@@ -39,7 +39,6 @@ from polars.datatypes import (
     UInt64,
     Utf8,
     dtype_to_ctype,
-    get_idx_type,
     is_polars_dtype,
     maybe_cast,
     numpy_char_code_to_dtype,
@@ -72,17 +71,22 @@ from polars.internals.series.string import StringNameSpace
 from polars.internals.series.struct import StructNameSpace
 from polars.internals.series.utils import expr_dispatch, get_ffi_func
 from polars.internals.slice import PolarsSlice
-from polars.utils import (
+from polars.utils.convert import (
     _date_to_pl_date,
     _datetime_to_pl_timestamp,
-    _is_generator,
     _time_to_pl_time,
+)
+from polars.utils.decorators import (
     deprecate_nonkeyword_arguments,
     deprecated_alias,
+    redirect,
+)
+from polars.utils.meta import get_index_type
+from polars.utils.various import (
+    _is_generator,
     is_int_sequence,
     range_to_series,
     range_to_slice,
-    redirect,
     scale_bytes,
     sphinx_accessor,
 )
@@ -703,7 +707,7 @@ class Series:
 
     def _pos_idxs(self, idxs: np.ndarray[Any, Any] | Series) -> Series:
         # pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx).
-        idx_type = get_idx_type()
+        idx_type = get_index_type()
 
         if isinstance(idxs, Series):
             if idxs.dtype == idx_type:

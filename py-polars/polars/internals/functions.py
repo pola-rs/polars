@@ -7,12 +7,8 @@ from typing import TYPE_CHECKING, Iterable, Sequence, overload
 
 from polars import internals as pli
 from polars.datatypes import Date
-from polars.utils import (
-    _datetime_to_pl_timestamp,
-    _timedelta_to_pl_duration,
-    deprecate_nonkeyword_arguments,
-    deprecated_alias,
-)
+from polars.utils.convert import _datetime_to_pl_timestamp, _timedelta_to_pl_duration
+from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import concat_df as _concat_df

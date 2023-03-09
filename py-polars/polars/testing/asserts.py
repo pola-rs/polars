@@ -13,7 +13,7 @@ from polars.datatypes import (
     dtype_to_py_type,
 )
 from polars.exceptions import ComputeError, InvalidAssert
-from polars.utils import deprecate_nonkeyword_arguments, deprecated_alias
+from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 
 
 @deprecate_nonkeyword_arguments()

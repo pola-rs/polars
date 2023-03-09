@@ -45,15 +45,17 @@ from polars.datatypes import (
 from polars.internals import selection_to_pyexpr_list
 from polars.internals.lazyframe.groupby import LazyGroupBy
 from polars.internals.slice import LazyPolarsSlice
-from polars.utils import (
+from polars.utils.convert import _timedelta_to_pl_duration
+from polars.utils.decorators import (
+    deprecate_nonkeyword_arguments,
+    deprecated_alias,
+    redirect,
+)
+from polars.utils.various import (
     _in_notebook,
     _prepare_row_count_args,
     _process_null_values,
-    _timedelta_to_pl_duration,
-    deprecate_nonkeyword_arguments,
-    deprecated_alias,
     normalise_filepath,
-    redirect,
 )
 
 with contextlib.suppress(ImportError):  # Module not available when building docs

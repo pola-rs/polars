@@ -220,7 +220,7 @@ fn when(predicate: PyExpr) -> dsl::When {
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[pyfunction]
-fn version() -> &'static str {
+fn get_polars_version() -> &'static str {
     VERSION
 }
 
@@ -564,18 +564,18 @@ fn as_struct(exprs: Vec<PyExpr>) -> PyExpr {
 }
 
 #[pyfunction]
-fn pool_size() -> usize {
-    POOL.current_num_threads()
-}
-
-#[pyfunction]
 fn arg_where(condition: PyExpr) -> PyExpr {
     polars_rs::lazy::dsl::arg_where(condition.inner).into()
 }
 
 #[pyfunction]
-fn get_idx_type(py: Python) -> PyObject {
+fn get_index_type(py: Python) -> PyObject {
     Wrap(IDX_DTYPE).to_object(py)
+}
+
+#[pyfunction]
+fn threadpool_size() -> usize {
+    POOL.current_num_threads()
 }
 
 #[pyfunction]
@@ -659,7 +659,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(cov)).unwrap();
     m.add_wrapped(wrap_pyfunction!(arg_sort_by)).unwrap();
     m.add_wrapped(wrap_pyfunction!(when)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(version)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(get_polars_version)).unwrap();
     m.add_wrapped(wrap_pyfunction!(toggle_string_cache))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(using_string_cache)).unwrap();
@@ -687,9 +687,9 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(max_exprs)).unwrap();
     m.add_wrapped(wrap_pyfunction!(as_struct)).unwrap();
     m.add_wrapped(wrap_pyfunction!(repeat)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(pool_size)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(threadpool_size)).unwrap();
     m.add_wrapped(wrap_pyfunction!(arg_where)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(get_idx_type)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(get_index_type)).unwrap();
     m.add_wrapped(wrap_pyfunction!(coalesce_exprs)).unwrap();
     m.add_wrapped(wrap_pyfunction!(set_float_fmt)).unwrap();
     Ok(())

@@ -5,7 +5,8 @@ from typing import TYPE_CHECKING
 
 import polars.internals as pli
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
-from polars.utils import _timedelta_to_pl_duration, deprecated_alias, redirect
+from polars.utils.convert import _timedelta_to_pl_duration
+from polars.utils.decorators import deprecated_alias, redirect
 
 if TYPE_CHECKING:
     from datetime import timedelta

@@ -64,7 +64,6 @@ from polars.datatypes.type_aliases import (
     SchemaDefinition,
     SchemaDict,
 )
-from polars.datatypes.utils import get_idx_type
 
 __all__ = [
     # classes
@@ -131,6 +130,4 @@ __all__ = [
     "PythonDataType",
     "SchemaDict",
     "SchemaDefinition",
-    # utils
-    "get_idx_type",
 ]

@@ -16,7 +16,7 @@ from typing import (
 
 from polars.dependencies import _FSSPEC_AVAILABLE, fsspec
 from polars.exceptions import NoDataError
-from polars.utils import normalise_filepath
+from polars.utils.various import normalise_filepath
 
 with suppress(ImportError):
     from polars.polars import ipc_schema as _ipc_schema

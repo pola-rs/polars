@@ -398,7 +398,10 @@ def maybe_cast(
 ) -> Any:
     """Try casting a value to a value that is valid for the given Polars dtype."""
     # cast el if it doesn't match
-    from polars.utils import _datetime_to_pl_timestamp, _timedelta_to_pl_timedelta
+    from polars.utils.convert import (
+        _datetime_to_pl_timestamp,
+        _timedelta_to_pl_timedelta,
+    )
 
     if isinstance(el, datetime):
         return _datetime_to_pl_timestamp(el, time_unit)

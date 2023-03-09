@@ -33,13 +33,10 @@ from polars.internals.expr.list import ExprListNameSpace
 from polars.internals.expr.meta import ExprMetaNameSpace
 from polars.internals.expr.string import ExprStringNameSpace
 from polars.internals.expr.struct import ExprStructNameSpace
-from polars.utils import (
-    _timedelta_to_pl_duration,
-    deprecate_nonkeyword_arguments,
-    deprecated_alias,
-    sphinx_accessor,
-    threadpool_size,
-)
+from polars.utils.convert import _timedelta_to_pl_duration
+from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
+from polars.utils.meta import threadpool_size
+from polars.utils.various import sphinx_accessor
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arg_where as py_arg_where

@@ -21,7 +21,7 @@ from polars.testing import (
     assert_frame_equal_local_categoricals,
     assert_series_equal,
 )
-from polars.utils import normalise_filepath
+from polars.utils.various import normalise_filepath
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import TimeUnit

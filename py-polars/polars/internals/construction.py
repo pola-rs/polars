@@ -54,13 +54,9 @@ from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import ShapeError
-from polars.utils import (
-    _is_generator,
-    arrlen,
-    deprecated_alias,
-    range_to_series,
-    threadpool_size,
-)
+from polars.utils.decorators import deprecated_alias
+from polars.utils.meta import threadpool_size
+from polars.utils.various import _is_generator, arrlen, range_to_series
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame, PySeries
