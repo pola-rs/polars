@@ -674,7 +674,7 @@ mod test {
         let sql = r#"
             CREATE TABLE pokemon AS
             SELECT *
-            FROM read_csv('../../examples/datasets/pokemon.csv')"#;
+            FROM read_csv('../../examples/datasets/csv/pokemon.csv')"#;
         context.execute(sql).unwrap().collect().unwrap();
         let df_sql = context
             .execute(
@@ -689,7 +689,7 @@ mod test {
             .unwrap()
             .collect()
             .unwrap();
-        let expected = LazyCsvReader::new("../../examples/datasets/pokemon.csv")
+        let expected = LazyCsvReader::new("../../examples/datasets/csv/pokemon.csv")
             .finish()
             .unwrap()
             .select(&[
@@ -703,5 +703,37 @@ mod test {
             .collect()
             .unwrap();
         assert!(df_sql.frame_equal(&expected));
+    }
+
+    #[test]
+    #[cfg(feature = "csv")]
+    fn iss_7437() -> PolarsResult<()> {
+        let mut context = SQLContext::try_new()?;
+        let sql = r#"
+            CREATE TABLE pokemon AS
+            SELECT *
+            FROM read_csv('../../examples/datasets/csv/pokemon.csv')"#;
+        context.execute(sql)?.collect()?;
+
+        let df_sql = context
+            .execute(
+                r#"
+                SELECT "Type 1" as type1
+                FROM pokemon
+                GROUP BY "Type 1"
+        "#,
+            )?
+            .collect()?
+            .sort(&["type1"], vec![false])?;
+
+        let expected = LazyCsvReader::new("../../examples/datasets/csv/pokemon.csv")
+            .finish()?
+            .groupby(vec![col("Type 1").alias("type1")])
+            .agg(vec![])
+            .collect()?
+            .sort(&["type1"], vec![false])?;
+
+        assert!(df_sql.frame_equal(&expected));
+        Ok(())
     }
 }

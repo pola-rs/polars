@@ -306,8 +306,18 @@ impl SQLContext {
 
         // remove the groupby keys as polars adds those implicitly
         let mut aggregation_projection = Vec::with_capacity(projections.len());
+        let mut aliases: Vec<&str> = Vec::with_capacity(projections.len());
+
         for e in projections {
-            let field = e.to_field(&schema_before, Context::Default)?;
+            // aliases must be applied after the groupby
+            let e = if let Expr::Alias(expr, name) = e {
+                aliases.push(name);
+                expr
+            } else {
+                e
+            };
+
+            let field = e.to_field(&schema_before, Context::Aggregation)?;
             if groupby_keys_schema.get(&field.name).is_none() {
                 aggregation_projection.push(e.clone())
             }
@@ -317,13 +327,14 @@ impl SQLContext {
 
         let projection_schema =
             expressions_to_schema(projections, &schema_before, Context::Default)?;
-
         // a final projection to get the proper order
         let final_projection = projection_schema
             .iter_names()
             .zip(projections)
             .map(|(name, projection_expr)| {
                 if groupby_keys_schema.get(name).is_some() {
+                    projection_expr.clone()
+                } else if aliases.contains(&name.as_str()) {
                     projection_expr.clone()
                 } else {
                     col(name)
