@@ -666,4 +666,42 @@ mod test {
         assert_eq!(df_2.height(), 27);
         assert_eq!(df_2.width(), 4);
     }
+
+    #[test]
+    #[cfg(feature = "csv")]
+    fn iss_7436() {
+        let mut context = SQLContext::try_new().unwrap();
+        let sql = r#"
+            CREATE TABLE pokemon AS
+            SELECT *
+            FROM read_csv('../../examples/datasets/pokemon.csv')"#;
+        context.execute(sql).unwrap().collect().unwrap();
+        let df_sql = context
+            .execute(
+                r#"
+            SELECT 
+                "Type 1" AS type1,
+                AVG(Attack) OVER (PARTITION BY "Type 1") AS avg_attack_by_type
+            FROM pokemon
+            LIMIT 5
+            "#,
+            )
+            .unwrap()
+            .collect()
+            .unwrap();
+        let expected = LazyCsvReader::new("../../examples/datasets/pokemon.csv")
+            .finish()
+            .unwrap()
+            .select(&[
+                col("Type 1").alias("type1"),
+                col("Attack")
+                    .mean()
+                    .over(vec![col("Type 1")])
+                    .alias("avg_attack_by_type"),
+            ])
+            .limit(5)
+            .collect()
+            .unwrap();
+        assert!(df_sql.frame_equal(&expected));
+    }
 }
