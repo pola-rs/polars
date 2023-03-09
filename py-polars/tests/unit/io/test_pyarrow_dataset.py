@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import tempfile
 import typing
+from datetime import date, datetime, time
 from pathlib import Path
 
 import pyarrow.dataset as ds
@@ -76,5 +77,26 @@ def test_dataset(df: pl.DataFrame) -> None:
             file_path,
             lambda lf: lf.filter(pl.col("floats").sum().over("date") == 10)
             .select(["bools", "floats", "date"])
+            .collect(),
+        )
+
+        # temporal types
+        helper_dataset_test(
+            file_path,
+            lambda lf: lf.filter(pl.col("date") < date(1972, 1, 1))
+            .select(["bools", "floats", "date"])
+            .collect(),
+        )
+        helper_dataset_test(
+            file_path,
+            lambda lf: lf.filter(pl.col("datetime") > datetime(1970, 1, 1, second=13))
+            .select(["bools", "floats", "date"])
+            .collect(),
+        )
+        # not yet supported in pyarrow
+        helper_dataset_test(
+            file_path,
+            lambda lf: lf.filter(pl.col("time") >= time(microsecond=100))
+            .select(["bools", "time", "date"])
             .collect(),
         )
