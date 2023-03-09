@@ -3,8 +3,8 @@ name: Lint Python
 on:
   pull_request:
     paths:
-      - 'py-polars/**'
-      - '.github/workflows/lint-python.yml'
+      - py-polars/**
+      - .github/workflows/lint-python.yml
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -24,8 +24,8 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-          cache: 'pip'
-          cache-dependency-path: 'py-polars/requirements-lint.txt'
+          cache: pip
+          cache-dependency-path: py-polars/requirements-lint.txt
 
       - name: Install Python dependencies
         run: |
