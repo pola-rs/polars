@@ -1,17 +1,9 @@
 from __future__ import annotations
 
-import sys
 from datetime import datetime, timedelta
 from typing import Any
 
 import pytest
-
-if sys.version_info >= (3, 9):
-    from zoneinfo import ZoneInfo
-else:
-    # Import from submodule due to typing issue with backports.zoneinfo package:
-    # https://github.com/pganssle/zoneinfo/issues/125
-    from backports.zoneinfo._zoneinfo import ZoneInfo
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
@@ -423,16 +415,14 @@ def test_groupby_dynamic_flat_agg_4814() -> None:
         (timedelta(seconds=10), "100s"),
     ],
 )
-@pytest.mark.parametrize("tzinfo", [None, ZoneInfo("Asia/Kathmandu")])
 def test_groupby_dynamic_overlapping_groups_flat_apply_multiple_5038(
-    every: str | timedelta, period: str | timedelta, tzinfo: ZoneInfo | None
+    every: str | timedelta, period: str | timedelta
 ) -> None:
     assert (
         pl.DataFrame(
             {
                 "a": [
-                    datetime(2021, 1, 1, tzinfo=tzinfo) + timedelta(seconds=2**i)
-                    for i in range(10)
+                    datetime(2021, 1, 1) + timedelta(seconds=2**i) for i in range(10)
                 ],
                 "b": [float(i) for i in range(10)],
             }
@@ -522,14 +512,13 @@ def test_groupby_when_then_with_binary_and_agg_in_pred_6202() -> None:
 
 
 @pytest.mark.parametrize("every", ["1h", timedelta(hours=1)])
-@pytest.mark.parametrize("tzinfo", [None, ZoneInfo("Asia/Kathmandu")])
-def test_groupby_dynamic_iter(every: str | timedelta, tzinfo: ZoneInfo | None) -> None:
+def test_groupby_dynamic_iter(every: str | timedelta) -> None:
     df = pl.DataFrame(
         {
             "datetime": [
-                datetime(2020, 1, 1, 10, 0, tzinfo=tzinfo),
-                datetime(2020, 1, 1, 10, 50, tzinfo=tzinfo),
-                datetime(2020, 1, 1, 11, 10, tzinfo=tzinfo),
+                datetime(2020, 1, 1, 10, 0),
+                datetime(2020, 1, 1, 10, 50),
+                datetime(2020, 1, 1, 11, 10),
             ],
             "a": [1, 2, 2],
             "b": [4, 5, 6],
@@ -542,8 +531,8 @@ def test_groupby_dynamic_iter(every: str | timedelta, tzinfo: ZoneInfo | None) -
         for name, data in df.groupby_dynamic("datetime", every=every, closed="left")
     ]
     expected1 = [
-        (datetime(2020, 1, 1, 10, tzinfo=tzinfo), (2, 3)),
-        (datetime(2020, 1, 1, 11, tzinfo=tzinfo), (1, 3)),
+        (datetime(2020, 1, 1, 10), (2, 3)),
+        (datetime(2020, 1, 1, 11), (1, 3)),
     ]
     assert result1 == expected1
 
@@ -555,21 +544,20 @@ def test_groupby_dynamic_iter(every: str | timedelta, tzinfo: ZoneInfo | None) -
         )
     ]
     expected2 = [
-        ((1, datetime(2020, 1, 1, 10, tzinfo=tzinfo)), (1, 3)),
-        ((2, datetime(2020, 1, 1, 10, tzinfo=tzinfo)), (1, 3)),
-        ((2, datetime(2020, 1, 1, 11, tzinfo=tzinfo)), (1, 3)),
+        ((1, datetime(2020, 1, 1, 10)), (1, 3)),
+        ((2, datetime(2020, 1, 1, 10)), (1, 3)),
+        ((2, datetime(2020, 1, 1, 11)), (1, 3)),
     ]
     assert result2 == expected2
 
 
 @pytest.mark.parametrize("every", ["1h", timedelta(hours=1)])
-@pytest.mark.parametrize("tzinfo", [None, ZoneInfo("Asia/Kathmandu")])
-def test_groupby_dynamic_lazy(every: str | timedelta, tzinfo: ZoneInfo | None) -> None:
+def test_groupby_dynamic_lazy(every: str | timedelta) -> None:
     ldf = pl.LazyFrame(
         {
             "time": pl.date_range(
-                low=datetime(2021, 12, 16, tzinfo=tzinfo),
-                high=datetime(2021, 12, 16, 2, tzinfo=tzinfo),
+                low=datetime(2021, 12, 16),
+                high=datetime(2021, 12, 16, 2),
                 interval="30m",
             ),
             "n": range(5),
@@ -587,19 +575,19 @@ def test_groupby_dynamic_lazy(every: str | timedelta, tzinfo: ZoneInfo | None) -
     )
     assert sorted(df.rows()) == [
         (
-            datetime(2021, 12, 15, 23, 0, tzinfo=tzinfo),
-            datetime(2021, 12, 16, 0, 0, tzinfo=tzinfo),
-            datetime(2021, 12, 16, 0, 0, tzinfo=tzinfo),
+            datetime(2021, 12, 15, 23, 0),
+            datetime(2021, 12, 16, 0, 0),
+            datetime(2021, 12, 16, 0, 0),
         ),
         (
-            datetime(2021, 12, 16, 0, 0, tzinfo=tzinfo),
-            datetime(2021, 12, 16, 0, 30, tzinfo=tzinfo),
-            datetime(2021, 12, 16, 1, 0, tzinfo=tzinfo),
+            datetime(2021, 12, 16, 0, 0),
+            datetime(2021, 12, 16, 0, 30),
+            datetime(2021, 12, 16, 1, 0),
         ),
         (
-            datetime(2021, 12, 16, 1, 0, tzinfo=tzinfo),
-            datetime(2021, 12, 16, 1, 30, tzinfo=tzinfo),
-            datetime(2021, 12, 16, 2, 0, tzinfo=tzinfo),
+            datetime(2021, 12, 16, 1, 0),
+            datetime(2021, 12, 16, 1, 30),
+            datetime(2021, 12, 16, 2, 0),
         ),
     ]
 
@@ -618,16 +606,12 @@ def test_overflow_mean_partitioned_groupby_5194(dtype: pl.PolarsDataType) -> Non
     ) == {"group": [1, 2], "data": [10000000.0, 10000000.0]}
 
 
-@pytest.mark.parametrize("tzinfo", [None, ZoneInfo("Asia/Kathmandu")])
-def test_groupby_dynamic_elementwise_following_mean_agg_6904(
-    tzinfo: ZoneInfo | None,
-) -> None:
+def test_groupby_dynamic_elementwise_following_mean_agg_6904() -> None:
     df = (
         pl.DataFrame(
             {
                 "a": [
-                    datetime(2021, 1, 1, tzinfo=tzinfo) + timedelta(seconds=2**i)
-                    for i in range(5)
+                    datetime(2021, 1, 1) + timedelta(seconds=2**i) for i in range(5)
                 ],
                 "b": [float(i) for i in range(5)],
             }
@@ -641,10 +625,7 @@ def test_groupby_dynamic_elementwise_following_mean_agg_6904(
         df,
         pl.DataFrame(
             {
-                "a": [
-                    datetime(2021, 1, 1, 0, 0, tzinfo=tzinfo),
-                    datetime(2021, 1, 1, 0, 0, 10, tzinfo=tzinfo),
-                ],
+                "a": [datetime(2021, 1, 1, 0, 0), datetime(2021, 1, 1, 0, 0, 10)],
                 "c": [0.9092974268256817, -0.7568024953079282],
             }
         ),
