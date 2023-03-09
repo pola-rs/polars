@@ -583,6 +583,13 @@ impl PredicatePushDown {
                     let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
 
                     if let Some(predicate) = predicate {
+                        // simplify expressions before we translate them to pyarrow
+                        let lp = PythonScan {options: options.clone(), predicate: Some(predicate)};
+                        let lp_top = lp_arena.add(lp);
+                        let stack_opt = StackOptimizer{};
+                        let lp_top = stack_opt.optimize_loop(&mut [Box::new(SimplifyExprRule{})], expr_arena, lp_arena, lp_top).unwrap();
+                        let PythonScan {options: _, predicate: Some(predicate)} = lp_arena.take(lp_top) else {unreachable!()};
+
                         match super::super::pyarrow::predicate_to_pa(predicate, expr_arena) {
                             // we we able to create a pyarrow string, mutate the options
                             Some(eval_str) => {
