@@ -230,11 +230,7 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
             AnyValue::Datetime(v, tu, tz) => {
                 let convert = utils.getattr("_to_python_datetime").unwrap();
                 let py_datetime_dtype = pl.getattr("Datetime").unwrap();
-                let tu = match tu {
-                    TimeUnit::Nanoseconds => "ns",
-                    TimeUnit::Microseconds => "us",
-                    TimeUnit::Milliseconds => "ms",
-                };
+                let tu = tu.to_ascii();
                 convert
                     .call1((v, py_datetime_dtype, tu, tz.as_ref().map(|s| s.as_str())))
                     .unwrap()
@@ -242,11 +238,8 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
             }
             AnyValue::Duration(v, tu) => {
                 let convert = utils.getattr("_to_python_timedelta").unwrap();
-                match tu {
-                    TimeUnit::Nanoseconds => convert.call1((v, "ns")).unwrap().into_py(py),
-                    TimeUnit::Microseconds => convert.call1((v, "us")).unwrap().into_py(py),
-                    TimeUnit::Milliseconds => convert.call1((v, "ms")).unwrap().into_py(py),
-                }
+                let tu = tu.to_ascii();
+                convert.call1((v, tu)).unwrap().into_py(py)
             }
             AnyValue::Time(v) => {
                 let convert = utils.getattr("_to_python_time").unwrap();

@@ -77,33 +77,18 @@ impl PhysicalExpr for LiteralExpr {
             },
             Utf8(v) => Utf8Chunked::full(NAME, v, 1).into_series(),
             Binary(v) => BinaryChunked::full(NAME, v, 1).into_series(),
-            #[cfg(feature = "temporal")]
-            DateTime(ndt, tu) => {
-                use polars_core::chunked_array::temporal::conversion::*;
-                let timestamp = match tu {
-                    TimeUnit::Nanoseconds => datetime_to_timestamp_ns(*ndt),
-                    TimeUnit::Microseconds => datetime_to_timestamp_us(*ndt),
-                    TimeUnit::Milliseconds => datetime_to_timestamp_ms(*ndt),
-                };
-                Int64Chunked::full(NAME, timestamp, 1)
-                    .into_datetime(*tu, None)
-                    .into_series()
-            }
-            #[cfg(feature = "temporal")]
-            Duration(v, tu) => {
-                let duration = match tu {
-                    TimeUnit::Milliseconds => v.num_milliseconds(),
-                    TimeUnit::Microseconds => v.num_microseconds().ok_or_else(
-                        || polars_err!(InvalidOperation: "cannot represent {} as {}", v, tu),
-                    )?,
-                    TimeUnit::Nanoseconds => v.num_nanoseconds().ok_or_else(
-                        || polars_err!(InvalidOperation: "cannot represent {} as {}", v, tu),
-                    )?,
-                };
-                Int64Chunked::full(NAME, duration, 1)
-                    .into_duration(*tu)
-                    .into_series()
-            }
+            #[cfg(feature = "dtype-datetime")]
+            DateTime(timestamp, tu, tz) => Int64Chunked::full(NAME, *timestamp, 1)
+                .into_datetime(*tu, tz.clone())
+                .into_series(),
+            #[cfg(feature = "dtype-duration")]
+            Duration(v, tu) => Int64Chunked::full(NAME, *v, 1)
+                .into_duration(*tu)
+                .into_series(),
+            #[cfg(feature = "dtype-date")]
+            Date(v) => Int32Chunked::full(NAME, *v, 1).into_date().into_series(),
+            #[cfg(feature = "dtype-datetime")]
+            Time(v) => Int64Chunked::full(NAME, *v, 1).into_time().into_series(),
             Series(series) => series.deref().clone(),
         };
         Ok(s)

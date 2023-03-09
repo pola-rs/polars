@@ -668,19 +668,10 @@ impl OptimizationRule for SimplifyExprRule {
 fn inline_cast(input: &AExpr, dtype: &DataType) -> Option<AExpr> {
     match (input, dtype) {
         #[cfg(feature = "dtype-duration")]
-        (AExpr::Literal(LiteralValue::Int64(v)), DataType::Duration(tu)) => {
-            use polars_core::export::chrono;
-            let dur = match tu {
-                TimeUnit::Nanoseconds => chrono::Duration::nanoseconds(*v),
-                TimeUnit::Microseconds => chrono::Duration::microseconds(*v),
-                TimeUnit::Milliseconds => chrono::Duration::milliseconds(*v),
-            };
-            Some(AExpr::Literal(LiteralValue::Duration(dur, *tu)))
-        }
-        (AExpr::Literal(lv), dt) if dt.is_numeric() => {
+        (AExpr::Literal(lv), _) => {
             let av = lv.to_anyvalue()?;
-            let av = av.cast(dt).ok()?;
-            let lv = LiteralValue::try_from(av).ok()?;
+            let out = av.cast(dtype).ok()?;
+            let lv: LiteralValue = out.try_into().ok()?;
             Some(AExpr::Literal(lv))
         }
         _ => None,

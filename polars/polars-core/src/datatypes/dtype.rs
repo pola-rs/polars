@@ -152,6 +152,7 @@ impl DataType {
             | DataType::Date
             | DataType::Datetime(_, _)
             | DataType::Duration(_)
+            | DataType::Time
             | DataType::Boolean
             | DataType::Unknown
             | DataType::Null => false,
