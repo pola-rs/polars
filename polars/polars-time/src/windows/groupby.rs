@@ -68,7 +68,6 @@ pub fn groupby_windows(
         let stop = start + 1;
         Bounds::new_checked(start, stop)
     };
-    println!("boundary: {:?}", boundary);
 
     let size = if include_lower_bound || include_upper_bound {
         match tu {
@@ -79,7 +78,6 @@ pub fn groupby_windows(
     } else {
         0
     };
-    println!("size: {:?}", size);
     let size_lower = if include_lower_bound { size } else { 0 };
     let size_upper = if include_upper_bound { size } else { 0 };
     let mut lower_bound = Vec::with_capacity(size_lower);

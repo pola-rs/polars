@@ -664,13 +664,14 @@ def test_date_comp(one: PolarsTemporalType, two: PolarsTemporalType) -> None:
     assert (a <= one).to_list() == [True, False]
 
 
-def test_truncate_negative_offset() -> None:
+@pytest.mark.parametrize("tzinfo", [None, ZoneInfo("Asia/Kathmandu")])
+def test_truncate_negative_offset(tzinfo: ZoneInfo | None) -> None:
     df = pl.DataFrame(
         {
             "event_date": [
-                datetime(2021, 4, 11),
-                datetime(2021, 4, 29),
-                datetime(2021, 5, 29),
+                datetime(2021, 4, 11, tzinfo=tzinfo),
+                datetime(2021, 4, 29, tzinfo=tzinfo),
+                datetime(2021, 5, 29, tzinfo=tzinfo),
             ],
             "adm1_code": [1, 2, 1],
         }
@@ -688,16 +689,16 @@ def test_truncate_negative_offset() -> None:
     )
 
     assert out["event_date"].to_list() == [
-        datetime(2021, 3, 1),
-        datetime(2021, 4, 1),
-        datetime(2021, 5, 1),
+        datetime(2021, 3, 1, tzinfo=tzinfo),
+        datetime(2021, 4, 1, tzinfo=tzinfo),
+        datetime(2021, 5, 1, tzinfo=tzinfo),
     ]
     df = pl.DataFrame(
         {
             "event_date": [
-                datetime(2021, 4, 11),
-                datetime(2021, 4, 29),
-                datetime(2021, 5, 29),
+                datetime(2021, 4, 11, tzinfo=tzinfo),
+                datetime(2021, 4, 29, tzinfo=tzinfo),
+                datetime(2021, 5, 29, tzinfo=tzinfo),
             ],
             "adm1_code": [1, 2, 1],
             "five_type": ["a", "b", "a"],
@@ -714,9 +715,9 @@ def test_truncate_negative_offset() -> None:
     ).agg([pl.col("adm1_code").unique(), (pl.col("fatalities") > 0).sum()])
 
     assert out["event_date"].to_list() == [
-        datetime(2021, 4, 1),
-        datetime(2021, 5, 1),
-        datetime(2021, 4, 1),
+        datetime(2021, 4, 1, tzinfo=tzinfo),
+        datetime(2021, 5, 1, tzinfo=tzinfo),
+        datetime(2021, 4, 1, tzinfo=tzinfo),
     ]
 
     for dt in [pl.Int32, pl.Int64]:
@@ -776,6 +777,46 @@ def test_explode_date() -> None:
             ("b", dclass(2021, 12, 1), None),
             ("b", dclass(2021, 12, 1), 0.25),
         ]
+
+
+def test_groupby_dynamic_when_conversion_crosses_dates_7274() -> None:
+    df = (
+        pl.DataFrame(
+            data={
+                "timestamp": ["1970-01-01 00:00:00+01:00", "1970-01-01 01:00:00+01:00"],
+                "value": [1, 1],
+            }
+        )
+        .with_columns(
+            pl.col("timestamp").str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S%:z")
+        )
+        .with_columns(
+            pl.col("timestamp").dt.convert_time_zone("UTC").alias("timestamp_utc")
+        )
+    )
+    result = df.groupby_dynamic(
+        index_column="timestamp", every="1d", closed="left"
+    ).agg(pl.col("value").count())
+    expected = pl.DataFrame({"timestamp": [datetime(1970, 1, 1)], "value": [2]})
+    expected = expected.with_columns(
+        pl.col("timestamp").dt.replace_time_zone("+01:00"),
+        pl.col("value").cast(pl.UInt32),
+    )
+    assert_frame_equal(result, expected)
+    result = df.groupby_dynamic(
+        index_column="timestamp_utc", every="1d", closed="left"
+    ).agg(pl.col("value").count())
+    expected = pl.DataFrame(
+        {
+            "timestamp_utc": [datetime(1969, 12, 31), datetime(1970, 1, 1)],
+            "value": [1, 1],
+        }
+    )
+    expected = expected.with_columns(
+        pl.col("timestamp_utc").dt.replace_time_zone("UTC"),
+        pl.col("value").cast(pl.UInt32),
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_rolling() -> None:
@@ -928,13 +969,14 @@ def test_read_utc_times_parquet() -> None:
     assert df_in["Timestamp"][0] == datetime(2022, 1, 1, 0, 0, tzinfo=tz)
 
 
-def test_default_negative_every_offset_dynamic_groupby() -> None:
+@pytest.mark.parametrize("tzinfo", [None, ZoneInfo("Asia/Kathmandu")])
+def test_default_negative_every_offset_dynamic_groupby(tzinfo: ZoneInfo | None) -> None:
     # 2791
     dts = [
-        datetime(2020, 1, 1),
-        datetime(2020, 1, 2),
-        datetime(2020, 2, 1),
-        datetime(2020, 3, 1),
+        datetime(2020, 1, 1, tzinfo=tzinfo),
+        datetime(2020, 1, 2, tzinfo=tzinfo),
+        datetime(2020, 2, 1, tzinfo=tzinfo),
+        datetime(2020, 3, 1, tzinfo=tzinfo),
     ]
     df = pl.DataFrame({"dt": dts, "idx": range(len(dts))})
     out = df.groupby_dynamic(index_column="dt", every="1mo", closed="right").agg(
@@ -944,9 +986,9 @@ def test_default_negative_every_offset_dynamic_groupby() -> None:
     expected = pl.DataFrame(
         {
             "dt": [
-                datetime(2019, 12, 1, 0, 0),
-                datetime(2020, 1, 1, 0, 0),
-                datetime(2020, 2, 1, 0, 0),
+                datetime(2019, 12, 1, 0, 0, tzinfo=tzinfo),
+                datetime(2020, 1, 1, 0, 0, tzinfo=tzinfo),
+                datetime(2020, 2, 1, 0, 0, tzinfo=tzinfo),
             ],
             "idx": [[0], [1, 2], [3]],
         }
