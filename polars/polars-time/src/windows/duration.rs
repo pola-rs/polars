@@ -351,6 +351,7 @@ impl Duration {
             // truncate by months
             (_, 0, 0) => {
                 let ts = timestamp_to_datetime(t);
+                println!("ts: {:?}", ts);
                 let (year, month) = (ts.year(), ts.month());
 
                 // determine the total number of months and truncate
@@ -363,6 +364,7 @@ impl Duration {
                 let (year, month) = ((total / 12), ((total % 12) + 1) as u32);
 
                 let dt = new_datetime(year, month, 1, 0, 0, 0, 0);
+                println!("datetime to timestamp{:?}", datetime_to_timestamp(dt));
                 datetime_to_timestamp(dt)
             }
             _ => panic!("duration may not mix month, weeks and nanosecond units"),

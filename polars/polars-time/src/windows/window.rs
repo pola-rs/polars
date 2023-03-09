@@ -110,8 +110,10 @@ impl Window {
         let start = if !self.every.months_only()
             && self.every.duration_us() > MICROSECONDS * SECONDS_IN_DAY
         {
+            println!("add us");
             self.offset.add_us(t)
         } else {
+            println!("truncate us");
             self.truncate_us(t, tz)
         };
         let stop = self.period.add_us(start);
