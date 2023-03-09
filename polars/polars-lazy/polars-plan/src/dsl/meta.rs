@@ -23,10 +23,10 @@ impl MetaNameSpace {
         expr_to_leaf_column_names(&self.0)
     }
     /// A projection that only takes a column or a column + alias.
-    pub fn is_simple_projection(&self) -> bool {
+    pub fn is_simple_projection(self) -> bool {
         let mut arena = Arena::with_capacity(8);
-        let e = self.0.clone();
-        let node = to_aexpr(e, &mut arena);
+        
+        let node = to_aexpr(self.0, &mut arena);
         aexpr_is_simple_projection(node, &arena)
     }
 
