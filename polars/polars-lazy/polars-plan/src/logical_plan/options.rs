@@ -272,6 +272,8 @@ pub struct PythonOptions {
     // a pyarrow predicate python expression
     // can be evaluated with python.eval
     pub predicate: Option<String>,
+    // a `head` call passed to pyarrow
+    pub n_rows: Option<usize>,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]

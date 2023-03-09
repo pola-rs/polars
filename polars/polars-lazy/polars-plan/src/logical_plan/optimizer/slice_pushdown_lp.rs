@@ -106,12 +106,11 @@ impl SlicePushDown {
                 file_info,
                 output_schema,
                 predicate,
-                options,
+                mut options,
             },
                 // TODO! we currently skip slice pushdown if there is a predicate.
                 // we can modify the readers to only limit after predicates have been applied
                 Some(state)) if state.offset == 0 && predicate.is_none() => {
-                let mut options = options;
                 options.n_rows = Some(state.len as usize);
                 let lp = AnonymousScan {
                     function,
@@ -123,6 +122,21 @@ impl SlicePushDown {
 
                 Ok(lp)
             },
+            #[cfg(feature = "python")]
+            (PythonScan {
+                mut options,
+                predicate,
+            },
+            // TODO! we currently skip slice pushdown if there is a predicate.
+            // we can modify the readers to only limit after predicates have been applied
+                Some(state)) if state.offset == 0 && predicate.is_none() => {
+                options.n_rows = Some(state.len as usize);
+                let lp = PythonScan {
+                    options,
+                    predicate
+                };
+                Ok(lp)
+            }
 
             #[cfg(feature = "parquet")]
             (ParquetScan {
@@ -130,14 +144,13 @@ impl SlicePushDown {
                 file_info,
                 output_schema,
                 predicate,
-                options,
+                mut options,
                 cloud_options,
 
             },
                 // TODO! we currently skip slice pushdown if there is a predicate.
                 // we can modify the readers to only limit after predicates have been applied
                 Some(state)) if state.offset == 0 && predicate.is_none() => {
-                let mut options = options;
                 options.n_rows = Some(state.len as usize);
                 let lp = ParquetScan {
                     path,
@@ -155,9 +168,8 @@ impl SlicePushDown {
             file_info,
                 output_schema,
                 predicate,
-                options
+                mut options
             }, Some(state)) if state.offset == 0 && predicate.is_none() => {
-                let mut options = options;
                 options.n_rows = Some(state.len as usize);
                 let lp = IpcScan {
                     path,
@@ -176,10 +188,9 @@ impl SlicePushDown {
                 path,
                 file_info,
                 output_schema,
-                options,
+                mut options,
                 predicate,
             }, Some(state)) if state.offset >= 0 && predicate.is_none() => {
-                let mut options = options;
                 options.skip_rows += state.offset as usize;
                 options.n_rows = Some(state.len as usize);
 

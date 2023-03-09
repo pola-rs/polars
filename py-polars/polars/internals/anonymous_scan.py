@@ -31,7 +31,10 @@ def _deser_and_exec(  # noqa: D417
 
 
 def _scan_pyarrow_dataset_impl(
-    ds: pa.dataset.dataset, with_columns: list[str] | None, predicate: str | None
+    ds: pa.dataset.dataset,
+    with_columns: list[str] | None,
+    predicate: str | None,
+    n_rows: int | None,
 ) -> pli.DataFrame:
     """
     Take the projected columns and materialize an arrow table.
@@ -44,6 +47,8 @@ def _scan_pyarrow_dataset_impl(
         Columns that are projected
     predicate
         pyarrow expression that can be evaluated with eval
+    n_rows:
+        Materialize only n rows from the arrow dataset
 
     Returns
     -------
@@ -53,6 +58,19 @@ def _scan_pyarrow_dataset_impl(
     _filter = None
     if predicate:
         _filter = eval(predicate)
+    if n_rows:
+        dfs = []
+        total_rows = 0
+        for rb in ds.to_batches(
+            columns=with_columns, filter=_filter, batch_size=n_rows
+        ):
+            df = pl.DataFrame(dict(zip(rb.schema.names, rb.columns)))
+            total_rows += df.height
+            dfs.append(df)
+            if total_rows > n_rows:
+                break
+        return pli.concat(dfs, rechunk=False).head(n_rows)
+
     return cast(
         pli.DataFrame, pl.from_arrow(ds.to_table(columns=with_columns, filter=_filter))
     )
