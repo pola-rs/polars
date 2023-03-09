@@ -55,8 +55,8 @@ impl SqlExprVisitor {
             SqlExpr::Value(value) => self.visit_literal(value),
             SqlExpr::IsNull(expr) => Ok(self.visit_expr(expr)?.is_null()),
             SqlExpr::IsNotNull(expr) => Ok(self.visit_expr(expr)?.is_not_null()),
-            SqlExpr::Floor { expr, .. } => self.visit_expr(expr),
-            SqlExpr::Ceil { expr, .. } => self.visit_expr(expr),
+            SqlExpr::Floor { expr, .. } => Ok(self.visit_expr(expr)?.floor()),
+            SqlExpr::Ceil { expr, .. } => Ok(self.visit_expr(expr)?.ceil()),
             SqlExpr::ArrayAgg(expr) => self.visit_arr_agg(expr),
             SqlExpr::Between {
                 expr,

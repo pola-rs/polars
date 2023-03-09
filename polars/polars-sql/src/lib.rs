@@ -300,7 +300,7 @@ mod test {
     #[test]
     fn test_math_functions() {
         let df = df! {
-            "a" => &[1.0]
+            "a" => [1.0]
         }
         .unwrap();
         let mut context = SQLContext::try_new().unwrap();
@@ -308,32 +308,36 @@ mod test {
         let sql = r#"
             SELECT 
                 a, 
-                abs(a) as abs_a,
-                exp(a) as exp_a,
-                floor(a) as floor_a,
-                ln(a) as ln_a,
-                acos(a) as acos_a,
-                asin(a) as asin_a,
-                atan(a) as atan_a,
-                log(a, 10) as log_a,
-                log2(a) as log2_a,
-                log10(a) as log10_a
+                ABS(a) AS abs,
+                ACOS(a) AS acos,
+                ASIN(a) AS asin,
+                ATAN(a) AS atan,
+                CEIL(a) AS ceil,
+                EXP(a) AS exp,
+                FLOOR(a) AS floor,
+                LN(a) AS ln,
+                LOG2(a) AS log2,
+                LOG10(a) AS log10,
+                LOG(a, 5) AS log5,
+                POW(a, 2) AS pow
             FROM df"#;
         let df_sql = context.execute(sql).unwrap().collect().unwrap();
         let df_pl = df
             .lazy()
             .select(&[
                 col("a"),
-                col("a").abs().alias("abs_a"),
-                col("a").exp().alias("exp_a"),
-                col("a").floor().alias("floor_a"),
-                col("a").log(std::f64::consts::E).alias("ln_a"),
-                col("a").arccos().alias("acos_a"),
-                col("a").arcsin().alias("asin_a"),
-                col("a").arctan().alias("atan_a"),
-                col("a").log(10.0).alias("log_a"),
-                col("a").log(2.0).alias("log2_a"),
-                col("a").log(10.0).alias("log10_a"),
+                col("a").abs().alias("abs"),
+                col("a").arccos().alias("acos"),
+                col("a").arcsin().alias("asin"),
+                col("a").arctan().alias("atan"),
+                col("a").ceil().alias("ceil"),
+                col("a").exp().alias("exp"),
+                col("a").floor().alias("floor"),
+                col("a").log(std::f64::consts::E).alias("ln"),
+                col("a").log(2.0).alias("log2"),
+                col("a").log(10.0).alias("log10"),
+                col("a").log(5.0).alias("log5"),
+                col("a").pow(2.0).alias("pow"),
             ])
             .collect()
             .unwrap();
