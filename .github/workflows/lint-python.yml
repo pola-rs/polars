@@ -4,7 +4,7 @@ on:
   pull_request:
     paths:
       - 'py-polars/**'
-      - '.github/workflows/lint-python.yaml'
+      - '.github/workflows/lint-python.yml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

@@ -6,7 +6,7 @@ on:
       - "polars/**"
       - "Cargo.toml"
       - "py-polars/tests/benchmark/**"
-      - ".github/workflows/benchmark.yaml"
+      - ".github/workflows/benchmark.yml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

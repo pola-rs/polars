@@ -5,7 +5,7 @@ on:
     paths:
       - 'py-polars/**'
       - 'polars/**'
-      - '.github/workflows/test-python.yaml'
+      - '.github/workflows/test-python.yml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
