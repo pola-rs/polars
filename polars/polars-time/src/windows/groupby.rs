@@ -51,13 +51,12 @@ pub fn groupby_windows(
     time: &[i64],
     closed_window: ClosedWindow,
     tu: TimeUnit,
+    tz: &Option<TimeZone>,
     include_lower_bound: bool,
     include_upper_bound: bool,
     start_by: StartBy,
 ) -> (GroupsSlice, Vec<i64>, Vec<i64>) {
-    println!("time: {:?}", time);
     let start = time[0];
-    println!("start: {:?}", start);
     // the boundary we define here is not yet correct. It doesn't take 'period' into account
     // and it doesn't have the proper starting point. This boundary is used as a proxy to find
     // the proper 'boundary' in  'window.get_overlapping_bounds_iter'.
@@ -99,7 +98,7 @@ pub fn groupby_windows(
     };
     let mut start_offset = 0;
 
-    for bi in window.get_overlapping_bounds_iter(boundary, tu, start_by) {
+    for bi in window.get_overlapping_bounds_iter(boundary, tu, tz, start_by) {
         let mut skip_window = false;
         // find starting point of window
         while start_offset < time.len() {
