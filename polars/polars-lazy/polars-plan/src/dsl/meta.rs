@@ -22,6 +22,13 @@ impl MetaNameSpace {
     pub fn root_names(&self) -> Vec<Arc<str>> {
         expr_to_leaf_column_names(&self.0)
     }
+    /// A projection that only takes a column or a column + alias.
+    pub fn is_simple_projection(&self) -> bool {
+        let mut arena = Arena::with_capacity(8);
+        let e = self.0.clone();
+        let node = to_aexpr(e, &mut arena);
+        aexpr_is_simple_projection(node, &arena)
+    }
 
     /// Get the output name of this expression.
     pub fn output_name(&self) -> PolarsResult<Arc<str>> {

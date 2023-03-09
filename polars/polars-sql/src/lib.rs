@@ -736,4 +736,47 @@ mod test {
         assert!(df_sql.frame_equal(&expected));
         Ok(())
     }
+    #[test]
+    #[cfg(feature = "ipc")]
+    fn test_groupby_2() -> PolarsResult<()> {
+        let mut context = SQLContext::try_new()?;
+        let sql = r#"
+        CREATE TABLE foods AS
+        SELECT *
+        FROM read_ipc('../../examples/datasets/foods1.ipc')"#;
+
+        context.execute(sql)?.collect()?;
+        let sql = r#"   
+        SELECT
+            category,
+            count(category) as count,
+            max(calories),
+            min(fats_g)
+        FROM foods
+        GROUP BY category
+        ORDER BY count, category DESC
+        LIMIT 2"#;
+
+        let df_sql = context.execute(sql)?;
+        let df_sql = df_sql.collect()?;
+        let expected =
+            LazyFrame::scan_ipc("../../examples/datasets/foods1.ipc", Default::default())?
+                .select(&[col("*")])
+                .groupby(vec![col("category")])
+                .agg(vec![
+                    col("category").count().alias("count"),
+                    col("calories").max(),
+                    col("fats_g").min(),
+                ])
+                .sort_by_exprs(
+                    vec![col("count"), col("category")],
+                    vec![false, true],
+                    false,
+                )
+                .limit(2);
+        let lp = expected.clone().describe_optimized_plan()?;
+        let expected = expected.collect()?;
+        assert!(df_sql.frame_equal(&expected));
+        Ok(())
+    }
 }
