@@ -225,7 +225,7 @@ macro_rules! map_as_slice {
 
 // FnOnce(Series)
 // FnOnce(Series, args)
-#[macro_export(super)]
+#[macro_export]
 macro_rules! map_owned {
     ($func:path) => {{
         let f = move |s: &mut [Series]| {
@@ -247,7 +247,7 @@ macro_rules! map_owned {
 }
 
 // Fn(&Series, args)
-#[macro_export(super)]
+#[macro_export]
 macro_rules! map {
     ($func:path) => {{
         let f = move |s: &mut [Series]| {
