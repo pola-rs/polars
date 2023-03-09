@@ -114,13 +114,9 @@ pub fn optimize(
     rules.push(Box::new(DelayRechunk::new()));
 
     if slice_pushdown {
-        let slice_pushdown_opt = SlicePushDown::new(streaming);
-        let alp = lp_arena.take(lp_top);
-        let alp = slice_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
-
-        lp_arena.replace(lp_top, alp);
-
         // expressions use the stack optimizer
+        // logical plan uses a single pass and runs after predicate pushdown
+        let slice_pushdown_opt = SlicePushDown::new(streaming);
         rules.push(Box::new(slice_pushdown_opt));
     }
     if type_coercion {
@@ -172,10 +168,20 @@ pub fn optimize(
 
     lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top)?;
 
+    // we run this after simplify expressions and type coercion
+    // as this make all expressions much clearer to the optimizer
     if predicate_pushdown {
         let predicate_pushdown_opt = PredicatePushDown::default();
         let alp = lp_arena.take(lp_top);
         let alp = predicate_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
+        lp_arena.replace(lp_top, alp);
+    }
+    // must run after predicate pushdown
+    if slice_pushdown {
+        let slice_pushdown_opt = SlicePushDown::new(streaming);
+        let alp = lp_arena.take(lp_top);
+        let alp = slice_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
+
         lp_arena.replace(lp_top, alp);
     }
 
