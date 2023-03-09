@@ -58,7 +58,7 @@ def fruits_cars() -> pl.DataFrame:
     )
 
 
-ISO8601_FORMATS = []
+ISO8601_FORMATS_DATETIME = []
 
 for T in ["T", " "]:
     for hms in (
@@ -74,9 +74,21 @@ for T in ["T", " "]:
     ):
         for date_sep in ("/", "-", ""):
             fmt = f"%Y{date_sep}%m{date_sep}%d{hms}"
-            ISO8601_FORMATS.append(fmt)
+            ISO8601_FORMATS_DATETIME.append(fmt)
 
 
-@pytest.fixture(params=ISO8601_FORMATS)
-def iso8601_format(request: pytest.FixtureRequest) -> list[str]:
+@pytest.fixture(params=ISO8601_FORMATS_DATETIME)
+def iso8601_format_datetime(request: pytest.FixtureRequest) -> list[str]:
+    return cast(List[str], request.param)
+
+
+ISO8601_FORMATS_DATE = []
+
+for date_sep in ("/", "-", ""):
+    fmt = f"%Y{date_sep}%m{date_sep}%d"
+    ISO8601_FORMATS_DATE.append(fmt)
+
+
+@pytest.fixture(params=ISO8601_FORMATS_DATE)
+def iso8601_format_date(request: pytest.FixtureRequest) -> list[str]:
     return cast(List[str], request.param)
