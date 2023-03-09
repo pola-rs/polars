@@ -3,12 +3,14 @@ use std::ops::Mul;
 
 use arrow::temporal_conversions::parse_offset;
 use chrono::{Utc, Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Weekday, TimeZone as TimeZoneTrait};
+#[cfg(feature = "timezones")]
+use chrono_tz::{Tz};
 use polars_arrow::export::arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
 };
 use polars_core::export::arrow::temporal_conversions::MICROSECONDS;
 use polars_core::prelude::{
-    datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us, TimeZone,
+    datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us, TimeZone, TimeUnit,
 };
 use polars_core::utils::arrow::temporal_conversions::NANOSECONDS;
 #[cfg(feature = "serde")]
@@ -18,6 +20,39 @@ use super::calendar::{
     is_leap_year, last_day_of_month, NS_DAY, NS_HOUR, NS_MICROSECOND, NS_MILLISECOND, NS_MINUTE,
     NS_SECOND, NS_WEEK,
 };
+
+fn unlocalize_timestamp(t: i64, tu: TimeUnit, tz: &Option<TimeZone>) -> i64 {
+    let timestamp_to_datetime_func = match tu {
+        TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
+        TimeUnit::Microseconds => timestamp_us_to_datetime,
+        TimeUnit::Milliseconds => timestamp_ms_to_datetime,
+    };
+    match tz {
+        #[cfg(feature = "timezones")]
+        Some(tz) => {
+            let dt = match parse_offset(tz) {
+                Ok(tz) =>  {
+                    let foo = Utc.from_local_datetime(&tz.from_utc_datetime(&timestamp_to_datetime_func(t)).naive_local());
+                    foo.unwrap()
+                }
+                Err(_) => match tz.parse::<Tz>() {
+                    Ok(tz) =>  {
+                        let foo = Utc.from_local_datetime(&tz.from_utc_datetime(&timestamp_to_datetime_func(t)).naive_local());
+                        foo.unwrap()
+                    }
+                    _ => unreachable!()
+                }
+            };
+            dt.timestamp_nanos()
+            // match tu {
+            //     TimeUnit::Nanoseconds => dt.timestamp_nanos(),
+            //     TimeUnit::Microseconds => dt.timestamp_micros(),
+            //     TimeUnit::Milliseconds => dt.timestamp_millis(),
+            // }
+        },
+        _ => t
+    }
+}
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -297,18 +332,8 @@ impl Duration {
             (0, 0, 0) => panic!("duration may not be zero"),
             // truncate by ns/us/ms
             (0, 0, _) => {
-                let to_datetime = timestamp_us_to_datetime(t);
-                let unlocalized_t = match tz {
-                    Some(tz) => {
-                        let mytz = parse_offset(tz).unwrap();
-                        let foo = Utc.from_local_datetime(&mytz.from_utc_datetime(&to_datetime).naive_local());
-                        foo.unwrap().timestamp_micros()
-                    }
-                    None => t
-                };
-                // this is the interval, we can't change that!
                 let duration = nsecs_to_unit(self.nsecs);
-                let mut remainder = unlocalized_t % duration;
+                let mut remainder = nsecs_to_unit(unlocalize_timestamp(t, TimeUnit::Microseconds, tz)) % duration;
                 if remainder < 0 {
                     remainder += duration
                 }
