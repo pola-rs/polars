@@ -62,6 +62,7 @@ def test_read_excel_all_sheets(excel_file_path: Path) -> None:
             "conditional_formats": {"val": "data_bar"},
             "column_formats": {"val": "#,##0.000;[White]-#,##0.000"},
             "column_widths": {"val": 100},
+            "row_heights": {0: 35},
             "column_totals": True,
         },
         # heavily customised formatting/definition
@@ -189,7 +190,7 @@ def test_excel_sparklines() -> None:
             },
             column_widths={("q1", "q2", "q3", "q4"): 40},
             hide_gridlines=True,
-            row_height=35,
+            row_heights=35,
             sheet_zoom=125,
         )
 
