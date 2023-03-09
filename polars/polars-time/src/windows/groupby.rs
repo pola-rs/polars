@@ -55,7 +55,9 @@ pub fn groupby_windows(
     include_upper_bound: bool,
     start_by: StartBy,
 ) -> (GroupsSlice, Vec<i64>, Vec<i64>) {
+    println!("time: {:?}", time);
     let start = time[0];
+    println!("start: {:?}", start);
     // the boundary we define here is not yet correct. It doesn't take 'period' into account
     // and it doesn't have the proper starting point. This boundary is used as a proxy to find
     // the proper 'boundary' in  'window.get_overlapping_bounds_iter'.
@@ -67,6 +69,7 @@ pub fn groupby_windows(
         let stop = start + 1;
         Bounds::new_checked(start, stop)
     };
+    println!("boundary: {:?}", boundary);
 
     let size = if include_lower_bound || include_upper_bound {
         match tu {
@@ -77,6 +80,7 @@ pub fn groupby_windows(
     } else {
         0
     };
+    println!("size: {:?}", size);
     let size_lower = if include_lower_bound { size } else { 0 };
     let size_upper = if include_upper_bound { size } else { 0 };
     let mut lower_bound = Vec::with_capacity(size_lower);
