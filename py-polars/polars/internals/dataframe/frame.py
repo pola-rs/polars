@@ -2409,7 +2409,7 @@ class DataFrame:
         conditional_formats: ConditionalFormatDict | None = None,
         column_totals: ColumnTotalsDefinition | None = None,
         column_widths: dict[str | tuple[str, ...], int] | int | None = None,
-        row_height: int | None = None,
+        row_heights: dict[int | tuple[int, ...], int] | int | None = None,
         sparklines: dict[str, Sequence[str] | dict[str, Any]] | None = None,
         float_precision: int = 3,
         has_header: bool = True,
@@ -2475,9 +2475,12 @@ class DataFrame:
             A ``{colname:int,}`` dict or single integer that sets (or overrides if
             autofitting) table column widths in integer pixel units. If given as an
             integer the same value is used for all table columns.
-        row_height : int
-            Sets the height of all rows that intersect with the table body (and any
-            headers or total row) in integer pixel units.
+        row_heights : {dict, int}
+            An int or ``{row_index:int,}`` dictionary that sets the height of the given
+            rows (if providing a dictionary) or all rows (if providing an integer) that
+            intersect with the table body (including any header and total row) in
+            integer pixel units. Note that ``row_index`` starts at zero and will be
+            the header row (unless ``has_headers`` is False).
         sparklines : dict
             A ``{colname:list,}`` or ``{colname:dict,}`` dictionary defining one or more
             sparklines to be written into a new column in the table.
@@ -2490,7 +2493,7 @@ class DataFrame:
               the source columns and position the sparkline(s) with respect to other
               table columns. If no position directive is given, sparklines are added to
               the end of the table (eg: to the far right) in the order they are given.
-        float_precision : int
+        float_precision : {dict, int}
             Default number of decimals displayed for floating point columns (note that
             this is purely a formatting directive; the actual values are not rounded).
         has_header : bool
@@ -2740,6 +2743,19 @@ class DataFrame:
             _xl_inject_sparklines(ws, df, table_start, col, has_header, params)
 
         # worksheet options
+        if hide_gridlines:
+            ws.hide_gridlines(2)
+        if sheet_zoom:
+            ws.set_zoom(sheet_zoom)
+        if row_heights:
+            if isinstance(row_heights, int):
+                for idx in range(table_start[0], table_finish[0] + 1):
+                    ws.set_row_pixels(idx, row_heights)
+            elif isinstance(row_heights, dict):
+                for idx, height in _unpack_multi_column_dict(row_heights).items():  # type: ignore[assignment]
+                    ws.set_row_pixels(idx, height)
+
+        # table/rows all written; apply (optional) autofit
         if autofit and not is_empty:
             xlv = xlsxwriter.__version__
             if parse_version(xlv) < parse_version("3.0.8"):
@@ -2747,13 +2763,6 @@ class DataFrame:
                     f'"autofit=True" requires xlsxwriter 3.0.8 or higher; found {xlv}.'
                 )
             ws.autofit()
-        if hide_gridlines:
-            ws.hide_gridlines(2)
-        if sheet_zoom:
-            ws.set_zoom(sheet_zoom)
-        if row_height:
-            for idx in range(table_start[0], table_finish[0] + 1):
-                ws.set_row_pixels(idx, row_height)
 
         if can_close:
             wb.close()
