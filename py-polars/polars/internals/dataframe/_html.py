@@ -124,7 +124,11 @@ class HTMLFormatter:
 
     def render(self) -> list[str]:
         with Tag(
-            self.elements, "table", {"border": "1", "class": "dataframe pl-dataframe"}
+            # be careful changing the CSS class ref here...
+            # ref: https://github.com/pola-rs/polars/issues/7443
+            self.elements,
+            "table",
+            {"border": "1", "class": "dataframe"},
         ):
             self.write_header()
             self.write_body()
@@ -142,7 +146,7 @@ class NotebookFormatter(HTMLFormatter):
     def write_style(self) -> None:
         style = """\
             <style>
-            .pl-dataframe > thead > tr > th {
+            .dataframe > thead > tr > th {
               text-align: right;
             }
             </style>

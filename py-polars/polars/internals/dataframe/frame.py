@@ -1755,7 +1755,7 @@ class DataFrame:
             max_rows = self.shape[0]
 
         from_series = kwargs.get("from_series", False)
-        return "\n".join(
+        return "".join(
             NotebookFormatter(
                 self,
                 max_cols=max_cols,
