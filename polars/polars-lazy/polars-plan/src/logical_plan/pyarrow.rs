@@ -4,15 +4,6 @@ use crate::prelude::*;
 
 // convert to a pyarrow expression that can be evaluated with pythons eval
 pub(super) fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Option<String> {
-    pub fn dbg_nodes(nodes: &[Node], arena: &Arena<AExpr>) {
-        println!("[");
-        for node in nodes {
-            let e = node_to_expr(*node, arena);
-            println!("{e}")
-        }
-        println!("]");
-    }
-    dbg_nodes(&[predicate], expr_arena);
     match expr_arena.get(predicate) {
         AExpr::BinaryExpr { left, right, op } => {
             if op.is_comparison() {
@@ -50,34 +41,35 @@ pub(super) fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Opt
                     // on the python side
                     match tz {
                         None => Some(format!(
-                            "_to_python_datetime(value={}, dtype=Date, tu={})",
+                            "_to_python_datetime(value={}, dtype=Datetime, tu='{}')",
                             v,
                             tu.to_ascii()
                         )),
                         Some(tz) => Some(format!(
-                            "to_python_datetime(value={}, dtype=Date, tu={}, tz={})",
+                            "to_python_datetime(value={}, dtype=Datetime, tu='{}', tz={})",
                             v,
                             tu.to_ascii(),
                             tz
                         )),
                     }
                 }
-                #[cfg(feature = "dtype-time")]
-                AnyValue::Time(v) => {
-                    // the function `_to_python_time` has to be in scope
-                    // on the python side
-                    Some(format!("_to_python_time(value={v})"))
-                }
-                #[cfg(feature = "dtype-duration")]
-                AnyValue::Duration(v, tu) => {
-                    // the function `_to_python_timedelta` has to be in scope
-                    // on the python side
-                    Some(format!(
-                        "_to_python_timedelta(value={}, tu={})",
-                        v,
-                        tu.to_ascii()
-                    ))
-                }
+                // Activate once pyarrow supports them
+                // #[cfg(feature = "dtype-time")]
+                // AnyValue::Time(v) => {
+                //     // the function `_to_python_time` has to be in scope
+                //     // on the python side
+                //     Some(format!("_to_python_time(value={v})"))
+                // }
+                // #[cfg(feature = "dtype-duration")]
+                // AnyValue::Duration(v, tu) => {
+                //     // the function `_to_python_timedelta` has to be in scope
+                //     // on the python side
+                //     Some(format!(
+                //         "_to_python_timedelta(value={}, tu='{}')",
+                //         v,
+                //         tu.to_ascii()
+                //     ))
+                // }
                 av => {
                     if dtype.is_float() {
                         let val = av.extract::<f64>()?;

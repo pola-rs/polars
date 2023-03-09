@@ -77,16 +77,18 @@ impl PhysicalExpr for LiteralExpr {
             },
             Utf8(v) => Utf8Chunked::full(NAME, v, 1).into_series(),
             Binary(v) => BinaryChunked::full(NAME, v, 1).into_series(),
-            #[cfg(feature = "temporal")]
+            #[cfg(feature = "dtype-datetime")]
             DateTime(timestamp, tu, tz) => Int64Chunked::full(NAME, *timestamp, 1)
                 .into_datetime(*tu, tz.clone())
                 .into_series(),
-            #[cfg(feature = "temporal")]
+            #[cfg(feature = "dtype-duration")]
             Duration(v, tu) => Int64Chunked::full(NAME, *v, 1)
                 .into_duration(*tu)
                 .into_series(),
-            #[cfg(feature = "temporal")]
+            #[cfg(feature = "dtype-date")]
             Date(v) => Int32Chunked::full(NAME, *v, 1).into_date().into_series(),
+            #[cfg(feature = "dtype-datetime")]
+            Time(v) => Int64Chunked::full(NAME, *v, 1).into_time().into_series(),
             Series(series) => series.deref().clone(),
         };
         Ok(s)

@@ -668,39 +668,10 @@ impl OptimizationRule for SimplifyExprRule {
 fn inline_cast(input: &AExpr, dtype: &DataType) -> Option<AExpr> {
     match (input, dtype) {
         #[cfg(feature = "dtype-duration")]
-        (AExpr::Literal(lv), DataType::Duration(tu)) => {
+        (AExpr::Literal(lv), _) => {
             let av = lv.to_anyvalue()?;
-            if av.dtype().is_numeric() {
-                let v = av.extract::<i64>()?;
-                Some(AExpr::Literal(LiteralValue::Duration(v, *tu)))
-            } else {
-                None
-            }
-        }
-        #[cfg(feature = "dtype-datetime")]
-        (AExpr::Literal(lv), DataType::Datetime(tu, tz)) => {
-            let av = lv.to_anyvalue()?;
-            if av.dtype().is_numeric() {
-                let v = av.extract::<i64>()?;
-                Some(AExpr::Literal(LiteralValue::DateTime(v, *tu, tz.clone())))
-            } else {
-                None
-            }
-        }
-        #[cfg(feature = "dtype-date")]
-        (AExpr::Literal(lv), DataType::Date) => {
-            let av = lv.to_anyvalue()?;
-            if av.dtype().is_numeric() {
-                let v = av.extract::<i32>()?;
-                Some(AExpr::Literal(LiteralValue::Date(v)))
-            } else {
-                None
-            }
-        }
-        (AExpr::Literal(lv), dt) if dt.is_numeric() => {
-            let av = lv.to_anyvalue()?;
-            let av = av.cast(dt).ok()?;
-            let lv = LiteralValue::try_from(av).ok()?;
+            let out = av.cast(dtype).ok()?;
+            let lv: LiteralValue = out.try_into().ok()?;
             Some(AExpr::Literal(lv))
         }
         _ => None,

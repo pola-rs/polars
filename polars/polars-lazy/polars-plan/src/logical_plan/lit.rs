@@ -45,12 +45,14 @@ pub enum LiteralValue {
         high: i64,
         data_type: DataType,
     },
-    #[cfg(all(feature = "temporal", feature = "dtype-duration"))]
+    #[cfg(feature = "dtype-date")]
     Date(i32),
-    #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
+    #[cfg(feature = "dtype-datetime")]
     DateTime(i64, TimeUnit, Option<TimeZone>),
-    #[cfg(all(feature = "temporal", feature = "dtype-duration"))]
+    #[cfg(feature = "dtype-duration")]
     Duration(i64, TimeUnit),
+    #[cfg(feature = "dtype-time")]
+    Time(i64),
     Series(SpecialEq<Series>),
 }
 
@@ -79,6 +81,14 @@ impl LiteralValue {
             Float32(v) => AnyValue::Float32(*v),
             Float64(v) => AnyValue::Float64(*v),
             Utf8(v) => AnyValue::Utf8(v),
+            #[cfg(feature = "dtype-duration")]
+            Duration(v, tu) => AnyValue::Duration(*v, *tu),
+            #[cfg(feature = "dtype-date")]
+            Date(v) => AnyValue::Date(*v),
+            #[cfg(feature = "dtype-datetime")]
+            DateTime(v, tu, tz) => AnyValue::Datetime(*v, *tu, tz),
+            #[cfg(feature = "dtype-time")]
+            Time(v) => AnyValue::Time(*v),
             _ => return None,
         };
         Some(av)
@@ -113,6 +123,8 @@ impl LiteralValue {
             LiteralValue::Duration(_, tu) => DataType::Duration(*tu),
             LiteralValue::Series(s) => s.dtype().clone(),
             LiteralValue::Null => DataType::Null,
+            #[cfg(feature = "dtype-time")]
+            LiteralValue::Time(_) => DataType::Time,
         }
     }
 }
@@ -175,7 +187,7 @@ impl TryFrom<AnyValue<'_>> for LiteralValue {
             #[cfg(all(feature = "temporal", feature = "dtype-duration"))]
             AnyValue::Duration(value, tu) => Ok(LiteralValue::Duration(value, tu)),
             #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
-            AnyValue::Time(nanosecs_since_midnight) => Ok(Self::Int64(nanosecs_since_midnight)),
+            AnyValue::Time(v) => Ok(LiteralValue::Time(v)),
             AnyValue::List(l) => Ok(Self::Series(SpecialEq::new(l))),
             AnyValue::Utf8Owned(o) => Ok(Self::Utf8(o.into())),
             #[cfg(feature = "dtype-categorical")]

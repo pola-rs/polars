@@ -107,13 +107,6 @@ pub fn optimize(
         }
     }
 
-    if predicate_pushdown {
-        let predicate_pushdown_opt = PredicatePushDown::default();
-        let alp = lp_arena.take(lp_top);
-        let alp = predicate_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
-        lp_arena.replace(lp_top, alp);
-    }
-
     // make sure its before slice pushdown.
     if projection_pushdown {
         rules.push(Box::new(FastProjectionAndCollapse {}));
@@ -178,6 +171,13 @@ pub fn optimize(
     rules.push(Box::new(ReplaceDropNulls {}));
 
     lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top)?;
+
+    if predicate_pushdown {
+        let predicate_pushdown_opt = PredicatePushDown::default();
+        let alp = lp_arena.take(lp_top);
+        let alp = predicate_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
+        lp_arena.replace(lp_top, alp);
+    }
 
     // during debug we check if the optimizations have not modified the final schema
     #[cfg(debug_assertions)]
