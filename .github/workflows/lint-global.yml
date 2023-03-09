@@ -5,7 +5,7 @@ on:
     paths:
       - '**.md'
       - '**.toml'
-      - '.github/workflows/lint-global.yaml'
+      - .github/workflows/lint-global.yml
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
