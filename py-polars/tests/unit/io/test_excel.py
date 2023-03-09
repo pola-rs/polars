@@ -56,23 +56,21 @@ def test_read_excel_all_sheets(excel_file_path: Path) -> None:
         {
             "position": (0, 0),
             "table_style": {
-                "style": "Table Style Medium 25",
+                "style": "Table Style Medium 23",
                 "first_column": True,
             },
-            "conditional_formats": {
-                # string: will unpack to {"type": "data_bar"}
-                "val": "data_bar"
-            },
+            "conditional_formats": {"val": "data_bar"},
             "column_formats": {"val": "#,##0.000;[White]-#,##0.000"},
             "column_widths": {"val": 100},
+            "column_totals": True,
         },
         # heavily customised formatting/definition
         {
             "position": "A1",
             "table_name": "PolarsFrameData",
-            "table_style": "Table Style Light 11",
+            "table_style": "Table Style Light 9",
             "conditional_formats": {
-                # dict format
+                # single dict format
                 "str": {
                     "type": "duplicate",
                     "format": {"bg_color": "#ff0000", "font_color": "#ffffff"},
@@ -191,6 +189,8 @@ def test_excel_sparklines() -> None:
             },
             column_widths={("q1", "q2", "q3", "q4"): 40},
             hide_gridlines=True,
+            row_height=35,
+            sheet_zoom=125,
         )
 
     tables = {tbl["name"] for tbl in wb.get_worksheet_by_name("frame_data").tables}
