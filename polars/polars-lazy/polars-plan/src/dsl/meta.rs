@@ -25,7 +25,6 @@ impl MetaNameSpace {
     /// A projection that only takes a column or a column + alias.
     pub fn is_simple_projection(self) -> bool {
         let mut arena = Arena::with_capacity(8);
-        
         let node = to_aexpr(self.0, &mut arena);
         aexpr_is_simple_projection(node, &arena)
     }
