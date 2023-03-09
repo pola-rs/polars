@@ -53,8 +53,14 @@ def _scan_pyarrow_dataset_impl(
     _filter = None
     if predicate:
         # imports are used by inline python evaluated by `eval`
-        from polars.utils import _to_python_time, _to_python_datetime, _to_python_timedelta  # noqa:
-        from polars.datatypes import Date, Datetime, Duration # noqa:
+
+        from polars.datatypes import Date, Datetime, Duration  # noqa: F401
+        from polars.utils import (
+            _to_python_datetime,  # noqa: F401
+            _to_python_time,  # noqa: F401
+            _to_python_timedelta,  # noqa: F401
+        )
+
         _filter = eval(predicate)
     return cast(
         pli.DataFrame, pl.from_arrow(ds.to_table(columns=with_columns, filter=_filter))
