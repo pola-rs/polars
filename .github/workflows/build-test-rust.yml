@@ -34,7 +34,7 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly-2023-02-14
+          toolchain: nightly-2023-03-09
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
@@ -58,7 +58,7 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly-2023-02-14
+          toolchain: nightly-2023-03-09
           components: rustfmt, clippy, miri
 
       - name: Cache Rust
@@ -102,7 +102,7 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: nightly-2023-02-14
+          toolchain: nightly-2023-03-09
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
