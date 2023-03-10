@@ -2,6 +2,7 @@
 #![cfg_attr(feature = "simd", feature(portable_simd))]
 extern crate core;
 
+pub mod arithmetics;
 #[macro_use]
 pub mod utils;
 pub mod chunked_array;

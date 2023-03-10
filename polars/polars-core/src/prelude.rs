@@ -9,6 +9,7 @@ pub use polars_arrow::kernels::ewm::EWMOptions;
 pub use polars_arrow::prelude::*;
 pub(crate) use polars_arrow::trusted_len::TrustedLen;
 
+pub use crate::arithmetics::*;
 pub use crate::chunked_array::builder::{
     BinaryChunkedBuilder, BooleanChunkedBuilder, ChunkedBuilder, ListBinaryChunkedBuilder,
     ListBooleanChunkedBuilder, ListBuilderTrait, ListPrimitiveChunkedBuilder,
