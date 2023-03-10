@@ -8,6 +8,7 @@ use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_utils::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
+use smartstring::alias::String as SmartString;
 
 use crate::executors::sinks::joins::generic_build::*;
 use crate::executors::sinks::utils::hash_series;
@@ -52,7 +53,7 @@ pub struct GenericJoinProbe {
     // these column locations need to be dropped from the rhs
     join_column_idx: Option<Vec<usize>>,
     // cached output names
-    output_names: Option<Vec<String>>,
+    output_names: Option<Vec<SmartString>>,
     how: JoinType,
 }
 

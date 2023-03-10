@@ -27,10 +27,10 @@ pub mod hash_join;
 #[cfg(feature = "rows")]
 pub mod row;
 mod upstream_traits;
-
 pub use chunks::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use smartstring::alias::String as SmartString;
 
 use crate::frame::groupby::GroupsIndicator;
 #[cfg(feature = "sort_multiple")]
@@ -51,8 +51,12 @@ pub enum NullStrategy {
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum UniqueKeepStrategy {
+    /// Keep the first unique row.
     First,
+    /// Keep the last unique row.
     Last,
+    /// Keep any of the unique rows.
+    /// This is faster.
     None,
 }
 
@@ -514,7 +518,7 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     #[inline]
-    pub fn get_columns(&self) -> &Vec<Series> {
+    pub fn get_columns(&self) -> &[Series] {
         &self.columns
     }
 
@@ -560,8 +564,8 @@ impl DataFrame {
     }
 
     /// Get the `Vec<String>` representing the column names.
-    pub fn get_column_names_owned(&self) -> Vec<String> {
-        self.columns.iter().map(|s| s.name().to_string()).collect()
+    pub fn get_column_names_owned(&self) -> Vec<SmartString> {
+        self.columns.iter().map(|s| s.name().into()).collect()
     }
 
     /// Set the column names.
@@ -1408,12 +1412,12 @@ impl DataFrame {
     {
         let cols = selection
             .into_iter()
-            .map(|s| s.as_ref().to_string())
+            .map(|s| SmartString::from(s.as_ref()))
             .collect::<Vec<_>>();
         self.select_impl(&cols)
     }
 
-    fn select_impl(&self, cols: &[String]) -> PolarsResult<Self> {
+    fn select_impl(&self, cols: &[SmartString]) -> PolarsResult<Self> {
         self.select_check_duplicates(cols)?;
         let selected = self.select_series_impl(cols)?;
         Ok(DataFrame::new_no_checks(selected))
@@ -1426,18 +1430,18 @@ impl DataFrame {
     {
         let cols = selection
             .into_iter()
-            .map(|s| s.as_ref().to_string())
+            .map(|s| SmartString::from(s.as_ref()))
             .collect::<Vec<_>>();
         self.select_physical_impl(&cols)
     }
 
-    fn select_physical_impl(&self, cols: &[String]) -> PolarsResult<Self> {
+    fn select_physical_impl(&self, cols: &[SmartString]) -> PolarsResult<Self> {
         self.select_check_duplicates(cols)?;
         let selected = self.select_series_physical_impl(cols)?;
         Ok(DataFrame::new_no_checks(selected))
     }
 
-    fn select_check_duplicates(&self, cols: &[String]) -> PolarsResult<()> {
+    fn select_check_duplicates(&self, cols: &[SmartString]) -> PolarsResult<()> {
         let mut names = PlHashSet::with_capacity(cols.len());
         for name in cols {
             if !names.insert(name.as_str()) {
@@ -1462,7 +1466,7 @@ impl DataFrame {
     /// assert_eq!(df["Hydrogen"], sv[1]);
     /// # Ok::<(), PolarsError>(())
     /// ```
-    pub fn select_series(&self, selection: impl IntoVec<String>) -> PolarsResult<Vec<Series>> {
+    pub fn select_series(&self, selection: impl IntoVec<SmartString>) -> PolarsResult<Vec<Series>> {
         let cols = selection.into_vec();
         self.select_series_impl(&cols)
     }
@@ -1476,7 +1480,7 @@ impl DataFrame {
     }
 
     /// A non generic implementation to reduce compiler bloat.
-    fn select_series_physical_impl(&self, cols: &[String]) -> PolarsResult<Vec<Series>> {
+    fn select_series_physical_impl(&self, cols: &[SmartString]) -> PolarsResult<Vec<Series>> {
         let selected = if cols.len() > 1 && self.columns.len() > 10 {
             let name_to_idx = self._names_to_idx_map();
             cols.iter()
@@ -1501,7 +1505,7 @@ impl DataFrame {
     }
 
     /// A non generic implementation to reduce compiler bloat.
-    fn select_series_impl(&self, cols: &[String]) -> PolarsResult<Vec<Series>> {
+    fn select_series_impl(&self, cols: &[SmartString]) -> PolarsResult<Vec<Series>> {
         let selected = if cols.len() > 1 && self.columns.len() > 10 {
             // we hash, because there are user that having millions of columns.
             // # https://github.com/pola-rs/polars/issues/1023
@@ -1764,7 +1768,7 @@ impl DataFrame {
     /// Sort `DataFrame` in place by a column.
     pub fn sort_in_place(
         &mut self,
-        by_column: impl IntoVec<String>,
+        by_column: impl IntoVec<SmartString>,
         descending: impl IntoVec<bool>,
     ) -> PolarsResult<&mut Self> {
         let by_column = self.select_series(by_column)?;
@@ -1875,7 +1879,7 @@ impl DataFrame {
     /// ```
     pub fn sort(
         &self,
-        by_column: impl IntoVec<String>,
+        by_column: impl IntoVec<SmartString>,
         descending: impl IntoVec<bool>,
     ) -> PolarsResult<Self> {
         let mut df = self.clone();
