@@ -25,7 +25,14 @@ use super::calendar::{
 };
 
 #[cfg(feature = "timezones")]
-fn localize_timestamp(ndt: NaiveDateTime, tz: &TimeZone) -> NaiveDateTime {
+fn localize_datetime(ndt: NaiveDateTime, tz: &TimeZone) -> NaiveDateTime {
+    // e.g.:
+    // ndt: 2021-11-01T00:00:00
+    // tz: US/Central
+    // result: 2021-11-01T05:00:00
+    // 
+    // equivalent to
+    // pl.Series([ndt]).replace_time_zone(tz).convert_time_zone(UTC).replace_time_zone(None)
     let dt = match parse_offset(tz) {
         Ok(tz) => tz.from_local_datetime(&ndt).unwrap().with_timezone(&Utc),
         Err(_) => match tz.parse::<Tz>() {
@@ -37,7 +44,14 @@ fn localize_timestamp(ndt: NaiveDateTime, tz: &TimeZone) -> NaiveDateTime {
 }
 
 #[cfg(feature = "timezones")]
-fn unlocalize_timestamp(ndt: NaiveDateTime, tz: &TimeZone) -> NaiveDateTime {
+fn unlocalize_datetime(ndt: NaiveDateTime, tz: &TimeZone) -> NaiveDateTime {
+    // e.g.:
+    // ndt: 2021-11-07T00:00:00
+    // tz: US/Central
+    // result: 2021-11-06T19:00:00
+    // 
+    // equivalent to
+    // pl.Series(['2021-11-07T00:00:00']).str.strptime(pl.Datetime('us', 'UTC')).dt.convert_time_zone('US/Central').dt.replace_time_zone(None)
     let dt = match parse_offset(tz) {
         Ok(tz) => Utc
             .from_local_datetime(&tz.from_utc_datetime(&ndt).naive_local())
@@ -334,7 +348,7 @@ impl Duration {
                 let mut remainder = match tz {
                     #[cfg(feature = "timezones")]
                     Some(tz) => {
-                        datetime_to_timestamp(unlocalize_timestamp(timestamp_to_datetime(t), tz))
+                        datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz))
                             % duration
                     }
                     _ => t % duration,
@@ -357,7 +371,9 @@ impl Duration {
             (_, 0, 0) => {
                 let ts = match tz {
                     #[cfg(feature = "timezones")]
-                    Some(tz) => unlocalize_timestamp(timestamp_to_datetime(t), tz),
+                    Some(tz) => {
+                        unlocalize_datetime(timestamp_to_datetime(t), tz)
+                    }
                     _ => timestamp_to_datetime(t),
                 };
                 let (year, month) = (ts.year(), ts.month());
@@ -374,7 +390,9 @@ impl Duration {
                 let dt = new_datetime(year, month, 1, 0, 0, 0, 0);
                 match tz {
                     #[cfg(feature = "timezones")]
-                    Some(tz) => datetime_to_timestamp(localize_timestamp(dt, tz)),
+                    Some(tz) => {
+                        datetime_to_timestamp(localize_datetime(dt, tz))
+                    }
                     _ => datetime_to_timestamp(dt),
                 }
             }
@@ -444,7 +462,7 @@ impl Duration {
             // based on the number of months
             let ts = match tz {
                 #[cfg(feature = "timezones")]
-                Some(tz) => unlocalize_timestamp(timestamp_to_datetime(t), tz),
+                Some(tz) => unlocalize_datetime(timestamp_to_datetime(t), tz),
                 _ => timestamp_to_datetime(t),
             };
             let mut year = ts.year();
@@ -483,7 +501,7 @@ impl Duration {
             let dt = new_datetime(year, month as u32, day, hour, minute, sec, nsec);
             new_t = match tz {
                 #[cfg(feature = "timezones")]
-                Some(tz) => datetime_to_timestamp(localize_timestamp(dt, tz)),
+                Some(tz) => datetime_to_timestamp(localize_datetime(dt, tz)),
                 _ => datetime_to_timestamp(dt),
             };
         }
