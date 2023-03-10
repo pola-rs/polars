@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO
 
@@ -10,9 +11,13 @@ from polars.internals.io import _prepare_file_arg
 from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 from polars.utils.various import normalise_filepath
 
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    from polars.polars import read_parquet_schema as _read_parquet_schema
+
 if TYPE_CHECKING:
     from io import BytesIO
 
+    from polars.datatypes.type_aliases import PolarsDataType
     from polars.internals.type_aliases import ParallelStrategy
 
 
@@ -128,6 +133,29 @@ def read_parquet(
             use_statistics=use_statistics,
             rechunk=rechunk,
         )
+
+
+@deprecated_alias(file="source")
+def read_parquet_schema(
+    source: str | BinaryIO | Path | bytes,
+) -> dict[str, PolarsDataType]:
+    """
+    Get the schema of a Parquet file without reading data.
+
+    Parameters
+    ----------
+    source
+        Path to a file or a file-like object.
+
+    Returns
+    -------
+    Dictionary mapping column names to datatypes
+
+    """
+    if isinstance(source, (str, Path)):
+        source = normalise_filepath(source)
+
+    return _read_parquet_schema(source)
 
 
 @deprecate_nonkeyword_arguments()

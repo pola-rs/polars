@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import glob
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager
 from io import BytesIO, StringIO
 from pathlib import Path
 from typing import (
@@ -16,16 +16,10 @@ from typing import (
 
 from polars.dependencies import _FSSPEC_AVAILABLE, fsspec
 from polars.exceptions import NoDataError
-from polars.utils.decorators import deprecated_alias
 from polars.utils.various import normalise_filepath
-
-with suppress(ImportError):
-    from polars.polars import ipc_schema as _ipc_schema
-    from polars.polars import parquet_schema as _parquet_schema
 
 if TYPE_CHECKING:
     import polars.internals as pli
-    from polars.datatypes import PolarsDataType
 
 
 def _check_empty(b: BytesIO, context: str, read_position: int | None = None) -> BytesIO:
@@ -191,50 +185,6 @@ def _prepare_file_arg(
                 )
 
     return managed_file(file)
-
-
-@deprecated_alias(file="source")
-def read_ipc_schema(source: str | BinaryIO | Path | bytes) -> dict[str, PolarsDataType]:
-    """
-    Get the schema of an IPC file without reading data.
-
-    Parameters
-    ----------
-    source
-        Path to a file or a file-like object.
-
-    Returns
-    -------
-    Dictionary mapping column names to datatypes
-
-    """
-    if isinstance(source, (str, Path)):
-        source = normalise_filepath(source)
-
-    return _ipc_schema(source)
-
-
-@deprecated_alias(file="source")
-def read_parquet_schema(
-    source: str | BinaryIO | Path | bytes,
-) -> dict[str, PolarsDataType]:
-    """
-    Get the schema of a Parquet file without reading data.
-
-    Parameters
-    ----------
-    source
-        Path to a file or a file-like object.
-
-    Returns
-    -------
-    Dictionary mapping column names to datatypes
-
-    """
-    if isinstance(source, (str, Path)):
-        source = normalise_filepath(source)
-
-    return _parquet_schema(source)
 
 
 def _is_local_file(file: str) -> bool:

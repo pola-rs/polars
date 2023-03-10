@@ -76,7 +76,6 @@ from polars.internals.functions import (
     ones,
     zeros,
 )
-from polars.internals.io import read_ipc_schema, read_parquet_schema
 from polars.internals.lazy_functions import (
     all,
     any,
@@ -144,9 +143,11 @@ from polars.io import (
     read_delta,
     read_excel,
     read_ipc,
+    read_ipc_schema,
     read_json,
     read_ndjson,
     read_parquet,
+    read_parquet_schema,
     read_sql,
     scan_csv,
     scan_delta,
