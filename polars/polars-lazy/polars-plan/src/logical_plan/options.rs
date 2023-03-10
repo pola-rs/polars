@@ -130,7 +130,7 @@ pub struct UnionOptions {
     pub from_partitioned_ds: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct GroupbyOptions {
     #[cfg(feature = "dynamic_groupby")]
@@ -143,8 +143,14 @@ pub struct GroupbyOptions {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DistinctOptions {
+    /// Subset of columns that will be taken into account.
     pub subset: Option<Arc<Vec<String>>>,
+    /// This will maintain the order of the input.
+    /// Note that this is more expensive.
+    /// `maintain_order` is not supported in the streaming
+    /// engine.
     pub maintain_order: bool,
+    /// Which rows to keep.
     pub keep_strategy: UniqueKeepStrategy,
 }
 

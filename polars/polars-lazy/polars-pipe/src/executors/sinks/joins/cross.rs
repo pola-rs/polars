@@ -7,6 +7,7 @@ use std::vec;
 
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
+use smartstring::alias::String as SmartString;
 
 use crate::operators::{
     chunks_to_df_unchecked, DataChunk, FinalizedSink, Operator, OperatorResult, PExecutionContext,
@@ -75,7 +76,7 @@ pub struct CrossJoinProbe {
     in_process_left: Option<StepBy<Range<usize>>>,
     in_process_right: Option<StepBy<Range<usize>>>,
     in_process_left_df: DataFrame,
-    output_names: Option<Vec<String>>,
+    output_names: Option<Vec<SmartString>>,
 }
 
 impl Operator for CrossJoinProbe {
