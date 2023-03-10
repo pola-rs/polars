@@ -1,106 +1,93 @@
 use super::*;
 
-pub trait NumOpsDispatchInner: PolarsDataType + Sized {
-    fn subtract(lhs: &ChunkedArray<Self>, rhs: &Series) -> PolarsResult<Series> {
-        polars_bail!(opq = sub, lhs.dtype(), rhs.dtype());
-    }
-    fn add_to(lhs: &ChunkedArray<Self>, rhs: &Series) -> PolarsResult<Series> {
-        polars_bail!(opq = add, lhs.dtype(), rhs.dtype());
-    }
-    fn multiply(lhs: &ChunkedArray<Self>, rhs: &Series) -> PolarsResult<Series> {
-        polars_bail!(opq = mul, lhs.dtype(), rhs.dtype());
-    }
-    fn divide(lhs: &ChunkedArray<Self>, rhs: &Series) -> PolarsResult<Series> {
-        polars_bail!(opq = div, lhs.dtype(), rhs.dtype());
-    }
-    fn remainder(lhs: &ChunkedArray<Self>, rhs: &Series) -> PolarsResult<Series> {
-        polars_bail!(opq = rem, lhs.dtype(), rhs.dtype());
-    }
-}
-
-pub trait NumOpsDispatch {
-    fn subtract(&self, rhs: &Series) -> PolarsResult<Series>;
-    fn add_to(&self, rhs: &Series) -> PolarsResult<Series>;
-    fn multiply(&self, rhs: &Series) -> PolarsResult<Series>;
-    fn divide(&self, rhs: &Series) -> PolarsResult<Series>;
-    fn remainder(&self, rhs: &Series) -> PolarsResult<Series>;
-}
-
-impl<T: NumOpsDispatchInner> NumOpsDispatch for ChunkedArray<T> {
+pub trait NumOpsDispatch: AsRefDataType {
     fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
-        T::subtract(self, rhs)
+        polars_bail!(opq = sub, self.as_ref_dtype(), rhs.dtype());
     }
+
     fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
-        T::add_to(self, rhs)
+        polars_bail!(opq = add, self.as_ref_dtype(), rhs.dtype());
     }
+
     fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
-        T::multiply(self, rhs)
+        polars_bail!(opq = mul, self.as_ref_dtype(), rhs.dtype());
     }
+
     fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
-        T::divide(self, rhs)
+        polars_bail!(opq = div, self.as_ref_dtype(), rhs.dtype());
     }
+
     fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
-        T::remainder(self, rhs)
+        polars_bail!(opq = rem, self.as_ref_dtype(), rhs.dtype());
     }
 }
 
-impl<T> NumOpsDispatchInner for T
+impl<T> NumOpsDispatch for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
+    for<'a> &'a ChunkedArray<T>: Add<Output = Self>
+        + Sub<Output = Self>
+        + Div<Output = Self>
+        + Mul<Output = Self>
+        + Rem<Output = Self>,
+    Self: IntoSeries,
 {
-    fn subtract(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
+    fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
         // Safety:
         // There will be UB if a ChunkedArray is alive with the wrong datatype.
         // we now only create the potentially wrong dtype for a short time.
         // Note that the physical type correctness is checked!
         // The ChunkedArray with the wrong dtype is dropped after this operation
-        let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
-        let out = lhs - rhs;
+        let rhs = unsafe { self.unpack_series_matching_physical_type(rhs) };
+        let out = self - rhs;
         Ok(out.into_series())
     }
-    fn add_to(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
+
+    fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
         // Safety:
         // see subtract
-        let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
-        let out = lhs + rhs;
+        let rhs = unsafe { self.unpack_series_matching_physical_type(rhs) };
+        let out = self + rhs;
         Ok(out.into_series())
     }
-    fn multiply(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
+
+    fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
         // Safety:
         // see subtract
-        let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
-        let out = lhs * rhs;
+        let rhs = unsafe { self.unpack_series_matching_physical_type(rhs) };
+        let out = self * rhs;
         Ok(out.into_series())
     }
-    fn divide(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
+
+    fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
         // Safety:
         // see subtract
-        let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
-        let out = lhs / rhs;
+        let rhs = unsafe { self.unpack_series_matching_physical_type(rhs) };
+        let out = self / rhs;
         Ok(out.into_series())
     }
-    fn remainder(lhs: &ChunkedArray<T>, rhs: &Series) -> PolarsResult<Series> {
+
+    fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
         // Safety:
         // see subtract
-        let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
-        let out = lhs % rhs;
+        let rhs = unsafe { self.unpack_series_matching_physical_type(rhs) };
+        let out = self % rhs;
         Ok(out.into_series())
     }
 }
 
-impl NumOpsDispatchInner for Utf8Type {
-    fn add_to(lhs: &Utf8Chunked, rhs: &Series) -> PolarsResult<Series> {
-        let rhs = lhs.unpack_series_matching_type(rhs)?;
-        let out = lhs + rhs;
+impl NumOpsDispatch for Utf8Chunked {
+    fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
+        let rhs = self.unpack_series_matching_type(rhs)?;
+        let out = self + rhs;
         Ok(out.into_series())
     }
 }
 
-impl NumOpsDispatchInner for BinaryType {
-    fn add_to(lhs: &BinaryChunked, rhs: &Series) -> PolarsResult<Series> {
-        let rhs = lhs.unpack_series_matching_type(rhs)?;
-        let out = lhs + rhs;
+impl NumOpsDispatch for BinaryChunked {
+    fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
+        let rhs = self.unpack_series_matching_type(rhs)?;
+        let out = self + rhs;
         Ok(out.into_series())
     }
 }
