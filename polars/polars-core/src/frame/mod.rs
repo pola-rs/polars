@@ -55,8 +55,7 @@ pub enum UniqueKeepStrategy {
     First,
     /// Keep the last unique row.
     Last,
-    /// Keep any of the unique rows.
-    /// This is faster.
+    /// Keep None of the unique rows.
     None,
 }
 

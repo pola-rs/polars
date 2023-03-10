@@ -323,7 +323,10 @@ pub(crate) fn insert_streaming_nodes(
                     pipeline_trees[current_idx].push(state);
                 }
             }
-            Distinct { input, options } if !options.maintain_order => {
+            Distinct { input, options }
+                if !options.maintain_order
+                    && !matches!(options.keep_strategy, UniqueKeepStrategy::None) =>
+            {
                 state.streamable = true;
                 state.operators_sinks.push((IS_SINK, !IS_RHS_JOIN, root));
                 stack.push((*input, state, current_idx))
