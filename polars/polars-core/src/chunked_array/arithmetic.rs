@@ -3,152 +3,26 @@ use std::borrow::Cow;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use arrow::array::PrimitiveArray;
-use arrow::compute::arithmetics::basic;
-#[cfg(feature = "dtype-decimal")]
-use arrow::compute::arithmetics::decimal;
+use arrow::compute::arithmetics::basic::{self, NativeArithmetics};
 use arrow::compute::arity_assign;
-use arrow::types::NativeType;
-use num_traits::{Num, NumCast, ToPrimitive};
+use num_traits::{NumCast, ToPrimitive};
 
 use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::utils::{align_chunks_binary, align_chunks_binary_owned};
 
-pub trait ArrayArithmetics
-where
-    Self: NativeType,
-{
-    fn add(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self>;
-    fn sub(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self>;
-    fn mul(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self>;
-    fn div(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self>;
-    fn div_scalar(lhs: &PrimitiveArray<Self>, rhs: &Self) -> PrimitiveArray<Self>;
-    fn rem(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self>;
-    fn rem_scalar(lhs: &PrimitiveArray<Self>, rhs: &Self) -> PrimitiveArray<Self>;
-}
-
-macro_rules! native_array_arithmetics {
-    ($ty: ty) => {
-        impl ArrayArithmetics for $ty
-        {
-            fn add(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self> {
-                basic::add(lhs, rhs)
-            }
-            fn sub(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self> {
-                basic::sub(lhs, rhs)
-            }
-            fn mul(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self> {
-                basic::mul(lhs, rhs)
-            }
-            fn div(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self> {
-                basic::div(lhs, rhs)
-            }
-            fn div_scalar(lhs: &PrimitiveArray<Self>, rhs: &Self) -> PrimitiveArray<Self> {
-                basic::div_scalar(lhs, rhs)
-            }
-            fn rem(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self> {
-                basic::rem(lhs, rhs)
-            }
-            fn rem_scalar(lhs: &PrimitiveArray<Self>, rhs: &Self) -> PrimitiveArray<Self> {
-                basic::rem_scalar(lhs, rhs)
-            }
-        }
-    };
-    ($($ty:ty),*) => {
-        $(native_array_arithmetics!($ty);)*
-    }
-}
-
-native_array_arithmetics!(u8, u16, u32, u64, i8, i16, i32, i64, f32, f64);
-
-#[cfg(feature = "dtype-decimal")]
-impl ArrayArithmetics for i128 {
-    fn add(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self> {
-        decimal::add(lhs, rhs)
-    }
-
-    fn sub(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self> {
-        decimal::sub(lhs, rhs)
-    }
-
-    fn mul(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self> {
-        decimal::mul(lhs, rhs)
-    }
-
-    fn div(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self> {
-        decimal::div(lhs, rhs)
-    }
-
-    fn div_scalar(_lhs: &PrimitiveArray<Self>, _rhs: &Self) -> PrimitiveArray<Self> {
-        // decimal::div_scalar(lhs, rhs)
-        todo!("decimal::div_scalar exists, but takes &PrimitiveScalar<i128>, not &i128");
-    }
-
-    fn rem(_lhs: &PrimitiveArray<Self>, _rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self> {
-        unimplemented!("requires support in arrow2 crate")
-    }
-
-    fn rem_scalar(_lhs: &PrimitiveArray<Self>, _rhs: &Self) -> PrimitiveArray<Self> {
-        unimplemented!("requires support in arrow2 crate")
-    }
-}
-
-macro_rules! apply_operand_on_chunkedarray_by_iter {
-
-    ($self:ident, $rhs:ident, $operand:tt) => {
-            {
-                match ($self.has_validity(), $rhs.has_validity()) {
-                    (false, false) => {
-                        let a: NoNull<ChunkedArray<_>> = $self
-                        .into_no_null_iter()
-                        .zip($rhs.into_no_null_iter())
-                        .map(|(left, right)| left $operand right)
-                        .collect_trusted();
-                        a.into_inner()
-                    },
-                    (false, _) => {
-                        $self
-                        .into_no_null_iter()
-                        .zip($rhs.into_iter())
-                        .map(|(left, opt_right)| opt_right.map(|right| left $operand right))
-                        .collect_trusted()
-                    },
-                    (_, false) => {
-                        $self
-                        .into_iter()
-                        .zip($rhs.into_no_null_iter())
-                        .map(|(opt_left, right)| opt_left.map(|left| left $operand right))
-                        .collect_trusted()
-                    },
-                    (_, _) => {
-                    $self.into_iter()
-                        .zip($rhs.into_iter())
-                        .map(|(opt_left, opt_right)| match (opt_left, opt_right) {
-                            (None, None) => None,
-                            (None, Some(_)) => None,
-                            (Some(_), None) => None,
-                            (Some(left), Some(right)) => Some(left $operand right),
-                        })
-                        .collect_trusted()
-
-                    }
-                }
-            }
-    }
-}
-
-fn arithmetic_helper<T, Kernel, F>(
+fn try_kernel_op_ref<T, K, F>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<T>,
-    kernel: Kernel,
-    operation: F,
-) -> ChunkedArray<T>
+    kernel: K,
+    op: F,
+) -> PolarsResult<ChunkedArray<T>>
 where
     T: PolarsNumericType,
-    Kernel: Fn(&PrimitiveArray<T::Native>, &PrimitiveArray<T::Native>) -> PrimitiveArray<T::Native>,
+    K: Fn(&PrimitiveArray<T::Native>, &PrimitiveArray<T::Native>) -> PrimitiveArray<T::Native>,
     F: Fn(T::Native, T::Native) -> T::Native,
 {
-    let mut ca = match (lhs.len(), rhs.len()) {
+    let ca = match (lhs.len(), rhs.len()) {
         (a, b) if a == b => {
             let (lhs, rhs) = align_chunks_binary(lhs, rhs);
             let chunks = lhs
@@ -158,43 +32,38 @@ where
                 .collect();
             lhs.copy_with_chunks(chunks, false, false)
         }
-        // broadcast right path
-        (_, 1) => {
-            let opt_rhs = rhs.get(0);
-            match opt_rhs {
-                None => ChunkedArray::full_null(lhs.name(), lhs.len()),
-                Some(rhs) => lhs.apply(|lhs| operation(lhs, rhs)),
-            }
+        (_, 1) => match rhs.get(0) {
+            None => ChunkedArray::full_null(lhs.name(), lhs.len()),
+            // TODO: could use <op>_scalar() logic here to speed up div/rem
+            Some(rhs) => lhs.apply(|lhs| op(lhs, rhs)),
+        },
+        (1, _) => match lhs.get(0) {
+            None => ChunkedArray::full_null(lhs.name(), rhs.len()),
+            Some(lhs_val) => rhs.apply(|rhs| op(lhs_val, rhs)).with_name(lhs.name()),
+        },
+        _ => {
+            polars_bail!(ComputeError: "cannot apply operation on arrays of different lengths")
         }
-        (1, _) => {
-            let opt_lhs = lhs.get(0);
-            match opt_lhs {
-                None => ChunkedArray::full_null(lhs.name(), rhs.len()),
-                Some(lhs) => rhs.apply(|rhs| operation(lhs, rhs)),
-            }
-        }
-        _ => panic!("Cannot apply operation on arrays of different lengths"),
     };
-    ca.rename(lhs.name());
-    ca
+    Ok(ca)
 }
 
-/// This assigns to the owned buffer if the ref count is 1
-fn arithmetic_helper_owned<T, Kernel, F>(
+fn try_kernel_op_owned<T, K, F>(
     mut lhs: ChunkedArray<T>,
     mut rhs: ChunkedArray<T>,
-    kernel: Kernel,
-    operation: F,
-) -> ChunkedArray<T>
+    kernel: K,
+    op: F,
+) -> PolarsResult<ChunkedArray<T>>
 where
     T: PolarsNumericType,
-    Kernel: Fn(&mut PrimitiveArray<T::Native>, &mut PrimitiveArray<T::Native>),
+    K: Fn(&mut PrimitiveArray<T::Native>, &PrimitiveArray<T::Native>),
     F: Fn(T::Native, T::Native) -> T::Native,
 {
+    // this assigns to the owned buffer if the ref count is 1
     let ca = match (lhs.len(), rhs.len()) {
         (a, b) if a == b => {
             let (mut lhs, mut rhs) = align_chunks_binary_owned(lhs, rhs);
-            // safety, we do no t change the lengths
+            // safety: we don't change lengths
             unsafe {
                 lhs.downcast_iter_mut()
                     .zip(rhs.downcast_iter_mut())
@@ -203,334 +72,133 @@ where
             lhs.set_sorted_flag(IsSorted::Not);
             lhs
         }
-        // broadcast right path
-        (_, 1) => {
-            let opt_rhs = rhs.get(0);
-            match opt_rhs {
-                None => ChunkedArray::full_null(lhs.name(), lhs.len()),
-                Some(rhs) => {
-                    lhs.apply_mut(|lhs| operation(lhs, rhs));
-                    lhs
-                }
+        (_, 1) => match rhs.get(0) {
+            None => ChunkedArray::full_null(lhs.name(), lhs.len()),
+            Some(rhs) => {
+                lhs.apply_mut(|lhs| op(lhs, rhs));
+                lhs
             }
-        }
-        (1, _) => {
-            let opt_lhs = lhs.get(0);
-            match opt_lhs {
-                None => ChunkedArray::full_null(lhs.name(), rhs.len()),
-                Some(lhs_val) => {
-                    rhs.apply_mut(|rhs| operation(lhs_val, rhs));
-                    rhs.rename(lhs.name());
-                    rhs
-                }
+        },
+        (1, _) => match lhs.get(0) {
+            None => ChunkedArray::full_null(lhs.name(), rhs.len()),
+            Some(lhs_val) => {
+                rhs.apply_mut(|rhs| op(lhs_val, rhs));
+                rhs.with_name(lhs.name())
             }
+        },
+        _ => {
+            polars_bail!(ComputeError: "cannot apply operation on arrays of different lengths")
         }
-        _ => panic!("Cannot apply operation on arrays of different lengths"),
     };
-    ca
+    Ok(ca)
 }
 
-// Operands on ChunkedArray & ChunkedArray
-
-impl<T> Add for &ChunkedArray<T>
+fn try_op_scalar_ref<T, N, F>(lhs: &ChunkedArray<T>, rhs: N, op: F) -> PolarsResult<ChunkedArray<T>>
 where
     T: PolarsNumericType,
+    T::Native: NativeArithmetics + NumCast + ToPrimitive,
+    N: NumCast,
+    F: Fn(&PrimitiveArray<T::Native>, &T::Native) -> PrimitiveArray<T::Native>,
 {
-    type Output = ChunkedArray<T>;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(
-            self,
-            rhs,
-            <T::Native as ArrayArithmetics>::add,
-            |lhs, rhs| lhs + rhs,
-        )
-    }
+    let rhs: T::Native = NumCast::from(rhs).ok_or_else(
+        || polars_err!(InvalidOperation: "`{}`: unable to cast to native type", stringify!($op)),
+    )?;
+    let chunks = lhs
+        .downcast_iter()
+        .map(|arr| Box::new(op(arr, &rhs)) as ArrayRef)
+        .collect();
+    Ok(unsafe { ChunkedArray::from_chunks(lhs.name(), chunks) })
 }
 
-impl<T> Div for &ChunkedArray<T>
+fn try_op_scalar_owned<T, N, F>(
+    lhs: ChunkedArray<T>,
+    rhs: N,
+    op: F,
+) -> PolarsResult<ChunkedArray<T>>
 where
     T: PolarsNumericType,
+    T::Native: NativeArithmetics + NumCast + ToPrimitive,
+    N: NumCast,
+    F: Fn(&PrimitiveArray<T::Native>, &T::Native) -> PrimitiveArray<T::Native>,
 {
-    type Output = ChunkedArray<T>;
-
-    fn div(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(
-            self,
-            rhs,
-            <T::Native as ArrayArithmetics>::div,
-            |lhs, rhs| lhs / rhs,
-        )
-    }
+    // TODO: for ops other than div_scalar/rem_scalar, it's possible to use apply_mut here instead
+    try_op_scalar_ref(&lhs, rhs, op)
 }
 
-impl<T> Mul for &ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-    type Output = ChunkedArray<T>;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(
-            self,
-            rhs,
-            <T::Native as ArrayArithmetics>::mul,
-            |lhs, rhs| lhs * rhs,
-        )
-    }
-}
-
-impl<T> Rem for &ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-    type Output = ChunkedArray<T>;
-
-    fn rem(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(
-            self,
-            rhs,
-            <T::Native as ArrayArithmetics>::rem,
-            |lhs, rhs| lhs % rhs,
-        )
-    }
-}
-
-impl<T> Sub for &ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-    type Output = ChunkedArray<T>;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(
-            self,
-            rhs,
-            <T::Native as ArrayArithmetics>::sub,
-            |lhs, rhs| lhs - rhs,
-        )
-    }
-}
-
-impl<T> Add for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        arithmetic_helper_owned(
-            self,
-            rhs,
-            |a, b| arity_assign::binary(a, b, |a, b| a + b),
-            |lhs, rhs| lhs + rhs,
-        )
-    }
-}
-
-impl<T> Div for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-    type Output = Self;
-
-    fn div(self, rhs: Self) -> Self::Output {
-        arithmetic_helper_owned(
-            self,
-            rhs,
-            |a, b| arity_assign::binary(a, b, |a, b| a / b),
-            |lhs, rhs| lhs / rhs,
-        )
-    }
-}
-
-impl<T> Mul for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-    type Output = Self;
-
-    fn mul(self, rhs: Self) -> Self::Output {
-        arithmetic_helper_owned(
-            self,
-            rhs,
-            |a, b| arity_assign::binary(a, b, |a, b| a * b),
-            |lhs, rhs| lhs * rhs,
-        )
-    }
-}
-
-impl<T> Sub for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-    type Output = Self;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        arithmetic_helper_owned(
-            self,
-            rhs,
-            |a, b| arity_assign::binary(a, b, |a, b| a - b),
-            |lhs, rhs| lhs - rhs,
-        )
-    }
-}
-
-impl<T> Rem for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-    type Output = ChunkedArray<T>;
-
-    fn rem(self, rhs: Self) -> Self::Output {
-        (&self).rem(&rhs)
-    }
-}
-
-// Operands on ChunkedArray & Num
-
-impl<T, N> Add<N> for &ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    N: Num + ToPrimitive,
-{
-    type Output = ChunkedArray<T>;
-
-    fn add(self, rhs: N) -> Self::Output {
-        let adder: T::Native = NumCast::from(rhs).unwrap();
-        self.apply(|val| val + adder)
-    }
-}
-
-impl<T, N> Sub<N> for &ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    N: Num + ToPrimitive,
-{
-    type Output = ChunkedArray<T>;
-
-    fn sub(self, rhs: N) -> Self::Output {
-        let subber: T::Native = NumCast::from(rhs).unwrap();
-        self.apply(|val| val - subber)
-    }
-}
-
-impl<T, N> Div<N> for &ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    N: Num + ToPrimitive,
-{
-    type Output = ChunkedArray<T>;
-
-    fn div(self, rhs: N) -> Self::Output {
-        let rhs: T::Native = NumCast::from(rhs).expect("could not cast");
-        self.apply_kernel(&|arr| Box::new(<T::Native as ArrayArithmetics>::div_scalar(arr, &rhs)))
-    }
-}
-
-impl<T, N> Mul<N> for &ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    N: Num + ToPrimitive,
-{
-    type Output = ChunkedArray<T>;
-
-    fn mul(self, rhs: N) -> Self::Output {
-        let multiplier: T::Native = NumCast::from(rhs).unwrap();
-        self.apply(|val| val * multiplier)
-    }
-}
-
-impl<T, N> Rem<N> for &ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    N: Num + ToPrimitive,
-{
-    type Output = ChunkedArray<T>;
-
-    fn rem(self, rhs: N) -> Self::Output {
-        let rhs: T::Native = NumCast::from(rhs).expect("could not cast");
-        self.apply_kernel(&|arr| Box::new(<T::Native as ArrayArithmetics>::rem_scalar(arr, &rhs)))
-    }
-}
-
-impl<T, N> Add<N> for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    N: Num + ToPrimitive,
-{
-    type Output = ChunkedArray<T>;
-
-    fn add(mut self, rhs: N) -> Self::Output {
-        if std::env::var("ASSIGN").is_ok() {
-            let adder: T::Native = NumCast::from(rhs).unwrap();
-            self.apply_mut(|val| val + adder);
-            self
-        } else {
-            (&self).add(rhs)
+macro_rules! implement_arithmetic_ops {
+    ($Op:ident, $op:ident, $op_scalar:ident, $TryOp:ident, $try_op:ident) => {
+        implement_arithmetic_ops!(
+            $Op, $op, $op_scalar, $TryOp, $try_op,
+            try_kernel_op_ref,
+            basic::$op::<T::Native>,
+            try_op_scalar_ref,
+            &'lhs ChunkedArray<T>, &'rhs ChunkedArray<T>, ['lhs, 'rhs],
+        );
+        implement_arithmetic_ops!(
+            $Op, $op, $op_scalar, $TryOp, $try_op,
+            try_kernel_op_owned,
+            |a, b| arity_assign::binary(a, b, <T::Native as $Op>::$op),
+            try_op_scalar_owned,
+            ChunkedArray<T>, ChunkedArray<T>, [],
+        );
+    };
+    (
+        $Op:ident, $op:ident, $op_scalar:ident, $TryOp:ident, $try_op:ident,
+        $kernel_op:ident, $func_op:expr, $func_op_scalar:expr,
+        $lhs:ty, $rhs:ty, [$($llt:lifetime, $rlt:lifetime)?] $(,)?
+    ) => {
+        impl<$($llt, $rlt,)? T> $TryOp<$rhs> for $lhs
+        where
+            T: PolarsNumericType,
+            T::Native: NativeArithmetics,
+        {
+            type Output = ChunkedArray<T>;
+            type Error = PolarsError;
+            fn $try_op(self, rhs: $rhs) -> PolarsResult<Self::Output> {
+                $kernel_op(self, rhs, $func_op, <T::Native as $Op>::$op)
+            }
         }
-    }
-}
-
-impl<T, N> Sub<N> for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    N: Num + ToPrimitive,
-{
-    type Output = ChunkedArray<T>;
-
-    fn sub(mut self, rhs: N) -> Self::Output {
-        if std::env::var("ASSIGN").is_ok() {
-            let subber: T::Native = NumCast::from(rhs).unwrap();
-            self.apply_mut(|val| val - subber);
-            self
-        } else {
-            (&self).sub(rhs)
+        impl<$($llt, $rlt,)? T> $Op<$rhs> for $lhs
+        where
+            T: PolarsNumericType,
+            T::Native: NativeArithmetics,
+        {
+            type Output = ChunkedArray<T>;
+            fn $op(self, rhs: $rhs) -> Self::Output {
+                $TryOp::$try_op(self, rhs).unwrap()
+            }
         }
-    }
-}
-
-impl<T, N> Div<N> for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    N: Num + ToPrimitive,
-{
-    type Output = ChunkedArray<T>;
-
-    fn div(self, rhs: N) -> Self::Output {
-        (&self).div(rhs)
-    }
-}
-
-impl<T, N> Mul<N> for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    N: Num + ToPrimitive,
-{
-    type Output = ChunkedArray<T>;
-
-    fn mul(mut self, rhs: N) -> Self::Output {
-        if std::env::var("ASSIGN").is_ok() {
-            let multiplier: T::Native = NumCast::from(rhs).unwrap();
-            self.apply_mut(|val| val * multiplier);
-            self
-        } else {
-            (&self).mul(rhs)
+        impl<$($llt,)? T, N> $TryOp<N> for $lhs
+        where
+            T: PolarsNumericType,
+            T::Native: NativeArithmetics + ToPrimitive + NumCast,
+            N: NumCast,
+        {
+            type Output = ChunkedArray<T>;
+            type Error = PolarsError;
+            fn $try_op(self, rhs: N) -> PolarsResult<Self::Output> {
+                $func_op_scalar(self, rhs, basic::$op_scalar::<T::Native>)
+            }
         }
-    }
+        impl<$($llt,)? T, N> $Op<N> for $lhs
+        where
+            T: PolarsNumericType,
+            T::Native: NativeArithmetics + ToPrimitive + NumCast,
+            N: NumCast,
+        {
+            type Output = ChunkedArray<T>;
+            fn $op(self, rhs: N) -> Self::Output {
+                $TryOp::$try_op(self, rhs).unwrap()
+            }
+        }
+    };
 }
 
-impl<T, N> Rem<N> for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    N: Num + ToPrimitive,
-{
-    type Output = ChunkedArray<T>;
-
-    fn rem(self, rhs: N) -> Self::Output {
-        (&self).rem(rhs)
-    }
-}
+implement_arithmetic_ops!(Add, add, add_scalar, TryAdd, try_add);
+implement_arithmetic_ops!(Sub, sub, sub_scalar, TrySub, try_sub);
+implement_arithmetic_ops!(Mul, mul, mul_scalar, TryMul, try_mul);
+implement_arithmetic_ops!(Div, div, div_scalar, TryDiv, try_div);
+implement_arithmetic_ops!(Rem, rem, rem_scalar, TryRem, try_rem);
 
 fn concat_strings(l: &str, r: &str) -> String {
     // fastest way to concat strings according to https://github.com/hoodie/concatenation_benchmarks-rs
