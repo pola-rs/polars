@@ -5,7 +5,8 @@ from typing import TYPE_CHECKING, Sequence
 
 import polars.internals as pli
 from polars.internals.series.utils import expr_dispatch
-from polars.utils import redirect, sphinx_accessor
+from polars.utils.decorators import redirect
+from polars.utils.various import sphinx_accessor
 
 if TYPE_CHECKING:
     from polars.polars import PySeries

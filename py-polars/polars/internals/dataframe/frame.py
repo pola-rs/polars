@@ -43,7 +43,6 @@ from polars.datatypes import (
     UInt32,
     UInt64,
     Utf8,
-    get_idx_type,
     py_type_to_dtype,
 )
 from polars.dependencies import (
@@ -78,12 +77,16 @@ from polars.internals.io_excel import (
     _xl_unique_table_name,
 )
 from polars.internals.slice import PolarsSlice
-from polars.utils import (
-    _prepare_row_count_args,
-    _process_null_values,
-    _timedelta_to_pl_duration,
+from polars.utils.convert import _timedelta_to_pl_duration
+from polars.utils.decorators import (
     deprecate_nonkeyword_arguments,
     deprecated_alias,
+    redirect,
+)
+from polars.utils.meta import get_index_type
+from polars.utils.various import (
+    _prepare_row_count_args,
+    _process_null_values,
     handle_projection_columns,
     is_bool_sequence,
     is_int_sequence,
@@ -91,7 +94,6 @@ from polars.utils import (
     normalise_filepath,
     parse_version,
     range_to_slice,
-    redirect,
     scale_bytes,
 )
 
@@ -1395,7 +1397,7 @@ class DataFrame:
         self, idxs: np.ndarray[Any, Any] | pli.Series, dim: int
     ) -> pli.Series:
         # pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx).
-        idx_type = get_idx_type()
+        idx_type = get_index_type()
 
         if isinstance(idxs, pli.Series):
             if idxs.dtype == idx_type:
@@ -1755,7 +1757,7 @@ class DataFrame:
             max_rows = self.shape[0]
 
         from_series = kwargs.get("from_series", False)
-        return "\n".join(
+        return "".join(
             NotebookFormatter(
                 self,
                 max_cols=max_cols,

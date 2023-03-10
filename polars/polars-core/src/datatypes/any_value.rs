@@ -1,3 +1,6 @@
+use arrow::temporal_conversions::{
+    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
+};
 use arrow::types::PrimitiveType;
 #[cfg(feature = "dtype-categorical")]
 use polars_utils::sync::SyncPtr;
@@ -424,7 +427,7 @@ impl<'a> AnyValue<'a> {
         )
     }
 
-    pub fn cast(&self, dtype: &DataType) -> PolarsResult<Self> {
+    pub fn cast(&self, dtype: &'a DataType) -> PolarsResult<AnyValue<'a>> {
         macro_rules! cast_to (
             ($av:expr) => {
                 match dtype {
@@ -438,6 +441,14 @@ impl<'a> AnyValue<'a> {
                     DataType::Int64 => AnyValue::Int64($av as i64),
                     DataType::Float32 => AnyValue::Float32($av as f32),
                     DataType::Float64 => AnyValue::Float64($av as f64),
+                    #[cfg(feature="dtype-date")]
+                    DataType::Date => AnyValue::Date($av as i32),
+                    #[cfg(feature="dtype-datetime")]
+                    DataType::Datetime(tu, tz) => AnyValue::Datetime($av as i64, *tu, tz),
+                    #[cfg(feature="dtype-duration")]
+                    DataType::Duration(tu) => AnyValue::Duration($av as i64, *tu),
+                    #[cfg(feature="dtype-time")]
+                    DataType::Time => AnyValue::Time($av as i64),
                     _ => polars_bail!(
                         ComputeError: "cannot cast any-value {:?} to dtype '{}'", self, dtype,
                     ),
@@ -447,9 +458,54 @@ impl<'a> AnyValue<'a> {
         );
 
         let new_av = match self {
+            AnyValue::Boolean(v) => cast_to!(*v as u8),
             AnyValue::Float32(_) | AnyValue::Float64(_) => cast_to!(self.extract::<f64>().unwrap()),
             av if av.is_signed() => cast_to!(av.extract::<i64>().unwrap()),
             av if av.is_unsigned() => cast_to!(av.extract::<u64>().unwrap()),
+            #[cfg(feature = "dtype-datetime")]
+            AnyValue::Datetime(v, tu, None) => match dtype {
+                DataType::Int64 => AnyValue::Int64(*v),
+                #[cfg(feature = "dtype-date")]
+                DataType::Date => {
+                    let convert = match tu {
+                        TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
+                        TimeUnit::Microseconds => timestamp_us_to_datetime,
+                        TimeUnit::Milliseconds => timestamp_ms_to_datetime,
+                    };
+                    let ndt = convert(*v);
+                    let date_value = naive_datetime_to_date(ndt);
+                    AnyValue::Date(date_value)
+                }
+                _ => polars_bail!(
+                    ComputeError: format!("cannot cast 'datetime' any-value to dtype {dtype}")
+                ),
+            },
+            #[cfg(feature = "dtype-time")]
+            AnyValue::Time(v) => match dtype {
+                DataType::Int64 => AnyValue::Int64(*v),
+                _ => polars_bail!(
+                    ComputeError: format!("cannot cast 'time' any-value to dtype {dtype}")
+                ),
+            },
+            #[cfg(feature = "dtype-date")]
+            AnyValue::Date(v) => match dtype {
+                DataType::Int32 => AnyValue::Int32(*v),
+                DataType::Int64 => AnyValue::Int64(*v as i64),
+                #[cfg(feature = "dtype-datetime")]
+                DataType::Datetime(tu, None) => {
+                    let ndt = arrow::temporal_conversions::date32_to_datetime(*v);
+                    let func = match tu {
+                        TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
+                        TimeUnit::Microseconds => datetime_to_timestamp_us,
+                        TimeUnit::Milliseconds => datetime_to_timestamp_ms,
+                    };
+                    let value = func(ndt);
+                    AnyValue::Datetime(value, *tu, &None)
+                }
+                _ => polars_bail!(
+                    ComputeError: format!("cannot cast 'date' any-value to dtype {dtype}")
+                ),
+            },
             _ => polars_bail!(ComputeError: "cannot cast non numeric any-value to numeric dtype"),
         };
         Ok(new_av)

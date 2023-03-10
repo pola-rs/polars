@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Callable, Generic, Iterable, TypeVar
 
 import polars.internals as pli
 from polars.internals import expr_to_lit_or_expr, selection_to_pyexpr_list
-from polars.utils import deprecated_alias
+from polars.utils.decorators import deprecated_alias
 
 if TYPE_CHECKING:
     from polars.datatypes import SchemaDict

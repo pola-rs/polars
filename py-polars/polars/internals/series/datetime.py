@@ -4,7 +4,8 @@ from typing import TYPE_CHECKING
 
 import polars.internals as pli
 from polars.internals.series.utils import expr_dispatch
-from polars.utils import _to_python_datetime, deprecated_alias, redirect
+from polars.utils.convert import _to_python_datetime
+from polars.utils.decorators import deprecated_alias, redirect
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time, timedelta

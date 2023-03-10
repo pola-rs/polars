@@ -4,7 +4,7 @@ import copy
 from typing import TYPE_CHECKING, Any, Callable
 
 import polars.internals as pli
-from polars.utils import deprecate_nonkeyword_arguments, deprecated_alias
+from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time

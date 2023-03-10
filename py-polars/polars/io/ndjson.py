@@ -5,7 +5,8 @@ from typing import TYPE_CHECKING
 
 from polars.datatypes import N_INFER_DEFAULT
 from polars.internals import DataFrame, LazyFrame
-from polars.utils import deprecate_nonkeyword_arguments, normalise_filepath
+from polars.utils.decorators import deprecate_nonkeyword_arguments
+from polars.utils.various import normalise_filepath
 
 if TYPE_CHECKING:
     from io import IOBase

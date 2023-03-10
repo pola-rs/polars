@@ -4,7 +4,7 @@ import warnings
 from typing import TYPE_CHECKING, Any
 
 from polars.convert import from_arrow
-from polars.utils import deprecate_nonkeyword_arguments, deprecated_alias
+from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 
 if TYPE_CHECKING:
     import polars.internals as pli

@@ -7,7 +7,8 @@ from polars.convert import from_arrow
 from polars.dependencies import _PYARROW_AVAILABLE
 from polars.internals import DataFrame, LazyFrame
 from polars.internals.io import _prepare_file_arg
-from polars.utils import deprecate_nonkeyword_arguments, normalise_filepath
+from polars.utils.decorators import deprecate_nonkeyword_arguments
+from polars.utils.various import normalise_filepath
 
 if TYPE_CHECKING:
     from io import BytesIO

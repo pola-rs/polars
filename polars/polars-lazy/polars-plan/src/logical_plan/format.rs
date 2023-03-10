@@ -433,33 +433,8 @@ impl Debug for LiteralValue {
         use LiteralValue::*;
 
         match self {
-            Null => write!(f, "null"),
-            Boolean(b) => write!(f, "{b}"),
-            Utf8(s) => write!(f, "{s}"),
             Binary(_) => write!(f, "[binary value]"),
-            #[cfg(feature = "dtype-u8")]
-            UInt8(v) => write!(f, "{v}u8"),
-            #[cfg(feature = "dtype-u16")]
-            UInt16(v) => write!(f, "{v}u16"),
-            UInt32(v) => write!(f, "{v}u32"),
-            UInt64(v) => write!(f, "{v}u64"),
-            #[cfg(feature = "dtype-i8")]
-            Int8(v) => write!(f, "{v}i8"),
-            #[cfg(feature = "dtype-i16")]
-            Int16(v) => write!(f, "{v}i16"),
-            Int32(v) => write!(f, "{v}i32"),
-            Int64(v) => write!(f, "{v}i64"),
-            Float32(v) => write!(f, "{v}f32"),
-            Float64(v) => write!(f, "{v}f64"),
             Range { low, high, .. } => write!(f, "range({low}, {high})"),
-            #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
-            DateTime(nd, _) => {
-                write!(f, "{nd}")
-            }
-            #[cfg(all(feature = "temporal", feature = "dtype-duration"))]
-            Duration(du, _) => {
-                write!(f, "{du}")
-            }
             Series(s) => {
                 let name = s.name();
                 if name.is_empty() {
@@ -467,6 +442,10 @@ impl Debug for LiteralValue {
                 } else {
                     write!(f, "Series[{name}]")
                 }
+            }
+            _ => {
+                let av = self.to_anyvalue().unwrap();
+                write!(f, "{av}")
             }
         }
     }

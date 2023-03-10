@@ -52,8 +52,8 @@ def test_dtype_base_type() -> None:
         assert dtype.base_type() is pl.Datetime
 
 
-def test_get_idx_type() -> None:
-    assert datatypes.get_idx_type() == pl.UInt32
+def test_get_index_type() -> None:
+    assert pl.get_index_type() == pl.UInt32
 
 
 def test_dtypes_picklable() -> None:

@@ -4,7 +4,7 @@ import warnings
 from typing import TYPE_CHECKING
 
 from polars.internals import _scan_pyarrow_dataset
-from polars.utils import deprecate_nonkeyword_arguments
+from polars.utils.decorators import deprecate_nonkeyword_arguments
 
 if TYPE_CHECKING:
     from polars.dependencies import pyarrow as pa

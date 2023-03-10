@@ -58,10 +58,3 @@ Other
     Object
     Utf8
     Unknown
-
-Functions
-~~~~~~~~~
-.. autosummary::
-    :toctree: api/
-
-    get_idx_type

@@ -131,13 +131,11 @@ fn test_strptime_block_predicate() -> PolarsResult<()> {
             ..Default::default()
         }))
         .filter(
-            col("date").gt(Expr::Literal(LiteralValue::DateTime(
-                NaiveDate::from_ymd_opt(2021, 1, 1)
-                    .unwrap()
-                    .and_hms_opt(0, 0, 0)
-                    .unwrap(),
-                TimeUnit::Milliseconds,
-            ))),
+            col("date").gt(NaiveDate::from_ymd_opt(2021, 1, 1)
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap()
+                .lit()),
         );
 
     assert!(!predicate_at_scan(q.clone()));
