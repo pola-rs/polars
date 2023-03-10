@@ -46,6 +46,7 @@ impl Default for StartBy {
 /// and end (upper) of the window of that group.
 ///
 /// If `include_boundaries` is `false` those `lower` and `upper` vectors will be empty.
+#[allow(clippy::too_many_arguments)]
 pub fn groupby_windows(
     window: Window,
     time: &[i64],

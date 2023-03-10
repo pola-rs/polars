@@ -1,16 +1,19 @@
 use std::cmp::Ordering;
 use std::ops::Mul;
 
-use arrow::temporal_conversions::parse_offset;
-use chrono::{Utc, Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Weekday, TimeZone as TimeZoneTrait};
 #[cfg(feature = "timezones")]
-use chrono_tz::{Tz};
+use arrow::temporal_conversions::parse_offset;
+use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Weekday};
+#[cfg(feature = "timezones")]
+use chrono::{TimeZone as TimeZoneTrait, Utc};
+#[cfg(feature = "timezones")]
+use chrono_tz::Tz;
 use polars_arrow::export::arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
 };
 use polars_core::export::arrow::temporal_conversions::MICROSECONDS;
 use polars_core::prelude::{
-    datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us, TimeZone, TimeUnit,
+    datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us, TimeZone,
 };
 use polars_core::utils::arrow::temporal_conversions::NANOSECONDS;
 #[cfg(feature = "serde")]
@@ -22,33 +25,31 @@ use super::calendar::{
 };
 
 #[cfg(feature = "timezones")]
-fn localize_timestamp(t: i64, ndt: NaiveDateTime, tz: &TimeZone) -> i64 {
+fn localize_timestamp(ndt: NaiveDateTime, tz: &TimeZone) -> NaiveDateTime {
     let dt = match parse_offset(tz) {
         Ok(tz) => tz.from_local_datetime(&ndt).unwrap().with_timezone(&Utc),
         Err(_) => match tz.parse::<Tz>() {
             Ok(tz) => tz.from_local_datetime(&ndt).unwrap().with_timezone(&Utc),
             _ => unreachable!(),
-        }
+        },
     };
-    dt.timestamp_nanos()
+    dt.naive_utc()
 }
 
 #[cfg(feature = "timezones")]
-fn unlocalize_timestamp(t: i64, ndt: NaiveDateTime, tz: &TimeZone) -> i64 {
+fn unlocalize_timestamp(ndt: NaiveDateTime, tz: &TimeZone) -> NaiveDateTime {
     let dt = match parse_offset(tz) {
-        Ok(tz) =>  {
-            let foo = Utc.from_local_datetime(&tz.from_utc_datetime(&ndt).naive_local());
-            foo.unwrap()
-        }
+        Ok(tz) => Utc
+            .from_local_datetime(&tz.from_utc_datetime(&ndt).naive_local())
+            .unwrap(),
         Err(_) => match tz.parse::<Tz>() {
-            Ok(tz) =>  {
-                let foo = Utc.from_local_datetime(&tz.from_utc_datetime(&ndt).naive_local());
-                foo.unwrap()
-            }
-            _ => unreachable!()
-        }
+            Ok(tz) => Utc
+                .from_local_datetime(&tz.from_utc_datetime(&ndt).naive_local())
+                .unwrap(),
+            _ => unreachable!(),
+        },
     };
-    dt.timestamp_nanos()
+    dt.naive_utc()
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -332,10 +333,11 @@ impl Duration {
                 let duration = nsecs_to_unit(self.nsecs);
                 let mut remainder = match tz {
                     #[cfg(feature = "timezones")]
-                    Some(tz) => { 
-                        nsecs_to_unit(unlocalize_timestamp(t, timestamp_to_datetime(t), tz)) % duration
+                    Some(tz) => {
+                        datetime_to_timestamp(unlocalize_timestamp(timestamp_to_datetime(t), tz))
+                            % duration
                     }
-                    _ => t % duration
+                    _ => t % duration,
                 };
                 if remainder < 0 {
                     remainder += duration
@@ -355,10 +357,8 @@ impl Duration {
             (_, 0, 0) => {
                 let ts = match tz {
                     #[cfg(feature = "timezones")]
-                    Some(tz) => {
-                        timestamp_to_datetime(nsecs_to_unit(unlocalize_timestamp(t, timestamp_to_datetime(t), tz)))
-                    },
-                    _ => timestamp_to_datetime(t)
+                    Some(tz) => unlocalize_timestamp(timestamp_to_datetime(t), tz),
+                    _ => timestamp_to_datetime(t),
                 };
                 let (year, month) = (ts.year(), ts.month());
 
@@ -374,8 +374,8 @@ impl Duration {
                 let dt = new_datetime(year, month, 1, 0, 0, 0, 0);
                 match tz {
                     #[cfg(feature = "timezones")]
-                    Some(tz) => nsecs_to_unit(localize_timestamp(datetime_to_timestamp(dt), timestamp_to_datetime(datetime_to_timestamp(dt)), tz)),
-                    _ => datetime_to_timestamp(dt)
+                    Some(tz) => datetime_to_timestamp(localize_timestamp(dt, tz)),
+                    _ => datetime_to_timestamp(dt),
                 }
             }
             _ => panic!("duration may not mix month, weeks and nanosecond units"),
@@ -444,8 +444,8 @@ impl Duration {
             // based on the number of months
             let ts = match tz {
                 #[cfg(feature = "timezones")]
-                Some(tz) => timestamp_to_datetime(nsecs_to_unit(unlocalize_timestamp(t, timestamp_to_datetime(t), tz))),
-                _ => timestamp_to_datetime(t)
+                Some(tz) => unlocalize_timestamp(timestamp_to_datetime(t), tz),
+                _ => timestamp_to_datetime(t),
             };
             let mut year = ts.year();
             let mut month = ts.month() as i32;
@@ -483,7 +483,7 @@ impl Duration {
             let dt = new_datetime(year, month as u32, day, hour, minute, sec, nsec);
             new_t = match tz {
                 #[cfg(feature = "timezones")]
-                Some(tz) => nsecs_to_unit(localize_timestamp(datetime_to_timestamp(dt), timestamp_to_datetime(datetime_to_timestamp(dt)), tz)),
+                Some(tz) => datetime_to_timestamp(localize_timestamp(dt, tz)),
                 _ => datetime_to_timestamp(dt),
             };
         }
@@ -598,6 +598,9 @@ mod test {
         let seven_days_negative = Duration::parse("-7d");
         let one_week_negative = Duration::parse("-1w");
 
-        assert_eq!(seven_days_negative.add_ns(t, &None), one_week_negative.add_ns(t, &None));
+        assert_eq!(
+            seven_days_negative.add_ns(t, &None),
+            one_week_negative.add_ns(t, &None)
+        );
     }
 }

@@ -1,6 +1,8 @@
 #[cfg(feature = "timezones")]
 use chrono::NaiveDateTime;
 #[cfg(feature = "timezones")]
+use chrono_tz::Tz;
+#[cfg(feature = "timezones")]
 use now::DateTimeNow;
 use polars_arrow::export::arrow::temporal_conversions::*;
 use polars_core::prelude::*;
@@ -173,7 +175,13 @@ pub struct BoundsIter {
     tz: Option<TimeZone>,
 }
 impl BoundsIter {
-    fn new(window: Window, boundary: Bounds, tu: TimeUnit, tz: &Option<TimeZone>, start_by: StartBy) -> Self {
+    fn new(
+        window: Window,
+        boundary: Bounds,
+        tu: TimeUnit,
+        tz: &Option<TimeZone>,
+        start_by: StartBy,
+    ) -> Self {
         let bi = match start_by {
             StartBy::DataPoint => {
                 let mut boundary = boundary;
@@ -218,15 +226,18 @@ impl BoundsIter {
                     // find beginning of the week.
                     let mut boundary = boundary;
                     let dt = from(boundary.start);
-                    let _tz = chrono_tz::UTC;
-                    let dt = dt.and_local_timezone(_tz).unwrap();
+                    let tz = match tz {
+                        Some(tz) => tz.parse::<Tz>().unwrap(),
+                        None => chrono_tz::UTC,
+                    };
+                    let dt = dt.and_local_timezone(tz).unwrap();
                     let dt = dt.beginning_of_week();
                     let dt = dt.naive_utc();
                     let start = to(dt);
                     // apply the 'offset'
-                    let start = offset(&window.offset, start, tz);
+                    let start = offset(&window.offset, start, &Some(tz.to_string()));
                     // and compute the end of the window defined by the 'period'
-                    let stop = offset(&window.period, start, tz);
+                    let stop = offset(&window.period, start, &Some(tz.to_string()));
                     boundary.start = start;
                     boundary.stop = stop;
                     boundary
