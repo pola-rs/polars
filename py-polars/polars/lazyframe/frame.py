@@ -4100,7 +4100,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     )
     def unique(
         self,
-        maintain_order: bool = True,
+        maintain_order: bool = False,
         subset: str | Sequence[str] | None = None,
         keep: UniqueKeepStrategy = "any",
     ) -> Self:
