@@ -24,8 +24,6 @@ from polars.internals.io import (
     _is_local_file,
     _prepare_file_arg,
     _update_columns,
-    read_ipc_schema,
-    read_parquet_schema,
 )
 from polars.internals.lazy_functions import (
     all,

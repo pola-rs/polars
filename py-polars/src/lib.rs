@@ -420,7 +420,7 @@ fn concat_series(series: &PyAny) -> PyResult<PySeries> {
 
 #[cfg(feature = "ipc")]
 #[pyfunction]
-fn ipc_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
+fn read_ipc_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
     use polars_core::export::arrow::io::ipc::read::read_file_metadata;
     let metadata = match get_either_file(py_f, false)? {
         EitherRustPythonFile::Rust(mut r) => {
@@ -439,7 +439,7 @@ fn ipc_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
 
 #[cfg(feature = "parquet")]
 #[pyfunction]
-fn parquet_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
+fn read_parquet_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
     use polars_core::export::arrow::io::parquet::read::{infer_schema, read_metadata};
 
     let metadata = match get_either_file(py_f, false)? {
