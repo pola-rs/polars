@@ -21,8 +21,15 @@ use super::calendar::{
     NS_SECOND, NS_WEEK,
 };
 
+#[cfg(feature = "timezones")]
 fn localize_timestamp(t: i64, ndt: NaiveDateTime, tz: &TimeZone) -> i64 {
-    let dt = parse_offset(tz).unwrap().from_local_datetime(&ndt).unwrap().with_timezone(&Utc);
+    let dt = match parse_offset(tz) {
+        Ok(tz) => tz.from_local_datetime(&ndt).unwrap().with_timezone(&Utc),
+        Err(_) => match tz.parse::<Tz>() {
+            Ok(tz) => tz.from_local_datetime(&ndt).unwrap().with_timezone(&Utc),
+            _ => unreachable!(),
+        }
+    };
     dt.timestamp_nanos()
 }
 
@@ -367,7 +374,7 @@ impl Duration {
                 let dt = new_datetime(year, month, 1, 0, 0, 0, 0);
                 match tz {
                     #[cfg(feature = "timezones")]
-                    Some(tz) => localize_timestamp(datetime_to_timestamp(dt), timestamp_to_datetime(datetime_to_timestamp(dt)), tz),
+                    Some(tz) => nsecs_to_unit(localize_timestamp(datetime_to_timestamp(dt), timestamp_to_datetime(datetime_to_timestamp(dt)), tz)),
                     _ => datetime_to_timestamp(dt)
                 }
             }

@@ -97,7 +97,6 @@ pub fn groupby_windows(
     let mut start_offset = 0;
 
     for bi in window.get_overlapping_bounds_iter(boundary, tu, tz, start_by) {
-        println!("bi: {:?}", bi);
         let mut skip_window = false;
         // find starting point of window
         while start_offset < time.len() {
