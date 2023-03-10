@@ -54,7 +54,10 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.exceptions import ShapeError
+from polars.exceptions import (
+    ColumnNotFoundError,
+    ShapeError,
+)
 from polars.internals.construction import (
     arrow_to_pyseries,
     iterable_to_pyseries,
@@ -530,8 +533,12 @@ class Series:
 
     def _arithmetic(self, other: Any, op_s: str, op_ffi: str) -> Series:
         if isinstance(other, pli.Expr):
-            # expand pl.lit, pl.datetime, pl.duration Exprs to compatible Series
-            other = self.to_frame().select(other).to_series()
+            try:
+                # expand pl.lit, pl.datetime, pl.duration Exprs to compatible Series
+                other = self.to_frame().select(other).to_series()
+            except ColumnNotFoundError:
+                # Expr is pl.col, let Expr.__radd__ handle this
+                return NotImplemented
         if isinstance(other, Series):
             return wrap_s(getattr(self._s, op_s)(other._s))
         if _check_for_numpy(other) and isinstance(other, np.ndarray):
