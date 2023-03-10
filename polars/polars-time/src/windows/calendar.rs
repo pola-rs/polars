@@ -58,27 +58,27 @@ pub fn date_range(
         ClosedWindow::Both => {
             while t <= stop {
                 ts.push(t);
-                t = f(&every, t)
+                t = f(&every, t, &None)
             }
         }
         ClosedWindow::Left => {
             while t < stop {
                 ts.push(t);
-                t = f(&every, t)
+                t = f(&every, t, &None)
             }
         }
         ClosedWindow::Right => {
-            t = f(&every, t);
+            t = f(&every, t, &None);
             while t <= stop {
                 ts.push(t);
-                t = f(&every, t)
+                t = f(&every, t, &None)
             }
         }
         ClosedWindow::None => {
-            t = f(&every, t);
+            t = f(&every, t, &None);
             while t < stop {
                 ts.push(t);
-                t = f(&every, t)
+                t = f(&every, t, &None)
             }
         }
     }

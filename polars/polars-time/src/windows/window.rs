@@ -31,7 +31,7 @@ impl Window {
     /// Truncate the given ns timestamp by the window boundary.
     pub fn truncate_ns(&self, t: i64, tz: &Option<TimeZone>) -> i64 {
         let t = self.every.truncate_ns(t, tz);
-        self.offset.add_ns(t)
+        self.offset.add_ns(t, tz)
     }
 
     pub fn truncate_no_offset_ns(&self, t: i64) -> i64 {
@@ -41,7 +41,7 @@ impl Window {
     /// Truncate the given ns timestamp by the window boundary.
     pub fn truncate_us(&self, t: i64, tz: &Option<TimeZone>) -> i64 {
         let t = self.every.truncate_us(t, tz);
-        self.offset.add_us(t)
+        self.offset.add_us(t, tz)
     }
 
     pub fn truncate_no_offset_us(&self, t: i64) -> i64 {
@@ -50,7 +50,7 @@ impl Window {
 
     pub fn truncate_ms(&self, t: i64, tz: &Option<TimeZone>) -> i64 {
         let t = self.every.truncate_ms(t, tz);
-        self.offset.add_ms(t)
+        self.offset.add_ms(t, tz)
     }
 
     #[inline]
@@ -95,13 +95,13 @@ impl Window {
         let start = if !self.every.months_only()
             && self.every.duration_ns() > NANOSECONDS * SECONDS_IN_DAY
         {
-            self.offset.add_ns(t)
+            self.offset.add_ns(t, tz)
         } else {
             // offset is translated in the truncate
             self.truncate_ns(t, tz)
         };
 
-        let stop = self.period.add_ns(start);
+        let stop = self.period.add_ns(start, tz);
 
         Bounds::new_checked(start, stop)
     }
@@ -110,26 +110,29 @@ impl Window {
         let start = if !self.every.months_only()
             && self.every.duration_us() > MICROSECONDS * SECONDS_IN_DAY
         {
-            println!("add us");
-            self.offset.add_us(t)
+            self.offset.add_us(t, tz)
         } else {
-            println!("truncate us");
             self.truncate_us(t, tz)
         };
-        let stop = self.period.add_us(start);
+        let stop = self.period.add_us(start, tz);
+        // maybe the unlocalize should happen here, with start and stop?
         Bounds::new_checked(start, stop)
+        // match tz {
+        //     Some(_) => Bounds::new_checked(1575154800000000, 1577833200000000),
+        //     None => Bounds::new_checked(start, stop),
+        // }
     }
 
     pub fn get_earliest_bounds_ms(&self, t: i64, tz: &Option<TimeZone>) -> Bounds {
         let start = if !self.every.months_only()
             && self.every.duration_ms() > MILLISECONDS * SECONDS_IN_DAY
         {
-            self.offset.add_ms(t)
+            self.offset.add_ms(t, tz)
         } else {
             self.truncate_ms(t, tz)
         };
 
-        let stop = self.period.add_ms(start);
+        let stop = self.period.add_ms(start, tz);
 
         Bounds::new_checked(start, stop)
     }
@@ -167,6 +170,7 @@ pub struct BoundsIter {
     // boundary per window iterator
     bi: Bounds,
     tu: TimeUnit,
+    tz: Option<TimeZone>,
 }
 impl BoundsIter {
     fn new(window: Window, boundary: Bounds, tu: TimeUnit, tz: &Option<TimeZone>, start_by: StartBy) -> Self {
@@ -178,7 +182,7 @@ impl BoundsIter {
                     TimeUnit::Microseconds => Duration::add_us,
                     TimeUnit::Milliseconds => Duration::add_ms,
                 };
-                boundary.stop = offset_fn(&window.period, boundary.start);
+                boundary.stop = offset_fn(&window.period, boundary.start, tz);
                 boundary
             }
             StartBy::WindowBound => match tu {
@@ -193,7 +197,7 @@ impl BoundsIter {
                     let (from, to, offset): (
                         fn(i64) -> NaiveDateTime,
                         fn(NaiveDateTime) -> i64,
-                        fn(&Duration, i64) -> i64,
+                        fn(&Duration, i64, &Option<TimeZone>) -> i64,
                     ) = match tu {
                         TimeUnit::Nanoseconds => (
                             timestamp_ns_to_datetime,
@@ -214,15 +218,15 @@ impl BoundsIter {
                     // find beginning of the week.
                     let mut boundary = boundary;
                     let dt = from(boundary.start);
-                    let tz = chrono_tz::UTC;
-                    let dt = dt.and_local_timezone(tz).unwrap();
+                    let _tz = chrono_tz::UTC;
+                    let dt = dt.and_local_timezone(_tz).unwrap();
                     let dt = dt.beginning_of_week();
                     let dt = dt.naive_utc();
                     let start = to(dt);
                     // apply the 'offset'
-                    let start = offset(&window.offset, start);
+                    let start = offset(&window.offset, start, tz);
                     // and compute the end of the window defined by the 'period'
-                    let stop = offset(&window.period, start);
+                    let stop = offset(&window.period, start, tz);
                     boundary.start = start;
                     boundary.stop = stop;
                     boundary
@@ -238,6 +242,7 @@ impl BoundsIter {
             boundary,
             bi,
             tu,
+            tz: tz.clone(),
         }
     }
 }
@@ -250,16 +255,16 @@ impl Iterator for BoundsIter {
             let out = self.bi;
             match self.tu {
                 TimeUnit::Nanoseconds => {
-                    self.bi.start = self.window.every.add_ns(self.bi.start);
-                    self.bi.stop = self.window.every.add_ns(self.bi.stop);
+                    self.bi.start = self.window.every.add_ns(self.bi.start, &self.tz);
+                    self.bi.stop = self.window.every.add_ns(self.bi.stop, &self.tz);
                 }
                 TimeUnit::Microseconds => {
-                    self.bi.start = self.window.every.add_us(self.bi.start);
-                    self.bi.stop = self.window.every.add_us(self.bi.stop);
+                    self.bi.start = self.window.every.add_us(self.bi.start, &self.tz);
+                    self.bi.stop = self.window.every.add_us(self.bi.stop, &self.tz);
                 }
                 TimeUnit::Milliseconds => {
-                    self.bi.start = self.window.every.add_ms(self.bi.start);
-                    self.bi.stop = self.window.every.add_ms(self.bi.stop);
+                    self.bi.start = self.window.every.add_ms(self.bi.start, &self.tz);
+                    self.bi.stop = self.window.every.add_ms(self.bi.stop, &self.tz);
                 }
             }
             Some(out)
