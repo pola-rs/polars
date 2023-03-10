@@ -29,9 +29,9 @@ if TYPE_CHECKING:
 
 
 @deprecate_nonkeyword_arguments()
-@deprecated_alias(parse_dates="try_parse_dates")
+@deprecated_alias(file="source", parse_dates="try_parse_dates")
 def read_csv(
-    file: str | TextIO | BytesIO | Path | BinaryIO | bytes,
+    source: str | TextIO | BytesIO | Path | BinaryIO | bytes,
     has_header: bool = True,
     columns: Sequence[int] | Sequence[str] | None = None,
     new_columns: list[str] | None = None,
@@ -71,7 +71,7 @@ def read_csv(
 
     Parameters
     ----------
-    file
+    source
         Path to a file or a file-like object.
         By file-like object, we refer to objects with a ``read()``
         method, such as a file handler (e.g. via builtin ``open``
@@ -191,7 +191,7 @@ def read_csv(
 
     projection, columns = handle_projection_columns(columns)
 
-    if isinstance(file, bytes) and len(file) == 0:
+    if isinstance(source, bytes) and len(source) == 0:
         raise ValueError("Empty bytes data provided.")
 
     storage_options = storage_options or {}
@@ -228,7 +228,7 @@ def read_csv(
             include_columns = [f"f{column_idx}" for column_idx in projection]
 
         with _prepare_file_arg(
-            file, encoding=None, use_pyarrow=True, **storage_options
+            source, encoding=None, use_pyarrow=True, **storage_options
         ) as data:
             import pyarrow as pa
             import pyarrow.csv
@@ -356,10 +356,10 @@ def read_csv(
             }
 
     with _prepare_file_arg(
-        file, encoding=encoding, use_pyarrow=False, **storage_options
+        source, encoding=encoding, use_pyarrow=False, **storage_options
     ) as data:
         df = DataFrame._read_csv(
-            file=data,
+            data,
             has_header=has_header,
             columns=columns if columns else projection,
             sep=sep,
@@ -391,8 +391,9 @@ def read_csv(
 
 
 @deprecate_nonkeyword_arguments()
+@deprecated_alias(file="source")
 def read_csv_batched(
-    file: str | Path,
+    source: str | Path,
     has_header: bool = True,
     columns: Sequence[int] | Sequence[str] | None = None,
     new_columns: list[str] | None = None,
@@ -421,45 +422,13 @@ def read_csv_batched(
     """
     Read a CSV file in batches.
 
-    Upon creation of the ``BatchedCsvReader``,
-    polars will gather statistics and determine the
-    file chunks. After that work will only be done
-    if ``next_batches`` is called.
-
-    Examples
-    --------
-    >>> reader = pl.read_csv_batched(
-    ...     "./tpch/tables_scale_100/lineitem.tbl", sep="|", try_parse_dates=True
-    ... )  # doctest: +SKIP
-    >>> batches = reader.next_batches(5)  # doctest: +SKIP
-    >>> for df in batches:  # doctest: +SKIP
-    ...     print(df)
-    ...
-
-    Read big CSV file in batches and write a CSV file for each "group" of interest.
-
-    >>> seen_groups = set()
-    >>> reader = pl.read_csv_batched("big_file.csv")  # doctest: +SKIP
-    >>> batches = reader.next_batches(100)  # doctest: +SKIP
-
-    >>> while batches:  # doctest: +SKIP
-    ...     df_current_batches = pl.concat(batches)
-    ...     partition_dfs = df_current_batches.partition_by("group", as_dict=True)
-    ...
-    ...     for group, df in partition_dfs.items():
-    ...         if group in seen_groups:
-    ...             with open(f"./data/{group}.csv", "a") as fh:
-    ...                 fh.write(df.write_csv(file=None, has_header=False))
-    ...         else:
-    ...             df.write_csv(file=f"./data/{group}.csv", has_header=True)
-    ...         seen_groups.add(group)
-    ...
-    ...     batches = reader.next_batches(100)
-    ...
+    Upon creation of the ``BatchedCsvReader``, Polars will gather statistics and
+    determine the file chunks. After that, work will only be done if ``next_batches``
+    is called.
 
     Parameters
     ----------
-    file
+    source
         Path to a file or a file-like object.
         By file-like object, we refer to objects with a ``read()``
         method, such as a file handler (e.g. via builtin ``open``
@@ -554,10 +523,41 @@ def read_csv_batched(
     --------
     scan_csv : Lazily read from a CSV file or multiple files via glob patterns.
 
+    Examples
+    --------
+    >>> reader = pl.read_csv_batched(
+    ...     "./tpch/tables_scale_100/lineitem.tbl", sep="|", try_parse_dates=True
+    ... )  # doctest: +SKIP
+    >>> batches = reader.next_batches(5)  # doctest: +SKIP
+    >>> for df in batches:  # doctest: +SKIP
+    ...     print(df)
+    ...
+
+    Read big CSV file in batches and write a CSV file for each "group" of interest.
+
+    >>> seen_groups = set()
+    >>> reader = pl.read_csv_batched("big_file.csv")  # doctest: +SKIP
+    >>> batches = reader.next_batches(100)  # doctest: +SKIP
+
+    >>> while batches:  # doctest: +SKIP
+    ...     df_current_batches = pl.concat(batches)
+    ...     partition_dfs = df_current_batches.partition_by("group", as_dict=True)
+    ...
+    ...     for group, df in partition_dfs.items():
+    ...         if group in seen_groups:
+    ...             with open(f"./data/{group}.csv", "a") as fh:
+    ...                 fh.write(df.write_csv(file=None, has_header=False))
+    ...         else:
+    ...             df.write_csv(file=f"./data/{group}.csv", has_header=True)
+    ...         seen_groups.add(group)
+    ...
+    ...     batches = reader.next_batches(100)
+    ...
+
     """
     projection, columns = handle_projection_columns(columns)
 
-    if isinstance(file, bytes) and len(file) == 0:
+    if isinstance(source, bytes) and len(source) == 0:
         raise ValueError("Empty bytes data provided.")
 
     if columns and not has_header:
@@ -660,7 +660,7 @@ def read_csv_batched(
             }
 
     return BatchedCsvReader(
-        file=file,
+        source,
         has_header=has_header,
         columns=columns if columns else projection,
         sep=sep,
@@ -689,9 +689,9 @@ def read_csv_batched(
 
 
 @deprecate_nonkeyword_arguments()
-@deprecated_alias(parse_dates="try_parse_dates")
+@deprecated_alias(file="source", parse_dates="try_parse_dates")
 def scan_csv(
-    file: str | Path,
+    source: str | Path,
     has_header: bool = True,
     sep: str = ",",
     comment_char: str | None = None,
@@ -723,7 +723,7 @@ def scan_csv(
 
     Parameters
     ----------
-    file
+    source
         Path to a file.
     has_header
         Indicate if the first row of dataset is a header or not.
@@ -840,11 +840,11 @@ def scan_csv(
     _check_arg_is_1byte("comment_char", comment_char, False)
     _check_arg_is_1byte("quote_char", quote_char, True)
 
-    if isinstance(file, (str, Path)):
-        file = normalise_filepath(file)
+    if isinstance(source, (str, Path)):
+        source = normalise_filepath(source)
 
     return LazyFrame._scan_csv(
-        file=file,
+        source,
         has_header=has_header,
         sep=sep,
         comment_char=comment_char,
