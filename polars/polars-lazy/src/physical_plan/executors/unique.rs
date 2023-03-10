@@ -1,16 +1,16 @@
 use super::*;
 
-pub(crate) struct DropDuplicatesExec {
+pub(crate) struct UniqueExec {
     pub(crate) input: Box<dyn Executor>,
     pub(crate) options: DistinctOptions,
 }
 
-impl Executor for DropDuplicatesExec {
+impl Executor for UniqueExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
-                println!("run DropDuplicatesExec")
+                println!("run UniqueExec")
             }
         }
         let df = self.input.execute(state)?;
@@ -19,8 +19,8 @@ impl Executor for DropDuplicatesExec {
 
         state.record(
             || match self.options.maintain_order {
-                true => df.unique_stable(subset, keep),
-                false => df.unique(subset, keep),
+                true => df.unique_stable(subset, keep, self.options.slice),
+                false => df.unique(subset, keep, self.options.slice),
             },
             Cow::Borrowed("unique()"),
         )

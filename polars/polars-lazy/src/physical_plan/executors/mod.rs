@@ -1,5 +1,4 @@
 mod cache;
-mod drop_duplicates;
 mod executor;
 mod ext_context;
 mod filter;
@@ -17,6 +16,7 @@ mod sort;
 mod stack;
 mod udf;
 mod union;
+mod unique;
 
 use std::borrow::Cow;
 
@@ -27,7 +27,6 @@ use polars_plan::utils::*;
 use rayon::prelude::*;
 
 pub(super) use self::cache::*;
-pub(super) use self::drop_duplicates::*;
 pub(super) use self::ext_context::*;
 pub(super) use self::filter::*;
 pub(super) use self::groupby::*;
@@ -46,6 +45,7 @@ pub(super) use self::sort::*;
 pub(super) use self::stack::*;
 pub(super) use self::udf::*;
 pub(super) use self::union::*;
+pub(super) use self::unique::*;
 use super::*;
 
 fn execute_projection_cached_window_fns(

@@ -276,7 +276,10 @@ where
                 schema,
                 apply: None,
                 maintain_order: false,
-                options: Default::default(),
+                options: GroupbyOptions {
+                    slice: options.slice,
+                    ..Default::default()
+                },
             };
             let node = lp_arena.add(lp);
             let groupby_sink = get_sink(node, lp_arena, expr_arena, to_physical)?;

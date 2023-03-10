@@ -342,7 +342,7 @@ pub fn create_physical_plan(
         }
         Distinct { input, options } => {
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
-            Ok(Box::new(executors::DropDuplicatesExec { input, options }))
+            Ok(Box::new(executors::UniqueExec { input, options }))
         }
         Aggregate {
             input,

@@ -987,6 +987,7 @@ impl LazyFrame {
             subset: subset.map(Arc::new),
             maintain_order: true,
             keep_strategy,
+            ..Default::default()
         };
         let lp = self.get_plan_builder().distinct(options).build();
         Self::from_logical_plan(lp, opt_state)
@@ -1003,6 +1004,7 @@ impl LazyFrame {
             subset: subset.map(Arc::new),
             maintain_order: false,
             keep_strategy,
+            ..Default::default()
         };
         let lp = self.get_plan_builder().distinct(options).build();
         Self::from_logical_plan(lp, opt_state)
