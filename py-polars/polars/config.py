@@ -16,10 +16,18 @@ def _get_float_fmt() -> str:  # pragma: no cover
     return "n/a"
 
 
+def _get_float_precision() -> str:
+    return "n/a"
+
+
 # note: module not available when building docs
 with contextlib.suppress(ImportError):
     from polars.polars import get_float_fmt as _get_float_fmt  # type: ignore[no-redef]
+    from polars.polars import (  # type: ignore[no-redef]
+        get_float_precision as _get_float_precision,
+    )
     from polars.polars import set_float_fmt as _set_float_fmt
+    from polars.polars import set_float_precision as _set_float_precision
 
 
 if sys.version_info >= (3, 10):
@@ -60,7 +68,9 @@ _POLARS_CFG_ENV_VARS = {
     "POLARS_FMT_MAX_COLS",
     "POLARS_FMT_MAX_ROWS",
     "POLARS_FMT_STR_LEN",
+    "POLARS_FMT_NUM_LEN",
     "POLARS_FMT_TABLE_CELL_ALIGNMENT",
+    "POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT",
     "POLARS_FMT_TABLE_DATAFRAME_SHAPE_BELOW",
     "POLARS_FMT_TABLE_FORMATTING",
     "POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES",
@@ -76,7 +86,10 @@ _POLARS_CFG_ENV_VARS = {
 
 # vars that set the rust env directly should declare themselves here as the Config
 # method name paired with a callable that returns the current state of that value:
-_POLARS_CFG_DIRECT_VARS = {"set_fmt_float": _get_float_fmt}
+_POLARS_CFG_DIRECT_VARS = {
+    "set_fmt_float": _get_float_fmt,
+    "set_float_precision": _get_float_precision,
+}
 
 
 class Config(contextlib.ContextDecorator):
@@ -252,6 +265,7 @@ class Config(contextlib.ContextDecorator):
 
         # apply any 'direct' setting values
         cls.set_fmt_float()
+        cls.set_float_precision()
         return cls
 
     @classmethod
@@ -428,6 +442,26 @@ class Config(contextlib.ContextDecorator):
         return cls
 
     @classmethod
+    def set_float_precision(cls, precision: int | None = None) -> type[Config]:
+        """
+        Control how floating point values are displayed.
+
+        Parameters
+        ----------
+        precision : int
+            Number of decimal places to display
+
+        """
+        if precision is None:
+            precision = 255
+        elif precision > 16 and precision != 255:
+            raise ValueError(
+                f"precision must be None, or a number between 0-16; got {precision}"
+            )
+        _set_float_precision(precision)
+        return cls
+
+    @classmethod
     def set_fmt_float(cls, fmt: FloatFmt | None = "mixed") -> type[Config]:
         """
         Control how floating point values are displayed.
@@ -596,6 +630,46 @@ class Config(contextlib.ContextDecorator):
             raise ValueError(f"invalid alignment: {format!r}")
         else:
             os.environ["POLARS_FMT_TABLE_CELL_ALIGNMENT"] = format
+        return cls
+
+    @classmethod
+    def set_tbl_cell_numeric_alignment(
+        cls, format: Literal["LEFT", "CENTER", "RIGHT"]
+    ) -> type[Config]:
+        """
+        Set table cell alignment for numeric columns.
+
+        Parameters
+        ----------
+        format : str
+            * "LEFT": left aligned
+            * "CENTER": center aligned
+            * "RIGHT": right aligned
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"column_abc": [11, 2, 333], "column_xyz": [True, False, True]}
+        ... )
+        >>> pl.Config.set_tbl_cell_numeric_alignment("RIGHT")  # doctest: +SKIP
+        # ...
+        # shape: (3, 2)
+        # ┌────────────┬────────────┐
+        # │ column_abc ┆ column_xyz │
+        # │        --- ┆        --- │
+        # │        i64 ┆       bool │
+        # ╞════════════╪════════════╡
+        # │         11 ┆ true       │
+        # │          2 ┆ false      │
+        # │        333 ┆ true       │
+        # └────────────┴────────────┘
+
+        Raises
+        ------
+        KeyError: if alignment string not recognised.
+
+        """
+        os.environ["POLARS_FMT_TABLE_CELL_NUMERIC_ALIGNMENT"] = format
         return cls
 
     @classmethod

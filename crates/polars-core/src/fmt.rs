@@ -33,6 +33,7 @@ pub enum FloatFmt {
     Full,
 }
 static FLOAT_FMT: AtomicU8 = AtomicU8::new(FloatFmt::Mixed as u8);
+static FLOAT_PRECISION: AtomicU8 = AtomicU8::new(u8::MAX);
 
 pub fn get_float_fmt() -> FloatFmt {
     match FLOAT_FMT.load(Ordering::Relaxed) {
@@ -42,8 +43,16 @@ pub fn get_float_fmt() -> FloatFmt {
     }
 }
 
+pub fn get_float_precision() -> u8 {
+    FLOAT_PRECISION.load(Ordering::Relaxed)
+}
+
 pub fn set_float_fmt(fmt: FloatFmt) {
     FLOAT_FMT.store(fmt as u8, Ordering::Relaxed)
+}
+
+pub fn set_float_precision(precision: u8) {
+    FLOAT_PRECISION.store(precision, Ordering::Relaxed)
 }
 
 macro_rules! format_array {
@@ -655,19 +664,24 @@ impl Display for DataFrame {
             }
 
             // set alignment of cells, if defined
-            if std::env::var(FMT_TABLE_CELL_ALIGNMENT).is_ok() {
-                // for (column_index, column) in table.column_iter_mut().enumerate() {
+            if std::env::var(FMT_TABLE_CELL_ALIGNMENT).is_ok()
+                | std::env::var(FMT_TABLE_CELL_NUMERIC_ALIGNMENT).is_ok()
+            {
                 let str_preset = std::env::var(FMT_TABLE_CELL_ALIGNMENT)
                     .unwrap_or_else(|_| "DEFAULT".to_string());
-                for column in table.column_iter_mut() {
-                    if str_preset == "RIGHT" {
-                        column.set_cell_alignment(CellAlignment::Right);
-                    } else if str_preset == "LEFT" {
-                        column.set_cell_alignment(CellAlignment::Left);
-                    } else if str_preset == "CENTER" {
-                        column.set_cell_alignment(CellAlignment::Center);
-                    } else {
-                        column.set_cell_alignment(CellAlignment::Left);
+                let num_preset = std::env::var(FMT_TABLE_CELL_NUMERIC_ALIGNMENT)
+                    .unwrap_or_else(|_| str_preset.to_string());
+                for (column_index, column) in table.column_iter_mut().enumerate() {
+                    let dtype = fields[column_index].data_type();
+                    let mut preset = str_preset.as_str();
+                    if dtype.to_physical().is_numeric() {
+                        preset = num_preset.as_str();
+                    }
+                    match preset {
+                        "RIGHT" => column.set_cell_alignment(CellAlignment::Right),
+                        "LEFT" => column.set_cell_alignment(CellAlignment::Left),
+                        "CENTER" => column.set_cell_alignment(CellAlignment::Center),
+                        _ => {},
                     }
                 }
             }
@@ -709,6 +723,15 @@ const SCIENTIFIC_BOUND: f64 = 999999.0;
 
 fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt::Result {
     let v: f64 = NumCast::from(v).unwrap();
+
+    let precision = get_float_precision();
+    if precision != u8::MAX {
+        if format!("{v:.precision$}", precision = precision as usize).len() > 19 {
+            return write!(f, "{v:>width$.precision$e}", precision = precision as usize);
+        }
+        return write!(f, "{v:>width$.precision$}", precision = precision as usize);
+    }
+
     if matches!(get_float_fmt(), FloatFmt::Full) {
         return write!(f, "{v:>width$}");
     }

@@ -7,7 +7,9 @@ from typing import Any, Iterator
 import pytest
 
 import polars as pl
-from polars.config import _POLARS_CFG_ENV_VARS, _get_float_fmt
+from polars.config import _POLARS_CFG_ENV_VARS, _get_float_fmt, _get_float_precision
+from polars.exceptions import StringCacheMismatchError
+from polars.testing import assert_frame_equal
 
 
 @pytest.fixture(autouse=True)
@@ -509,6 +511,128 @@ def test_shape_format_for_big_numbers() -> None:
     )
 
 
+def test_numeric_right_alignment() -> None:
+    pl.Config.set_tbl_cell_numeric_alignment("RIGHT")
+
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
+    assert (
+        str(df) == "shape: (3, 3)\n"
+        "┌─────┬─────┬─────┐\n"
+        "│   a ┆   b ┆   c │\n"
+        "│ --- ┆ --- ┆ --- │\n"
+        "│ i64 ┆ i64 ┆ i64 │\n"
+        "╞═════╪═════╪═════╡\n"
+        "│   1 ┆   4 ┆   7 │\n"
+        "│   2 ┆   5 ┆   8 │\n"
+        "│   3 ┆   6 ┆   9 │\n"
+        "└─────┴─────┴─────┘"
+    )
+
+    df = pl.DataFrame(
+        {"a": [1.1, 2.22, 3.333], "b": [4.0, 5.0, 6.0], "c": [7.0, 8.0, 9.0]}
+    )
+    with pl.Config():
+        pl.Config.set_fmt_float("full")
+        assert (
+            str(df) == "shape: (3, 3)\n"
+            "┌───────┬─────┬─────┐\n"
+            "│     a ┆   b ┆   c │\n"
+            "│   --- ┆ --- ┆ --- │\n"
+            "│   f64 ┆ f64 ┆ f64 │\n"
+            "╞═══════╪═════╪═════╡\n"
+            "│   1.1 ┆   4 ┆   7 │\n"
+            "│  2.22 ┆   5 ┆   8 │\n"
+            "│ 3.333 ┆   6 ┆   9 │\n"
+            "└───────┴─────┴─────┘"
+        )
+
+    with pl.Config():
+        pl.Config.set_fmt_float("mixed")
+        assert (
+            str(df) == "shape: (3, 3)\n"
+            "┌───────┬─────┬─────┐\n"
+            "│     a ┆   b ┆   c │\n"
+            "│   --- ┆ --- ┆ --- │\n"
+            "│   f64 ┆ f64 ┆ f64 │\n"
+            "╞═══════╪═════╪═════╡\n"
+            "│   1.1 ┆ 4.0 ┆ 7.0 │\n"
+            "│  2.22 ┆ 5.0 ┆ 8.0 │\n"
+            "│ 3.333 ┆ 6.0 ┆ 9.0 │\n"
+            "└───────┴─────┴─────┘"
+        )
+
+    df = pl.DataFrame(
+        {"a": [1.1, 22.2, 3.33], "b": [444, 55.5, 6.6], "c": [77.7, 8888, 9.9999]}
+    )
+    with pl.Config():
+        pl.Config.set_fmt_float("full")
+        pl.Config.set_float_precision(1)
+        assert (
+            str(df) == "shape: (3, 3)\n"
+            "┌──────┬───────┬────────┐\n"
+            "│    a ┆     b ┆      c │\n"
+            "│  --- ┆   --- ┆    --- │\n"
+            "│  f64 ┆   f64 ┆    f64 │\n"
+            "╞══════╪═══════╪════════╡\n"
+            "│  1.1 ┆ 444.0 ┆   77.7 │\n"
+            "│ 22.2 ┆  55.5 ┆ 8888.0 │\n"
+            "│  3.3 ┆   6.6 ┆   10.0 │\n"
+            "└──────┴───────┴────────┘"
+        )
+
+    df = pl.DataFrame(
+        {
+            "a": [1100000000000000000.1, 22200000000000000.2, 33330000000000000.33333],
+            "b": [40000000000000000000.0, 5, 600000000000000000.0],
+            "c": [700000.0, 80000000000000000.0, 900],
+        }
+    )
+    with pl.Config():
+        pl.Config.set_float_precision(2)
+        assert (
+            str(df) == "shape: (3, 3)\n"
+            "┌─────────┬─────────┬───────────┐\n"
+            "│       a ┆       b ┆         c │\n"
+            "│     --- ┆     --- ┆       --- │\n"
+            "│     f64 ┆     f64 ┆       f64 │\n"
+            "╞═════════╪═════════╪═══════════╡\n"
+            "│ 1.10e18 ┆ 4.00e19 ┆ 700000.00 │\n"
+            "│ 2.22e16 ┆    5.00 ┆   8.00e16 │\n"
+            "│ 3.33e16 ┆ 6.00e17 ┆    900.00 │\n"
+            "└─────────┴─────────┴───────────┘"
+        )
+    # test nonsensical float precision raises an error
+    with pytest.raises(ValueError):
+        pl.Config.set_float_precision(50)
+
+
+def test_string_cache() -> None:
+    df1 = pl.DataFrame({"a": ["foo", "bar", "ham"], "b": [1, 2, 3]})
+    df2 = pl.DataFrame({"a": ["foo", "spam", "eggs"], "c": [3, 2, 2]})
+
+    # ensure cache is off when casting to categorical; the join will fail
+    pl.enable_string_cache(False)
+    assert pl.using_string_cache() is False
+
+    df1a = df1.with_columns(pl.col("a").cast(pl.Categorical))
+    df2a = df2.with_columns(pl.col("a").cast(pl.Categorical))
+    with pytest.raises(StringCacheMismatchError):
+        _ = df1a.join(df2a, on="a", how="inner")
+
+    # now turn on the cache
+    pl.enable_string_cache(True)
+    assert pl.using_string_cache() is True
+
+    df1b = df1.with_columns(pl.col("a").cast(pl.Categorical))
+    df2b = df2.with_columns(pl.col("a").cast(pl.Categorical))
+    out = df1b.join(df2b, on="a", how="inner")
+
+    expected = pl.DataFrame(
+        {"a": ["foo"], "b": [1], "c": [3]}, schema_overrides={"a": pl.Categorical}
+    )
+    assert_frame_equal(out, expected)
+
+
 @pytest.mark.write_disk()
 def test_config_load_save(tmp_path: Path) -> None:
     for file in (
@@ -520,6 +644,7 @@ def test_config_load_save(tmp_path: Path) -> None:
         pl.Config.set_tbl_cols(12)
         pl.Config.set_verbose(True)
         pl.Config.set_fmt_float("full")
+        pl.Config.set_float_precision(6)
         assert os.environ.get("POLARS_VERBOSE") == "1"
 
         if file is None:
@@ -533,6 +658,8 @@ def test_config_load_save(tmp_path: Path) -> None:
         # ...modify the same options...
         pl.Config.set_tbl_cols(10)
         pl.Config.set_verbose(False)
+        pl.Config.set_fmt_float("mixed")
+        pl.Config.set_float_precision("2")
         assert os.environ.get("POLARS_VERBOSE") == "0"
 
         # ...load back from config file/string...
@@ -555,6 +682,7 @@ def test_config_load_save(tmp_path: Path) -> None:
         assert os.environ.get("POLARS_FMT_MAX_COLS") == "12"
         assert os.environ.get("POLARS_VERBOSE") == "1"
         assert _get_float_fmt() == "full"
+        assert _get_float_precision() == 6
 
         # restore all default options (unsets from env)
         pl.Config.restore_defaults()
@@ -565,6 +693,7 @@ def test_config_load_save(tmp_path: Path) -> None:
         assert os.environ.get("POLARS_FMT_MAX_COLS") is None
         assert os.environ.get("POLARS_VERBOSE") is None
         assert _get_float_fmt() == "mixed"
+        assert _get_float_precision() == 255
 
     # ref: #11094
     with pl.Config(
