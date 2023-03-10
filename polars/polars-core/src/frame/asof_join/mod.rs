@@ -28,8 +28,10 @@ pub struct AsOfOptions {
 }
 
 fn check_asof_columns(a: &Series, b: &Series) -> PolarsResult<()> {
+    let dtype_a = a.dtype();
+    let dtype_b = b.dtype();
     polars_ensure!(
-        a.dtype() == b.dtype(),
+        dtype_a == dtype_b,
         ComputeError: "mismatching key dtypes in asof-join: `{}` and `{}`",
         a.dtype(), b.dtype()
     );
