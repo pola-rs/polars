@@ -511,7 +511,7 @@ impl DataFrame {
     /// # use polars_core::prelude::*;
     /// let df: DataFrame = df!("Name" => &["Adenine", "Cytosine", "Guanine", "Thymine"],
     ///                         "Symbol" => &["A", "C", "G", "T"])?;
-    /// let columns: &Vec<Series> = df.get_columns();
+    /// let columns: &[Series] = df.get_columns();
     ///
     /// assert_eq!(columns[0].name(), "Name");
     /// assert_eq!(columns[1].name(), "Symbol");
