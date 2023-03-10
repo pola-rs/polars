@@ -8030,11 +8030,10 @@ class DataFrame:
         └──────┴──────┴──────┘
 
         """
+        corr = np.corrcoef(self, **kwargs)
+        names = self.columns
         return self._from_pydf(
-            DataFrame(
-                np.corrcoef(self, **kwargs),
-                schema=self.columns,
-            )._df
+            DataFrame([pli.Series(names[i], corr[i, :]) for i in range(len(names))])._df
         )
 
     def merge_sorted(self, other: DataFrame, key: str) -> Self:
