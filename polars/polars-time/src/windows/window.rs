@@ -117,12 +117,7 @@ impl Window {
             self.truncate_us(t, tz)
         };
         let stop = self.period.add_us(start, tz);
-        // maybe the unlocalize should happen here, with start and stop?
         Bounds::new_checked(start, stop)
-        // match tz {
-        //     Some(_) => Bounds::new_checked(1575154800000000, 1577833200000000),
-        //     None => Bounds::new_checked(start, stop),
-        // }
     }
 
     pub fn get_earliest_bounds_ms(&self, t: i64, tz: &Option<TimeZone>) -> Bounds {
