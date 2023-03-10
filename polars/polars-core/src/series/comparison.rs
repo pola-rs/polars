@@ -17,8 +17,8 @@ use crate::series::arithmetic::coerce_lhs_rhs;
 macro_rules! impl_compare {
     ($self:expr, $rhs:expr, $method:ident) => {{
         let (lhs, rhs) = coerce_lhs_rhs($self, $rhs).expect("cannot coerce datatypes");
-        let lhs = lhs.as_ref();
-        let rhs = rhs.as_ref();
+        let lhs = lhs.to_physical_repr();
+        let rhs = rhs.to_physical_repr();
         match lhs.dtype() {
             DataType::Boolean => lhs.bool().unwrap().$method(rhs.bool().unwrap()),
             DataType::Utf8 => lhs.utf8().unwrap().$method(rhs.utf8().unwrap()),
@@ -33,15 +33,6 @@ macro_rules! impl_compare {
             DataType::Int64 => lhs.i64().unwrap().$method(rhs.i64().unwrap()),
             DataType::Float32 => lhs.f32().unwrap().$method(rhs.f32().unwrap()),
             DataType::Float64 => lhs.f64().unwrap().$method(rhs.f64().unwrap()),
-            #[cfg(feature = "dtype-date")]
-            DataType::Date => lhs.date().unwrap().$method(rhs.date().unwrap().deref()),
-            #[cfg(feature = "dtype-time")]
-            DataType::Time => lhs.time().unwrap().$method(rhs.time().unwrap().deref()),
-            #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(_, _) => lhs
-                .datetime()
-                .unwrap()
-                .$method(rhs.datetime().unwrap().deref()),
             #[cfg(feature = "dtype-duration")]
             DataType::Duration(_) => lhs
                 .duration()

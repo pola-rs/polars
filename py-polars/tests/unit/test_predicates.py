@@ -1,6 +1,8 @@
 import typing
 from datetime import date, datetime, timedelta
 
+import numpy as np
+
 import polars as pl
 
 
@@ -127,3 +129,12 @@ def test_predicate_arr_first_6573() -> None:
         .filter(pl.col("a") == pl.col("b"))
         .collect()
     ).to_dict(False) == {"a": [1], "b": [1]}
+
+
+def test_fast_path_comparisons() -> None:
+    s = pl.Series(np.sort(np.random.randint(0, 50, 100)))
+
+    assert (s > 25).series_equal(s.set_sorted() > 25)
+    assert (s >= 25).series_equal(s.set_sorted() >= 25)
+    assert (s < 25).series_equal(s.set_sorted() < 25)
+    assert (s <= 25).series_equal(s.set_sorted() <= 25)

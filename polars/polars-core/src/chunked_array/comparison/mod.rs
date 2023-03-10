@@ -1,13 +1,18 @@
+mod scalar;
+
 use std::ops::Not;
 
 use arrow::array::{BooleanArray, PrimitiveArray, Utf8Array};
+use arrow::bitmap::MutableBitmap;
 use arrow::compute;
 use arrow::compute::comparison;
 use arrow::scalar::{BinaryScalar, PrimitiveScalar, Scalar, Utf8Scalar};
 use num_traits::{NumCast, ToPrimitive};
+use polars_arrow::kernels::rolling::compare_fn_nan_max;
 use polars_arrow::prelude::FromData;
 
 use crate::prelude::*;
+use crate::series::IsSorted;
 use crate::utils::{align_chunks_binary, NoNull};
 
 impl<T> ChunkedArray<T>
@@ -761,64 +766,6 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
     }
 }
 
-impl<T> ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-    fn primitive_compare_scalar<Rhs: ToPrimitive>(
-        &self,
-        rhs: Rhs,
-        f: impl Fn(&PrimitiveArray<T::Native>, &dyn Scalar) -> BooleanArray,
-    ) -> BooleanChunked {
-        let rhs: T::Native =
-            NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
-        let scalar = PrimitiveScalar::new(T::get_dtype().to_arrow(), Some(rhs));
-        self.apply_kernel_cast(&|arr| Box::new(f(arr, &scalar)))
-    }
-}
-
-impl<T, Rhs> ChunkCompare<Rhs> for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    Rhs: ToPrimitive,
-{
-    type Item = BooleanChunked;
-    fn equal(&self, rhs: Rhs) -> BooleanChunked {
-        self.primitive_compare_scalar(rhs, |l, rhs| comparison::eq_scalar_and_validity(l, rhs))
-    }
-
-    fn not_equal(&self, rhs: Rhs) -> BooleanChunked {
-        self.primitive_compare_scalar(rhs, |l, rhs| comparison::neq_scalar_and_validity(l, rhs))
-    }
-
-    fn gt(&self, rhs: Rhs) -> BooleanChunked {
-        self.primitive_compare_scalar(rhs, |l, rhs| comparison::gt_scalar(l, rhs))
-    }
-
-    fn gt_eq(&self, rhs: Rhs) -> BooleanChunked {
-        self.primitive_compare_scalar(rhs, |l, rhs| comparison::gt_eq_scalar(l, rhs))
-    }
-
-    fn lt(&self, rhs: Rhs) -> BooleanChunked {
-        self.primitive_compare_scalar(rhs, |l, rhs| comparison::lt_scalar(l, rhs))
-    }
-
-    fn lt_eq(&self, rhs: Rhs) -> BooleanChunked {
-        self.primitive_compare_scalar(rhs, |l, rhs| comparison::lt_eq_scalar(l, rhs))
-    }
-}
-
-impl Utf8Chunked {
-    fn utf8_compare_scalar(
-        &self,
-        rhs: &str,
-        f: impl Fn(&Utf8Array<i64>, &dyn Scalar) -> BooleanArray,
-    ) -> BooleanChunked {
-        let scalar = Utf8Scalar::<i64>::new(Some(rhs));
-        self.apply_kernel_cast(&|arr| Box::new(f(arr, &scalar)))
-    }
-}
-
 impl ChunkCompare<&str> for Utf8Chunked {
     type Item = BooleanChunked;
     fn equal(&self, rhs: &str) -> BooleanChunked {
@@ -842,43 +789,6 @@ impl ChunkCompare<&str> for Utf8Chunked {
 
     fn lt_eq(&self, rhs: &str) -> BooleanChunked {
         self.utf8_compare_scalar(rhs, |l, rhs| comparison::lt_eq_scalar(l, rhs))
-    }
-}
-
-impl BinaryChunked {
-    fn binary_compare_scalar(
-        &self,
-        rhs: &[u8],
-        f: impl Fn(&BinaryArray<i64>, &dyn Scalar) -> BooleanArray,
-    ) -> BooleanChunked {
-        let scalar = BinaryScalar::<i64>::new(Some(rhs));
-        self.apply_kernel_cast(&|arr| Box::new(f(arr, &scalar)))
-    }
-}
-
-impl ChunkCompare<&[u8]> for BinaryChunked {
-    type Item = BooleanChunked;
-    fn equal(&self, rhs: &[u8]) -> BooleanChunked {
-        self.binary_compare_scalar(rhs, |l, rhs| comparison::eq_scalar_and_validity(l, rhs))
-    }
-    fn not_equal(&self, rhs: &[u8]) -> BooleanChunked {
-        self.binary_compare_scalar(rhs, |l, rhs| comparison::neq_scalar_and_validity(l, rhs))
-    }
-
-    fn gt(&self, rhs: &[u8]) -> BooleanChunked {
-        self.binary_compare_scalar(rhs, |l, rhs| comparison::gt_scalar(l, rhs))
-    }
-
-    fn gt_eq(&self, rhs: &[u8]) -> BooleanChunked {
-        self.binary_compare_scalar(rhs, |l, rhs| comparison::gt_eq_scalar(l, rhs))
-    }
-
-    fn lt(&self, rhs: &[u8]) -> BooleanChunked {
-        self.binary_compare_scalar(rhs, |l, rhs| comparison::lt_scalar(l, rhs))
-    }
-
-    fn lt_eq(&self, rhs: &[u8]) -> BooleanChunked {
-        self.binary_compare_scalar(rhs, |l, rhs| comparison::lt_eq_scalar(l, rhs))
     }
 }
 
