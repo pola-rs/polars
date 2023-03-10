@@ -7,8 +7,6 @@ from typing import Any, cast
 import polars as pl
 from polars import internals as pli
 from polars.dependencies import pyarrow as pa  # noqa: TCH001
-from polars.io.ipc import read_ipc_schema
-from polars.io.parquet import read_parquet_schema
 
 
 def _deser_and_exec(  # noqa: D417
@@ -140,7 +138,7 @@ def _scan_ipc_fsspec(
 
     storage_options = storage_options or {}
     with pli._prepare_file_arg(file, **storage_options) as data:
-        schema = read_ipc_schema(data)
+        schema = pli.read_ipc_schema(data)
 
     return pli.LazyFrame._scan_python_function(schema, func_serialized)
 
@@ -173,6 +171,6 @@ def _scan_parquet_fsspec(
 
     storage_options = storage_options or {}
     with pli._prepare_file_arg(file, **storage_options) as data:
-        schema = read_parquet_schema(data)
+        schema = pli.read_parquet_schema(data)
 
     return pli.LazyFrame._scan_python_function(schema, func_serialized)

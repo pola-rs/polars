@@ -46,6 +46,8 @@ from polars.internals.lazy_functions import (
 from polars.internals.lazyframe import LazyFrame, wrap_ldf
 from polars.internals.series import Series, wrap_s
 from polars.internals.whenthen import WhenThen, WhenThenThen, when
+from polars.io.ipc import read_ipc_schema
+from polars.io.parquet import read_parquet_schema
 
 __all__ = [
     "DataFrame",
