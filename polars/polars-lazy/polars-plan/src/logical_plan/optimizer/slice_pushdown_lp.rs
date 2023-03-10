@@ -258,6 +258,17 @@ impl SlicePushDown {
                     options
                 })
             }
+            (Distinct {input, mut options}, Some(state)) => {
+                // first restart optimization in inputs and get the updated LP
+                let input_lp = lp_arena.take(input);
+                let input_lp = self.pushdown(input_lp, None, lp_arena, expr_arena)?;
+                let input= lp_arena.add(input_lp);
+                options.slice = Some((state.offset, state.len as usize));
+                Ok(Distinct {
+                    input,
+                    options,
+                })
+            }
             (Sort {input, by_column, mut args}, Some(state)) => {
                 // first restart optimization in inputs and get the updated LP
                 let input_lp = lp_arena.take(input);

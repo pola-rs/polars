@@ -337,6 +337,7 @@ pub(crate) fn insert_streaming_nodes(
                 maintain_order: false,
                 apply: None,
                 schema,
+                options,
                 ..
             } => {
                 #[cfg(feature = "dtype-categorical")]
@@ -355,12 +356,26 @@ pub(crate) fn insert_streaming_nodes(
                     }
                 }
                 let input_schema = lp_arena.get(*input).schema(lp_arena);
+                let mut can_stream = true;
 
-                if aggs.iter().all(|node| {
-                    polars_pipe::pipeline::can_convert_to_hash_agg(*node, expr_arena, &input_schema)
-                }) && schema
-                    .iter_dtypes()
-                    .all(|dt| allowed_dtype(dt, string_cache))
+                #[cfg(feature = "dynamic_groupby")]
+                {
+                    if options.rolling.is_some() || options.dynamic.is_some() {
+                        can_stream = false
+                    }
+                }
+
+                if can_stream
+                    && aggs.iter().all(|node| {
+                        polars_pipe::pipeline::can_convert_to_hash_agg(
+                            *node,
+                            expr_arena,
+                            &input_schema,
+                        )
+                    })
+                    && schema
+                        .iter_dtypes()
+                        .all(|dt| allowed_dtype(dt, string_cache))
                 {
                     state.streamable = true;
                     state.operators_sinks.push((IS_SINK, !IS_RHS_JOIN, root));
