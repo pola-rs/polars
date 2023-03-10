@@ -745,9 +745,9 @@ class Expr:
         function
             Callable; will receive the expression as the first parameter,
             followed by any given args/kwargs.
-        args
+        *args
             Arguments to pass to the UDF.
-        kwargs
+        **kwargs
             Keyword arguments to pass to the UDF.
 
         Examples

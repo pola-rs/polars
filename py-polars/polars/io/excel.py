@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO, overload
 
 from polars.io.csv import read_csv
-from polars.utils.decorators import deprecate_nonkeyword_arguments
+from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 from polars.utils.various import normalise_filepath
 
 if TYPE_CHECKING:
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 @overload
 def read_excel(
-    file: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | BytesIO | Path | BinaryIO | bytes,
     sheet_id: Literal[None],
     sheet_name: Literal[None],
     xlsx2csv_options: dict[str, Any] | None,
@@ -33,7 +33,7 @@ def read_excel(
 
 @overload
 def read_excel(
-    file: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | BytesIO | Path | BinaryIO | bytes,
     sheet_id: Literal[None],
     sheet_name: str,
     xlsx2csv_options: dict[str, Any] | None = None,
@@ -44,7 +44,7 @@ def read_excel(
 
 @overload
 def read_excel(
-    file: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | BytesIO | Path | BinaryIO | bytes,
     sheet_id: int,
     sheet_name: Literal[None],
     xlsx2csv_options: dict[str, Any] | None = None,
@@ -54,8 +54,9 @@ def read_excel(
 
 
 @deprecate_nonkeyword_arguments()
+@deprecated_alias(file="source")
 def read_excel(
-    file: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | BytesIO | Path | BinaryIO | bytes,
     sheet_id: int | None = 1,
     sheet_name: str | None = None,
     xlsx2csv_options: dict[str, Any] | None = None,
@@ -69,7 +70,7 @@ def read_excel(
 
     Parameters
     ----------
-    file
+    source
         Path to a file or a file-like object.
         By file-like object, we refer to objects with a ``read()`` method, such as a
         file handler (e.g. via builtin ``open`` function) or ``BytesIO``.
@@ -94,20 +95,17 @@ def read_excel(
     --------
     Read "My Datasheet" sheet from Excel sheet file to a DataFrame.
 
-    >>> excel_file = "test.xlsx"
-    >>> sheet_name = "My Datasheet"
     >>> pl.read_excel(
-    ...     file=excel_file,
-    ...     sheet_name=sheet_name,
+    ...     "test.xlsx",
+    ...     sheet_name="My Datasheet",
     ... )  # doctest: +SKIP
 
     Read sheet 3 from Excel sheet file to a DataFrame while skipping empty lines in the
     sheet. As sheet 3 does not have header row, pass the needed settings to
     :func:`read_csv`.
 
-    >>> excel_file = "test.xlsx"
     >>> pl.read_excel(
-    ...     file=excel_file,
+    ...     "test.xlsx",
     ...     sheet_id=3,
     ...     xlsx2csv_options={"skip_empty_lines": True},
     ...     read_csv_options={"has_header": False, "new_columns": ["a", "b", "c"]},
@@ -120,9 +118,8 @@ def read_excel(
     types. With `"infer_schema_length": 1000``, only the first 1000 lines are read
     twice.
 
-    >>> excel_file = "test.xlsx"
     >>> pl.read_excel(
-    ...     file=excel_file,
+    ...     "test.xlsx",
     ...     read_csv_options={"infer_schema_length": None},
     ... )  # doctest: +SKIP
 
@@ -130,8 +127,7 @@ def read_excel(
     files, you can try pandas ``pd.read_excel()``
     (supports `xls`, `xlsx`, `xlsm`, `xlsb`, `odf`, `ods` and `odt`).
 
-    >>> excel_file = "test.xlsx"
-    >>> pl.from_pandas(pd.read_excel(excel_file))  # doctest: +SKIP
+    >>> pl.from_pandas(pd.read_excel("test.xlsx"))  # doctest: +SKIP
 
     """
     try:
@@ -141,8 +137,8 @@ def read_excel(
             "xlsx2csv is not installed. Please run `pip install xlsx2csv`."
         ) from None
 
-    if isinstance(file, (str, Path)):
-        file = normalise_filepath(file)
+    if isinstance(source, (str, Path)):
+        source = normalise_filepath(source)
 
     if not xlsx2csv_options:
         xlsx2csv_options = {}
@@ -151,7 +147,7 @@ def read_excel(
         read_csv_options = {}
 
     # Convert sheets from XSLX document to CSV.
-    parser = xlsx2csv.Xlsx2csv(file, **xlsx2csv_options)
+    parser = xlsx2csv.Xlsx2csv(source, **xlsx2csv_options)
 
     if (sheet_name is not None) or ((sheet_id is not None) and (sheet_id > 0)):
         return _read_excel_sheet(parser, sheet_id, sheet_name, read_csv_options)

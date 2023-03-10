@@ -296,7 +296,7 @@ class LazyFrame:
     @classmethod
     def _scan_csv(
         cls,
-        file: str,
+        source: str,
         has_header: bool = True,
         sep: str = ",",
         comment_char: str | None = None,
@@ -338,7 +338,7 @@ class LazyFrame:
 
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_csv(
-            file,
+            source,
             sep,
             has_header,
             ignore_errors,
@@ -365,7 +365,7 @@ class LazyFrame:
     @classmethod
     def _scan_parquet(
         cls,
-        file: str,
+        source: str,
         n_rows: int | None = None,
         cache: bool = True,
         parallel: ParallelStrategy = "auto",
@@ -387,8 +387,8 @@ class LazyFrame:
 
         """
         # try fsspec scanner
-        if not pli._is_local_file(file):
-            scan = pli._scan_parquet_fsspec(file, storage_options)
+        if not pli._is_local_file(source):
+            scan = pli._scan_parquet_fsspec(source, storage_options)
             if n_rows:
                 scan = scan.head(n_rows)
             if row_count_name is not None:
@@ -397,7 +397,7 @@ class LazyFrame:
 
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_parquet(
-            file,
+            source,
             n_rows,
             cache,
             parallel,
@@ -412,7 +412,7 @@ class LazyFrame:
     @classmethod
     def _scan_ipc(
         cls,
-        file: str | Path,
+        source: str | Path,
         n_rows: int | None = None,
         cache: bool = True,
         rechunk: bool = True,
@@ -431,12 +431,12 @@ class LazyFrame:
         polars.io.scan_ipc
 
         """
-        if isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
+        if isinstance(source, (str, Path)):
+            source = normalise_filepath(source)
 
         # try fsspec scanner
-        if not pli._is_local_file(file):
-            scan = pli._scan_ipc_fsspec(file, storage_options)
+        if not pli._is_local_file(source):
+            scan = pli._scan_ipc_fsspec(source, storage_options)
             if n_rows:
                 scan = scan.head(n_rows)
             if row_count_name is not None:
@@ -445,7 +445,7 @@ class LazyFrame:
 
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_ipc(
-            file,
+            source,
             n_rows,
             cache,
             rechunk,
@@ -457,7 +457,7 @@ class LazyFrame:
     @classmethod
     def _scan_ndjson(
         cls,
-        file: str,
+        source: str,
         infer_schema_length: int | None = None,
         batch_size: int | None = None,
         n_rows: int | None = None,
@@ -478,7 +478,7 @@ class LazyFrame:
         """
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_ndjson(
-            file,
+            source,
             infer_schema_length,
             batch_size,
             n_rows,
@@ -748,9 +748,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         func
             Callable; will receive the frame as the first parameter,
             followed by any given args/kwargs.
-        args
+        *args
             Arguments to pass to the UDF.
-        kwargs
+        **kwargs
             Keyword arguments to pass to the UDF.
 
         Examples

@@ -5,29 +5,31 @@ from typing import TYPE_CHECKING
 
 from polars.datatypes import N_INFER_DEFAULT
 from polars.internals import DataFrame, LazyFrame
-from polars.utils.decorators import deprecate_nonkeyword_arguments
+from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 from polars.utils.various import normalise_filepath
 
 if TYPE_CHECKING:
     from io import IOBase
 
 
-def read_ndjson(file: str | Path | IOBase) -> DataFrame:
+@deprecated_alias(file="source")
+def read_ndjson(source: str | Path | IOBase) -> DataFrame:
     """
     Read into a DataFrame from a newline delimited JSON file.
 
     Parameters
     ----------
-    file
+    source
         Path to a file or a file-like object.
 
     """
-    return DataFrame._read_ndjson(file)
+    return DataFrame._read_ndjson(source)
 
 
 @deprecate_nonkeyword_arguments()
+@deprecated_alias(file="source")
 def scan_ndjson(
-    file: str | Path,
+    source: str | Path,
     infer_schema_length: int | None = N_INFER_DEFAULT,
     batch_size: int | None = 1024,
     n_rows: int | None = None,
@@ -44,7 +46,7 @@ def scan_ndjson(
 
     Parameters
     ----------
-    file
+    source
         Path to a file.
     infer_schema_length
         Infer the schema from the first ``infer_schema_length`` rows.
@@ -63,11 +65,11 @@ def scan_ndjson(
         Offset to start the row_count column (only use if the name is set)
 
     """
-    if isinstance(file, (str, Path)):
-        file = normalise_filepath(file)
+    if isinstance(source, (str, Path)):
+        source = normalise_filepath(source)
 
     return LazyFrame._scan_ndjson(
-        file=file,
+        source,
         infer_schema_length=infer_schema_length,
         batch_size=batch_size,
         n_rows=n_rows,

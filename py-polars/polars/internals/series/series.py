@@ -2993,18 +2993,9 @@ class Series:
 
         If you want a zero-copy view and know what you are doing, use `.view()`.
 
-        Examples
-        --------
-        >>> s = pl.Series("a", [1, 2, 3])
-        >>> arr = s.to_numpy()
-        >>> arr  # doctest: +IGNORE_RESULT
-        array([1, 2, 3], dtype=int64)
-        >>> type(arr)
-        <class 'numpy.ndarray'>
-
         Parameters
         ----------
-        args
+        *args
             args will be sent to pyarrow.Array.to_numpy.
         zero_copy_only
             If True, an exception will be raised if the conversion to a numpy
@@ -3017,8 +3008,15 @@ class Series:
             it is writable.
         use_pyarrow
             Use pyarrow for the conversion to numpy.
-        kwargs
-            kwargs will be sent to pyarrow.Array.to_numpy
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> arr = s.to_numpy()
+        >>> arr  # doctest: +IGNORE_RESULT
+        array([1, 2, 3], dtype=int64)
+        >>> type(arr)
+        <class 'numpy.ndarray'>
 
         """
 

@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 class BatchedCsvReader:
     def __init__(
         self,
-        file: str | Path,
+        source: str | Path,
         has_header: bool = True,
         columns: Sequence[int] | Sequence[str] | None = None,
         sep: str = ",",
@@ -54,8 +54,8 @@ class BatchedCsvReader:
         new_columns: list[str] | None = None,
     ):
         path: str | None
-        if isinstance(file, (str, Path)):
-            path = normalise_filepath(file)
+        if isinstance(source, (str, Path)):
+            path = normalise_filepath(source)
 
         dtype_list: Sequence[tuple[str, PolarsDataType]] | None = None
         dtype_slice: Sequence[PolarsDataType] | None = None

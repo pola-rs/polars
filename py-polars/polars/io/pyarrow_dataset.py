@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 
 def scan_pyarrow_dataset(
-    source: pa.dataset.dataset, *, allow_pyarrow_filter: bool = True
+    source: pa.dataset.Dataset, *, allow_pyarrow_filter: bool = True
 ) -> LazyFrame:
     """
     Scan a pyarrow dataset.
@@ -57,7 +57,7 @@ def scan_pyarrow_dataset(
 
 
 @deprecate_nonkeyword_arguments()
-def scan_ds(ds: pa.dataset.dataset, allow_pyarrow_filter: bool = True) -> LazyFrame:
+def scan_ds(ds: pa.dataset.Dataset, allow_pyarrow_filter: bool = True) -> LazyFrame:
     """
     Scan a pyarrow dataset.
 
