@@ -81,7 +81,7 @@ fn check_mmap_err(err: PolarsError) -> PolarsResult<()> {
     if let PolarsError::ArrowError(ref e) = err {
         if let arrow::error::Error::NotYetImplemented(s) = e.as_ref() {
             if s == "mmap can only be done on uncompressed IPC files" {
-                eprint!(
+                eprintln!(
                     "Could not mmap compressed IPC file, defaulting to normal read. \
                     Toggle off 'memory_map' to silence this warning."
                 );
