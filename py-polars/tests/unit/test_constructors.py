@@ -108,6 +108,8 @@ def test_init_dataclasses_and_namedtuple() -> None:
     from dataclasses import dataclass
     from typing import NamedTuple
 
+    from polars.internals.construction import dataclass_type_hints
+
     @dataclass
     class TradeDC:
         timestamp: datetime
@@ -169,6 +171,9 @@ def test_init_dataclasses_and_namedtuple() -> None:
             "sz": pl.UInt16,
         }
         assert df.rows() == raw_data
+
+        # cover a miscellaneous edge-case when detecting the annotations
+        assert dataclass_type_hints(obj=type(None)) == {}
 
 
 def test_init_ndarray(monkeypatch: Any) -> None:

@@ -73,7 +73,7 @@ if version_info >= (3, 10):
 else:
 
     def dataclass_type_hints(obj: type) -> dict[str, Any]:
-        return obj.__annotations__
+        return getattr(obj, "__annotations__", {})
 
 
 def is_namedtuple(value: Any, annotated: bool = False) -> bool:
