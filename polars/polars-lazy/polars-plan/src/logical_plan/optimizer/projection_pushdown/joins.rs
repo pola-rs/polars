@@ -110,33 +110,27 @@ pub(super) fn process_asof_join(
             .unwrap();
             already_added_local_to_local_projected.insert(local_name);
         }
+        // this differs from normal joins, as in `asof_joins`
+        // both columns remain. So `add_local=true` also for the right table
         for e in &right_on {
-            add_keys_to_accumulated_state(
+            if let Some(local_name) = add_keys_to_accumulated_state(
                 *e,
                 &mut pushdown_right,
                 &mut local_projection,
                 &mut names_right,
                 expr_arena,
-                false,
-            );
+                true,
+            ) {
+                // insert the name.
+                // if name was already added we pop the local projection
+                // otherwise we would project duplicate columns
+                if !already_added_local_to_local_projected.insert(local_name) {
+                    local_projection.pop();
+                }
+            };
         }
 
         for proj in acc_projections {
-            // Asof joins don't replace
-            // the right column name with the left one
-            // so the two join columns remain
-            let names = aexpr_to_leaf_names(proj, expr_arena);
-            if names.len() == 1
-                // we only add to local projection
-                // if the right join column differs from the left
-                && names_right.contains(&names[0])
-                && !names_left.contains(&names[0])
-                && !local_projection.contains(&proj)
-            {
-                local_projection.push(proj);
-                continue;
-            }
-
             let mut add_local = if already_added_local_to_local_projected.is_empty() {
                 true
             } else {
