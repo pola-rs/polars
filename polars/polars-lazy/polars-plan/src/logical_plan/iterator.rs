@@ -318,30 +318,3 @@ impl<'a> Iterator for AlpIter<'a> {
         })
     }
 }
-
-#[cfg(test)]
-mod test {
-    use polars_core::df;
-    use polars_core::prelude::*;
-
-    use super::*;
-
-    #[test]
-    fn test_lp_iter() -> PolarsResult<()> {
-        let df = df! {
-            "a" => [1, 2]
-        }?;
-
-        let (root, lp_arena, _expr_arena) = df
-            .lazy()
-            .sort("a", Default::default())
-            .groupby([col("a")])
-            .agg([col("a").first()])
-            .logical_plan
-            .into_alp();
-
-        let cnt = (&lp_arena).iter(root).count();
-        assert_eq!(cnt, 3);
-        Ok(())
-    }
-}

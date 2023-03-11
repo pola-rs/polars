@@ -37,6 +37,7 @@ test:  ## Run tests
 	POLARS_MAX_THREADS=4 cargo t -p polars-core test_4_threads
 	cargo test --all-features \
 	    -p polars-lazy \
+	    -p polars-plan \
 	    -p polars-io \
 	    -p polars-core \
 	    -p polars-arrow \

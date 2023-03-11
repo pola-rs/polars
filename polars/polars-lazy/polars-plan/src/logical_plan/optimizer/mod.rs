@@ -204,7 +204,9 @@ fn optimize_lp(lp: LogicalPlan, rules: &mut [Box<dyn OptimizationRule>]) -> Logi
     let root = to_alp(lp, &mut expr_arena, &mut lp_arena).unwrap();
 
     let opt = StackOptimizer {};
-    let lp_top = opt.optimize_loop(rules, &mut expr_arena, &mut lp_arena, root);
+    let lp_top = opt
+        .optimize_loop(rules, &mut expr_arena, &mut lp_arena, root)
+        .unwrap();
     node_to_lp(lp_top, &mut expr_arena, &mut lp_arena)
 }
 
@@ -231,7 +233,9 @@ fn optimize_expr(expr: Expr, schema: Schema, rules: &mut [Box<dyn OptimizationRu
     let root = to_alp(lp, &mut expr_arena, &mut lp_arena).unwrap();
 
     let opt = StackOptimizer {};
-    let lp_top = opt.optimize_loop(rules, &mut expr_arena, &mut lp_arena, root);
+    let lp_top = opt
+        .optimize_loop(rules, &mut expr_arena, &mut lp_arena, root)
+        .unwrap();
     if let LogicalPlan::Projection { mut expr, .. } =
         node_to_lp(lp_top, &mut expr_arena, &mut lp_arena)
     {

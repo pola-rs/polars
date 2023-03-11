@@ -7,6 +7,7 @@ mod folds;
 mod functions;
 mod groupby;
 mod groupby_dynamic;
+mod optimizations;
 mod predicate_queries;
 mod projection_queries;
 mod queries;
