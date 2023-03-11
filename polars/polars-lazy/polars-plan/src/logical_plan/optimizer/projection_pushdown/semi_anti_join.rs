@@ -1,4 +1,5 @@
 use super::*;
+use crate::logical_plan::optimizer::projection_pushdown::joins::process_alias;
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn process_semi_anti_join(
@@ -44,20 +45,7 @@ pub(super) fn process_semi_anti_join(
         }
 
         for proj in acc_projections {
-            let mut add_local = true;
-
-            // if it is an alias we want to project the leaf column name downwards
-            // but we don't want to project it a this level, otherwise we project both
-            // the root and the alias, hence add_local = false.
-            if let AExpr::Alias(expr, name) = expr_arena.get(proj).clone() {
-                for root_name in aexpr_to_leaf_names(expr, expr_arena) {
-                    let node = expr_arena.add(AExpr::Column(root_name));
-                    let proj = expr_arena.add(AExpr::Alias(node, name.clone()));
-                    local_projection.push(proj)
-                }
-                // now we don't
-                add_local = false;
-            }
+            let add_local = process_alias(proj, &mut local_projection, expr_arena, true);
 
             proj_pd.join_push_down(
                 &schema_left,
