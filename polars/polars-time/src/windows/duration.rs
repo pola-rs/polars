@@ -346,11 +346,6 @@ impl Duration {
             (0, 0, _) => {
                 let duration = nsecs_to_unit(self.nsecs);
                 let mut remainder = match tz {
-                    #[cfg(feature = "timezones")]
-                    Some(tz) => {
-                        datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz))
-                            % duration
-                    }
                     _ => t % duration,
                 };
                 if remainder < 0 {
@@ -370,10 +365,6 @@ impl Duration {
             // truncate by months
             (_, 0, 0) => {
                 let ts = match tz {
-                    #[cfg(feature = "timezones")]
-                    Some(tz) => {
-                        unlocalize_datetime(timestamp_to_datetime(t), tz)
-                    }
                     _ => timestamp_to_datetime(t),
                 };
                 let (year, month) = (ts.year(), ts.month());
@@ -389,10 +380,6 @@ impl Duration {
 
                 let dt = new_datetime(year, month, 1, 0, 0, 0, 0);
                 match tz {
-                    #[cfg(feature = "timezones")]
-                    Some(tz) => {
-                        datetime_to_timestamp(localize_datetime(dt, tz))
-                    }
                     _ => datetime_to_timestamp(dt),
                 }
             }
@@ -415,13 +402,30 @@ impl Duration {
     // Truncate the given ns timestamp by the window boundary.
     #[inline]
     pub fn truncate_us(&self, t: i64, tz: &Option<TimeZone>) -> i64 {
-        self.truncate_impl(
-            t,
-            tz,
-            |nsecs| nsecs / 1000,
-            timestamp_us_to_datetime,
-            datetime_to_timestamp_us,
-        )
+        match tz {
+            #[cfg(feature = "timezones")]
+            Some(tz) => {
+                datetime_to_timestamp_us(localize_datetime(timestamp_us_to_datetime(
+                    self.truncate_impl(
+                        datetime_to_timestamp_us(unlocalize_datetime(timestamp_us_to_datetime(t), tz)),
+                        &None,
+                        |nsecs| nsecs / 1000,
+                        // |t| localize_datetime(timestamp_us_to_datetime(t), tz),
+                        timestamp_us_to_datetime,
+                        datetime_to_timestamp_us,
+                        // |ndt| datetime_to_timestamp_us(unlocalize_datetime(ndt, tz)),
+                    ),
+                ), tz
+                ))
+            }
+            _ => self.truncate_impl(
+                t,
+                &None,
+                |nsecs| nsecs / 1000,
+                timestamp_us_to_datetime,
+                datetime_to_timestamp_us,
+            )
+        }
     }
 
     // Truncate the given ms timestamp by the window boundary.
@@ -461,8 +465,6 @@ impl Duration {
             // Retrieve the current date and increment the values
             // based on the number of months
             let ts = match tz {
-                #[cfg(feature = "timezones")]
-                Some(tz) => unlocalize_datetime(timestamp_to_datetime(t), tz),
                 _ => timestamp_to_datetime(t),
             };
             let mut year = ts.year();
@@ -500,8 +502,6 @@ impl Duration {
             let nsec = ts.nanosecond();
             let dt = new_datetime(year, month as u32, day, hour, minute, sec, nsec);
             new_t = match tz {
-                #[cfg(feature = "timezones")]
-                Some(tz) => datetime_to_timestamp(localize_datetime(dt, tz)),
                 _ => datetime_to_timestamp(dt),
             };
         }
@@ -529,13 +529,23 @@ impl Duration {
 
     pub fn add_us(&self, t: i64, tz: &Option<TimeZone>) -> i64 {
         let d = self;
-        let new_t = self.add_impl_month_or_week(
-            t,
-            tz,
-            |nsecs| nsecs / 1000,
-            timestamp_us_to_datetime,
-            datetime_to_timestamp_us,
-        );
+        let new_t = match tz {
+            #[cfg(feature = "timezones")]
+            Some(tz) => datetime_to_timestamp_us(localize_datetime(timestamp_us_to_datetime(self.add_impl_month_or_week(
+                datetime_to_timestamp_us(unlocalize_datetime(timestamp_us_to_datetime(t), tz)),
+                &None,
+                |nsecs| nsecs / 1000,
+                timestamp_us_to_datetime,
+                datetime_to_timestamp_us,
+            )), tz)),
+            _ => self.add_impl_month_or_week(
+                t,
+                &None,
+                |nsecs| nsecs / 1000,
+                timestamp_us_to_datetime,
+                datetime_to_timestamp_us,
+            )
+        };
         let nsecs = if d.negative { -d.nsecs } else { d.nsecs };
         new_t + nsecs / 1_000
     }

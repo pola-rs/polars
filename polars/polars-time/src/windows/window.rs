@@ -10,6 +10,7 @@ use polars_core::utils::arrow::temporal_conversions::{timeunit_scale, SECONDS_IN
 
 use crate::prelude::*;
 
+
 /// Represents a window in time
 #[derive(Copy, Clone)]
 pub struct Window {
@@ -114,6 +115,8 @@ impl Window {
         {
             self.offset.add_us(t, tz)
         } else {
+            println!("before truncate us: {:?}", t);
+            println!("after truncate us: {:?}", self.truncate_us(t, tz));
             self.truncate_us(t, tz)
         };
         let stop = self.period.add_us(start, tz);
