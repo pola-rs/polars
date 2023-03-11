@@ -423,7 +423,7 @@ impl<'a> Iterator for SplitFields<'a> {
 
             idx as usize
         } else {
-            match memchr::memchr2(self.delimiter, self.eol_char, self.v) {
+            match self.v.iter().position(|&c| self.eof_oel(c)) {
                 None => return self.finish(needs_escaping),
                 Some(idx) => unsafe {
                     // Safety:
