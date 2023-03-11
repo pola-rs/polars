@@ -10,7 +10,6 @@ use polars_core::utils::arrow::temporal_conversions::{timeunit_scale, SECONDS_IN
 
 use crate::prelude::*;
 
-
 /// Represents a window in time
 #[derive(Copy, Clone)]
 pub struct Window {
