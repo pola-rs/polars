@@ -329,3 +329,12 @@ def test_asof_join_by_logical_types() -> None:
         "b": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
         "c": ["1", "2", "3", "1", "2", "3", "1", "2", "3"],
     }
+
+
+def test_join_asof_projection_7481() -> None:
+    ldf1 = pl.DataFrame({"a": [1, 2, 2], "b": "bleft"}).lazy()
+    ldf2 = pl.DataFrame({"a": 2, "b": [1, 2, 2]}).lazy()
+
+    assert (
+        ldf1.join_asof(ldf2, left_on="a", right_on="b").select("a", "b")
+    ).collect().to_dict(False) == {"a": [1, 2, 2], "b": ["bleft", "bleft", "bleft"]}
