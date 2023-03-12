@@ -26,6 +26,8 @@ pub struct Duration {
     // the number of weeks for the duration
     weeks: i64,
     // the number of nanoseconds for the duration
+    days: i64,
+    // the number of nanoseconds for the duration
     nsecs: i64,
     // indicates if the duration is negative
     pub(crate) negative: bool,
@@ -51,6 +53,7 @@ impl Duration {
         Duration {
             months: 0,
             weeks: 0,
+            days: 0,
             nsecs: fixed_slots.abs(),
             negative: fixed_slots < 0,
             parsed_int: true,
@@ -83,6 +86,7 @@ impl Duration {
 
         let mut nsecs = 0;
         let mut weeks = 0;
+        let mut days = 0;
         let mut months = 0;
         let mut iter = duration.char_indices();
         let negative = duration.starts_with('-');
@@ -128,7 +132,7 @@ impl Duration {
                     "s" => nsecs += n * NS_SECOND,
                     "m" => nsecs += n * NS_MINUTE,
                     "h" => nsecs += n * NS_HOUR,
-                    "d" => nsecs += n * NS_DAY,
+                    "d" => days += n,
                     "w" => weeks += n,
                     "mo" => months += n,
                     "y" => months += n * 12,
@@ -144,6 +148,7 @@ impl Duration {
         }
         Duration {
             nsecs: nsecs.abs(),
+            days: days.abs(),
             weeks: weeks.abs(),
             months: months.abs(),
             negative,
@@ -202,6 +207,7 @@ impl Duration {
         Self {
             months: 0,
             weeks: 0,
+            days: 0,
             nsecs,
             negative,
             parsed_int: false,
@@ -214,6 +220,7 @@ impl Duration {
         Self {
             months,
             weeks: 0,
+            days: 0,
             nsecs: 0,
             negative,
             parsed_int: false,
@@ -226,6 +233,20 @@ impl Duration {
         Self {
             months: 0,
             weeks,
+            days: 0,
+            nsecs: 0,
+            negative,
+            parsed_int: false,
+        }
+    }
+
+    /// Creates a [`Duration`] that represents a fixed number of days.
+    pub(crate) fn from_days(v: i64) -> Self {
+        let (negative, days) = Self::to_positive(v);
+        Self {
+            months: 0,
+            weeks: 0,
+            days,
             nsecs: 0,
             negative,
             parsed_int: false,
@@ -234,11 +255,11 @@ impl Duration {
 
     /// `true` if zero duration.
     pub fn is_zero(&self) -> bool {
-        self.months == 0 && self.weeks == 0 && self.nsecs == 0
+        self.months == 0 && self.weeks == 0 && self.days == 0 && self.nsecs == 0
     }
 
     pub fn months_only(&self) -> bool {
-        self.months != 0 && self.weeks == 0 && self.nsecs == 0
+        self.months != 0 && self.weeks == 0 && self.days == 0 && self.nsecs == 0
     }
 
     pub fn months(&self) -> i64 {
@@ -246,11 +267,19 @@ impl Duration {
     }
 
     pub fn weeks_only(&self) -> bool {
-        self.months == 0 && self.weeks != 0 && self.nsecs == 0
+        self.months == 0 && self.weeks != 0 && self.days == 0 && self.nsecs == 0
     }
 
     pub fn weeks(&self) -> i64 {
         self.weeks
+    }
+
+    pub fn days_only(&self) -> bool {
+        self.months == 0 && self.weeks == 0 && self.days != 0 && self.nsecs == 0
+    }
+
+    pub fn days(&self) -> i64 {
+        self.days
     }
 
     /// Returns the nanoseconds from the `Duration` without the weeks or months part.
@@ -262,20 +291,20 @@ impl Duration {
     #[cfg(feature = "private")]
     #[doc(hidden)]
     pub const fn duration_ns(&self) -> i64 {
-        self.months * 28 * 24 * 3600 * NANOSECONDS + self.weeks * NS_WEEK + self.nsecs
+        self.months * 28 * 24 * 3600 * NANOSECONDS + self.weeks * NS_WEEK + self.days * NS_DAY + self.nsecs
     }
 
     #[cfg(feature = "private")]
     #[doc(hidden)]
     pub const fn duration_us(&self) -> i64 {
-        self.months * 28 * 24 * 3600 * MICROSECONDS + (self.weeks * NS_WEEK + self.nsecs) / 1000
+        self.months * 28 * 24 * 3600 * MICROSECONDS + (self.weeks * NS_WEEK + self.nsecs + self.days * NS_DAY) / 1000
     }
 
     #[cfg(feature = "private")]
     #[doc(hidden)]
     pub const fn duration_ms(&self) -> i64 {
         self.months * 28 * 24 * 3600 * MILLISECONDS
-            + (self.weeks * NS_WEEK + self.nsecs) / 1_000_000
+            + (self.weeks * NS_WEEK + self.nsecs + self.days * NS_DAY) / 1_000_000
     }
 
     #[inline]
@@ -291,10 +320,10 @@ impl Duration {
         G: Fn(i64) -> NaiveDateTime,
         J: Fn(NaiveDateTime) -> i64,
     {
-        match (self.months, self.weeks, self.nsecs) {
-            (0, 0, 0) => panic!("duration may not be zero"),
+        match (self.months, self.weeks, self.days, self.nsecs) {
+            (0, 0, 0, 0) => panic!("duration may not be zero"),
             // truncate by ns/us/ms
-            (0, 0, _) => {
+            (0, 0, 0, _) => {
                 let duration = nsecs_to_unit(self.nsecs);
                 let mut remainder = t % duration;
                 if remainder < 0 {
@@ -303,7 +332,7 @@ impl Duration {
                 t - remainder
             }
             // truncate by weeks
-            (0, _, 0) => {
+            (0, _, 0, 0) => {
                 let dt = timestamp_to_datetime(t).date();
                 let week_timestamp = dt.week(Weekday::Mon);
                 let first_day_of_week =
@@ -311,8 +340,18 @@ impl Duration {
 
                 datetime_to_timestamp(first_day_of_week.and_time(NaiveTime::default()))
             }
+            // truncate by days
+            (0, 0, _, 0) => {
+                // todo
+                let duration = self.days * NS_DAY;
+                let mut remainder = t % duration;
+                if remainder < 0 {
+                    remainder += duration
+                }
+                t - remainder
+            }
             // truncate by months
-            (_, 0, 0) => {
+            (_, 0, 0, 0) => {
                 let ts = timestamp_to_datetime(t);
                 let (year, month) = (ts.year(), ts.month());
 
@@ -431,6 +470,11 @@ impl Duration {
             new_t += if d.negative { -t_weeks } else { t_weeks };
         }
 
+        if d.days > 0 {
+            let t_days = nsecs_to_unit(self.days * NS_DAY);
+            new_t += if d.negative { -t_days } else { t_days };
+        }
+
         new_t
     }
 
@@ -481,6 +525,7 @@ impl Mul<i64> for Duration {
         }
         self.months *= rhs;
         self.weeks *= rhs;
+        self.days *= rhs;
         self.nsecs *= rhs;
         self
     }
