@@ -6,7 +6,7 @@ except ImportError:
     # this is only useful for documentation
     import warnings
 
-    warnings.warn("polars binary missing!")
+    warnings.warn("polars binary missing!", stacklevel=2)
     polars_version_string = ""
 
 

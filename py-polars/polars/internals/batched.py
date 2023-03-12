@@ -35,7 +35,7 @@ class BatchedCsvReader:
         quote_char: str | None = r'"',
         skip_rows: int = 0,
         dtypes: None | (SchemaDict | Sequence[PolarsDataType]) = None,
-        null_values: str | list[str] | dict[str, str] | None = None,
+        null_values: str | Sequence[str] | dict[str, str] | None = None,
         missing_utf8_is_empty_string: bool = False,
         ignore_errors: bool = False,
         try_parse_dates: bool = False,
@@ -51,7 +51,7 @@ class BatchedCsvReader:
         row_count_offset: int = 0,
         sample_size: int = 1024,
         eol_char: str = "\n",
-        new_columns: list[str] | None = None,
+        new_columns: Sequence[str] | None = None,
     ):
         path: str | None
         if isinstance(source, (str, Path)):
