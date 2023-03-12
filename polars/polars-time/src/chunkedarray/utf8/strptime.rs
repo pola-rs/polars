@@ -1,18 +1,24 @@
 //! Much more opinionated, but also much faster strptrime than the one given in Chrono.
 //!
+use atoi::FromRadix10;
 use chrono::{NaiveDate, NaiveDateTime};
+use polars_utils::slice::GetSaferUnchecked;
 
 #[inline]
-fn update_and_parse<T: lexical::FromLexical>(
+fn update_and_parse<T: atoi::FromRadix10>(
     incr: usize,
     offset: usize,
     vals: &[u8],
 ) -> Option<(T, usize)> {
     // this maybe oob because we cannot entirely sure about fmt lengths
     let new_offset = offset + incr;
-    lexical::parse(vals.get(offset..new_offset)?)
-        .ok()
-        .map(|v| (v, new_offset))
+    let bytes = vals.get(offset..new_offset)?;
+    let (val, parsed) = T::from_radix_10(bytes);
+    if parsed == 0 {
+        None
+    } else {
+        Some((val, new_offset))
+    }
 }
 
 #[inline]
@@ -104,7 +110,13 @@ pub(super) unsafe fn parse(val: &[u8], fmt: &[u8], fmt_len: u16) -> Option<Naive
                 }
                 b'y' => {
                     let new_offset = offset + 2;
-                    let decade = lexical::parse::<i32, _>(&val[offset..new_offset]).ok()?;
+                    let bytes = val.get_unchecked_release(offset..new_offset);
+
+                    let (decade, parsed) = i32::from_radix_10(bytes);
+                    if parsed == 0 {
+                        return None;
+                    }
+
                     if decade < 50 {
                         year = 2000 + decade;
                     } else {
