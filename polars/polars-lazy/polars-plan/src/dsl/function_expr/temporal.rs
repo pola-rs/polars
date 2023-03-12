@@ -24,7 +24,8 @@ pub(super) fn date_offset(s: Series, offset: Duration) -> PolarsResult<Series> {
                 TimeUnit::Microseconds => Duration::add_us,
                 TimeUnit::Milliseconds => Duration::add_ms,
             };
-            ca.0.apply_mut(|v| adder(&offset, v, &None));
+            // TODO remove unwrap once time zone is respected
+            ca.0.apply_mut(|v| adder(&offset, v, &None).unwrap());
             Ok(ca.into_series())
         }
         dt => polars_bail!(

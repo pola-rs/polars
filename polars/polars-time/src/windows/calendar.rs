@@ -41,7 +41,7 @@ pub fn date_range(
     closed: ClosedWindow,
     tu: TimeUnit,
     tz: &Option<TimeZone>,
-) -> Vec<i64> {
+) -> PolarsResult<Vec<i64>> {
     let size = match tu {
         TimeUnit::Nanoseconds => ((stop - start) / every.duration_ns() + 1) as usize,
         TimeUnit::Microseconds => ((stop - start) / every.duration_us() + 1) as usize,
@@ -59,30 +59,30 @@ pub fn date_range(
         ClosedWindow::Both => {
             while t <= stop {
                 ts.push(t);
-                t = f(&every, t, tz)
+                t = f(&every, t, tz)?
             }
         }
         ClosedWindow::Left => {
             while t < stop {
                 ts.push(t);
-                t = f(&every, t, tz)
+                t = f(&every, t, tz)?
             }
         }
         ClosedWindow::Right => {
-            t = f(&every, t, tz);
+            t = f(&every, t, tz)?;
             while t <= stop {
                 ts.push(t);
-                t = f(&every, t, tz)
+                t = f(&every, t, tz)?
             }
         }
         ClosedWindow::None => {
-            t = f(&every, t, tz);
+            t = f(&every, t, tz)?;
             while t < stop {
                 ts.push(t);
-                t = f(&every, t, tz)
+                t = f(&every, t, tz)?
             }
         }
     }
     debug_assert!(size >= ts.len());
-    ts
+    Ok(ts)
 }

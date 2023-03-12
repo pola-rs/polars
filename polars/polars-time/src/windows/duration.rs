@@ -3,7 +3,7 @@ use std::ops::Mul;
 
 #[cfg(feature = "timezones")]
 use arrow::temporal_conversions::parse_offset;
-use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Weekday};
+use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Weekday, LocalResult};
 #[cfg(feature = "timezones")]
 use chrono::{TimeZone as TimeZoneTrait, Utc};
 #[cfg(feature = "timezones")]
@@ -13,7 +13,7 @@ use polars_arrow::export::arrow::temporal_conversions::{
 };
 use polars_core::export::arrow::temporal_conversions::MICROSECONDS;
 use polars_core::prelude::{
-    datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us, TimeZone,
+    datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us, TimeZone, PolarsResult, polars_bail
 };
 use polars_core::utils::arrow::temporal_conversions::NANOSECONDS;
 #[cfg(feature = "serde")]
@@ -54,12 +54,28 @@ impl Ord for Duration {
 }
 
 #[cfg(feature = "timezones")]
-fn localize_datetime(ndt: NaiveDateTime, tz: &TimeZone) -> NaiveDateTime {
+fn localize_datetime(ndt: NaiveDateTime, tz: &TimeZone) -> PolarsResult<NaiveDateTime> {
     // e.g. '2021-01-01 03:00' -> '2021-01-01 03:00CDT'
     match parse_offset(tz) {
-        Ok(tz) => tz.from_local_datetime(&ndt).unwrap().naive_utc(),
+        Ok(tz) => match tz.from_local_datetime(&ndt){
+            LocalResult::Single(tz) => Ok(tz.naive_utc()),
+            LocalResult::Ambiguous(_, _) => {
+                polars_bail!(ComputeError: "ambiguous timestamps are not (yet) supported")
+            }
+            LocalResult::None => {
+                polars_bail!(ComputeError: "non-existent timestamps are not (yet) supported")
+            }
+        },
         Err(_) => match tz.parse::<Tz>() {
-            Ok(tz) => tz.from_local_datetime(&ndt).unwrap().naive_utc(),
+            Ok(tz) => match tz.from_local_datetime(&ndt){
+                LocalResult::Single(tz) => Ok(tz.naive_utc()),
+                LocalResult::Ambiguous(_, _) => {
+                    polars_bail!(ComputeError: "ambiguous timestamps are not (yet) supported")
+                }
+                LocalResult::None => {
+                    polars_bail!(ComputeError: "non-existent timestamps are not (yet) supported")
+                }
+            },
             _ => unreachable!(),
         },
     }
@@ -440,7 +456,7 @@ impl Duration {
         nsecs_to_unit: F,
         timestamp_to_datetime: G,
         datetime_to_timestamp: J,
-    ) -> i64
+    ) -> PolarsResult<i64>
     where
         F: Fn(i64) -> i64,
         G: Fn(i64) -> NaiveDateTime,
@@ -498,7 +514,7 @@ impl Duration {
             let dt = new_datetime(year, month as u32, day, hour, minute, sec, nsec);
             new_t = match tz {
                 #[cfg(feature = "timezones")]
-                Some(tz) => datetime_to_timestamp(localize_datetime(dt, tz)),
+                Some(tz) => datetime_to_timestamp(localize_datetime(dt, tz)?),
                 _ => datetime_to_timestamp(dt),
             };
         }
@@ -510,7 +526,7 @@ impl Duration {
                 Some(tz) => {
                     new_t = datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
                     new_t += if d.negative { -t_weeks } else { t_weeks };
-                    new_t = datetime_to_timestamp(localize_datetime(timestamp_to_datetime(new_t), tz));
+                    new_t = datetime_to_timestamp(localize_datetime(timestamp_to_datetime(new_t), tz)?);
                 }
                 _ => {
                     new_t += if d.negative { -t_weeks } else { t_weeks }
@@ -525,7 +541,7 @@ impl Duration {
                 Some(tz) => {
                     new_t = datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
                     new_t += if d.negative { -t_days } else { t_days };
-                    new_t = datetime_to_timestamp(localize_datetime(timestamp_to_datetime(new_t), tz));
+                    new_t = datetime_to_timestamp(localize_datetime(timestamp_to_datetime(new_t), tz)?);
                 }
                 _ => {
                     new_t += if d.negative { -t_days } else { t_days }
@@ -533,10 +549,10 @@ impl Duration {
             };
         }
 
-        new_t
+        Ok(new_t)
     }
 
-    pub fn add_ns(&self, t: i64, tz: &Option<TimeZone>) -> i64 {
+    pub fn add_ns(&self, t: i64, tz: &Option<TimeZone>) -> PolarsResult<i64> {
         let d = self;
         let new_t = self.add_impl_month_week_or_day(
             t,
@@ -546,10 +562,10 @@ impl Duration {
             datetime_to_timestamp_ns,
         );
         let nsecs = if d.negative { -d.nsecs } else { d.nsecs };
-        new_t + nsecs
+        Ok(new_t? + nsecs)
     }
 
-    pub fn add_us(&self, t: i64, tz: &Option<TimeZone>) -> i64 {
+    pub fn add_us(&self, t: i64, tz: &Option<TimeZone>) -> PolarsResult<i64> {
         let d = self;
         let new_t = self.add_impl_month_week_or_day(
             t,
@@ -559,10 +575,10 @@ impl Duration {
             datetime_to_timestamp_us,
         );
         let nsecs = if d.negative { -d.nsecs } else { d.nsecs };
-        new_t + nsecs / 1_000
+        Ok(new_t? + nsecs / 1_000)
     }
 
-    pub fn add_ms(&self, t: i64, tz: &Option<TimeZone>) -> i64 {
+    pub fn add_ms(&self, t: i64, tz: &Option<TimeZone>) -> PolarsResult<i64> {
         let d = self;
         let new_t = self.add_impl_month_week_or_day(
             t,
@@ -572,7 +588,7 @@ impl Duration {
             datetime_to_timestamp_ms,
         );
         let nsecs = if d.negative { -d.nsecs } else { d.nsecs };
-        new_t + nsecs / 1_000_000
+        Ok(new_t? + nsecs / 1_000_000)
     }
 }
 
@@ -634,11 +650,11 @@ mod test {
         let seven_days = Duration::parse("7d");
         let one_week = Duration::parse("1w");
 
-        assert_eq!(seven_days.add_ns(t, &None), one_week.add_ns(t, &None));
+        assert_eq!(seven_days.add_ns(t, &None).unwrap(), one_week.add_ns(t, &None).unwrap());
 
         let seven_days_negative = Duration::parse("-7d");
         let one_week_negative = Duration::parse("-1w");
 
-        assert_eq!(seven_days_negative.add_ns(t, &None), one_week_negative.add_ns(t, &None));
+        assert_eq!(seven_days_negative.add_ns(t, &None).unwrap(), one_week_negative.add_ns(t, &None).unwrap());
     }
 }
