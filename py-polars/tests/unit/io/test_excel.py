@@ -22,7 +22,6 @@ def test_read_excel(excel_file_path: Path) -> None:
     df = pl.read_excel(excel_file_path, sheet_name="Sheet1", sheet_id=None)
 
     expected = pl.DataFrame({"hello": ["Row 1", "Row 2"]})
-
     assert_frame_equal(df, expected)
 
 
@@ -64,6 +63,7 @@ def test_read_excel_all_sheets(excel_file_path: Path) -> None:
             "column_widths": {"val": 100},
             "row_heights": {0: 35},
             "column_totals": True,
+            "row_totals": True,
         },
         # heavily customised formatting/definition
         {
@@ -113,6 +113,7 @@ def test_read_excel_all_sheets(excel_file_path: Path) -> None:
             },
             "column_totals": {"val": "average", "dtm": "min"},
             "column_widths": {("str", "val"): 60, "dtm": 80},
+            "row_totals": {"tot": True},
             "hidden_columns": ["str"],
             "hide_gridlines": True,
             "has_header": False,
@@ -145,8 +146,10 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
         xls,
         sheet_name="data",
         read_csv_options=header_opts,
-    )[:3].with_columns(pl.col("dtm").str.strptime(pl.Date, fmt_strptime))
-
+    )[:3]
+    xldf = xldf.select(xldf.columns[:3]).with_columns(
+        pl.col("dtm").str.strptime(pl.Date, fmt_strptime)
+    )
     assert_frame_equal(df, xldf)
 
 
@@ -173,6 +176,7 @@ def test_excel_sparklines() -> None:
             worksheet="frame_data",
             table_style="Table Style Light 2",
             dtype_formats={pl.INTEGER_DTYPES: "#,##0_);(#,##0)"},
+            column_formats={("h1", "h2"): "#,##0_);(#,##0)"},
             sparklines={
                 "trend": ["q1", "q2", "q3", "q4"],
                 "+/-": {
@@ -182,39 +186,43 @@ def test_excel_sparklines() -> None:
                 },
             },
             conditional_formats={
-                ("q1", "q2", "q3", "q4"): {
+                ("q1", "q2", "q3", "q4", "h1", "h2"): {
                     "type": "2_color_scale",
                     "min_color": "#95b3d7",
                     "max_color": "#ffffff",
                 }
             },
-            column_widths={("q1", "q2", "q3", "q4"): 40},
+            column_widths={("q1", "q2", "q3", "q4", "h1", "h2"): 40},
+            row_totals={
+                "h1": ("q1", "q2"),
+                "h2": ("q3", "q4"),
+            },
             hide_gridlines=True,
             row_heights=35,
             sheet_zoom=125,
         )
 
     tables = {tbl["name"] for tbl in wb.get_worksheet_by_name("frame_data").tables}
-    assert "PolarsFrameTable0" in tables
+    assert "Frame0" in tables
 
     xldf = pl.read_excel(xls, sheet_name="frame_data")  # type: ignore[call-overload]
-    # ┌──────┬──────┬─────┬─────┬─────┬─────┬───────┐
-    # │ id   ┆ +/-  ┆ q1  ┆ q2  ┆ q3  ┆ q4  ┆ trend │
-    # │ ---  ┆ ---  ┆ --- ┆ --- ┆ --- ┆ --- ┆ ---   │
-    # │ str  ┆ str  ┆ i64 ┆ i64 ┆ i64 ┆ i64 ┆ str   │
-    # ╞══════╪══════╪═════╪═════╪═════╪═════╪═══════╡
-    # │ aaa  ┆ null ┆ 100 ┆ 30  ┆ -50 ┆ 75  ┆ null  │
-    # │ bbb  ┆ null ┆ 55  ┆ -10 ┆ 0   ┆ 55  ┆ null  │
-    # │ ccc  ┆ null ┆ -20 ┆ 15  ┆ 40  ┆ 25  ┆ null  │
-    # │ ddd  ┆ null ┆ 0   ┆ 60  ┆ 80  ┆ -10 ┆ null  │
-    # │ eee  ┆ null ┆ 35  ┆ 20  ┆ 80  ┆ -55 ┆ null  │
-    # └──────┴──────┴─────┴─────┴─────┴─────┴───────┘
+    # ┌─────┬──────┬─────┬─────┬─────┬─────┬───────┬─────┬─────┐
+    # │ id  ┆ +/-  ┆ q1  ┆ q2  ┆ q3  ┆ q4  ┆ trend ┆ h1  ┆ h2  │
+    # │ --- ┆ ---  ┆ --- ┆ --- ┆ --- ┆ --- ┆ ---   ┆ --- ┆ --- │
+    # │ str ┆ str  ┆ i64 ┆ i64 ┆ i64 ┆ i64 ┆ str   ┆ i64 ┆ i64 │
+    # ╞═════╪══════╪═════╪═════╪═════╪═════╪═══════╪═════╪═════╡
+    # │ aaa ┆ null ┆ 100 ┆ 30  ┆ -50 ┆ 75  ┆ null  ┆ 0   ┆ 0   │
+    # │ bbb ┆ null ┆ 55  ┆ -10 ┆ 0   ┆ 55  ┆ null  ┆ 0   ┆ 0   │
+    # │ ccc ┆ null ┆ -20 ┆ 15  ┆ 40  ┆ 25  ┆ null  ┆ 0   ┆ 0   │
+    # │ ddd ┆ null ┆ 0   ┆ 60  ┆ 80  ┆ -10 ┆ null  ┆ 0   ┆ 0   │
+    # │ eee ┆ null ┆ 35  ┆ 20  ┆ 80  ┆ -55 ┆ null  ┆ 0   ┆ 0   │
+    # └─────┴──────┴─────┴─────┴─────┴─────┴───────┴─────┴─────┘
 
     for sparkline_col in ("+/-", "trend"):
         assert set(xldf[sparkline_col]) == {None}
 
-    assert xldf.columns == ["id", "+/-", "q1", "q2", "q3", "q4", "trend"]
-    assert_frame_equal(df, xldf.drop("+/-", "trend"))
+    assert xldf.columns == ["id", "+/-", "q1", "q2", "q3", "q4", "trend", "h1", "h2"]
+    assert_frame_equal(df, xldf.drop("+/-", "trend", "h1", "h2"))
 
 
 def test_excel_write_multiple_tables() -> None:
@@ -252,5 +260,5 @@ def test_excel_write_multiple_tables() -> None:
         table_names.update(
             tbl["name"] for tbl in wb.get_worksheet_by_name(sheet).tables
         )
-    assert table_names == {f"PolarsFrameTable{n}" for n in range(4)}
-    assert pl.read_excel(xls, sheet_name="sheet3").rows() == [(None, None, None)]  # type: ignore[call-overload]
+    assert table_names == {f"Frame{n}" for n in range(4)}
+    assert pl.read_excel(xls, sheet_name="sheet3").rows() == []  # type: ignore[call-overload]

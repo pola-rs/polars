@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import (
     TYPE_CHECKING,
     Any,
-    Dict,
+    Collection,
     Iterable,
     List,
     Mapping,
@@ -146,14 +146,20 @@ FrameInitTypes: TypeAlias = Union[
 ]
 
 # Excel IO
+ConditionalFormatDict: TypeAlias = Mapping[
+    # dict of colname(s) to str, dict, or sequence of str/dict
+    Union[str, Collection[str]],
+    Union[str, Union[Mapping[str, Any], Sequence[Union[str, Mapping[str, Any]]]]],
+]
 ColumnTotalsDefinition: TypeAlias = Union[
-    # dict of colname(s) to str, a sequence of str, or a boolean
-    Dict[Union[str, Tuple[str, ...]], str],
+    # dict of colname(s) to str, a collection of str, or a boolean
+    Mapping[Union[str, Collection[str]], str],
     Sequence[str],
     bool,
 ]
-ConditionalFormatDict: TypeAlias = Dict[
-    # dict of colname(s) to str, dict, or sequence of str/dict
-    Union[str, Tuple[str, ...]],
-    Union[str, Union[Dict[str, Any], Sequence[Union[str, Dict[str, Any]]]]],
+RowTotalsDefinition: TypeAlias = Union[
+    # dict of colname to str(s), a collection of str, or a boolean
+    Mapping[str, Union[str, Collection[str]]],
+    Collection[str],
+    bool,
 ]
