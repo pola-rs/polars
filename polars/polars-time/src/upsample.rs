@@ -1,3 +1,4 @@
+use chrono::FixedOffset;
 use polars_core::prelude::*;
 use polars_ops::prelude::*;
 
@@ -147,9 +148,9 @@ fn upsample_single_impl(
             match (first, last) {
                 (Some(first), Some(last)) => {
                     let first = match tu {
-                        TimeUnit::Nanoseconds => offset.add_ns(first, &None)?,
-                        TimeUnit::Microseconds => offset.add_us(first, &None)?,
-                        TimeUnit::Milliseconds => offset.add_ms(first, &None)?,
+                        TimeUnit::Nanoseconds => offset.add_ns(first, None::<&FixedOffset>)?,
+                        TimeUnit::Microseconds => offset.add_us(first, None::<&FixedOffset>)?,
+                        TimeUnit::Milliseconds => offset.add_ms(first, None::<&FixedOffset>)?,
                     };
                     let range = match tz {
                         #[cfg(feature = "timezones")]

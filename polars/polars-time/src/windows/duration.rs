@@ -2,12 +2,10 @@ use std::cmp::Ordering;
 use std::ops::Mul;
 
 #[cfg(feature = "timezones")]
-use arrow::temporal_conversions::parse_offset;
-use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Weekday};
-#[cfg(feature = "timezones")]
-use chrono::{LocalResult, TimeZone as TimeZoneTrait};
-#[cfg(feature = "timezones")]
-use chrono_tz::Tz;
+use chrono::LocalResult;
+use chrono::{
+    Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeZone as TimeZoneTrait, Timelike, Weekday,
+};
 use polars_arrow::export::arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
 };
@@ -16,7 +14,6 @@ use polars_core::export::arrow::temporal_conversions::MICROSECONDS;
 use polars_core::prelude::polars_bail;
 use polars_core::prelude::{
     datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us, PolarsResult,
-    TimeZone,
 };
 use polars_core::utils::arrow::temporal_conversions::NANOSECONDS;
 #[cfg(feature = "serde")]
@@ -57,43 +54,23 @@ impl Ord for Duration {
 }
 
 #[cfg(feature = "timezones")]
-fn localize_datetime(ndt: NaiveDateTime, tz: &TimeZone) -> PolarsResult<NaiveDateTime> {
+fn localize_datetime(ndt: NaiveDateTime, tz: &impl TimeZoneTrait) -> PolarsResult<NaiveDateTime> {
     // e.g. '2021-01-01 03:00' -> '2021-01-01 03:00CDT'
-    match parse_offset(tz) {
-        Ok(tz) => match tz.from_local_datetime(&ndt) {
-            LocalResult::Single(tz) => Ok(tz.naive_utc()),
-            LocalResult::Ambiguous(_, _) => {
-                polars_bail!(ComputeError: "ambiguous timestamps are not (yet) supported")
-            }
-            LocalResult::None => {
-                polars_bail!(ComputeError: "non-existent timestamps are not (yet) supported")
-            }
-        },
-        Err(_) => match tz.parse::<Tz>() {
-            Ok(tz) => match tz.from_local_datetime(&ndt) {
-                LocalResult::Single(tz) => Ok(tz.naive_utc()),
-                LocalResult::Ambiguous(_, _) => {
-                    polars_bail!(ComputeError: "ambiguous timestamps are not (yet) supported")
-                }
-                LocalResult::None => {
-                    polars_bail!(ComputeError: "non-existent timestamps are not (yet) supported")
-                }
-            },
-            _ => unreachable!(),
-        },
+    match tz.from_local_datetime(&ndt) {
+        LocalResult::Single(tz) => Ok(tz.naive_utc()),
+        LocalResult::Ambiguous(_, _) => {
+            polars_bail!(ComputeError: "ambiguous timestamps are not (yet) supported")
+        }
+        LocalResult::None => {
+            polars_bail!(ComputeError: "non-existent timestamps are not (yet) supported")
+        }
     }
 }
 
 #[cfg(feature = "timezones")]
-fn unlocalize_datetime(ndt: NaiveDateTime, tz: &TimeZone) -> NaiveDateTime {
+fn unlocalize_datetime(ndt: NaiveDateTime, tz: &impl TimeZoneTrait) -> NaiveDateTime {
     // e.g. '2021-01-01 03:00CDT' -> '2021-01-01 03:00'
-    match parse_offset(tz) {
-        Ok(tz) => tz.from_utc_datetime(&ndt).naive_local(),
-        Err(_) => match tz.parse::<Tz>() {
-            Ok(tz) => tz.from_utc_datetime(&ndt).naive_local(),
-            _ => unreachable!(),
-        },
-    }
+    tz.from_utc_datetime(&ndt).naive_local()
 }
 
 impl Duration {
@@ -467,7 +444,7 @@ impl Duration {
     fn add_impl_month_week_or_day<F, G, J>(
         &self,
         t: i64,
-        tz: &Option<TimeZone>,
+        tz: Option<&impl TimeZoneTrait>,
         nsecs_to_unit: F,
         timestamp_to_datetime: G,
         datetime_to_timestamp: J,
@@ -567,7 +544,7 @@ impl Duration {
         Ok(new_t)
     }
 
-    pub fn add_ns(&self, t: i64, tz: &Option<TimeZone>) -> PolarsResult<i64> {
+    pub fn add_ns(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> PolarsResult<i64> {
         let d = self;
         let new_t = self.add_impl_month_week_or_day(
             t,
@@ -580,7 +557,7 @@ impl Duration {
         Ok(new_t? + nsecs)
     }
 
-    pub fn add_us(&self, t: i64, tz: &Option<TimeZone>) -> PolarsResult<i64> {
+    pub fn add_us(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> PolarsResult<i64> {
         let d = self;
         let new_t = self.add_impl_month_week_or_day(
             t,
@@ -593,7 +570,7 @@ impl Duration {
         Ok(new_t? + nsecs / 1_000)
     }
 
-    pub fn add_ms(&self, t: i64, tz: &Option<TimeZone>) -> PolarsResult<i64> {
+    pub fn add_ms(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> PolarsResult<i64> {
         let d = self;
         let new_t = self.add_impl_month_week_or_day(
             t,
@@ -668,8 +645,8 @@ mod test {
         // add_ns can only error if a time zone is passed, so it's
         // safe to unwrap here
         assert_eq!(
-            seven_days.add_ns(t, &None).unwrap(),
-            one_week.add_ns(t, &None).unwrap()
+            seven_days.add_ns(t, None::<&FixedOffset>).unwrap(),
+            one_week.add_ns(t, None::<&FixedOffset>).unwrap()
         );
 
         let seven_days_negative = Duration::parse("-7d");
@@ -678,8 +655,8 @@ mod test {
         // add_ns can only error if a time zone is passed, so it's
         // safe to unwrap here
         assert_eq!(
-            seven_days_negative.add_ns(t, &None).unwrap(),
-            one_week_negative.add_ns(t, &None).unwrap()
+            seven_days_negative.add_ns(t, None::<&FixedOffset>).unwrap(),
+            one_week_negative.add_ns(t, None::<&FixedOffset>).unwrap()
         );
     }
 }

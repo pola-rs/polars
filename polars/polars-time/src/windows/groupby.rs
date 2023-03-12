@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 
+use chrono::FixedOffset;
 use polars_arrow::trusted_len::TrustedLen;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::export::rayon::prelude::*;
@@ -191,8 +192,8 @@ pub(crate) fn groupby_values_iter_full_lookbehind(
             last = *lower;
             i += start_offset;
             // TODO remove unwrap once time zone is respected
-            let lower = add(&offset, *lower, &None).unwrap();
-            let upper = add(&period, lower, &None).unwrap();
+            let lower = add(&offset, *lower, None::<&FixedOffset>).unwrap();
+            let upper = add(&period, lower, None::<&FixedOffset>).unwrap();
 
             let b = Bounds::new(lower, upper);
 
@@ -246,8 +247,8 @@ pub(crate) fn groupby_values_iter_window_behind_t(
         }
         last = *lower;
         // TODO remove unwrap once time zone is respected
-        let lower = add(&offset, *lower, &None).unwrap();
-        let upper = add(&period, lower, &None).unwrap();
+        let lower = add(&offset, *lower, None::<&FixedOffset>).unwrap();
+        let upper = add(&period, lower, None::<&FixedOffset>).unwrap();
 
         let b = Bounds::new(lower, upper);
         if b.is_future(time[0], closed_window) {
@@ -301,8 +302,8 @@ pub(crate) fn groupby_values_iter_partial_lookbehind(
         }
         last = *lower;
         // TODO remove unwrap once time zone is respected
-        let lower = add(&offset, *lower, &None).unwrap();
-        let upper = add(&period, lower, &None).unwrap();
+        let lower = add(&offset, *lower, None::<&FixedOffset>).unwrap();
+        let upper = add(&period, lower, None::<&FixedOffset>).unwrap();
 
         let b = Bounds::new(lower, upper);
 
@@ -351,8 +352,8 @@ pub(crate) fn groupby_values_iter_full_lookahead(
             last = *lower;
             i += start_offset;
             // TODO remove unwrap once time zone is respected
-            let lower = add(&offset, *lower, &None).unwrap();
-            let upper = add(&period, lower, &None).unwrap();
+            let lower = add(&offset, *lower, None::<&FixedOffset>).unwrap();
+            let upper = add(&period, lower, None::<&FixedOffset>).unwrap();
 
             let b = Bounds::new(lower, upper);
 
