@@ -145,6 +145,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "atoi"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "616896e05fc0e2649463a93a15183c6a16bf03413a7af88ef1285ddedfa9cda5"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1662,9 +1671,9 @@ name = "polars-time"
 version = "0.27.2"
 dependencies = [
  "arrow2",
+ "atoi",
  "chrono",
  "chrono-tz 0.8.1",
- "lexical",
  "now",
  "once_cell",
  "polars-arrow",

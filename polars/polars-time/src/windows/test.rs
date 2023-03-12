@@ -22,7 +22,8 @@ fn test_date_range() {
         ClosedWindow::Both,
         TimeUnit::Nanoseconds,
         &None,
-    ).unwrap();  // unwrapping as we pass None as the time zone
+    )
+    .unwrap(); // unwrapping as we pass None as the time zone
     let expected = [
         NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(),
         NaiveDate::from_ymd_opt(2022, 2, 1).unwrap(),
@@ -52,7 +53,8 @@ fn test_feb_date_range() {
         ClosedWindow::Both,
         TimeUnit::Nanoseconds,
         &None,
-    ).unwrap();  // unwrapping as we pass None as the time zone
+    )
+    .unwrap(); // unwrapping as we pass None as the time zone
     let expected = [
         NaiveDate::from_ymd_opt(2022, 2, 1).unwrap(),
         NaiveDate::from_ymd_opt(2022, 3, 1).unwrap(),
@@ -169,7 +171,8 @@ fn test_boundaries() {
         ClosedWindow::Both,
         TimeUnit::Nanoseconds,
         &None,
-    ).unwrap();  // unwrapping as we pass None as the time zone
+    )
+    .unwrap(); // unwrapping as we pass None as the time zone
 
     // window:
     // every 2h
@@ -340,7 +343,8 @@ fn test_boundaries_2() {
         ClosedWindow::Both,
         TimeUnit::Nanoseconds,
         &None,
-    ).unwrap();  // unwrapping as we pass None as the time zone
+    )
+    .unwrap(); // unwrapping as we pass None as the time zone
 
     print_ns(&ts);
 
@@ -446,7 +450,8 @@ fn test_boundaries_ms() {
         ClosedWindow::Both,
         TimeUnit::Milliseconds,
         &None,
-    ).unwrap();  // unwrapping as we pass None as the time zone
+    )
+    .unwrap(); // unwrapping as we pass None as the time zone
 
     // window:
     // every 2h
@@ -617,7 +622,8 @@ fn test_rolling_lookback() {
         ClosedWindow::Both,
         TimeUnit::Milliseconds,
         &None,
-    ).unwrap();  // unwrapping as we pass None as the time zone
+    )
+    .unwrap(); // unwrapping as we pass None as the time zone
 
     // full lookbehind
     let groups = groupby_values(
