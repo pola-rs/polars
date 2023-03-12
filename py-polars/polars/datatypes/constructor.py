@@ -31,6 +31,7 @@ if not _DOCUMENTING:
         dt.UInt16: PySeries.new_opt_u16,
         dt.UInt32: PySeries.new_opt_u32,
         dt.UInt64: PySeries.new_opt_u64,
+        dt.Decimal: PySeries.new_decimal,
         dt.Date: PySeries.new_opt_i32,
         dt.Datetime: PySeries.new_opt_i64,
         dt.Duration: PySeries.new_opt_i64,
