@@ -1,100 +1,42 @@
 use super::*;
 
-impl<'lhs, 'rhs, T> TryAdd<&'rhs Series> for &'lhs ChunkedArray<T>
-where
-    T: PolarsDataType + 'rhs,
-    Self: TryAdd<&'rhs ChunkedArray<T>, Output = ChunkedArray<T>, Error = PolarsError>,
-    ChunkedArray<T>: IntoSeries,
-{
-    type Output = Series;
-    type Error = PolarsError;
+macro_rules! impl_series_arithmetic_op {
+    ($trait:ident, $op:ident, $try_trait:ident, $try_op:ident) => {
+        impl<'lhs, 'rhs, T> $try_trait<&'rhs Series> for &'lhs ChunkedArray<T>
+        where
+            T: PolarsDataType + 'rhs,
+            Self: $try_trait<&'rhs ChunkedArray<T>, Output = ChunkedArray<T>, Error = PolarsError>,
+            ChunkedArray<T>: IntoSeries,
+        {
+            type Output = Series;
+            type Error = PolarsError;
 
-    fn try_add(self, rhs: &'rhs Series) -> PolarsResult<Series> {
-        Ok(self
-            .try_add(self.unpack_series_matching_type(rhs)?)?
-            .into_series())
-    }
+            fn $try_op(self, rhs: &'rhs Series) -> PolarsResult<Series> {
+                Ok(self
+                    .$try_op(self.unpack_series_matching_type(rhs)?)?
+                    .into_series())
+            }
+        }
+
+        impl<'lhs, 'rhs, T> $trait<&'rhs Series> for &'lhs ChunkedArray<T>
+        where
+            T: PolarsDataType,
+            Self: $try_trait<&'rhs Series, Output = Series, Error = PolarsError>,
+        {
+            type Output = Series;
+
+            fn $op(self, rhs: &'rhs Series) -> Series {
+                self.$try_op(rhs).unwrap()
+            }
+        }
+    };
 }
 
-impl<'lhs, 'rhs, T> Add<&'rhs Series> for &'lhs ChunkedArray<T>
-where
-    T: PolarsDataType,
-    Self: TryAdd<&'rhs Series, Output = Series, Error = PolarsError>,
-{
-    type Output = Series;
-
-    fn add(self, rhs: &'rhs Series) -> Series {
-        self.try_add(rhs).unwrap()
-    }
-}
-
-pub trait NumOpsDispatch: AsRefDataType {
-    fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
-        polars_bail!(opq = sub, self.as_ref_dtype(), rhs.dtype());
-    }
-
-    fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
-        polars_bail!(opq = mul, self.as_ref_dtype(), rhs.dtype());
-    }
-
-    fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
-        polars_bail!(opq = div, self.as_ref_dtype(), rhs.dtype());
-    }
-
-    fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
-        polars_bail!(opq = rem, self.as_ref_dtype(), rhs.dtype());
-    }
-}
-
-impl<T> NumOpsDispatch for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    for<'a> &'a ChunkedArray<T>: Add<Output = Self>
-        + Sub<Output = Self>
-        + Div<Output = Self>
-        + Mul<Output = Self>
-        + Rem<Output = Self>,
-    Self: IntoSeries,
-{
-    fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
-        // Safety:
-        // There will be UB if a ChunkedArray is alive with the wrong datatype.
-        // we now only create the potentially wrong dtype for a short time.
-        // Note that the physical type correctness is checked!
-        // The ChunkedArray with the wrong dtype is dropped after this operation
-        let rhs = unsafe { self.unpacked_series_matching_type_unchecked(rhs) };
-        let out = self - rhs;
-        Ok(out.into_series())
-    }
-
-    fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
-        // Safety:
-        // see subtract
-        let rhs = unsafe { self.unpacked_series_matching_type_unchecked(rhs) };
-        let out = self * rhs;
-        Ok(out.into_series())
-    }
-
-    fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
-        // Safety:
-        // see subtract
-        let rhs = unsafe { self.unpacked_series_matching_type_unchecked(rhs) };
-        let out = self / rhs;
-        Ok(out.into_series())
-    }
-
-    fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
-        // Safety:
-        // see subtract
-        let rhs = unsafe { self.unpacked_series_matching_type_unchecked(rhs) };
-        let out = self % rhs;
-        Ok(out.into_series())
-    }
-}
-
-impl NumOpsDispatch for Utf8Chunked {}
-
-impl NumOpsDispatch for BinaryChunked {}
+impl_series_arithmetic_op!(Add, add, TryAdd, try_add);
+impl_series_arithmetic_op!(Sub, sub, TrySub, try_sub);
+impl_series_arithmetic_op!(Mul, mul, TryMul, try_mul);
+impl_series_arithmetic_op!(Div, div, TryDiv, try_div);
+impl_series_arithmetic_op!(Rem, rem, TryRem, try_rem);
 
 #[cfg(feature = "checked_arithmetic")]
 pub mod checked {

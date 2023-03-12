@@ -69,20 +69,8 @@ impl private::PrivateSeries for SeriesWrap<BinaryChunked> {
     ) -> Series {
         ZipOuterJoinColumn::zip_outer_join_column(&self.0, right_column, opt_join_tuples)
     }
-    fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
-        NumOpsDispatch::subtract(&self.0, rhs)
-    }
     fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
         TryAdd::try_add(&self.0, rhs)
-    }
-    fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
-        NumOpsDispatch::multiply(&self.0, rhs)
-    }
-    fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
-        NumOpsDispatch::divide(&self.0, rhs)
-    }
-    fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
-        NumOpsDispatch::remainder(&self.0, rhs)
     }
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)

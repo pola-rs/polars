@@ -45,7 +45,7 @@ pub use crate::named_from::{NamedFrom, NamedFromOwned};
 pub use crate::schema::*;
 #[cfg(feature = "checked_arithmetic")]
 pub use crate::series::arithmetic::checked::NumOpsDispatchChecked;
-pub use crate::series::arithmetic::{LhsNumOps, NumOpsDispatch};
+pub use crate::series::arithmetic::LhsNumOps;
 pub use crate::series::{IntoSeries, Series, SeriesTrait};
 pub use crate::testing::*;
 pub(crate) use crate::utils::CustomIterTools;
