@@ -64,9 +64,7 @@ pub fn date_range_impl(
                     name,
                     date_range_vec(start?, stop?, every, closed, tu, Some(&tz))?,
                 )
-                .into_datetime(tu, None)
-                .replace_time_zone(Some("UTC"))?
-                .convert_time_zone(tz.to_string())?
+                .into_datetime(tu, _tz.cloned())
             }
             Err(_) => match parse_offset(tz) {
                 Ok(tz) => {
@@ -76,9 +74,7 @@ pub fn date_range_impl(
                         name,
                         date_range_vec(start?, stop?, every, closed, tu, Some(&tz))?,
                     )
-                    .into_datetime(tu, None)
-                    .replace_time_zone(Some("UTC"))?
-                    .convert_time_zone(tz.to_string())?
+                    .into_datetime(tu, _tz.cloned())
                 }
                 _ => polars_bail!(ComputeError: "unable to parse time zone: {}", tz),
             },
