@@ -289,5 +289,28 @@ where
 impl PolarsFloatType for Float32Type {}
 impl PolarsFloatType for Float64Type {}
 
+pub trait PolarsDowncastType: PolarsDataType {
+    type Array: Array;
+}
+impl<T: PolarsNumericType> PolarsDowncastType for T {
+    type Array = PrimitiveArray<T::Native>;
+}
+impl PolarsDowncastType for BooleanType {
+    type Array = BooleanArray;
+}
+impl PolarsDowncastType for Utf8Type {
+    type Array = Utf8Array<i64>;
+}
+impl PolarsDowncastType for ListType {
+    type Array = ListArray<i64>;
+}
+impl PolarsDowncastType for BinaryType {
+    type Array = BinaryArray<i64>;
+}
+#[cfg(feature = "object")]
+impl<T: PolarsObject> PolarsDowncastType for ObjectType<T> {
+    type Array = crate::chunked_array::object::ObjectArray<T>;
+}
+
 // Provide options to cloud providers (credentials, region).
 pub type CloudOptions = PlHashMap<String, String>;
