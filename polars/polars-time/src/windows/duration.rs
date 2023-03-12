@@ -475,7 +475,11 @@ impl Duration {
 
             // Retrieve the current date and increment the values
             // based on the number of months
-            let ts = timestamp_to_datetime(t);
+            let ts = match tz {
+                #[cfg(feature = "timezones")]
+                Some(tz) => unlocalize_datetime(timestamp_to_datetime(t), tz),
+                _ => timestamp_to_datetime(t),
+            };
             let mut year = ts.year();
             let mut month = ts.month() as i32;
             let mut day = ts.day();
@@ -510,19 +514,29 @@ impl Duration {
             let sec = ts.second();
             let nsec = ts.nanosecond();
             let dt = new_datetime(year, month as u32, day, hour, minute, sec, nsec);
-            new_t = datetime_to_timestamp(dt);
+            new_t = match tz {
+                #[cfg(feature = "timezones")]
+                Some(tz) => datetime_to_timestamp(localize_datetime(dt, tz)),
+                _ => datetime_to_timestamp(dt),
+            };
         }
 
         if d.weeks > 0 {
             let t_weeks = nsecs_to_unit(self.weeks * NS_WEEK);
-            new_t += if d.negative { -t_weeks } else { t_weeks };
+            match tz {
+                #[cfg(feature = "timezones")]
+                Some(tz) => {
+                    new_t = datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
+                    new_t += if d.negative { -t_weeks } else { t_weeks };
+                    new_t = datetime_to_timestamp(localize_datetime(timestamp_to_datetime(new_t), tz));
+                }
+                _ => {
+                    new_t += if d.negative { -t_weeks } else { t_weeks }
+                }
+            };
         }
 
         if d.days > 0 {
-            // wait, this will have to be done differently.
-            // need to do the localize -> remainder -> unlocalize trick?
-            // first, let's pass the tz down?
-            // could do: unlocalize, add days times ns_day, relocalize?
             let t_days = nsecs_to_unit(self.days * NS_DAY);
             match tz {
                 #[cfg(feature = "timezones")]
