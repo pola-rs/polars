@@ -665,6 +665,8 @@ mod test {
         let seven_days = Duration::parse("7d");
         let one_week = Duration::parse("1w");
 
+        // add_ns can only error if a time zone is passed, so it's
+        // safe to unwrap here
         assert_eq!(
             seven_days.add_ns(t, &None).unwrap(),
             one_week.add_ns(t, &None).unwrap()
@@ -673,6 +675,8 @@ mod test {
         let seven_days_negative = Duration::parse("-7d");
         let one_week_negative = Duration::parse("-1w");
 
+        // add_ns can only error if a time zone is passed, so it's
+        // safe to unwrap here
         assert_eq!(
             seven_days_negative.add_ns(t, &None).unwrap(),
             one_week_negative.add_ns(t, &None).unwrap()

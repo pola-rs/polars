@@ -190,8 +190,7 @@ pub(crate) fn groupby_values_iter_full_lookbehind(
             }
             last = *lower;
             i += start_offset;
-            // TODO: once these respect the time zone, then they may error,
-            // so the .unwrap() will need to be removed.
+            // TODO remove unwrap once time zone is respected
             let lower = add(&offset, *lower, &None).unwrap();
             let upper = add(&period, lower, &None).unwrap();
 
@@ -246,8 +245,7 @@ pub(crate) fn groupby_values_iter_window_behind_t(
             panic!("index column of 'groupby_rolling' must be sorted!")
         }
         last = *lower;
-        // TODO: once these respect the time zone, then they may error,
-        // so the .unwrap() will need to be removed.
+        // TODO remove unwrap once time zone is respected
         let lower = add(&offset, *lower, &None).unwrap();
         let upper = add(&period, lower, &None).unwrap();
 
@@ -302,8 +300,7 @@ pub(crate) fn groupby_values_iter_partial_lookbehind(
             panic!("index column of 'groupby_rolling' must be sorted!")
         }
         last = *lower;
-        // TODO: once these respect the time zone, then they may error,
-        // so the .unwrap() will need to be removed.
+        // TODO remove unwrap once time zone is respected
         let lower = add(&offset, *lower, &None).unwrap();
         let upper = add(&period, lower, &None).unwrap();
 
@@ -353,8 +350,7 @@ pub(crate) fn groupby_values_iter_full_lookahead(
             }
             last = *lower;
             i += start_offset;
-            // TODO: once these respect the time zone, then they may error,
-            // so the .unwrap() will need to be removed.
+            // TODO remove unwrap once time zone is respected
             let lower = add(&offset, *lower, &None).unwrap();
             let upper = add(&period, lower, &None).unwrap();
 

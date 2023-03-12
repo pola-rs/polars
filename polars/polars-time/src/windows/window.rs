@@ -31,8 +31,7 @@ impl Window {
     /// Truncate the given ns timestamp by the window boundary.
     pub fn truncate_ns(&self, t: i64) -> i64 {
         let t = self.every.truncate_ns(t);
-        // TODO once time zone is respected, this may error,
-        // so the unwrap would need to be removed
+        // TODO remove unwrap once time zone is respected
         self.offset.add_ns(t, &None).unwrap()
     }
 
@@ -43,8 +42,7 @@ impl Window {
     /// Truncate the given ns timestamp by the window boundary.
     pub fn truncate_us(&self, t: i64) -> i64 {
         let t = self.every.truncate_us(t);
-        // TODO once time zone is respected, this may error,
-        // so the unwrap would need to be removed
+        // TODO remove unwrap once time zone is respected
         self.offset.add_us(t, &None).unwrap()
     }
 
@@ -54,8 +52,7 @@ impl Window {
 
     pub fn truncate_ms(&self, t: i64) -> i64 {
         let t = self.every.truncate_ms(t);
-        // TODO once time zone is respected, this may error,
-        // so the unwrap would need to be removed
+        // TODO remove unwrap once time zone is respected
         self.offset.add_ms(t, &None).unwrap()
     }
 
@@ -262,7 +259,7 @@ impl Iterator for BoundsIter {
         if self.bi.start < self.boundary.stop {
             let out = self.bi;
             match self.tu {
-                // TODO remove .unwrap() once time zone is respect, as then they may error
+                // TODO remove unwrap once time zone is respected
                 TimeUnit::Nanoseconds => {
                     self.bi.start = self.window.every.add_ns(self.bi.start, &None).unwrap();
                     self.bi.stop = self.window.every.add_ns(self.bi.stop, &None).unwrap();
