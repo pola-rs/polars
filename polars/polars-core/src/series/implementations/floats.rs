@@ -119,19 +119,19 @@ macro_rules! impl_dyn_series {
             ) -> Series {
                 ZipOuterJoinColumn::zip_outer_join_column(&self.0, right_column, opt_join_tuples)
             }
-            fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
-                TrySub::try_sub(&self.0, rhs)
-            }
-            fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
+            fn series_add(&self, rhs: &Series) -> PolarsResult<Series> {
                 TryAdd::try_add(&self.0, rhs)
             }
-            fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
+            fn series_sub(&self, rhs: &Series) -> PolarsResult<Series> {
+                TrySub::try_sub(&self.0, rhs)
+            }
+            fn series_mul(&self, rhs: &Series) -> PolarsResult<Series> {
                 TryMul::try_mul(&self.0, rhs)
             }
-            fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
+            fn series_div(&self, rhs: &Series) -> PolarsResult<Series> {
                 TryDiv::try_div(&self.0, rhs)
             }
-            fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
+            fn series_rem(&self, rhs: &Series) -> PolarsResult<Series> {
                 TryRem::try_rem(&self.0, rhs)
             }
             fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {

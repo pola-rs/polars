@@ -117,7 +117,7 @@ mod inner_mod {
                         series_container._get_inner_mut().compute_len();
 
                         let s = if size == options.window_size {
-                            f(&series_container.multiply(&weights_series).unwrap())
+                            f(&series_container.series_mul(&weights_series).unwrap())
                         } else {
                             let weights_cutoff: Series = match self.dtype() {
                                 DataType::Float64 => weights_series
@@ -133,7 +133,7 @@ mod inner_mod {
                                     .take(series_container.len())
                                     .collect(),
                             };
-                            f(&series_container.multiply(&weights_cutoff).unwrap())
+                            f(&series_container.series_mul(&weights_cutoff).unwrap())
                         };
 
                         let out = self.unpack_series_matching_type(&s)?;

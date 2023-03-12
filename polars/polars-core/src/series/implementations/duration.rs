@@ -147,44 +147,44 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .into_duration(self.0.time_unit())
             .into_series()
     }
-    fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
+    fn series_sub(&self, rhs: &Series) -> PolarsResult<Series> {
         match (self.dtype(), rhs.dtype()) {
             (DataType::Duration(tu), DataType::Duration(tur)) => {
                 assert_eq!(tu, tur);
                 let lhs = self.cast(&DataType::Int64).unwrap();
                 let rhs = rhs.cast(&DataType::Int64).unwrap();
-                Ok(lhs.subtract(&rhs)?.into_duration(*tu).into_series())
+                Ok(lhs.series_sub(&rhs)?.into_duration(*tu).into_series())
             }
             (dtl, dtr) => polars_bail!(opq = sub, dtl, dtr),
         }
     }
-    fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
+    fn series_add(&self, rhs: &Series) -> PolarsResult<Series> {
         match (self.dtype(), rhs.dtype()) {
             (DataType::Duration(tu), DataType::Duration(tur)) => {
                 assert_eq!(tu, tur);
                 let lhs = self.cast(&DataType::Int64).unwrap();
                 let rhs = rhs.cast(&DataType::Int64).unwrap();
-                Ok(lhs.add_to(&rhs)?.into_duration(*tu).into_series())
+                Ok(lhs.series_add(&rhs)?.into_duration(*tu).into_series())
             }
             (DataType::Duration(tu), DataType::Datetime(tur, tz)) => {
                 assert_eq!(tu, tur);
                 let lhs = self.cast(&DataType::Int64).unwrap();
                 let rhs = rhs.cast(&DataType::Int64).unwrap();
                 Ok(lhs
-                    .add_to(&rhs)?
+                    .series_add(&rhs)?
                     .into_datetime(*tu, tz.clone())
                     .into_series())
             }
             (dtl, dtr) => polars_bail!(opq = add, dtl, dtr),
         }
     }
-    fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
+    fn series_mul(&self, rhs: &Series) -> PolarsResult<Series> {
         polars_bail!(opq = mul, self.dtype(), rhs.dtype());
     }
-    fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
+    fn series_div(&self, rhs: &Series) -> PolarsResult<Series> {
         polars_bail!(opq = div, self.dtype(), rhs.dtype());
     }
-    fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
+    fn series_rem(&self, rhs: &Series) -> PolarsResult<Series> {
         polars_bail!(opq = rem, self.dtype(), rhs.dtype());
     }
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {

@@ -57,7 +57,7 @@ fn test_datelike_methods() -> PolarsResult<()> {
     let s = Series::new("foo", &[1, 2, 3]);
     let s = s.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?;
 
-    let out = s.subtract(&s)?;
+    let out = s.series_sub(&s)?;
     assert!(matches!(
         out.dtype(),
         DataType::Duration(TimeUnit::Nanoseconds)
@@ -144,15 +144,15 @@ fn test_duration() -> PolarsResult<()> {
         .into_duration(TimeUnit::Nanoseconds)
         .into_series();
     assert_eq!(
-        *b.subtract(&a)?.dtype(),
+        *b.series_sub(&a)?.dtype(),
         DataType::Duration(TimeUnit::Nanoseconds)
     );
     assert_eq!(
-        *a.add_to(&c)?.dtype(),
+        *a.series_add(&c)?.dtype(),
         DataType::Datetime(TimeUnit::Nanoseconds, None)
     );
     assert_eq!(
-        b.subtract(&a)?,
+        b.series_sub(&a)?,
         Int64Chunked::full("", 1, a.len())
             .into_duration(TimeUnit::Nanoseconds)
             .into_series()

@@ -6,7 +6,7 @@ use polars_core::datatypes::PolarsNumericType;
 use polars_core::export::num;
 use polars_core::prelude::*;
 #[cfg(feature = "dtype-struct")]
-use polars_core::series::arithmetic::_struct_arithmetic;
+use polars_core::series::arithmetic::struct_arithmetic_try_op;
 use polars_core::utils::align_chunks_binary;
 use polars_core::with_match_physical_numeric_polars_type;
 
@@ -96,9 +96,7 @@ pub fn floor_div_series(a: &Series, b: &Series) -> PolarsResult<Series> {
     match (a.dtype(), b.dtype()) {
         #[cfg(feature = "dtype-struct")]
         (DataType::Struct(_), DataType::Struct(_)) => {
-            return Ok(_struct_arithmetic(a, b, |a, b| {
-                floor_div_series(a, b).unwrap()
-            }))
+            return struct_arithmetic_try_op(a, b, floor_div_series);
         }
         _ => {}
     }

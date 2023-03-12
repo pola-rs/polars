@@ -8,7 +8,8 @@ impl Series {
             _ => return self.cast(&DataType::Float64)?.pct_change(n),
         }
         let nn = self.fill_null(FillNullStrategy::Forward(None))?;
-        nn.diff(n, NullBehavior::Ignore).divide(&nn.shift(n as i64))
+        nn.diff(n, NullBehavior::Ignore)
+            .series_div(&nn.shift(n as i64))
     }
 }
 

@@ -142,20 +142,20 @@ pub(crate) mod private {
             invalid_operation_panic!(zip_outer_join_column, self)
         }
 
-        fn subtract(&self, _rhs: &Series) -> PolarsResult<Series> {
-            invalid_operation_panic!(sub, self)
+        fn series_add(&self, _rhs: &Series) -> PolarsResult<Series> {
+            polars_bail!(opq = add, self._dtype());
         }
-        fn add_to(&self, _rhs: &Series) -> PolarsResult<Series> {
-            invalid_operation_panic!(add, self)
+        fn series_sub(&self, _rhs: &Series) -> PolarsResult<Series> {
+            polars_bail!(opq = sub, self._dtype());
         }
-        fn multiply(&self, _rhs: &Series) -> PolarsResult<Series> {
-            invalid_operation_panic!(mul, self)
+        fn series_mul(&self, _rhs: &Series) -> PolarsResult<Series> {
+            polars_bail!(opq = mul, self._dtype());
         }
-        fn divide(&self, _rhs: &Series) -> PolarsResult<Series> {
-            invalid_operation_panic!(div, self)
+        fn series_div(&self, _rhs: &Series) -> PolarsResult<Series> {
+            polars_bail!(opq = div, self._dtype());
         }
-        fn remainder(&self, _rhs: &Series) -> PolarsResult<Series> {
-            invalid_operation_panic!(rem, self)
+        fn series_rem(&self, _rhs: &Series) -> PolarsResult<Series> {
+            polars_bail!(opq = rem, self._dtype());
         }
         fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsProxy> {
             invalid_operation_panic!(group_tuples, self)

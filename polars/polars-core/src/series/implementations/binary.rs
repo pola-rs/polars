@@ -69,7 +69,7 @@ impl private::PrivateSeries for SeriesWrap<BinaryChunked> {
     ) -> Series {
         ZipOuterJoinColumn::zip_outer_join_column(&self.0, right_column, opt_join_tuples)
     }
-    fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
+    fn series_add(&self, rhs: &Series) -> PolarsResult<Series> {
         TryAdd::try_add(&self.0, rhs)
     }
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {

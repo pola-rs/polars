@@ -187,7 +187,7 @@ impl StructChunked {
 
     pub(crate) fn try_apply_fields<F>(&self, func: F) -> PolarsResult<Self>
     where
-        F: Fn(&Series) -> PolarsResult<Series>,
+        F: FnMut(&Series) -> PolarsResult<Series>,
     {
         let fields = self
             .fields

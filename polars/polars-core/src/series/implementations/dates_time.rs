@@ -115,41 +115,27 @@ macro_rules! impl_dyn_series {
                     .$into_logical()
                     .into_series()
             }
-
-            fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
+            fn series_add(&self, rhs: &Series) -> PolarsResult<Series> {
+                match (self.dtype(), rhs.dtype()) {
+                    (DataType::Date, DataType::Duration(_)) => (
+                        (&self.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?) + rhs)
+                        .cast(&DataType::Date),
+                    (dtl, dtr) => polars_bail!(opq = add, dtl, dtr),
+                }
+            }
+            fn series_sub(&self, rhs: &Series) -> PolarsResult<Series> {
                 match (self.dtype(), rhs.dtype()) {
                     (DataType::Date, DataType::Date) => {
                         let dt = DataType::Datetime(TimeUnit::Milliseconds, None);
                         let lhs = self.cast(&dt)?;
                         let rhs = rhs.cast(&dt)?;
-                        lhs.subtract(&rhs)
+                        lhs.series_sub(&rhs)
                     }
-                    (DataType::Date, DataType::Duration(_)) => ((&self
-                        .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
-                        .unwrap())
-                        - rhs)
+                    (DataType::Date, DataType::Duration(_)) => (
+                        (&self.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?) - rhs)
                         .cast(&DataType::Date),
                     (dtl, dtr) => polars_bail!(opq = sub, dtl, dtr),
                 }
-            }
-            fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
-                match (self.dtype(), rhs.dtype()) {
-                    (DataType::Date, DataType::Duration(_)) => ((&self
-                        .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
-                        .unwrap())
-                        + rhs)
-                        .cast(&DataType::Date),
-                    (dtl, dtr) => polars_bail!(opq = add, dtl, dtr),
-                }
-            }
-            fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
-                polars_bail!(opq = mul, self.0.dtype(), rhs.dtype());
-            }
-            fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
-                polars_bail!(opq = div, self.0.dtype(), rhs.dtype());
-            }
-            fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
-                polars_bail!(opq = rem, self.0.dtype(), rhs.dtype());
             }
             fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
                 self.0.group_tuples(multithreaded, sorted)
