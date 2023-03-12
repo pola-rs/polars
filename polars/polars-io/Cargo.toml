@@ -19,7 +19,7 @@ ipc_streaming = ["arrow/io_ipc", "arrow/io_ipc_compression"]
 # support for arrow avro parsing
 avro = ["arrow/io_avro", "arrow/io_avro_compression"]
 # ipc = []
-csv-file = ["memmap", "lexical", "polars-core/rows", "lexical-core", "fast-float"]
+csv-file = ["memmap", "lexical", "polars-core/rows", "lexical-core", "fast-float", "simdutf8"]
 decompress = ["flate2/miniz_oxide"]
 decompress-fast = ["flate2/zlib-ng"]
 dtype-categorical = ["polars-core/dtype-categorical"]
@@ -47,6 +47,7 @@ partition = ["polars-core/partition_by"]
 temporal = ["dtype-datetime", "dtype-date", "dtype-time"]
 # don't use this
 private = ["polars-time/private"]
+simd = []
 
 [dependencies]
 ahash.workspace = true
@@ -75,7 +76,7 @@ regex = "1.6"
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true, default-features = false, features = ["alloc", "raw_value"] }
 simd-json = { version = "0.7.0", optional = true, features = ["allow-non-simd", "known-key"] }
-simdutf8 = "0.1"
+simdutf8 = { version = "0.1", optional = true }
 tokio = { version = "1.22.0", features = ["net"], optional = true }
 url = { version = "2.3.1", optional = true }
 
