@@ -137,19 +137,20 @@ mod inner {
     use std::ops::BitOr;
     use std::simd::*;
 
+    use polars_utils::slice::GetSaferUnchecked;
+    use polars_utils::unwrap::UnwrapUncheckedRelease;
+
     const SIMD_SIZE: usize = 16;
     type SimdVec = u8x16;
 
     #[inline]
     unsafe fn simple_argmax(arr: &[bool; SIMD_SIZE]) -> usize {
-        let mut high_index = 0usize;
         for (i, item) in arr.iter().enumerate() {
             if *item {
-                high_index = i;
-                break;
+                return i;
             }
         }
-        high_index
+        unreachable!();
     }
 
     /// An adapted version of std::iter::Split.
@@ -268,18 +269,20 @@ mod inner {
                 let mut total_idx = 0;
 
                 loop {
-                    if self.v.len() >= SIMD_SIZE {
+                    let bytes = unsafe { self.v.get_unchecked_release(total_idx..) };
+
+                    if bytes.len() > SIMD_SIZE {
                         unsafe {
-                            let lane: [u8; SIMD_SIZE] = self
-                                .v
-                                .get_unchecked(total_idx..total_idx + 16)
+                            let lane: [u8; SIMD_SIZE] = bytes
+                                .get_unchecked(0..SIMD_SIZE)
                                 .try_into()
-                                .unwrap_unchecked();
+                                .unwrap_unchecked_release();
                             let simd_bytes = SimdVec::from(lane);
                             let has_eol_char = simd_bytes.simd_eq(self.simd_eol_char);
                             let has_delimiter = simd_bytes.simd_eq(self.simd_delimiter);
                             let has_any = has_delimiter.bitor(has_eol_char);
                             if has_any.any() {
+                                // soundness we can transmute because we have the same alignment
                                 let has_any = std::mem::transmute::<
                                     Mask<_, SIMD_SIZE>,
                                     [bool; SIMD_SIZE],
@@ -291,7 +294,7 @@ mod inner {
                             }
                         }
                     } else {
-                        match self.v.iter().position(|&c| self.eof_oel(c)) {
+                        match bytes.iter().position(|&c| self.eof_oel(c)) {
                             None => return self.finish(needs_escaping),
                             Some(idx) => {
                                 total_idx += idx;
@@ -301,7 +304,7 @@ mod inner {
                     }
                 }
                 unsafe {
-                    if *self.v.get_unchecked(total_idx) == self.eol_char {
+                    if *self.v.get_unchecked_release(total_idx) == self.eol_char {
                         return self.finish_eol(needs_escaping, total_idx);
                     } else {
                         total_idx
