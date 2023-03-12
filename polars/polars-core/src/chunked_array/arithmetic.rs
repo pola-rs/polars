@@ -208,36 +208,29 @@ fn concat_strings(l: &str, r: &str) -> String {
     s
 }
 
-fn concat_binary_arrs(l: &[u8], r: &[u8]) -> Vec<u8> {
-    let mut v = Vec::with_capacity(l.len() + r.len());
-    v.extend_from_slice(l);
-    v.extend_from_slice(r);
-    v
-}
-
-impl Add for &Utf8Chunked {
+impl<'lhs, 'rhs> TryAdd<&'rhs Utf8Chunked> for &'lhs Utf8Chunked {
     type Output = Utf8Chunked;
+    type Error = PolarsError;
 
-    fn add(self, rhs: Self) -> Self::Output {
-        // broadcasting path rhs
+    fn try_add(self, rhs: &'rhs Utf8Chunked) -> PolarsResult<Self::Output> {
+        // TODO: len check?
+        let lhs = self;
         if rhs.len() == 1 {
-            let rhs = rhs.get(0);
-            return match rhs {
-                Some(rhs) => self.add(rhs),
-                None => Utf8Chunked::full_null(self.name(), self.len()),
-            };
+            return Ok(match rhs.get(0) {
+                Some(v) => lhs.add(v),
+                None => Utf8Chunked::full_null(lhs.name(), lhs.len()),
+            });
         }
         // broadcasting path lhs
-        if self.len() == 1 {
-            let lhs = self.get(0);
-            return match lhs {
-                Some(lhs) => rhs.apply(|s| Cow::Owned(concat_strings(lhs, s))),
-                None => Utf8Chunked::full_null(self.name(), rhs.len()),
-            };
+        if lhs.len() == 1 {
+            return Ok(match lhs.get(0) {
+                Some(v) => rhs.apply(|s| Cow::Owned(concat_strings(v, s))),
+                None => Utf8Chunked::full_null(lhs.name(), rhs.len()),
+            });
         }
 
         // todo! add no_null variants. Need 4 paths.
-        let mut ca: Self::Output = self
+        let ca: Utf8Chunked = lhs
             .into_iter()
             .zip(rhs.into_iter())
             .map(|(opt_l, opt_r)| match (opt_l, opt_r) {
@@ -245,8 +238,24 @@ impl Add for &Utf8Chunked {
                 _ => None,
             })
             .collect_trusted();
-        ca.rename(self.name());
-        ca
+        Ok(ca.with_name(lhs.name()))
+    }
+}
+
+impl TryAdd for Utf8Chunked {
+    type Output = Self;
+    type Error = PolarsError;
+
+    fn try_add(self, rhs: Self) -> PolarsResult<Self::Output> {
+        (&self).try_add(&rhs)
+    }
+}
+
+impl<'lhs, 'rhs> Add<&'rhs Utf8Chunked> for &'lhs Utf8Chunked {
+    type Output = Utf8Chunked;
+
+    fn add(self, rhs: &'rhs Utf8Chunked) -> Self::Output {
+        self.try_add(rhs).unwrap()
     }
 }
 
@@ -254,7 +263,7 @@ impl Add for Utf8Chunked {
     type Output = Utf8Chunked;
 
     fn add(self, rhs: Self) -> Self::Output {
-        (&self).add(&rhs)
+        self.try_add(rhs).unwrap()
     }
 }
 
@@ -262,44 +271,60 @@ impl Add<&str> for &Utf8Chunked {
     type Output = Utf8Chunked;
 
     fn add(self, rhs: &str) -> Self::Output {
-        let mut ca: Self::Output = match self.has_validity() {
-            false => self
+        let lhs = self;
+        let ca: Utf8Chunked = match lhs.has_validity() {
+            false => lhs
                 .into_no_null_iter()
                 .map(|l| concat_strings(l, rhs))
                 .collect_trusted(),
-            _ => self
+            _ => lhs
                 .into_iter()
                 .map(|opt_l| opt_l.map(|l| concat_strings(l, rhs)))
                 .collect_trusted(),
         };
-        ca.rename(self.name());
-        ca
+        ca.with_name(lhs.name())
     }
 }
 
-impl Add for &BinaryChunked {
-    type Output = BinaryChunked;
+impl TryAdd<&str> for &Utf8Chunked {
+    type Output = Utf8Chunked;
+    type Error = PolarsError;
 
-    fn add(self, rhs: Self) -> Self::Output {
-        // broadcasting path rhs
+    fn try_add(self, rhs: &str) -> PolarsResult<Self::Output> {
+        Ok(self.add(rhs))
+    }
+}
+
+fn concat_binary_arrs(l: &[u8], r: &[u8]) -> Vec<u8> {
+    let mut v = Vec::with_capacity(l.len() + r.len());
+    v.extend_from_slice(l);
+    v.extend_from_slice(r);
+    v
+}
+
+impl<'lhs, 'rhs> TryAdd<&'rhs BinaryChunked> for &'lhs BinaryChunked {
+    type Output = BinaryChunked;
+    type Error = PolarsError;
+
+    fn try_add(self, rhs: &'rhs BinaryChunked) -> PolarsResult<Self::Output> {
+        // TODO: len check?
+        let lhs = self;
         if rhs.len() == 1 {
-            let rhs = rhs.get(0);
-            return match rhs {
-                Some(rhs) => self.add(rhs),
-                None => BinaryChunked::full_null(self.name(), self.len()),
-            };
+            return Ok(match rhs.get(0) {
+                Some(v) => lhs.add(v),
+                None => BinaryChunked::full_null(lhs.name(), lhs.len()),
+            });
         }
         // broadcasting path lhs
-        if self.len() == 1 {
-            let lhs = self.get(0);
-            return match lhs {
-                Some(lhs) => rhs.apply(|s| Cow::Owned(concat_binary_arrs(lhs, s))),
-                None => BinaryChunked::full_null(self.name(), rhs.len()),
-            };
+        if lhs.len() == 1 {
+            return Ok(match lhs.get(0) {
+                Some(v) => rhs.apply(|s| Cow::Owned(concat_binary_arrs(v, s))),
+                None => BinaryChunked::full_null(lhs.name(), rhs.len()),
+            });
         }
 
         // todo! add no_null variants. Need 4 paths.
-        let mut ca: Self::Output = self
+        let ca: BinaryChunked = lhs
             .into_iter()
             .zip(rhs.into_iter())
             .map(|(opt_l, opt_r)| match (opt_l, opt_r) {
@@ -307,8 +332,24 @@ impl Add for &BinaryChunked {
                 _ => None,
             })
             .collect_trusted();
-        ca.rename(self.name());
-        ca
+        Ok(ca.with_name(lhs.name()))
+    }
+}
+
+impl TryAdd for BinaryChunked {
+    type Output = Self;
+    type Error = PolarsError;
+
+    fn try_add(self, rhs: Self) -> PolarsResult<Self::Output> {
+        (&self).try_add(&rhs)
+    }
+}
+
+impl<'lhs, 'rhs> Add<&'rhs BinaryChunked> for &'lhs BinaryChunked {
+    type Output = BinaryChunked;
+
+    fn add(self, rhs: &'rhs BinaryChunked) -> Self::Output {
+        self.try_add(rhs).unwrap()
     }
 }
 
@@ -316,7 +357,7 @@ impl Add for BinaryChunked {
     type Output = BinaryChunked;
 
     fn add(self, rhs: Self) -> Self::Output {
-        (&self).add(&rhs)
+        self.try_add(rhs).unwrap()
     }
 }
 
@@ -324,18 +365,27 @@ impl Add<&[u8]> for &BinaryChunked {
     type Output = BinaryChunked;
 
     fn add(self, rhs: &[u8]) -> Self::Output {
-        let mut ca: Self::Output = match self.has_validity() {
-            false => self
+        let lhs = self;
+        let ca: BinaryChunked = match lhs.has_validity() {
+            false => lhs
                 .into_no_null_iter()
                 .map(|l| concat_binary_arrs(l, rhs))
                 .collect_trusted(),
-            _ => self
+            _ => lhs
                 .into_iter()
                 .map(|opt_l| opt_l.map(|l| concat_binary_arrs(l, rhs)))
                 .collect_trusted(),
         };
-        ca.rename(self.name());
-        ca
+        ca.with_name(lhs.name())
+    }
+}
+
+impl TryAdd<&[u8]> for &BinaryChunked {
+    type Output = BinaryChunked;
+    type Error = PolarsError;
+
+    fn try_add(self, rhs: &[u8]) -> PolarsResult<Self::Output> {
+        Ok(self.add(rhs))
     }
 }
 

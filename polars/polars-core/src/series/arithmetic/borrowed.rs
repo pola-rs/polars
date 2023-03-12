@@ -1,12 +1,36 @@
 use super::*;
 
+impl<'lhs, 'rhs, T> TryAdd<&'rhs Series> for &'lhs ChunkedArray<T>
+where
+    T: PolarsDataType + 'rhs,
+    Self: TryAdd<&'rhs ChunkedArray<T>, Output = ChunkedArray<T>, Error = PolarsError>,
+    ChunkedArray<T>: IntoSeries,
+{
+    type Output = Series;
+    type Error = PolarsError;
+
+    fn try_add(self, rhs: &'rhs Series) -> PolarsResult<Series> {
+        Ok(self
+            .try_add(self.unpack_series_matching_type(rhs)?)?
+            .into_series())
+    }
+}
+
+impl<'lhs, 'rhs, T> Add<&'rhs Series> for &'lhs ChunkedArray<T>
+where
+    T: PolarsDataType,
+    Self: TryAdd<&'rhs Series, Output = Series, Error = PolarsError>,
+{
+    type Output = Series;
+
+    fn add(self, rhs: &'rhs Series) -> Series {
+        self.try_add(rhs).unwrap()
+    }
+}
+
 pub trait NumOpsDispatch: AsRefDataType {
     fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
         polars_bail!(opq = sub, self.as_ref_dtype(), rhs.dtype());
-    }
-
-    fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
-        polars_bail!(opq = add, self.as_ref_dtype(), rhs.dtype());
     }
 
     fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
@@ -38,23 +62,15 @@ where
         // we now only create the potentially wrong dtype for a short time.
         // Note that the physical type correctness is checked!
         // The ChunkedArray with the wrong dtype is dropped after this operation
-        let rhs = unsafe { self.unpack_series_matching_physical_type(rhs) };
+        let rhs = unsafe { self.unpacked_series_matching_type_unchecked(rhs) };
         let out = self - rhs;
-        Ok(out.into_series())
-    }
-
-    fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
-        // Safety:
-        // see subtract
-        let rhs = unsafe { self.unpack_series_matching_physical_type(rhs) };
-        let out = self + rhs;
         Ok(out.into_series())
     }
 
     fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
         // Safety:
         // see subtract
-        let rhs = unsafe { self.unpack_series_matching_physical_type(rhs) };
+        let rhs = unsafe { self.unpacked_series_matching_type_unchecked(rhs) };
         let out = self * rhs;
         Ok(out.into_series())
     }
@@ -62,7 +78,7 @@ where
     fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
         // Safety:
         // see subtract
-        let rhs = unsafe { self.unpack_series_matching_physical_type(rhs) };
+        let rhs = unsafe { self.unpacked_series_matching_type_unchecked(rhs) };
         let out = self / rhs;
         Ok(out.into_series())
     }
@@ -70,27 +86,15 @@ where
     fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
         // Safety:
         // see subtract
-        let rhs = unsafe { self.unpack_series_matching_physical_type(rhs) };
+        let rhs = unsafe { self.unpacked_series_matching_type_unchecked(rhs) };
         let out = self % rhs;
         Ok(out.into_series())
     }
 }
 
-impl NumOpsDispatch for Utf8Chunked {
-    fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
-        let rhs = self.unpack_series_matching_type(rhs)?;
-        let out = self + rhs;
-        Ok(out.into_series())
-    }
-}
+impl NumOpsDispatch for Utf8Chunked {}
 
-impl NumOpsDispatch for BinaryChunked {
-    fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
-        let rhs = self.unpack_series_matching_type(rhs)?;
-        let out = self + rhs;
-        Ok(out.into_series())
-    }
-}
+impl NumOpsDispatch for BinaryChunked {}
 
 #[cfg(feature = "checked_arithmetic")]
 pub mod checked {
@@ -139,7 +143,7 @@ pub mod checked {
             // we now only create the potentially wrong dtype for a short time.
             // Note that the physical type correctness is checked!
             // The ChunkedArray with the wrong dtype is dropped after this operation
-            let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
+            let rhs = unsafe { lhs.unpacked_series_matching_type_unchecked(rhs) };
             let (l, r) = align_chunks_binary(lhs, rhs);
 
             Ok((l)
@@ -165,7 +169,7 @@ pub mod checked {
         fn checked_div(lhs: &Float32Chunked, rhs: &Series) -> PolarsResult<Series> {
             // Safety:
             // see check_div for chunkedarray<T>
-            let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
+            let rhs = unsafe { lhs.unpacked_series_matching_type_unchecked(rhs) };
             let (l, r) = align_chunks_binary(lhs, rhs);
 
             Ok((l)
@@ -197,7 +201,7 @@ pub mod checked {
         fn checked_div(lhs: &Float64Chunked, rhs: &Series) -> PolarsResult<Series> {
             // Safety:
             // see check_div
-            let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
+            let rhs = unsafe { lhs.unpacked_series_matching_type_unchecked(rhs) };
             let (l, r) = align_chunks_binary(lhs, rhs);
 
             Ok((l)

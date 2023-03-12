@@ -252,10 +252,10 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     ///
     /// This is unsafe as the dtype may be incorrect and
     /// is assumed to be correct in other safe code.
-    pub(crate) unsafe fn unpack_series_matching_physical_type(
+    pub(crate) unsafe fn unpacked_series_matching_type_unchecked<'a>(
         &self,
-        series: &Series,
-    ) -> &ChunkedArray<T> {
+        series: &'a Series,
+    ) -> &'a ChunkedArray<T> {
         let series_trait = &**series;
         if self.dtype() == series.dtype() {
             &*(series_trait as *const dyn SeriesTrait as *const ChunkedArray<T>)
@@ -275,7 +275,10 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     /// Series to ChunkedArray<T>
-    pub fn unpack_series_matching_type(&self, series: &Series) -> PolarsResult<&ChunkedArray<T>> {
+    pub fn unpack_series_matching_type<'a>(
+        &self,
+        series: &'a Series,
+    ) -> PolarsResult<&'a ChunkedArray<T>> {
         polars_ensure!(
             self.dtype() == series.dtype(),
             SchemaMismatch: "cannot unpack series of type `{}` into `{}`",
@@ -284,7 +287,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         );
         // Safety
         // dtype will be correct.
-        Ok(unsafe { self.unpack_series_matching_physical_type(series) })
+        Ok(unsafe { self.unpacked_series_matching_type_unchecked(series) })
     }
 
     /// Unique id representing the number of chunks

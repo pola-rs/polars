@@ -123,7 +123,7 @@ macro_rules! impl_dyn_series {
                 NumOpsDispatch::subtract(&self.0, rhs)
             }
             fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
-                NumOpsDispatch::add_to(&self.0, rhs)
+                TryAdd::try_add(&self.0, rhs)
             }
             fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
                 NumOpsDispatch::multiply(&self.0, rhs)
