@@ -540,7 +540,7 @@ class Series:
             isinstance(other, (float, date, datetime, timedelta, str))
             and not self.is_float()
         ):
-            _s = sequence_to_pyseries("", [other])
+            _s = sequence_to_pyseries(self.name, [other])
             if "rhs" in op_ffi:
                 return wrap_s(getattr(_s, op_s)(self._s))
             else:

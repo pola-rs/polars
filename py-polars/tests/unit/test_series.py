@@ -2569,3 +2569,21 @@ def test_cut() -> None:
         (3.0, inf, "(1.0, inf]"),
         (4.0, inf, "(1.0, inf]"),
     ]
+
+
+def test_symmetry_for_max_in_names() -> None:
+    # int
+    a = pl.Series('a', [1])
+    assert (a - a.max()).name == (a.max() - a).name == a.name
+    # float
+    a = pl.Series('a', [1.])
+    assert (a - a.max()).name == (a.max() - a).name == a.name
+    # duration
+    a = pl.Series('a', [1], dtype=pl.Duration('ns'))
+    assert (a - a.max()).name == (a.max() - a).name == a.name
+    # datetime
+    a = pl.Series('a', [1], dtype=pl.Datetime('ns'))
+    assert (a - a.max()).name == (a.max() - a).name == a.name
+    # time
+    a = pl.Series('a', [1], dtype=pl.Time('ns'))
+    assert (a - a.max()).name == (a.max() - a).name == a.name
