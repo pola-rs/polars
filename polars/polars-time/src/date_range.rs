@@ -2,13 +2,15 @@
 use arrow::temporal_conversions::{
     parse_offset, timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
-use chrono::{Datelike, FixedOffset, NaiveDateTime};
 #[cfg(feature = "timezones")]
-use chrono::{LocalResult, TimeZone as TimeZoneTrait};
+use chrono::TimeZone as TimeZoneTrait;
+use chrono::{Datelike, FixedOffset, NaiveDateTime};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 
 use crate::prelude::*;
+#[cfg(feature = "timezones")]
+use crate::windows::duration::localize_datetime;
 
 pub fn in_nanoseconds_window(ndt: &NaiveDateTime) -> bool {
     // ~584 year around 1970
@@ -22,19 +24,11 @@ fn localize_timestamp<T: TimeZoneTrait>(timestamp: i64, tu: TimeUnit, tz: T) -> 
         TimeUnit::Microseconds => timestamp_us_to_datetime(timestamp),
         TimeUnit::Milliseconds => timestamp_ms_to_datetime(timestamp),
     };
-    let dt: PolarsResult<NaiveDateTime> = match tz.from_local_datetime(&ndt) {
-        LocalResult::Single(dt) => Ok(dt.naive_utc()),
-        LocalResult::Ambiguous(_, _) => {
-            polars_bail!(ComputeError: "ambiguous timestamps are not (yet) supported")
-        }
-        LocalResult::None => {
-            polars_bail!(ComputeError: "non-existent timestamps are not (yet) supported")
-        }
-    };
+    let dt = localize_datetime(ndt, &tz)?;
     match tu {
-        TimeUnit::Nanoseconds => Ok(dt?.timestamp_nanos()),
-        TimeUnit::Microseconds => Ok(dt?.timestamp_micros()),
-        TimeUnit::Milliseconds => Ok(dt?.timestamp_millis()),
+        TimeUnit::Nanoseconds => Ok(dt.timestamp_nanos()),
+        TimeUnit::Microseconds => Ok(dt.timestamp_micros()),
+        TimeUnit::Milliseconds => Ok(dt.timestamp_millis()),
     }
 }
 

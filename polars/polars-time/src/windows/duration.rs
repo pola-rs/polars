@@ -54,7 +54,10 @@ impl Ord for Duration {
 }
 
 #[cfg(feature = "timezones")]
-fn localize_datetime(ndt: NaiveDateTime, tz: &impl TimeZoneTrait) -> PolarsResult<NaiveDateTime> {
+pub(crate) fn localize_datetime(
+    ndt: NaiveDateTime,
+    tz: &impl TimeZoneTrait,
+) -> PolarsResult<NaiveDateTime> {
     // e.g. '2021-01-01 03:00' -> '2021-01-01 03:00CDT'
     match tz.from_local_datetime(&ndt) {
         LocalResult::Single(tz) => Ok(tz.naive_utc()),
