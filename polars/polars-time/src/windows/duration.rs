@@ -638,6 +638,7 @@ mod test {
 
     #[test]
     fn test_add_ns() {
+        use chrono::FixedOffset;
         let t = 1;
         let seven_days = Duration::parse("7d");
         let one_week = Duration::parse("1w");
