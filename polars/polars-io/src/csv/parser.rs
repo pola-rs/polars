@@ -4,6 +4,7 @@ use polars_core::prelude::*;
 
 use super::buffer::*;
 use crate::csv::read::NullValuesCompiled;
+use crate::csv::splitfields::SplitFields;
 
 /// Skip the utf-8 Byte Order Mark.
 /// credits to csv-core
@@ -300,50 +301,6 @@ impl<'a> Iterator for SplitLines<'a> {
     }
 }
 
-/// An adapted version of std::iter::Split.
-/// This exists solely because we cannot split the lines naively as
-pub(crate) struct SplitFields<'a> {
-    v: &'a [u8],
-    delimiter: u8,
-    finished: bool,
-    quote_char: u8,
-    quoting: bool,
-    eol_char: u8,
-}
-
-impl<'a> SplitFields<'a> {
-    pub(crate) fn new(
-        slice: &'a [u8],
-        delimiter: u8,
-        quote_char: Option<u8>,
-        eol_char: u8,
-    ) -> Self {
-        Self {
-            v: slice,
-            delimiter,
-            finished: false,
-            quote_char: quote_char.unwrap_or(b'"'),
-            quoting: quote_char.is_some(),
-            eol_char,
-        }
-    }
-
-    unsafe fn finish_eol(&mut self, need_escaping: bool, idx: usize) -> Option<(&'a [u8], bool)> {
-        self.finished = true;
-        debug_assert!(idx <= self.v.len());
-        Some((self.v.get_unchecked(..idx), need_escaping))
-    }
-
-    fn finish(&mut self, need_escaping: bool) -> Option<(&'a [u8], bool)> {
-        self.finished = true;
-        Some((self.v, need_escaping))
-    }
-
-    fn eof_oel(&self, current_ch: u8) -> bool {
-        current_ch == self.delimiter || current_ch == self.eol_char
-    }
-}
-
 #[inline]
 fn find_quoted(bytes: &[u8], quote_char: u8, needle: u8) -> Option<usize> {
     let mut in_field = false;
@@ -365,87 +322,6 @@ fn find_quoted(bytes: &[u8], quote_char: u8, needle: u8) -> Option<usize> {
         idx += 1;
     }
     None
-}
-
-impl<'a> Iterator for SplitFields<'a> {
-    // the bool is used to indicate that it requires escaping
-    type Item = (&'a [u8], bool);
-
-    #[inline]
-    fn next(&mut self) -> Option<(&'a [u8], bool)> {
-        if self.v.is_empty() || self.finished {
-            return None;
-        }
-
-        let mut needs_escaping = false;
-        // There can be strings with delimiters:
-        // "Street, City",
-
-        // Safety:
-        // we have checked bounds
-        let pos = if self.quoting && unsafe { *self.v.get_unchecked(0) } == self.quote_char {
-            needs_escaping = true;
-            // There can be pair of double-quotes within string.
-            // Each of the embedded double-quote characters must be represented
-            // by a pair of double-quote characters:
-            // e.g. 1997,Ford,E350,"Super, ""luxurious"" truck",20020
-
-            // denotes if we are in a string field, started with a quote
-            let mut in_field = false;
-
-            let mut idx = 0u32;
-            let mut current_idx = 0u32;
-            // micro optimizations
-            #[allow(clippy::explicit_counter_loop)]
-            for &c in self.v.iter() {
-                if c == self.quote_char {
-                    // toggle between string field enclosure
-                    //      if we encounter a starting '"' -> in_field = true;
-                    //      if we encounter a closing '"' -> in_field = false;
-                    in_field = !in_field;
-                }
-
-                if !in_field && self.eof_oel(c) {
-                    if c == self.eol_char {
-                        // safety
-                        // we are in bounds
-                        return unsafe { self.finish_eol(needs_escaping, current_idx as usize) };
-                    }
-                    idx = current_idx;
-                    break;
-                }
-                current_idx += 1;
-            }
-
-            if idx == 0 {
-                return self.finish(needs_escaping);
-            }
-
-            idx as usize
-        } else {
-            match self.v.iter().position(|&c| self.eof_oel(c)) {
-                None => return self.finish(needs_escaping),
-                Some(idx) => unsafe {
-                    // Safety:
-                    // idx was just found
-                    if *self.v.get_unchecked(idx) == self.eol_char {
-                        return self.finish_eol(needs_escaping, idx);
-                    } else {
-                        idx
-                    }
-                },
-            }
-        };
-
-        unsafe {
-            debug_assert!(pos <= self.v.len());
-            // safety
-            // we are in bounds
-            let ret = Some((self.v.get_unchecked(..pos), needs_escaping));
-            self.v = self.v.get_unchecked(pos + 1..);
-            ret
-        }
-    }
 }
 
 #[inline]
