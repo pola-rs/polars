@@ -2,9 +2,9 @@
 use arrow::temporal_conversions::{
     parse_offset, timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
-#[cfg(feature = "timezones")]
-use chrono::{DateTime, LocalResult, TimeZone as TimeZoneTrait, Utc};
 use chrono::{Datelike, FixedOffset, NaiveDateTime};
+#[cfg(feature = "timezones")]
+use chrono::{LocalResult, TimeZone as TimeZoneTrait};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 
@@ -22,8 +22,8 @@ fn localize_timestamp<T: TimeZoneTrait>(timestamp: i64, tu: TimeUnit, tz: T) -> 
         TimeUnit::Microseconds => timestamp_us_to_datetime(timestamp),
         TimeUnit::Milliseconds => timestamp_ms_to_datetime(timestamp),
     };
-    let dt: PolarsResult<DateTime<Utc>> = match tz.from_local_datetime(&ndt) {
-        LocalResult::Single(dt) => Ok(dt.with_timezone(&Utc)),
+    let dt: PolarsResult<NaiveDateTime> = match tz.from_local_datetime(&ndt) {
+        LocalResult::Single(dt) => Ok(dt.naive_utc()),
         LocalResult::Ambiguous(_, _) => {
             polars_bail!(ComputeError: "ambiguous timestamps are not (yet) supported")
         }
