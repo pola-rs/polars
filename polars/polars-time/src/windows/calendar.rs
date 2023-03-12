@@ -40,6 +40,7 @@ pub fn date_range(
     every: Duration,
     closed: ClosedWindow,
     tu: TimeUnit,
+    tz: &Option<TimeZone>,
 ) -> Vec<i64> {
     let size = match tu {
         TimeUnit::Nanoseconds => ((stop - start) / every.duration_ns() + 1) as usize,
@@ -58,27 +59,27 @@ pub fn date_range(
         ClosedWindow::Both => {
             while t <= stop {
                 ts.push(t);
-                t = f(&every, t)
+                t = f(&every, t, tz)
             }
         }
         ClosedWindow::Left => {
             while t < stop {
                 ts.push(t);
-                t = f(&every, t)
+                t = f(&every, t, tz)
             }
         }
         ClosedWindow::Right => {
-            t = f(&every, t);
+            t = f(&every, t, tz);
             while t <= stop {
                 ts.push(t);
-                t = f(&every, t)
+                t = f(&every, t, tz)
             }
         }
         ClosedWindow::None => {
-            t = f(&every, t);
+            t = f(&every, t, tz);
             while t < stop {
                 ts.push(t);
-                t = f(&every, t)
+                t = f(&every, t, tz)
             }
         }
     }

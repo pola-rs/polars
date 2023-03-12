@@ -20,8 +20,9 @@ pub fn date_range_impl(
     tu: TimeUnit,
     _tz: Option<&TimeZone>,
 ) -> PolarsResult<DatetimeChunked> {
-    let mut out = Int64Chunked::new_vec(name, date_range_vec(start, stop, every, closed, tu))
-        .into_datetime(tu, None);
+    let mut out = Int64Chunked::new_vec(name, date_range_vec(start, stop, every, closed, tu, &_tz.map(|x| x.clone())))
+        .into_datetime(tu, _tz.cloned());
+
 
     #[cfg(feature = "timezones")]
     if let Some(tz) = _tz {

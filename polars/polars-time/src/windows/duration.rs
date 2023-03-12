@@ -1,13 +1,19 @@
 use std::cmp::Ordering;
 use std::ops::Mul;
 
+#[cfg(feature = "timezones")]
+use arrow::temporal_conversions::parse_offset;
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Weekday};
+#[cfg(feature = "timezones")]
+use chrono::{TimeZone as TimeZoneTrait, Utc};
+#[cfg(feature = "timezones")]
+use chrono_tz::Tz;
 use polars_arrow::export::arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
 };
 use polars_core::export::arrow::temporal_conversions::MICROSECONDS;
 use polars_core::prelude::{
-    datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us,
+    datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us, TimeZone,
 };
 use polars_core::utils::arrow::temporal_conversions::NANOSECONDS;
 #[cfg(feature = "serde")]
@@ -45,6 +51,48 @@ impl Ord for Duration {
     fn cmp(&self, other: &Self) -> Ordering {
         self.duration_ns().cmp(&other.duration_ns())
     }
+}
+
+#[cfg(feature = "timezones")]
+fn localize_datetime(ndt: NaiveDateTime, tz: &TimeZone) -> NaiveDateTime {
+    // e.g.:
+    // ndt: 2021-11-01T00:00:00
+    // tz: US/Central
+    // result: 2021-11-01T05:00:00
+    // 
+    // equivalent to
+    // pl.Series([ndt]).replace_time_zone(tz).convert_time_zone(UTC).replace_time_zone(None)
+    let dt = match parse_offset(tz) {
+        Ok(tz) => tz.from_local_datetime(&ndt).unwrap().with_timezone(&Utc),
+        Err(_) => match tz.parse::<Tz>() {
+            Ok(tz) => tz.from_local_datetime(&ndt).unwrap().with_timezone(&Utc),
+            _ => unreachable!(),
+        },
+    };
+    dt.naive_utc()
+}
+
+#[cfg(feature = "timezones")]
+fn unlocalize_datetime(ndt: NaiveDateTime, tz: &TimeZone) -> NaiveDateTime {
+    // e.g.:
+    // ndt: 2021-11-07T00:00:00
+    // tz: US/Central
+    // result: 2021-11-06T19:00:00
+    // 
+    // equivalent to
+    // pl.Series(['2021-11-07T00:00:00']).str.strptime(pl.Datetime('us', 'UTC')).dt.convert_time_zone('US/Central').dt.replace_time_zone(None)
+    let dt = match parse_offset(tz) {
+        Ok(tz) => Utc
+            .from_local_datetime(&tz.from_utc_datetime(&ndt).naive_local())
+            .unwrap(),
+        Err(_) => match tz.parse::<Tz>() {
+            Ok(tz) => Utc
+                .from_local_datetime(&tz.from_utc_datetime(&ndt).naive_local())
+                .unwrap(),
+            _ => unreachable!(),
+        },
+    };
+    dt.naive_utc()
 }
 
 impl Duration {
@@ -342,8 +390,7 @@ impl Duration {
             }
             // truncate by days
             (0, 0, _, 0) => {
-                // todo
-                let duration = self.days * NS_DAY;
+                let duration = self.days * nsecs_to_unit(NS_DAY);
                 let mut remainder = t % duration;
                 if remainder < 0 {
                     remainder += duration
@@ -407,6 +454,7 @@ impl Duration {
     fn add_impl_month_or_week<F, G, J>(
         &self,
         t: i64,
+        tz: &Option<TimeZone>,
         nsecs_to_unit: F,
         timestamp_to_datetime: G,
         datetime_to_timestamp: J,
@@ -471,17 +519,32 @@ impl Duration {
         }
 
         if d.days > 0 {
+            // wait, this will have to be done differently.
+            // need to do the localize -> remainder -> unlocalize trick?
+            // first, let's pass the tz down?
+            // could do: unlocalize, add days times ns_day, relocalize?
             let t_days = nsecs_to_unit(self.days * NS_DAY);
-            new_t += if d.negative { -t_days } else { t_days };
+            match tz {
+                #[cfg(feature = "timezones")]
+                Some(tz) => {
+                    new_t = datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
+                    new_t += if d.negative { -t_days } else { t_days };
+                    new_t = datetime_to_timestamp(localize_datetime(timestamp_to_datetime(new_t), tz));
+                }
+                _ => {
+                    new_t += if d.negative { -t_days } else { t_days }
+                }
+            };
         }
 
         new_t
     }
 
-    pub fn add_ns(&self, t: i64) -> i64 {
+    pub fn add_ns(&self, t: i64, tz: &Option<TimeZone>) -> i64 {
         let d = self;
         let new_t = self.add_impl_month_or_week(
             t,
+            tz,
             |nsecs| nsecs,
             timestamp_ns_to_datetime,
             datetime_to_timestamp_ns,
@@ -490,10 +553,11 @@ impl Duration {
         new_t + nsecs
     }
 
-    pub fn add_us(&self, t: i64) -> i64 {
+    pub fn add_us(&self, t: i64, tz: &Option<TimeZone>) -> i64 {
         let d = self;
         let new_t = self.add_impl_month_or_week(
             t,
+            tz,
             |nsecs| nsecs / 1000,
             timestamp_us_to_datetime,
             datetime_to_timestamp_us,
@@ -502,10 +566,11 @@ impl Duration {
         new_t + nsecs / 1_000
     }
 
-    pub fn add_ms(&self, t: i64) -> i64 {
+    pub fn add_ms(&self, t: i64, tz: &Option<TimeZone>) -> i64 {
         let d = self;
         let new_t = self.add_impl_month_or_week(
             t,
+            tz,
             |nsecs| nsecs / 1_000_000,
             timestamp_ms_to_datetime,
             datetime_to_timestamp_ms,
@@ -573,11 +638,11 @@ mod test {
         let seven_days = Duration::parse("7d");
         let one_week = Duration::parse("1w");
 
-        assert_eq!(seven_days.add_ns(t), one_week.add_ns(t));
+        assert_eq!(seven_days.add_ns(t, &None), one_week.add_ns(t, &None));
 
         let seven_days_negative = Duration::parse("-7d");
         let one_week_negative = Duration::parse("-1w");
 
-        assert_eq!(seven_days_negative.add_ns(t), one_week_negative.add_ns(t));
+        assert_eq!(seven_days_negative.add_ns(t, &None), one_week_negative.add_ns(t, &None));
     }
 }
