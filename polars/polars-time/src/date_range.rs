@@ -75,14 +75,8 @@ pub fn date_range_impl(
         name,
         date_range_vec(start?, stop?, every, closed, tu, &_tz.cloned())?,
     )
-    .into_datetime(tu, None);
+    .into_datetime(tu, _tz.cloned());
 
-    #[cfg(feature = "timezones")]
-    if let Some(tz) = _tz {
-        out = out
-            .replace_time_zone(Some("UTC"))?
-            .convert_time_zone(tz.to_string())?
-    }
     out.set_sorted_flag(s);
     Ok(out)
 }
