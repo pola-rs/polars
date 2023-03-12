@@ -9,9 +9,7 @@ use polars_arrow::prelude::ValueSize;
 
 use crate::prelude::*;
 
-pub mod ops;
-#[macro_use]
-pub mod arithmetic;
+pub mod arithmetics;
 pub mod builder;
 pub mod cast;
 pub mod comparison;
@@ -20,6 +18,7 @@ pub mod iterator;
 pub mod kernels;
 #[cfg(feature = "ndarray")]
 mod ndarray;
+pub mod ops;
 
 mod bitwise;
 #[cfg(feature = "object")]

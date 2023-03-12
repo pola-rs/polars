@@ -1021,7 +1021,7 @@ impl ChunkCompare<&StructChunked> for StructChunked {
 mod test {
     use std::iter::repeat;
 
-    use super::super::arithmetic::test::create_two_chunked;
+    use super::super::arithmetics::test::create_two_chunked;
     use super::super::test::get_chunked_array;
     use crate::prelude::*;
 
