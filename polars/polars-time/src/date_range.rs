@@ -71,8 +71,11 @@ pub fn date_range_impl(
         },
         _ => (Ok(start), Ok(stop)),
     };
-    let mut out = Int64Chunked::new_vec(name, date_range_vec(start?, stop?, every, closed, tu, &_tz.map(|x| x.clone()))?)
-        .into_datetime(tu, None);
+    let mut out = Int64Chunked::new_vec(
+        name,
+        date_range_vec(start?, stop?, every, closed, tu, &_tz.cloned())?,
+    )
+    .into_datetime(tu, None);
 
     #[cfg(feature = "timezones")]
     if let Some(tz) = _tz {

@@ -3,17 +3,20 @@ use std::ops::Mul;
 
 #[cfg(feature = "timezones")]
 use arrow::temporal_conversions::parse_offset;
-use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Weekday, LocalResult};
+use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Weekday};
 #[cfg(feature = "timezones")]
-use chrono::{TimeZone as TimeZoneTrait, Utc};
+use chrono::{LocalResult, TimeZone as TimeZoneTrait};
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
 use polars_arrow::export::arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
 };
 use polars_core::export::arrow::temporal_conversions::MICROSECONDS;
+#[cfg(feature = "timezones")]
+use polars_core::prelude::polars_bail;
 use polars_core::prelude::{
-    datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us, TimeZone, PolarsResult, polars_bail
+    datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us, PolarsResult,
+    TimeZone,
 };
 use polars_core::utils::arrow::temporal_conversions::NANOSECONDS;
 #[cfg(feature = "serde")]
@@ -57,7 +60,7 @@ impl Ord for Duration {
 fn localize_datetime(ndt: NaiveDateTime, tz: &TimeZone) -> PolarsResult<NaiveDateTime> {
     // e.g. '2021-01-01 03:00' -> '2021-01-01 03:00CDT'
     match parse_offset(tz) {
-        Ok(tz) => match tz.from_local_datetime(&ndt){
+        Ok(tz) => match tz.from_local_datetime(&ndt) {
             LocalResult::Single(tz) => Ok(tz.naive_utc()),
             LocalResult::Ambiguous(_, _) => {
                 polars_bail!(ComputeError: "ambiguous timestamps are not (yet) supported")
@@ -67,7 +70,7 @@ fn localize_datetime(ndt: NaiveDateTime, tz: &TimeZone) -> PolarsResult<NaiveDat
             }
         },
         Err(_) => match tz.parse::<Tz>() {
-            Ok(tz) => match tz.from_local_datetime(&ndt){
+            Ok(tz) => match tz.from_local_datetime(&ndt) {
                 LocalResult::Single(tz) => Ok(tz.naive_utc()),
                 LocalResult::Ambiguous(_, _) => {
                     polars_bail!(ComputeError: "ambiguous timestamps are not (yet) supported")
@@ -231,6 +234,14 @@ impl Duration {
                 _ => {}
             }
             Duration::from_weeks(weeks)
+        } else if self.days_only() && interval.days_only() {
+            let mut days = self.days() % interval.days();
+
+            match (self.negative, interval.negative) {
+                (true, true) | (true, false) => days = -days + interval.days(),
+                _ => {}
+            }
+            Duration::from_days(days)
         } else {
             let mut offset = self.duration_ns();
             if offset == 0 {
@@ -337,13 +348,17 @@ impl Duration {
     #[cfg(feature = "private")]
     #[doc(hidden)]
     pub const fn duration_ns(&self) -> i64 {
-        self.months * 28 * 24 * 3600 * NANOSECONDS + self.weeks * NS_WEEK + self.days * NS_DAY + self.nsecs
+        self.months * 28 * 24 * 3600 * NANOSECONDS
+            + self.weeks * NS_WEEK
+            + self.days * NS_DAY
+            + self.nsecs
     }
 
     #[cfg(feature = "private")]
     #[doc(hidden)]
     pub const fn duration_us(&self) -> i64 {
-        self.months * 28 * 24 * 3600 * MICROSECONDS + (self.weeks * NS_WEEK + self.nsecs + self.days * NS_DAY) / 1000
+        self.months * 28 * 24 * 3600 * MICROSECONDS
+            + (self.weeks * NS_WEEK + self.nsecs + self.days * NS_DAY) / 1000
     }
 
     #[cfg(feature = "private")]
@@ -524,13 +539,13 @@ impl Duration {
             match tz {
                 #[cfg(feature = "timezones")]
                 Some(tz) => {
-                    new_t = datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
+                    new_t =
+                        datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
                     new_t += if d.negative { -t_weeks } else { t_weeks };
-                    new_t = datetime_to_timestamp(localize_datetime(timestamp_to_datetime(new_t), tz)?);
+                    new_t =
+                        datetime_to_timestamp(localize_datetime(timestamp_to_datetime(new_t), tz)?);
                 }
-                _ => {
-                    new_t += if d.negative { -t_weeks } else { t_weeks }
-                }
+                _ => new_t += if d.negative { -t_weeks } else { t_weeks },
             };
         }
 
@@ -539,13 +554,13 @@ impl Duration {
             match tz {
                 #[cfg(feature = "timezones")]
                 Some(tz) => {
-                    new_t = datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
+                    new_t =
+                        datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
                     new_t += if d.negative { -t_days } else { t_days };
-                    new_t = datetime_to_timestamp(localize_datetime(timestamp_to_datetime(new_t), tz)?);
+                    new_t =
+                        datetime_to_timestamp(localize_datetime(timestamp_to_datetime(new_t), tz)?);
                 }
-                _ => {
-                    new_t += if d.negative { -t_days } else { t_days }
-                }
+                _ => new_t += if d.negative { -t_days } else { t_days },
             };
         }
 
@@ -650,11 +665,17 @@ mod test {
         let seven_days = Duration::parse("7d");
         let one_week = Duration::parse("1w");
 
-        assert_eq!(seven_days.add_ns(t, &None).unwrap(), one_week.add_ns(t, &None).unwrap());
+        assert_eq!(
+            seven_days.add_ns(t, &None).unwrap(),
+            one_week.add_ns(t, &None).unwrap()
+        );
 
         let seven_days_negative = Duration::parse("-7d");
         let one_week_negative = Duration::parse("-1w");
 
-        assert_eq!(seven_days_negative.add_ns(t, &None).unwrap(), one_week_negative.add_ns(t, &None).unwrap());
+        assert_eq!(
+            seven_days_negative.add_ns(t, &None).unwrap(),
+            one_week_negative.add_ns(t, &None).unwrap()
+        );
     }
 }

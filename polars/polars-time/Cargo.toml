@@ -9,12 +9,12 @@ description = "Time related code for the polars dataframe library"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+arrow.workspace = true
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 chrono-tz = { version = "0.8", optional = true }
 lexical = { version = "6", default-features = false, features = ["std", "parse-floats", "parse-integers"] }
 now = "0.1"
 once_cell.workspace = true
-arrow.workspace = true
 polars-arrow = { version = "0.27.2", path = "../polars-arrow", features = ["compute", "temporal"] }
 polars-core = { version = "0.27.2", path = "../polars-core", default-features = false, features = ["private", "dtype-datetime", "dtype-duration", "dtype-time", "dtype-date"] }
 polars-ops = { version = "0.27.2", path = "../polars-ops" }
