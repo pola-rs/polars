@@ -55,44 +55,26 @@ impl Ord for Duration {
 
 #[cfg(feature = "timezones")]
 fn localize_datetime(ndt: NaiveDateTime, tz: &TimeZone) -> NaiveDateTime {
-    // e.g.:
-    // ndt: 2021-11-01T00:00:00
-    // tz: US/Central
-    // result: 2021-11-01T05:00:00
-    // 
-    // equivalent to
-    // pl.Series([ndt]).replace_time_zone(tz).convert_time_zone(UTC).replace_time_zone(None)
-    let dt = match parse_offset(tz) {
-        Ok(tz) => tz.from_local_datetime(&ndt).unwrap().with_timezone(&Utc),
+    // e.g. '2021-01-01 03:00' -> '2021-01-01 03:00CDT'
+    match parse_offset(tz) {
+        Ok(tz) => tz.from_local_datetime(&ndt).unwrap().naive_utc(),
         Err(_) => match tz.parse::<Tz>() {
-            Ok(tz) => tz.from_local_datetime(&ndt).unwrap().with_timezone(&Utc),
+            Ok(tz) => tz.from_local_datetime(&ndt).unwrap().naive_utc(),
             _ => unreachable!(),
         },
-    };
-    dt.naive_utc()
+    }
 }
 
 #[cfg(feature = "timezones")]
 fn unlocalize_datetime(ndt: NaiveDateTime, tz: &TimeZone) -> NaiveDateTime {
-    // e.g.:
-    // ndt: 2021-11-07T00:00:00
-    // tz: US/Central
-    // result: 2021-11-06T19:00:00
-    // 
-    // equivalent to
-    // pl.Series(['2021-11-07T00:00:00']).str.strptime(pl.Datetime('us', 'UTC')).dt.convert_time_zone('US/Central').dt.replace_time_zone(None)
-    let dt = match parse_offset(tz) {
-        Ok(tz) => Utc
-            .from_local_datetime(&tz.from_utc_datetime(&ndt).naive_local())
-            .unwrap(),
+    // e.g. '2021-01-01 03:00CDT' -> '2021-01-01 03:00'
+    match parse_offset(tz) {
+        Ok(tz) => tz.from_utc_datetime(&ndt).naive_local(),
         Err(_) => match tz.parse::<Tz>() {
-            Ok(tz) => Utc
-                .from_local_datetime(&tz.from_utc_datetime(&ndt).naive_local())
-                .unwrap(),
+            Ok(tz) => tz.from_utc_datetime(&ndt).naive_local(),
             _ => unreachable!(),
         },
-    };
-    dt.naive_utc()
+    }
 }
 
 impl Duration {
@@ -451,7 +433,7 @@ impl Duration {
         )
     }
 
-    fn add_impl_month_or_week<F, G, J>(
+    fn add_impl_month_week_or_day<F, G, J>(
         &self,
         t: i64,
         tz: &Option<TimeZone>,
@@ -556,7 +538,7 @@ impl Duration {
 
     pub fn add_ns(&self, t: i64, tz: &Option<TimeZone>) -> i64 {
         let d = self;
-        let new_t = self.add_impl_month_or_week(
+        let new_t = self.add_impl_month_week_or_day(
             t,
             tz,
             |nsecs| nsecs,
@@ -569,7 +551,7 @@ impl Duration {
 
     pub fn add_us(&self, t: i64, tz: &Option<TimeZone>) -> i64 {
         let d = self;
-        let new_t = self.add_impl_month_or_week(
+        let new_t = self.add_impl_month_week_or_day(
             t,
             tz,
             |nsecs| nsecs / 1000,
@@ -582,7 +564,7 @@ impl Duration {
 
     pub fn add_ms(&self, t: i64, tz: &Option<TimeZone>) -> i64 {
         let d = self;
-        let new_t = self.add_impl_month_or_week(
+        let new_t = self.add_impl_month_week_or_day(
             t,
             tz,
             |nsecs| nsecs / 1_000_000,
