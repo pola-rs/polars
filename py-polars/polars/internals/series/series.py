@@ -533,12 +533,8 @@ class Series:
 
     def _arithmetic(self, other: Any, op_s: str, op_ffi: str) -> Series:
         if isinstance(other, pli.Expr):
-            try:
-                # expand pl.lit, pl.datetime, pl.duration Exprs to compatible Series
-                other = self.to_frame().select(other).to_series()
-            except ColumnNotFoundError:
-                # Expr is pl.col, let Expr.__radd__ handle this
-                return NotImplemented
+            # expand pl.lit, pl.datetime, pl.duration Exprs to compatible Series
+            other = self.to_frame().select(other).to_series()
         if isinstance(other, Series):
             return wrap_s(getattr(self._s, op_s)(other._s))
         if _check_for_numpy(other) and isinstance(other, np.ndarray):
@@ -567,14 +563,24 @@ class Series:
         ...
 
     @overload
+    def __add__(self, other: pli.Expr) -> pli.Expr | Series:  # type: ignore[misc]
+        ...
+
+    @overload
     def __add__(self, other: Any) -> Series:
         ...
 
-    def __add__(self, other: Any) -> Series | pli.DataFrame:
+    def __add__(self, other: Any) -> Series | pli.DataFrame | pli.Expr:
         if isinstance(other, str):
             other = Series("", [other])
         elif isinstance(other, pli.DataFrame):
             return other + self
+        elif isinstance(other, pli.Expr):
+            try:
+                # Expand pl.lit, pl.datetime, pl.duration Exprs to compatible Series
+                other = self.to_frame().select(other).to_series()
+            except ColumnNotFoundError:
+                return other + self
         return self._arithmetic(other, "add", "add_<>")
 
     def __sub__(self, other: Any) -> Series:
@@ -609,16 +615,25 @@ class Series:
         ...
 
     @overload
+    def __mul__(self, other: pli.Expr) -> pli.Expr | Series:  # type: ignore[misc]
+        ...
+
+    @overload
     def __mul__(self, other: Any) -> Series:
         ...
 
-    def __mul__(self, other: Any) -> Series | pli.DataFrame:
+    def __mul__(self, other: Any) -> Series | pli.DataFrame | pli.Expr:
         if self.is_temporal():
             raise ValueError("first cast to integer before multiplying datelike dtypes")
         elif isinstance(other, pli.DataFrame):
             return other * self
-        else:
-            return self._arithmetic(other, "mul", "mul_<>")
+        elif isinstance(other, pli.Expr):
+            try:
+                # Expand pl.lit, pl.datetime, pl.duration Exprs to compatible Series
+                other = self.to_frame().select(other).to_series()
+            except ColumnNotFoundError:
+                return other * self
+        return self._arithmetic(other, "mul", "mul_<>")
 
     def __mod__(self, other: Any) -> Series:
         if self.is_temporal():
