@@ -14,6 +14,8 @@ use polars_core::export::regex::{escape, Regex};
 use super::*;
 #[cfg(feature = "binary_encoding")]
 use crate::chunked_array::binary::BinaryNameSpaceImpl;
+#[cfg(feature = "string_inflection")]
+use crate::chunked_array::strings::inflection;
 
 fn f_regex_extract<'a>(reg: &Regex, input: &'a str, group_index: usize) -> Option<Cow<'a, str>> {
     reg.captures(input)
@@ -383,6 +385,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
 
     /// Modify the strings to their lowercase equivalent
     #[must_use]
+    #[cfg(feature = "string_inflection")]
     fn to_lowercase(&self) -> Utf8Chunked {
         let ca = self.as_utf8();
         ca.apply(|s| str::to_lowercase(s).into())
@@ -390,9 +393,17 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
 
     /// Modify the strings to their uppercase equivalent
     #[must_use]
+    #[cfg(feature = "string_inflection")]
     fn to_uppercase(&self) -> Utf8Chunked {
         let ca = self.as_utf8();
         ca.apply(|s| str::to_uppercase(s).into())
+    }
+
+    #[must_use]
+    #[cfg(feature = "string_inflection")]
+    fn to_title_case(&self) -> Utf8Chunked {
+        let ca = self.as_utf8();
+        ca.apply(|s| inflection::to_title_case(s).into())
     }
 
     /// Concat with the values from a second Utf8Chunked

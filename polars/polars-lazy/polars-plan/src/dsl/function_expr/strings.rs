@@ -53,8 +53,12 @@ pub enum StringFunction {
         all: bool,
         literal: bool,
     },
-    Uppercase,
-    Lowercase,
+    #[cfg(feature = "string_inflection")]
+    ToUppercase,
+    #[cfg(feature = "string_inflection")]
+    ToLowercase,
+    #[cfg(feature = "string_inflection")]
+    ToTitleCase,
     Strip(Option<String>),
     RStrip(Option<String>),
     LStrip(Option<String>),
@@ -74,7 +78,7 @@ impl Display for StringFunction {
             #[cfg(feature = "string_justify")]
             StringFunction::Zfill(_) => "zfill",
             #[cfg(feature = "string_justify")]
-            StringFunction::LJust { .. } => "str.ljust",
+            StringFunction::LJust { .. } => "ljust",
             #[cfg(feature = "string_justify")]
             StringFunction::RJust { .. } => "rjust",
             StringFunction::ExtractAll => "extract_all",
@@ -87,8 +91,12 @@ impl Display for StringFunction {
             StringFunction::ConcatHorizontal(_) => "concat_horizontal",
             #[cfg(feature = "regex")]
             StringFunction::Replace { .. } => "replace",
-            StringFunction::Uppercase => "uppercase",
-            StringFunction::Lowercase => "lowercase",
+            #[cfg(feature = "string_inflection")]
+            StringFunction::ToUppercase => "to_uppercase",
+            #[cfg(feature = "string_inflection")]
+            StringFunction::ToLowercase => "to_lowercase",
+            #[cfg(feature = "string_inflection")]
+            StringFunction::ToTitleCase => "to_title_case",
             StringFunction::Strip(_) => "strip",
             StringFunction::LStrip(_) => "lstrip",
             StringFunction::RStrip(_) => "rstrip",
@@ -100,14 +108,22 @@ impl Display for StringFunction {
     }
 }
 
-pub(super) fn uppercase(s: &Series) -> PolarsResult<Series> {
+#[cfg(feature = "string_inflection")]
+pub(super) fn to_uppercase(s: &Series) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     Ok(ca.to_uppercase().into_series())
 }
 
-pub(super) fn lowercase(s: &Series) -> PolarsResult<Series> {
+#[cfg(feature = "string_inflection")]
+pub(super) fn to_lowercase(s: &Series) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     Ok(ca.to_lowercase().into_series())
+}
+
+#[cfg(feature = "string_inflection")]
+pub(super) fn to_title_case(s: &Series) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    Ok(ca.to_title_case().into_series())
 }
 
 #[cfg(feature = "regex")]
@@ -227,6 +243,7 @@ pub(super) fn ljust(s: &Series, width: usize, fillchar: char) -> PolarsResult<Se
     let ca = s.utf8()?;
     Ok(ca.ljust(width, fillchar).into_series())
 }
+
 #[cfg(feature = "string_justify")]
 pub(super) fn rjust(s: &Series, width: usize, fillchar: char) -> PolarsResult<Series> {
     let ca = s.utf8()?;

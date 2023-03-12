@@ -878,6 +878,9 @@ class StringNameSpace:
     def to_uppercase(self) -> pli.Series:
         """Modify the strings to their uppercase equivalent."""
 
+    def to_title_case(self) -> pli.Series:
+        """Modify the strings to their title case equivalent."""
+
     def slice(self, offset: int, length: int | None = None) -> pli.Series:
         """
         Create subslices of the string values of a Utf8 Series.

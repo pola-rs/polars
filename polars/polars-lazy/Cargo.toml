@@ -106,6 +106,7 @@ list_to_struct = ["polars-plan/list_to_struct"]
 python = ["pyo3", "polars-plan/python"]
 row_hash = ["polars-plan/row_hash"]
 string_justify = ["polars-plan/string_justify"]
+string_inflection = ["polars-plan/string_inflection"]
 string_from_radix = ["polars-plan/string_from_radix"]
 arg_where = ["polars-plan/arg_where"]
 search_sorted = ["polars-plan/search_sorted"]
@@ -162,6 +163,7 @@ test_all = [
   "ipc",
   "row_hash",
   "string_justify",
+  "string_inflection",
   "string_from_radix",
   "search_sorted",
   "top_k",

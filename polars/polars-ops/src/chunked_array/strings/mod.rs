@@ -1,3 +1,5 @@
+#[cfg(feature = "string_inflection")]
+mod inflection;
 #[cfg(feature = "extract_jsonpath")]
 mod json_path;
 #[cfg(feature = "strings")]

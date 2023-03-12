@@ -658,3 +658,10 @@ def test_splitn() -> None:
 
     assert_frame_equal(out, expected)
     assert_frame_equal(df["x"].str.splitn("_", 2).to_frame().unnest("x"), expected)
+
+
+def test_to_title_case() -> None:
+    s = pl.Series(["CAT", "DOG"])
+    result = s.str.to_title_case()
+    expected = pl.Series(["Cat", "Dog"])
+    assert_series_equal(result, expected)

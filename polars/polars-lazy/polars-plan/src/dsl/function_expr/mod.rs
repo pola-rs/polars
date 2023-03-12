@@ -426,8 +426,12 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             ConcatHorizontal(delimiter) => map_as_slice!(strings::concat_hor, &delimiter),
             #[cfg(feature = "regex")]
             Replace { all, literal } => map_as_slice!(strings::replace, literal, all),
-            Uppercase => map!(strings::uppercase),
-            Lowercase => map!(strings::lowercase),
+            #[cfg(feature = "string_inflection")]
+            ToUppercase => map!(strings::to_uppercase),
+            #[cfg(feature = "string_inflection")]
+            ToLowercase => map!(strings::to_lowercase),
+            #[cfg(feature = "string_inflection")]
+            ToTitleCase => map!(strings::to_title_case),
             Strip(matches) => map!(strings::strip, matches.as_deref()),
             LStrip(matches) => map!(strings::lstrip, matches.as_deref()),
             RStrip(matches) => map!(strings::rstrip, matches.as_deref()),

@@ -273,6 +273,10 @@ class ExprStringNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.str_to_lowercase())
 
+    def to_title_case(self) -> pli.Expr:
+        """Transform to title case variant."""
+        return pli.wrap_expr(self._pyexpr.str_to_title_case())
+
     def strip(self, matches: str | None = None) -> pli.Expr:
         r"""
         Remove leading and trailing characters.

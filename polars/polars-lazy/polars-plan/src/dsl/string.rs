@@ -379,15 +379,24 @@ impl StringNameSpace {
     }
 
     /// Convert all characters to lowercase.
+    #[cfg(feature = "string_inflection")]
     pub fn to_lowercase(self) -> Expr {
         self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::Lowercase))
+            .map_private(FunctionExpr::StringExpr(StringFunction::ToLowercase))
     }
 
     /// Convert all characters to uppercase.
+    #[cfg(feature = "string_inflection")]
     pub fn to_uppercase(self) -> Expr {
         self.0
-            .map_private(FunctionExpr::StringExpr(StringFunction::Uppercase))
+            .map_private(FunctionExpr::StringExpr(StringFunction::ToUppercase))
+    }
+
+    /// Convert the string to title case.
+    #[cfg(feature = "string_inflection")]
+    pub fn to_title_case(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::ToTitleCase))
     }
 
     #[cfg(feature = "string_from_radix")]

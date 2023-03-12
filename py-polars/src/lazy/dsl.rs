@@ -664,6 +664,10 @@ impl PyExpr {
         self.inner.clone().str().to_lowercase().into()
     }
 
+    pub fn str_to_title_case(&self) -> PyExpr {
+        self.inner.clone().str().to_title_case().into()
+    }
+
     pub fn str_lengths(&self) -> PyExpr {
         let function = |s: Series| {
             let ca = s.utf8()?;
