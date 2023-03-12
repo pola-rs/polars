@@ -305,7 +305,6 @@ class Expr:
         self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
     ) -> Self:
         """Numpy universal functions."""
-
         num_expr = sum(isinstance(inp, Expr) for inp in inputs)
         if num_expr > 1:
             raise ValueError(

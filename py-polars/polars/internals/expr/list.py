@@ -701,7 +701,6 @@ class ExprListNameSpace:
         └────────────────┘
 
         """
-
         return pli.wrap_expr(
             self._pyexpr.lst_count_match(pli.expr_to_lit_or_expr(element)._pyexpr)
         )
