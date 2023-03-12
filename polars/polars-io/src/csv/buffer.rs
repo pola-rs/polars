@@ -158,7 +158,7 @@ fn delay_utf8_validation(encoding: CsvEncoding, ignore_errors: bool) -> bool {
 
 #[inline]
 fn validate_utf8(bytes: &[u8]) -> bool {
-    bytes.is_ascii() || simdutf8::basic::from_utf8(bytes).is_ok()
+    simdutf8::basic::from_utf8(bytes).is_ok()
 }
 
 impl ParsedBuffer for Utf8Field {
