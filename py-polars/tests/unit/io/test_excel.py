@@ -220,7 +220,7 @@ def test_excel_sparklines() -> None:
 def test_excel_write_multiple_tables() -> None:
     from xlsxwriter import Workbook
 
-    # note: also checks that empty tables don't error on write
+    # note: checks that empty tables don't error on write
     df1 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.Utf8, "colz": pl.Float64})
     df2 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.Utf8, "colz": pl.Float64})
     df3 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.Utf8, "colz": pl.Float64})
@@ -231,7 +231,21 @@ def test_excel_write_multiple_tables() -> None:
         df1.write_excel(workbook=wb, worksheet="sheet1", position="A1")
         df2.write_excel(workbook=wb, worksheet="sheet1", position="A6")
         df3.write_excel(workbook=wb, worksheet="sheet2", position="A1")
-        df4.write_excel(workbook=wb, worksheet="sheet3", position="A1")
+
+        # validate integration of externally-added formats
+        fmt = wb.add_format({"bg_color": "#ffff00"})
+        df4.write_excel(
+            workbook=wb,
+            worksheet="sheet3",
+            position="A1",
+            conditional_formats={
+                "colz": {
+                    "type": "formula",
+                    "criteria": "=C2=B2",
+                    "format": fmt,
+                }
+            },
+        )
 
     table_names: set[str] = set()
     for sheet in ("sheet1", "sheet2", "sheet3"):

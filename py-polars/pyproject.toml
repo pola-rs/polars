@@ -82,6 +82,7 @@ module = [
   "IPython.*",
   "xlsx2csv",
   "xlsxwriter",
+  "xlsxwriter.format",
   "xlsxwriter.utility",
   "xlsxwriter.worksheet",
   "zoneinfo",
