@@ -653,7 +653,7 @@ def _expand_dict_scalars(
                     )
 
                 elif val is None or isinstance(  # type: ignore[redundant-expr]
-                    val, (int, float, str, bool)
+                    val, (int, float, str, bool, date, datetime, time, timedelta)
                 ):
                     updated_data[name] = pli.Series(
                         name=name, values=[val], dtype=dtype
