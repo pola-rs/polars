@@ -1993,6 +1993,8 @@ pub fn lit(value: &PyAny, allow_object: bool) -> PyResult<PyExpr> {
         Ok(dsl::lit(series.series).into())
     } else if value.is_none() {
         Ok(dsl::lit(Null {}).into())
+    } else if let Ok(value) = value.downcast::<PyBytes>() {
+        Ok(dsl::lit(value.as_bytes()).into())
     } else if allow_object {
         let s = Python::with_gil(|py| {
             PySeries::new_object("", vec![ObjectValue::from(value.into_py(py))], false).series
