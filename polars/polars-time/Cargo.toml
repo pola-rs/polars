@@ -10,7 +10,7 @@ description = "Time related code for the polars dataframe library"
 
 [dependencies]
 arrow.workspace = true
-atoi = "0.4"
+atoi = "2.0.0"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 chrono-tz = { version = "0.8", optional = true }
 now = "0.1"
