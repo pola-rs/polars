@@ -289,7 +289,12 @@ mod test {
 
         for (val, fmt, len, expected) in patterns {
             assert_eq!(fmt_len(fmt.as_bytes()).unwrap(), len);
-            unsafe { assert_eq!(parse(val.as_bytes(), fmt.as_bytes(), len), expected) };
+            unsafe {
+                assert_eq!(
+                    StrpTimeState::default().parse(val.as_bytes(), fmt.as_bytes(), len),
+                    expected
+                )
+            };
         }
     }
 }
