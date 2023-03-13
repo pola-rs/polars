@@ -19,16 +19,10 @@ pub fn in_nanoseconds_window(ndt: &NaiveDateTime) -> bool {
 
 #[cfg(feature = "timezones")]
 fn localize_timestamp<T: TimeZoneTrait>(timestamp: i64, tu: TimeUnit, tz: T) -> PolarsResult<i64> {
-    let ndt = match tu {
-        TimeUnit::Nanoseconds => timestamp_ns_to_datetime(timestamp),
-        TimeUnit::Microseconds => timestamp_us_to_datetime(timestamp),
-        TimeUnit::Milliseconds => timestamp_ms_to_datetime(timestamp),
-    };
-    let dt = localize_datetime(ndt, &tz)?;
     match tu {
-        TimeUnit::Nanoseconds => Ok(dt.timestamp_nanos()),
-        TimeUnit::Microseconds => Ok(dt.timestamp_micros()),
-        TimeUnit::Milliseconds => Ok(dt.timestamp_millis()),
+        TimeUnit::Nanoseconds => Ok(localize_datetime(timestamp_ns_to_datetime(timestamp), &tz)?.timestamp_nanos()),
+        TimeUnit::Microseconds => Ok(localize_datetime(timestamp_us_to_datetime(timestamp), &tz)?.timestamp_micros()),
+        TimeUnit::Milliseconds => Ok(localize_datetime(timestamp_ms_to_datetime(timestamp), &tz)?.timestamp_millis()),
     }
 }
 

@@ -19,3 +19,6 @@ pub use windows::calendar::date_range as date_range_vec;
 pub use windows::duration::Duration;
 pub use windows::groupby::ClosedWindow;
 pub use windows::window::Window;
+
+use chrono::FixedOffset;
+pub const NO_TIMEZONE: Option<&FixedOffset> = None;
