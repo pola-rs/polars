@@ -1953,6 +1953,81 @@ def test_timezone_aware_date_range() -> None:
         pl.date_range(low, high, interval=timedelta(days=5), time_zone="UTC")
 
 
+def test_tzaware_date_range_crossing_dst_hourly() -> None:
+    result = pl.date_range(
+        datetime(2021, 11, 7), datetime(2021, 11, 7, 2), "1h", time_zone="US/Central"
+    )
+    assert result.to_list() == [
+        datetime(2021, 11, 7, 0, 0, tzinfo=ZoneInfo("US/Central")),
+        datetime(2021, 11, 7, 1, 0, tzinfo=ZoneInfo("US/Central")),
+        datetime(2021, 11, 7, 1, 0, fold=1, tzinfo=ZoneInfo("US/Central")),
+        datetime(2021, 11, 7, 2, 0, tzinfo=ZoneInfo("US/Central")),
+    ]
+
+
+def test_tzaware_date_range_crossing_dst_daily() -> None:
+    result = pl.date_range(
+        datetime(2021, 11, 7), datetime(2021, 11, 11), "2d", time_zone="US/Central"
+    )
+    assert result.to_list() == [
+        datetime(2021, 11, 7, 0, 0, tzinfo=ZoneInfo("US/Central")),
+        datetime(2021, 11, 9, 0, 0, tzinfo=ZoneInfo("US/Central")),
+        datetime(2021, 11, 11, 0, 0, tzinfo=ZoneInfo("US/Central")),
+    ]
+
+
+def test_tzaware_date_range_crossing_dst_weekly() -> None:
+    result = pl.date_range(
+        datetime(2021, 11, 7), datetime(2021, 11, 20), "1w", time_zone="US/Central"
+    )
+    assert result.to_list() == [
+        datetime(2021, 11, 7, 0, 0, tzinfo=ZoneInfo("US/Central")),
+        datetime(2021, 11, 14, 0, 0, tzinfo=ZoneInfo("US/Central")),
+    ]
+
+
+def test_tzaware_date_range_crossing_dst_monthly() -> None:
+    result = pl.date_range(
+        datetime(2021, 11, 7), datetime(2021, 12, 20), "1mo", time_zone="US/Central"
+    )
+    assert result.to_list() == [
+        datetime(2021, 11, 7, 0, 0, tzinfo=ZoneInfo("US/Central")),
+        datetime(2021, 12, 7, 0, 0, tzinfo=ZoneInfo("US/Central")),
+    ]
+
+
+def test_tzaware_date_range_with_fixed_offset() -> None:
+    result = pl.date_range(
+        datetime(2021, 11, 7), datetime(2021, 11, 7, 2), "1h", time_zone="+01:00"
+    )
+    assert result.to_list() == [
+        datetime(2021, 11, 7, 0, 0, tzinfo=timezone(timedelta(hours=1))),
+        datetime(2021, 11, 7, 1, 0, tzinfo=timezone(timedelta(hours=1))),
+        datetime(2021, 11, 7, 2, 0, tzinfo=timezone(timedelta(hours=1))),
+    ]
+
+
+def test_date_range_with_unsupported_datetimes() -> None:
+    with pytest.raises(
+        ComputeError, match=r"ambiguous timestamps are not \(yet\) supported"
+    ):
+        pl.date_range(
+            datetime(2021, 11, 7, 1),
+            datetime(2021, 11, 7, 2),
+            "1h",
+            time_zone="US/Central",
+        )
+    with pytest.raises(
+        ComputeError, match=r"non-existent timestamps are not \(yet\) supported"
+    ):
+        pl.date_range(
+            datetime(2021, 3, 28, 2, 30),
+            datetime(2021, 3, 28, 4),
+            "1h",
+            time_zone="Europe/Vienna",
+        )
+
+
 def test_logical_nested_take() -> None:
     frame = pl.DataFrame(
         {

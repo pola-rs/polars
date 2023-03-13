@@ -147,9 +147,9 @@ fn upsample_single_impl(
             match (first, last) {
                 (Some(first), Some(last)) => {
                     let first = match tu {
-                        TimeUnit::Nanoseconds => offset.add_ns(first),
-                        TimeUnit::Microseconds => offset.add_us(first),
-                        TimeUnit::Milliseconds => offset.add_ms(first),
+                        TimeUnit::Nanoseconds => offset.add_ns(first, NO_TIMEZONE)?,
+                        TimeUnit::Microseconds => offset.add_us(first, NO_TIMEZONE)?,
+                        TimeUnit::Milliseconds => offset.add_ms(first, NO_TIMEZONE)?,
                     };
                     let range = match tz {
                         #[cfg(feature = "timezones")]
