@@ -356,6 +356,9 @@ pub(crate) fn insert_streaming_nodes(
                     }
                 }
                 let input_schema = lp_arena.get(*input).schema(lp_arena);
+
+                // mutability required when feature enabled
+                #[allow(unused_mut)]
                 let mut can_stream = true;
 
                 #[cfg(feature = "dynamic_groupby")]
