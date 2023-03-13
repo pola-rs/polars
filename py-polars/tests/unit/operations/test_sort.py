@@ -518,3 +518,14 @@ def test_sort_by_logical() -> None:
     assert test.select([pl.col("num").sort_by(["start", "end"]).alias("n1")])[
         "n1"
     ].to_list() == [0, 2, 1]
+    df = pl.DataFrame(
+        {
+            "dt1": [date(2022, 2, 1), date(2022, 3, 1), date(2022, 4, 1)],
+            "dt2": [date(2022, 2, 2), date(2022, 3, 2), date(2022, 4, 2)],
+            "name": ["a", "b", "a"],
+            "num": [3, 4, 1],
+        }
+    )
+    assert df.groupby("name").agg([pl.col("num").sort_by(["dt1", "dt2"])]).sort(
+        "name"
+    ).to_dict(False) == {"name": ["a", "b"], "num": [[3, 1], [4]]}
