@@ -5,7 +5,7 @@ use polars_core::prelude::*;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
 use polars_time::chunkedarray::utf8::Pattern;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
-use polars_time::prelude::utf8::infer::{infer_pattern_single, DatetimeInfer};
+use polars_time::prelude::utf8::infer::{infer_pattern_single, DatetimeInfer, StrpTimeParser};
 
 use crate::csv::parser::{is_whitespace, skip_whitespace};
 use crate::csv::read_impl::RunningSize;
@@ -447,7 +447,7 @@ where
 impl<T> ParsedBuffer for DatetimeField<T>
 where
     T: PolarsNumericType,
-    DatetimeInfer<T::Native>: TryFrom<Pattern>,
+    DatetimeInfer<T::Native>: TryFrom<Pattern> + StrpTimeParser<T::Native>,
 {
     #[inline]
     fn parse_bytes(
