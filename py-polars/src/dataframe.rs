@@ -139,7 +139,7 @@ impl PyDataFrame {
     #[cfg(feature = "csv-file")]
     #[pyo3(signature = (
         py_f, infer_schema_length, chunk_size, has_header, ignore_errors, n_rows,
-        skip_rows, projection, sep, rechunk, columns, encoding, n_threads, path,
+        skip_rows, projection, separator, rechunk, columns, encoding, n_threads, path,
         overwrite_dtype, overwrite_dtype_slice, low_memory, comment_char, quote_char,
         null_values, missing_utf8_is_empty_string, try_parse_dates, skip_rows_after_header,
         row_count, sample_size, eol_char)
@@ -153,7 +153,7 @@ impl PyDataFrame {
         n_rows: Option<usize>,
         skip_rows: usize,
         projection: Option<Vec<usize>>,
-        sep: &str,
+        separator: &str,
         rechunk: bool,
         columns: Option<Vec<String>>,
         encoding: Wrap<CsvEncoding>,
@@ -206,7 +206,7 @@ impl PyDataFrame {
             .infer_schema(infer_schema_length)
             .has_header(has_header)
             .with_n_rows(n_rows)
-            .with_delimiter(sep.as_bytes()[0])
+            .with_delimiter(separator.as_bytes()[0])
             .with_skip_rows(skip_rows)
             .with_ignore_errors(ignore_errors)
             .with_projection(projection)
@@ -514,7 +514,7 @@ impl PyDataFrame {
         py: Python,
         py_f: PyObject,
         has_header: bool,
-        sep: u8,
+        separator: u8,
         quote: u8,
         batch_size: usize,
         datetime_format: Option<String>,
@@ -531,7 +531,7 @@ impl PyDataFrame {
                 // no need for a buffered writer, because the csv writer does internal buffering
                 CsvWriter::new(f)
                     .has_header(has_header)
-                    .with_delimiter(sep)
+                    .with_delimiter(separator)
                     .with_quoting_char(quote)
                     .with_batch_size(batch_size)
                     .with_datetime_format(datetime_format)
@@ -546,7 +546,7 @@ impl PyDataFrame {
             let mut buf = get_file_like(py_f, true)?;
             CsvWriter::new(&mut buf)
                 .has_header(has_header)
-                .with_delimiter(sep)
+                .with_delimiter(separator)
                 .with_quoting_char(quote)
                 .with_batch_size(batch_size)
                 .with_datetime_format(datetime_format)

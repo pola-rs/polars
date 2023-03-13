@@ -1069,8 +1069,11 @@ impl PySeries {
         Ok(PySeries::new(s))
     }
 
-    pub fn to_dummies(&self, sep: Option<&str>) -> PyResult<PyDataFrame> {
-        let df = self.series.to_dummies(sep).map_err(PyPolarsErr::from)?;
+    pub fn to_dummies(&self, separator: Option<&str>) -> PyResult<PyDataFrame> {
+        let df = self
+            .series
+            .to_dummies(separator)
+            .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
 
