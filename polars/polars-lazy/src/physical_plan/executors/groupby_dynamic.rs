@@ -25,12 +25,6 @@ impl GroupByDynamicExec {
     ) -> PolarsResult<DataFrame> {
         df.as_single_chunk_par();
 
-        // if the periods are larger than the intervals,
-        // the groups overlap
-        if self.options.every < self.options.period {
-            state.flags |= StateFlags::OVERLAPPING_GROUPS
-        }
-
         let keys = self
             .keys
             .iter()
@@ -62,13 +56,7 @@ impl GroupByDynamicExec {
                 .par_iter()
                 .map(|expr| {
                     let agg = expr.evaluate_on_groups(&df, groups, state)?.finalize();
-                    if agg.len() != groups.len() {
-                        return Err(PolarsError::ComputeError(
-                            format!("returned aggregation is a different length: {} than the group lengths: {}",
-                                    agg.len(),
-                                    groups.len()).into()
-                        ))
-                    }
+                    polars_ensure!(agg.len() == groups.len(), agg_len = agg.len(), groups.len());
                     Ok(agg)
                 })
                 .collect::<PolarsResult<Vec<_>>>()
@@ -105,7 +93,7 @@ impl Executor for GroupByDynamicExec {
                 .iter()
                 .map(|s| Ok(s.to_field(&self.input_schema)?.name))
                 .collect::<PolarsResult<Vec<_>>>()?;
-            let name = column_delimited("groupby_dynamic".to_string(), &by);
+            let name = comma_delimited("groupby_dynamic".to_string(), &by);
             Cow::Owned(name)
         } else {
             Cow::Borrowed("")

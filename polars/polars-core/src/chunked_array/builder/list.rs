@@ -180,7 +180,6 @@ where
 
 type LargePrimitiveBuilder<T> = MutableListArray<i64, MutablePrimitiveArray<T>>;
 type LargeListUtf8Builder = MutableListArray<i64, MutableUtf8Array<i64>>;
-#[cfg(feature = "dtype-binary")]
 type LargeListBinaryBuilder = MutableListArray<i64, MutableBinaryArray<i64>>;
 type LargeListBooleanBuilder = MutableListArray<i64, MutableBooleanArray>;
 
@@ -264,14 +263,12 @@ impl ListBuilderTrait for ListUtf8ChunkedBuilder {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 pub struct ListBinaryChunkedBuilder {
     builder: LargeListBinaryBuilder,
     field: Field,
     fast_explode: bool,
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ListBinaryChunkedBuilder {
     pub fn new(name: &str, capacity: usize, values_capacity: usize) -> Self {
         let values = MutableBinaryArray::<i64>::with_capacity(values_capacity);
@@ -317,7 +314,6 @@ impl ListBinaryChunkedBuilder {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ListBuilderTrait for ListBinaryChunkedBuilder {
     fn append_opt_series(&mut self, opt_s: Option<&Series>) {
         match opt_s {
@@ -425,19 +421,9 @@ pub fn get_list_builder(
 ) -> PolarsResult<Box<dyn ListBuilderTrait>> {
     let physical_type = dt.to_physical();
 
-    let _err = || -> PolarsResult<Box<dyn ListBuilderTrait>> {
-        Err(PolarsError::ComputeError(
-            format!(
-                "list builder not supported for this dtype: {}",
-                &physical_type
-            )
-            .into(),
-        ))
-    };
-
     match &physical_type {
         #[cfg(feature = "object")]
-        DataType::Object(_) => _err(),
+        DataType::Object(_) => polars_bail!(opq = list_builder, &physical_type),
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(_) => Ok(Box::new(AnonymousOwnedListBuilder::new(
             name,
@@ -475,7 +461,6 @@ pub fn get_list_builder(
                     Box::new(builder)
                 }};
             }
-            #[cfg(feature = "dtype-binary")]
             macro_rules! get_binary_builder {
                 () => {{
                     let builder =

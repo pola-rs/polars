@@ -23,7 +23,7 @@ impl SortExpr {
     }
 }
 
-/// Map argsort result back to the indices on the `GroupIdx`
+/// Map arg_sort result back to the indices on the `GroupIdx`
 pub(crate) fn map_sorted_indices_to_group_idx(sorted_idx: &IdxCa, idx: &[IdxSize]) -> Vec<IdxSize> {
     sorted_idx
         .cont_slice()
@@ -69,7 +69,7 @@ impl PhysicalExpr for SortExpr {
             AggState::AggregatedList(s) => {
                 let ca = s.list().unwrap();
                 let out = ca.lst_sort(self.options);
-                ac.with_series(out.into_series(), true);
+                ac.with_series(out.into_series(), true, Some(&self.expr))?;
             }
             _ => {
                 let series = ac.flat_naive().into_owned();
@@ -85,7 +85,7 @@ impl PhysicalExpr for SortExpr {
                                     series.take_iter_unchecked(&mut idx.iter().map(|i| *i as usize))
                                 };
 
-                                let sorted_idx = group.argsort(self.options);
+                                let sorted_idx = group.arg_sort(self.options);
                                 let new_idx = map_sorted_indices_to_group_idx(&sorted_idx, idx);
                                 (new_idx.first().copied().unwrap_or(first), new_idx)
                             })
@@ -95,7 +95,7 @@ impl PhysicalExpr for SortExpr {
                         .iter()
                         .map(|&[first, len]| {
                             let group = series.slice(first as i64, len as usize);
-                            let sorted_idx = group.argsort(self.options);
+                            let sorted_idx = group.arg_sort(self.options);
                             let new_idx = map_sorted_indices_to_group_slice(&sorted_idx, first);
                             (new_idx.first().copied().unwrap_or(first), new_idx)
                         })

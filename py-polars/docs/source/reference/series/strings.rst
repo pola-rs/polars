@@ -15,8 +15,10 @@ The following methods are available under the `Series.str` attribute.
     Series.str.decode
     Series.str.encode
     Series.str.ends_with
+    Series.str.explode
     Series.str.extract
     Series.str.extract_all
+    Series.str.json_extract
     Series.str.json_path_match
     Series.str.lengths
     Series.str.ljust
@@ -36,3 +38,4 @@ The following methods are available under the `Series.str` attribute.
     Series.str.to_lowercase
     Series.str.to_uppercase
     Series.str.zfill
+    Series.str.parse_int

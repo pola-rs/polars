@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Sequence
 
 import polars.internals as pli
 from polars.internals.series.utils import expr_dispatch
-from polars.utils import sphinx_accessor
+from polars.utils.decorators import redirect
+from polars.utils.various import sphinx_accessor
 
 if TYPE_CHECKING:
     from polars.polars import PySeries
@@ -14,6 +15,7 @@ elif os.getenv("BUILDING_SPHINX_DOCS"):
 
 
 @expr_dispatch
+@redirect({"to_frame": "unnest"})
 class StructNameSpace:
     """Series.struct namespace."""
 
@@ -33,10 +35,6 @@ class StructNameSpace:
     def _ipython_key_completions_(self) -> list[str]:
         return self.fields
 
-    def to_frame(self) -> pli.DataFrame:
-        """Convert this Struct Series to a DataFrame."""
-        return pli.wrap_df(self._s.struct_to_frame())
-
     @property
     def fields(self) -> list[str]:
         """Get the names of the fields."""
@@ -55,7 +53,7 @@ class StructNameSpace:
 
         """
 
-    def rename_fields(self, names: list[str]) -> pli.Series:
+    def rename_fields(self, names: Sequence[str]) -> pli.Series:
         """
         Rename the fields of the struct.
 
@@ -65,3 +63,24 @@ class StructNameSpace:
             New names in the order of the struct's fields
 
         """
+
+    def unnest(self) -> pli.DataFrame:
+        """
+        Convert this struct Series to a DataFrame with a separate column for each field.
+
+        Examples
+        --------
+        >>> s = pl.Series([{"a": 1, "b": 2}, {"a": 3, "b": 4}])
+        >>> s.struct.unnest()
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 2   │
+        │ 3   ┆ 4   │
+        └─────┴─────┘
+
+        """
+        return pli.wrap_df(self._s.struct_unnest())

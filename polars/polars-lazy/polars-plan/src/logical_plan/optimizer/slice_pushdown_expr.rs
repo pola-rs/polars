@@ -15,7 +15,7 @@ impl OptimizationRule for SlicePushDown {
         expr_node: Node,
         _lp_arena: &Arena<ALogicalPlan>,
         _lp_node: Node,
-    ) -> Option<AExpr> {
+    ) -> PolarsResult<Option<AExpr>> {
         if let AExpr::Slice {
             input,
             offset,
@@ -26,10 +26,10 @@ impl OptimizationRule for SlicePushDown {
             let length = *length;
 
             use AExpr::*;
-            match expr_arena.get(*input) {
+            let out = match expr_arena.get(*input) {
                 m @ Alias(..) | m @ Cast { .. } => {
                     let m = m.clone();
-                    let input = m.get_input();
+                    let input = m.get_input().first();
                     let new_input = pushdown(input, offset, length, expr_arena);
                     Some(m.replace_input(new_input))
                 }
@@ -94,9 +94,10 @@ impl OptimizationRule for SlicePushDown {
                     }
                 }
                 _ => None,
-            }
+            };
+            Ok(out)
         } else {
-            None
+            Ok(None)
         }
     }
 }

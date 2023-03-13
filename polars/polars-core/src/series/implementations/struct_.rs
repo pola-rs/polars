@@ -104,40 +104,52 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     /// When offset is negative the offset is counted from the
     /// end of the array
     fn slice(&self, offset: i64, length: usize) -> Series {
-        self.0
-            .apply_fields(|s| s.slice(offset, length))
-            .into_series()
+        let mut out = self.0.apply_fields(|s| s.slice(offset, length));
+        out.update_chunks(0);
+        out.into_series()
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         let other = other.struct_()?;
-        let offset = self.chunks().len();
-
-        for (lhs, rhs) in self.0.fields_mut().iter_mut().zip(other.fields()) {
-            let lhs_name = lhs.name();
-            let rhs_name = rhs.name();
-            if lhs_name != rhs_name {
-                return Err(PolarsError::SchemaMisMatch(format!("cannot append field with name: {rhs_name} to struct with field name: {lhs_name}, please check your schema").into()));
+        if self.is_empty() {
+            self.0 = other.clone();
+            Ok(())
+        } else if other.is_empty() {
+            Ok(())
+        } else {
+            let offset = self.chunks().len();
+            for (lhs, rhs) in self.0.fields_mut().iter_mut().zip(other.fields()) {
+                polars_ensure!(
+                    lhs.name() == rhs.name(), SchemaMismatch:
+                    "cannot append field with name {:?} to struct with field name {:?}",
+                    rhs.name(), lhs.name(),
+                );
+                lhs.append(rhs)?;
             }
-            lhs.append(rhs)?;
+            self.0.update_chunks(offset);
+            Ok(())
         }
-        self.0.update_chunks(offset);
-        Ok(())
     }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         let other = other.struct_()?;
-
-        for (lhs, rhs) in self.0.fields_mut().iter_mut().zip(other.fields()) {
-            let lhs_name = lhs.name();
-            let rhs_name = rhs.name();
-            if lhs_name != rhs_name {
-                return Err(PolarsError::SchemaMisMatch(format!("cannot extend field with name: {rhs_name} to struct with field name: {lhs_name}, please check your schema").into()));
+        if self.is_empty() {
+            self.0 = other.clone();
+            Ok(())
+        } else if other.is_empty() {
+            Ok(())
+        } else {
+            for (lhs, rhs) in self.0.fields_mut().iter_mut().zip(other.fields()) {
+                polars_ensure!(
+                    lhs.name() == rhs.name(), SchemaMismatch:
+                    "cannot extend field with name {:?} to struct with field name {:?}",
+                    rhs.name(), lhs.name(),
+                );
+                lhs.extend(rhs)?;
             }
-            lhs.extend(rhs)?;
+            self.0.update_chunks(0);
+            Ok(())
         }
-        self.0.update_chunks(0);
-        Ok(())
     }
 
     /// Filter by boolean mask. This operation clones data.
@@ -334,12 +346,6 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         self.0.apply_fields(|s| s.shift(periods)).into_series()
     }
 
-    fn fill_null(&self, strategy: FillNullStrategy) -> PolarsResult<Series> {
-        self.0
-            .try_apply_fields(|s| s.fill_null(strategy))
-            .map(|ca| ca.into_series())
-    }
-
     #[cfg(feature = "is_in")]
     fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
         self.0.is_in(other)
@@ -355,5 +361,25 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
 
     fn as_any(&self) -> &dyn Any {
         &self.0
+    }
+
+    fn sort_with(&self, options: SortOptions) -> Series {
+        let df = self.0.clone().unnest();
+
+        let desc = if options.descending {
+            vec![true; df.width()]
+        } else {
+            vec![false; df.width()]
+        };
+        let out = df
+            .sort_impl(
+                df.columns.clone(),
+                desc,
+                options.nulls_last,
+                None,
+                options.multithreaded,
+            )
+            .unwrap();
+        StructChunked::new_unchecked(self.name(), &out.columns).into_series()
     }
 }

@@ -1,34 +1,42 @@
-use polars_arrow::trusted_len::PushUnchecked;
+use polars_core::utils::arrow::bitmap::utils::SlicesIterator;
 
 use super::*;
 
-pub(super) fn arg_where(s: &mut [Series]) -> PolarsResult<Series> {
+pub(super) fn arg_where(s: &mut [Series]) -> PolarsResult<Option<Series>> {
     let predicate = s[0].bool()?;
 
     if predicate.is_empty() {
-        Ok(Series::full_null(predicate.name(), 0, &IDX_DTYPE))
+        Ok(Some(Series::full_null(predicate.name(), 0, &IDX_DTYPE)))
     } else {
         let capacity = predicate.sum().unwrap();
         let mut out = Vec::with_capacity(capacity as usize);
-        let mut cnt = 0 as IdxSize;
+        let mut total_offset = 0;
 
         predicate.downcast_iter().for_each(|arr| {
             let values = match arr.validity() {
-                Some(validity) => validity & arr.values(),
-                None => arr.values().clone(),
+                Some(validity) if validity.unset_bits() > 0 => validity & arr.values(),
+                _ => arr.values().clone(),
             };
 
-            // todo! could use chunkiter from arrow here
-            for bit in values.iter() {
-                if bit {
-                    // safety:
-                    // we allocated enough slots
-                    unsafe { out.push_unchecked(cnt) }
+            for (offset, len) in SlicesIterator::new(&values) {
+                // law of small numbers optimization
+                if len == 1 {
+                    out.push(offset as IdxSize)
+                } else {
+                    let offset = (offset + total_offset) as IdxSize;
+                    let len = len as IdxSize;
+                    let iter = offset..offset + len;
+                    out.extend(iter)
                 }
-                cnt += 1;
             }
+
+            total_offset += arr.len();
         });
         let arr = Box::new(IdxArr::from_vec(out)) as ArrayRef;
-        unsafe { Ok(IdxCa::from_chunks(predicate.name(), vec![arr]).into_series()) }
+        unsafe {
+            Ok(Some(
+                IdxCa::from_chunks(predicate.name(), vec![arr]).into_series(),
+            ))
+        }
     }
 }

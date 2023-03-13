@@ -15,9 +15,12 @@ pub enum DataType {
     Int64,
     Float32,
     Float64,
+    #[cfg(feature = "dtype-decimal")]
+    /// Fixed point decimal type optional precision and non-negative scale.
+    /// This is backed by a signed 128-bit integer which allows for up to 38 significant digits.
+    Decimal(Option<usize>, Option<usize>), // precision/scale; scale being None means "infer"
     /// String data
     Utf8,
-    #[cfg(feature = "dtype-binary")]
     Binary,
     /// A 32-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in days (32 bits).
@@ -44,6 +47,10 @@ pub enum DataType {
     // some logical types we cannot know statically, e.g. Datetime
     #[default]
     Unknown,
+}
+
+pub trait AsRefDataType {
+    fn as_ref_dtype(&self) -> &DataType;
 }
 
 impl Hash for DataType {
@@ -132,16 +139,7 @@ impl DataType {
     /// Check if datatype is a primitive type. By that we mean that
     /// it is not a container type.
     pub fn is_primitive(&self) -> bool {
-        #[cfg(feature = "dtype-binary")]
-        {
-            self.is_numeric()
-                | matches!(self, DataType::Boolean | DataType::Utf8 | DataType::Binary)
-        }
-
-        #[cfg(not(feature = "dtype-binary"))]
-        {
-            self.is_numeric() | matches!(self, DataType::Boolean | DataType::Utf8)
-        }
+        self.is_numeric() | matches!(self, DataType::Boolean | DataType::Utf8 | DataType::Binary)
     }
 
     /// Check if this [`DataType`] is a numeric type
@@ -154,9 +152,10 @@ impl DataType {
             | DataType::Date
             | DataType::Datetime(_, _)
             | DataType::Duration(_)
+            | DataType::Time
             | DataType::Boolean
+            | DataType::Unknown
             | DataType::Null => false,
-            #[cfg(feature = "dtype-binary")]
             DataType::Binary => false,
             #[cfg(feature = "object")]
             DataType::Object(_) => false,
@@ -208,8 +207,13 @@ impl DataType {
             Int64 => ArrowDataType::Int64,
             Float32 => ArrowDataType::Float32,
             Float64 => ArrowDataType::Float64,
+            #[cfg(feature = "dtype-decimal")]
+            // note: what else can we do here other than setting precision to 38?..
+            Decimal(precision, scale) => ArrowDataType::Decimal(
+                (*precision).unwrap_or(38),
+                scale.unwrap_or(0), // and what else can we do here?
+            ),
             Utf8 => ArrowDataType::LargeUtf8,
-            #[cfg(feature = "dtype-binary")]
             Binary => ArrowDataType::LargeBinary,
             Date => ArrowDataType::Date32,
             Datetime(unit, tz) => ArrowDataType::Timestamp(unit.to_arrow(), tz.clone()),
@@ -261,8 +265,17 @@ impl Display for DataType {
             DataType::Int64 => "i64",
             DataType::Float32 => "f32",
             DataType::Float64 => "f64",
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(precision, scale) => {
+                return match (precision, scale) {
+                    (_, None) => f.write_str("decimal[?]"), // shouldn't happen
+                    (None, Some(scale)) => f.write_str(&format!("decimal[{scale}]")),
+                    (Some(precision), Some(scale)) => {
+                        f.write_str(&format!("decimal[.{precision},{scale}]"))
+                    }
+                };
+            }
             DataType::Utf8 => "str",
-            #[cfg(feature = "dtype-binary")]
             DataType::Binary => "binary",
             DataType::Date => "date",
             DataType::Datetime(tu, tz) => {
@@ -290,19 +303,17 @@ impl Display for DataType {
 pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType> {
     // TODO! add struct
     use DataType::*;
-    match (left, right) {
+    Ok(match (left, right) {
         #[cfg(feature = "dtype-categorical")]
         (Categorical(Some(rev_map_l)), Categorical(Some(rev_map_r))) => {
             let rev_map = merge_categorical_map(rev_map_l, rev_map_r)?;
-            Ok(DataType::Categorical(Some(rev_map)))
+            Categorical(Some(rev_map))
         }
         (List(inner_l), List(inner_r)) => {
             let merged = merge_dtypes(inner_l, inner_r)?;
-            Ok(DataType::List(Box::new(merged)))
+            List(Box::new(merged))
         }
-        (left, right) if left == right => Ok(left.clone()),
-        _ => Err(PolarsError::ComputeError(
-            "Coult not merge datatypes".into(),
-        )),
-    }
+        (left, right) if left == right => left.clone(),
+        _ => polars_bail!(ComputeError: "unable to merge datatypes"),
+    })
 }

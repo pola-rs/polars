@@ -12,12 +12,12 @@ use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
 use polars_core::utils::arrow::bitmap::MutableBitmap;
 use polars_core::{downcast_as_macro_arg_physical, POOL};
+use polars_utils::format_smartstring;
 use polars_utils::sort::perfect_sort;
 use polars_utils::sync::SyncPtr;
 use rayon::prelude::*;
 
 use super::*;
-use crate::physical_plan::expression_err;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
@@ -43,13 +43,13 @@ enum MapStrategy {
     Explode,
     // will be exploded by subsequent `.flatten()` call
     ExplodeLater,
-    // Use an argsort to map the values back
+    // Use an arg_sort to map the values back
     Map,
     Nothing,
 }
 
 impl WindowExpr {
-    fn map_list_agg_by_argsort(
+    fn map_list_agg_by_arg_sort(
         &self,
         out_column: Series,
         flattened: Series,
@@ -65,7 +65,7 @@ impl WindowExpr {
         // that saves an allocation
         let mut take_idx = vec![];
 
-        // groups are not changed, we can map by doing a standard argsort.
+        // groups are not changed, we can map by doing a standard arg_sort.
         if std::ptr::eq(ac.groups().as_ref(), gb.get_groups()) {
             let mut iter = 0..flattened.len() as IdxSize;
             match ac.groups().as_ref() {
@@ -81,7 +81,7 @@ impl WindowExpr {
                 }
             }
         }
-        // groups are changed, we use the new group indexes as arguments of the argsort
+        // groups are changed, we use the new group indexes as arguments of the arg_sort
         // and sort by the old indexes
         else {
             let mut original_idx = Vec::with_capacity(out_column.len());
@@ -127,7 +127,7 @@ impl WindowExpr {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn map_by_argsort(
+    fn map_by_arg_sort(
         &self,
         df: &DataFrame,
         out_column: Series,
@@ -138,10 +138,10 @@ impl WindowExpr {
         state: &ExecutionState,
         cache_key: &str,
     ) -> PolarsResult<Series> {
-        // we use an argsort to map the values back
+        // we use an arg_sort to map the values back
 
         // This is a bit more complicated because the final group tuples may differ from the original
-        // so we use the original indices as idx values to argsort the original column
+        // so we use the original indices as idx values to arg_sort the original column
         //
         // The example below shows the naive version without group tuple mapping
 
@@ -156,11 +156,11 @@ impl WindowExpr {
         //
         // [0, 2, 3, 1]
         //
-        // argsort
+        // arg_sort
         //
         // [0, 3, 1, 2]
         //
-        // take by argsorted indexes and voila groups mapped
+        // take by arg_sorted indexes and voila groups mapped
         // [0, 1, 2, 3]
 
         if flattened.len() != df.height() {
@@ -176,30 +176,26 @@ impl WindowExpr {
                         }
                     });
 
-            return if let Some((output, group)) = non_matching_group {
+            if let Some((output, group)) = non_matching_group {
                 let first = group.first();
                 let group = groupby_columns
                     .iter()
-                    .map(|s| format!("{}", s.get(first as usize).unwrap()))
+                    .map(|s| format_smartstring!("{}", s.get(first as usize).unwrap()))
                     .collect::<Vec<_>>();
-                let err_msg = format!(
-                    "{}\n> Group: ",
-                    "The length of the window expression did not match that of the group."
+                polars_bail!(
+                    expr = self.expr, ComputeError:
+                    "the length of the window expression did not match that of the group\
+                    \n> group: {}\n> group length: {}\n> output: '{:?}'",
+                    comma_delimited(String::new(), &group), group.len(), output.unwrap()
                 );
-                let err_msg = column_delimited(err_msg, &group);
-                let err_msg = format!(
-                    "{}\n> Group length: {}\n> Output: '{:?}'",
-                    err_msg,
-                    group.len(),
-                    output.unwrap()
-                );
-                Err(expression_err!(err_msg, self.expr, ComputeError))
             } else {
-                let msg = "The length of the window expression did not match that of the group.";
-                Err(expression_err!(msg, self.expr, ComputeError))
+                polars_bail!(
+                    expr = self.expr, ComputeError:
+                    "the length of the window expression did not match that of the group"
+                );
             };
         }
-        self.map_list_agg_by_argsort(out_column, flattened, ac, gb, state, cache_key)
+        self.map_list_agg_by_arg_sort(out_column, flattened, ac, gb, state, cache_key)
     }
 
     fn run_aggregation<'a>(
@@ -241,6 +237,7 @@ impl WindowExpr {
                 explicit_list = finishes_list;
             }
         }
+
         explicit_list
     }
 
@@ -334,8 +331,10 @@ impl WindowExpr {
             (true, true, _) => Ok(MapStrategy::ExplodeLater),
             // Explode all the aggregated lists. Maybe add later?
             (true, false, _) => {
-                let msg = "This operation is likely not what you want (you may need '.list()'). Please open an issue if you really want to do this";
-                Err(expression_err!(msg, self.expr, ComputeError))
+                polars_bail!(
+                    expr = self.expr, ComputeError:
+                    "this operation is likely not what you want (you may need `.list()`)"
+                );
             }
             // explicit list
             // `(col("x").sum() * col("y")).list().over("groups")`
@@ -423,6 +422,16 @@ impl PhysicalExpr for WindowExpr {
             )
         });
         let explicit_list_agg = self.is_explicit_list_agg();
+
+        // A `sort()` in a window function is one level flatter
+        // Assume we have column a : i32
+        // than a sort in a groupby. A groupby sorts the groups and returns array: list[i32]
+        // whereas a window function returns array: i32
+        // So a `sort().list()` in a groupby returns: list[list[i32]]
+        // whereas in a window function would return: list[i32]
+        if explicit_list_agg {
+            state.set_finalize_window_as_list();
+        }
 
         // if we flatten this column we need to make sure the groups are sorted.
         let mut sort_groups = self.options.explode ||
@@ -525,7 +534,7 @@ impl PhysicalExpr for WindowExpr {
                 let ac = unsafe {
                     std::mem::transmute::<AggregationContext<'_>, AggregationContext<'static>>(ac)
                 };
-                self.map_by_argsort(
+                self.map_by_arg_sort(
                     df,
                     out_column,
                     flattened,
@@ -540,7 +549,7 @@ impl PhysicalExpr for WindowExpr {
                 let out_column = ac.aggregated();
                 // we try to flatten/extend the array by repeating the aggregated value n times
                 // where n is the number of members in that group. That way we can try to reuse
-                // the same map by argsort logic as done for listed aggregations
+                // the same map by arg_sort logic as done for listed aggregations
                 match (
                     &ac.update_groups,
                     set_by_groups(&out_column, &ac.groups, df.height()),
@@ -611,9 +620,7 @@ impl PhysicalExpr for WindowExpr {
         _groups: &'a GroupsProxy,
         _state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        Err(PolarsError::InvalidOperation(
-            "window expression not allowed in aggregation".into(),
-        ))
+        polars_bail!(InvalidOperation: "window expression not allowed in aggregation");
     }
 
     fn as_expression(&self) -> Option<&Expr> {

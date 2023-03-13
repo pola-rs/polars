@@ -19,13 +19,15 @@ pub(crate) mod anonymous_scan;
 mod apply;
 mod builder;
 pub(crate) mod conversion;
+#[cfg(feature = "debugging")]
+pub(crate) mod debug;
 mod format;
 mod functions;
 pub(crate) mod iterator;
 mod lit;
 pub(crate) mod optimizer;
 pub(crate) mod options;
-mod projection;
+pub(crate) mod projection;
 #[cfg(feature = "python")]
 mod pyarrow;
 mod schema;
@@ -40,7 +42,6 @@ pub use functions::*;
 pub use iterator::*;
 pub use lit::*;
 pub use optimizer::*;
-use polars_core::frame::explode::MeltArgs;
 pub use schema::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -96,9 +97,11 @@ impl ErrorStateSync {
                 };
                 err
             }
-            ErrorState::AlreadyEncountered { prev_err_msg } => PolarsError::ComputeError(
-                format!("LogicalPlan already failed with error: `{prev_err_msg}`").into(),
-            ),
+            ErrorState::AlreadyEncountered { prev_err_msg } => {
+                polars_err!(
+                    ComputeError: "LogicalPlan already failed with error: '{}'", prev_err_msg,
+                )
+            }
         }
     }
 }
@@ -218,23 +221,11 @@ pub enum LogicalPlan {
         by_column: Vec<Expr>,
         args: SortArguments,
     },
-    /// An explode operation
-    Explode {
-        input: Box<LogicalPlan>,
-        columns: Vec<String>,
-        schema: SchemaRef,
-    },
     /// Slice the table
     Slice {
         input: Box<LogicalPlan>,
         offset: i64,
         len: IdxSize,
-    },
-    /// A Melt operation
-    Melt {
-        input: Box<LogicalPlan>,
-        args: Arc<MeltArgs>,
-        schema: SchemaRef,
     },
     /// A (User Defined) Function
     MapFunction {
@@ -296,7 +287,6 @@ impl LogicalPlan {
             Union { inputs, .. } => inputs[0].schema(),
             Cache { input, .. } => input.schema(),
             Sort { input, .. } => input.schema(),
-            Explode { schema, .. } => Ok(Cow::Borrowed(schema)),
             #[cfg(feature = "parquet")]
             ParquetScan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
             #[cfg(feature = "ipc")]
@@ -313,7 +303,6 @@ impl LogicalPlan {
             HStack { schema, .. } => Ok(Cow::Borrowed(schema)),
             Distinct { input, .. } | FileSink { input, .. } => input.schema(),
             Slice { input, .. } => input.schema(),
-            Melt { schema, .. } => Ok(Cow::Borrowed(schema)),
             MapFunction {
                 input, function, ..
             } => {

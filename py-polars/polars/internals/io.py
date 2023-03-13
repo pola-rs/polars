@@ -4,16 +4,39 @@ import glob
 from contextlib import contextmanager, suppress
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import Any, BinaryIO, ContextManager, Iterator, TextIO, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    BinaryIO,
+    ContextManager,
+    Iterator,
+    TextIO,
+    overload,
+)
 
-import polars.internals as pli
-from polars.datatypes import DataType
 from polars.dependencies import _FSSPEC_AVAILABLE, fsspec
-from polars.utils import normalise_filepath
+from polars.exceptions import NoDataError
+from polars.utils.decorators import deprecated_alias
+from polars.utils.various import normalise_filepath
 
 with suppress(ImportError):
     from polars.polars import ipc_schema as _ipc_schema
     from polars.polars import parquet_schema as _parquet_schema
+
+if TYPE_CHECKING:
+    import polars.internals as pli
+    from polars.datatypes import PolarsDataType
+
+
+def _check_empty(b: BytesIO, context: str, read_position: int | None = None) -> BytesIO:
+    if not b.getbuffer().nbytes:
+        hint = (
+            f" (buffer position = {read_position}; try seek(0) before reading?)"
+            if context in ("StringIO", "BytesIO") and read_position
+            else ""
+        )
+        raise NoDataError(f"empty CSV data from {context}{hint}")
+    return b
 
 
 def _process_http_file(path: str, encoding: str | None = None) -> BytesIO:
@@ -75,6 +98,7 @@ def _prepare_file_arg(
     fsspec too.
 
     """
+
     # Small helper to use a variable as context
     @contextmanager
     def managed_file(file: Any) -> Iterator[Any]:
@@ -88,24 +112,48 @@ def _prepare_file_arg(
     )
     encoding_str = encoding if encoding else "utf8"
 
+    # PyArrow allows directories, so we only check that something is not
+    # a dir if we are not using PyArrow
+    check_not_dir = not use_pyarrow
+
     if isinstance(file, bytes):
         if has_non_utf8_non_utf8_lossy_encoding:
-            return BytesIO(file.decode(encoding_str).encode("utf8"))
+            return _check_empty(
+                BytesIO(file.decode(encoding_str).encode("utf8")),
+                context="bytes",
+            )
         if use_pyarrow:
-            return BytesIO(file)
+            return _check_empty(BytesIO(file), context="bytes")
 
     if isinstance(file, StringIO):
-        return BytesIO(file.getvalue().encode("utf8"))
+        return _check_empty(
+            BytesIO(file.read().encode("utf8")),
+            context="StringIO",
+            read_position=file.tell(),
+        )
 
     if isinstance(file, BytesIO):
         if has_non_utf8_non_utf8_lossy_encoding:
-            return BytesIO(file.getvalue().decode(encoding_str).encode("utf8"))
-        return managed_file(file)
+            return _check_empty(
+                BytesIO(file.read().decode(encoding_str).encode("utf8")),
+                context="BytesIO",
+                read_position=file.tell(),
+            )
+        return managed_file(
+            _check_empty(
+                b=file,
+                context="BytesIO",
+                read_position=file.tell(),
+            )
+        )
 
     if isinstance(file, Path):
         if has_non_utf8_non_utf8_lossy_encoding:
-            return BytesIO(file.read_bytes().decode(encoding_str).encode("utf8"))
-        return managed_file(normalise_filepath(file))
+            return _check_empty(
+                BytesIO(file.read_bytes().decode(encoding_str).encode("utf8")),
+                context=f"Path ({file!r})",
+            )
+        return managed_file(normalise_filepath(file, check_not_dir))
 
     if isinstance(file, str):
         # make sure that this is before fsspec
@@ -118,7 +166,7 @@ def _prepare_file_arg(
 
             if not has_non_utf8_non_utf8_lossy_encoding:
                 if infer_storage_options(file)["protocol"] == "file":
-                    return managed_file(normalise_filepath(file))
+                    return managed_file(normalise_filepath(file, check_not_dir))
             kwargs["encoding"] = encoding
             return fsspec.open(file, **kwargs)
 
@@ -128,26 +176,31 @@ def _prepare_file_arg(
 
             if not has_non_utf8_non_utf8_lossy_encoding:
                 if all(infer_storage_options(f)["protocol"] == "file" for f in file):
-                    return managed_file([normalise_filepath(f) for f in file])
+                    return managed_file(
+                        [normalise_filepath(f, check_not_dir) for f in file]
+                    )
             kwargs["encoding"] = encoding
             return fsspec.open_files(file, **kwargs)
 
     if isinstance(file, str):
-        file = normalise_filepath(file)
+        file = normalise_filepath(file, check_not_dir)
         if has_non_utf8_non_utf8_lossy_encoding:
             with open(file, encoding=encoding_str) as f:
-                return BytesIO(f.read().encode("utf8"))
+                return _check_empty(
+                    BytesIO(f.read().encode("utf8")), context=f"{file!r}"
+                )
 
     return managed_file(file)
 
 
-def read_ipc_schema(file: str | BinaryIO | Path | bytes) -> dict[str, type[DataType]]:
+@deprecated_alias(file="source")
+def read_ipc_schema(source: str | BinaryIO | Path | bytes) -> dict[str, PolarsDataType]:
     """
-    Get a schema of the IPC file without reading data.
+    Get the schema of an IPC file without reading data.
 
     Parameters
     ----------
-    file
+    source
         Path to a file or a file-like object.
 
     Returns
@@ -155,21 +208,22 @@ def read_ipc_schema(file: str | BinaryIO | Path | bytes) -> dict[str, type[DataT
     Dictionary mapping column names to datatypes
 
     """
-    if isinstance(file, (str, Path)):
-        file = normalise_filepath(file)
+    if isinstance(source, (str, Path)):
+        source = normalise_filepath(source)
 
-    return _ipc_schema(file)
+    return _ipc_schema(source)
 
 
+@deprecated_alias(file="source")
 def read_parquet_schema(
-    file: str | BinaryIO | Path | bytes,
-) -> dict[str, type[DataType]]:
+    source: str | BinaryIO | Path | bytes,
+) -> dict[str, PolarsDataType]:
     """
-    Get a schema of the Parquet file without reading data.
+    Get the schema of a Parquet file without reading data.
 
     Parameters
     ----------
-    file
+    source
         Path to a file or a file-like object.
 
     Returns
@@ -177,10 +231,10 @@ def read_parquet_schema(
     Dictionary mapping column names to datatypes
 
     """
-    if isinstance(file, (str, Path)):
-        file = normalise_filepath(file)
+    if isinstance(source, (str, Path)):
+        source = normalise_filepath(source)
 
-    return _parquet_schema(file)
+    return _parquet_schema(source)
 
 
 def _is_local_file(file: str) -> bool:

@@ -51,9 +51,8 @@ pub(super) fn position_aggregates(
                 let offset = i * n_rows;
                 let avs = &buf[offset..offset + n_rows];
                 let name = opt_name.unwrap_or("null");
-                let mut out = Series::new(name, avs);
-                finish_logical_type(&mut out, logical_type);
-                out
+                let out = Series::new(name, avs);
+                unsafe { out.cast_unchecked(logical_type).unwrap() }
             })
             .collect::<Vec<_>>()
     })
@@ -110,10 +109,8 @@ where
                 let offset = i * n_rows;
                 let opt_values = &buf[offset..offset + n_rows];
                 let name = opt_name.unwrap_or("null");
-                let mut out = ChunkedArray::<T>::from_slice_options(name, opt_values).into_series();
-
-                finish_logical_type(&mut out, logical_type);
-                out
+                let out = ChunkedArray::<T>::from_slice_options(name, opt_values).into_series();
+                unsafe { out.cast_unchecked(logical_type).unwrap() }
             })
             .collect::<Vec<_>>()
     })

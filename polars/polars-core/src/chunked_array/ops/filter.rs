@@ -9,20 +9,11 @@ use crate::utils::align_chunks_binary;
 
 macro_rules! check_filter_len {
     ($self:expr, $filter:expr) => {{
-        if $self.len() != $filter.len() {
-            return Err(PolarsError::ShapeMisMatch(
-                format!(
-                    "Filter's length differs from that of the ChunkedArray/ Series. \
-                Length Self: {} Length mask: {}\
-                Self: {:?}; mask: {:?}",
-                    $self.len(),
-                    $filter.len(),
-                    $self,
-                    $filter
-                )
-                .into(),
-            ));
-        }
+        polars_ensure!(
+            $self.len() == $filter.len(),
+            ShapeMismatch: "filter's length: {} differs from that of the series: {}",
+            $filter.len(), $self.len()
+        )
     }};
 }
 
@@ -46,7 +37,7 @@ where
             .zip(filter.downcast_iter())
             .map(|(left, mask)| filter_fn(left, mask).unwrap())
             .collect::<Vec<_>>();
-        Ok(self.copy_with_chunks(chunks, true))
+        Ok(self.copy_with_chunks(chunks, true, true))
     }
 }
 
@@ -67,33 +58,17 @@ impl ChunkFilter<BooleanType> for BooleanChunked {
             .zip(filter.downcast_iter())
             .map(|(left, mask)| filter_fn(left, mask).unwrap())
             .collect::<Vec<_>>();
-        Ok(self.copy_with_chunks(chunks, true))
+        Ok(self.copy_with_chunks(chunks, true, true))
     }
 }
 
 impl ChunkFilter<Utf8Type> for Utf8Chunked {
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ChunkedArray<Utf8Type>> {
-        // broadcast
-        if filter.len() == 1 {
-            return match filter.get(0) {
-                Some(true) => Ok(self.clone()),
-                _ => Ok(Utf8Chunked::full_null(self.name(), 0)),
-            };
-        }
-        check_filter_len!(self, filter);
-        let (left, filter) = align_chunks_binary(self, filter);
-
-        let chunks = left
-            .downcast_iter()
-            .zip(filter.downcast_iter())
-            .map(|(left, mask)| filter_fn(left, mask).unwrap())
-            .collect::<Vec<_>>();
-
-        Ok(self.copy_with_chunks(chunks, true))
+        let out = self.as_binary().filter(filter)?;
+        unsafe { Ok(out.to_utf8()) }
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ChunkFilter<BinaryType> for BinaryChunked {
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ChunkedArray<BinaryType>> {
         // broadcast
@@ -112,7 +87,7 @@ impl ChunkFilter<BinaryType> for BinaryChunked {
             .map(|(left, mask)| filter_fn(left, mask).unwrap())
             .collect::<Vec<_>>();
 
-        Ok(self.copy_with_chunks(chunks, true))
+        Ok(self.copy_with_chunks(chunks, true, true))
     }
 }
 
@@ -162,11 +137,7 @@ where
                 _ => Ok(ObjectChunked::new_empty(self.name())),
             };
         }
-        if self.is_empty() {
-            return Err(PolarsError::NoData(
-                "cannot filter empty object array".into(),
-            ));
-        }
+        polars_ensure!(!self.is_empty(), NoData: "cannot filter empty object array");
         let chunks = self.downcast_iter().collect::<Vec<_>>();
         let mut builder = ObjectChunkedBuilder::<T>::new(self.name(), self.len());
         for (idx, mask) in filter.into_iter().enumerate() {

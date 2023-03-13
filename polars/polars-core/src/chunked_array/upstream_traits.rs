@@ -133,7 +133,6 @@ where
 }
 
 // FromIterator for BinaryChunked variants.
-#[cfg(feature = "dtype-binary")]
 impl<Ptr> FromIterator<Option<Ptr>> for BinaryChunked
 where
     Ptr: AsRef<[u8]>,
@@ -144,19 +143,15 @@ where
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl PolarsAsRef<[u8]> for Vec<u8> {}
 
-#[cfg(feature = "dtype-binary")]
 impl PolarsAsRef<[u8]> for &[u8] {}
 
-#[cfg(feature = "dtype-binary")]
+// TODO: remove!
 impl PolarsAsRef<[u8]> for &&[u8] {}
 
-#[cfg(feature = "dtype-binary")]
 impl<'a> PolarsAsRef<[u8]> for Cow<'a, [u8]> {}
 
-#[cfg(feature = "dtype-binary")]
 impl<Ptr> FromIterator<Ptr> for BinaryChunked
 where
     Ptr: PolarsAsRef<[u8]>,

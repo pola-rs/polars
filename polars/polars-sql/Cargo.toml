@@ -1,6 +1,6 @@
 [package]
 name = "polars-sql"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/pola-rs/polars"
@@ -8,25 +8,22 @@ description = "Lazy query engine for the Polars DataFrame library"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
-default = []
 cli = ["csv", "polars-lazy/fmt", "atty", "rustyline", "jemallocator"]
 csv = ["polars-lazy/csv-file"]
-parquet = ["polars-lazy/parquet", "polars-lazy/dtype-binary"]
+default = []
 ipc = ["polars-lazy/ipc"]
+parquet = ["polars-lazy/parquet"]
 
 [dependencies]
 atty = { version = "0.2", optional = true }
-polars-arrow = { version = "0.26.1", path = "../polars-arrow", features = ["like"] }
-polars-core = { version = "0.26.1", path = "../polars-core", features = [] }
-polars-lazy = { version = "0.26.1", path = "../polars-lazy", features = ["compile", "strings", "cross_join"] }
-polars-plan = { version = "0.26.1", path = "../polars-lazy/polars-plan", features = ["compile"] }
-rustyline = { version = "10.0.0", optional = true }
+polars-arrow = { version = "0.27.2", path = "../polars-arrow", features = ["like"] }
+polars-core = { version = "0.27.2", path = "../polars-core", features = [] }
+polars-lazy = { version = "0.27.2", path = "../polars-lazy", features = ["compile", "strings", "cross_join", "trigonometry", "abs", "round_series", "log", "regex", "is_in"] }
+polars-plan = { version = "0.27.2", path = "../polars-lazy/polars-plan", features = ["compile"] }
+rustyline = { version = "11.0.0", optional = true }
 serde = "1"
 serde_json = { version = "1" }
-sqlparser = { version = "0.19" }
+sqlparser = { version = "0.30" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"], optional = true }
-
-[target.'cfg(not(target_os = "linux"))'.features]
-jemallocator = []

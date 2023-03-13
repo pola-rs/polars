@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from types import TracebackType
+import contextlib
+from typing import TYPE_CHECKING
 
-try:
+with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import toggle_string_cache as _toggle_string_cache
     from polars.polars import using_string_cache as _using_string_cache
 
-    _DOCUMENTING = False
-except ImportError:
-    _DOCUMENTING = True
+if TYPE_CHECKING:
+    from types import TracebackType
 
 
 class StringCache:

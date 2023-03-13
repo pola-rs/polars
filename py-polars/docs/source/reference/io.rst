@@ -35,12 +35,13 @@ Parquet
    read_parquet_schema
    DataFrame.write_parquet
 
-SQL
-~~~
+Database
+~~~~~~~~
 .. autosummary::
    :toctree: api/
 
-   read_sql
+   read_database
+   DataFrame.write_database
 
 JSON
 ~~~~
@@ -67,6 +68,7 @@ Excel
    :toctree: api/
 
    read_excel
+   DataFrame.write_excel
 
 Delta Lake
 ~~~~~~~~~~
@@ -83,7 +85,7 @@ Connect to pyarrow datasets.
 .. autosummary::
    :toctree: api/
 
-   scan_ds
+   scan_pyarrow_dataset
 
 
 BatchedCsvReader

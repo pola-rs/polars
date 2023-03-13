@@ -1,94 +1,10 @@
 from __future__ import annotations
 
-import os
+from typing import List, cast
 
 import pytest
 
 import polars as pl
-
-IO_TEST_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "io"))
-
-EXAMPLES_DIR = os.path.abspath(
-    os.path.join(
-        os.path.dirname(__file__),
-        "..",
-        "..",
-        "..",
-        "examples",
-        "datasets",
-    )
-)
-
-FOODS_CSV = os.path.join(
-    EXAMPLES_DIR,
-    "foods1.csv",
-)
-
-
-FOODS_CSV_GLOB = os.path.join(
-    EXAMPLES_DIR,
-    "foods*.csv",
-)
-
-FOODS_PARQUET = os.path.join(
-    EXAMPLES_DIR,
-    "foods1.parquet",
-)
-
-FOODS_IPC = os.path.join(
-    EXAMPLES_DIR,
-    "foods1.ipc",
-)
-
-FOODS_NDJSON = os.path.join(
-    EXAMPLES_DIR,
-    "foods1.ndjson",
-)
-
-
-@pytest.fixture()
-def io_test_dir() -> str:
-    return IO_TEST_DIR
-
-
-@pytest.fixture()
-def examples_dir() -> str:
-    return EXAMPLES_DIR
-
-
-@pytest.fixture()
-def foods_csv() -> str:
-    return FOODS_CSV
-
-
-@pytest.fixture()
-def foods_csv_glob() -> str:
-    return FOODS_CSV
-
-
-if not os.path.isfile(FOODS_PARQUET):
-    pl.read_csv(FOODS_CSV).write_parquet(FOODS_PARQUET)
-
-if not os.path.isfile(FOODS_IPC):
-    pl.read_csv(FOODS_CSV).write_ipc(FOODS_IPC)
-
-if not os.path.isfile(FOODS_NDJSON):
-    pl.read_csv(FOODS_CSV).write_json(FOODS_NDJSON, json_lines=True)
-
-
-@pytest.fixture()
-def foods_ipc() -> str:
-    return FOODS_IPC
-
-
-@pytest.fixture()
-def foods_parquet() -> str:
-    return FOODS_PARQUET
-
-
-@pytest.fixture()
-def foods_ndjson() -> str:
-    return FOODS_NDJSON
 
 
 @pytest.fixture()
@@ -137,5 +53,42 @@ def fruits_cars() -> pl.DataFrame:
             "fruits": ["banana", "banana", "apple", "apple", "banana"],
             "B": [5, 4, 3, 2, 1],
             "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
-        }
+        },
+        schema_overrides={"A": pl.Int64, "B": pl.Int64},
     )
+
+
+ISO8601_FORMATS_DATETIME = []
+
+for T in ["T", " "]:
+    for hms in (
+        [
+            f"{T}%H:%M:%S",
+            f"{T}%H%M%S",
+            f"{T}%H:%M",
+            f"{T}%H%M",
+        ]
+        + [f"{T}%H:%M:%S.{fraction}" for fraction in ["%9f", "%6f", "%3f"]]
+        + [f"{T}%H%M%S.{fraction}" for fraction in ["%9f", "%6f", "%3f"]]
+        + [""]
+    ):
+        for date_sep in ("/", "-", ""):
+            fmt = f"%Y{date_sep}%m{date_sep}%d{hms}"
+            ISO8601_FORMATS_DATETIME.append(fmt)
+
+
+@pytest.fixture(params=ISO8601_FORMATS_DATETIME)
+def iso8601_format_datetime(request: pytest.FixtureRequest) -> list[str]:
+    return cast(List[str], request.param)
+
+
+ISO8601_FORMATS_DATE = []
+
+for date_sep in ("/", "-", ""):
+    fmt = f"%Y{date_sep}%m{date_sep}%d"
+    ISO8601_FORMATS_DATE.append(fmt)
+
+
+@pytest.fixture(params=ISO8601_FORMATS_DATE)
+def iso8601_format_date(request: pytest.FixtureRequest) -> list[str]:
+    return cast(List[str], request.param)

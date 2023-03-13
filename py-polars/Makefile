@@ -1,5 +1,6 @@
 .DEFAULT_GOAL := help
 
+PYTHONPATH=
 SHELL=/bin/bash
 VENV = venv
 
@@ -35,27 +36,27 @@ fmt: venv  ## Run autoformatting and linting
 
 .PHONY: clippy
 clippy:  ## Run clippy
-	cargo clippy -- -D warnings -A clippy::borrow_deref_ref
+	cargo clippy -- -D warnings
 
 .PHONY: pre-commit
 pre-commit: fmt clippy  ## Run all code quality checks
 
 .PHONY: test
 test: venv build  ## Run fast unittests
-	$(VENV_BIN)/pytest tests/unit/
+	$(VENV_BIN)/pytest -n auto --dist worksteal
 
 .PHONY: doctest
 doctest: venv build  ## Run doctests
-	$(VENV_BIN)/python tests/docs/run_doc_examples.py
+	$(VENV_BIN)/python tests/docs/run_doctest.py
 
 .PHONY: test-all
 test-all: venv build  ## Run all tests
-	$(VENV_BIN)/pytest
-	$(VENV_BIN)/python tests/docs/run_doc_examples.py
+	$(VENV_BIN)/pytest -n auto --dist worksteal -m "slow or not slow"
+	$(VENV_BIN)/python tests/docs/run_doctest.py
 
 .PHONY: coverage
 coverage: venv build  ## Run tests and report coverage
-	$(VENV_BIN)/pytest --cov
+	$(VENV_BIN)/pytest --cov -n auto --dist worksteal -m "not benchmark"
 
 .PHONY: clean
 clean:  ## Clean up caches and build artifacts

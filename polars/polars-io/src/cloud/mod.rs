@@ -5,7 +5,7 @@ use std::str::FromStr;
 use object_store::local::LocalFileSystem;
 use object_store::ObjectStore;
 use polars_core::cloud::{CloudOptions, CloudType};
-use polars_core::prelude::{PolarsError, PolarsResult};
+use polars_core::prelude::{polars_bail, PolarsError, PolarsResult};
 
 mod adaptors;
 mod glob;
@@ -16,21 +16,21 @@ type BuildResult = PolarsResult<(CloudLocation, Box<dyn ObjectStore>)>;
 
 #[allow(dead_code)]
 fn err_missing_feature(feature: &str, scheme: &str) -> BuildResult {
-    Err(PolarsError::ComputeError(
-        format!("Feature '{feature}' must be enabled in order to use '{scheme}' cloud urls.")
-            .into(),
-    ))
+    polars_bail!(
+        ComputeError:
+        "feature '{}' must be enabled in order to use '{}' cloud urls", feature, scheme,
+    );
 }
 fn err_missing_configuration(feature: &str, scheme: &str) -> BuildResult {
-    Err(PolarsError::ComputeError(
-        format!("Configuration '{feature}' must be provided in order to use {scheme} cloud urls.")
-            .into(),
-    ))
+    polars_bail!(
+        ComputeError:
+        "configuration '{}' must be provided in order to use '{}' cloud urls", feature, scheme,
+    );
 }
 /// Build an ObjectStore based on the URL and passed in url. Return the cloud location and an implementation of the object store.
 pub fn build(url: &str, options: Option<&CloudOptions>) -> BuildResult {
     let cloud_location = CloudLocation::new(url)?;
-    let store = match CloudType::from_str(url).map_err(anyhow::Error::from)? {
+    let store = match CloudType::from_str(url)? {
         CloudType::File => {
             let local = LocalFileSystem::new();
             Ok::<_, PolarsError>(Box::new(local) as Box<dyn ObjectStore>)

@@ -1,14 +1,16 @@
 try:
     from polars.polars import (
         ArrowError,
+        ColumnNotFoundError,
         ComputeError,
         DuplicateError,
         InvalidOperationError,
         NoDataError,
-        NotFoundError,
         PanicException,
         SchemaError,
+        SchemaFieldNotFoundError,
         ShapeError,
+        StructFieldNotFoundError,
     )
 except ImportError:
     # They are only redefined for documentation purposes
@@ -17,20 +19,11 @@ except ImportError:
     class ArrowError(Exception):  # type: ignore[no-redef]
         """Exception raised the underlying Arrow library encounters an error."""
 
-    class ComputeError(Exception):  # type: ignore[no-redef]
-        """Exception raised when polars could not finish the computation."""
-
-    class NoDataError(Exception):  # type: ignore[no-redef]
-        """Exception raised when an operation can not be performed on an empty data structure."""  # noqa: E501
-
-    class NotFoundError(Exception):  # type: ignore[no-redef]
+    class ColumnNotFoundError(Exception):  # type: ignore[no-redef]
         """Exception raised when a specified column is not found."""
 
-    class SchemaError(Exception):  # type: ignore[no-redef]
-        """Exception raised when trying to combine data structures with mismatched schemas."""  # noqa: E501
-
-    class ShapeError(Exception):  # type: ignore[no-redef]
-        """Exception raised when trying to combine data structures with incompatible shapes."""  # noqa: E501
+    class ComputeError(Exception):  # type: ignore[no-redef]
+        """Exception raised when polars could not finish the computation."""
 
     class DuplicateError(Exception):  # type: ignore[no-redef]
         """Exception raised when a column name is duplicated."""
@@ -38,8 +31,23 @@ except ImportError:
     class InvalidOperationError(Exception):  # type: ignore[no-redef]
         """Exception raised when an operation is not allowed on a certain data type."""
 
+    class NoDataError(Exception):  # type: ignore[no-redef]
+        """Exception raised when an operation can not be performed on an empty data structure."""  # noqa: W505
+
+    class SchemaError(Exception):  # type: ignore[no-redef]
+        """Exception raised when trying to combine data structures with mismatched schemas."""  # noqa: W505
+
+    class SchemaFieldNotFoundError(Exception):  # type: ignore[no-redef]
+        """Exception raised when a specified schema field is not found."""
+
+    class ShapeError(Exception):  # type: ignore[no-redef]
+        """Exception raised when trying to combine data structures with incompatible shapes."""  # noqa: W505
+
+    class StructFieldNotFoundError(Exception):  # type: ignore[no-redef]
+        """Exception raised when a specified schema field is not found."""
+
     class PanicException(Exception):  # type: ignore[no-redef]
-        """Exception raised when an unexpected state causes a panic in the underlying Rust library."""  # noqa: E501
+        """Exception raised when an unexpected state causes a panic in the underlying Rust library."""  # noqa: W505
 
 
 class InvalidAssert(Exception):
@@ -60,15 +68,17 @@ class TooManyRowsReturned(RowsException):
 
 __all__ = [
     "ArrowError",
+    "ColumnNotFoundError",
     "ComputeError",
-    "NoDataError",
-    "NotFoundError",
-    "SchemaError",
-    "ShapeError",
     "DuplicateError",
     "InvalidOperationError",
+    "NoDataError",
+    "NoRowsReturned",
     "PanicException",
     "RowsException",
-    "NoRowsReturned",
+    "SchemaError",
+    "SchemaFieldNotFoundError",
+    "ShapeError",
+    "StructFieldNotFoundError",
     "TooManyRowsReturned",
 ]

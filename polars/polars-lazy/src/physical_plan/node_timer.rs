@@ -39,12 +39,9 @@ impl NodeTimer {
 
         let mut ticks = std::mem::take(&mut data.1);
         // first value is end of optimization
-        if ticks.is_empty() {
-            return Err(PolarsError::ComputeError("no data to time".into()));
-        } else {
-            let start = ticks[0].0;
-            ticks.push((self.query_start, start))
-        }
+        polars_ensure!(!ticks.is_empty(), ComputeError: "no data to time");
+        let start = ticks[0].0;
+        ticks.push((self.query_start, start));
         let nodes_s = Series::new("node", nodes);
         let start: NoNull<UInt64Chunked> = ticks
             .iter()

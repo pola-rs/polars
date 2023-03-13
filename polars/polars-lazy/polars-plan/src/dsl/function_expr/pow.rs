@@ -5,7 +5,7 @@ use polars_core::export::num::{Float, ToPrimitive};
 
 use super::*;
 
-fn pow_on_floats<T>(base: &ChunkedArray<T>, exponent: &Series) -> PolarsResult<Series>
+fn pow_on_floats<T>(base: &ChunkedArray<T>, exponent: &Series) -> PolarsResult<Option<Series>>
 where
     T: PolarsFloatType,
     T::Native: num::pow::Pow<T::Native, Output = T::Native> + ToPrimitive + Float,
@@ -18,7 +18,7 @@ where
     if exponent.len() == 1 {
         let exponent_value = exponent
             .get(0)
-            .ok_or_else(|| PolarsError::ComputeError("exponent is null".into()))?;
+            .ok_or_else(|| polars_err!(ComputeError: "exponent is null"))?;
         let s = match exponent_value.to_f64().unwrap() {
             a if a == 1.0 => base.clone().into_series(),
             // specialized sqrt will ensure (-inf)^0.5 = NaN
@@ -34,27 +34,30 @@ where
             }
             _ => base.apply(|v| Pow::pow(v, exponent_value)).into_series(),
         };
-        Ok(s)
+        Ok(Some(s))
     } else if (base.len() == 1) && (exponent.len() != 1) {
         let base = base
             .get(0)
-            .ok_or_else(|| PolarsError::ComputeError("base is null".into()))?;
+            .ok_or_else(|| polars_err!(ComputeError: "base is null"))?;
 
-        Ok(exponent.apply(|exp| Pow::pow(base, exp)).into_series())
+        Ok(Some(
+            exponent.apply(|exp| Pow::pow(base, exp)).into_series(),
+        ))
     } else {
-        Ok(base
-            .into_iter()
-            .zip(exponent.into_iter())
-            .map(|(opt_base, opt_exponent)| match (opt_base, opt_exponent) {
-                (Some(base), Some(exponent)) => Some(num::pow::Pow::pow(base, exponent)),
-                _ => None,
-            })
-            .collect_trusted::<ChunkedArray<T>>()
-            .into_series())
+        Ok(Some(
+            base.into_iter()
+                .zip(exponent.into_iter())
+                .map(|(opt_base, opt_exponent)| match (opt_base, opt_exponent) {
+                    (Some(base), Some(exponent)) => Some(num::pow::Pow::pow(base, exponent)),
+                    _ => None,
+                })
+                .collect_trusted::<ChunkedArray<T>>()
+                .into_series(),
+        ))
     }
 }
 
-fn pow_on_series(base: &Series, exponent: &Series) -> PolarsResult<Series> {
+fn pow_on_series(base: &Series, exponent: &Series) -> PolarsResult<Option<Series>> {
     use DataType::*;
     match base.dtype() {
         Float32 => {
@@ -72,7 +75,7 @@ fn pow_on_series(base: &Series, exponent: &Series) -> PolarsResult<Series> {
     }
 }
 
-pub(super) fn pow(s: &mut [Series]) -> PolarsResult<Series> {
+pub(super) fn pow(s: &mut [Series]) -> PolarsResult<Option<Series>> {
     let base = &s[0];
     let exponent = &s[1];
 
@@ -80,13 +83,11 @@ pub(super) fn pow(s: &mut [Series]) -> PolarsResult<Series> {
     let exp_len = exponent.len();
     match (base_len, exp_len) {
         (1, _) | (_, 1) => pow_on_series(base, exponent),
-        (len_a, len_b) if len_a == len_b => {
-            pow_on_series(base, exponent)
-        }
-        _ => {
-            Err(PolarsError::ComputeError(
-                format!("pow expression: the exponents length: {exp_len} does not match that of the base: {base_len}. Please ensure the lengths match or consider a literal exponent.").into()))
-        }
-
+        (len_a, len_b) if len_a == len_b => pow_on_series(base, exponent),
+        _ => polars_bail!(
+            ComputeError:
+            "exponent shape: {} in `pow` expression does not match that of the base: {}",
+            exp_len, base_len,
+        ),
     }
 }

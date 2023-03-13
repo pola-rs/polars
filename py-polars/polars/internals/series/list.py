@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from datetime import date, datetime
 from typing import TYPE_CHECKING, Any, Callable
 
 import polars.internals as pli
 from polars.internals.series.utils import expr_dispatch
+from polars.utils.decorators import deprecate_nonkeyword_arguments
 
 if TYPE_CHECKING:
+    from datetime import date, datetime, time
+
     from polars.internals.type_aliases import NullBehavior, ToStructStrategy
     from polars.polars import PySeries
 
@@ -49,8 +51,41 @@ class ListNameSpace:
     def mean(self) -> pli.Series:
         """Compute the mean value of the arrays in the list."""
 
-    def sort(self, reverse: bool = False) -> pli.Series:
-        """Sort the arrays in the list."""
+    @deprecate_nonkeyword_arguments()
+    def sort(self, descending: bool = False) -> pli.Series:
+        """
+        Sort the arrays in this column.
+
+        Parameters
+        ----------
+        descending
+            Sort in descending order.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[3, 2, 1], [9, 1, 2]])
+        >>> s.arr.sort()
+        shape: (2,)
+        Series: 'a' [list[i64]]
+        [
+                [1, 2, 3]
+                [1, 2, 9]
+        ]
+        >>> s.arr.sort(descending=True)
+        shape: (2,)
+        Series: 'a' [list[i64]]
+        [
+                [3, 2, 1]
+                [9, 2, 1]
+        ]
+
+        """
+        return (
+            pli.wrap_s(self._s)
+            .to_frame()
+            .select(pli.col(self._s.name()).arr.sort(descending=descending))
+            .to_series()
+        )
 
     def reverse(self) -> pli.Series:
         """Reverse the arrays in the list."""
@@ -199,6 +234,22 @@ class ListNameSpace:
             [null, -8, -1]
         ]
 
+        >>> s.arr.diff(n=2)
+        shape: (2,)
+        Series: 'a' [list[i64]]
+        [
+            [null, null, ... 2]
+            [null, null, -9]
+        ]
+
+        >>> s.arr.diff(n=2, null_behavior="drop")
+        shape: (2,)
+        Series: 'a' [list[i64]]
+        [
+            [2, 2]
+            [-9]
+        ]
+
         """
 
     def shift(self, periods: int = 1) -> pli.Series:
@@ -292,6 +343,48 @@ class ListNameSpace:
 
         """
 
+    def explode(self) -> pli.Series:
+        """
+        Returns a column with a separate row for every list element.
+
+        Returns
+        -------
+        Exploded column with the datatype of the list elements.
+
+        See Also
+        --------
+        Series.reshape : Reshape this Series to a flat Series or a Series of Lists.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 2, 3], [4, 5, 6]])
+        >>> s.arr.explode()
+        shape: (6,)
+        Series: 'a' [i64]
+        [
+            1
+            2
+            3
+            4
+            5
+            6
+        ]
+
+        """
+
+    def count_match(
+        self, element: float | str | bool | int | date | datetime | time | pli.Expr
+    ) -> pli.Expr:
+        """
+        Count how often the value produced by ``element`` occurs.
+
+        Parameters
+        ----------
+        element
+            An expression that produces a single value
+
+        """
+
     def to_struct(
         self,
         n_field_strategy: ToStructStrategy = "first_non_null",
@@ -367,7 +460,7 @@ class ListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
-        >>> df.with_column(
+        >>> df.with_columns(
         ...     pl.concat_list(["a", "b"]).arr.eval(pl.element().rank()).alias("rank")
         ... )
         shape: (3, 3)

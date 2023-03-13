@@ -32,6 +32,7 @@ fn get_source<F>(
     expr_arena: &Arena<AExpr>,
     to_physical: &F,
     push_predicate: bool,
+    verbose: bool,
 ) -> PolarsResult<Box<dyn Source>>
 where
     F: Fn(Node, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
@@ -76,7 +77,7 @@ where
                 let op = Box::new(op) as Box<dyn Operator>;
                 operator_objects.push(op)
             }
-            let src = sources::CsvSource::new(path, file_info.schema, options)?;
+            let src = sources::CsvSource::new(path, file_info.schema, options, verbose)?;
             Ok(Box::new(src) as Box<dyn Source>)
         }
         #[cfg(feature = "parquet")]
@@ -96,7 +97,13 @@ where
                 let op = Box::new(op) as Box<dyn Operator>;
                 operator_objects.push(op)
             }
-            let src = sources::ParquetSource::new(path, options, cloud_options, &file_info.schema)?;
+            let src = sources::ParquetSource::new(
+                path,
+                options,
+                cloud_options,
+                &file_info.schema,
+                verbose,
+            )?;
             Ok(Box::new(src) as Box<dyn Source>)
         }
         _ => todo!(),
@@ -190,20 +197,93 @@ where
             by_column,
             args,
         } => {
-            let input_schema = lp_arena.get(*input).schema(lp_arena);
-            assert_eq!(by_column.len(), 1);
-            let by_column = aexpr_to_leaf_names_iter(by_column[0], expr_arena)
-                .next()
-                .unwrap();
-            let index = input_schema.try_index_of(by_column.as_ref())?;
+            let input_schema = lp_arena.get(*input).schema(lp_arena).into_owned();
 
-            let sort_sink = SortSink::new(
-                index,
-                args.reverse[0],
-                input_schema.into_owned(),
-                args.slice,
-            );
-            Box::new(sort_sink) as Box<dyn Sink>
+            if by_column.len() == 1 {
+                let by_column = aexpr_to_leaf_names_iter(by_column[0], expr_arena)
+                    .next()
+                    .unwrap();
+                let index = input_schema.try_index_of(by_column.as_ref())?;
+
+                let sort_sink = SortSink::new(index, args.clone(), input_schema);
+                Box::new(sort_sink) as Box<dyn Sink>
+            } else {
+                let sort_idx = by_column
+                    .iter()
+                    .map(|node| {
+                        let name = aexpr_to_leaf_names_iter(*node, expr_arena).next().unwrap();
+                        input_schema.try_index_of(name.as_ref())
+                    })
+                    .collect::<PolarsResult<Vec<_>>>()?;
+
+                let sort_sink = SortSinkMultiple::new(args.clone(), &input_schema, sort_idx);
+                Box::new(sort_sink) as Box<dyn Sink>
+            }
+        }
+        Distinct { input, options } => {
+            // We create a Groupby.agg_first()/agg_last (depending on the keep strategy
+            let input_schema = lp_arena.get(*input).schema(lp_arena).into_owned();
+
+            let (keys, aggs, schema) = match &options.subset {
+                None => {
+                    let keys = input_schema
+                        .iter_names()
+                        .map(|name| expr_arena.add(AExpr::Column(Arc::from(name.as_str()))))
+                        .collect();
+                    let aggs = vec![];
+                    (keys, aggs, input_schema.clone())
+                }
+                Some(keys) => {
+                    let mut groupby_out_schema = Schema::with_capacity(input_schema.len());
+                    let key_names = PlHashSet::from_iter(keys.iter().map(|s| s.as_ref()));
+                    let keys = keys
+                        .iter()
+                        .map(|key| {
+                            let (_, name, dtype) = input_schema.get_full(key.as_str()).unwrap();
+                            groupby_out_schema.with_column(name.clone(), dtype.clone());
+                            expr_arena.add(AExpr::Column(Arc::from(key.as_str())))
+                        })
+                        .collect();
+
+                    let aggs = input_schema
+                        .iter_names()
+                        .flat_map(|name| {
+                            if key_names.contains(name.as_str()) {
+                                None
+                            } else {
+                                let (_, name, dtype) =
+                                    input_schema.get_full(name.as_str()).unwrap();
+                                groupby_out_schema.with_column(name.clone(), dtype.clone());
+                                let col = expr_arena.add(AExpr::Column(Arc::from(name.as_str())));
+                                Some(match options.keep_strategy {
+                                    UniqueKeepStrategy::First | UniqueKeepStrategy::None => {
+                                        expr_arena.add(AExpr::Agg(AAggExpr::First(col)))
+                                    }
+                                    UniqueKeepStrategy::Last => {
+                                        expr_arena.add(AExpr::Agg(AAggExpr::Last(col)))
+                                    }
+                                })
+                            }
+                        })
+                        .collect();
+                    (keys, aggs, groupby_out_schema.into())
+                }
+            };
+            let lp = Aggregate {
+                input: *input,
+                keys,
+                aggs,
+                schema,
+                apply: None,
+                maintain_order: false,
+                options: GroupbyOptions {
+                    slice: options.slice,
+                    ..Default::default()
+                },
+            };
+            let node = lp_arena.add(lp);
+            let groupby_sink = get_sink(node, lp_arena, expr_arena, to_physical)?;
+            Box::new(ReProjectSink::new(input_schema, groupby_sink))
         }
         Aggregate {
             input,
@@ -320,6 +400,10 @@ where
             };
             Box::new(op) as Box<dyn Operator>
         }
+        MapFunction { function, .. } => {
+            let op = operators::FunctionOperator::new(function.clone());
+            Box::new(op) as Box<dyn Operator>
+        }
 
         lp => {
             panic!("operator {lp:?} not (yet) supported")
@@ -355,6 +439,7 @@ where
                 expr_arena,
                 &to_physical,
                 true,
+                verbose,
             )?,
             #[cfg(feature = "csv-file")]
             lp @ CsvScan { .. } => get_source(
@@ -363,6 +448,7 @@ where
                 expr_arena,
                 &to_physical,
                 true,
+                verbose,
             )?,
             #[cfg(feature = "parquet")]
             lp @ ParquetScan { .. } => get_source(
@@ -371,6 +457,7 @@ where
                 expr_arena,
                 &to_physical,
                 true,
+                verbose,
             )?,
             Union { inputs, .. } => {
                 let sources = inputs
@@ -384,6 +471,7 @@ where
                             &mut operator_objects,
                             expr_arena,
                             &to_physical,
+                            i == 0,
                             i == 0,
                         )
                     })

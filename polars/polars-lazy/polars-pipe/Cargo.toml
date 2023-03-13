@@ -12,13 +12,14 @@ description = "Lazy query engine for the Polars DataFrame library"
 crossbeam-channel = "0.5"
 enum_dispatch = "0.3"
 hashbrown.workspace = true
-num.workspace = true
-polars-arrow = { version = "0.26.1", path = "../../polars-arrow", default-features = false }
-polars-core = { version = "0.26.1", path = "../../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
-polars-io = { version = "0.26.1", path = "../../polars-io", default-features = false, features = ["ipc"] }
-polars-ops = { version = "0.26.1", path = "../../polars-ops", features = ["search_sorted"] }
-polars-plan = { version = "0.26.1", path = "../polars-plan", default-features = false, features = ["compile"] }
-polars-utils = { version = "0.26.1", path = "../../polars-utils", features = ["sysinfo"] }
+num-traits.workspace = true
+polars-arrow = { version = "0.27.2", path = "../../polars-arrow", default-features = false }
+polars-core = { version = "0.27.2", path = "../../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
+polars-io = { version = "0.27.2", path = "../../polars-io", default-features = false, features = ["ipc"] }
+polars-ops = { version = "0.27.2", path = "../../polars-ops", features = ["search_sorted"] }
+polars-plan = { version = "0.27.2", path = "../polars-plan", default-features = false, features = ["compile"] }
+polars-row = { version = "0.27.2", path = "../../polars-row" }
+polars-utils = { version = "0.27.2", path = "../../polars-utils", features = ["sysinfo"] }
 rayon.workspace = true
 smartstring = { version = "1" }
 
@@ -34,4 +35,5 @@ dtype-u8 = ["polars-core/dtype-u8"]
 dtype-u16 = ["polars-core/dtype-u16"]
 dtype-i8 = ["polars-core/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16"]
+dtype-decimal = ["polars-core/dtype-decimal"]
 dtype-categorical = ["polars-core/dtype-categorical"]

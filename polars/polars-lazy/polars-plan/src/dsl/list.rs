@@ -18,7 +18,7 @@ impl ListNameSpace {
     pub fn lengths(self) -> Expr {
         let function = |s: Series| {
             let ca = s.list()?;
-            Ok(ca.lst_lengths().into_series())
+            Ok(Some(ca.lst_lengths().into_series()))
         };
         self.0
             .map(function, GetOutput::from_type(IDX_DTYPE))
@@ -29,7 +29,7 @@ impl ListNameSpace {
     pub fn max(self) -> Expr {
         self.0
             .map(
-                |s| Ok(s.list()?.lst_max()),
+                |s| Ok(Some(s.list()?.lst_max())),
                 GetOutput::map_field(|f| {
                     if let DataType::List(adt) = f.data_type() {
                         Field::new(f.name(), *adt.clone())
@@ -46,7 +46,7 @@ impl ListNameSpace {
     pub fn min(self) -> Expr {
         self.0
             .map(
-                |s| Ok(s.list()?.lst_min()),
+                |s| Ok(Some(s.list()?.lst_min())),
                 GetOutput::map_field(|f| {
                     if let DataType::List(adt) = f.data_type() {
                         Field::new(f.name(), *adt.clone())
@@ -62,25 +62,14 @@ impl ListNameSpace {
     /// Compute the sum the items in every sublist.
     pub fn sum(self) -> Expr {
         self.0
-            .map(
-                |s| Ok(s.list()?.lst_sum()),
-                GetOutput::map_field(|f| {
-                    if let DataType::List(adt) = f.data_type() {
-                        Field::new(f.name(), *adt.clone())
-                    } else {
-                        // inner type
-                        f.clone()
-                    }
-                }),
-            )
-            .with_fmt("arr.sum")
+            .map_private(FunctionExpr::ListExpr(ListFunction::Sum))
     }
 
     /// Compute the mean of every sublist and return a `Series` of dtype `Float64`
     pub fn mean(self) -> Expr {
         self.0
             .map(
-                |s| Ok(s.list()?.lst_mean().into_series()),
+                |s| Ok(Some(s.list()?.lst_mean().into_series())),
                 GetOutput::from_type(DataType::Float64),
             )
             .with_fmt("arr.mean")
@@ -90,7 +79,7 @@ impl ListNameSpace {
     pub fn sort(self, options: SortOptions) -> Expr {
         self.0
             .map(
-                move |s| Ok(s.list()?.lst_sort(options).into_series()),
+                move |s| Ok(Some(s.list()?.lst_sort(options).into_series())),
                 GetOutput::same_type(),
             )
             .with_fmt("arr.sort")
@@ -100,7 +89,7 @@ impl ListNameSpace {
     pub fn reverse(self) -> Expr {
         self.0
             .map(
-                move |s| Ok(s.list()?.lst_reverse().into_series()),
+                move |s| Ok(Some(s.list()?.lst_reverse().into_series())),
                 GetOutput::same_type(),
             )
             .with_fmt("arr.reverse")
@@ -110,7 +99,7 @@ impl ListNameSpace {
     pub fn unique(self) -> Expr {
         self.0
             .map(
-                move |s| Ok(s.list()?.lst_unique()?.into_series()),
+                move |s| Ok(Some(s.list()?.lst_unique()?.into_series())),
                 GetOutput::same_type(),
             )
             .with_fmt("arr.unique")
@@ -153,7 +142,11 @@ impl ListNameSpace {
         let separator = separator.to_string();
         self.0
             .map(
-                move |s| s.list()?.lst_join(&separator).map(|ca| ca.into_series()),
+                move |s| {
+                    s.list()?
+                        .lst_join(&separator)
+                        .map(|ca| Some(ca.into_series()))
+                },
                 GetOutput::from_type(DataType::Utf8),
             )
             .with_fmt("arr.join")
@@ -163,7 +156,7 @@ impl ListNameSpace {
     pub fn arg_min(self) -> Expr {
         self.0
             .map(
-                |s| Ok(s.list()?.lst_arg_min().into_series()),
+                |s| Ok(Some(s.list()?.lst_arg_min().into_series())),
                 GetOutput::from_type(IDX_DTYPE),
             )
             .with_fmt("arr.arg_min")
@@ -173,7 +166,7 @@ impl ListNameSpace {
     pub fn arg_max(self) -> Expr {
         self.0
             .map(
-                |s| Ok(s.list()?.lst_arg_max().into_series()),
+                |s| Ok(Some(s.list()?.lst_arg_max().into_series())),
                 GetOutput::from_type(IDX_DTYPE),
             )
             .with_fmt("arr.arg_max")
@@ -184,7 +177,7 @@ impl ListNameSpace {
     pub fn diff(self, n: usize, null_behavior: NullBehavior) -> Expr {
         self.0
             .map(
-                move |s| Ok(s.list()?.lst_diff(n, null_behavior).into_series()),
+                move |s| Ok(Some(s.list()?.lst_diff(n, null_behavior).into_series())),
                 GetOutput::same_type(),
             )
             .with_fmt("arr.diff")
@@ -194,7 +187,7 @@ impl ListNameSpace {
     pub fn shift(self, periods: i64) -> Expr {
         self.0
             .map(
-                move |s| Ok(s.list()?.lst_shift(periods).into_series()),
+                move |s| Ok(Some(s.list()?.lst_shift(periods).into_series())),
                 GetOutput::same_type(),
             )
             .with_fmt("arr.shift")
@@ -244,7 +237,7 @@ impl ListNameSpace {
                 move |s| {
                     s.list()?
                         .to_struct(n_fields, name_generator.clone())
-                        .map(|s| s.into_series())
+                        .map(|s| Some(s.into_series()))
                 },
                 // we don't yet know the fields
                 GetOutput::map_dtype(move |dt: &DataType| {
@@ -287,7 +280,21 @@ impl ListNameSpace {
                 collect_groups: ApplyOptions::ApplyFlat,
                 input_wildcard_expansion: true,
                 auto_explode: true,
-                fmt_str: "arr.contains",
+                ..Default::default()
+            },
+        }
+    }
+    #[cfg(feature = "list_count")]
+    pub fn count_match<E: Into<Expr>>(self, other: E) -> Expr {
+        let other = other.into();
+
+        Expr::Function {
+            input: vec![self.0, other],
+            function: FunctionExpr::ListExpr(ListFunction::CountMatch),
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ApplyFlat,
+                input_wildcard_expansion: true,
+                auto_explode: true,
                 ..Default::default()
             },
         }

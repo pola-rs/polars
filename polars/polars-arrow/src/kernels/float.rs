@@ -1,7 +1,7 @@
 use arrow::array::{BooleanArray, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::types::NativeType;
-use num::Float;
+use num_traits::Float;
 
 use crate::array::default_arrays::FromData;
 use crate::prelude::*;

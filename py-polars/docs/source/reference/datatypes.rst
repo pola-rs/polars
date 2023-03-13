@@ -15,6 +15,7 @@ Numeric
     :toctree: api/
     :nosignatures:
 
+    Decimal
     Float32
     Float64
     Int16
@@ -26,7 +27,7 @@ Numeric
     UInt64
     UInt8
 
-Date / Time
+Temporal
 ~~~~~~~~~~~
 .. autosummary::
     :toctree: api/
@@ -58,10 +59,3 @@ Other
     Object
     Utf8
     Unknown
-
-Functions
-~~~~~~~~~
-.. autosummary::
-    :toctree: api/
-
-    get_idx_type

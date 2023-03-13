@@ -1,24 +1,26 @@
 from __future__ import annotations
 
 import copy
+import os.path
 from typing import cast
 
 import polars as pl
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_copy() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": ["a", None], "c": [True, False]})
-    assert copy.copy(df).frame_equal(df, True)
-    assert copy.deepcopy(df).frame_equal(df, True)
+    assert_frame_equal(copy.copy(df), df)
+    assert_frame_equal(copy.deepcopy(df), df)
 
     a = pl.Series("a", [1, 2])
-    assert copy.copy(a).series_equal(a, True)
-    assert copy.deepcopy(a).series_equal(a, True)
+    assert_series_equal(copy.copy(a), a)
+    assert_series_equal(copy.deepcopy(a), a)
 
 
 def test_categorical_round_trip() -> None:
     df = pl.DataFrame({"ints": [1, 2, 3], "cat": ["a", "b", "c"]})
-    df = df.with_column(pl.col("cat").cast(pl.Categorical))
+    df = df.with_columns(pl.col("cat").cast(pl.Categorical))
 
     tbl = df.to_arrow()
     assert "dictionary" in str(tbl["cat"].type)
@@ -35,7 +37,7 @@ def test_date_list_fmt() -> None:
         }
     )
 
-    df = df.with_column(pl.col("mydate").str.strptime(pl.Date, "%Y-%m-%d"))
+    df = df.with_columns(pl.col("mydate").str.strptime(pl.Date, "%Y-%m-%d"))
     assert (
         str(df.groupby("index", maintain_order=True).agg(pl.col("mydate"))["mydate"])
         == """shape: (3,)
@@ -44,7 +46,7 @@ Series: 'mydate' [list[date]]
 	[2020-01-01]
 	[2020-01-02]
 	[2020-01-05, 2020-01-05]
-]"""  # noqa: E101, W191
+]"""
     )
 
 
@@ -61,3 +63,17 @@ def test_from_different_chunks() -> None:
     out = df.to_pandas()
     assert list(out.columns) == ["a", "b"]
     assert out.shape == (5, 2)
+
+
+def test_unit_io_subdir_has_no_init() -> None:
+    # --------------------------------------------------------------------------------
+    # If this test fails it means an '__init__.py' was added to 'tests/unit/io'.
+    # See https://github.com/pola-rs/polars/pull/6889 for why this can cause issues.
+    # --------------------------------------------------------------------------------
+    # TLDR: it can mask the builtin 'io' module, causing a fatal python error.
+    # --------------------------------------------------------------------------------
+    io_dir = os.path.dirname(__file__)
+    assert io_dir.endswith(f"unit{os.path.sep}io")
+    assert not os.path.exists(
+        f"{io_dir}{os.path.sep}__init__.py"
+    ), "Found undesirable '__init__.py' in the 'unit.io' tests subdirectory"

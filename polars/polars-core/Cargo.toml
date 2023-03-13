@@ -14,7 +14,7 @@ simd = ["arrow/simd"]
 nightly = ["simd", "hashbrown/nightly", "polars-utils/nightly", "polars-arrow/nightly"]
 avx512 = []
 docs = []
-temporal = ["regex", "chrono"]
+temporal = ["regex", "chrono", "polars-error/regex"]
 random = ["rand", "rand_distr"]
 default = ["docs", "temporal", "private"]
 lazy = ["sort_multiple"]
@@ -24,13 +24,9 @@ lazy = ["sort_multiple"]
 performant = ["polars-arrow/performant"]
 
 # extra utilities for Utf8Chunked
-strings = ["regex", "polars-arrow/strings", "arrow/compute_substring"]
-string_encoding = ["base64", "hex"]
+strings = ["regex", "polars-arrow/strings", "arrow/compute_substring", "polars-error/regex"]
 # support for ObjectChunked<T> (downcastable Series of any type)
 object = ["serde_json"]
-
-# extra utilities for BinaryChunked
-binary_encoding = ["base64", "hex", "dtype-binary"]
 
 fmt = ["comfy-table/tty"]
 fmt_no_tty = ["comfy-table"]
@@ -92,18 +88,19 @@ dtype-duration = ["temporal"]
 dtype-time = ["temporal"]
 dtype-i8 = []
 dtype-i16 = []
+dtype-decimal = ["dep:itoap"]
 dtype-u8 = []
 dtype-u16 = []
 dtype-categorical = []
 dtype-struct = []
-dtype-binary = []
 
 parquet = ["arrow/io_parquet"]
 
 # scale to terabytes?
 bigidx = ["polars-arrow/bigidx"]
+python = []
 
-serde-lazy = ["serde", "polars-arrow/serde", "indexmap/serde"]
+serde-lazy = ["serde", "polars-arrow/serde", "indexmap/serde", "smartstring/serde", "chrono/serde"]
 
 docs-selection = [
   "ndarray",
@@ -138,7 +135,6 @@ docs-selection = [
   "horizontal_concat",
   "abs",
   "dataframe_arithmetic",
-  "string_encoding",
   "product",
   "unique_counts",
   "describe",
@@ -155,22 +151,22 @@ docs-selection = [
 
 [dependencies]
 ahash.workspace = true
-anyhow.workspace = true
 arrow.workspace = true
-base64 = { version = "0.21", optional = true }
 bitflags.workspace = true
-chrono = { version = "0.4", optional = true }
+chrono = { version = "0.4", default-features = false, features = ["std"], optional = true }
 chrono-tz = { version = "0.8", optional = true }
 comfy-table = { version = "6.1.4", optional = true, default_features = false }
 hashbrown.workspace = true
-hex = { version = "0.4", optional = true }
 indexmap = { version = "1", features = ["std"] }
+itoap = { version = "1", optional = true }
 ndarray = { version = "0.15", optional = true, default_features = false }
-num.workspace = true
+num-traits.workspace = true
 object_store = { version = "0.5.3", default-features = false, optional = true }
 once_cell.workspace = true
-polars-arrow = { version = "0.26.1", path = "../polars-arrow", features = ["compute"] }
-polars-utils = { version = "0.26.1", path = "../polars-utils" }
+polars-arrow = { version = "0.27.2", path = "../polars-arrow", features = ["compute"] }
+polars-error = { version = "0.27.2", path = "../polars-error" }
+polars-row = { version = "0.27.2", path = "../polars-row" }
+polars-utils = { version = "0.27.2", path = "../polars-utils" }
 rand = { version = "0.8", optional = true, features = ["small_rng", "std"] }
 rand_distr = { version = "0.4", optional = true }
 rayon.workspace = true
@@ -178,7 +174,7 @@ regex = { version = "1.6", optional = true }
 # activate if you want serde support for Series and DataFrames
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
-smartstring = { version = "1" }
+smartstring.workspace = true
 thiserror.workspace = true
 url = { version = "2.3.1", optional = true }
 xxhash-rust.workspace = true

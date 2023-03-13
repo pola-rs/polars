@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use polars_core::error::{PolarsError, PolarsResult};
+use polars_core::error::PolarsResult;
+use polars_core::prelude::polars_err;
 
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, Operator, OperatorResult, PExecutionContext};
@@ -19,9 +20,9 @@ impl Operator for FilterOperator {
         let s = self
             .predicate
             .evaluate(chunk, context.execution_state.as_any())?;
-        let mask = s.bool().map_err(|e| {
-            PolarsError::ComputeError(
-                format!("Filter predicate must be of type Boolean, got: {e:?}").into(),
+        let mask = s.bool().map_err(|_| {
+            polars_err!(
+                ComputeError: "filter predicate must be of type `Boolean`, got `{}`", s.dtype()
             )
         })?;
         // the filter is sequential as they are already executed on different threads

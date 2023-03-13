@@ -12,7 +12,7 @@ fn test_arange_agg() -> PolarsResult<()> {
         .with_columns([arange(lit(0i32), count(), 1).over([col("x")])])
         .collect()?;
     assert_eq!(
-        Vec::from_iter(out.column("literal")?.i64()?.into_no_null_iter()),
+        Vec::from_iter(out.column("arange")?.i64()?.into_no_null_iter()),
         &[0, 1, 0, 1, 0, 1]
     );
 

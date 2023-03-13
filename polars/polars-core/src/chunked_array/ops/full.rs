@@ -64,7 +64,6 @@ impl ChunkFullNull for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl<'a> ChunkFull<&'a [u8]> for BinaryChunked {
     fn full(name: &str, value: &'a [u8], length: usize) -> Self {
         let mut builder = BinaryChunkedBuilder::new(name, length, length * value.len());
@@ -78,7 +77,6 @@ impl<'a> ChunkFull<&'a [u8]> for BinaryChunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ChunkFullNull for BinaryChunked {
     fn full_null(name: &str, length: usize) -> Self {
         let arr = new_null_array(DataType::Binary.to_arrow(), length);
@@ -99,7 +97,7 @@ impl ChunkFull<&Series> for ListChunked {
 
 impl ChunkFullNull for ListChunked {
     fn full_null(name: &str, length: usize) -> ListChunked {
-        ListChunked::full_null_with_dtype(name, length, &DataType::Boolean)
+        ListChunked::full_null_with_dtype(name, length, &DataType::Null)
     }
 }
 
@@ -114,6 +112,13 @@ impl ListChunked {
             length,
         );
         unsafe { ListChunked::from_chunks(name, vec![arr]) }
+    }
+}
+#[cfg(feature = "dtype-struct")]
+impl ChunkFullNull for StructChunked {
+    fn full_null(name: &str, length: usize) -> StructChunked {
+        let s = vec![Series::full_null("", length, &DataType::Null)];
+        StructChunked::new_unchecked(name, &s)
     }
 }
 

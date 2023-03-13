@@ -16,17 +16,19 @@ use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::utils::arrow::types::NativeType;
 use pyo3::basic::CompareOp;
 use pyo3::conversion::{FromPyObject, IntoPy};
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyBytes, PyDict, PyList, PySequence};
+use pyo3::types::{PyBool, PyBytes, PyDict, PyList, PySequence, PyTuple};
 use pyo3::{PyAny, PyResult};
+use smartstring::alias::String as SmartString;
 
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::lazy::dataframe::PyLazyFrame;
+#[cfg(feature = "object")]
 use crate::object::OBJECT_NAME;
 use crate::prelude::*;
-use crate::py_modules::POLARS;
+use crate::py_modules::{POLARS, UTILS};
 use crate::series::PySeries;
 
 pub(crate) fn slice_to_wrapped<T>(slice: &[T]) -> &[Wrap<T>] {
@@ -64,12 +66,6 @@ impl<T> From<T> for Wrap<T> {
     }
 }
 
-pub(crate) fn get_pyseq(obj: &PyAny) -> PyResult<(&PySequence, usize)> {
-    let seq = <PySequence as PyTryFrom>::try_from(obj)?;
-    let len = seq.len()?;
-    Ok((seq, len))
-}
-
 // extract a Rust DataFrame from a python DataFrame, that is DataFrame<PyDataFrame<RustDataFrame>>
 pub(crate) fn get_df(obj: &PyAny) -> PyResult<DataFrame> {
     let pydf = obj.getattr("_df")?;
@@ -92,10 +88,10 @@ where
     T::Native: FromPyObject<'a>,
 {
     fn extract(obj: &'a PyAny) -> PyResult<Self> {
-        let (seq, len) = get_pyseq(obj)?;
+        let len = obj.len()?;
         let mut builder = PrimitiveChunkedBuilder::new("", len);
 
-        for res in seq.iter()? {
+        for res in obj.iter()? {
             let item = res?;
             match item.extract::<T::Native>() {
                 Ok(val) => builder.append_value(val),
@@ -108,10 +104,10 @@ where
 
 impl<'a> FromPyObject<'a> for Wrap<BooleanChunked> {
     fn extract(obj: &'a PyAny) -> PyResult<Self> {
-        let (seq, len) = get_pyseq(obj)?;
+        let len = obj.len()?;
         let mut builder = BooleanChunkedBuilder::new("", len);
 
-        for res in seq.iter()? {
+        for res in obj.iter()? {
             let item = res?;
             match item.extract::<bool>() {
                 Ok(val) => builder.append_value(val),
@@ -124,10 +120,10 @@ impl<'a> FromPyObject<'a> for Wrap<BooleanChunked> {
 
 impl<'a> FromPyObject<'a> for Wrap<Utf8Chunked> {
     fn extract(obj: &'a PyAny) -> PyResult<Self> {
-        let (seq, len) = get_pyseq(obj)?;
+        let len = obj.len()?;
         let mut builder = Utf8ChunkedBuilder::new("", len, len * 25);
 
-        for res in seq.iter()? {
+        for res in obj.iter()? {
             let item = res?;
             match item.extract::<&str>() {
                 Ok(val) => builder.append_value(val),
@@ -140,12 +136,12 @@ impl<'a> FromPyObject<'a> for Wrap<Utf8Chunked> {
 
 impl<'a> FromPyObject<'a> for Wrap<BinaryChunked> {
     fn extract(obj: &'a PyAny) -> PyResult<Self> {
-        let (seq, len) = get_pyseq(obj)?;
+        let len = obj.len()?;
         let mut builder = BinaryChunkedBuilder::new("", len, len * 25);
 
-        for res in seq.iter()? {
+        for res in obj.iter()? {
             let item = res?;
-            match item.extract::<&str>() {
+            match item.extract::<&[u8]>() {
                 Ok(val) => builder.append_value(val),
                 Err(_) => builder.append_null(),
             }
@@ -178,13 +174,31 @@ fn struct_dict<'a>(
 ) -> PyObject {
     let dict = PyDict::new(py);
     for (fld, val) in flds.iter().zip(vals) {
-        dict.set_item(fld.name(), Wrap(val)).unwrap()
+        dict.set_item(fld.name().as_str(), Wrap(val)).unwrap()
     }
     dict.into_py(py)
 }
 
+fn decimal_to_digits(v: i128, buf: &mut [u8; 48]) -> usize {
+    const ZEROS: i128 = 0x3030_3030_3030_3030_3030_3030_3030_3030;
+    if buf.len() < 48 {
+        panic!("decimal_to_digits: buffer size < 48");
+    }
+    let len = lexical_core::write(v, buf).len();
+    let ptr = buf.as_mut_ptr() as *mut i128;
+    unsafe {
+        // this is safe because we know that the buffer is exactly 48 bytes long
+        *ptr -= ZEROS;
+        *ptr.add(1) -= ZEROS;
+        *ptr.add(2) -= ZEROS;
+    }
+    len
+}
+
 impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
     fn into_py(self, py: Python) -> PyObject {
+        let pl = POLARS.as_ref(py);
+        let utils = UTILS.as_ref(py);
         match self.0 {
             AnyValue::UInt8(v) => v.into_py(py),
             AnyValue::UInt16(v) => v.into_py(py),
@@ -209,40 +223,25 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                 s.into_py(py)
             }
             AnyValue::Date(v) => {
-                let pl = PyModule::import(py, "polars").unwrap();
-                let utils = pl.getattr("utils").unwrap();
                 let convert = utils.getattr("_to_python_datetime").unwrap();
                 let py_date_dtype = pl.getattr("Date").unwrap();
                 convert.call1((v, py_date_dtype)).unwrap().into_py(py)
             }
             AnyValue::Datetime(v, tu, tz) => {
-                let pl = PyModule::import(py, "polars").unwrap();
-                let utils = pl.getattr("utils").unwrap();
                 let convert = utils.getattr("_to_python_datetime").unwrap();
                 let py_datetime_dtype = pl.getattr("Datetime").unwrap();
-                let tu = match tu {
-                    TimeUnit::Nanoseconds => "ns",
-                    TimeUnit::Microseconds => "us",
-                    TimeUnit::Milliseconds => "ms",
-                };
+                let tu = tu.to_ascii();
                 convert
                     .call1((v, py_datetime_dtype, tu, tz.as_ref().map(|s| s.as_str())))
                     .unwrap()
                     .into_py(py)
             }
             AnyValue::Duration(v, tu) => {
-                let pl = PyModule::import(py, "polars").unwrap();
-                let utils = pl.getattr("utils").unwrap();
                 let convert = utils.getattr("_to_python_timedelta").unwrap();
-                match tu {
-                    TimeUnit::Nanoseconds => convert.call1((v, "ns")).unwrap().into_py(py),
-                    TimeUnit::Microseconds => convert.call1((v, "us")).unwrap().into_py(py),
-                    TimeUnit::Milliseconds => convert.call1((v, "ms")).unwrap().into_py(py),
-                }
+                let tu = tu.to_ascii();
+                convert.call1((v, tu)).unwrap().into_py(py)
             }
             AnyValue::Time(v) => {
-                let pl = PyModule::import(py, "polars").unwrap();
-                let utils = pl.getattr("utils").unwrap();
                 let convert = utils.getattr("_to_python_time").unwrap();
                 convert.call1((v,)).unwrap().into_py(py)
             }
@@ -261,6 +260,16 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
             }
             AnyValue::Binary(v) => v.into_py(py),
             AnyValue::BinaryOwned(v) => v.into_py(py),
+            AnyValue::Decimal(v, scale) => {
+                let convert = utils.getattr("_to_python_decimal").unwrap();
+                let mut buf = [0_u8; 48];
+                let n_digits = decimal_to_digits(v.abs(), &mut buf);
+                let digits = PyTuple::new(py, buf.into_iter().take(n_digits));
+                convert
+                    .call1((v.is_negative() as u8, digits, n_digits, -(scale as i32)))
+                    .unwrap()
+                    .into_py(py)
+            }
         }
     }
 }
@@ -280,6 +289,12 @@ impl ToPyObject for Wrap<DataType> {
             DataType::UInt64 => pl.getattr("UInt64").unwrap().into(),
             DataType::Float32 => pl.getattr("Float32").unwrap().into(),
             DataType::Float64 => pl.getattr("Float64").unwrap().into(),
+            DataType::Decimal(precision, scale) => pl
+                .getattr("Decimal")
+                .unwrap()
+                .call1((*precision, *scale))
+                .unwrap()
+                .into(),
             DataType::Boolean => pl.getattr("Boolean").unwrap().into(),
             DataType::Utf8 => pl.getattr("Utf8").unwrap().into(),
             DataType::Binary => pl.getattr("Binary").unwrap().into(),
@@ -307,7 +322,7 @@ impl ToPyObject for Wrap<DataType> {
             DataType::Struct(fields) => {
                 let field_class = pl.getattr("Field").unwrap();
                 let iter = fields.iter().map(|fld| {
-                    let name = fld.name().clone();
+                    let name = fld.name().as_str();
                     let dtype = Wrap(fld.data_type().clone()).to_object(py);
                     field_class.call1((name, dtype)).unwrap()
                 });
@@ -354,6 +369,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     "Datetime" => DataType::Datetime(TimeUnit::Microseconds, None),
                     "Time" => DataType::Time,
                     "Duration" => DataType::Duration(TimeUnit::Microseconds),
+                    "Decimal" => DataType::Decimal(None, None), // "none" scale => "infer"
                     "Float32" => DataType::Float32,
                     "Float64" => DataType::Float64,
                     #[cfg(feature = "object")]
@@ -380,6 +396,11 @@ impl FromPyObject<'_> for Wrap<DataType> {
                 let tz = tz.extract()?;
                 DataType::Datetime(tu, tz)
             }
+            "Decimal" => {
+                let precision = ob.getattr("precision")?.extract()?;
+                let scale = ob.getattr("scale")?.extract()?;
+                DataType::Decimal(precision, Some(scale))
+            }
             "List" => {
                 let inner = ob.getattr("inner").unwrap();
                 let inner = inner.extract::<Wrap<DataType>>()?;
@@ -395,9 +416,9 @@ impl FromPyObject<'_> for Wrap<DataType> {
                 DataType::Struct(fields)
             }
             dt => {
-                return Err(PyValueError::new_err(format!(
-                    "A {dt} object is not a correct polars DataType.\
-                 Hint: use the class without instantiating it.",
+                return Err(PyTypeError::new_err(format!(
+                    "A {dt} object is not a correct polars DataType. \
+                    Hint: use the class without instantiating it.",
                 )))
             }
         };
@@ -459,12 +480,9 @@ impl ToPyObject for Wrap<&StructChunked> {
 
 impl ToPyObject for Wrap<&DurationChunked> {
     fn to_object(&self, py: Python) -> PyObject {
-        let pl = PyModule::import(py, "polars").unwrap();
-        let pl_utils = pl.getattr("utils").unwrap();
-        let convert = pl_utils.getattr("_to_python_timedelta").unwrap();
-
+        let utils = UTILS.as_ref(py);
+        let convert = utils.getattr("_to_python_timedelta").unwrap();
         let tu = Wrap(self.0.time_unit()).to_object(py);
-
         let iter = self
             .0
             .into_iter()
@@ -475,14 +493,11 @@ impl ToPyObject for Wrap<&DurationChunked> {
 
 impl ToPyObject for Wrap<&DatetimeChunked> {
     fn to_object(&self, py: Python) -> PyObject {
-        let pl = PyModule::import(py, "polars").unwrap();
-        let utils = pl.getattr("utils").unwrap();
+        let (pl, utils) = (POLARS.as_ref(py), UTILS.as_ref(py));
         let convert = utils.getattr("_to_python_datetime").unwrap();
         let py_date_dtype = pl.getattr("Datetime").unwrap();
-
         let tu = Wrap(self.0.time_unit()).to_object(py);
         let tz = self.0.time_zone().to_object(py);
-
         let iter = self
             .0
             .into_iter()
@@ -493,9 +508,8 @@ impl ToPyObject for Wrap<&DatetimeChunked> {
 
 impl ToPyObject for Wrap<&TimeChunked> {
     fn to_object(&self, py: Python) -> PyObject {
-        let pl = PyModule::import(py, "polars").unwrap();
-        let pl_utils = pl.getattr("utils").unwrap();
-        let convert = pl_utils.getattr("_to_python_time").unwrap();
+        let utils = UTILS.as_ref(py);
+        let convert = utils.getattr("_to_python_time").unwrap();
         let iter = self
             .0
             .into_iter()
@@ -506,11 +520,9 @@ impl ToPyObject for Wrap<&TimeChunked> {
 
 impl ToPyObject for Wrap<&DateChunked> {
     fn to_object(&self, py: Python) -> PyObject {
-        let pl = PyModule::import(py, "polars").unwrap();
-        let utils = pl.getattr("utils").unwrap();
+        let (pl, utils) = (POLARS.as_ref(py), UTILS.as_ref(py));
         let convert = utils.getattr("_to_python_datetime").unwrap();
         let py_date_dtype = pl.getattr("Date").unwrap();
-
         let iter = self
             .0
             .into_iter()
@@ -519,53 +531,69 @@ impl ToPyObject for Wrap<&DateChunked> {
     }
 }
 
+impl ToPyObject for Wrap<&DecimalChunked> {
+    fn to_object(&self, py: Python) -> PyObject {
+        let utils = UTILS.as_ref(py);
+        let convert = utils.getattr("_to_python_decimal").unwrap();
+        let py_scale = self.0.scale().to_object(py);
+        // if we don't know precision, the only safe bet is to set it to 39
+        let py_precision = self.0.precision().unwrap_or(39).to_object(py);
+        let iter = self.0.into_iter().map(|opt_v| {
+            opt_v.map(|v| {
+                let mut buf = [0_u8; 48];
+                let n_digits = decimal_to_digits(v.abs(), &mut buf);
+                convert
+                    .call1((
+                        v.is_negative() as u8,
+                        &buf[..n_digits],
+                        &py_precision,
+                        &py_scale,
+                    ))
+                    .unwrap()
+            })
+        });
+        PyList::new(py, iter).into_py(py)
+    }
+}
+
+fn abs_decimal_from_digits(
+    digits: impl IntoIterator<Item = u8>,
+    exp: i32,
+) -> Option<(i128, usize)> {
+    const MAX_ABS_DEC: i128 = 10_i128.pow(38) - 1;
+    let mut v = 0_i128;
+    for (i, d) in digits.into_iter().map(i128::from).enumerate() {
+        if i < 38 {
+            v = v * 10 + d;
+        } else {
+            v = v.checked_mul(10).and_then(|v| v.checked_add(d))?;
+        }
+    }
+    // we only support non-negative scale (=> non-positive exponent)
+    let scale = if exp > 0 {
+        // the decimal may be in a non-canonical representation, try to fix it first
+        v = 10_i128
+            .checked_pow(exp as u32)
+            .and_then(|factor| v.checked_mul(factor))?;
+        0
+    } else {
+        (-exp) as usize
+    };
+    // TODO: do we care for checking if it fits in MAX_ABS_DEC? (if we set precision to None anyway?)
+    (v <= MAX_ABS_DEC).then_some((v, scale))
+}
+
 impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
+        let type_name = ob.get_type().name()?;
         if ob.is_instance_of::<PyBool>().unwrap() {
             Ok(AnyValue::Boolean(ob.extract::<bool>().unwrap()).into())
         } else if let Ok(v) = ob.extract::<i64>() {
             Ok(AnyValue::Int64(v).into())
-        } else if let Ok(v) = ob.extract::<f64>() {
+        } else if let Some(Ok(v)) = (type_name != "Decimal").then_some(ob.extract::<f64>()) {
             Ok(AnyValue::Float64(v).into())
         } else if let Ok(v) = ob.extract::<&'s str>() {
             Ok(AnyValue::Utf8(v).into())
-        } else if ob.get_type().name()?.eq("datetime") {
-            Python::with_gil(|py| {
-                // windows
-                #[cfg(target_arch = "windows")]
-                {
-                    let kwargs = PyDict::new(py);
-                    kwargs.set_item("tzinfo", py.None())?;
-                    let dt = ob.call_method("replace", (), Some(kwargs))?;
-
-                    let pypolars = PyModule::import(py, "polars").unwrap();
-                    let localize = pypolars
-                        .getattr("utils")
-                        .unwrap()
-                        .getattr("_localize")
-                        .unwrap();
-                    let loc_tz = localize.call1((dt, "UTC"));
-
-                    loc_tz.call_method0("timestamp")?;
-                    // s to us
-                    let v = (ts.extract::<f64>()? * 1000_000.0) as i64;
-                    Ok(AnyValue::Datetime(v, TimeUnit::Microseconds, &None).into())
-                }
-                // unix
-                #[cfg(not(target_arch = "windows"))]
-                {
-                    let datetime = PyModule::import(py, "datetime")?;
-                    let timezone = datetime.getattr("timezone")?;
-                    let kwargs = PyDict::new(py);
-                    kwargs.set_item("tzinfo", timezone.getattr("utc")?)?;
-                    let dt = ob.call_method("replace", (), Some(kwargs))?;
-                    let ts = dt.call_method0("timestamp")?;
-                    // s to us
-                    let v = (ts.extract::<f64>()? * 1_000_000.0) as i64;
-                    // choose "us" as that is python's default unit
-                    Ok(AnyValue::Datetime(v, TimeUnit::Microseconds, &None).into())
-                }
-            })
         } else if ob.is_none() {
             Ok(AnyValue::Null.into())
         } else if ob.is_instance_of::<PyDict>()? {
@@ -600,42 +628,102 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             let py_pyseries = ob.getattr("_s").unwrap();
             let series = py_pyseries.extract::<PySeries>().unwrap().series;
             Ok(Wrap(AnyValue::List(series)))
-        } else if ob.get_type().name()?.eq("date") {
-            Python::with_gil(|py| {
-                let date = py_modules::UTILS
-                    .getattr(py, "_date_to_pl_date")
-                    .unwrap()
-                    .call1(py, (ob,))
-                    .unwrap();
-                let v = date.extract::<i32>(py).unwrap();
-                Ok(Wrap(AnyValue::Date(v)))
-            })
-        } else if ob.get_type().name()?.eq("timedelta") {
-            Python::with_gil(|py| {
-                let td = py_modules::UTILS
-                    .getattr(py, "_timedelta_to_pl_timedelta")
-                    .unwrap()
-                    .call1(py, (ob, "us"))
-                    .unwrap();
-                let v = td.extract::<i64>(py).unwrap();
-                Ok(Wrap(AnyValue::Duration(v, TimeUnit::Microseconds)))
-            })
-        } else if ob.get_type().name()?.eq("time") {
-            Python::with_gil(|py| {
-                let time = py_modules::UTILS
-                    .getattr(py, "_time_to_pl_time")
-                    .unwrap()
-                    .call1(py, (ob,))
-                    .unwrap();
-                let v = time.extract::<i64>(py).unwrap();
-                Ok(Wrap(AnyValue::Time(v)))
-            })
         } else if let Ok(v) = ob.extract::<&'s [u8]>() {
             Ok(AnyValue::Binary(v).into())
         } else {
-            Err(PyErr::from(PyPolarsErr::Other(format!(
-                "object type not supported {ob:?}",
-            ))))
+            match type_name {
+                "datetime" => {
+                    Python::with_gil(|py| {
+                        // windows
+                        #[cfg(target_arch = "windows")]
+                        let (seconds, microseconds) = {
+                            let kwargs = PyDict::new(py);
+                            kwargs.set_item("tzinfo", py.None())?;
+                            let dt = ob.call_method("replace", (), Some(kwargs))?;
+                            let localize = UTILS.getattr("_localize").unwrap();
+                            let loc_tz = localize.call1((dt, "UTC"));
+                            let kwargs = PyDict::new(py);
+                            kwargs.set_item("microsecond", 0)?;
+                            let seconds = loc_tz
+                                .call_method("replace", (), Some(kwargs))?
+                                .call_method0("timestamp")?;
+                            let microseconds = dt.getattr("microsecond")?.extract::<i64>()?;
+                            (seconds, microseconds)
+                        };
+                        // unix
+                        #[cfg(not(target_arch = "windows"))]
+                        let (seconds, microseconds) = {
+                            let datetime = PyModule::import(py, "datetime")?;
+                            let timezone = datetime.getattr("timezone")?;
+                            let kwargs = PyDict::new(py);
+                            kwargs.set_item("tzinfo", timezone.getattr("utc")?)?;
+                            let dt = ob.call_method("replace", (), Some(kwargs))?;
+
+                            let kwargs = PyDict::new(py);
+                            kwargs.set_item("microsecond", 0)?;
+                            let seconds = dt
+                                .call_method("replace", (), Some(kwargs))?
+                                .call_method0("timestamp")?;
+                            let microseconds = dt.getattr("microsecond")?.extract::<i64>()?;
+                            (seconds, microseconds)
+                        };
+
+                        // s to us
+                        let mut v = (seconds.extract::<f64>()? as i64) * 1_000_000;
+                        v += microseconds;
+
+                        // choose "us" as that is python's default unit
+                        Ok(AnyValue::Datetime(v, TimeUnit::Microseconds, &None).into())
+                    })
+                }
+                "date" => Python::with_gil(|py| {
+                    let date = UTILS
+                        .as_ref(py)
+                        .getattr("_date_to_pl_date")
+                        .unwrap()
+                        .call1((ob,))
+                        .unwrap();
+                    let v = date.extract::<i32>().unwrap();
+                    Ok(Wrap(AnyValue::Date(v)))
+                }),
+                "timedelta" => Python::with_gil(|py| {
+                    let td = UTILS
+                        .as_ref(py)
+                        .getattr("_timedelta_to_pl_timedelta")
+                        .unwrap()
+                        .call1((ob, "us"))
+                        .unwrap();
+                    let v = td.extract::<i64>().unwrap();
+                    Ok(Wrap(AnyValue::Duration(v, TimeUnit::Microseconds)))
+                }),
+                "time" => Python::with_gil(|py| {
+                    let time = UTILS
+                        .as_ref(py)
+                        .getattr("_time_to_pl_time")
+                        .unwrap()
+                        .call1((ob,))
+                        .unwrap();
+                    let v = time.extract::<i64>().unwrap();
+                    Ok(Wrap(AnyValue::Time(v)))
+                }),
+                "Decimal" => {
+                    let (sign, digits, exp): (i8, Vec<u8>, i32) =
+                        ob.call_method0("as_tuple").unwrap().extract().unwrap();
+                    // note: using Vec<u8> is not the most efficient thing here (input is a tuple)
+                    let (mut v, scale) = abs_decimal_from_digits(digits, exp).ok_or_else(|| {
+                        PyErr::from(PyPolarsErr::Other(
+                            "Decimal is too large to fit in Decimal128".into(),
+                        ))
+                    })?;
+                    if sign > 0 {
+                        v = -v; // won't overflow since -i128::MAX > i128::MIN
+                    }
+                    Ok(Wrap(AnyValue::Decimal(v, scale)))
+                }
+                _ => Err(PyErr::from(PyPolarsErr::Other(format!(
+                    "object type not supported {ob:?}",
+                )))),
+            }
         }
     }
 }
@@ -771,30 +859,36 @@ impl<'a, T: NativeType + FromPyObject<'a>> FromPyObject<'a> for Wrap<Vec<T>> {
 
 pub(crate) fn dicts_to_rows(
     records: &PyAny,
-    infer_schema_len: usize,
+    infer_schema_len: Option<usize>,
+    schema_columns: PlIndexSet<String>,
 ) -> PyResult<(Vec<Row>, Vec<String>)> {
-    let (dicts, len) = get_pyseq(records)?;
+    let infer_schema_len = infer_schema_len.map(|n| std::cmp::max(1, n));
+    let len = records.len()?;
 
-    let mut key_names = PlIndexSet::new();
-    for d in dicts.iter()?.take(infer_schema_len) {
-        let d = d?;
-        let d = d.downcast::<PyDict>()?;
-        let keys = d.keys();
-
-        for name in keys {
-            let name = name.extract::<String>()?;
-            key_names.insert(name);
+    let key_names = {
+        if !schema_columns.is_empty() {
+            schema_columns
+        } else {
+            let mut inferred_keys = PlIndexSet::new();
+            for d in records.iter()?.take(infer_schema_len.unwrap_or(usize::MAX)) {
+                let d = d?;
+                let d = d.downcast::<PyDict>()?;
+                let keys = d.keys();
+                for name in keys {
+                    let name = name.extract::<String>()?;
+                    inferred_keys.insert(name);
+                }
+            }
+            inferred_keys
         }
-    }
-
+    };
     let mut rows = Vec::with_capacity(len);
 
-    for d in dicts.iter()? {
+    for d in records.iter()? {
         let d = d?;
         let d = d.downcast::<PyDict>()?;
 
         let mut row = Vec::with_capacity(key_names.len());
-
         for k in key_names.iter() {
             let val = match d.get_item(k) {
                 None => AnyValue::Null,
@@ -1180,4 +1274,12 @@ pub(crate) fn parse_parquet_compression(
         }
     };
     Ok(parsed)
+}
+
+pub(crate) fn strings_to_smartstrings<I, S>(container: I) -> Vec<SmartString>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    container.into_iter().map(|s| s.as_ref().into()).collect()
 }

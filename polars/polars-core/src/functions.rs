@@ -8,12 +8,12 @@ use std::ops::Add;
 use ahash::AHashSet;
 use arrow::compute;
 use arrow::types::simd::Simd;
-use num::{Float, NumCast, ToPrimitive};
+use num_traits::{Float, NumCast, ToPrimitive};
 #[cfg(feature = "concat_str")]
 use polars_arrow::prelude::ValueSize;
 
 #[cfg(feature = "sort_multiple")]
-use crate::chunked_array::ops::sort::prepare_argsort;
+use crate::chunked_array::ops::sort::prepare_arg_sort;
 use crate::prelude::*;
 use crate::utils::coalesce_nulls;
 #[cfg(feature = "diagonal_concat")]
@@ -99,19 +99,14 @@ where
 /// That means that the first `Series` will be used to determine the ordering
 /// until duplicates are found. Once duplicates are found, the next `Series` will
 /// be used and so on.
-pub fn argsort_by(by: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
-    if by.len() != reverse.len() {
-        return Err(PolarsError::ComputeError(
-            format!(
-                "The amount of ordering booleans: {} does not match amount of Series: {}",
-                reverse.len(),
-                by.len()
-            )
-            .into(),
-        ));
-    }
-    let (first, by, reverse) = prepare_argsort(by.to_vec(), reverse.to_vec()).unwrap();
-    first.argsort_multiple(&by, &reverse)
+pub fn arg_sort_by(by: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {
+    polars_ensure!(
+        by.len() == descending.len(),
+        ComputeError: "the number of ordering booleans: {} does not match the number of series: {}",
+        descending.len(), by.len()
+    );
+    let (first, by, descending) = prepare_arg_sort(by.to_vec(), descending.to_vec()).unwrap();
+    first.arg_sort_multiple(&by, &descending)
 }
 
 // utility to be able to also add literals to concat_str function
@@ -137,11 +132,7 @@ impl<'a> IterBroadCast<'a> {
 /// If no `delimiter` is needed, an empty &str should be passed as argument.
 #[cfg(feature = "concat_str")]
 pub fn concat_str(s: &[Series], delimiter: &str) -> PolarsResult<Utf8Chunked> {
-    if s.is_empty() {
-        return Err(PolarsError::NoData(
-            "expected multiple series in concat_str function".into(),
-        ));
-    }
+    polars_ensure!(!s.is_empty(), NoData: "expected multiple series in `concat_str`");
     if s.iter().any(|s| s.is_empty()) {
         return Ok(Utf8Chunked::full_null(s[0].name(), 0));
     }
@@ -162,11 +153,10 @@ pub fn concat_str(s: &[Series], delimiter: &str) -> PolarsResult<Utf8Chunked> {
         })
         .collect::<PolarsResult<Vec<_>>>()?;
 
-    if !s.iter().all(|s| s.len() == 1 || s.len() == len) {
-        return Err(PolarsError::ComputeError(
-            "All series in concat_str function should have equal length or unit length".into(),
-        ));
-    }
+    polars_ensure!(
+        s.iter().all(|s| s.len() == 1 || s.len() == len),
+        ComputeError: "all series in `concat_str` should have equal or unit length"
+    );
     let mut iters = cas
         .iter()
         .map(|ca| match ca.len() {
@@ -217,7 +207,7 @@ pub fn hor_concat_df(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
         .iter()
         .map(|df| df.height())
         .max()
-        .ok_or_else(|| PolarsError::ComputeError("cannot concat empty dataframes".into()))?;
+        .ok_or_else(|| polars_err!(ComputeError: "cannot concat empty dataframes"))?;
 
     let owned_df;
 

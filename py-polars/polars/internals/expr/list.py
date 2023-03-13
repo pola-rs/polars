@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import copy
-from datetime import date, datetime, time
 from typing import TYPE_CHECKING, Any, Callable
 
 import polars.internals as pli
+from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 
 if TYPE_CHECKING:
+    from datetime import date, datetime, time
+
     from polars.internals.type_aliases import NullBehavior, ToStructStrategy
 
 
@@ -123,9 +125,16 @@ class ExprListNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.lst_mean())
 
-    def sort(self, reverse: bool = False) -> pli.Expr:
+    @deprecate_nonkeyword_arguments()
+    @deprecated_alias(reverse="descending")
+    def sort(self, descending: bool = False) -> pli.Expr:
         """
-        Sort the arrays in the list.
+        Sort the arrays in this column.
+
+        Parameters
+        ----------
+        descending
+            Sort in descending order.
 
         Examples
         --------
@@ -144,9 +153,19 @@ class ExprListNameSpace:
         │ [1, 2, 3] │
         │ [1, 2, 9] │
         └───────────┘
+        >>> df.select(pl.col("a").arr.sort(reverse=True))
+        shape: (2, 1)
+        ┌───────────┐
+        │ a         │
+        │ ---       │
+        │ list[i64] │
+        ╞═══════════╡
+        │ [3, 2, 1] │
+        │ [9, 2, 1] │
+        └───────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.lst_sort(reverse))
+        return pli.wrap_expr(self._pyexpr.lst_sort(descending))
 
     def reverse(self) -> pli.Expr:
         """
@@ -234,10 +253,7 @@ class ExprListNameSpace:
             return self.concat(pli.Series([other]))
 
         other_list: list[pli.Expr | str | pli.Series]
-        if not isinstance(other, list):
-            other_list = [other]
-        else:
-            other_list = copy.copy(other)  # type: ignore[arg-type]
+        other_list = [other] if not isinstance(other, list) else copy.copy(other)  # type: ignore[arg-type]
 
         other_list.insert(0, pli.wrap_expr(self._pyexpr))
         return pli.concat_list(other_list)
@@ -486,14 +502,39 @@ class ExprListNameSpace:
 
         Examples
         --------
-        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
-        >>> s.arr.diff()
-        shape: (2,)
-        Series: 'a' [list[i64]]
-        [
-            [null, 1, ... 1]
-            [null, -8, -1]
-        ]
+        >>> df = pl.DataFrame({"n": [[1, 2, 3, 4], [10, 2, 1]]})
+        >>> df.select(pl.col("n").arr.diff())
+        shape: (2, 1)
+        ┌──────────────────┐
+        │ n                │
+        │ ---              │
+        │ list[i64]        │
+        ╞══════════════════╡
+        │ [null, 1, ... 1] │
+        │ [null, -8, -1]   │
+        └──────────────────┘
+
+        >>> df.select(pl.col("n").arr.diff(n=2))
+        shape: (2, 1)
+        ┌─────────────────────┐
+        │ n                   │
+        │ ---                 │
+        │ list[i64]           │
+        ╞═════════════════════╡
+        │ [null, null, ... 2] │
+        │ [null, null, -9]    │
+        └─────────────────────┘
+
+        >>> df.select(pl.col("n").arr.diff(n=2, null_behavior="drop"))
+        shape: (2, 1)
+        ┌───────────┐
+        │ n         │
+        │ ---       │
+        │ list[i64] │
+        ╞═══════════╡
+        │ [2, 2]    │
+        │ [-9]      │
+        └───────────┘
 
         """
         return pli.wrap_expr(self._pyexpr.lst_diff(n, null_behavior))
@@ -598,6 +639,72 @@ class ExprListNameSpace:
         offset = -pli.expr_to_lit_or_expr(n, str_to_lit=False)
         return self.slice(offset, n)
 
+    def explode(self) -> pli.Expr:
+        """
+        Returns a column with a separate row for every list element.
+
+        Returns
+        -------
+        Exploded column with the datatype of the list elements.
+
+        See Also
+        --------
+        ExprNameSpace.reshape: Reshape this Expr to a flat Series or a Series of Lists.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [[1, 2, 3], [4, 5, 6]]})
+        >>> df.select(pl.col("a").arr.explode())
+        shape: (6, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        │ 2   │
+        │ 3   │
+        │ 4   │
+        │ 5   │
+        │ 6   │
+        └─────┘
+
+        """
+        return pli.wrap_expr(self._pyexpr.explode())
+
+    def count_match(
+        self, element: float | str | bool | int | date | datetime | time | pli.Expr
+    ) -> pli.Expr:
+        """
+        Count how often the value produced by ``element`` occurs.
+
+        Parameters
+        ----------
+        element
+            An expression that produces a single value
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"listcol": [[0], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]})
+        >>> df.select(pl.col("listcol").arr.count_match(2).alias("number_of_twos"))
+        shape: (5, 1)
+        ┌────────────────┐
+        │ number_of_twos │
+        │ ---            │
+        │ u32            │
+        ╞════════════════╡
+        │ 0              │
+        │ 0              │
+        │ 2              │
+        │ 1              │
+        │ 0              │
+        └────────────────┘
+
+        """
+        return pli.wrap_expr(
+            self._pyexpr.lst_count_match(pli.expr_to_lit_or_expr(element)._pyexpr)
+        )
+
     def to_struct(
         self,
         n_field_strategy: ToStructStrategy = "first_non_null",
@@ -670,7 +777,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
-        >>> df.with_column(
+        >>> df.with_columns(
         ...     pl.concat_list(["a", "b"]).arr.eval(pl.element().rank()).alias("rank")
         ... )
         shape: (3, 3)

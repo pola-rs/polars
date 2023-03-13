@@ -20,5 +20,9 @@ pub fn primitive_to_vec<T: NativeType>(arr: ArrayRef) -> Option<Vec<T>> {
     let arr_ref = arr.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
     let mut buffer = arr_ref.values().clone();
     drop(arr);
-    buffer.get_mut().map(std::mem::take)
+    // Safety:
+    // if the `get_mut` is successful
+    // we are the only owner and we drop it
+    // so it is safe to take the vec
+    unsafe { buffer.get_mut().map(std::mem::take) }
 }

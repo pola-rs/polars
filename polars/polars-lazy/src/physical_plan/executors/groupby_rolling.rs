@@ -67,21 +67,12 @@ impl GroupByRollingExec {
             }
         };
 
-        // a rolling groupby has overlapping windows
-        state.flags |= StateFlags::OVERLAPPING_GROUPS;
-
         let agg_columns = POOL.install(|| {
             self.aggs
                 .par_iter()
                 .map(|expr| {
                     let agg = expr.evaluate_on_groups(&df, groups, state)?.aggregated();
-                    if agg.len() != groups.len() {
-                        return Err(PolarsError::ComputeError(
-                            format!("returned aggregation is a different length: {} than the group lengths: {}",
-                                    agg.len(),
-                                    groups.len()).into()
-                        ))
-                    }
+                    polars_ensure!(agg.len() == groups.len(), agg_len = agg.len(), groups.len());
                     Ok(agg)
                 })
                 .collect::<PolarsResult<Vec<_>>>()
@@ -117,7 +108,7 @@ impl Executor for GroupByRollingExec {
                 .iter()
                 .map(|s| Ok(s.to_field(&self.input_schema)?.name))
                 .collect::<PolarsResult<Vec<_>>>()?;
-            let name = column_delimited("groupby_rolling".to_string(), &by);
+            let name = comma_delimited("groupby_rolling".to_string(), &by);
             Cow::Owned(name)
         } else {
             Cow::Borrowed("")

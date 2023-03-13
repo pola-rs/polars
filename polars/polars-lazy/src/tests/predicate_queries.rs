@@ -71,7 +71,7 @@ fn test_pass_unrelated_apply() -> PolarsResult<()> {
     let q = df
         .lazy()
         .with_column(col("A").map(
-            |s| Ok(s.is_null().into_series()),
+            |s| Ok(Some(s.is_null().into_series())),
             GetOutput::from_type(DataType::Boolean),
         ))
         .filter(col("B").gt(lit(10i32)));
@@ -130,10 +130,13 @@ fn test_strptime_block_predicate() -> PolarsResult<()> {
             date_dtype: DataType::Date,
             ..Default::default()
         }))
-        .filter(col("date").gt(Expr::Literal(LiteralValue::DateTime(
-            NaiveDate::from_ymd(2021, 1, 1).and_hms(0, 0, 0),
-            TimeUnit::Milliseconds,
-        ))));
+        .filter(
+            col("date").gt(NaiveDate::from_ymd_opt(2021, 1, 1)
+                .unwrap()
+                .and_hms_opt(0, 0, 0)
+                .unwrap()
+                .lit()),
+        );
 
     assert!(!predicate_at_scan(q.clone()));
     let df = q.collect()?;
@@ -229,7 +232,7 @@ fn test_predicate_pd_apply() -> PolarsResult<()> {
         // map_list is use in python `col().apply`
         col("a"),
         col("a")
-            .map_list(|s| Ok(s), GetOutput::same_type())
+            .map_list(|s| Ok(Some(s)), GetOutput::same_type())
             .alias("a_applied"),
     ])
     .filter(col("a").lt(lit(3)));

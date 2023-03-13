@@ -1,11 +1,9 @@
+import contextlib
+
 import polars.internals as pli
 
-try:
+with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PySQLContext
-
-    _DOCUMENTING = False
-except ImportError:
-    _DOCUMENTING = True
 
 
 class SQLContext:
@@ -14,7 +12,7 @@ class SQLContext:
 
     Warnings
     --------
-    This feature is experimental and my change without it being
+    This feature is experimental and may change without it being
     considered a breaking change.
 
     """

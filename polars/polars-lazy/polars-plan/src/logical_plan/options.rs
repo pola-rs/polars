@@ -36,7 +36,7 @@ pub struct CsvParserOptions {
     pub rechunk: bool,
     pub encoding: CsvEncoding,
     pub row_count: Option<RowCount>,
-    pub parse_dates: bool,
+    pub try_parse_dates: bool,
     pub file_counter: FileCount,
 }
 
@@ -52,6 +52,7 @@ pub struct ParquetOptions {
     pub row_count: Option<RowCount>,
     pub file_counter: FileCount,
     pub low_memory: bool,
+    pub use_statistics: bool,
 }
 
 #[cfg(feature = "parquet")]
@@ -129,22 +130,31 @@ pub struct UnionOptions {
     pub from_partitioned_ds: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct GroupbyOptions {
     #[cfg(feature = "dynamic_groupby")]
     pub dynamic: Option<DynamicGroupOptions>,
     #[cfg(feature = "dynamic_groupby")]
     pub rolling: Option<RollingGroupOptions>,
+    /// Take only a slice of the result
     pub slice: Option<(i64, usize)>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DistinctOptions {
+    /// Subset of columns that will be taken into account.
     pub subset: Option<Arc<Vec<String>>>,
+    /// This will maintain the order of the input.
+    /// Note that this is more expensive.
+    /// `maintain_order` is not supported in the streaming
+    /// engine.
     pub maintain_order: bool,
+    /// Which rows to keep.
     pub keep_strategy: UniqueKeepStrategy,
+    /// Take only a slice of the result
+    pub slice: Option<(i64, usize)>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -217,9 +227,12 @@ pub struct FunctionOptions {
 }
 
 impl FunctionOptions {
-    /// Whether this can simply applied elementwise
-    pub fn is_mappable(&self) -> bool {
-        !matches!(self.collect_groups, ApplyOptions::ApplyGroups)
+    /// Any function that is sensitive to the number of elements in a group
+    /// - Aggregations
+    /// - Sorts
+    /// - Counts
+    pub fn is_groups_sensitive(&self) -> bool {
+        matches!(self.collect_groups, ApplyOptions::ApplyGroups)
     }
 }
 
@@ -250,8 +263,7 @@ pub struct LogicalPlanUdfOptions {
 #[derive(Clone, PartialEq, Eq, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SortArguments {
-    pub reverse: Vec<bool>,
-    // Can only be true in case of a single column.
+    pub descending: Vec<bool>,
     pub nulls_last: bool,
     pub slice: Option<(i64, usize)>,
 }
@@ -269,6 +281,8 @@ pub struct PythonOptions {
     // a pyarrow predicate python expression
     // can be evaluated with python.eval
     pub predicate: Option<String>,
+    // a `head` call passed to pyarrow
+    pub n_rows: Option<usize>,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]

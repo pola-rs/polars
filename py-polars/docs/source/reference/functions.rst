@@ -9,6 +9,7 @@ Conversion
    :toctree: api/
 
     from_arrow
+    from_dataframe
     from_dict
     from_dicts
     from_numpy
@@ -41,7 +42,6 @@ Parallelization
    :toctree: api/
 
    collect_all
-   threadpool_size
 
 StringCache
 ~~~~~~~~~~~

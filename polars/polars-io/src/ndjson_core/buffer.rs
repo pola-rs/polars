@@ -1,10 +1,12 @@
 use std::hash::{Hash, Hasher};
 
 use arrow::types::NativeType;
-use num::traits::NumCast;
+use num_traits::NumCast;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
+#[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
 use polars_time::prelude::utf8::infer::{infer_pattern_single, DatetimeInfer};
+#[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
 use polars_time::prelude::utf8::Pattern;
 use simd_json::{BorrowedValue as Value, KnownKey, StaticNode};
 
@@ -106,8 +108,8 @@ impl Buffer<'_> {
                 buf.append_option(v);
                 Ok(())
             }
-            All(_, buf) => {
-                let av = deserialize_all(value);
+            All(dtype, buf) => {
+                let av = deserialize_all(value, dtype)?;
                 buf.push(av);
                 Ok(())
             }
@@ -126,7 +128,7 @@ pub(crate) fn init_buffers(
         .iter()
         .map(|(name, dtype)| {
             let av_buf = (dtype, capacity).into();
-            let key = KnownKey::from(name);
+            let key = KnownKey::from(name.as_str());
             Ok((BufferKey(key), Buffer(name, av_buf)))
         })
         .collect()
@@ -134,14 +136,15 @@ pub(crate) fn init_buffers(
 
 fn deserialize_number<T: NativeType + NumCast>(value: &Value) -> Option<T> {
     match value {
-        Value::Static(StaticNode::F64(f)) => num::traits::cast::<f64, T>(*f),
-        Value::Static(StaticNode::I64(i)) => num::traits::cast::<i64, T>(*i),
-        Value::Static(StaticNode::U64(u)) => num::traits::cast::<u64, T>(*u),
-        Value::Static(StaticNode::Bool(b)) => num::traits::cast::<i32, T>(*b as i32),
+        Value::Static(StaticNode::F64(f)) => num_traits::cast(*f),
+        Value::Static(StaticNode::I64(i)) => num_traits::cast(*i),
+        Value::Static(StaticNode::U64(u)) => num_traits::cast(*u),
+        Value::Static(StaticNode::Bool(b)) => num_traits::cast(*b as i32),
         _ => None,
     }
 }
 
+#[cfg(feature = "dtype-datetime")]
 fn deserialize_datetime<T>(value: &Value) -> Option<T::Native>
 where
     T: PolarsNumericType,
@@ -159,33 +162,8 @@ where
     })
 }
 
-#[cfg(feature = "dtype-struct")]
-fn value_to_dtype(val: &Value) -> DataType {
-    match val {
-        Value::Static(StaticNode::Bool(_)) => DataType::Boolean,
-        Value::Static(StaticNode::I64(_)) => DataType::Int64,
-        Value::Static(StaticNode::U64(_)) => DataType::UInt64,
-        Value::Static(StaticNode::F64(_)) => DataType::Float64,
-        Value::Static(StaticNode::Null) => DataType::Null,
-        Value::Array(arr) => {
-            let dtype = value_to_dtype(&arr[0]);
-
-            DataType::List(Box::new(dtype))
-        }
-        #[cfg(feature = "dtype-struct")]
-        Value::Object(doc) => {
-            let fields = doc.iter().map(|(key, value)| {
-                let dtype = value_to_dtype(value);
-                Field::new(key, dtype)
-            });
-            DataType::Struct(fields.collect())
-        }
-        _ => DataType::Utf8,
-    }
-}
-
-fn deserialize_all<'a>(json: &Value) -> AnyValue<'a> {
-    match json {
+fn deserialize_all<'a>(json: &Value, dtype: &DataType) -> PolarsResult<AnyValue<'a>> {
+    let out = match json {
         Value::Static(StaticNode::Bool(b)) => AnyValue::Boolean(*b),
         Value::Static(StaticNode::I64(i)) => AnyValue::Int64(*i),
         Value::Static(StaticNode::U64(u)) => AnyValue::UInt64(*u),
@@ -193,25 +171,40 @@ fn deserialize_all<'a>(json: &Value) -> AnyValue<'a> {
         Value::Static(StaticNode::Null) => AnyValue::Null,
         Value::String(s) => AnyValue::Utf8Owned(s.as_ref().into()),
         Value::Array(arr) => {
-            let vals: Vec<AnyValue> = arr.iter().map(deserialize_all).collect();
-
-            let s = Series::new("", vals);
+            let Some(inner_dtype) = dtype.inner_dtype() else {
+                polars_bail!(ComputeError: "expected list/array in json value, got {}", dtype);
+            };
+            let vals: Vec<AnyValue> = arr
+                .iter()
+                .map(|val| deserialize_all(val, inner_dtype))
+                .collect::<PolarsResult<_>>()?;
+            let s = Series::from_any_values_and_dtype("", &vals, inner_dtype)?;
             AnyValue::List(s)
         }
         #[cfg(feature = "dtype-struct")]
         Value::Object(doc) => {
-            let vals: (Vec<AnyValue>, Vec<Field>) = doc
-                .iter()
-                .map(|(key, value)| {
-                    let dt = value_to_dtype(value);
-                    let fld = Field::new(key, dt);
-                    let av: AnyValue<'a> = deserialize_all(value);
-                    (av, fld)
-                })
-                .unzip();
-            AnyValue::StructOwned(Box::new(vals))
+            if let DataType::Struct(fields) = dtype {
+                let document = &**doc;
+
+                let vals = fields
+                    .iter()
+                    .map(|field| {
+                        if let Some(value) = document.get(field.name.as_str()) {
+                            deserialize_all(value, &field.dtype)
+                        } else {
+                            Ok(AnyValue::Null)
+                        }
+                    })
+                    .collect::<PolarsResult<Vec<_>>>()?;
+                AnyValue::StructOwned(Box::new((vals, fields.clone())))
+            } else {
+                polars_bail!(
+                    ComputeError: "expected {dtype} in json value, got object",
+                );
+            }
         }
         #[cfg(not(feature = "dtype-struct"))]
         val => AnyValue::Utf8Owned(format!("{:#?}", val).into()),
-    }
+    };
+    Ok(out)
 }

@@ -15,14 +15,10 @@ def test_pickling_simple_expression() -> None:
 
 def test_serde_lazy_frame_lp() -> None:
     lf = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).lazy().select(pl.col("a"))
-    json = lf.write_json(to_string=True)
+    json = lf.write_json()
 
-    assert (
-        pl.LazyFrame.from_json(json)
-        .collect()
-        .to_series()
-        .series_equal(pl.Series("a", [1, 2, 3]))
-    )
+    result = pl.LazyFrame.from_json(json).collect().to_series()
+    assert_series_equal(result, pl.Series("a", [1, 2, 3]))
 
 
 def test_serde_time_unit() -> None:
@@ -61,3 +57,23 @@ def test_serde_duration() -> None:
 def test_serde_expression_5461() -> None:
     e = pl.col("a").sqrt() / pl.col("b").alias("c")
     assert pickle.loads(pickle.dumps(e)).meta == e.meta
+
+
+def test_serde_binary() -> None:
+    data = pl.Series(
+        "binary_data",
+        [
+            b"\xba\x9b\xca\xd3y\xcb\xc9#",
+            b"9\x04\xab\xe2\x11\xf3\x85",
+            b"\xb8\xcb\xc9^\\\xa9-\x94\xe0H\x9d ",
+            b"S\xbc:\xcb\xf0\xf5r\xfe\x18\xfeH",
+            b",\xf5)y\x00\xe5\xf7",
+            b"\xfd\xf6\xf1\xc2X\x0cn\xb9#",
+            b"\x06\xef\xa6\xa2\xb7",
+            b"@\xff\x95\xda\xff\xd2\x18",
+        ],
+    )
+    assert_series_equal(
+        data,
+        pickle.loads(pickle.dumps(data)),
+    )

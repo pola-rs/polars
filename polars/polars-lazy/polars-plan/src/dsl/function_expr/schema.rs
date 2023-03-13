@@ -33,7 +33,6 @@ impl FunctionExpr {
             Ok(fld)
         };
 
-        #[cfg(any(feature = "rolling_window", feature = "trigonometry"))]
         // set float supertype
         let float_dtype = || {
             map_dtype(&|dtype| match dtype {
@@ -93,14 +92,12 @@ impl FunctionExpr {
         };
 
         #[cfg(feature = "timezones")]
-        let cast_tz = |tz: &TimeZone| {
+        let cast_tz = |tz: Option<&TimeZone>| {
             try_map_dtype(&|dt| {
                 if let DataType::Datetime(tu, _) = dt {
-                    Ok(DataType::Datetime(*tu, Some(tz.clone())))
+                    Ok(DataType::Datetime(*tu, tz.cloned()))
                 } else {
-                    Err(PolarsError::SchemaMisMatch(
-                        format!("expected Datetime got {dt:?}").into(),
-                    ))
+                    polars_bail!(op = "cast-timezone", got = dt, expected = "Datetime");
                 }
             })
         };
@@ -108,7 +105,7 @@ impl FunctionExpr {
         use FunctionExpr::*;
         match self {
             NullCount => with_dtype(IDX_DTYPE),
-            Pow => super_type(),
+            Pow => float_dtype(),
             Coalesce => super_type(),
             #[cfg(feature = "row_hash")]
             Hash(..) => with_dtype(DataType::UInt64),
@@ -122,7 +119,9 @@ impl FunctionExpr {
             StringExpr(s) => {
                 use StringFunction::*;
                 match s {
-                    Contains { .. } | EndsWith(_) | StartsWith(_) => with_dtype(DataType::Boolean),
+                    #[cfg(feature = "regex")]
+                    Contains { .. } => with_dtype(DataType::Boolean),
+                    EndsWith | StartsWith => with_dtype(DataType::Boolean),
                     Extract { .. } => same_type(),
                     ExtractAll => with_dtype(DataType::List(Box::new(DataType::Utf8))),
                     CountMatch(_) => with_dtype(DataType::UInt32),
@@ -137,9 +136,10 @@ impl FunctionExpr {
                     Uppercase | Lowercase | Strip(_) | LStrip(_) | RStrip(_) => {
                         with_dtype(DataType::Utf8)
                     }
+                    #[cfg(feature = "string_from_radix")]
+                    FromRadix { .. } => with_dtype(DataType::Int32),
                 }
             }
-            #[cfg(feature = "dtype-binary")]
             BinaryExpr(s) => {
                 use BinaryFunction::*;
                 match s {
@@ -157,7 +157,9 @@ impl FunctionExpr {
                     Truncate(..) => same_type().unwrap().dtype,
                     Round(..) => same_type().unwrap().dtype,
                     #[cfg(feature = "timezones")]
-                    CastTimezone(tz) | TzLocalize(tz) => return cast_tz(tz),
+                    CastTimezone(tz) => return cast_tz(tz.as_ref()),
+                    #[cfg(feature = "timezones")]
+                    TzLocalize(tz) => return cast_tz(Some(tz)),
                     DateRange { .. } => return super_type(),
                     Combine(tu) => DataType::Datetime(*tu, None),
                 };
@@ -187,6 +189,20 @@ impl FunctionExpr {
                     Get => inner_type_list(),
                     #[cfg(feature = "list_take")]
                     Take(_) => same_type(),
+                    #[cfg(feature = "list_count")]
+                    CountMatch => with_dtype(IDX_DTYPE),
+                    Sum => {
+                        let mut first = fields[0].clone();
+                        use DataType::*;
+                        let dt = first.data_type().inner_dtype().cloned().unwrap_or(Unknown);
+
+                        if matches!(dt, UInt8 | Int8 | Int16 | UInt16) {
+                            first.coerce(Int64);
+                        } else {
+                            first.coerce(dt);
+                        }
+                        Ok(first)
+                    }
                 }
             }
             #[cfg(feature = "dtype-struct")]
@@ -196,23 +212,21 @@ impl FunctionExpr {
                 match s {
                     FieldByIndex(index) => {
                         let (index, _) = slice_offsets(*index, 0, fields.len());
-                        fields.get(index).cloned().ok_or_else(|| {
-                            PolarsError::ComputeError(
-                                "index out of bounds in 'struct.field'".into(),
-                            )
-                        })
+                        fields.get(index).cloned().ok_or_else(
+                            || polars_err!(ComputeError: "index out of bounds in `struct.field`"),
+                        )
                     }
                     FieldByName(name) => {
                         if let DataType::Struct(flds) = &fields[0].dtype {
                             let fld = flds
                                 .iter()
                                 .find(|fld| fld.name() == name.as_ref())
-                                .ok_or_else(|| {
-                                    PolarsError::NotFound(name.as_ref().to_string().into())
-                                })?;
+                                .ok_or_else(
+                                    || polars_err!(StructFieldNotFound: "{}", name.as_ref()),
+                                )?;
                             Ok(fld.clone())
                         } else {
-                            Err(PolarsError::NotFound(name.as_ref().to_string().into()))
+                            polars_bail!(StructFieldNotFound: "{}", name.as_ref());
                         }
                     }
                 }
@@ -220,7 +234,9 @@ impl FunctionExpr {
             #[cfg(feature = "top_k")]
             TopK { .. } => same_type(),
             Shift(..) | Reverse => same_type(),
-            IsNotNull | IsNull | Not | IsUnique | IsDuplicated => with_dtype(DataType::Boolean),
+            IsNotNull | IsNull | Not => with_dtype(DataType::Boolean),
+            #[cfg(feature = "is_unique")]
+            IsUnique | IsDuplicated => with_dtype(DataType::Boolean),
             #[cfg(feature = "diff")]
             Diff(_, _) => map_dtype(&|dt| match dt {
                 #[cfg(feature = "dtype-datetime")]
@@ -231,7 +247,7 @@ impl FunctionExpr {
                 DataType::Time => DataType::Duration(TimeUnit::Nanoseconds),
                 DataType::UInt64 | DataType::UInt32 => DataType::Int64,
                 DataType::UInt16 => DataType::Int32,
-                DataType::UInt8 => DataType::Int8,
+                DataType::UInt8 => DataType::Int16,
                 dt => dt.clone(),
             }),
             #[cfg(feature = "interpolate")]
@@ -259,6 +275,16 @@ impl FunctionExpr {
                     }
                 })
             }
+            #[cfg(feature = "dot_product")]
+            Dot => map_dtype(&|dt| {
+                use DataType::*;
+                match dt {
+                    Int8 | Int16 | UInt16 | UInt8 => Int64,
+                    _ => dt.clone(),
+                }
+            }),
+            #[cfg(feature = "log")]
+            Entropy { .. } => float_dtype(),
         }
     }
 }

@@ -13,43 +13,45 @@ where
     // We use the hash to partition the keys to the matching hashtable.
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
     POOL.install(|| {
-        (0..n_partitions).into_par_iter().map(|partition_no| {
-            let partition_no = partition_no as u64;
+        (0..n_partitions)
+            .into_par_iter()
+            .map(|partition_no| {
+                let partition_no = partition_no as u64;
 
-            let mut hash_tbl: PlHashMap<T, Vec<IdxSize>> =
-                PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
+                let mut hash_tbl: PlHashMap<T, Vec<IdxSize>> =
+                    PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
 
-            let n_partitions = n_partitions as u64;
-            let mut offset = 0;
-            for keys in &keys {
-                let keys = keys.as_ref();
-                let len = keys.len() as IdxSize;
+                let n_partitions = n_partitions as u64;
+                let mut offset = 0;
+                for keys in &keys {
+                    let keys = keys.as_ref();
+                    let len = keys.len() as IdxSize;
 
-                let mut cnt = 0;
-                keys.iter().for_each(|k| {
-                    let idx = cnt + offset;
-                    cnt += 1;
+                    let mut cnt = 0;
+                    keys.iter().for_each(|k| {
+                        let idx = cnt + offset;
+                        cnt += 1;
 
-                    if this_partition(k.as_u64(), partition_no, n_partitions) {
-                        let entry = hash_tbl.entry(*k);
+                        if this_partition(k.as_u64(), partition_no, n_partitions) {
+                            let entry = hash_tbl.entry(*k);
 
-                        match entry {
-                            Entry::Vacant(entry) => {
-                                entry.insert(vec![idx]);
-                            }
-                            Entry::Occupied(mut entry) => {
-                                let v = entry.get_mut();
-                                v.push(idx);
+                            match entry {
+                                Entry::Vacant(entry) => {
+                                    entry.insert(vec![idx]);
+                                }
+                                Entry::Occupied(mut entry) => {
+                                    let v = entry.get_mut();
+                                    v.push(idx);
+                                }
                             }
                         }
-                    }
-                });
-                offset += len;
-            }
-            hash_tbl
-        })
+                    });
+                    offset += len;
+                }
+                hash_tbl
+            })
+            .collect()
     })
-    .collect()
 }
 
 // we determine the offset so that we later know which index to store in the join tuples

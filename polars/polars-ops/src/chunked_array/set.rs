@@ -23,13 +23,8 @@ fn check_sorted(idx: &[IdxSize]) -> PolarsResult<()> {
         }
         previous = i;
     }
-    if sorted {
-        Ok(())
-    } else {
-        Err(PolarsError::ComputeError(
-            "set indices must be sorted".into(),
-        ))
-    }
+    polars_ensure!(sorted, ComputeError: "set indices must be sorted");
+    Ok(())
 }
 
 fn check_bounds(idx: &[IdxSize], len: IdxSize) -> PolarsResult<()> {
@@ -41,13 +36,8 @@ fn check_bounds(idx: &[IdxSize], len: IdxSize) -> PolarsResult<()> {
             inbounds = false;
         }
     }
-    if inbounds {
-        Ok(())
-    } else {
-        Err(PolarsError::ComputeError(
-            "set indices are out of bounds".into(),
-        ))
-    }
+    polars_ensure!(inbounds, ComputeError: "set indices are out of bounds");
+    Ok(())
 }
 
 trait PolarsOpsNumericType: PolarsNumericType {}

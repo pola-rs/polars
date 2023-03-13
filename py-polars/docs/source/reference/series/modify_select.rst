@@ -12,11 +12,12 @@ Manipulation/selection
     Series.argsort
     Series.cast
     Series.ceil
-    Series.cleared
+    Series.clear
     Series.clip
     Series.clip_max
     Series.clip_min
     Series.clone
+    Series.cut
     Series.drop_nans
     Series.drop_nulls
     Series.explode

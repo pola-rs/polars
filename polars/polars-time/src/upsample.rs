@@ -140,29 +140,43 @@ fn upsample_single_impl(
     use DataType::*;
     match index_column.dtype() {
         Datetime(tu, tz) => {
-            let s = index_column.cast(&DataType::Int64).unwrap();
+            let s = index_column.cast(&Int64).unwrap();
             let ca = s.i64().unwrap();
             let first = ca.into_iter().flatten().next();
             let last = ca.into_iter().flatten().next_back();
             match (first, last) {
                 (Some(first), Some(last)) => {
                     let first = match tu {
-                        TimeUnit::Nanoseconds => offset.add_ns(first),
-                        TimeUnit::Microseconds => offset.add_us(first),
-                        TimeUnit::Milliseconds => offset.add_ms(first),
+                        TimeUnit::Nanoseconds => offset.add_ns(first, NO_TIMEZONE)?,
+                        TimeUnit::Microseconds => offset.add_us(first, NO_TIMEZONE)?,
+                        TimeUnit::Milliseconds => offset.add_ms(first, NO_TIMEZONE)?,
                     };
-                    let range = date_range_impl(
-                        index_col_name,
-                        first,
-                        last,
-                        every,
-                        ClosedWindow::Both,
-                        *tu,
-                        None,
-                    )
-                    .with_time_zone(tz.clone())
-                    .into_series()
-                    .into_frame();
+                    let range = match tz {
+                        #[cfg(feature = "timezones")]
+                        Some(tz) => date_range_impl(
+                            index_col_name,
+                            first,
+                            last,
+                            every,
+                            ClosedWindow::Both,
+                            *tu,
+                            Some(&"UTC".to_string()),
+                        )?
+                        .convert_time_zone(tz.clone())?
+                        .into_series()
+                        .into_frame(),
+                        _ => date_range_impl(
+                            index_col_name,
+                            first,
+                            last,
+                            every,
+                            ClosedWindow::Both,
+                            *tu,
+                            None,
+                        )?
+                        .into_series()
+                        .into_frame(),
+                    };
                     range.join(
                         source,
                         &[index_col_name],
@@ -171,13 +185,13 @@ fn upsample_single_impl(
                         None,
                     )
                 }
-                _ => Err(PolarsError::ComputeError(
-                    "Cannot determine upsample boundaries. All elements are null.".into(),
-                )),
+                _ => polars_bail!(
+                    ComputeError: "cannot determine upsample boundaries: all elements are null"
+                ),
             }
         }
-        dt => Err(PolarsError::ComputeError(
-            format!("upsample not allowed for index_column of dtype {dt:?}").into(),
-        )),
+        dt => polars_bail!(
+            ComputeError: "upsample not allowed for index column of dtype {}", dt,
+        ),
     }
 }

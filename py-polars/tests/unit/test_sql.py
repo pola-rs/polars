@@ -1,10 +1,21 @@
+import os
+from pathlib import Path
+
+import pytest
+
 import polars as pl
 
 
-def test_sql_groupby(foods_ipc: str) -> None:
+# TODO: Do not rely on I/O for these tests
+@pytest.fixture()
+def foods_ipc_path() -> str:
+    return str(Path(os.path.dirname(__file__)) / "io" / "files" / "foods1.ipc")
+
+
+def test_sql_groupby(foods_ipc_path: Path) -> None:
     c = pl.SQLContext()
 
-    lf = pl.scan_ipc(foods_ipc)
+    lf = pl.scan_ipc(foods_ipc_path)
     c.register("foods", lf)
 
     out = c.query(
@@ -29,10 +40,10 @@ def test_sql_groupby(foods_ipc: str) -> None:
     }
 
 
-def test_sql_join(foods_ipc: str) -> None:
+def test_sql_join(foods_ipc_path: Path) -> None:
     c = pl.SQLContext()
 
-    lf = pl.scan_ipc(foods_ipc)
+    lf = pl.scan_ipc(foods_ipc_path)
     c.register("foods1", lf)
     c.register("foods2", lf)
 
@@ -54,10 +65,10 @@ def test_sql_join(foods_ipc: str) -> None:
     }
 
 
-def test_sql_is_between(foods_ipc: str) -> None:
+def test_sql_is_between(foods_ipc_path: Path) -> None:
     c = pl.SQLContext()
 
-    lf = pl.scan_ipc(foods_ipc)
+    lf = pl.scan_ipc(foods_ipc_path)
     c.register("foods1", lf)
 
     out = c.query(
@@ -91,10 +102,10 @@ def test_sql_is_between(foods_ipc: str) -> None:
     }
 
 
-def test_sql_trim(foods_ipc: str) -> None:
+def test_sql_trim(foods_ipc_path: Path) -> None:
     c = pl.SQLContext()
 
-    lf = pl.scan_ipc(foods_ipc)
+    lf = pl.scan_ipc(foods_ipc_path)
     c.register("foods1", lf)
 
     out = c.query(

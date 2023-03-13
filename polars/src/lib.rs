@@ -176,6 +176,7 @@
 //! * `timezones` - Activate timezone support.
 //! * `strings` - Extra string utilities for `Utf8Chunked`
 //!     - `string_justify` - `zfill`, `ljust`, `rjust`
+//!     - `string_from_radix` - `parse_int`
 //! * `object` - Support for generic ChunkedArrays called `ObjectChunked<T>` (generic over `T`).
 //!              These are downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
 //! * Performance related:
@@ -244,6 +245,7 @@
 //!     - `unique_counts` - Count unique values in expressions.
 //!     - `log` - Logarithms for `Series`.
 //!     - `list_to_struct` - Convert `List` to `Struct` dtypes.
+//!     - `list_count` - Count elements in lists.
 //!     - `list_eval` - Apply expressions over list elements.
 //!     - `cumulative_eval` - Apply expressions over cumulatively increasing windows.
 //!     - `arg_where` - Get indices where condition holds.
@@ -278,7 +280,6 @@
 //! | UInt16                  | dtype-u16         |
 //! | Categorical             | dtype-categorical |
 //! | Struct                  | dtype-struct      |
-//! | Binary                  | dtype-binary      |
 //!
 //!
 //! Or you can choose on of the preconfigured pre-sets.

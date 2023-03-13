@@ -54,42 +54,6 @@ fn test_filter_after_tail() -> PolarsResult<()> {
 }
 
 #[test]
-#[cfg(feature = "unique_counts")]
-fn test_list_arithmetic_in_groupby() -> PolarsResult<()> {
-    // specifically make the amount of groups equal to df height.
-    let df = df![
-        "a" => ["foo", "ham", "bar"],
-        "b" => [1, 2, 3]
-    ]?;
-
-    let out = df
-        .lazy()
-        .groupby_stable([col("a")])
-        .agg([
-            col("b").list().alias("original"),
-            (col("b").list() * lit(2)).alias("mult_lit"),
-            (col("b").list() / lit(2)).alias("div_lit"),
-            (col("b").list() - lit(2)).alias("min_lit"),
-            (col("b").list() + lit(2)).alias("plus_lit"),
-            (col("b").list() % lit(2)).alias("mod_lit"),
-            (lit(1) + col("b").list()).alias("lit_plus"),
-            (col("b").unique_counts() + count()).alias("plus_count"),
-        ])
-        .collect()?;
-
-    let cols = ["mult_lit", "div_lit", "plus_count"];
-    let out = out.explode(&cols)?.select(&cols)?;
-
-    assert!(out.frame_equal(&df![
-        "mult_lit" => [2, 4, 6],
-        "div_lit"=> [0, 1, 1],
-        "plus_count" => [2 as IdxSize, 2, 2]
-    ]?));
-
-    Ok(())
-}
-
-#[test]
 fn test_filter_diff_arithmetic() -> PolarsResult<()> {
     let df = df![
         "user" => [1, 1, 1, 1, 2],
@@ -160,7 +124,7 @@ fn test_groupby_agg_list_with_not_aggregated() -> PolarsResult<()> {
 #[test]
 #[cfg(all(feature = "dtype-duration", feature = "dtype-struct"))]
 fn test_logical_mean_partitioned_groupby_block() -> PolarsResult<()> {
-    let guard = SINGLE_LOCK.lock();
+    let _guard = SINGLE_LOCK.lock();
     let df = df![
         "a" => [1, 1, 2],
         "duration" => [1000, 2000, 3000]
@@ -181,5 +145,31 @@ fn test_logical_mean_partitioned_groupby_block() -> PolarsResult<()> {
         AnyValue::Duration(1500, TimeUnit::Microseconds)
     );
 
+    Ok(())
+}
+
+#[test]
+fn test_filter_aggregated_expression() -> PolarsResult<()> {
+    let df: DataFrame = df![
+    "day" => [2, 2, 2, 2, 2, 2, 1, 1],
+    "y" => [Some(4), Some(5), Some(8), Some(7), Some(9), None, None, None],
+    "x" => [1, 2, 3, 4, 5, 6, 1, 2],
+    ]?;
+
+    let f = col("y").is_not_null().and(col("x").is_not_null());
+
+    let df = df
+        .lazy()
+        .groupby([col("day")])
+        .agg([(col("x") - col("x").first()).filter(f)])
+        .sort("day", Default::default())
+        .collect()
+        .unwrap();
+    let x = df.column("x")?;
+
+    assert_eq!(
+        x.get(1).unwrap(),
+        AnyValue::List(Series::new("", [0, 1, 2, 3, 4]))
+    );
     Ok(())
 }

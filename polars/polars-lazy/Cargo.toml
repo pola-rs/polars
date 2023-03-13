@@ -16,16 +16,17 @@ serde_json = "1"
 ahash.workspace = true
 bitflags.workspace = true
 glob = "0.3"
-polars-arrow = { version = "0.26.1", path = "../polars-arrow" }
-polars-core = { version = "0.26.1", path = "../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
-polars-io = { version = "0.26.1", path = "../polars-io", features = ["lazy", "csv-file", "private"], default-features = false }
-polars-ops = { version = "0.26.1", path = "../polars-ops", default-features = false }
-polars-pipe = { version = "0.26.1", path = "./polars-pipe", optional = true }
-polars-plan = { version = "0.26.1", path = "./polars-plan" }
-polars-time = { version = "0.26.1", path = "../polars-time", optional = true }
-polars-utils = { version = "0.26.1", path = "../polars-utils" }
-pyo3 = { version = "0.16", optional = true }
+polars-arrow = { version = "0.27.2", path = "../polars-arrow" }
+polars-core = { version = "0.27.2", path = "../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
+polars-io = { version = "0.27.2", path = "../polars-io", features = ["lazy", "csv-file", "private"], default-features = false }
+polars-ops = { version = "0.27.2", path = "../polars-ops", default-features = false }
+polars-pipe = { version = "0.27.2", path = "./polars-pipe", optional = true }
+polars-plan = { version = "0.27.2", path = "./polars-plan" }
+polars-time = { version = "0.27.2", path = "../polars-time", optional = true }
+polars-utils = { version = "0.27.2", path = "../polars-utils" }
+pyo3 = { version = "0.18", optional = true }
 rayon.workspace = true
+smartstring.workspace = true
 
 [features]
 nightly = ["polars-core/nightly", "polars-pipe/nightly"]
@@ -51,27 +52,29 @@ dtype-u8 = ["polars-plan/dtype-u8", "polars-pipe/dtype-u8"]
 dtype-u16 = ["polars-plan/dtype-u16", "polars-pipe/dtype-u16"]
 dtype-i8 = ["polars-plan/dtype-i8", "polars-pipe/dtype-i8"]
 dtype-i16 = ["polars-plan/dtype-i16", "polars-pipe/dtype-i16"]
+dtype-decimal = ["polars-plan/dtype-decimal", "polars-pipe/dtype-decimal"]
 dtype-date = ["polars-plan/dtype-date", "polars-time/dtype-date", "temporal"]
 dtype-datetime = ["polars-plan/dtype-datetime", "polars-time/dtype-datetime", "temporal"]
 dtype-duration = ["polars-plan/dtype-duration", "polars-time/dtype-duration", "temporal"]
 dtype-time = ["polars-core/dtype-time", "temporal"]
 dtype-categorical = ["polars-plan/dtype-categorical", "polars-pipe/dtype-categorical"]
 dtype-struct = ["polars-plan/dtype-struct"]
-dtype-binary = ["polars-plan/dtype-binary"]
 object = ["polars-plan/object"]
 date_offset = ["polars-plan/date_offset"]
 trigonometry = ["polars-plan/trigonometry"]
 sign = ["polars-plan/sign"]
 timezones = ["polars-plan/timezones"]
 list_take = ["polars-ops/list_take", "polars-plan/list_take"]
+list_count = ["polars-ops/list_count", "polars-plan/list_count"]
 
 true_div = ["polars-plan/true_div"]
 
 # operations
 is_in = ["polars-plan/is_in"]
 repeat_by = ["polars-plan/repeat_by"]
-round_series = ["polars-plan/round_series"]
+round_series = ["polars-plan/round_series", "polars-ops/round_series"]
 is_first = ["polars-plan/is_first"]
+is_unique = ["polars-plan/is_unique"]
 cross_join = ["polars-plan/cross_join", "polars-pipe/cross_join"]
 asof_join = ["polars-plan/asof_join", "polars-time"]
 dot_product = ["polars-plan/dot_product"]
@@ -103,6 +106,7 @@ list_to_struct = ["polars-plan/list_to_struct"]
 python = ["pyo3", "polars-plan/python"]
 row_hash = ["polars-plan/row_hash"]
 string_justify = ["polars-plan/string_justify"]
+string_from_radix = ["polars-plan/string_from_radix"]
 arg_where = ["polars-plan/arg_where"]
 search_sorted = ["polars-plan/search_sorted"]
 merge_sorted = ["polars-plan/merge_sorted"]
@@ -123,6 +127,8 @@ serde = [
   "polars-ops/serde",
 ]
 
+binary_encoding = ["polars-plan/binary_encoding"]
+
 # no guarantees whatsoever
 private = ["polars-plan/private"]
 
@@ -131,6 +137,7 @@ bigidx = ["polars-plan/bigidx"]
 panic_on_schema = ["polars-plan/panic_on_schema"]
 
 test = [
+  "polars-plan/debugging",
   "panic_on_schema",
   "private",
   "rolling_window",
@@ -155,6 +162,7 @@ test_all = [
   "ipc",
   "row_hash",
   "string_justify",
+  "string_from_radix",
   "search_sorted",
   "top_k",
   "pivot",

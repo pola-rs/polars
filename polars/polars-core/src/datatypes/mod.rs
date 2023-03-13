@@ -22,7 +22,6 @@ use std::ops::{Add, AddAssign, Div, Mul, Rem, Sub, SubAssign};
 use ahash::RandomState;
 pub use aliases::*;
 pub use any_value::*;
-use arrow::compute::arithmetics::basic::NativeArithmetics;
 use arrow::compute::comparison::Simd8;
 #[cfg(feature = "dtype-categorical")]
 use arrow::datatypes::IntegerType;
@@ -31,16 +30,17 @@ use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 pub use dtype::*;
 pub use field::*;
-use num::{Bounded, FromPrimitive, Num, NumCast, Zero};
+use num_traits::{Bounded, FromPrimitive, Num, NumCast, Zero};
 use polars_arrow::data_types::IsFloat;
 #[cfg(feature = "serde")]
 use serde::de::{EnumAccess, Error, Unexpected, VariantAccess, Visitor};
-#[cfg(feature = "serde")]
+#[cfg(any(feature = "serde", feature = "serde-lazy"))]
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "serde")]
+#[cfg(any(feature = "serde", feature = "serde-lazy"))]
 use serde::{Deserializer, Serializer};
 pub use time_unit::*;
 
+use crate::chunked_array::arithmetic::ArrayArithmetics;
 pub use crate::chunked_array::logical::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
@@ -49,7 +49,6 @@ use crate::utils::Wrap;
 
 pub struct Utf8Type {}
 
-#[cfg(feature = "dtype-binary")]
 pub struct BinaryType {}
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -85,6 +84,8 @@ impl_polars_datatype!(Int64Type, Int64, i64);
 impl_polars_datatype!(Float32Type, Float32, f32);
 impl_polars_datatype!(Float64Type, Float64, f64);
 impl_polars_datatype!(DateType, Date, i32);
+#[cfg(feature = "dtype-decimal")]
+impl_polars_datatype!(DecimalType, Unknown, i128);
 impl_polars_datatype!(DatetimeType, Unknown, i64);
 impl_polars_datatype!(DurationType, Unknown, i64);
 impl_polars_datatype!(CategoricalType, Unknown, u32);
@@ -96,7 +97,6 @@ impl PolarsDataType for Utf8Type {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl PolarsDataType for BinaryType {
     fn get_dtype() -> DataType {
         DataType::Binary
@@ -115,6 +115,16 @@ impl PolarsDataType for ListType {
     fn get_dtype() -> DataType {
         // null as we cannot no anything without self.
         DataType::List(Box::new(DataType::Null))
+    }
+}
+
+#[cfg(feature = "dtype-decimal")]
+pub struct Int128Type {}
+
+#[cfg(feature = "dtype-decimal")]
+impl PolarsDataType for Int128Type {
+    fn get_dtype() -> DataType {
+        DataType::Decimal(None, Some(0)) // scale is not None to allow for get_any_value() to work
     }
 }
 
@@ -137,7 +147,6 @@ impl<T> PolarsSingleType for T where T: NativeType + PolarsDataType {}
 
 impl PolarsSingleType for Utf8Type {}
 
-#[cfg(feature = "dtype-binary")]
 impl PolarsSingleType for BinaryType {}
 
 pub type ListChunked = ChunkedArray<ListType>;
@@ -150,10 +159,11 @@ pub type Int8Chunked = ChunkedArray<Int8Type>;
 pub type Int16Chunked = ChunkedArray<Int16Type>;
 pub type Int32Chunked = ChunkedArray<Int32Type>;
 pub type Int64Chunked = ChunkedArray<Int64Type>;
+#[cfg(feature = "dtype-decimal")]
+pub type Int128Chunked = ChunkedArray<Int128Type>;
 pub type Float32Chunked = ChunkedArray<Float32Type>;
 pub type Float64Chunked = ChunkedArray<Float64Type>;
 pub type Utf8Chunked = ChunkedArray<Utf8Type>;
-#[cfg(feature = "dtype-binary")]
 pub type BinaryChunked = ChunkedArray<BinaryType>;
 
 pub trait NumericNative:
@@ -175,7 +185,7 @@ pub trait NumericNative:
     + Bounded
     + FromPrimitive
     + IsFloat
-    + NativeArithmetics
+    + ArrayArithmetics
 {
     type POLARSTYPE: PolarsNumericType;
 }
@@ -203,6 +213,10 @@ impl NumericNative for u32 {
 }
 impl NumericNative for u64 {
     type POLARSTYPE = UInt64Type;
+}
+#[cfg(feature = "dtype-decimal")]
+impl NumericNative for i128 {
+    type POLARSTYPE = Int128Type;
 }
 impl NumericNative for f32 {
     type POLARSTYPE = Float32Type;
@@ -237,6 +251,10 @@ impl PolarsNumericType for Int32Type {
 }
 impl PolarsNumericType for Int64Type {
     type Native = i64;
+}
+#[cfg(feature = "dtype-decimal")]
+impl PolarsNumericType for Int128Type {
+    type Native = i128;
 }
 impl PolarsNumericType for Float32Type {
     type Native = f32;

@@ -1,7 +1,8 @@
 use arrow::offset::OffsetsBuffer;
 use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
-#[cfg(feature = "serde")]
+#[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
+use smartstring::alias::String as SmartString;
 
 use crate::chunked_array::ops::explode::offsets_to_indexes;
 use crate::prelude::*;
@@ -12,20 +13,22 @@ fn get_exploded(series: &Series) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
     match series.dtype() {
         DataType::List(_) => series.list().unwrap().explode_and_offsets(),
         DataType::Utf8 => series.utf8().unwrap().explode_and_offsets(),
-        _ => Err(PolarsError::InvalidOperation(
-            format!("cannot explode dtype: {:?}", series.dtype()).into(),
-        )),
+        _ => polars_bail!(opq = explode, series.dtype()),
     }
 }
 
 /// Arguments for `[DataFrame::melt]` function
-#[derive(Clone, Default, Debug)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Default, Debug, PartialEq)]
+#[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub struct MeltArgs {
-    pub id_vars: Vec<String>,
-    pub value_vars: Vec<String>,
-    pub variable_name: Option<String>,
-    pub value_name: Option<String>,
+    pub id_vars: Vec<SmartString>,
+    pub value_vars: Vec<SmartString>,
+    pub variable_name: Option<SmartString>,
+    pub value_name: Option<SmartString>,
+    /// Whether the melt may be done
+    /// in the streaming engine
+    /// This will not have a stable ordering
+    pub streamable: bool,
 }
 
 impl DataFrame {
@@ -68,14 +71,13 @@ impl DataFrame {
                 if exploded.len() == df.height() || df.width() == 0 {
                     df.columns.insert(col_idx, exploded);
                 } else {
-                    return Err(PolarsError::ShapeMisMatch(
-                        format!("The exploded column(s) don't have the same length. Length DataFrame: {}. Length exploded column {}: {}", df.height(), exploded.name(), exploded.len()).into(),
-                    ));
+                    polars_bail!(
+                        ShapeMismatch: "exploded column(s) {:?} doesn't have the same length: {} \
+                        as the dataframe: {}", exploded.name(), exploded.name(), df.height(),
+                    );
                 }
             } else {
-                return Err(PolarsError::InvalidOperation(
-                    format!("cannot explode dtype: {:?}", s.dtype()).into(),
-                ));
+                polars_bail!(opq = explode, s.dtype());
             }
         }
         Ok(df)
@@ -209,8 +211,8 @@ impl DataFrame {
     /// ```
     pub fn melt<I, J>(&self, id_vars: I, value_vars: J) -> PolarsResult<Self>
     where
-        I: IntoVec<String>,
-        J: IntoVec<String>,
+        I: IntoVec<SmartString>,
+        J: IntoVec<SmartString>,
     {
         let id_vars = id_vars.into_vec();
         let value_vars = value_vars.into_vec();
@@ -242,7 +244,7 @@ impl DataFrame {
                     if id_vars_set.contains(s.name()) {
                         None
                     } else {
-                        Some(s.name().to_string())
+                        Some(s.name().into())
                     }
                 })
                 .collect();
@@ -253,7 +255,7 @@ impl DataFrame {
         let mut iter = value_vars.iter().map(|v| {
             schema
                 .get(v)
-                .ok_or_else(|| PolarsError::NotFound(v.to_string().into()))
+                .ok_or_else(|| polars_err!(ColumnNotFound: "{}", v))
         });
         let mut st = iter.next().unwrap()?.clone();
         for dt in iter {
@@ -282,7 +284,11 @@ impl DataFrame {
 
         for value_column_name in &value_vars {
             variable_col.extend_trusted_len_values(std::iter::repeat(value_column_name).take(len));
-            let value_col = self.column(value_column_name)?.cast(&st)?;
+            // ensure we go via the schema so we are O(1)
+            // self.column() is linear
+            // together with this loop that would make it O^2 over value_vars
+            let (pos, _name, _dtype) = schema.try_get_full(value_column_name)?;
+            let value_col = self.columns[pos].cast(&st).unwrap();
             values.extend_from_slice(value_col.chunks())
         }
         let values_arr = concatenate_owned_unchecked(&values)?;
@@ -350,7 +356,7 @@ mod test {
     fn test_explode_df_empty_list() -> PolarsResult<()> {
         let s0 = Series::new("a", &[1, 2, 3]);
         let s1 = Series::new("b", &[1, 1, 1]);
-        let list = Series::new("foo", &[s0, s1.clone(), s1.slice(0, 0)]);
+        let list = Series::new("foo", &[s0, s1.clone(), s1.clear()]);
         let s0 = Series::new("B", [1, 2, 3]);
         let s1 = Series::new("C", [1, 1, 1]);
         let df = DataFrame::new(vec![list, s0.clone(), s1.clone()])?;
@@ -364,7 +370,7 @@ mod test {
 
         assert!(out.frame_equal_missing(&expected));
 
-        let list = Series::new("foo", &[s0.clone(), s1.slice(0, 0), s1.clone()]);
+        let list = Series::new("foo", &[s0.clone(), s1.clear(), s1.clone()]);
         let df = DataFrame::new(vec![list, s0.clone(), s1.clone()])?;
         let out = df.explode(["foo"])?;
         let expected = df![
@@ -415,8 +421,7 @@ mod test {
         let args = MeltArgs {
             id_vars: vec![],
             value_vars: vec![],
-            variable_name: None,
-            value_name: None,
+            ..Default::default()
         };
 
         let melted = df.melt2(args).unwrap();
@@ -432,8 +437,7 @@ mod test {
         let args = MeltArgs {
             id_vars: vec!["A".into()],
             value_vars: vec![],
-            variable_name: None,
-            value_name: None,
+            ..Default::default()
         };
 
         let melted = df.melt2(args).unwrap();

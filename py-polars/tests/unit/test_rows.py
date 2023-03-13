@@ -12,21 +12,17 @@ def test_row_tuple() -> None:
     assert df.row(1) == ("bar", 2, 2.0)
     assert df.row(-1) == ("2", 3, 3.0)
 
-    # return row by index as namedtuple
+    # return named row by index
     row = df.row(0, named=True)
-    assert row.a == "foo"
-    assert row.b == 1
-    assert row.c == 1.0
+    assert row == {"a": "foo", "b": 1, "c": 1.0}
 
     # return row by predicate
     assert df.row(by_predicate=pl.col("a") == "bar") == ("bar", 2, 2.0)
     assert df.row(by_predicate=pl.col("b").is_in([2, 4, 6])) == ("bar", 2, 2.0)
 
-    # return row by predicate as namedtuple
+    # return named row by predicate
     row = df.row(by_predicate=pl.col("a") == "bar", named=True)
-    assert row.a == "bar"
-    assert row.b == 2
-    assert row.c == 2.0
+    assert row == {"a": "bar", "b": 2, "c": 2.0}
 
     # expected error conditions
     with pytest.raises(TooManyRowsReturned):
@@ -61,42 +57,81 @@ def test_rows() -> None:
 
     # Named rows
     rows = df.rows(named=True)
-    assert [row.a for row in rows] == [1, 2]
-    assert [row.b for row in rows] == [1, 2]
+    assert rows == [{"a": 1, "b": 1}, {"a": 2, "b": 2}]
+
+    # Rows with nullarray cols
+    df = df.with_columns(c=pl.lit(None))
+    assert df.schema == {"a": pl.Int64, "b": pl.Int64, "c": pl.Null}
+    assert df.rows() == [(1, 1, None), (2, 2, None)]
+    assert df.rows(named=True) == [
+        {"a": 1, "b": 1, "c": None},
+        {"a": 2, "b": 2, "c": None},
+    ]
 
 
-def test_iterrows() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [None, False, None]})
+def test_iter_rows() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": [True, False, None],
+        }
+    ).with_columns(pl.Series(["a:b", "c:d", "e:f"]).str.split_exact(":", 1).alias("c"))
 
-    # Default iterrows behaviour
-    it = df.iterrows()
-    assert next(it) == (1, None)
-    assert next(it) == (2, False)
-    assert next(it) == (3, None)
+    # expected struct values
+    c1 = {"field_0": "a", "field_1": "b"}
+    c2 = {"field_0": "c", "field_1": "d"}
+    c3 = {"field_0": "e", "field_1": "f"}
+
+    # Default iter_rows behaviour
+    it = df.iter_rows()
+    assert next(it) == (1, True, c1)
+    assert next(it) == (2, False, c2)
+    assert next(it) == (3, None, c3)
     with pytest.raises(StopIteration):
         next(it)
 
-    # Apply explicit row-buffer size
-    for sz in (0, 1, 2, 3, 4):
-        it = df.iterrows(buffer_size=sz)
-        assert next(it) == (1, None)
-        assert next(it) == (2, False)
-        assert next(it) == (3, None)
+    # TODO: Remove this section once iterrows is removed
+    with pytest.deprecated_call():
+        it = df.iterrows()  # type: ignore[attr-defined]
+        assert next(it) == (1, True, c1)
+        assert next(it) == (2, False, c2)
+        assert next(it) == (3, None, c3)
         with pytest.raises(StopIteration):
             next(it)
 
-        # Return rows as namedtuples
-        it_named = df.iterrows(named=True, buffer_size=sz)
+    # Apply explicit row-buffer size
+    for sz in (0, 1, 2, 3, 4):
+        it = df.iter_rows(buffer_size=sz)
+        assert next(it) == (1, True, c1)
+        assert next(it) == (2, False, c2)
+        assert next(it) == (3, None, c3)
+        with pytest.raises(StopIteration):
+            next(it)
 
+        # Return named rows
+        it_named = df.iter_rows(named=True, buffer_size=sz)
         row = next(it_named)
-        assert row.a == 1
-        assert row.b is None
+        assert row == {"a": 1, "b": True, "c": c1}
         row = next(it_named)
-        assert row.a == 2
-        assert row.b is False
+        assert row == {"a": 2, "b": False, "c": c2}
         row = next(it_named)
-        assert row.a == 3
-        assert row.b is None
+        assert row == {"a": 3, "b": None, "c": c3}
 
         with pytest.raises(StopIteration):
             next(it_named)
+
+    # test over chunked frame
+    df = pl.concat(
+        [
+            pl.DataFrame({"id": [0, 1], "values": ["a", "b"]}),
+            pl.DataFrame({"id": [2, 3], "values": ["c", "d"]}),
+        ],
+        rechunk=False,
+    )
+    assert df.n_chunks() == 2
+    assert df.to_dicts() == [
+        {"id": 0, "values": "a"},
+        {"id": 1, "values": "b"},
+        {"id": 2, "values": "c"},
+        {"id": 3, "values": "d"},
+    ]

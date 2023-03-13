@@ -16,11 +16,12 @@ These functions are available from the polars module root and can be used as exp
    any
    apply
    arange
-   argsort_by
+   arg_sort_by
    avg
    coalesce
    concat_list
    concat_str
+   corr
    count
    cov
    cumfold

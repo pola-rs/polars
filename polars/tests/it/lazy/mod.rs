@@ -1,6 +1,9 @@
 mod aggregation;
+#[cfg(feature = "cse")]
+mod cse;
 mod explodes;
 mod expressions;
+mod folds;
 mod functions;
 mod groupby;
 mod groupby_dynamic;

@@ -6,7 +6,7 @@ Manipulation/selection
 .. autosummary::
    :toctree: api/
 
-    LazyFrame.cleared
+    LazyFrame.clear
     LazyFrame.clone
     LazyFrame.drop
     LazyFrame.drop_nulls
@@ -38,7 +38,7 @@ Manipulation/selection
     LazyFrame.take_every
     LazyFrame.unique
     LazyFrame.unnest
-    LazyFrame.with_column
+    LazyFrame.update
     LazyFrame.with_columns
     LazyFrame.with_context
     LazyFrame.with_row_count

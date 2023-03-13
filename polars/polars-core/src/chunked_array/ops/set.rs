@@ -8,22 +8,12 @@ use crate::utils::{align_chunks_binary, CustomIterTools};
 
 macro_rules! impl_set_at_idx_with {
     ($self:ident, $builder:ident, $idx:ident, $f:ident) => {{
-        let mut idx_iter = $idx.into_iter();
         let mut ca_iter = $self.into_iter().enumerate();
 
-        while let Some(current_idx) = idx_iter.next() {
-            if current_idx as usize > $self.len() {
-                return Err(PolarsError::ComputeError(
-                    format!(
-                        "index: {} outside of ChunkedArray with length: {}",
-                        current_idx,
-                        $self.len()
-                    )
-                    .into(),
-                ));
-            }
+        for current_idx in $idx.into_iter().map(|i| i as usize) {
+            polars_ensure!(current_idx < $self.len(), oob = current_idx, $self.len());
             while let Some((cnt_idx, opt_val)) = ca_iter.next() {
-                if cnt_idx == current_idx as usize {
+                if cnt_idx == current_idx {
                     $builder.append_option($f(opt_val));
                     break;
                 } else {
@@ -43,11 +33,10 @@ macro_rules! impl_set_at_idx_with {
 
 macro_rules! check_bounds {
     ($self:ident, $mask:ident) => {{
-        if $self.len() != $mask.len() {
-            return Err(PolarsError::ShapeMisMatch(
-                "Shape of parameter `mask` could not be used in `set` operation.".into(),
-            ));
-        }
+        polars_ensure!(
+            $self.len() == $mask.len(),
+            ShapeMismatch: "invalid mask in `get` operation: shape doesn't match array's shape"
+        );
     }};
 }
 
@@ -78,12 +67,9 @@ where
                     let data = av.as_mut_slice();
 
                     idx.into_iter().try_for_each::<_, PolarsResult<_>>(|idx| {
-                        let val = data.get_mut(idx as usize).ok_or_else(|| {
-                            PolarsError::ComputeError(
-                                format!("{} out of bounds on array of length: {}", idx, self.len())
-                                    .into(),
-                            )
-                        })?;
+                        let val = data
+                            .get_mut(idx as usize)
+                            .ok_or_else(|| polars_err!(oob = idx as usize, self.len()))?;
                         *val = value;
                         Ok(())
                     })?;
@@ -167,16 +153,9 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
             }
         }
 
-        for i in idx {
-            let input = if validity.get(i as usize) {
-                Some(values.get(i as usize))
-            } else {
-                None
-            };
-            match f(input) {
-                None => validity.set(i as usize, false),
-                Some(v) => values.set(i as usize, v),
-            }
+        for i in idx.into_iter().map(|i| i as usize) {
+            let input = validity.get(i).then(|| values.get(i));
+            validity.set(i, f(input).unwrap_or(false));
         }
         let arr = BooleanArray::from_data_default(values.into(), Some(validity.into()));
 
@@ -210,19 +189,10 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
         let mut ca_iter = self.into_iter().enumerate();
         let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
 
-        for current_idx in idx_iter {
-            if current_idx as usize > self.len() {
-                return Err(PolarsError::ComputeError(
-                    format!(
-                        "index: {} outside of ChunkedArray with length: {}",
-                        current_idx,
-                        self.len()
-                    )
-                    .into(),
-                ));
-            }
+        for current_idx in idx_iter.into_iter().map(|i| i as usize) {
+            polars_ensure!(current_idx < self.len(), oob = current_idx, self.len());
             for (cnt_idx, opt_val_self) in &mut ca_iter {
-                if cnt_idx == current_idx as usize {
+                if cnt_idx == current_idx {
                     builder.append_option(opt_value);
                     break;
                 } else {
@@ -269,7 +239,6 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl<'a> ChunkSet<'a, &'a [u8], Vec<u8>> for BinaryChunked {
     fn set_at_idx<I: IntoIterator<Item = IdxSize>>(
         &'a self,
@@ -279,24 +248,14 @@ impl<'a> ChunkSet<'a, &'a [u8], Vec<u8>> for BinaryChunked {
     where
         Self: Sized,
     {
-        let idx_iter = idx.into_iter();
         let mut ca_iter = self.into_iter().enumerate();
         let mut builder =
             BinaryChunkedBuilder::new(self.name(), self.len(), self.get_values_size());
 
-        for current_idx in idx_iter {
-            if current_idx as usize > self.len() {
-                return Err(PolarsError::ComputeError(
-                    format!(
-                        "index: {} outside of ChunkedArray with length: {}",
-                        current_idx,
-                        self.len()
-                    )
-                    .into(),
-                ));
-            }
+        for current_idx in idx.into_iter().map(|i| i as usize) {
+            polars_ensure!(current_idx < self.len(), oob = current_idx, self.len());
             for (cnt_idx, opt_val_self) in &mut ca_iter {
-                if cnt_idx == current_idx as usize {
+                if cnt_idx == current_idx {
                     builder.append_option(opt_value);
                     break;
                 } else {

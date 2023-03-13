@@ -10,19 +10,24 @@ description = "Lazy query engine for the Polars DataFrame library"
 
 [dependencies]
 ahash.workspace = true
+chrono = { version = "0.4", optional = true }
 futures = { version = "0.3.25", optional = true }
-polars-arrow = { version = "0.26.1", path = "../../polars-arrow" }
-polars-core = { version = "0.26.1", path = "../../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
-polars-io = { version = "0.26.1", path = "../../polars-io", features = ["lazy", "csv-file", "private"], default-features = false }
-polars-ops = { version = "0.26.1", path = "../../polars-ops", default-features = false }
-polars-time = { version = "0.26.1", path = "../../polars-time", optional = true }
-polars-utils = { version = "0.26.1", path = "../../polars-utils" }
-pyo3 = { version = "0.16", optional = true }
+once_cell.workspace = true
+polars-arrow = { version = "0.27.2", path = "../../polars-arrow" }
+polars-core = { version = "0.27.2", path = "../../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
+polars-io = { version = "0.27.2", path = "../../polars-io", features = ["lazy", "csv-file", "private"], default-features = false }
+polars-ops = { version = "0.27.2", path = "../../polars-ops", default-features = false }
+polars-time = { version = "0.27.2", path = "../../polars-time", optional = true }
+polars-utils = { version = "0.27.2", path = "../../polars-utils" }
+pyo3 = { version = "0.18", optional = true }
 rayon.workspace = true
 regex = { version = "1.6", optional = true }
 serde = { version = "1", features = ["derive", "rc"], optional = true }
+smartstring.workspace = true
 
 [features]
+# debuging utility
+debugging = []
 python = ["pyo3"]
 # make sure we don't compile unneeded things even though
 # this dependency gets activated
@@ -43,20 +48,21 @@ dtype-u8 = ["polars-core/dtype-u8"]
 dtype-u16 = ["polars-core/dtype-u16"]
 dtype-i8 = ["polars-core/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16"]
+dtype-decimal = ["polars-core/dtype-decimal"]
 dtype-date = ["polars-core/dtype-date", "polars-time/dtype-date", "temporal"]
 dtype-datetime = ["polars-core/dtype-datetime", "polars-time/dtype-datetime", "temporal"]
 dtype-duration = ["polars-core/dtype-duration", "polars-time/dtype-duration", "temporal"]
 dtype-time = ["polars-core/dtype-time", "polars-time/dtype-time"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-struct = ["polars-core/dtype-struct"]
-dtype-binary = ["polars-core/dtype-binary"]
 object = ["polars-core/object"]
-date_offset = ["polars-time"]
+date_offset = ["polars-time", "chrono"]
 list_take = ["polars-ops/list_take"]
+list_count = ["polars-ops/list_count"]
 trigonometry = []
 sign = []
-timezones = ["polars-time/timezones", "polars-core/timezones"]
-
+timezones = ["polars-time/timezones", "polars-core/timezones", "regex"]
+binary_encoding = ["polars-ops/binary_encoding"]
 true_div = []
 
 # operations
@@ -64,6 +70,7 @@ is_in = ["polars-core/is_in"]
 repeat_by = ["polars-core/repeat_by"]
 round_series = ["polars-core/round_series"]
 is_first = ["polars-core/is_first"]
+is_unique = ["polars-ops/is_unique"]
 cross_join = ["polars-core/cross_join"]
 asof_join = ["polars-core/asof_join", "polars-time", "polars-ops/asof_join"]
 dot_product = ["polars-core/dot_product"]
@@ -94,6 +101,7 @@ list_to_struct = ["polars-ops/list_to_struct"]
 # python = ["pyo3"]
 row_hash = ["polars-core/row_hash", "polars-ops/hash"]
 string_justify = ["polars-ops/string_justify"]
+string_from_radix = ["polars-ops/string_from_radix"]
 arg_where = []
 search_sorted = ["polars-ops/search_sorted"]
 merge_sorted = ["polars-ops/merge_sorted"]

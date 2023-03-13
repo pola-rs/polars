@@ -50,7 +50,7 @@ impl Executor for StackExec {
                 .iter()
                 .map(|s| Ok(s.to_field(&self.input_schema)?.name))
                 .collect::<PolarsResult<Vec<_>>>()?;
-            let name = column_delimited("with_column".to_string(), &by);
+            let name = comma_delimited("with_column".to_string(), &by);
             Cow::Owned(name)
         } else {
             Cow::Borrowed("")

@@ -1,6 +1,6 @@
 [package]
 name = "polars"
-version = "0.26.1"
+version.workspace = true
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2021"
 keywords = ["dataframe", "query-engine", "arrow"]
@@ -12,7 +12,7 @@ description = "DataFrame Library based on Apache Arrow"
 [features]
 sql = ["polars-sql"]
 rows = ["polars-core/rows"]
-simd = ["polars-core/simd"]
+simd = ["polars-core/simd", "polars-io/simd"]
 avx512 = ["polars-core/avx512"]
 nightly = ["polars-core/nightly", "polars-ops/nightly", "simd"]
 docs = ["polars-core/docs"]
@@ -82,10 +82,11 @@ sort_multiple = ["polars-core/sort_multiple"]
 # extra operations
 is_in = ["polars-core/is_in", "polars-lazy/is_in"]
 zip_with = ["polars-core/zip_with"]
-round_series = ["polars-core/round_series", "polars-lazy/round_series"]
+round_series = ["polars-core/round_series", "polars-lazy/round_series", "polars-ops/round_series"]
 checked_arithmetic = ["polars-core/checked_arithmetic"]
 repeat_by = ["polars-core/repeat_by", "polars-lazy/repeat_by"]
-is_first = ["polars-core/is_first", "polars-lazy/is_first"]
+is_first = ["polars-lazy/is_first", "polars-ops/is_first"]
+is_unique = ["polars-lazy/is_unique", "polars-ops/is_unique"]
 is_last = ["polars-core/is_last"]
 asof_join = ["polars-core/asof_join", "polars-lazy/asof_join", "polars-ops/asof_join"]
 cross_join = ["polars-core/cross_join", "polars-lazy/cross_join", "polars-ops/cross_join"]
@@ -98,8 +99,8 @@ decompress-fast = ["polars-io/decompress-fast"]
 mode = ["polars-core/mode", "polars-lazy/mode"]
 take_opt_iter = ["polars-core/take_opt_iter"]
 extract_jsonpath = ["polars-core/strings", "polars-ops/extract_jsonpath", "polars-ops/strings"]
-string_encoding = ["polars-core/string_encoding", "polars-core/strings"]
-binary_encoding = ["polars-core/binary_encoding", "dtype-binary"]
+string_encoding = ["polars-ops/string_encoding", "polars-core/strings"]
+binary_encoding = ["polars-ops/binary_encoding"]
 groupby_list = ["polars-core/groupby_list"]
 lazy_regex = ["polars-lazy/regex"]
 cum_agg = ["polars-core/cum_agg", "polars-core/cum_agg"]
@@ -129,10 +130,12 @@ chunked_ids = ["polars-core/chunked_ids", "polars-lazy/chunked_ids", "polars-cor
 to_dummies = ["polars-ops/to_dummies"]
 bigidx = ["polars-core/bigidx", "polars-lazy/bigidx", "polars-ops/big_idx"]
 list_to_struct = ["polars-ops/list_to_struct", "polars-lazy/list_to_struct"]
+list_count = ["polars-ops/list_count", "polars-lazy/list_count"]
 list_take = ["polars-ops/list_take", "polars-lazy/list_take"]
 describe = ["polars-core/describe"]
-timezones = ["polars-core/timezones", "polars-lazy/timezones"]
+timezones = ["polars-core/timezones", "polars-lazy/timezones", "polars-io/timezones"]
 string_justify = ["polars-lazy/string_justify", "polars-ops/string_justify"]
+string_from_radix = ["polars-lazy/string_from_radix", "polars-ops/string_from_radix"]
 arg_where = ["polars-lazy/arg_where"]
 search_sorted = ["polars-lazy/search_sorted"]
 merge_sorted = ["polars-lazy/merge_sorted"]
@@ -177,11 +180,11 @@ dtype-full = [
   "dtype-time",
   "dtype-i8",
   "dtype-i16",
+  "dtype-decimal",
   "dtype-u8",
   "dtype-u16",
   "dtype-categorical",
   "dtype-struct",
-  "dtype-binary",
 ]
 
 # sensible minimal set of opt-in datatypes
@@ -215,6 +218,7 @@ dtype-duration = [
 dtype-time = ["polars-core/dtype-time", "polars-io/dtype-time", "polars-time/dtype-time", "polars-ops/dtype-time"]
 dtype-i8 = ["polars-core/dtype-i8", "polars-lazy/dtype-i8", "polars-ops/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16", "polars-lazy/dtype-i16", "polars-ops/dtype-i16"]
+dtype-decimal = ["polars-core/dtype-decimal", "polars-lazy/dtype-decimal", "polars-ops/dtype-decimal"]
 dtype-u8 = ["polars-core/dtype-u8", "polars-lazy/dtype-u8", "polars-ops/dtype-u8"]
 dtype-u16 = ["polars-core/dtype-u16", "polars-lazy/dtype-u16", "polars-ops/dtype-u16"]
 dtype-categorical = [
@@ -228,12 +232,6 @@ dtype-struct = [
   "polars-lazy/dtype-struct",
   "polars-ops/dtype-struct",
   "polars-io/dtype-struct",
-]
-dtype-binary = [
-  "polars-core/dtype-binary",
-  "polars-lazy/dtype-binary",
-  "polars-ops/dtype-binary",
-  "polars-io/dtype-binary",
 ]
 
 docs-selection = [
@@ -262,6 +260,7 @@ docs-selection = [
   "asof_join",
   "cross_join",
   "concat_str",
+  "string_from_radix",
   "decompress",
   "mode",
   "take_opt_iter",
@@ -285,6 +284,7 @@ docs-selection = [
   "arg_where",
   "propagate_nans",
   "coalesce",
+  "dynamic_groupby",
 ]
 
 bench = [
@@ -292,16 +292,17 @@ bench = [
 ]
 
 [dependencies]
-polars-algo = { version = "0.26.1", path = "./polars-algo", optional = true }
-polars-core = { version = "0.26.1", path = "./polars-core", features = ["docs", "private"], default-features = false }
-polars-io = { version = "0.26.1", path = "./polars-io", features = ["private"], default-features = false, optional = true }
-polars-lazy = { version = "0.26.1", path = "./polars-lazy", features = ["private"], default-features = false, optional = true }
-polars-ops = { version = "0.26.1", path = "./polars-ops" }
+polars-algo = { version = "0.27.2", path = "./polars-algo", optional = true }
+polars-core = { version = "0.27.2", path = "./polars-core", features = ["docs", "private"], default-features = false }
+polars-io = { version = "0.27.2", path = "./polars-io", features = ["private"], default-features = false, optional = true }
+polars-lazy = { version = "0.27.2", path = "./polars-lazy", features = ["private"], default-features = false, optional = true }
+polars-ops = { version = "0.27.2", path = "./polars-ops" }
 polars-sql = { version = "0.2", path = "./polars-sql", default-features = false, optional = true }
-polars-time = { version = "0.26.1", path = "./polars-time", default-features = false, optional = true }
+polars-time = { version = "0.27.2", path = "./polars-time", default-features = false, optional = true }
 
 # enable js feature for getrandom to work in wasm
 [target.'cfg(target_family = "wasm")'.dependencies.getrandom]
+version = "0.2"
 features = ["js"]
 
 [dev-dependencies]

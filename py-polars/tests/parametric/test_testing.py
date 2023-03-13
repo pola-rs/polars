@@ -204,6 +204,7 @@ def test_infinities(
         assert all(finite_float(val) for val in df[col].to_list())
 
 
+@pytest.mark.hypothesis()
 def test_invalid_arguments() -> None:
     for invalid_probability in (-1.0, +2.0):
         with pytest.raises(InvalidArgument, match="between 0.0 and 1.0"):

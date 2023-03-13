@@ -1,68 +1,54 @@
-use std::ops::AddAssign;
+use std::ops::{AddAssign, MulAssign};
 
 use arrow::array::PrimitiveArray;
 use arrow::types::NativeType;
-use num::Float;
+use num_traits::Float;
 
 use crate::trusted_len::TrustedLen;
 use crate::utils::CustomIterTools;
 
-pub fn ewm_mean<I, T>(xs: I, alpha: T, adjust: bool, min_periods: usize) -> PrimitiveArray<T>
+pub fn ewm_mean<I, T>(
+    xs: I,
+    alpha: T,
+    adjust: bool,
+    min_periods: usize,
+    ignore_nulls: bool,
+) -> PrimitiveArray<T>
 where
     I: IntoIterator<Item = Option<T>>,
     I::IntoIter: TrustedLen,
-    T: Float + NativeType + AddAssign,
+    T: Float + NativeType + AddAssign + MulAssign,
 {
-    if alpha.is_one() {
-        return ewm_mean_alpha_equals_one(xs, min_periods);
-    }
-
-    let one_sub_alpha = T::one() - alpha;
-
-    let mut opt_mean = None;
+    let new_wt = if adjust { T::one() } else { alpha };
+    let old_wt_factor = T::one() - alpha;
+    let mut old_wt = T::one();
+    let mut weighted_avg = None;
     let mut non_null_cnt = 0usize;
 
-    let wgt = alpha;
-    let mut wgt_sum = if adjust { T::zero() } else { T::one() };
-
     xs.into_iter()
-        .map(|opt_x| {
-            if let Some(x) = opt_x {
+        .enumerate()
+        .map(|(i, opt_x)| {
+            if opt_x.is_some() {
                 non_null_cnt += 1;
-
-                let prev_mean = opt_mean.unwrap_or(x);
-
-                wgt_sum = one_sub_alpha * wgt_sum + wgt;
-
-                let curr_mean = prev_mean + (x - prev_mean) * wgt / wgt_sum;
-
-                opt_mean = Some(curr_mean);
+            }
+            match (i, weighted_avg) {
+                (0, _) | (_, None) => weighted_avg = opt_x,
+                (_, Some(w_avg)) => {
+                    if opt_x.is_some() || !ignore_nulls {
+                        old_wt *= old_wt_factor;
+                        if let Some(x) = opt_x {
+                            if w_avg != x {
+                                weighted_avg =
+                                    Some((old_wt * w_avg + new_wt * x) / (old_wt + new_wt));
+                            }
+                            old_wt = if adjust { old_wt + new_wt } else { T::one() };
+                        }
+                    }
+                }
             }
             match non_null_cnt < min_periods {
                 true => None,
-                false => opt_mean,
-            }
-        })
-        .collect_trusted()
-}
-
-/// To prevent numerical instability (and as a slight optimization), we
-/// special-case ``alpha=1``.
-fn ewm_mean_alpha_equals_one<I, T>(xs: I, min_periods: usize) -> PrimitiveArray<T>
-where
-    I: IntoIterator<Item = Option<T>>,
-    I::IntoIter: TrustedLen,
-    T: Float + NativeType + AddAssign,
-{
-    let mut non_null_count = 0usize;
-    xs.into_iter()
-        .map(|opt_x| {
-            if opt_x.is_some() {
-                non_null_count += 1;
-            }
-            match non_null_count < min_periods {
-                true => None,
-                false => opt_x,
+                false => weighted_avg,
             }
         })
         .collect_trusted()
@@ -70,119 +56,109 @@ where
 
 #[cfg(test)]
 mod test {
+    use super::super::assert_allclose;
     use super::*;
+    const ALPHA: f64 = 0.5;
+    const EPS: f64 = 1e-15;
 
     #[test]
     fn test_ewm_mean_without_null() {
-        let xs = vec![Some(1.0f32), Some(2.0f32), Some(3.0f32)];
-
+        let xs: Vec<Option<f64>> = vec![Some(1.0), Some(2.0), Some(3.0)];
         for adjust in [false, true] {
-            let result = ewm_mean(xs.clone().into_iter(), 0.5, adjust, 0);
-
-            let expected = match adjust {
-                false => PrimitiveArray::from([Some(1.0f32), Some(1.5f32), Some(2.25f32)]),
-                true => PrimitiveArray::from([
-                    Some(1.0f32),
-                    Some(1.6666667f32), // <-- pandas: 1.66666667
-                    Some(2.42857143),
-                ]),
-            };
-            assert_eq!(result, expected);
+            for ignore_nulls in [false, true] {
+                for min_periods in [0, 1] {
+                    let result = ewm_mean(xs.clone(), ALPHA, adjust, min_periods, ignore_nulls);
+                    let expected = match adjust {
+                        false => PrimitiveArray::from([Some(1.0f64), Some(1.5f64), Some(2.25f64)]),
+                        true => PrimitiveArray::from([
+                            Some(1.00000000000000000000),
+                            Some(1.66666666666666674068),
+                            Some(2.42857142857142838110),
+                        ]),
+                    };
+                    assert_allclose!(result, expected, 1e-15);
+                }
+                let result = ewm_mean(xs.clone(), ALPHA, adjust, 2, ignore_nulls);
+                let expected = match adjust {
+                    false => PrimitiveArray::from([None, Some(1.5f64), Some(2.25f64)]),
+                    true => PrimitiveArray::from([
+                        None,
+                        Some(1.66666666666666674068),
+                        Some(2.42857142857142838110),
+                    ]),
+                };
+                assert_allclose!(result, expected, EPS);
+            }
         }
     }
 
     #[test]
     fn test_ewm_mean_with_null() {
-        let xs = vec![Some(1.0f32), None, Some(1.0f32), Some(1.0f32)].into_iter();
-        let result = ewm_mean(xs, 0.5, false, 2);
-        let expected = PrimitiveArray::from([None, None, Some(1.0f32), Some(1.0f32)]);
-        assert_eq!(result, expected);
-
-        let xs = vec![None, None, Some(1.0f32), Some(1.0f32)].into_iter();
-        let result = ewm_mean(xs, 0.5, false, 1);
-        let expected = PrimitiveArray::from([None, None, Some(1.0f32), Some(1.0f32)]);
-        assert_eq!(result, expected);
-
-        let xs = vec![
-            Some(2.0f32),
-            Some(3.0f32),
-            Some(5.0f32),
-            Some(7.0f32),
+        let xs1 = vec![
             None,
             None,
+            Some(5.0f64),
+            Some(7.0f64),
             None,
-            Some(4.0f32),
+            Some(2.0f64),
+            Some(1.0f64),
+            Some(4.0f64),
         ];
-        let result = ewm_mean(xs, 0.5, false, 0);
-        let expected = PrimitiveArray::from([
-            Some(2.0f32),
-            Some(2.5f32),
-            Some(3.75f32),
-            Some(5.375f32),
-            Some(5.375f32),
-            Some(5.375f32),
-            Some(5.375f32),
-            Some(4.6875f32),
-        ]);
-        assert_eq!(result, expected);
-
-        let xs = vec![
-            None,
-            None,
-            Some(5.0f32),
-            Some(7.0f32),
-            None,
-            Some(2.0f32),
-            Some(1.0f32),
-            Some(4.0f32),
-        ];
-        let unadjusted_result = ewm_mean(xs.clone().into_iter(), 0.5, false, 1);
-        let unadjusted_expected = PrimitiveArray::from([
-            None,
-            None,
-            Some(5.0f32),
-            Some(6.0f32),
-            Some(6.0f32),
-            Some(4.0f32),
-            Some(2.5f32),
-            Some(3.25f32),
-        ]);
-        assert_eq!(unadjusted_result, unadjusted_expected);
-        let adjusted_result = ewm_mean(xs.clone().into_iter(), 0.5, true, 1);
-        let adjusted_expected = PrimitiveArray::from([
-            None,
-            None,
-            Some(5.0f32),
-            Some(6.33333333f32),
-            Some(6.33333333f32),
-            Some(3.85714286f32),
-            Some(2.3333335f32), // <-- pandas: 2.33333333
-            Some(3.19354839f32),
-        ]);
-        assert_eq!(adjusted_result, adjusted_expected);
-
-        let xs = vec![
-            None,
-            Some(1.0f32),
-            Some(5.0f32),
-            Some(7.0f32),
-            None,
-            Some(2.0f32),
-            Some(1.0f32),
-            Some(4.0f32),
-        ]
-        .into_iter();
-        let result = ewm_mean(xs, 0.5, true, 1);
-        let expected = PrimitiveArray::from([
-            None,
-            Some(1.0f32),
-            Some(3.66666667f32),
-            Some(5.57142857f32),
-            Some(5.57142857f32),
-            Some(3.66666667),
-            Some(2.2903228f32), // <-- pandas: 2.29032258
-            Some(3.15873016f32),
-        ]);
-        assert_eq!(result, expected);
+        assert_allclose!(
+            ewm_mean(xs1.clone(), 0.5, true, 0, true),
+            PrimitiveArray::from([
+                None,
+                None,
+                Some(5.00000000000000000000),
+                Some(6.33333333333333303727),
+                Some(6.33333333333333303727),
+                Some(3.85714285714285720630),
+                Some(2.33333333333333348136),
+                Some(3.19354838709677402164),
+            ]),
+            EPS
+        );
+        assert_allclose!(
+            ewm_mean(xs1.clone(), 0.5, true, 0, false),
+            PrimitiveArray::from([
+                None,
+                None,
+                Some(5.00000000000000000000),
+                Some(6.33333333333333303727),
+                Some(6.33333333333333303727),
+                Some(3.18181818181818165669),
+                Some(1.88888888888888883955),
+                Some(3.03389830508474567239),
+            ]),
+            EPS
+        );
+        assert_allclose!(
+            ewm_mean(xs1.clone(), 0.5, false, 0, true),
+            PrimitiveArray::from([
+                None,
+                None,
+                Some(5.00000000000000000000),
+                Some(6.00000000000000000000),
+                Some(6.00000000000000000000),
+                Some(4.00000000000000000000),
+                Some(2.50000000000000000000),
+                Some(3.25000000000000000000),
+            ]),
+            EPS
+        );
+        assert_allclose!(
+            ewm_mean(xs1.clone(), 0.5, false, 0, false),
+            PrimitiveArray::from([
+                None,
+                None,
+                Some(5.00000000000000000000),
+                Some(6.00000000000000000000),
+                Some(6.00000000000000000000),
+                Some(3.33333333333333348136),
+                Some(2.16666666666666696273),
+                Some(3.08333333333333348136),
+            ]),
+            EPS
+        );
     }
 }

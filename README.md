@@ -19,6 +19,9 @@
   <a href="https://www.npmjs.com/package/nodejs-polars">
     <img src="https://img.shields.io/npm/v/nodejs-polars.svg" alt="NPM Latest Release"/>
   </a>
+  <a href="https://doi.org/10.5281/zenodo.7697217">
+    <img src="https://zenodo.org/badge/DOI/10.5281/zenodo.7697217.svg" alt="DOI Latest Release"/>
+  </a>
 </div>
 
 <p align="center">
@@ -69,16 +72,14 @@ To learn more, read the [User Guide](https://pola-rs.github.io/polars-book/).
 
 # embarrassingly parallel execution & very expressive query language
 >>> df.sort("fruits").select(
-...     [
-...         "fruits",
-...         "cars",
-...         pl.lit("fruits").alias("literal_string_fruits"),
-...         pl.col("B").filter(pl.col("cars") == "beetle").sum(),
-...         pl.col("A").filter(pl.col("B") > 2).sum().over("cars").alias("sum_A_by_cars"),
-...         pl.col("A").sum().over("fruits").alias("sum_A_by_fruits"),
-...         pl.col("A").reverse().over("fruits").alias("rev_A_by_fruits"),
-...         pl.col("A").sort_by("B").over("fruits").alias("sort_A_by_B_by_fruits"),
-...     ]
+...     "fruits",
+...     "cars",
+...     pl.lit("fruits").alias("literal_string_fruits"),
+...     pl.col("B").filter(pl.col("cars") == "beetle").sum(),
+...     pl.col("A").filter(pl.col("B") > 2).sum().over("cars").alias("sum_A_by_cars"),
+...     pl.col("A").sum().over("fruits").alias("sum_A_by_fruits"),
+...     pl.col("A").reverse().over("fruits").alias("rev_A_by_fruits"),
+...     pl.col("A").sort_by("B").over("fruits").alias("sort_A_by_B_by_fruits"),
 ... )
 shape: (5, 8)
 ┌──────────┬──────────┬──────────────┬─────┬─────────────┬─────────────┬─────────────┬─────────────┐
@@ -130,7 +131,7 @@ Install the latest polars version with:
 pip install polars
 ```
 
-We also have a conda package (`conda install polars`), however pip is the preferred way to install Polars.
+We also have a conda package (`conda install -c conda-forge polars`), however pip is the preferred way to install Polars.
 
 Install Polars with all optional dependencies.
 
@@ -164,11 +165,11 @@ point to the `master` branch of this repo.
 polars = { git = "https://github.com/pola-rs/polars", rev = "<optional git tag>" }
 ```
 
-Required Rust version `>=1.58`
+Required Rust version `>=1.62`
 
 ## Contributing
 
-Want to contribute? Read our [contribution guideline](https://github.com/pola-rs/polars/blob/master/CONTRIBUTING.md).
+Want to contribute? Read our [contribution guideline](./CONTRIBUTING.md).
 
 ## Python: compile polars from source
 

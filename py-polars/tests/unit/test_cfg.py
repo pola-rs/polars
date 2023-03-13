@@ -6,6 +6,7 @@ from typing import Iterator
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 @pytest.fixture(autouse=True)
@@ -99,7 +100,6 @@ def test_set_tbl_cols() -> None:
 
 
 def test_set_tbl_rows() -> None:
-
     df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8], "c": [9, 10, 11, 12]})
     ser = pl.Series("ser", [1, 2, 3, 4, 5])
 
@@ -395,8 +395,8 @@ def test_string_cache() -> None:
     pl.toggle_string_cache(False)
     assert pl.using_string_cache() is False
 
-    df1a = df1.with_column(pl.col("a").cast(pl.Categorical))
-    df2a = df2.with_column(pl.col("a").cast(pl.Categorical))
+    df1a = df1.with_columns(pl.col("a").cast(pl.Categorical))
+    df2a = df2.with_columns(pl.col("a").cast(pl.Categorical))
     with pytest.raises(pl.ComputeError):
         _ = df1a.join(df2a, on="a", how="inner")
 
@@ -404,40 +404,46 @@ def test_string_cache() -> None:
     pl.toggle_string_cache(True)
     assert pl.using_string_cache() is True
 
-    df1b = df1.with_column(pl.col("a").cast(pl.Categorical))
-    df2b = df2.with_column(pl.col("a").cast(pl.Categorical))
+    df1b = df1.with_columns(pl.col("a").cast(pl.Categorical))
+    df2b = df2.with_columns(pl.col("a").cast(pl.Categorical))
     out = df1b.join(df2b, on="a", how="inner")
-    assert out.frame_equal(pl.DataFrame({"a": ["foo"], "b": [1], "c": [3]}))
+
+    expected = pl.DataFrame(
+        {"a": ["foo"], "b": [1], "c": [3]}, schema_overrides={"a": pl.Categorical}
+    )
+    assert_frame_equal(out, expected)
 
 
 def test_config_load_save() -> None:
-    # set some config options
-    pl.Config.with_columns_kwargs = True
+    # set some config options...
+    pl.Config.set_tbl_cols(12)
     pl.Config.set_verbose(True)
-    assert os.environ["POLARS_VERBOSE"] == "1"
+    assert os.environ.get("POLARS_VERBOSE") == "1"
 
     cfg = pl.Config.save()
     assert isinstance(cfg, str)
     assert "POLARS_VERBOSE" in pl.Config.state(if_set=True)
 
-    # unset the saved options
-    pl.Config.with_columns_kwargs = False
+    # ...modify the same options...
+    pl.Config.set_tbl_cols(10)
     pl.Config.set_verbose(False)
-    assert os.environ["POLARS_VERBOSE"] == "0"
+    assert os.environ.get("POLARS_VERBOSE") == "0"
 
-    # now load back from config...
+    # ...load back from config...
     pl.Config.load(cfg)
 
-    # ...and confirm the saved options were set
-    assert os.environ["POLARS_VERBOSE"] == "1"
-    assert pl.Config.with_columns_kwargs is True
+    # ...and confirm the saved options were set.
+    assert os.environ.get("POLARS_FMT_MAX_COLS") == "12"
+    assert os.environ.get("POLARS_VERBOSE") == "1"
 
-    # restore explicitly-set config options (unsets from env)
+    # restore all default options (unsets from env)
     pl.Config.restore_defaults()
-    assert "POLARS_VERBOSE" not in pl.Config.state(if_set=True)
-    assert "POLARS_VERBOSE" in pl.Config.state()
+    for e in ("POLARS_FMT_MAX_COLS", "POLARS_VERBOSE"):
+        assert e not in pl.Config.state(if_set=True)
+        assert e in pl.Config.state()
+
+    assert os.environ.get("POLARS_FMT_MAX_COLS") is None
     assert os.environ.get("POLARS_VERBOSE") is None
-    assert pl.Config.with_columns_kwargs is False
 
 
 def test_config_scope() -> None:

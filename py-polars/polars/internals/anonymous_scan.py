@@ -6,7 +6,7 @@ from typing import Any, cast
 
 import polars as pl
 from polars import internals as pli
-from polars.dependencies import pyarrow as pa
+from polars.dependencies import pyarrow as pa  # noqa: TCH001
 
 
 def _deser_and_exec(  # noqa: D417
@@ -30,8 +30,11 @@ def _deser_and_exec(  # noqa: D417
     return func(with_columns, *args)
 
 
-def _scan_ds_impl(
-    ds: pa.dataset.dataset, with_columns: list[str] | None, predicate: str | None
+def _scan_pyarrow_dataset_impl(
+    ds: pa.dataset.Dataset,
+    with_columns: list[str] | None,
+    predicate: str | None,
+    n_rows: int | None,
 ) -> pli.DataFrame:
     """
     Take the projected columns and materialize an arrow table.
@@ -44,6 +47,8 @@ def _scan_ds_impl(
         Columns that are projected
     predicate
         pyarrow expression that can be evaluated with eval
+    n_rows:
+        Materialize only n rows from the arrow dataset
 
     Returns
     -------
@@ -52,17 +57,38 @@ def _scan_ds_impl(
     """
     _filter = None
     if predicate:
+        # imports are used by inline python evaluated by `eval`
+        from polars.datatypes import Date, Datetime, Duration  # noqa: F401
+        from polars.utils.convert import (
+            _to_python_datetime,  # noqa: F401
+            _to_python_time,  # noqa: F401
+            _to_python_timedelta,  # noqa: F401
+        )
+
         _filter = eval(predicate)
+    if n_rows:
+        dfs = []
+        total_rows = 0
+        for rb in ds.to_batches(
+            columns=with_columns, filter=_filter, batch_size=n_rows
+        ):
+            df = pl.DataFrame(dict(zip(rb.schema.names, rb.columns)))
+            total_rows += df.height
+            dfs.append(df)
+            if total_rows > n_rows:
+                break
+        return pli.concat(dfs, rechunk=False).head(n_rows)
+
     return cast(
         pli.DataFrame, pl.from_arrow(ds.to_table(columns=with_columns, filter=_filter))
     )
 
 
-def _scan_ds(
-    ds: pa.dataset.dataset, allow_pyarrow_filter: bool = True
+def _scan_pyarrow_dataset(
+    ds: pa.dataset.Dataset, allow_pyarrow_filter: bool = True
 ) -> pli.LazyFrame:
     """
-    Pickle the partially applied function `_scan_ds_impl`.
+    Pickle the partially applied function `_scan_pyarrow_dataset_impl`.
 
     The bytes are then sent to the polars logical plan. It can be deserialized once
     executed and ran.
@@ -77,7 +103,7 @@ def _scan_ds(
         different than polars does.
 
     """
-    func = partial(_scan_ds_impl, ds)
+    func = partial(_scan_pyarrow_dataset_impl, ds)
     func_serialized = pickle.dumps(func)
     return pli.LazyFrame._scan_python_function(
         ds.schema, func_serialized, allow_pyarrow_filter
@@ -85,7 +111,7 @@ def _scan_ds(
 
 
 def _scan_ipc_impl(  # noqa: D417
-    uri: str, with_columns: list[str] | None, *args: Any
+    uri: str, with_columns: list[str] | None, *args: Any, **kwargs: Any
 ) -> pli.DataFrame:
     """
     Take the projected columns and materialize an arrow table.
@@ -100,14 +126,14 @@ def _scan_ipc_impl(  # noqa: D417
     """
     import polars as pl
 
-    return pl.read_ipc(uri, with_columns)
+    return pl.read_ipc(uri, with_columns, *args, **kwargs)
 
 
 def _scan_ipc_fsspec(
     file: str,
     storage_options: dict[str, object] | None = None,
 ) -> pli.LazyFrame:
-    func = partial(_scan_ipc_impl, file)
+    func = partial(_scan_ipc_impl, file, storage_options=storage_options)
     func_serialized = pickle.dumps(func)
 
     storage_options = storage_options or {}

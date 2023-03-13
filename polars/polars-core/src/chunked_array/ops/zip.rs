@@ -59,9 +59,8 @@ macro_rules! impl_ternary_broadcast {
                 val.rename($self.name());
                 Ok(val)
             }
-            (_, _) => Err(PolarsError::ShapeMisMatch(
-                "Shape of parameter `mask` and `other` could not be used in zip_with operation"
-                    .into(),
+            (_, _) => Err(polars_err!(
+                ShapeMismatch: "shapes of `mask` and `other` are not suitable for `zip_with` operation"
             )),
         }
     }};
@@ -143,7 +142,6 @@ impl ChunkZip<Utf8Type> for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ChunkZip<BinaryType> for BinaryChunked {
     fn zip_with(
         &self,

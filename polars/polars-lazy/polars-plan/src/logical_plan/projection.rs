@@ -118,6 +118,10 @@ fn expand_regex(
     Ok(())
 }
 
+pub(crate) fn is_regex_projection(name: &str) -> bool {
+    name.starts_with('^') && name.ends_with('$')
+}
+
 #[cfg(feature = "regex")]
 /// This function searches for a regex expression in `col("..")` and expands the columns
 /// that are selected by that regex in `result`. The regex should start with `^` and end with `$`.
@@ -125,7 +129,7 @@ fn replace_regex(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema) -> Polars
     let roots = expr_to_leaf_column_names(expr);
     let mut regex = None;
     for name in &roots {
-        if name.starts_with('^') && name.ends_with('$') {
+        if is_regex_projection(name) {
             match regex {
                 None => {
                     regex = Some(name);
@@ -149,11 +153,17 @@ fn replace_regex(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema) -> Polars
 
 /// replace `columns(["A", "B"])..` with `col("A")..`, `col("B")..`
 fn expand_columns(expr: &Expr, result: &mut Vec<Expr>, names: &[String]) -> PolarsResult<()> {
+    let mut is_valid = true;
     for name in names {
         let mut new_expr = expr.clone();
         new_expr.mutate().apply(|e| {
-            if let Expr::Columns(_) = &e {
-                *e = Expr::Column(Arc::from(name.as_str()));
+            if let Expr::Columns(members) = &e {
+                // `col([a, b]) + col([c, d])`
+                if members == names {
+                    *e = Expr::Column(Arc::from(name.as_str()));
+                } else {
+                    is_valid = false;
+                }
             }
             // always keep iterating all inputs
             true
@@ -162,6 +172,7 @@ fn expand_columns(expr: &Expr, result: &mut Vec<Expr>, names: &[String]) -> Pola
         let new_expr = rewrite_special_aliases(new_expr)?;
         result.push(new_expr)
     }
+    polars_ensure!(is_valid, ComputeError: "expanding more than one `col` is not allowed");
     Ok(())
 }
 
@@ -192,20 +203,17 @@ fn expand_dtypes(
     dtypes: &[DataType],
     exclude: &[Arc<str>],
 ) -> PolarsResult<()> {
-    for dtype in dtypes {
-        for field in schema.iter_fields().filter(|f| f.data_type() == dtype) {
-            let name = field.name();
-
-            // skip excluded names
-            if exclude.iter().any(|excl| excl.as_ref() == name.as_str()) {
-                continue;
-            }
-
-            let new_expr = expr.clone();
-            let new_expr = replace_dtype_with_column(new_expr, Arc::from(name.as_str()));
-            let new_expr = rewrite_special_aliases(new_expr)?;
-            result.push(new_expr)
+    // note: we loop over the schema to guarantee that we return a stable
+    // field-order, irrespective of which dtypes are filtered against
+    for field in schema.iter_fields().filter(|f| dtypes.contains(&f.dtype)) {
+        let name = field.name();
+        if exclude.iter().any(|excl| excl.as_ref() == name.as_str()) {
+            continue; // skip excluded names
         }
+        let new_expr = expr.clone();
+        let new_expr = replace_dtype_with_column(new_expr, Arc::from(name.as_str()));
+        let new_expr = rewrite_special_aliases(new_expr)?;
+        result.push(new_expr)
     }
     Ok(())
 }

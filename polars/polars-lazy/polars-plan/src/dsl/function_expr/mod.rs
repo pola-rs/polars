@@ -1,6 +1,5 @@
 #[cfg(feature = "arg_where")]
 mod arg_where;
-#[cfg(feature = "dtype-binary")]
 mod binary;
 #[cfg(feature = "round_series")]
 mod clip;
@@ -40,7 +39,6 @@ use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "dtype-binary")]
 pub(crate) use self::binary::BinaryFunction;
 #[cfg(feature = "temporal")]
 pub(super) use self::datetime::TemporalFunction;
@@ -54,7 +52,7 @@ pub(super) use self::trigonometry::TrigonometricFunction;
 use super::*;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, PartialEq, Debug, Eq, Hash)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum FunctionExpr {
     NullCount,
     Pow,
@@ -68,7 +66,6 @@ pub enum FunctionExpr {
     SearchSorted(SearchSortedSide),
     #[cfg(feature = "strings")]
     StringExpr(StringFunction),
-    #[cfg(feature = "dtype-binary")]
     BinaryExpr(BinaryFunction),
     #[cfg(feature = "temporal")]
     TemporalExpr(TemporalFunction),
@@ -102,14 +99,16 @@ pub enum FunctionExpr {
     #[cfg(feature = "top_k")]
     TopK {
         k: usize,
-        reverse: bool,
+        descending: bool,
     },
     Shift(i64),
     Reverse,
     IsNull,
     IsNotNull,
     Not,
+    #[cfg(feature = "is_unique")]
     IsUnique,
+    #[cfg(feature = "is_unique")]
     IsDuplicated,
     Coalesce,
     ShrinkType,
@@ -117,6 +116,13 @@ pub enum FunctionExpr {
     Diff(usize, NullBehavior),
     #[cfg(feature = "interpolate")]
     Interpolate(InterpolationMethod),
+    #[cfg(feature = "dot_product")]
+    Dot,
+    #[cfg(feature = "log")]
+    Entropy {
+        base: f64,
+        normalize: bool,
+    },
 }
 
 impl Display for FunctionExpr {
@@ -136,7 +142,6 @@ impl Display for FunctionExpr {
             SearchSorted(_) => "search_sorted",
             #[cfg(feature = "strings")]
             StringExpr(s) => return write!(f, "{s}"),
-            #[cfg(feature = "dtype-binary")]
             BinaryExpr(b) => return write!(f, "{b}"),
             #[cfg(feature = "temporal")]
             TemporalExpr(fun) => return write!(f, "{fun}"),
@@ -150,7 +155,11 @@ impl Display for FunctionExpr {
             #[cfg(all(feature = "rolling_window", feature = "moment"))]
             RollingSkew { .. } => "rolling_skew",
             ShiftAndFill { .. } => "shift_and_fill",
-            Nan(_) => "nan",
+            Nan(func) => match func {
+                NanFunction::IsNan => "is_nan",
+                NanFunction::IsNotNan => "is_not_nan",
+                NanFunction::DropNans => "drop_nans",
+            },
             #[cfg(feature = "round_series")]
             Clip { min, max } => match (min, max) {
                 (Some(_), Some(_)) => "clip",
@@ -168,7 +177,9 @@ impl Display for FunctionExpr {
             Not => "is_not",
             IsNull => "is_null",
             IsNotNull => "is_not_null",
+            #[cfg(feature = "is_unique")]
             IsUnique => "is_unique",
+            #[cfg(feature = "is_unique")]
             IsDuplicated => "is_duplicated",
             Coalesce => "coalesce",
             ShrinkType => "shrink_dtype",
@@ -176,6 +187,10 @@ impl Display for FunctionExpr {
             Diff(_, _) => "diff",
             #[cfg(feature = "interpolate")]
             Interpolate(_) => "interpolate",
+            #[cfg(feature = "dot_product")]
+            Dot => "dot",
+            #[cfg(feature = "log")]
+            Entropy { .. } => "entropy",
         };
         write!(f, "{s}")
     }
@@ -193,7 +208,7 @@ macro_rules! wrap {
 macro_rules! map_as_slice {
     ($func:path) => {{
         let f = move |s: &mut [Series]| {
-            $func(s)
+            $func(s).map(Some)
         };
 
         SpecialEq::new(Arc::new(f))
@@ -201,7 +216,7 @@ macro_rules! map_as_slice {
 
     ($func:path, $($args:expr),*) => {{
         let f = move |s: &mut [Series]| {
-            $func(s, $($args),*)
+            $func(s, $($args),*).map(Some)
         };
 
         SpecialEq::new(Arc::new(f))
@@ -210,12 +225,12 @@ macro_rules! map_as_slice {
 
 // FnOnce(Series)
 // FnOnce(Series, args)
-#[macro_export(super)]
+#[macro_export]
 macro_rules! map_owned {
     ($func:path) => {{
         let f = move |s: &mut [Series]| {
             let s = std::mem::take(&mut s[0]);
-            $func(s)
+            $func(s).map(Some)
         };
 
         SpecialEq::new(Arc::new(f))
@@ -224,7 +239,7 @@ macro_rules! map_owned {
     ($func:path, $($args:expr),*) => {{
         let f = move |s: &mut [Series]| {
             let s = std::mem::take(&mut s[0]);
-            $func(s, $($args),*)
+            $func(s, $($args),*).map(Some)
         };
 
         SpecialEq::new(Arc::new(f))
@@ -232,12 +247,12 @@ macro_rules! map_owned {
 }
 
 // Fn(&Series, args)
-#[macro_export(super)]
+#[macro_export]
 macro_rules! map {
     ($func:path) => {{
         let f = move |s: &mut [Series]| {
             let s = &s[0];
-            $func(s)
+            $func(s).map(Some)
         };
 
         SpecialEq::new(Arc::new(f))
@@ -246,7 +261,7 @@ macro_rules! map {
     ($func:path, $($args:expr),*) => {{
         let f = move |s: &mut [Series]| {
             let s = &s[0];
-            $func(s, $($args),*)
+            $func(s, $($args),*).map(Some)
         };
 
         SpecialEq::new(Arc::new(f))
@@ -260,7 +275,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             NullCount => {
                 let f = |s: &mut [Series]| {
                     let s = &s[0];
-                    Ok(Series::new(s.name(), [s.null_count() as IdxSize]))
+                    Ok(Some(Series::new(s.name(), [s.null_count() as IdxSize])))
                 };
                 wrap!(f)
             }
@@ -285,7 +300,6 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             }
             #[cfg(feature = "strings")]
             StringExpr(s) => s.into(),
-            #[cfg(feature = "dtype-binary")]
             BinaryExpr(s) => s.into(),
             #[cfg(feature = "temporal")]
             TemporalExpr(func) => func.into(),
@@ -328,6 +342,9 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     Get => wrap!(list::get),
                     #[cfg(feature = "list_take")]
                     Take(null_ob_oob) => map_as_slice!(list::take, null_ob_oob),
+                    #[cfg(feature = "list_count")]
+                    CountMatch => map_as_slice!(list::count_match),
+                    Sum => map!(list::sum),
                 }
             }
             #[cfg(feature = "dtype-struct")]
@@ -339,15 +356,17 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 }
             }
             #[cfg(feature = "top_k")]
-            TopK { k, reverse } => {
-                map!(top_k, k, reverse)
+            TopK { k, descending } => {
+                map!(top_k, k, descending)
             }
             Shift(periods) => map!(dispatch::shift, periods),
             Reverse => map!(dispatch::reverse),
             IsNull => map!(dispatch::is_null),
             IsNotNull => map!(dispatch::is_not_null),
             Not => map!(dispatch::is_not),
+            #[cfg(feature = "is_unique")]
             IsUnique => map!(dispatch::is_unique),
+            #[cfg(feature = "is_unique")]
             IsDuplicated => map!(dispatch::is_duplicated),
             Coalesce => map_as_slice!(fill_null::coalesce),
             ShrinkType => map_owned!(shrink_type::shrink),
@@ -357,6 +376,12 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Interpolate(method) => {
                 map!(dispatch::interpolate, method)
             }
+            #[cfg(feature = "dot_product")]
+            Dot => {
+                map_as_slice!(dispatch::dot_impl)
+            }
+            #[cfg(feature = "log")]
+            Entropy { base, normalize } => map!(dispatch::entropy, base, normalize),
         }
     }
 }
@@ -366,15 +391,10 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: StringFunction) -> Self {
         use StringFunction::*;
         match func {
-            Contains { pat, literal } => {
-                map!(strings::contains, &pat, literal)
-            }
-            EndsWith(sub) => {
-                map!(strings::ends_with, &sub)
-            }
-            StartsWith(sub) => {
-                map!(strings::starts_with, &sub)
-            }
+            #[cfg(feature = "regex")]
+            Contains { literal, strict } => map_as_slice!(strings::contains, literal, strict),
+            EndsWith { .. } => map_as_slice!(strings::ends_with),
+            StartsWith { .. } => map_as_slice!(strings::starts_with),
             Extract { pat, group_index } => {
                 map!(strings::extract, &pat, group_index)
             }
@@ -411,11 +431,12 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Strip(matches) => map!(strings::strip, matches.as_deref()),
             LStrip(matches) => map!(strings::lstrip, matches.as_deref()),
             RStrip(matches) => map!(strings::rstrip, matches.as_deref()),
+            #[cfg(feature = "string_from_radix")]
+            FromRadix(radix, strict) => map!(strings::from_radix, radix, strict),
         }
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl From<BinaryFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: BinaryFunction) -> Self {
         use BinaryFunction::*;
@@ -434,6 +455,7 @@ impl From<BinaryFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
 }
 
 #[cfg(feature = "temporal")]
+#[allow(deprecated)] // tz_localize
 impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: TemporalFunction) -> Self {
         use TemporalFunction::*;
@@ -456,7 +478,7 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Truncate(every, offset) => map!(datetime::truncate, &every, &offset),
             Round(every, offset) => map!(datetime::round, &every, &offset),
             #[cfg(feature = "timezones")]
-            CastTimezone(tz) => map!(datetime::cast_timezone, &tz),
+            CastTimezone(tz) => map!(datetime::replace_timezone, tz.as_deref()),
             #[cfg(feature = "timezones")]
             TzLocalize(tz) => map!(datetime::tz_localize, &tz),
             Combine(tu) => map_as_slice!(temporal::combine, tu),

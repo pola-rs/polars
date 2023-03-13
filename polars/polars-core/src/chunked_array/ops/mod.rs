@@ -1,6 +1,4 @@
 //! Traits for miscellaneous operations on ChunkedArray
-use std::marker::Sized;
-
 use arrow::offset::OffsetsBuffer;
 use polars_arrow::prelude::QuantileInterpolOptions;
 
@@ -40,7 +38,7 @@ mod reverse;
 pub(crate) mod rolling_window;
 mod set;
 mod shift;
-pub(crate) mod sort;
+pub mod sort;
 pub(crate) mod take;
 pub(crate) mod unique;
 #[cfg(feature = "zip_with")]
@@ -54,9 +52,7 @@ use crate::series::IsSorted;
 #[cfg(feature = "to_list")]
 pub trait ToList<T: PolarsDataType> {
     fn to_list(&self) -> PolarsResult<ListChunked> {
-        Err(PolarsError::InvalidOperation(
-            format!("to_list not supported for dtype: {:?}", T::get_dtype()).into(),
-        ))
+        polars_bail!(opq = to_list, T::get_dtype());
     }
 }
 
@@ -135,7 +131,7 @@ pub trait ChunkBytes {
 /// by not using a fold aggregator, but reusing a `Series` wrapper and calling `Series` aggregators.
 /// This likely is a bit slower than ChunkWindow
 #[cfg(feature = "rolling_window")]
-pub trait ChunkRollApply {
+pub trait ChunkRollApply: AsRefDataType {
     fn rolling_apply(
         &self,
         _f: &dyn Fn(&Series) -> Series,
@@ -144,9 +140,7 @@ pub trait ChunkRollApply {
     where
         Self: Sized,
     {
-        Err(PolarsError::InvalidOperation(
-            "rolling mean not supported for this datatype".into(),
-        ))
+        polars_bail!(opq = rolling_apply, self.as_ref_dtype());
     }
 }
 
@@ -205,7 +199,7 @@ pub trait ChunkTake {
     #[must_use]
     unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
     where
-        Self: std::marker::Sized,
+        Self: Sized,
         I: TakeIterator,
         INulls: TakeIteratorNulls;
 
@@ -214,7 +208,7 @@ pub trait ChunkTake {
     /// by reference.
     fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> PolarsResult<Self>
     where
-        Self: std::marker::Sized,
+        Self: Sized,
         I: TakeIterator,
         INulls: TakeIteratorNulls;
 }
@@ -283,7 +277,11 @@ pub trait ChunkCast {
     fn cast(&self, data_type: &DataType) -> PolarsResult<Series>;
 
     /// Does not check if the cast is a valid one and may over/underflow
-    fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series>;
+    ///
+    /// # Safety
+    /// - This doesn't do utf8 validation checking when casting from binary
+    /// - This doesn't do categorical bound checking when casting from UInt32
+    unsafe fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series>;
 }
 
 /// Fastest way to do elementwise operations on a ChunkedArray<T> when the operation is cheaper than
@@ -460,26 +458,10 @@ pub trait ChunkUnique<T: PolarsDataType> {
         self.arg_unique().map(|v| v.len())
     }
 
-    /// Get a mask of all the unique values.
-    fn is_unique(&self) -> PolarsResult<BooleanChunked> {
-        Err(PolarsError::InvalidOperation(
-            "is_unique is not implemented for this dtype".into(),
-        ))
-    }
-
-    /// Get a mask of all the duplicated values.
-    fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
-        Err(PolarsError::InvalidOperation(
-            "is_duplicated is not implemented for this dtype".into(),
-        ))
-    }
-
     /// The most occurring value(s). Can return multiple Values
     #[cfg(feature = "mode")]
     fn mode(&self) -> PolarsResult<ChunkedArray<T>> {
-        Err(PolarsError::InvalidOperation(
-            "mode is not implemented for this dtype".into(),
-        ))
+        polars_bail!(opq = mode, T::get_dtype());
     }
 }
 
@@ -507,16 +489,14 @@ pub trait ChunkSort<T: PolarsDataType> {
     fn sort_with(&self, options: SortOptions) -> ChunkedArray<T>;
 
     /// Returned a sorted `ChunkedArray`.
-    fn sort(&self, reverse: bool) -> ChunkedArray<T>;
+    fn sort(&self, descending: bool) -> ChunkedArray<T>;
 
     /// Retrieve the indexes needed to sort this array.
-    fn argsort(&self, options: SortOptions) -> IdxCa;
+    fn arg_sort(&self, options: SortOptions) -> IdxCa;
 
     /// Retrieve the indexes need to sort this and the other arrays.
-    fn argsort_multiple(&self, _other: &[Series], _reverse: &[bool]) -> PolarsResult<IdxCa> {
-        Err(PolarsError::InvalidOperation(
-            "argsort_multiple not implemented for this dtype".into(),
-        ))
+    fn arg_sort_multiple(&self, _other: &[Series], _descending: &[bool]) -> PolarsResult<IdxCa> {
+        polars_bail!(opq = arg_sort_multiple, T::get_dtype());
     }
 }
 
@@ -543,19 +523,6 @@ pub enum FillNullStrategy {
     /// replace with the minimal value of that data type
     MinBound,
 }
-
-/// Replace None values with various strategies
-pub trait ChunkFillNull {
-    /// Replace None values with one of the following strategies:
-    /// * Forward fill (replace None with the previous value)
-    /// * Backward fill (replace None with the next value)
-    /// * Mean fill (replace None with the mean of the whole array)
-    /// * Min fill (replace None with the minimum of the whole array)
-    /// * Max fill (replace None with the maximum of the whole array)
-    fn fill_null(&self, strategy: FillNullStrategy) -> PolarsResult<Self>
-    where
-        Self: Sized;
-}
 /// Replace None values with a value
 pub trait ChunkFillNullValue<T> {
     /// Replace None values with a give value `T`.
@@ -569,13 +536,13 @@ pub trait ChunkFull<T> {
     /// Create a ChunkedArray with a single value.
     fn full(name: &str, value: T, length: usize) -> Self
     where
-        Self: std::marker::Sized;
+        Self: Sized;
 }
 
 pub trait ChunkFullNull {
     fn full_null(_name: &str, _length: usize) -> Self
     where
-        Self: std::marker::Sized;
+        Self: Sized;
 }
 
 /// Reverse a ChunkedArray<T>
@@ -648,7 +615,6 @@ impl ChunkExpandAtIndex<Utf8Type> for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ChunkExpandAtIndex<BinaryType> for BinaryChunked {
     fn new_from_index(&self, index: usize, length: usize) -> BinaryChunked {
         let mut out = impl_chunk_expand!(self, length, index);
@@ -734,18 +700,6 @@ pub trait IsIn {
     }
 }
 
-/// Argmin/ Argmax
-pub trait ArgAgg {
-    /// Get the index of the minimal value
-    fn arg_min(&self) -> Option<usize> {
-        None
-    }
-    /// Get the index of the maximal value
-    fn arg_max(&self) -> Option<usize> {
-        None
-    }
-}
-
 /// Repeat the values `n` times.
 #[cfg(feature = "repeat_by")]
 pub trait RepeatBy {
@@ -759,9 +713,7 @@ pub trait RepeatBy {
 /// Mask the first unique values as `true`
 pub trait IsFirst<T: PolarsDataType> {
     fn is_first(&self) -> PolarsResult<BooleanChunked> {
-        Err(PolarsError::InvalidOperation(
-            format!("operation not supported by {:?}", T::get_dtype()).into(),
-        ))
+        polars_bail!(opq = is_first, T::get_dtype());
     }
 }
 
@@ -769,9 +721,7 @@ pub trait IsFirst<T: PolarsDataType> {
 /// Mask the last unique values as `true`
 pub trait IsLast<T: PolarsDataType> {
     fn is_last(&self) -> PolarsResult<BooleanChunked> {
-        Err(PolarsError::InvalidOperation(
-            format!("operation not supported by {:?}", T::get_dtype()).into(),
-        ))
+        polars_bail!(opq = is_last, T::get_dtype());
     }
 }
 

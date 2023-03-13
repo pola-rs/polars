@@ -5,8 +5,7 @@ use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::POOL;
 
-use crate::physical_plan::expression_err;
-use crate::physical_plan::state::{ExecutionState, StateFlags};
+use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
 pub struct TernaryExpr {
@@ -82,7 +81,7 @@ fn finish_as_iters<'a>(
         out = out.explode()?
     }
 
-    ac_truthy.with_series(out, true);
+    ac_truthy.with_series(out, true, None)?;
     Ok(ac_truthy)
 }
 
@@ -93,7 +92,7 @@ impl PhysicalExpr for TernaryExpr {
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
         let mut state = state.split();
         // don't cache window functions as they run in parallel
-        state.flags.remove(StateFlags::CACHE_WINDOW_EXPR);
+        state.remove_cache_window_flag();
         let mask_series = self.predicate.evaluate(df, &state)?;
         let mut mask = mask_series.bool()?.clone();
 
@@ -167,7 +166,7 @@ impl PhysicalExpr for TernaryExpr {
                 expand_lengths(&mut truthy, &mut falsy, &mut mask);
                 let mut out = truthy.zip_with(&mask, &falsy).unwrap();
                 out.rename(truthy.name());
-                ac_truthy.with_series(out, true);
+                ac_truthy.with_series(out, true, Some(&self.expr))?;
                 Ok(ac_truthy)
             }
 
@@ -186,12 +185,12 @@ impl PhysicalExpr for TernaryExpr {
                 }
                 let mask = mask_s.bool()?;
                 let check_length = |ca: &ListChunked, mask: &BooleanChunked| {
-                    if ca.len() != mask.len() {
-                        let msg = format!("The predicates length: '{}' does not match the length of the groups: {}.", mask.len(), ca.len());
-                        Err(expression_err!(msg, self.expr, ComputeError))
-                    } else {
-                        Ok(())
-                    }
+                    polars_ensure!(
+                        ca.len() == mask.len(), expr = self.expr, ComputeError:
+                        "predicates length: {} does not match groups length: {}",
+                        mask.len(), ca.len()
+                    );
+                    Ok(())
                 };
 
                 if ac_falsy.is_literal() && self.falsy.as_expression().map(has_null) == Some(true) {
@@ -208,7 +207,7 @@ impl PhysicalExpr for TernaryExpr {
                         })
                         .collect_trusted();
                     out.rename(ac_truthy.series().name());
-                    ac_truthy.with_series(out.into_series(), true);
+                    ac_truthy.with_series(out.into_series(), true, Some(&self.expr))?;
                     Ok(ac_truthy)
                 } else if ac_truthy.is_literal()
                     && self.truthy.as_expression().map(has_null) == Some(true)
@@ -226,7 +225,7 @@ impl PhysicalExpr for TernaryExpr {
                         })
                         .collect_trusted();
                     out.rename(ac_truthy.series().name());
-                    ac_truthy.with_series(out.into_series(), true);
+                    ac_truthy.with_series(out.into_series(), true, Some(&self.expr))?;
                     Ok(ac_truthy)
                 }
                 // then:
@@ -248,7 +247,7 @@ impl PhysicalExpr for TernaryExpr {
                         })
                         .collect_trusted();
                     out.rename(ac_truthy.series().name());
-                    ac_truthy.with_series(out.into_series(), true);
+                    ac_truthy.with_series(out.into_series(), true, Some(&self.expr))?;
                     Ok(ac_truthy)
                 } else {
                     let literal = ac_falsy.series();
@@ -265,7 +264,7 @@ impl PhysicalExpr for TernaryExpr {
                         })
                         .collect_trusted();
                     out.rename(ac_truthy.series().name());
-                    ac_truthy.with_series(out.into_series(), true);
+                    ac_truthy.with_series(out.into_series(), true, Some(&self.expr))?;
                     Ok(ac_truthy)
                 }
             }
@@ -286,7 +285,7 @@ impl PhysicalExpr for TernaryExpr {
                             Expr::Agg(_) => has_agg = true,
                             Expr::Function { options, .. }
                             | Expr::AnonymousFunction { options, .. }
-                                if !options.is_mappable() =>
+                                if options.is_groups_sensitive() =>
                             {
                                 has_agg = true
                             }
@@ -313,7 +312,7 @@ impl PhysicalExpr for TernaryExpr {
                     ac_truthy.with_update_groups(UpdateGroups::No);
                 }
 
-                ac_truthy.with_series(out, false);
+                ac_truthy.with_series(out, false, None)?;
 
                 Ok(ac_truthy)
             }

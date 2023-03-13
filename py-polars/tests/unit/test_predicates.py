@@ -1,6 +1,8 @@
 import typing
 from datetime import date, datetime, timedelta
 
+import numpy as np
+
 import polars as pl
 
 
@@ -91,12 +93,48 @@ def test_streaming_empty_df() -> None:
         ]
     )
 
-    assert df.lazy().join(df.lazy(), on="a", how="inner").filter(
-        2 == 1  # noqa: SIM300
-    ).collect(streaming=True).to_dict(False) == {"a": [], "b": [], "b_right": []}
+    assert df.lazy().join(df.lazy(), on="a", how="inner").filter(2 == 1).collect(
+        streaming=True
+    ).to_dict(False) == {"a": [], "b": [], "b_right": []}
 
 
 def test_when_then_empty_list_5547() -> None:
     out = pl.DataFrame({"a": []}).select([pl.when(pl.col("a") > 1).then([1])])
     assert out.shape == (0, 1)
     assert out.dtypes == [pl.List(pl.Int64)]
+
+
+def test_predicate_strptime_6558() -> None:
+    assert (
+        pl.DataFrame({"date": ["2022-01-03", "2020-01-04", "2021-02-03", "2019-01-04"]})
+        .lazy()
+        .select(pl.col("date").str.strptime(pl.Date, fmt="%F"))
+        .filter((pl.col("date").dt.year() == 2022) & (pl.col("date").dt.month() == 1))
+        .collect()
+    ).to_dict(False) == {"date": [date(2022, 1, 3)]}
+
+
+def test_predicate_arr_first_6573() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4, 5, 6],
+            "b": [6, 5, 4, 3, 2, 1],
+        }
+    )
+
+    assert (
+        df.lazy()
+        .with_columns(pl.col("a").list())
+        .with_columns(pl.col("a").arr.first())
+        .filter(pl.col("a") == pl.col("b"))
+        .collect()
+    ).to_dict(False) == {"a": [1], "b": [1]}
+
+
+def test_fast_path_comparisons() -> None:
+    s = pl.Series(np.sort(np.random.randint(0, 50, 100)))
+
+    assert (s > 25).series_equal(s.set_sorted() > 25)
+    assert (s >= 25).series_equal(s.set_sorted() >= 25)
+    assert (s < 25).series_equal(s.set_sorted() < 25)
+    assert (s <= 25).series_equal(s.set_sorted() <= 25)

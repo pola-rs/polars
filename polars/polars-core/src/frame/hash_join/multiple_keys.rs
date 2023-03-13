@@ -38,41 +38,43 @@ pub(crate) fn create_probe_table(
     // We use the hash to partition the keys to the matching hashtable.
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
     POOL.install(|| {
-        (0..n_partitions).into_par_iter().map(|part_no| {
-            let part_no = part_no as u64;
-            let mut hash_tbl: HashMap<IdxHash, Vec<IdxSize>, IdBuildHasher> =
-                HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
+        (0..n_partitions)
+            .into_par_iter()
+            .map(|part_no| {
+                let part_no = part_no as u64;
+                let mut hash_tbl: HashMap<IdxHash, Vec<IdxSize>, IdBuildHasher> =
+                    HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
 
-            let n_partitions = n_partitions as u64;
-            let mut offset = 0;
-            for hashes in hashes {
-                for hashes in hashes.data_views() {
-                    let len = hashes.len();
-                    let mut idx = 0;
-                    hashes.iter().for_each(|h| {
-                        // partition hashes by thread no.
-                        // So only a part of the hashes go to this hashmap
-                        if this_partition(*h, part_no, n_partitions) {
-                            let idx = idx + offset;
-                            populate_multiple_key_hashmap(
-                                &mut hash_tbl,
-                                idx,
-                                *h,
-                                keys,
-                                || vec![idx],
-                                |v| v.push(idx),
-                            )
-                        }
-                        idx += 1;
-                    });
+                let n_partitions = n_partitions as u64;
+                let mut offset = 0;
+                for hashes in hashes {
+                    for hashes in hashes.data_views() {
+                        let len = hashes.len();
+                        let mut idx = 0;
+                        hashes.iter().for_each(|h| {
+                            // partition hashes by thread no.
+                            // So only a part of the hashes go to this hashmap
+                            if this_partition(*h, part_no, n_partitions) {
+                                let idx = idx + offset;
+                                populate_multiple_key_hashmap(
+                                    &mut hash_tbl,
+                                    idx,
+                                    *h,
+                                    keys,
+                                    || vec![idx],
+                                    |v| v.push(idx),
+                                )
+                            }
+                            idx += 1;
+                        });
 
-                    offset += len as IdxSize;
+                        offset += len as IdxSize;
+                    }
                 }
-            }
-            hash_tbl
-        })
+                hash_tbl
+            })
+            .collect()
     })
-    .collect()
 }
 
 fn create_build_table_outer(

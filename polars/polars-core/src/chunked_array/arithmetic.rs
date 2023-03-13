@@ -4,12 +4,94 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use arrow::array::PrimitiveArray;
 use arrow::compute::arithmetics::basic;
+#[cfg(feature = "dtype-decimal")]
+use arrow::compute::arithmetics::decimal;
 use arrow::compute::arity_assign;
-use num::{Num, NumCast, ToPrimitive};
+use arrow::types::NativeType;
+use num_traits::{Num, NumCast, ToPrimitive};
 
 use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::utils::{align_chunks_binary, align_chunks_binary_owned};
+
+pub trait ArrayArithmetics
+where
+    Self: NativeType,
+{
+    fn add(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self>;
+    fn sub(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self>;
+    fn mul(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self>;
+    fn div(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self>;
+    fn div_scalar(lhs: &PrimitiveArray<Self>, rhs: &Self) -> PrimitiveArray<Self>;
+    fn rem(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self>;
+    fn rem_scalar(lhs: &PrimitiveArray<Self>, rhs: &Self) -> PrimitiveArray<Self>;
+}
+
+macro_rules! native_array_arithmetics {
+    ($ty: ty) => {
+        impl ArrayArithmetics for $ty
+        {
+            fn add(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self> {
+                basic::add(lhs, rhs)
+            }
+            fn sub(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self> {
+                basic::sub(lhs, rhs)
+            }
+            fn mul(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self> {
+                basic::mul(lhs, rhs)
+            }
+            fn div(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self> {
+                basic::div(lhs, rhs)
+            }
+            fn div_scalar(lhs: &PrimitiveArray<Self>, rhs: &Self) -> PrimitiveArray<Self> {
+                basic::div_scalar(lhs, rhs)
+            }
+            fn rem(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self> {
+                basic::rem(lhs, rhs)
+            }
+            fn rem_scalar(lhs: &PrimitiveArray<Self>, rhs: &Self) -> PrimitiveArray<Self> {
+                basic::rem_scalar(lhs, rhs)
+            }
+        }
+    };
+    ($($ty:ty),*) => {
+        $(native_array_arithmetics!($ty);)*
+    }
+}
+
+native_array_arithmetics!(u8, u16, u32, u64, i8, i16, i32, i64, f32, f64);
+
+#[cfg(feature = "dtype-decimal")]
+impl ArrayArithmetics for i128 {
+    fn add(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self> {
+        decimal::add(lhs, rhs)
+    }
+
+    fn sub(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self> {
+        decimal::sub(lhs, rhs)
+    }
+
+    fn mul(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self> {
+        decimal::mul(lhs, rhs)
+    }
+
+    fn div(lhs: &PrimitiveArray<Self>, rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self> {
+        decimal::div(lhs, rhs)
+    }
+
+    fn div_scalar(_lhs: &PrimitiveArray<Self>, _rhs: &Self) -> PrimitiveArray<Self> {
+        // decimal::div_scalar(lhs, rhs)
+        todo!("decimal::div_scalar exists, but takes &PrimitiveScalar<i128>, not &i128");
+    }
+
+    fn rem(_lhs: &PrimitiveArray<Self>, _rhs: &PrimitiveArray<Self>) -> PrimitiveArray<Self> {
+        unimplemented!("requires support in arrow2 crate")
+    }
+
+    fn rem_scalar(_lhs: &PrimitiveArray<Self>, _rhs: &Self) -> PrimitiveArray<Self> {
+        unimplemented!("requires support in arrow2 crate")
+    }
+}
 
 macro_rules! apply_operand_on_chunkedarray_by_iter {
 
@@ -74,7 +156,7 @@ where
                 .zip(rhs.downcast_iter())
                 .map(|(lhs, rhs)| Box::new(kernel(lhs, rhs)) as ArrayRef)
                 .collect();
-            lhs.copy_with_chunks(chunks, false)
+            lhs.copy_with_chunks(chunks, false, false)
         }
         // broadcast right path
         (_, 1) => {
@@ -157,7 +239,12 @@ where
     type Output = ChunkedArray<T>;
 
     fn add(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(self, rhs, basic::add, |lhs, rhs| lhs + rhs)
+        arithmetic_helper(
+            self,
+            rhs,
+            <T::Native as ArrayArithmetics>::add,
+            |lhs, rhs| lhs + rhs,
+        )
     }
 }
 
@@ -168,7 +255,12 @@ where
     type Output = ChunkedArray<T>;
 
     fn div(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(self, rhs, basic::div, |lhs, rhs| lhs / rhs)
+        arithmetic_helper(
+            self,
+            rhs,
+            <T::Native as ArrayArithmetics>::div,
+            |lhs, rhs| lhs / rhs,
+        )
     }
 }
 
@@ -179,7 +271,12 @@ where
     type Output = ChunkedArray<T>;
 
     fn mul(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(self, rhs, basic::mul, |lhs, rhs| lhs * rhs)
+        arithmetic_helper(
+            self,
+            rhs,
+            <T::Native as ArrayArithmetics>::mul,
+            |lhs, rhs| lhs * rhs,
+        )
     }
 }
 
@@ -190,7 +287,12 @@ where
     type Output = ChunkedArray<T>;
 
     fn rem(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(self, rhs, basic::rem, |lhs, rhs| lhs % rhs)
+        arithmetic_helper(
+            self,
+            rhs,
+            <T::Native as ArrayArithmetics>::rem,
+            |lhs, rhs| lhs % rhs,
+        )
     }
 }
 
@@ -201,7 +303,12 @@ where
     type Output = ChunkedArray<T>;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(self, rhs, basic::sub, |lhs, rhs| lhs - rhs)
+        arithmetic_helper(
+            self,
+            rhs,
+            <T::Native as ArrayArithmetics>::sub,
+            |lhs, rhs| lhs - rhs,
+        )
     }
 }
 
@@ -317,7 +424,7 @@ where
 
     fn div(self, rhs: N) -> Self::Output {
         let rhs: T::Native = NumCast::from(rhs).expect("could not cast");
-        self.apply_kernel(&|arr| Box::new(basic::div_scalar(arr, &rhs)))
+        self.apply_kernel(&|arr| Box::new(<T::Native as ArrayArithmetics>::div_scalar(arr, &rhs)))
     }
 }
 
@@ -343,7 +450,7 @@ where
 
     fn rem(self, rhs: N) -> Self::Output {
         let rhs: T::Native = NumCast::from(rhs).expect("could not cast");
-        self.apply_kernel(&|arr| Box::new(basic::rem_scalar(arr, &rhs)))
+        self.apply_kernel(&|arr| Box::new(<T::Native as ArrayArithmetics>::rem_scalar(arr, &rhs)))
     }
 }
 
@@ -433,7 +540,6 @@ fn concat_strings(l: &str, r: &str) -> String {
     s
 }
 
-#[cfg(feature = "dtype-binary")]
 fn concat_binary_arrs(l: &[u8], r: &[u8]) -> Vec<u8> {
     let mut v = Vec::with_capacity(l.len() + r.len());
     v.extend_from_slice(l);
@@ -503,7 +609,6 @@ impl Add<&str> for &Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl Add for &BinaryChunked {
     type Output = BinaryChunked;
 
@@ -539,7 +644,6 @@ impl Add for &BinaryChunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl Add for BinaryChunked {
     type Output = BinaryChunked;
 
@@ -548,7 +652,6 @@ impl Add for BinaryChunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl Add<&[u8]> for &BinaryChunked {
     type Output = BinaryChunked;
 

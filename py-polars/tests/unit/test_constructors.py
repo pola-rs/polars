@@ -1,5 +1,9 @@
+from __future__ import annotations
+
 import typing
-from datetime import date, datetime
+from datetime import date, datetime, timezone
+from decimal import Decimal
+from random import shuffle
 from typing import Any
 
 import numpy as np
@@ -8,6 +12,7 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_init_dict() -> None:
@@ -21,8 +26,8 @@ def test_init_dict() -> None:
     assert df.schema == {"a": pl.Float32, "b": pl.Float32}
 
     for df in (
-        pl.DataFrame({}, columns={"a": pl.Date, "b": pl.Utf8}),
-        pl.DataFrame({"a": [], "b": []}, columns={"a": pl.Date, "b": pl.Utf8}),
+        pl.DataFrame({}, schema={"a": pl.Date, "b": pl.Utf8}),
+        pl.DataFrame({"a": [], "b": []}, schema={"a": pl.Date, "b": pl.Utf8}),
     ):
         assert df.shape == (0, 2)
         assert df.schema == {"a": pl.Date, "b": pl.Utf8}
@@ -41,7 +46,7 @@ def test_init_dict() -> None:
 
     df = pl.DataFrame(
         data={"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]},
-        columns=[("a", pl.Int8), ("b", pl.Float32)],
+        schema=[("a", pl.Int8), ("b", pl.Float32)],
     )
     assert df.schema == {"a": pl.Int8, "b": pl.Float32}
 
@@ -68,90 +73,176 @@ def test_init_dict() -> None:
     ):
         df = pl.DataFrame(
             data={"dt": dates, "dtm": datetimes},
-            columns=coldefs,
+            schema=coldefs,
         )
         assert df.schema == {"dt": pl.Date, "dtm": pl.Datetime}
         assert df.rows() == list(zip(py_dates, py_datetimes))
 
     # Overriding dict column names/types
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}, columns=["c", "d"])
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}, schema=["c", "d"])
     assert df.columns == ["c", "d"]
 
     df = pl.DataFrame(
         {"a": [1, 2, 3], "b": [4, 5, 6]},
-        columns=["c", ("d", pl.Int8)],
+        schema=["c", ("d", pl.Int8)],
     )  # partial type info (allowed, but mypy doesn't like it ;p)
     assert df.schema == {"c": pl.Int64, "d": pl.Int8}
 
     df = pl.DataFrame(
-        {"a": [1, 2, 3], "b": [4, 5, 6]}, columns=[("c", pl.Int8), ("d", pl.Int16)]
+        {"a": [1, 2, 3], "b": [4, 5, 6]}, schema=[("c", pl.Int8), ("d", pl.Int16)]
     )
     assert df.schema == {"c": pl.Int8, "d": pl.Int16}
 
-    dfe = df.cleared()
+    dfe = df.clear()
     assert df.schema == dfe.schema
     assert len(dfe) == 0
+
+    # empty nested objects
+    for empty_val in [None, "", {}, []]:  # type: ignore[var-annotated]
+        test = [{"field": {"sub_field": empty_val, "sub_field_2": 2}}]
+        df = pl.DataFrame(test, schema={"field": pl.Object})
+        assert df.to_dict(False)["field"][0] == test[0]["field"]
+
+
+def test_init_dataclasses_and_namedtuple() -> None:
+    from dataclasses import dataclass
+    from typing import NamedTuple
+
+    from polars.internals.construction import dataclass_type_hints
+
+    @dataclass
+    class TradeDC:
+        timestamp: datetime
+        ticker: str
+        price: Decimal
+        size: int | None = None
+
+    class TradeNT(NamedTuple):
+        timestamp: datetime
+        ticker: str
+        price: Decimal
+        size: int | None = None
+
+    raw_data = [
+        (datetime(2022, 9, 8, 14, 30, 45), "AAPL", Decimal("157.5"), 125),
+        (datetime(2022, 9, 9, 10, 15, 12), "FLSY", Decimal("10.0"), 1500),
+        (datetime(2022, 9, 7, 15, 30), "MU", Decimal("55.5"), 400),
+    ]
+
+    for TradeClass in (TradeDC, TradeNT):
+        trades = [TradeClass(*values) for values in raw_data]
+
+        for DF in (pl.DataFrame, pl.from_records):
+            df = DF(data=trades)  # type: ignore[operator]
+            assert df.schema == {
+                "timestamp": pl.Datetime("us"),
+                "ticker": pl.Utf8,
+                "price": pl.Decimal(None, 1),
+                "size": pl.Int64,
+            }
+            assert df.rows() == raw_data
+
+            # partial dtypes override
+            df = DF(  # type: ignore[operator]
+                data=trades,
+                schema_overrides={"timestamp": pl.Datetime("ms"), "size": pl.Int32},
+            )
+            assert df.schema == {
+                "timestamp": pl.Datetime("ms"),
+                "ticker": pl.Utf8,
+                "price": pl.Decimal(None, 1),
+                "size": pl.Int32,
+            }
+
+        # in conjunction with full 'columns' override (rename/downcast)
+        df = pl.DataFrame(
+            data=trades,
+            schema=[
+                ("ts", pl.Datetime("ms")),
+                ("tk", pl.Categorical),
+                ("pc", pl.Decimal(None, 1)),
+                ("sz", pl.UInt16),
+            ],
+        )
+        assert df.schema == {
+            "ts": pl.Datetime("ms"),
+            "tk": pl.Categorical,
+            "pc": pl.Decimal(None, 1),
+            "sz": pl.UInt16,
+        }
+        assert df.rows() == raw_data
+
+        # cover a miscellaneous edge-case when detecting the annotations
+        assert dataclass_type_hints(obj=type(None)) == {}
 
 
 def test_init_ndarray(monkeypatch: Any) -> None:
     # Empty array
     df = pl.DataFrame(np.array([]))
-    assert df.frame_equal(pl.DataFrame())
+    assert_frame_equal(df, pl.DataFrame())
 
     # 1D array
-    df = pl.DataFrame(np.array([1, 2, 3]), columns=["a"])
-    truth = pl.DataFrame({"a": [1, 2, 3]})
-    assert df.frame_equal(truth)
+    df = pl.DataFrame(np.array([1, 2, 3], dtype=np.int64), schema=["a"])
+    expected = pl.DataFrame({"a": [1, 2, 3]})
+    assert_frame_equal(df, expected)
 
-    df = pl.DataFrame(np.array([1, 2, 3]), columns=[("a", pl.Int32)])
-    truth = pl.DataFrame({"a": [1, 2, 3]}).with_column(pl.col("a").cast(pl.Int32))
-    assert df.frame_equal(truth)
+    df = pl.DataFrame(np.array([1, 2, 3]), schema=[("a", pl.Int32)])
+    expected = pl.DataFrame({"a": [1, 2, 3]}).with_columns(pl.col("a").cast(pl.Int32))
+    assert_frame_equal(df, expected)
 
-    # 2D array - default to column orientation
-    df = pl.DataFrame(np.array([[1, 2], [3, 4]]), orient="col")
-    truth = pl.DataFrame({"column_0": [1, 2], "column_1": [3, 4]})
-    assert df.frame_equal(truth)
+    # 2D array (or 2x 1D array) - should default to column orientation
+    for data in (
+        np.array([[1, 2], [3, 4]], dtype=np.int64),
+        [np.array([1, 2], dtype=np.int64), np.array([3, 4], dtype=np.int64)],
+    ):
+        df = pl.DataFrame(data, orient="col")
+        expected = pl.DataFrame({"column_0": [1, 2], "column_1": [3, 4]})
+        assert_frame_equal(df, expected)
 
     df = pl.DataFrame([[1, 2.0, "a"], [None, None, None]], orient="row")
-    truth = pl.DataFrame(
+    expected = pl.DataFrame(
         {"column_0": [1, None], "column_1": [2.0, None], "column_2": ["a", None]}
     )
-    assert df.frame_equal(truth)
+    assert_frame_equal(df, expected)
 
     df = pl.DataFrame(
         data=[[1, 2.0, "a"], [None, None, None]],
-        columns=[("x", pl.Boolean), ("y", pl.Int32), "z"],
+        schema=[("x", pl.Boolean), ("y", pl.Int32), "z"],
         orient="row",
     )
     assert df.rows() == [(True, 2, "a"), (None, None, None)]
     assert df.schema == {"x": pl.Boolean, "y": pl.Int32, "z": pl.Utf8}
 
     # 2D array - default to column orientation
-    df = pl.DataFrame(np.array([[1, 2], [3, 4]]))
-    truth = pl.DataFrame({"column_0": [1, 3], "column_1": [2, 4]})
-    assert df.frame_equal(truth)
+    df = pl.DataFrame(np.array([[1, 2], [3, 4]], dtype=np.int64))
+    expected = pl.DataFrame({"column_0": [1, 3], "column_1": [2, 4]})
+    assert_frame_equal(df, expected)
 
     # no orientation is numpy convention
-    df = pl.DataFrame(np.ones((3, 1)))
+    df = pl.DataFrame(np.ones((3, 1), dtype=np.int64))
     assert df.shape == (3, 1)
 
     # 2D array - row orientation inferred
-    df = pl.DataFrame(np.array([[1, 2, 3], [4, 5, 6]]), columns=["a", "b", "c"])
-    truth = pl.DataFrame({"a": [1, 4], "b": [2, 5], "c": [3, 6]})
-    assert df.frame_equal(truth)
+    df = pl.DataFrame(
+        np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int64), schema=["a", "b", "c"]
+    )
+    expected = pl.DataFrame({"a": [1, 4], "b": [2, 5], "c": [3, 6]})
+    assert_frame_equal(df, expected)
 
     # 2D array - column orientation inferred
-    df = pl.DataFrame(np.array([[1, 2, 3], [4, 5, 6]]), columns=["a", "b"])
-    truth = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
-    assert df.frame_equal(truth)
+    df = pl.DataFrame(
+        np.array([[1, 2, 3], [4, 5, 6]], dtype=np.int64), schema=["a", "b"]
+    )
+    expected = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    assert_frame_equal(df, expected)
 
     # 2D array - orientation conflicts with columns
     with pytest.raises(ValueError):
-        pl.DataFrame(np.array([[1, 2, 3], [4, 5, 6]]), columns=["a", "b"], orient="row")
+        pl.DataFrame(np.array([[1, 2, 3], [4, 5, 6]]), schema=["a", "b"], orient="row")
     with pytest.raises(ValueError):
         pl.DataFrame(
             np.array([[1, 2, 3], [4, 5, 6]]),
-            columns=[("a", pl.UInt32), ("b", pl.UInt32)],
+            schema=[("a", pl.UInt32), ("b", pl.UInt32)],
             orient="row",
         )
 
@@ -168,75 +259,88 @@ def test_init_ndarray(monkeypatch: Any) -> None:
 
     # Dimensions mismatch
     with pytest.raises(ValueError):
-        _ = pl.DataFrame(np.array([1, 2, 3]), columns=[])
+        _ = pl.DataFrame(np.array([1, 2, 3]), schema=[])
     with pytest.raises(ValueError):
-        _ = pl.DataFrame(np.array([[1, 2], [3, 4]]), columns=["a"])
+        _ = pl.DataFrame(np.array([[1, 2], [3, 4]]), schema=["a"])
 
     # NumPy not available
     monkeypatch.setattr(
         pl.internals.dataframe.frame, "_check_for_numpy", lambda x: False
     )
     with pytest.raises(ValueError):
-        pl.DataFrame(np.array([1, 2, 3]), columns=["a"])
+        pl.DataFrame(np.array([1, 2, 3]), schema=["a"])
 
     # 2D numpy arrays
     df = pl.DataFrame({"a": np.arange(5, dtype=np.int64).reshape(1, -1)})
     assert df.dtypes == [pl.List(pl.Int64)]
     assert df.shape == (1, 1)
+
     df = pl.DataFrame({"a": np.arange(10, dtype=np.int64).reshape(2, -1)})
     assert df.dtypes == [pl.List(pl.Int64)]
     assert df.shape == (2, 1)
     assert df.rows() == [([0, 1, 2, 3, 4],), ([5, 6, 7, 8, 9],)]
 
+    # numpy arrays containing NaN
+    df0 = pl.DataFrame(
+        data={"x": [1.0, 2.5, float("nan")], "y": [4.0, float("nan"), 6.5]},
+    )
+    df1 = pl.DataFrame(
+        data={"x": np.array([1.0, 2.5, np.nan]), "y": np.array([4.0, np.nan, 6.5])},
+    )
+    df2 = pl.DataFrame(
+        data={"x": np.array([1.0, 2.5, np.nan]), "y": np.array([4.0, np.nan, 6.5])},
+        nan_to_null=True,
+    )
+    assert_frame_equal(df0, df1, nans_compare_equal=True)
+    assert df2.rows() == [(1.0, 4.0), (2.5, None), (None, 6.5)]
+
 
 def test_init_arrow() -> None:
     # Handle unnamed column
     df = pl.DataFrame(pa.table({"a": [1, 2], None: [3, 4]}))
-    truth = pl.DataFrame({"a": [1, 2], "None": [3, 4]})
-    assert df.frame_equal(truth)
+    expected = pl.DataFrame({"a": [1, 2], "None": [3, 4]})
+    assert_frame_equal(df, expected)
 
     # Rename columns
-    df = pl.DataFrame(pa.table({"a": [1, 2], "b": [3, 4]}), columns=["c", "d"])
-    truth = pl.DataFrame({"c": [1, 2], "d": [3, 4]})
-    assert df.frame_equal(truth)
+    df = pl.DataFrame(pa.table({"a": [1, 2], "b": [3, 4]}), schema=["c", "d"])
+    expected = pl.DataFrame({"c": [1, 2], "d": [3, 4]})
+    assert_frame_equal(df, expected)
 
     df = pl.DataFrame(
         pa.table({"a": [1, 2], None: [3, 4]}),
-        columns=[("c", pl.Int32), ("d", pl.Float32)],
+        schema=[("c", pl.Int32), ("d", pl.Float32)],
     )
     assert df.schema == {"c": pl.Int32, "d": pl.Float32}
     assert df.rows() == [(1, 3.0), (2, 4.0)]
 
     # Bad columns argument
     with pytest.raises(ValueError):
-        pl.DataFrame(
-            pa.table({"a": [1, 2, 3], "b": [4, 5, 6]}), columns=["c", "d", "e"]
-        )
+        pl.DataFrame(pa.table({"a": [1, 2, 3], "b": [4, 5, 6]}), schema=["c", "d", "e"])
 
 
 def test_init_series() -> None:
     # List of Series
     df = pl.DataFrame([pl.Series("a", [1, 2, 3]), pl.Series("b", [4, 5, 6])])
-    truth = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
-    assert df.frame_equal(truth)
+    expected = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    assert_frame_equal(df, expected)
 
     # Tuple of Series
     df = pl.DataFrame((pl.Series("a", (1, 2, 3)), pl.Series("b", (4, 5, 6))))
-    assert df.frame_equal(truth)
+    assert_frame_equal(df, expected)
 
     df = pl.DataFrame(
         (pl.Series("a", (1, 2, 3)), pl.Series("b", (4, 5, 6))),
-        columns=[("x", pl.Float64), ("y", pl.Float64)],
+        schema=[("x", pl.Float64), ("y", pl.Float64)],
     )
     assert df.schema == {"x": pl.Float64, "y": pl.Float64}
     assert df.rows() == [(1.0, 4.0), (2.0, 5.0), (3.0, 6.0)]
 
     # List of unnamed Series
     df = pl.DataFrame([pl.Series([1, 2, 3]), pl.Series([4, 5, 6])])
-    truth = pl.DataFrame(
+    expected = pl.DataFrame(
         [pl.Series("column_0", [1, 2, 3]), pl.Series("column_1", [4, 5, 6])]
     )
-    assert df.frame_equal(truth)
+    assert_frame_equal(df, expected)
 
     df = pl.DataFrame([pl.Series([0.0]), pl.Series([1.0])])
     assert df.schema == {"column_0": pl.Float64, "column_1": pl.Float64}
@@ -244,50 +348,65 @@ def test_init_series() -> None:
 
     df = pl.DataFrame(
         [pl.Series([None]), pl.Series([1.0])],
-        columns=[("x", pl.Date), ("y", pl.Boolean)],
+        schema=[("x", pl.Date), ("y", pl.Boolean)],
     )
     assert df.schema == {"x": pl.Date, "y": pl.Boolean}
     assert df.rows() == [(None, True)]
 
     # Single Series
     df = pl.DataFrame(pl.Series("a", [1, 2, 3]))
-    truth = pl.DataFrame({"a": [1, 2, 3]})
+    expected = pl.DataFrame({"a": [1, 2, 3]})
     assert df.schema == {"a": pl.Int64}
-    assert df.frame_equal(truth)
+    assert_frame_equal(df, expected)
 
-    df = pl.DataFrame(pl.Series("a", [1, 2, 3]), columns=[("a", pl.UInt32)])
+    df = pl.DataFrame(pl.Series("a", [1, 2, 3]), schema=[("a", pl.UInt32)])
     assert df.rows() == [(1,), (2,), (3,)]
     assert df.schema == {"a": pl.UInt32}
 
-    # nested list
-    assert pl.Series([[[2, 2]]]).dtype == pl.List(pl.List(pl.Int64))
+    # nested list, with/without explicit dtype
+    s1 = pl.Series([[[2, 2]]])
+    assert s1.dtype == pl.List(pl.List(pl.Int64))
+
+    s2 = pl.Series([[[2, 2]]], dtype=pl.List(pl.List(pl.UInt8)))
+    assert s2.dtype == pl.List(pl.List(pl.UInt8))
+
+    s3 = pl.Series(dtype=pl.List(pl.List(pl.UInt8)))
+    assert s3.dtype == pl.List(pl.List(pl.UInt8))
+
+    # numpy data containing NaN values
+    s0 = pl.Series("n", [1.0, 2.5, float("nan")])
+    s1 = pl.Series("n", np.array([1.0, 2.5, float("nan")]))
+    s2 = pl.Series("n", np.array([1.0, 2.5, float("nan")]), nan_to_null=True)
+
+    assert_series_equal(s0, s1, nans_compare_equal=True)
+    assert s2.to_list() == [1.0, 2.5, None]
 
 
 def test_init_seq_of_seq() -> None:
     # List of lists
-    df = pl.DataFrame([[1, 2, 3], [4, 5, 6]], columns=["a", "b", "c"])
-    truth = pl.DataFrame({"a": [1, 4], "b": [2, 5], "c": [3, 6]})
-    assert df.frame_equal(truth)
+    df = pl.DataFrame([[1, 2, 3], [4, 5, 6]], schema=["a", "b", "c"])
+    expected = pl.DataFrame({"a": [1, 4], "b": [2, 5], "c": [3, 6]})
+    assert_frame_equal(df, expected)
 
     df = pl.DataFrame(
         [[1, 2, 3], [4, 5, 6]],
-        columns=[("a", pl.Int8), ("b", pl.Int16), ("c", pl.Int32)],
+        schema=[("a", pl.Int8), ("b", pl.Int16), ("c", pl.Int32)],
     )
     assert df.schema == {"a": pl.Int8, "b": pl.Int16, "c": pl.Int32}
     assert df.rows() == [(1, 2, 3), (4, 5, 6)]
 
     # Tuple of tuples, default to column orientation
     df = pl.DataFrame(((1, 2, 3), (4, 5, 6)))
-    truth = pl.DataFrame({"column_0": [1, 2, 3], "column_1": [4, 5, 6]})
-    assert df.frame_equal(truth)
+    expected = pl.DataFrame({"column_0": [1, 2, 3], "column_1": [4, 5, 6]})
+    assert_frame_equal(df, expected)
 
     # Row orientation
-    df = pl.DataFrame(((1, 2), (3, 4)), columns=("a", "b"), orient="row")
-    truth = pl.DataFrame({"a": [1, 3], "b": [2, 4]})
-    assert df.frame_equal(truth)
+    df = pl.DataFrame(((1, 2), (3, 4)), schema=("a", "b"), orient="row")
+    expected = pl.DataFrame({"a": [1, 3], "b": [2, 4]})
+    assert_frame_equal(df, expected)
 
     df = pl.DataFrame(
-        ((1, 2), (3, 4)), columns=(("a", pl.Float32), ("b", pl.Float32)), orient="row"
+        ((1, 2), (3, 4)), schema=(("a", pl.Float32), ("b", pl.Float32)), orient="row"
     )
     assert df.schema == {"a": pl.Float32, "b": pl.Float32}
     assert df.rows() == [(1.0, 2.0), (3.0, 4.0)]
@@ -300,19 +419,29 @@ def test_init_seq_of_seq() -> None:
 def test_init_1d_sequence() -> None:
     # Empty list
     df = pl.DataFrame([])
-    assert df.frame_equal(pl.DataFrame())
+    assert_frame_equal(df, pl.DataFrame())
 
-    # List of strings
-    df = pl.DataFrame(["a", "b", "c"], columns=["hi"])
-    truth = pl.DataFrame({"hi": ["a", "b", "c"]})
-    assert df.frame_equal(truth)
+    # List/array of strings
+    data = ["a", "b", "c"]
+    for a in (data, np.array(data)):
+        df = pl.DataFrame(a, schema=["s"])
+        expected = pl.DataFrame({"s": data})
+        assert_frame_equal(df, expected)
 
-    df = pl.DataFrame([None, True, False], columns=[("xx", pl.Int8)])
+    df = pl.DataFrame([None, True, False], schema=[("xx", pl.Int8)])
     assert df.schema == {"xx": pl.Int8}
     assert df.rows() == [(None,), (1,), (0,)]
 
     # String sequence
-    assert pl.DataFrame("abc", columns=["s"]).to_dict(False) == {"s": ["a", "b", "c"]}
+    assert pl.DataFrame("abc", schema=["s"]).to_dict(False) == {"s": ["a", "b", "c"]}
+
+    # datetimes sequence
+    df = pl.DataFrame([datetime(2020, 1, 1)], schema={"ts": pl.Datetime("ms")})
+    assert df.schema == {"ts": pl.Datetime("ms")}
+    df = pl.DataFrame(
+        [datetime(2020, 1, 1, tzinfo=timezone.utc)], schema={"ts": pl.Datetime("ms")}
+    )
+    assert df.schema == {"ts": pl.Datetime("ms", "UTC")}
 
 
 def test_init_pandas(monkeypatch: Any) -> None:
@@ -320,12 +449,12 @@ def test_init_pandas(monkeypatch: Any) -> None:
 
     # integer column names
     df = pl.DataFrame(pandas_df)
-    truth = pl.DataFrame({"1": [1, 3], "2": [2, 4]})
-    assert df.frame_equal(truth)
+    expected = pl.DataFrame({"1": [1, 3], "2": [2, 4]})
+    assert_frame_equal(df, expected)
     assert df.schema == {"1": pl.Int64, "2": pl.Int64}
 
     # override column names, types
-    df = pl.DataFrame(pandas_df, columns=[("x", pl.Float64), ("y", pl.Float64)])
+    df = pl.DataFrame(pandas_df, schema=[("x", pl.Float64), ("y", pl.Float64)])
     assert df.schema == {"x": pl.Float64, "y": pl.Float64}
     assert df.rows() == [(1.0, 2.0), (3.0, 4.0)]
 
@@ -353,7 +482,7 @@ def test_init_pandas(monkeypatch: Any) -> None:
                 dtype=np.dtype("<M8[ns]"),
             )
         ],
-        columns={"colx": pl.Datetime("us")},
+        schema={"colx": pl.Datetime("us")},
     )
     assert df.schema == {"colx": pl.Datetime("us")}
     assert df.rows() == [(datetime(2022, 10, 31, 10, 30, 45, 123456),)]
@@ -373,7 +502,7 @@ def test_init_errors() -> None:
 
     # Columns don't match data dimensions
     with pytest.raises(pl.ShapeError):
-        pl.DataFrame([[1, 2], [3, 4]], columns=["a", "b", "c"])
+        pl.DataFrame([[1, 2], [3, 4]], schema=["a", "b", "c"])
 
     # Unmatched input
     with pytest.raises(ValueError):
@@ -388,56 +517,77 @@ def test_init_records() -> None:
     ]
     df = pl.DataFrame(dicts)
     expected = pl.DataFrame({"a": [1, 2, 1], "b": [2, 1, 2]})
-    assert df.frame_equal(expected)
+    assert_frame_equal(df, expected)
     assert df.to_dicts() == dicts
 
-    df_cd = pl.DataFrame(dicts, columns=["c", "d"])
+    df_cd = pl.DataFrame(dicts, schema=["c", "d"])
     expected = pl.DataFrame({"c": [1, 2, 1], "d": [2, 1, 2]})
-    assert df_cd.frame_equal(expected)
+    assert_frame_equal(df_cd, expected)
 
-    df_xy = pl.DataFrame(dicts, columns=[("x", pl.UInt32), ("y", pl.UInt32)])
-    expected = pl.DataFrame({"x": [1, 2, 1], "y": [2, 1, 2]}).with_columns(
-        [pl.col("x").cast(pl.UInt32), pl.col("y").cast(pl.UInt32)]
-    )
-    assert df_xy.frame_equal(expected)
-    assert df_xy.schema == {"x": pl.UInt32, "y": pl.UInt32}
-    assert df_xy.rows() == [(1, 2), (2, 1), (1, 2)]
+
+def test_init_records_schema_order() -> None:
+    cols: list[str] = ["a", "b", "c", "d"]
+    data: list[dict[str, int]] = [
+        {"c": 3, "b": 2, "a": 1},
+        {"b": 2, "d": 4},
+        {},
+        {"a": 1, "b": 2, "c": 3},
+        {"d": 4, "b": 2, "a": 1},
+        {"c": 3, "b": 2},
+    ]
+    lookup = {"a": 1, "b": 2, "c": 3, "d": 4, "e": None}
+
+    for constructor in (pl.from_dicts, pl.DataFrame):
+        # ensure field values are loaded according to the declared schema order
+        for _ in range(8):
+            shuffle(data)
+            shuffle(cols)
+
+            df = constructor(data, schema=cols)  # type: ignore[operator]
+            for col in df.columns:
+                assert all(value in (None, lookup[col]) for value in df[col].to_list())
+
+        # have schema override inferred types, omit some columns, add a new one
+        schema = {"a": pl.Int8, "c": pl.Int16, "e": pl.Int32}
+        df = constructor(data, schema=schema)  # type: ignore[operator]
+
+        assert df.schema == schema
+        for col in df.columns:
+            assert all(value in (None, lookup[col]) for value in df[col].to_list())
 
 
 def test_init_only_columns() -> None:
-    df = pl.DataFrame(columns=["a", "b", "c"])
-    truth = pl.DataFrame({"a": [], "b": [], "c": []})
-    assert df.shape == (0, 3)
-    assert df.frame_equal(truth, null_equal=True)
-    assert df.dtypes == [pl.Float32, pl.Float32, pl.Float32]
+    df = pl.DataFrame(schema=["a", "b", "c"])
+    expected = pl.DataFrame({"a": [], "b": [], "c": []})
+    assert_frame_equal(df, expected)
 
     # Validate construction with various flavours of no/empty data
     no_data: Any
     for no_data in (None, {}, []):
         df = pl.DataFrame(
             data=no_data,
-            columns=[
+            schema=[
                 ("a", pl.Date),
                 ("b", pl.UInt64),
                 ("c", pl.Int8),
                 ("d", pl.List(pl.UInt8)),
             ],
         )
-        truth = pl.DataFrame({"a": [], "b": [], "c": []}).with_columns(
+        expected = pl.DataFrame({"a": [], "b": [], "c": []}).with_columns(
             [
                 pl.col("a").cast(pl.Date),
                 pl.col("b").cast(pl.UInt64),
                 pl.col("c").cast(pl.Int8),
             ]
         )
-        truth.insert_at_idx(3, pl.Series("d", [], pl.List(pl.UInt8)))
+        expected.insert_at_idx(3, pl.Series("d", [], pl.List(pl.UInt8)))
 
         assert df.shape == (0, 4)
-        assert df.frame_equal(truth, null_equal=True)
+        assert_frame_equal(df, expected)
         assert df.dtypes == [pl.Date, pl.UInt64, pl.Int8, pl.List]
         assert df.schema["d"].inner == pl.UInt8  # type: ignore[union-attr]
 
-        dfe = df.cleared()
+        dfe = df.clear()
         assert len(dfe) == 0
         assert df.schema == dfe.schema
         assert dfe.shape == df.shape
@@ -490,7 +640,7 @@ def test_upcast_primitive_and_strings() -> None:
 
 
 def test_u64_lit_5031() -> None:
-    df = pl.DataFrame({"foo": [1, 2, 3]}).with_column(pl.col("foo").cast(pl.UInt64))
+    df = pl.DataFrame({"foo": [1, 2, 3]}).with_columns(pl.col("foo").cast(pl.UInt64))
     assert df.filter(pl.col("foo") < (1 << 64) - 20).shape == (3, 1)
     assert df["foo"].to_list() == [1, 2, 3]
 
@@ -510,7 +660,7 @@ def test_from_rows_dtype() -> None:
     # 5182
     df = pl.DataFrame(
         data=[(None, None)] * 50 + [("1.23", None)],
-        columns=[("foo", pl.Utf8), ("bar", pl.Utf8)],
+        schema=[("foo", pl.Utf8), ("bar", pl.Utf8)],
         orient="row",
     )
     assert df.dtypes == [pl.Utf8, pl.Utf8]
@@ -523,7 +673,7 @@ def test_from_rows_dtype() -> None:
 
     df = pl.DataFrame(
         data=type1 * 50 + type2,
-        columns=[("c1", pl.Int32), ("c2", pl.Object), ("c3", pl.Object)],
+        schema=[("c1", pl.Int32), ("c2", pl.Object), ("c3", pl.Object)],
     )
     assert df.dtypes == [pl.Int32, pl.Object, pl.Object]
 
@@ -536,7 +686,7 @@ def test_from_rows_dtype() -> None:
 
     df = pl.DataFrame(
         data=type1 * 50 + type2,
-        columns=[("c1", pl.Int32), ("c2", pl.Object), ("c3", pl.Object)],
+        schema=[("c1", pl.Int32), ("c2", pl.Object), ("c3", pl.Object)],
     )
     assert df.dtypes == [pl.Int32, pl.Object, pl.Object]
     assert df.null_count().row(0) == (0, 0, 0)
@@ -545,17 +695,23 @@ def test_from_rows_dtype() -> None:
 def test_from_dicts_schema() -> None:
     data = [{"a": 1, "b": 4}, {"a": 2, "b": 5}, {"a": 3, "b": 6}]
 
-    # let polars infer the dtypes
-    # but inform about a 3rd column
-    df = pl.from_dicts(
-        data, schema_overrides={"a": pl.Unknown, "b": pl.Unknown, "c": pl.Int32}
-    )
-    assert df.dtypes == [pl.Int64, pl.Int64, pl.Int32]
-    assert df.to_dict(False) == {
-        "a": [1, 2, 3],
-        "b": [4, 5, 6],
-        "c": [None, None, None],
-    }
+    # let polars infer the dtypes, but inform it about a 3rd column.
+    for schema, overrides in (
+        ({"a": pl.Unknown, "b": pl.Unknown, "c": pl.Int32}, None),
+        ({"a": None, "b": None, "c": None}, {"c": pl.Int32}),
+        (["a", "b", ("c", pl.Int32)], None),
+    ):
+        df = pl.from_dicts(
+            data,
+            schema=schema,  # type: ignore[arg-type]
+            schema_overrides=overrides,
+        )
+        assert df.dtypes == [pl.Int64, pl.Int64, pl.Int32]
+        assert df.to_dict(False) == {
+            "a": [1, 2, 3],
+            "b": [4, 5, 6],
+            "c": [None, None, None],
+        }
 
 
 def test_nested_read_dict_4143() -> None:
@@ -647,11 +803,138 @@ def test_from_records_nullable_structs() -> None:
         ),
     ]
 
-    for columns in [schema, None]:
-        assert pl.DataFrame(records, orient="row", columns=columns).to_dict(False) == {
+    for s in [schema, None]:
+        assert pl.DataFrame(records, schema=s, orient="row").to_dict(False) == {
             "id": [1, 1],
             "items": [
                 [{"item_id": 100, "description": None}],
                 [{"item_id": 100, "description": "hi"}],
             ],
         }
+
+    # check initialisation without any records
+    df = pl.DataFrame(schema=schema)
+    dict_schema = dict(schema)
+
+    assert df.to_dict(False) == {"id": [], "items": []}
+    assert df.schema == dict_schema
+
+    s = pl.Series("items", dtype=dict_schema["items"])
+    assert s.to_frame().to_dict(False) == {"items": []}
+    assert s.dtype == dict_schema["items"]
+    assert s.to_list() == []
+
+
+def test_from_categorical_in_struct_defined_by_schema() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [
+                {"value": "foo", "counts": 1},
+                {"value": "bar", "counts": 2},
+            ]
+        },
+        schema={"a": pl.Struct({"value": pl.Categorical, "counts": pl.UInt32})},
+    )
+    out = df.unnest("a")
+    assert out.schema == {"value": pl.Categorical, "counts": pl.UInt32}
+    assert out.to_dict(False) == {"value": ["foo", "bar"], "counts": [1, 2]}
+
+
+def test_nested_schema_construction() -> None:
+    schema = {
+        "node_groups": pl.List(
+            pl.Struct(
+                [
+                    pl.Field("parent_node_group_id", pl.UInt8),
+                    pl.Field(
+                        "nodes",
+                        pl.List(
+                            pl.Struct(
+                                [
+                                    pl.Field("name", pl.Utf8),
+                                    pl.Field(
+                                        "sub_nodes",
+                                        pl.List(
+                                            pl.Struct(
+                                                [
+                                                    pl.Field("internal_id", pl.UInt64),
+                                                    pl.Field("value", pl.UInt32),
+                                                ]
+                                            )
+                                        ),
+                                    ),
+                                ]
+                            )
+                        ),
+                    ),
+                ]
+            )
+        )
+    }
+    df = pl.DataFrame(
+        {
+            "node_groups": [
+                [{"nodes": []}, {"nodes": [{"name": "", "sub_nodes": []}]}],
+            ]
+        },
+        schema=schema,
+    )
+    assert df.schema == schema
+    assert df.to_dict(False) == {
+        "node_groups": [
+            [
+                {"parent_node_group_id": None, "nodes": []},
+                {
+                    "parent_node_group_id": None,
+                    "nodes": [{"name": "", "sub_nodes": []}],
+                },
+            ]
+        ]
+    }
+
+    schema = {
+        "node_groups": pl.List(
+            pl.Struct(
+                [
+                    pl.Field(
+                        "nodes",
+                        pl.List(
+                            pl.Struct(
+                                [pl.Field("name", pl.Utf8), pl.Field("time", pl.UInt32)]
+                            )
+                        ),
+                    )
+                ]
+            )
+        )
+    }
+    df = pl.DataFrame(
+        [
+            {"node_groups": [{"nodes": [{"name": "a", "time": 0}]}]},
+            {"node_groups": [{"nodes": []}]},
+        ],
+        schema=schema,
+    )
+    assert df.schema == schema
+    assert df.to_dict(False) == {
+        "node_groups": [[{"nodes": [{"name": "a", "time": 0}]}], [{"nodes": []}]]
+    }
+
+
+def test_array_to_pyseries_with_one_chunk_does_not_copy_data() -> None:
+    original_array = pa.chunked_array([[1, 2, 3]], type=pa.int64())
+    pyseries = pl.internals.construction.arrow_to_pyseries("", original_array)
+    assert (
+        pyseries.get_chunks()[0]._get_ptr()
+        == original_array.chunks[0].buffers()[1].address
+    )
+
+
+def test_init_with_explicit_binary_schema() -> None:
+    df = pl.DataFrame({"a": [b"hello", b"world"]}, schema={"a": pl.Binary})
+    assert df.schema == {"a": pl.Binary}
+    assert df["a"].to_list() == [b"hello", b"world"]
+
+    s = pl.Series("a", [b"hello", b"world"], dtype=pl.Binary)
+    assert s.dtype == pl.Binary
+    assert s.to_list() == [b"hello", b"world"]

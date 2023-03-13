@@ -6,7 +6,7 @@ use std::path::Path;
 use crate::prelude::*;
 
 fn write_scan<P: Display>(
-    f: &mut fmt::Formatter,
+    f: &mut Formatter,
     name: &str,
     path: &Path,
     indent: usize,
@@ -14,25 +14,31 @@ fn write_scan<P: Display>(
     total_columns: usize,
     predicate: &Option<P>,
 ) -> fmt::Result {
-    writeln!(f, "{:indent$}{} SCAN {}", "", name, path.to_string_lossy(),)?;
+    if indent != 0 {
+        writeln!(f)?;
+    }
+    write!(f, "{:indent$}{} SCAN {}", "", name, path.display())?;
     if n_columns > 0 {
-        writeln!(
+        write!(
             f,
-            "{:indent$}PROJECT {n_columns}/{total_columns} COLUMNS",
+            "\n{:indent$}PROJECT {n_columns}/{total_columns} COLUMNS",
             "",
         )?;
     } else {
-        writeln!(f, "{:indent$}PROJECT */{total_columns} COLUMNS", "",)?;
+        write!(f, "\n{:indent$}PROJECT */{total_columns} COLUMNS", "",)?;
     }
     if let Some(predicate) = predicate {
-        writeln!(f, "{:indent$}SELECTION: {predicate}", "")?;
+        write!(f, "\n{:indent$}SELECTION: {predicate}", "")?;
     }
     Ok(())
 }
 
 impl LogicalPlan {
-    fn _format(&self, f: &mut fmt::Formatter, mut indent: usize) -> fmt::Result {
-        indent += 2;
+    fn _format(&self, f: &mut Formatter, indent: usize) -> fmt::Result {
+        if indent != 0 {
+            writeln!(f)?;
+        }
+        let sub_indent = indent + 2;
         use LogicalPlan::*;
         match self {
             #[cfg(feature = "python")]
@@ -48,7 +54,7 @@ impl LogicalPlan {
                     f,
                     "PYTHON",
                     Path::new(""),
-                    indent,
+                    sub_indent,
                     n_columns,
                     total_columns,
                     &options.predicate,
@@ -69,23 +75,23 @@ impl LogicalPlan {
                     f,
                     options.fmt_str,
                     Path::new(""),
-                    indent,
+                    sub_indent,
                     n_columns,
                     file_info.schema.len(),
                     predicate,
                 )
             }
             Union { inputs, .. } => {
-                writeln!(f, "{:indent$}UNION:", "")?;
+                write!(f, "{:indent$}UNION:", "")?;
                 for (i, plan) in inputs.iter().enumerate() {
-                    writeln!(f, "{:indent$}PLAN {i}:", "")?;
-                    plan._format(f, indent)?;
+                    write!(f, "\n{:indent$}PLAN {i}:", "")?;
+                    plan._format(f, sub_indent)?;
                 }
-                writeln!(f, "{:indent$}END UNION", "")
+                write!(f, "\n{:indent$}END UNION", "")
             }
             Cache { input, id, count } => {
-                writeln!(f, "{:indent$}CACHE[id: {:x}, count: {}]", "", *id, *count)?;
-                input._format(f, indent)
+                write!(f, "{:indent$}CACHE[id: {:x}, count: {}]", "", *id, *count)?;
+                input._format(f, sub_indent)
             }
             #[cfg(feature = "parquet")]
             ParquetScan {
@@ -104,7 +110,7 @@ impl LogicalPlan {
                     f,
                     "PARQUET",
                     path,
-                    indent,
+                    sub_indent,
                     n_columns,
                     file_info.schema.len(),
                     predicate,
@@ -127,18 +133,14 @@ impl LogicalPlan {
                     f,
                     "IPC",
                     path,
-                    indent,
+                    sub_indent,
                     n_columns,
                     file_info.schema.len(),
                     predicate,
                 )
             }
             Selection { predicate, input } => {
-                writeln!(f, "{:indent$}FILTER {predicate:?} FROM", "")?;
-                input._format(f, indent)
-            }
-            Melt { input, .. } => {
-                writeln!(f, "{:indent$}MELT", "")?;
+                write!(f, "{:indent$}FILTER {predicate:?} FROM", "")?;
                 input._format(f, indent)
             }
             #[cfg(feature = "csv-file")]
@@ -158,7 +160,7 @@ impl LogicalPlan {
                     f,
                     "CSV",
                     path,
-                    indent,
+                    sub_indent,
                     n_columns,
                     file_info.schema.len(),
                     predicate,
@@ -179,8 +181,7 @@ impl LogicalPlan {
                     Some(s) => Cow::Owned(format!("{s:?}")),
                     None => Cow::Borrowed("None"),
                 };
-
-                writeln!(
+                write!(
                     f,
                     "{:indent$}DF {:?}; PROJECT {}/{} COLUMNS; SELECTION: {:?}",
                     "",
@@ -191,29 +192,25 @@ impl LogicalPlan {
                 )
             }
             Projection { expr, input, .. } => {
-                writeln!(f, "{:indent$} SELECT {expr:?} FROM", "")?;
-                input._format(f, indent)
+                write!(f, "{:indent$} SELECT {expr:?} FROM", "")?;
+                input._format(f, sub_indent)
             }
             LocalProjection { expr, input, .. } => {
-                writeln!(f, "{:indent$} LOCAL SELECT {expr:?} FROM", "")?;
-                input._format(f, indent)
+                write!(f, "{:indent$} LOCAL SELECT {expr:?} FROM", "")?;
+                input._format(f, sub_indent)
             }
             Sort {
                 input, by_column, ..
             } => {
-                writeln!(f, "{:indent$}SORT BY {by_column:?}", "")?;
-                input._format(f, indent)
-            }
-            Explode { input, columns, .. } => {
-                writeln!(f, "{:indent$}EXPLODE BY {columns:?}", "")?;
-                input._format(f, indent)
+                write!(f, "{:indent$}SORT BY {by_column:?}", "")?;
+                input._format(f, sub_indent)
             }
             Aggregate {
                 input, keys, aggs, ..
             } => {
-                writeln!(f, "{:indent$}Aggregate", "")?;
-                writeln!(f, "{:indent$}\t{aggs:?} BY {keys:?} FROM", "")?;
-                writeln!(f, "{:indent$}\t{input:?}", "")
+                write!(f, "{:indent$}AGGREGATE", "")?;
+                write!(f, "\n{:indent$}\t{aggs:?} BY {keys:?} FROM", "")?;
+                write!(f, "\n{:indent$}\t{input:?}", "")
             }
             Join {
                 input_left,
@@ -224,48 +221,48 @@ impl LogicalPlan {
                 ..
             } => {
                 let how = &options.how;
-                writeln!(f, "{:indent$}{how} JOIN:", "")?;
-                writeln!(f, "{:indent$}LEFT PLAN ON: {left_on:?}", "")?;
-                input_left._format(f, indent)?;
-                writeln!(f, "{:indent$}RIGHT PLAN ON: {right_on:?}", "")?;
-                input_right._format(f, indent)?;
-                writeln!(f, "{:indent$}END {} JOIN", "", how)
+                write!(f, "{:indent$}{how} JOIN:", "")?;
+                write!(f, "\n{:indent$}LEFT PLAN ON: {left_on:?}", "")?;
+                input_left._format(f, sub_indent)?;
+                write!(f, "\n{:indent$}RIGHT PLAN ON: {right_on:?}", "")?;
+                input_right._format(f, sub_indent)?;
+                write!(f, "\n{:indent$}END {} JOIN", "", how)
             }
             HStack { input, exprs, .. } => {
-                writeln!(f, "{:indent$} WITH_COLUMNS:", "",)?;
-                writeln!(f, "{:indent$} {exprs:?}", "")?;
-                input._format(f, indent)
+                write!(f, "{:indent$} WITH_COLUMNS:", "",)?;
+                write!(f, "\n{:indent$} {exprs:?}", "")?;
+                input._format(f, sub_indent)
             }
             Distinct { input, options } => {
-                writeln!(f, "{:indent$}UNIQUE BY {:?}", "", options.subset)?;
-                input._format(f, indent)
+                write!(f, "{:indent$}UNIQUE BY {:?}", "", options.subset)?;
+                input._format(f, sub_indent)
             }
             Slice { input, offset, len } => {
-                writeln!(f, "{:indent$}SLICE[offset: {offset}, len: {len}]", "")?;
-                input._format(f, indent)
+                write!(f, "{:indent$}SLICE[offset: {offset}, len: {len}]", "")?;
+                input._format(f, sub_indent)
             }
             MapFunction {
                 input, function, ..
             } => {
                 let function_fmt = format!("{function}");
-                writeln!(f, "{:indent$}{function_fmt}", "")?;
-                input._format(f, indent)
+                write!(f, "{:indent$}{function_fmt}", "")?;
+                input._format(f, sub_indent)
             }
             Error { input, err } => write!(f, "{err:?}\n{input:?}"),
             ExtContext { input, .. } => {
-                writeln!(f, "{:indent$}EXTERNAL_CONTEXT", "")?;
-                input._format(f, indent)
+                write!(f, "{:indent$}EXTERNAL_CONTEXT", "")?;
+                input._format(f, sub_indent)
             }
             FileSink { input, .. } => {
-                writeln!(f, "{:indent$}FILE_SINK", "")?;
-                input._format(f, indent)
+                write!(f, "{:indent$}FILE_SINK", "")?;
+                input._format(f, sub_indent)
             }
         }
     }
 }
 
-impl fmt::Debug for LogicalPlan {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Debug for LogicalPlan {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         self._format(f, 0)
     }
 }
@@ -276,8 +273,8 @@ impl Display for Expr {
     }
 }
 
-impl fmt::Debug for Expr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Debug for Expr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         use Expr::*;
         match self {
             Window {
@@ -306,8 +303,12 @@ impl fmt::Debug for Expr {
                 true => write!(f, "{expr:?} DESC"),
                 false => write!(f, "{expr:?} ASC"),
             },
-            SortBy { expr, by, reverse } => {
-                write!(f, "SORT {expr:?} BY {by:?} REVERSE ORDERING {reverse:?}",)
+            SortBy {
+                expr,
+                by,
+                descending,
+            } => {
+                write!(f, "SORT {expr:?} BY {by:?} REVERSE ORDERING {descending:?}",)
             }
             Filter { input, by } => {
                 write!(f, "{input:?}\nFILTER WHERE {by:?}")
@@ -432,34 +433,8 @@ impl Debug for LiteralValue {
         use LiteralValue::*;
 
         match self {
-            Null => write!(f, "null"),
-            Boolean(b) => write!(f, "{b}"),
-            Utf8(s) => write!(f, "{s}"),
-            #[cfg(feature = "dtype-binary")]
             Binary(_) => write!(f, "[binary value]"),
-            #[cfg(feature = "dtype-u8")]
-            UInt8(v) => write!(f, "{v}u8"),
-            #[cfg(feature = "dtype-u16")]
-            UInt16(v) => write!(f, "{v}u16"),
-            UInt32(v) => write!(f, "{v}u32"),
-            UInt64(v) => write!(f, "{v}u64"),
-            #[cfg(feature = "dtype-i8")]
-            Int8(v) => write!(f, "{v}i8"),
-            #[cfg(feature = "dtype-i16")]
-            Int16(v) => write!(f, "{v}i16"),
-            Int32(v) => write!(f, "{v}i32"),
-            Int64(v) => write!(f, "{v}i64"),
-            Float32(v) => write!(f, "{v}f32"),
-            Float64(v) => write!(f, "{v}f64"),
             Range { low, high, .. } => write!(f, "range({low}, {high})"),
-            #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
-            DateTime(nd, _) => {
-                write!(f, "{nd}")
-            }
-            #[cfg(all(feature = "temporal", feature = "dtype-duration"))]
-            Duration(du, _) => {
-                write!(f, "{du}")
-            }
             Series(s) => {
                 let name = s.name();
                 if name.is_empty() {
@@ -467,6 +442,10 @@ impl Debug for LiteralValue {
                 } else {
                     write!(f, "Series[{name}]")
                 }
+            }
+            _ => {
+                let av = self.to_anyvalue().unwrap();
+                write!(f, "{av}")
             }
         }
     }

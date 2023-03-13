@@ -11,7 +11,7 @@ The following methods are available under the `Series.struct` attribute.
 
     Series.struct.field
     Series.struct.rename_fields
-    Series.struct.to_frame
+    Series.struct.unnest
 
 .. autosummary::
    :toctree: api/

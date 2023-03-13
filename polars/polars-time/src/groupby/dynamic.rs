@@ -5,6 +5,7 @@ use polars_core::prelude::*;
 use polars_core::POOL;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use smartstring::alias::String as SmartString;
 
 use crate::prelude::*;
 
@@ -15,7 +16,7 @@ struct Wrap<T>(pub T);
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DynamicGroupOptions {
     /// Time or index column
-    pub index_column: String,
+    pub index_column: SmartString,
     /// start a window at this interval
     pub every: Duration,
     /// window duration
@@ -33,7 +34,7 @@ pub struct DynamicGroupOptions {
 impl Default for DynamicGroupOptions {
     fn default() -> Self {
         Self {
-            index_column: "".to_string(),
+            index_column: "".into(),
             every: Duration::new(1),
             period: Duration::new(1),
             offset: Duration::new(1),
@@ -49,7 +50,7 @@ impl Default for DynamicGroupOptions {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RollingGroupOptions {
     /// Time or index column
-    pub index_column: String,
+    pub index_column: SmartString,
     /// window duration
     pub period: Duration,
     pub offset: Duration,
@@ -127,14 +128,11 @@ impl Wrap<&DataFrame> {
                 let out = out.cast(&Int64).unwrap();
                 return Ok((out, by, gt));
             }
-            dt => {
-                return Err(PolarsError::ComputeError(
-                    format!(
-                    "expected any of the following dtypes {{Date, Datetime, Int32, Int64}}, got {dt}",
-                )
-                    .into(),
-                ))
-            }
+            dt => polars_bail!(
+                ComputeError:
+                "expected any of the following dtypes: {{ Date, Datetime, Int32, Int64 }}, got {}",
+                dt
+            ),
         };
         self.impl_groupby_rolling(dt, by, options, tu, time_type)
     }
@@ -194,14 +192,11 @@ impl Wrap<&DataFrame> {
                 }
                 return Ok((out, keys, gt));
             }
-            dt => {
-                return Err(PolarsError::ComputeError(
-                    format!(
-                    "expected any of the following dtypes {{Date, Datetime, Int32, Int64}}, got {dt}",
-                )
-                    .into(),
-                ))
-            }
+            dt => polars_bail!(
+                ComputeError:
+                "expected any of the following dtypes: {{ Date, Datetime, Int32, Int64 }}, got {}",
+                dt
+            ),
         };
         self.impl_groupby_dynamic(dt, by, options, tu, time_type)
     }
@@ -221,6 +216,11 @@ impl Wrap<&DataFrame> {
         let w = Window::new(options.every, options.period, options.offset);
         let dt = dt.datetime().unwrap();
         let tz = dt.time_zone();
+        let dt = match tz {
+            #[cfg(feature = "timezones")]
+            Some(_) => dt.replace_time_zone(None)?,
+            _ => dt.clone(),
+        };
 
         let mut lower_bound = None;
         let mut upper_bound = None;
@@ -252,6 +252,7 @@ impl Wrap<&DataFrame> {
         let groups = if by.is_empty() {
             let vals = dt.downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
+            partially_check_sorted(ts);
             let (groups, lower, upper) = groupby_windows(
                 w,
                 ts,
@@ -271,66 +272,124 @@ impl Wrap<&DataFrame> {
                 .0
                 .groupby_with_series(by.clone(), true, true)?
                 .take_groups();
-            let groups = groups.into_idx();
 
             // include boundaries cannot be parallel (easily)
             if include_lower_bound {
-                POOL.install(|| {
-                    let mut ir = groups
-                        .par_iter()
-                        .map(|base_g| {
-                            let dt = unsafe { dt.take_unchecked(base_g.1.into()) };
+                POOL.install(|| match groups {
+                    GroupsProxy::Idx(groups) => {
+                        let mut ir = groups
+                            .par_iter()
+                            .map(|base_g| {
+                                let dt = unsafe { dt.take_unchecked(base_g.1.into()) };
 
-                            let vals = dt.downcast_iter().next().unwrap();
-                            let ts = vals.values().as_slice();
-                            let (sub_groups, lower, upper) = groupby_windows(
-                                w,
-                                ts,
-                                options.closed_window,
-                                tu,
-                                include_lower_bound,
-                                include_upper_bound,
-                                options.start_by,
-                            );
+                                let vals = dt.downcast_iter().next().unwrap();
+                                let ts = vals.values().as_slice();
+                                let (sub_groups, lower, upper) = groupby_windows(
+                                    w,
+                                    ts,
+                                    options.closed_window,
+                                    tu,
+                                    include_lower_bound,
+                                    include_upper_bound,
+                                    options.start_by,
+                                );
 
-                            (lower, upper, update_subgroups_idx(&sub_groups, base_g))
-                        })
-                        .collect::<Vec<_>>();
+                                (lower, upper, update_subgroups_idx(&sub_groups, base_g))
+                            })
+                            .collect::<Vec<_>>();
 
-                    ir.iter_mut().for_each(|(lower, upper, _)| {
-                        let lower = std::mem::take(lower);
-                        let upper = std::mem::take(upper);
-                        update_bounds(lower, upper)
-                    });
+                        ir.iter_mut().for_each(|(lower, upper, _)| {
+                            let lower = std::mem::take(lower);
+                            let upper = std::mem::take(upper);
+                            update_bounds(lower, upper)
+                        });
 
-                    GroupsProxy::Idx(ir.into_iter().flat_map(|(_, _, groups)| groups).collect())
+                        GroupsProxy::Idx(ir.into_iter().flat_map(|(_, _, groups)| groups).collect())
+                    }
+                    GroupsProxy::Slice { groups, .. } => {
+                        let mut ir = groups
+                            .par_iter()
+                            .map(|base_g| {
+                                let dt = dt.slice(base_g[0] as i64, base_g[1] as usize);
+                                let vals = dt.downcast_iter().next().unwrap();
+                                let ts = vals.values().as_slice();
+                                let (sub_groups, lower, upper) = groupby_windows(
+                                    w,
+                                    ts,
+                                    options.closed_window,
+                                    tu,
+                                    include_lower_bound,
+                                    include_upper_bound,
+                                    options.start_by,
+                                );
+                                (lower, upper, update_subgroups_slice(&sub_groups, *base_g))
+                            })
+                            .collect::<Vec<_>>();
+
+                        ir.iter_mut().for_each(|(lower, upper, _)| {
+                            let lower = std::mem::take(lower);
+                            let upper = std::mem::take(upper);
+                            update_bounds(lower, upper)
+                        });
+
+                        GroupsProxy::Slice {
+                            groups: ir.into_iter().flat_map(|(_, _, groups)| groups).collect(),
+                            rolling: false,
+                        }
+                    }
                 })
             } else {
-                let groupsidx = POOL.install(|| {
-                    groups
-                        .par_iter()
-                        .flat_map(|base_g| {
-                            let dt = unsafe { dt.take_unchecked(base_g.1.into()) };
-                            let vals = dt.downcast_iter().next().unwrap();
-                            let ts = vals.values().as_slice();
-                            let (sub_groups, _, _) = groupby_windows(
-                                w,
-                                ts,
-                                options.closed_window,
-                                tu,
-                                include_lower_bound,
-                                include_upper_bound,
-                                options.start_by,
-                            );
-                            update_subgroups_idx(&sub_groups, base_g)
-                        })
-                        .collect()
-                });
-                GroupsProxy::Idx(groupsidx)
+                POOL.install(|| match groups {
+                    GroupsProxy::Idx(groups) => {
+                        let groupsidx = groups
+                            .par_iter()
+                            .flat_map(|base_g| {
+                                let dt = unsafe { dt.take_unchecked(base_g.1.into()) };
+                                let vals = dt.downcast_iter().next().unwrap();
+                                let ts = vals.values().as_slice();
+                                let (sub_groups, _, _) = groupby_windows(
+                                    w,
+                                    ts,
+                                    options.closed_window,
+                                    tu,
+                                    include_lower_bound,
+                                    include_upper_bound,
+                                    options.start_by,
+                                );
+                                update_subgroups_idx(&sub_groups, base_g)
+                            })
+                            .collect();
+                        GroupsProxy::Idx(groupsidx)
+                    }
+                    GroupsProxy::Slice { groups, .. } => {
+                        let groups = groups
+                            .par_iter()
+                            .flat_map(|base_g| {
+                                let dt = dt.slice(base_g[0] as i64, base_g[1] as usize);
+                                let vals = dt.downcast_iter().next().unwrap();
+                                let ts = vals.values().as_slice();
+                                let (sub_groups, _, _) = groupby_windows(
+                                    w,
+                                    ts,
+                                    options.closed_window,
+                                    tu,
+                                    include_lower_bound,
+                                    include_upper_bound,
+                                    options.start_by,
+                                );
+                                update_subgroups_slice(&sub_groups, *base_g)
+                            })
+                            .collect();
+                        GroupsProxy::Slice {
+                            groups,
+                            rolling: false,
+                        }
+                    }
+                })
             }
         };
 
-        let dt = unsafe { dt.clone().into_series().agg_first(&groups) };
+        let dt = unsafe { dt.into_series().agg_first(&groups) };
         let mut dt = dt.datetime().unwrap().as_ref().clone();
         for key in by.iter_mut() {
             *key = unsafe { key.agg_first(&groups) };
@@ -346,17 +405,43 @@ impl Wrap<&DataFrame> {
 
         if let (true, Some(lower), Some(higher)) = (options.include_boundaries, lower, upper_bound)
         {
-            by.push(lower.into_datetime(tu, tz.clone()).into_series());
-            let s = Int64Chunked::new_vec(UP_NAME, higher)
-                .into_datetime(tu, tz.clone())
-                .into_series();
+            match tz {
+                #[cfg(feature = "timezones")]
+                Some(tz) => by.push(
+                    lower
+                        .into_datetime(tu, None)
+                        .replace_time_zone(Some(tz))?
+                        .into_series(),
+                ),
+                _ => by.push(lower.into_datetime(tu, None).into_series()),
+            };
+            let s = match tz {
+                #[cfg(feature = "timezones")]
+                Some(tz) => Int64Chunked::new_vec(UP_NAME, higher)
+                    .into_datetime(tu, None)
+                    .replace_time_zone(Some(tz))?
+                    .into_series(),
+                _ => Int64Chunked::new_vec(UP_NAME, higher)
+                    .into_datetime(tu, None)
+                    .into_series(),
+            };
             by.push(s);
         }
 
-        dt.into_datetime(tu, None)
-            .into_series()
-            .cast(time_type)
-            .map(|s| (s, by, groups))
+        match tz {
+            #[cfg(feature = "timezones")]
+            Some(tz) => dt
+                .into_datetime(tu, None)
+                .replace_time_zone(Some(tz))?
+                .into_series()
+                .cast(time_type)
+                .map(|s| (s, by, groups)),
+            _ => dt
+                .into_datetime(tu, None)
+                .into_series()
+                .cast(time_type)
+                .map(|s| (s, by, groups)),
+        }
     }
 
     /// Returns: time_keys, keys, groupsproxy
@@ -508,7 +593,7 @@ mod test {
                     "2020-01-08 23:16:43",
                 ],
             )
-            .as_datetime(None, tu, false, false)?
+            .as_datetime(None, tu, false, false, false, None)?
             .into_series();
             let a = Series::new("a", [3, 7, 5, 9, 2, 1]);
             let df = DataFrame::new(vec![date, a.clone()])?;
@@ -546,7 +631,7 @@ mod test {
                 "2020-01-08 23:16:43",
             ],
         )
-        .as_datetime(None, TimeUnit::Milliseconds, false, false)?
+        .as_datetime(None, TimeUnit::Milliseconds, false, false, false, None)?
         .into_series();
         let a = Series::new("a", [3, 7, 5, 9, 2, 1]);
         let df = DataFrame::new(vec![date, a.clone()])?;
@@ -603,7 +688,7 @@ mod test {
     }
 
     #[test]
-    fn test_dynamic_groupby_window() {
+    fn test_dynamic_groupby_window() -> PolarsResult<()> {
         let start = NaiveDate::from_ymd_opt(2021, 12, 16)
             .unwrap()
             .and_hms_opt(0, 0, 0)
@@ -622,7 +707,7 @@ mod test {
             ClosedWindow::Both,
             TimeUnit::Milliseconds,
             None,
-        )
+        )?
         .into_series();
 
         let groups = Series::new("groups", ["a", "a", "a", "b", "b", "a", "a"]);
@@ -674,7 +759,7 @@ mod test {
             ClosedWindow::Both,
             TimeUnit::Milliseconds,
             None,
-        )
+        )?
         .into_series();
         assert_eq!(&upper, &range);
 
@@ -697,7 +782,7 @@ mod test {
             ClosedWindow::Both,
             TimeUnit::Milliseconds,
             None,
-        )
+        )?
         .into_series();
         assert_eq!(&upper, &range);
 
@@ -713,6 +798,7 @@ mod test {
             .into(),
         );
         assert_eq!(expected, groups);
+        Ok(())
     }
 
     #[test]
@@ -735,7 +821,7 @@ mod test {
     }
 
     #[test]
-    fn test_truncate_offset() {
+    fn test_truncate_offset() -> PolarsResult<()> {
         let start = NaiveDate::from_ymd_opt(2021, 3, 1)
             .unwrap()
             .and_hms_opt(12, 0, 0)
@@ -754,7 +840,7 @@ mod test {
             ClosedWindow::Both,
             TimeUnit::Milliseconds,
             None,
-        )
+        )?
         .into_series();
 
         let groups = Series::new("groups", ["a", "a", "a", "b", "b", "a", "a"]);
@@ -779,5 +865,6 @@ mod test {
         time_key.rename("");
         lower_bound.rename("");
         assert!(time_key.series_equal(&lower_bound));
+        Ok(())
     }
 }

@@ -20,7 +20,7 @@ fn test_expand_datetimes_3042() -> PolarsResult<()> {
         ClosedWindow::Left,
         TimeUnit::Milliseconds,
         None,
-    )
+    )?
     .into_series();
 
     let out = df![

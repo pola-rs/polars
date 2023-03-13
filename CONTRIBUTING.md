@@ -9,6 +9,8 @@ If you're unclear on how to proceed after reading this guide, please contact us 
 - [Suggesting enhancements](#suggesting-enhancements)
 - [Contributing to the codebase](#contributing-to-the-codebase)
 - [Contributing to documentation](#contributing-to-documentation)
+- [Release flow](#release-flow)
+- [License](#license)
 
 ## Reporting bugs
 
@@ -100,10 +102,8 @@ Note that we do not actually use the [pre-commit](https://pre-commit.com/) tool.
 We use the Makefile to conveniently run the following formatting and linting tools:
 
 - [black](https://black.readthedocs.io/) and [blackdoc](https://github.com/keewis/blackdoc)
-- [isort](https://pycqa.github.io/isort/)
+- [ruff](https://github.com/charliermarsh/ruff)
 - [mypy](http://mypy-lang.org/)
-- [flake8](https://flake8.pycqa.org/)
-- [pyupgrade](https://github.com/asottile/pyupgrade)
 - [rustfmt](https://github.com/rust-lang/rustfmt)
 - [clippy](https://doc.rust-lang.org/nightly/clippy/index.html)
 - [dprint](https://dprint.dev/)
@@ -117,7 +117,7 @@ Create a new git branch from the `master` branch in your local repository, and s
 The Rust codebase is located in the `polars` directory, while the Python codebase is located in the `py-polars` directory.
 Both directories contain a `Makefile` with helpful commands. Most notably:
 
-- `make test` to run the test suite
+- `make test` to run the test suite (see the [test suite docs](/py-polars/tests/README.md) for more info)
 - `make pre-commit` to run autoformatting and linting
 
 Note that your work cannot be merged if these checks fail!
@@ -145,11 +145,6 @@ Once all issues are resolved, the maintainer will merge your pull request, and y
 
 Keep in mind that your work does not have to be perfect right away!
 If you are stuck or unsure about your solution, feel free to open a draft pull request and ask for help.
-
-## Any contributions you make will be under the MIT Software License
-
-In short, when you submit code changes, your submissions are understood to be under the same
-[MIT License](https://choosealicense.com/licenses/mit/) that covers the project.
 
 ## Contributing to documentation
 
@@ -201,3 +196,51 @@ There is a separate tag for each language:
 
 Contributions in the form of well-formulated questions or answers are always welcome!
 If you add a new question, please notify us by adding a [matching issue](https://github.com/pola-rs/polars/issues/new?&labels=question&template=question.yml) to our GitHub issue tracker.
+
+## Release flow
+
+_This section is intended for Polars maintainers._
+
+Polars releases Rust crates to [crates.io](https://crates.io/crates/polars) and Python packages to [PyPI](https://pypi.org/project/polars/).
+
+New releases are marked by an official [GitHub release](https://github.com/pola-rs/polars/releases) and an associated git tag. We utilize [Release Drafter](https://github.com/release-drafter/release-drafter) to automatically draft GitHub releases with release notes.
+
+### Steps
+
+The steps for releasing a new Rust or Python version are similar. The release process is mostly automated through GitHub Actions, but some manual steps are required. Follow the steps below to release a new version.
+
+Start by bumping the version number in the source code:
+
+1. Check the [releases page](https://github.com/pola-rs/polars/releases) on GitHub and find the appropriate draft release. Note the version number associated with this release.
+2. Make sure your fork is up-to-date with the latest version of the main Polars repository, and create a new branch.
+3. Bump the version number.
+
+- _Rust:_ Update the version number in all `Cargo.toml` files in the `polars` directory and subdirectories. You'll probably want to use some search/replace strategy, as there are quite a few crates that need to be updated.
+- _Python:_ Update the version number in [`py-polars/Cargo.toml`](https://github.com/pola-rs/polars/blob/master/py-polars/Cargo.toml#L3) to match the version of the draft release.
+
+4. From the `py-polars` directory, run `make build` to generate a new `Cargo.lock` file.
+5. Create a new commit with all files added. The name of the commit should follow the format `release(<language>): <Language> Polars <version-number>`. For example: `release(python): Python Polars 0.16.1`
+6. Push your branch and open a new pull request to the `master` branch of the main Polars repository.
+7. Wait for the GitHub Actions checks to pass, then squash and merge your pull request.
+
+Directly after merging your pull request, release the new version:
+
+8. Go back to the [releases page](https://github.com/pola-rs/polars/releases) and click _Edit_ on the appropriate draft release.
+9. On the draft release page, click _Publish release_. This will create a new release and a new tag, which will trigger the GitHub Actions release workflow ([Python](https://github.com/pola-rs/polars/actions/workflows/create-python-release.yml) / [Rust](https://github.com/pola-rs/polars/actions/workflows/release-rust.yml)).
+10. Wait for all release jobs to finish, then check [crates.io](https://crates.io/crates/polars)/[PyPI](https://pypi.org/project/polars/) to verify that the new Polars release is now available.
+
+### Troubleshooting
+
+It may happen that one or multiple release jobs fail. If so, you should first try to simply re-run the failed jobs from the GitHub Actions UI.
+
+If that doesn't help, you will have to figure out what's wrong and commit a fix. Once your fix has made it to the `master` branch, re-trigger the release workflow by updating the git tag associated with the release. Note the commit hash of your fix, and run the following command:
+
+```shell
+git tag -f <version-number> <commit-hash> && git push -f origin <version-number>
+```
+
+This will update the tag to point to the commit of your fix. The release workflows will re-trigger and hopefully succeed this time!
+
+## License
+
+Any contributions you make to this project will fall under the [MIT License](LICENSE) that covers the Polars project.

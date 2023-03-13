@@ -1,3 +1,4 @@
+use polars_core::error::to_compute_err;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
@@ -17,6 +18,7 @@ impl Executor for PythonScanExec {
         }
         let with_columns = self.options.with_columns.take();
         let pyarrow_predicate = self.options.predicate.take();
+        let n_rows = self.options.n_rows.take();
         Python::with_gil(|py| {
             let pl = PyModule::import(py, "polars").unwrap();
             let pli = pl.getattr("internals").unwrap();
@@ -28,8 +30,8 @@ impl Executor for PythonScanExec {
                 with_columns.map(|mut cols| std::mem::take(Arc::make_mut(&mut cols)));
 
             let out = deser_and_exec
-                .call1((bytes, with_columns, pyarrow_predicate))
-                .map_err(|err| PolarsError::ComputeError(format!("{err:?}").into()))?;
+                .call1((bytes, with_columns, pyarrow_predicate, n_rows))
+                .map_err(to_compute_err)?;
             let pydf = out.getattr("_df").unwrap();
             let raw_parts = pydf.call_method0("into_raw_parts").unwrap();
             let raw_parts = raw_parts.extract::<(usize, usize, usize)>().unwrap();

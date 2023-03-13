@@ -1,4 +1,22 @@
 use core::slice::SliceIndex;
+use std::cmp::Ordering;
+
+pub trait Extrema<T> {
+    fn min_value(&self) -> Option<&T>;
+    fn max_value(&self) -> Option<&T>;
+}
+
+impl<T: PartialOrd> Extrema<T> for [T] {
+    fn min_value(&self) -> Option<&T> {
+        self.iter()
+            .min_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal))
+    }
+
+    fn max_value(&self) -> Option<&T> {
+        self.iter()
+            .max_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal))
+    }
+}
 
 pub trait GetSaferUnchecked<T> {
     /// # Safety

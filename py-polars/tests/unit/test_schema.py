@@ -1,6 +1,7 @@
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_schema_on_agg() -> None:
@@ -31,13 +32,8 @@ def test_schema_on_agg() -> None:
 def test_fill_null_minimal_upcast_4056() -> None:
     df = pl.DataFrame({"a": [-1, 2, None]})
     df = df.with_columns(pl.col("a").cast(pl.Int8))
-    assert df.with_column(pl.col(pl.Int8).fill_null(-1)).dtypes[0] == pl.Int8
-    assert df.with_column(pl.col(pl.Int8).fill_null(-1000)).dtypes[0] == pl.Int32
-
-
-def test_with_column_duplicates() -> None:
-    df = pl.DataFrame({"a": [0, None, 2, 3, None], "b": [None, 1, 2, 3, None]})
-    assert df.with_columns([pl.all().alias("same")]).columns == ["a", "b", "same"]
+    assert df.with_columns(pl.col(pl.Int8).fill_null(-1)).dtypes[0] == pl.Int8
+    assert df.with_columns(pl.col(pl.Int8).fill_null(-1000)).dtypes[0] == pl.Int32
 
 
 def test_pow_dtype() -> None:
@@ -77,7 +73,6 @@ def test_bool_numeric_supertype() -> None:
 
 def test_with_context() -> None:
     df_a = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "c", None]}).lazy()
-
     df_b = pl.DataFrame({"c": ["foo", "ham"]})
 
     assert (
@@ -94,9 +89,9 @@ def test_from_dicts_nested_nulls() -> None:
     }
 
 
-def test_schema_err() -> None:
+def test_group_schema_err() -> None:
     df = pl.DataFrame({"foo": [None, 1, 2], "bar": [1, 2, 3]}).lazy()
-    with pytest.raises(pl.NotFoundError):
+    with pytest.raises(pl.ColumnNotFoundError):
         df.groupby("not-existent").agg(pl.col("bar").max().alias("max_bar")).schema
 
 
@@ -116,7 +111,7 @@ def test_lazy_map_schema() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]})
 
     # identity
-    assert df.lazy().map(lambda x: x).collect().frame_equal(df)
+    assert_frame_equal(df.lazy().map(lambda x: x).collect(), df)
 
     def custom(df: pl.DataFrame) -> pl.Series:
         return df["a"]
@@ -275,7 +270,7 @@ def test_schema_owned_arithmetic_5669() -> None:
         pl.DataFrame({"A": [1, 2, 3]})
         .lazy()
         .filter(pl.col("A") >= 3)
-        .with_column(-pl.col("A").alias("B"))
+        .with_columns(-pl.col("A").alias("B"))
         .collect()
     )
     assert df.columns == ["A", "literal"], df.columns
@@ -283,7 +278,7 @@ def test_schema_owned_arithmetic_5669() -> None:
 
 def test_fill_null_f32_with_lit() -> None:
     # ensure the literal integer does not upcast the f32 to an f64
-    df = pl.DataFrame({"a": [1.1, 1.2]}, columns=[("a", pl.Float32)])
+    df = pl.DataFrame({"a": [1.1, 1.2]}, schema=[("a", pl.Float32)])
     assert df.fill_null(value=0).dtypes == [pl.Float32]
 
 
@@ -297,7 +292,7 @@ def test_lazy_rename() -> None:
 
 def test_all_null_cast_5826() -> None:
     df = pl.DataFrame(data=[pl.Series("a", [None], dtype=pl.Utf8)])
-    out = df.with_column(pl.col("a").cast(pl.Boolean))
+    out = df.with_columns(pl.col("a").cast(pl.Boolean))
     assert out.dtypes == [pl.Boolean]
     assert out.item() is None
 
@@ -307,3 +302,74 @@ def test_emtpy_list_eval_schema_5734() -> None:
     assert df.filter(False).select(
         pl.col("a").arr.eval(pl.element().struct.field("b"))
     ).schema == {"a": pl.List(pl.Int64)}
+
+
+def test_schema_true_divide_6643() -> None:
+    df = pl.DataFrame({"a": [1]})
+    a = pl.col("a")
+    assert df.lazy().select(a / 2).select(pl.col(pl.Int64)).collect().shape == (0, 0)
+
+
+def test_rename_schema_order_6660() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [],
+            "b": [],
+            "c": [],
+            "d": [],
+        }
+    )
+
+    mapper = {"a": "1", "b": "2", "c": "3", "d": "4"}
+
+    renamed = df.lazy().rename(mapper)
+
+    computed = renamed.select([pl.all(), pl.col("4").alias("computed")])
+
+    assert renamed.schema == renamed.collect().schema
+    assert computed.schema == computed.collect().schema
+
+
+def test_from_dicts_all_cols_6716() -> None:
+    dicts = [{"a": None} for _ in range(20)] + [{"a": "crash"}]
+
+    with pytest.raises(
+        pl.ComputeError, match="make sure that all rows have the same schema"
+    ):
+        pl.from_dicts(dicts, infer_schema_length=20)
+    assert pl.from_dicts(dicts, infer_schema_length=None).dtypes == [pl.Utf8]
+
+
+def test_from_dicts_empty() -> None:
+    with pytest.raises(pl.NoDataError, match="No rows. Cannot infer schema."):
+        pl.from_dicts([])
+
+
+def test_duration_divison_schema() -> None:
+    df = pl.DataFrame({"a": [1]})
+    q = (
+        df.lazy()
+        .with_columns(pl.col("a").cast(pl.Duration))
+        .select(pl.col("a") / pl.col("a"))
+    )
+
+    assert q.schema == {"a": pl.Float64}
+    assert q.collect().to_dict(False) == {"a": [1.0]}
+
+
+def test_int_operator_stability() -> None:
+    for dt in pl.datatypes.INTEGER_DTYPES:
+        s = pl.Series(values=[10], dtype=dt)
+        assert pl.select(pl.lit(s) // 2).dtypes == [dt]
+        assert pl.select(pl.lit(s) + 2).dtypes == [dt]
+        assert pl.select(pl.lit(s) - 2).dtypes == [dt]
+        assert pl.select(pl.lit(s) * 2).dtypes == [dt]
+        assert pl.select(pl.lit(s) / 2).dtypes == [pl.Float64]
+
+
+def test_deep_subexpression_f32_schema_7129() -> None:
+    df = pl.DataFrame({"a": [1.1, 2.3, 3.4, 4.5]}, schema={"a": pl.Float32()})
+    assert df.with_columns(pl.col("a") - pl.col("a").median()).dtypes == [pl.Float32]
+    assert df.with_columns(
+        (pl.col("a") - pl.col("a").mean()) / (pl.col("a").std() + 0.001)
+    ).dtypes == [pl.Float32]

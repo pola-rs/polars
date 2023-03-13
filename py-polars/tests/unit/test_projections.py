@@ -12,7 +12,7 @@ def test_projection_on_semi_join_4789() -> None:
 
     ab = lfa.join(lfb, on="p", how="semi").inspect()
 
-    intermediate_agg = (ab.groupby("a").agg([pl.col("a").list().alias("seq")])).select(
+    intermediate_agg = (ab.groupby("a").agg([pl.col("a").alias("seq")])).select(
         ["a", "seq"]
     )
 
@@ -41,7 +41,7 @@ def test_double_projection_pushdown() -> None:
             .lazy()
             .select(["c0", "c1", "c2"])
             .select(["c0", "c1"])
-        ).describe_optimized_plan()
+        ).explain()
     )
 
 
@@ -59,7 +59,7 @@ def test_groupby_projection_pushdown() -> None:
                 ]
             )
             .select(["sum(c1)"])
-        ).describe_optimized_plan()
+        ).explain()
     )
 
 
@@ -68,7 +68,7 @@ def test_unnest_projection_pushdown() -> None:
 
     mlf = (
         lf.melt()
-        .with_column(pl.col("variable").str.split_exact("|", 2))
+        .with_columns(pl.col("variable").str.split_exact("|", 2))
         .unnest("variable")
     )
     mlf = mlf.select(
@@ -99,7 +99,7 @@ def test_unnest_columns_available() -> None:
         }
     ).lazy()
 
-    q = df.with_column(
+    q = df.with_columns(
         pl.col("genres")
         .str.split("|")
         .arr.to_struct(
@@ -179,7 +179,7 @@ def test_asof_join_projection_() -> None:
                 "c": ["x", "x", "x", "y", "y", "y", "y"],
             }
         )
-        .with_column(pl.col("val").alias("b"))
+        .with_columns(pl.col("val").alias("b"))
         .lazy()
     )
 

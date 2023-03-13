@@ -105,13 +105,7 @@ where
                     DataType::UInt16 | DataType::Int16 => unsafe {
                         is_in_helper::<T, u16>(self, other)
                     },
-                    _ => Err(PolarsError::ComputeError(
-                        format!(
-                            "Data type {:?} not supported in is_in operation",
-                            self.dtype()
-                        )
-                        .into(),
-                    )),
+                    dt => polars_bail!(opq = is_in, dt),
                 }
             }
         }
@@ -214,14 +208,7 @@ impl IsIn for Utf8Chunked {
                 ca.rename(self.name());
                 Ok(ca)
             }
-            _ => Err(PolarsError::SchemaMisMatch(
-                format!(
-                    "cannot do is_in operation with left a dtype: {:?} and right a dtype {:?}",
-                    self.dtype(),
-                    other.dtype()
-                )
-                .into(),
-            )),
+            _ => polars_bail!(opq = is_in, self.dtype(), other.dtype()),
         }
         .map(|mut ca| {
             ca.rename(self.name());
@@ -230,7 +217,6 @@ impl IsIn for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl IsIn for BinaryChunked {
     fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
         match other.dtype() {
@@ -278,14 +264,7 @@ impl IsIn for BinaryChunked {
                 ca.rename(self.name());
                 Ok(ca)
             }
-            _ => Err(PolarsError::SchemaMisMatch(
-                format!(
-                    "cannot do is_in operation with left a dtype: {:?} and right a dtype {:?}",
-                    self.dtype(),
-                    other.dtype()
-                )
-                .into(),
-            )),
+            _ => polars_bail!(opq = is_in, self.dtype(), other.dtype()),
         }
         .map(|mut ca| {
             ca.rename(self.name());
@@ -335,14 +314,7 @@ impl IsIn for BooleanChunked {
                 let has_false = !other.all();
                 Ok(self.apply(|v| if v { has_true } else { has_false }))
             }
-            _ => Err(PolarsError::SchemaMisMatch(
-                format!(
-                    "cannot do is_in operation with left a dtype: {:?} and right a dtype {:?}",
-                    self.dtype(),
-                    other.dtype()
-                )
-                .into(),
-            )),
+            _ => polars_bail!(opq = is_in, self.dtype(), other.dtype()),
         }
         .map(|mut ca| {
             ca.rename(self.name());
@@ -391,9 +363,11 @@ impl IsIn for StructChunked {
             _ => {
                 let other = other.struct_()?;
 
-                if self.fields().len() != other.fields().len() {
-                    return Err(PolarsError::ComputeError(format!("Cannot compare structs in 'is_in', the number of fields differ. Fields left: {}, fields right: {}", self.fields().len(), other.fields().len()).into()));
-                }
+                polars_ensure!(
+                    self.fields().len() == other.fields().len(),
+                    ComputeError: "`is_in`: mismatch in the number of struct fields: {} and {}",
+                    self.fields().len(), other.fields().len()
+                );
 
                 let out = self
                     .fields()
@@ -410,7 +384,7 @@ impl IsIn for StructChunked {
                         acc & val
                     }
                 });
-                out.ok_or_else(|| PolarsError::ComputeError("no fields in struct".into()))
+                out.ok_or_else(|| polars_err!(ComputeError: "no fields in struct"))
             }
         }
     }

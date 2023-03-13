@@ -8,7 +8,7 @@ use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::types::NativeType;
-use num::{Bounded, Float, NumCast, One, ToPrimitive, Zero};
+use num_traits::{Bounded, Float, NumCast, One, ToPrimitive, Zero};
 use window::*;
 
 use crate::data_types::IsFloat;

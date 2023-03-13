@@ -89,7 +89,11 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
             .map(|ca| ca.into_series())
     }
     fn into_partial_ord_inner<'a>(&'a self) -> Box<dyn PartialOrdInner + 'a> {
-        (&self.0).into_partial_ord_inner()
+        if self.0.use_lexical_sort() {
+            (&self.0).into_partial_ord_inner()
+        } else {
+            self.0.logical().into_partial_ord_inner()
+        }
     }
 
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
@@ -140,16 +144,16 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
     }
 
     #[cfg(feature = "sort_multiple")]
-    fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
-        self.0.argsort_multiple(by, reverse)
+    fn arg_sort_multiple(&self, by: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {
+        self.0.arg_sort_multiple(by, descending)
     }
 }
 
 impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     fn is_sorted_flag(&self) -> IsSorted {
-        if self.0.logical().is_sorted_flag() {
+        if self.0.logical().is_sorted_ascending_flag() {
             IsSorted::Ascending
-        } else if self.0.logical().is_sorted_reverse_flag() {
+        } else if self.0.logical().is_sorted_descending_flag() {
             IsSorted::Descending
         } else {
             IsSorted::Not
@@ -180,28 +184,19 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
-        if self.0.dtype() == other.dtype() {
-            self.0.append(other.categorical().unwrap())
-        } else {
-            Err(PolarsError::SchemaMisMatch(
-                "cannot append Series; data types don't match".into(),
-            ))
-        }
+        polars_ensure!(self.0.dtype() == other.dtype(), append);
+        self.0.append(other.categorical().unwrap())
     }
+
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
-        if self.0.dtype() == other.dtype() {
-            let other = other.categorical()?;
-            self.0.logical_mut().extend(other.logical());
-            let new_rev_map = self.0.merge_categorical_map(other)?;
-            // safety:
-            // rev_maps are merged
-            unsafe { self.0.set_rev_map(new_rev_map, false) };
-            Ok(())
-        } else {
-            Err(PolarsError::SchemaMisMatch(
-                "cannot extend Series; data types don't match".into(),
-            ))
-        }
+        polars_ensure!(self.0.dtype() == other.dtype(), extend);
+        let other = other.categorical()?;
+        self.0.logical_mut().extend(other.logical());
+        let new_rev_map = self.0.merge_categorical_map(other)?;
+        // SAFETY
+        // rev_maps are merged
+        unsafe { self.0.set_rev_map(new_rev_map, false) };
+        Ok(())
     }
 
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {
@@ -299,8 +294,8 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.0.sort_with(options).into_series()
     }
 
-    fn argsort(&self, options: SortOptions) -> IdxCa {
-        self.0.argsort(options)
+    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        self.0.arg_sort(options)
     }
 
     fn null_count(&self) -> usize {
@@ -331,14 +326,6 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.0.logical().is_not_null()
     }
 
-    fn is_unique(&self) -> PolarsResult<BooleanChunked> {
-        self.0.logical().is_unique()
-    }
-
-    fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
-        self.0.logical().is_duplicated()
-    }
-
     fn reverse(&self) -> Series {
         self.with_state(true, |cats| cats.reverse()).into_series()
     }
@@ -349,11 +336,6 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
 
     fn shift(&self, periods: i64) -> Series {
         self.with_state(false, |ca| ca.shift(periods)).into_series()
-    }
-
-    fn fill_null(&self, strategy: FillNullStrategy) -> PolarsResult<Series> {
-        self.try_with_state(false, |cats| cats.fill_null(strategy))
-            .map(|ca| ca.into_series())
     }
 
     fn _sum_as_series(&self) -> Series {
@@ -401,11 +383,6 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
             .cast(&DataType::List(Box::new(self.dtype().clone())))
             .unwrap();
         casted.list().unwrap().clone()
-    }
-
-    #[cfg(feature = "is_first")]
-    fn is_first(&self) -> PolarsResult<BooleanChunked> {
-        self.0.logical().is_first()
     }
 
     #[cfg(feature = "mode")]

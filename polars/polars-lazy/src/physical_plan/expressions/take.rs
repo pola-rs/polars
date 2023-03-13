@@ -5,7 +5,6 @@ use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
 
-use crate::physical_plan::expression_err;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 
@@ -22,10 +21,21 @@ impl TakeExpr {
         state: &ExecutionState,
         series: Series,
     ) -> PolarsResult<Series> {
-        let idx = self.idx.evaluate(df, state)?.cast(&IDX_DTYPE)?;
+        let idx = self.idx.evaluate(df, state)?;
+
+        let nulls_before_cast = idx.null_count();
+
+        let idx = idx.cast(&IDX_DTYPE)?;
+        if idx.null_count() != nulls_before_cast {
+            self.oob_err()?;
+        }
         let idx_ca = idx.idx()?;
 
         series.take(idx_ca)
+    }
+
+    fn oob_err(&self) -> PolarsResult<()> {
+        polars_bail!(expr = self.expr, ComputeError: "index out of bounds");
     }
 }
 
@@ -47,11 +57,6 @@ impl PhysicalExpr for TakeExpr {
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.phys_expr.evaluate_on_groups(df, groups, state)?;
         let mut idx = self.idx.evaluate_on_groups(df, groups, state)?;
-
-        let oob_err = || {
-            let msg = "Out of bounds.";
-            Err(expression_err!(msg, self.expr, ComputeError))
-        };
 
         let idx =
             match idx.state {
@@ -80,7 +85,7 @@ impl PhysicalExpr for TakeExpr {
                                         Some(idx) => idx >= g.len() as IdxSize,
                                     },
                                 ) {
-                                    return oob_err();
+                                    self.oob_err()?;
                                 }
 
                                 idx.into_iter()
@@ -97,7 +102,7 @@ impl PhysicalExpr for TakeExpr {
                                         Some(idx) => idx >= g[1],
                                     })
                                 {
-                                    return oob_err();
+                                    self.oob_err()?;
                                 }
 
                                 idx.into_iter()
@@ -107,7 +112,7 @@ impl PhysicalExpr for TakeExpr {
                             }
                         };
                     let taken = ac.flat_naive().take(&idx)?;
-                    ac.with_series(taken, true);
+                    ac.with_series(taken, true, Some(&self.expr))?;
                     return Ok(ac);
                 }
                 AggState::AggregatedList(s) => s.list().unwrap().clone(),
@@ -122,7 +127,7 @@ impl PhysicalExpr for TakeExpr {
 
                     return if idx.len() == 1 {
                         match idx.get(0) {
-                            None => Err(PolarsError::ComputeError("cannot take by a null".into())),
+                            None => polars_bail!(ComputeError: "cannot take by a null"),
                             Some(idx) => {
                                 if idx != 0 {
                                     // We must make sure that the column we take from is sorted by
@@ -136,21 +141,21 @@ impl PhysicalExpr for TakeExpr {
                                 let idx: NoNull<IdxCa> = match groups.as_ref() {
                                     GroupsProxy::Idx(groups) => {
                                         if groups.all().iter().any(|g| idx >= g.len() as IdxSize) {
-                                            return oob_err();
+                                            self.oob_err()?;
                                         }
 
                                         groups.first().iter().map(|f| *f + idx).collect_trusted()
                                     }
                                     GroupsProxy::Slice { groups, .. } => {
                                         if groups.iter().any(|g| idx >= g[1]) {
-                                            return oob_err();
+                                            self.oob_err()?;
                                         }
 
                                         groups.iter().map(|g| g[0] + idx).collect_trusted()
                                     }
                                 };
                                 let taken = ac.flat_naive().take(&idx.into_inner())?;
-                                ac.with_series(taken, true);
+                                ac.with_series(taken, true, Some(&self.expr))?;
                                 ac.with_update_groups(UpdateGroups::WithGroupsLen);
                                 Ok(ac)
                             }
@@ -162,7 +167,7 @@ impl PhysicalExpr for TakeExpr {
                             .unwrap()
                             .try_apply_amortized(|s| s.as_ref().take(idx))?;
 
-                        ac.with_series(out.into_series(), true);
+                        ac.with_series(out.into_series(), true, Some(&self.expr))?;
                         ac.with_update_groups(UpdateGroups::WithGroupsLen);
                         Ok(ac)
                     };
@@ -191,7 +196,7 @@ impl PhysicalExpr for TakeExpr {
 
         taken.rename(ac.series().name());
 
-        ac.with_series(taken.into_series(), true);
+        ac.with_series(taken.into_series(), true, Some(&self.expr))?;
         ac.with_update_groups(UpdateGroups::WithGroupsLen);
         Ok(ac)
     }

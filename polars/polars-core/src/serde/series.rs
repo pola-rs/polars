@@ -35,6 +35,15 @@ impl Serialize for Series {
             ca.serialize(serializer)
         } else {
             match self.dtype() {
+                DataType::Binary => {
+                    let ca = self.binary().unwrap();
+                    ca.serialize(serializer)
+                }
+                #[cfg(feature = "dtype-struct")]
+                DataType::Struct(_) => {
+                    let ca = self.struct_().unwrap();
+                    ca.serialize(serializer)
+                }
                 #[cfg(feature = "dtype-date")]
                 DataType::Date => {
                     let ca = self.date().unwrap();
@@ -195,6 +204,18 @@ impl<'de> Deserialize<'de> for Series {
                     DeDataType::List => {
                         let values: Vec<Option<Series>> = map.next_value()?;
                         Ok(Series::new(&name, values))
+                    }
+                    DeDataType::Binary => {
+                        let values: Vec<Option<Cow<[u8]>>> = map.next_value()?;
+                        Ok(Series::new(&name, values))
+                    }
+                    #[cfg(feature = "dtype-struct")]
+                    DeDataType::Struct => {
+                        let values: Vec<Series> = map.next_value()?;
+                        let ca = StructChunked::new(&name, &values).unwrap();
+                        let mut s = ca.into_series();
+                        s.rename(&name);
+                        Ok(s)
                     }
                     #[cfg(feature = "dtype-categorical")]
                     DeDataType::Categorical => {

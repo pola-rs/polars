@@ -50,17 +50,11 @@ impl PhysicalExpr for AggregationExpr {
         let keep_name = ac.series().name().to_string();
 
         let check_flat = || {
-            if !ac.null_propagated && matches!(ac.agg_state(), AggState::AggregatedFlat(_)) {
-                Err(PolarsError::ComputeError(
-                    format!(
-                        "Cannot aggregate as {}. The column is already aggregated.",
-                        self.agg_type
-                    )
-                    .into(),
-                ))
-            } else {
-                Ok(())
-            }
+            polars_ensure!(
+                ac.null_propagated || !matches!(ac.agg_state(), AggState::AggregatedFlat(_)),
+                ComputeError: "cannot aggregate as {}, the column is already aggregated"
+            );
+            Ok(())
         };
 
         // Safety:
@@ -168,8 +162,28 @@ impl PhysicalExpr for AggregationExpr {
                     rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::List => {
-                    let agg = ac.aggregated();
-                    rename_series(agg, &keep_name)
+                    if state.unset_finalize_window_as_list() {
+                        let agg = ac.aggregated();
+                        rename_series(agg, &keep_name)
+                    } else {
+                        // if the aggregation is already
+                        // in an aggregate flat state for instance by
+                        // a mean aggregation, we simply convert to list
+                        //
+                        // if it is not, we traverse the groups and create
+                        // a list per group.
+                        let s = match ac.agg_state() {
+                            // mean agg:
+                            // -> f64 -> list<f64>
+                            AggState::AggregatedFlat(s) => s.reshape(&[-1, 1]).unwrap(),
+                            _ => {
+                                let agg = ac.aggregated();
+                                let ca = agg.list().unwrap();
+                                run_list_agg(ca)
+                            }
+                        };
+                        rename_series(s, &keep_name)
+                    }
                 }
                 GroupByMethod::Groups => {
                     let mut column: ListChunked = ac.groups().as_list_chunked();
@@ -430,7 +444,7 @@ impl PartitionedAggregation for AggregationExpr {
                 if can_fast_explode {
                     ca.set_fast_explode()
                 }
-                Ok(ca.into_series())
+                Ok(run_list_agg(&ca))
             }
             GroupByMethod::First => {
                 let mut agg = unsafe { partitioned.agg_first(groups) };
@@ -478,14 +492,11 @@ impl AggQuantileExpr {
 
     fn get_quantile(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<f64> {
         let quantile = self.quantile.evaluate(df, state)?;
-        if quantile.len() > 1 {
-            return Err(PolarsError::ComputeError(
-                "Polars only supports computing a single quantile. \
-            Make sure the 'quantile' expression input produces a single quantile."
-                    .into(),
-            ));
-        }
-        quantile.get(0).unwrap().try_extract::<f64>()
+        polars_ensure!(quantile.len() <= 1, ComputeError:
+            "polars only supports computing a single quantile; \
+            make sure the 'quantile' expression input produces a single quantile"
+        );
+        quantile.get(0).unwrap().try_extract()
     }
 }
 
@@ -530,4 +541,20 @@ impl PhysicalExpr for AggQuantileExpr {
     fn is_valid_aggregation(&self) -> bool {
         true
     }
+}
+
+fn run_list_agg(ca: &ListChunked) -> Series {
+    assert_eq!(ca.chunks().len(), 1);
+    let arr = ca.chunks()[0].clone();
+
+    let offsets = (0i64..(ca.len() as i64 + 1)).collect::<Vec<_>>();
+    let offsets = unsafe { Offsets::new_unchecked(offsets) };
+
+    let new_arr = LargeListArray::new(
+        DataType::List(Box::new(ca.dtype().clone())).to_arrow(),
+        offsets.into(),
+        arr,
+        None,
+    );
+    unsafe { ListChunked::from_chunks(ca.name(), vec![Box::new(new_arr)]).into_series() }
 }

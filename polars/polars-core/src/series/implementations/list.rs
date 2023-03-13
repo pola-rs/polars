@@ -71,22 +71,13 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
-        if self.0.dtype() == other.dtype() {
-            self.0.append(other.as_ref().as_ref())
-        } else {
-            Err(PolarsError::SchemaMisMatch(
-                "cannot append Series; data types don't match".into(),
-            ))
-        }
+        polars_ensure!(self.0.dtype() == other.dtype(), append);
+        self.0.append(other.as_ref().as_ref())
     }
+
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
-        if self.0.dtype() == other.dtype() {
-            self.0.extend(other.as_ref().as_ref())
-        } else {
-            Err(PolarsError::SchemaMisMatch(
-                "cannot extend Series; data types don't match".into(),
-            ))
-        }
+        polars_ensure!(self.0.dtype() == other.dtype(), extend);
+        self.0.extend(other.as_ref().as_ref())
     }
 
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {
@@ -194,10 +185,6 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
 
     fn shift(&self, periods: i64) -> Series {
         ChunkShift::shift(&self.0, periods).into_series()
-    }
-
-    fn fill_null(&self, strategy: FillNullStrategy) -> PolarsResult<Series> {
-        ChunkFillNull::fill_null(&self.0, strategy).map(|ca| ca.into_series())
     }
 
     fn _sum_as_series(&self) -> Series {

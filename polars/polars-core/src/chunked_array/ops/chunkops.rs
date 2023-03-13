@@ -38,7 +38,7 @@ fn slice(
         unsafe {
             // Safety:
             // this function ensures the slices are in bounds
-            new_chunks.push(chunk.slice_unchecked(remaining_offset, take_len));
+            new_chunks.push(chunk.sliced_unchecked(remaining_offset, take_len));
         }
         remaining_length -= take_len;
         remaining_offset = 0;
@@ -47,7 +47,7 @@ fn slice(
         }
     }
     if new_chunks.is_empty() {
-        new_chunks.push(chunks[0].slice(0, 0));
+        new_chunks.push(chunks[0].sliced(0, 0));
     }
     (new_chunks, new_len)
 }
@@ -72,7 +72,17 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                 _ => chunks.iter().fold(0, |acc, arr| acc + arr.len()),
             }
         }
-        self.length = inner(&self.chunks) as IdxSize
+        self.length = inner(&self.chunks) as IdxSize;
+        #[cfg(feature = "python")]
+        assert!(
+            self.length < IdxSize::MAX,
+            "Polars' maximum length reached. Consider installing 'polars-u64-idx'."
+        );
+        #[cfg(not(feature = "python"))]
+        assert!(
+            self.length < IdxSize::MAX,
+            "Polars' maximum length reached. Consider compiling with 'bigidx' feature."
+        );
     }
 
     pub fn rechunk(&self) -> Self {
@@ -93,7 +103,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                     self.clone()
                 } else {
                     let chunks = inner_rechunk(&self.chunks);
-                    self.copy_with_chunks(chunks, true)
+                    self.copy_with_chunks(chunks, true, true)
                 }
             }
         }
@@ -107,7 +117,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     #[inline]
     pub fn slice(&self, offset: i64, length: usize) -> Self {
         let (chunks, len) = slice(&self.chunks, offset, length, self.len());
-        let mut out = self.copy_with_chunks(chunks, true);
+        let mut out = self.copy_with_chunks(chunks, true, true);
         out.length = len as IdxSize;
         out
     }

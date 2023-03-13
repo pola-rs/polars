@@ -1,4 +1,5 @@
 use super::*;
+use crate::logical_plan::projection::is_regex_projection;
 
 /// Specialized expressions for Categorical dtypes.
 pub struct MetaNameSpace(pub(crate) Expr);
@@ -44,5 +45,20 @@ impl MetaNameSpace {
         });
 
         self.0
+    }
+
+    pub fn has_multiple_outputs(&self) -> bool {
+        self.0.into_iter().any(|e| match e {
+            Expr::Wildcard | Expr::Columns(_) | Expr::DtypeColumn(_) => true,
+            Expr::Column(name) => is_regex_projection(name),
+            _ => false,
+        })
+    }
+
+    pub fn is_regex_projection(&self) -> bool {
+        self.0.into_iter().any(|e| match e {
+            Expr::Column(name) => is_regex_projection(name),
+            _ => false,
+        })
     }
 }

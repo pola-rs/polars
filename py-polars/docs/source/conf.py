@@ -118,17 +118,17 @@ html_theme_options = {
         {
             "rel": "icon",
             "sizes": "32x32",
-            "href": "https://raw.githubusercontent.com/pola-rs/polars-static/master/icons/favicon-32x32.png",  # noqa: E501
+            "href": "https://raw.githubusercontent.com/pola-rs/polars-static/master/icons/favicon-32x32.png",
         },
         {
             "rel": "apple-touch-icon",
             "sizes": "180x180",
-            "href": "https://raw.githubusercontent.com/pola-rs/polars-static/master/icons/touchicon-180x180.png",  # noqa: E501
+            "href": "https://raw.githubusercontent.com/pola-rs/polars-static/master/icons/touchicon-180x180.png",
         },
     ],
     "logo": {
-        "image_light": "https://raw.githubusercontent.com/pola-rs/polars-static/master/logos/polars-logo-dark-medium.png",  # noqa: E501
-        "image_dark": "https://raw.githubusercontent.com/pola-rs/polars-static/master/logos/polars-logo-dimmed-medium.png",  # noqa: E501
+        "image_light": "https://raw.githubusercontent.com/pola-rs/polars-static/master/logos/polars-logo-dark-medium.png",
+        "image_dark": "https://raw.githubusercontent.com/pola-rs/polars-static/master/logos/polars-logo-dimmed-medium.png",
     },
 }
 
@@ -187,10 +187,7 @@ def linkcode_resolve(domain, info):
     except OSError:
         lineno = None
 
-    if lineno:
-        linespec = f"#L{lineno}-L{lineno + len(source) - 1}"
-    else:
-        linespec = ""
+    linespec = f"#L{lineno}-L{lineno + len(source) - 1}" if lineno else ""
 
     conf_dir_path = os.path.dirname(os.path.realpath(__file__))
     polars_root = os.path.abspath(f"{conf_dir_path}/../../polars")

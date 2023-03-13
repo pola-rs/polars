@@ -11,7 +11,7 @@ impl DateLikeNameSpace {
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     pub fn strftime(self, fmt: &str) -> Expr {
         let fmt = fmt.to_string();
-        let function = move |s: Series| s.strftime(&fmt);
+        let function = move |s: Series| s.strftime(&fmt).map(Some);
         self.0
             .map(function, GetOutput::from_type(DataType::Utf8))
             .with_fmt("strftime")
@@ -23,16 +23,14 @@ impl DateLikeNameSpace {
             move |s| match s.dtype() {
                 DataType::Datetime(_, _) => {
                     let ca = s.datetime().unwrap();
-                    Ok(ca.cast_time_unit(tu).into_series())
+                    Ok(Some(ca.cast_time_unit(tu).into_series()))
                 }
                 #[cfg(feature = "dtype-duration")]
                 DataType::Duration(_) => {
                     let ca = s.duration().unwrap();
-                    Ok(ca.cast_time_unit(tu).into_series())
+                    Ok(Some(ca.cast_time_unit(tu).into_series()))
                 }
-                dt => Err(PolarsError::ComputeError(
-                    format!("Series of dtype {dt:?} has got no time unit").into(),
-                )),
+                dt => polars_bail!(ComputeError: "dtype `{}` has no time unit", dt),
             },
             GetOutput::map_dtype(move |dtype| match dtype {
                 DataType::Duration(_) => DataType::Duration(tu),
@@ -49,36 +47,41 @@ impl DateLikeNameSpace {
                 DataType::Datetime(_, _) => {
                     let mut ca = s.datetime().unwrap().clone();
                     ca.set_time_unit(tu);
-                    Ok(ca.into_series())
+                    Ok(Some(ca.into_series()))
                 }
                 #[cfg(feature = "dtype-duration")]
                 DataType::Duration(_) => {
                     let mut ca = s.duration().unwrap().clone();
                     ca.set_time_unit(tu);
-                    Ok(ca.into_series())
+                    Ok(Some(ca.into_series()))
                 }
-                dt => Err(PolarsError::ComputeError(
-                    format!("Series of dtype {dt:?} has got no time unit").into(),
-                )),
+                dt => polars_bail!(ComputeError: "dtype `{}` has no time unit", dt),
             },
             GetOutput::same_type(),
         )
     }
 
     /// Change the underlying [`TimeZone`] of the [`Series`]. This does not modify the data.
-    pub fn with_time_zone(self, tz: Option<TimeZone>) -> Expr {
+    #[cfg(feature = "timezones")]
+    pub fn convert_time_zone(self, time_zone: TimeZone) -> Expr {
+        let time_zone_clone = time_zone.clone();
         self.0.map(
             move |s| match s.dtype() {
-                DataType::Datetime(_, _) => {
+                DataType::Datetime(_, Some(_)) => {
                     let mut ca = s.datetime().unwrap().clone();
-                    ca.set_time_zone(tz.clone());
-                    Ok(ca.into_series())
+                    ca.set_time_zone(time_zone.clone())?;
+                    Ok(Some(ca.into_series()))
                 }
-                dt => Err(PolarsError::ComputeError(
-                    format!("Series of dtype {dt:?} has got no time zone").into(),
-                )),
+                _ => polars_bail!(
+                    ComputeError:
+                    "cannot call `convert_time_zone` on tz-naive; set a time zone first \
+                    with `replace_time_zone`"
+                ),
             },
-            GetOutput::same_type(),
+            GetOutput::map_dtype(move |dtype| match dtype {
+                DataType::Datetime(tu, _) => DataType::Datetime(*tu, Some(time_zone_clone.clone())),
+                _ => panic!("expected datetime"),
+            }),
         )
     }
 
@@ -87,6 +90,7 @@ impl DateLikeNameSpace {
     // This method takes a naive Datetime Series and makes this time zone aware.
     // It does not move the time to another time zone.
     #[cfg(feature = "timezones")]
+    #[deprecated(note = "use replace_time_zone")]
     pub fn tz_localize(self, tz: TimeZone) -> Expr {
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::TzLocalize(tz)))
@@ -216,10 +220,10 @@ impl DateLikeNameSpace {
     }
 
     #[cfg(feature = "timezones")]
-    pub fn cast_time_zone(self, tz: TimeZone) -> Expr {
+    pub fn replace_time_zone(self, time_zone: Option<TimeZone>) -> Expr {
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::CastTimezone(
-                tz,
+                time_zone,
             )))
     }
 

@@ -11,6 +11,7 @@ mod parquet;
 mod python;
 
 mod anonymous_scan;
+mod file_list_reader;
 #[cfg(feature = "pivot")]
 pub mod pivot;
 
@@ -22,6 +23,7 @@ use std::sync::Arc;
 pub use anonymous_scan::*;
 #[cfg(feature = "csv-file")]
 pub use csv::*;
+pub use file_list_reader::*;
 #[cfg(feature = "ipc")]
 pub use ipc::*;
 #[cfg(feature = "json")]
@@ -38,7 +40,8 @@ use polars_plan::global::FETCH_ROWS;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
 use polars_plan::logical_plan::collect_fingerprints;
 use polars_plan::logical_plan::optimize;
-use polars_plan::utils::{combine_predicates_expr, expr_to_leaf_column_names};
+use polars_plan::utils::expr_to_leaf_column_names;
+use smartstring::alias::String as SmartString;
 
 use crate::physical_plan::executors::Executor;
 use crate::physical_plan::planner::create_physical_plan;
@@ -87,8 +90,7 @@ impl From<LogicalPlan> for LazyFrame {
 impl LazyFrame {
     /// Get a hold on the schema of the current LazyFrame computation.
     pub fn schema(&self) -> PolarsResult<SchemaRef> {
-        let logical_plan = self.clone().get_plan_builder().build();
-        logical_plan.schema().map(|schema| schema.into_owned())
+        self.logical_plan.schema().map(|schema| schema.into_owned())
     }
 
     pub(crate) fn get_plan_builder(self) -> LogicalPlanBuilder {
@@ -205,13 +207,13 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn sort(self, by_column: &str, options: SortOptions) -> Self {
-        let reverse = options.descending;
+        let descending = options.descending;
         let nulls_last = options.nulls_last;
 
         let opt_state = self.get_opt_state();
         let lp = self
             .get_plan_builder()
-            .sort(vec![col(by_column)], vec![reverse], nulls_last)
+            .sort(vec![col(by_column)], vec![descending], nulls_last)
             .build();
         Self::from_logical_plan(lp, opt_state)
     }
@@ -233,18 +235,18 @@ impl LazyFrame {
     pub fn sort_by_exprs<E: AsRef<[Expr]>, B: AsRef<[bool]>>(
         self,
         by_exprs: E,
-        reverse: B,
+        descending: B,
         nulls_last: bool,
     ) -> Self {
         let by_exprs = by_exprs.as_ref().to_vec();
-        let reverse = reverse.as_ref().to_vec();
+        let descending = descending.as_ref().to_vec();
         if by_exprs.is_empty() {
             self
         } else {
             let opt_state = self.get_opt_state();
             let lp = self
                 .get_plan_builder()
-                .sort(by_exprs, reverse, nulls_last)
+                .sort(by_exprs, descending, nulls_last)
                 .build();
             Self::from_logical_plan(lp, opt_state)
         }
@@ -267,93 +269,32 @@ impl LazyFrame {
         self.select_local(vec![col("*").reverse()])
     }
 
-    fn rename_impl_swapping(self, existing: Vec<String>, new: Vec<String>) -> Self {
-        assert_eq!(new.len(), existing.len());
+    /// Check the if the `names` are available in the `schema`, if not
+    /// return a `LogicalPlan` that raises an `Error`.
+    fn check_names(&self, names: &[SmartString], schema: Option<&SchemaRef>) -> Option<Self> {
+        let schema = schema
+            .map(Cow::Borrowed)
+            .unwrap_or_else(|| Cow::Owned(self.schema().unwrap()));
 
-        let existing2 = existing.clone();
-        let new2 = new.clone();
-        let udf_schema = move |old_schema: &Schema| {
-            let mut new_schema = old_schema.clone();
+        let mut opt_not_found = None;
+        names.iter().for_each(|name| {
+            let invalid = schema.get(name).is_none();
 
-            // schema after renaming
-            for (old, new) in existing2.iter().zip(new2.iter()) {
-                let dtype = old_schema.try_get(old)?;
-                if new_schema.with_column(new.clone(), dtype.clone()).is_none() {
-                    new_schema.remove(old);
-                }
+            if invalid && opt_not_found.is_none() {
+                opt_not_found = Some(name)
             }
-            Ok(Arc::new(new_schema))
-        };
+        });
 
-        self.map(
-            move |mut df: DataFrame| {
-                let positions = existing
-                    .iter()
-                    .map(|old| df.try_find_idx_by_name(old))
-                    .collect::<PolarsResult<Vec<_>>>()?;
-
-                for (pos, name) in positions.iter().zip(new.iter()) {
-                    df.get_columns_mut()[*pos].rename(name);
-                }
-                // recreate dataframe so we check duplicates
-                let columns = std::mem::take(df.get_columns_mut());
-                DataFrame::new(columns)
-            },
-            // Don't allow optimizations. Swapping names are opaque to the optimizer
-            AllowedOptimizations {
-                projection_pushdown: false,
-                predicate_pushdown: false,
-                ..Default::default()
-            },
-            Some(Arc::new(udf_schema)),
-            Some("RENAME_SWAPPING"),
-        )
-    }
-
-    fn rename_impl(self, existing: Vec<String>, new: Vec<String>) -> Self {
-        let existing2 = existing.clone();
-        let new2 = new.clone();
-        let udf_schema = move |s: &Schema| {
-            let mut new_schema = s.clone();
-            for (old, new) in existing2.iter().zip(&new2) {
-                let _ = new_schema.rename(old, new.clone());
-            }
-            Ok(Arc::new(new_schema))
-        };
-
-        self.with_columns(
-            existing
-                .iter()
-                .zip(&new)
-                .map(|(old, new)| col(old).alias(new.as_ref()))
-                .collect::<Vec<_>>(),
-        )
-        .map(
-            move |mut df: DataFrame| {
-                let cols = df.get_columns_mut();
-                let mut removed_count = 0;
-                for (existing, new) in existing.iter().zip(new.iter()) {
-                    let idx_a = cols.iter().position(|s| s.name() == existing.as_str());
-                    let idx_b = cols.iter().position(|s| s.name() == new.as_str());
-
-                    match (idx_a, idx_b) {
-                        (Some(idx_a), Some(idx_b)) => {
-                            cols.swap(idx_a, idx_b);
-                        }
-                        // renamed columns are removed by predicate pushdown
-                        _ => {
-                            removed_count += 1;
-                            continue;
-                        }
-                    }
-                }
-                cols.truncate(cols.len() - (existing.len() - removed_count));
-                Ok(df)
-            },
-            Default::default(),
-            Some(Arc::new(udf_schema)),
-            Some("RENAME"),
-        )
+        if let Some(name) = opt_not_found {
+            let lp = self
+                .clone()
+                .get_plan_builder()
+                .add_err(polars_err!(SchemaFieldNotFound: "{}", name))
+                .build();
+            Some(Self::from_logical_plan(lp, self.opt_state))
+        } else {
+            None
+        }
     }
 
     /// Rename columns in the DataFrame.
@@ -364,38 +305,34 @@ impl LazyFrame {
         T: AsRef<str>,
         S: AsRef<str>,
     {
-        // We dispatch to 2 implementations.
-        // 1 is swapping eg. rename a -> b and b -> a
-        // 2 is non-swapping eg. rename a -> new_name
-        // the latter allows predicate pushdown.
-        let existing = existing
-            .into_iter()
-            .map(|a| a.as_ref().to_string())
-            .collect::<Vec<_>>();
-        let new = new
-            .into_iter()
-            .map(|a| a.as_ref().to_string())
-            .collect::<Vec<_>>();
+        let iter = existing.into_iter();
+        let cap = iter.size_hint().0;
+        let mut existing_vec: Vec<SmartString> = Vec::with_capacity(cap);
+        let mut new_vec: Vec<SmartString> = Vec::with_capacity(cap);
 
-        fn inner(lf: LazyFrame, existing: Vec<String>, new: Vec<String>) -> LazyFrame {
-            // remove mappings that map to themselves.
-            let (existing, new): (Vec<_>, Vec<_>) = existing
-                .into_iter()
-                .zip(new)
-                .flat_map(|(a, b)| if a == b { None } else { Some((a, b)) })
-                .unzip();
+        for (existing, new) in iter.zip(new.into_iter()) {
+            let existing = existing.as_ref();
+            let new = new.as_ref();
 
-            // todo! make delayed
-            let schema = &*lf.schema().unwrap();
-            // a column gets swapped
-            if new.iter().any(|name| schema.get(name).is_some()) {
-                lf.rename_impl_swapping(existing, new)
-            } else {
-                lf.rename_impl(existing, new)
+            if new != existing {
+                existing_vec.push(existing.into());
+                new_vec.push(new.into());
             }
         }
 
-        inner(self, existing, new)
+        // a column gets swapped
+        let schema = &self.schema().unwrap();
+        let swapping = new_vec.iter().any(|name| schema.get(name).is_some());
+
+        if let Some(lp) = self.check_names(&existing_vec, Some(schema)) {
+            lp
+        } else {
+            self.map_private(FunctionNode::Rename {
+                existing: existing_vec.into(),
+                new: new_vec.into(),
+                swapping,
+            })
+        }
     }
 
     /// Removes columns from the DataFrame.
@@ -406,16 +343,22 @@ impl LazyFrame {
         I: IntoIterator<Item = T>,
         T: AsRef<str>,
     {
-        let columns: Vec<String> = columns
+        let columns: Vec<SmartString> = columns
             .into_iter()
-            .map(|name| name.as_ref().to_string())
+            .map(|name| name.as_ref().into())
             .collect();
-        self.drop_columns_impl(&columns)
+        self.drop_columns_impl(columns)
     }
 
     #[allow(clippy::ptr_arg)]
-    fn drop_columns_impl(self, columns: &Vec<String>) -> Self {
-        self.select_local(vec![col("*").exclude(columns)])
+    fn drop_columns_impl(self, columns: Vec<SmartString>) -> Self {
+        if let Some(lp) = self.check_names(&columns, None) {
+            lp
+        } else {
+            self.map_private(FunctionNode::Drop {
+                names: columns.into(),
+            })
+        }
     }
 
     /// Shift the values by a given period and fill the parts that will be empty due to this operation
@@ -602,13 +545,13 @@ impl LazyFrame {
             },
         };
         let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true)?;
-
-        if is_streaming {
-            let _ = physical_plan.execute(&mut state)?;
-            Ok(())
-        } else {
-            Err(PolarsError::ComputeError("Cannot run whole the query in a streaming order. Use `collect().write_parquet()` instead.".into()))
-        }
+        polars_ensure!(
+            is_streaming,
+            ComputeError: "cannot run the whole query in a streaming order; \
+            use `collect().write_parquet()` instead"
+        );
+        let _ = physical_plan.execute(&mut state)?;
+        Ok(())
     }
 
     //// Stream a query result into an ipc/arrow file. This is useful if the final result doesn't fit
@@ -625,13 +568,13 @@ impl LazyFrame {
             },
         };
         let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true)?;
-
-        if is_streaming {
-            let _ = physical_plan.execute(&mut state)?;
-            Ok(())
-        } else {
-            Err(PolarsError::ComputeError("Cannot run whole the query in a streaming order. Use `collect().write_parquet()` instead.".into()))
-        }
+        polars_ensure!(
+            is_streaming,
+            ComputeError: "cannot run the whole query in a streaming order; \
+            use `collect().write_ipc()` instead"
+        );
+        let _ = physical_plan.execute(&mut state)?;
+        Ok(())
     }
 
     /// Filter by some predicate expression.
@@ -1044,6 +987,7 @@ impl LazyFrame {
             subset: subset.map(Arc::new),
             maintain_order: true,
             keep_strategy,
+            ..Default::default()
         };
         let lp = self.get_plan_builder().distinct(options).build();
         Self::from_logical_plan(lp, opt_state)
@@ -1060,6 +1004,7 @@ impl LazyFrame {
             subset: subset.map(Arc::new),
             maintain_order: false,
             keep_strategy,
+            ..Default::default()
         };
         let lp = self.get_plan_builder().distinct(options).build();
         Self::from_logical_plan(lp, opt_state)
@@ -1070,10 +1015,14 @@ impl LazyFrame {
     /// Equal to `LazyFrame::filter(col("*").is_not_null())`
     pub fn drop_nulls(self, subset: Option<Vec<Expr>>) -> LazyFrame {
         match subset {
-            None => self.filter(col("*").is_not_null()),
+            None => self.filter(all_exprs([col("*").is_not_null()])),
             Some(subset) => {
-                let it = subset.into_iter().map(|e| e.is_not_null());
-                let predicate = combine_predicates_expr(it);
+                let predicate = all_exprs(
+                    subset
+                        .into_iter()
+                        .map(|e| e.is_not_null())
+                        .collect::<Vec<_>>(),
+                );
                 self.filter(predicate)
             }
         }
@@ -1157,8 +1106,7 @@ impl LazyFrame {
     /// This can have a negative effect on query performance.
     /// This may for instance block predicate pushdown optimization.
     pub fn with_row_count(mut self, name: &str, offset: Option<IdxSize>) -> LazyFrame {
-        let mut add_row_count_in_map = false;
-        match &mut self.logical_plan {
+        let add_row_count_in_map = match &mut self.logical_plan {
             // Do the row count at scan
             #[cfg(feature = "csv-file")]
             LogicalPlan::CsvScan { options, .. } => {
@@ -1166,6 +1114,7 @@ impl LazyFrame {
                     name: name.to_string(),
                     offset: offset.unwrap_or(0),
                 });
+                false
             }
             #[cfg(feature = "ipc")]
             LogicalPlan::IpcScan { options, .. } => {
@@ -1173,6 +1122,7 @@ impl LazyFrame {
                     name: name.to_string(),
                     offset: offset.unwrap_or(0),
                 });
+                false
             }
             #[cfg(feature = "parquet")]
             LogicalPlan::ParquetScan { options, .. } => {
@@ -1180,13 +1130,12 @@ impl LazyFrame {
                     name: name.to_string(),
                     offset: offset.unwrap_or(0),
                 });
+                false
             }
-            _ => {
-                add_row_count_in_map = true;
-            }
-        }
+            _ => true,
+        };
 
-        let name2 = name.to_string();
+        let name2: SmartString = name.into();
         let udf_schema = move |s: &Schema| {
             let new = s.insert_index(0, name2.clone(), IDX_DTYPE).unwrap();
             Ok(Arc::new(new))
@@ -1199,6 +1148,7 @@ impl LazyFrame {
             AllowedOptimizations {
                 slice_pushdown: false,
                 predicate_pushdown: false,
+                streaming: false,
                 ..Default::default()
             }
         } else {
@@ -1224,7 +1174,7 @@ impl LazyFrame {
     #[cfg(feature = "dtype-struct")]
     pub fn unnest<I: IntoIterator<Item = S>, S: AsRef<str>>(self, cols: I) -> Self {
         self.map_private(FunctionNode::Unnest {
-            columns: Arc::new(cols.into_iter().map(|s| Arc::from(s.as_ref())).collect()),
+            columns: cols.into_iter().map(|s| Arc::from(s.as_ref())).collect(),
         })
     }
 
@@ -1306,7 +1256,7 @@ impl LazyGroupBy {
             .flat_map(|k| expr_to_leaf_column_names(k).into_iter())
             .collect::<Vec<_>>();
 
-        self.agg([col("*").exclude(&keys).head(n).list().keep_name()])
+        self.agg([col("*").exclude(&keys).head(n).keep_name()])
             .explode([col("*").exclude(&keys)])
     }
 

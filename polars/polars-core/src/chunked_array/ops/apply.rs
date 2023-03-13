@@ -351,6 +351,25 @@ impl<'a> ChunkApply<'a, bool, bool> for BooleanChunked {
     }
 }
 
+impl Utf8Chunked {
+    pub fn apply_mut<'a, F>(&'a self, mut f: F) -> Self
+    where
+        F: FnMut(&'a str) -> &'a str,
+    {
+        use polars_arrow::array::utf8::Utf8FromIter;
+        let chunks = self
+            .downcast_iter()
+            .map(|arr| {
+                let iter = arr.values_iter().map(&mut f);
+                let value_size = (arr.get_values_size() as f64 * 1.3) as usize;
+                let new = Utf8Array::<i64>::from_values_iter(iter, arr.len(), value_size);
+                Box::new(new.with_validity(arr.validity().cloned())) as ArrayRef
+            })
+            .collect();
+        unsafe { Utf8Chunked::from_chunks(self.name(), chunks) }
+    }
+}
+
 impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
     fn apply_cast_numeric<F, S>(&'a self, f: F) -> ChunkedArray<S>
     where
@@ -388,7 +407,17 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
     where
         F: Fn(&'a str) -> Cow<'a, str> + Copy,
     {
-        apply!(self, f)
+        use polars_arrow::array::utf8::Utf8FromIter;
+        let chunks = self
+            .downcast_iter()
+            .map(|arr| {
+                let iter = arr.values_iter().map(f);
+                let value_size = (arr.get_values_size() as f64 * 1.3) as usize;
+                let new = Utf8Array::<i64>::from_values_iter(iter, arr.len(), value_size);
+                Box::new(new.with_validity(arr.validity().cloned())) as ArrayRef
+            })
+            .collect();
+        unsafe { Utf8Chunked::from_chunks(self.name(), chunks) }
     }
 
     fn try_apply<F>(&'a self, f: F) -> PolarsResult<Self>
@@ -442,7 +471,6 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl<'a> ChunkApply<'a, &'a [u8], Cow<'a, [u8]>> for BinaryChunked {
     fn apply_cast_numeric<F, S>(&'a self, f: F) -> ChunkedArray<S>
     where
@@ -582,7 +610,6 @@ impl ChunkApplyKernel<LargeStringArray> for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ChunkApplyKernel<LargeBinaryArray> for BinaryChunked {
     fn apply_kernel(&self, f: &dyn Fn(&LargeBinaryArray) -> ArrayRef) -> Self {
         self.apply_kernel_cast(&f)

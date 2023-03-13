@@ -21,30 +21,35 @@ impl PhysicalExpr for LiteralExpr {
         Some(&self.1)
     }
     fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Series> {
+        const NAME: &str = "literal";
         use LiteralValue::*;
         let s = match &self.0 {
             #[cfg(feature = "dtype-i8")]
-            Int8(v) => Int8Chunked::full("literal", *v, 1).into_series(),
+            Int8(v) => Int8Chunked::full(NAME, *v, 1).into_series(),
             #[cfg(feature = "dtype-i16")]
-            Int16(v) => Int16Chunked::full("literal", *v, 1).into_series(),
-            Int32(v) => Int32Chunked::full("literal", *v, 1).into_series(),
-            Int64(v) => Int64Chunked::full("literal", *v, 1).into_series(),
+            Int16(v) => Int16Chunked::full(NAME, *v, 1).into_series(),
+            Int32(v) => Int32Chunked::full(NAME, *v, 1).into_series(),
+            Int64(v) => Int64Chunked::full(NAME, *v, 1).into_series(),
             #[cfg(feature = "dtype-u8")]
-            UInt8(v) => UInt8Chunked::full("literal", *v, 1).into_series(),
+            UInt8(v) => UInt8Chunked::full(NAME, *v, 1).into_series(),
             #[cfg(feature = "dtype-u16")]
-            UInt16(v) => UInt16Chunked::full("literal", *v, 1).into_series(),
-            UInt32(v) => UInt32Chunked::full("literal", *v, 1).into_series(),
-            UInt64(v) => UInt64Chunked::full("literal", *v, 1).into_series(),
-            Float32(v) => Float32Chunked::full("literal", *v, 1).into_series(),
-            Float64(v) => Float64Chunked::full("literal", *v, 1).into_series(),
-            Boolean(v) => BooleanChunked::full("literal", *v, 1).into_series(),
-            Null => BooleanChunked::new("literal", &[None]).into_series(),
+            UInt16(v) => UInt16Chunked::full(NAME, *v, 1).into_series(),
+            UInt32(v) => UInt32Chunked::full(NAME, *v, 1).into_series(),
+            UInt64(v) => UInt64Chunked::full(NAME, *v, 1).into_series(),
+            Float32(v) => Float32Chunked::full(NAME, *v, 1).into_series(),
+            Float64(v) => Float64Chunked::full(NAME, *v, 1).into_series(),
+            Boolean(v) => BooleanChunked::full(NAME, *v, 1).into_series(),
+            Null => polars_core::prelude::Series::new_null(NAME, 1),
             Range {
                 low,
                 high,
                 data_type,
             } => match data_type {
                 DataType::Int32 => {
+                    polars_ensure!(
+                        *low >= i32::MIN as i64 && *high <= i32::MAX as i64,
+                        ComputeError: "range not within bounds of `Int32`: [{}, {}]", *low, *high
+                    );
                     let low = *low as i32;
                     let high = *high as i32;
                     let ca: NoNull<Int32Chunked> = (low..high).collect();
@@ -57,66 +62,33 @@ impl PhysicalExpr for LiteralExpr {
                     ca.into_inner().into_series()
                 }
                 DataType::UInt32 => {
-                    if *low >= 0 || *high <= u32::MAX as i64 {
-                        return Err(PolarsError::ComputeError(
-                            "range not within bounds of u32 type".into(),
-                        ));
-                    }
+                    polars_ensure!(
+                        *low >= 0 && *high <= u32::MAX as i64,
+                        ComputeError: "range not within bounds of `UInt32`: [{}, {}]", *low, *high
+                    );
                     let low = *low as u32;
                     let high = *high as u32;
                     let ca: NoNull<UInt32Chunked> = (low..high).collect();
                     ca.into_inner().into_series()
                 }
-                dt => {
-                    return Err(PolarsError::InvalidOperation(
-                        format!("datatype {dt:?} not supported as range").into(),
-                    ));
-                }
+                dt => polars_bail!(
+                    InvalidOperation: "datatype `{}` is not supported as range", dt
+                ),
             },
-            Utf8(v) => Utf8Chunked::full("literal", v, 1).into_series(),
-            #[cfg(feature = "dtype-binary")]
-            Binary(v) => BinaryChunked::full("literal", v, 1).into_series(),
-            #[cfg(feature = "temporal")]
-            DateTime(ndt, tu) => {
-                use polars_core::chunked_array::temporal::conversion::*;
-                let timestamp = match tu {
-                    TimeUnit::Nanoseconds => datetime_to_timestamp_ns(*ndt),
-                    TimeUnit::Microseconds => datetime_to_timestamp_us(*ndt),
-                    TimeUnit::Milliseconds => datetime_to_timestamp_ms(*ndt),
-                };
-                Int64Chunked::full("literal", timestamp, 1)
-                    .into_datetime(*tu, None)
-                    .into_series()
-            }
-            #[cfg(feature = "temporal")]
-            Duration(v, tu) => {
-                let duration = match tu {
-                    TimeUnit::Milliseconds => v.num_milliseconds(),
-                    TimeUnit::Microseconds => match v.num_microseconds() {
-                        Some(v) => v,
-                        None => {
-                            // Overflow
-                            return Err(PolarsError::InvalidOperation(
-                                format!("cannot represent {v:?} as {tu:?}").into(),
-                            ));
-                        }
-                    },
-                    TimeUnit::Nanoseconds => {
-                        match v.num_nanoseconds() {
-                            Some(v) => v,
-                            None => {
-                                // Overflow
-                                return Err(PolarsError::InvalidOperation(
-                                    format!("cannot represent {v:?} as {tu:?}").into(),
-                                ));
-                            }
-                        }
-                    }
-                };
-                Int64Chunked::full("literal", duration, 1)
-                    .into_duration(*tu)
-                    .into_series()
-            }
+            Utf8(v) => Utf8Chunked::full(NAME, v, 1).into_series(),
+            Binary(v) => BinaryChunked::full(NAME, v, 1).into_series(),
+            #[cfg(feature = "dtype-datetime")]
+            DateTime(timestamp, tu, tz) => Int64Chunked::full(NAME, *timestamp, 1)
+                .into_datetime(*tu, tz.clone())
+                .into_series(),
+            #[cfg(feature = "dtype-duration")]
+            Duration(v, tu) => Int64Chunked::full(NAME, *v, 1)
+                .into_duration(*tu)
+                .into_series(),
+            #[cfg(feature = "dtype-date")]
+            Date(v) => Int32Chunked::full(NAME, *v, 1).into_date().into_series(),
+            #[cfg(feature = "dtype-datetime")]
+            Time(v) => Int64Chunked::full(NAME, *v, 1).into_time().into_series(),
             Series(series) => series.deref().clone(),
         };
         Ok(s)

@@ -26,7 +26,7 @@ fn array_to_rust(arrow_array: &PyAny) -> PyResult<ArrayRef> {
     unsafe {
         let field = ffi::import_field_from_c(schema.as_ref()).unwrap();
         let array = ffi::import_array_from_c(*array, field.data_type).unwrap();
-        Ok(array.into())
+        Ok(array)
     }
 }
 
@@ -70,17 +70,16 @@ pub fn rust_series_to_py_series(series: &Series) -> PyResult<PyObject> {
     let series = series.rechunk();
     let array = series.to_arrow(0);
 
-    // acquire the gil
-    let gil = Python::acquire_gil();
-    let py = gil.python();
-    // import pyarrow
-    let pyarrow = py.import("pyarrow")?;
+    Python::with_gil(|py| {
+        // import pyarrow
+        let pyarrow = py.import("pyarrow")?;
 
-    // pyarrow array
-    let pyarrow_array = to_py_array(py, pyarrow, array)?;
+        // pyarrow array
+        let pyarrow_array = to_py_array(py, pyarrow, array)?;
 
-    // import polars
-    let polars = py.import("polars")?;
-    let out = polars.call_method1("from_arrow", (pyarrow_array,))?;
-    Ok(out.to_object(py))
+        // import polars
+        let polars = py.import("polars")?;
+        let out = polars.call_method1("from_arrow", (pyarrow_array,))?;
+        Ok(out.to_object(py))
+    })
 }

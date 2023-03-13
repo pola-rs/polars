@@ -1,7 +1,7 @@
 use std::iter::FromIterator;
 use std::ops::{Add, AddAssign, Mul};
 
-use num::Bounded;
+use num_traits::Bounded;
 
 use crate::prelude::*;
 use crate::utils::CustomIterTools;

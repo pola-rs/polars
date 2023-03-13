@@ -1,0 +1,11 @@
+[package]
+name = "polars-error"
+version = "0.27.2"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+arrow.workspace = true
+regex = { version = "1.6", optional = true }
+thiserror.workspace = true

@@ -106,9 +106,10 @@ where
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
-    let out = POOL
-        .install(|| {
-            (0..n_partitions).into_par_iter().map(|thread_no| {
+    let out = POOL.install(|| {
+        (0..n_partitions)
+            .into_par_iter()
+            .map(|thread_no| {
                 let mut hash_tbl: PlHashMap<T, (IdxSize, Vec<IdxSize>)> =
                     PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
 
@@ -149,8 +150,8 @@ where
                     .map(|(_k, v)| v)
                     .collect_trusted::<Vec<_>>()
             })
-        })
-        .collect::<Vec<_>>();
+            .collect::<Vec<_>>()
+    });
     finish_group_order(out, sorted)
 }
 
@@ -303,9 +304,10 @@ pub(crate) fn groupby_threaded_multiple_keys_flat(
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
-    let groups = POOL
-        .install(|| {
-            (0..n_partitions).into_par_iter().map(|thread_no| {
+    let groups = POOL.install(|| {
+        (0..n_partitions)
+            .into_par_iter()
+            .map(|thread_no| {
                 let hashes = &hashes;
 
                 let mut hash_tbl: HashMap<IdxHash, (IdxSize, Vec<IdxSize>), IdBuildHasher> =
@@ -339,7 +341,7 @@ pub(crate) fn groupby_threaded_multiple_keys_flat(
                 }
                 hash_tbl.into_iter().map(|(_k, v)| v).collect::<Vec<_>>()
             })
-        })
-        .collect::<Vec<_>>();
+            .collect::<Vec<_>>()
+    });
     Ok(finish_group_order(groups, sorted))
 }

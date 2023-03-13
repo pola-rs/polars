@@ -5,14 +5,16 @@ use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
 use arrow::bitmap::Bitmap;
+use num_traits::{One, Zero};
 pub use polars_arrow::utils::{TrustMyLength, *};
 use rayon::prelude::*;
 pub use series::*;
+use smartstring::alias::String as SmartString;
 pub use supertype::*;
 pub use {arrow, rayon};
 
 #[cfg(feature = "private")]
-pub use crate::chunked_array::ops::sort::argsort_no_nulls;
+pub use crate::chunked_array::ops::sort::arg_sort_no_nulls;
 use crate::prelude::*;
 use crate::POOL;
 
@@ -282,7 +284,6 @@ macro_rules! match_dtype_to_logical_apply_macro {
     ($obj:expr, $macro:ident, $macro_utf8:ident, $macro_binary:ident, $macro_bool:ident $(, $opt_args:expr)*) => {{
         match $obj {
             DataType::Utf8 => $macro_utf8!($($opt_args)*),
-            #[cfg(feature = "dtype-binary")]
             DataType::Binary => $macro_binary!($($opt_args)*),
             DataType::Boolean => $macro_bool!($($opt_args)*),
             #[cfg(feature = "dtype-u8")]
@@ -637,7 +638,11 @@ pub fn accumulate_dataframes_horizontal(dfs: Vec<DataFrame>) -> PolarsResult<Dat
 /// Simple wrapper to parallelize functions that can be divided over threads aggregated and
 /// finally aggregated in the main thread. This can be done for sum, min, max, etc.
 #[cfg(feature = "private")]
-pub fn parallel_op_series<F>(f: F, s: Series, n_threads: Option<usize>) -> PolarsResult<Series>
+pub fn parallel_op_series<F>(
+    f: F,
+    s: Series,
+    n_threads: Option<usize>,
+) -> PolarsResult<Option<Series>>
 where
     F: Fn(Series) -> PolarsResult<Series> + Send + Sync,
 {
@@ -661,10 +666,10 @@ where
         acc
     });
 
-    f(out)
+    f(out).map(Some)
 }
 
-pub(crate) fn align_chunks_binary<'a, T, B>(
+pub fn align_chunks_binary<'a, T, B>(
     left: &'a ChunkedArray<T>,
     right: &'a ChunkedArray<B>,
 ) -> (Cow<'a, ChunkedArray<T>>, Cow<'a, ChunkedArray<B>>)
@@ -820,6 +825,16 @@ where
     }
 }
 
+impl<I, S> IntoVec<SmartString> for I
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    fn into_vec(self) -> Vec<SmartString> {
+        self.into_iter().map(|s| s.as_ref().into()).collect()
+    }
+}
+
 /// This logic is same as the impl on ChunkedArray
 /// The difference is that there is less indirection because the caller should preallocate
 /// `chunk_lens` once. On the `ChunkedArray` we indirect through an `ArrayRef` which is an indirection
@@ -827,20 +842,20 @@ where
 #[inline]
 pub(crate) fn index_to_chunked_index<
     I: Iterator<Item = Idx>,
-    Idx: PartialOrd + std::ops::AddAssign + std::ops::SubAssign + num::Zero + num::One,
+    Idx: PartialOrd + std::ops::AddAssign + std::ops::SubAssign + Zero + One,
 >(
     chunk_lens: I,
     index: Idx,
 ) -> (Idx, Idx) {
     let mut index_remainder = index;
-    let mut current_chunk_idx = num::Zero::zero();
+    let mut current_chunk_idx = Zero::zero();
 
     for chunk_len in chunk_lens {
         if chunk_len > index_remainder {
             break;
         } else {
             index_remainder -= chunk_len;
-            current_chunk_idx += num::One::one();
+            current_chunk_idx += One::one();
         }
     }
     (current_chunk_idx, index_remainder)
@@ -860,13 +875,6 @@ pub(crate) fn index_to_chunked_index2(chunks: &[ArrayRef], index: usize) -> (usi
         }
     }
     (current_chunk_idx, index_remainder)
-}
-
-/// # SAFETY
-/// `dst` must be valid for `dst.len()` elements, and `src` and `dst` may not overlap.
-#[inline]
-pub(crate) unsafe fn copy_from_slice_unchecked<T>(src: &[T], dst: &mut [T]) {
-    std::ptr::copy_nonoverlapping(src.as_ptr(), dst.as_mut_ptr(), dst.len());
 }
 
 #[cfg(feature = "chunked_ids")]

@@ -1,9 +1,12 @@
+import time
 from datetime import date
+from typing import Any
 
 import numpy as np
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_streaming_groupby_types() -> None:
@@ -119,14 +122,14 @@ def test_streaming_non_streaming_gb() -> None:
     n = 100
     df = pl.DataFrame({"a": np.random.randint(0, 20, n)})
     q = df.lazy().groupby("a").agg(pl.count()).sort("a")
-    assert q.collect(streaming=True).frame_equal(q.collect())
+    assert_frame_equal(q.collect(streaming=True), q.collect())
 
-    q = df.lazy().with_column(pl.col("a").cast(pl.Utf8))
+    q = df.lazy().with_columns(pl.col("a").cast(pl.Utf8))
     q = q.groupby("a").agg(pl.count()).sort("a")
-    assert q.collect(streaming=True).frame_equal(q.collect())
-    q = df.lazy().with_column(pl.col("a").alias("b"))
+    assert_frame_equal(q.collect(streaming=True), q.collect())
+    q = df.lazy().with_columns(pl.col("a").alias("b"))
     q = q.groupby(["a", "b"]).agg(pl.count()).sort("a")
-    assert q.collect(streaming=True).frame_equal(q.collect())
+    assert_frame_equal(q.collect(streaming=True), q.collect())
 
 
 def test_streaming_groupby_sorted_fast_path() -> None:
@@ -138,7 +141,7 @@ def test_streaming_groupby_sorted_fast_path() -> None:
         }
     ).with_row_count()
 
-    df_sorted = df.with_column(pl.col("a").set_sorted())
+    df_sorted = df.with_columns(pl.col("a").set_sorted())
 
     for streaming in [True, False]:
         results = []
@@ -162,7 +165,7 @@ def test_streaming_groupby_sorted_fast_path() -> None:
             )
             results.append(out)
 
-        assert results[0].frame_equal(results[1])
+        assert_frame_equal(results[0], results[1])
 
 
 def test_streaming_categoricals_5921() -> None:
@@ -170,7 +173,7 @@ def test_streaming_categoricals_5921() -> None:
         out_lazy = (
             pl.DataFrame({"X": ["a", "a", "a", "b", "b"], "Y": [2, 2, 2, 1, 1]})
             .lazy()
-            .with_column(pl.col("X").cast(pl.Categorical))
+            .with_columns(pl.col("X").cast(pl.Categorical))
             .groupby("X")
             .agg(pl.col("Y").min())
             .sort("X")
@@ -179,7 +182,7 @@ def test_streaming_categoricals_5921() -> None:
 
         out_eager = (
             pl.DataFrame({"X": ["a", "a", "a", "b", "b"], "Y": [2, 2, 2, 1, 1]})
-            .with_column(pl.col("X").cast(pl.Categorical))
+            .with_columns(pl.col("X").cast(pl.Categorical))
             .groupby("X")
             .agg(pl.col("Y").min())
             .sort("X")
@@ -194,6 +197,145 @@ def test_streaming_block_on_literals_6054() -> None:
     df = pl.DataFrame({"col_1": [0] * 5 + [1] * 5})
     s = pl.Series("col_2", list(range(10)))
 
-    assert df.lazy().with_column(s).groupby("col_1").agg(pl.all().first()).collect(
+    assert df.lazy().with_columns(s).groupby("col_1").agg(pl.all().first()).collect(
         streaming=True
     ).sort("col_1").to_dict(False) == {"col_1": [0, 1], "col_2": [0, 5]}
+
+
+def test_streaming_streamable_functions(monkeypatch: Any, capfd: Any) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    assert (
+        pl.DataFrame({"a": [1, 2, 3]})
+        .lazy()
+        .map(
+            function=lambda df: df.with_columns(pl.col("a").alias("b")),
+            schema={"a": pl.Int64, "b": pl.Int64},
+            streamable=True,
+        )
+    ).collect(streaming=True).to_dict(False) == {"a": [1, 2, 3], "b": [1, 2, 3]}
+
+    (_, err) = capfd.readouterr()
+    assert "df -> function -> ordered_sink" in err
+
+
+@pytest.mark.slow()
+def test_cross_join_stack() -> None:
+    a = pl.Series(np.arange(100_000)).to_frame().lazy()
+    t0 = time.time()
+    # this should be instant if directly pushed into sink
+    # if not the cross join will first fill the stack with all matches of a single chunk
+    assert a.join(a, how="cross").head().collect(streaming=True).shape == (5, 2)
+    t1 = time.time()
+    assert (t1 - t0) < 0.5
+
+
+@pytest.mark.slow()
+def test_ooc_sort(monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_FORCE_OOC_SORT", "1")
+
+    s = pl.arange(0, 100_000, eager=True).rename("idx")
+
+    df = s.shuffle().to_frame()
+
+    for descending in [True, False]:
+        out = (
+            df.lazy().sort("idx", descending=descending).collect(streaming=True)
+        ).to_series()
+
+        assert_series_equal(out, s.sort(descending=descending))
+
+
+def test_streaming_literal_expansion() -> None:
+    df = pl.DataFrame(
+        {
+            "y": ["a", "b"],
+            "z": [1, 2],
+        }
+    )
+
+    q = df.lazy().select(
+        x=pl.lit("constant"),
+        y=pl.col("y"),
+        z=pl.col("z"),
+    )
+
+    assert q.collect(streaming=True).to_dict(False) == {
+        "x": ["constant", "constant"],
+        "y": ["a", "b"],
+        "z": [1, 2],
+    }
+    assert q.groupby(["x", "y"]).agg(pl.mean("z")).sort("y").collect(
+        streaming=True
+    ).to_dict(False) == {
+        "x": ["constant", "constant"],
+        "y": ["a", "b"],
+        "z": [1.0, 2.0],
+    }
+    assert q.groupby(["x"]).agg(pl.mean("z")).collect().to_dict(False) == {
+        "x": ["constant"],
+        "z": [1.5],
+    }
+
+
+def test_tree_validation_streaming() -> None:
+    # this query leads to a tree collection with an invalid branch
+    # this test triggers the tree validation function.
+    df_1 = pl.DataFrame(
+        {
+            "a": [22, 1, 1],
+            "b": [500, 37, 20],
+        },
+    ).lazy()
+
+    df_2 = pl.DataFrame(
+        {"a": [23, 4, 20, 28, 3]},
+    ).lazy()
+
+    dfs = [df_2]
+    cat = pl.concat(dfs, how="vertical")
+
+    df_3 = df_1.select(
+        [
+            "a",
+            # this expression is not allowed streaming, so it invalidates a branch
+            pl.col("b")
+            .filter(pl.col("a").min() > pl.col("a").rank())
+            .alias("b_not_streaming"),
+        ]
+    ).join(
+        cat,
+        on=[
+            "a",
+        ],
+    )
+
+    out = df_1.join(df_3, on="a", how="left")
+    assert out.collect(streaming=True).shape == (3, 3)
+
+
+def test_streaming_apply(monkeypatch: Any, capfd: Any) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    q = pl.DataFrame({"a": [1, 2]}).lazy()
+
+    (
+        q.select(pl.col("a").apply(lambda x: x * 2, return_dtype=pl.Int64)).collect(
+            streaming=True
+        )
+    )
+    (_, err) = capfd.readouterr()
+    assert "df -> projection -> ordered_sink" in err
+
+
+def test_streaming_unique(monkeypatch: Any, capfd: Any) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    df = pl.DataFrame({"a": [1, 2, 2, 2], "b": [3, 4, 4, 4], "c": [5, 6, 7, 7]})
+    q = df.lazy().unique(subset=["a", "c"], maintain_order=False).sort(["a", "b", "c"])
+    assert_frame_equal(q.collect(streaming=True), q.collect(streaming=False))
+
+    q = df.lazy().unique(subset=["b", "c"], maintain_order=False).sort(["a", "b", "c"])
+    assert_frame_equal(q.collect(streaming=True), q.collect(streaming=False))
+
+    q = df.lazy().unique(subset=None, maintain_order=False).sort(["a", "b", "c"])
+    assert_frame_equal(q.collect(streaming=True), q.collect(streaming=False))
+    (_, err) = capfd.readouterr()
+    assert "df -> re-project-sink -> sort_multiple" in err

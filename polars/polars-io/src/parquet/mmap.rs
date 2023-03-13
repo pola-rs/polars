@@ -8,7 +8,7 @@ use polars_core::datatypes::PlHashMap;
 
 use super::*;
 
-/// Store colums data in two scenarios:
+/// Store columns data in two scenarios:
 /// 1. a local memory mapped file
 /// 2. data fetched from cloud storage on demand, in this case
 ///     a. the key in the hashmap is the start in the file

@@ -12,12 +12,12 @@ fn sort_with_nulls<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
 }
 
 /// Default sorting nulls
-pub fn order_default_null<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
+pub fn order_ascending_null<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
     sort_with_nulls(a, b)
 }
 
 /// Default sorting nulls
-pub fn order_reverse_null<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
+pub fn order_descending_null<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
     sort_with_nulls(b, a)
 }
 
@@ -57,11 +57,11 @@ impl CategoricalChunked {
                         .zip(self.iter_str())
                         .collect_trusted::<Vec<_>>();
 
-                    argsort_branch(
+                    arg_sort_branch(
                         vals.as_mut_slice(),
                         options.descending,
-                        |(_, a), (_, b)| order_default_null(a, b),
-                        |(_, a), (_, b)| order_reverse_null(a, b),
+                        |(_, a), (_, b)| order_ascending_null(a, b),
+                        |(_, a), (_, b)| order_descending_null(a, b),
                         options.multithreaded,
                     );
                     let cats: NoNull<UInt32Chunked> =
@@ -94,19 +94,19 @@ impl CategoricalChunked {
 
     /// Returned a sorted `ChunkedArray`.
     #[must_use]
-    pub fn sort(&self, reverse: bool) -> CategoricalChunked {
+    pub fn sort(&self, descending: bool) -> CategoricalChunked {
         self.sort_with(SortOptions {
             nulls_last: false,
-            descending: reverse,
+            descending,
             multithreaded: true,
         })
     }
 
     /// Retrieve the indexes needed to sort this array.
-    pub fn argsort(&self, options: SortOptions) -> IdxCa {
+    pub fn arg_sort(&self, options: SortOptions) -> IdxCa {
         if self.use_lexical_sort() {
             let iters = [self.iter_str()];
-            argsort::argsort(
+            arg_sort::arg_sort(
                 self.name(),
                 iters,
                 options,
@@ -114,19 +114,19 @@ impl CategoricalChunked {
                 self.len(),
             )
         } else {
-            self.logical().argsort(options)
+            self.logical().arg_sort(options)
         }
     }
 
     /// Retrieve the indexes need to sort this and the other arrays.
     #[cfg(feature = "sort_multiple")]
-    pub(crate) fn argsort_multiple(
+    pub(crate) fn arg_sort_multiple(
         &self,
         other: &[Series],
-        reverse: &[bool],
+        descending: &[bool],
     ) -> PolarsResult<IdxCa> {
         if self.use_lexical_sort() {
-            args_validate(self.logical(), other, reverse)?;
+            args_validate(self.logical(), other, descending)?;
             let mut count: IdxSize = 0;
             let vals: Vec<_> = self
                 .iter_str()
@@ -137,9 +137,9 @@ impl CategoricalChunked {
                 })
                 .collect_trusted();
 
-            argsort_multiple_impl(vals, other, reverse)
+            arg_sort_multiple_impl(vals, other, descending)
         } else {
-            self.logical().argsort_multiple(other, reverse)
+            self.logical().arg_sort_multiple(other, descending)
         }
     }
 }
@@ -173,7 +173,7 @@ mod test {
             let out = ca.sort(false);
             assert_order(&out, init);
 
-            let out = ca_lexical.argsort(SortOptions {
+            let out = ca_lexical.arg_sort(SortOptions {
                 descending: false,
                 ..Default::default()
             });

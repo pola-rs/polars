@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
+import typing
+from datetime import date, datetime
 from typing import Any, cast, no_type_check
 
 import numpy as np
@@ -9,7 +10,7 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
-from polars.datatypes import dtype_to_py_type
+from polars.testing import assert_series_equal
 
 
 def test_df_from_numpy() -> None:
@@ -26,6 +27,8 @@ def test_df_from_numpy() -> None:
             "float16": np.array([21.7, 21.8, 21], dtype=np.float16),
             "float32": np.array([21.7, 21.8, 21], dtype=np.float32),
             "float64": np.array([21.7, 21.8, 21], dtype=np.float64),
+            "intc": np.array([1, 3, 2], dtype=np.intc),
+            "uintc": np.array([1, 3, 2], dtype=np.uintc),
             "str": np.array(["string1", "string2", "string3"], dtype=np.str_),
             "bytes": np.array(
                 ["byte_string1", "byte_string2", "byte_string3"], dtype=np.bytes_
@@ -45,8 +48,10 @@ def test_df_from_numpy() -> None:
         pl.datatypes.Float32,
         pl.datatypes.Float32,
         pl.datatypes.Float64,
+        pl.datatypes.Int32,
+        pl.datatypes.UInt32,
         pl.datatypes.Utf8,
-        pl.datatypes.Object,
+        pl.datatypes.Binary,
     ]
     assert out == df.dtypes
 
@@ -82,6 +87,10 @@ def test_to_numpy() -> None:
     test_series_to_numpy("float64", [21.7, 21.8, 21], pl.Float64, np.float64)
 
     test_series_to_numpy("str", ["string1", "string2", "string3"], pl.Utf8, np.object_)
+    # without pyarrow
+    arr = pl.Series(["a", "b", None]).to_numpy(use_pyarrow=False)
+    assert arr.dtype == np.dtype("O")
+    assert list(arr) == ["a", "b", None]
 
 
 def test_from_pandas() -> None:
@@ -126,7 +135,7 @@ def test_from_pandas() -> None:
         assert out.schema[col] == dtype
 
 
-def test_from_pandas_nan_to_none() -> None:
+def test_from_pandas_nan_to_null() -> None:
     df = pd.DataFrame(
         {
             "bools_nulls": [None, True, False],
@@ -137,21 +146,21 @@ def test_from_pandas_nan_to_none() -> None:
         }
     )
     out_true = pl.from_pandas(df)
-    out_false = pl.from_pandas(df, nan_to_none=False)
+    out_false = pl.from_pandas(df, nan_to_null=False)
     assert all(val is None for val in out_true["nulls"])
     assert all(np.isnan(val) for val in out_false["nulls"][1:])
 
     df = pd.Series([2, np.nan, None], name="pd")  # type: ignore[assignment]
     out_true = pl.from_pandas(df)
-    out_false = pl.from_pandas(df, nan_to_none=False)
+    out_false = pl.from_pandas(df, nan_to_null=False)
     assert [val is None for val in out_true]
     assert [np.isnan(val) for val in out_false[1:]]
 
 
 def test_from_pandas_datetime() -> None:
     ts = datetime(2021, 1, 1, 20, 20, 20, 20)
-    pl_s = pd.Series([ts, ts])
-    tmp = pl.from_pandas(pl_s.to_frame("a"))
+    pd_s = pd.Series([ts, ts])
+    tmp = pl.from_pandas(pd_s.to_frame("a"))
     s = tmp["a"]
     assert s.dt.hour()[0] == 20
     assert s.dt.minute()[0] == 20
@@ -162,9 +171,26 @@ def test_from_pandas_datetime() -> None:
     assert s[0] == datetime(2021, 6, 24, 0, 0)
     assert s[-1] == datetime(2021, 6, 24, 9, 0)
 
-    df = pd.DataFrame({"datetime": ["2021-01-01", "2021-01-02"], "foo": [1, 2]})
-    df["datetime"] = pd.to_datetime(df["datetime"])
-    pl.from_pandas(df)
+
+def test_from_pandas_include_indexes() -> None:
+    data = {
+        "dtm": [datetime(2021, 1, 1), datetime(2021, 1, 2), datetime(2021, 1, 3)],
+        "val": [100, 200, 300],
+        "misc": ["x", "y", "z"],
+    }
+    pd_df = pd.DataFrame(data)
+
+    df = pl.from_pandas(pd_df.set_index(["dtm"]))
+    assert df.to_dict(False) == {"val": [100, 200, 300], "misc": ["x", "y", "z"]}
+
+    df = pl.from_pandas(pd_df.set_index(["dtm", "val"]))
+    assert df.to_dict(False) == {"misc": ["x", "y", "z"]}
+
+    df = pl.from_pandas(pd_df.set_index(["dtm"]), include_index=True)
+    assert df.to_dict(False) == data
+
+    df = pl.from_pandas(pd_df.set_index(["dtm", "val"]), include_index=True)
+    assert df.to_dict(False) == data
 
 
 def test_from_pandas_duplicated_columns() -> None:
@@ -184,6 +210,21 @@ def test_arrow_list_roundtrip() -> None:
         assert c1.to_pylist() == c2.to_pylist()
 
 
+def test_arrow_null_roundtrip() -> None:
+    tbl = pa.table({"a": [None, None], "b": [[None, None], [None, None]]})
+    df = pl.from_arrow(tbl)
+
+    if isinstance(df, pl.DataFrame):
+        assert df.dtypes == [pl.Null, pl.List(pl.Null)]
+
+    arw = df.to_arrow()
+
+    assert arw.shape == tbl.shape
+    assert arw.schema.names == tbl.schema.names
+    for c1, c2 in zip(arw.columns, tbl.columns):
+        assert c1.to_pylist() == c2.to_pylist()
+
+
 def test_arrow_dict_to_polars() -> None:
     pa_dict = pa.DictionaryArray.from_arrays(
         indices=np.array([0, 1, 2, 3, 1, 0, 2, 3, 3, 2]),
@@ -195,7 +236,7 @@ def test_arrow_dict_to_polars() -> None:
         values=["AAA", "BBB", "CCC", "DDD", "BBB", "AAA", "CCC", "DDD", "DDD", "CCC"],
     )
 
-    assert s.series_equal(pl.Series("pa_dict", pa_dict))
+    assert_series_equal(s, pl.Series("pa_dict", pa_dict))
 
 
 def test_arrow_list_chunked_array() -> None:
@@ -244,7 +285,7 @@ def test_from_dict() -> None:
     df = pl.from_dict(data)
     assert df.shape == (2, 2)
     for s1, s2 in zip(list(df), [pl.Series("a", [1, 2]), pl.Series("b", [3, 4])]):
-        assert s1.series_equal(s2)
+        assert_series_equal(s1, s2)
 
 
 def test_from_dict_struct() -> None:
@@ -296,7 +337,7 @@ def test_from_dicts_schema_override() -> None:
     for n_infer in (0, 3, 5, 8, 10, 100):
         df = pl.DataFrame(
             data=(data1 + data2),
-            columns=schema,  # type: ignore[arg-type]
+            schema=schema,  # type: ignore[arg-type]
             infer_schema_length=n_infer,
         )
         assert df.schema == schema
@@ -332,7 +373,7 @@ def test_from_dicts_struct() -> None:
 
 def test_from_records() -> None:
     data = [[1, 2, 3], [4, 5, 6]]
-    df = pl.from_records(data, columns=["a", "b"])
+    df = pl.from_records(data, schema=["a", "b"])
     assert df.shape == (3, 2)
     assert df.rows() == [(1, 4), (2, 5), (3, 6)]
 
@@ -341,7 +382,7 @@ def test_from_numpy() -> None:
     data = np.array([[1, 2, 3], [4, 5, 6]])
     df = pl.from_numpy(
         data,
-        columns=["a", "b"],
+        schema=["a", "b"],
         orient="col",
         schema_overrides={"a": pl.UInt32, "b": pl.UInt32},
     )
@@ -393,7 +434,7 @@ def test_from_optional_not_available() -> None:
 
     np = _LazyModule("numpy", module_available=False)
     with pytest.raises(ImportError, match=r"np\.array requires 'numpy'"):
-        pl.from_numpy(np.array([[1, 2], [3, 4]]), columns=["a", "b"])
+        pl.from_numpy(np.array([[1, 2], [3, 4]]), schema=["a", "b"])
 
     pa = _LazyModule("pyarrow", module_available=False)
     with pytest.raises(ImportError, match=r"pa\.table requires 'pyarrow'"):
@@ -436,8 +477,71 @@ def test_no_rechunk() -> None:
 def test_cat_to_pandas() -> None:
     df = pl.DataFrame({"a": ["best", "test"]})
     df = df.with_columns(pl.all().cast(pl.Categorical))
-    out = df.to_pandas()
-    assert "category" in str(out["a"].dtype)
+    pd_out = df.to_pandas()
+    assert "category" in str(pd_out["a"].dtype)
+
+    try:
+        pd_pa_out = df.to_pandas(use_pyarrow_extension_array=True)
+        assert pd_pa_out["a"].dtype.type == pa.DictionaryType
+    except ModuleNotFoundError:
+        # Skip test if Pandas 1.5.x is not installed.
+        pass
+
+
+def test_to_pandas() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": [6, None, 8],
+            "c": [10.0, 25.0, 50.5],
+            "d": [date(2023, 7, 5), None, date(1999, 12, 13)],
+            "e": ["a", "b", "c"],
+            "f": [None, "e", "f"],
+            "g": [datetime.now(), datetime.now(), None],
+        },
+        schema_overrides={"a": pl.UInt8},
+    ).with_columns(
+        [
+            pl.col("e").cast(pl.Categorical).alias("h"),
+            pl.col("f").cast(pl.Categorical).alias("i"),
+        ]
+    )
+    pd_out = df.to_pandas()
+    pd_out_dtypes_expected = [
+        np.uint8,
+        np.float64,
+        np.float64,
+        np.dtype("datetime64[ns]"),
+        np.object_,
+        np.object_,
+        np.dtype("datetime64[ns]"),
+        pd.CategoricalDtype(categories=["a", "b", "c"], ordered=False),
+        pd.CategoricalDtype(categories=["e", "f"], ordered=False),
+    ]
+    assert pd_out_dtypes_expected == pd_out.dtypes.to_list()
+
+    pd_out_dtypes_expected[3] = np.dtype("O")
+    pd_out = df.to_pandas(date_as_object=True)
+    assert pd_out_dtypes_expected == pd_out.dtypes.to_list()
+
+    try:
+        pd_pa_out = df.to_pandas(use_pyarrow_extension_array=True)
+        pd_pa_dtypes_names = [dtype.name for dtype in pd_pa_out.dtypes]
+        pd_pa_dtypes_names_expected = [
+            "uint8[pyarrow]",
+            "int64[pyarrow]",
+            "double[pyarrow]",
+            "date32[day][pyarrow]",
+            "large_string[pyarrow]",
+            "large_string[pyarrow]",
+            "timestamp[us][pyarrow]",
+            "dictionary<values=large_string, indices=int64, ordered=0>[pyarrow]",
+            "dictionary<values=large_string, indices=int64, ordered=0>[pyarrow]",
+        ]
+        assert pd_pa_dtypes_names == pd_pa_dtypes_names_expected
+    except ModuleNotFoundError:
+        # Skip test if Pandas 1.5.x is not installed.
+        pass
 
 
 def test_numpy_to_lit() -> None:
@@ -467,7 +571,7 @@ def test_from_empty_pandas_with_dtypes() -> None:
 
     df = pl.DataFrame(
         data=[],
-        columns={
+        schema={
             "a": pl.Int32,
             "b": pl.Datetime,
             "c": pl.Float32,
@@ -475,6 +579,7 @@ def test_from_empty_pandas_with_dtypes() -> None:
             "e": pl.Utf8,
         },
     ).to_pandas()
+
     assert pl.from_pandas(df).dtypes == [
         pl.Int32,
         pl.Datetime,
@@ -494,7 +599,7 @@ def test_from_empty_arrow() -> None:
     tbl = pa.Table.from_pandas(df1)
     out = cast(pl.DataFrame, pl.from_arrow(tbl))
     assert out.columns == ["b", "__index_level_0__"]
-    assert out.dtypes == [pl.Float64, pl.Int8]
+    assert out.dtypes == [pl.Float64, pl.Null]
     tbl = pa.Table.from_pandas(df1, preserve_index=False)
     out = cast(pl.DataFrame, pl.from_arrow(tbl))
     assert out.columns == ["b"]
@@ -512,7 +617,7 @@ def test_from_null_column() -> None:
 
     assert df.shape == (2, 1)
     assert df.columns == ["n/a"]
-    assert dtype_to_py_type(df.dtypes[0]) == int
+    assert df.dtypes[0] is pl.Null
 
 
 def test_to_pandas_series() -> None:
@@ -555,7 +660,7 @@ def test_cat_int_types_3500() -> None:
 
         for t in [int_dict_type, uint_dict_type]:
             s = cast(pl.Series, pl.from_arrow(pyarrow_array.cast(t)))
-            assert s.series_equal(pl.Series(["a", "a", "b"]).cast(pl.Categorical))
+            assert_series_equal(s, pl.Series(["a", "a", "b"]).cast(pl.Categorical))
 
 
 def test_from_pyarrow_chunked_array() -> None:
@@ -565,7 +670,7 @@ def test_from_pyarrow_chunked_array() -> None:
 
 
 def test_numpy_preserve_uint64_4112() -> None:
-    assert pl.DataFrame({"a": [1, 2, 3]}).with_column(
+    assert pl.DataFrame({"a": [1, 2, 3]}).with_columns(
         pl.col("a").hash()
     ).to_numpy().dtype == np.dtype("uint64")
 
@@ -581,6 +686,70 @@ def test_arrow_list_null_5697() -> None:
     df = pl.from_arrow(pa_table)
     pa_table = df.to_arrow()
     # again to polars to test the schema
-    assert pl.from_arrow(pa_table,).schema == {  # type: ignore[union-attr]
+    assert pl.from_arrow(pa_table).schema == {  # type: ignore[union-attr]
         "mycol": pl.List(pl.Null)
     }
+
+
+def test_from_pandas_null_struct_6412() -> None:
+    data = [
+        {
+            "a": {
+                "b": None,
+            },
+        },
+        {"a": None},
+    ]
+    df_pandas = pd.DataFrame(data)
+    assert pl.from_pandas(df_pandas).to_dict(False) == {"a": [{"b": None}, {"b": None}]}
+
+
+@typing.no_type_check
+def test_from_pyarrow_map() -> None:
+    pa_table = pa.table(
+        [[1, 2], [[("a", "something")], [("a", "else"), ("b", "another key")]]],
+        schema=pa.schema(
+            [("idx", pa.int16()), ("mapping", pa.map_(pa.string(), pa.string()))]
+        ),
+    )
+
+    df = pl.from_arrow(pa_table)
+    assert df.to_dict(False) == {
+        "idx": [1, 2],
+        "mapping": [
+            [{"key": "a", "value": "something"}],
+            [{"key": "a", "value": "else"}, {"key": "b", "value": "another key"}],
+        ],
+    }
+
+
+def test_to_numpy_datelike() -> None:
+    s = pl.Series(
+        "dt",
+        [
+            datetime(2022, 7, 5, 10, 30, 45, 123456),
+            None,
+            datetime(2023, 2, 5, 15, 22, 30, 987654),
+        ],
+    )
+    assert str(s.to_numpy()) == str(
+        np.array(
+            ["2022-07-05T10:30:45.123456", "NaT", "2023-02-05T15:22:30.987654"],
+            dtype="datetime64[us]",
+        )
+    )
+    assert str(s.drop_nulls().to_numpy()) == str(
+        np.array(
+            ["2022-07-05T10:30:45.123456", "2023-02-05T15:22:30.987654"],
+            dtype="datetime64[us]",
+        )
+    )
+
+
+@typing.no_type_check
+def test_from_fixed_size_binary_list() -> None:
+    val = [[b"63A0B1C66575DD5708E1EB2B"]]
+    arrow_array = pa.array(val, type=pa.list_(pa.binary(24)))
+    s = pl.from_arrow(arrow_array)
+    assert s.dtype == pl.List(pl.Binary)
+    assert s.to_list() == val

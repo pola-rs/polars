@@ -1,10 +1,17 @@
 use std::io::Write;
 
+#[cfg(any(
+    feature = "dtype-date",
+    feature = "dtype-time",
+    feature = "dtype-datetime"
+))]
 use arrow::temporal_conversions;
+#[cfg(feature = "timezones")]
+use chrono::TimeZone;
+#[cfg(feature = "timezones")]
+use chrono_tz::Tz;
 use lexical_core::{FormattedSize, ToLexical};
 use memchr::{memchr, memchr2};
-use polars_core::error::PolarsError::ComputeError;
-use polars_core::fmt::PlTzAware;
 use polars_core::prelude::*;
 use polars_core::series::SeriesIter;
 use polars_core::POOL;
@@ -49,7 +56,12 @@ fn fast_float_write<N: ToLexical>(f: &mut Vec<u8>, n: N, write_size: usize) -> s
     Ok(())
 }
 
-fn write_anyvalue(f: &mut Vec<u8>, value: AnyValue, options: &SerializeOptions) {
+fn write_anyvalue(
+    f: &mut Vec<u8>,
+    value: AnyValue,
+    options: &SerializeOptions,
+    #[allow(unused_variables)] datetime_format: Option<&str>,
+) -> PolarsResult<()> {
     match value {
         AnyValue::Null => write!(f, "{}", &options.null),
         AnyValue::Int8(v) => write!(f, "{v}"),
@@ -85,20 +97,29 @@ fn write_anyvalue(f: &mut Vec<u8>, value: AnyValue, options: &SerializeOptions) 
         }
         #[cfg(feature = "dtype-datetime")]
         AnyValue::Datetime(v, tu, tz) => {
+            // If this is a datetime, then datetime_format was either set or inferred.
+            let datetime_format = datetime_format.unwrap();
             let ndt = match tu {
                 TimeUnit::Nanoseconds => temporal_conversions::timestamp_ns_to_datetime(v),
                 TimeUnit::Microseconds => temporal_conversions::timestamp_us_to_datetime(v),
                 TimeUnit::Milliseconds => temporal_conversions::timestamp_ms_to_datetime(v),
             };
-            match tz {
-                None => match &options.datetime_format {
-                    None => write!(f, "{ndt}"),
-                    Some(fmt) => write!(f, "{}", ndt.format(fmt)),
+            let formatted = match tz {
+                #[cfg(feature = "timezones")]
+                Some(tz) => match tz.parse::<Tz>() {
+                    Ok(parsed_tz) => parsed_tz.from_utc_datetime(&ndt).format(datetime_format),
+                    Err(_) => match temporal_conversions::parse_offset(tz) {
+                        Ok(parsed_tz) => parsed_tz.from_utc_datetime(&ndt).format(datetime_format),
+                        Err(_) => unreachable!(),
+                    },
                 },
-                Some(tz) => {
-                    write!(f, "{}", PlTzAware::new(ndt, tz))
+                #[cfg(not(feature = "timezones"))]
+                Some(_) => {
+                    panic!("activate 'timezones' feature");
                 }
-            }
+                _ => ndt.format(datetime_format),
+            };
+            write!(f, "{formatted}")
         }
         #[cfg(feature = "dtype-time")]
         AnyValue::Time(v) => {
@@ -108,9 +129,24 @@ fn write_anyvalue(f: &mut Vec<u8>, value: AnyValue, options: &SerializeOptions) 
                 Some(fmt) => write!(f, "{}", date.format(fmt)),
             }
         }
-        dt => panic!("DataType: {dt} not supported in writing to csv"),
+        ref dt => polars_bail!(ComputeError: "datatype {} cannot be written to csv", dt),
     }
-    .unwrap();
+    .map_err(|err| match value {
+        #[cfg(feature = "dtype-datetime")]
+        AnyValue::Datetime(_, _, tz) => {
+            // If this is a datetime, then datetime_format was either set or inferred.
+            let datetime_format = datetime_format.unwrap_or_default();
+            let type_name = if tz.is_some() {
+                "DateTime"
+            } else {
+                "NaiveDateTime"
+            };
+            polars_err!(
+                ComputeError: "cannot format {} with format '{}'", type_name, datetime_format,
+            )
+        }
+        _ => polars_err!(ComputeError: "error writing value {}: {}", value, err),
+    })
 }
 
 /// Options to serialize logical types to CSV
@@ -161,7 +197,7 @@ pub(crate) fn write<W: Write>(
     writer: &mut W,
     df: &DataFrame,
     chunk_size: usize,
-    options: &mut SerializeOptions,
+    options: &SerializeOptions,
 ) -> PolarsResult<()> {
     for s in df.get_columns() {
         let nested = match s.dtype() {
@@ -170,37 +206,42 @@ pub(crate) fn write<W: Write>(
             DataType::Struct(_) => true,
             _ => false,
         };
-        if nested {
-            return Err(ComputeError(format!("CSV format does not support nested data. Consider using a different data format. Got: '{}'", s.dtype()).into()));
-        }
+        polars_ensure!(
+            !nested,
+            ComputeError: "CSV format does not support nested data",
+        );
     }
 
     // check that the double quote is valid utf8
-    std::str::from_utf8(&[options.quote, options.quote])
-        .map_err(|_| PolarsError::ComputeError("quote char leads invalid utf8".into()))?;
+    polars_ensure!(
+        std::str::from_utf8(&[options.quote, options.quote]).is_ok(),
+        ComputeError: "quote char results in invalid utf-8",
+    );
     let delimiter = char::from(options.delimiter);
 
-    // if datetime format not specified, infer the maximum required precision
-    if options.datetime_format.is_none() {
-        for col in df.get_columns() {
-            match col.dtype() {
-                DataType::Datetime(TimeUnit::Microseconds, _)
-                    if options.datetime_format.is_none() =>
-                {
-                    options.datetime_format = Some("%FT%H:%M:%S.%6f".to_string());
-                }
-                DataType::Datetime(TimeUnit::Nanoseconds, _) => {
-                    options.datetime_format = Some("%FT%H:%M:%S.%9f".to_string());
-                    break; // highest precision; no need to check further
-                }
-                _ => {}
-            }
-        }
-        // if still not set, no cols require higher precision than "ms" (or no datetime cols)
-        if options.datetime_format.is_none() {
-            options.datetime_format = Some("%FT%H:%M:%S.%3f".to_string());
-        }
-    }
+    let formats: Option<Vec<Option<&str>>> = match &options.datetime_format {
+        None => Some(
+            df.get_columns()
+                .iter()
+                .map(|col| match col.dtype() {
+                    DataType::Datetime(TimeUnit::Milliseconds, tz) => match tz {
+                        Some(_) => Some("%FT%H:%M:%S.%3f%z"),
+                        None => Some("%FT%H:%M:%S.%3f"),
+                    },
+                    DataType::Datetime(TimeUnit::Microseconds, tz) => match tz {
+                        Some(_) => Some("%FT%H:%M:%S.%6f%z"),
+                        None => Some("%FT%H:%M:%S.%6f"),
+                    },
+                    DataType::Datetime(TimeUnit::Nanoseconds, tz) => match tz {
+                        Some(_) => Some("%FT%H:%M:%S.%9f%z"),
+                        None => Some("%FT%H:%M:%S.%9f"),
+                    },
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+        ),
+        Some(_) => None,
+    };
 
     let len = df.height();
     let n_threads = POOL.current_num_threads();
@@ -211,24 +252,30 @@ pub(crate) fn write<W: Write>(
     let mut n_rows_finished = 0;
 
     // holds the buffers that will be written
-    let mut result_buf = Vec::with_capacity(n_threads);
+    let mut result_buf: Vec<PolarsResult<Vec<u8>>> = Vec::with_capacity(n_threads);
     while n_rows_finished < len {
         let par_iter = (0..n_threads).into_par_iter().map(|thread_no| {
             let thread_offset = thread_no * chunk_size;
             let total_offset = n_rows_finished + thread_offset;
-            let df = df.slice(total_offset as i64, chunk_size);
+            let mut df = df.slice(total_offset as i64, chunk_size);
+            // the `series.iter` needs rechunked series.
+            // we don't do this on the whole as this probably needs much less rechunking
+            // so will be faster.
+            // and allows writing `pl.concat([df] * 100, rechunk=False).write_csv()` as the rechunk
+            // would go OOM
+            df.as_single_chunk();
             let cols = df.get_columns();
 
             // Safety:
             // the bck thinks the lifetime is bounded to write_buffer_pool, but at the time we return
             // the vectors the buffer pool, the series have already been removed from the buffers
             // in other words, the lifetime does not leave this scope
-            let cols = unsafe { std::mem::transmute::<&Vec<Series>, &Vec<Series>>(cols) };
+            let cols = unsafe { std::mem::transmute::<&[Series], &[Series]>(cols) };
             let mut write_buffer = write_buffer_pool.get();
 
             // don't use df.empty, won't work if there are columns.
             if df.height() == 0 {
-                return write_buffer;
+                return Ok(write_buffer);
             }
 
             let any_value_iters = cols.iter().map(|s| s.iter());
@@ -239,10 +286,14 @@ pub(crate) fn write<W: Write>(
             let mut finished = false;
             // loop rows
             while !finished {
-                for col in &mut col_iters {
+                for (i, col) in &mut col_iters.iter_mut().enumerate() {
+                    let datetime_format = match &options.datetime_format {
+                        Some(datetime_format) => Some(datetime_format.as_str()),
+                        None => unsafe { *formats.as_ref().unwrap().get_unchecked(i) },
+                    };
                     match col.next() {
                         Some(value) => {
-                            write_anyvalue(&mut write_buffer, value, options);
+                            write_anyvalue(&mut write_buffer, value, options, datetime_format)?;
                         }
                         None => {
                             finished = true;
@@ -263,13 +314,14 @@ pub(crate) fn write<W: Write>(
             col_iters.clear();
             any_value_iter_pool.set(col_iters);
 
-            write_buffer
+            Ok(write_buffer)
         });
 
         // rayon will ensure the right order
         result_buf.par_extend(par_iter);
 
-        for mut buf in result_buf.drain(..) {
+        for buf in result_buf.drain(..) {
+            let mut buf = buf?;
             let _ = writer.write(&buf)?;
             buf.clear();
             write_buffer_pool.set(buf);

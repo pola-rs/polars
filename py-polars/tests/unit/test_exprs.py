@@ -1,21 +1,60 @@
 from __future__ import annotations
 
 import random
+import sys
 import typing
-from typing import cast
+from datetime import datetime, timedelta, timezone
+from typing import Any, cast
+
+if sys.version_info >= (3, 9):
+    from zoneinfo import ZoneInfo
+else:
+    # Import from submodule due to typing issue with backports.zoneinfo package:
+    # https://github.com/pganssle/zoneinfo/issues/125
+    from backports.zoneinfo._zoneinfo import ZoneInfo
 
 import numpy as np
 import pytest
 
 import polars as pl
 from polars.datatypes import (
+    DATETIME_DTYPES,
+    DURATION_DTYPES,
     FLOAT_DTYPES,
     INTEGER_DTYPES,
     NUMERIC_DTYPES,
     TEMPORAL_DTYPES,
 )
-from polars.testing import assert_series_equal
-from polars.testing._private import verify_series_and_expr_api
+from polars.testing import assert_frame_equal, assert_series_equal
+
+
+def test_col_select() -> None:
+    df = pl.DataFrame(
+        {
+            "ham": [1, 2, 3],
+            "hamburger": [11, 22, 33],
+            "foo": [3, 2, 1],
+            "bar": ["a", "b", "c"],
+        }
+    )
+
+    # Single column
+    assert df.select(pl.col("foo")).columns == ["foo"]
+    # Regex
+    assert df.select(pl.col("*")).columns == ["ham", "hamburger", "foo", "bar"]
+    assert df.select(pl.col("^ham.*$")).columns == ["ham", "hamburger"]
+    assert df.select(pl.col("*").exclude("ham")).columns == ["hamburger", "foo", "bar"]
+    # Multiple inputs
+    assert df.select(pl.col(["hamburger", "foo"])).columns == ["hamburger", "foo"]
+    assert df.select(pl.col("hamburger", "foo")).columns == ["hamburger", "foo"]
+    assert df.select(pl.col(pl.Series(["ham", "foo"]))).columns == ["ham", "foo"]
+    # Dtypes
+    assert df.select(pl.col(pl.Utf8)).columns == ["bar"]
+    assert df.select(pl.col(pl.Int64, pl.Float64)).columns == [
+        "ham",
+        "hamburger",
+        "foo",
+    ]
 
 
 def test_horizontal_agg(fruits_cars: pl.DataFrame) -> None:
@@ -33,6 +72,21 @@ def test_suffix(fruits_cars: pl.DataFrame) -> None:
     assert out.columns == ["A_reverse", "fruits_reverse", "B_reverse", "cars_reverse"]
 
 
+def test_pipe() -> None:
+    df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, None, 8]})
+
+    def _multiply(expr: pl.Expr, mul: int) -> pl.Expr:
+        return expr * mul
+
+    result = df.select(
+        pl.col("foo").pipe(_multiply, mul=2),
+        pl.col("bar").pipe(_multiply, mul=3),
+    )
+
+    expected = pl.DataFrame({"foo": [2, 4, 6], "bar": [18, None, 24]})
+    assert_frame_equal(result, expected)
+
+
 def test_prefix(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
     out = df.select([pl.all().prefix("reverse_")])
@@ -40,7 +94,7 @@ def test_prefix(fruits_cars: pl.DataFrame) -> None:
 
 
 def test_cumcount() -> None:
-    df = pl.DataFrame([["a"], ["a"], ["a"], ["b"], ["b"], ["a"]], columns=["A"])
+    df = pl.DataFrame([["a"], ["a"], ["a"], ["b"], ["b"], ["a"]], schema=["A"])
 
     out = df.groupby("A", maintain_order=True).agg(
         [pl.col("A").cumcount(reverse=False).alias("foo")]
@@ -59,19 +113,8 @@ def test_filter_where() -> None:
         pl.col("b").filter(pl.col("b") > 4).alias("c")
     )
     expected = pl.DataFrame({"a": [1, 2, 3], "c": [[7], [5, 8], [6, 9]]})
-    assert result_where.frame_equal(expected)
-    assert result_filter.frame_equal(expected)
-
-
-def test_flatten_explode() -> None:
-    df = pl.Series("a", ["Hello", "World"])
-    expected = pl.Series("a", ["H", "e", "l", "l", "o", "W", "o", "r", "l", "d"])
-
-    result = df.to_frame().select(pl.col("a").flatten())[:, 0]
-    assert_series_equal(result, expected)
-
-    result = df.to_frame().select(pl.col("a").explode())[:, 0]
-    assert_series_equal(result, expected)
+    assert_frame_equal(result_where, expected)
+    assert_frame_equal(result_filter, expected)
 
 
 def test_min_nulls_consistency() -> None:
@@ -88,7 +131,7 @@ def test_min_nulls_consistency() -> None:
 def test_list_join_strings() -> None:
     s = pl.Series("a", [["ab", "c", "d"], ["e", "f"], ["g"], []])
     expected = pl.Series("a", ["ab-c-d", "e-f", "g", ""])
-    verify_series_and_expr_api(s, expected, "arr.join", "-")
+    assert_series_equal(s.arr.join("-"), expected)
 
 
 def test_count_expr() -> None:
@@ -110,7 +153,7 @@ def test_shuffle() -> None:
     result1 = pl.select(pl.lit(s).shuffle()).to_series()
     random.seed(1)
     result2 = pl.select(pl.lit(s).shuffle()).to_series()
-    assert result1.series_equal(result2)
+    assert_series_equal(result1, result2)
 
 
 def test_sample() -> None:
@@ -134,7 +177,7 @@ def test_sample() -> None:
     result1 = pl.select(pl.lit(a).sample(n=10)).to_series()
     random.seed(1)
     result2 = pl.select(pl.lit(a).sample(n=10)).to_series()
-    assert result1.series_equal(result2)
+    assert_series_equal(result1, result2)
 
 
 def test_map_alias() -> None:
@@ -142,99 +185,13 @@ def test_map_alias() -> None:
         (pl.col("foo") * 2).map_alias(lambda name: f"{name}{name}")
     )
     expected = pl.DataFrame({"foofoo": [2, 4, 6]})
-    assert out.frame_equal(expected)
+    assert_frame_equal(out, expected)
 
 
 def test_unique_stable() -> None:
-    a = pl.Series("a", [1, 1, 1, 1, 2, 2, 2, 3, 3])
+    s = pl.Series("a", [1, 1, 1, 1, 2, 2, 2, 3, 3])
     expected = pl.Series("a", [1, 2, 3])
-
-    verify_series_and_expr_api(a, expected, "unique", True)
-
-
-def test_wildcard_expansion() -> None:
-    # one function requires wildcard expansion the other need
-    # this tests the nested behavior
-    # see: #2867
-
-    df = pl.DataFrame({"a": ["x", "Y", "z"], "b": ["S", "o", "S"]})
-    assert df.select(
-        pl.concat_str(pl.all()).str.to_lowercase()
-    ).to_series().to_list() == ["xs", "yo", "zs"]
-
-
-def test_split() -> None:
-    df = pl.DataFrame({"x": ["a_a", None, "b", "c_c_c"]})
-    out = df.select([pl.col("x").str.split("_")])
-
-    expected = pl.DataFrame(
-        [
-            {"x": ["a", "a"]},
-            {"x": None},
-            {"x": ["b"]},
-            {"x": ["c", "c", "c"]},
-        ]
-    )
-
-    assert out.frame_equal(expected)
-    assert df["x"].str.split("_").to_frame().frame_equal(expected)
-
-    out = df.select([pl.col("x").str.split("_", inclusive=True)])
-
-    expected = pl.DataFrame(
-        [
-            {"x": ["a_", "a"]},
-            {"x": None},
-            {"x": ["b"]},
-            {"x": ["c_", "c_", "c"]},
-        ]
-    )
-
-    assert out.frame_equal(expected)
-    assert df["x"].str.split("_", inclusive=True).to_frame().frame_equal(expected)
-
-
-def test_split_exact() -> None:
-    df = pl.DataFrame({"x": ["a_a", None, "b", "c_c"]})
-    out = df.select([pl.col("x").str.split_exact("_", 2, inclusive=False)]).unnest("x")
-
-    expected = pl.DataFrame(
-        {
-            "field_0": ["a", None, "b", "c"],
-            "field_1": ["a", None, None, "c"],
-            "field_2": pl.Series([None, None, None, None], dtype=pl.Utf8),
-        }
-    )
-
-    assert out.frame_equal(expected)
-    assert (
-        df["x"]
-        .str.split_exact("_", 2, inclusive=False)
-        .to_frame()
-        .unnest("x")
-        .frame_equal(expected)
-    )
-
-    out = df.select([pl.col("x").str.split_exact("_", 1, inclusive=True)]).unnest("x")
-
-    expected = pl.DataFrame(
-        {"field_0": ["a_", None, "b", "c_"], "field_1": ["a", None, None, "c"]}
-    )
-    assert out.frame_equal(expected)
-    assert df["x"].str.split_exact("_", 1).dtype == pl.Struct
-    assert df["x"].str.split_exact("_", 1, inclusive=False).dtype == pl.Struct
-
-
-def test_splitn() -> None:
-    df = pl.DataFrame({"x": ["a_a", None, "b", "c_c_c"]})
-    out = df.select([pl.col("x").str.splitn("_", 2)]).unnest("x")
-
-    expected = pl.DataFrame(
-        {"field_0": ["a", None, "b", "c"], "field_1": ["a", None, None, "c_c"]}
-    )
-
-    assert out.frame_equal(expected)
-    assert df["x"].str.splitn("_", 2).to_frame().unnest("x").frame_equal(expected)
+    assert_series_equal(s.unique(maintain_order=True), expected)
 
 
 def test_unique_and_drop_stability() -> None:
@@ -250,7 +207,7 @@ def test_unique_and_drop_stability() -> None:
 def test_unique_counts() -> None:
     s = pl.Series("id", ["a", "b", "b", "c", "c", "c"])
     expected = pl.Series("id", [1, 2, 3], dtype=pl.UInt32)
-    verify_series_and_expr_api(s, expected, "unique_counts")
+    assert_series_equal(s.unique_counts(), expected)
 
 
 def test_entropy() -> None:
@@ -260,16 +217,13 @@ def test_entropy() -> None:
             "id": [1, 2, 1, 4, 5, 4, 6],
         }
     )
-
-    assert (
-        df.groupby("group", maintain_order=True).agg(
-            pl.col("id").entropy(normalize=True)
-        )
-    ).frame_equal(
-        pl.DataFrame(
-            {"group": ["A", "B"], "id": [1.0397207708399179, 1.371381017771811]}
-        )
+    result = df.groupby("group", maintain_order=True).agg(
+        pl.col("id").entropy(normalize=True)
     )
+    expected = pl.DataFrame(
+        {"group": ["A", "B"], "id": [1.0397207708399179, 1.371381017771811]}
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_dot_in_groupby() -> None:
@@ -281,17 +235,17 @@ def test_dot_in_groupby() -> None:
         }
     )
 
-    assert (
-        df.groupby("group", maintain_order=True)
-        .agg(pl.col("x").dot("y").alias("dot"))
-        .frame_equal(pl.DataFrame({"group": ["a", "b"], "dot": [6, 15]}))
+    result = df.groupby("group", maintain_order=True).agg(
+        pl.col("x").dot("y").alias("dot")
     )
+    expected = pl.DataFrame({"group": ["a", "b"], "dot": [6, 15]})
+    assert_frame_equal(result, expected)
 
 
 def test_dtype_col_selection() -> None:
     df = pl.DataFrame(
         data=[],
-        columns={
+        schema={
             "a1": pl.Datetime,
             "a2": pl.Datetime("ms"),
             "a3": pl.Datetime("ms"),
@@ -314,7 +268,7 @@ def test_dtype_col_selection() -> None:
             "n": pl.UInt64,
         },
     )
-    assert set(df.select(pl.col(INTEGER_DTYPES)).columns) == {
+    assert df.select(pl.col(INTEGER_DTYPES)).columns == [
         "e",
         "f",
         "g",
@@ -323,9 +277,9 @@ def test_dtype_col_selection() -> None:
         "l",
         "m",
         "n",
-    }
-    assert set(df.select(pl.col(FLOAT_DTYPES)).columns) == {"i", "j"}
-    assert set(df.select(pl.col(NUMERIC_DTYPES)).columns) == {
+    ]
+    assert df.select(pl.col(FLOAT_DTYPES)).columns == ["i", "j"]
+    assert df.select(pl.col(NUMERIC_DTYPES)).columns == [
         "e",
         "f",
         "g",
@@ -336,8 +290,8 @@ def test_dtype_col_selection() -> None:
         "l",
         "m",
         "n",
-    }
-    assert set(df.select(pl.col(TEMPORAL_DTYPES)).columns) == {
+    ]
+    assert df.select(pl.col(TEMPORAL_DTYPES)).columns == [
         "a1",
         "a2",
         "a3",
@@ -348,14 +302,26 @@ def test_dtype_col_selection() -> None:
         "d2",
         "d3",
         "d4",
-    }
+    ]
+    assert df.select(pl.col(DATETIME_DTYPES)).columns == [
+        "a1",
+        "a2",
+        "a3",
+        "a4",
+    ]
+    assert df.select(pl.col(DURATION_DTYPES)).columns == [
+        "d1",
+        "d2",
+        "d3",
+        "d4",
+    ]
 
 
 def test_list_eval_expression() -> None:
     df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
 
     for parallel in [True, False]:
-        assert df.with_column(
+        assert df.with_columns(
             pl.concat_list(["a", "b"])
             .arr.eval(pl.first().rank(), parallel=parallel)
             .alias("rank")
@@ -427,7 +393,9 @@ def test_regex_in_filter() -> None:
     )
 
     res = df.filter(
-        pl.fold(acc=False, f=lambda acc, s: acc | s, exprs=(pl.col("^nrs|flt*$") < 3))
+        pl.fold(
+            acc=False, function=lambda acc, s: acc | s, exprs=(pl.col("^nrs|flt*$") < 3)
+        )
     ).row(0)
     expected = (1, "foo", 1.0)
     assert res == expected
@@ -481,7 +449,7 @@ def test_rank_so_4109() -> None:
 def test_unique_empty() -> None:
     for dt in [pl.Utf8, pl.Boolean, pl.Int32, pl.UInt32]:
         s = pl.Series([], dtype=dt)
-        assert s.unique().series_equal(s)
+        assert_series_equal(s.unique(), s)
 
 
 @typing.no_type_check
@@ -527,6 +495,14 @@ def test_logical_boolean() -> None:
     with pytest.raises(ValueError, match="ambiguous"):
         pl.col("colx") or pl.col("coly")
 
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
+
+    with pytest.raises(ValueError, match="ambiguous"):
+        df.select([(pl.col("a") > pl.col("b")) and (pl.col("b") > pl.col("b"))])
+
+    with pytest.raises(ValueError, match="ambiguous"):
+        df.select([(pl.col("a") > pl.col("b")) or (pl.col("b") > pl.col("b"))])
+
 
 # https://github.com/pola-rs/polars/issues/4951
 def test_ewm_with_multiple_chunks() -> None:
@@ -537,7 +513,7 @@ def test_ewm_with_multiple_chunks() -> None:
             ("y", 4.0, 3.0),
             ("z", 3.0, 4.0),
         ],
-        columns=["a", "b", "c"],
+        schema=["a", "b", "c"],
     ).with_columns(
         [
             pl.col(pl.Float64).log().diff().prefix("ld_"),
@@ -556,3 +532,236 @@ def test_ewm_with_multiple_chunks() -> None:
         ]
     )
     assert ewm_std.null_count().sum(axis=1)[0] == 4
+
+
+def test_map_dict() -> None:
+    country_code_dict = {
+        "CA": "Canada",
+        "DE": "Germany",
+        "FR": "France",
+        None: "Not specified",
+    }
+    df = pl.DataFrame(
+        {
+            "int": [None, 1, None, 3],
+            "country_code": ["FR", None, "ES", "DE"],
+        }
+    )
+
+    assert (
+        df.with_columns(
+            pl.col("country_code")
+            .map_dict(country_code_dict, default=pl.first())
+            .alias("remapped")
+        )
+    ).to_dict(False) == {
+        "int": [None, 1, None, 3],
+        "country_code": ["FR", None, "ES", "DE"],
+        "remapped": ["France", "Not specified", "ES", "Germany"],
+    }
+
+    assert (
+        df.with_columns(
+            pl.col("country_code")
+            .map_dict(country_code_dict, default=pl.col("country_code"))
+            .alias("remapped")
+        )
+    ).to_dict(False) == {
+        "int": [None, 1, None, 3],
+        "country_code": ["FR", None, "ES", "DE"],
+        "remapped": ["France", "Not specified", "ES", "Germany"],
+    }
+
+    assert (
+        df.with_columns(
+            pl.col("country_code").map_dict(country_code_dict).alias("remapped")
+        )
+    ).to_dict(False) == {
+        "int": [None, 1, None, 3],
+        "country_code": ["FR", None, "ES", "DE"],
+        "remapped": ["France", "Not specified", None, "Germany"],
+    }
+
+    assert (
+        df.with_row_count().with_columns(
+            pl.struct(pl.col(["country_code", "row_nr"]))
+            .map_dict(
+                country_code_dict,
+                default=pl.col("row_nr").cast(pl.Utf8),
+            )
+            .alias("remapped")
+        )
+    ).to_dict(False) == {
+        "row_nr": [0, 1, 2, 3],
+        "int": [None, 1, None, 3],
+        "country_code": ["FR", None, "ES", "DE"],
+        "remapped": ["France", "Not specified", "2", "Germany"],
+    }
+
+    with pl.StringCache():
+        assert (
+            df.with_columns(
+                pl.col("country_code")
+                .cast(pl.Categorical)
+                .map_dict(country_code_dict, default=pl.col("country_code"))
+                .alias("remapped")
+            )
+        ).to_dict(False) == {
+            "int": [None, 1, None, 3],
+            "country_code": ["FR", None, "ES", "DE"],
+            "remapped": ["France", "Not specified", "ES", "Germany"],
+        }
+
+    df_categorical_lazy = df.lazy().with_columns(
+        pl.col("country_code").cast(pl.Categorical)
+    )
+
+    with pl.StringCache():
+        assert (
+            df_categorical_lazy.with_columns(
+                pl.col("country_code")
+                .map_dict(country_code_dict, default=pl.col("country_code"))
+                .alias("remapped")
+            )
+            .collect()
+            .to_dict(False)
+        ) == {
+            "int": [None, 1, None, 3],
+            "country_code": ["FR", None, "ES", "DE"],
+            "remapped": ["France", "Not specified", "ES", "Germany"],
+        }
+
+    int_dict = {1: "b", 3: "d"}
+    int_with_none_dict = {1: "b", 3: "d", None: "e"}
+
+    assert (
+        df.with_columns(pl.col("int").map_dict(int_dict).alias("remapped")).to_dict(
+            False
+        )
+    ) == {
+        "int": [None, 1, None, 3],
+        "country_code": ["FR", None, "ES", "DE"],
+        "remapped": [None, "b", None, "d"],
+    }
+
+    assert (
+        df.with_columns(
+            pl.col("int").map_dict(int_with_none_dict).alias("remapped")
+        ).to_dict(False)
+    ) == {
+        "int": [None, 1, None, 3],
+        "country_code": ["FR", None, "ES", "DE"],
+        "remapped": ["e", "b", "e", "d"],
+    }
+
+    float_dict = {1.0: "b", 3.0: "d"}
+
+    with pytest.raises(
+        pl.ComputeError, match="Remapping keys could not be converted to Int64: "
+    ):
+        df.with_columns(pl.col("int").map_dict(float_dict))
+
+    df_int_as_str = df.with_columns(pl.col("int").cast(pl.Utf8))
+
+    with pytest.raises(
+        pl.ComputeError,
+        match="Remapping keys could not be converted to Utf8 without losing values in the conversion.",
+    ):
+        df_int_as_str.with_columns(pl.col("int").map_dict(int_dict))
+
+    with pytest.raises(
+        pl.ComputeError,
+        match="Remapping keys could not be converted to Utf8 without losing values in the conversion.",
+    ):
+        df_int_as_str.with_columns(pl.col("int").map_dict(int_with_none_dict))
+
+    # 7132
+    df = pl.DataFrame({"text": ["abc"]})
+    mapper = {"abc": "123"}
+    assert df.select(pl.col("text").map_dict(mapper).str.replace_all("1", "-")).to_dict(
+        False
+    ) == {"text": ["-23"]}
+
+
+def test_lit_dtypes() -> None:
+    def lit_series(value: Any, dtype: pl.PolarsDataType | None) -> pl.Series:
+        return pl.select(pl.lit(value, dtype=dtype)).to_series()
+
+    d = datetime(2049, 10, 5, 1, 2, 3, 987654)
+    d_ms = datetime(2049, 10, 5, 1, 2, 3, 987000)
+    d_tz = datetime(2049, 10, 5, 1, 2, 3, 987654, tzinfo=ZoneInfo("Asia/Kathmandu"))
+
+    td = timedelta(days=942, hours=6, microseconds=123456)
+    td_ms = timedelta(days=942, seconds=21600, microseconds=123000)
+
+    df = pl.DataFrame(
+        {
+            "dtm_ms": lit_series(d, pl.Datetime("ms")),
+            "dtm_us": lit_series(d, pl.Datetime("us")),
+            "dtm_ns": lit_series(d, pl.Datetime("ns")),
+            "dtm_aware_0": lit_series(d, pl.Datetime("us", "Asia/Kathmandu")),
+            "dtm_aware_1": lit_series(d_tz, pl.Datetime("us")),
+            "dtm_aware_2": lit_series(d_tz, None),
+            "dtm_aware_3": lit_series(d, pl.Datetime(None, "Asia/Kathmandu")),
+            "dur_ms": lit_series(td, pl.Duration("ms")),
+            "dur_us": lit_series(td, pl.Duration("us")),
+            "dur_ns": lit_series(td, pl.Duration("ns")),
+            "f32": lit_series(0, pl.Float32),
+            "u16": lit_series(0, pl.UInt16),
+            "i16": lit_series(0, pl.Int16),
+        }
+    )
+    assert df.dtypes == [
+        pl.Datetime("ms"),
+        pl.Datetime("us"),
+        pl.Datetime("ns"),
+        pl.Datetime("us", "Asia/Kathmandu"),
+        pl.Datetime("us", "Asia/Kathmandu"),
+        pl.Datetime("us", "Asia/Kathmandu"),
+        pl.Datetime("us", "Asia/Kathmandu"),
+        pl.Duration("ms"),
+        pl.Duration("us"),
+        pl.Duration("ns"),
+        pl.Float32,
+        pl.UInt16,
+        pl.Int16,
+    ]
+    assert df.row(0) == (d_ms, d, d, d_tz, d_tz, d_tz, d_tz, td_ms, td, td, 0, 0, 0)
+
+
+def test_incompatible_lit_dtype() -> None:
+    with pytest.raises(TypeError, match="Cannot cast tz-aware value to tz-aware dtype"):
+        pl.lit(
+            datetime(2020, 1, 1, tzinfo=timezone.utc),
+            dtype=pl.Datetime("us", "Asia/Kathmandu"),
+        )
+
+
+@pytest.mark.parametrize(
+    ("input", "expected"),
+    [
+        (("a",), ["b", "c"]),
+        (("a", "b"), ["c"]),
+        ((["a", "b"],), ["c"]),
+        ((pl.Int64,), ["c"]),
+        ((pl.Utf8, pl.Float32), ["a", "b"]),
+        (([pl.Utf8, pl.Float32],), ["a", "b"]),
+    ],
+)
+def test_exclude(input: tuple[Any, ...], expected: list[str]) -> None:
+    df = pl.DataFrame(schema={"a": pl.Int64, "b": pl.Int64, "c": pl.Utf8})
+    assert df.select(pl.all().exclude(*input)).columns == expected
+
+
+@pytest.mark.parametrize("input", [(5,), (["a"], "b"), (pl.Int64, "a")])
+def test_exclude_invalid_input(input: tuple[Any, ...]) -> None:
+    df = pl.DataFrame(schema=["a", "b", "c"])
+    with pytest.raises(TypeError):
+        df.select(pl.all().exclude(*input))
+
+
+def test_arg_true() -> None:
+    df = pl.DataFrame({"a": [1, 1, 2, 1]})
+    res = df.select((pl.col("a") == 1).arg_true())
+    expected = pl.DataFrame([pl.Series("a", [0, 1, 3], dtype=pl.UInt32)])
+    assert_frame_equal(res, expected)

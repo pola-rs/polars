@@ -23,10 +23,8 @@ fn test_duration() -> PolarsResult<()> {
         )
         .groupby([col("groups")])
         .agg([
-            (col("date") - col("date").first()).list().alias("date"),
-            (col("datetime") - col("datetime").first())
-                .list()
-                .alias("datetime"),
+            (col("date") - col("date").first()).alias("date"),
+            (col("datetime") - col("datetime").first()).alias("datetime"),
         ])
         .explode([col("date"), col("datetime")])
         .collect()?;

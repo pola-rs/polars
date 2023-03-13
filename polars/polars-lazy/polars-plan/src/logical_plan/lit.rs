@@ -15,7 +15,6 @@ pub enum LiteralValue {
     /// A UTF8 encoded string type.
     Utf8(String),
     /// A raw binary array
-    #[cfg(feature = "dtype-binary")]
     Binary(Vec<u8>),
     /// An unsigned 8-bit integer number.
     #[cfg(feature = "dtype-u8")]
@@ -46,17 +45,22 @@ pub enum LiteralValue {
         high: i64,
         data_type: DataType,
     },
-    #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
-    #[cfg_attr(feature = "serde", serde(skip))]
-    DateTime(NaiveDateTime, TimeUnit),
-    #[cfg(all(feature = "temporal", feature = "dtype-duration"))]
-    #[cfg_attr(feature = "serde", serde(skip))]
-    Duration(ChronoDuration, TimeUnit),
-    #[cfg_attr(feature = "serde", serde(skip))]
+    #[cfg(feature = "dtype-date")]
+    Date(i32),
+    #[cfg(feature = "dtype-datetime")]
+    DateTime(i64, TimeUnit, Option<TimeZone>),
+    #[cfg(feature = "dtype-duration")]
+    Duration(i64, TimeUnit),
+    #[cfg(feature = "dtype-time")]
+    Time(i64),
     Series(SpecialEq<Series>),
 }
 
 impl LiteralValue {
+    pub(crate) fn is_float(&self) -> bool {
+        matches!(self, LiteralValue::Float32(_) | LiteralValue::Float64(_))
+    }
+
     pub fn to_anyvalue(&self) -> Option<AnyValue> {
         use LiteralValue::*;
         let av = match self {
@@ -76,6 +80,15 @@ impl LiteralValue {
             Int64(v) => AnyValue::Int64(*v),
             Float32(v) => AnyValue::Float32(*v),
             Float64(v) => AnyValue::Float64(*v),
+            Utf8(v) => AnyValue::Utf8(v),
+            #[cfg(feature = "dtype-duration")]
+            Duration(v, tu) => AnyValue::Duration(*v, *tu),
+            #[cfg(feature = "dtype-date")]
+            Date(v) => AnyValue::Date(*v),
+            #[cfg(feature = "dtype-datetime")]
+            DateTime(v, tu, tz) => AnyValue::Datetime(*v, *tu, tz),
+            #[cfg(feature = "dtype-time")]
+            Time(v) => AnyValue::Time(*v),
             _ => return None,
         };
         Some(av)
@@ -100,15 +113,18 @@ impl LiteralValue {
             LiteralValue::Float32(_) => DataType::Float32,
             LiteralValue::Float64(_) => DataType::Float64,
             LiteralValue::Utf8(_) => DataType::Utf8,
-            #[cfg(feature = "dtype-binary")]
             LiteralValue::Binary(_) => DataType::Binary,
             LiteralValue::Range { data_type, .. } => data_type.clone(),
+            #[cfg(all(feature = "temporal", feature = "dtype-date"))]
+            LiteralValue::Date(_) => DataType::Date,
             #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
-            LiteralValue::DateTime(_, tu) => DataType::Datetime(*tu, None),
+            LiteralValue::DateTime(_, tu, tz) => DataType::Datetime(*tu, tz.clone()),
             #[cfg(all(feature = "temporal", feature = "dtype-duration"))]
             LiteralValue::Duration(_, tu) => DataType::Duration(*tu),
             LiteralValue::Series(s) => s.dtype().clone(),
             LiteralValue::Null => DataType::Null,
+            #[cfg(feature = "dtype-time")]
+            LiteralValue::Time(_) => DataType::Time,
         }
     }
 }
@@ -130,14 +146,12 @@ impl<'a> Literal for &'a str {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl Literal for Vec<u8> {
     fn lit(self) -> Expr {
         Expr::Literal(LiteralValue::Binary(self))
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl<'a> Literal for &'a [u8] {
     fn lit(self) -> Expr {
         Expr::Literal(LiteralValue::Binary(self.to_vec()))
@@ -151,7 +165,6 @@ impl TryFrom<AnyValue<'_>> for LiteralValue {
             AnyValue::Null => Ok(Self::Null),
             AnyValue::Boolean(b) => Ok(Self::Boolean(b)),
             AnyValue::Utf8(s) => Ok(Self::Utf8(s.to_string())),
-            #[cfg(feature = "dtype-binary")]
             AnyValue::Binary(b) => Ok(Self::Binary(b.to_vec())),
             #[cfg(feature = "dtype-u8")]
             AnyValue::UInt8(u) => Ok(Self::UInt8(u)),
@@ -168,36 +181,13 @@ impl TryFrom<AnyValue<'_>> for LiteralValue {
             AnyValue::Float32(f) => Ok(Self::Float32(f)),
             AnyValue::Float64(f) => Ok(Self::Float64(f)),
             #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
-            AnyValue::Date(d) => Ok(Self::DateTime(
-                NaiveDate::from_ymd_opt(1970, 1, 1)
-                    .unwrap()
-                    .and_hms_opt(0, 0, 0)
-                    .unwrap()
-                    + ChronoDuration::days(d as i64),
-                TimeUnit::Milliseconds,
-            )),
+            AnyValue::Date(v) => Ok(LiteralValue::Date(v)),
             #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
-            AnyValue::Datetime(epoch, _time_unit, _time_zone) => Ok(Self::DateTime(
-                NaiveDateTime::from_timestamp_opt(epoch, 0).unwrap(),
-                TimeUnit::Nanoseconds,
-            )),
+            AnyValue::Datetime(value, tu, tz) => Ok(LiteralValue::DateTime(value, tu, tz.clone())),
             #[cfg(all(feature = "temporal", feature = "dtype-duration"))]
-            AnyValue::Duration(chrono_duration, time_scale) => Ok(match time_scale {
-                TimeUnit::Nanoseconds => Self::Duration(
-                    ChronoDuration::nanoseconds(chrono_duration),
-                    TimeUnit::Nanoseconds,
-                ),
-                TimeUnit::Microseconds => Self::Duration(
-                    ChronoDuration::microseconds(chrono_duration),
-                    TimeUnit::Microseconds,
-                ),
-                TimeUnit::Milliseconds => Self::Duration(
-                    ChronoDuration::milliseconds(chrono_duration),
-                    TimeUnit::Milliseconds,
-                ),
-            }),
+            AnyValue::Duration(value, tu) => Ok(LiteralValue::Duration(value, tu)),
             #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
-            AnyValue::Time(nanosecs_since_midnight) => Ok(Self::Int64(nanosecs_since_midnight)),
+            AnyValue::Time(v) => Ok(LiteralValue::Time(v)),
             AnyValue::List(l) => Ok(Self::Series(SpecialEq::new(l))),
             AnyValue::Utf8Owned(o) => Ok(Self::Utf8(o.into())),
             #[cfg(feature = "dtype-categorical")]
@@ -212,9 +202,9 @@ impl TryFrom<AnyValue<'_>> for LiteralValue {
                     }
                 }
             }
-            _ => Err(PolarsError::ComputeError(
-                "Unsupported AnyValue type variant, cannot convert to Literal".into(),
-            )),
+            v => polars_bail!(
+                ComputeError: "cannot convert any-value {:?} to literal", v
+            ),
         }
     }
 }
@@ -259,9 +249,17 @@ impl Literal for Null {
 impl Literal for NaiveDateTime {
     fn lit(self) -> Expr {
         if in_nanoseconds_window(&self) {
-            Expr::Literal(LiteralValue::DateTime(self, TimeUnit::Nanoseconds))
+            Expr::Literal(LiteralValue::DateTime(
+                self.timestamp_nanos(),
+                TimeUnit::Nanoseconds,
+                None,
+            ))
         } else {
-            Expr::Literal(LiteralValue::DateTime(self, TimeUnit::Microseconds))
+            Expr::Literal(LiteralValue::DateTime(
+                self.timestamp_micros(),
+                TimeUnit::Microseconds,
+                None,
+            ))
         }
     }
 }
@@ -269,17 +267,21 @@ impl Literal for NaiveDateTime {
 #[cfg(all(feature = "temporal", feature = "dtype-duration"))]
 impl Literal for ChronoDuration {
     fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::Duration(self, TimeUnit::Nanoseconds))
+        if let Some(value) = self.num_nanoseconds() {
+            Expr::Literal(LiteralValue::Duration(value, TimeUnit::Nanoseconds))
+        } else {
+            Expr::Literal(LiteralValue::Duration(
+                self.num_microseconds().unwrap(),
+                TimeUnit::Microseconds,
+            ))
+        }
     }
 }
 
 #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
 impl Literal for NaiveDate {
     fn lit(self) -> Expr {
-        Expr::Literal(LiteralValue::DateTime(
-            self.and_hms_opt(0, 0, 0).unwrap(),
-            TimeUnit::Milliseconds,
-        ))
+        self.and_hms_opt(0, 0, 0).unwrap().lit()
     }
 }
 
@@ -289,7 +291,13 @@ impl Literal for Series {
     }
 }
 
-/// Create a Literal Expression from `L`
+/// Create a Literal Expression from `L`. A literal expression behaves like a column that contains a single distinct
+/// value.
+///
+/// The column is automatically of the "correct" length to make the operations work. Often this is determined by the
+/// length of the `LazyFrame` it is being used with. For instance, `lazy_df.with_column(lit(5).alias("five"))` creates a
+/// new column named "five" that is the length of the Dataframe (at the time `collect` is called), where every value in
+/// the column is `5`.
 pub fn lit<L: Literal>(t: L) -> Expr {
     t.lit()
 }

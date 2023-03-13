@@ -1,16 +1,26 @@
 from __future__ import annotations
 
-from datetime import time, timedelta
+from datetime import time
 from typing import TYPE_CHECKING
 
 import polars.internals as pli
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
-from polars.utils import _timedelta_to_pl_duration
+from polars.utils.convert import _timedelta_to_pl_duration
+from polars.utils.decorators import deprecated_alias, redirect
 
 if TYPE_CHECKING:
+    from datetime import timedelta
+
     from polars.internals.type_aliases import EpochTimeUnit, TimeUnit
 
 
+@redirect(
+    {
+        "tz_localize": "replace_time_zone",
+        "with_time_zone": "convert_time_zone",
+        "cast_time_zone": "replace_time_zone",
+    }
+)
 class ExprDateTimeNameSpace:
     """Namespace for datetime related expressions."""
 
@@ -321,6 +331,35 @@ class ExprDateTimeNameSpace:
         See `chrono strftime/strptime
         <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_.
 
+        Examples
+        --------
+        >>> from datetime import timedelta, datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "date": pl.date_range(
+        ...             datetime(2020, 3, 1), datetime(2020, 5, 1), "1mo"
+        ...         ),
+        ...     }
+        ... )
+        >>> df.select(
+        ...     [
+        ...         pl.col("date"),
+        ...         pl.col("date")
+        ...         .dt.strftime("%Y/%m/%d %H:%M:%S")
+        ...         .alias("date_formatted"),
+        ...     ]
+        ... )
+        shape: (3, 2)
+        ┌─────────────────────┬─────────────────────┐
+        │ date                ┆ date_formatted      │
+        │ ---                 ┆ ---                 │
+        │ datetime[μs]        ┆ str                 │
+        ╞═════════════════════╪═════════════════════╡
+        │ 2020-03-01 00:00:00 ┆ 2020/03/01 00:00:00 │
+        │ 2020-04-01 00:00:00 ┆ 2020/04/01 00:00:00 │
+        │ 2020-05-01 00:00:00 ┆ 2020/05/01 00:00:00 │
+        └─────────────────────┴─────────────────────┘
+
         """
         return pli.wrap_expr(self._pyexpr.strftime(fmt))
 
@@ -382,6 +421,35 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         ISO Year as Int32
+
+        Examples
+        --------
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2006, 1, 1)
+        >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=180))})
+        >>> df.select(
+        ...     [
+        ...         pl.col("date"),
+        ...         pl.col("date").dt.iso_year().alias("iso_year"),
+        ...     ]
+        ... )
+        shape: (11, 2)
+        ┌─────────────────────┬──────────┐
+        │ date                ┆ iso_year │
+        │ ---                 ┆ ---      │
+        │ datetime[μs]        ┆ i32      │
+        ╞═════════════════════╪══════════╡
+        │ 2001-01-01 00:00:00 ┆ 2001     │
+        │ 2001-06-30 00:00:00 ┆ 2001     │
+        │ 2001-12-27 00:00:00 ┆ 2001     │
+        │ 2002-06-25 00:00:00 ┆ 2002     │
+        │ ...                 ┆ ...      │
+        │ 2004-06-14 00:00:00 ┆ 2004     │
+        │ 2004-12-11 00:00:00 ┆ 2004     │
+        │ 2005-06-09 00:00:00 ┆ 2005     │
+        │ 2005-12-06 00:00:00 ┆ 2005     │
+        └─────────────────────┴──────────┘
 
         """
         return pli.wrap_expr(self._pyexpr.iso_year())
@@ -883,6 +951,39 @@ class ExprDateTimeNameSpace:
         -------
         Microseconds as UInt32
 
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "date": pl.date_range(
+        ...             datetime(2020, 1, 1), datetime(2020, 1, 1, 0, 0, 1, 0), "1ms"
+        ...         ),
+        ...     }
+        ... )
+        >>> df.select(
+        ...     [
+        ...         pl.col("date"),
+        ...         pl.col("date").dt.microsecond().alias("microseconds"),
+        ...     ]
+        ... )
+        shape: (1001, 2)
+        ┌─────────────────────────┬──────────────┐
+        │ date                    ┆ microseconds │
+        │ ---                     ┆ ---          │
+        │ datetime[μs]            ┆ u32          │
+        ╞═════════════════════════╪══════════════╡
+        │ 2020-01-01 00:00:00     ┆ 0            │
+        │ 2020-01-01 00:00:00.001 ┆ 1000         │
+        │ 2020-01-01 00:00:00.002 ┆ 2000         │
+        │ 2020-01-01 00:00:00.003 ┆ 3000         │
+        │ ...                     ┆ ...          │
+        │ 2020-01-01 00:00:00.997 ┆ 997000       │
+        │ 2020-01-01 00:00:00.998 ┆ 998000       │
+        │ 2020-01-01 00:00:00.999 ┆ 999000       │
+        │ 2020-01-01 00:00:01     ┆ 0            │
+        └─────────────────────────┴──────────────┘
+
         """
         return pli.wrap_expr(self._pyexpr.microsecond())
 
@@ -1062,13 +1163,14 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.dt_cast_time_unit(tu))
 
-    def with_time_zone(self, tz: str | None) -> pli.Expr:
+    @deprecated_alias(tz="time_zone")
+    def convert_time_zone(self, time_zone: str) -> pli.Expr:
         """
-        Set time zone for a Series of type Datetime.
+        Convert to given time zone for a Series of type Datetime.
 
         Parameters
         ----------
-        tz
+        time_zone
             Time zone for the `Datetime` Series.
 
         Examples
@@ -1077,7 +1179,10 @@ class ExprDateTimeNameSpace:
         >>> df = pl.DataFrame(
         ...     {
         ...         "date": pl.date_range(
-        ...             datetime(2020, 3, 1), datetime(2020, 5, 1), "1mo"
+        ...             datetime(2020, 3, 1),
+        ...             datetime(2020, 5, 1),
+        ...             "1mo",
+        ...             time_zone="UTC",
         ...         ),
         ...     }
         ... )
@@ -1085,53 +1190,72 @@ class ExprDateTimeNameSpace:
         ...     [
         ...         pl.col("date"),
         ...         pl.col("date")
-        ...         .dt.with_time_zone(tz="Europe/London")
+        ...         .dt.convert_time_zone(tz="Europe/London")
         ...         .alias("London"),
         ...     ]
         ... )
         shape: (3, 2)
-        ┌─────────────────────┬─────────────────────────────┐
-        │ date                ┆ London                      │
-        │ ---                 ┆ ---                         │
-        │ datetime[μs]        ┆ datetime[μs, Europe/London] │
-        ╞═════════════════════╪═════════════════════════════╡
-        │ 2020-03-01 00:00:00 ┆ 2020-03-01 00:00:00 GMT     │
-        │ 2020-04-01 00:00:00 ┆ 2020-04-01 01:00:00 BST     │
-        │ 2020-05-01 00:00:00 ┆ 2020-05-01 01:00:00 BST     │
-        └─────────────────────┴─────────────────────────────┘
-
+        ┌─────────────────────────┬─────────────────────────────┐
+        │ date                    ┆ London                      │
+        │ ---                     ┆ ---                         │
+        │ datetime[μs, UTC]       ┆ datetime[μs, Europe/London] │
+        ╞═════════════════════════╪═════════════════════════════╡
+        │ 2020-03-01 00:00:00 UTC ┆ 2020-03-01 00:00:00 GMT     │
+        │ 2020-04-01 00:00:00 UTC ┆ 2020-04-01 01:00:00 BST     │
+        │ 2020-05-01 00:00:00 UTC ┆ 2020-05-01 01:00:00 BST     │
+        └─────────────────────────┴─────────────────────────────┘
         """
-        return pli.wrap_expr(self._pyexpr.dt_with_time_zone(tz))
+        return pli.wrap_expr(self._pyexpr.dt_convert_time_zone(time_zone))
 
-    def cast_time_zone(self, tz: str) -> pli.Expr:
+    @deprecated_alias(tz="time_zone")
+    def replace_time_zone(self, time_zone: str | None) -> pli.Expr:
         """
-        Cast time zone for a Series of type Datetime.
+        Replace time zone for a Series of type Datetime.
 
-        Different from ``with_time_zone``, this will also modify
-        the underlying timestamp,
+        Different from ``convert_time_zone``, this will also modify
+        the underlying timestamp and will ignore the original time zone.
 
         Parameters
         ----------
-        tz
-            Time zone for the `Datetime` Series.
+        time_zone
+            Time zone for the `Datetime` Series. Pass `None` to unset time zone.
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "london_timezone": pl.date_range(
+        ...             datetime(2020, 3, 1),
+        ...             datetime(2020, 7, 1),
+        ...             "1mo",
+        ...             time_zone="UTC",
+        ...         ).dt.convert_time_zone(tz="Europe/London"),
+        ...     }
+        ... )
+        >>> df.select(
+        ...     [
+        ...         pl.col("london_timezone"),
+        ...         pl.col("london_timezone")
+        ...         .dt.replace_time_zone(tz="Europe/Amsterdam")
+        ...         .alias("London_to_Amsterdam"),
+        ...     ]
+        ... )
+        shape: (5, 2)
+        ┌─────────────────────────────┬────────────────────────────────┐
+        │ london_timezone             ┆ London_to_Amsterdam            │
+        │ ---                         ┆ ---                            │
+        │ datetime[μs, Europe/London] ┆ datetime[μs, Europe/Amsterdam] │
+        ╞═════════════════════════════╪════════════════════════════════╡
+        │ 2020-03-01 00:00:00 GMT     ┆ 2020-03-01 00:00:00 CET        │
+        │ 2020-04-01 01:00:00 BST     ┆ 2020-04-01 01:00:00 CEST       │
+        │ 2020-05-01 01:00:00 BST     ┆ 2020-05-01 01:00:00 CEST       │
+        │ 2020-06-01 01:00:00 BST     ┆ 2020-06-01 01:00:00 CEST       │
+        │ 2020-07-01 01:00:00 BST     ┆ 2020-07-01 01:00:00 CEST       │
+        └─────────────────────────────┴────────────────────────────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.dt_cast_time_zone(tz))
-
-    def tz_localize(self, tz: str) -> pli.Expr:
-        """
-        Localize tz-naive Datetime Series to tz-aware Datetime Series.
-
-        This method takes a naive Datetime Series and makes this time zone aware.
-        It does not move the time to another time zone.
-
-        Parameters
-        ----------
-        tz
-            Time zone for the `Datetime` Series.
-
-        """
-        return pli.wrap_expr(self._pyexpr.dt_tz_localize(tz))
+        return pli.wrap_expr(self._pyexpr.dt_replace_time_zone(time_zone))
 
     def days(self) -> pli.Expr:
         """

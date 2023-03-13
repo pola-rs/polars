@@ -1,16 +1,16 @@
 from __future__ import annotations
 
+import contextlib
 import typing
-from typing import Any, Sequence
-
-try:
-    from polars.polars import when as pywhen
-
-    _DOCUMENTING = False
-except ImportError:
-    _DOCUMENTING = True
+from typing import TYPE_CHECKING, Any, Iterable
 
 from polars import internals as pli
+
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    from polars.polars import when as pywhen
+
+if TYPE_CHECKING:
+    from polars.internals.type_aliases import PolarsExprType, PythonLiteral
 
 
 class WhenThenThen:
@@ -26,15 +26,7 @@ class WhenThenThen:
 
     def then(
         self,
-        expr: (
-            pli.Expr
-            | int
-            | float
-            | str
-            | None
-            | pli.Series
-            | Sequence[int | float | str | None]
-        ),
+        expr: (PolarsExprType | PythonLiteral | pli.Series | None),
     ) -> WhenThenThen:
         """
         Values to return in case of the predicate being `True`.
@@ -50,9 +42,7 @@ class WhenThenThen:
 
     def otherwise(
         self,
-        expr: (
-            pli.Expr | int | float | str | None | Sequence[int | float | str | None]
-        ),
+        expr: (PolarsExprType | PythonLiteral | pli.Series | None),
     ) -> pli.Expr:
         """
         Values to return in case of the predicate being `False`.
@@ -78,12 +68,21 @@ class WhenThen:
     def __init__(self, pywhenthen: Any):
         self._pywhenthen = pywhenthen
 
-    def when(self, predicate: pli.Expr | bool) -> WhenThenThen:
+    def when(self, predicate: pli.Expr | bool | pli.Series) -> WhenThenThen:
         """Start another "when, then, otherwise" layer."""
         predicate = pli.expr_to_lit_or_expr(predicate)
         return WhenThenThen(self._pywhenthen.when(predicate._pyexpr))
 
-    def otherwise(self, expr: pli.Expr | int | float | str | None) -> pli.Expr:
+    def otherwise(
+        self,
+        expr: (
+            PolarsExprType
+            | PythonLiteral
+            | pli.Series
+            | Iterable[PolarsExprType | PythonLiteral | pli.Series]
+            | None
+        ),
+    ) -> pli.Expr:
         """
         Values to return in case of the predicate being `False`.
 
@@ -111,13 +110,11 @@ class When:
     def then(
         self,
         expr: (
-            pli.Expr
+            PolarsExprType
+            | PythonLiteral
             | pli.Series
-            | int
-            | float
-            | str
+            | Iterable[PolarsExprType | PythonLiteral | pli.Series]
             | None
-            | Sequence[None | int | float | str]
         ),
     ) -> WhenThen:
         """
@@ -134,7 +131,7 @@ class When:
         return WhenThen(pywhenthen)
 
 
-def when(expr: pli.Expr | bool) -> When:
+def when(expr: pli.Expr | bool | pli.Series) -> When:
     """
     Start a "when, then, otherwise" expression.
 
@@ -144,7 +141,9 @@ def when(expr: pli.Expr | bool) -> When:
     where it isn't.
 
     >>> df = pl.DataFrame({"foo": [1, 3, 4], "bar": [3, 4, 0]})
-    >>> df.with_column(pl.when(pl.col("foo") > 2).then(pl.lit(1)).otherwise(pl.lit(-1)))
+    >>> df.with_columns(
+    ...     pl.when(pl.col("foo") > 2).then(pl.lit(1)).otherwise(pl.lit(-1))
+    ... )
     shape: (3, 3)
     ┌─────┬─────┬─────────┐
     │ foo ┆ bar ┆ literal │
@@ -158,7 +157,7 @@ def when(expr: pli.Expr | bool) -> When:
 
     Or with multiple `when, thens` chained:
 
-    >>> df.with_column(
+    >>> df.with_columns(
     ...     pl.when(pl.col("foo") > 2)
     ...     .then(1)
     ...     .when(pl.col("bar") > 2)

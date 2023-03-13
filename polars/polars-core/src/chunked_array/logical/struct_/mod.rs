@@ -2,6 +2,8 @@ mod from;
 
 use std::collections::BTreeMap;
 
+use smartstring::alias::String as SmartString;
+
 use super::*;
 use crate::datatypes::*;
 use crate::utils::index_to_chunked_index2;
@@ -49,6 +51,7 @@ impl StructChunked {
         let mut max_len = first_len;
 
         let mut all_equal_len = true;
+        let mut is_empty = false;
         for s in fields {
             let s_len = s.len();
             max_len = std::cmp::max(max_len, s_len);
@@ -56,26 +59,29 @@ impl StructChunked {
             if s_len != first_len {
                 all_equal_len = false;
             }
-            let name = s.name();
-            if !names.insert(name) {
-                return Err(PolarsError::Duplicate(
-                    format!("multiple fields with name '{name}' found").into(),
-                ));
+            if s_len == 0 {
+                is_empty = true;
             }
+            polars_ensure!(
+                names.insert(s.name()),
+                Duplicate: "multiple fields with name '{}' found", s.name()
+            );
         }
 
         if !all_equal_len {
             let mut new_fields = Vec::with_capacity(fields.len());
             for s in fields {
                 let s_len = s.len();
-                if s_len == max_len {
+                if is_empty {
+                    new_fields.push(s.clear())
+                } else if s_len == max_len {
                     new_fields.push(s.clone())
                 } else if s_len == 1 {
                     new_fields.push(s.new_from_index(0, max_len))
                 } else {
-                    return Err(PolarsError::ShapeMisMatch(
-                        "expected all fields to have equal length".into(),
-                    ));
+                    polars_bail!(
+                        ShapeMismatch: "expected all fields to have equal length"
+                    );
                 }
             }
             Ok(Self::new_unchecked(name, &new_fields))
@@ -147,7 +153,7 @@ impl StructChunked {
         self.fields
             .iter()
             .find(|s| s.name() == name)
-            .ok_or_else(|| PolarsError::NotFound(name.to_string().into()))
+            .ok_or_else(|| polars_err!(StructFieldNotFound: "{}", name))
             .map(|s| s.clone())
     }
 
@@ -163,7 +169,7 @@ impl StructChunked {
         &self.field
     }
 
-    pub fn name(&self) -> &String {
+    pub fn name(&self) -> &SmartString {
         self.field.name()
     }
 
@@ -176,7 +182,7 @@ impl StructChunked {
     }
 
     pub fn rename(&mut self, name: &str) {
-        self.field.set_name(name.to_string())
+        self.field.set_name(name.into())
     }
 
     pub(crate) fn try_apply_fields<F>(&self, func: F) -> PolarsResult<Self>
@@ -198,6 +204,9 @@ impl StructChunked {
         let fields = self.fields.iter().map(func).collect::<Vec<_>>();
         Self::new_unchecked(self.field.name(), &fields)
     }
+    pub fn unnest(self) -> DataFrame {
+        self.into()
+    }
 }
 
 impl LogicalType for StructChunked {
@@ -207,11 +216,8 @@ impl LogicalType for StructChunked {
 
     /// Gets AnyValue from LogicalType
     fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
-        if i >= self.len() {
-            Err(PolarsError::ComputeError("Index out of bounds.".into()))
-        } else {
-            unsafe { Ok(self.get_any_value_unchecked(i)) }
-        }
+        polars_ensure!(i < self.len(), oob = i, self.len());
+        unsafe { Ok(self.get_any_value_unchecked(i)) }
     }
 
     unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {

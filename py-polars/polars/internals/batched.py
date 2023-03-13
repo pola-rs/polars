@@ -1,35 +1,33 @@
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
-from typing import Sequence
+from typing import TYPE_CHECKING, Sequence
 
 import polars.internals as pli
 from polars.datatypes import (
     N_INFER_DEFAULT,
-    PolarsDataType,
-    SchemaDict,
     py_type_to_dtype,
 )
-from polars.internals.type_aliases import CsvEncoding
-from polars.utils import (
+from polars.utils.various import (
     _prepare_row_count_args,
     _process_null_values,
     handle_projection_columns,
     normalise_filepath,
 )
 
-try:
+with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyBatchedCsv
 
-    _DOCUMENTING = False
-except ImportError:
-    _DOCUMENTING = True
+if TYPE_CHECKING:
+    from polars.datatypes import PolarsDataType, SchemaDict
+    from polars.internals.type_aliases import CsvEncoding
 
 
 class BatchedCsvReader:
     def __init__(
         self,
-        file: str | Path,
+        source: str | Path,
         has_header: bool = True,
         columns: Sequence[int] | Sequence[str] | None = None,
         sep: str = ",",
@@ -40,7 +38,7 @@ class BatchedCsvReader:
         null_values: str | list[str] | dict[str, str] | None = None,
         missing_utf8_is_empty_string: bool = False,
         ignore_errors: bool = False,
-        parse_dates: bool = False,
+        try_parse_dates: bool = False,
         n_threads: int | None = None,
         infer_schema_length: int | None = N_INFER_DEFAULT,
         batch_size: int = 50_000,
@@ -55,10 +53,9 @@ class BatchedCsvReader:
         eol_char: str = "\n",
         new_columns: list[str] | None = None,
     ):
-
         path: str | None
-        if isinstance(file, (str, Path)):
-            path = normalise_filepath(file)
+        if isinstance(source, (str, Path)):
+            path = normalise_filepath(source)
 
         dtype_list: Sequence[tuple[str, PolarsDataType]] | None = None
         dtype_slice: Sequence[PolarsDataType] | None = None
@@ -96,7 +93,7 @@ class BatchedCsvReader:
             quote_char=quote_char,
             null_values=processed_null_values,
             missing_utf8_is_empty_string=missing_utf8_is_empty_string,
-            parse_dates=parse_dates,
+            try_parse_dates=try_parse_dates,
             skip_rows_after_header=skip_rows_after_header,
             row_count=_prepare_row_count_args(row_count_name, row_count_offset),
             sample_size=sample_size,
@@ -120,7 +117,7 @@ class BatchedCsvReader:
         Examples
         --------
         >>> reader = pl.read_csv_batched(
-        ...     "./tpch/tables_scale_100/lineitem.tbl", sep="|", parse_dates=True
+        ...     "./tpch/tables_scale_100/lineitem.tbl", sep="|", try_parse_dates=True
         ... )  # doctest: +SKIP
         >>> reader.next_batches(5)  # doctest: +SKIP
 

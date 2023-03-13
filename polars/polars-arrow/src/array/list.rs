@@ -60,9 +60,7 @@ impl<'a> AnonymousBuilder<'a> {
             self.arrays.push(arr.as_ref());
         }
         self.offsets.push(self.size);
-        if let Some(validity) = &mut self.validity {
-            validity.push(true)
-        }
+        self.update_validity()
     }
 
     pub fn push_null(&mut self) {
@@ -75,6 +73,7 @@ impl<'a> AnonymousBuilder<'a> {
 
     pub fn push_empty(&mut self) {
         self.offsets.push(self.last_offset());
+        self.update_validity()
     }
 
     fn init_validity(&mut self) {
@@ -85,11 +84,15 @@ impl<'a> AnonymousBuilder<'a> {
         validity.set(len - 1, false);
         self.validity = Some(validity)
     }
+    fn update_validity(&mut self) {
+        if let Some(validity) = &mut self.validity {
+            validity.push(true)
+        }
+    }
 
     pub fn finish(self, inner_dtype: Option<&DataType>) -> Result<ListArray<i64>> {
         let inner_dtype = inner_dtype.unwrap_or_else(|| self.arrays[0].data_type());
         let values = concatenate::concatenate(&self.arrays)?;
-
         let dtype = ListArray::<i64>::default_datatype(inner_dtype.clone());
         // Safety:
         // offsets are monotonically increasing

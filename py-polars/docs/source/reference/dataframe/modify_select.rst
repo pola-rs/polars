@@ -6,7 +6,7 @@ Manipulation/selection
 .. autosummary::
    :toctree: api/
 
-    DataFrame.cleared
+    DataFrame.clear
     DataFrame.clone
     DataFrame.drop
     DataFrame.drop_in_place
@@ -27,7 +27,8 @@ Manipulation/selection
     DataFrame.insert_at_idx
     DataFrame.interpolate
     DataFrame.item
-    DataFrame.iterrows
+    DataFrame.iter_rows
+    DataFrame.iter_slices
     DataFrame.join
     DataFrame.join_asof
     DataFrame.limit
@@ -58,8 +59,8 @@ Manipulation/selection
     DataFrame.unique
     DataFrame.unnest
     DataFrame.unstack
+    DataFrame.update
     DataFrame.upsample
     DataFrame.vstack
-    DataFrame.with_column
     DataFrame.with_columns
     DataFrame.with_row_count

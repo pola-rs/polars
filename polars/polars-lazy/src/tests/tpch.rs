@@ -56,8 +56,7 @@ fn test_q2() -> PolarsResult<()> {
         .inner_join(nation(), "s_nationkey", "n_nationkey")
         .inner_join(region(), "n_regionkey", "r_regionkey")
         .filter(col("p_size").eq(15))
-        .filter(col("p_type").str().ends_with("BRASS"));
-
+        .filter(col("p_type").str().ends_with(lit("BRASS".to_string())));
     let q = q1
         .clone()
         .groupby([col("p_partkey")])

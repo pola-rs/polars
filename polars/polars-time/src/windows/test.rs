@@ -21,7 +21,9 @@ fn test_date_range() {
         Duration::parse("1mo"),
         ClosedWindow::Both,
         TimeUnit::Nanoseconds,
-    );
+        NO_TIMEZONE,
+    )
+    .unwrap(); // unwrapping as we pass None as the time zone
     let expected = [
         NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(),
         NaiveDate::from_ymd_opt(2022, 2, 1).unwrap(),
@@ -29,7 +31,7 @@ fn test_date_range() {
         NaiveDate::from_ymd_opt(2022, 4, 1).unwrap(),
     ]
     .iter()
-    .map(|d| d.and_hms(0, 0, 0).timestamp_nanos())
+    .map(|d| d.and_hms_opt(0, 0, 0).unwrap().timestamp_nanos())
     .collect::<Vec<_>>();
     assert_eq!(dates, expected);
 }
@@ -50,13 +52,15 @@ fn test_feb_date_range() {
         Duration::parse("1mo"),
         ClosedWindow::Both,
         TimeUnit::Nanoseconds,
-    );
+        NO_TIMEZONE,
+    )
+    .unwrap(); // unwrapping as we pass None as the time zone
     let expected = [
-        NaiveDate::from_ymd(2022, 2, 1),
-        NaiveDate::from_ymd(2022, 3, 1),
+        NaiveDate::from_ymd_opt(2022, 2, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2022, 3, 1).unwrap(),
     ]
     .iter()
-    .map(|d| d.and_hms(0, 0, 0).timestamp_nanos())
+    .map(|d| d.and_hms_opt(0, 0, 0).unwrap().timestamp_nanos())
     .collect::<Vec<_>>();
     assert_eq!(dates, expected);
 }
@@ -84,7 +88,7 @@ fn test_groups_large_interval() {
     ];
     let ts = dates
         .iter()
-        .map(|d| d.and_hms(0, 0, 0).timestamp_nanos())
+        .map(|d| d.and_hms_opt(0, 0, 0).unwrap().timestamp_nanos())
         .collect::<Vec<_>>();
 
     let dur = Duration::parse("2d");
@@ -141,8 +145,10 @@ fn test_offset() {
     );
 
     let b = w.get_earliest_bounds_ns(t);
-    let start = NaiveDate::from_ymd(2020, 1, 1)
-        .and_hms(23, 58, 0)
+    let start = NaiveDate::from_ymd_opt(2020, 1, 1)
+        .unwrap()
+        .and_hms_opt(23, 58, 0)
+        .unwrap()
         .timestamp_nanos();
     assert_eq!(b.start, start);
 }
@@ -164,7 +170,9 @@ fn test_boundaries() {
         Duration::parse("30m"),
         ClosedWindow::Both,
         TimeUnit::Nanoseconds,
-    );
+        NO_TIMEZONE,
+    )
+    .unwrap(); // unwrapping as we pass None as the time zone
 
     // window:
     // every 2h
@@ -334,7 +342,9 @@ fn test_boundaries_2() {
         Duration::parse("30m"),
         ClosedWindow::Both,
         TimeUnit::Nanoseconds,
-    );
+        NO_TIMEZONE,
+    )
+    .unwrap(); // unwrapping as we pass None as the time zone
 
     print_ns(&ts);
 
@@ -439,7 +449,9 @@ fn test_boundaries_ms() {
         Duration::parse("30m"),
         ClosedWindow::Both,
         TimeUnit::Milliseconds,
-    );
+        NO_TIMEZONE,
+    )
+    .unwrap(); // unwrapping as we pass None as the time zone
 
     // window:
     // every 2h
@@ -609,7 +621,9 @@ fn test_rolling_lookback() {
         Duration::parse("30m"),
         ClosedWindow::Both,
         TimeUnit::Milliseconds,
-    );
+        NO_TIMEZONE,
+    )
+    .unwrap(); // unwrapping as we pass None as the time zone
 
     // full lookbehind
     let groups = groupby_values(

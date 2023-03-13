@@ -5,7 +5,7 @@ use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::offset::OffsetsBuffer;
 use polars_arrow::array::PolarsArray;
 use polars_arrow::bit_util::unset_bit_raw;
-use polars_arrow::prelude::{FromDataUtf8, ValueSize};
+use polars_arrow::prelude::*;
 
 use crate::chunked_array::builder::AnonymousOwnedListBuilder;
 use crate::prelude::*;
@@ -179,7 +179,7 @@ impl ExplodeByOffsets for BooleanChunked {
             let o = o as usize;
             if o == last {
                 if start != last {
-                    let vals = arr.slice(start, last - start);
+                    let vals = arr.slice_typed(start, last - start);
 
                     if vals.null_count() == 0 {
                         builder
@@ -194,7 +194,7 @@ impl ExplodeByOffsets for BooleanChunked {
             }
             last = o;
         }
-        let vals = arr.slice(start, last - start);
+        let vals = arr.slice_typed(start, last - start);
         if vals.null_count() == 0 {
             builder
                 .array_builder
@@ -220,7 +220,7 @@ impl ExplodeByOffsets for ListChunked {
             let o = o as usize;
             if o == last {
                 if start != last {
-                    let vals = arr.slice(start, last - start);
+                    let vals = arr.slice_typed(start, last - start);
                     let ca = unsafe { ListChunked::from_chunks("", vec![Box::new(vals)]) };
                     for s in &ca {
                         builder.append_opt_series(s.as_ref())
@@ -231,7 +231,7 @@ impl ExplodeByOffsets for ListChunked {
             }
             last = o;
         }
-        let vals = arr.slice(start, last - start);
+        let vals = arr.slice_typed(start, last - start);
         let ca = unsafe { ListChunked::from_chunks("", vec![Box::new(vals)]) };
         for s in &ca {
             builder.append_opt_series(s.as_ref())
@@ -241,46 +241,15 @@ impl ExplodeByOffsets for ListChunked {
 }
 impl ExplodeByOffsets for Utf8Chunked {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        debug_assert_eq!(self.chunks.len(), 1);
-        let arr = self.downcast_iter().next().unwrap();
-
-        let cap = ((arr.len() as f32) * 1.5) as usize;
-        let bytes_size = self.get_values_size();
-        let mut builder = Utf8ChunkedBuilder::new(self.name(), cap, bytes_size);
-
-        let mut start = offsets[0] as usize;
-        let mut last = start;
-        for &o in &offsets[1..] {
-            let o = o as usize;
-            if o == last {
-                if start != last {
-                    let vals = arr.slice(start, last - start);
-                    if vals.null_count() == 0 {
-                        builder
-                            .builder
-                            .extend_trusted_len_values(vals.values_iter())
-                    } else {
-                        builder.builder.extend_trusted_len(vals.into_iter());
-                    }
-                }
-                builder.append_null();
-                start = o;
-            }
-            last = o;
+        unsafe {
+            self.as_binary()
+                .explode_by_offsets(offsets)
+                .cast_unchecked(&DataType::Utf8)
+                .unwrap()
         }
-        let vals = arr.slice(start, last - start);
-        if vals.null_count() == 0 {
-            builder
-                .builder
-                .extend_trusted_len_values(vals.values_iter())
-        } else {
-            builder.builder.extend_trusted_len(vals.into_iter());
-        }
-        builder.finish().into()
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl ExplodeByOffsets for BinaryChunked {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         debug_assert_eq!(self.chunks.len(), 1);
@@ -296,7 +265,7 @@ impl ExplodeByOffsets for BinaryChunked {
             let o = o as usize;
             if o == last {
                 if start != last {
-                    let vals = arr.slice(start, last - start);
+                    let vals = arr.slice_typed(start, last - start);
                     if vals.null_count() == 0 {
                         builder
                             .builder
@@ -310,7 +279,7 @@ impl ExplodeByOffsets for BinaryChunked {
             }
             last = o;
         }
-        let vals = arr.slice(start, last - start);
+        let vals = arr.slice_typed(start, last - start);
         if vals.null_count() == 0 {
             builder
                 .builder
@@ -377,7 +346,7 @@ impl ChunkExplode for ListChunked {
         let listarr: &LargeListArray = ca
             .downcast_iter()
             .next()
-            .ok_or_else(|| PolarsError::NoData("cannot explode empty list".into()))?;
+            .ok_or_else(|| polars_err!(NoData: "cannot explode empty list"))?;
         let offsets_buf = listarr.offsets().clone();
         let offsets = listarr.offsets().as_slice();
         let mut values = listarr.values().clone();
@@ -393,7 +362,7 @@ impl ChunkExplode for ListChunked {
                 let len = offsets[offsets.len() - 1] as usize - start;
                 // safety:
                 // we are in bounds
-                values = unsafe { values.slice_unchecked(start, len) };
+                values = unsafe { values.sliced_unchecked(start, len) };
             }
             Series::try_from((self.name(), values)).unwrap()
         } else {
@@ -454,7 +423,7 @@ impl ChunkExplode for Utf8Chunked {
         let array: &Utf8Array<i64> = ca
             .downcast_iter()
             .next()
-            .ok_or_else(|| PolarsError::NoData("cannot explode empty str".into()))?;
+            .ok_or_else(|| polars_err!(NoData: "cannot explode empty str"))?;
 
         let values = array.values();
         let old_offsets = array.offsets().clone();
@@ -463,13 +432,14 @@ impl ChunkExplode for Utf8Chunked {
             // capacity estimate
             let capacity = self.get_values_size() + validity.unset_bits();
 
+            let old_offsets = old_offsets.as_slice();
+            let mut old_offset = old_offsets[0];
             let mut new_offsets = Vec::with_capacity(capacity + 1);
-            new_offsets.push(0i64);
+            new_offsets.push(old_offset);
 
             let mut bitmap = MutableBitmap::with_capacity(capacity);
             let values = values.as_slice();
-            let mut old_offset = 0i64;
-            for (&offset, valid) in old_offsets.as_slice()[1..].iter().zip(validity) {
+            for (&offset, valid) in old_offsets[1..].iter().zip(validity) {
                 // safety:
                 // new_offsets already has a single value, so -1 is always in bounds
                 let latest_offset = unsafe { *new_offsets.get_unchecked(new_offsets.len() - 1) };
@@ -513,12 +483,13 @@ impl ChunkExplode for Utf8Chunked {
 
             // capacity estimate
             let capacity = self.get_values_size();
+            let old_offsets = old_offsets.as_slice();
+            let mut old_offset = old_offsets[0];
             let mut new_offsets = Vec::with_capacity(capacity + 1);
-            new_offsets.push(0i64);
+            new_offsets.push(old_offset);
 
             let values = values.as_slice();
-            let mut old_offset = 0i64;
-            for &offset in &old_offsets.as_slice()[1..] {
+            for &offset in &old_offsets[1..] {
                 // safety:
                 // new_offsets already has a single value, so -1 is always in bounds
                 let latest_offset = unsafe { *new_offsets.get_unchecked(new_offsets.len() - 1) };

@@ -14,7 +14,7 @@ Series: 'foo' [str]
 [
 	"Somelongstring...
 ]
-""",  # noqa: E101, W191
+""",
             ["Somelongstringto eeat wit me oundaf"],
             id="Long string",
         ),
@@ -24,7 +24,7 @@ Series: 'foo' [str]
 [
 	"😀😁😂😃😄😅😆😇😈😉😊😋😌😎...
 ]
-""",  # noqa: E101, W191
+""",
             ["😀😁😂😃😄😅😆😇😈😉😊😋😌😎😏😐😑😒😓"],
             id="Emojis",
         ),
@@ -34,7 +34,7 @@ Series: 'foo' [str]
 [
 	"yzäöüäöüäöüäö"
 ]
-""",  # noqa: E101, W191
+""",
             ["yzäöüäöüäöüäö"],
             id="Characters with accents",
         ),
@@ -69,7 +69,7 @@ Series: 'foo' [i64]
 	98
 	99
 ]
-""",  # noqa: E101, W191
+""",
             [*range(100)],
             id="Long series",
         ),
@@ -96,7 +96,7 @@ Series: 'foo' [f64]
 	0.000085
 	8.00008
 ]
-"""  # noqa: E101, W191
+"""
     assert out == expected
 
 
@@ -104,15 +104,26 @@ def test_duration_smallest_units() -> None:
     s = pl.Series(range(6), dtype=pl.Duration("us"))
     assert (
         str(s)
-        == "shape: (6,)\nSeries: '' [duration[μs]]\n[\n\t0µs\n\t1µs\n\t2µs\n\t3µs\n\t4µs\n\t5µs\n]"  # noqa: E501
+        == "shape: (6,)\nSeries: '' [duration[μs]]\n[\n\t0µs\n\t1µs\n\t2µs\n\t3µs\n\t4µs\n\t5µs\n]"
     )
     s = pl.Series(range(6), dtype=pl.Duration("ms"))
     assert (
         str(s)
-        == "shape: (6,)\nSeries: '' [duration[ms]]\n[\n\t0ms\n\t1ms\n\t2ms\n\t3ms\n\t4ms\n\t5ms\n]"  # noqa: E501
+        == "shape: (6,)\nSeries: '' [duration[ms]]\n[\n\t0ms\n\t1ms\n\t2ms\n\t3ms\n\t4ms\n\t5ms\n]"
     )
     s = pl.Series(range(6), dtype=pl.Duration("ns"))
     assert (
         str(s)
-        == "shape: (6,)\nSeries: '' [duration[ns]]\n[\n\t0ns\n\t1ns\n\t2ns\n\t3ns\n\t4ns\n\t5ns\n]"  # noqa: E501
+        == "shape: (6,)\nSeries: '' [duration[ns]]\n[\n\t0ns\n\t1ns\n\t2ns\n\t3ns\n\t4ns\n\t5ns\n]"
     )
+
+
+def test_fmt_float_full() -> None:
+    fmt_float_full = "shape: (1,)\nSeries: '' [f64]\n[\n\t1.230498095872587\n]"
+    s = pl.Series([1.2304980958725870923])
+
+    with pl.Config() as cfg:
+        cfg.set_fmt_float("full")
+        assert str(s) == fmt_float_full
+
+    assert str(s) != fmt_float_full

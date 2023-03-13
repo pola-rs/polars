@@ -27,9 +27,6 @@ pub(crate) use column::*;
 pub(crate) use count::*;
 pub(crate) use filter::*;
 pub(crate) use literal::*;
-use polars_arrow::export::arrow::array::ListArray;
-use polars_arrow::export::arrow::offset::Offsets;
-use polars_arrow::trusted_len::PushUnchecked;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
@@ -88,8 +85,6 @@ pub(crate) enum UpdateGroups {
     /// this one should be used when the length has changed. Note that
     /// the series should be aggregated state or else it will panic.
     WithSeriesLen,
-    // Same as WithSeriesLen, but now take a series given by the caller
-    WithSeriesLenOwned(Series),
 }
 
 #[cfg_attr(debug_assertions, derive(Debug))]
@@ -155,10 +150,6 @@ impl<'a> AggregationContext<'a> {
                 let s = self.series().clone();
                 self.det_groups_from_list(&s);
             }
-            UpdateGroups::WithSeriesLenOwned(ref s) => {
-                let s = s.clone();
-                self.det_groups_from_list(&s);
-            }
         }
         &self.groups
     }
@@ -186,15 +177,9 @@ impl<'a> AggregationContext<'a> {
     pub(crate) fn is_aggregated(&self) -> bool {
         !self.is_not_aggregated()
     }
+
     pub(crate) fn is_literal(&self) -> bool {
         matches!(self.state, AggState::Literal(_))
-    }
-
-    pub(crate) fn combine_groups(&mut self, other: AggregationContext) -> &mut Self {
-        if let (Cow::Borrowed(_), Cow::Owned(a)) = (&self.groups, other.groups) {
-            self.groups = Cow::Owned(a);
-        };
-        self
     }
 
     /// # Arguments
@@ -333,10 +318,27 @@ impl<'a> AggregationContext<'a> {
     /// # Arguments
     /// - `aggregated` sets if the Series is a list due to aggregation (could also be a list because its
     /// the columns dtype)
-    pub(crate) fn with_series(&mut self, series: Series, aggregated: bool) -> &mut Self {
+    pub(crate) fn with_series(
+        &mut self,
+        series: Series,
+        aggregated: bool,
+        expr: Option<&Expr>,
+    ) -> PolarsResult<&mut Self> {
         self.state = match (aggregated, series.dtype()) {
             (true, &DataType::List(_)) => {
-                assert_eq!(series.len(), self.groups.len());
+                if series.len() != self.groups.len() {
+                    let fmt_expr = if let Some(e) = expr {
+                        format!("'{e}' ")
+                    } else {
+                        String::new()
+                    };
+                    polars_bail!(
+                        ComputeError:
+                        "aggregation expression '{}' produced a different number of elements: {} \
+                        than the number of groups: {} (this is likely invalid)",
+                        fmt_expr, series.len(), self.groups.len(),
+                    );
+                }
                 AggState::AggregatedList(series)
             }
             (true, _) => AggState::AggregatedFlat(series),
@@ -350,7 +352,7 @@ impl<'a> AggregationContext<'a> {
                 }
             }
         };
-        self
+        Ok(self)
     }
 
     pub(crate) fn with_literal(&mut self, series: Series) -> &mut Self {
@@ -361,7 +363,8 @@ impl<'a> AggregationContext<'a> {
     /// Update the group tuples
     pub(crate) fn with_groups(&mut self, groups: GroupsProxy) -> &mut Self {
         // In case of new groups, a series always needs to be flattened
-        self.with_series(self.flat_naive().into_owned(), false);
+        self.with_series(self.flat_naive().into_owned(), false, None)
+            .unwrap();
         self.groups = Cow::Owned(groups);
         // make sure that previous setting is not used
         self.update_groups = UpdateGroups::No;
@@ -417,50 +420,6 @@ impl<'a> AggregationContext<'a> {
                 s.new_from_index(0, rows)
             }
             _ => self.aggregated(),
-        }
-    }
-
-    /// Different from aggregated, in arity operations we expect literals to expand to the size of the
-    /// group
-    /// eg:
-    ///
-    /// lit(9) in groups [[1, 1], [2, 2, 2]]
-    /// becomes: [[9, 9], [9, 9, 9]]
-    ///
-    /// where in [`Self::aggregated`] this becomes [9, 9]
-    ///
-    /// this is because comparisons need to create mask that have a correct length.
-    fn aggregated_arity_operation(&mut self) -> Series {
-        if let AggState::Literal(s) = self.agg_state() {
-            // stop borrow;
-            let s = s.clone();
-            let groups = self.groups();
-
-            let mut offsets = Vec::with_capacity(groups.len() + 1);
-
-            let mut last_offset = 0i64;
-            offsets.push(last_offset);
-            for g in groups.iter() {
-                last_offset += g.len() as i64;
-                // safety:
-                // we allocated enough
-                unsafe { offsets.push_unchecked(last_offset) };
-            }
-            let values = s.new_from_index(0, last_offset as usize);
-            let values = values.array_ref(0).clone();
-            // Safety:
-            // offsets are monotonically increasing
-            let arr = unsafe {
-                ListArray::<i64>::new(
-                    DataType::List(Box::new(s.dtype().clone())).to_arrow(),
-                    Offsets::new_unchecked(offsets).into(),
-                    values,
-                    None,
-                )
-            };
-            Series::try_from((s.name(), Box::new(arr) as ArrayRef)).unwrap()
-        } else {
-            self.aggregated()
         }
     }
 

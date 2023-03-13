@@ -33,7 +33,7 @@ impl Default for RankOptions {
     }
 }
 
-pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
+pub(crate) fn rank(s: &Series, method: RankMethod, descending: bool) -> Series {
     match s.len() {
         1 => {
             return match method {
@@ -54,18 +54,18 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
         let nulls = s.is_not_null().rechunk();
         let arr = nulls.downcast_iter().next().unwrap();
         let validity = arr.values();
-        // Currently, nulls tie with the minimum or maximum bound for a type, depending on reverse.
-        // TODO: Need to expose nulls_last in argsort to prevent this.
+        // Currently, nulls tie with the minimum or maximum bound for a type, depending on descending.
+        // TODO: Need to expose nulls_last in arg_sort to prevent this.
         // Fill using MaxBound/MinBound to give nulls last rank.
         // we will replace them later.
-        let null_strategy = if reverse {
+        let null_strategy = if descending {
             FillNullStrategy::MinBound
         } else {
             FillNullStrategy::MaxBound
         };
         let s = s.fill_null(null_strategy).unwrap();
 
-        let mut out = rank(&s, method, reverse);
+        let mut out = rank(&s, method, descending);
         unsafe {
             let arr = &mut out.chunks_mut()[0];
             *arr = arr.with_validity(Some(validity.clone()))
@@ -77,8 +77,8 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
 
     let len = s.len();
     let null_count = s.null_count();
-    let sort_idx_ca = s.argsort(SortOptions {
-        descending: reverse,
+    let sort_idx_ca = s.arg_sort(SortOptions {
+        descending,
         ..Default::default()
     });
     let sort_idx = sort_idx_ca.downcast_iter().next().unwrap().values();

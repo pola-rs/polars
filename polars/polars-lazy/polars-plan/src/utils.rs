@@ -3,14 +3,15 @@ use std::iter::FlatMap;
 use std::sync::Arc;
 
 use polars_core::prelude::*;
+use smartstring::alias::String as SmartString;
 
 use crate::logical_plan::iterator::ArenaExprIter;
 use crate::logical_plan::Context;
 use crate::prelude::names::COUNT;
 use crate::prelude::*;
 
-/// Utility to write comma delimited
-pub fn column_delimited(mut s: String, items: &[String]) -> String {
+/// Utility to write comma delimited strings
+pub fn comma_delimited(mut s: String, items: &[SmartString]) -> String {
     s.push('(');
     for c in items {
         s.push_str(c);
@@ -142,27 +143,22 @@ pub(crate) fn expr_output_name(expr: &Expr) -> PolarsResult<Arc<str>> {
             Expr::Window { function, .. } => return expr_output_name(function),
             Expr::Column(name) => return Ok(name.clone()),
             Expr::Alias(_, name) => return Ok(name.clone()),
-            Expr::KeepName(_) | Expr::Wildcard | Expr::RenameAlias { .. } => {
-                return Err(PolarsError::ComputeError(
-                    "Cannot determine an output column without a context for this expression"
-                        .into(),
-                ))
-            }
-            Expr::Columns(_) | Expr::DtypeColumn(_) => {
-                return Err(PolarsError::ComputeError(
-                    "This expression might produce multiple output names".into(),
-                ))
-            }
+            Expr::KeepName(_) | Expr::Wildcard | Expr::RenameAlias { .. } => polars_bail!(
+                ComputeError:
+                "cannot determine output column without a context for this expression"
+            ),
+            Expr::Columns(_) | Expr::DtypeColumn(_) => polars_bail!(
+                ComputeError:
+                "this expression may produce multiple output names"
+            ),
             Expr::Count => return Ok(Arc::from(COUNT)),
             _ => {}
         }
     }
-    Err(PolarsError::ComputeError(
-        format!(
-            "No root column name could be found for expr '{expr:?}' when calling 'output_name'",
-        )
-        .into(),
-    ))
+    polars_bail!(
+        ComputeError:
+        "unable to find root column name for expr '{expr:?}' when calling 'output_name'",
+    );
 }
 
 /// This function should be used to find the name of the start of an expression
@@ -178,9 +174,9 @@ pub(crate) fn get_single_leaf(expr: &Expr) -> PolarsResult<Arc<str>> {
             _ => {}
         }
     }
-    Err(PolarsError::ComputeError(
-        format!("no single leaf column found in {expr:?}").into(),
-    ))
+    polars_bail!(
+        ComputeError: "unable to find a single leaf column in {expr:?}"
+    );
 }
 
 /// This should gradually replace expr_to_root_column as this will get all names in the tree.
@@ -194,22 +190,16 @@ pub fn expr_to_leaf_column_names(expr: &Expr) -> Vec<Arc<str>> {
 /// unpack alias(col) to name of the root column name
 pub fn expr_to_leaf_column_name(expr: &Expr) -> PolarsResult<Arc<str>> {
     let mut roots = expr_to_root_column_exprs(expr);
-    match roots.len() {
-        0 => Err(PolarsError::ComputeError(
-            "no root column name found".into(),
-        )),
-        1 => match roots.pop().unwrap() {
-            Expr::Wildcard => Err(PolarsError::ComputeError(
-                "wildcard has not root column name".into(),
-            )),
-            Expr::Column(name) => Ok(name),
-            _ => {
-                unreachable!();
-            }
-        },
-        _ => Err(PolarsError::ComputeError(
-            "found more than one root column name".into(),
-        )),
+    polars_ensure!(roots.len() <= 1, ComputeError: "found more than one root column name");
+    match roots.pop() {
+        Some(Expr::Column(name)) => Ok(name),
+        Some(Expr::Wildcard) => polars_bail!(
+            ComputeError: "wildcard has not root column name",
+        ),
+        Some(_) => unreachable!(),
+        None => polars_bail!(
+            ComputeError: "no root column name found",
+        ),
     }
 }
 
@@ -258,17 +248,43 @@ pub(crate) fn rename_aexpr_leaf_names(
     to_aexpr(new_expr, arena)
 }
 
-/// Rename the root of the expression from `current` to `new` and assign to new node in arena.
-/// Returns `Node` on first successful rename.
-pub(crate) fn aexpr_assign_renamed_root(
+/// If the leaf names match `current`, the node will be replaced
+/// with a renamed expression.
+pub(crate) fn rename_matching_aexpr_leaf_names(
     node: Node,
     arena: &mut Arena<AExpr>,
     current: &str,
     new_name: &str,
 ) -> Node {
-    let roots = aexpr_to_leaf_nodes(node, arena);
+    let mut leaves = aexpr_to_leaf_nodes_iter(node, arena);
 
-    for node in roots {
+    if leaves.any(|node| matches!(arena.get(node), AExpr::Column(name) if &**name == current)) {
+        // we convert to expression as we cannot easily copy the aexpr.
+        let mut new_expr = node_to_expr(node, arena);
+        new_expr.mutate().apply(|e| match e {
+            Expr::Column(name) if &**name == current => {
+                *name = Arc::from(new_name);
+                true
+            }
+            _ => true,
+        });
+        to_aexpr(new_expr, arena)
+    } else {
+        node
+    }
+}
+
+/// Rename the root of the expression from `current` to `new` and assign to new node in arena.
+/// Returns `Node` on first successful rename.
+pub(crate) fn aexpr_assign_renamed_leaf(
+    node: Node,
+    arena: &mut Arena<AExpr>,
+    current: &str,
+    new_name: &str,
+) -> Node {
+    let leafs = aexpr_to_leaf_nodes_iter(node, arena);
+
+    for node in leafs {
         match arena.get(node) {
             AExpr::Column(name) if &**name == current => {
                 return arena.add(AExpr::Column(Arc::from(new_name)))
@@ -319,6 +335,10 @@ pub fn aexpr_to_leaf_names_iter(
 
 pub fn aexpr_to_leaf_names(node: Node, arena: &Arena<AExpr>) -> Vec<Arc<str>> {
     aexpr_to_leaf_names_iter(node, arena).collect()
+}
+
+pub fn aexpr_to_leaf_name(node: Node, arena: &Arena<AExpr>) -> Arc<str> {
+    aexpr_to_leaf_names_iter(node, arena).next().unwrap()
 }
 
 /// check if a selection/projection can be done on the downwards schema

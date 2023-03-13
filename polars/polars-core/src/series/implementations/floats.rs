@@ -139,16 +139,16 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "sort_multiple")]
-            fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> PolarsResult<IdxCa> {
-                self.0.argsort_multiple(by, reverse)
+            fn arg_sort_multiple(&self, by: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {
+                self.0.arg_sort_multiple(by, descending)
             }
         }
 
         impl SeriesTrait for SeriesWrap<$ca> {
             fn is_sorted_flag(&self) -> IsSorted {
-                if self.0.is_sorted_flag() {
+                if self.0.is_sorted_ascending_flag() {
                     IsSorted::Ascending
-                } else if self.0.is_sorted_reverse_flag() {
+                } else if self.0.is_sorted_descending_flag() {
                     IsSorted::Descending
                 } else {
                     IsSorted::Not
@@ -187,25 +187,15 @@ macro_rules! impl_dyn_series {
             }
 
             fn append(&mut self, other: &Series) -> PolarsResult<()> {
-                if self.0.dtype() == other.dtype() {
-                    self.0.append(other.as_ref().as_ref());
-                    Ok(())
-                } else {
-                    Err(PolarsError::SchemaMisMatch(
-                        "cannot append Series; data types don't match".into(),
-                    ))
-                }
+                polars_ensure!(self.0.dtype() == other.dtype(), append);
+                self.0.append(other.as_ref().as_ref());
+                Ok(())
             }
 
             fn extend(&mut self, other: &Series) -> PolarsResult<()> {
-                if self.0.dtype() == other.dtype() {
-                    self.0.extend(other.as_ref().as_ref());
-                    Ok(())
-                } else {
-                    Err(PolarsError::SchemaMisMatch(
-                        "cannot extend Series; data types don't match".into(),
-                    ))
-                }
+                polars_ensure!(self.0.dtype() == other.dtype(), extend);
+                self.0.extend(other.as_ref().as_ref());
+                Ok(())
             }
 
             fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {
@@ -260,7 +250,8 @@ macro_rules! impl_dyn_series {
 
                 let mut out = ChunkTake::take_unchecked(&self.0, (&*idx).into());
 
-                if self.0.is_sorted_flag() && (idx.is_sorted_flag() || idx.is_sorted_reverse_flag())
+                if self.0.is_sorted_ascending_flag()
+                    && (idx.is_sorted_ascending_flag() || idx.is_sorted_descending_flag())
                 {
                     out.set_sorted_flag(idx.is_sorted_flag2())
                 }
@@ -307,8 +298,8 @@ macro_rules! impl_dyn_series {
                 ChunkSort::sort_with(&self.0, options).into_series()
             }
 
-            fn argsort(&self, options: SortOptions) -> IdxCa {
-                ChunkSort::argsort(&self.0, options)
+            fn arg_sort(&self, options: SortOptions) -> IdxCa {
+                ChunkSort::arg_sort(&self.0, options)
             }
 
             fn null_count(&self) -> usize {
@@ -331,28 +322,12 @@ macro_rules! impl_dyn_series {
                 ChunkUnique::arg_unique(&self.0)
             }
 
-            fn arg_min(&self) -> Option<usize> {
-                ArgAgg::arg_min(&self.0)
-            }
-
-            fn arg_max(&self) -> Option<usize> {
-                ArgAgg::arg_max(&self.0)
-            }
-
             fn is_null(&self) -> BooleanChunked {
                 self.0.is_null()
             }
 
             fn is_not_null(&self) -> BooleanChunked {
                 self.0.is_not_null()
-            }
-
-            fn is_unique(&self) -> PolarsResult<BooleanChunked> {
-                ChunkUnique::is_unique(&self.0)
-            }
-
-            fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
-                ChunkUnique::is_duplicated(&self.0)
             }
 
             fn reverse(&self) -> Series {
@@ -365,10 +340,6 @@ macro_rules! impl_dyn_series {
 
             fn shift(&self, periods: i64) -> Series {
                 ChunkShift::shift(&self.0, periods).into_series()
-            }
-
-            fn fill_null(&self, strategy: FillNullStrategy) -> PolarsResult<Series> {
-                ChunkFillNull::fill_null(&self.0, strategy).map(|ca| ca.into_series())
             }
 
             fn _sum_as_series(&self) -> Series {
@@ -424,11 +395,6 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "checked_arithmetic")]
             fn checked_div(&self, rhs: &Series) -> PolarsResult<Series> {
                 self.0.checked_div(rhs)
-            }
-
-            #[cfg(feature = "is_first")]
-            fn is_first(&self) -> PolarsResult<BooleanChunked> {
-                self.0.is_first()
             }
 
             #[cfg(feature = "mode")]

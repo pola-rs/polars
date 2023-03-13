@@ -9,6 +9,7 @@ mod truncate;
 mod upsample;
 mod windows;
 
+use chrono::FixedOffset;
 pub use date_range::*;
 #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
 pub use groupby::dynamic::*;
@@ -19,3 +20,4 @@ pub use windows::calendar::date_range as date_range_vec;
 pub use windows::duration::Duration;
 pub use windows::groupby::ClosedWindow;
 pub use windows::window::Window;
+pub const NO_TIMEZONE: Option<&FixedOffset> = None;

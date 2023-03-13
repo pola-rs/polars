@@ -4,15 +4,16 @@ use std::ops::Sub;
 
 use ahash::RandomState;
 use arrow::types::NativeType;
-use num::Zero;
+use num_traits::Zero;
 use rayon::prelude::*;
+use smartstring::alias::String as SmartString;
 
 use super::*;
 use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
 #[cfg(feature = "dtype-categorical")]
 use crate::frame::hash_join::_check_categorical_src;
 use crate::frame::hash_join::{
-    create_probe_table, get_hash_tbl_threaded_join_partitioned, multiple_keys as mk, prepare_strs,
+    create_probe_table, get_hash_tbl_threaded_join_partitioned, multiple_keys as mk, prepare_bytes,
 };
 use crate::utils::{split_ca, split_df};
 use crate::vector_hasher::{df_rows_to_hashes_threaded, AsU64};
@@ -158,7 +159,7 @@ fn process_group<K, T>(
     forward: bool,
 ) where
     K: Hash + PartialEq + Eq,
-    T: NativeType + Sub<Output = T> + PartialOrd + num::Zero,
+    T: NativeType + Sub<Output = T> + PartialOrd + Zero,
 {
     let (offset_slice, mut previous_join_idx) =
         *right_tbl_offsets.get(&k).unwrap_or(&(0usize, None));
@@ -179,7 +180,7 @@ fn process_group<K, T>(
             if forward {
                 previous_join_idx = None;
             }
-            if tolerance > num::zero() {
+            if tolerance > Zero::zero() {
                 if let Some(idx) = previous_join_idx {
                     debug_assert!((idx as usize) < right_asof.len());
                     let val_r = unsafe { *right_asof.get_unchecked(idx as usize) };
@@ -237,7 +238,9 @@ where
 
     let left_asof = left_asof.rechunk();
     let err = |_: PolarsError| {
-        PolarsError::ComputeError("Keys are not allowed to have null values in asof join.".into())
+        polars_err!(
+            ComputeError: "keys are not allowed to have null values in asof join"
+        )
     };
     let left_asof = left_asof.cont_slice().map_err(err)?;
 
@@ -325,9 +328,9 @@ where
     }))
 }
 
-fn asof_join_by_utf8<T>(
-    by_left: &Utf8Chunked,
-    by_right: &Utf8Chunked,
+fn asof_join_by_binary<T>(
+    by_left: &BinaryChunked,
+    by_right: &BinaryChunked,
     left_asof: &ChunkedArray<T>,
     right_asof: &ChunkedArray<T>,
     tolerance: Option<AnyValue<'static>>,
@@ -375,8 +378,8 @@ where
     let splitted_right = split_ca(by_right, n_threads).unwrap();
 
     let hb = RandomState::default();
-    let vals_left = prepare_strs(&splitted_by_left, &hb);
-    let vals_right = prepare_strs(&splitted_right, &hb);
+    let vals_left = prepare_bytes(&splitted_by_left, &hb);
+    let vals_right = prepare_bytes(&splitted_right, &hb);
 
     let hash_tbls = create_probe_table(vals_right);
 
@@ -581,9 +584,17 @@ fn dispatch_join<T: PolarsNumericType>(
 ) -> PolarsResult<Vec<Option<IdxSize>>> {
     let out = if left_by.width() == 1 {
         match left_by_s.dtype() {
-            DataType::Utf8 => asof_join_by_utf8(
-                left_by_s.utf8().unwrap(),
-                right_by_s.utf8().unwrap(),
+            DataType::Utf8 => asof_join_by_binary(
+                &left_by_s.utf8().unwrap().as_binary(),
+                &right_by_s.utf8().unwrap().as_binary(),
+                left_asof,
+                right_asof,
+                tolerance,
+                strategy,
+            ),
+            DataType::Binary => asof_join_by_binary(
+                left_by_s.binary().unwrap(),
+                right_by_s.binary().unwrap(),
                 left_asof,
                 right_asof,
                 tolerance,
@@ -626,10 +637,11 @@ impl DataFrame {
         other: &DataFrame,
         left_on: &str,
         right_on: &str,
-        left_by: Vec<String>,
-        right_by: Vec<String>,
+        left_by: Vec<SmartString>,
+        right_by: Vec<SmartString>,
         strategy: AsofStrategy,
         tolerance: Option<AnyValue<'static>>,
+        suffix: Option<&str>,
         slice: Option<(i64, usize)>,
     ) -> PolarsResult<DataFrame> {
         let left_asof = self.column(left_on)?.to_physical_repr();
@@ -639,8 +651,18 @@ impl DataFrame {
 
         check_asof_columns(&left_asof, &right_asof)?;
 
-        let mut left_by = self.select_physical(left_by)?;
-        let mut right_by = other.select_physical(right_by)?;
+        let mut left_by = self.select(left_by)?;
+        let mut right_by = other.select(right_by)?;
+        for (l, r) in left_by
+            .get_columns_mut()
+            .iter_mut()
+            .zip(right_by.get_columns_mut().iter_mut())
+        {
+            #[cfg(feature = "dtype-categorical")]
+            _check_categorical_src(l.dtype(), r.dtype())?;
+            *l = l.to_physical_repr().into_owned();
+            *r = r.to_physical_repr().into_owned();
+        }
 
         let left_by_s = left_by.get_columns()[0].to_physical_repr().into_owned();
         let right_by_s = right_by.get_columns()[0].to_physical_repr().into_owned();
@@ -697,7 +719,7 @@ impl DataFrame {
             )
         };
 
-        _finish_join(left, right_df, None)
+        _finish_join(left, right_df, suffix)
     }
 
     /// This is similar to a left-join except that we match on nearest key rather than equal keys.
@@ -718,16 +740,10 @@ impl DataFrame {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        let left_by = left_by
-            .into_iter()
-            .map(|s| s.as_ref().to_string())
-            .collect();
-        let right_by = right_by
-            .into_iter()
-            .map(|s| s.as_ref().to_string())
-            .collect();
+        let left_by = left_by.into_iter().map(|s| s.as_ref().into()).collect();
+        let right_by = right_by.into_iter().map(|s| s.as_ref().into()).collect();
         self._join_asof_by(
-            other, left_on, right_on, left_by, right_by, strategy, tolerance, None,
+            other, left_on, right_on, left_by, right_by, strategy, tolerance, None, None,
         )
     }
 }

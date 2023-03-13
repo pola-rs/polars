@@ -6,13 +6,11 @@ import warnings
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from math import isfinite
-from typing import Any, Sequence
+from typing import TYPE_CHECKING, Any, Sequence
 
 from hypothesis import settings
 from hypothesis.errors import InvalidArgument, NonInteractiveExampleWarning
 from hypothesis.strategies import (
-    DrawFn,
-    SearchStrategy,
     booleans,
     composite,
     dates,
@@ -41,7 +39,6 @@ from polars.datatypes import (
     Int16,
     Int32,
     Int64,
-    PolarsDataType,
     Time,
     UInt8,
     UInt16,
@@ -51,7 +48,14 @@ from polars.datatypes import (
     is_polars_dtype,
     py_type_to_dtype,
 )
+from polars.string_cache import StringCache
 from polars.testing.asserts import is_categorical_dtype
+
+if TYPE_CHECKING:
+    from hypothesis.strategies import DrawFn, SearchStrategy
+
+    from polars.datatypes import OneOrMoreDataTypes, PolarsDataType
+
 
 # Default profile (eg: running locally)
 common_settings = {"print_blob": True, "deadline": None}
@@ -159,7 +163,7 @@ class column:
     >>> column(name="ccy", strategy=sampled_from(["GBP", "EUR", "JPY"]))
     column(name='ccy', dtype=Utf8, strategy=sampled_from(['GBP', 'EUR', 'JPY']), null_probability=None, unique=False)
 
-    """  # noqa: E501
+    """  # noqa: W505
 
     name: str
     dtype: PolarsDataType | None = None
@@ -209,7 +213,7 @@ class column:
 def columns(
     cols: int | Sequence[str] | None = None,
     *,
-    dtype: PolarsDataType | Sequence[PolarsDataType] | None = None,
+    dtype: OneOrMoreDataTypes | None = None,
     min_cols: int | None = 0,
     max_cols: int | None = MAX_COLS,
     unique: bool = False,
@@ -251,8 +255,8 @@ def columns(
     >>> from string import punctuation
     >>>
     >>> def test_special_char_colname_init() -> None:
-    ...     cols = [(c.name, c.dtype) for c in columns(punctuation)]
-    ...     df = pl.DataFrame(columns=cols)
+    ...     schema = [(c.name, c.dtype) for c in columns(punctuation)]
+    ...     df = pl.DataFrame(schema=schema)
     ...     assert len(cols) == len(df.columns)
     ...     assert 0 == len(df.rows())
     ...
@@ -385,61 +389,65 @@ def series(
 
     @composite
     def draw_series(draw: DrawFn) -> pli.Series:
-        # create/assign series dtype and retrieve matching strategy
-        series_dtype = draw(sampled_from(selectable_dtypes)) if dtype is None else dtype
-        if strategy is None:
-            dtype_strategy = dtype_strategy_mapping[series_dtype]
-        else:
-            dtype_strategy = strategy
-
-        if series_dtype in (Float32, Float64) and not allow_infinities:
-            dtype_strategy = dtype_strategy.filter(
-                lambda x: not isinstance(x, float) or isfinite(x)
+        with StringCache():
+            # create/assign series dtype and retrieve matching strategy
+            series_dtype = (
+                draw(sampled_from(selectable_dtypes)) if dtype is None else dtype
             )
+            if strategy is None:
+                dtype_strategy = dtype_strategy_mapping[series_dtype]
+            else:
+                dtype_strategy = strategy
 
-        # create/assign series size
-        series_size = (
-            between(draw, int, min_=(min_size or 0), max_=(max_size or MAX_DATA_SIZE))
-            if size is None
-            else size
-        )
-        # assign series name
-        series_name = name if isinstance(name, str) or name is None else draw(name)
-
-        # create series using dtype-specific strategy to generate values
-        if series_size == 0:
-            series_values = []
-        elif null_probability == 1:
-            series_values = [None] * series_size
-        else:
-            series_values = draw(
-                lists(
-                    dtype_strategy,
-                    min_size=series_size,
-                    max_size=series_size,
-                    unique=unique,
+            if series_dtype in (Float32, Float64) and not allow_infinities:
+                dtype_strategy = dtype_strategy.filter(
+                    lambda x: not isinstance(x, float) or isfinite(x)
                 )
+
+            # create/assign series size
+            series_size = (
+                between(
+                    draw, int, min_=(min_size or 0), max_=(max_size or MAX_DATA_SIZE)
+                )
+                if size is None
+                else size
             )
+            # assign series name
+            series_name = name if isinstance(name, str) or name is None else draw(name)
 
-        # apply null values (custom frequency)
-        if null_probability and null_probability != 1:
-            for idx in range(series_size):
-                if random.random() < null_probability:
-                    series_values[idx] = None
+            # create series using dtype-specific strategy to generate values
+            if series_size == 0:
+                series_values = []
+            elif null_probability == 1:
+                series_values = [None] * series_size
+            else:
+                series_values = draw(
+                    lists(
+                        dtype_strategy,
+                        min_size=series_size,
+                        max_size=series_size,
+                        unique=unique,
+                    )
+                )
 
-        # init series with strategy-generated data
-        s = pli.Series(
-            name=series_name,
-            dtype=series_dtype,
-            values=series_values,
-        )
-        if is_categorical_dtype(dtype):
-            s = s.cast(Categorical)
-        if series_size:
-            if chunked or (chunked is None and draw(booleans())):
+            # apply null values (custom frequency)
+            if null_probability and null_probability != 1:
+                for idx in range(series_size):
+                    if random.random() < null_probability:
+                        series_values[idx] = None
+
+            # init series with strategy-generated data
+            s = pli.Series(
+                name=series_name,
+                dtype=series_dtype,
+                values=series_values,
+            )
+            if is_categorical_dtype(dtype):
+                s = s.cast(Categorical)
+            if series_size and (chunked or (chunked is None and draw(booleans()))):
                 split_at = series_size // 2
                 s = s[:split_at].append(s[split_at:], append_chunks=True)
-        return s
+            return s
 
     return draw_series()
 
@@ -554,11 +562,8 @@ def dataframes(
     │ 575050513 ┆ NaN        │
     └───────────┴────────────┘
     """  # noqa: 501
-    if isinstance(cols, int):
-        cols = columns(cols)
-    if isinstance(min_size, int):
-        if min_cols in (0, None):
-            min_cols = 1
+    if isinstance(min_size, int) and min_cols in (0, None):
+        min_cols = 1
 
     selectable_dtypes = [
         dtype
@@ -568,63 +573,68 @@ def dataframes(
 
     @composite
     def draw_frames(draw: DrawFn) -> pli.DataFrame | pli.LazyFrame:
-        # if not given, create 'n' cols with random dtypes
-        if cols is None:
-            n = between(draw, int, min_=(min_cols or 0), max_=(max_cols or MAX_COLS))
-            dtypes_ = [draw(sampled_from(selectable_dtypes)) for _ in range(n)]
-            coldefs = columns(cols=n, dtype=dtypes_)
-        elif isinstance(cols, column):
-            coldefs = [cols]
-        else:
-            coldefs = list(cols)  # type: ignore[arg-type]
-
-        # append any explicitly provided cols
-        coldefs.extend(include_cols or ())
-
-        # assign dataframe/series size
-        series_size = (
-            between(draw, int, min_=(min_size or 0), max_=(max_size or MAX_DATA_SIZE))
-            if size is None
-            else size
-        )
-        # init dataframe from generated series data; series data is
-        # given as a python-native sequence (TODO: or as an arrow array).
-        for idx, c in enumerate(coldefs):
-            if c.name is None:
-                c.name = f"col{idx}"
-            if c.null_probability is None:
-                if isinstance(null_probability, dict):
-                    c.null_probability = null_probability.get(c.name, 0.0)
-                else:
-                    c.null_probability = null_probability
-
-        frame_columns = [
-            c.name if (c.dtype is None) else (c.name, c.dtype) for c in coldefs
-        ]
-        df = pli.DataFrame(
-            data={
-                c.name: draw(
-                    series(
-                        name=c.name,
-                        dtype=c.dtype,
-                        size=series_size,
-                        null_probability=(c.null_probability or 0.0),
-                        allow_infinities=allow_infinities,
-                        strategy=c.strategy,
-                        unique=c.unique,
-                        chunked=(chunked is None and draw(booleans())),
-                    )
+        with StringCache():
+            # if not given, create 'n' cols with random dtypes
+            if cols is None or isinstance(cols, int):
+                n = cols or between(
+                    draw, int, min_=(min_cols or 0), max_=(max_cols or MAX_COLS)
                 )
-                for c in coldefs
-            },
-            columns=frame_columns,  # type: ignore[arg-type]
-        )
-        # optionally generate frames with n_chunks > 1
-        if series_size > 1 and chunked is True:
-            split_at = series_size // 2
-            df = df[:split_at].vstack(df[split_at:])
+                dtypes_ = [draw(sampled_from(selectable_dtypes)) for _ in range(n)]
+                coldefs = columns(cols=n, dtype=dtypes_)
+            elif isinstance(cols, column):
+                coldefs = [cols]
+            else:
+                coldefs = list(cols)
 
-        # optionally make lazy
-        return df.lazy() if lazy else df
+            # append any explicitly provided cols
+            coldefs.extend(include_cols or ())
+
+            # assign dataframe/series size
+            series_size = (
+                between(
+                    draw, int, min_=(min_size or 0), max_=(max_size or MAX_DATA_SIZE)
+                )
+                if size is None
+                else size
+            )
+            # init dataframe from generated series data; series data is
+            # given as a python-native sequence (TODO: or as an arrow array).
+            for idx, c in enumerate(coldefs):
+                if c.name is None:
+                    c.name = f"col{idx}"
+                if c.null_probability is None:
+                    if isinstance(null_probability, dict):
+                        c.null_probability = null_probability.get(c.name, 0.0)
+                    else:
+                        c.null_probability = null_probability
+
+            frame_columns = [
+                c.name if (c.dtype is None) else (c.name, c.dtype) for c in coldefs
+            ]
+            df = pli.DataFrame(
+                data={
+                    c.name: draw(
+                        series(
+                            name=c.name,
+                            dtype=c.dtype,
+                            size=series_size,
+                            null_probability=(c.null_probability or 0.0),
+                            allow_infinities=allow_infinities,
+                            strategy=c.strategy,
+                            unique=c.unique,
+                            chunked=(chunked is None and draw(booleans())),
+                        )
+                    )
+                    for c in coldefs
+                },
+                schema=frame_columns,  # type: ignore[arg-type]
+            )
+            # optionally generate frames with n_chunks > 1
+            if series_size > 1 and chunked is True:
+                split_at = series_size // 2
+                df = df[:split_at].vstack(df[split_at:])
+
+            # optionally make lazy
+            return df.lazy() if lazy else df
 
     return draw_frames()

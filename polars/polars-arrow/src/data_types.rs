@@ -20,6 +20,7 @@ unsafe impl IsFloat for i8 {}
 unsafe impl IsFloat for i16 {}
 unsafe impl IsFloat for i32 {}
 unsafe impl IsFloat for i64 {}
+unsafe impl IsFloat for i128 {}
 unsafe impl IsFloat for u8 {}
 unsafe impl IsFloat for u16 {}
 unsafe impl IsFloat for u32 {}
@@ -35,6 +36,7 @@ mod private {
     impl Sealed for i16 {}
     impl Sealed for i32 {}
     impl Sealed for i64 {}
+    impl Sealed for i128 {}
     impl Sealed for u8 {}
     impl Sealed for u16 {}
     impl Sealed for u32 {}

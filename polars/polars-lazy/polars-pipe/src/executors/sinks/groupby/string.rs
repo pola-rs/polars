@@ -1,7 +1,7 @@
 use std::any::Any;
 
 use hashbrown::hash_map::RawEntryMut;
-use num::NumCast;
+use num_traits::NumCast;
 use polars_core::export::ahash::RandomState;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
@@ -252,7 +252,7 @@ impl Sink for Utf8GroupbySink {
         Ok(SinkResult::CanHaveMoreInput)
     }
 
-    fn combine(&mut self, mut other: Box<dyn Sink>) {
+    fn combine(&mut self, other: &mut dyn Sink) {
         // don't parallel this as this is already done in parallel.
 
         let other = other.as_any().downcast_ref::<Self>().unwrap();

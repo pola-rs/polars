@@ -13,8 +13,10 @@ The following methods are available under the `Series.arr` attribute.
     Series.arr.arg_min
     Series.arr.concat
     Series.arr.contains
+    Series.arr.count_match
     Series.arr.diff
     Series.arr.eval
+    Series.arr.explode
     Series.arr.first
     Series.arr.get
     Series.arr.head

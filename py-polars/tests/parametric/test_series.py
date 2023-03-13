@@ -6,8 +6,10 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import no_type_check
 
+import numpy as np
 from hypothesis import given, settings
 from hypothesis.strategies import booleans, floats, sampled_from
+from numpy.testing import assert_array_equal
 
 import polars as pl
 from polars.internals.expr.expr import _prepare_alpha
@@ -35,6 +37,7 @@ def alpha_guard(**decay_param: float) -> bool:
     ),
     com=floats(min_value=0, max_value=99).filter(lambda x: alpha_guard(com=x)),
     span=floats(min_value=1, max_value=10).filter(lambda x: alpha_guard(span=x)),
+    ignore_nulls=booleans(),
     adjust=booleans(),
     bias=booleans(),
 )
@@ -44,6 +47,7 @@ def test_ewm_methods(
     com: float | None,
     span: float | None,
     half_life: float | None,
+    ignore_nulls: bool,
     adjust: bool,
     bias: bool,
 ) -> None:
@@ -59,16 +63,21 @@ def test_ewm_methods(
         # https://github.com/pola-rs/polars/issues/5006#issuecomment-1259477178
         for mp in range(2, len(s), len(s) // 3):
             # consolidate ewm parameters
-            pl_params = {"min_periods": mp, "adjust": adjust}
+            pl_params = {
+                "min_periods": mp,
+                "adjust": adjust,
+                "ignore_nulls": ignore_nulls,
+            }
             pl_params.update(decay_param)
-
             pd_params = pl_params.copy()
             if "half_life" in pl_params:
                 pd_params["halflife"] = pd_params.pop("half_life")
+            if "ignore_nulls" in pl_params:
+                pd_params["ignore_na"] = pd_params.pop("ignore_nulls")
 
             # mean:
             ewm_mean_pl = s.ewm_mean(**pl_params).fill_nan(None)
-            ewm_mean_pd = pl.Series(p.ewm(ignore_na=True, **pd_params).mean())
+            ewm_mean_pd = pl.Series(p.ewm(**pd_params).mean())
             if alpha == 1:
                 # apply fill-forward to nulls to match pandas
                 # https://github.com/pola-rs/polars/pull/5011#issuecomment-1262318124
@@ -78,12 +87,12 @@ def test_ewm_methods(
 
             # std:
             ewm_std_pl = s.ewm_std(bias=bias, **pl_params).fill_nan(None)
-            ewm_std_pd = pl.Series(p.ewm(ignore_na=True, **pd_params).std(bias=bias))
+            ewm_std_pd = pl.Series(p.ewm(**pd_params).std(bias=bias))
             assert_series_equal(ewm_std_pl, ewm_std_pd, atol=1e-07)
 
             # var:
             ewm_var_pl = s.ewm_var(bias=bias, **pl_params).fill_nan(None)
-            ewm_var_pd = pl.Series(p.ewm(ignore_na=True, **pd_params).var(bias=bias))
+            ewm_var_pd = pl.Series(p.ewm(**pd_params).var(bias=bias))
             assert_series_equal(ewm_var_pl, ewm_var_pd, atol=1e-07)
 
 
@@ -141,4 +150,15 @@ def test_series_timeunits(
         if isinstance(us, int)
     ):
         for ns, us in zip(s2.dt.nanoseconds(), micros):
-            assert ns == (us * 1000)  # type: ignore[operator]
+            assert ns == (us * 1000)
+
+
+@given(
+    s=series(min_size=1, max_size=10, excluded_dtypes=[pl.Categorical]),
+)
+def test_series_to_numpy(
+    s: pl.Series,
+) -> None:
+    if s.dtype != pl.Utf8 or not s.str.contains("\x00").any():
+        np_array = np.array(s.to_list())
+        assert_array_equal(np_array, s.to_numpy())

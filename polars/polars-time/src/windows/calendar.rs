@@ -1,3 +1,4 @@
+use chrono::TimeZone as TimeZoneTrait;
 use polars_core::prelude::*;
 
 use crate::prelude::*;
@@ -40,7 +41,8 @@ pub fn date_range(
     every: Duration,
     closed: ClosedWindow,
     tu: TimeUnit,
-) -> Vec<i64> {
+    tz: Option<&impl TimeZoneTrait>,
+) -> PolarsResult<Vec<i64>> {
     let size = match tu {
         TimeUnit::Nanoseconds => ((stop - start) / every.duration_ns() + 1) as usize,
         TimeUnit::Microseconds => ((stop - start) / every.duration_us() + 1) as usize,
@@ -58,30 +60,30 @@ pub fn date_range(
         ClosedWindow::Both => {
             while t <= stop {
                 ts.push(t);
-                t = f(&every, t)
+                t = f(&every, t, tz)?
             }
         }
         ClosedWindow::Left => {
             while t < stop {
                 ts.push(t);
-                t = f(&every, t)
+                t = f(&every, t, tz)?
             }
         }
         ClosedWindow::Right => {
-            t = f(&every, t);
+            t = f(&every, t, tz)?;
             while t <= stop {
                 ts.push(t);
-                t = f(&every, t)
+                t = f(&every, t, tz)?
             }
         }
         ClosedWindow::None => {
-            t = f(&every, t);
+            t = f(&every, t, tz)?;
             while t < stop {
                 ts.push(t);
-                t = f(&every, t)
+                t = f(&every, t, tz)?
             }
         }
     }
     debug_assert!(size >= ts.len());
-    ts
+    Ok(ts)
 }

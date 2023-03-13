@@ -11,8 +11,7 @@ fn test_agg_exprs() -> PolarsResult<()> {
         .lazy()
         .groupby_stable([col("cars")])
         .agg([(lit(1) - col("A"))
-            .map(|s| Ok(&s * 2), GetOutput::same_type())
-            .list()
+            .map(|s| Ok(Some(&s * 2)), GetOutput::same_type())
             .alias("foo")])
         .collect()?;
     let ca = out.column("foo")?.list()?;
@@ -182,7 +181,6 @@ fn test_power_in_agg_list1() -> PolarsResult<()> {
             },
         )
         .collect()?;
-    dbg!(&out);
 
     let agg = out.column("foo")?.list()?;
     let first = agg.get(0).unwrap();
@@ -331,7 +329,7 @@ fn test_binary_agg_context_2() -> PolarsResult<()> {
         .clone()
         .lazy()
         .groupby_stable([col("groups")])
-        .agg([((col("vals").first() - col("vals")).list()).alias("vals")])
+        .agg([(col("vals").first() - col("vals")).alias("vals")])
         .collect()?;
 
     // 0 - [1, 2] = [0, -1]
@@ -349,7 +347,7 @@ fn test_binary_agg_context_2() -> PolarsResult<()> {
     let out = df
         .lazy()
         .groupby_stable([col("groups")])
-        .agg([((col("vals")) - col("vals").first()).list().alias("vals")])
+        .agg([((col("vals")) - col("vals").first()).alias("vals")])
         .collect()?;
 
     // [1, 2] - 1 = [0, 1]
@@ -393,7 +391,7 @@ fn test_shift_elementwise_issue_2509() -> PolarsResult<()> {
         .lazy()
         // Don't use maintain order here! That hides the bug
         .groupby([col("x")])
-        .agg(&[(col("y").shift(-1) + col("x")).list().alias("sum")])
+        .agg(&[(col("y").shift(-1) + col("x")).alias("sum")])
         .sort("x", Default::default())
         .collect()?;
 

@@ -31,7 +31,8 @@ impl Window {
     /// Truncate the given ns timestamp by the window boundary.
     pub fn truncate_ns(&self, t: i64) -> i64 {
         let t = self.every.truncate_ns(t);
-        self.offset.add_ns(t)
+        // TODO remove unwrap once time zone is respected
+        self.offset.add_ns(t, NO_TIMEZONE).unwrap()
     }
 
     pub fn truncate_no_offset_ns(&self, t: i64) -> i64 {
@@ -41,7 +42,8 @@ impl Window {
     /// Truncate the given ns timestamp by the window boundary.
     pub fn truncate_us(&self, t: i64) -> i64 {
         let t = self.every.truncate_us(t);
-        self.offset.add_us(t)
+        // TODO remove unwrap once time zone is respected
+        self.offset.add_us(t, NO_TIMEZONE).unwrap()
     }
 
     pub fn truncate_no_offset_us(&self, t: i64) -> i64 {
@@ -50,7 +52,8 @@ impl Window {
 
     pub fn truncate_ms(&self, t: i64) -> i64 {
         let t = self.every.truncate_ms(t);
-        self.offset.add_ms(t)
+        // TODO remove unwrap once time zone is respected
+        self.offset.add_ms(t, NO_TIMEZONE).unwrap()
     }
 
     #[inline]
@@ -95,13 +98,15 @@ impl Window {
         let start = if !self.every.months_only()
             && self.every.duration_ns() > NANOSECONDS * SECONDS_IN_DAY
         {
-            self.offset.add_ns(t)
+            // TODO remove unwrap once time zone is respected
+            self.offset.add_ns(t, NO_TIMEZONE).unwrap()
         } else {
             // offset is translated in the truncate
             self.truncate_ns(t)
         };
 
-        let stop = self.period.add_ns(start);
+        // TODO remove unwrap once time zone is respected
+        let stop = self.period.add_ns(start, NO_TIMEZONE).unwrap();
 
         Bounds::new_checked(start, stop)
     }
@@ -110,11 +115,13 @@ impl Window {
         let start = if !self.every.months_only()
             && self.every.duration_us() > MICROSECONDS * SECONDS_IN_DAY
         {
-            self.offset.add_us(t)
+            // TODO remove unwrap once time zone is supported
+            self.offset.add_us(t, NO_TIMEZONE).unwrap()
         } else {
             self.truncate_us(t)
         };
-        let stop = self.period.add_us(start);
+        // TODO remove unwrap once time zone is supported
+        let stop = self.period.add_us(start, NO_TIMEZONE).unwrap();
 
         Bounds::new_checked(start, stop)
     }
@@ -123,12 +130,14 @@ impl Window {
         let start = if !self.every.months_only()
             && self.every.duration_ms() > MILLISECONDS * SECONDS_IN_DAY
         {
-            self.offset.add_ms(t)
+            // TODO remove unwrap once time zone is supported
+            self.offset.add_ms(t, NO_TIMEZONE).unwrap()
         } else {
             self.truncate_ms(t)
         };
 
-        let stop = self.period.add_ms(start);
+        // TODO remove unwrap once time zone is supported
+        let stop = self.period.add_ms(start, NO_TIMEZONE).unwrap();
 
         Bounds::new_checked(start, stop)
     }
@@ -176,7 +185,8 @@ impl BoundsIter {
                     TimeUnit::Microseconds => Duration::add_us,
                     TimeUnit::Milliseconds => Duration::add_ms,
                 };
-                boundary.stop = offset_fn(&window.period, boundary.start);
+                // TODO remove unwrap once time zone is respected
+                boundary.stop = offset_fn(&window.period, boundary.start, NO_TIMEZONE).unwrap();
                 boundary
             }
             StartBy::WindowBound => match tu {
@@ -191,7 +201,7 @@ impl BoundsIter {
                     let (from, to, offset): (
                         fn(i64) -> NaiveDateTime,
                         fn(NaiveDateTime) -> i64,
-                        fn(&Duration, i64) -> i64,
+                        fn(&Duration, i64, Option<&FixedOffset>) -> PolarsResult<i64>,
                     ) = match tu {
                         TimeUnit::Nanoseconds => (
                             timestamp_ns_to_datetime,
@@ -218,9 +228,11 @@ impl BoundsIter {
                     let dt = dt.naive_utc();
                     let start = to(dt);
                     // apply the 'offset'
-                    let start = offset(&window.offset, start);
+                    // TODO remove unwrap once time zone is respected
+                    let start = offset(&window.offset, start, NO_TIMEZONE).unwrap();
                     // and compute the end of the window defined by the 'period'
-                    let stop = offset(&window.period, start);
+                    // TODO remove unwrap once time zone is respected
+                    let stop = offset(&window.period, start, NO_TIMEZONE).unwrap();
                     boundary.start = start;
                     boundary.stop = stop;
                     boundary
@@ -247,17 +259,30 @@ impl Iterator for BoundsIter {
         if self.bi.start < self.boundary.stop {
             let out = self.bi;
             match self.tu {
+                // TODO remove unwrap once time zone is respected
                 TimeUnit::Nanoseconds => {
-                    self.bi.start = self.window.every.add_ns(self.bi.start);
-                    self.bi.stop = self.window.every.add_ns(self.bi.stop);
+                    self.bi.start = self
+                        .window
+                        .every
+                        .add_ns(self.bi.start, NO_TIMEZONE)
+                        .unwrap();
+                    self.bi.stop = self.window.every.add_ns(self.bi.stop, NO_TIMEZONE).unwrap();
                 }
                 TimeUnit::Microseconds => {
-                    self.bi.start = self.window.every.add_us(self.bi.start);
-                    self.bi.stop = self.window.every.add_us(self.bi.stop);
+                    self.bi.start = self
+                        .window
+                        .every
+                        .add_us(self.bi.start, NO_TIMEZONE)
+                        .unwrap();
+                    self.bi.stop = self.window.every.add_us(self.bi.stop, NO_TIMEZONE).unwrap();
                 }
                 TimeUnit::Milliseconds => {
-                    self.bi.start = self.window.every.add_ms(self.bi.start);
-                    self.bi.stop = self.window.every.add_ms(self.bi.stop);
+                    self.bi.start = self
+                        .window
+                        .every
+                        .add_ms(self.bi.start, NO_TIMEZONE)
+                        .unwrap();
+                    self.bi.stop = self.window.every.add_ms(self.bi.stop, NO_TIMEZONE).unwrap();
                 }
             }
             Some(out)

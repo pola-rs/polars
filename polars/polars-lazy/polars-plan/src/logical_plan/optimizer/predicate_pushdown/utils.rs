@@ -1,6 +1,7 @@
 use polars_core::datatypes::PlHashMap;
 use polars_core::prelude::*;
 
+use super::keys::*;
 use crate::logical_plan::Context;
 use crate::prelude::*;
 use crate::utils::{aexpr_to_leaf_names, check_input_node, has_aexpr, rename_aexpr_leaf_names};
@@ -75,33 +76,6 @@ pub(super) fn predicate_at_scan(
     }
 }
 
-// an invisible ascii token we use as delimiter
-const HIDDEN_DELIMITER: char = '\u{1D17A}';
-
-/// Determine the hashmap key by combining all the leaf column names of a predicate
-pub(super) fn predicate_to_key(predicate: Node, expr_arena: &Arena<AExpr>) -> Arc<str> {
-    let mut iter = aexpr_to_leaf_names_iter(predicate, expr_arena);
-    if let Some(first) = iter.next() {
-        if let Some(second) = iter.next() {
-            let mut new = String::with_capacity(32 * iter.size_hint().0);
-            new.push_str(&first);
-            new.push(HIDDEN_DELIMITER);
-            new.push_str(&second);
-
-            for name in iter {
-                new.push(HIDDEN_DELIMITER);
-                new.push_str(&name);
-            }
-            return Arc::from(new);
-        }
-        first
-    } else {
-        let mut s = String::new();
-        s.push(HIDDEN_DELIMITER);
-        Arc::from(s)
-    }
-}
-
 // this checks if a predicate from a node upstream can pass
 // the predicate in this filter
 // Cases where this cannot be the case:
@@ -134,72 +108,124 @@ pub(super) fn predicate_is_pushdown_boundary(node: Node, expr_arena: &Arena<AExp
 /// predicate pushdown blocker.
 ///
 /// This checks the boundary of other columns
-pub(super) fn project_other_column_is_predicate_pushdown_boundary(
+pub(super) fn projection_is_definite_pushdown_boundary(
     node: Node,
     expr_arena: &Arena<AExpr>,
 ) -> bool {
     let matches = |e: &AExpr| {
-        matches!(
-            e,
-            AExpr::Sort { .. } | AExpr::SortBy { .. }
-            | AExpr::Agg(_) // an aggregation needs all rows
+        use AExpr::*;
+        // any result that will change due to rows filtered before the projection
+
+        // explicit match is more readable in this case
+        #[allow(clippy::match_like_matches_macro)]
+        match e {
+             Agg(_) // an aggregation needs all rows
             // Apply groups can be something like shift, sort, or an aggregation like skew
             // both need all values
-            | AExpr::AnonymousFunction {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
-            | AExpr::Function {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
-            | AExpr::BinaryExpr {..}
-            // casts may produce null values, change values etc.
-            // they can fail in myriad ways
-            | AExpr::Cast {..}
+            | AnonymousFunction {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
+            | Function {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
             // still need to investigate this one
-            | AExpr::Explode {..}
+            | Explode {..}
+            | Count
+             | Nth(_)
+             | Slice {..}
+             | Take {..}
             // A groupby needs all rows for aggregation
-            | AExpr::Window {..}
-            | AExpr::Literal(LiteralValue::Range {..})
-        ) ||
-            // a series that is not a singleton would also have a different result
-            // if filter is applied earlier
-            matches!(e, AExpr::Literal(LiteralValue::Series(s)) if s.len() > 1
-        )
+            | Window {..}
+            | Literal(LiteralValue::Range {..}) => true,
+            // The series might be used in a comparison with exactly the right length
+            Literal(LiteralValue::Series(s)) => s.len() > 1,
+            _ => false
+        }
     };
     has_aexpr(node, expr_arena, matches)
 }
 
+/// This is only a boundary if a predicate refers to the projection output name.
 /// This checks the boundary of same columns.
 /// So that means columns that are referred in the predicate
 /// for instance `predicate = col(A) == col(B).`
 /// and `col().some_func().alias(B)` is projected.
 /// then the projection can not pass, as column `B` maybe
 /// changed by `some_func`
-pub(super) fn projection_column_is_predicate_pushdown_boundary(
+pub(super) fn projection_is_optional_pushdown_boundary(
     node: Node,
     expr_arena: &Arena<AExpr>,
 ) -> bool {
     let matches = |e: &AExpr| {
-        matches!(
-            e,
-            AExpr::Sort { .. } | AExpr::SortBy { .. }
-            | AExpr::Agg(_) // an aggregation needs all rows
-            // everything that works on groups likely changes to order of elements w/r/t the other columns
-            | AExpr::AnonymousFunction {..}
-            | AExpr::Function {..}
-            | AExpr::BinaryExpr {..}
-            // cast may change precision.
-            | AExpr::Cast {data_type: DataType::Float32 | DataType::Float64 | DataType::Utf8 | DataType::Boolean, ..}
-            // cast may create nulls
-            | AExpr::Cast {strict: false, ..}
-            // still need to investigate this one
-            | AExpr::Explode {..}
-            // A groupby needs all rows for aggregation
-            | AExpr::Window {..}
-            | AExpr::Literal(LiteralValue::Range {..})
-        ) ||
-            // a series that is not a singleton would also have a different result
-            // if filter is applied earlier
-            matches!(e, AExpr::Literal(LiteralValue::Series(s)) if s.len() > 1
-        )
+        use AExpr::*;
+        // anything that changes output values modifies the predicate result
+        // and is not captured by function above: `projection_is_definite_pushdown_boundary`
+
+        // explicit match is more readable in this case
+        #[allow(clippy::match_like_matches_macro)]
+        match e {
+            AnonymousFunction { .. }
+            | Function { .. }
+            | BinaryExpr { .. }
+            | Ternary { .. }
+            | Cast { .. } => true,
+            _ => false,
+        }
     };
     has_aexpr(node, expr_arena, matches)
+}
+
+enum LoopBehavior {
+    Continue,
+    Nothing,
+}
+
+fn rename_predicate_columns_due_to_aliased_projection(
+    expr_arena: &mut Arena<AExpr>,
+    acc_predicates: &mut PlHashMap<Arc<str>, Node>,
+    projection_node: Node,
+    projection_maybe_boundary: bool,
+    local_predicates: &mut Vec<Node>,
+) -> LoopBehavior {
+    let projection_aexpr = expr_arena.get(projection_node);
+    if let AExpr::Alias(_, alias_name) = projection_aexpr {
+        let alias_name = alias_name.as_ref();
+        let projection_roots = aexpr_to_leaf_names(projection_node, expr_arena);
+        // if this alias refers to one of the predicates in the upper nodes
+        // we rename the column of the predicate before we push it downwards.
+        if let Some(predicate) = acc_predicates.remove(alias_name) {
+            if projection_maybe_boundary {
+                local_predicates.push(predicate);
+                return LoopBehavior::Continue;
+            }
+            if projection_roots.len() == 1 {
+                // we were able to rename the alias column with the root column name
+                // before pushing down the predicate
+                let predicate =
+                    rename_aexpr_leaf_names(predicate, expr_arena, projection_roots[0].clone());
+
+                insert_and_combine_predicate(acc_predicates, predicate, expr_arena);
+            } else {
+                // this may be a complex binary function. The predicate may only be valid
+                // on this projected column so we do filter locally.
+                local_predicates.push(predicate)
+            }
+        } else {
+            // we could not find the alias name
+            // that could still mean that a predicate that is a complicated binary expression
+            // refers to the aliased name. If we find it, we remove it for now
+            // TODO! rename the expression.
+            let mut remove_names = vec![];
+            for (composed_name, _) in acc_predicates.iter() {
+                if key_has_name(composed_name, alias_name) {
+                    remove_names.push(composed_name.clone());
+                    break;
+                }
+            }
+
+            for composed_name in remove_names {
+                let predicate = acc_predicates.remove(&composed_name).unwrap();
+                local_predicates.push(predicate)
+            }
+        }
+    }
+    LoopBehavior::Nothing
 }
 
 /// Implementation for both Hstack and Projection
@@ -213,7 +239,6 @@ pub(super) fn rewrite_projection_node(
 where
 {
     let mut local_predicates = Vec::with_capacity(acc_predicates.len());
-    let input_schema = lp_arena.get(input).schema(lp_arena);
 
     // maybe update predicate name if a projection is an alias
     // aliases change the column names and because we push the predicates downwards
@@ -221,69 +246,31 @@ where
     for projection_node in &projections {
         // only if a predicate refers to this projection's output column.
         let projection_maybe_boundary =
-            projection_column_is_predicate_pushdown_boundary(*projection_node, expr_arena);
+            projection_is_optional_pushdown_boundary(*projection_node, expr_arena);
 
+        {
+            // if this alias refers to one of the predicates in the upper nodes
+            // we rename the column of the predicate before we push it downwards.
+            match rename_predicate_columns_due_to_aliased_projection(
+                expr_arena,
+                acc_predicates,
+                *projection_node,
+                projection_maybe_boundary,
+                &mut local_predicates,
+            ) {
+                LoopBehavior::Continue => continue,
+                LoopBehavior::Nothing => {}
+            }
+        }
+        let input_schema = lp_arena.get(input).schema(lp_arena);
         let projection_expr = expr_arena.get(*projection_node);
         let output_field = projection_expr
             .to_field(&input_schema, Context::Default, expr_arena)
             .unwrap();
-        let projection_roots = aexpr_to_leaf_names(*projection_node, expr_arena);
-
-        {
-            let projection_aexpr = expr_arena.get(*projection_node);
-            if let AExpr::Alias(_, alias_name) = projection_aexpr {
-                // if this alias refers to one of the predicates in the upper nodes
-                // we rename the column of the predicate before we push it downwards.
-
-                if let Some(predicate) = acc_predicates.remove(alias_name) {
-                    if projection_maybe_boundary {
-                        local_predicates.push(predicate);
-                        continue;
-                    }
-                    if projection_roots.len() == 1 {
-                        // we were able to rename the alias column with the root column name
-                        // before pushing down the predicate
-                        let predicate = rename_aexpr_leaf_names(
-                            predicate,
-                            expr_arena,
-                            projection_roots[0].clone(),
-                        );
-
-                        insert_and_combine_predicate(acc_predicates, predicate, expr_arena);
-                    } else {
-                        // this may be a complex binary function. The predicate may only be valid
-                        // on this projected column so we do filter locally.
-                        local_predicates.push(predicate)
-                    }
-                } else {
-                    // we could not find the alias name
-                    // that could still mean that a predicate that is a complicated binary expression
-                    // refers to the aliased name. If we find it, we remove it for now
-                    // TODO! rename the expression.
-                    let mut remove_names = vec![];
-                    for (composed_name, _) in acc_predicates.iter() {
-                        if composed_name.contains(HIDDEN_DELIMITER) {
-                            for root_name in composed_name.as_ref().split(HIDDEN_DELIMITER) {
-                                if root_name == alias_name.as_ref() {
-                                    remove_names.push(composed_name.clone());
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-                    for composed_name in remove_names {
-                        let predicate = acc_predicates.remove(&composed_name).unwrap();
-                        local_predicates.push(predicate)
-                    }
-                }
-            }
-        }
 
         // we check if predicates can be done on the input above
         // this can only be done if the current projection is not a projection boundary
-        let is_boundary =
-            project_other_column_is_predicate_pushdown_boundary(*projection_node, expr_arena);
+        let is_boundary = projection_is_definite_pushdown_boundary(*projection_node, expr_arena);
 
         // remove predicates that cannot be done on the input above
         let to_local = acc_predicates
@@ -299,7 +286,7 @@ where
                 // checks 1.
                 if check_input_node(*predicate, &input_schema, expr_arena)
                 // checks 2.
-                && !(output_field.name().as_str() == &**name && projection_maybe_boundary)
+                && !(key_has_name(name, output_field.name()) && projection_maybe_boundary)
                 // checks 3.
                 && !is_boundary
                 {

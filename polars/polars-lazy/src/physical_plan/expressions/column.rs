@@ -168,17 +168,13 @@ impl PhysicalExpr for ColumnExpr {
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
-        let field = input_schema.get_field(&self.name).ok_or_else(|| {
-            PolarsError::NotFound(
-                format!(
-                    "could not find column: {} in schema: {:?}",
-                    self.name, &input_schema
-                )
-                .into(),
+        input_schema.get_field(&self.name).ok_or_else(|| {
+            polars_err!(
+                ColumnNotFound: "could not find {:?} in schema: {:?}", self.name, &input_schema
             )
-        })?;
-        Ok(field)
+        })
     }
+
     fn is_valid_aggregation(&self) -> bool {
         false
     }

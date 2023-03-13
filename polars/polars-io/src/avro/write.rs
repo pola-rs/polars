@@ -1,6 +1,7 @@
 pub use arrow::io::avro::avro_schema::file::Compression;
 use arrow::io::avro::avro_schema::{self};
 use arrow::io::avro::write;
+use polars_core::error::to_compute_err;
 pub use Compression as AvroCompression;
 
 use super::*;
@@ -68,13 +69,13 @@ where
             write::serialize(&mut serializers, &mut block);
             let _was_compressed =
                 avro_schema::write::compress(&mut block, &mut compressed_block, self.compression)
-                    .map_err(convert_err)?;
+                    .map_err(to_compute_err)?;
 
             avro_schema::write::write_metadata(&mut self.writer, record.clone(), self.compression)
-                .map_err(convert_err)?;
+                .map_err(to_compute_err)?;
 
             avro_schema::write::write_block(&mut self.writer, &compressed_block)
-                .map_err(convert_err)?;
+                .map_err(to_compute_err)?;
             // reuse block for next iteration.
             data = block.data;
             data.clear();

@@ -1,18 +1,24 @@
 //! Much more opinionated, but also much faster strptrime than the one given in Chrono.
 //!
+use atoi::FromRadix10;
 use chrono::{NaiveDate, NaiveDateTime};
+use polars_utils::slice::GetSaferUnchecked;
 
 #[inline]
-fn update_and_parse<T: lexical::FromLexical>(
+fn update_and_parse<T: atoi::FromRadix10>(
     incr: usize,
     offset: usize,
     vals: &[u8],
 ) -> Option<(T, usize)> {
     // this maybe oob because we cannot entirely sure about fmt lengths
     let new_offset = offset + incr;
-    lexical::parse(vals.get(offset..new_offset)?)
-        .ok()
-        .map(|v| (v, new_offset))
+    let bytes = vals.get(offset..new_offset)?;
+    let (val, parsed) = T::from_radix_10(bytes);
+    if parsed == 0 {
+        None
+    } else {
+        Some((val, new_offset))
+    }
 }
 
 #[inline]
@@ -46,107 +52,123 @@ pub(super) fn compile_fmt(fmt: &str) -> String {
         .replace("%F", "%Y-%m-%d")
 }
 
-#[inline]
-// # Safety
-// Caller must ensure that fmt adheres to the fmt rules of chrono and `fmt_len` is correct.
-pub(super) unsafe fn parse(val: &[u8], fmt: &[u8], fmt_len: u16) -> Option<NaiveDateTime> {
-    const ESCAPE: u8 = b'%';
-    if val.len() < fmt_len as usize {
-        return None;
-    }
-    let mut year: i32 = 1;
-    // minimal day/month is always 1
-    // otherwise chrono may panic.
-    let mut month: u32 = 1;
-    let mut day: u32 = 1;
-    let mut hour: u32 = 0;
-    let mut min: u32 = 0;
-    let mut sec: u32 = 0;
-    let mut nano: u32 = 0;
+#[derive(Default, Clone)]
+pub(super) struct StrpTimeState {}
 
-    let mut fmt_iter = fmt.iter();
-
-    let mut offset = 0;
-    let mut negative = false;
-
-    if val.starts_with(b"-") && fmt.starts_with(b"%Y") {
-        offset = 1;
-        negative = true;
-    }
-
-    while let Some(fmt_b) = fmt_iter.next() {
-        debug_assert!(offset < val.len());
-        let b = *val.get_unchecked(offset);
-        if *fmt_b == ESCAPE {
-            match fmt_iter.next().expect("invalid fmt") {
-                b'Y' => {
-                    (year, offset) = update_and_parse(4, offset, val)?;
-                    if negative {
-                        year *= -1
-                    }
-                }
-                b'm' => {
-                    (month, offset) = update_and_parse(2, offset, val)?;
-                }
-                b'b' => {
-                    (month, offset) = parse_month_abbrev(val, offset)?;
-                }
-                b'd' => {
-                    (day, offset) = update_and_parse(2, offset, val)?;
-                }
-                b'H' => {
-                    (hour, offset) = update_and_parse(2, offset, val)?;
-                }
-                b'M' => {
-                    (min, offset) = update_and_parse(2, offset, val)?;
-                }
-                b'S' => {
-                    (sec, offset) = update_and_parse(2, offset, val)?;
-                }
-                b'y' => {
-                    let new_offset = offset + 2;
-                    let decade = lexical::parse::<i32, _>(&val[offset..new_offset]).ok()?;
-                    if decade < 50 {
-                        year = 2000 + decade;
-                    } else {
-                        year = 1900 + decade;
-                    }
-                    offset = new_offset;
-                }
-                b'9' => {
-                    (nano, offset) = update_and_parse(9, offset, val)?;
-                    break;
-                }
-                b'6' => {
-                    (nano, offset) = update_and_parse(6, offset, val)?;
-                    nano *= 1000;
-                    break;
-                }
-                b'3' => {
-                    (nano, offset) = update_and_parse(3, offset, val)?;
-                    nano *= 1_000_000;
-                    break;
-                }
-                // utc can be ignored
-                b'Z' => {}
-                _ => return None,
-            }
+impl StrpTimeState {
+    #[inline]
+    // # Safety
+    // Caller must ensure that fmt adheres to the fmt rules of chrono and `fmt_len` is correct.
+    pub(super) unsafe fn parse(
+        &mut self,
+        val: &[u8],
+        fmt: &[u8],
+        fmt_len: u16,
+    ) -> Option<NaiveDateTime> {
+        let mut offset = 0;
+        let mut negative = false;
+        if val.starts_with(b"-") && fmt.starts_with(b"%Y") {
+            offset = 1;
+            negative = true;
         }
-        // consume
-        else if b == *fmt_b {
-            offset += 1;
-        } else {
+        if val.len() - offset != (fmt_len as usize) {
             return None;
         }
-    }
-    // all values processed
-    if offset == val.len() {
-        NaiveDate::from_ymd_opt(year, month, day)
-            .and_then(|nd| nd.and_hms_nano_opt(hour, min, sec, nano))
-    }
-    // remaining values did not match pattern
-    else {
-        None
+
+        const ESCAPE: u8 = b'%';
+        let mut year: i32 = 1;
+        // minimal day/month is always 1
+        // otherwise chrono may panic.
+        let mut month: u32 = 1;
+        let mut day: u32 = 1;
+        let mut hour: u32 = 0;
+        let mut min: u32 = 0;
+        let mut sec: u32 = 0;
+        let mut nano: u32 = 0;
+
+        let mut fmt_iter = fmt.iter();
+
+        while let Some(fmt_b) = fmt_iter.next() {
+            debug_assert!(offset < val.len());
+            let b = *val.get_unchecked(offset);
+            if *fmt_b == ESCAPE {
+                // Safety: we must ensure we provide valid patterns
+                let next = fmt_iter.next();
+                debug_assert!(next.is_some());
+                match next.unwrap_unchecked() {
+                    b'Y' => {
+                        (year, offset) = update_and_parse(4, offset, val)?;
+                        if negative {
+                            year *= -1
+                        }
+                    }
+                    b'm' => {
+                        (month, offset) = update_and_parse(2, offset, val)?;
+                    }
+                    b'b' => {
+                        (month, offset) = parse_month_abbrev(val, offset)?;
+                    }
+                    b'd' => {
+                        (day, offset) = update_and_parse(2, offset, val)?;
+                    }
+                    b'H' => {
+                        (hour, offset) = update_and_parse(2, offset, val)?;
+                    }
+                    b'M' => {
+                        (min, offset) = update_and_parse(2, offset, val)?;
+                    }
+                    b'S' => {
+                        (sec, offset) = update_and_parse(2, offset, val)?;
+                    }
+                    b'y' => {
+                        let new_offset = offset + 2;
+                        let bytes = val.get_unchecked_release(offset..new_offset);
+
+                        let (decade, parsed) = i32::from_radix_10(bytes);
+                        if parsed == 0 {
+                            return None;
+                        }
+
+                        if decade < 50 {
+                            year = 2000 + decade;
+                        } else {
+                            year = 1900 + decade;
+                        }
+                        offset = new_offset;
+                    }
+                    b'9' => {
+                        (nano, offset) = update_and_parse(9, offset, val)?;
+                        break;
+                    }
+                    b'6' => {
+                        (nano, offset) = update_and_parse(6, offset, val)?;
+                        nano *= 1000;
+                        break;
+                    }
+                    b'3' => {
+                        (nano, offset) = update_and_parse(3, offset, val)?;
+                        nano *= 1_000_000;
+                        break;
+                    }
+                    _ => return None,
+                }
+            }
+            // consume
+            else if b == *fmt_b {
+                offset += 1;
+            } else {
+                return None;
+            }
+        }
+        // all values processed
+        if offset == val.len() {
+            NaiveDate::from_ymd_opt(year, month, day)
+                .and_then(|nd| nd.and_hms_nano_opt(hour, min, sec, nano))
+        }
+        // remaining values did not match pattern
+        else {
+            None
+        }
     }
 }
 
@@ -165,7 +187,6 @@ pub(super) fn fmt_len(fmt: &[u8]) -> Option<u16> {
                 b'H' => cnt += 2,
                 b'M' => cnt += 2,
                 b'S' => cnt += 2,
-                b'Z' => cnt += 1,
                 b'9' => {
                     cnt += 9;
                     debug_assert_eq!(iter.next(), Some(&b'f'));
@@ -202,43 +223,78 @@ mod test {
                 "2021-01-01",
                 "%Y-%m-%d",
                 10,
-                Some(NaiveDate::from_ymd(2021, 1, 1).and_hms_nano(0, 0, 0, 0)),
+                Some(
+                    NaiveDate::from_ymd_opt(2021, 1, 1)
+                        .unwrap()
+                        .and_hms_nano_opt(0, 0, 0, 0)
+                        .unwrap(),
+                ),
             ),
             (
                 "2021-01-01 07:45:12",
                 "%Y-%m-%d %H:%M:%S",
                 19,
-                Some(NaiveDate::from_ymd(2021, 1, 1).and_hms_nano(7, 45, 12, 0)),
+                Some(
+                    NaiveDate::from_ymd_opt(2021, 1, 1)
+                        .unwrap()
+                        .and_hms_nano_opt(7, 45, 12, 0)
+                        .unwrap(),
+                ),
             ),
             (
                 "2021-01-01 07:45:12",
                 "%Y-%m-%d %H:%M:%S",
                 19,
-                Some(NaiveDate::from_ymd(2021, 1, 1).and_hms_nano(7, 45, 12, 0)),
+                Some(
+                    NaiveDate::from_ymd_opt(2021, 1, 1)
+                        .unwrap()
+                        .and_hms_nano_opt(7, 45, 12, 0)
+                        .unwrap(),
+                ),
             ),
             (
                 "2019-04-18T02:45:55.555000000",
                 "%Y-%m-%dT%H:%M:%S.%9f",
                 29,
-                Some(NaiveDate::from_ymd(2019, 4, 18).and_hms_nano(2, 45, 55, 555000000)),
+                Some(
+                    NaiveDate::from_ymd_opt(2019, 4, 18)
+                        .unwrap()
+                        .and_hms_nano_opt(2, 45, 55, 555000000)
+                        .unwrap(),
+                ),
             ),
             (
                 "2019-04-18T02:45:55.555000",
                 "%Y-%m-%dT%H:%M:%S.%6f",
                 26,
-                Some(NaiveDate::from_ymd(2019, 4, 18).and_hms_nano(2, 45, 55, 555000000)),
+                Some(
+                    NaiveDate::from_ymd_opt(2019, 4, 18)
+                        .unwrap()
+                        .and_hms_nano_opt(2, 45, 55, 555000000)
+                        .unwrap(),
+                ),
             ),
             (
                 "2019-04-18T02:45:55.555",
                 "%Y-%m-%dT%H:%M:%S.%3f",
                 23,
-                Some(NaiveDate::from_ymd(2019, 4, 18).and_hms_nano(2, 45, 55, 555000000)),
+                Some(
+                    NaiveDate::from_ymd_opt(2019, 4, 18)
+                        .unwrap()
+                        .and_hms_nano_opt(2, 45, 55, 555000000)
+                        .unwrap(),
+                ),
             ),
         ];
 
         for (val, fmt, len, expected) in patterns {
             assert_eq!(fmt_len(fmt.as_bytes()).unwrap(), len);
-            unsafe { assert_eq!(parse(val.as_bytes(), fmt.as_bytes(), len), expected) };
+            unsafe {
+                assert_eq!(
+                    StrpTimeState::default().parse(val.as_bytes(), fmt.as_bytes(), len),
+                    expected
+                )
+            };
         }
     }
 }

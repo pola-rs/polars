@@ -1,6 +1,7 @@
 use polars_arrow::array::ValueSize;
 #[cfg(feature = "dtype-struct")]
 use polars_arrow::export::arrow::array::{MutableArray, MutableUtf8Array};
+use polars_utils::format_smartstring;
 
 use super::function_expr::StringFunction;
 use super::*;
@@ -9,37 +10,51 @@ pub struct StringNameSpace(pub(crate) Expr);
 
 impl StringNameSpace {
     /// Check if a string value contains a literal substring.
-    pub fn contains_literal<S: AsRef<str>>(self, pat: S) -> Expr {
-        let pat = pat.as_ref().into();
-        self.0
-            .map_private(StringFunction::Contains { pat, literal: true }.into())
+    #[cfg(feature = "regex")]
+    pub fn contains_literal(self, pat: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::Contains {
+                literal: true,
+                strict: false,
+            }),
+            &[pat],
+            true,
+        )
     }
 
-    /// Check if a string value contains a Regex substring.
-    pub fn contains<S: AsRef<str>>(self, pat: S) -> Expr {
-        let pat = pat.as_ref().into();
-        self.0.map_private(
-            StringFunction::Contains {
-                pat,
+    /// Check if this column of strings contains a Regex. If `strict` is `true`, then it is an error if any `pat` is
+    /// an invalid regex, whereas if `strict` is `false`, an invalid regex will simply evaluate to `false`.
+    #[cfg(feature = "regex")]
+    pub fn contains(self, pat: Expr, strict: bool) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::Contains {
                 literal: false,
-            }
-            .into(),
+                strict,
+            }),
+            &[pat],
+            true,
         )
     }
 
     /// Check if a string value ends with the `sub` string.
-    pub fn ends_with<S: AsRef<str>>(self, sub: S) -> Expr {
-        let sub = sub.as_ref().into();
-        self.0.map_private(StringFunction::EndsWith(sub).into())
+    pub fn ends_with(self, sub: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::EndsWith),
+            &[sub],
+            true,
+        )
     }
 
     /// Check if a string value starts with the `sub` string.
-    pub fn starts_with<S: AsRef<str>>(self, sub: S) -> Expr {
-        let sub = sub.as_ref().into();
-        self.0.map_private(StringFunction::StartsWith(sub).into())
+    pub fn starts_with(self, sub: Expr) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::StartsWith),
+            &[sub],
+            true,
+        )
     }
 
-    /// Extract a regex pattern from the a string value.
+    /// Extract a regex pattern from the a string value. If `group_index` is out of bounds, null is returned.
     pub fn extract(self, pat: &str, group_index: usize) -> Expr {
         let pat = pat.to_string();
         self.0
@@ -85,6 +100,7 @@ impl StringNameSpace {
         self.0.map_private(StringFunction::CountMatch(pat).into())
     }
 
+    /// Construct a `Datetime` column by parsing this string column as datetimes, using the provided `options`.
     #[cfg(feature = "temporal")]
     pub fn strptime(self, options: StrpTimeOptions) -> Expr {
         self.0.map_private(StringFunction::Strptime(options).into())
@@ -125,7 +141,7 @@ impl StringNameSpace {
                     builder.append_values_iter(iter);
                 }
             });
-            Ok(builder.finish().into_series())
+            Ok(Some(builder.finish().into_series()))
         };
         self.0
             .map(
@@ -150,7 +166,7 @@ impl StringNameSpace {
                     builder.append_values_iter(iter);
                 }
             });
-            Ok(builder.finish().into_series())
+            Ok(Some(builder.finish().into_series()))
         };
         self.0
             .map(
@@ -197,14 +213,16 @@ impl StringNameSpace {
                     Series::try_from((format!("field_{i}").as_str(), arr.as_box())).unwrap()
                 })
                 .collect::<Vec<_>>();
-            Ok(StructChunked::new(ca.name(), &fields)?.into_series())
+            Ok(Some(StructChunked::new(ca.name(), &fields)?.into_series()))
         };
         self.0
             .map(
                 function,
                 GetOutput::from_type(DataType::Struct(
                     (0..n + 1)
-                        .map(|i| Field::from_owned(format!("field_{i}"), DataType::Utf8))
+                        .map(|i| {
+                            Field::from_owned(format_smartstring!("field_{i}"), DataType::Utf8)
+                        })
                         .collect(),
                 )),
             )
@@ -249,14 +267,16 @@ impl StringNameSpace {
                     Series::try_from((format!("field_{i}").as_str(), arr.as_box())).unwrap()
                 })
                 .collect::<Vec<_>>();
-            Ok(StructChunked::new(ca.name(), &fields)?.into_series())
+            Ok(Some(StructChunked::new(ca.name(), &fields)?.into_series()))
         };
         self.0
             .map(
                 function,
                 GetOutput::from_type(DataType::Struct(
                     (0..n + 1)
-                        .map(|i| Field::from_owned(format!("field_{i}"), DataType::Utf8))
+                        .map(|i| {
+                            Field::from_owned(format_smartstring!("field_{i}"), DataType::Utf8)
+                        })
                         .collect(),
                 )),
             )
@@ -301,14 +321,16 @@ impl StringNameSpace {
                     Series::try_from((format!("field_{i}").as_str(), arr.as_box())).unwrap()
                 })
                 .collect::<Vec<_>>();
-            Ok(StructChunked::new(ca.name(), &fields)?.into_series())
+            Ok(Some(StructChunked::new(ca.name(), &fields)?.into_series()))
         };
         self.0
             .map(
                 function,
                 GetOutput::from_type(DataType::Struct(
                     (0..n)
-                        .map(|i| Field::from_owned(format!("field_{i}"), DataType::Utf8))
+                        .map(|i| {
+                            Field::from_owned(format_smartstring!("field_{i}"), DataType::Utf8)
+                        })
                         .collect(),
                 )),
             )
@@ -366,5 +388,14 @@ impl StringNameSpace {
     pub fn to_uppercase(self) -> Expr {
         self.0
             .map_private(FunctionExpr::StringExpr(StringFunction::Uppercase))
+    }
+
+    #[cfg(feature = "string_from_radix")]
+    /// Parse string in base radix into decimal
+    pub fn from_radix(self, radix: u32, strict: bool) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::FromRadix(
+                radix, strict,
+            )))
     }
 }

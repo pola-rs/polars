@@ -50,7 +50,7 @@ impl PhysicalExpr for AliasExpr {
         if ac.is_literal() {
             ac.with_literal(s);
         } else {
-            ac.with_series(s, ac.is_aggregated());
+            ac.with_series(s, ac.is_aggregated(), Some(&self.expr))?;
         }
         Ok(ac)
     }

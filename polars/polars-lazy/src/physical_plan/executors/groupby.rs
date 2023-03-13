@@ -65,20 +65,15 @@ pub(super) fn groupby_helper(
     let (mut columns, agg_columns) = POOL.install(|| {
         let get_columns = || gb.keys_sliced(slice);
 
-        let get_agg = || aggs
-            .par_iter()
-            .map(|expr| {
-                let agg = expr.evaluate_on_groups(&df, groups, state)?.finalize();
-                if agg.len() != groups.len() {
-                    return Err(PolarsError::ComputeError(
-                        format!("returned aggregation is a different length: {} than the group lengths: {}",
-                                agg.len(),
-                                groups.len()).into()
-                    ))
-                }
-                Ok(agg)
-            })
-            .collect::<PolarsResult<Vec<_>>>();
+        let get_agg = || {
+            aggs.par_iter()
+                .map(|expr| {
+                    let agg = expr.evaluate_on_groups(&df, groups, state)?.finalize();
+                    polars_ensure!(agg.len() == groups.len(), agg_len = agg.len(), groups.len());
+                    Ok(agg)
+                })
+                .collect::<PolarsResult<Vec<_>>>()
+        };
 
         rayon::join(get_columns, get_agg)
     });
@@ -130,7 +125,7 @@ impl Executor for GroupByExec {
                 .iter()
                 .map(|s| Ok(s.to_field(&self.input_schema)?.name))
                 .collect::<PolarsResult<Vec<_>>>()?;
-            let name = column_delimited("groupby".to_string(), &by);
+            let name = comma_delimited("groupby".to_string(), &by);
             Cow::Owned(name)
         } else {
             Cow::Borrowed("")

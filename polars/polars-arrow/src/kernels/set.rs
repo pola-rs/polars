@@ -3,9 +3,10 @@ use std::ops::BitOr;
 use arrow::array::*;
 use arrow::datatypes::DataType;
 use arrow::types::NativeType;
+use polars_error::polars_err;
 
 use crate::array::default_arrays::FromData;
-use crate::error::{PolarsError, Result};
+use crate::error::PolarsResult;
 use crate::index::IdxSize;
 use crate::kernels::BinaryMaskedSliceIterator;
 use crate::trusted_len::PushUnchecked;
@@ -70,7 +71,7 @@ pub fn set_at_idx_no_null<T, I>(
     idx: I,
     set_value: T,
     data_type: DataType,
-) -> Result<PrimitiveArray<T>>
+) -> PolarsResult<PrimitiveArray<T>>
 where
     T: NativeType,
     I: IntoIterator<Item = IdxSize>,
@@ -79,10 +80,10 @@ where
     buf.extend_from_slice(array.values().as_slice());
     let mut_slice = buf.as_mut_slice();
 
-    idx.into_iter().try_for_each::<_, Result<_>>(|idx| {
+    idx.into_iter().try_for_each::<_, PolarsResult<_>>(|idx| {
         let val = mut_slice
             .get_mut(idx as usize)
-            .ok_or_else(|| PolarsError::ComputeError("idx is out of bounds".into()))?;
+            .ok_or_else(|| polars_err!(ComputeError: "index is out of bounds"))?;
         *val = set_value;
         Ok(())
     })?;
@@ -121,7 +122,6 @@ mod test {
         ]);
         let val = UInt32Array::from_slice(&[0; 10]);
         let out = set_with_mask(&val, &mask, 1, DataType::UInt32);
-        dbg!(&out);
         assert_eq!(out.values().as_slice(), &[0, 1, 0, 1, 0, 1, 0, 1, 0, 0]);
 
         let val = UInt32Array::from(&[None, None, None]);

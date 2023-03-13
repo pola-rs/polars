@@ -1,17 +1,26 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
 import polars.internals as pli
 from polars.internals.series.utils import expr_dispatch
-from polars.utils import _to_python_datetime
+from polars.utils.convert import _to_python_datetime
+from polars.utils.decorators import deprecated_alias, redirect
 
 if TYPE_CHECKING:
+    from datetime import date, datetime, time, timedelta
+
     from polars.internals.type_aliases import EpochTimeUnit, TimeUnit
     from polars.polars import PySeries
 
 
+@redirect(
+    {
+        "tz_localize": "replace_time_zone",
+        "with_time_zone": "convert_time_zone",
+        "cast_time_zone": "replace_time_zone",
+    }
+)
 @expr_dispatch
 class DateTimeNameSpace:
     """Series.dt namespace."""
@@ -25,7 +34,7 @@ class DateTimeNameSpace:
         s = pli.wrap_s(self._s)
         return s[item]
 
-    def min(self) -> date | datetime | timedelta:
+    def min(self) -> date | datetime | timedelta | None:
         """
         Return minimum as python DateTime.
 
@@ -45,10 +54,9 @@ class DateTimeNameSpace:
         datetime.datetime(2001, 1, 1, 0, 0)
 
         """
-        # we can ignore types because we are certain we get a logical type
         return pli.wrap_s(self._s).min()  # type: ignore[return-value]
 
-    def max(self) -> date | datetime | timedelta:
+    def max(self) -> date | datetime | timedelta | None:
         """
         Return maximum as python DateTime.
 
@@ -70,7 +78,7 @@ class DateTimeNameSpace:
         """
         return pli.wrap_s(self._s).max()  # type: ignore[return-value]
 
-    def median(self) -> date | datetime | timedelta:
+    def median(self) -> date | datetime | timedelta | None:
         """
         Return median as python DateTime.
 
@@ -91,10 +99,12 @@ class DateTimeNameSpace:
 
         """
         s = pli.wrap_s(self._s)
-        out = int(s.median())
-        return _to_python_datetime(out, s.dtype, s.time_unit)
+        out = s.median()
+        if out is not None:
+            return _to_python_datetime(int(out), s.dtype, s.time_unit)
+        return None
 
-    def mean(self) -> date | datetime:
+    def mean(self) -> date | datetime | None:
         """
         Return mean as python DateTime.
 
@@ -115,8 +125,10 @@ class DateTimeNameSpace:
 
         """
         s = pli.wrap_s(self._s)
-        out = int(s.mean())
-        return _to_python_datetime(out, s.dtype, s.time_unit)
+        out = s.mean()
+        if out is not None:
+            return _to_python_datetime(int(out), s.dtype, s.time_unit)
+        return None
 
     def strftime(self, fmt: str) -> pli.Series:
         """
@@ -906,13 +918,14 @@ class DateTimeNameSpace:
 
         """
 
-    def with_time_zone(self, tz: str | None) -> pli.Series:
+    @deprecated_alias(tz="time_zone")
+    def convert_time_zone(self, time_zone: str) -> pli.Series:
         """
-        Set time zone a Series of type Datetime.
+        Convert to given time zone for a Series of type Datetime.
 
         Parameters
         ----------
-        tz
+        time_zone
             Time zone for the `Datetime` Series.
 
         Examples
@@ -920,16 +933,16 @@ class DateTimeNameSpace:
         >>> from datetime import datetime
         >>> start = datetime(2020, 3, 1)
         >>> stop = datetime(2020, 5, 1)
-        >>> date = pl.date_range(start, stop, "1mo")
+        >>> date = pl.date_range(start, stop, "1mo", time_zone="UTC")
         >>> date
         shape: (3,)
-        Series: '' [datetime[μs]]
+        Series: '' [datetime[μs, UTC]]
         [
-                2020-03-01 00:00:00
-                2020-04-01 00:00:00
-                2020-05-01 00:00:00
+                2020-03-01 00:00:00 UTC
+                2020-04-01 00:00:00 UTC
+                2020-05-01 00:00:00 UTC
         ]
-        >>> date = date.dt.with_time_zone(tz="Europe/London").alias("London")
+        >>> date = date.dt.convert_time_zone(tz="Europe/London").alias("London")
         >>> date
         shape: (3,)
         Series: 'London' [datetime[μs, Europe/London]]
@@ -938,34 +951,40 @@ class DateTimeNameSpace:
             2020-04-01 01:00:00 BST
             2020-05-01 01:00:00 BST
         ]
-
         """
+        return (
+            pli.wrap_s(self._s)
+            .to_frame()
+            .select(pli.col(self._s.name()).dt.convert_time_zone(time_zone))
+            .to_series()
+        )
 
-    def cast_time_zone(self, tz: str) -> pli.Series:
+    @deprecated_alias(tz="time_zone")
+    def replace_time_zone(self, time_zone: str | None) -> pli.Series:
         """
-        Cast time zone for a Series of type Datetime.
+        Replace time zone for a Series of type Datetime.
 
-        Different from ``with_time_zone``, this will also modify
-        the underlying timestamp.
+        Different from ``convert_time_zone``, this will also modify
+        the underlying timestamp and will ignore the original time zone.
 
         Parameters
         ----------
-        tz
-            Time zone for the `Datetime` Series.
+        time_zone
+            Time zone for the `Datetime` Series. Pass `None` to unset time zone.
 
         Examples
         --------
         >>> from datetime import datetime
         >>> start = datetime(2020, 3, 1)
         >>> stop = datetime(2020, 5, 1)
-        >>> date = pl.date_range(start, stop, "1mo")
+        >>> date = pl.date_range(start, stop, "1mo", time_zone="UTC")
         >>> date
         shape: (3,)
-        Series: '' [datetime[μs]]
+        Series: '' [datetime[μs, UTC]]
         [
-                2020-03-01 00:00:00
-                2020-04-01 00:00:00
-                2020-05-01 00:00:00
+                2020-03-01 00:00:00 UTC
+                2020-04-01 00:00:00 UTC
+                2020-05-01 00:00:00 UTC
         ]
         >>> date.dt.epoch(tu="s")
         shape: (3,)
@@ -975,7 +994,7 @@ class DateTimeNameSpace:
                 1585699200
                 1588291200
         ]
-        >>> date = date.dt.with_time_zone(tz="Europe/London").alias("London")
+        >>> date = date.dt.convert_time_zone(tz="Europe/London").alias("London")
         >>> date
         shape: (3,)
         Series: 'London' [datetime[μs, Europe/London]]
@@ -984,7 +1003,7 @@ class DateTimeNameSpace:
             2020-04-01 01:00:00 BST
             2020-05-01 01:00:00 BST
         ]
-        >>> # Timestamps have not changed after with_time_zone
+        >>> # Timestamps have not changed after convert_time_zone
         >>> date.dt.epoch(tu="s")
         shape: (3,)
         Series: 'London' [i64]
@@ -993,7 +1012,7 @@ class DateTimeNameSpace:
                 1585699200
                 1588291200
         ]
-        >>> date = date.dt.cast_time_zone(tz="America/New_York").alias("NYC")
+        >>> date = date.dt.replace_time_zone(tz="America/New_York").alias("NYC")
         >>> date
         shape: (3,)
         Series: 'NYC' [datetime[μs, America/New_York]]
@@ -1002,7 +1021,7 @@ class DateTimeNameSpace:
             2020-04-01 01:00:00 EDT
             2020-05-01 01:00:00 EDT
         ]
-        >>> # Timestamps have changed after cast_time_zone
+        >>> # Timestamps have changed after replace_time_zone
         >>> date.dt.epoch(tu="s")
         shape: (3,)
         Series: 'NYC' [i64]
@@ -1013,20 +1032,12 @@ class DateTimeNameSpace:
         ]
 
         """
-
-    def tz_localize(self, tz: str) -> pli.Series:
-        """
-        Localize tz-naive Datetime Series to tz-aware Datetime Series.
-
-        This method takes a naive Datetime Series and makes this time zone aware.
-        It does not move the time to another time zone.
-
-        Parameters
-        ----------
-        tz
-            Time zone for the `Datetime` Series.
-
-        """
+        return (
+            pli.wrap_s(self._s)
+            .to_frame()
+            .select(pli.col(self._s.name()).dt.replace_time_zone(time_zone))
+            .to_series()
+        )
 
     def days(self) -> pli.Series:
         """

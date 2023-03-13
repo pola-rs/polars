@@ -1,15 +1,91 @@
 use std::fmt::Write;
 
+#[cfg(feature = "timezones")]
+use arrow::temporal_conversions::parse_offset;
 use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
+use chrono::format::{DelayedFormat, StrftimeItems};
 #[cfg(feature = "timezones")]
-use polars_arrow::kernels::cast_timezone;
+use chrono::FixedOffset;
+#[cfg(feature = "timezones")]
+use chrono::TimeZone as TimeZoneTrait;
+#[cfg(feature = "timezones")]
+use chrono_tz::Tz;
+#[cfg(feature = "timezones")]
+use polars_arrow::kernels::replace_timezone;
 
 use super::conversion::{datetime_to_timestamp_ms, datetime_to_timestamp_ns};
 use super::*;
 use crate::prelude::DataType::Datetime;
 use crate::prelude::*;
+
+#[cfg(feature = "timezones")]
+fn validate_time_zone(tz: TimeZone) -> PolarsResult<()> {
+    match parse_offset(&tz) {
+        Ok(_) => Ok(()),
+        Err(_) => match tz.parse::<Tz>() {
+            Ok(_) => Ok(()),
+            Err(_) => polars_bail!(ComputeError: "unable to parse timezone: '{}'", tz),
+        },
+    }
+}
+
+fn apply_datefmt_f<'a>(
+    arr: &PrimitiveArray<i64>,
+    fmted: &'a str,
+    conversion_f: fn(i64) -> NaiveDateTime,
+    datefmt_f: impl Fn(NaiveDateTime) -> DelayedFormat<StrftimeItems<'a>>,
+) -> ArrayRef {
+    let mut buf = String::new();
+    let mut mutarr = MutableUtf8Array::with_capacities(arr.len(), arr.len() * fmted.len() + 1);
+    for opt in arr.into_iter() {
+        match opt {
+            None => mutarr.push_null(),
+            Some(v) => {
+                buf.clear();
+                let converted = conversion_f(*v);
+                let datefmt = datefmt_f(converted);
+                write!(buf, "{datefmt}").unwrap();
+                mutarr.push(Some(&buf))
+            }
+        }
+    }
+    let arr: Utf8Array<i64> = mutarr.into();
+    Box::new(arr)
+}
+
+#[cfg(feature = "timezones")]
+fn format_fixed_offset(
+    tz: FixedOffset,
+    arr: &PrimitiveArray<i64>,
+    fmt: &str,
+    fmted: &str,
+    conversion_f: fn(i64) -> NaiveDateTime,
+) -> ArrayRef {
+    let datefmt_f = |ndt| tz.from_utc_datetime(&ndt).format(fmt);
+    apply_datefmt_f(arr, fmted, conversion_f, datefmt_f)
+}
+#[cfg(feature = "timezones")]
+fn format_tz(
+    tz: Tz,
+    arr: &PrimitiveArray<i64>,
+    fmt: &str,
+    fmted: &str,
+    conversion_f: fn(i64) -> NaiveDateTime,
+) -> ArrayRef {
+    let datefmt_f = |ndt| tz.from_utc_datetime(&ndt).format(fmt);
+    apply_datefmt_f(arr, fmted, conversion_f, datefmt_f)
+}
+fn format_naive(
+    arr: &PrimitiveArray<i64>,
+    fmt: &str,
+    fmted: &str,
+    conversion_f: fn(i64) -> NaiveDateTime,
+) -> ArrayRef {
+    let datefmt_f = |ndt: NaiveDateTime| ndt.format(fmt);
+    apply_datefmt_f(arr, fmted, conversion_f, datefmt_f)
+}
 
 impl DatetimeChunked {
     pub fn as_datetime_iter(
@@ -50,42 +126,75 @@ impl DatetimeChunked {
         let mut ca = self.clone();
         #[cfg(feature = "timezones")]
         if self.time_zone().is_some() {
-            ca = self.cast_time_zone("UTC")?
+            ca = self.replace_time_zone(Some("UTC"))?
         }
         let out = func(ca)?;
 
         #[cfg(feature = "timezones")]
         if let Some(tz) = self.time_zone() {
             return out
-                .with_time_zone(Some("UTC".to_string()))
-                .cast_time_zone(tz);
+                .convert_time_zone("UTC".to_string())?
+                .replace_time_zone(Some(tz));
         }
         Ok(out)
     }
 
     #[cfg(feature = "timezones")]
-    pub fn cast_time_zone(&self, tz: &str) -> PolarsResult<DatetimeChunked> {
-        use chrono_tz::Tz;
-
-        if let Some(from) = self.time_zone() {
-            let old: Tz = from.parse().map_err(|_| {
-                PolarsError::ComputeError(format!("Could not parse timezone: '{tz}'").into())
-            })?;
-            let new: Tz = tz.parse().map_err(|_| {
-                PolarsError::ComputeError(format!("Could not parse timezone: '{tz}'").into())
-            })?;
-            let out =
-                self.apply_kernel(&|arr| cast_timezone(arr, self.time_unit().to_arrow(), new, old));
-            Ok(out.into_datetime(self.time_unit(), Some(tz.to_string())))
-        } else {
-            Err(PolarsError::ComputeError(
-                "Cannot cast Naive Datetime. First set a timezone".into(),
-            ))
+    pub fn replace_time_zone(&self, time_zone: Option<&str>) -> PolarsResult<DatetimeChunked> {
+        match (self.time_zone(), time_zone) {
+            (Some(from), Some(to)) => {
+                let chunks = self
+                    .downcast_iter()
+                    .map(|arr| {
+                        replace_timezone(
+                            arr,
+                            self.time_unit().to_arrow(),
+                            to.to_string(),
+                            from.to_string(),
+                        )
+                    })
+                    .collect::<PolarsResult<_>>()?;
+                let out = unsafe { ChunkedArray::from_chunks(self.name(), chunks) };
+                Ok(out.into_datetime(self.time_unit(), Some(to.to_string())))
+            }
+            (Some(from), None) => {
+                let chunks = self
+                    .downcast_iter()
+                    .map(|arr| {
+                        replace_timezone(
+                            arr,
+                            self.time_unit().to_arrow(),
+                            "UTC".to_string(),
+                            from.to_string(),
+                        )
+                    })
+                    .collect::<PolarsResult<_>>()?;
+                let out = unsafe { ChunkedArray::from_chunks(self.name(), chunks) };
+                Ok(out.into_datetime(self.time_unit(), None))
+            }
+            (None, Some(to)) => {
+                let chunks = self
+                    .downcast_iter()
+                    .map(|arr| {
+                        replace_timezone(
+                            arr,
+                            self.time_unit().to_arrow(),
+                            to.to_string(),
+                            "UTC".to_string(),
+                        )
+                    })
+                    .collect::<PolarsResult<_>>()?;
+                let out = unsafe { ChunkedArray::from_chunks(self.name(), chunks) };
+                Ok(out.into_datetime(self.time_unit(), Some(to.to_string())))
+            }
+            (None, None) => Ok(self.clone()),
         }
     }
 
     /// Format Datetime with a `fmt` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
-    pub fn strftime(&self, fmt: &str) -> Utf8Chunked {
+    pub fn strftime(&self, fmt: &str) -> PolarsResult<Utf8Chunked> {
+        #[cfg(feature = "timezones")]
+        use chrono::Utc;
         let conversion_f = match self.time_unit() {
             TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
             TimeUnit::Microseconds => timestamp_us_to_datetime,
@@ -96,37 +205,40 @@ impl DatetimeChunked {
             .unwrap()
             .and_hms_opt(0, 0, 0)
             .unwrap();
-        let fmted = format!("{}", dt.format(fmt));
+        let mut fmted = String::new();
+        match self.time_zone() {
+            #[cfg(feature = "timezones")]
+            Some(_) => write!(
+                fmted,
+                "{}",
+                Utc.from_local_datetime(&dt).earliest().unwrap().format(fmt)
+            )
+            .map_err(
+                |_| polars_err!(ComputeError: "cannot format DateTime with format '{}'", fmt),
+            )?,
+            _ => write!(fmted, "{}", dt.format(fmt)).map_err(
+                |_| polars_err!(ComputeError: "cannot format NaiveDateTime with format '{}'", fmt),
+            )?,
+        };
+        let fmted = fmted; // discard mut
 
-        #[allow(unused_mut)]
-        let mut ca = self.clone();
-        #[cfg(feature = "timezones")]
-        if self.time_zone().is_some() {
-            ca = ca.cast_time_zone("UTC").unwrap();
-        }
-
-        let mut ca: Utf8Chunked = ca.apply_kernel_cast(&|arr| {
-            let mut buf = String::new();
-            let mut mutarr =
-                MutableUtf8Array::with_capacities(arr.len(), arr.len() * fmted.len() + 1);
-
-            for opt in arr.into_iter() {
-                match opt {
-                    None => mutarr.push_null(),
-                    Some(v) => {
-                        buf.clear();
-                        let datefmt = conversion_f(*v).format(fmt);
-                        write!(buf, "{datefmt}").unwrap();
-                        mutarr.push(Some(&buf))
-                    }
-                }
-            }
-
-            let arr: Utf8Array<i64> = mutarr.into();
-            Box::new(arr)
-        });
+        let mut ca: Utf8Chunked = match self.time_zone() {
+            #[cfg(feature = "timezones")]
+            Some(time_zone) => match parse_offset(time_zone) {
+                Ok(time_zone) => self.apply_kernel_cast(&|arr| {
+                    format_fixed_offset(time_zone, arr, fmt, &fmted, conversion_f)
+                }),
+                Err(_) => match time_zone.parse::<Tz>() {
+                    Ok(time_zone) => self.apply_kernel_cast(&|arr| {
+                        format_tz(time_zone, arr, fmt, &fmted, conversion_f)
+                    }),
+                    Err(_) => unreachable!(),
+                },
+            },
+            _ => self.apply_kernel_cast(&|arr| format_naive(arr, fmt, &fmted, conversion_f)),
+        };
         ca.rename(self.name());
-        ca
+        Ok(ca)
     }
 
     /// Construct a new [`DatetimeChunked`] from an iterator over [`NaiveDateTime`].
@@ -209,12 +321,22 @@ impl DatetimeChunked {
     }
 
     /// Change the underlying [`TimeZone`]. This does not modify the data.
-    pub fn set_time_zone(&mut self, tz: Option<TimeZone>) {
-        self.2 = Some(Datetime(self.time_unit(), tz))
+    #[cfg(feature = "timezones")]
+    pub fn set_time_zone(&mut self, time_zone: TimeZone) -> PolarsResult<()> {
+        validate_time_zone(time_zone.to_string())?;
+        self.2 = Some(Datetime(self.time_unit(), Some(time_zone)));
+        Ok(())
     }
-    pub fn with_time_zone(mut self, tz: Option<TimeZone>) -> Self {
-        self.set_time_zone(tz);
-        self
+    #[cfg(feature = "timezones")]
+    pub fn convert_time_zone(mut self, time_zone: TimeZone) -> PolarsResult<Self> {
+        polars_ensure!(
+            self.time_zone().is_some(),
+            InvalidOperation:
+            "cannot call `convert_time_zone` on tz-naive; \
+            set a time zone first with `replace_time_zone`"
+        );
+        self.set_time_zone(time_zone)?;
+        Ok(self)
     }
 }
 

@@ -31,7 +31,7 @@ impl Sink for OrderedSink {
         Ok(SinkResult::CanHaveMoreInput)
     }
 
-    fn combine(&mut self, mut other: Box<dyn Sink>) {
+    fn combine(&mut self, other: &mut dyn Sink) {
         let other = other.as_any().downcast_ref::<OrderedSink>().unwrap();
         self.chunks.extend_from_slice(&other.chunks);
         self.sort();

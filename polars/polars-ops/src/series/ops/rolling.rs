@@ -1,9 +1,10 @@
-use std::ops::SubAssign;
-
-use polars_core::export::num;
-use polars_core::export::num::{Float, FromPrimitive};
 use polars_core::prelude::*;
-use polars_core::utils::with_unstable_series;
+#[cfg(feature = "moment")]
+use {
+    polars_core::export::num::{self, Float, FromPrimitive},
+    polars_core::utils::with_unstable_series,
+    std::ops::SubAssign,
+};
 
 use crate::series::ops::SeriesSealed;
 
@@ -50,9 +51,7 @@ pub trait RollingSeries: SeriesSealed {
                 let s = s.cast(&DataType::Float64).unwrap();
                 s.rolling_skew(window_size, bias)
             }
-            dt => Err(PolarsError::ComputeError(
-                format!("cannot use rolling_skew function on Series of dtype: {dt:?}",).into(),
-            )),
+            dt => polars_bail!(opq = rolling_skew, dt),
         }
     }
 }

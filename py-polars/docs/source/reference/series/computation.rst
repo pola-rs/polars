@@ -30,9 +30,11 @@ Computation
     Series.ewm_var
     Series.exp
     Series.hash
+    Series.is_between
     Series.kurtosis
     Series.log
     Series.log10
+    Series.map_dict
     Series.pct_change
     Series.peak_max
     Series.peak_min

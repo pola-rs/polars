@@ -1,20 +1,16 @@
 from __future__ import annotations
 
-import sys
-from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING, Sequence, overload
+import contextlib
+import warnings
+from datetime import datetime, timedelta
+from typing import TYPE_CHECKING, Iterable, Sequence, overload
 
 from polars import internals as pli
-from polars.datatypes import Categorical, Date, Float64, PolarsDataType
-from polars.utils import _datetime_to_pl_timestamp, _timedelta_to_pl_duration
+from polars.datatypes import Date
+from polars.utils.convert import _datetime_to_pl_timestamp, _timedelta_to_pl_duration
+from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 
-if sys.version_info >= (3, 10):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
-
-
-try:
+with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import concat_df as _concat_df
     from polars.polars import concat_lf as _concat_lf
     from polars.polars import concat_series as _concat_series
@@ -24,27 +20,41 @@ try:
     from polars.polars import py_diag_concat_lf as _diag_concat_lf
     from polars.polars import py_hor_concat_df as _hor_concat_df
 
-    _DOCUMENTING = False
-except ImportError:
-    _DOCUMENTING = True
 
 if TYPE_CHECKING:
+    import sys
+    from datetime import date
+
+    from polars.datatypes import PolarsDataType
     from polars.internals.type_aliases import ClosedInterval, ConcatMethod, TimeUnit
+
+    if sys.version_info >= (3, 8):
+        from typing import Literal
+    else:
+        from typing_extensions import Literal
 
 
 def get_dummies(
-    df: pli.DataFrame, *, columns: list[str] | None = None
+    df: pli.DataFrame,
+    *,
+    columns: str | Sequence[str] | None = None,
+    separator: str = "_",
 ) -> pli.DataFrame:
     """
     Convert categorical variables into dummy/indicator variables.
+
+    .. deprecated:: 0.16.8
+        `pl.get_dummies(df)` has been deprecated; use `df.to_dummies()`
 
     Parameters
     ----------
     df
         DataFrame to convert.
     columns
-        A subset of columns to convert to dummy variables. ``None`` means
-        "all columns".
+        Name of the column(s) that should be converted to dummy variables.
+        If set to ``None`` (default), convert all columns.
+    separator
+        Separator/delimiter used when generating column names.
 
     Examples
     --------
@@ -67,12 +77,17 @@ def get_dummies(
     └───────┴───────┴───────┴───────┴───────┴───────┘
 
     """
-    return df.to_dummies(columns=columns)
+    warnings.warn(
+        "`pl.get_dummies(df)` has been deprecated; use `df.to_dummies()`",
+        category=DeprecationWarning,
+        stacklevel=2,
+    )
+    return df.to_dummies(columns=columns, separator=separator)
 
 
 @overload
 def concat(
-    items: Sequence[pli.DataFrame],
+    items: Iterable[pli.DataFrame],
     rechunk: bool = True,
     how: ConcatMethod = "vertical",
     parallel: bool = True,
@@ -82,7 +97,7 @@ def concat(
 
 @overload
 def concat(
-    items: Sequence[pli.Series],
+    items: Iterable[pli.Series],
     rechunk: bool = True,
     how: ConcatMethod = "vertical",
     parallel: bool = True,
@@ -92,7 +107,7 @@ def concat(
 
 @overload
 def concat(
-    items: Sequence[pli.LazyFrame],
+    items: Iterable[pli.LazyFrame],
     rechunk: bool = True,
     how: ConcatMethod = "vertical",
     parallel: bool = True,
@@ -102,7 +117,7 @@ def concat(
 
 @overload
 def concat(
-    items: Sequence[pli.Expr],
+    items: Iterable[pli.Expr],
     rechunk: bool = True,
     how: ConcatMethod = "vertical",
     parallel: bool = True,
@@ -110,12 +125,13 @@ def concat(
     ...
 
 
+@deprecate_nonkeyword_arguments()
 def concat(
     items: (
-        Sequence[pli.DataFrame]
-        | Sequence[pli.Series]
-        | Sequence[pli.LazyFrame]
-        | Sequence[pli.Expr]
+        Iterable[pli.DataFrame]
+        | Iterable[pli.Series]
+        | Iterable[pli.LazyFrame]
+        | Iterable[pli.Expr]
     ),
     rechunk: bool = True,
     how: ConcatMethod = "vertical",
@@ -217,18 +233,21 @@ def concat(
     └─────┴──────┴──────┘
 
     """
-    if not len(items) > 0:
+    # unpack/standardise (offers simple support for generator input)
+    elems = list(items)
+
+    if not len(elems) > 0:
         raise ValueError("cannot concat empty list")
 
     out: pli.Series | pli.DataFrame | pli.LazyFrame | pli.Expr
-    first = items[0]
+    first = elems[0]
     if isinstance(first, pli.DataFrame):
         if how == "vertical":
-            out = pli.wrap_df(_concat_df(items))
+            out = pli.wrap_df(_concat_df(elems))
         elif how == "diagonal":
-            out = pli.wrap_df(_diag_concat_df(items))
+            out = pli.wrap_df(_diag_concat_df(elems))
         elif how == "horizontal":
-            out = pli.wrap_df(_hor_concat_df(items))
+            out = pli.wrap_df(_hor_concat_df(elems))
         else:
             raise ValueError(
                 f"how must be one of {{'vertical', 'diagonal', 'horizontal'}}, "
@@ -236,18 +255,18 @@ def concat(
             )
     elif isinstance(first, pli.LazyFrame):
         if how == "vertical":
-            return pli.wrap_ldf(_concat_lf(items, rechunk, parallel))
+            return pli.wrap_ldf(_concat_lf(elems, rechunk, parallel))
         if how == "diagonal":
-            return pli.wrap_ldf(_diag_concat_lf(items, rechunk, parallel))
+            return pli.wrap_ldf(_diag_concat_lf(elems, rechunk, parallel))
         else:
             raise ValueError(
                 "Lazy only allows {{'vertical', 'diagonal'}} concat strategy."
             )
     elif isinstance(first, pli.Series):
-        out = pli.wrap_s(_concat_series(items))
+        out = pli.wrap_s(_concat_series(elems))
     elif isinstance(first, pli.Expr):
         out = first
-        for e in items[1:]:
+        for e in elems[1:]:
             out = out.append(e)  # type: ignore[arg-type]
     else:
         raise ValueError(f"did not expect type: {type(first)} in 'pl.concat'.")
@@ -273,13 +292,13 @@ def _interval_granularity(interval: str) -> str:
 def date_range(
     low: pli.Expr,
     high: date | datetime | pli.Expr | str,
-    interval: str | timedelta,
+    interval: str | timedelta = ...,
     *,
     lazy: Literal[False] = ...,
-    closed: ClosedInterval = "both",
-    name: str | None = None,
-    time_unit: TimeUnit | None = None,
-    time_zone: str | None = None,
+    closed: ClosedInterval = ...,
+    name: str | None = ...,
+    time_unit: TimeUnit | None = ...,
+    time_zone: str | None = ...,
 ) -> pli.Expr:
     ...
 
@@ -288,13 +307,13 @@ def date_range(
 def date_range(
     low: date | datetime | pli.Expr | str,
     high: pli.Expr,
-    interval: str | timedelta,
+    interval: str | timedelta = ...,
     *,
     lazy: Literal[False] = ...,
-    closed: ClosedInterval = "both",
-    name: str | None = None,
-    time_unit: TimeUnit | None = None,
-    time_zone: str | None = None,
+    closed: ClosedInterval = ...,
+    name: str | None = ...,
+    time_unit: TimeUnit | None = ...,
+    time_zone: str | None = ...,
 ) -> pli.Expr:
     ...
 
@@ -303,13 +322,13 @@ def date_range(
 def date_range(
     low: date | datetime | str,
     high: date | datetime | str,
-    interval: str | timedelta,
+    interval: str | timedelta = ...,
     *,
     lazy: Literal[False] = ...,
-    closed: ClosedInterval = "both",
-    name: str | None = None,
-    time_unit: TimeUnit | None = None,
-    time_zone: str | None = None,
+    closed: ClosedInterval = ...,
+    name: str | None = ...,
+    time_unit: TimeUnit | None = ...,
+    time_zone: str | None = ...,
 ) -> pli.Series:
     ...
 
@@ -318,13 +337,13 @@ def date_range(
 def date_range(
     low: date | datetime | pli.Expr | str,
     high: date | datetime | pli.Expr | str,
-    interval: str | timedelta,
+    interval: str | timedelta = ...,
     *,
     lazy: Literal[True],
-    closed: ClosedInterval = "both",
+    closed: ClosedInterval = ...,
     name: str | None = None,
-    time_unit: TimeUnit | None = None,
-    time_zone: str | None = None,
+    time_unit: TimeUnit | None = ...,
+    time_zone: str | None = ...,
 ) -> pli.Expr:
     ...
 
@@ -332,7 +351,7 @@ def date_range(
 def date_range(
     low: date | datetime | pli.Expr | str,
     high: date | datetime | pli.Expr | str,
-    interval: str | timedelta,
+    interval: str | timedelta = "1d",
     *,
     lazy: bool = False,
     closed: ClosedInterval = "both",
@@ -454,7 +473,7 @@ def date_range(
         if time_zone is not None and low.tzinfo is not None:
             if str(low.tzinfo) != time_zone:
                 raise ValueError(
-                    "Given time_zone is different from that timezone aware datetimes."
+                    "Given time_zone is different from that of timezone aware datetimes."
                     f" Given: '{time_zone}', got: '{low.tzinfo}'."
                 )
         if time_zone is None:
@@ -492,6 +511,9 @@ def cut(
 ) -> pli.DataFrame:
     """
     Bin values into discrete values.
+
+    .. deprecated:: 0.16.8
+        `pl.cut(series, ...)` has been deprecated; use `series.cut(...)`
 
     Parameters
     ----------
@@ -538,43 +560,12 @@ def cut(
     └──────┴─────────────┴──────────────┘
 
     """
-    var_nm = s.name
-
-    cuts_df = pli.DataFrame(
-        [
-            pli.Series(
-                name=break_point_label, values=bins, dtype=Float64
-            ).extend_constant(float("inf"), 1)
-        ]
+    warnings.warn(
+        "`pl.cut(series)` has been deprecated; use `series.cut()`",
+        category=DeprecationWarning,
+        stacklevel=2,
     )
-
-    if labels:
-        if len(labels) != len(bins) + 1:
-            raise ValueError("expected more labels")
-        cuts_df = cuts_df.with_column(pli.Series(name=category_label, values=labels))
-    else:
-        cuts_df = cuts_df.with_column(
-            pli.format(
-                "({}, {}]",
-                pli.col(break_point_label).shift_and_fill(1, float("-inf")),
-                pli.col(break_point_label),
-            ).alias(category_label)
-        )
-
-    cuts_df = cuts_df.with_column(pli.col(category_label).cast(Categorical))
-
-    result = (
-        s.cast(Float64)
-        .sort()
-        .to_frame()
-        .join_asof(
-            cuts_df,
-            left_on=var_nm,
-            right_on=break_point_label,
-            strategy="forward",
-        )
-    )
-    return result
+    return s.cut(bins, labels, break_point_label, category_label)
 
 
 @overload
@@ -582,7 +573,7 @@ def align_frames(
     *frames: pli.DataFrame,
     on: str | pli.Expr | Sequence[str] | Sequence[pli.Expr] | Sequence[str | pli.Expr],
     select: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
-    reverse: bool | Sequence[bool] = False,
+    descending: bool | Sequence[bool] = False,
 ) -> list[pli.DataFrame]:
     ...
 
@@ -592,16 +583,17 @@ def align_frames(
     *frames: pli.LazyFrame,
     on: str | pli.Expr | Sequence[str] | Sequence[pli.Expr] | Sequence[str | pli.Expr],
     select: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
-    reverse: bool | Sequence[bool] = False,
+    descending: bool | Sequence[bool] = False,
 ) -> list[pli.LazyFrame]:
     ...
 
 
+@deprecated_alias(reverse="descending")
 def align_frames(
     *frames: pli.DataFrame | pli.LazyFrame,
     on: str | pli.Expr | Sequence[str] | Sequence[pli.Expr] | Sequence[str | pli.Expr],
     select: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
-    reverse: bool | Sequence[bool] = False,
+    descending: bool | Sequence[bool] = False,
 ) -> list[pli.DataFrame] | list[pli.LazyFrame]:
     r"""
     Align a sequence of frames using the unique values from one or more columns as a key.
@@ -625,12 +617,13 @@ def align_frames(
     select
         optional post-alignment column select to constrain and/or order
         the columns returned from the newly aligned frames.
-    reverse
+    descending
         sort the alignment column values in descending order; can be a single
         boolean or a list of booleans associated with each column in ``on``.
 
     Examples
     --------
+    >>> from datetime import date
     >>> df1 = pl.DataFrame(
     ...     {
     ...         "dt": [date(2022, 9, 1), date(2022, 9, 2), date(2022, 9, 3)],
@@ -652,7 +645,6 @@ def align_frames(
     ...         "y": [2.5, 2.0],
     ...     }
     ... )  # doctest: +IGNORE_RESULT
-    >>>
     >>> pl.Config.set_tbl_formatting("UTF8_FULL")  # doctest: +IGNORE_RESULT
     #
     # df1                              df2                              df3
@@ -669,7 +661,9 @@ def align_frames(
     # │ 2022-09-03 ┆ 1.0 ┆ 1.5  │_/  `>│ 2022-09-01 ┆ 3.5 ┆ 5.0  │-//-
     # └────────────┴─────┴──────┘      └────────────┴─────┴──────┘
     ...
-    >>> # align frames by the "dt" column:
+
+    Align frames by the "dt" column:
+
     >>> af1, af2, af3 = pl.align_frames(
     ...     df1, df2, df3, on="dt"
     ... )  # doctest: +IGNORE_RESULT
@@ -688,7 +682,9 @@ def align_frames(
     # │ 2022-09-03 ┆ 1.0 ┆ 1.5  │----->│ 2022-09-03 ┆ 1.0 ┆ 12.0 │----->│ 2022-09-03 ┆ 2.0  ┆ 2.5  │
     # └────────────┴─────┴──────┘      └────────────┴─────┴──────┘      └────────────┴──────┴──────┘
     ...
-    >>> # align frames by "dt", but keep only cols "x" and "y":
+
+    Align frames by "dt", but keep only cols "x" and "y":
+
     >>> af1, af2, af3 = pl.align_frames(
     ...     df1, df2, df3, on="dt", select=["x", "y"]
     ... )  # doctest: +IGNORE_RESULT
@@ -707,7 +703,9 @@ def align_frames(
     # │ 1.0 ┆ 1.5  │      │ 1.0 ┆ 12.0 │      │ 2.0  ┆ 2.5  │
     # └─────┴──────┘      └─────┴──────┘      └──────┴──────┘
     ...
-    >>> # now data is aligned, can easily calculate the row-wise dot product:
+
+    Now data is aligned, and you can easily calculate the row-wise dot product:
+
     >>> (af1 * af2 * af3).fill_null(0).select(pl.sum(pl.col("*")).alias("dot"))
     shape: (3, 1)
     ┌───────┐
@@ -722,7 +720,7 @@ def align_frames(
     │ 47.0  │
     └───────┘
 
-    """  # noqa: E501
+    """  # noqa: W505
     if not frames:
         return []  # type: ignore[return-value]
     elif len({type(f) for f in frames}) != 1:
@@ -735,7 +733,7 @@ def align_frames(
     alignment_frame = (
         concat([df.lazy().select(on) for df in frames])
         .unique(maintain_order=False)
-        .sort(by=on, reverse=reverse)
+        .sort(by=on, descending=descending)
     )
     alignment_frame = (
         alignment_frame.collect().lazy() if eager else alignment_frame.cache()

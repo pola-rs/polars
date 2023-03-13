@@ -203,11 +203,12 @@ impl PipeLine {
                 }
             }
 
-            let mut reduced_sink = sink
-                .into_par_iter()
-                .reduce_with(|mut a, b| {
-                    a.combine(b);
-                    a
+            let mut reduced_sink = POOL
+                .install(|| {
+                    sink.into_par_iter().reduce_with(|mut a, mut b| {
+                        a.combine(&mut *b);
+                        a
+                    })
                 })
                 .unwrap();
             let sink_result = reduced_sink.finalize(ec)?;

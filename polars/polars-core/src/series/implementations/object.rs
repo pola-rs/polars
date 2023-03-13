@@ -92,18 +92,15 @@ where
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
-        if self.dtype() == other.dtype() {
-            ObjectChunked::append(&mut self.0, other.as_ref().as_ref());
-            Ok(())
-        } else {
-            Err(PolarsError::SchemaMisMatch(
-                "cannot append Series; data types don't match".into(),
-            ))
+        if self.dtype() != other.dtype() {
+            polars_bail!(append);
         }
+        ObjectChunked::append(&mut self.0, other.as_ref().as_ref());
+        Ok(())
     }
 
     fn extend(&mut self, _other: &Series) -> PolarsResult<()> {
-        panic!("extend not implemented for Object dtypes")
+        polars_bail!(opq = extend, self.dtype());
     }
 
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {
@@ -168,9 +165,7 @@ where
     }
 
     fn cast(&self, _data_type: &DataType) -> PolarsResult<Series> {
-        Err(PolarsError::InvalidOperation(
-            "cannot cast array of type ObjectChunked to arrow datatype".into(),
-        ))
+        polars_bail!(opq = cast, self.dtype());
     }
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {
@@ -204,24 +199,12 @@ where
         ObjectChunked::is_not_null(&self.0)
     }
 
-    fn is_unique(&self) -> PolarsResult<BooleanChunked> {
-        ChunkUnique::is_unique(&self.0)
-    }
-
-    fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
-        ChunkUnique::is_duplicated(&self.0)
-    }
-
     fn reverse(&self) -> Series {
         ChunkReverse::reverse(&self.0).into_series()
     }
 
     fn shift(&self, periods: i64) -> Series {
         ChunkShift::shift(&self.0, periods).into_series()
-    }
-
-    fn fill_null(&self, strategy: FillNullStrategy) -> PolarsResult<Series> {
-        ChunkFillNull::fill_null(&self.0, strategy).map(|ca| ca.into_series())
     }
 
     fn fmt_list(&self) -> String {

@@ -16,7 +16,7 @@ def test_compare_series_value_mismatch() -> None:
     srs2 = pl.Series([2, 3, 4])
 
     assert_series_not_equal(srs1, srs2)
-    with pytest.raises(AssertionError, match="Series are different\n\nValue mismatch"):
+    with pytest.raises(AssertionError, match="Series are different.\n\nValue mismatch"):
         assert_series_equal(srs1, srs2)
 
 
@@ -93,11 +93,36 @@ def test_compare_series_nulls() -> None:
         assert_series_equal(srs1, srs2, check_exact=True)
 
 
+def test_series_cmp_fast_paths() -> None:
+    assert (
+        pl.Series([None], dtype=pl.Int32) != pl.Series([1, 2], dtype=pl.Int32)
+    ).to_list() == [True, True]
+    assert (
+        pl.Series([None], dtype=pl.Int32) == pl.Series([1, 2], dtype=pl.Int32)
+    ).to_list() == [False, False]
+
+    assert (
+        pl.Series([None], dtype=pl.Utf8) != pl.Series(["a", "b"], dtype=pl.Utf8)
+    ).to_list() == [True, True]
+    assert (
+        pl.Series([None], dtype=pl.Utf8) == pl.Series(["a", "b"], dtype=pl.Utf8)
+    ).to_list() == [False, False]
+
+    assert (
+        pl.Series([None], dtype=pl.Boolean)
+        != pl.Series([True, False], dtype=pl.Boolean)
+    ).to_list() == [True, True]
+    assert (
+        pl.Series([None], dtype=pl.Boolean)
+        == pl.Series([False, False], dtype=pl.Boolean)
+    ).to_list() == [False, False]
+
+
 def test_compare_series_value_mismatch_string() -> None:
     srs1 = pl.Series(["hello", "no"])
     srs2 = pl.Series(["hello", "yes"])
     with pytest.raises(
-        AssertionError, match="Series are different\n\nExact value mismatch"
+        AssertionError, match="Series are different.\n\nExact value mismatch"
     ):
         assert_series_equal(srs1, srs2)
 
@@ -105,25 +130,29 @@ def test_compare_series_value_mismatch_string() -> None:
 def test_compare_series_type_mismatch() -> None:
     srs1 = pl.Series([1, 2, 3])
     srs2 = pl.DataFrame({"col1": [2, 3, 4]})
-    with pytest.raises(AssertionError, match="Series are different\n\nType mismatch"):
+    with pytest.raises(
+        AssertionError, match="Inputs are different.\n\nUnexpected input types"
+    ):
         assert_series_equal(srs1, srs2)  # type: ignore[arg-type]
 
     srs3 = pl.Series([1.0, 2.0, 3.0])
-    with pytest.raises(AssertionError, match="Series are different\n\nDtype mismatch"):
+    with pytest.raises(AssertionError, match="Series are different.\n\nDtype mismatch"):
         assert_series_equal(srs1, srs3)
 
 
 def test_compare_series_name_mismatch() -> None:
     srs1 = pl.Series(values=[1, 2, 3], name="srs1")
     srs2 = pl.Series(values=[1, 2, 3], name="srs2")
-    with pytest.raises(AssertionError, match="Series are different\n\nName mismatch"):
+    with pytest.raises(AssertionError, match="Series are different.\n\nName mismatch"):
         assert_series_equal(srs1, srs2)
 
 
 def test_compare_series_shape_mismatch() -> None:
     srs1 = pl.Series(values=[1, 2, 3, 4], name="srs1")
     srs2 = pl.Series(values=[1, 2, 3], name="srs2")
-    with pytest.raises(AssertionError, match="Series are different\n\nShape mismatch"):
+    with pytest.raises(
+        AssertionError, match="Series are different.\n\nLength mismatch"
+    ):
         assert_series_equal(srs1, srs2)
 
 
@@ -131,7 +160,7 @@ def test_compare_series_value_exact_mismatch() -> None:
     srs1 = pl.Series([1.0, 2.0, 3.0])
     srs2 = pl.Series([1.0, 2.0 + 1e-7, 3.0])
     with pytest.raises(
-        AssertionError, match="Series are different\n\nExact value mismatch"
+        AssertionError, match="Series are different.\n\nExact value mismatch"
     ):
         assert_series_equal(srs1, srs2, check_exact=True)
 
@@ -142,17 +171,15 @@ def test_compare_frame_equal_nans() -> None:
 
     df1 = pl.DataFrame(
         data={"x": [1.0, nan], "y": [nan, 2.0]},
-        columns=[("x", pl.Float32), ("y", pl.Float64)],
+        schema=[("x", pl.Float32), ("y", pl.Float64)],
     )
     assert_frame_equal(df1, df1, check_exact=True)
 
     df2 = pl.DataFrame(
         data={"x": [1.0, nan], "y": [None, 2.0]},
-        columns=[("x", pl.Float32), ("y", pl.Float64)],
+        schema=[("x", pl.Float32), ("y", pl.Float64)],
     )
-    with pytest.raises(
-        AssertionError, match="DataFrames are different\n\nExact value mismatch"
-    ):
+    with pytest.raises(AssertionError, match="Values for column 'y' are different"):
         assert_frame_equal(df1, df2, check_exact=True)
 
 
@@ -166,7 +193,7 @@ def test_assert_frame_equal_types() -> None:
     df1 = pl.DataFrame({"a": [1, 2]})
     srs1 = pl.Series(values=[1, 2], name="a")
     with pytest.raises(
-        AssertionError, match="DataFrames are different\n\nType mismatch"
+        AssertionError, match="Inputs are different.\n\nUnexpected input types"
     ):
         assert_frame_equal(df1, srs1)  # type: ignore[arg-type]
 
@@ -175,7 +202,7 @@ def test_assert_frame_equal_length_mismatch() -> None:
     df1 = pl.DataFrame({"a": [1, 2]})
     df2 = pl.DataFrame({"a": [1, 2, 3]})
     with pytest.raises(
-        AssertionError, match="DataFrames are different\n\nLength mismatch"
+        AssertionError, match="DataFrames are different.\n\nLength mismatch"
     ):
         assert_frame_equal(df1, df2)
 
@@ -216,7 +243,7 @@ def test_assert_frame_equal_ignore_row_order() -> None:
     df1 = pl.DataFrame({"a": [1, 2], "b": [4, 3]})
     df2 = pl.DataFrame({"a": [2, 1], "b": [3, 4]})
     df3 = pl.DataFrame({"b": [3, 4], "a": [2, 1]})
-    with pytest.raises(AssertionError, match="Value mismatch"):
+    with pytest.raises(AssertionError, match="Values for column 'a' are different."):
         assert_frame_equal(df1, df2)
 
     assert_frame_equal(df1, df2, check_row_order=False)

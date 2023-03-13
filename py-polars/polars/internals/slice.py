@@ -32,7 +32,7 @@ class PolarsSlice:
     @staticmethod
     def _lazify(obj: FrameOrSeries) -> "pli.LazyFrame":
         """Make lazy to ensure efficient/consistent handling."""
-        return obj.lazy() if isinstance(obj, pli.DataFrame) else obj.to_frame().lazy()
+        return obj.to_frame().lazy() if isinstance(obj, pli.Series) else obj.lazy()
 
     def _slice_positive(self, obj: "pli.LazyFrame") -> "pli.LazyFrame":
         """Logic for slices with positive stride."""
@@ -81,7 +81,7 @@ class PolarsSlice:
 
         # check for fast-paths / single-operation calls
         if self.slice_length == 0:
-            return self.obj.cleared()
+            return self.obj.clear()
 
         elif self.is_unbounded and self.stride in (-1, 1):
             return self.obj.reverse() if (self.stride < 0) else self.obj.clone()
@@ -106,8 +106,8 @@ class LazyPolarsSlice:
     """
     Apply python slice object to Polars LazyFrame.
 
-    Only slices with efficient computation paths mapping directly to existing lazy
-    methods are supported.
+    Only slices with efficient computation paths that map directly
+    to existing lazy methods are supported.
 
     """
 
@@ -138,7 +138,7 @@ class LazyPolarsSlice:
                 )
 
         # ---------------------------------------
-        # empty slice patterns.
+        # empty slice patterns
         # ---------------------------------------
         # [:0]
         # [i:<=i]
@@ -146,10 +146,10 @@ class LazyPolarsSlice:
         if (step > 0 and (s.stop is not None and start >= s.stop)) or (
             step < 0 and (s.stop is not None and s.stop >= s.start >= 0)
         ):
-            return self.obj.cleared()
+            return self.obj.clear()
 
         # ---------------------------------------
-        # straight-though mappings for "reverse"
+        # straight-through mappings for "reverse"
         # and/or "take_every"
         # ---------------------------------------
         # [:]    => clone()
@@ -171,7 +171,7 @@ class LazyPolarsSlice:
             return obj if (abs(step) == 1) else obj.take_every(abs(step))
 
         # ---------------------------------------
-        # straight-though mappings for "head"
+        # straight-through mappings for "head"
         # ---------------------------------------
         # [:j]    => head(j)
         # [:j:k]  => head(j).take_every(k)
@@ -180,7 +180,7 @@ class LazyPolarsSlice:
             return obj if (step == 1) else obj.take_every(step)
 
         # ---------------------------------------
-        # straight-though mappings for "tail"
+        # straight-through mappings for "tail"
         # ---------------------------------------
         # [-i:]    => tail(abs(i))
         # [-i::k]  => tail(abs(i)).take_every(k)
@@ -189,7 +189,7 @@ class LazyPolarsSlice:
             return obj if (step == 1) else obj.take_every(step)
 
         # ---------------------------------------
-        # straight-though mappings for "slice"
+        # straight-through mappings for "slice"
         # ---------------------------------------
         # [i:]     => slice(i)
         # [i:j]    => slice(i,j-i)

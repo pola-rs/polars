@@ -11,11 +11,11 @@ class ExprMetaNameSpace:
     def __init__(self, expr: pli.Expr):
         self._pyexpr = expr._pyexpr
 
-    def __eq__(self, other: ExprMetaNameSpace | pli.Expr) -> bool:  # type: ignore[override] # noqa: #501
+    def __eq__(self, other: ExprMetaNameSpace | pli.Expr) -> bool:  # type: ignore[override]
         return self._pyexpr.meta_eq(other._pyexpr)
 
-    def __ne__(self, other: ExprMetaNameSpace | pli.Expr) -> bool:  # type: ignore[override] # noqa: #501
-        return not self == other  # noqa: SIM201
+    def __ne__(self, other: ExprMetaNameSpace | pli.Expr) -> bool:  # type: ignore[override]
+        return not self == other
 
     def pop(self) -> list[pli.Expr]:
         """
@@ -48,3 +48,11 @@ class ExprMetaNameSpace:
     def undo_aliases(self) -> pli.Expr:
         """Undo any renaming operation like ``alias`` or ``keep_name``."""
         return pli.wrap_expr(self._pyexpr.meta_undo_aliases())
+
+    def has_multiple_outputs(self) -> bool:
+        """Whether this expression expands into multiple expressions."""
+        return self._pyexpr.meta_has_multiple_outputs()
+
+    def is_regex_projection(self) -> bool:
+        """Whether this expression expands to columns that match a regex pattern."""
+        return self._pyexpr.meta_is_regex_projection()

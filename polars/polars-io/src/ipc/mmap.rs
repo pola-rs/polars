@@ -101,9 +101,7 @@ impl<R: MmapBytesReader> IpcReader<R> {
                     self.row_count.clone(),
                 )
             }
-            None => Err(PolarsError::ComputeError(
-                "Cannot memory map, you must provide a file".into(),
-            )),
+            None => polars_bail!(ComputeError: "cannot memory-map, you must provide a file"),
         }
     }
 }

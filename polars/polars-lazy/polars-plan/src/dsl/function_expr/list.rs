@@ -1,4 +1,5 @@
 use polars_arrow::utils::CustomIterTools;
+use polars_ops::chunked_array::list::*;
 
 use super::*;
 
@@ -12,6 +13,9 @@ pub enum ListFunction {
     Get,
     #[cfg(feature = "list_take")]
     Take(bool),
+    #[cfg(feature = "list_count")]
+    CountMatch,
+    Sum,
 }
 
 impl Display for ListFunction {
@@ -26,23 +30,36 @@ impl Display for ListFunction {
             Get => "get",
             #[cfg(feature = "list_take")]
             Take(_) => "take",
+            #[cfg(feature = "list_count")]
+            CountMatch => "count",
+            Sum => "sum",
         };
         write!(f, "{name}")
     }
 }
 
 #[cfg(feature = "is_in")]
-pub(super) fn contains(args: &mut [Series]) -> PolarsResult<Series> {
+pub(super) fn contains(args: &mut [Series]) -> PolarsResult<Option<Series>> {
     let list = &args[0];
     let is_in = &args[1];
 
     is_in.is_in(list).map(|mut ca| {
         ca.rename(list.name());
-        ca.into_series()
+        Some(ca.into_series())
     })
 }
 
-pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Series> {
+fn check_slice_arg_shape(slice_len: usize, ca_len: usize, name: &str) -> PolarsResult<()> {
+    polars_ensure!(
+        slice_len == ca_len,
+        ComputeError:
+        "shape of the slice '{}' argument: {} does not match that of the list column: {}",
+        name, slice_len, ca_len
+    );
+    Ok(())
+}
+
+pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Option<Series>> {
     let s = &args[0];
     let list_ca = s.list()?;
     let offset_s = &args[1];
@@ -56,12 +73,10 @@ pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Series> {
                 .unwrap()
                 .extract::<usize>()
                 .unwrap_or(usize::MAX);
-            return Ok(list_ca.lst_slice(offset, slice_len).into_series());
+            return Ok(Some(list_ca.lst_slice(offset, slice_len).into_series()));
         }
         (1, length_slice_len) => {
-            if length_slice_len != list_ca.len() {
-                return Err(PolarsError::ComputeError("the length of the slice 'length' argument does not match that of the list column".into()));
-            }
+            check_slice_arg_shape(length_slice_len, list_ca.len(), "length")?;
             let offset = offset_s.get(0).unwrap().try_extract::<i64>()?;
             // cast to i64 as it is more likely that it is that dtype
             // instead of usize/u64 (we never need that max length)
@@ -78,9 +93,7 @@ pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Series> {
                 .collect_trusted()
         }
         (offset_len, 1) => {
-            if offset_len != list_ca.len() {
-                return Err(PolarsError::ComputeError("the length of the slice 'offset' argument does not match that of the list column".into()));
-            }
+            check_slice_arg_shape(offset_len, list_ca.len(), "offset")?;
             let length_slice = length_s
                 .get(0)
                 .unwrap()
@@ -98,12 +111,8 @@ pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Series> {
                 .collect_trusted()
         }
         _ => {
-            if offset_s.len() != list_ca.len() {
-                return Err(PolarsError::ComputeError("the length of the slice 'offset' argument does not match that of the list column".into()));
-            }
-            if length_s.len() != list_ca.len() {
-                return Err(PolarsError::ComputeError("the length of the slice 'length' argument does not match that of the list column".into()));
-            }
+            check_slice_arg_shape(offset_s.len(), list_ca.len(), "offset")?;
+            check_slice_arg_shape(length_s.len(), list_ca.len(), "length")?;
             let offset_ca = offset_s.cast(&DataType::Int64)?;
             let offset_ca = offset_ca.i64()?;
             // cast to i64 as it is more likely that it is that dtype
@@ -127,24 +136,33 @@ pub(super) fn slice(args: &mut [Series]) -> PolarsResult<Series> {
         }
     };
     out.rename(s.name());
-    Ok(out.into_series())
+    Ok(Some(out.into_series()))
 }
 
-pub(super) fn concat(s: &mut [Series]) -> PolarsResult<Series> {
+pub(super) fn concat(s: &mut [Series]) -> PolarsResult<Option<Series>> {
     let mut first = std::mem::take(&mut s[0]);
     let other = &s[1..];
 
-    let first_ca = match first.list().ok() {
+    let mut first_ca = match first.list().ok() {
         Some(ca) => ca,
         None => {
             first = first.reshape(&[-1, 1]).unwrap();
             first.list().unwrap()
         }
-    };
-    first_ca.lst_concat(other).map(|ca| ca.into_series())
+    }
+    .clone();
+
+    if first_ca.len() == 1 && !other.is_empty() {
+        let max_len = other.iter().map(|s| s.len()).max().unwrap();
+        if max_len > 1 {
+            first_ca = first_ca.new_from_index(0, max_len)
+        }
+    }
+
+    first_ca.lst_concat(other).map(|ca| Some(ca.into_series()))
 }
 
-pub(super) fn get(s: &mut [Series]) -> PolarsResult<Series> {
+pub(super) fn get(s: &mut [Series]) -> PolarsResult<Option<Series>> {
     let ca = s[0].list()?;
     let index = s[1].cast(&DataType::Int64)?;
     let index = index.i64().unwrap();
@@ -153,9 +171,9 @@ pub(super) fn get(s: &mut [Series]) -> PolarsResult<Series> {
         1 => {
             let index = index.get(0);
             if let Some(index) = index {
-                ca.lst_get(index)
+                ca.lst_get(index).map(Some)
             } else {
-                Err(PolarsError::ComputeError("Expression 'arr.get' expected a valid index, got 'null' instead.".into()))
+                polars_bail!(ComputeError: "unexpected null index received in `arr.get`")
             }
         }
         len if len == ca.len() => {
@@ -163,30 +181,30 @@ pub(super) fn get(s: &mut [Series]) -> PolarsResult<Series> {
             let arr = ca.downcast_iter().next().unwrap();
             let offsets = arr.offsets().as_slice();
 
-            let take_by = index.into_iter().enumerate().map(|(i, opt_idx)| {
-                opt_idx.and_then(|idx| {
-                    let (start, end) =  unsafe {
-                        (*offsets.get_unchecked(i), *offsets.get_unchecked(i + 1))
-                    };
-                    let offset = if idx >= 0 {
-                        start + idx
-                    } else {
-                        end + idx
-                    };
-                    if offset > end || offset < start || start == end {
-                        None
-                    } else {
-                        Some(offset as IdxSize)
-                    }
+            let take_by = index
+                .into_iter()
+                .enumerate()
+                .map(|(i, opt_idx)| {
+                    opt_idx.and_then(|idx| {
+                        let (start, end) =
+                            unsafe { (*offsets.get_unchecked(i), *offsets.get_unchecked(i + 1)) };
+                        let offset = if idx >= 0 { start + idx } else { end + idx };
+                        if offset >= end || offset < start || start == end {
+                            None
+                        } else {
+                            Some(offset as IdxSize)
+                        }
+                    })
                 })
-            }).collect::<IdxCa>();
+                .collect::<IdxCa>();
             let s = Series::try_from((ca.name(), arr.values().clone())).unwrap();
-            unsafe { s.take_unchecked(&take_by) }
+            unsafe { s.take_unchecked(&take_by) }.map(Some)
         }
-        len => {
-            Err(PolarsError::ComputeError(format!("Expression 'arr.get' got an index array of length: {} where there were {} elements in the list.", len, ca.len()).into()))
-        }
-
+        len => polars_bail!(
+            ComputeError:
+            "`arr.get` expression got an index array of length {} while the list has {} elements",
+            len, ca.len()
+        ),
     }
 }
 
@@ -205,4 +223,21 @@ pub(super) fn take(args: &[Series], null_on_oob: bool) -> PolarsResult<Series> {
     } else {
         ca.lst_take(idx, null_on_oob)
     }
+}
+
+#[cfg(feature = "list_count")]
+pub(super) fn count_match(args: &[Series]) -> PolarsResult<Series> {
+    let s = &args[0];
+    let element = &args[1];
+    polars_ensure!(
+        element.len() == 1,
+        ComputeError: "argument expression in `arr.count` must produce exactly one element, got {}",
+        element.len()
+    );
+    let ca = s.list()?;
+    list_count_match(ca, element.get(0).unwrap())
+}
+
+pub(super) fn sum(s: &Series) -> PolarsResult<Series> {
+    Ok(s.list()?.lst_sum())
 }

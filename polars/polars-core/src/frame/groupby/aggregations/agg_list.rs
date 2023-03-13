@@ -175,6 +175,7 @@ impl AggList for BooleanChunked {
 
 impl AggList for Utf8Chunked {
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+        // TODO: dispatch via binary
         match groups {
             GroupsProxy::Idx(groups) => {
                 let mut builder =
@@ -198,7 +199,6 @@ impl AggList for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-binary")]
 impl AggList for BinaryChunked {
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         match groups {
@@ -244,7 +244,7 @@ fn agg_list_list<F: Fn(&ListChunked, bool, &mut Vec<i64>, &mut i64, &mut Vec<Arr
         &mut list_values,
     );
     if groups_len == 0 {
-        list_values.push(ca.chunks[0].slice(0, 0))
+        list_values.push(ca.chunks[0].sliced(0, 0))
     }
     let arrays = list_values.iter().map(|arr| &**arr).collect::<Vec<_>>();
     let list_values: ArrayRef = arrow::compute::concatenate::concatenate(&arrays).unwrap();

@@ -244,7 +244,7 @@ impl Sink for GenericBuild {
         Ok(SinkResult::CanHaveMoreInput)
     }
 
-    fn combine(&mut self, mut other: Box<dyn Sink>) {
+    fn combine(&mut self, other: &mut dyn Sink) {
         if self.is_empty() {
             let other = other.as_any().downcast_mut::<Self>().unwrap();
             if !other.is_empty() {

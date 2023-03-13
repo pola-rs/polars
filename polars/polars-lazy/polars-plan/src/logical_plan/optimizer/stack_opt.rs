@@ -1,3 +1,5 @@
+use polars_core::prelude::PolarsResult;
+
 use crate::logical_plan::aexpr::AExpr;
 use crate::logical_plan::alp::ALogicalPlan;
 use crate::prelude::{Arena, Node};
@@ -12,7 +14,7 @@ impl StackOptimizer {
         expr_arena: &mut Arena<AExpr>,
         lp_arena: &mut Arena<ALogicalPlan>,
         lp_top: Node,
-    ) -> Node {
+    ) -> PolarsResult<Node> {
         let mut changed = true;
 
         let mut plans = Vec::with_capacity(32);
@@ -50,7 +52,7 @@ impl StackOptimizer {
                             current_expr_node,
                             lp_arena,
                             current_node,
-                        ) {
+                        )? {
                             expr_arena.replace(current_expr_node, x);
                             changed = true;
                         }
@@ -62,7 +64,7 @@ impl StackOptimizer {
                 }
             }
         }
-        lp_top
+        Ok(lp_top)
     }
 }
 
@@ -86,7 +88,7 @@ pub trait OptimizationRule {
         _expr_node: Node,
         _lp_arena: &Arena<ALogicalPlan>,
         _lp_node: Node,
-    ) -> Option<AExpr> {
-        None
+    ) -> PolarsResult<Option<AExpr>> {
+        Ok(None)
     }
 }

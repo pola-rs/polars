@@ -3,13 +3,14 @@ use std::fmt::{Debug, Formatter};
 use indexmap::IndexMap;
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
+use smartstring::alias::String as SmartString;
 
 use crate::prelude::*;
 
 #[derive(Eq, Clone, Default)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub struct Schema {
-    inner: PlIndexMap<String, DataType>,
+    inner: PlIndexMap<SmartString, DataType>,
 }
 
 // IndexMap does not care about order.
@@ -90,7 +91,7 @@ impl Schema {
         self.inner.is_empty()
     }
 
-    pub fn rename(&mut self, old: &str, new: String) -> Option<()> {
+    pub fn rename(&mut self, old: &str, new: SmartString) -> Option<()> {
         // we first append the new name
         // and then remove the old name
         // this works because the removed slot is swapped with the last value in the indexmap
@@ -100,7 +101,7 @@ impl Schema {
         Some(())
     }
 
-    pub fn insert_index(&self, index: usize, name: String, dtype: DataType) -> Option<Self> {
+    pub fn insert_index(&self, index: usize, name: SmartString, dtype: DataType) -> Option<Self> {
         // 0 and self.len() 0 is allowed
         if index > self.len() {
             return None;
@@ -122,20 +123,20 @@ impl Schema {
 
     pub fn try_get(&self, name: &str) -> PolarsResult<&DataType> {
         self.get(name)
-            .ok_or_else(|| PolarsError::NotFound(name.to_string().into()))
+            .ok_or_else(|| polars_err!(SchemaFieldNotFound: "{}", name))
     }
 
-    pub fn try_get_full(&self, name: &str) -> PolarsResult<(usize, &String, &DataType)> {
+    pub fn try_get_full(&self, name: &str) -> PolarsResult<(usize, &SmartString, &DataType)> {
         self.inner
             .get_full(name)
-            .ok_or_else(|| PolarsError::NotFound(name.to_string().into()))
+            .ok_or_else(|| polars_err!(SchemaFieldNotFound: "{}", name))
     }
 
     pub fn remove(&mut self, name: &str) -> Option<DataType> {
         self.inner.remove(name)
     }
 
-    pub fn get_full(&self, name: &str) -> Option<(usize, &String, &DataType)> {
+    pub fn get_full(&self, name: &str) -> Option<(usize, &SmartString, &DataType)> {
         self.inner.get_full(name)
     }
 
@@ -148,11 +149,11 @@ impl Schema {
     pub fn try_get_field(&self, name: &str) -> PolarsResult<Field> {
         self.inner
             .get(name)
-            .ok_or_else(|| PolarsError::NotFound(name.to_string().into()))
+            .ok_or_else(|| polars_err!(SchemaFieldNotFound: "{}", name))
             .map(|dtype| Field::new(name, dtype.clone()))
     }
 
-    pub fn get_index(&self, index: usize) -> Option<(&String, &DataType)> {
+    pub fn get_index(&self, index: usize) -> Option<(&SmartString, &DataType)> {
         self.inner.get_index(index)
     }
 
@@ -160,7 +161,7 @@ impl Schema {
         self.get(name).is_some()
     }
 
-    pub fn get_index_mut(&mut self, index: usize) -> Option<(&mut String, &mut DataType)> {
+    pub fn get_index_mut(&mut self, index: usize) -> Option<(&mut SmartString, &mut DataType)> {
         self.inner.get_index_mut(index)
     }
 
@@ -184,7 +185,7 @@ impl Schema {
     /// inserted, last in order, and `None` is returned.
     ///
     /// Computes in **O(1)** time (amortized average).
-    pub fn with_column(&mut self, name: String, dtype: DataType) -> Option<DataType> {
+    pub fn with_column(&mut self, name: SmartString, dtype: DataType) -> Option<DataType> {
         self.inner.insert(name, dtype)
     }
 
@@ -196,7 +197,7 @@ impl Schema {
         let fields: Vec<_> = self
             .inner
             .iter()
-            .map(|(name, dtype)| ArrowField::new(name, dtype.to_arrow(), true))
+            .map(|(name, dtype)| ArrowField::new(name.as_str(), dtype.to_arrow(), true))
             .collect();
         ArrowSchema::from(fields)
     }
@@ -211,10 +212,10 @@ impl Schema {
         self.inner.iter().map(|(_name, dtype)| dtype)
     }
 
-    pub fn iter_names(&self) -> impl Iterator<Item = &String> + '_ + ExactSizeIterator {
+    pub fn iter_names(&self) -> impl Iterator<Item = &SmartString> + '_ + ExactSizeIterator {
         self.inner.iter().map(|(name, _dtype)| name)
     }
-    pub fn iter(&self) -> impl Iterator<Item = (&String, &DataType)> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = (&SmartString, &DataType)> + '_ {
         self.inner.iter()
     }
 }
@@ -222,8 +223,8 @@ impl Schema {
 pub type SchemaRef = Arc<Schema>;
 
 impl IntoIterator for Schema {
-    type Item = (String, DataType);
-    type IntoIter = <PlIndexMap<String, DataType> as IntoIterator>::IntoIter;
+    type Item = (SmartString, DataType);
+    type IntoIter = <PlIndexMap<SmartString, DataType> as IntoIterator>::IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
         self.inner.into_iter()
@@ -238,9 +239,7 @@ pub trait IndexOfSchema: Debug {
 
     fn try_index_of(&self, name: &str) -> PolarsResult<usize> {
         self.index_of(name).ok_or_else(|| {
-            PolarsError::SchemaMisMatch(
-                format!("Unable to get field named \"{name}\" from schema: {self:?}",).into(),
-            )
+            polars_err!(SchemaMismatch: "unable to get field '{}' from schema: {:?}", name, self)
         })
     }
 }

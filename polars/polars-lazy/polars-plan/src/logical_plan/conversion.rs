@@ -39,10 +39,14 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             expr: to_aexpr(*expr, arena),
             options,
         },
-        Expr::SortBy { expr, by, reverse } => AExpr::SortBy {
+        Expr::SortBy {
+            expr,
+            by,
+            descending,
+        } => AExpr::SortBy {
             expr: to_aexpr(*expr, arena),
             by: by.into_iter().map(|e| to_aexpr(e, arena)).collect(),
-            reverse,
+            descending,
         },
         Expr::Filter { input, by } => AExpr::Filter {
             input: to_aexpr(*input, arena),
@@ -198,18 +202,6 @@ pub fn to_alp(
             let input = to_alp(*input, expr_arena, lp_arena)?;
             ALogicalPlan::Slice { input, offset, len }
         }
-        LogicalPlan::Melt {
-            input,
-            args,
-            schema,
-        } => {
-            let input = to_alp(*input, expr_arena, lp_arena)?;
-            ALogicalPlan::Melt {
-                input,
-                args,
-                schema,
-            }
-        }
         #[cfg(feature = "csv-file")]
         LogicalPlan::CsvScan {
             path,
@@ -304,18 +296,6 @@ pub fn to_alp(
                 input,
                 by_column,
                 args,
-            }
-        }
-        LogicalPlan::Explode {
-            input,
-            columns,
-            schema,
-        } => {
-            let input = to_alp(*input, expr_arena, lp_arena)?;
-            ALogicalPlan::Explode {
-                input,
-                columns,
-                schema,
             }
         }
         LogicalPlan::Cache { input, id, count } => {
@@ -475,7 +455,11 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 idx: Box::new(idx),
             }
         }
-        AExpr::SortBy { expr, by, reverse } => {
+        AExpr::SortBy {
+            expr,
+            by,
+            descending,
+        } => {
             let expr = node_to_expr(expr, expr_arena);
             let by = by
                 .iter()
@@ -484,7 +468,7 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             Expr::SortBy {
                 expr: Box::new(expr),
                 by,
-                reverse,
+                descending,
             }
         }
         AExpr::Filter { input, by } => {
@@ -792,18 +776,6 @@ impl ALogicalPlan {
                     args,
                 }
             }
-            ALogicalPlan::Explode {
-                input,
-                columns,
-                schema,
-            } => {
-                let input = Box::new(convert_to_lp(input, lp_arena));
-                LogicalPlan::Explode {
-                    input,
-                    columns,
-                    schema,
-                }
-            }
             ALogicalPlan::Cache { input, id, count } => {
                 let input = Box::new(convert_to_lp(input, lp_arena));
                 LogicalPlan::Cache { input, id, count }
@@ -867,18 +839,6 @@ impl ALogicalPlan {
                 LogicalPlan::Distinct {
                     input: Box::new(i),
                     options,
-                }
-            }
-            ALogicalPlan::Melt {
-                input,
-                args,
-                schema,
-            } => {
-                let input = convert_to_lp(input, lp_arena);
-                LogicalPlan::Melt {
-                    input: Box::new(input),
-                    args,
-                    schema,
                 }
             }
             ALogicalPlan::MapFunction { input, function } => {

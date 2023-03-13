@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 #[cfg(feature = "parquet")]
 use polars_core::cloud::CloudOptions;
-use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
 use polars_utils::arena::{Arena, Node};
 
@@ -17,7 +16,6 @@ use crate::logical_plan::CsvParserOptions;
 use crate::logical_plan::IpcScanOptionsInner;
 #[cfg(feature = "parquet")]
 use crate::logical_plan::ParquetOptions;
-use crate::logical_plan::{det_melt_schema, Context};
 use crate::prelude::*;
 use crate::utils::{aexprs_to_schema, PushNode};
 
@@ -35,11 +33,6 @@ pub enum ALogicalPlan {
     PythonScan {
         options: PythonOptions,
         predicate: Option<Node>,
-    },
-    Melt {
-        input: Node,
-        args: Arc<MeltArgs>,
-        schema: SchemaRef,
     },
     Slice {
         input: Node,
@@ -100,11 +93,6 @@ pub enum ALogicalPlan {
         input: Node,
         by_column: Vec<Node>,
         args: SortArguments,
-    },
-    Explode {
-        input: Node,
-        columns: Vec<String>,
-        schema: SchemaRef,
     },
     Cache {
         input: Node,
@@ -186,6 +174,36 @@ impl ALogicalPlan {
         }
     }
 
+    pub fn name(&self) -> &'static str {
+        use ALogicalPlan::*;
+        match self {
+            AnonymousScan { .. } => "anonymous_scan",
+            #[cfg(feature = "python")]
+            PythonScan { .. } => "python_scan",
+            Slice { .. } => "slice",
+            Selection { .. } => "selection",
+            #[cfg(feature = "csv-file")]
+            CsvScan { .. } => "csv_scan",
+            #[cfg(feature = "ipc")]
+            IpcScan { .. } => "ipc_scan",
+            #[cfg(feature = "parquet")]
+            ParquetScan { .. } => "parquet_scan",
+            DataFrameScan { .. } => "df",
+            Projection { .. } => "projection",
+            LocalProjection { .. } => "local_projection",
+            Sort { .. } => "sort",
+            Cache { .. } => "cache",
+            Aggregate { .. } => "aggregate",
+            Join { .. } => "join",
+            HStack { .. } => "hstack",
+            Distinct { .. } => "distinct",
+            MapFunction { .. } => "map_function",
+            Union { .. } => "union",
+            ExtContext { .. } => "ext_context",
+            FileSink { .. } => "file_sink",
+        }
+    }
+
     /// Get the schema of the logical plan node.
     pub fn schema<'a>(&'a self, arena: &'a Arena<ALogicalPlan>) -> Cow<'a, SchemaRef> {
         use ALogicalPlan::*;
@@ -195,7 +213,6 @@ impl ALogicalPlan {
             Union { inputs, .. } => return arena.get(inputs[0]).schema(arena),
             Cache { input, .. } => return arena.get(*input).schema(arena),
             Sort { input, .. } => return arena.get(*input).schema(arena),
-            Explode { schema, .. } => schema,
             #[cfg(feature = "parquet")]
             ParquetScan {
                 file_info,
@@ -234,9 +251,9 @@ impl ALogicalPlan {
                 return arena.get(*input).schema(arena)
             }
             Slice { input, .. } => return arena.get(*input).schema(arena),
-            Melt { schema, .. } => schema,
             MapFunction { input, function } => {
                 let input_schema = arena.get(*input).schema(arena);
+
                 return match input_schema {
                     Cow::Owned(schema) => {
                         Cow::Owned(function.schema(&schema).unwrap().into_owned())
@@ -268,11 +285,6 @@ impl ALogicalPlan {
             Union { options, .. } => Union {
                 inputs,
                 options: *options,
-            },
-            Melt { args, schema, .. } => Melt {
-                input: inputs[0],
-                args: args.clone(),
-                schema: schema.clone(),
             },
             Slice { offset, len, .. } => Slice {
                 input: inputs[0],
@@ -328,13 +340,6 @@ impl ALogicalPlan {
                 input: inputs[0],
                 by_column: by_column.clone(),
                 args: args.clone(),
-            },
-            Explode {
-                columns, schema, ..
-            } => Explode {
-                input: inputs[0],
-                columns: columns.clone(),
-                schema: schema.clone(),
             },
             Cache { id, count, .. } => Cache {
                 input: inputs[0],
@@ -478,14 +483,8 @@ impl ALogicalPlan {
     pub fn copy_exprs(&self, container: &mut Vec<Node>) {
         use ALogicalPlan::*;
         match self {
-            Melt { .. }
-            | Slice { .. }
-            | Sort { .. }
-            | Explode { .. }
-            | Cache { .. }
-            | Distinct { .. }
-            | Union { .. }
-            | MapFunction { .. } => {}
+            Slice { .. } | Cache { .. } | Distinct { .. } | Union { .. } | MapFunction { .. } => {}
+            Sort { by_column, .. } => container.extend_from_slice(by_column),
             Selection { predicate, .. } => container.push(*predicate),
             Projection { expr, .. } => container.extend_from_slice(expr),
             LocalProjection { expr, .. } => container.extend_from_slice(expr),
@@ -556,13 +555,11 @@ impl ALogicalPlan {
                 }
                 return;
             }
-            Melt { input, .. } => *input,
             Slice { input, .. } => *input,
             Selection { input, .. } => *input,
             Projection { input, .. } => *input,
             LocalProjection { input, .. } => *input,
             Sort { input, .. } => *input,
-            Explode { input, .. } => *input,
             Cache { input, .. } => *input,
             Aggregate { input, .. } => *input,
             Join {
@@ -647,18 +644,6 @@ impl<'a> ALogicalPlanBuilder<'a> {
             expr_arena,
             lp_arena,
         }
-    }
-
-    pub fn melt(self, args: Arc<MeltArgs>) -> Self {
-        let schema = det_melt_schema(&args, &self.schema());
-
-        let lp = ALogicalPlan::Melt {
-            input: self.root,
-            args,
-            schema,
-        };
-        let node = self.lp_arena.add(lp);
-        ALogicalPlanBuilder::new(node, self.expr_arena, self.lp_arena)
     }
 
     pub fn project_local(self, exprs: Vec<Node>) -> Self {

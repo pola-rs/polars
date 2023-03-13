@@ -1,4 +1,5 @@
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(feature = "simd", feature(portable_simd))]
 
 #[cfg(feature = "avro")]
 pub mod avro;
@@ -61,9 +62,11 @@ pub trait SerReader<R>
 where
     R: Read + Seek,
 {
+    /// Create a new instance of the `[SerReader]`
     fn new(reader: R) -> Self;
 
-    /// Rechunk to a single chunk after Reading file.
+    /// Make sure that all columns are contiguous in memory by
+    /// aggregating the chunks into a single array.
     #[must_use]
     fn set_rechunk(self, _rechunk: bool) -> Self
     where
@@ -135,7 +138,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
                     .iter()
                     .map(|df: &DataFrame| df.height())
                     .sum::<usize>();
-                if std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("0") == "1" {
+                if polars_core::config::verbose() {
                     eprintln!("sliced off {} rows of the 'DataFrame'. These lines were read because they were in a single chunk.", df.height() - n)
                 }
                 parsed_dfs.push(df.slice(0, len));

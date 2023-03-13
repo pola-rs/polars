@@ -238,6 +238,22 @@ fn test_csv_globbing() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(not(target_os = "windows"))]
+#[cfg(feature = "json")]
+fn test_ndjson_globbing() -> PolarsResult<()> {
+    // for side effects
+    init_files();
+    let glob = "../../examples/datasets/*.ndjson";
+    let df = LazyJsonLineReader::new(glob.into()).finish()?.collect()?;
+    assert_eq!(df.shape(), (54, 4));
+    let cal = df.column("calories")?;
+    assert_eq!(cal.get(0)?, AnyValue::Int64(45));
+    assert_eq!(cal.get(53)?, AnyValue::Int64(194));
+
+    Ok(())
+}
+
+#[test]
 pub fn test_simple_slice() -> PolarsResult<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
     let out = scan_foods_parquet(false).limit(3).collect()?;
@@ -407,5 +423,29 @@ fn scan_anonymous_fn() -> PolarsResult<()> {
     let df = LazyFrame::anonymous_scan(function, args)?.collect()?;
 
     assert_eq!(df.shape(), (5, 4));
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "dtype-full")]
+fn scan_small_dtypes() -> PolarsResult<()> {
+    let small_dt = vec![
+        DataType::Int8,
+        DataType::UInt8,
+        DataType::Int16,
+        DataType::UInt16,
+    ];
+    for dt in small_dt {
+        let df = LazyCsvReader::new(FOODS_CSV)
+            .has_header(true)
+            .with_dtype_overwrite(Some(&Schema::from(
+                vec![Field::new("sugars_g", dt.clone())].into_iter(),
+            )))
+            .finish()?
+            .select(&[col("sugars_g")])
+            .collect()?;
+
+        assert_eq!(df.dtypes(), &[dt]);
+    }
     Ok(())
 }

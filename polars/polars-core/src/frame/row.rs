@@ -108,11 +108,9 @@ impl DataFrame {
         let has_nulls = schema
             .iter_dtypes()
             .any(|dtype| matches!(dtype, DataType::Null));
-        if has_nulls {
-            return Err(PolarsError::ComputeError(
-                "Could not infer row types, because of the null values".into(),
-            ));
-        }
+        polars_ensure!(
+            !has_nulls, ComputeError: "unable to infer row types because of null values"
+        );
         Self::from_rows_and_schema(rows, &schema)
     }
 
@@ -173,12 +171,10 @@ impl DataFrame {
 
     /// Transpose a DataFrame. This is a very expensive operation.
     pub fn transpose(&self) -> PolarsResult<DataFrame> {
-        let height = self.height();
-        let width = self.width();
-        if height == 0 || width == 0 {
-            return Err(PolarsError::NoData("empty dataframe".into()));
-        }
-
+        polars_ensure!(
+            self.height() != 0 && self.width() != 0,
+            NoData: "unable to transpose an empty dataframe"
+        );
         let dtype = self.get_supertype().unwrap()?;
         self.transpose_from_dtype(&dtype)
     }
@@ -297,7 +293,7 @@ pub fn rows_to_schema_supertypes(
 ) -> PolarsResult<Schema> {
     // no of rows to use to infer dtype
     let max_infer = infer_schema_length.unwrap_or(rows.len());
-
+    polars_ensure!(!rows.is_empty(), NoData: "no rows, cannot infer schema");
     let mut dtypes: Vec<PlIndexSet<DataType>> = vec![PlIndexSet::new(); rows[0].0.len()];
 
     for row in rows.iter().take(max_infer) {
@@ -311,7 +307,11 @@ pub fn rows_to_schema_supertypes(
         .into_iter()
         .enumerate()
         .map(|(i, types_set)| {
-            let dtype = types_set_to_dtype(types_set)?;
+            let dtype = if types_set.is_empty() {
+                DataType::Unknown
+            } else {
+                types_set_to_dtype(types_set)?
+            };
             Ok(Field::new(format!("column_{i}").as_ref(), dtype))
         })
         .collect::<PolarsResult<_>>()
@@ -467,8 +467,10 @@ impl<'a> AnyValueBuffer<'a> {
 
     pub(crate) fn add_fallible(&mut self, val: &AnyValue<'a>) -> PolarsResult<()> {
         self.add(val.clone()).ok_or_else(|| {
-            PolarsError::ComputeError(format!("Could not append {val:?} to builder; make sure that all rows have the same schema.\n\
-            Or consider increasing the the 'schema_inference_length' argument.").into())
+            polars_err!(
+                ComputeError: "could not append {:?} to the builder; make sure that all rows \
+                have the same schema or consider increasing `schema_inference_length`"
+            )
         })
     }
 

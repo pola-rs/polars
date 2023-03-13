@@ -5,7 +5,8 @@ pub use agg_list::*;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
-use num::{Bounded, Num, NumCast, ToPrimitive, Zero};
+use num_traits::pow::Pow;
+use num_traits::{Bounded, Num, NumCast, ToPrimitive, Zero};
 use polars_arrow::data_types::IsFloat;
 use polars_arrow::kernels::rolling;
 use polars_arrow::kernels::rolling::no_nulls::{
@@ -439,6 +440,154 @@ fn take_max<T: PartialOrd>(a: T, b: T) -> T {
     }
 }
 
+/// Intermediate helper trait so we can have a single generic implementation
+/// This trait will ensure the specific dispatch works without complicating
+/// the trait bounds.
+trait QuantileDispatcher<K> {
+    fn _quantile(self, quantile: f64, interpol: QuantileInterpolOptions)
+        -> PolarsResult<Option<K>>;
+
+    fn _median(self) -> Option<K>;
+}
+
+impl<T> QuantileDispatcher<f64> for ChunkedArray<T>
+where
+    T: PolarsIntegerType,
+    T::Native: Ord,
+    ChunkedArray<T>: IntoSeries,
+{
+    fn _quantile(
+        self,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    ) -> PolarsResult<Option<f64>> {
+        self.quantile_faster(quantile, interpol)
+    }
+    fn _median(self) -> Option<f64> {
+        self.median_faster()
+    }
+}
+
+impl QuantileDispatcher<f32> for Float32Chunked {
+    fn _quantile(
+        self,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    ) -> PolarsResult<Option<f32>> {
+        self.quantile_faster(quantile, interpol)
+    }
+    fn _median(self) -> Option<f32> {
+        self.median_faster()
+    }
+}
+impl QuantileDispatcher<f64> for Float64Chunked {
+    fn _quantile(
+        self,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    ) -> PolarsResult<Option<f64>> {
+        self.quantile_faster(quantile, interpol)
+    }
+    fn _median(self) -> Option<f64> {
+        self.median_faster()
+    }
+}
+
+unsafe fn agg_quantile_generic<T, K>(
+    ca: &ChunkedArray<T>,
+    groups: &GroupsProxy,
+    quantile: f64,
+    interpol: QuantileInterpolOptions,
+) -> Series
+where
+    T: PolarsNumericType,
+    ChunkedArray<T>: QuantileDispatcher<K::Native>,
+    ChunkedArray<K>: IntoSeries,
+    K: PolarsNumericType,
+{
+    let invalid_quantile = !(0.0..=1.0).contains(&quantile);
+    if invalid_quantile {
+        return Series::full_null(ca.name(), groups.len(), ca.dtype());
+    }
+    match groups {
+        GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<K, _>(groups, |idx| {
+            debug_assert!(idx.len() <= ca.len());
+            if idx.is_empty() {
+                return None;
+            }
+            let take = { ca.take_unchecked(idx.into()) };
+            // checked with invalid quantile check
+            take._quantile(quantile, interpol).unwrap_unchecked()
+        }),
+        GroupsProxy::Slice { groups, .. } => {
+            if _use_rolling_kernels(groups, ca.chunks()) {
+                // this cast is a no-op for floats
+                let s = ca.cast(&K::get_dtype()).unwrap();
+                let ca: &ChunkedArray<K> = s.as_ref().as_ref();
+                let arr = ca.downcast_iter().next().unwrap();
+                let values = arr.values().as_slice();
+                let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
+                let arr = match arr.validity() {
+                    None => rolling::no_nulls::rolling_quantile_by_iter(
+                        values,
+                        quantile,
+                        interpol,
+                        offset_iter,
+                    ),
+                    Some(validity) => rolling::nulls::rolling_quantile_by_iter(
+                        values,
+                        validity,
+                        quantile,
+                        interpol,
+                        offset_iter,
+                    ),
+                };
+                // the rolling kernels works on the dtype, this is not yet the float
+                // output type we need.
+                ChunkedArray::<K>::from_chunks("", vec![arr]).into_series()
+            } else {
+                _agg_helper_slice::<K, _>(groups, |[first, len]| {
+                    debug_assert!(first + len <= ca.len() as IdxSize);
+                    match len {
+                        0 => None,
+                        1 => ca.get(first as usize).map(|v| NumCast::from(v).unwrap()),
+                        _ => {
+                            let arr_group = _slice_from_offsets(ca, first, len);
+                            // unwrap checked with invalid quantile check
+                            arr_group
+                                ._quantile(quantile, interpol)
+                                .unwrap_unchecked()
+                                .map(|flt| NumCast::from(flt).unwrap_unchecked())
+                        }
+                    }
+                })
+            }
+        }
+    }
+}
+
+unsafe fn agg_median_generic<T, K>(ca: &ChunkedArray<T>, groups: &GroupsProxy) -> Series
+where
+    T: PolarsNumericType,
+    ChunkedArray<T>: QuantileDispatcher<K::Native>,
+    ChunkedArray<K>: IntoSeries,
+    K: PolarsNumericType,
+{
+    match groups {
+        GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<K, _>(groups, |idx| {
+            debug_assert!(idx.len() <= ca.len());
+            if idx.is_empty() {
+                return None;
+            }
+            let take = { ca.take_unchecked(idx.into()) };
+            take._median()
+        }),
+        GroupsProxy::Slice { .. } => {
+            agg_quantile_generic::<T, K>(ca, groups, 0.5, QuantileInterpolOptions::Linear)
+        }
+    }
+}
+
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType + Sync,
@@ -681,7 +830,7 @@ where
         + VarAggSeries
         + ChunkQuantile<T::Native>
         + QuantileAggSeries,
-    T::Native: Simd + NumericNative + num::pow::Pow<T::Native, Output = T::Native>,
+    T::Native: Simd + NumericNative + Pow<T::Native, Output = T::Native>,
     <T::Native as Simd>::Simd: std::ops::Add<Output = <T::Native as Simd>::Simd>
         + arrow::compute::aggregate::Sum<T::Native>
         + arrow::compute::aggregate::SimdOrd<T::Native>,
@@ -778,7 +927,7 @@ where
                     return None;
                 }
                 let take = { ca.take_unchecked(idx.into()) };
-                take.var_as_series(ddof).unpack::<T>().unwrap().get(0)
+                take.var(ddof)
             }),
             GroupsProxy::Slice { groups, .. } => {
                 if _use_rolling_kernels(groups, self.chunks()) {
@@ -822,7 +971,7 @@ where
                     return None;
                 }
                 let take = { ca.take_unchecked(idx.into()) };
-                take.std_as_series(ddof).unpack::<T>().unwrap().get(0)
+                take.std(ddof)
             }),
             GroupsProxy::Slice { groups, .. } => {
                 if _use_rolling_kernels(groups, self.chunks()) {
@@ -857,84 +1006,32 @@ where
             }
         }
     }
+}
 
+impl Float32Chunked {
     pub(crate) unsafe fn agg_quantile(
         &self,
         groups: &GroupsProxy,
         quantile: f64,
         interpol: QuantileInterpolOptions,
     ) -> Series {
-        let ca = &self.0;
-        let invalid_quantile = !(0.0..=1.0).contains(&quantile);
-        match groups {
-            GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<T, _>(groups, |idx| {
-                debug_assert!(idx.len() <= ca.len());
-                if idx.is_empty() | invalid_quantile {
-                    return None;
-                }
-                let take = { ca.take_unchecked(idx.into()) };
-                take.quantile_as_series(quantile, interpol)
-                    .unwrap() // checked with invalid quantile check
-                    .unpack::<T>()
-                    .unwrap()
-                    .get(0)
-            }),
-            GroupsProxy::Slice { groups, .. } => {
-                if _use_rolling_kernels(groups, self.chunks()) {
-                    let arr = self.downcast_iter().next().unwrap();
-                    let values = arr.values().as_slice();
-                    let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
-                    let arr = match arr.validity() {
-                        None => rolling::no_nulls::rolling_quantile_by_iter(
-                            values,
-                            quantile,
-                            interpol,
-                            offset_iter,
-                        ),
-                        Some(validity) => rolling::nulls::rolling_quantile_by_iter(
-                            values,
-                            validity,
-                            quantile,
-                            interpol,
-                            offset_iter,
-                        ),
-                    };
-                    ChunkedArray::<T>::from_chunks("", vec![arr]).into_series()
-                } else {
-                    _agg_helper_slice::<T, _>(groups, |[first, len]| {
-                        debug_assert!(first + len <= self.len() as IdxSize);
-                        match len {
-                            0 => None,
-                            1 => self.get(first as usize),
-                            _ => {
-                                let arr_group = _slice_from_offsets(self, first, len);
-                                // unwrap checked with invalid quantile check
-                                arr_group
-                                    .quantile(quantile, interpol)
-                                    .unwrap()
-                                    .map(|flt| NumCast::from(flt).unwrap())
-                            }
-                        }
-                    })
-                }
-            }
-        }
+        agg_quantile_generic::<_, Float32Type>(self, groups, quantile, interpol)
     }
     pub(crate) unsafe fn agg_median(&self, groups: &GroupsProxy) -> Series {
-        let ca = &self.0;
-        match groups {
-            GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<T, _>(groups, |idx| {
-                debug_assert!(idx.len() <= ca.len());
-                if idx.is_empty() {
-                    return None;
-                }
-                let take = { ca.take_unchecked(idx.into()) };
-                take.median_as_series().unpack::<T>().unwrap().get(0)
-            }),
-            GroupsProxy::Slice { .. } => {
-                self.agg_quantile(groups, 0.5, QuantileInterpolOptions::Linear)
-            }
-        }
+        agg_median_generic::<_, Float32Type>(self, groups)
+    }
+}
+impl Float64Chunked {
+    pub(crate) unsafe fn agg_quantile(
+        &self,
+        groups: &GroupsProxy,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    ) -> Series {
+        agg_quantile_generic::<_, Float64Type>(self, groups, quantile, interpol)
+    }
+    pub(crate) unsafe fn agg_median(&self, groups: &GroupsProxy) -> Series {
+        agg_median_generic::<_, Float64Type>(self, groups)
     }
 }
 
@@ -1032,10 +1129,7 @@ where
                     return None;
                 }
                 let take = { self.take_unchecked(idx.into()) };
-                take.var_as_series(ddof)
-                    .unpack::<Float64Type>()
-                    .unwrap()
-                    .get(0)
+                take.var(ddof)
             }),
             GroupsProxy::Slice {
                 groups: groups_slice,
@@ -1068,10 +1162,7 @@ where
                     return None;
                 }
                 let take = { self.take_unchecked(idx.into()) };
-                take.std_as_series(ddof)
-                    .unpack::<Float64Type>()
-                    .unwrap()
-                    .get(0)
+                take.std(ddof)
             }),
             GroupsProxy::Slice {
                 groups: groups_slice,
@@ -1103,77 +1194,10 @@ where
         quantile: f64,
         interpol: QuantileInterpolOptions,
     ) -> Series {
-        match groups {
-            GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<Float64Type, _>(groups, |idx| {
-                debug_assert!(idx.len() <= self.len());
-                if idx.is_empty() {
-                    return None;
-                }
-                let take = self.take_unchecked(idx.into());
-                take.quantile_as_series(quantile, interpol)
-                    .unwrap()
-                    .unpack::<Float64Type>()
-                    .unwrap()
-                    .get(0)
-            }),
-            GroupsProxy::Slice {
-                groups: groups_slice,
-                ..
-            } => {
-                if _use_rolling_kernels(groups_slice, self.chunks()) {
-                    let ca = self.cast(&DataType::Float64).unwrap();
-                    ca.agg_quantile(groups, quantile, interpol)
-                } else {
-                    _agg_helper_slice::<Float64Type, _>(groups_slice, |[first, len]| {
-                        debug_assert!(len <= self.len() as IdxSize);
-                        match len {
-                            0 => None,
-                            1 => self.get(first as usize).map(|v| NumCast::from(v).unwrap()),
-                            _ => {
-                                let arr_group = _slice_from_offsets(self, first, len);
-                                arr_group.quantile(quantile, interpol).unwrap()
-                            }
-                        }
-                    })
-                }
-            }
-        }
+        agg_quantile_generic::<_, Float64Type>(self, groups, quantile, interpol)
     }
     pub(crate) unsafe fn agg_median(&self, groups: &GroupsProxy) -> Series {
-        match groups {
-            GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<Float64Type, _>(groups, |idx| {
-                debug_assert!(idx.len() <= self.len());
-                if idx.is_empty() {
-                    return None;
-                }
-                let take = self.take_unchecked(idx.into());
-                take.median_as_series()
-                    .unpack::<Float64Type>()
-                    .unwrap()
-                    .get(0)
-            }),
-            GroupsProxy::Slice {
-                groups: groups_slice,
-                ..
-            } => {
-                if _use_rolling_kernels(groups_slice, self.chunks()) {
-                    let ca = self.cast(&DataType::Float64).unwrap();
-                    ca.agg_median(groups)
-                } else {
-                    _agg_helper_slice::<Float64Type, _>(groups_slice, |[first, len]| {
-                        debug_assert!(len <= self.len() as IdxSize);
-                        match len {
-                            0 => None,
-                            1 => self.get(first as usize).map(|v| NumCast::from(v).unwrap()),
-                            _ => {
-                                let arr_group = _slice_from_offsets(self, first, len);
-                                arr_group.median()
-                            }
-                        }
-                    })
-                }
-            }
-        }
+        agg_median_generic::<_, Float64Type>(self, groups)
     }
 }
 

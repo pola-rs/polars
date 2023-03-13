@@ -190,8 +190,9 @@ pub(crate) fn groupby_values_iter_full_lookbehind(
             }
             last = *lower;
             i += start_offset;
-            let lower = add(&offset, *lower);
-            let upper = add(&period, lower);
+            // TODO remove unwrap once time zone is respected
+            let lower = add(&offset, *lower, NO_TIMEZONE).unwrap();
+            let upper = add(&period, lower, NO_TIMEZONE).unwrap();
 
             let b = Bounds::new(lower, upper);
 
@@ -244,8 +245,9 @@ pub(crate) fn groupby_values_iter_window_behind_t(
             panic!("index column of 'groupby_rolling' must be sorted!")
         }
         last = *lower;
-        let lower = add(&offset, *lower);
-        let upper = add(&period, lower);
+        // TODO remove unwrap once time zone is respected
+        let lower = add(&offset, *lower, NO_TIMEZONE).unwrap();
+        let upper = add(&period, lower, NO_TIMEZONE).unwrap();
 
         let b = Bounds::new(lower, upper);
         if b.is_future(time[0], closed_window) {
@@ -298,8 +300,9 @@ pub(crate) fn groupby_values_iter_partial_lookbehind(
             panic!("index column of 'groupby_rolling' must be sorted!")
         }
         last = *lower;
-        let lower = add(&offset, *lower);
-        let upper = add(&period, lower);
+        // TODO remove unwrap once time zone is respected
+        let lower = add(&offset, *lower, NO_TIMEZONE).unwrap();
+        let upper = add(&period, lower, NO_TIMEZONE).unwrap();
 
         let b = Bounds::new(lower, upper);
 
@@ -347,8 +350,9 @@ pub(crate) fn groupby_values_iter_full_lookahead(
             }
             last = *lower;
             i += start_offset;
-            let lower = add(&offset, *lower);
-            let upper = add(&period, lower);
+            // TODO remove unwrap once time zone is respected
+            let lower = add(&offset, *lower, NO_TIMEZONE).unwrap();
+            let upper = add(&period, lower, NO_TIMEZONE).unwrap();
 
             let b = Bounds::new(lower, upper);
 
@@ -360,13 +364,13 @@ pub(crate) fn groupby_values_iter_full_lookahead(
         })
 }
 
-fn partially_check_sorted(time: &[i64]) {
+pub(crate) fn partially_check_sorted(time: &[i64]) {
     // check sortedness of a small subslice.
     if time.len() > 1 {
         assert!(time[..std::cmp::min(time.len(), 10)].windows(2).filter_map(|w| match w[0].cmp(&w[1]) {
             Ordering::Equal => None,
             t => Some(t)
-        }).all_equal(), "Subslice check showed that the values in `groupby_rolling` were not sorted. Pleasure ensure the index column is sorted.");
+        }).all_equal(), "Subslice check showed that the values in `groupby_rolling/groupby_dynamic` were not sorted. Pleasure ensure the index column is sorted.");
     }
 }
 
@@ -423,23 +427,25 @@ pub fn groupby_values(
             // ------t---
             // [------]
             if offset.duration_ns() < period.duration_ns() * 2 {
-                let vals = thread_offsets
-                    .par_iter()
-                    .copied()
-                    .map(|(base_offset, len)| {
-                        let upper_bound = base_offset + len;
-                        let iter = groupby_values_iter_full_lookbehind(
-                            period,
-                            offset,
-                            &time[..upper_bound],
-                            closed_window,
-                            tu,
-                            base_offset,
-                        );
-                        iter.map(|(offset, len)| [offset as IdxSize, len])
-                            .collect_trusted::<Vec<_>>()
-                    })
-                    .collect::<Vec<_>>();
+                let vals = POOL.install(|| {
+                    thread_offsets
+                        .par_iter()
+                        .copied()
+                        .map(|(base_offset, len)| {
+                            let upper_bound = base_offset + len;
+                            let iter = groupby_values_iter_full_lookbehind(
+                                period,
+                                offset,
+                                &time[..upper_bound],
+                                closed_window,
+                                tu,
+                                base_offset,
+                            );
+                            iter.map(|(offset, len)| [offset as IdxSize, len])
+                                .collect_trusted::<Vec<_>>()
+                        })
+                        .collect::<Vec<_>>()
+                });
                 flatten(&vals, Some(time.len()))
             }
             // window is completely behind t and t itself is not a member
@@ -463,25 +469,27 @@ pub fn groupby_values(
             iter.map(|(offset, len)| [offset, len]).collect_trusted()
         }
     } else {
-        let vals = thread_offsets
-            .par_iter()
-            .copied()
-            .map(|(base_offset, len)| {
-                let lower_bound = base_offset;
-                let upper_bound = base_offset + len;
-                let iter = groupby_values_iter_full_lookahead(
-                    period,
-                    offset,
-                    time,
-                    closed_window,
-                    tu,
-                    lower_bound,
-                    Some(upper_bound),
-                );
-                iter.map(|(offset, len)| [offset as IdxSize, len])
-                    .collect_trusted::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
+        let vals = POOL.install(|| {
+            thread_offsets
+                .par_iter()
+                .copied()
+                .map(|(base_offset, len)| {
+                    let lower_bound = base_offset;
+                    let upper_bound = base_offset + len;
+                    let iter = groupby_values_iter_full_lookahead(
+                        period,
+                        offset,
+                        time,
+                        closed_window,
+                        tu,
+                        lower_bound,
+                        Some(upper_bound),
+                    );
+                    iter.map(|(offset, len)| [offset as IdxSize, len])
+                        .collect_trusted::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        });
         flatten(&vals, Some(time.len()))
     }
 }

@@ -1,4 +1,6 @@
 use polars_core::export::rayon::prelude::*;
+use polars_utils::format_smartstring;
+use smartstring::alias::String as SmartString;
 
 use super::*;
 
@@ -45,10 +47,10 @@ fn det_n_fields(ca: &ListChunked, n_fields: ListToStructWidthStrategy) -> usize 
     }
 }
 
-pub type NameGenerator = Arc<dyn Fn(usize) -> String + Send + Sync>;
+pub type NameGenerator = Arc<dyn Fn(usize) -> SmartString + Send + Sync>;
 
-pub fn _default_struct_name_gen(idx: usize) -> String {
-    format!("field_{idx}")
+pub fn _default_struct_name_gen(idx: usize) -> SmartString {
+    format_smartstring!("field_{idx}")
 }
 
 pub trait ToStruct: AsList {
@@ -64,23 +66,18 @@ pub trait ToStruct: AsList {
             .as_deref()
             .unwrap_or(&_default_struct_name_gen);
 
-        if n_fields == 0 {
-            Err(PolarsError::ComputeError(
-                "cannot create a struct with 0 fields".into(),
-            ))
-        } else {
-            let fields = (0..n_fields)
-                .into_par_iter()
-                .map(|i| {
-                    ca.lst_get(i as i64).map(|mut s| {
-                        s.rename(&name_generator(i));
-                        s
-                    })
+        polars_ensure!(n_fields != 0, ComputeError: "cannot create a struct with 0 fields");
+        let fields = (0..n_fields)
+            .into_par_iter()
+            .map(|i| {
+                ca.lst_get(i as i64).map(|mut s| {
+                    s.rename(&name_generator(i));
+                    s
                 })
-                .collect::<PolarsResult<Vec<_>>>()?;
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
 
-            StructChunked::new(ca.name(), &fields)
-        }
+        StructChunked::new(ca.name(), &fields)
     }
 }
 

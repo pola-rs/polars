@@ -3,11 +3,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import polars.internals as pli
-from polars.datatypes import PolarsTemporalType
 from polars.internals.series.utils import expr_dispatch
-from polars.utils import deprecated_alias
 
 if TYPE_CHECKING:
+    from polars.datatypes import PolarsDataType, PolarsTemporalType
     from polars.internals.type_aliases import TransferEncoding
     from polars.polars import PySeries
 
@@ -29,6 +28,7 @@ class StringNameSpace:
         exact: bool = True,
         cache: bool = True,
         tz_aware: bool = False,
+        utc: bool = False,
     ) -> pli.Series:
         """
         Parse a Series of dtype Utf8 to a Date/Datetime Series.
@@ -52,6 +52,9 @@ class StringNameSpace:
         tz_aware
             Parse timezone aware datetimes. This may be automatically toggled by the
             'fmt' given.
+        utc
+            Parse timezone aware datetimes as UTC. This may be useful if you have data
+            with mixed offsets.
 
         Returns
         -------
@@ -59,6 +62,17 @@ class StringNameSpace:
 
         Examples
         --------
+        Dealing with a consistent format:
+
+        >>> ts = ["2020-01-01 01:00Z", "2020-01-01 02:00Z"]
+        >>> pl.Series(ts).str.strptime(pl.Datetime, "%Y-%m-%d %H:%M%#z")
+        shape: (2,)
+        Series: '' [datetime[μs, +00:00]]
+        [
+                2020-01-01 01:00:00 +00:00
+                2020-01-01 02:00:00 +00:00
+        ]
+
         Dealing with different formats.
 
         >>> s = pl.Series(
@@ -71,7 +85,7 @@ class StringNameSpace:
         ...     ],
         ... )
         >>> (
-        ...     s.to_frame().with_column(
+        ...     s.to_frame().with_columns(
         ...         pl.col("date")
         ...         .str.strptime(pl.Date, "%F", strict=False)
         ...         .fill_null(
@@ -171,7 +185,9 @@ class StringNameSpace:
 
         """
 
-    def contains(self, pattern: str, literal: bool = False) -> pli.Series:
+    def contains(
+        self, pattern: str | pli.Expr, literal: bool = False, strict: bool = True
+    ) -> pli.Series:
         """
         Check if strings in Series contain a substring that matches a regex.
 
@@ -181,6 +197,9 @@ class StringNameSpace:
             A valid regex pattern.
         literal
             Treat pattern as a literal string.
+        strict
+            Raise an error if the underlying pattern is not a valid regex expression,
+            otherwise mask out with a null value.
 
         Returns
         -------
@@ -210,7 +229,7 @@ class StringNameSpace:
 
         """
 
-    def ends_with(self, sub: str) -> pli.Series:
+    def ends_with(self, sub: str | pli.Expr) -> pli.Series:
         """
         Check if string values end with a substring.
 
@@ -238,7 +257,7 @@ class StringNameSpace:
 
         """
 
-    def starts_with(self, sub: str) -> pli.Series:
+    def starts_with(self, sub: str | pli.Expr) -> pli.Series:
         """
         Check if string values start with a substring.
 
@@ -304,6 +323,37 @@ class StringNameSpace:
             "626172"
             null
         ]
+
+        """
+
+    def json_extract(self, dtype: PolarsDataType | None = None) -> pli.Series:
+        """
+        Parse string values as JSON.
+
+        Throw errors if encounter invalid JSON strings.
+
+        Parameters
+        ----------
+        dtype
+            The dtype to cast the extracted value to. If None, the dtype will be
+            inferred from the JSON value.
+
+        Examples
+        --------
+        >>> s = pl.Series("json", ['{"a":1, "b": true}', None, '{"a":2, "b": false}'])
+        >>> s.str.json_extract()
+        shape: (3,)
+        Series: 'json' [struct[2]]
+        [
+                {1,true}
+                {null,null}
+                {2,false}
+        ]
+
+        See Also
+        --------
+        json_path_match : Extract the first match of json string with provided JSONPath
+            expression.
 
         """
 
@@ -828,7 +878,6 @@ class StringNameSpace:
     def to_uppercase(self) -> pli.Series:
         """Modify the strings to their uppercase equivalent."""
 
-    @deprecated_alias(start="offset")
     def slice(self, offset: int, length: int | None = None) -> pli.Series:
         """
         Create subslices of the string values of a Utf8 Series.
@@ -872,7 +921,74 @@ class StringNameSpace:
         ]
 
         """
-        s = pli.wrap_s(self._s)
-        return (
-            s.to_frame().select(pli.col(s.name).str.slice(offset, length)).to_series()
-        )
+
+    def explode(self) -> pli.Series:
+        """
+        Returns a column with a separate row for every string character.
+
+        Returns
+        -------
+        Exploded column with string datatype.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", ["foo", "bar"])
+        >>> s.str.explode()
+        shape: (6,)
+        Series: 'a' [str]
+        [
+                "f"
+                "o"
+                "o"
+                "b"
+                "a"
+                "r"
+        ]
+
+        """
+
+    def parse_int(self, radix: int = 2, strict: bool = True) -> pli.Series:
+        r"""
+        Parse integers with base radix from strings.
+
+        By default base 2. ParseError/Overflows become Nulls.
+
+        Parameters
+        ----------
+        radix
+            Positive integer which is the base of the string we are parsing.
+            Default: 2
+
+        strict
+            Bool, Defult=True will raise any ParseError or overflow as ComputeError.
+            False silently convert to Null.
+
+        Returns
+        -------
+        Series of parsed integers in i32 format
+
+        Examples
+        --------
+        >>> s = pl.Series("bin", ["110", "101", "010", "invalid"])
+        >>> s.str.parse_int(2, False)
+        shape: (4,)
+        Series: 'bin' [i32]
+        [
+                6
+                5
+                2
+                null
+        ]
+
+        >>> s = pl.Series("hex", ["fa1e", "ff00", "cafe", None])
+        >>> s.str.parse_int(16)
+        shape: (4,)
+        Series: 'hex' [i32]
+        [
+                64030
+                65280
+                51966
+                null
+        ]
+
+        """

@@ -138,12 +138,8 @@ impl Series {
         use DataType::*;
 
         match self.dtype() {
-            Float32 => {
-                SeriesWrap(self.f32().unwrap().clone()).agg_quantile(groups, quantile, interpol)
-            }
-            Float64 => {
-                SeriesWrap(self.f64().unwrap().clone()).agg_quantile(groups, quantile, interpol)
-            }
+            Float32 => self.f32().unwrap().agg_quantile(groups, quantile, interpol),
+            Float64 => self.f64().unwrap().agg_quantile(groups, quantile, interpol),
             dt if dt.is_numeric() || dt.is_temporal() => {
                 let ca = self.to_physical_repr();
                 let physical_type = ca.dtype();

@@ -25,7 +25,7 @@ pub enum TemporalFunction {
     Truncate(String, String),
     Round(String, String),
     #[cfg(feature = "timezones")]
-    CastTimezone(TimeZone),
+    CastTimezone(Option<TimeZone>),
     #[cfg(feature = "timezones")]
     TzLocalize(TimeZone),
     DateRange {
@@ -59,7 +59,7 @@ impl Display for TemporalFunction {
             Truncate(..) => "truncate",
             Round(..) => "round",
             #[cfg(feature = "timezones")]
-            CastTimezone(_) => "cast_timezone",
+            CastTimezone(_) => "replace_timezone",
             #[cfg(feature = "timezones")]
             TzLocalize(_) => "tz_localize",
             DateRange { .. } => return write!(f, "date_range"),
@@ -114,48 +114,44 @@ pub(super) fn nanosecond(s: &Series) -> PolarsResult<Series> {
 pub(super) fn timestamp(s: &Series, tu: TimeUnit) -> PolarsResult<Series> {
     s.timestamp(tu).map(|ca| ca.into_series())
 }
+
 pub(super) fn truncate(s: &Series, every: &str, offset: &str) -> PolarsResult<Series> {
     let every = Duration::parse(every);
     let offset = Duration::parse(offset);
-    match s.dtype() {
-        DataType::Datetime(_, _) => Ok(s.datetime().unwrap().truncate(every, offset).into_series()),
-        DataType::Date => Ok(s.date().unwrap().truncate(every, offset).into_series()),
-        dt => Err(PolarsError::ComputeError(
-            format!("expected date/datetime got {dt:?}").into(),
-        )),
-    }
+    Ok(match s.dtype() {
+        DataType::Datetime(_, _) => s.datetime().unwrap().truncate(every, offset).into_series(),
+        DataType::Date => s.date().unwrap().truncate(every, offset).into_series(),
+        dt => polars_bail!(opq = round, got = dt, expected = "date/datetime"),
+    })
 }
+
 pub(super) fn round(s: &Series, every: &str, offset: &str) -> PolarsResult<Series> {
     let every = Duration::parse(every);
     let offset = Duration::parse(offset);
-    match s.dtype() {
-        DataType::Datetime(_, _) => Ok(s.datetime().unwrap().round(every, offset).into_series()),
-        DataType::Date => Ok(s.date().unwrap().round(every, offset).into_series()),
-        dt => Err(PolarsError::ComputeError(
-            format!("expected date/datetime got {dt:?}").into(),
-        )),
-    }
-}
-#[cfg(feature = "timezones")]
-pub(super) fn cast_timezone(s: &Series, tz: &str) -> PolarsResult<Series> {
-    let ca = s.datetime()?;
-    ca.cast_time_zone(tz).map(|ca| ca.into_series())
+    Ok(match s.dtype() {
+        DataType::Datetime(_, _) => s.datetime().unwrap().round(every, offset).into_series(),
+        DataType::Date => s.date().unwrap().round(every, offset).into_series(),
+        dt => polars_bail!(opq = round, got = dt, expected = "date/datetime"),
+    })
 }
 
 #[cfg(feature = "timezones")]
+pub(super) fn replace_timezone(s: &Series, time_zone: Option<&str>) -> PolarsResult<Series> {
+    let ca = s.datetime()?;
+    ca.replace_time_zone(time_zone).map(|ca| ca.into_series())
+}
+
+#[cfg(feature = "timezones")]
+#[deprecated(note = "use replace_time_zone")]
 pub(super) fn tz_localize(s: &Series, tz: &str) -> PolarsResult<Series> {
     let ca = s.datetime()?.clone();
-    match ca.time_zone() {
-        Some(tz) if tz == "UTC" => {
-           Ok(ca.with_time_zone(Some("UTC".into())).into_series())
-        }
-        Some(tz) if !tz.is_empty() => {
-            Err(PolarsError::ComputeError("Cannot localize a tz-aware datetime. Consider using 'dt.with_time_zone' or 'dt.cast_time_zone'".into()))
-        },
-        _ => {
-            Ok(ca.with_time_zone(Some("UTC".to_string())).cast_time_zone(tz)?.into_series())
-        }
-    }
+    polars_ensure!(
+        ca.time_zone().as_ref().map_or(true, |tz| tz.is_empty()),
+        ComputeError:
+        "cannot localize a tz-aware datetime \
+        (consider using 'dt.convert_time_zone' or 'dt.replace_time_zone')"
+    );
+    Ok(ca.replace_time_zone(Some(tz))?.into_series())
 }
 
 pub(super) fn date_range_dispatch(
@@ -168,11 +164,10 @@ pub(super) fn date_range_dispatch(
     let start = &s[0];
     let stop = &s[1];
 
-    if start.len() != stop.len() {
-        return Err(PolarsError::ComputeError(
-            "'start' and 'stop' should have the same length.".into(),
-        ));
-    }
+    polars_ensure!(
+        start.len() == stop.len(),
+        ComputeError: "'start' and 'stop' should have the same length",
+    );
     const TO_MS: i64 = SECONDS_IN_DAY * 1000;
 
     if start.len() == 1 && stop.len() == 1 {
@@ -192,7 +187,7 @@ pub(super) fn date_range_dispatch(
                     closed,
                     TimeUnit::Milliseconds,
                     tz.as_ref(),
-                )
+                )?
                 .cast(&DataType::Date)
             }
             DataType::Datetime(tu, _) => {
@@ -202,7 +197,7 @@ pub(super) fn date_range_dispatch(
                 let stop = stop.get(0).unwrap().extract::<i64>().unwrap();
 
                 Ok(
-                    date_range_impl(name, start, stop, every, closed, *tu, tz.as_ref())
+                    date_range_impl(name, start, stop, every, closed, *tu, tz.as_ref())?
                         .into_series(),
                 )
             }
@@ -239,7 +234,7 @@ pub(super) fn date_range_dispatch(
                     match (start, stop) {
                         (Some(start), Some(stop)) => {
                             let date_range =
-                                date_range_impl("", start, stop, every, closed, tu, tz);
+                                date_range_impl("", start, stop, every, closed, tu, tz)?;
                             let date_range = date_range.cast(&DataType::Date).unwrap();
                             let date_range = date_range.to_physical_repr();
                             let date_range = date_range.i32().unwrap();
@@ -262,7 +257,7 @@ pub(super) fn date_range_dispatch(
                     match (start, stop) {
                         (Some(start), Some(stop)) => {
                             let date_range =
-                                date_range_impl("", start, stop, every, closed, tu, tz);
+                                date_range_impl("", start, stop, every, closed, tu, tz)?;
                             builder.append_slice(date_range.cont_slice().unwrap())
                         }
                         _ => builder.append_null(),

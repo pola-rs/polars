@@ -13,6 +13,18 @@ use polars_core::series::ops::NullBehavior;
 use polars_core::utils::{try_get_supertype, CustomIterTools};
 
 use super::*;
+use crate::chunked_array::list::min_max::{list_max_function, list_min_function};
+use crate::prelude::list::sum_mean::{mean_list_numerical, sum_list_numerical};
+use crate::series::ArgAgg;
+
+pub(super) fn has_inner_nulls(ca: &ListChunked) -> bool {
+    for arr in ca.downcast_iter() {
+        if arr.values().null_count() > 0 {
+            return true;
+        }
+    }
+    false
+}
 
 fn cast_rhs(
     other: &mut [Series],
@@ -31,30 +43,28 @@ fn cast_rhs(
             *s = s.reshape(&[-1, 1]).unwrap();
         }
         if s.dtype() != dtype {
-            match s.cast(dtype) {
-                Ok(out) => {
-                    *s = out;
-                }
-                Err(_) => {
-                    return Err(PolarsError::SchemaMisMatch(
-                        format!("cannot concat {:?} into a list of {:?}", s.dtype(), dtype).into(),
-                    ));
-                }
-            }
+            *s = s.cast(dtype).map_err(|e| {
+                polars_err!(
+                    SchemaMismatch:
+                    "cannot concat `{}` into a list of `{}`: {}",
+                    s.dtype(),
+                    dtype,
+                    e
+                )
+            })?;
         }
 
         if s.len() != length {
-            if s.len() == 1 {
-                if allow_broadcast {
-                    // broadcast JIT
-                    *s = s.new_from_index(0, length)
-                }
-                // else do nothing
-            } else {
-                return Err(PolarsError::ShapeMisMatch(
-                    format!("length {} does not match {}", s.len(), length).into(),
-                ));
+            polars_ensure!(
+                s.len() == 1,
+                ShapeMismatch: "series length {} does not match expected length of {}",
+                s.len(), length
+            );
+            if allow_broadcast {
+                // broadcast JIT
+                *s = s.new_from_index(0, length)
             }
+            // else do nothing
         }
     }
     Ok(())
@@ -95,45 +105,129 @@ pub trait ListNameSpaceImpl: AsList {
                 });
                 Ok(builder.finish())
             }
-            dt => Err(PolarsError::SchemaMisMatch(
-                format!(
-                    "cannot call lst.join on Series with dtype {dt:?}.\
-                Inner type must be Utf8",
-                )
-                .into(),
-            )),
+            dt => polars_bail!(op = "`lst.join`", got = dt, expected = "Utf8"),
         }
     }
 
     fn lst_max(&self) -> Series {
-        let ca = self.as_list();
-        ca.apply_amortized(|s| s.as_ref().max_as_series())
-            .explode()
-            .unwrap()
-            .into_series()
+        list_max_function(self.as_list())
     }
 
     fn lst_min(&self) -> Series {
-        let ca = self.as_list();
-        ca.apply_amortized(|s| s.as_ref().min_as_series())
-            .explode()
-            .unwrap()
-            .into_series()
+        list_min_function(self.as_list())
     }
 
     fn lst_sum(&self) -> Series {
+        fn inner(ca: &ListChunked, inner_dtype: &DataType) -> Series {
+            use DataType::*;
+            // TODO: add fast path for smaller ints?
+            let mut out = match inner_dtype {
+                Boolean => {
+                    let out: IdxCa = ca
+                        .amortized_iter()
+                        .map(|s| s.and_then(|s| s.as_ref().sum()))
+                        .collect();
+                    out.into_series()
+                }
+                UInt32 => {
+                    let out: UInt32Chunked = ca
+                        .amortized_iter()
+                        .map(|s| s.and_then(|s| s.as_ref().sum()))
+                        .collect();
+                    out.into_series()
+                }
+                UInt64 => {
+                    let out: UInt64Chunked = ca
+                        .amortized_iter()
+                        .map(|s| s.and_then(|s| s.as_ref().sum()))
+                        .collect();
+                    out.into_series()
+                }
+                Int32 => {
+                    let out: Int32Chunked = ca
+                        .amortized_iter()
+                        .map(|s| s.and_then(|s| s.as_ref().sum()))
+                        .collect();
+                    out.into_series()
+                }
+                Int64 => {
+                    let out: Int64Chunked = ca
+                        .amortized_iter()
+                        .map(|s| s.and_then(|s| s.as_ref().sum()))
+                        .collect();
+                    out.into_series()
+                }
+                Float32 => {
+                    let out: Float32Chunked = ca
+                        .amortized_iter()
+                        .map(|s| s.and_then(|s| s.as_ref().sum()))
+                        .collect();
+                    out.into_series()
+                }
+                Float64 => {
+                    let out: Float64Chunked = ca
+                        .amortized_iter()
+                        .map(|s| s.and_then(|s| s.as_ref().sum()))
+                        .collect();
+                    out.into_series()
+                }
+                // slowest sum_as_series path
+                _ => ca
+                    .apply_amortized(|s| s.as_ref().sum_as_series())
+                    .explode()
+                    .unwrap()
+                    .into_series(),
+            };
+            out.rename(ca.name());
+            out
+        }
+
         let ca = self.as_list();
-        ca.apply_amortized(|s| s.as_ref().sum_as_series())
-            .explode()
-            .unwrap()
-            .into_series()
+
+        if has_inner_nulls(ca) {
+            return inner(ca, &ca.inner_dtype());
+        };
+
+        match ca.inner_dtype() {
+            DataType::Boolean => count_boolean_bits(ca).into_series(),
+            dt if dt.is_numeric() => sum_list_numerical(ca, &dt),
+            dt => inner(ca, &dt),
+        }
     }
 
-    fn lst_mean(&self) -> Float64Chunked {
+    fn lst_mean(&self) -> Series {
+        fn inner(ca: &ListChunked) -> Series {
+            let mut out: Float64Chunked = ca
+                .amortized_iter()
+                .map(|s| s.and_then(|s| s.as_ref().mean()))
+                .collect();
+
+            out.rename(ca.name());
+            out.into_series()
+        }
+        use DataType::*;
+
         let ca = self.as_list();
-        ca.amortized_iter()
-            .map(|s| s.and_then(|s| s.as_ref().mean()))
-            .collect()
+
+        if has_inner_nulls(ca) {
+            return match ca.inner_dtype() {
+                Float32 => {
+                    let mut out: Float32Chunked = ca
+                        .amortized_iter()
+                        .map(|s| s.and_then(|s| s.as_ref().mean().map(|v| v as f32)))
+                        .collect();
+
+                    out.rename(ca.name());
+                    out.into_series()
+                }
+                _ => inner(ca),
+            };
+        };
+
+        match ca.inner_dtype() {
+            dt if dt.is_numeric() => mean_list_numerical(ca, &dt),
+            _ => inner(ca),
+        }
     }
 
     #[must_use]
@@ -214,6 +308,8 @@ pub trait ListNameSpaceImpl: AsList {
             .map(|arr| sublist_get(arr, idx))
             .collect::<Vec<_>>();
         Series::try_from((ca.name(), chunks))
+            .unwrap()
+            .cast(&ca.inner_dtype())
     }
 
     #[cfg(feature = "list_take")]
@@ -279,12 +375,10 @@ pub trait ListNameSpaceImpl: AsList {
                         Ok(out.into_series())
                     }
                 } else {
-                    Err(PolarsError::ComputeError("All indices are null".into()))
+                    polars_bail!(ComputeError: "all indices are null");
                 }
             }
-            dt => Err(PolarsError::ComputeError(
-                format!("Cannot use dtype: '{dt}' as index.").into(),
-            )),
+            dt => polars_bail!(ComputeError: "cannot use dtype `{}` as an index", dt),
         }
     }
 
@@ -537,11 +631,9 @@ fn cast_index(idx: Series, len: usize, null_on_oob: bool) -> PolarsResult<Series
             unreachable!()
         }
     };
-    if !null_on_oob && out.null_count() != idx_null_count {
-        Err(PolarsError::ComputeError(
-            "Take indices are out of bounds.".into(),
-        ))
-    } else {
-        Ok(out)
-    }
+    polars_ensure!(
+        out.null_count() == idx_null_count || null_on_oob,
+        ComputeError: "take indices are out of bounds"
+    );
+    Ok(out)
 }
