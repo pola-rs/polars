@@ -16,17 +16,20 @@ def show_versions() -> None:
     --------
     >>> pl.show_versions()  # doctest: +SKIP
     ---Version info---
-    Polars: 0.14.0
+    Polars: 0.16.13
     Index type: UInt32
-    Platform: Linux-5.10.16.3-microsoft-standard-WSL2-x86_64-with-glibc2.31
-    Python: 3.10.5 (main, Jul  8 2022, 14:32:56) [GCC 10.2.1 20210110]
+    Platform: macOS-13.2.1-arm64-arm-64bit
+    Python: 3.11.2 (main, Feb 16 2023, 02:55:59) [Clang 14.0.0 (clang-1400.0.29.202)]
     ---Optional dependencies---
-    pyarrow: 8.0.0
-    pandas: 1.4.3
-    numpy: 1.23.0
+    numpy: 1.24.2
+    pandas: 1.5.3
+    pyarrow: 11.0.0
+    connectorx: 0.3.2_alpha.2
+    deltalake: <version not detected>
     fsspec: <not installed>
-    connectorx: <not installed>
-    xlsx2csv: <not installed>
+    matplotlib: <not installed>
+    xlsx2csv: 0.8.1
+    xlsxwriter: 3.0.8
 
     """
     print("---Version info---")
@@ -44,14 +47,15 @@ def show_versions() -> None:
 def _get_dependency_info() -> dict[str, str]:
     # see the list of dependencies in pyproject.toml
     opt_deps = [
-        "pyarrow",
-        "pandas",
         "numpy",
-        "fsspec",
+        "pandas",
+        "pyarrow",
         "connectorx",
-        "xlsx2csv",
         "deltalake",
+        "fsspec",
         "matplotlib",
+        "xlsx2csv",
+        "xlsxwriter",
     ]
     return {name: _get_dependency_version(name) for name in opt_deps}
 

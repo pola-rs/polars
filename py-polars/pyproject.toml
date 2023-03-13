@@ -53,8 +53,9 @@ deltalake = ["deltalake >= 0.6.2"]
 timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
 matplotlib = ["matplotlib"]
 sqlalchemy = ["sqlalchemy", "pandas"]
+xlsxwriter = ["xlsxwriter"]
 all = [
-  "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib,sqlalchemy]",
+  "polars[pyarrow,pandas,numpy,fsspec,connectorx,xlsx2csv,deltalake,timezone,matplotlib,sqlalchemy,xlsxwriter]",
 ]
 
 [tool.mypy]
@@ -129,7 +130,6 @@ ignore = [
   # pydocstyle: http://www.pydocstyle.org/en/stable/error_codes.html
   # numpy convention with a few additional lints
   "D107",
-  "D202", # No blank lines allowed after function docstring -> clashes with Black
   "D203",
   "D212",
   "D401",

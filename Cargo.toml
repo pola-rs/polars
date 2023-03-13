@@ -16,6 +16,7 @@ members = [
   "examples/read_csv",
   "examples/read_parquet",
   "examples/read_parquet_cloud",
+  "examples/string_filter",
   "examples/python_rust_compiled_function",
 ]
 
