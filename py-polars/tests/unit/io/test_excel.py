@@ -1,10 +1,9 @@
 from __future__ import annotations
-import os
-from pathlib import Path
 
-from datetime import date, datetime
+from datetime import date
 from io import BytesIO
 from typing import TYPE_CHECKING, Any
+
 import pytest
 
 import polars as pl
@@ -37,10 +36,9 @@ def test_read_excel_all_sheets(excel_file_path: Path) -> None:
     assert_frame_equal(df["Sheet2"], expected2)
 
 
-def test_read_excel_all_sheets_openpyxl() -> None:
-    example_file = Path(__file__).parent.parent / "files" / "example.xlsx"
+def test_read_excel_all_sheets_openpyxl(excel_file_path: Path) -> None:
     df = pl.read_excel(  # type: ignore[call-overload]
-        example_file, sheet_id=None, engine="openpyxl"
+        excel_file_path, sheet_id=None, engine="openpyxl"
     )
 
     expected1 = pl.DataFrame({"hello": ["Row 1", "Row 2"]})
@@ -58,9 +56,7 @@ def test_write_excel_bytes() -> None:
     )
     excel_bytes = df.write_excel(None)
     assert isinstance(excel_bytes, bytes)
-    df_read = pl.read_excel(  # type: ignore[call-overload]
-        excel_bytes, engine="openpyxl"
-    )
+    df_read = pl.read_excel(excel_bytes)
     assert_frame_equal(df, df_read)
 
 

@@ -46,7 +46,7 @@ def read_excel(
 
 @overload
 def read_excel(
-    file: str | BytesIO | Path | BinaryIO | bytes,
+    source: str | BytesIO | Path | BinaryIO | bytes,
     sheet_id: int,
     sheet_name: Literal[None],
     xlsx2csv_options: dict[str, Any] | None = None,
