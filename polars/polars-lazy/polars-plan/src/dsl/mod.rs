@@ -6,7 +6,7 @@ pub use cat::*;
 mod arithmetic;
 pub mod binary;
 #[cfg(feature = "temporal")]
-mod dt;
+pub mod dt;
 mod expr;
 mod from;
 pub(crate) mod function_expr;
