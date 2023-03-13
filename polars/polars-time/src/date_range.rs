@@ -4,7 +4,7 @@ use arrow::temporal_conversions::{
 };
 #[cfg(feature = "timezones")]
 use chrono::TimeZone as TimeZoneTrait;
-use chrono::{Datelike, FixedOffset, NaiveDateTime};
+use chrono::{Datelike, NaiveDateTime};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 
@@ -20,9 +20,15 @@ pub fn in_nanoseconds_window(ndt: &NaiveDateTime) -> bool {
 #[cfg(feature = "timezones")]
 fn localize_timestamp<T: TimeZoneTrait>(timestamp: i64, tu: TimeUnit, tz: T) -> PolarsResult<i64> {
     match tu {
-        TimeUnit::Nanoseconds => Ok(localize_datetime(timestamp_ns_to_datetime(timestamp), &tz)?.timestamp_nanos()),
-        TimeUnit::Microseconds => Ok(localize_datetime(timestamp_us_to_datetime(timestamp), &tz)?.timestamp_micros()),
-        TimeUnit::Milliseconds => Ok(localize_datetime(timestamp_ms_to_datetime(timestamp), &tz)?.timestamp_millis()),
+        TimeUnit::Nanoseconds => {
+            Ok(localize_datetime(timestamp_ns_to_datetime(timestamp), &tz)?.timestamp_nanos())
+        }
+        TimeUnit::Microseconds => {
+            Ok(localize_datetime(timestamp_us_to_datetime(timestamp), &tz)?.timestamp_micros())
+        }
+        TimeUnit::Milliseconds => {
+            Ok(localize_datetime(timestamp_ms_to_datetime(timestamp), &tz)?.timestamp_millis())
+        }
     }
 }
 
@@ -69,7 +75,7 @@ pub fn date_range_impl(
         },
         _ => Int64Chunked::new_vec(
             name,
-            date_range_vec(start, stop, every, closed, tu, None::<&FixedOffset>)?,
+            date_range_vec(start, stop, every, closed, tu, NO_TIMEZONE)?,
         )
         .into_datetime(tu, None),
     };

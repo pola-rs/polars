@@ -1,6 +1,4 @@
 #[cfg(feature = "date_offset")]
-use chrono::FixedOffset;
-#[cfg(feature = "date_offset")]
 use polars_time::prelude::*;
 
 use super::*;
@@ -27,7 +25,7 @@ pub(super) fn date_offset(s: Series, offset: Duration) -> PolarsResult<Series> {
                 TimeUnit::Milliseconds => Duration::add_ms,
             };
             // TODO remove unwrap once time zone is respected
-            ca.0.apply_mut(|v| adder(&offset, v, None::<&FixedOffset>).unwrap());
+            ca.0.apply_mut(|v| adder(&offset, v, NO_TIMEZONE).unwrap());
             Ok(ca.into_series())
         }
         dt => polars_bail!(
