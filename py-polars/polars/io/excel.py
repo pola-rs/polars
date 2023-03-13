@@ -27,6 +27,7 @@ def read_excel(
     sheet_name: Literal[None],
     xlsx2csv_options: dict[str, Any] | None,
     read_csv_options: dict[str, Any] | None,
+    engine: Literal["xlsx2csv", "openpyxl"] | None = None,
 ) -> dict[str, DataFrame]:
     ...
 
@@ -38,17 +39,19 @@ def read_excel(
     sheet_name: str,
     xlsx2csv_options: dict[str, Any] | None = None,
     read_csv_options: dict[str, Any] | None = None,
+    engine: Literal["xlsx2csv", "openpyxl"] | None = None,
 ) -> DataFrame:
     ...
 
 
 @overload
 def read_excel(
-    source: str | BytesIO | Path | BinaryIO | bytes,
+    file: str | BytesIO | Path | BinaryIO | bytes,
     sheet_id: int,
     sheet_name: Literal[None],
     xlsx2csv_options: dict[str, Any] | None = None,
     read_csv_options: dict[str, Any] | None = None,
+    engine: Literal["xlsx2csv", "openpyxl"] | None = None,
 ) -> DataFrame:
     ...
 
@@ -61,6 +64,7 @@ def read_excel(
     sheet_name: str | None = None,
     xlsx2csv_options: dict[str, Any] | None = None,
     read_csv_options: dict[str, Any] | None = None,
+    engine: Literal["xlsx2csv", "openpyxl"] | None = None,
 ) -> DataFrame | dict[str, DataFrame]:
     """
     Read Excel (XLSX) sheet into a DataFrame.
@@ -86,11 +90,14 @@ def read_excel(
         ``xlsx2csv.Xlsx2csv().convert()``
         e.g.: ``{"has_header": False, "new_columns": ["a", "b", "c"],
         "infer_schema_length": None}``
-
+    engine
+        Library used to parse Excel, either openpyxl or xlsx2csv (default is xlsx2csv).
+        Please not that xlsx2csv converts first to csv, making type inference worse
+        than openpyxl. To remedy that, you can use the extra options defined on
+        `xlsx2csv_options` and `read_csv_options`
     Returns
     -------
-    DataFrame
-
+    DataFrame | dict[str, DataFrame]
     Examples
     --------
     Read "My Datasheet" sheet from Excel sheet file to a DataFrame.
@@ -130,13 +137,6 @@ def read_excel(
     >>> pl.from_pandas(pd.read_excel("test.xlsx"))  # doctest: +SKIP
 
     """
-    try:
-        import xlsx2csv
-    except ImportError:
-        raise ImportError(
-            "xlsx2csv is not installed. Please run `pip install xlsx2csv`."
-        ) from None
-
     if isinstance(source, (str, Path)):
         source = normalise_filepath(source)
 
@@ -146,21 +146,76 @@ def read_excel(
     if not read_csv_options:
         read_csv_options = {}
 
-    # Convert sheets from XSLX document to CSV.
-    parser = xlsx2csv.Xlsx2csv(source, **xlsx2csv_options)
-
-    if (sheet_name is not None) or ((sheet_id is not None) and (sheet_id > 0)):
-        return _read_excel_sheet(parser, sheet_id, sheet_name, read_csv_options)
+    reader_fn: Any  # make mypy happy
+    # do conditions imports
+    if engine == "openpyxl":
+        try:
+            import openpyxl  # type: ignore[import]
+        except ImportError:
+            raise ImportError(
+                "openpyxl is not installed. Please run `pip install openpyxl`."
+            ) from None
+        parser = openpyxl.load_workbook(source, read_only=True)
+        sheets = [{"index": i, "name": sheet.title} for i, sheet in enumerate(parser)]
+        reader_fn = _read_excel_sheet_openpyxl
+        # setup good defaults for the sheet id
+        engine_sheet_id = sheet_id
+    elif engine == "xlsx2csv" or engine is None:  # default
+        try:
+            import xlsx2csv  # type: ignore[import]
+        except ImportError:
+            raise ImportError(
+                "xlsx2csv is not installed. Please run `pip install xlsx2csv`."
+            ) from None
+        # Convert sheets from XSLX document to CSV.
+        parser = xlsx2csv.Xlsx2csv(source, **xlsx2csv_options)
+        sheets = parser.workbook.sheets
+        reader_fn = _read_excel_sheet_xlsx2csv
+        # setup good defaults for the sheet id
+        engine_sheet_id = 1 if sheet_id == 0 else sheet_id
     else:
-        return {
-            sheet["name"]: _read_excel_sheet(
-                parser, sheet["index"], None, read_csv_options
-            )
-            for sheet in parser.workbook.sheets
+        raise NotImplementedError(f"Cannot find the {engine} engine")
+
+    if sheet_id is None and sheet_name is None:
+        ret_val = {
+            sheet["name"]: reader_fn(parser, sheet["index"], None, read_csv_options)
+            for sheet in sheets
         }
+    else:
+        ret_val = reader_fn(parser, engine_sheet_id, sheet_name, read_csv_options)
+
+    if engine == "openpyxl":
+        # close iterator
+        parser.close()
+    return ret_val
 
 
-def _read_excel_sheet(
+def _read_excel_sheet_openpyxl(
+    parser: Any,
+    sheet_id: int | None,
+    sheet_name: str | None,
+    _: dict[str, Any] | None,
+) -> DataFrame:
+    # read requested sheet if provided on kwargs, otherwise read active sheet
+    if sheet_name is not None:
+        ws = parser[sheet_name]
+    elif sheet_id is not None:
+        ws = parser.worksheets[sheet_id]
+    else:
+        ws = parser.active
+
+    rows_iter = iter(ws.rows)
+
+    # check whether to include or omit the header
+    header = [str(cell.value) for cell in next(rows_iter)]
+
+    df = DataFrame(
+        {key: cell.value for key, cell in zip(header, row)} for row in rows_iter
+    )
+    return df
+
+
+def _read_excel_sheet_xlsx2csv(
     parser: Any,
     sheet_id: int | None,
     sheet_name: str | None,
