@@ -91,7 +91,7 @@ def selection_to_pyexpr_list(
     ]
 
 
-def expr_output_name(expr: pli.Expr) -> str | None:
+def expr_output_name(expr: Expr) -> str | None:
     try:
         return expr.meta.output_name()
     except Exception:

@@ -1230,9 +1230,7 @@ class Series:
         else:
             raise TypeError("This type is not supported")
 
-        return pli.DataFrame(
-            {"statistic": list(stats.keys()), "value": list(stats.values())}
-        )
+        return pli.DataFrame({"statistic": stats.keys(), "value": stats.values()})
 
     def sum(self) -> int | float:
         """
@@ -1476,20 +1474,16 @@ class Series:
         """
         var_nm = self.name
 
-        cuts_df = pli.DataFrame(
-            [
-                pli.Series(
-                    name=break_point_label, values=bins, dtype=Float64
-                ).extend_constant(float("inf"), 1)
-            ]
+        cuts_df = (
+            Series(break_point_label, bins, dtype=Float64)
+            .extend_constant(float("inf"), 1)
+            .to_frame()
         )
 
         if labels:
             if len(labels) != len(bins) + 1:
                 raise ValueError("expected more labels")
-            cuts_df = cuts_df.with_columns(
-                pli.Series(name=category_label, values=labels)
-            )
+            cuts_df = cuts_df.with_columns(Series(category_label, labels))
         else:
             cuts_df = cuts_df.with_columns(
                 pli.format(
@@ -4244,12 +4238,12 @@ class Series:
 
     def rolling_apply(
         self,
-        function: Callable[[pli.Series], Any],
+        function: Callable[[Series], Any],
         window_size: int,
         weights: list[float] | None = None,
         min_periods: int | None = None,
         center: bool = False,
-    ) -> pli.Series:
+    ) -> Series:
         """
         Apply a custom rolling window function.
 
@@ -4557,7 +4551,7 @@ class Series:
         seed_1: int | None = None,
         seed_2: int | None = None,
         seed_3: int | None = None,
-    ) -> pli.Series:
+    ) -> Series:
         """
         Hash the Series.
 
@@ -5393,7 +5387,7 @@ class Series:
         """
         return wrap_s(self._s.set_sorted_flag(descending))
 
-    def new_from_index(self, index: int, length: int) -> pli.Series:
+    def new_from_index(self, index: int, length: int) -> Series:
         """Create a new Series filled with values from the given index."""
         return wrap_s(self._s.new_from_index(index, length))
 
