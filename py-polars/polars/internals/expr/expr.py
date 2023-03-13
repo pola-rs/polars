@@ -218,24 +218,32 @@ class Expr:
         return self._from_pyexpr(self._to_pyexpr(other)._or(self._pyexpr))
 
     def __add__(self, other: Any) -> Self:
+        if isinstance(other, pli.Series) and "col" not in self.__str__():
+            return NotImplemented
         return self._from_pyexpr(self._pyexpr + self._to_pyexpr(other))
 
     def __radd__(self, other: Any) -> Self:
         return self._from_pyexpr(self._to_pyexpr(other) + self._pyexpr)
 
     def __sub__(self, other: Any) -> Self:
+        if isinstance(other, pli.Series) and "col" not in self.__str__():
+            return NotImplemented
         return self._from_pyexpr(self._pyexpr - self._to_pyexpr(other))
 
     def __rsub__(self, other: Any) -> Self:
         return self._from_pyexpr(self._to_pyexpr(other) - self._pyexpr)
 
     def __mul__(self, other: Any) -> Self:
+        if isinstance(other, pli.Series) and "col" not in self.__str__():
+            return NotImplemented
         return self._from_pyexpr(self._pyexpr * self._to_pyexpr(other))
 
     def __rmul__(self, other: Any) -> Self:
         return self._from_pyexpr(self._to_pyexpr(other) * self._pyexpr)
 
     def __truediv__(self, other: Any) -> Self:
+        if isinstance(other, pli.Series) and "col" not in self.__str__():
+            return NotImplemented
         return self._from_pyexpr(self._pyexpr / self._to_pyexpr(other))
 
     def __rtruediv__(self, other: Any) -> Self:

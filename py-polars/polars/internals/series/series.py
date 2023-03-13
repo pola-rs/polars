@@ -55,7 +55,6 @@ from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import (
-    ColumnNotFoundError,
     ShapeError,
 )
 from polars.internals.construction import (
@@ -533,10 +532,15 @@ class Series:
 
     def _arithmetic(self, other: Any, op_s: str, op_ffi: str) -> Series:
         if isinstance(other, pli.Expr):
-            # expand pl.lit, pl.datetime, pl.duration Exprs to compatible Series
+            if "col" in other.__str__():
+                return NotImplemented
+            # Expand pl.lit, pl.datetime, pl.duration Exprs to compatible Series
             other = self.to_frame().select(other).to_series()
         if isinstance(other, Series):
-            return wrap_s(getattr(self._s, op_s)(other._s))
+            if "rhs" in op_ffi:
+                return wrap_s(getattr(other._s, op_s)(self._s))
+            else:
+                return wrap_s(getattr(self._s, op_s)(other._s))
         if _check_for_numpy(other) and isinstance(other, np.ndarray):
             return wrap_s(getattr(self._s, op_s)(Series(other)._s))
         if (
@@ -563,24 +567,14 @@ class Series:
         ...
 
     @overload
-    def __add__(self, other: pli.Expr) -> pli.Expr | Series:  # type: ignore[misc]
-        ...
-
-    @overload
     def __add__(self, other: Any) -> Series:
         ...
 
-    def __add__(self, other: Any) -> Series | pli.DataFrame | pli.Expr:
+    def __add__(self, other: Any) -> Series | pli.DataFrame:
         if isinstance(other, str):
             other = Series("", [other])
         elif isinstance(other, pli.DataFrame):
             return other + self
-        elif isinstance(other, pli.Expr):
-            try:
-                # Expand pl.lit, pl.datetime, pl.duration Exprs to compatible Series
-                other = self.to_frame().select(other).to_series()
-            except ColumnNotFoundError:
-                return other + self
         return self._arithmetic(other, "add", "add_<>")
 
     def __sub__(self, other: Any) -> Series:
@@ -615,24 +609,14 @@ class Series:
         ...
 
     @overload
-    def __mul__(self, other: pli.Expr) -> pli.Expr | Series:  # type: ignore[misc]
-        ...
-
-    @overload
     def __mul__(self, other: Any) -> Series:
         ...
 
-    def __mul__(self, other: Any) -> Series | pli.DataFrame | pli.Expr:
+    def __mul__(self, other: Any) -> Series | pli.DataFrame:
         if self.is_temporal():
             raise ValueError("first cast to integer before multiplying datelike dtypes")
         elif isinstance(other, pli.DataFrame):
             return other * self
-        elif isinstance(other, pli.Expr):
-            try:
-                # Expand pl.lit, pl.datetime, pl.duration Exprs to compatible Series
-                other = self.to_frame().select(other).to_series()
-            except ColumnNotFoundError:
-                return other * self
         return self._arithmetic(other, "mul", "mul_<>")
 
     def __mod__(self, other: Any) -> Series:
@@ -675,7 +659,7 @@ class Series:
     def __rmul__(self, other: Any) -> Series:
         if self.is_temporal():
             raise ValueError("first cast to integer before multiplying datelike dtypes")
-        return self._arithmetic(other, "mul", "mul_<>")
+        return self._arithmetic(other, "mul", "mul_<>_rhs")
 
     def __pow__(self, power: int | float | Series) -> Series:
         if self.is_temporal():
