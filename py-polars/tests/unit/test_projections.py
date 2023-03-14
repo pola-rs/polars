@@ -236,3 +236,20 @@ def test_asof_join_projection_() -> None:
             5.0,
         ],
     }
+
+
+def test_merge_sorted_projection_pd() -> None:
+    lf = pl.LazyFrame(
+        {
+            "foo": [1, 2, 3, 4],
+            "bar": ["patrick", "lukas", "onion", "afk"],
+        }
+    ).sort("foo")
+
+    lf2 = pl.LazyFrame({"foo": [5, 6], "bar": ["nice", "false"]}).sort("foo")
+
+    assert (
+        lf.merge_sorted(lf2, key="foo").reverse().select(["bar"])
+    ).collect().to_dict(False) == {
+        "bar": ["false", "nice", "afk", "onion", "lukas", "patrick"]
+    }
