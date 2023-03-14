@@ -38,7 +38,7 @@ impl ParquetSource {
 
         let n_cols = projection.as_ref().map(|v| v.len()).unwrap_or(schema.len());
         let n_threads = POOL.current_num_threads();
-        let chunk_size = determine_chunk_size(n_cols, n_threads);
+        let chunk_size = determine_chunk_size(n_cols, n_threads)?;
 
         if verbose {
             eprintln!("STREAMING CHUNK SIZE: {chunk_size} rows")

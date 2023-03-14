@@ -47,7 +47,7 @@ impl CsvSource {
         };
         // inversely scale the chunk size by the number of threads so that we reduce memory pressure
         // in streaming
-        let chunk_size = determine_chunk_size(n_cols, POOL.current_num_threads());
+        let chunk_size = determine_chunk_size(n_cols, POOL.current_num_threads())?;
 
         if verbose {
             eprintln!("STREAMING CHUNK SIZE: {chunk_size} rows")
