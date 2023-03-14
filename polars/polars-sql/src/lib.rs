@@ -672,32 +672,32 @@ mod test {
     fn iss_7436() {
         let mut context = SQLContext::try_new().unwrap();
         let sql = r#"
-            CREATE TABLE pokemon AS
+            CREATE TABLE foods AS
             SELECT *
-            FROM read_csv('../../examples/datasets/csv/pokemon.csv')"#;
+            FROM read_csv('../../examples/datasets/foods1.csv')"#;
         context.execute(sql).unwrap().collect().unwrap();
         let df_sql = context
             .execute(
                 r#"
             SELECT 
-                "Type 1" AS type1,
-                AVG(Attack) OVER (PARTITION BY "Type 1") AS avg_attack_by_type
-            FROM pokemon
+                "fats_g" AS fats,
+                AVG(calories) OVER (PARTITION BY "category") AS avg_calories_by_category
+            FROM foods
             LIMIT 5
             "#,
             )
             .unwrap()
             .collect()
             .unwrap();
-        let expected = LazyCsvReader::new("../../examples/datasets/csv/pokemon.csv")
+        let expected = LazyCsvReader::new("../../examples/datasets/foods1.csv")
             .finish()
             .unwrap()
             .select(&[
-                col("Type 1").alias("type1"),
-                col("Attack")
+                col("fats_g").alias("fats"),
+                col("calories")
                     .mean()
-                    .over(vec![col("Type 1")])
-                    .alias("avg_attack_by_type"),
+                    .over(vec![col("category")])
+                    .alias("avg_calories_by_category"),
             ])
             .limit(5)
             .collect()
@@ -710,28 +710,28 @@ mod test {
     fn iss_7437() -> PolarsResult<()> {
         let mut context = SQLContext::try_new()?;
         let sql = r#"
-            CREATE TABLE pokemon AS
+            CREATE TABLE foods AS
             SELECT *
-            FROM read_csv('../../examples/datasets/csv/pokemon.csv')"#;
+            FROM read_csv('../../examples/datasets/foods1.csv')"#;
         context.execute(sql)?.collect()?;
 
         let df_sql = context
             .execute(
                 r#"
-                SELECT "Type 1" as type1
-                FROM pokemon
-                GROUP BY "Type 1"
+                SELECT "category" as category
+                FROM foods
+                GROUP BY "category"
         "#,
             )?
             .collect()?
-            .sort(&["type1"], vec![false])?;
+            .sort(&["category"], vec![false])?;
 
-        let expected = LazyCsvReader::new("../../examples/datasets/csv/pokemon.csv")
+        let expected = LazyCsvReader::new("../../examples/datasets/foods1.csv")
             .finish()?
-            .groupby(vec![col("Type 1").alias("type1")])
+            .groupby(vec![col("category").alias("category")])
             .agg(vec![])
             .collect()?
-            .sort(&["type1"], vec![false])?;
+            .sort(&["category"], vec![false])?;
 
         assert!(df_sql.frame_equal(&expected));
         Ok(())

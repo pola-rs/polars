@@ -324,7 +324,6 @@ impl SQLContext {
         }
 
         let aggregated = lf.groupby(groupby_keys).agg(&aggregation_projection);
-        if !aliases.is_empty() {}
         let projection_schema =
             expressions_to_schema(projections, &schema_before, Context::Default)?;
         // a final projection to get the proper order
