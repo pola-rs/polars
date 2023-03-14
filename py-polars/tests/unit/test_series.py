@@ -429,6 +429,30 @@ def test_various() -> None:
     assert not a.is_numeric()
 
 
+def test_series_head_tail_limit() -> None:
+    s = pl.Series(range(10))
+
+    assert_series_equal(s.head(5), pl.Series(range(5)))
+    assert_series_equal(s.limit(5), s.head(5))
+    assert_series_equal(s.tail(5), pl.Series(range(5, 10)))
+
+    # check if it doesn't fail when out of bounds
+    assert s.head(100).len() == 10
+    assert s.limit(100).len() == 10
+    assert s.tail(100).len() == 10
+
+    # negative values
+    assert_series_equal(s.head(-7), pl.Series(range(3)))
+    assert s.head(-2).len() == 8
+    assert_series_equal(s.tail(-8), pl.Series(range(8, 10)))
+    assert s.head(-6).len() == 4
+
+    # negative values out of bounds
+    assert s.head(-12).len() == 0
+    assert s.limit(-12).len() == 0
+    assert s.tail(-12).len() == 0
+
+
 def test_filter_ops() -> None:
     a = pl.Series("a", range(20))
     assert a.filter(a > 1).len() == 18
