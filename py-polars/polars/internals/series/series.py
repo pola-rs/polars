@@ -31,7 +31,6 @@ from polars.datatypes import (
     Int32,
     Int64,
     List,
-    Object,
     Time,
     UInt8,
     UInt16,
@@ -854,17 +853,6 @@ class Series:
         elif isinstance(item, int):
             if item < 0:
                 item = self.len() + item
-            if self.dtype in (List, Object):
-                f = get_ffi_func("get_<>", self.dtype, self._s)
-                if f is None:
-                    return NotImplemented
-                out = f(item)
-                if self.dtype == List:
-                    if out is None:
-                        return None
-                    return self._from_pyseries(out)
-                return out
-
             return self._s.get_idx(item)
 
         # Slice.
