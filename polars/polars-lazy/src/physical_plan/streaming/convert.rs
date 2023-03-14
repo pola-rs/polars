@@ -357,15 +357,13 @@ pub(crate) fn insert_streaming_nodes(
                     }
                 }
                 let input_schema = lp_arena.get(*input).schema(lp_arena);
-                #[allow(unused_mut)]
-                let mut can_stream = true;
 
+                #[allow(unused_variables)]
+                let options = options;
                 #[cfg(feature = "dynamic_groupby")]
-                {
-                    if options.rolling.is_some() || options.dynamic.is_some() {
-                        can_stream = false
-                    }
-                }
+                let can_stream = options.rolling.is_none() && options.dynamic.is_none();
+                #[cfg(not(feature = "dynamic_groupby"))]
+                let can_stream = true;
 
                 if can_stream
                     && aggs.iter().all(|node| {

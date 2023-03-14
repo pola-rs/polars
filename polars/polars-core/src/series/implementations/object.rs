@@ -10,6 +10,7 @@ use crate::frame::groupby::{GroupsProxy, IntoGroupsProxy};
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
+#[cfg(feature = "chunked_ids")]
 use crate::series::IsSorted;
 
 impl<T: PolarsObject> PrivateSeriesNumeric for SeriesWrap<ObjectChunked<T>> {}
