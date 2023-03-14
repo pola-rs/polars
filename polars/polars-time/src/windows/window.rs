@@ -1,7 +1,6 @@
 #[cfg(feature = "timezones")]
 use chrono::NaiveDateTime;
 use chrono::TimeZone as TimeZoneTrait;
-use chrono::format::Fixed;
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
 #[cfg(feature = "timezones")]
@@ -153,19 +152,18 @@ impl Window {
             + self.period.duration_ms() / self.every.duration_ms()) as usize
     }
 
-    pub fn get_overlapping_bounds_iter<T: TimeZoneTrait>(
+    pub fn get_overlapping_bounds_iter<'a, T: TimeZoneTrait>(
         &self,
         boundary: Bounds,
         tu: TimeUnit,
-        // tz: Option<&impl TimeZoneTrait>,
-        tz: Option<&FixedOffset>,
+        tz: Option<&T>,
         start_by: StartBy,
-    ) -> PolarsResult<BoundsIter<T>> {
+    ) -> PolarsResult<BoundsIter<'a, T>> {
         BoundsIter::new(*self, boundary, tu, tz, start_by)
     }
 }
 
-pub struct BoundsIter <'a, T: TimeZoneTrait>{
+pub struct BoundsIter<'a, T: TimeZoneTrait>{
     window: Window,
     // wrapping boundary
     boundary: Bounds,
@@ -174,96 +172,12 @@ pub struct BoundsIter <'a, T: TimeZoneTrait>{
     tu: TimeUnit,
     tz: Option<&'a T>
 }
-impl BoundsIter<'_, FixedOffset>{
-    fn new<'a>(
+impl<'a, T: TimeZoneTrait> BoundsIter<'a, T>{
+    fn new(
         window: Window,
         boundary: Bounds,
         tu: TimeUnit,
-        tz: Option<&FixedOffset>,
-        start_by: StartBy,
-    ) -> PolarsResult<Self> {
-        let bi = match start_by {
-            StartBy::DataPoint => {
-                let mut boundary = boundary;
-                let offset_fn = match tu {
-                    TimeUnit::Nanoseconds => Duration::add_ns,
-                    TimeUnit::Microseconds => Duration::add_us,
-                    TimeUnit::Milliseconds => Duration::add_ms,
-                };
-                boundary.stop = offset_fn(&window.period, boundary.start, tz)?;
-                boundary
-            }
-            StartBy::WindowBound => match tu {
-                TimeUnit::Nanoseconds => window.get_earliest_bounds_ns(boundary.start, tz)?,
-                TimeUnit::Microseconds => window.get_earliest_bounds_us(boundary.start, tz)?,
-                TimeUnit::Milliseconds => window.get_earliest_bounds_ms(boundary.start, tz)?,
-            },
-            StartBy::Monday => {
-                #[cfg(feature = "timezones")]
-                {
-                    #[allow(clippy::type_complexity)]
-                    let (from, to, offset): (
-                        fn(i64) -> NaiveDateTime,
-                        fn(NaiveDateTime) -> i64,
-                        fn(&Duration, i64, Option<&FixedOffset>) -> PolarsResult<i64>,
-                    ) = match tu {
-                        TimeUnit::Nanoseconds => (
-                            timestamp_ns_to_datetime,
-                            datetime_to_timestamp_ns,
-                            Duration::add_ns,
-                        ),
-                        TimeUnit::Microseconds => (
-                            timestamp_us_to_datetime,
-                            datetime_to_timestamp_us,
-                            Duration::add_us,
-                        ),
-                        TimeUnit::Milliseconds => (
-                            timestamp_ms_to_datetime,
-                            datetime_to_timestamp_ms,
-                            Duration::add_ms,
-                        ),
-                    };
-                    // find beginning of the week.
-                    let mut boundary = boundary;
-                    let dt = from(boundary.start);
-                    let tz = match tz {
-                        Some(tz) => tz.parse::<Tz>().unwrap(),
-                        None => chrono_tz::UTC,
-                    };
-                    let dt = dt.and_local_timezone(tz).unwrap();
-                    let dt = dt.beginning_of_week();
-                    let dt = dt.naive_utc();
-                    let start = to(dt);
-                    // apply the 'offset'
-                    let start = offset(&window.offset, start, tz);
-                    // and compute the end of the window defined by the 'period'
-                    let stop = offset(&window.period, start, tz);
-                    boundary.start = start;
-                    boundary.stop = stop;
-                    boundary
-                }
-                #[cfg(not(feature = "timezones"))]
-                {
-                    panic!("activate 'timezones' feature")
-                }
-            }
-        };
-        Ok(Self {
-            window,
-            boundary,
-            bi,
-            tu,
-            tz,
-        })
-    }
-}
-#[cfg(feature = "timezones")]
-impl BoundsIter<'_, Tz>{
-    fn new<'a>(
-        window: Window,
-        boundary: Bounds,
-        tu: TimeUnit,
-        tz: Option<&'a impl TimeZoneTrait>,
+        tz: Option<&T>,
         start_by: StartBy,
     ) -> PolarsResult<Self> {
         let bi = match start_by {
@@ -342,30 +256,30 @@ impl BoundsIter<'_, Tz>{
     }
 }
 
-impl Iterator for BoundsIter<'_, FixedOffset> {
+impl<'a, T: TimeZoneTrait> Iterator for BoundsIter<'a, T> {
     type Item = Bounds;
 
-    fn next(&mut self) -> PolarsResult<Option<Self::Item>> {
+    fn next(&mut self) -> Option<Self::Item> {
         if self.bi.start < self.boundary.stop {
             let out = self.bi;
             match self.tu {
                 // TODO remove unwrap once time zone is respected
                 TimeUnit::Nanoseconds => {
-                    self.bi.start = self.window.every.add_ns(self.bi.start, self.tz)?;
-                    self.bi.stop = self.window.every.add_ns(self.bi.stop, self.tz)?;
+                    self.bi.start = self.window.every.add_ns(self.bi.start, self.tz).unwrap();
+                    self.bi.stop = self.window.every.add_ns(self.bi.stop, self.tz).unwrap();
                 }
                 TimeUnit::Microseconds => {
-                    self.bi.start = self.window.every.add_us(self.bi.start, self.tz)?;
-                    self.bi.stop = self.window.every.add_us(self.bi.stop, self.tz)?;
+                    self.bi.start = self.window.every.add_us(self.bi.start, self.tz).unwrap();
+                    self.bi.stop = self.window.every.add_us(self.bi.stop, self.tz).unwrap();
                 }
                 TimeUnit::Milliseconds => {
-                    self.bi.start = self.window.every.add_ms(self.bi.start, self.tz)?;
-                    self.bi.stop = self.window.every.add_ms(self.bi.stop, self.tz)?;
+                    self.bi.start = self.window.every.add_ms(self.bi.start, self.tz).unwrap();
+                    self.bi.stop = self.window.every.add_ms(self.bi.stop, self.tz).unwrap();
                 }
             }
-            Ok(Some(out))
+            Some(out)
         } else {
-            Ok(None)
+            None
         }
     }
 }

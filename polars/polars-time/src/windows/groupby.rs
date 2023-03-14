@@ -1,4 +1,11 @@
 use std::cmp::Ordering;
+use chrono::TimeZone as TimeZoneTrait;
+#[cfg(feature = "timezones")]
+use arrow::temporal_conversions::{
+    parse_offset, timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
+};
+#[cfg(feature = "timezones")]
+use chrono::{Datelike, NaiveDateTime};
 
 use polars_arrow::trusted_len::TrustedLen;
 use polars_arrow::utils::CustomIterTools;
@@ -97,7 +104,23 @@ pub fn groupby_windows(
     };
     let mut start_offset = 0;
 
-    for bi in window.get_overlapping_bounds_iter(boundary, tu, tz, start_by) {
+    // ffs, this requires a huge overhaul...
+    let overlapping_bounds_iter = match tz {
+        #[cfg(feature = "timezones")]
+        Some(tz) => {
+            match parse_offset(tz) {
+                Ok(tz) => window.get_overlapping_bounds_iter(boundary, tu, Some(&tz), start_by),
+                Err(_) => unreachable!()
+                // Err(_) => match parse_offset(tz) {
+                //     Ok(tz) => window.get_overlapping_bounds_iter(boundary, tu, Some(&tz), start_by),
+                //     _ => unreachable!(),
+                // },
+            }
+        }
+        _ => window.get_overlapping_bounds_iter(boundary, tu, NO_TIMEZONE, start_by),
+    };
+
+    for bi in overlapping_bounds_iter{
         let mut skip_window = false;
         // find starting point of window
         while start_offset < time.len() {
