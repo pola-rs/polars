@@ -49,10 +49,7 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: nightly-2023-03-10
-          components: rustfmt, clippy
+        run: rustup component add rustfmt clippy
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2

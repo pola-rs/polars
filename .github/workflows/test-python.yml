@@ -44,9 +44,7 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: nightly-2023-03-10
+        run: rustup show
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
@@ -107,9 +105,7 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: nightly-2023-03-10
+        run: rustup show
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2

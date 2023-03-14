@@ -49,9 +49,7 @@ jobs:
           Rscript groupby-datagen.R 1e7 1e2 5 0
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: nightly-2023-03-10
+        run: rustup show
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
