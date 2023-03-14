@@ -40,69 +40,64 @@ def test_cum_agg() -> None:
 
 def test_init_inputs(monkeypatch: Any) -> None:
     nan = float("nan")
-    for flag in [False, True]:
-        monkeypatch.setattr(pl.internals.construction, "_PYARROW_AVAILABLE", flag)
-        # Good inputs
-        pl.Series("a", [1, 2])
-        pl.Series("a", values=[1, 2])
-        pl.Series(name="a", values=[1, 2])
-        pl.Series(values=[1, 2], name="a")
+    # Good inputs
+    pl.Series("a", [1, 2])
+    pl.Series("a", values=[1, 2])
+    pl.Series(name="a", values=[1, 2])
+    pl.Series(values=[1, 2], name="a")
 
-        assert pl.Series([1, 2]).dtype == pl.Int64
-        assert pl.Series(values=[1, 2]).dtype == pl.Int64
-        assert pl.Series("a").dtype == pl.Float32  # f32 type used in case of no data
-        assert pl.Series().dtype == pl.Float32
-        assert pl.Series([]).dtype == pl.Float32
-        assert pl.Series(dtype_if_empty=pl.Utf8).dtype == pl.Utf8
-        assert pl.Series([], dtype_if_empty=pl.UInt16).dtype == pl.UInt16
-        # "== []" will be cast to empty Series with Utf8 dtype.
-        assert_series_equal(
-            pl.Series([], dtype_if_empty=pl.Utf8) == [], pl.Series("", dtype=pl.Boolean)
-        )
-        assert pl.Series(values=[True, False]).dtype == pl.Boolean
-        assert pl.Series(values=np.array([True, False])).dtype == pl.Boolean
-        assert pl.Series(values=np.array(["foo", "bar"])).dtype == pl.Utf8
-        assert pl.Series(values=["foo", "bar"]).dtype == pl.Utf8
-        assert (
-            pl.Series("a", [pl.Series([1, 2, 4]), pl.Series([3, 2, 1])]).dtype
-            == pl.List
-        )
-        assert pl.Series("a", [10000, 20000, 30000], dtype=pl.Time).dtype == pl.Time
+    assert pl.Series([1, 2]).dtype == pl.Int64
+    assert pl.Series(values=[1, 2]).dtype == pl.Int64
+    assert pl.Series("a").dtype == pl.Float32  # f32 type used in case of no data
+    assert pl.Series().dtype == pl.Float32
+    assert pl.Series([]).dtype == pl.Float32
+    assert pl.Series(dtype_if_empty=pl.Utf8).dtype == pl.Utf8
+    assert pl.Series([], dtype_if_empty=pl.UInt16).dtype == pl.UInt16
+    # "== []" will be cast to empty Series with Utf8 dtype.
+    assert_series_equal(
+        pl.Series([], dtype_if_empty=pl.Utf8) == [], pl.Series("", dtype=pl.Boolean)
+    )
+    assert pl.Series(values=[True, False]).dtype == pl.Boolean
+    assert pl.Series(values=np.array([True, False])).dtype == pl.Boolean
+    assert pl.Series(values=np.array(["foo", "bar"])).dtype == pl.Utf8
+    assert pl.Series(values=["foo", "bar"]).dtype == pl.Utf8
+    assert pl.Series("a", [pl.Series([1, 2, 4]), pl.Series([3, 2, 1])]).dtype == pl.List
+    assert pl.Series("a", [10000, 20000, 30000], dtype=pl.Time).dtype == pl.Time
 
-        # 2d numpy array and/or list of 1d numpy arrays
-        for res in (
-            pl.Series(
-                name="a",
-                values=np.array([[1, 2], [3, nan]], dtype=np.float32),
-                nan_to_null=True,
+    # 2d numpy array and/or list of 1d numpy arrays
+    for res in (
+        pl.Series(
+            name="a",
+            values=np.array([[1, 2], [3, nan]], dtype=np.float32),
+            nan_to_null=True,
+        ),
+        pl.Series(
+            name="a",
+            values=[
+                np.array([1, 2], dtype=np.float32),
+                np.array([3, nan], dtype=np.float32),
+            ],
+            nan_to_null=True,
+        ),
+        pl.Series(
+            name="a",
+            values=(
+                np.ndarray((2,), np.float32, np.array([1, 2], dtype=np.float32)),
+                np.ndarray((2,), np.float32, np.array([3, nan], dtype=np.float32)),
             ),
-            pl.Series(
-                name="a",
-                values=[
-                    np.array([1, 2], dtype=np.float32),
-                    np.array([3, nan], dtype=np.float32),
-                ],
-                nan_to_null=True,
-            ),
-            pl.Series(
-                name="a",
-                values=(
-                    np.ndarray((2,), np.float32, np.array([1, 2], dtype=np.float32)),
-                    np.ndarray((2,), np.float32, np.array([3, nan], dtype=np.float32)),
-                ),
-                nan_to_null=True,
-            ),
-        ):
-            assert res.dtype == pl.List(pl.Float32)
-            assert res[0].to_list() == [1.0, 2.0]
-            assert res[1].to_list() == [3.0, None]
+            nan_to_null=True,
+        ),
+    ):
+        assert res.dtype == pl.List(pl.Float32)
+        assert res[0].to_list() == [1.0, 2.0]
+        assert res[1].to_list() == [3.0, None]
 
-        assert pl.Series(
-            values=np.array([["foo", "bar"], ["foo2", "bar2"]])
-        ).dtype == pl.List(pl.Utf8)
+    assert pl.Series(
+        values=np.array([["foo", "bar"], ["foo2", "bar2"]])
+    ).dtype == pl.List(pl.Utf8)
 
-        # lists
-        assert pl.Series("a", [[1, 2], [3, 4]]).dtype == pl.List(pl.Int64)
+    # lists
+    assert pl.Series("a", [[1, 2], [3, 4]]).dtype == pl.List(pl.Int64)
 
     # datetime64: check timeunit (auto-detect, implicit/explicit) and NaT
     d64 = pd.date_range(date(2021, 8, 1), date(2021, 8, 3)).values

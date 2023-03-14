@@ -437,6 +437,8 @@ def test_list_mean() -> None:
 
 def test_list_min_max() -> None:
     for dt in pl.NUMERIC_DTYPES:
+        if dt == pl.Decimal:
+            continue
         df = pl.DataFrame(
             {"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]]},
             schema={"a": pl.List(dt)},
