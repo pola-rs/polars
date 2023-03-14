@@ -1118,10 +1118,9 @@ def test_is_in() -> None:
         False,
     ]
     assert df.select(pl.col("b").is_in([])).to_series().to_list() == [False]
-    assert df.select(pl.col("b").is_in(["x", "x"])).to_series().to_list() == [
-        False,
-        False,
-    ]
+
+    with pytest.raises(pl.ComputeError, match=r"cannot compare"):
+        df.select(pl.col("b").is_in(["x", "x"]))
 
 
 def test_slice() -> None:
