@@ -13,6 +13,7 @@ use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::list_construction::py_seq_to_list;
 use crate::prelude::*;
+use crate::py_modules::POLARS;
 use crate::set::set_at_idx;
 use crate::{apply_method_all_arrow_series2, arrow_interop, raise_err};
 
@@ -409,7 +410,19 @@ impl PySeries {
     }
 
     pub fn get_idx(&self, py: Python, idx: usize) -> PyResult<PyObject> {
-        Ok(Wrap(self.series.get(idx).map_err(PyPolarsErr::from)?).into_py(py))
+        let av = self.series.get(idx).map_err(PyPolarsErr::from)?;
+        if let AnyValue::List(s) = av {
+            let pyseries = PySeries::new(s);
+            let out = POLARS
+                .getattr(py, "wrap_s")
+                .unwrap()
+                .call1(py, (pyseries,))
+                .unwrap();
+
+            Ok(out.into_py(py))
+        } else {
+            Ok(Wrap(self.series.get(idx).map_err(PyPolarsErr::from)?).into_py(py))
+        }
     }
 
     pub fn bitand(&self, other: &PySeries) -> PyResult<Self> {
