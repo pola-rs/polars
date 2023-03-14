@@ -45,6 +45,7 @@ pub(crate) mod parser;
 pub mod read_impl;
 
 mod read;
+pub(super) mod splitfields;
 #[cfg(not(feature = "private"))]
 pub(crate) mod utils;
 #[cfg(feature = "private")]

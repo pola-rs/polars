@@ -1953,7 +1953,7 @@ def test_timezone_aware_date_range() -> None:
         pl.date_range(low, high, interval=timedelta(days=5), time_zone="UTC")
 
 
-def test_tzaware_date_range_crossing_dst() -> None:
+def test_tzaware_date_range_crossing_dst_hourly() -> None:
     result = pl.date_range(
         datetime(2021, 11, 7), datetime(2021, 11, 7, 2), "1h", time_zone="US/Central"
     )
@@ -1962,6 +1962,37 @@ def test_tzaware_date_range_crossing_dst() -> None:
         datetime(2021, 11, 7, 1, 0, tzinfo=ZoneInfo("US/Central")),
         datetime(2021, 11, 7, 1, 0, fold=1, tzinfo=ZoneInfo("US/Central")),
         datetime(2021, 11, 7, 2, 0, tzinfo=ZoneInfo("US/Central")),
+    ]
+
+
+def test_tzaware_date_range_crossing_dst_daily() -> None:
+    result = pl.date_range(
+        datetime(2021, 11, 7), datetime(2021, 11, 11), "2d", time_zone="US/Central"
+    )
+    assert result.to_list() == [
+        datetime(2021, 11, 7, 0, 0, tzinfo=ZoneInfo("US/Central")),
+        datetime(2021, 11, 9, 0, 0, tzinfo=ZoneInfo("US/Central")),
+        datetime(2021, 11, 11, 0, 0, tzinfo=ZoneInfo("US/Central")),
+    ]
+
+
+def test_tzaware_date_range_crossing_dst_weekly() -> None:
+    result = pl.date_range(
+        datetime(2021, 11, 7), datetime(2021, 11, 20), "1w", time_zone="US/Central"
+    )
+    assert result.to_list() == [
+        datetime(2021, 11, 7, 0, 0, tzinfo=ZoneInfo("US/Central")),
+        datetime(2021, 11, 14, 0, 0, tzinfo=ZoneInfo("US/Central")),
+    ]
+
+
+def test_tzaware_date_range_crossing_dst_monthly() -> None:
+    result = pl.date_range(
+        datetime(2021, 11, 7), datetime(2021, 12, 20), "1mo", time_zone="US/Central"
+    )
+    assert result.to_list() == [
+        datetime(2021, 11, 7, 0, 0, tzinfo=ZoneInfo("US/Central")),
+        datetime(2021, 12, 7, 0, 0, tzinfo=ZoneInfo("US/Central")),
     ]
 
 
@@ -2483,10 +2514,10 @@ def test_rolling_groupby_empty_groups_by_take_6330() -> None:
     }
 
 
-def test_infer_iso8601(iso8601_format: str) -> None:
+def test_infer_iso8601_datetime(iso8601_format_datetime: str) -> None:
     # construct an example time string
     time_string = (
-        iso8601_format.replace("%Y", "2134")
+        iso8601_format_datetime.replace("%Y", "2134")
         .replace("%m", "12")
         .replace("%d", "13")
         .replace("%H", "01")
@@ -2500,18 +2531,31 @@ def test_infer_iso8601(iso8601_format: str) -> None:
     assert parsed.dt.year().item() == 2134
     assert parsed.dt.month().item() == 12
     assert parsed.dt.day().item() == 13
-    if "%H" in iso8601_format:
+    if "%H" in iso8601_format_datetime:
         assert parsed.dt.hour().item() == 1
-    if "%M" in iso8601_format:
+    if "%M" in iso8601_format_datetime:
         assert parsed.dt.minute().item() == 12
-    if "%S" in iso8601_format:
+    if "%S" in iso8601_format_datetime:
         assert parsed.dt.second().item() == 34
-    if "%9f" in iso8601_format:
+    if "%9f" in iso8601_format_datetime:
         assert parsed.dt.nanosecond().item() == 123456789
-    if "%6f" in iso8601_format:
+    if "%6f" in iso8601_format_datetime:
         assert parsed.dt.nanosecond().item() == 123456000
-    if "%3f" in iso8601_format:
+    if "%3f" in iso8601_format_datetime:
         assert parsed.dt.nanosecond().item() == 123000000
+
+
+def test_infer_iso8601_date(iso8601_format_date: str) -> None:
+    # construct an example date string
+    time_string = (
+        iso8601_format_date.replace("%Y", "2134")
+        .replace("%m", "12")
+        .replace("%d", "13")
+    )
+    parsed = pl.Series([time_string]).str.strptime(pl.Date)
+    assert parsed.dt.year().item() == 2134
+    assert parsed.dt.month().item() == 12
+    assert parsed.dt.day().item() == 13
 
 
 def test_series_is_temporal() -> None:

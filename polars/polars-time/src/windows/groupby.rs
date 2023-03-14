@@ -192,8 +192,9 @@ pub(crate) fn groupby_values_iter_full_lookbehind(
             }
             last = *lower;
             i += start_offset;
-            let lower = add(&offset, *lower, &None);
-            let upper = add(&period, lower, &None);
+            // TODO remove unwrap once time zone is respected
+            let lower = add(&offset, *lower, NO_TIMEZONE).unwrap();
+            let upper = add(&period, lower, NO_TIMEZONE).unwrap();
 
             let b = Bounds::new(lower, upper);
 
@@ -246,8 +247,9 @@ pub(crate) fn groupby_values_iter_window_behind_t(
             panic!("index column of 'groupby_rolling' must be sorted!")
         }
         last = *lower;
-        let lower = add(&offset, *lower, &None);
-        let upper = add(&period, lower, &None);
+        // TODO remove unwrap once time zone is respected
+        let lower = add(&offset, *lower, NO_TIMEZONE).unwrap();
+        let upper = add(&period, lower, NO_TIMEZONE).unwrap();
 
         let b = Bounds::new(lower, upper);
         if b.is_future(time[0], closed_window) {
@@ -300,8 +302,9 @@ pub(crate) fn groupby_values_iter_partial_lookbehind(
             panic!("index column of 'groupby_rolling' must be sorted!")
         }
         last = *lower;
-        let lower = add(&offset, *lower, &None);
-        let upper = add(&period, lower, &None);
+        // TODO remove unwrap once time zone is respected
+        let lower = add(&offset, *lower, NO_TIMEZONE).unwrap();
+        let upper = add(&period, lower, NO_TIMEZONE).unwrap();
 
         let b = Bounds::new(lower, upper);
 
@@ -349,8 +352,9 @@ pub(crate) fn groupby_values_iter_full_lookahead(
             }
             last = *lower;
             i += start_offset;
-            let lower = add(&offset, *lower, &None);
-            let upper = add(&period, lower, &None);
+            // TODO remove unwrap once time zone is respected
+            let lower = add(&offset, *lower, NO_TIMEZONE).unwrap();
+            let upper = add(&period, lower, NO_TIMEZONE).unwrap();
 
             let b = Bounds::new(lower, upper);
 

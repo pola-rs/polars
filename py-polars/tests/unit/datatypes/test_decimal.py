@@ -69,3 +69,10 @@ def test_to_from_pydecimal_and_format() -> None:
         .split()
     )
     assert formatted == dec_strs
+
+
+def test_init_decimal_dtype() -> None:
+    _ = pl.Series("a", [D("-0.01"), D("1.2345678"), D("500")], dtype=pl.Decimal)
+    _ = pl.DataFrame(
+        {"a": [D("-0.01"), D("1.2345678"), D("500")]}, schema={"a": pl.Decimal}
+    )

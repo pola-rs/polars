@@ -73,7 +73,7 @@ if version_info >= (3, 10):
 else:
 
     def dataclass_type_hints(obj: type) -> dict[str, Any]:
-        return obj.__annotations__
+        return getattr(obj, "__annotations__", {})
 
 
 def is_namedtuple(value: Any, annotated: bool = False) -> bool:
@@ -653,7 +653,7 @@ def _expand_dict_scalars(
                     )
 
                 elif val is None or isinstance(  # type: ignore[redundant-expr]
-                    val, (int, float, str, bool)
+                    val, (int, float, str, bool, date, datetime, time, timedelta)
                 ):
                     updated_data[name] = pli.Series(
                         name=name, values=[val], dtype=dtype

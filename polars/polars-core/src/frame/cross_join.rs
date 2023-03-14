@@ -1,3 +1,5 @@
+use smartstring::alias::String as SmartString;
+
 use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::utils::{concat_df_unchecked, slice_offsets, CustomIterTools, NoNull};
@@ -98,7 +100,7 @@ impl DataFrame {
     pub fn _cross_join_with_names(
         &self,
         other: &DataFrame,
-        names: &[String],
+        names: &[SmartString],
     ) -> PolarsResult<DataFrame> {
         let (mut l_df, r_df) = self.cross_join_dfs(other, None, false)?;
         l_df.get_columns_mut().extend_from_slice(&r_df.columns);

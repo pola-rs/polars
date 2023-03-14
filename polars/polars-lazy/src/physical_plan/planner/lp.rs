@@ -342,7 +342,7 @@ pub fn create_physical_plan(
         }
         Distinct { input, options } => {
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
-            Ok(Box::new(executors::DropDuplicatesExec { input, options }))
+            Ok(Box::new(executors::UniqueExec { input, options }))
         }
         Aggregate {
             input,
@@ -425,14 +425,14 @@ pub fn create_physical_plan(
                     };
                     let root = lp_arena.add(lp);
 
-                    // do not jit insert join streaming nodes
+                    // do not jit insert if we have joins or distinct
                     // first we have to test them more and ensure solid perf
-                    let has_joins = (&*lp_arena)
+                    let has_joins_or_distinct = (&*lp_arena)
                         .iter(root)
-                        .any(|(_, lp)| matches!(lp, Join { .. }));
+                        .any(|(_, lp)| matches!(lp, Join { .. } | Distinct { .. }));
                     if allowed_key
                         && allowed_aggs
-                        && !has_joins
+                        && !has_joins_or_distinct
                         && insert_streaming_nodes(root, lp_arena, expr_arena, &mut vec![], false)?
                     {
                         return create_physical_plan(root, lp_arena, expr_arena);
@@ -440,7 +440,7 @@ pub fn create_physical_plan(
                 }
 
                 let from_partitioned_ds = (&*lp_arena).iter(input).any(|(_, lp)| {
-                    if let ALogicalPlan::Union { options, .. } = lp {
+                    if let Union { options, .. } = lp {
                         options.from_partitioned_ds
                     } else {
                         false

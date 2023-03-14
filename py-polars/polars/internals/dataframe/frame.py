@@ -672,7 +672,7 @@ class DataFrame:
     @classmethod
     def _read_csv(
         cls,
-        file: str | Path | BinaryIO | bytes,
+        source: str | Path | BinaryIO | bytes,
         has_header: bool = True,
         columns: Sequence[int] | Sequence[str] | None = None,
         sep: str = ",",
@@ -710,14 +710,14 @@ class DataFrame:
         self = cls.__new__(cls)
 
         path: str | None
-        if isinstance(file, (str, Path)):
-            path = normalise_filepath(file)
+        if isinstance(source, (str, Path)):
+            path = normalise_filepath(source)
         else:
             path = None
-            if isinstance(file, BytesIO):
-                file = file.getvalue()
-            if isinstance(file, StringIO):
-                file = file.getvalue().encode()
+            if isinstance(source, BytesIO):
+                source = source.getvalue()
+            if isinstance(source, StringIO):
+                source = source.getvalue().encode()
 
         dtype_list: Sequence[tuple[str, PolarsDataType]] | None = None
         dtype_slice: Sequence[PolarsDataType] | None = None
@@ -735,7 +735,7 @@ class DataFrame:
 
         if isinstance(columns, str):
             columns = [columns]
-        if isinstance(file, str) and "*" in file:
+        if isinstance(source, str) and "*" in source:
             dtypes_dict = None
             if dtype_list is not None:
                 dtypes_dict = {name: dt for (name, dt) in dtype_list}
@@ -747,7 +747,7 @@ class DataFrame:
             from polars import scan_csv
 
             scan = scan_csv(
-                file,
+                source,
                 has_header=has_header,
                 sep=sep,
                 comment_char=comment_char,
@@ -779,7 +779,7 @@ class DataFrame:
         projection, columns = handle_projection_columns(columns)
 
         self._df = PyDataFrame.read_csv(
-            file,
+            source,
             infer_schema_length,
             batch_size,
             has_header,
@@ -811,7 +811,7 @@ class DataFrame:
     @classmethod
     def _read_parquet(
         cls,
-        file: str | Path | BinaryIO,
+        source: str | Path | BinaryIO,
         columns: Sequence[int] | Sequence[str] | None = None,
         n_rows: int | None = None,
         parallel: ParallelStrategy = "auto",
@@ -831,16 +831,16 @@ class DataFrame:
         polars.io.read_parquet
 
         """
-        if isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
+        if isinstance(source, (str, Path)):
+            source = normalise_filepath(source)
         if isinstance(columns, str):
             columns = [columns]
 
-        if isinstance(file, str) and "*" in file and pli._is_local_file(file):
+        if isinstance(source, str) and "*" in source and pli._is_local_file(source):
             from polars import scan_parquet
 
             scan = scan_parquet(
-                file,
+                source,
                 n_rows=n_rows,
                 rechunk=True,
                 parallel=parallel,
@@ -862,7 +862,7 @@ class DataFrame:
         projection, columns = handle_projection_columns(columns)
         self = cls.__new__(cls)
         self._df = PyDataFrame.read_parquet(
-            file,
+            source,
             columns,
             projection,
             n_rows,
@@ -877,7 +877,7 @@ class DataFrame:
     @classmethod
     def _read_avro(
         cls,
-        file: str | Path | BinaryIO,
+        source: str | Path | BinaryIO,
         columns: Sequence[int] | Sequence[str] | None = None,
         n_rows: int | None = None,
     ) -> Self:
@@ -886,7 +886,7 @@ class DataFrame:
 
         Parameters
         ----------
-        file
+        source
             Path to a file or a file-like object.
         columns
             Columns.
@@ -898,17 +898,17 @@ class DataFrame:
         DataFrame
 
         """
-        if isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
+        if isinstance(source, (str, Path)):
+            source = normalise_filepath(source)
         projection, columns = handle_projection_columns(columns)
         self = cls.__new__(cls)
-        self._df = PyDataFrame.read_avro(file, columns, projection, n_rows)
+        self._df = PyDataFrame.read_avro(source, columns, projection, n_rows)
         return self
 
     @classmethod
     def _read_ipc(
         cls,
-        file: str | Path | BinaryIO,
+        source: str | Path | BinaryIO,
         columns: Sequence[int] | Sequence[str] | None = None,
         n_rows: int | None = None,
         row_count_name: str | None = None,
@@ -923,7 +923,7 @@ class DataFrame:
 
         Parameters
         ----------
-        file
+        source
             Path to a file or a file-like object.
         columns
             Columns to select. Accepts a list of column indices (starting at zero) or a
@@ -944,16 +944,16 @@ class DataFrame:
         DataFrame
 
         """
-        if isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
+        if isinstance(source, (str, Path)):
+            source = normalise_filepath(source)
         if isinstance(columns, str):
             columns = [columns]
 
-        if isinstance(file, str) and "*" in file and pli._is_local_file(file):
+        if isinstance(source, str) and "*" in source and pli._is_local_file(source):
             from polars import scan_ipc
 
             scan = scan_ipc(
-                file,
+                source,
                 n_rows=n_rows,
                 rechunk=rechunk,
                 row_count_name=row_count_name,
@@ -974,7 +974,7 @@ class DataFrame:
         projection, columns = handle_projection_columns(columns)
         self = cls.__new__(cls)
         self._df = PyDataFrame.read_ipc(
-            file,
+            source,
             columns,
             projection,
             n_rows,
@@ -984,7 +984,7 @@ class DataFrame:
         return self
 
     @classmethod
-    def _read_json(cls, file: str | Path | IOBase) -> Self:
+    def _read_json(cls, source: str | Path | IOBase) -> Self:
         """
         Read into a DataFrame from a JSON file.
 
@@ -995,17 +995,17 @@ class DataFrame:
         polars.io.read_json
 
         """
-        if isinstance(file, StringIO):
-            file = BytesIO(file.getvalue().encode())
-        elif isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
+        if isinstance(source, StringIO):
+            source = BytesIO(source.getvalue().encode())
+        elif isinstance(source, (str, Path)):
+            source = normalise_filepath(source)
 
         self = cls.__new__(cls)
-        self._df = PyDataFrame.read_json(file, False)
+        self._df = PyDataFrame.read_json(source, False)
         return self
 
     @classmethod
-    def _read_ndjson(cls, file: str | Path | IOBase) -> Self:
+    def _read_ndjson(cls, source: str | Path | IOBase) -> Self:
         """
         Read into a DataFrame from a newline delimited JSON file.
 
@@ -1016,13 +1016,13 @@ class DataFrame:
         polars.io.read_ndjson
 
         """
-        if isinstance(file, StringIO):
-            file = BytesIO(file.getvalue().encode())
-        elif isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
+        if isinstance(source, StringIO):
+            source = BytesIO(source.getvalue().encode())
+        elif isinstance(source, (str, Path)):
+            source = normalise_filepath(source)
 
         self = cls.__new__(cls)
-        self._df = PyDataFrame.read_ndjson(file)
+        self._df = PyDataFrame.read_ndjson(source)
         return self
 
     @property
@@ -3971,9 +3971,9 @@ class DataFrame:
         func
             Callable; will receive the frame as the first parameter,
             followed by any given args/kwargs.
-        args
+        *args
             Arguments to pass to the UDF.
-        kwargs
+        **kwargs
             Keyword arguments to pass to the UDF.
 
         Notes
@@ -4079,6 +4079,8 @@ class DataFrame:
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default groupby.
+            Settings this to ``True`` blocks the possibility
+            to run on the streaming engine.
 
         Examples
         --------
@@ -7113,6 +7115,8 @@ class DataFrame:
         maintain_order
             Keep the same order as the original DataFrame. This is more expensive to
             compute.
+            Settings this to ``True`` blocks the possibility
+            to run on the streaming engine.
         subset
             Column name(s) to consider when identifying duplicates.
             If set to ``None`` (default), use all columns.
@@ -8030,11 +8034,10 @@ class DataFrame:
         └──────┴──────┴──────┘
 
         """
+        corr = np.corrcoef(self, **kwargs)
+        names = self.columns
         return self._from_pydf(
-            DataFrame(
-                np.corrcoef(self, **kwargs),
-                schema=self.columns,
-            )._df
+            DataFrame([pli.Series(names[i], corr[i, :]) for i in range(len(names))])._df
         )
 
     def merge_sorted(self, other: DataFrame, key: str) -> Self:

@@ -5,7 +5,7 @@ use polars_core::prelude::*;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
 use polars_time::chunkedarray::utf8::Pattern;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
-use polars_time::prelude::utf8::infer::{infer_pattern_single, DatetimeInfer};
+use polars_time::prelude::utf8::infer::{infer_pattern_single, DatetimeInfer, StrpTimeParser};
 
 use crate::csv::parser::{is_whitespace, skip_whitespace};
 use crate::csv::read_impl::RunningSize;
@@ -19,13 +19,13 @@ pub(crate) trait PrimitiveParser: PolarsNumericType {
 impl PrimitiveParser for Float32Type {
     #[inline]
     fn parse(bytes: &[u8]) -> Option<f32> {
-        lexical::parse(bytes).ok()
+        fast_float::parse(bytes).ok()
     }
 }
 impl PrimitiveParser for Float64Type {
     #[inline]
     fn parse(bytes: &[u8]) -> Option<f64> {
-        lexical::parse(bytes).ok()
+        fast_float::parse(bytes).ok()
     }
 }
 
@@ -158,7 +158,7 @@ fn delay_utf8_validation(encoding: CsvEncoding, ignore_errors: bool) -> bool {
 
 #[inline]
 fn validate_utf8(bytes: &[u8]) -> bool {
-    bytes.is_ascii() || simdutf8::basic::from_utf8(bytes).is_ok()
+    simdutf8::basic::from_utf8(bytes).is_ok()
 }
 
 impl ParsedBuffer for Utf8Field {
@@ -447,7 +447,7 @@ where
 impl<T> ParsedBuffer for DatetimeField<T>
 where
     T: PolarsNumericType,
-    DatetimeInfer<T::Native>: TryFrom<Pattern>,
+    DatetimeInfer<T::Native>: TryFrom<Pattern> + StrpTimeParser<T::Native>,
 {
     #[inline]
     fn parse_bytes(

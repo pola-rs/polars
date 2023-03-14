@@ -16,6 +16,7 @@ from typing import (
 
 from polars.dependencies import _FSSPEC_AVAILABLE, fsspec
 from polars.exceptions import NoDataError
+from polars.utils.decorators import deprecated_alias
 from polars.utils.various import normalise_filepath
 
 with suppress(ImportError):
@@ -192,13 +193,14 @@ def _prepare_file_arg(
     return managed_file(file)
 
 
-def read_ipc_schema(file: str | BinaryIO | Path | bytes) -> dict[str, PolarsDataType]:
+@deprecated_alias(file="source")
+def read_ipc_schema(source: str | BinaryIO | Path | bytes) -> dict[str, PolarsDataType]:
     """
-    Get a schema of the IPC file without reading data.
+    Get the schema of an IPC file without reading data.
 
     Parameters
     ----------
-    file
+    source
         Path to a file or a file-like object.
 
     Returns
@@ -206,21 +208,22 @@ def read_ipc_schema(file: str | BinaryIO | Path | bytes) -> dict[str, PolarsData
     Dictionary mapping column names to datatypes
 
     """
-    if isinstance(file, (str, Path)):
-        file = normalise_filepath(file)
+    if isinstance(source, (str, Path)):
+        source = normalise_filepath(source)
 
-    return _ipc_schema(file)
+    return _ipc_schema(source)
 
 
+@deprecated_alias(file="source")
 def read_parquet_schema(
-    file: str | BinaryIO | Path | bytes,
+    source: str | BinaryIO | Path | bytes,
 ) -> dict[str, PolarsDataType]:
     """
-    Get a schema of the Parquet file without reading data.
+    Get the schema of a Parquet file without reading data.
 
     Parameters
     ----------
-    file
+    source
         Path to a file or a file-like object.
 
     Returns
@@ -228,10 +231,10 @@ def read_parquet_schema(
     Dictionary mapping column names to datatypes
 
     """
-    if isinstance(file, (str, Path)):
-        file = normalise_filepath(file)
+    if isinstance(source, (str, Path)):
+        source = normalise_filepath(source)
 
-    return _parquet_schema(file)
+    return _parquet_schema(source)
 
 
 def _is_local_file(file: str) -> bool:

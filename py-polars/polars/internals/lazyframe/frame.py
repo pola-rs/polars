@@ -160,8 +160,8 @@ class LazyFrame:
     Constructing a LazyFrame directly from a dictionary:
 
     >>> data = {"a": [1, 2], "b": [3, 4]}
-    >>> ldf = pl.LazyFrame(data)
-    >>> ldf.collect()
+    >>> lf = pl.LazyFrame(data)
+    >>> lf.collect()
     shape: (2, 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
@@ -174,15 +174,15 @@ class LazyFrame:
 
     Notice that the dtypes are automatically inferred as polars Int64:
 
-    >>> ldf.dtypes
+    >>> lf.dtypes
     [Int64, Int64]
 
     To specify a more detailed/specific frame schema you can supply the `schema`
     parameter with a dictionary of (name,dtype) pairs...
 
     >>> data = {"col1": [0, 2], "col2": [3, 7]}
-    >>> ldf2 = pl.LazyFrame(data, schema={"col1": pl.Float32, "col2": pl.Int64})
-    >>> ldf2.collect()
+    >>> lf2 = pl.LazyFrame(data, schema={"col1": pl.Float32, "col2": pl.Int64})
+    >>> lf2.collect()
     shape: (2, 2)
     ┌──────┬──────┐
     │ col1 ┆ col2 │
@@ -196,8 +196,8 @@ class LazyFrame:
     ...a sequence of (name,dtype) pairs...
 
     >>> data = {"col1": [1, 2], "col2": [3, 4]}
-    >>> ldf3 = pl.LazyFrame(data, schema=[("col1", pl.Float32), ("col2", pl.Int64)])
-    >>> ldf3.collect()
+    >>> lf3 = pl.LazyFrame(data, schema=[("col1", pl.Float32), ("col2", pl.Int64)])
+    >>> lf3.collect()
     shape: (2, 2)
     ┌──────┬──────┐
     │ col1 ┆ col2 │
@@ -214,8 +214,8 @@ class LazyFrame:
     ...     pl.Series("col1", [1, 2], dtype=pl.Float32),
     ...     pl.Series("col2", [3, 4], dtype=pl.Int64),
     ... ]
-    >>> ldf4 = pl.LazyFrame(data)
-    >>> ldf4.collect()
+    >>> lf4 = pl.LazyFrame(data)
+    >>> lf4.collect()
     shape: (2, 2)
     ┌──────┬──────┐
     │ col1 ┆ col2 │
@@ -230,8 +230,8 @@ class LazyFrame:
 
     >>> import numpy as np
     >>> data = np.array([(1, 2), (3, 4)], dtype=np.int64)
-    >>> ldf5 = pl.LazyFrame(data, schema=["a", "b"], orient="col")
-    >>> ldf5.collect()
+    >>> lf5 = pl.LazyFrame(data, schema=["a", "b"], orient="col")
+    >>> lf5.collect()
     shape: (2, 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
@@ -245,8 +245,8 @@ class LazyFrame:
     Constructing a LazyFrame from a list of lists, row orientation inferred:
 
     >>> data = [[1, 2, 3], [4, 5, 6]]
-    >>> ldf6 = pl.LazyFrame(data, schema=["a", "b", "c"])
-    >>> ldf6.collect()
+    >>> lf6 = pl.LazyFrame(data, schema=["a", "b", "c"])
+    >>> lf6.collect()
     shape: (2, 3)
     ┌─────┬─────┬─────┐
     │ a   ┆ b   ┆ c   │
@@ -296,7 +296,7 @@ class LazyFrame:
     @classmethod
     def _scan_csv(
         cls,
-        file: str,
+        source: str,
         has_header: bool = True,
         sep: str = ",",
         comment_char: str | None = None,
@@ -338,7 +338,7 @@ class LazyFrame:
 
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_csv(
-            file,
+            source,
             sep,
             has_header,
             ignore_errors,
@@ -365,7 +365,7 @@ class LazyFrame:
     @classmethod
     def _scan_parquet(
         cls,
-        file: str,
+        source: str,
         n_rows: int | None = None,
         cache: bool = True,
         parallel: ParallelStrategy = "auto",
@@ -387,8 +387,8 @@ class LazyFrame:
 
         """
         # try fsspec scanner
-        if not pli._is_local_file(file):
-            scan = pli._scan_parquet_fsspec(file, storage_options)
+        if not pli._is_local_file(source):
+            scan = pli._scan_parquet_fsspec(source, storage_options)
             if n_rows:
                 scan = scan.head(n_rows)
             if row_count_name is not None:
@@ -397,7 +397,7 @@ class LazyFrame:
 
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_parquet(
-            file,
+            source,
             n_rows,
             cache,
             parallel,
@@ -412,7 +412,7 @@ class LazyFrame:
     @classmethod
     def _scan_ipc(
         cls,
-        file: str | Path,
+        source: str | Path,
         n_rows: int | None = None,
         cache: bool = True,
         rechunk: bool = True,
@@ -431,12 +431,12 @@ class LazyFrame:
         polars.io.scan_ipc
 
         """
-        if isinstance(file, (str, Path)):
-            file = normalise_filepath(file)
+        if isinstance(source, (str, Path)):
+            source = normalise_filepath(source)
 
         # try fsspec scanner
-        if not pli._is_local_file(file):
-            scan = pli._scan_ipc_fsspec(file, storage_options)
+        if not pli._is_local_file(source):
+            scan = pli._scan_ipc_fsspec(source, storage_options)
             if n_rows:
                 scan = scan.head(n_rows)
             if row_count_name is not None:
@@ -445,7 +445,7 @@ class LazyFrame:
 
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_ipc(
-            file,
+            source,
             n_rows,
             cache,
             rechunk,
@@ -457,7 +457,7 @@ class LazyFrame:
     @classmethod
     def _scan_ndjson(
         cls,
-        file: str,
+        source: str,
         infer_schema_length: int | None = None,
         batch_size: int | None = None,
         n_rows: int | None = None,
@@ -478,7 +478,7 @@ class LazyFrame:
         """
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_ndjson(
-            file,
+            source,
             infer_schema_length,
             batch_size,
             n_rows,
@@ -554,19 +554,14 @@ class LazyFrame:
 
         Examples
         --------
-        >>> df = (
-        ...     pl.DataFrame(
-        ...         {
-        ...             "foo": [1, 2, 3],
-        ...             "bar": [6, 7, 8],
-        ...             "ham": ["a", "b", "c"],
-        ...         }
-        ...     )
-        ...     .lazy()
-        ...     .select(["foo", "bar"])
-        ... )
-
-        >>> df.columns
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... ).select(["foo", "bar"])
+        >>> lf.columns
         ['foo', 'bar']
 
         """
@@ -579,13 +574,13 @@ class LazyFrame:
 
         Examples
         --------
-        >>> lf = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "foo": [1, 2, 3],
         ...         "bar": [6.0, 7.0, 8.0],
         ...         "ham": ["a", "b", "c"],
         ...     }
-        ... ).lazy()
+        ... )
         >>> lf.dtypes
         [Int64, Float64, Utf8]
 
@@ -603,13 +598,13 @@ class LazyFrame:
 
         Examples
         --------
-        >>> lf = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "foo": [1, 2, 3],
         ...         "bar": [6.0, 7.0, 8.0],
         ...         "ham": ["a", "b", "c"],
         ...     }
-        ... ).lazy()
+        ... )
         >>> lf.schema
         {'foo': Int64, 'bar': Float64, 'ham': Utf8}
 
@@ -623,7 +618,12 @@ class LazyFrame:
 
         Examples
         --------
-        >>> lf = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]}).lazy()
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [4, 5, 6],
+        ...     }
+        ... )
         >>> lf.width
         2
 
@@ -707,13 +707,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "foo": [1, 2, 3],
         ...         "bar": [6, 7, 8],
         ...     }
-        ... ).lazy()
-        >>> df.write_json()
+        ... )
+        >>> lf.write_json()
         '{"DataFrameScan":{"df":{"columns":[{"name":"foo","datatype":"Int64","values":[1,2,3]},{"name":"bar","datatype":"Int64","values":[6,7,8]}]},"schema":{"inner":{"foo":"Int64","bar":"Int64"}},"output_schema":null,"projection":null,"selection":null}}'
 
         """
@@ -748,9 +748,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         func
             Callable; will receive the frame as the first parameter,
             followed by any given args/kwargs.
-        args
+        *args
             Arguments to pass to the UDF.
-        kwargs
+        **kwargs
             Keyword arguments to pass to the UDF.
 
         Examples
@@ -758,8 +758,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> def cast_str_to_int(data, col_name):
         ...     return data.with_columns(pl.col(col_name).cast(pl.Int64))
         ...
-        >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": ["10", "20", "30", "40"]}).lazy()
-        >>> df.pipe(cast_str_to_int, col_name="b").collect()
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": [1, 2, 3, 4],
+        ...         "b": ["10", "20", "30", "40"],
+        ...     }
+        ... )
+        >>> lf.pipe(cast_str_to_int, col_name="b").collect()
         shape: (4, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -772,8 +777,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4   ┆ 40  │
         └─────┴─────┘
 
-        >>> df = pl.DataFrame({"b": [1, 2], "a": [3, 4]})
-        >>> df
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "b": [1, 2],
+        ...         "a": [3, 4],
+        ...     }
+        ... )
+        >>> lf.collect()
         shape: (2, 2)
         ┌─────┬─────┐
         │ b   ┆ a   │
@@ -783,7 +793,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1   ┆ 3   │
         │ 2   ┆ 4   │
         └─────┴─────┘
-        >>> df.lazy().pipe(lambda tdf: tdf.select(sorted(tdf.columns))).collect()
+        >>> lf.pipe(lambda tdf: tdf.select(sorted(tdf.columns))).collect()
         shape: (2, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -838,14 +848,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": ["a", "b", "a", "b", "b", "c"],
         ...         "b": [1, 2, 3, 4, 5, 6],
         ...         "c": [6, 5, 4, 3, 2, 1],
         ...     }
-        ... ).lazy()
-        >>> df.groupby("a", maintain_order=True).agg(pl.all().sum()).sort(
+        ... )
+        >>> lf.groupby("a", maintain_order=True).agg(pl.all().sum()).sort(
         ...     "a"
         ... ).explain()  # doctest: +SKIP
         """
@@ -904,14 +914,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": ["a", "b", "a", "b", "b", "c"],
         ...         "b": [1, 2, 3, 4, 5, 6],
         ...         "c": [6, 5, 4, 3, 2, 1],
         ...     }
-        ... ).lazy()
-        >>> df.groupby("a", maintain_order=True).agg(pl.all().sum()).sort(
+        ... )
+        >>> lf.groupby("a", maintain_order=True).agg(pl.all().sum()).sort(
         ...     "a"
         ... ).describe_plan()  # doctest: +SKIP
 
@@ -1012,14 +1022,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": ["a", "b", "a", "b", "b", "c"],
         ...         "b": [1, 2, 3, 4, 5, 6],
         ...         "c": [6, 5, 4, 3, 2, 1],
         ...     }
-        ... ).lazy()
-        >>> df.groupby("a", maintain_order=True).agg(pl.all().sum()).sort(
+        ... )
+        >>> lf.groupby("a", maintain_order=True).agg(pl.all().sum()).sort(
         ...     "a"
         ... ).show_graph()  # doctest: +SKIP
 
@@ -1083,9 +1093,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame({"foo": [1, 1, -2, 3]}).lazy()
+        >>> lf = pl.LazyFrame({"foo": [1, 1, -2, 3]})
         >>> (
-        ...     df.select(pl.col("foo").cumsum().alias("bar"))
+        ...     lf.select(pl.col("foo").cumsum().alias("bar"))
         ...     .inspect()  # print the node before the filter
         ...     .filter(pl.col("bar") == pl.col("foo"))
         ... )  # doctest: +ELLIPSIS
@@ -1127,14 +1137,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         Pass a single column name to sort by that column.
 
-        >>> ldf = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": [1, 2, None],
         ...         "b": [6.0, 5.0, 4.0],
         ...         "c": ["a", "c", "b"],
         ...     }
-        ... ).lazy()
-        >>> ldf.sort("a").collect()
+        ... )
+        >>> lf.sort("a").collect()
         shape: (3, 3)
         ┌──────┬─────┬─────┐
         │ a    ┆ b   ┆ c   │
@@ -1148,7 +1158,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Sorting by expressions is also supported.
 
-        >>> ldf.sort(pl.col("a") + pl.col("b") * 2, nulls_last=True).collect()
+        >>> lf.sort(pl.col("a") + pl.col("b") * 2, nulls_last=True).collect()
         shape: (3, 3)
         ┌──────┬─────┬─────┐
         │ a    ┆ b   ┆ c   │
@@ -1162,7 +1172,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Sort by multiple columns by passing a list of columns.
 
-        >>> ldf.sort(["c", "a"], descending=True).collect()
+        >>> lf.sort(["c", "a"], descending=True).collect()
         shape: (3, 3)
         ┌──────┬─────┬─────┐
         │ a    ┆ b   ┆ c   │
@@ -1176,7 +1186,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Or use positional arguments to sort by multiple columns in the same way.
 
-        >>> ldf.sort("c", "a", descending=[False, True]).collect()
+        >>> lf.sort("c", "a", descending=[False, True]).collect()
         shape: (3, 3)
         ┌──────┬─────┬─────┐
         │ a    ┆ b   ┆ c   │
@@ -1251,20 +1261,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
 
-        Returns
-        -------
-        DataFrame
-
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": ["a", "b", "a", "b", "b", "c"],
         ...         "b": [1, 2, 3, 4, 5, 6],
         ...         "c": [6, 5, 4, 3, 2, 1],
         ...     }
-        ... ).lazy()
-        >>> df.groupby("a", maintain_order=True).agg(pl.all().sum()).sort(
+        ... )
+        >>> lf.groupby("a", maintain_order=True).agg(pl.all().sum()).sort(
         ...     "a"
         ... ).profile()  # doctest: +SKIP
         (shape: (3, 3)
@@ -1391,14 +1397,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": ["a", "b", "a", "b", "b", "c"],
         ...         "b": [1, 2, 3, 4, 5, 6],
         ...         "c": [6, 5, 4, 3, 2, 1],
         ...     }
-        ... ).lazy()
-        >>> df.groupby("a", maintain_order=True).agg(pl.all().sum()).collect()
+        ... )
+        >>> lf.groupby("a", maintain_order=True).agg(pl.all().sum()).collect()
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -1503,8 +1509,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> ldf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
-        >>> ldf.sink_parquet("out.parquet")  # doctest: +SKIP
+        >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
+        >>> lf.sink_parquet("out.parquet")  # doctest: +SKIP
 
         """
         if no_optimization:
@@ -1512,7 +1518,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             projection_pushdown = False
             slice_pushdown = False
 
-        ldf = self._ldf.optimization_toggle(
+        lf = self._ldf.optimization_toggle(
             type_coercion,
             predicate_pushdown,
             projection_pushdown,
@@ -1521,7 +1527,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             cse=False,
             streaming=True,
         )
-        return ldf.sink_parquet(
+        return lf.sink_parquet(
             path=path,
             compression=compression,
             compression_level=compression_level,
@@ -1578,8 +1584,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> ldf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
-        >>> ldf.sink_ipc("out.arrow")  # doctest: +SKIP
+        >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
+        >>> lf.sink_ipc("out.arrow")  # doctest: +SKIP
 
         """
         if no_optimization:
@@ -1587,7 +1593,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             projection_pushdown = False
             slice_pushdown = False
 
-        ldf = self._ldf.optimization_toggle(
+        lf = self._ldf.optimization_toggle(
             type_coercion,
             predicate_pushdown,
             projection_pushdown,
@@ -1596,7 +1602,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             cse=False,
             streaming=True,
         )
-        return ldf.sink_ipc(
+        return lf.sink_ipc(
             path=path,
             compression=compression,
             maintain_order=maintain_order,
@@ -1653,14 +1659,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": ["a", "b", "a", "b", "b", "c"],
         ...         "b": [1, 2, 3, 4, 5, 6],
         ...         "c": [6, 5, 4, 3, 2, 1],
         ...     }
-        ... ).lazy()
-        >>> df.groupby("a", maintain_order=True).agg(pl.all().sum()).fetch(2)
+        ... )
+        >>> lf.groupby("a", maintain_order=True).agg(pl.all().sum()).fetch(2)
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -1678,7 +1684,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             slice_pushdown = False
             common_subplan_elimination = False
 
-        ldf = self._ldf.optimization_toggle(
+        lf = self._ldf.optimization_toggle(
             type_coercion,
             predicate_pushdown,
             projection_pushdown,
@@ -1687,7 +1693,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             common_subplan_elimination,
             streaming,
         )
-        return pli.wrap_df(ldf.fetch(n_rows))
+        return pli.wrap_df(lf.fetch(n_rows))
 
     def lazy(self) -> Self:
         """
@@ -1702,14 +1708,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": [None, 2, 3, 4],
         ...         "b": [0.5, None, 2.5, 13],
         ...         "c": [True, True, False, None],
         ...     }
         ... )
-        >>> df.lazy()  # doctest: +ELLIPSIS
+        >>> lf.lazy()  # doctest: +ELLIPSIS
         <polars.LazyFrame object at ...>
 
         """
@@ -1736,14 +1742,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> ldf = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": [None, 2, 3, 4],
         ...         "b": [0.5, None, 2.5, 13],
         ...         "c": [True, True, False, None],
         ...     }
-        ... ).lazy()
-        >>> ldf.clear().fetch()
+        ... )
+        >>> lf.clear().fetch()
         shape: (0, 3)
         ┌─────┬─────┬──────┐
         │ a   ┆ b   ┆ c    │
@@ -1752,7 +1758,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ╞═════╪═════╪══════╡
         └─────┴─────┴──────┘
 
-        >>> ldf.clear(2).fetch()
+        >>> lf.clear(2).fetch()
         shape: (2, 3)
         ┌──────┬──────┬──────┐
         │ a    ┆ b    ┆ c    │
@@ -1777,14 +1783,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": [None, 2, 3, 4],
         ...         "b": [0.5, None, 2.5, 13],
         ...         "c": [True, True, False, None],
         ...     }
-        ... ).lazy()
-        >>> df.clone()  # doctest: +ELLIPSIS
+        ... )
+        >>> lf.clone()  # doctest: +ELLIPSIS
         <polars.LazyFrame object at ...>
 
         """
@@ -1801,13 +1807,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> lf = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "foo": [1, 2, 3],
         ...         "bar": [6, 7, 8],
         ...         "ham": ["a", "b", "c"],
         ...     }
-        ... ).lazy()
+        ... )
 
         Filter on one condition:
 
@@ -1881,14 +1887,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         Pass the name of a column to select that column.
 
-        >>> ldf = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "foo": [1, 2, 3],
         ...         "bar": [6, 7, 8],
         ...         "ham": ["a", "b", "c"],
         ...     }
-        ... ).lazy()
-        >>> ldf.select("foo").collect()
+        ... )
+        >>> lf.select("foo").collect()
         shape: (3, 1)
         ┌─────┐
         │ foo │
@@ -1902,7 +1908,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Multiple columns can be selected by passing a list of column names.
 
-        >>> ldf.select(["foo", "bar"]).collect()
+        >>> lf.select(["foo", "bar"]).collect()
         shape: (3, 2)
         ┌─────┬─────┐
         │ foo ┆ bar │
@@ -1917,7 +1923,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Multiple columns can also be selected using positional arguments instead of a
         list. Expressions are also accepted.
 
-        >>> ldf.select(pl.col("foo"), pl.col("bar") + 1).collect()
+        >>> lf.select(pl.col("foo"), pl.col("bar") + 1).collect()
         shape: (3, 2)
         ┌─────┬─────┐
         │ foo ┆ bar │
@@ -1931,7 +1937,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Use keyword arguments to easily name your expression inputs.
 
-        >>> ldf.select(
+        >>> lf.select(
         ...     threshold=pl.when(pl.col("foo") > 2).then(10).otherwise(0)
         ... ).collect()
         shape: (3, 1)
@@ -1950,7 +1956,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         >>> with pl.Config() as cfg:
         ...     cfg.set_auto_structify(True)  # doctest: +IGNORE_RESULT
-        ...     ldf.select(
+        ...     lf.select(
         ...         is_odd=(pl.col(pl.INTEGER_DTYPES) % 2).suffix("_is_odd"),
         ...     ).collect()
         ...
@@ -2003,20 +2009,22 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         maintain_order
             Ensure that the order of the groups is consistent with the input data.
             This is slower than a default groupby.
+            Settings this to ``True`` blocks the possibility
+            to run on the streaming engine.
 
         Examples
         --------
         Group by one column and call ``agg`` to compute the grouped sum of another
         column.
 
-        >>> ldf = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": ["a", "b", "a", "b", "c"],
         ...         "b": [1, 2, 1, 3, 3],
         ...         "c": [5, 4, 3, 2, 1],
         ...     }
-        ... ).lazy()
-        >>> ldf.groupby("a").agg(pl.col("b").sum()).collect()  # doctest: +IGNORE_RESULT
+        ... )
+        >>> lf.groupby("a").agg(pl.col("b").sum()).collect()  # doctest: +IGNORE_RESULT
         shape: (3, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -2031,7 +2039,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Set ``maintain_order=True`` to ensure the order of the groups is consistent with
         the input.
 
-        >>> ldf.groupby("a", maintain_order=True).agg(pl.col("c")).collect()
+        >>> lf.groupby("a", maintain_order=True).agg(pl.col("c")).collect()
         shape: (3, 2)
         ┌─────┬───────────┐
         │ a   ┆ c         │
@@ -2045,7 +2053,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Group by multiple columns by passing a list of column names.
 
-        >>> ldf.groupby(["a", "b"]).agg(pl.max("c")).collect()  # doctest: +SKIP
+        >>> lf.groupby(["a", "b"]).agg(pl.max("c")).collect()  # doctest: +SKIP
         shape: (4, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -2061,7 +2069,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Or use positional arguments to group by multiple columns in the same way.
         Expressions are also accepted.
 
-        >>> ldf.groupby("a", pl.col("b") // 2).agg(
+        >>> lf.groupby("a", pl.col("b") // 2).agg(
         ...     pl.col("c").mean()
         ... ).collect()  # doctest: +SKIP
         shape: (3, 3)
@@ -2294,7 +2302,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         >>> from datetime import datetime
         >>> # create an example dataframe
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "time": pl.date_range(
         ...             low=datetime(2021, 12, 16),
@@ -2304,7 +2312,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "n": range(7),
         ...     }
         ... )
-        >>> df
+        >>> lf.collect()
         shape: (7, 2)
         ┌─────────────────────┬─────┐
         │ time                ┆ n   │
@@ -2322,7 +2330,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Group by windows of 1 hour starting at 2021-12-16 00:00:00.
 
-        >>> df.lazy().groupby_dynamic("time", every="1h", closed="right").agg(
+        >>> lf.groupby_dynamic("time", every="1h", closed="right").agg(
         ...     [
         ...         pl.col("time").min().alias("time_min"),
         ...         pl.col("time").max().alias("time_max"),
@@ -2342,7 +2350,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         The window boundaries can also be added to the aggregation result
 
-        >>> df.lazy().groupby_dynamic(
+        >>> lf.groupby_dynamic(
         ...     "time", every="1h", include_boundaries=True, closed="right"
         ... ).agg([pl.col("time").count().alias("time_count")]).collect()
         shape: (4, 4)
@@ -2360,7 +2368,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         When closed="left", should not include right end of interval
         [lower_bound, upper_bound)
 
-        >>> df.lazy().groupby_dynamic("time", every="1h", closed="left").agg(
+        >>> lf.groupby_dynamic("time", every="1h", closed="left").agg(
         ...     [
         ...         pl.col("time").count().alias("time_count"),
         ...         pl.col("time").alias("time_agg_list"),
@@ -2380,7 +2388,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         When closed="both" the time values at the window boundaries belong to 2 groups.
 
-        >>> df.lazy().groupby_dynamic("time", every="1h", closed="both").agg(
+        >>> lf.groupby_dynamic("time", every="1h", closed="both").agg(
         ...     pl.col("time").count().alias("time_count")
         ... ).collect()
         shape: (5, 2)
@@ -2398,7 +2406,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Dynamic groupbys can also be combined with grouping on normal keys
 
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "time": pl.date_range(
         ...             low=datetime(2021, 12, 16),
@@ -2408,7 +2416,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "groups": ["a", "a", "a", "b", "b", "a", "a"],
         ...     }
         ... )
-        >>> df
+        >>> lf.collect()
         shape: (7, 2)
         ┌─────────────────────┬────────┐
         │ time                ┆ groups │
@@ -2424,7 +2432,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2021-12-16 03:00:00 ┆ a      │
         └─────────────────────┴────────┘
         >>> (
-        ...     df.lazy().groupby_dynamic(
+        ...     lf.groupby_dynamic(
         ...         "time",
         ...         every="1h",
         ...         closed="both",
@@ -2449,20 +2457,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Dynamic groupby on an index column
 
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "idx": pl.arange(0, 6, eager=True),
         ...         "A": ["A", "A", "B", "B", "B", "C"],
         ...     }
         ... )
-        >>> (
-        ...     df.lazy().groupby_dynamic(
-        ...         "idx",
-        ...         every="2i",
-        ...         period="3i",
-        ...         include_boundaries=True,
-        ...         closed="right",
-        ...     )
+        >>> lf.groupby_dynamic(
+        ...     "idx",
+        ...     every="2i",
+        ...     period="3i",
+        ...     include_boundaries=True,
+        ...     closed="right",
         ... ).agg(pl.col("A").alias("A_agg_list")).collect()
         shape: (3, 4)
         ┌─────────────────┬─────────────────┬─────┬─────────────────┐
@@ -2586,7 +2592,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Examples
         --------
         >>> from datetime import datetime
-        >>> gdp = pl.DataFrame(
+        >>> gdp = pl.LazyFrame(
         ...     {
         ...         "date": [
         ...             datetime(2016, 1, 1),
@@ -2596,8 +2602,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         ],  # note record date: Jan 1st (sorted!)
         ...         "gdp": [4164, 4411, 4566, 4696],
         ...     }
-        ... ).lazy()
-        >>> population = pl.DataFrame(
+        ... )
+        >>> population = pl.LazyFrame(
         ...     {
         ...         "date": [
         ...             datetime(2016, 5, 12),
@@ -2607,7 +2613,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         ],  # note record date: May 12th (sorted!)
         ...         "population": [82.19, 82.66, 83.12, 83.52],
         ...     }
-        ... ).lazy()
+        ... )
         >>> population.join_asof(
         ...     gdp, left_on="date", right_on="date", strategy="backward"
         ... ).collect()
@@ -2725,20 +2731,20 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "foo": [1, 2, 3],
         ...         "bar": [6.0, 7.0, 8.0],
         ...         "ham": ["a", "b", "c"],
         ...     }
-        ... ).lazy()
-        >>> other_df = pl.DataFrame(
+        ... )
+        >>> other_lf = pl.LazyFrame(
         ...     {
         ...         "apple": ["x", "y", "z"],
         ...         "ham": ["a", "b", "d"],
         ...     }
-        ... ).lazy()
-        >>> df.join(other_df, on="ham").collect()
+        ... )
+        >>> lf.join(other_lf, on="ham").collect()
         shape: (2, 4)
         ┌─────┬─────┬─────┬───────┐
         │ foo ┆ bar ┆ ham ┆ apple │
@@ -2748,7 +2754,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1   ┆ 6.0 ┆ a   ┆ x     │
         │ 2   ┆ 7.0 ┆ b   ┆ y     │
         └─────┴─────┴─────┴───────┘
-        >>> df.join(other_df, on="ham", how="outer").collect()
+        >>> lf.join(other_lf, on="ham", how="outer").collect()
         shape: (4, 4)
         ┌──────┬──────┬─────┬───────┐
         │ foo  ┆ bar  ┆ ham ┆ apple │
@@ -2760,7 +2766,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ null ┆ null ┆ d   ┆ z     │
         │ 3    ┆ 8.0  ┆ c   ┆ null  │
         └──────┴──────┴─────┴───────┘
-        >>> df.join(other_df, on="ham", how="left").collect()
+        >>> lf.join(other_lf, on="ham", how="left").collect()
         shape: (3, 4)
         ┌─────┬─────┬─────┬───────┐
         │ foo ┆ bar ┆ ham ┆ apple │
@@ -2771,7 +2777,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2   ┆ 7.0 ┆ b   ┆ y     │
         │ 3   ┆ 8.0 ┆ c   ┆ null  │
         └─────┴─────┴─────┴───────┘
-        >>> df.join(other_df, on="ham", how="semi").collect()
+        >>> lf.join(other_lf, on="ham", how="semi").collect()
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -2781,7 +2787,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1   ┆ 6.0 ┆ a   │
         │ 2   ┆ 7.0 ┆ b   │
         └─────┴─────┴─────┘
-        >>> df.join(other_df, on="ham", how="anti").collect()
+        >>> lf.join(other_lf, on="ham", how="anti").collect()
         shape: (1, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -2868,14 +2874,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         Pass an expression to add it as a new column.
 
-        >>> ldf = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": [1, 2, 3, 4],
         ...         "b": [0.5, 4, 10, 13],
         ...         "c": [True, True, False, True],
         ...     }
-        ... ).lazy()
-        >>> ldf.with_columns((pl.col("a") ** 2).alias("a^2")).collect()
+        ... )
+        >>> lf.with_columns((pl.col("a") ** 2).alias("a^2")).collect()
         shape: (4, 4)
         ┌─────┬──────┬───────┬──────┐
         │ a   ┆ b    ┆ c     ┆ a^2  │
@@ -2890,7 +2896,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Added columns will replace existing columns with the same name.
 
-        >>> ldf.with_columns(pl.col("a").cast(pl.Float64)).collect()
+        >>> lf.with_columns(pl.col("a").cast(pl.Float64)).collect()
         shape: (4, 3)
         ┌─────┬──────┬───────┐
         │ a   ┆ b    ┆ c     │
@@ -2905,7 +2911,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Multiple columns can be added by passing a list of expressions.
 
-        >>> ldf.with_columns(
+        >>> lf.with_columns(
         ...     [
         ...         (pl.col("a") ** 2).alias("a^2"),
         ...         (pl.col("b") / 2).alias("b/2"),
@@ -2926,7 +2932,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Multiple columns also can be added using positional arguments instead of a list.
 
-        >>> ldf.with_columns(
+        >>> lf.with_columns(
         ...     (pl.col("a") ** 2).alias("a^2"),
         ...     (pl.col("b") / 2).alias("b/2"),
         ...     (pl.col("c").is_not()).alias("not c"),
@@ -2945,7 +2951,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Use keyword arguments to easily name your expression inputs.
 
-        >>> ldf.with_columns(
+        >>> lf.with_columns(
         ...     ab=pl.col("a") * pl.col("b"),
         ...     not_c=pl.col("c").is_not(),
         ... ).collect()
@@ -2966,7 +2972,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         >>> with pl.Config() as cfg:
         ...     cfg.set_auto_structify(True)  # doctest: +IGNORE_RESULT
-        ...     ldf.drop("c").with_columns(
+        ...     lf.drop("c").with_columns(
         ...         diffs=pl.col(["a", "b"]).diff().suffix("_diff"),
         ...     ).collect()
         ...
@@ -3016,10 +3022,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df_a = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "c", None]}).lazy()
-        >>> df_other = pl.DataFrame({"c": ["foo", "ham"]})
-        >>> df_a.with_context(df_other.lazy()).select(
-        ...     [pl.col("b") + pl.col("c").first()]
+        >>> lf = pl.LazyFrame({"a": [1, 2, 3], "b": ["a", "c", None]})
+        >>> lf_other = pl.LazyFrame({"c": ["foo", "ham"]})
+        >>> lf.with_context(lf_other).select(
+        ...     pl.col("b") + pl.col("c").first()
         ... ).collect()
         shape: (3, 1)
         ┌──────┐
@@ -3034,13 +3040,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Fill nulls with the median from another dataframe:
 
-        >>> train_df = pl.DataFrame(
+        >>> train_lf = pl.LazyFrame(
         ...     {"feature_0": [-1.0, 0, 1], "feature_1": [-1.0, 0, 1]}
-        ... ).lazy()
-        >>> test_df = pl.DataFrame(
+        ... )
+        >>> test_lf = pl.LazyFrame(
         ...     {"feature_0": [-1.0, None, 1], "feature_1": [-1.0, 0, 1]}
-        ... ).lazy()
-        >>> test_df.with_context(train_df.select(pl.all().suffix("_train"))).select(
+        ... )
+        >>> test_lf.with_context(train_lf.select(pl.all().suffix("_train"))).select(
         ...     pl.col("feature_0").fill_null(pl.col("feature_0_train").median())
         ... ).collect()
         shape: (3, 1)
@@ -3075,14 +3081,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         Drop a single column by passing the name of that column.
 
-        >>> ldf = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "foo": [1, 2, 3],
         ...         "bar": [6.0, 7.0, 8.0],
         ...         "ham": ["a", "b", "c"],
         ...     }
-        ... ).lazy()
-        >>> ldf.drop("ham").collect()
+        ... )
+        >>> lf.drop("ham").collect()
         shape: (3, 2)
         ┌─────┬─────┐
         │ foo ┆ bar │
@@ -3096,7 +3102,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Drop multiple columns by passing a list of column names.
 
-        >>> ldf.drop(["bar", "ham"]).collect()
+        >>> lf.drop(["bar", "ham"]).collect()
         shape: (3, 1)
         ┌─────┐
         │ foo │
@@ -3110,7 +3116,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Or use positional arguments to drop multiple columns in the same way.
 
-        >>> ldf.drop("foo", "bar").collect()
+        >>> lf.drop("foo", "bar").collect()
         shape: (3, 1)
         ┌─────┐
         │ ham │
@@ -3146,10 +3152,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame(
-        ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
-        ... ).lazy()
-        >>> df.rename({"foo": "apple"}).collect()
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
+        >>> lf.rename({"foo": "apple"}).collect()
         shape: (3, 3)
         ┌───────┬─────┬─────┐
         │ apple ┆ bar ┆ ham │
@@ -3172,13 +3182,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "key": ["a", "b", "c"],
         ...         "val": [1, 2, 3],
         ...     }
-        ... ).lazy()
-        >>> df.reverse().collect()
+        ... )
+        >>> lf.reverse().collect()
         shape: (3, 2)
         ┌─────┬─────┐
         │ key ┆ val │
@@ -3204,13 +3214,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": [1, 3, 5],
         ...         "b": [2, 4, 6],
         ...     }
-        ... ).lazy()
-        >>> df.shift(periods=1).collect()
+        ... )
+        >>> lf.shift(periods=1).collect()
         shape: (3, 2)
         ┌──────┬──────┐
         │ a    ┆ b    │
@@ -3221,7 +3231,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1    ┆ 2    │
         │ 3    ┆ 4    │
         └──────┴──────┘
-        >>> df.shift(periods=-1).collect()
+        >>> lf.shift(periods=-1).collect()
         shape: (3, 2)
         ┌──────┬──────┐
         │ a    ┆ b    │
@@ -3253,13 +3263,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": [1, 3, 5],
         ...         "b": [2, 4, 6],
         ...     }
-        ... ).lazy()
-        >>> df.shift_and_fill(periods=1, fill_value=0).collect()
+        ... )
+        >>> lf.shift_and_fill(periods=1, fill_value=0).collect()
         shape: (3, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -3270,7 +3280,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1   ┆ 2   │
         │ 3   ┆ 4   │
         └─────┴─────┘
-        >>> df.shift_and_fill(periods=-1, fill_value=0).collect()
+        >>> lf.shift_and_fill(periods=-1, fill_value=0).collect()
         shape: (3, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -3301,15 +3311,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": ["x", "y", "z"],
         ...         "b": [1, 3, 5],
         ...         "c": [2, 4, 6],
         ...     }
-        ... ).lazy()
-        >>>
-        >>> df.slice(1, 2).collect()
+        ... )
+        >>> lf.slice(1, 2).collect()
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
@@ -3346,13 +3355,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": [1, 2, 3, 4, 5, 6],
         ...         "b": [7, 8, 9, 10, 11, 12],
         ...     }
-        ... ).lazy()
-        >>> df.limit().collect()
+        ... )
+        >>> lf.limit().collect()
         shape: (5, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -3365,7 +3374,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4   ┆ 10  │
         │ 5   ┆ 11  │
         └─────┴─────┘
-        >>> df.limit(2).collect()
+        >>> lf.limit(2).collect()
         shape: (2, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -3396,13 +3405,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": [1, 2, 3, 4, 5, 6],
         ...         "b": [7, 8, 9, 10, 11, 12],
         ...     }
-        ... ).lazy()
-        >>> df.head().collect()
+        ... )
+        >>> lf.head().collect()
         shape: (5, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -3415,7 +3424,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4   ┆ 10  │
         │ 5   ┆ 11  │
         └─────┴─────┘
-        >>> df.head(2).collect()
+        >>> lf.head(2).collect()
         shape: (2, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -3440,13 +3449,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": [1, 2, 3, 4, 5, 6],
         ...         "b": [7, 8, 9, 10, 11, 12],
         ...     }
-        ... ).lazy()
-        >>> df.tail().collect()
+        ... )
+        >>> lf.tail().collect()
         shape: (5, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -3459,7 +3468,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 5   ┆ 11  │
         │ 6   ┆ 12  │
         └─────┴─────┘
-        >>> df.tail(2).collect()
+        >>> lf.tail(2).collect()
         shape: (2, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -3479,13 +3488,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": [1, 3, 5],
         ...         "b": [2, 4, 6],
         ...     }
-        ... ).lazy()
-        >>> df.last().collect()
+        ... )
+        >>> lf.last().collect()
         shape: (1, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -3504,13 +3513,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": [1, 3, 5],
         ...         "b": [2, 4, 6],
         ...     }
-        ... ).lazy()
-        >>> df.first().collect()
+        ... )
+        >>> lf.first().collect()
         shape: (1, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -3541,13 +3550,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": [1, 3, 5],
         ...         "b": [2, 4, 6],
         ...     }
-        ... ).lazy()
-        >>> df.with_row_count().collect()
+        ... )
+        >>> lf.with_row_count().collect()
         shape: (3, 3)
         ┌────────┬─────┬─────┐
         │ row_nr ┆ a   ┆ b   │
@@ -3568,8 +3577,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> s = pl.DataFrame({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]}).lazy()
-        >>> s.take_every(2).collect()
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": [1, 2, 3, 4],
+        ...         "b": [5, 6, 7, 8],
+        ...     }
+        ... )
+        >>> lf.take_every(2).collect()
         shape: (2, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -3608,13 +3622,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": [1, 2, None, 4],
         ...         "b": [0.5, 4, None, 13],
         ...     }
-        ... ).lazy()
-        >>> df.fill_null(99).collect()
+        ... )
+        >>> lf.fill_null(99).collect()
         shape: (4, 2)
         ┌─────┬──────┐
         │ a   ┆ b    │
@@ -3626,7 +3640,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 99  ┆ 99.0 │
         │ 4   ┆ 13.0 │
         └─────┴──────┘
-        >>> df.fill_null(strategy="forward").collect()
+        >>> lf.fill_null(strategy="forward").collect()
         shape: (4, 2)
         ┌─────┬──────┐
         │ a   ┆ b    │
@@ -3639,7 +3653,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4   ┆ 13.0 │
         └─────┴──────┘
 
-        >>> df.fill_null(strategy="max").collect()
+        >>> lf.fill_null(strategy="max").collect()
         shape: (4, 2)
         ┌─────┬──────┐
         │ a   ┆ b    │
@@ -3652,7 +3666,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4   ┆ 13.0 │
         └─────┴──────┘
 
-        >>> df.fill_null(strategy="zero").collect()
+        >>> lf.fill_null(strategy="zero").collect()
         shape: (4, 2)
         ┌─────┬──────┐
         │ a   ┆ b    │
@@ -3728,13 +3742,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": [1.5, 2, float("NaN"), 4],
         ...         "b": [0.5, 4, float("NaN"), 13],
         ...     }
-        ... ).lazy()
-        >>> df.fill_nan(99).collect()
+        ... )
+        >>> lf.fill_nan(99).collect()
         shape: (4, 2)
         ┌──────┬──────┐
         │ a    ┆ b    │
@@ -3758,8 +3772,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [1, 2, 1, 1]}).lazy()
-        >>> df.std().collect()
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": [1, 2, 3, 4],
+        ...         "b": [1, 2, 1, 1],
+        ...     }
+        ... )
+        >>> lf.std().collect()
         shape: (1, 2)
         ┌──────────┬─────┐
         │ a        ┆ b   │
@@ -3768,7 +3787,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ╞══════════╪═════╡
         │ 1.290994 ┆ 0.5 │
         └──────────┴─────┘
-        >>> df.std(ddof=0).collect()
+        >>> lf.std(ddof=0).collect()
         shape: (1, 2)
         ┌──────────┬──────────┐
         │ a        ┆ b        │
@@ -3787,8 +3806,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [1, 2, 1, 1]}).lazy()
-        >>> df.var().collect()
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": [1, 2, 3, 4],
+        ...         "b": [1, 2, 1, 1],
+        ...     }
+        ... )
+        >>> lf.var().collect()
         shape: (1, 2)
         ┌──────────┬──────┐
         │ a        ┆ b    │
@@ -3797,7 +3821,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ╞══════════╪══════╡
         │ 1.666667 ┆ 0.25 │
         └──────────┴──────┘
-        >>> df.var(ddof=0).collect()
+        >>> lf.var(ddof=0).collect()
         shape: (1, 2)
         ┌──────┬────────┐
         │ a    ┆ b      │
@@ -3816,8 +3840,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [1, 2, 1, 1]}).lazy()
-        >>> df.max().collect()
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": [1, 2, 3, 4],
+        ...         "b": [1, 2, 1, 1],
+        ...     }
+        ... )
+        >>> lf.max().collect()
         shape: (1, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -3836,8 +3865,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [1, 2, 1, 1]}).lazy()
-        >>> df.min().collect()
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": [1, 2, 3, 4],
+        ...         "b": [1, 2, 1, 1],
+        ...     }
+        ... )
+        >>> lf.min().collect()
         shape: (1, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -3856,8 +3890,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [1, 2, 1, 1]}).lazy()
-        >>> df.sum().collect()
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": [1, 2, 3, 4],
+        ...         "b": [1, 2, 1, 1],
+        ...     }
+        ... )
+        >>> lf.sum().collect()
         shape: (1, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -3876,8 +3915,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [1, 2, 1, 1]}).lazy()
-        >>> df.mean().collect()
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": [1, 2, 3, 4],
+        ...         "b": [1, 2, 1, 1],
+        ...     }
+        ... )
+        >>> lf.mean().collect()
         shape: (1, 2)
         ┌─────┬──────┐
         │ a   ┆ b    │
@@ -3896,8 +3940,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [1, 2, 1, 1]}).lazy()
-        >>> df.median().collect()
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": [1, 2, 3, 4],
+        ...         "b": [1, 2, 1, 1],
+        ...     }
+        ... )
+        >>> lf.median().collect()
         shape: (1, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -3927,8 +3976,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [1, 2, 1, 1]}).lazy()
-        >>> df.quantile(0.7).collect()
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": [1, 2, 3, 4],
+        ...         "b": [1, 2, 1, 1],
+        ...     }
+        ... )
+        >>> lf.quantile(0.7).collect()
         shape: (1, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -3960,13 +4014,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "letters": ["a", "a", "b", "c"],
         ...         "numbers": [[1], [2, 3], [4, 5], [6, 7, 8]],
         ...     }
-        ... ).lazy()
-        >>> df.explode("numbers").collect()
+        ... )
+        >>> lf.explode("numbers").collect()
         shape: (8, 2)
         ┌─────────┬─────────┐
         │ letters ┆ numbers │
@@ -4009,6 +4063,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         maintain_order
             Keep the same order as the original DataFrame. This is more expensive to
             compute.
+            Settings this to ``True`` blocks the possibility
+            to run on the streaming engine.
         subset
             Column name(s) to consider when identifying duplicates.
             If set to ``None`` (default), use all columns.
@@ -4026,14 +4082,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "foo": [1, 2, 3, 1],
         ...         "bar": ["a", "a", "a", "a"],
         ...         "ham": ["b", "b", "b", "b"],
         ...     }
-        ... ).lazy()
-        >>> df.unique().collect()
+        ... )
+        >>> lf.unique().collect()
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -4044,7 +4100,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2   ┆ a   ┆ b   │
         │ 3   ┆ a   ┆ b   │
         └─────┴─────┴─────┘
-        >>> df.unique(subset=["bar", "ham"]).collect()
+        >>> lf.unique(subset=["bar", "ham"]).collect()
         shape: (1, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -4053,7 +4109,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ╞═════╪═════╪═════╡
         │ 1   ┆ a   ┆ b   │
         └─────┴─────┴─────┘
-        >>> df.unique(keep="last").collect()
+        >>> lf.unique(keep="last").collect()
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -4084,14 +4140,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "foo": [1, 2, 3],
         ...         "bar": [6, None, 8],
         ...         "ham": ["a", "b", "c"],
         ...     }
         ... )
-        >>> df.lazy().drop_nulls().collect()
+        >>> lf.drop_nulls().collect()
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -4107,14 +4163,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Below are some example snippets that show how you could drop null values based
         on other conditions:
 
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": [None, None, None, None],
         ...         "b": [1, 2, None, 1],
         ...         "c": [1, None, None, 1],
         ...     }
         ... )
-        >>> df
+        >>> lf.collect()
         shape: (4, 3)
         ┌──────┬──────┬──────┐
         │ a    ┆ b    ┆ c    │
@@ -4129,7 +4185,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Drop a row only if all values are null:
 
-        >>> df.filter(~pl.all(pl.all().is_null()))
+        >>> lf.filter(~pl.all(pl.all().is_null())).collect()
         shape: (3, 3)
         ┌──────┬─────┬──────┐
         │ a    ┆ b   ┆ c    │
@@ -4183,14 +4239,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "a": ["x", "y", "z"],
         ...         "b": [1, 3, 5],
         ...         "c": [2, 4, 6],
         ...     }
-        ... ).lazy()
-        >>> df.melt(id_vars="a", value_vars=["b", "c"]).collect()
+        ... )
+        >>> lf.melt(id_vars="a", value_vars=["b", "c"]).collect()
         shape: (6, 3)
         ┌─────┬──────────┬───────┐
         │ a   ┆ variable ┆ value │
@@ -4272,8 +4328,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [1, 2], "b": [3, 4]}).lazy()
-        >>> df.map(lambda x: 2 * x).collect()
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": [1, 2],
+        ...         "b": [3, 4],
+        ...     }
+        ... )
+        >>> lf.map(lambda x: 2 * x).collect()
         shape: (2, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -4308,14 +4369,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Examples
         --------
-        >>> df = pl.DataFrame(
+        >>> lf = pl.LazyFrame(
         ...     {
         ...         "foo": [1, None, 9, 10],
         ...         "bar": [6, 7, 9, None],
         ...         "baz": [1, None, None, 9],
         ...     }
-        ... ).lazy()
-        >>> df.interpolate().collect()
+        ... )
+        >>> lf.interpolate().collect()
         shape: (4, 3)
         ┌─────┬──────┬─────┐
         │ foo ┆ bar  ┆ baz │

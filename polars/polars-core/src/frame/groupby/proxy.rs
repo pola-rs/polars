@@ -458,8 +458,13 @@ impl<'a> GroupsProxyIter<'a> {
 impl<'a> Iterator for GroupsProxyIter<'a> {
     type Item = GroupsIndicator<'a>;
 
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        self.idx = self.idx.saturating_add(n);
+        self.next()
+    }
+
     fn next(&mut self) -> Option<Self::Item> {
-        if self.idx == self.len {
+        if self.idx >= self.len {
             return None;
         }
 

@@ -868,7 +868,7 @@ impl PyDataFrame {
     }
 
     pub fn get_columns(&self) -> Vec<PySeries> {
-        let cols = self.df.get_columns().clone();
+        let cols = self.df.get_columns().to_vec();
         to_pyseries_collection(cols)
     }
 

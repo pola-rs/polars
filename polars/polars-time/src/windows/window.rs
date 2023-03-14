@@ -1,5 +1,6 @@
 #[cfg(feature = "timezones")]
 use chrono::NaiveDateTime;
+use chrono::TimeZone as TimeZoneTrait;
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
 #[cfg(feature = "timezones")]
@@ -31,7 +32,7 @@ impl Window {
     }
 
     /// Truncate the given ns timestamp by the window boundary.
-    pub fn truncate_ns(&self, t: i64, tz: &Option<TimeZone>) -> i64 {
+    pub fn truncate_ns(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> i64 {
         let t = self.every.truncate_ns(t, tz);
         self.offset.add_ns(t, tz)
     }
@@ -41,7 +42,7 @@ impl Window {
     }
 
     /// Truncate the given ns timestamp by the window boundary.
-    pub fn truncate_us(&self, t: i64, tz: &Option<TimeZone>) -> i64 {
+    pub fn truncate_us(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> i64 {
         let t = self.every.truncate_us(t, tz);
         self.offset.add_us(t, tz)
     }
@@ -50,34 +51,34 @@ impl Window {
         self.every.truncate_us(t, &None)
     }
 
-    pub fn truncate_ms(&self, t: i64, tz: &Option<TimeZone>) -> i64 {
+    pub fn truncate_ms(&self, t: i64, tz: Option<&TimeZoneTrait>) -> i64 {
         let t = self.every.truncate_ms(t, tz);
         self.offset.add_ms(t, tz)
     }
 
     #[inline]
-    pub fn truncate_no_offset_ms(&self, t: i64, tz: &Option<TimeZone>) -> i64 {
+    pub fn truncate_no_offset_ms(&self, t: i64, tz: Option<&TimeZoneTrait>) -> i64 {
         self.every.truncate_ms(t, tz)
     }
 
     /// Round the given ns timestamp by the window boundary.
-    pub fn round_ns(&self, t: i64) -> i64 {
+    pub fn round_ns(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> i64 {
         let t = t + self.every.duration_ns() / 2_i64;
-        self.truncate_ns(t, &None)
+        self.truncate_ns(t, tz)
     }
 
     /// Round the given us timestamp by the window boundary.
-    pub fn round_us(&self, t: i64) -> i64 {
+    pub fn round_us(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> i64 {
         let t = t + self.every.duration_ns()
             / (2 * timeunit_scale(ArrowTimeUnit::Nanosecond, ArrowTimeUnit::Microsecond) as i64);
-        self.truncate_us(t, &None)
+        self.truncate_us(t, tz)
     }
 
     /// Round the given ms timestamp by the window boundary.
-    pub fn round_ms(&self, t: i64) -> i64 {
+    pub fn round_ms(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> i64 {
         let t = t + self.every.duration_ns()
             / (2 * timeunit_scale(ArrowTimeUnit::Nanosecond, ArrowTimeUnit::Millisecond) as i64);
-        self.truncate_ms(t, &None)
+        self.truncate_ms(t, tz)
     }
 
     /// returns the bounds for the earliest window bounds
@@ -93,7 +94,7 @@ impl Window {
     /// - etc.
     ///
     /// But for 2w3d, it does not make sense to start it on a different lower bound, so we start at `t`
-    pub fn get_earliest_bounds_ns(&self, t: i64, tz: &Option<TimeZone>) -> Bounds {
+    pub fn get_earliest_bounds_ns(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> Bounds {
         let start = if !self.every.months_only()
             && self.every.duration_ns() > NANOSECONDS * SECONDS_IN_DAY
         {
@@ -108,7 +109,7 @@ impl Window {
         Bounds::new_checked(start, stop)
     }
 
-    pub fn get_earliest_bounds_us(&self, t: i64, tz: &Option<TimeZone>) -> Bounds {
+    pub fn get_earliest_bounds_us(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> Bounds {
         let start = if !self.every.months_only()
             && self.every.duration_us() > MICROSECONDS * SECONDS_IN_DAY
         {
@@ -120,7 +121,7 @@ impl Window {
         Bounds::new_checked(start, stop)
     }
 
-    pub fn get_earliest_bounds_ms(&self, t: i64, tz: &Option<TimeZone>) -> Bounds {
+    pub fn get_earliest_bounds_ms(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> Bounds {
         let start = if !self.every.months_only()
             && self.every.duration_ms() > MILLISECONDS * SECONDS_IN_DAY
         {
@@ -153,7 +154,7 @@ impl Window {
         &self,
         boundary: Bounds,
         tu: TimeUnit,
-        tz: &Option<TimeZone>,
+        tz: Option<&impl TimeZoneTrait>,
         start_by: StartBy,
     ) -> BoundsIter {
         BoundsIter::new(*self, boundary, tu, tz, start_by)
@@ -174,7 +175,7 @@ impl BoundsIter {
         window: Window,
         boundary: Bounds,
         tu: TimeUnit,
-        tz: &Option<TimeZone>,
+        tz: Option<&impl TimeZoneTrait>,
         start_by: StartBy,
     ) -> Self {
         let bi = match start_by {
@@ -200,7 +201,7 @@ impl BoundsIter {
                     let (from, to, offset): (
                         fn(i64) -> NaiveDateTime,
                         fn(NaiveDateTime) -> i64,
-                        fn(&Duration, i64, &Option<TimeZone>) -> i64,
+                        fn(&Duration, i64, Option<&FixedOffset>) -> PolarsResult<i64>,
                     ) = match tu {
                         TimeUnit::Nanoseconds => (
                             timestamp_ns_to_datetime,
@@ -230,9 +231,9 @@ impl BoundsIter {
                     let dt = dt.naive_utc();
                     let start = to(dt);
                     // apply the 'offset'
-                    let start = offset(&window.offset, start, &Some(tz.to_string()));
+                    let start = offset(&window.offset, start, tz);
                     // and compute the end of the window defined by the 'period'
-                    let stop = offset(&window.period, start, &Some(tz.to_string()));
+                    let stop = offset(&window.period, start, tz);
                     boundary.start = start;
                     boundary.stop = stop;
                     boundary
@@ -260,6 +261,7 @@ impl Iterator for BoundsIter {
         if self.bi.start < self.boundary.stop {
             let out = self.bi;
             match self.tu {
+                // TODO remove unwrap once time zone is respected
                 TimeUnit::Nanoseconds => {
                     self.bi.start = self.window.every.add_ns(self.bi.start, &self.tz);
                     self.bi.stop = self.window.every.add_ns(self.bi.stop, &self.tz);

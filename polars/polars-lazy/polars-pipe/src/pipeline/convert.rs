@@ -220,6 +220,71 @@ where
                 Box::new(sort_sink) as Box<dyn Sink>
             }
         }
+        Distinct { input, options } => {
+            // We create a Groupby.agg_first()/agg_last (depending on the keep strategy
+            let input_schema = lp_arena.get(*input).schema(lp_arena).into_owned();
+
+            let (keys, aggs, schema) = match &options.subset {
+                None => {
+                    let keys = input_schema
+                        .iter_names()
+                        .map(|name| expr_arena.add(AExpr::Column(Arc::from(name.as_str()))))
+                        .collect();
+                    let aggs = vec![];
+                    (keys, aggs, input_schema.clone())
+                }
+                Some(keys) => {
+                    let mut groupby_out_schema = Schema::with_capacity(input_schema.len());
+                    let key_names = PlHashSet::from_iter(keys.iter().map(|s| s.as_ref()));
+                    let keys = keys
+                        .iter()
+                        .map(|key| {
+                            let (_, name, dtype) = input_schema.get_full(key.as_str()).unwrap();
+                            groupby_out_schema.with_column(name.clone(), dtype.clone());
+                            expr_arena.add(AExpr::Column(Arc::from(key.as_str())))
+                        })
+                        .collect();
+
+                    let aggs = input_schema
+                        .iter_names()
+                        .flat_map(|name| {
+                            if key_names.contains(name.as_str()) {
+                                None
+                            } else {
+                                let (_, name, dtype) =
+                                    input_schema.get_full(name.as_str()).unwrap();
+                                groupby_out_schema.with_column(name.clone(), dtype.clone());
+                                let col = expr_arena.add(AExpr::Column(Arc::from(name.as_str())));
+                                Some(match options.keep_strategy {
+                                    UniqueKeepStrategy::First | UniqueKeepStrategy::None => {
+                                        expr_arena.add(AExpr::Agg(AAggExpr::First(col)))
+                                    }
+                                    UniqueKeepStrategy::Last => {
+                                        expr_arena.add(AExpr::Agg(AAggExpr::Last(col)))
+                                    }
+                                })
+                            }
+                        })
+                        .collect();
+                    (keys, aggs, groupby_out_schema.into())
+                }
+            };
+            let lp = Aggregate {
+                input: *input,
+                keys,
+                aggs,
+                schema,
+                apply: None,
+                maintain_order: false,
+                options: GroupbyOptions {
+                    slice: options.slice,
+                    ..Default::default()
+                },
+            };
+            let node = lp_arena.add(lp);
+            let groupby_sink = get_sink(node, lp_arena, expr_arena, to_physical)?;
+            Box::new(ReProjectSink::new(input_schema, groupby_sink))
+        }
         Aggregate {
             input,
             keys,

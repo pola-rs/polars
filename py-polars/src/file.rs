@@ -259,7 +259,7 @@ pub fn get_mmap_bytes_reader<'a>(py_f: &'a PyAny) -> PyResult<Box<dyn MmapBytesR
     else if py_f.getattr("read").is_ok() {
         // we can still get a file name, inform the user of possibly wrong API usage.
         if py_f.getattr("name").is_ok() {
-            eprint!("Polars found a filename. \
+            eprintln!("Polars found a filename. \
             Ensure you pass a path to the file instead of a python file object when possible for best \
             performance.")
         }

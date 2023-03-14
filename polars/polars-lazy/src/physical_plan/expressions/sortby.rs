@@ -197,7 +197,14 @@ impl PhysicalExpr for SortByExpr {
                     .collect::<PolarsResult<Vec<_>>>()?;
                 let sort_by_s = ac_sort_by
                     .iter()
-                    .map(|s| s.flat_naive().into_owned())
+                    .map(|s| {
+                        let s = s.flat_naive();
+                        match s.dtype() {
+                            #[cfg(feature = "dtype-categorical")]
+                            DataType::Categorical(_) => s.into_owned(),
+                            _ => s.to_physical_repr().into_owned(),
+                        }
+                    })
                     .collect::<Vec<_>>();
 
                 for sort_by_s in &sort_by_s {

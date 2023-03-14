@@ -305,7 +305,6 @@ class Expr:
         self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
     ) -> Self:
         """Numpy universal functions."""
-
         num_expr = sum(isinstance(inp, Expr) for inp in inputs)
         if num_expr > 1:
             raise ValueError(
@@ -745,9 +744,9 @@ class Expr:
         function
             Callable; will receive the expression as the first parameter,
             followed by any given args/kwargs.
-        args
+        *args
             Arguments to pass to the UDF.
-        kwargs
+        **kwargs
             Keyword arguments to pass to the UDF.
 
         Examples

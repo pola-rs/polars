@@ -380,6 +380,50 @@ def test_from_dict_with_scalars() -> None:
         "z": pl.UInt8,
     }
 
+    # a bit of everything
+    mixed_dtype_data: dict[str, Any] = {
+        "a": 0,
+        "b": 8,
+        "c": 9.5,
+        "d": None,
+        "e": True,
+        "f": False,
+        "g": time(0, 1, 2),
+        "h": date(2023, 3, 14),
+        "i": timedelta(seconds=3601),
+        "j": datetime(2111, 11, 11, 11, 11, 11, 11),
+        "k": "「趣味でヒーローをやっている者だ」",
+    }
+    # note: deliberately set this value large; if all dtypes are
+    # on the fast-path it'll only take ~0.03secs. if it becomes
+    # even remotely noticeable that will indicate a regression.
+    n_range = 1_000_000
+    index_and_data: dict[str, Any] = {"idx": range(n_range)}
+    index_and_data.update(mixed_dtype_data.items())
+    df8 = pl.DataFrame(
+        data=index_and_data,
+        schema={
+            "idx": pl.Int32,
+            "a": pl.UInt16,
+            "b": pl.UInt32,
+            "c": pl.Float64,
+            "d": pl.Float32,
+            "e": pl.Boolean,
+            "f": pl.Boolean,
+            "g": pl.Time,
+            "h": pl.Date,
+            "i": pl.Duration,
+            "j": pl.Datetime,
+            "k": pl.Utf8,
+        },
+    )
+    dfx = df8.select(pl.exclude("idx"))
+
+    assert len(df8) == n_range
+    assert dfx[:5].rows() == dfx[5:10].rows()
+    assert dfx[-10:-5].rows() == dfx[-5:].rows()
+    assert dfx.row(n_range // 2, named=True) == mixed_dtype_data
+
 
 def test_dataframe_membership_operator() -> None:
     # cf. issue #4032

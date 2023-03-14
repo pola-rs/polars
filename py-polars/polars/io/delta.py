@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 from polars.convert import from_arrow
 from polars.dependencies import _DELTALAKE_AVAILABLE, deltalake
 from polars.io.pyarrow_dataset import scan_pyarrow_dataset
-from polars.utils.decorators import deprecate_nonkeyword_arguments
+from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 
 if TYPE_CHECKING:
     from polars.dependencies import pyarrow as pa
@@ -14,8 +14,9 @@ if TYPE_CHECKING:
 
 
 @deprecate_nonkeyword_arguments()
+@deprecated_alias(table_uri="source")
 def read_delta(
-    table_uri: str,
+    source: str,
     version: int | None = None,
     columns: list[str] | None = None,
     storage_options: dict[str, Any] | None = None,
@@ -27,7 +28,7 @@ def read_delta(
 
     Parameters
     ----------
-    table_uri
+    source
         Path or URI to the root of the Delta lake table.
 
         Note: For Local filesystem, absolute and relative paths are supported. But
@@ -131,7 +132,7 @@ def read_delta(
     if pyarrow_options is None:
         pyarrow_options = {}
 
-    _, resolved_uri, _ = _resolve_delta_lake_uri(table_uri)
+    _, resolved_uri, _ = _resolve_delta_lake_uri(source)
 
     dl_tbl = _get_delta_lake_table(
         table_path=resolved_uri,
@@ -144,8 +145,9 @@ def read_delta(
 
 
 @deprecate_nonkeyword_arguments()
+@deprecated_alias(table_uri="source")
 def scan_delta(
-    table_uri: str,
+    source: str,
     version: int | None = None,
     raw_filesystem: pa.fs.FileSystem | None = None,
     storage_options: dict[str, Any] | None = None,
@@ -157,7 +159,7 @@ def scan_delta(
 
     Parameters
     ----------
-    table_uri
+    source
         Path or URI to the root of the Delta lake table.
 
         Note: For Local filesystem, absolute and relative paths are supported. But
@@ -303,7 +305,7 @@ def scan_delta(
     import pyarrow.fs as pa_fs
 
     # Resolve relative paths if not an object storage
-    scheme, resolved_uri, normalized_path = _resolve_delta_lake_uri(table_uri)
+    scheme, resolved_uri, normalized_path = _resolve_delta_lake_uri(source)
 
     # Storage Backend
     if raw_filesystem is None:
@@ -368,7 +370,7 @@ def _get_delta_lake_table(
         delta_table_options = {}
 
     dl_tbl = deltalake.DeltaTable(
-        table_uri=table_path,
+        table_path,
         version=version,
         storage_options=storage_options,
         **delta_table_options,

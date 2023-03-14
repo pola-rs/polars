@@ -79,11 +79,6 @@ class HTMLFormatter:
 
     def write_header(self) -> None:
         """Write the header of an HTML table."""
-        shape: tuple[int, ...] = self.df.shape
-        if self.series:
-            shape = shape[:1]
-
-        self.elements.append(f"<small>shape: {shape}</small>")
         with Tag(self.elements, "thead"):
             with Tag(self.elements, "tr"):
                 columns = self.df.columns
@@ -123,6 +118,11 @@ class HTMLFormatter:
         self.elements.append(inner)
 
     def render(self) -> list[str]:
+        shape: tuple[int, ...] = self.df.shape
+        if self.series:
+            shape = shape[:1]
+
+        self.elements.append(f"<small>shape: {shape}</small>")
         with Tag(
             # be careful changing the CSS class ref here...
             # ref: https://github.com/pola-rs/polars/issues/7443
@@ -146,7 +146,8 @@ class NotebookFormatter(HTMLFormatter):
     def write_style(self) -> None:
         style = """\
             <style>
-            .dataframe > thead > tr > th {
+            .dataframe > thead > tr > th,
+            .dataframe > tbody > tr > td {
               text-align: right;
             }
             </style>

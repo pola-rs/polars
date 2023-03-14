@@ -289,3 +289,28 @@ def test_categorical_sort_order(monkeypatch: Any) -> None:
     assert df.with_columns(pl.col("x").cat.set_ordering("lexical")).sort(["n", "x"])[
         "x"
     ].to_list() == ["bar", "baz", "foo"]
+
+
+def test_err_on_categorical_asof_join_by_arg() -> None:
+    df1 = pl.DataFrame(
+        [
+            pl.Series("cat", ["a", "foo", "bar", "foo", "bar"], dtype=pl.Categorical),
+            pl.Series("time", [-10, 0, 10, 20, 30], dtype=pl.Int32),
+        ]
+    )
+    df2 = pl.DataFrame(
+        [
+            pl.Series(
+                "cat",
+                ["bar", "bar", "bar", "bar", "foo", "foo", "foo", "foo"],
+                dtype=pl.Categorical,
+            ),
+            pl.Series("time", [-5, 5, 15, 25] * 2, dtype=pl.Int32),
+            pl.Series("x", [1, 2, 3, 4] * 2, dtype=pl.Int32),
+        ]
+    )
+    with pytest.raises(
+        pl.ComputeError,
+        match=r"joins/or comparisons on categoricals can only happen if they were created under the same global string cache",
+    ):
+        df1.join_asof(df2, on="time", by="cat")

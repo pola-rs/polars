@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, BinaryIO
 from polars.dependencies import _PYARROW_AVAILABLE
 from polars.internals import DataFrame, LazyFrame
 from polars.internals.io import _prepare_file_arg
-from polars.utils.decorators import deprecate_nonkeyword_arguments
+from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 
 if TYPE_CHECKING:
     from io import BytesIO
@@ -13,8 +13,9 @@ if TYPE_CHECKING:
 
 
 @deprecate_nonkeyword_arguments()
+@deprecated_alias(file="source")
 def read_ipc(
-    file: str | BinaryIO | BytesIO | Path | bytes,
+    source: str | BinaryIO | BytesIO | Path | bytes,
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
     use_pyarrow: bool = False,
@@ -29,7 +30,7 @@ def read_ipc(
 
     Parameters
     ----------
-    file
+    source
         Path to a file or a file-like object.
         If ``fsspec`` is installed, it will be used to open remote files.
     columns
@@ -73,7 +74,7 @@ def read_ipc(
         )
 
     storage_options = storage_options or {}
-    with _prepare_file_arg(file, use_pyarrow=use_pyarrow, **storage_options) as data:
+    with _prepare_file_arg(source, use_pyarrow=use_pyarrow, **storage_options) as data:
         if use_pyarrow:
             if not _PYARROW_AVAILABLE:
                 raise ImportError(
@@ -104,8 +105,9 @@ def read_ipc(
 
 
 @deprecate_nonkeyword_arguments()
+@deprecated_alias(file="source")
 def scan_ipc(
-    file: str | Path,
+    source: str | Path,
     n_rows: int | None = None,
     cache: bool = True,
     rechunk: bool = True,
@@ -122,7 +124,7 @@ def scan_ipc(
 
     Parameters
     ----------
-    file
+    source
         Path to a IPC file.
     n_rows
         Stop reading from IPC file after reading ``n_rows``.
@@ -146,7 +148,7 @@ def scan_ipc(
 
     """
     return LazyFrame._scan_ipc(
-        file=file,
+        source,
         n_rows=n_rows,
         cache=cache,
         rechunk=rechunk,

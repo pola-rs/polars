@@ -11,7 +11,7 @@ use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::prelude::*;
 #[cfg(feature = "describe")]
 use crate::utils::concat_df_unchecked;
-use crate::utils::{split_ca, split_df, try_get_supertype, NoNull};
+use crate::utils::{slice_offsets, split_ca, split_df, try_get_supertype, NoNull};
 
 #[cfg(feature = "dataframe_arithmetic")]
 mod arithmetic;
@@ -27,10 +27,10 @@ pub mod hash_join;
 #[cfg(feature = "rows")]
 pub mod row;
 mod upstream_traits;
-
 pub use chunks::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use smartstring::alias::String as SmartString;
 
 use crate::frame::groupby::GroupsIndicator;
 #[cfg(feature = "sort_multiple")]
@@ -48,11 +48,15 @@ pub enum NullStrategy {
     Propagate,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum UniqueKeepStrategy {
+    /// Keep the first unique row.
+    #[default]
     First,
+    /// Keep the last unique row.
     Last,
+    /// Keep None of the unique rows.
     None,
 }
 
@@ -507,14 +511,14 @@ impl DataFrame {
     /// # use polars_core::prelude::*;
     /// let df: DataFrame = df!("Name" => &["Adenine", "Cytosine", "Guanine", "Thymine"],
     ///                         "Symbol" => &["A", "C", "G", "T"])?;
-    /// let columns: &Vec<Series> = df.get_columns();
+    /// let columns: &[Series] = df.get_columns();
     ///
     /// assert_eq!(columns[0].name(), "Name");
     /// assert_eq!(columns[1].name(), "Symbol");
     /// # Ok::<(), PolarsError>(())
     /// ```
     #[inline]
-    pub fn get_columns(&self) -> &Vec<Series> {
+    pub fn get_columns(&self) -> &[Series] {
         &self.columns
     }
 
@@ -560,8 +564,8 @@ impl DataFrame {
     }
 
     /// Get the `Vec<String>` representing the column names.
-    pub fn get_column_names_owned(&self) -> Vec<String> {
-        self.columns.iter().map(|s| s.name().to_string()).collect()
+    pub fn get_column_names_owned(&self) -> Vec<SmartString> {
+        self.columns.iter().map(|s| s.name().into()).collect()
     }
 
     /// Set the column names.
@@ -1408,12 +1412,12 @@ impl DataFrame {
     {
         let cols = selection
             .into_iter()
-            .map(|s| s.as_ref().to_string())
+            .map(|s| SmartString::from(s.as_ref()))
             .collect::<Vec<_>>();
         self.select_impl(&cols)
     }
 
-    fn select_impl(&self, cols: &[String]) -> PolarsResult<Self> {
+    fn select_impl(&self, cols: &[SmartString]) -> PolarsResult<Self> {
         self.select_check_duplicates(cols)?;
         let selected = self.select_series_impl(cols)?;
         Ok(DataFrame::new_no_checks(selected))
@@ -1426,18 +1430,18 @@ impl DataFrame {
     {
         let cols = selection
             .into_iter()
-            .map(|s| s.as_ref().to_string())
+            .map(|s| SmartString::from(s.as_ref()))
             .collect::<Vec<_>>();
         self.select_physical_impl(&cols)
     }
 
-    fn select_physical_impl(&self, cols: &[String]) -> PolarsResult<Self> {
+    fn select_physical_impl(&self, cols: &[SmartString]) -> PolarsResult<Self> {
         self.select_check_duplicates(cols)?;
         let selected = self.select_series_physical_impl(cols)?;
         Ok(DataFrame::new_no_checks(selected))
     }
 
-    fn select_check_duplicates(&self, cols: &[String]) -> PolarsResult<()> {
+    fn select_check_duplicates(&self, cols: &[SmartString]) -> PolarsResult<()> {
         let mut names = PlHashSet::with_capacity(cols.len());
         for name in cols {
             if !names.insert(name.as_str()) {
@@ -1462,7 +1466,7 @@ impl DataFrame {
     /// assert_eq!(df["Hydrogen"], sv[1]);
     /// # Ok::<(), PolarsError>(())
     /// ```
-    pub fn select_series(&self, selection: impl IntoVec<String>) -> PolarsResult<Vec<Series>> {
+    pub fn select_series(&self, selection: impl IntoVec<SmartString>) -> PolarsResult<Vec<Series>> {
         let cols = selection.into_vec();
         self.select_series_impl(&cols)
     }
@@ -1476,7 +1480,7 @@ impl DataFrame {
     }
 
     /// A non generic implementation to reduce compiler bloat.
-    fn select_series_physical_impl(&self, cols: &[String]) -> PolarsResult<Vec<Series>> {
+    fn select_series_physical_impl(&self, cols: &[SmartString]) -> PolarsResult<Vec<Series>> {
         let selected = if cols.len() > 1 && self.columns.len() > 10 {
             let name_to_idx = self._names_to_idx_map();
             cols.iter()
@@ -1501,7 +1505,7 @@ impl DataFrame {
     }
 
     /// A non generic implementation to reduce compiler bloat.
-    fn select_series_impl(&self, cols: &[String]) -> PolarsResult<Vec<Series>> {
+    fn select_series_impl(&self, cols: &[SmartString]) -> PolarsResult<Vec<Series>> {
         let selected = if cols.len() > 1 && self.columns.len() > 10 {
             // we hash, because there are user that having millions of columns.
             // # https://github.com/pola-rs/polars/issues/1023
@@ -1764,7 +1768,7 @@ impl DataFrame {
     /// Sort `DataFrame` in place by a column.
     pub fn sort_in_place(
         &mut self,
-        by_column: impl IntoVec<String>,
+        by_column: impl IntoVec<SmartString>,
         descending: impl IntoVec<bool>,
     ) -> PolarsResult<&mut Self> {
         let by_column = self.select_series(by_column)?;
@@ -1875,7 +1879,7 @@ impl DataFrame {
     /// ```
     pub fn sort(
         &self,
-        by_column: impl IntoVec<String>,
+        by_column: impl IntoVec<SmartString>,
         descending: impl IntoVec<bool>,
     ) -> PolarsResult<Self> {
         let mut df = self.clone();
@@ -2939,49 +2943,6 @@ impl DataFrame {
     /// Drop duplicate rows from a `DataFrame`.
     /// *This fails when there is a column of type List in DataFrame*
     ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # use polars_core::prelude::*;
-    /// let df = df! {
-    ///               "flt" => [1., 1., 2., 2., 3., 3.],
-    ///               "int" => [1, 1, 2, 2, 3, 3, ],
-    ///               "str" => ["a", "a", "b", "b", "c", "c"]
-    ///           }?;
-    ///
-    /// println!("{}", df.drop_duplicates(true, None)?);
-    /// # Ok::<(), PolarsError>(())
-    /// ```
-    /// Returns
-    ///
-    /// ```text
-    /// +-----+-----+-----+
-    /// | flt | int | str |
-    /// | --- | --- | --- |
-    /// | f64 | i32 | str |
-    /// +=====+=====+=====+
-    /// | 1   | 1   | "a" |
-    /// +-----+-----+-----+
-    /// | 2   | 2   | "b" |
-    /// +-----+-----+-----+
-    /// | 3   | 3   | "c" |
-    /// +-----+-----+-----+
-    /// ```
-    #[deprecated(note = "use DataFrame::unique")]
-    pub fn drop_duplicates(
-        &self,
-        maintain_order: bool,
-        subset: Option<&[String]>,
-    ) -> PolarsResult<Self> {
-        match maintain_order {
-            true => self.unique_stable(subset, UniqueKeepStrategy::First),
-            false => self.unique(subset, UniqueKeepStrategy::First),
-        }
-    }
-
-    /// Drop duplicate rows from a `DataFrame`.
-    /// *This fails when there is a column of type List in DataFrame*
-    ///
     /// Stable means that the order is maintained. This has a higher cost than an unstable distinct.
     ///
     /// # Example
@@ -2994,7 +2955,7 @@ impl DataFrame {
     ///               "str" => ["a", "a", "b", "b", "c", "c"]
     ///           }?;
     ///
-    /// println!("{}", df.unique_stable(None, UniqueKeepStrategy::First)?);
+    /// println!("{}", df.unique_stable(None, UniqueKeepStrategy::First, None)?);
     /// # Ok::<(), PolarsError>(())
     /// ```
     /// Returns
@@ -3016,8 +2977,9 @@ impl DataFrame {
         &self,
         subset: Option<&[String]>,
         keep: UniqueKeepStrategy,
+        slice: Option<(i64, usize)>,
     ) -> PolarsResult<DataFrame> {
-        self.unique_impl(true, subset, keep)
+        self.unique_impl(true, subset, keep, slice)
     }
 
     /// Unstable distinct. See [`DataFrame::unique_stable`].
@@ -3025,15 +2987,17 @@ impl DataFrame {
         &self,
         subset: Option<&[String]>,
         keep: UniqueKeepStrategy,
+        slice: Option<(i64, usize)>,
     ) -> PolarsResult<DataFrame> {
-        self.unique_impl(false, subset, keep)
+        self.unique_impl(false, subset, keep, slice)
     }
 
-    fn unique_impl(
+    pub fn unique_impl(
         &self,
         maintain_order: bool,
         subset: Option<&[String]>,
         keep: UniqueKeepStrategy,
+        slice: Option<(i64, usize)>,
     ) -> PolarsResult<Self> {
         let names = match &subset {
             Some(s) => s.iter().map(|s| &**s).collect(),
@@ -3044,20 +3008,28 @@ impl DataFrame {
             (UniqueKeepStrategy::First, true) => {
                 let gb = self.groupby_stable(names)?;
                 let groups = gb.get_groups();
-                self.apply_columns_par(&|s| unsafe { s.agg_first(groups) })
+                let (offset, len) = slice.unwrap_or((0, groups.len()));
+                let groups = groups.slice(offset, len);
+                self.apply_columns_par(&|s| unsafe { s.agg_first(&groups) })
             }
             (UniqueKeepStrategy::Last, true) => {
                 // maintain order by last values, so the sorted groups are not correct as they
                 // are sorted by the first value
                 let gb = self.groupby(names)?;
                 let groups = gb.get_groups();
-                let last_idx: NoNull<IdxCa> = groups
-                    .iter()
-                    .map(|g| match g {
-                        GroupsIndicator::Idx((_first, idx)) => idx[idx.len() - 1],
-                        GroupsIndicator::Slice([first, len]) => first + len - 1,
-                    })
-                    .collect();
+
+                let func = |g: GroupsIndicator| match g {
+                    GroupsIndicator::Idx((_first, idx)) => idx[idx.len() - 1],
+                    GroupsIndicator::Slice([first, len]) => first + len - 1,
+                };
+
+                let last_idx: NoNull<IdxCa> = match slice {
+                    None => groups.iter().map(func).collect(),
+                    Some((offset, len)) => {
+                        let (offset, len) = slice_offsets(offset, len, groups.len());
+                        groups.iter().skip(offset).take(len).map(func).collect()
+                    }
+                };
 
                 let last_idx = last_idx.sort(false);
                 return Ok(unsafe { self.take_unchecked(&last_idx) });
@@ -3065,16 +3037,24 @@ impl DataFrame {
             (UniqueKeepStrategy::First, false) => {
                 let gb = self.groupby(names)?;
                 let groups = gb.get_groups();
-                self.apply_columns_par(&|s| unsafe { s.agg_first(groups) })
+                let (offset, len) = slice.unwrap_or((0, groups.len()));
+                let groups = groups.slice(offset, len);
+                self.apply_columns_par(&|s| unsafe { s.agg_first(&groups) })
             }
             (UniqueKeepStrategy::Last, false) => {
                 let gb = self.groupby(names)?;
                 let groups = gb.get_groups();
-                self.apply_columns_par(&|s| unsafe { s.agg_last(groups) })
+                let (offset, len) = slice.unwrap_or((0, groups.len()));
+                let groups = groups.slice(offset, len);
+                self.apply_columns_par(&|s| unsafe { s.agg_last(&groups) })
             }
             (UniqueKeepStrategy::None, _) => {
                 let df_part = self.select(names)?;
                 let mask = df_part.is_unique()?;
+                let mask = match slice {
+                    None => mask,
+                    Some((offset, len)) => mask.slice(offset, len),
+                };
                 return self.filter(&mask);
             }
         };
@@ -3535,7 +3515,7 @@ mod test {
         }
         .unwrap();
         let df = df
-            .unique_stable(None, UniqueKeepStrategy::First)
+            .unique_stable(None, UniqueKeepStrategy::First, None)
             .unwrap()
             .sort(["flt"], false)
             .unwrap();

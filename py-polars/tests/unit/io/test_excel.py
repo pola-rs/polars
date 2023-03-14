@@ -142,7 +142,7 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
 
     # ...and read it back again:
     xldf = pl.read_excel(  # type: ignore[call-overload]
-        file=xls,
+        xls,
         sheet_name="data",
         read_csv_options=header_opts,
     )[:3].with_columns(pl.col("dtm").str.strptime(pl.Date, fmt_strptime))
@@ -197,7 +197,7 @@ def test_excel_sparklines() -> None:
     tables = {tbl["name"] for tbl in wb.get_worksheet_by_name("frame_data").tables}
     assert "PolarsFrameTable0" in tables
 
-    xldf = pl.read_excel(file=xls, sheet_name="frame_data")  # type: ignore[call-overload]
+    xldf = pl.read_excel(xls, sheet_name="frame_data")  # type: ignore[call-overload]
     # ┌──────┬──────┬─────┬─────┬─────┬─────┬───────┐
     # │ id   ┆ +/-  ┆ q1  ┆ q2  ┆ q3  ┆ q4  ┆ trend │
     # │ ---  ┆ ---  ┆ --- ┆ --- ┆ --- ┆ --- ┆ ---   │
@@ -220,7 +220,7 @@ def test_excel_sparklines() -> None:
 def test_excel_write_multiple_tables() -> None:
     from xlsxwriter import Workbook
 
-    # note: also checks that empty tables don't error on write
+    # note: checks that empty tables don't error on write
     df1 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.Utf8, "colz": pl.Float64})
     df2 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.Utf8, "colz": pl.Float64})
     df3 = pl.DataFrame(schema={"colx": pl.Date, "coly": pl.Utf8, "colz": pl.Float64})
@@ -231,7 +231,21 @@ def test_excel_write_multiple_tables() -> None:
         df1.write_excel(workbook=wb, worksheet="sheet1", position="A1")
         df2.write_excel(workbook=wb, worksheet="sheet1", position="A6")
         df3.write_excel(workbook=wb, worksheet="sheet2", position="A1")
-        df4.write_excel(workbook=wb, worksheet="sheet3", position="A1")
+
+        # validate integration of externally-added formats
+        fmt = wb.add_format({"bg_color": "#ffff00"})
+        df4.write_excel(
+            workbook=wb,
+            worksheet="sheet3",
+            position="A1",
+            conditional_formats={
+                "colz": {
+                    "type": "formula",
+                    "criteria": "=C2=B2",
+                    "format": fmt,
+                }
+            },
+        )
 
     table_names: set[str] = set()
     for sheet in ("sheet1", "sheet2", "sheet3"):
@@ -239,4 +253,4 @@ def test_excel_write_multiple_tables() -> None:
             tbl["name"] for tbl in wb.get_worksheet_by_name(sheet).tables
         )
     assert table_names == {f"PolarsFrameTable{n}" for n in range(4)}
-    assert pl.read_excel(file=xls, sheet_name="sheet3").rows() == [(None, None, None)]  # type: ignore[call-overload]
+    assert pl.read_excel(xls, sheet_name="sheet3").rows() == [(None, None, None)]  # type: ignore[call-overload]

@@ -97,6 +97,7 @@ def _xl_apply_conditional_formats(
     has_header: bool,
 ) -> None:
     """Take all conditional formatting options and apply them to the table/range."""
+    from xlsxwriter.format import Format
 
     for cols, formats in conditional_formats.items():
         if not isinstance(cols, str) and len(cols) == 1:
@@ -118,8 +119,12 @@ def _xl_apply_conditional_formats(
 
             if "format" in fmt:
                 f = fmt["format"]
-                fmt["format"] = workbook.add_format(
-                    {"num_format": f} if isinstance(f, str) else f
+                fmt["format"] = (
+                    f  # already registered
+                    if isinstance(f, Format)
+                    else workbook.add_format(
+                        {"num_format": f} if isinstance(f, str) else f
+                    )
                 )
             worksheet.conditional_format(col_range, fmt)
 
@@ -175,7 +180,6 @@ def _xl_column_multi_range(
     has_header: bool,
 ) -> str:
     """Return column ranges as an xlsxwriter 'multi_range' string, or spanning range."""
-
     if _adjacent_cols(df, cols):
         col_idxs = sorted(df.find_idx_by_name(c) for c in cols)
         return _xl_column_range(
