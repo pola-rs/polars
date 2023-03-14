@@ -105,22 +105,25 @@ pub fn groupby_windows(
     let mut start_offset = 0;
 
     // ffs, this requires a huge overhaul...
-    let overlapping_bounds_iter = match tz {
-        #[cfg(feature = "timezones")]
-        Some(tz) => {
-            match parse_offset(tz) {
-                Ok(tz) => window.get_overlapping_bounds_iter(boundary, tu, Some(&tz), start_by),
-                Err(_) => unreachable!()
-                // Err(_) => match parse_offset(tz) {
-                //     Ok(tz) => window.get_overlapping_bounds_iter(boundary, tu, Some(&tz), start_by),
-                //     _ => unreachable!(),
-                // },
-            }
-        }
-        _ => window.get_overlapping_bounds_iter(boundary, tu, NO_TIMEZONE, start_by),
-    };
+    // let overlapping_bounds_iter = match tz {
+    //     #[cfg(feature = "timezones")]
+    //     Some(tz) => {
+    //         match parse_offset(tz) {
+    //             Ok(tz) => window.get_overlapping_bounds_iter(boundary, tu, Some(&tz.clone()), start_by),
+    //             Err(_) => unreachable!()
+    //             // Err(_) => match parse_offset(tz) {
+    //             //     Ok(tz) => window.get_overlapping_bounds_iter(boundary, tu, Some(&tz), start_by),
+    //             //     _ => unreachable!(),
+    //             // },
+    //         }
+    //     }
+    //     _ => window.get_overlapping_bounds_iter(boundary, tu, NO_TIMEZONE, start_by),
+    // };
 
-    for bi in overlapping_bounds_iter{
+    use arrow::temporal_conversions::{
+        parse_offset, 
+    };
+    for bi in window.get_overlapping_bounds_iter(boundary, tu, Some(&parse_offset(&tz.as_ref().unwrap()).unwrap()), start_by).unwrap(){
         let mut skip_window = false;
         // find starting point of window
         while start_offset < time.len() {

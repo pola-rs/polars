@@ -156,7 +156,7 @@ impl Window {
         &self,
         boundary: Bounds,
         tu: TimeUnit,
-        tz: Option<&T>,
+        tz: Option<&'a T>,
         start_by: StartBy,
     ) -> PolarsResult<BoundsIter<'a, T>> {
         BoundsIter::new(*self, boundary, tu, tz, start_by)
@@ -177,7 +177,7 @@ impl<'a, T: TimeZoneTrait> BoundsIter<'a, T>{
         window: Window,
         boundary: Bounds,
         tu: TimeUnit,
-        tz: Option<&T>,
+        tz: Option<&'a T>,
         start_by: StartBy,
     ) -> PolarsResult<Self> {
         let bi = match start_by {
@@ -224,18 +224,20 @@ impl<'a, T: TimeZoneTrait> BoundsIter<'a, T>{
                     // find beginning of the week.
                     let mut boundary = boundary;
                     let dt = from(boundary.start);
-                    let tz = match tz {
-                        Some(tz) => tz.parse::<Tz>().unwrap(),
-                        None => chrono_tz::UTC,
-                    };
+                    // let tz = match tz {
+                    //     Some(tz) => tz,
+                    //     None => chrono_tz::UTC,
+                    // };
+                    let tz = chrono::Utc;
                     let dt = dt.and_local_timezone(tz).unwrap();
                     let dt = dt.beginning_of_week();
                     let dt = dt.naive_utc();
                     let start = to(dt);
                     // apply the 'offset'
-                    let start = offset(&window.offset, start, tz);
+                    // TODO
+                    let start = offset(&window.offset, start, NO_TIMEZONE).unwrap();
                     // and compute the end of the window defined by the 'period'
-                    let stop = offset(&window.period, start, tz);
+                    let stop = offset(&window.period, start, NO_TIMEZONE).unwrap();
                     boundary.start = start;
                     boundary.stop = stop;
                     boundary
