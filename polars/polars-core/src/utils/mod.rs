@@ -408,20 +408,23 @@ macro_rules! downcast_as_macro_arg_physical {
     ($self:expr, $macro:ident $(, $opt_args:expr)*) => {{
         match $self.dtype() {
             #[cfg(feature = "dtype-u8")]
-            DataType::UInt8 => $macro!($self.u8().unwrap() $(, $opt_args)*),
+            DataType::UInt8 => Ok($macro!($self.u8().unwrap() $(, $opt_args)*)),
             #[cfg(feature = "dtype-u16")]
-            DataType::UInt16 => $macro!($self.u16().unwrap() $(, $opt_args)*),
-            DataType::UInt32 => $macro!($self.u32().unwrap() $(, $opt_args)*),
-            DataType::UInt64 => $macro!($self.u64().unwrap() $(, $opt_args)*),
+            DataType::UInt16 => Ok($macro!($self.u16().unwrap() $(, $opt_args)*)),
+            DataType::UInt32 => Ok($macro!($self.u32().unwrap() $(, $opt_args)*)),
+            DataType::UInt64 => Ok($macro!($self.u64().unwrap() $(, $opt_args)*)),
             #[cfg(feature = "dtype-i8")]
-            DataType::Int8 => $macro!($self.i8().unwrap() $(, $opt_args)*),
+            DataType::Int8 => Ok($macro!($self.i8().unwrap() $(, $opt_args)*)),
             #[cfg(feature = "dtype-i16")]
-            DataType::Int16 => $macro!($self.i16().unwrap() $(, $opt_args)*),
-            DataType::Int32 => $macro!($self.i32().unwrap() $(, $opt_args)*),
-            DataType::Int64 => $macro!($self.i64().unwrap() $(, $opt_args)*),
-            DataType::Float32 => $macro!($self.f32().unwrap() $(, $opt_args)*),
-            DataType::Float64 => $macro!($self.f64().unwrap() $(, $opt_args)*),
-            dt => panic!("not implemented for {:?}", dt),
+            DataType::Int16 => Ok($macro!($self.i16().unwrap() $(, $opt_args)*)),
+            DataType::Int32 => Ok($macro!($self.i32().unwrap() $(, $opt_args)*)),
+            DataType::Int64 => Ok($macro!($self.i64().unwrap() $(, $opt_args)*)),
+            DataType::Float32 => Ok($macro!($self.f32().unwrap() $(, $opt_args)*)),
+            DataType::Float64 => Ok($macro!($self.f64().unwrap() $(, $opt_args)*)),
+            dt => Err(polars_err!(
+                InvalidOperation: "unable to apply `{}` on a non-physical dtype: `{}`",
+                stringify!($macro), dt,
+            )),
         }
     }};
 }
@@ -436,48 +439,51 @@ macro_rules! downcast_as_macro_arg_physical_mut {
             #[cfg(feature = "dtype-u8")]
             DataType::UInt8 => {
                 let ca: &mut UInt8Chunked = $self.as_mut();
-                $macro!(UInt8Type, ca $(, $opt_args)*)
+                Ok($macro!(UInt8Type, ca $(, $opt_args)*))
             },
             #[cfg(feature = "dtype-u16")]
             DataType::UInt16 => {
                 let ca: &mut UInt16Chunked = $self.as_mut();
-                $macro!(UInt16Type, ca $(, $opt_args)*)
+                Ok($macro!(UInt16Type, ca $(, $opt_args)*))
             },
             DataType::UInt32 => {
                 let ca: &mut UInt32Chunked = $self.as_mut();
-                $macro!(UInt32Type, ca $(, $opt_args)*)
+                Ok($macro!(UInt32Type, ca $(, $opt_args)*))
             },
             DataType::UInt64 => {
                 let ca: &mut UInt64Chunked = $self.as_mut();
-                $macro!(UInt64Type, ca $(, $opt_args)*)
+                Ok($macro!(UInt64Type, ca $(, $opt_args)*))
             },
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => {
                 let ca: &mut Int8Chunked = $self.as_mut();
-                $macro!(Int8Type, ca $(, $opt_args)*)
+                Ok($macro!(Int8Type, ca $(, $opt_args)*))
             },
             #[cfg(feature = "dtype-i16")]
             DataType::Int16 => {
                 let ca: &mut Int16Chunked = $self.as_mut();
-                $macro!(Int16Type, ca $(, $opt_args)*)
+                Ok($macro!(Int16Type, ca $(, $opt_args)*))
             },
             DataType::Int32 => {
                 let ca: &mut Int32Chunked = $self.as_mut();
-                $macro!(Int32Type, ca $(, $opt_args)*)
+                Ok($macro!(Int32Type, ca $(, $opt_args)*))
             },
             DataType::Int64 => {
                 let ca: &mut Int64Chunked = $self.as_mut();
-                $macro!(Int64Type, ca $(, $opt_args)*)
+                Ok($macro!(Int64Type, ca $(, $opt_args)*))
             },
             DataType::Float32 => {
                 let ca: &mut Float32Chunked = $self.as_mut();
-                $macro!(Float32Type, ca $(, $opt_args)*)
+                Ok($macro!(Float32Type, ca $(, $opt_args)*))
             },
             DataType::Float64 => {
                 let ca: &mut Float64Chunked = $self.as_mut();
-                $macro!(Float64Type, ca $(, $opt_args)*)
+                Ok($macro!(Float64Type, ca $(, $opt_args)*))
             },
-            dt => panic!("not implemented for {:?}", dt),
+            dt => Err(polars_err!(
+                InvalidOperation: "unable to apply `{}` on a non-physical dtype: `{}`",
+                stringify!($macro), dt,
+            )),
         }
     }};
 }

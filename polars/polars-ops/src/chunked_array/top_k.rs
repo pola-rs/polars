@@ -80,11 +80,11 @@ pub fn top_k(s: &Series, k: usize, descending: bool) -> PolarsResult<Series> {
 
     let s = s.to_physical_repr();
 
-    macro_rules! dispatch {
+    macro_rules! top_k {
         ($ca:expr) => {{
             top_k_impl($ca, k, descending).into_series()
         }};
     }
 
-    downcast_as_macro_arg_physical!(&s, dispatch).cast(dtype)
+    downcast_as_macro_arg_physical!(&s, top_k)?.cast(dtype)
 }

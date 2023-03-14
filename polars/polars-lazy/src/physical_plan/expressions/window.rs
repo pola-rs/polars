@@ -677,12 +677,14 @@ fn set_by_groups(
         let dtype = s.dtype();
         let s = s.to_physical_repr();
 
-        macro_rules! dispatch {
+        macro_rules! set_by_groups {
             ($ca:expr) => {{
                 set_numeric($ca, groups, len)
             }};
         }
-        downcast_as_macro_arg_physical!(&s, dispatch).map(|s| s.cast(dtype).unwrap())
+        downcast_as_macro_arg_physical!(&s, set_by_groups)
+            .unwrap()
+            .map(|s| s.cast(dtype).unwrap())
     } else {
         None
     }

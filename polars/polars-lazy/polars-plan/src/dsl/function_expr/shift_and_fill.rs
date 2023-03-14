@@ -93,13 +93,14 @@ pub(super) fn shift_and_fill(args: &mut [Series], periods: i64) -> PolarsResult<
         #[cfg(feature = "dtype-categorical")]
         Categorical(_) => shift_and_fill_with_mask(s, periods, fill_value_s),
         dt if dt.is_numeric() || dt.is_logical() => {
-            macro_rules! dispatch {
+            macro_rules! shift_and_fill {
                 ($ca:expr, $periods:expr, $fill_value:expr) => {{
                     shift_and_fill_numeric($ca, $periods, $fill_value).into_series()
                 }};
             }
 
-            let out = downcast_as_macro_arg_physical!(physical, dispatch, periods, fill_value);
+            let out =
+                downcast_as_macro_arg_physical!(physical, shift_and_fill, periods, fill_value)?;
             out.cast(logical)
         }
         _ => {

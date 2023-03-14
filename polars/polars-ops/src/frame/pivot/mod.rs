@@ -252,7 +252,7 @@ fn pivot_impl(
                 debug_assert_eq!(value_agg_phys.len(), row_locations.len());
 
                 let mut cols = if value_agg_phys.dtype().is_numeric() {
-                    macro_rules! dispatch {
+                    macro_rules! pivot {
                         ($ca:expr) => {{
                             positioning::position_aggregates_numeric(
                                 n_rows,
@@ -265,7 +265,7 @@ fn pivot_impl(
                             )
                         }};
                     }
-                    downcast_as_macro_arg_physical!(value_agg_phys, dispatch)
+                    downcast_as_macro_arg_physical!(value_agg_phys, pivot)?
                 } else {
                     positioning::position_aggregates(
                         n_rows,

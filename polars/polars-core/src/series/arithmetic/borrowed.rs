@@ -1,3 +1,5 @@
+use arrow::compute::arithmetics::basic::NativeArithmetics;
+
 use super::*;
 
 macro_rules! impl_series_arithmetic_op {
@@ -10,7 +12,6 @@ macro_rules! impl_series_arithmetic_op {
         {
             type Output = Series;
             type Error = PolarsError;
-
             fn $try_op(self, rhs: &'rhs Series) -> PolarsResult<Series> {
                 Ok(self
                     .$try_op(self.unpack_series_matching_type(rhs)?)?
@@ -24,7 +25,6 @@ macro_rules! impl_series_arithmetic_op {
             Self: $try_trait<&'rhs Series, Output = Series, Error = PolarsError>,
         {
             type Output = Series;
-
             fn $op(self, rhs: &'rhs Series) -> Series {
                 self.$try_op(rhs).unwrap()
             }
@@ -33,7 +33,6 @@ macro_rules! impl_series_arithmetic_op {
         impl<'lhs, 'rhs> $try_trait<&'rhs Series> for &'lhs Series {
             type Output = Series;
             type Error = PolarsError;
-
             fn $try_op(self, rhs: &'rhs Series) -> PolarsResult<Series> {
                 let lhs = self;
                 match (lhs.dtype(), rhs.dtype()) {
@@ -51,8 +50,58 @@ macro_rules! impl_series_arithmetic_op {
 
         impl<'lhs, 'rhs> $trait<&'rhs Series> for &'lhs Series {
             type Output = Series;
-
             fn $op(self, rhs: &'rhs Series) -> Series {
+                self.$try_op(rhs).unwrap()
+            }
+        }
+
+        impl<T> $try_trait<T> for &Series
+        where
+            T: NumericNative + NativeArithmetics,
+        {
+            type Output = Series;
+            type Error = PolarsError;
+            fn $try_op(self, rhs: T) -> PolarsResult<Self::Output> {
+                let s = self.to_physical_repr();
+                macro_rules! $try_op {
+                    ($ca:expr) => {{
+                        $crate::arithmetics::$try_trait::$try_op($ca, rhs)?.into_series()
+                    }};
+                }
+                // NOTE: this is quite dodgy because simply "convert it to physical and add it"
+                // logic doesn't always work (e.g. for decimals). Needs reviewing.
+                let out = downcast_as_macro_arg_physical!(s, $try_op)?;
+                Ok(finish_cast(self, out))
+            }
+        }
+
+        impl<T> $try_trait<T> for Series
+        where
+            T: NumericNative + NativeArithmetics,
+        {
+            type Output = Series;
+            type Error = PolarsError;
+            fn $try_op(self, rhs: T) -> PolarsResult<Self::Output> {
+                (&self).$try_op(rhs)
+            }
+        }
+
+        impl<T> $trait<T> for &Series
+        where
+            T: NumericNative + NativeArithmetics,
+        {
+            type Output = Series;
+            fn $op(self, rhs: T) -> Self::Output {
+                self.$try_op(rhs).unwrap()
+            }
+        }
+
+        impl<T> $trait<T> for Series
+        where
+            T: NumericNative + NativeArithmetics,
+        {
+            type Output = Series;
+            fn $op(self, rhs: T) -> Self::Output {
                 self.$try_op(rhs).unwrap()
             }
         }
@@ -411,153 +460,6 @@ fn finish_cast(inp: &Series, out: Series) -> Series {
     }
 }
 
-impl<T> Sub<T> for &Series
-where
-    T: Num + NumCast,
-{
-    type Output = Series;
-
-    fn sub(self, rhs: T) -> Self::Output {
-        let s = self.to_physical_repr();
-        macro_rules! sub {
-            ($ca:expr) => {{
-                $ca.sub(rhs).into_series()
-            }};
-        }
-
-        let out = downcast_as_macro_arg_physical!(s, sub);
-        finish_cast(self, out)
-    }
-}
-
-impl<T> Sub<T> for Series
-where
-    T: Num + NumCast,
-{
-    type Output = Self;
-
-    fn sub(self, rhs: T) -> Self::Output {
-        (&self).sub(rhs)
-    }
-}
-
-impl<T> Add<T> for &Series
-where
-    T: Num + NumCast,
-{
-    type Output = Series;
-
-    fn add(self, rhs: T) -> Self::Output {
-        let s = self.to_physical_repr();
-        macro_rules! add {
-            ($ca:expr) => {{
-                $ca.add(rhs).into_series()
-            }};
-        }
-        let out = downcast_as_macro_arg_physical!(s, add);
-        finish_cast(self, out)
-    }
-}
-
-impl<T> Add<T> for Series
-where
-    T: Num + NumCast,
-{
-    type Output = Self;
-
-    fn add(self, rhs: T) -> Self::Output {
-        (&self).add(rhs)
-    }
-}
-
-impl<T> Div<T> for &Series
-where
-    T: Num + NumCast,
-{
-    type Output = Series;
-
-    fn div(self, rhs: T) -> Self::Output {
-        let s = self.to_physical_repr();
-        macro_rules! div {
-            ($ca:expr) => {{
-                $ca.div(rhs).into_series()
-            }};
-        }
-
-        let out = downcast_as_macro_arg_physical!(s, div);
-        finish_cast(self, out)
-    }
-}
-
-impl<T> Div<T> for Series
-where
-    T: Num + NumCast,
-{
-    type Output = Self;
-
-    fn div(self, rhs: T) -> Self::Output {
-        (&self).div(rhs)
-    }
-}
-
-impl<T> Mul<T> for &Series
-where
-    T: Num + NumCast,
-{
-    type Output = Series;
-
-    fn mul(self, rhs: T) -> Self::Output {
-        let s = self.to_physical_repr();
-        macro_rules! mul {
-            ($ca:expr) => {{
-                $ca.mul(rhs).into_series()
-            }};
-        }
-        let out = downcast_as_macro_arg_physical!(s, mul);
-        finish_cast(self, out)
-    }
-}
-
-impl<T> Mul<T> for Series
-where
-    T: Num + NumCast,
-{
-    type Output = Self;
-
-    fn mul(self, rhs: T) -> Self::Output {
-        (&self).mul(rhs)
-    }
-}
-
-impl<T> Rem<T> for &Series
-where
-    T: Num + NumCast,
-{
-    type Output = Series;
-
-    fn rem(self, rhs: T) -> Self::Output {
-        let s = self.to_physical_repr();
-        macro_rules! rem {
-            ($ca:expr) => {{
-                $ca.rem(rhs).into_series()
-            }};
-        }
-        let out = downcast_as_macro_arg_physical!(s, rem);
-        finish_cast(self, out)
-    }
-}
-
-impl<T> Rem<T> for Series
-where
-    T: Num + NumCast,
-{
-    type Output = Self;
-
-    fn rem(self, rhs: T) -> Self::Output {
-        (&self).rem(rhs)
-    }
-}
-
 /// We cannot override the left hand side behaviour. So we create a trait LhsNumOps.
 /// This allows for 1.add(&Series)
 ///
@@ -600,7 +502,7 @@ pub trait LhsNumOps {
 
 impl<T> LhsNumOps for T
 where
-    T: Num + NumCast,
+    T: NumericNative + NativeArithmetics,
 {
     type Output = Series;
 
@@ -615,7 +517,7 @@ where
                 $rhs.lhs_sub(self).into_series()
             }};
         }
-        let out = downcast_as_macro_arg_physical!(s, sub);
+        let out = downcast_as_macro_arg_physical!(s, sub).unwrap();
 
         finish_cast(rhs, out)
     }
@@ -626,7 +528,7 @@ where
                 $rhs.lhs_div(self).into_series()
             }};
         }
-        let out = downcast_as_macro_arg_physical!(s, div);
+        let out = downcast_as_macro_arg_physical!(s, div).unwrap();
 
         finish_cast(rhs, out)
     }
@@ -642,7 +544,7 @@ where
             }};
         }
 
-        let out = downcast_as_macro_arg_physical!(s, rem);
+        let out = downcast_as_macro_arg_physical!(s, rem).unwrap();
 
         finish_cast(rhs, out)
     }

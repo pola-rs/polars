@@ -2903,8 +2903,10 @@ impl DataFrame {
                 let sum = sum?;
 
                 // value lengths: len - null_count
-                let value_length: UInt32Chunked =
-                    (numeric_df.width().sub(&null_count)).u32().unwrap().clone();
+                let value_length: UInt32Chunked = ((numeric_df.width() as u32).sub(&null_count))
+                    .u32()
+                    .unwrap()
+                    .clone();
 
                 // make sure that we do not divide by zero
                 // by replacing with None
