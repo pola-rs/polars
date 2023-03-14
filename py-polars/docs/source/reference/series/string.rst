@@ -1,6 +1,6 @@
-=======
-Strings
-=======
+======
+String
+======
 
 The following methods are available under the `Series.str` attribute.
 

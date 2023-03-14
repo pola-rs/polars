@@ -1,6 +1,6 @@
-=====
-Array
-=====
+====
+List
+====
 
 The following methods are available under the `expr.arr` attribute.
 
