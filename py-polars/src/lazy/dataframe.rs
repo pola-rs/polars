@@ -194,7 +194,7 @@ impl PyLazyFrame {
     #[staticmethod]
     #[allow(clippy::too_many_arguments)]
     #[cfg(feature = "csv-file")]
-    #[pyo3(signature = (path, sep, has_header, ignore_errors, skip_rows, n_rows, cache, overwrite_dtype,
+    #[pyo3(signature = (path, separator, has_header, ignore_errors, skip_rows, n_rows, cache, overwrite_dtype,
         low_memory, comment_char, quote_char, null_values, missing_utf8_is_empty_string,
         infer_schema_length, with_schema_modify, rechunk, skip_rows_after_header,
         encoding, row_count, try_parse_dates, eol_char,
@@ -202,7 +202,7 @@ impl PyLazyFrame {
     )]
     pub fn new_from_csv(
         path: String,
-        sep: &str,
+        separator: &str,
         has_header: bool,
         ignore_errors: bool,
         skip_rows: usize,
@@ -226,7 +226,7 @@ impl PyLazyFrame {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
         let quote_char = quote_char.map(|s| s.as_bytes()[0]);
-        let delimiter = sep.as_bytes()[0];
+        let delimiter = separator.as_bytes()[0];
         let eol_char = eol_char.as_bytes()[0];
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
 

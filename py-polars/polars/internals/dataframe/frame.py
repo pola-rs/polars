@@ -675,7 +675,7 @@ class DataFrame:
         source: str | Path | BinaryIO | bytes,
         has_header: bool = True,
         columns: Sequence[int] | Sequence[str] | None = None,
-        sep: str = ",",
+        separator: str = ",",
         comment_char: str | None = None,
         quote_char: str | None = r'"',
         skip_rows: int = 0,
@@ -749,7 +749,7 @@ class DataFrame:
             scan = scan_csv(
                 source,
                 has_header=has_header,
-                sep=sep,
+                separator=separator,
                 comment_char=comment_char,
                 quote_char=quote_char,
                 skip_rows=skip_rows,
@@ -787,7 +787,7 @@ class DataFrame:
             n_rows,
             skip_rows,
             projection,
-            sep,
+            separator,
             rechunk,
             columns,
             encoding,
@@ -2229,7 +2229,7 @@ class DataFrame:
         self,
         file: None = None,
         has_header: bool = ...,
-        sep: str = ...,
+        separator: str = ...,
         quote: str = ...,
         batch_size: int = ...,
         datetime_format: str | None = ...,
@@ -2245,7 +2245,7 @@ class DataFrame:
         self,
         file: BytesIO | str | Path,
         has_header: bool = ...,
-        sep: str = ...,
+        separator: str = ...,
         quote: str = ...,
         batch_size: int = ...,
         datetime_format: str | None = ...,
@@ -2256,12 +2256,13 @@ class DataFrame:
     ) -> None:
         ...
 
+    @deprecated_alias(sep="separator")
     @deprecate_nonkeyword_arguments(allowed_args=["self", "file"])
     def write_csv(
         self,
         file: BytesIO | str | Path | None = None,
         has_header: bool = True,
-        sep: str = ",",
+        separator: str = ",",
         quote: str = '"',
         batch_size: int = 1024,
         datetime_format: str | None = None,
@@ -2280,7 +2281,7 @@ class DataFrame:
             (default), the output is returned as a string instead.
         has_header
             Whether to include header in the CSV output.
-        sep
+        separator
             Separate CSV fields with this symbol.
         quote
             Byte to use as quoting character.
@@ -2318,10 +2319,10 @@ class DataFrame:
         ...     }
         ... )
         >>> path: pathlib.Path = dirpath / "new_file.csv"
-        >>> df.write_csv(path, sep=",")
+        >>> df.write_csv(path, separator=",")
 
         """
-        if len(sep) > 1:
+        if len(separator) > 1:
             raise ValueError("only single byte separator is allowed")
         elif len(quote) > 1:
             raise ValueError("only single byte quote char is allowed")
@@ -2333,7 +2334,7 @@ class DataFrame:
             self._df.write_csv(
                 buffer,
                 has_header,
-                ord(sep),
+                ord(separator),
                 ord(quote),
                 batch_size,
                 datetime_format,
@@ -2350,7 +2351,7 @@ class DataFrame:
         self._df.write_csv(
             file,
             has_header,
-            ord(sep),
+            ord(separator),
             ord(quote),
             batch_size,
             datetime_format,

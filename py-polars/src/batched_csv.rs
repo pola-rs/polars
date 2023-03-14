@@ -28,7 +28,7 @@ impl PyBatchedCsv {
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (
         infer_schema_length, chunk_size, has_header, ignore_errors, n_rows, skip_rows,
-        projection, sep, rechunk, columns, encoding, n_threads, path, overwrite_dtype,
+        projection, separator, rechunk, columns, encoding, n_threads, path, overwrite_dtype,
         overwrite_dtype_slice, low_memory, comment_char, quote_char, null_values,
         missing_utf8_is_empty_string, try_parse_dates, skip_rows_after_header, row_count,
         sample_size, eol_char)
@@ -41,7 +41,7 @@ impl PyBatchedCsv {
         n_rows: Option<usize>,
         skip_rows: usize,
         projection: Option<Vec<usize>>,
-        sep: &str,
+        separator: &str,
         rechunk: bool,
         columns: Option<Vec<String>>,
         encoding: Wrap<CsvEncoding>,
@@ -95,7 +95,7 @@ impl PyBatchedCsv {
             .infer_schema(infer_schema_length)
             .has_header(has_header)
             .with_n_rows(n_rows)
-            .with_delimiter(sep.as_bytes()[0])
+            .with_delimiter(separator.as_bytes()[0])
             .with_skip_rows(skip_rows)
             .with_ignore_errors(ignore_errors)
             .with_projection(projection)
