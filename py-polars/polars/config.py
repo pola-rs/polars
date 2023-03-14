@@ -38,6 +38,7 @@ POLARS_CFG_ENV_VARS = {
     "POLARS_TABLE_WIDTH",
     "POLARS_VERBOSE",
     "POLARS_ACTIVATE_DECIMAL",
+    "POLARS_STREAMING_CHUNK_SIZE",
 }
 
 
@@ -585,4 +586,24 @@ class Config:
 
         """
         os.environ["POLARS_ACTIVATE_DECIMAL"] = "1"
+        return cls
+
+    @classmethod
+    def set_streaming_chunk_size(cls, size: int) -> type[Config]:
+        """
+        Overwrite chunk size used in ``streaming`` engine.
+
+        By default, the chunk size is determined by the schema
+        and size of the thread pool. For some datasets (esp.
+        when you have large string elements) this can be too
+        optimistic and lead to Out of Memory errors.
+
+        Parameters
+        ----------
+        size
+            Number of rows per chunk. Every thread will process chunks
+            of this size.
+
+        """
+        os.environ["POLARS_STREAMING_CHUNK_SIZE"] = str(size)
         return cls
