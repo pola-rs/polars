@@ -18,10 +18,7 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: nightly-2023-03-10
-          components: rust-docs
+        run: rustup component add rust-docs
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
