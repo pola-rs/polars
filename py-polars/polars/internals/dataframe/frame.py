@@ -3733,46 +3733,15 @@ class DataFrame:
             length = self.height - offset + length
         return self._from_pydf(self._df.slice(offset, length))
 
-    def limit(self, n: int = 5) -> Self:
+    def head(self, n: int = 5) -> Self:
         """
         Get the first `n` rows.
 
-        Alias for :func:`DataFrame.head`.
-
         Parameters
         ----------
         n
-            Number of rows to return.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {"foo": [1, 2, 3, 4, 5, 6], "bar": ["a", "b", "c", "d", "e", "f"]}
-        ... )
-        >>> df.limit(4)
-        shape: (4, 2)
-        ┌─────┬─────┐
-        │ foo ┆ bar │
-        │ --- ┆ --- │
-        │ i64 ┆ str │
-        ╞═════╪═════╡
-        │ 1   ┆ a   │
-        │ 2   ┆ b   │
-        │ 3   ┆ c   │
-        │ 4   ┆ d   │
-        └─────┴─────┘
-
-        """
-        return self.head(n)
-
-    def head(self, n: int = 5) -> Self:
-        """
-        Get the first `n` rows (if negative, returns all rows except the last `n`).
-
-        Parameters
-        ----------
-        n
-            Number of rows to return.
+            Number of rows to return. If a negative value is passed, return all rows
+            except the last ``abs(n)``.
 
         See Also
         --------
@@ -3799,7 +3768,7 @@ class DataFrame:
         │ 3   ┆ 8   ┆ c   │
         └─────┴─────┴─────┘
 
-        Negative values of ``head`` return all rows _except_ the last abs(n).
+        Pass a negative value to get all rows `except` the last ``abs(n)``.
 
         >>> df.head(-3)
         shape: (2, 3)
@@ -3811,19 +3780,21 @@ class DataFrame:
         │ 1   ┆ 6   ┆ a   │
         │ 2   ┆ 7   ┆ b   │
         └─────┴─────┴─────┘
+
         """
         if n < 0:
-            n = len(self) + n
+            n = max(0, self.height + n)
         return self._from_pydf(self._df.head(n))
 
     def tail(self, n: int = 5) -> Self:
         """
-        Get the last `n` rows (if negative, returns all rows except the first `n`).
+        Get the last `n` rows.
 
         Parameters
         ----------
         n
-            Number of rows to return.
+            Number of rows to return. If a negative value is passed, return all rows
+            except the first ``abs(n)``.
 
         See Also
         --------
@@ -3850,7 +3821,7 @@ class DataFrame:
         │ 5   ┆ 10  ┆ e   │
         └─────┴─────┴─────┘
 
-        Negative values of ``tail`` return all rows _except_ the first abs(n).
+        Pass a negative value to get all rows `except` the first ``abs(n)``.
 
         >>> df.tail(-3)
         shape: (2, 3)
@@ -3862,10 +3833,30 @@ class DataFrame:
         │ 4   ┆ 9   ┆ d   │
         │ 5   ┆ 10  ┆ e   │
         └─────┴─────┴─────┘
+
         """
         if n < 0:
-            n = len(self) + n
+            n = max(0, self.height + n)
         return self._from_pydf(self._df.tail(n))
+
+    def limit(self, n: int = 5) -> Self:
+        """
+        Get the first `n` rows.
+
+        Alias for :func:`DataFrame.head`.
+
+        Parameters
+        ----------
+        n
+            Number of rows to return. If a negative value is passed, return all rows
+            except the last ``abs(n)``.
+
+        See Also
+        --------
+        head
+
+        """
+        return self.head(n)
 
     def drop_nulls(self, subset: str | Sequence[str] | None = None) -> Self:
         """

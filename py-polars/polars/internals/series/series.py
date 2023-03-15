@@ -1812,31 +1812,6 @@ class Series:
 
         """
 
-    def limit(self, n: int = 10) -> Series:
-        """
-        Get the first `n` rows.
-
-        Alias for :func:`Series.head`.
-
-        Parameters
-        ----------
-        n
-            Number of rows to return.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.head(2)
-        shape: (2,)
-        Series: 'a' [i64]
-        [
-                1
-                2
-        ]
-
-        """
-        return self.to_frame().select(pli.col(self.name).limit(n)).to_series()
-
     def slice(self, offset: int, length: int | None = None) -> Series:
         """
         Get a slice of this Series.
@@ -1952,17 +1927,33 @@ class Series:
 
     def head(self, n: int = 10) -> Series:
         """
-        Get the first `n` rows.
+        Get the first `n` elements.
 
         Parameters
         ----------
         n
-            Number of rows to return.
+            Number of elements to return. If a negative value is passed, return all
+            elements except the last ``abs(n)``.
+
+        See Also
+        --------
+        tail, slice
 
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.head(2)
+        >>> s = pl.Series("a", [1, 2, 3, 4, 5])
+        >>> s.head(3)
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+                1
+                2
+                3
+        ]
+
+        Pass a negative value to get all rows `except` the last ``abs(n)``.
+
+        >>> s.head(-3)
         shape: (2,)
         Series: 'a' [i64]
         [
@@ -1971,30 +1962,69 @@ class Series:
         ]
 
         """
+        if n < 0:
+            n = max(0, self.len() + n)
         return self.to_frame().select(pli.col(self.name).head(n)).to_series()
 
     def tail(self, n: int = 10) -> Series:
         """
-        Get the last `n` rows.
+        Get the last `n` elements.
 
         Parameters
         ----------
         n
-            Number of rows to return.
+            Number of elements to return. If a negative value is passed, return all
+            elements except the first ``abs(n)``.
+
+        See Also
+        --------
+        head, slice
 
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.tail(2)
+        >>> s = pl.Series("a", [1, 2, 3, 4, 5])
+        >>> s.tail(3)
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+                3
+                4
+                5
+        ]
+
+        Pass a negative value to get all rows `except` the first ``abs(n)``.
+
+        >>> s.tail(-3)
         shape: (2,)
         Series: 'a' [i64]
         [
-                2
-                3
+                4
+                5
         ]
 
         """
+        if n < 0:
+            n = max(0, self.len() + n)
         return self.to_frame().select(pli.col(self.name).tail(n)).to_series()
+
+    def limit(self, n: int = 10) -> Series:
+        """
+        Get the first `n` elements.
+
+        Alias for :func:`Series.head`.
+
+        Parameters
+        ----------
+        n
+            Number of elements to return. If a negative value is passed, return all
+            elements except the last ``abs(n)``.
+
+        See Also
+        --------
+        head
+
+        """
+        return self.head(n)
 
     def take_every(self, n: int) -> Series:
         """
