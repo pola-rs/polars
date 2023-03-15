@@ -2,6 +2,8 @@
 mod json_path;
 #[cfg(feature = "strings")]
 mod namespace;
+#[cfg(feature = "strings")]
+mod replace;
 
 #[cfg(feature = "extract_jsonpath")]
 pub use json_path::*;
