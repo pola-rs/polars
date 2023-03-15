@@ -1,8 +1,6 @@
 use std::cmp::Ordering;
 use std::ops::Mul;
 
-#[cfg(feature = "timezones")]
-use chrono::LocalResult;
 use chrono::{
     Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeZone as TimeZoneTrait, Timelike, Weekday,
 };
@@ -10,8 +8,6 @@ use polars_arrow::export::arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
 };
 use polars_core::export::arrow::temporal_conversions::MICROSECONDS;
-#[cfg(feature = "timezones")]
-use polars_core::prelude::polars_bail;
 use polars_core::prelude::{
     datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us, PolarsResult,
 };
@@ -23,6 +19,8 @@ use super::calendar::{
     is_leap_year, last_day_of_month, NS_DAY, NS_HOUR, NS_MICROSECOND, NS_MILLISECOND, NS_MINUTE,
     NS_SECOND, NS_WEEK,
 };
+#[cfg(feature = "timezones")]
+use crate::utils::{localize_datetime, unlocalize_datetime};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -51,29 +49,6 @@ impl Ord for Duration {
     fn cmp(&self, other: &Self) -> Ordering {
         self.duration_ns().cmp(&other.duration_ns())
     }
-}
-
-#[cfg(feature = "timezones")]
-pub(crate) fn localize_datetime(
-    ndt: NaiveDateTime,
-    tz: &impl TimeZoneTrait,
-) -> PolarsResult<NaiveDateTime> {
-    // e.g. '2021-01-01 03:00' -> '2021-01-01 03:00CDT'
-    match tz.from_local_datetime(&ndt) {
-        LocalResult::Single(tz) => Ok(tz.naive_utc()),
-        LocalResult::Ambiguous(_, _) => {
-            polars_bail!(ComputeError: "ambiguous timestamps are not (yet) supported")
-        }
-        LocalResult::None => {
-            polars_bail!(ComputeError: "non-existent timestamps are not (yet) supported")
-        }
-    }
-}
-
-#[cfg(feature = "timezones")]
-fn unlocalize_datetime(ndt: NaiveDateTime, tz: &impl TimeZoneTrait) -> NaiveDateTime {
-    // e.g. '2021-01-01 03:00CDT' -> '2021-01-01 03:00'
-    tz.from_utc_datetime(&ndt).naive_local()
 }
 
 impl Duration {

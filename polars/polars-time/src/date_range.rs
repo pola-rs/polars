@@ -1,35 +1,16 @@
 #[cfg(feature = "timezones")]
-use arrow::temporal_conversions::{
-    parse_offset, timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
-};
-#[cfg(feature = "timezones")]
-use chrono::TimeZone as TimeZoneTrait;
+use arrow::temporal_conversions::parse_offset;
 use chrono::{Datelike, NaiveDateTime};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 
 use crate::prelude::*;
 #[cfg(feature = "timezones")]
-use crate::windows::duration::localize_datetime;
+use crate::utils::localize_timestamp;
 
 pub fn in_nanoseconds_window(ndt: &NaiveDateTime) -> bool {
     // ~584 year around 1970
     !(ndt.year() > 2554 || ndt.year() < 1386)
-}
-
-#[cfg(feature = "timezones")]
-fn localize_timestamp<T: TimeZoneTrait>(timestamp: i64, tu: TimeUnit, tz: T) -> PolarsResult<i64> {
-    match tu {
-        TimeUnit::Nanoseconds => {
-            Ok(localize_datetime(timestamp_ns_to_datetime(timestamp), &tz)?.timestamp_nanos())
-        }
-        TimeUnit::Microseconds => {
-            Ok(localize_datetime(timestamp_us_to_datetime(timestamp), &tz)?.timestamp_micros())
-        }
-        TimeUnit::Milliseconds => {
-            Ok(localize_datetime(timestamp_ms_to_datetime(timestamp), &tz)?.timestamp_millis())
-        }
-    }
 }
 
 #[cfg(feature = "private")]
