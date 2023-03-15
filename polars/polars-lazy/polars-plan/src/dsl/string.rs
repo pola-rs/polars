@@ -341,10 +341,17 @@ impl StringNameSpace {
     /// Replace values that match a regex `pat` with a `value`.
     pub fn replace(self, pat: Expr, value: Expr, literal: bool) -> Expr {
         self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::Replace {
-                all: false,
-                literal,
-            }),
+            FunctionExpr::StringExpr(StringFunction::Replace { n: 1, literal }),
+            &[pat, value],
+            true,
+        )
+    }
+
+    #[cfg(feature = "regex")]
+    /// Replace values that match a regex `pat` with a `value`.
+    pub fn replace_n(self, pat: Expr, value: Expr, literal: bool, n: i64) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::Replace { n, literal }),
             &[pat, value],
             true,
         )
@@ -354,7 +361,7 @@ impl StringNameSpace {
     /// Replace all values that match a regex `pat` with a `value`.
     pub fn replace_all(self, pat: Expr, value: Expr, literal: bool) -> Expr {
         self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::Replace { all: true, literal }),
+            FunctionExpr::StringExpr(StringFunction::Replace { n: -1, literal }),
             &[pat, value],
             true,
         )

@@ -49,8 +49,9 @@ pub enum StringFunction {
     ConcatHorizontal(String),
     #[cfg(feature = "regex")]
     Replace {
-        // replace_single or replace_all
-        all: bool,
+        // negative is replace all
+        // how many matches to replace
+        n: i64,
         literal: bool,
     },
     Uppercase,
@@ -432,11 +433,12 @@ fn is_literal_pat(pat: &str) -> bool {
 }
 
 #[cfg(feature = "regex")]
-fn replace_single<'a>(
+fn replace_n<'a>(
     ca: &'a Utf8Chunked,
     pat: &'a Utf8Chunked,
     val: &'a Utf8Chunked,
     literal: bool,
+    n: usize,
 ) -> PolarsResult<Utf8Chunked> {
     match (pat.len(), val.len()) {
         (1, 1) => {
@@ -447,11 +449,19 @@ fn replace_single<'a>(
             let literal = literal || is_literal_pat(pat);
 
             match literal {
-                true => ca.replace_literal(pat, val),
-                false => ca.replace(pat, val),
+                true => ca.replace_literal(pat, val, n),
+                false => {
+                    if n > 1 {
+                        polars_bail!(ComputeError: "regex replacement with 'n > 1' not yet supported")
+                    }
+                    ca.replace(pat, val)
+                }
             }
         }
         (1, len_val) => {
+            if n > 1 {
+                polars_bail!(ComputeError: "multivalue replacement with 'n > 1' not yet supported")
+            }
             let mut pat = get_pat(pat)?.to_string();
             polars_ensure!(
                 len_val == ca.len(),
@@ -529,10 +539,12 @@ fn replace_all<'a>(
 }
 
 #[cfg(feature = "regex")]
-pub(super) fn replace(s: &[Series], literal: bool, all: bool) -> PolarsResult<Series> {
+pub(super) fn replace(s: &[Series], literal: bool, n: i64) -> PolarsResult<Series> {
     let column = &s[0];
     let pat = &s[1];
     let val = &s[2];
+
+    let all = n < 0;
 
     let column = column.utf8()?;
     let pat = pat.utf8()?;
@@ -541,7 +553,7 @@ pub(super) fn replace(s: &[Series], literal: bool, all: bool) -> PolarsResult<Se
     if all {
         replace_all(column, pat, val, literal)
     } else {
-        replace_single(column, pat, val, literal)
+        replace_n(column, pat, val, literal, n as usize)
     }
     .map(|ca| ca.into_series())
 }

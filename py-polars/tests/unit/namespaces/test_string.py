@@ -83,6 +83,14 @@ def test_str_replace_str_replace_all() -> None:
     assert_series_equal(s.str.replace_all("o", "0"), expected)
 
 
+def test_str_replace_n_single() -> None:
+    s = pl.Series(["aba", "abaa"])
+
+    assert s.str.replace("a", "b", n=1).to_list() == ["bba", "bbaa"]
+    assert s.str.replace("a", "b", n=2).to_list() == ["bbb", "bbba"]
+    assert s.str.replace("a", "b", n=3).to_list() == ["bbb", "bbbb"]
+
+
 def test_str_to_lowercase() -> None:
     s = pl.Series(["Hello", "WORLD"])
     expected = pl.Series(["hello", "world"])
