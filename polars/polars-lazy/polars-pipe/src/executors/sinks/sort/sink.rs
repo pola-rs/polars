@@ -2,6 +2,7 @@ use std::any::Any;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
+use polars_core::config::verbose;
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{AnyValue, SchemaRef, Series, SortOptions};
@@ -55,6 +56,9 @@ impl SortSink {
     }
 
     fn init_ooc(&mut self) -> PolarsResult<()> {
+        if verbose() {
+            eprintln!("OOC sort started");
+        }
         self.ooc = true;
 
         // start IO thread
@@ -68,7 +72,7 @@ impl SortSink {
     fn store_chunk(&mut self, chunk: DataChunk) -> PolarsResult<()> {
         if !self.ooc {
             let chunk_bytes = chunk.data.estimated_size();
-            let used = self.mem_track.fetch_add_used(chunk_bytes);
+            let used = self.mem_track.fetch_add(chunk_bytes);
             let free = self.mem_track.get_available();
 
             // we need some free memory to be able to sort
