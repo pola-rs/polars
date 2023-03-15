@@ -3,6 +3,7 @@ use std::any::Any;
 use polars_core::prelude::sort::_broadcast_descending;
 use polars_core::prelude::sort::arg_sort_multiple::_get_rows_encoded_compat_array;
 use polars_core::prelude::*;
+use polars_core::series::IsSorted;
 use polars_plan::prelude::*;
 use polars_row::SortField;
 
@@ -22,6 +23,22 @@ fn get_sort_fields(sort_idx: &[usize], sort_args: &SortArguments) -> Vec<SortFie
             nulls_last: sort_args.nulls_last,
         })
         .collect()
+}
+
+fn finalize_dataframe(df: &mut DataFrame, sort_idx: &[usize], sort_args: &SortArguments) {
+    unsafe {
+        let cols = df.get_columns_mut();
+        // pop the encoded sort column
+        let _ = cols.pop();
+
+        let first_sort_col = &mut cols[sort_idx[0]];
+        let flag = if sort_args.descending[0] {
+            IsSorted::Descending
+        } else {
+            IsSorted::Ascending
+        };
+        first_sort_col.set_sorted_flag(flag)
+    }
 }
 
 /// This struct will dispatch all sorting to `SortSink`
@@ -127,13 +144,14 @@ impl Sink for SortSinkMultiple {
         // we must adapt the finalized sink result so that the sort encoded column is dropped
         match out {
             FinalizedSink::Finished(mut df) => {
-                // pop the sort column
-                unsafe { df.get_columns_mut().pop() };
+                finalize_dataframe(&mut df, self.sort_idx.as_ref(), &self.sort_args);
                 Ok(FinalizedSink::Finished(df))
             }
-            FinalizedSink::Source(source) => {
-                Ok(FinalizedSink::Source(Box::new(DropEncoded { source })))
-            }
+            FinalizedSink::Source(source) => Ok(FinalizedSink::Source(Box::new(DropEncoded {
+                source,
+                sort_idx: self.sort_idx.clone(),
+                sort_args: std::mem::take(&mut self.sort_args),
+            }))),
             // SortSink should not produce this branch
             FinalizedSink::Operator(_) => unreachable!(),
         }
@@ -150,6 +168,8 @@ impl Sink for SortSinkMultiple {
 
 struct DropEncoded {
     source: Box<dyn Source>,
+    sort_idx: Arc<[usize]>,
+    sort_args: SortArguments,
 }
 
 impl Source for DropEncoded {
@@ -157,8 +177,7 @@ impl Source for DropEncoded {
         let mut result = self.source.get_batches(context);
         if let Ok(SourceResult::GotMoreData(data)) = &mut result {
             for chunk in data {
-                // drop encoded column
-                unsafe { chunk.data.get_columns_mut().pop() };
+                finalize_dataframe(&mut chunk.data, self.sort_idx.as_ref(), &self.sort_args)
             }
         };
         result
