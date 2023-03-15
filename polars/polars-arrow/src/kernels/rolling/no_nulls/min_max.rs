@@ -41,13 +41,16 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> fo
 
     unsafe fn update(&mut self, start: usize, end: usize) -> T {
         // recompute min
-        if start >= self.last_end {
+        if start >= self.last_end
+            // the window only got smaller
+            || end == self.last_end
+        {
             self.min = *self
                 .slice
                 .get_unchecked(start..end)
                 .iter()
                 .min_by(|a, b| compare_fn_nan_min(*a, *b))
-                .unwrap_or(&self.slice[start]);
+                .unwrap_or(self.slice.get_unchecked(start));
 
             self.last_start = start;
             self.last_end = end;
@@ -78,9 +81,10 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> fo
             .get_unchecked(self.last_end..end)
             .iter()
             .min_by(|a, b| compare_fn_nan_min(*a, *b))
-            .unwrap_or(
-                &self.slice[std::cmp::min(self.last_start, self.last_end.saturating_sub(1))],
-            );
+            .unwrap_or(self.slice.get_unchecked(std::cmp::min(
+                self.last_start,
+                self.last_end.saturating_sub(1),
+            )));
 
         if recompute_min {
             match compare_fn_nan_min(&self.min, entering_min) {
@@ -161,13 +165,16 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> fo
 
     unsafe fn update(&mut self, start: usize, end: usize) -> T {
         // recompute max
-        if start >= self.last_end {
+        if start >= self.last_end
+            // the window only got smaller
+            || end == self.last_end
+        {
             self.max = *self
                 .slice
                 .get_unchecked(start..end)
                 .iter()
                 .max_by(|a, b| compare_fn_nan_max(*a, *b))
-                .unwrap_or(&self.slice[start]);
+                .unwrap_or(self.slice.get_unchecked(start));
 
             self.last_start = start;
             self.last_end = end;
@@ -195,9 +202,10 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> fo
             .get_unchecked(self.last_end..end)
             .iter()
             .max_by(|a, b| compare_fn_nan_max(*a, *b))
-            .unwrap_or(
-                &self.slice[std::cmp::max(self.last_start, self.last_end.saturating_sub(1))],
-            );
+            .unwrap_or(self.slice.get_unchecked(std::cmp::max(
+                self.last_start,
+                self.last_end.saturating_sub(1),
+            )));
 
         if recompute_max {
             match compare_fn_nan_max(&self.max, entering_max) {
