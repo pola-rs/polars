@@ -14,12 +14,14 @@ pub(super) struct MemTracker {
 
 impl MemTracker {
     pub(super) fn new(thread_count: usize) -> Self {
-        Self {
+        let out = Self {
             available_mem: Default::default(),
             used_by_node: Default::default(),
-            fetch_count: Default::default(),
+            fetch_count: Arc::new(AtomicUsize::new(1)),
             thread_count,
-        }
+        };
+        out.refresh_memory();
+        out
     }
 
     /// This shouldn't be called often as this is expensive.
@@ -39,7 +41,7 @@ impl MemTracker {
     }
 
     /// Increment the used memory and return the previous value.
-    pub(super) fn fetch_add_used(&self, add: usize) -> usize {
+    pub(super) fn fetch_add(&self, add: usize) -> usize {
         self.used_by_node.fetch_add(add, Ordering::Relaxed)
     }
 }
