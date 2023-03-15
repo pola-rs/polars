@@ -12,7 +12,7 @@ from hypothesis.strategies import booleans, floats, sampled_from
 from numpy.testing import assert_array_equal
 
 import polars as pl
-from polars.internals.expr.expr import _prepare_alpha
+from polars.expr.expr import _prepare_alpha
 from polars.testing import assert_series_equal
 from polars.testing.parametric import series
 

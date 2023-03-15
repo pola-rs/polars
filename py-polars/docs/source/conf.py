@@ -202,8 +202,8 @@ def linkcode_resolve(domain, info):
 def _minify_classpaths(s: str) -> str:
     # strip private polars classpaths, leaving the classname:
     # * "pli.Expr" -> "Expr"
-    # * "polars.internals.expr.expr.Expr" -> "Expr"
-    # * "polars.internals.lazyframe.frame.LazyFrame" -> "LazyFrame"
+    # * "polars.expr.expr.Expr" -> "Expr"
+    # * "polars.lazyframe.frame.LazyFrame" -> "LazyFrame"
     # also:
     # * "datetime.date" => "date"
     s = s.replace("datetime.", "")

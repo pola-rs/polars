@@ -19,7 +19,7 @@ def test_interchange() -> None:
 
 
 def test_interchange_pyarrow_required(monkeypatch: Any) -> None:
-    monkeypatch.setattr(pl.internals.dataframe.frame, "_PYARROW_AVAILABLE", False)
+    monkeypatch.setattr(pl.dataframe.frame, "_PYARROW_AVAILABLE", False)
 
     df = pl.DataFrame({"a": [1, 2]})
     with pytest.raises(ImportError, match="pyarrow"):
@@ -28,7 +28,7 @@ def test_interchange_pyarrow_required(monkeypatch: Any) -> None:
 
 def test_interchange_pyarrow_min_version(monkeypatch: Any) -> None:
     monkeypatch.setattr(
-        pl.internals.dataframe.frame.pa,  # type: ignore[attr-defined]
+        pl.dataframe.frame.pa,  # type: ignore[attr-defined]
         "__version__",
         "10.0.0",
     )

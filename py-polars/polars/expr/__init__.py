@@ -1,4 +1,4 @@
-from polars.internals.expr.expr import (
+from polars.expr.expr import (
     Expr,
     expr_to_lit_or_expr,
     selection_to_pyexpr_list,

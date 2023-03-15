@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars.internals.series.utils import expr_dispatch
+from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     import polars.internals as pli

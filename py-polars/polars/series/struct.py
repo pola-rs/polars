@@ -4,7 +4,7 @@ import os
 from typing import TYPE_CHECKING, Sequence
 
 import polars.internals as pli
-from polars.internals.series.utils import expr_dispatch
+from polars.series.utils import expr_dispatch
 from polars.utils.decorators import redirect
 from polars.utils.various import sphinx_accessor
 

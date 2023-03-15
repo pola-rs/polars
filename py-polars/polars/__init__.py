@@ -11,6 +11,12 @@ from polars.convert import (
     from_pandas,
     from_records,
 )
+
+# TODO remove need for wrap_df
+from polars.dataframe import (
+    DataFrame,
+    wrap_df,  # noqa: F401
+)
 from polars.datatypes import (
     DATETIME_DTYPES,
     DURATION_DTYPES,
@@ -59,13 +65,7 @@ from polars.exceptions import (
     ShapeError,
     StructFieldNotFoundError,
 )
-
-# TODO remove need for wrap_df
-from polars.internals.dataframe import (
-    DataFrame,
-    wrap_df,  # noqa: F401
-)
-from polars.internals.expr.expr import Expr
+from polars.expr.expr import Expr
 from polars.internals.functions import (
     align_frames,
     concat,
@@ -128,11 +128,6 @@ from polars.internals.lazy_functions import (
 from polars.internals.lazy_functions import date_ as date
 from polars.internals.lazy_functions import datetime_ as datetime
 from polars.internals.lazy_functions import list_ as list
-from polars.internals.lazyframe import LazyFrame
-
-# TODO: remove need for wrap_s
-from polars.internals.series import wrap_s  # noqa: F401
-from polars.internals.series.series import Series
 from polars.internals.sql import SQLContext
 from polars.internals.whenthen import when
 from polars.io import (
@@ -155,6 +150,11 @@ from polars.io import (
     scan_parquet,
     scan_pyarrow_dataset,
 )
+from polars.lazyframe import LazyFrame
+
+# TODO: remove need for wrap_s
+from polars.series import wrap_s  # noqa: F401
+from polars.series.series import Series
 from polars.string_cache import StringCache, toggle_string_cache, using_string_cache
 from polars.utils import (
     build_info,

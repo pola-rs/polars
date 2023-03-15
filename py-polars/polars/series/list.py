@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Callable
 
 import polars.internals as pli
-from polars.internals.series.utils import expr_dispatch
+from polars.series.utils import expr_dispatch
 from polars.utils.decorators import deprecate_nonkeyword_arguments
 
 if TYPE_CHECKING:

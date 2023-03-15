@@ -43,8 +43,8 @@ from polars.datatypes import (
     py_type_to_dtype,
 )
 from polars.internals import selection_to_pyexpr_list
-from polars.internals.lazyframe.groupby import LazyGroupBy
 from polars.internals.slice import LazyPolarsSlice
+from polars.lazyframe.groupby import LazyGroupBy
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import (
     deprecate_nonkeyword_arguments,
@@ -272,7 +272,7 @@ class LazyFrame:
         infer_schema_length: int | None = N_INFER_DEFAULT,
         nan_to_null: bool = False,
     ):
-        from polars.internals.dataframe import DataFrame
+        from polars.dataframe import DataFrame
 
         self._ldf = (
             DataFrame(
