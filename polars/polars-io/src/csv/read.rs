@@ -600,7 +600,7 @@ where
 
 #[cfg(feature = "temporal")]
 fn parse_dates(mut df: DataFrame, fixed_schema: &Schema) -> DataFrame {
-    let cols = std::mem::take(df.get_columns_mut())
+    let cols = unsafe { std::mem::take(df.get_columns_mut()) }
         .into_par_iter()
         .map(|s| {
             if let Ok(ca) = s.utf8() {

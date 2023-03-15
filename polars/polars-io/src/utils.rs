@@ -84,7 +84,7 @@ pub(crate) fn update_row_counts(dfs: &mut [(DataFrame, IdxSize)], offset: IdxSiz
     if !dfs.is_empty() {
         let mut previous = dfs[0].1 + offset;
         for (df, n_read) in &mut dfs[1..] {
-            if let Some(s) = df.get_columns_mut().get_mut(0) {
+            if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
                 *s = &*s + previous;
             }
             previous += *n_read;
@@ -99,7 +99,7 @@ pub(crate) fn update_row_counts2(dfs: &mut [DataFrame], offset: IdxSize) {
         let mut previous = dfs[0].height() as IdxSize + offset;
         for df in &mut dfs[1..] {
             let n_read = df.height() as IdxSize;
-            if let Some(s) = df.get_columns_mut().get_mut(0) {
+            if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
                 *s = &*s + previous;
             }
             previous += n_read;

@@ -128,7 +128,7 @@ impl Sink for SortSinkMultiple {
         match out {
             FinalizedSink::Finished(mut df) => {
                 // pop the sort column
-                df.get_columns_mut().pop();
+                unsafe { df.get_columns_mut().pop() };
                 Ok(FinalizedSink::Finished(df))
             }
             FinalizedSink::Source(source) => {
@@ -158,7 +158,7 @@ impl Source for DropEncoded {
         if let Ok(SourceResult::GotMoreData(data)) = &mut result {
             for chunk in data {
                 // drop encoded column
-                chunk.data.get_columns_mut().pop();
+                unsafe { chunk.data.get_columns_mut().pop() };
             }
         };
         result
