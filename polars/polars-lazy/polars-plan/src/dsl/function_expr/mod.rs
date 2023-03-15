@@ -425,7 +425,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "concat_str")]
             ConcatHorizontal(delimiter) => map_as_slice!(strings::concat_hor, &delimiter),
             #[cfg(feature = "regex")]
-            Replace { all, literal } => map_as_slice!(strings::replace, literal, all),
+            Replace { n, literal } => map_as_slice!(strings::replace, literal, n),
             Uppercase => map!(strings::uppercase),
             Lowercase => map!(strings::lowercase),
             Strip(matches) => map!(strings::strip, matches.as_deref()),

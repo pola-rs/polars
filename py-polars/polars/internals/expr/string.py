@@ -1081,7 +1081,12 @@ class ExprStringNameSpace:
         return pli.wrap_expr(self._pyexpr.str_splitn(by, n))
 
     def replace(
-        self, pattern: str | pli.Expr, value: str | pli.Expr, literal: bool = False
+        self,
+        pattern: str | pli.Expr,
+        value: str | pli.Expr,
+        literal: bool = False,
+        *,
+        n: int = 1,
     ) -> pli.Expr:
         r"""
         Replace first matching regex/literal substring with a new string value.
@@ -1094,6 +1099,8 @@ class ExprStringNameSpace:
             Replacement string.
         literal
              Treat pattern as a literal string.
+        n
+            Number of matches to replace
 
         See Also
         --------
@@ -1119,7 +1126,7 @@ class ExprStringNameSpace:
         pattern = pli.expr_to_lit_or_expr(pattern, str_to_lit=True)
         value = pli.expr_to_lit_or_expr(value, str_to_lit=True)
         return pli.wrap_expr(
-            self._pyexpr.str_replace(pattern._pyexpr, value._pyexpr, literal)
+            self._pyexpr.str_replace_n(pattern._pyexpr, value._pyexpr, literal, n)
         )
 
     def replace_all(
