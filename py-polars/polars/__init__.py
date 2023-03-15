@@ -128,7 +128,6 @@ from polars.internals.lazy_functions import (
 from polars.internals.lazy_functions import date_ as date
 from polars.internals.lazy_functions import datetime_ as datetime
 from polars.internals.lazy_functions import list_ as list
-from polars.internals.sql import SQLContext
 from polars.internals.whenthen import when
 from polars.io import (
     read_avro,
@@ -155,6 +154,7 @@ from polars.lazyframe import LazyFrame
 # TODO: remove need for wrap_s
 from polars.series import wrap_s  # noqa: F401
 from polars.series.series import Series
+from polars.sql import SQLContext
 from polars.string_cache import StringCache, toggle_string_cache, using_string_cache
 from polars.utils import (
     build_info,
