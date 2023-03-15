@@ -240,6 +240,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
 
     /// Replace the leftmost literal (sub)string with another string
     fn replace_literal<'a>(&'a self, pat: &str, val: &str) -> PolarsResult<Utf8Chunked> {
+        let ca = self.as_utf8();
         // amortize allocation
         let mut buf = String::new();
 
@@ -266,7 +267,6 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
                 s
             }
         };
-        let ca = self.as_utf8();
         Ok(ca.apply_mut(f))
     }
 
@@ -279,6 +279,16 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
 
     /// Replace all matching literal (sub)strings with another string
     fn replace_literal_all<'a>(&'a self, pat: &str, val: &str) -> PolarsResult<Utf8Chunked> {
+        let ca = self.as_utf8();
+        // for single bytes we can replace on the whole values buffer
+        if pat.len() == 1 && val.len() == 1 {
+            let pat = pat.as_bytes()[0];
+            let val = val.as_bytes()[0];
+            return Ok(
+                ca.apply_kernel(&|arr| Box::new(replace::replace_lit_single_char(arr, pat, val)))
+            );
+        }
+
         // amortize allocation
         let mut buf = String::new();
 
@@ -306,7 +316,6 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
             }
         };
 
-        let ca = self.as_utf8();
         Ok(ca.apply_mut(f))
     }
 
