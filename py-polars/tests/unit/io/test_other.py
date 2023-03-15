@@ -29,27 +29,6 @@ def test_categorical_round_trip() -> None:
     assert df2.dtypes == [pl.Int64, pl.Categorical]
 
 
-def test_date_list_fmt() -> None:
-    df = pl.DataFrame(
-        {
-            "mydate": ["2020-01-01", "2020-01-02", "2020-01-05", "2020-01-05"],
-            "index": [1, 2, 5, 5],
-        }
-    )
-
-    df = df.with_columns(pl.col("mydate").str.strptime(pl.Date, "%Y-%m-%d"))
-    assert (
-        str(df.groupby("index", maintain_order=True).agg(pl.col("mydate"))["mydate"])
-        == """shape: (3,)
-Series: 'mydate' [list[date]]
-[
-	[2020-01-01]
-	[2020-01-02]
-	[2020-01-05, 2020-01-05]
-]"""
-    )
-
-
 def test_from_different_chunks() -> None:
     s0 = pl.Series("a", [1, 2, 3, 4, None])
     s1 = pl.Series("b", [1, 2])

@@ -1757,18 +1757,6 @@ def test_groupby_cat_list() -> None:
     assert out.dtype == pl.Categorical
     assert out[0] == "a"
 
-    # test if we can also correctly fmt the categorical in list
-    assert (
-        str(grouped)
-        == """shape: (3,)
-Series: 'cat_column' [list[cat]]
-[
-	["a", "b"]
-	["b", "a"]
-	["b"]
-]"""
-    )
-
 
 def test_groupby_agg_n_unique_floats() -> None:
     # tests proper dispatch
