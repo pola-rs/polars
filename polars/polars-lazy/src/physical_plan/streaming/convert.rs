@@ -331,6 +331,7 @@ pub(crate) fn insert_streaming_nodes(
                 state.operators_sinks.push((IS_SINK, !IS_RHS_JOIN, root));
                 stack.push((*input, state, current_idx))
             }
+            #[allow(unused_variables)]
             Aggregate {
                 input,
                 aggs,
@@ -356,6 +357,7 @@ pub(crate) fn insert_streaming_nodes(
                     }
                 }
                 let input_schema = lp_arena.get(*input).schema(lp_arena);
+                #[allow(unused_mut)]
                 let mut can_stream = true;
 
                 #[cfg(feature = "dynamic_groupby")]

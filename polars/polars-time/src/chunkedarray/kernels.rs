@@ -191,6 +191,7 @@ to_temporal_unit!(
     i64,
     ArrowDataType::Int32
 );
+
 #[cfg(feature = "dtype-datetime")]
 to_temporal_unit!(
     datetime_to_iso_year_ms,
