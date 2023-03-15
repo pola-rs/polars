@@ -11,6 +11,12 @@ pub struct SyncCounter {
     count: NonNull<AtomicUsize>,
 }
 
+impl Default for SyncCounter {
+    fn default() -> Self {
+        Self::new(0)
+    }
+}
+
 impl SyncCounter {
     pub fn new(value: usize) -> Self {
         let count = Box::new(AtomicUsize::new(value));

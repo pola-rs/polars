@@ -2,6 +2,7 @@
 mod file_sink;
 pub(crate) mod groupby;
 mod joins;
+mod memory;
 mod ordered;
 mod reproject;
 mod slice;
