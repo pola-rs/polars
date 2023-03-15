@@ -1,6 +1,6 @@
-=====
-Array
-=====
+====
+List
+====
 
 The following methods are available under the `Series.arr` attribute.
 

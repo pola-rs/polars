@@ -1,6 +1,6 @@
-=======
-Strings
-=======
+======
+String
+======
 
 The following methods are available under the `expr.str` attribute.
 
