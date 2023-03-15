@@ -1188,7 +1188,7 @@ class Series:
         └────────────┴───────┘
 
         """
-        stats: dict[str, float | None | int | str | date | datetime | timedelta]
+        stats: dict[str, float | None | int | str | date | datetime | timedelta | time]
 
         if self.len() == 0:
             raise ValueError("Series must contain at least one value")
@@ -1263,7 +1263,7 @@ class Series:
         """Reduce this Series to the product value."""
         return self.to_frame().select(pli.col(self.name).product()).to_series()[0]
 
-    def min(self) -> int | float | date | datetime | timedelta | str | None:
+    def min(self) -> int | float | date | datetime | timedelta | time | str | None:
         """
         Get the minimal value in this Series.
 
@@ -1276,7 +1276,7 @@ class Series:
         """
         return self._s.min()
 
-    def max(self) -> int | float | date | datetime | timedelta | str | None:
+    def max(self) -> int | float | date | datetime | timedelta | time | str | None:
         """
         Get the maximum value in this Series.
 
