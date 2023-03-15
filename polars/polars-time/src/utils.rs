@@ -50,7 +50,7 @@ pub(crate) fn localize_timestamp<T: TimeZoneTrait>(
 }
 
 #[cfg(feature = "timezones")]
-pub(crate) fn _unlocalize_timestamp<T: TimeZoneTrait>(timestamp: i64, tu: TimeUnit, tz: T) -> i64 {
+pub(crate) fn unlocalize_timestamp<T: TimeZoneTrait>(timestamp: i64, tu: TimeUnit, tz: T) -> i64 {
     match tu {
         TimeUnit::Nanoseconds => {
             unlocalize_datetime(timestamp_ns_to_datetime(timestamp), &tz).timestamp_nanos()
