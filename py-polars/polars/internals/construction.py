@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-from contextlib import suppress
 from dataclasses import astuple, is_dataclass
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
@@ -28,14 +27,13 @@ from polars.datatypes import (
     Duration,
     Float32,
     List,
+    Object,
     Struct,
     Time,
     Unknown,
     Utf8,
-    dtype_to_arrow_type,
     dtype_to_py_type,
     is_polars_dtype,
-    py_type_to_arrow_type,
     py_type_to_dtype,
 )
 from polars.datatypes.constructor import (
@@ -47,13 +45,12 @@ from polars.datatypes.constructor import (
 from polars.dependencies import (
     _NUMPY_AVAILABLE,
     _PANDAS_AVAILABLE,
-    _PYARROW_AVAILABLE,
     _check_for_numpy,
 )
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.exceptions import ShapeError
+from polars.exceptions import ComputeError, ShapeError
 from polars.utils.decorators import deprecated_alias
 from polars.utils.meta import threadpool_size
 from polars.utils.various import _is_generator, arrlen, range_to_series
@@ -190,10 +187,14 @@ def sequence_from_anyvalue_or_object(name: str, values: Sequence[Any]) -> PySeri
 
     """
     try:
-        return PySeries.new_from_anyvalues(name, values)
+        return PySeries.new_from_anyvalues(name, values, strict=True)
     # raised if we cannot convert to Wrap<AnyValue>
     except RuntimeError:
         return PySeries.new_object(name, values, False)
+    except ComputeError as e:
+        if "mixed dtypes" in str(e):
+            return PySeries.new_object(name, values, False)
+        raise e
 
 
 def iterable_to_pyseries(
@@ -249,7 +250,6 @@ def sequence_to_pyseries(
 ) -> PySeries:
     """Construct a PySeries from a sequence."""
     python_dtype: type | None = None
-    nested_dtype: PolarsDataType | type | None = None
 
     # empty sequence
     if not values and dtype is None:
@@ -259,7 +259,7 @@ def sequence_to_pyseries(
 
     # lists defer to subsequent handling; identify nested type
     elif dtype == List:
-        nested_dtype = getattr(dtype, "inner", None)
+        getattr(dtype, "inner", None)
         python_dtype = list
 
     # infer temporal type handling
@@ -322,7 +322,7 @@ def sequence_to_pyseries(
 
             # we use anyvalue builder to create the datetime array
             # we store the values internally as UTC and set the timezone
-            py_series = PySeries.new_from_anyvalues(name, values)
+            py_series = PySeries.new_from_anyvalues(name, values, strict)
             if time_unit is None:
                 s = pli.wrap_s(py_series)
             else:
@@ -339,71 +339,13 @@ def sequence_to_pyseries(
             return s._s
 
         elif python_dtype in (list, tuple):
-            if nested_dtype is None:
-                nested_value = _get_first_non_none(value)
-                if isinstance(nested_value, range):
-                    nested_dtype = list
-                else:
-                    nested_dtype = (
-                        type(nested_value) if nested_value is not None else float
-                    )
-
-            # recursively call Series constructor for nested types
-            if nested_dtype in (list, List, Struct):
-                s = sequence_to_pyseries(
-                    name=name,
-                    values=[
-                        pli.Series(
-                            values=v,
-                            dtype=nested_dtype,  # type: ignore[arg-type]
-                            strict=strict,
-                            nan_to_null=nan_to_null,
-                        )
-                        for v in (values or [None])
-                    ],
-                    nan_to_null=nan_to_null,
-                    strict=strict,
+            if isinstance(dtype, Object):
+                return PySeries.new_object(name, values, strict)
+            if dtype:
+                return sequence_from_anyvalue_or_object(name, values).cast(
+                    dtype, strict=False
                 )
-                return s if values else pli.Series._from_pyseries(s).head(0)._s
-
-            # logs will show a panic if we infer wrong dtype and it's hard to error
-            # from the rust side. to reduce the likelihood of this happening we
-            # infer the dtype of first 100 elements; if all() fails, we will hit
-            # the PySeries.new_object
-            if not _PYARROW_AVAILABLE:
-                # check lists for consistent inner types
-                if isinstance(value, list):
-                    count = 0
-                    equal_to_inner = True
-                    for lst in values:
-                        for vl in lst:
-                            equal_to_inner = type(vl) == nested_dtype
-                            if not equal_to_inner or count > N_INFER_DEFAULT:
-                                break
-                            count += 1
-                    if equal_to_inner:
-                        dtype = py_type_to_dtype(nested_dtype)
-                        with suppress(BaseException):
-                            return PySeries.new_list(name, values, dtype)
-                # pass; give up and create via "new_object" if we get here
-            else:
-                try:
-                    if is_polars_dtype(nested_dtype):
-                        nested_arrow_dtype = dtype_to_arrow_type(
-                            nested_dtype  # type: ignore[arg-type]
-                        )
-                    else:
-                        nested_arrow_dtype = py_type_to_arrow_type(
-                            nested_dtype  # type: ignore[arg-type]
-                        )
-                except ValueError:  # pragma: no cover
-                    return sequence_from_anyvalue_or_object(name, values)
-                with suppress(pa.lib.ArrowInvalid, pa.lib.ArrowTypeError):
-                    arrow_values = pa.array(values, pa.large_list(nested_arrow_dtype))
-                    return arrow_to_pyseries(name, arrow_values)
-
-            # Convert mixed sequences like `[[12], "foo", 9]`
-            return PySeries.new_object(name, values, strict)
+            return sequence_from_anyvalue_or_object(name, values)
 
         elif (
             _check_for_numpy(value)
@@ -425,7 +367,7 @@ def sequence_to_pyseries(
             constructor = py_type_to_constructor(python_dtype)
             if constructor == PySeries.new_object:
                 try:
-                    return PySeries.new_from_anyvalues(name, values)
+                    return PySeries.new_from_anyvalues(name, values, strict)
                 # raised if we cannot convert to Wrap<AnyValue>
                 except RuntimeError:
                     return sequence_from_anyvalue_or_object(name, values)

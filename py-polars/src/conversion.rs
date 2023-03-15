@@ -583,6 +583,23 @@ fn abs_decimal_from_digits(
     (v <= MAX_ABS_DEC).then_some((v, scale))
 }
 
+fn materialize_list(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
+    if ob.is_empty()? {
+        Ok(Wrap(AnyValue::List(Series::new_empty("", &DataType::Null))))
+    } else {
+        let avs = ob.extract::<Wrap<Row>>()?.0 .0;
+        // use first `n` values to infer datatype
+        // this value is not too large as this will be done with every
+        // anyvalue that has to be converted, which can be many
+        let n = 25;
+        let dtype =
+            any_values_to_dtype(&avs[..std::cmp::min(avs.len(), n)]).map_err(PyPolarsErr::from)?;
+        let s =
+            Series::from_any_values_and_dtype("", &avs, &dtype, true).map_err(PyPolarsErr::from)?;
+        Ok(Wrap(AnyValue::List(s)))
+    }
+}
+
 impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
         let type_name = ob.get_type().name()?;
@@ -610,20 +627,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             }
             Ok(Wrap(AnyValue::StructOwned(Box::new((vals, keys)))))
         } else if ob.is_instance_of::<PyList>()? {
-            if ob.is_empty()? {
-                Ok(Wrap(AnyValue::List(Series::new_empty("", &DataType::Null))))
-            } else {
-                let avs = ob.extract::<Wrap<Row>>()?.0 .0;
-                // use first `n` values to infer datatype
-                // this value is not too large as this will be done with every
-                // anyvalue that has to be converted, which can be many
-                let n = 25;
-                let dtype = any_values_to_dtype(&avs[..std::cmp::min(avs.len(), n)])
-                    .map_err(PyPolarsErr::from)?;
-                let s = Series::from_any_values_and_dtype("", &avs, &dtype)
-                    .map_err(PyPolarsErr::from)?;
-                Ok(Wrap(AnyValue::List(s)))
-            }
+            materialize_list(ob)
         } else if ob.hasattr("_s")? {
             let py_pyseries = ob.getattr("_s").unwrap();
             let series = py_pyseries.extract::<PySeries>().unwrap().series;
@@ -720,6 +724,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                     }
                     Ok(Wrap(AnyValue::Decimal(v, scale)))
                 }
+                "range" => materialize_list(ob),
                 _ => Err(PyErr::from(PyPolarsErr::Other(format!(
                     "object type not supported {ob:?}",
                 )))),

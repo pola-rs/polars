@@ -32,9 +32,9 @@ def test_init_dict() -> None:
         assert df.shape == (0, 2)
         assert df.schema == {"a": pl.Date, "b": pl.Utf8}
 
-    # List of empty list/tuple
-    df = pl.DataFrame({"a": [[]], "b": [()]})
-    expected = {"a": pl.List(pl.Float64), "b": pl.List(pl.Float64)}
+    # List of empty list
+    df = pl.DataFrame({"a": [[]], "b": [[]]})
+    expected = {"a": pl.List(pl.Int32), "b": pl.List(pl.Int32)}
     assert df.schema == expected
     assert df.rows() == [([], [])]
 
@@ -938,3 +938,9 @@ def test_init_with_explicit_binary_schema() -> None:
     s = pl.Series("a", [b"hello", b"world"], dtype=pl.Binary)
     assert s.dtype == pl.Binary
     assert s.to_list() == [b"hello", b"world"]
+
+
+def test_nested_categorical() -> None:
+    s = pl.Series([["a"]], dtype=pl.List(pl.Categorical))
+    assert s.to_list() == [["a"]]
+    assert s.dtype == pl.List(pl.Categorical)

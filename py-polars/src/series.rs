@@ -225,10 +225,14 @@ impl From<Series> for PySeries {
 )]
 impl PySeries {
     #[staticmethod]
-    pub fn new_from_anyvalues(name: &str, val: Vec<Wrap<AnyValue<'_>>>) -> PyResult<PySeries> {
+    pub fn new_from_anyvalues(
+        name: &str,
+        val: Vec<Wrap<AnyValue<'_>>>,
+        strict: bool,
+    ) -> PyResult<PySeries> {
         let avs = slice_extract_wrapped(&val);
         // from anyvalues is fallible
-        let s = Series::from_any_values(name, avs).map_err(PyPolarsErr::from)?;
+        let s = Series::from_any_values(name, avs, strict).map_err(PyPolarsErr::from)?;
         Ok(s.into())
     }
 
@@ -275,13 +279,14 @@ impl PySeries {
     pub fn new_decimal(
         name: &str,
         val: Vec<Wrap<AnyValue<'_>>>,
-        _strict: bool,
+        strict: bool,
     ) -> PyResult<PySeries> {
         // TODO: do we have to respect 'strict' here? it's possible if we want to
         let avs = slice_extract_wrapped(&val);
         // create a fake dtype with a placeholder "none" scale, to be inferred later
         let dtype = DataType::Decimal(None, None);
-        let s = Series::from_any_values_and_dtype(name, avs, &dtype).map_err(PyPolarsErr::from)?;
+        let s = Series::from_any_values_and_dtype(name, avs, &dtype, strict)
+            .map_err(PyPolarsErr::from)?;
         Ok(s.into())
     }
 

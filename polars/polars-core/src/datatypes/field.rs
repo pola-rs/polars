@@ -150,6 +150,8 @@ impl From<&ArrowDataType> for DataType {
                     panic!("activate the 'object' feature to be able to load POLARS_EXTENSION_TYPE")
                 }
             }
+            #[cfg(feature = "dtype-decimal")]
+            ArrowDataType::Decimal(precision, scale) => DataType::Decimal(Some(*precision), Some(*scale)),
             dt => panic!("Arrow datatype {dt:?} not supported by Polars. You probably need to activate that data-type feature."),
         }
     }
