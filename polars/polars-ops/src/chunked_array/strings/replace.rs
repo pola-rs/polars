@@ -6,7 +6,7 @@ pub(super) fn replace_lit_single_char(arr: &Utf8Array<i64>, pat: u8, val: u8) ->
     let mut offsets = arr.offsets().clone();
     let validity = arr.validity().cloned();
     let start = offsets[0] as usize;
-    let end = (offsets[offsets.len() - 1] + 1) as usize;
+    let end = (offsets[offsets.len() - 1]) as usize;
 
     let mut values = values.as_slice()[start..end].to_vec();
     for byte in values.iter_mut() {
