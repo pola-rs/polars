@@ -340,7 +340,7 @@ where
             )));
         }
         let mut df = accumulate_dataframes_vertical_unchecked(dfs);
-        DataFrame::new(std::mem::take(df.get_columns_mut())).map(FinalizedSink::Finished)
+        unsafe { DataFrame::new(std::mem::take(df.get_columns_mut())).map(FinalizedSink::Finished) }
     }
 
     fn split(&self, thread_no: usize) -> Box<dyn Sink> {

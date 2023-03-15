@@ -110,7 +110,7 @@ impl PyDataFrame {
         // used for polars-lazy python node. This takes the dataframe from underneath of you, so
         // don't use this anywhere else.
         let mut df = std::mem::take(&mut self.df);
-        let cols = std::mem::take(df.get_columns_mut());
+        let cols = unsafe { std::mem::take(df.get_columns_mut()) };
         let (ptr, len, cap) = cols.into_raw_parts();
         (ptr as usize, len, cap)
     }
@@ -467,13 +467,15 @@ impl PyDataFrame {
             schema_overwrite.map(|wrap| wrap.0),
         )?;
 
-        pydf.df
-            .get_columns_mut()
-            .iter_mut()
-            .zip(&names)
-            .for_each(|(s, name)| {
-                s.rename(name);
-            });
+        unsafe {
+            pydf.df
+                .get_columns_mut()
+                .iter_mut()
+                .zip(&names)
+                .for_each(|(s, name)| {
+                    s.rename(name);
+                });
+        }
         let length = names.len();
         if names.into_iter().collect::<PlHashSet<_>>().len() != length {
             let err = PolarsError::Duplicate("duplicate column names found".into());

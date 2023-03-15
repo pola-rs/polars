@@ -571,7 +571,7 @@ impl DataFrame {
             _ => s,
         };
 
-        df_left.get_columns_mut().insert(join_column_index, s);
+        unsafe { df_left.get_columns_mut().insert(join_column_index, s) };
         _finish_join(df_left, df_right, suffix.as_deref())
     }
 }

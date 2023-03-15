@@ -206,7 +206,7 @@ impl GenericJoinProbe {
                 self.output_names = Some(out.get_column_names_owned());
                 out
             }
-            Some(names) => {
+            Some(names) => unsafe {
                 left_df
                     .get_columns_mut()
                     .extend_from_slice(right_df.get_columns());
@@ -218,7 +218,7 @@ impl GenericJoinProbe {
                         s.rename(name);
                     });
                 left_df
-            }
+            },
         };
 
         Ok(OperatorResult::Finished(chunk.with_data(out)))
@@ -296,12 +296,14 @@ impl GenericJoinProbe {
             }
             Some(names) => {
                 a.hstack_mut(b.get_columns()).unwrap();
-                a.get_columns_mut()
-                    .iter_mut()
-                    .zip(names)
-                    .for_each(|(s, name)| {
-                        s.rename(name);
-                    });
+                unsafe {
+                    a.get_columns_mut()
+                        .iter_mut()
+                        .zip(names)
+                        .for_each(|(s, name)| {
+                            s.rename(name);
+                        });
+                }
                 a
             }
         };

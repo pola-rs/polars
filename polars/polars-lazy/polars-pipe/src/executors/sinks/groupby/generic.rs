@@ -422,7 +422,7 @@ impl Sink for GenericGroupbySink {
             )));
         }
         let mut df = accumulate_dataframes_vertical_unchecked(dfs);
-        DataFrame::new(std::mem::take(df.get_columns_mut())).map(FinalizedSink::Finished)
+        unsafe { DataFrame::new(std::mem::take(df.get_columns_mut())).map(FinalizedSink::Finished) }
     }
 
     fn as_any(&mut self) -> &mut dyn Any {
