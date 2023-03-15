@@ -143,6 +143,8 @@ ignore = [
   "SIM102", # Use a single `if` statement instead of nested `if` statements
   # ruff
   "RUF005", # unpack-instead-of-concatenating-to-collection-literal
+  # pycodestyle
+  "W191", # Indentation contains tabs - disabled because of https://github.com/charliermarsh/ruff/issues/3438
   # TODO: Remove errors below to further improve docstring linting
   # Ordered from most common to least common errors.
   "D105",
