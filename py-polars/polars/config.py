@@ -161,7 +161,7 @@ class Config:
     @classmethod
     def set_ascii_tables(cls, active: bool = True) -> type[Config]:
         """
-        Use ASCII characters to print table outlines (set False to revert to UTF8).
+        Use ASCII characters to display table outlines (set False to revert to UTF8).
 
         Examples
         --------
@@ -193,12 +193,12 @@ class Config:
     @classmethod
     def set_fmt_str_lengths(cls, n: int) -> type[Config]:
         """
-        Set the number of characters used to print string values.
+        Set the number of characters used to display string values.
 
         Parameters
         ----------
         n : int
-            number of characters to print
+            number of characters to display
 
         """
         os.environ["POLARS_FMT_STR_LEN"] = str(n)
@@ -247,12 +247,12 @@ class Config:
     @classmethod
     def set_tbl_cols(cls, n: int) -> type[Config]:
         """
-        Set the number of columns used to print tables.
+        Set the number of columns that are visible when displaying tables.
 
         Parameters
         ----------
         n : int
-            number of columns to print. If n<0 print all the columns.
+            number of columns to display; if ``n < 0`` (eg: -1), display all columns.
 
         Examples
         --------
@@ -515,8 +515,8 @@ class Config:
         Parameters
         ----------
         n : int
-            number of rows to print; if n < 0, prints all rows (DataFrame) and
-            all elements (Series).
+            number of rows to display; if ``n < 0`` (eg: -1), display all
+            rows (DataFrame) and all elements (Series).
 
         Examples
         --------

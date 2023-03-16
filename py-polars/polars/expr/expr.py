@@ -3270,10 +3270,13 @@ class Expr:
 
         Notes
         -----
-        Using ``apply`` is strongly discouraged as you will be effectively running
-        python for loops. This will be very slow.
-        Wherever possible you should strongly prefer the native expression API
-        to achieve the best performance.
+        * Using ``apply`` is strongly discouraged as you will be effectively running
+          python "for" loops. This will be very slow. Wherever possible you should
+          strongly prefer the native expression API to achieve the best performance.
+
+        * If your function is expensive and you don't want it to be called more than
+          once for a given input, consider applying an ``@lru_cache`` decorator to it.
+          With suitable data you may achieve order-of-magnitude speedups (or more).
 
         Parameters
         ----------

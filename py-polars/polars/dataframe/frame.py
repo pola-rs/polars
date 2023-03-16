@@ -4966,7 +4966,7 @@ class DataFrame:
 
         - The native expression engine runs in Rust; UDFs run in Python.
         - Use of Python UDFs forces the DataFrame to be materialized in memory.
-        - Polars-native expressions can be parallelised (UDFs cannot).
+        - Polars-native expressions can be parallelised (UDFs typically cannot).
         - Polars-native expressions can be logically optimised (UDFs cannot).
 
         Wherever possible you should strongly prefer the native expression API
@@ -4975,7 +4975,7 @@ class DataFrame:
         Parameters
         ----------
         function
-            Custom function/ lambda function.
+            Custom function or lambda.
         return_dtype
             Output type of the operation. If none given, Polars tries to infer the type.
         inference_size
@@ -4984,10 +4984,14 @@ class DataFrame:
 
         Notes
         -----
-        The frame-level ``apply`` cannot track column names (as the UDF is a black-box
-        that may arbitrarily drop, rearrange, transform, or add new columns); if you
-        want to apply a UDF such that column names are preserved, you should use the
-        expression-level ``apply`` syntax instead.
+        * The frame-level ``apply`` cannot track column names (as the UDF is a black-box
+          that may arbitrarily drop, rearrange, transform, or add new columns); if you
+          want to apply a UDF such that column names are preserved, you should use the
+          expression-level ``apply`` syntax instead.
+
+        * If your function is expensive and you don't want it to be called more than
+          once for a given input, consider applying an ``@lru_cache`` decorator to it.
+          With suitable data you may achieve order-of-magnitude speedups (or more).
 
         Examples
         --------
