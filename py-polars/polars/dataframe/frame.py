@@ -140,6 +140,7 @@ if TYPE_CHECKING:
         UniqueKeepStrategy,
         UnstackDirection,
     )
+    from polars.series.series import Series
 
     if sys.version_info >= (3, 8):
         from typing import Literal
@@ -161,9 +162,9 @@ if TYPE_CHECKING:
     # MultiColSelector indexes into the horizontal axis
     # NOTE: wrapping these as strings is necessary for Python <3.10
 
-    MultiRowSelector: TypeAlias = "slice | range | list[int] | pli.Series"
+    MultiRowSelector: TypeAlias = "slice | range | list[int] | Series"
     MultiColSelector: TypeAlias = (
-        "slice | range | list[int] | list[str] | list[bool] | pli.Series"
+        "slice | range | list[int] | list[str] | list[bool] | Series"
     )
 
     T = TypeVar("T")
@@ -432,9 +433,7 @@ class DataFrame:
     @classmethod
     def _from_dict(
         cls,
-        data: Mapping[
-            str, Sequence[object] | Mapping[str, Sequence[object]] | pli.Series
-        ],
+        data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
         schema: SchemaDefinition | None = None,
         schema_overrides: SchemaDict | None = None,
     ) -> Self:
@@ -1304,10 +1303,10 @@ class DataFrame:
         casts = [s.cast(to).alias(s.name) for s in df if s.dtype() in from_]
         return df.with_columns(casts) if casts else df
 
-    def __floordiv__(self, other: DataFrame | pli.Series | int | float) -> Self:
+    def __floordiv__(self, other: DataFrame | Series | int | float) -> Self:
         return self._div(other, floordiv=True)
 
-    def __truediv__(self, other: DataFrame | pli.Series | int | float) -> Self:
+    def __truediv__(self, other: DataFrame | Series | int | float) -> Self:
         return self._div(other, floordiv=False)
 
     def __bool__(self) -> NoReturn:
@@ -1334,42 +1333,40 @@ class DataFrame:
     def __le__(self, other: Any) -> DataFrame:
         return self._comp(other, "lt_eq")
 
-    def __getstate__(self) -> list[pli.Series]:
+    def __getstate__(self) -> list[Series]:
         return self.get_columns()
 
     def __setstate__(self, state) -> None:  # type: ignore[no-untyped-def]
         self._df = DataFrame(state)._df
 
-    def __mul__(self, other: DataFrame | pli.Series | int | float) -> Self:
+    def __mul__(self, other: DataFrame | Series | int | float) -> Self:
         if isinstance(other, DataFrame):
             return self._from_pydf(self._df.mul_df(other._df))
 
         other = _prepare_other_arg(other)
         return self._from_pydf(self._df.mul(other._s))
 
-    def __rmul__(self, other: DataFrame | pli.Series | int | float) -> Self:
+    def __rmul__(self, other: DataFrame | Series | int | float) -> Self:
         return self * other
 
-    def __add__(self, other: DataFrame | pli.Series | int | float | bool | str) -> Self:
+    def __add__(self, other: DataFrame | Series | int | float | bool | str) -> Self:
         if isinstance(other, DataFrame):
             return self._from_pydf(self._df.add_df(other._df))
         other = _prepare_other_arg(other)
         return self._from_pydf(self._df.add(other._s))
 
-    def __radd__(
-        self, other: DataFrame | pli.Series | int | float | bool | str
-    ) -> Self:
+    def __radd__(self, other: DataFrame | Series | int | float | bool | str) -> Self:
         if isinstance(other, str):
             return self.select((pli.lit(other) + pli.col("*")).keep_name())
         return self + other
 
-    def __sub__(self, other: DataFrame | pli.Series | int | float) -> Self:
+    def __sub__(self, other: DataFrame | Series | int | float) -> Self:
         if isinstance(other, DataFrame):
             return self._from_pydf(self._df.sub_df(other._df))
         other = _prepare_other_arg(other)
         return self._from_pydf(self._df.sub(other._s))
 
-    def __mod__(self, other: DataFrame | pli.Series | int | float) -> Self:
+    def __mod__(self, other: DataFrame | Series | int | float) -> Self:
         if isinstance(other, DataFrame):
             return self._from_pydf(self._df.rem_df(other._df))
         other = _prepare_other_arg(other)
@@ -1393,9 +1390,7 @@ class DataFrame:
         else:
             return self.shape[dim] + idx
 
-    def _pos_idxs(
-        self, idxs: np.ndarray[Any, Any] | pli.Series, dim: int
-    ) -> pli.Series:
+    def _pos_idxs(self, idxs: np.ndarray[Any, Any] | Series, dim: int) -> Series:
         # pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx).
         idx_type = get_index_type()
 
@@ -1468,7 +1463,7 @@ class DataFrame:
         raise NotImplementedError("Unsupported idxs datatype.")
 
     @overload
-    def __getitem__(self, item: str) -> pli.Series:
+    def __getitem__(self, item: str) -> Series:
         ...
 
     @overload
@@ -1485,11 +1480,11 @@ class DataFrame:
         ...
 
     @overload
-    def __getitem__(self, item: tuple[MultiRowSelector, int]) -> pli.Series:
+    def __getitem__(self, item: tuple[MultiRowSelector, int]) -> Series:
         ...
 
     @overload
-    def __getitem__(self, item: tuple[MultiRowSelector, str]) -> pli.Series:
+    def __getitem__(self, item: tuple[MultiRowSelector, str]) -> Series:
         ...
 
     @overload
@@ -1514,7 +1509,7 @@ class DataFrame:
             | tuple[int, int]
             | tuple[int, str]
         ),
-    ) -> DataFrame | pli.Series:
+    ) -> DataFrame | Series:
         """Get item. Does quite a lot. Read the comments."""
         # select rows and columns at once
         # every 2d selection, i.e. tuple is row column order, just like numpy
@@ -1823,7 +1818,7 @@ class DataFrame:
         return pa.Table.from_batches(record_batches)
 
     @overload
-    def to_dict(self, as_series: Literal[True] = ...) -> dict[str, pli.Series]:
+    def to_dict(self, as_series: Literal[True] = ...) -> dict[str, Series]:
         ...
 
     @overload
@@ -1833,12 +1828,12 @@ class DataFrame:
     @overload
     def to_dict(
         self, as_series: bool = True
-    ) -> dict[str, pli.Series] | dict[str, list[Any]]:
+    ) -> dict[str, Series] | dict[str, list[Any]]:
         ...
 
     def to_dict(
         self, as_series: bool = True
-    ) -> dict[str, pli.Series] | dict[str, list[Any]]:
+    ) -> dict[str, Series] | dict[str, list[Any]]:
         """
         Convert DataFrame to a dictionary mapping column name to values.
 
@@ -2072,7 +2067,7 @@ class DataFrame:
         date_as_object = kwargs.pop("date_as_object", False)
         return tbl.to_pandas(date_as_object=date_as_object, **kwargs)
 
-    def to_series(self, index: int = 0) -> pli.Series:
+    def to_series(self, index: int = 0) -> Series:
         """
         Select column as Series at index location.
 
@@ -3177,7 +3172,7 @@ class DataFrame:
             self.lazy().rename(mapping).collect(no_optimization=True)._df
         )
 
-    def insert_at_idx(self, index: int, series: pli.Series) -> Self:
+    def insert_at_idx(self, index: int, series: Series) -> Self:
         """
         Insert a Series at a certain column index. This operation is in place.
 
@@ -3233,9 +3228,7 @@ class DataFrame:
 
     def filter(
         self,
-        predicate: (
-            pli.Expr | str | pli.Series | list[bool] | np.ndarray[Any, Any] | bool
-        ),
+        predicate: (pli.Expr | str | Series | list[bool] | np.ndarray[Any, Any] | bool),
     ) -> Self:
         """
         Filter the rows in the DataFrame based on a predicate expression.
@@ -3493,7 +3486,7 @@ class DataFrame:
         """
         return self._df.find_idx_by_name(name)
 
-    def replace_at_idx(self, index: int, series: pli.Series) -> Self:
+    def replace_at_idx(self, index: int, series: Series) -> Self:
         """
         Replace a column at an index location.
 
@@ -3665,7 +3658,7 @@ class DataFrame:
         """
         return self._df.frame_equal(other._df, null_equal)
 
-    def replace(self, column: str, new_col: pli.Series) -> Self:
+    def replace(self, column: str, new_col: Series) -> Self:
         """
         Replace a column by a new Series.
 
@@ -5046,7 +5039,7 @@ class DataFrame:
     @deprecate_nonkeyword_arguments()
     def hstack(
         self,
-        columns: list[pli.Series] | DataFrame,
+        columns: list[Series] | DataFrame,
         in_place: bool = False,
     ) -> Self:
         """
@@ -5252,7 +5245,7 @@ class DataFrame:
             self.lazy().drop(columns, *more_columns).collect(no_optimization=True)._df
         )
 
-    def drop_in_place(self, name: str) -> pli.Series:
+    def drop_in_place(self, name: str) -> Series:
         """
         Drop a single column in-place and return the dropped column.
 
@@ -5377,7 +5370,7 @@ class DataFrame:
         """
         return self._from_pydf(self._df.clone())
 
-    def get_columns(self) -> list[pli.Series]:
+    def get_columns(self) -> list[Series]:
         """
         Get the DataFrame as a List of Series.
 
@@ -5433,7 +5426,7 @@ class DataFrame:
         """
         return [pli.wrap_s(s) for s in self._df.get_columns()]
 
-    def get_column(self, name: str) -> pli.Series:
+    def get_column(self, name: str) -> Series:
         """
         Get a single column as Series by name.
 
@@ -6212,7 +6205,7 @@ class DataFrame:
             ._df
         )
 
-    def is_duplicated(self) -> pli.Series:
+    def is_duplicated(self) -> Series:
         """
         Get a mask of all duplicated rows in this DataFrame.
 
@@ -6249,7 +6242,7 @@ class DataFrame:
         """
         return pli.wrap_s(self._df.is_duplicated())
 
-    def is_unique(self) -> pli.Series:
+    def is_unique(self) -> Series:
         """
         Get a mask of all unique rows in this DataFrame.
 
@@ -6646,14 +6639,14 @@ class DataFrame:
         ...
 
     @overload
-    def max(self, axis: Literal[1]) -> pli.Series:
+    def max(self, axis: Literal[1]) -> Series:
         ...
 
     @overload
-    def max(self, axis: int = 0) -> Self | pli.Series:
+    def max(self, axis: int = 0) -> Self | Series:
         ...
 
-    def max(self, axis: int = 0) -> Self | pli.Series:
+    def max(self, axis: int = 0) -> Self | Series:
         """
         Aggregate the columns of this DataFrame to their maximum value.
 
@@ -6688,14 +6681,14 @@ class DataFrame:
         ...
 
     @overload
-    def min(self, axis: Literal[1]) -> pli.Series:
+    def min(self, axis: Literal[1]) -> Series:
         ...
 
     @overload
-    def min(self, axis: int = 0) -> Self | pli.Series:
+    def min(self, axis: int = 0) -> Self | Series:
         ...
 
-    def min(self, axis: int = 0) -> Self | pli.Series:
+    def min(self, axis: int = 0) -> Self | Series:
         """
         Aggregate the columns of this DataFrame to their minimum value.
 
@@ -6740,7 +6733,7 @@ class DataFrame:
         *,
         axis: Literal[1],
         null_strategy: NullStrategy = "ignore",
-    ) -> pli.Series:
+    ) -> Series:
         ...
 
     @overload
@@ -6749,7 +6742,7 @@ class DataFrame:
         *,
         axis: int = 0,
         null_strategy: NullStrategy = "ignore",
-    ) -> Self | pli.Series:
+    ) -> Self | Series:
         ...
 
     def sum(
@@ -6757,7 +6750,7 @@ class DataFrame:
         *,
         axis: int = 0,
         null_strategy: NullStrategy = "ignore",
-    ) -> Self | pli.Series:
+    ) -> Self | Series:
         """
         Aggregate the columns of this DataFrame to their sum value.
 
@@ -6817,7 +6810,7 @@ class DataFrame:
         *,
         axis: Literal[1],
         null_strategy: NullStrategy = "ignore",
-    ) -> pli.Series:
+    ) -> Series:
         ...
 
     @overload
@@ -6826,7 +6819,7 @@ class DataFrame:
         *,
         axis: int = 0,
         null_strategy: NullStrategy = "ignore",
-    ) -> Self | pli.Series:
+    ) -> Self | Series:
         ...
 
     @deprecate_nonkeyword_arguments()
@@ -6834,7 +6827,7 @@ class DataFrame:
         self,
         axis: int = 0,
         null_strategy: NullStrategy = "ignore",
-    ) -> Self | pli.Series:
+    ) -> Self | Series:
         """
         Aggregate the columns of this DataFrame to their mean value.
 
@@ -7345,9 +7338,7 @@ class DataFrame:
             n = 1
         return self._from_pydf(self._df.sample_n(n, with_replacement, shuffle, seed))
 
-    def fold(
-        self, operation: Callable[[pli.Series, pli.Series], pli.Series]
-    ) -> pli.Series:
+    def fold(self, operation: Callable[[Series, Series], Series]) -> Series:
         """
         Apply a horizontal reduction on a DataFrame.
 
@@ -7820,7 +7811,7 @@ class DataFrame:
         seed_1: int | None = None,
         seed_2: int | None = None,
         seed_3: int | None = None,
-    ) -> pli.Series:
+    ) -> Series:
         """
         Hash and combine the rows in this DataFrame.
 
@@ -7906,7 +7897,7 @@ class DataFrame:
         """
         return self.height == 0
 
-    def to_struct(self, name: str) -> pli.Series:
+    def to_struct(self, name: str) -> Series:
         """
         Convert a ``DataFrame`` to a ``Series`` of type ``Struct``.
 
@@ -8139,7 +8130,7 @@ class DataFrame:
         )
 
 
-def _prepare_other_arg(other: Any, length: int | None = None) -> pli.Series:
+def _prepare_other_arg(other: Any, length: int | None = None) -> Series:
     # if not a series create singleton series such that it will broadcast
     value = other
     if not isinstance(other, pli.Series):

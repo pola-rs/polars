@@ -9,6 +9,7 @@ from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_a
 if TYPE_CHECKING:
     from datetime import date, datetime, time
 
+    from polars.expr.expr import Expr
     from polars.internals.type_aliases import NullBehavior, ToStructStrategy
 
 
@@ -17,10 +18,10 @@ class ExprListNameSpace:
 
     _accessor = "arr"
 
-    def __init__(self, expr: pli.Expr):
+    def __init__(self, expr: Expr):
         self._pyexpr = expr._pyexpr
 
-    def lengths(self) -> pli.Expr:
+    def lengths(self) -> Expr:
         """
         Get the length of the arrays as UInt32.
 
@@ -41,7 +42,7 @@ class ExprListNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.arr_lengths())
 
-    def sum(self) -> pli.Expr:
+    def sum(self) -> Expr:
         """
         Sum all the lists in the array.
 
@@ -62,7 +63,7 @@ class ExprListNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.lst_sum())
 
-    def max(self) -> pli.Expr:
+    def max(self) -> Expr:
         """
         Compute the max value of the lists in the array.
 
@@ -83,7 +84,7 @@ class ExprListNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.lst_max())
 
-    def min(self) -> pli.Expr:
+    def min(self) -> Expr:
         """
         Compute the min value of the lists in the array.
 
@@ -104,7 +105,7 @@ class ExprListNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.lst_min())
 
-    def mean(self) -> pli.Expr:
+    def mean(self) -> Expr:
         """
         Compute the mean value of the lists in the array.
 
@@ -127,7 +128,7 @@ class ExprListNameSpace:
 
     @deprecate_nonkeyword_arguments()
     @deprecated_alias(reverse="descending")
-    def sort(self, descending: bool = False) -> pli.Expr:
+    def sort(self, descending: bool = False) -> Expr:
         """
         Sort the arrays in this column.
 
@@ -167,7 +168,7 @@ class ExprListNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.lst_sort(descending))
 
-    def reverse(self) -> pli.Expr:
+    def reverse(self) -> Expr:
         """
         Reverse the arrays in the list.
 
@@ -192,7 +193,7 @@ class ExprListNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.lst_reverse())
 
-    def unique(self) -> pli.Expr:
+    def unique(self) -> Expr:
         """
         Get the unique/distinct values in the list.
 
@@ -217,8 +218,8 @@ class ExprListNameSpace:
         return pli.wrap_expr(self._pyexpr.lst_unique())
 
     def concat(
-        self, other: list[pli.Expr | str] | pli.Expr | str | pli.Series | list[Any]
-    ) -> pli.Expr:
+        self, other: list[Expr | str] | Expr | str | pli.Series | list[Any]
+    ) -> Expr:
         """
         Concat the arrays in a Series dtype List in linear time.
 
@@ -252,13 +253,13 @@ class ExprListNameSpace:
         ):
             return self.concat(pli.Series([other]))
 
-        other_list: list[pli.Expr | str | pli.Series]
+        other_list: list[Expr | str | pli.Series]
         other_list = [other] if not isinstance(other, list) else copy.copy(other)  # type: ignore[arg-type]
 
         other_list.insert(0, pli.wrap_expr(self._pyexpr))
         return pli.concat_list(other_list)
 
-    def get(self, index: int | pli.Expr | str) -> pli.Expr:
+    def get(self, index: int | Expr | str) -> Expr:
         """
         Get the value by index in the sublists.
 
@@ -292,9 +293,9 @@ class ExprListNameSpace:
 
     def take(
         self,
-        index: pli.Expr | pli.Series | list[int] | list[list[int]],
+        index: Expr | pli.Series | list[int] | list[list[int]],
         null_on_oob: bool = False,
-    ) -> pli.Expr:
+    ) -> Expr:
         """
         Take sublists by multiple indices.
 
@@ -317,10 +318,10 @@ class ExprListNameSpace:
         index = pli.expr_to_lit_or_expr(index, str_to_lit=False)._pyexpr
         return pli.wrap_expr(self._pyexpr.lst_take(index, null_on_oob))
 
-    def __getitem__(self, item: int) -> pli.Expr:
+    def __getitem__(self, item: int) -> Expr:
         return self.get(item)
 
-    def first(self) -> pli.Expr:
+    def first(self) -> Expr:
         """
         Get the first value of the sublists.
 
@@ -342,7 +343,7 @@ class ExprListNameSpace:
         """
         return self.get(0)
 
-    def last(self) -> pli.Expr:
+    def last(self) -> Expr:
         """
         Get the last value of the sublists.
 
@@ -365,8 +366,8 @@ class ExprListNameSpace:
         return self.get(-1)
 
     def contains(
-        self, item: float | str | bool | int | date | datetime | time | pli.Expr
-    ) -> pli.Expr:
+        self, item: float | str | bool | int | date | datetime | time | Expr
+    ) -> Expr:
         """
         Check if sublists contain the given item.
 
@@ -399,7 +400,7 @@ class ExprListNameSpace:
             self._pyexpr.arr_contains(pli.expr_to_lit_or_expr(item)._pyexpr)
         )
 
-    def join(self, separator: str) -> pli.Expr:
+    def join(self, separator: str) -> Expr:
         """
         Join all string items in a sublist and place a separator between them.
 
@@ -431,7 +432,7 @@ class ExprListNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.lst_join(separator))
 
-    def arg_min(self) -> pli.Expr:
+    def arg_min(self) -> Expr:
         """
         Retrieve the index of the minimal value in every sublist.
 
@@ -460,7 +461,7 @@ class ExprListNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.lst_arg_min())
 
-    def arg_max(self) -> pli.Expr:
+    def arg_max(self) -> Expr:
         """
         Retrieve the index of the maximum value in every sublist.
 
@@ -489,7 +490,7 @@ class ExprListNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.lst_arg_max())
 
-    def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> pli.Expr:
+    def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Expr:
         """
         Calculate the n-th discrete difference of every sublist.
 
@@ -539,7 +540,7 @@ class ExprListNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.lst_diff(n, null_behavior))
 
-    def shift(self, periods: int = 1) -> pli.Expr:
+    def shift(self, periods: int = 1) -> Expr:
         """
         Shift values by the given period.
 
@@ -563,8 +564,8 @@ class ExprListNameSpace:
         return pli.wrap_expr(self._pyexpr.lst_shift(periods))
 
     def slice(
-        self, offset: int | str | pli.Expr, length: int | str | pli.Expr | None = None
-    ) -> pli.Expr:
+        self, offset: int | str | Expr, length: int | str | Expr | None = None
+    ) -> Expr:
         """
         Slice every sublist.
 
@@ -592,7 +593,7 @@ class ExprListNameSpace:
         length = pli.expr_to_lit_or_expr(length, str_to_lit=False)._pyexpr
         return pli.wrap_expr(self._pyexpr.lst_slice(offset, length))
 
-    def head(self, n: int | str | pli.Expr = 5) -> pli.Expr:
+    def head(self, n: int | str | Expr = 5) -> Expr:
         """
         Slice the first `n` values of every sublist.
 
@@ -615,7 +616,7 @@ class ExprListNameSpace:
         """
         return self.slice(0, n)
 
-    def tail(self, n: int | str | pli.Expr = 5) -> pli.Expr:
+    def tail(self, n: int | str | Expr = 5) -> Expr:
         """
         Slice the last `n` values of every sublist.
 
@@ -639,7 +640,7 @@ class ExprListNameSpace:
         offset = -pli.expr_to_lit_or_expr(n, str_to_lit=False)
         return self.slice(offset, n)
 
-    def explode(self) -> pli.Expr:
+    def explode(self) -> Expr:
         """
         Returns a column with a separate row for every list element.
 
@@ -673,8 +674,8 @@ class ExprListNameSpace:
         return pli.wrap_expr(self._pyexpr.explode())
 
     def count_match(
-        self, element: float | str | bool | int | date | datetime | time | pli.Expr
-    ) -> pli.Expr:
+        self, element: float | str | bool | int | date | datetime | time | Expr
+    ) -> Expr:
         """
         Count how often the value produced by ``element`` occurs.
 
@@ -710,7 +711,7 @@ class ExprListNameSpace:
         n_field_strategy: ToStructStrategy = "first_non_null",
         name_generator: Callable[[int], str] | None = None,
         upper_bound: int = 0,
-    ) -> pli.Expr:
+    ) -> Expr:
         """
         Convert the series of type ``List`` to a series of type ``Struct``.
 
@@ -758,7 +759,7 @@ class ExprListNameSpace:
             self._pyexpr.lst_to_struct(n_field_strategy, name_generator, upper_bound)
         )
 
-    def eval(self, expr: pli.Expr, parallel: bool = False) -> pli.Expr:
+    def eval(self, expr: Expr, parallel: bool = False) -> Expr:
         """
         Run any polars expression against the lists' elements.
 

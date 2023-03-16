@@ -11,6 +11,7 @@ from polars.utils.decorators import deprecated_alias, redirect
 if TYPE_CHECKING:
     from datetime import timedelta
 
+    from polars.expr.expr import Expr
     from polars.internals.type_aliases import EpochTimeUnit, TimeUnit
 
 
@@ -26,14 +27,14 @@ class ExprDateTimeNameSpace:
 
     _accessor = "dt"
 
-    def __init__(self, expr: pli.Expr):
+    def __init__(self, expr: Expr):
         self._pyexpr = expr._pyexpr
 
     def truncate(
         self,
         every: str | timedelta,
         offset: str | timedelta | None = None,
-    ) -> pli.Expr:
+    ) -> Expr:
         """
         Divide the date/datetime range into buckets.
 
@@ -147,7 +148,7 @@ class ExprDateTimeNameSpace:
         self,
         every: str | timedelta,
         offset: str | timedelta | None = None,
-    ) -> pli.Expr:
+    ) -> Expr:
         """
         Divide the date/datetime range into buckets.
 
@@ -263,7 +264,7 @@ class ExprDateTimeNameSpace:
             )
         )
 
-    def combine(self, tm: time | pli.Expr, tu: TimeUnit = "us") -> pli.Expr:
+    def combine(self, tm: time | Expr, tu: TimeUnit = "us") -> Expr:
         """
         Create a naive Datetime from an existing Date/Datetime expression and a Time.
 
@@ -324,7 +325,7 @@ class ExprDateTimeNameSpace:
         tm = pli.expr_to_lit_or_expr(tm)
         return pli.wrap_expr(self._pyexpr.dt_combine(tm._pyexpr, tu))
 
-    def strftime(self, fmt: str) -> pli.Expr:
+    def strftime(self, fmt: str) -> Expr:
         """
         Format Date/Datetime with a formatting rule.
 
@@ -363,7 +364,7 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.strftime(fmt))
 
-    def year(self) -> pli.Expr:
+    def year(self) -> Expr:
         """
         Extract year from underlying Date representation.
 
@@ -409,7 +410,7 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.year())
 
-    def iso_year(self) -> pli.Expr:
+    def iso_year(self) -> Expr:
         """
         Extract ISO year from underlying Date representation.
 
@@ -454,7 +455,7 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.iso_year())
 
-    def quarter(self) -> pli.Expr:
+    def quarter(self) -> Expr:
         """
         Extract quarter from underlying Date representation.
 
@@ -498,7 +499,7 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.quarter())
 
-    def month(self) -> pli.Expr:
+    def month(self) -> Expr:
         """
         Extract month from underlying Date representation.
 
@@ -543,7 +544,7 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.month())
 
-    def week(self) -> pli.Expr:
+    def week(self) -> Expr:
         """
         Extract the week from the underlying Date representation.
 
@@ -588,7 +589,7 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.week())
 
-    def weekday(self) -> pli.Expr:
+    def weekday(self) -> Expr:
         """
         Extract the week day from the underlying Date representation.
 
@@ -638,7 +639,7 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.weekday())
 
-    def day(self) -> pli.Expr:
+    def day(self) -> Expr:
         """
         Extract day from underlying Date representation.
 
@@ -689,7 +690,7 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.day())
 
-    def ordinal_day(self) -> pli.Expr:
+    def ordinal_day(self) -> Expr:
         """
         Extract ordinal day from underlying Date representation.
 
@@ -740,7 +741,7 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.ordinal_day())
 
-    def hour(self) -> pli.Expr:
+    def hour(self) -> Expr:
         """
         Extract hour from underlying DateTime representation.
 
@@ -784,7 +785,7 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.hour())
 
-    def minute(self) -> pli.Expr:
+    def minute(self) -> Expr:
         """
         Extract minutes from underlying DateTime representation.
 
@@ -830,7 +831,7 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.minute())
 
-    def second(self, fractional: bool = False) -> pli.Expr:
+    def second(self, fractional: bool = False) -> Expr:
         """
         Extract seconds from underlying DateTime representation.
 
@@ -928,7 +929,7 @@ class ExprDateTimeNameSpace:
             else sec
         )
 
-    def millisecond(self) -> pli.Expr:
+    def millisecond(self) -> Expr:
         """
         Extract milliseconds from underlying DateTime representation.
 
@@ -941,7 +942,7 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.millisecond())
 
-    def microsecond(self) -> pli.Expr:
+    def microsecond(self) -> Expr:
         """
         Extract microseconds from underlying DateTime representation.
 
@@ -987,7 +988,7 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.microsecond())
 
-    def nanosecond(self) -> pli.Expr:
+    def nanosecond(self) -> Expr:
         """
         Extract nanoseconds from underlying DateTime representation.
 
@@ -1000,7 +1001,7 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.nanosecond())
 
-    def epoch(self, tu: EpochTimeUnit = "us") -> pli.Expr:
+    def epoch(self, tu: EpochTimeUnit = "us") -> Expr:
         """
         Get the time passed since the Unix EPOCH in the give time unit.
 
@@ -1045,7 +1046,7 @@ class ExprDateTimeNameSpace:
                 f"tu must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {tu}"
             )
 
-    def timestamp(self, tu: TimeUnit = "us") -> pli.Expr:
+    def timestamp(self, tu: TimeUnit = "us") -> Expr:
         """
         Return a timestamp in the given time unit.
 
@@ -1081,7 +1082,7 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.timestamp(tu))
 
-    def with_time_unit(self, tu: TimeUnit) -> pli.Expr:
+    def with_time_unit(self, tu: TimeUnit) -> Expr:
         """
         Set time unit of a Series of dtype Datetime or Duration.
 
@@ -1123,7 +1124,7 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.dt_with_time_unit(tu))
 
-    def cast_time_unit(self, tu: TimeUnit) -> pli.Expr:
+    def cast_time_unit(self, tu: TimeUnit) -> Expr:
         """
         Cast the underlying data to another time unit. This may lose precision.
 
@@ -1164,7 +1165,7 @@ class ExprDateTimeNameSpace:
         return pli.wrap_expr(self._pyexpr.dt_cast_time_unit(tu))
 
     @deprecated_alias(tz="time_zone")
-    def convert_time_zone(self, time_zone: str) -> pli.Expr:
+    def convert_time_zone(self, time_zone: str) -> Expr:
         """
         Convert to given time zone for a Series of type Datetime.
 
@@ -1208,7 +1209,7 @@ class ExprDateTimeNameSpace:
         return pli.wrap_expr(self._pyexpr.dt_convert_time_zone(time_zone))
 
     @deprecated_alias(tz="time_zone")
-    def replace_time_zone(self, time_zone: str | None) -> pli.Expr:
+    def replace_time_zone(self, time_zone: str | None) -> Expr:
         """
         Replace time zone for a Series of type Datetime.
 
@@ -1257,7 +1258,7 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.dt_replace_time_zone(time_zone))
 
-    def days(self) -> pli.Expr:
+    def days(self) -> Expr:
         """
         Extract the days from a Duration type.
 
@@ -1295,7 +1296,7 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.duration_days())
 
-    def hours(self) -> pli.Expr:
+    def hours(self) -> Expr:
         """
         Extract the hours from a Duration type.
 
@@ -1334,7 +1335,7 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.duration_hours())
 
-    def minutes(self) -> pli.Expr:
+    def minutes(self) -> Expr:
         """
         Extract the minutes from a Duration type.
 
@@ -1373,7 +1374,7 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.duration_minutes())
 
-    def seconds(self) -> pli.Expr:
+    def seconds(self) -> Expr:
         """
         Extract the seconds from a Duration type.
 
@@ -1413,7 +1414,7 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.duration_seconds())
 
-    def milliseconds(self) -> pli.Expr:
+    def milliseconds(self) -> Expr:
         """
         Extract the milliseconds from a Duration type.
 
@@ -1457,7 +1458,7 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.duration_milliseconds())
 
-    def microseconds(self) -> pli.Expr:
+    def microseconds(self) -> Expr:
         """
         Extract the microseconds from a Duration type.
 
@@ -1501,7 +1502,7 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.duration_microseconds())
 
-    def nanoseconds(self) -> pli.Expr:
+    def nanoseconds(self) -> Expr:
         """
         Extract the nanoseconds from a Duration type.
 
@@ -1545,7 +1546,7 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.duration_nanoseconds())
 
-    def offset_by(self, by: str) -> pli.Expr:
+    def offset_by(self, by: str) -> Expr:
         """
         Offset this date by a relative time offset.
 

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from typing import Sequence
+from typing import TYPE_CHECKING, Sequence
 
 from polars import internals as pli
+
+if TYPE_CHECKING:
+    from polars.expr.expr import Expr
 
 
 class ExprStructNameSpace:
@@ -10,10 +13,10 @@ class ExprStructNameSpace:
 
     _accessor = "struct"
 
-    def __init__(self, expr: pli.Expr):
+    def __init__(self, expr: Expr):
         self._pyexpr = expr._pyexpr
 
-    def __getitem__(self, item: str | int) -> pli.Expr:
+    def __getitem__(self, item: str | int) -> Expr:
         if isinstance(item, str):
             return self.field(item)
         elif isinstance(item, int):
@@ -23,7 +26,7 @@ class ExprStructNameSpace:
                 f"expected type 'int | str', got {type(item).__name__} ({item!r})"
             )
 
-    def field(self, name: str) -> pli.Expr:
+    def field(self, name: str) -> Expr:
         """
         Retrieve a ``Struct`` field as a new Series.
 
@@ -83,7 +86,7 @@ class ExprStructNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.struct_field_by_name(name))
 
-    def rename_fields(self, names: Sequence[str]) -> pli.Expr:
+    def rename_fields(self, names: Sequence[str]) -> Expr:
         """
         Rename the fields of the struct.
 
