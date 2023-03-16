@@ -2,16 +2,20 @@ from __future__ import annotations
 
 import pickle
 from functools import partial
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import polars as pl
 from polars import internals as pli
 from polars.dependencies import pyarrow as pa  # noqa: TCH001
 
+if TYPE_CHECKING:
+    from polars.dataframe.frame import DataFrame
+    from polars.lazyframe.frame import LazyFrame
+
 
 def _deser_and_exec(  # noqa: D417
     buf: bytes, with_columns: list[str] | None, *args: Any
-) -> pli.DataFrame:
+) -> DataFrame:
     """
     Deserialize and execute the given function for the projected columns.
 
@@ -35,7 +39,7 @@ def _scan_pyarrow_dataset_impl(
     with_columns: list[str] | None,
     predicate: str | None,
     n_rows: int | None,
-) -> pli.DataFrame:
+) -> DataFrame:
     """
     Take the projected columns and materialize an arrow table.
 
@@ -79,7 +83,7 @@ def _scan_pyarrow_dataset_impl(
 
 def _scan_pyarrow_dataset(
     ds: pa.dataset.Dataset, allow_pyarrow_filter: bool = True
-) -> pli.LazyFrame:
+) -> LazyFrame:
     """
     Pickle the partially applied function `_scan_pyarrow_dataset_impl`.
 
@@ -105,7 +109,7 @@ def _scan_pyarrow_dataset(
 
 def _scan_ipc_impl(  # noqa: D417
     uri: str, with_columns: list[str] | None, *args: Any, **kwargs: Any
-) -> pli.DataFrame:
+) -> DataFrame:
     """
     Take the projected columns and materialize an arrow table.
 
@@ -125,7 +129,7 @@ def _scan_ipc_impl(  # noqa: D417
 def _scan_ipc_fsspec(
     file: str,
     storage_options: dict[str, object] | None = None,
-) -> pli.LazyFrame:
+) -> LazyFrame:
     func = partial(_scan_ipc_impl, file, storage_options=storage_options)
     func_serialized = pickle.dumps(func)
 
@@ -138,7 +142,7 @@ def _scan_ipc_fsspec(
 
 def _scan_parquet_impl(  # noqa: D417
     uri: str, with_columns: list[str] | None, *args: Any, **kwargs: Any
-) -> pli.DataFrame:
+) -> DataFrame:
     """
     Take the projected columns and materialize an arrow table.
 
@@ -158,7 +162,7 @@ def _scan_parquet_impl(  # noqa: D417
 def _scan_parquet_fsspec(
     file: str,
     storage_options: dict[str, object] | None = None,
-) -> pli.LazyFrame:
+) -> LazyFrame:
     func = partial(_scan_parquet_impl, file, storage_options=storage_options)
     func_serialized = pickle.dumps(func)
 

@@ -60,8 +60,10 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PyDataFrame, PySeries
 
 if TYPE_CHECKING:
+    from polars.dataframe.frame import DataFrame
     from polars.datatypes import PolarsDataType, SchemaDefinition, SchemaDict
     from polars.internals.type_aliases import Orientation
+    from polars.series.series import Series
 
 if version_info >= (3, 10):
 
@@ -96,7 +98,7 @@ def include_unknowns(
 ################################
 
 
-def series_to_pyseries(name: str, values: pli.Series) -> PySeries:
+def series_to_pyseries(name: str, values: Series) -> PySeries:
     """Construct a PySeries from a Polars Series."""
     values.rename(name, in_place=True)
     return values._s
@@ -210,7 +212,7 @@ def iterable_to_pyseries(
     if not isinstance(values, Generator):
         values = iter(values)
 
-    def to_series_chunk(values: list[Any], dtype: PolarsDataType | None) -> pli.Series:
+    def to_series_chunk(values: list[Any], dtype: PolarsDataType | None) -> Series:
         return pli.Series(
             name=name,
             values=values,
@@ -220,7 +222,7 @@ def iterable_to_pyseries(
         )
 
     n_chunks = 0
-    series: pli.Series = None  # type: ignore[assignment]
+    series: Series = None  # type: ignore[assignment]
     while True:
         slice_values = list(islice(values, chunk_size))
         if not slice_values:
@@ -574,11 +576,11 @@ def _unpack_schema(
 
 
 def _expand_dict_scalars(
-    data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | pli.Series],
+    data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
     schema_overrides: SchemaDict | None = None,
     order: Sequence[str] | None = None,
     nan_to_null: bool = False,
-) -> dict[str, pli.Series]:
+) -> dict[str, Series]:
     """Expand any scalar values in dict data (propagate literal as array)."""
     updated_data = {}
     if data:
@@ -625,7 +627,7 @@ def _expand_dict_scalars(
 
 
 def dict_to_pydf(
-    data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | pli.Series],
+    data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
     schema: SchemaDefinition | None = None,
     schema_overrides: SchemaDict | None = None,
     nan_to_null: bool = False,
@@ -1196,7 +1198,7 @@ def arrow_to_pydf(
 
 
 def series_to_pydf(
-    data: pli.Series,
+    data: Series,
     schema: SchemaDefinition | None = None,
     schema_overrides: SchemaDict | None = None,
 ) -> PyDataFrame:
@@ -1253,9 +1255,7 @@ def iterable_to_pydf(
             }
         )._df
 
-    def to_frame_chunk(
-        values: list[Any], schema: SchemaDefinition | None
-    ) -> pli.DataFrame:
+    def to_frame_chunk(values: list[Any], schema: SchemaDefinition | None) -> DataFrame:
         return pli.DataFrame(
             data=values,
             schema=schema,
@@ -1273,7 +1273,7 @@ def iterable_to_pydf(
     else:
         adaptive_chunk_size = None
 
-    df: pli.DataFrame = None  # type: ignore[assignment]
+    df: DataFrame = None  # type: ignore[assignment]
     chunk_size = max(
         (infer_schema_length or 0),
         (adaptive_chunk_size or 1000),
