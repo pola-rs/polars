@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-from dataclasses import astuple, is_dataclass
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
 from functools import singledispatch
@@ -47,6 +46,7 @@ from polars.dependencies import (
     _NUMPY_AVAILABLE,
     _check_for_numpy,
     _check_for_pandas,
+    dataclasses,
 )
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
@@ -271,7 +271,7 @@ def sequence_to_pyseries(
 
     value = _get_first_non_none(values)
     if value is not None:
-        if is_dataclass(value) or is_namedtuple(value, annotated=True):
+        if dataclasses.is_dataclass(value) or is_namedtuple(value, annotated=True):
             return pli.DataFrame(values).to_struct(name)._s
         elif isinstance(value, range):
             values = [range_to_series("", v) for v in values]
@@ -766,16 +766,13 @@ def _sequence_to_pydf_dispatcher(
     }
 
     to_pydf: Callable[..., PyDataFrame]
-    register = True
+    register_with_singledispatch = True
 
     if isinstance(first_element, Generator):
         to_pydf = _sequence_of_sequence_to_pydf
         data = [list(row) for row in data]
         first_element = data[0]
-        register = False
-
-    elif is_dataclass(first_element):
-        to_pydf = dataclasses_to_pydf
+        register_with_singledispatch = False
 
     elif isinstance(first_element, pli.Series):
         to_pydf = _sequence_of_series_to_pydf
@@ -787,10 +784,13 @@ def _sequence_to_pydf_dispatcher(
         first_element, (pd.Series, pd.DatetimeIndex)
     ):
         to_pydf = _sequence_of_pandas_to_pydf
+
+    elif dataclasses.is_dataclass(first_element):
+        to_pydf = dataclasses_to_pydf
     else:
         to_pydf = _sequence_of_elements_to_pydf
 
-    if register:
+    if register_with_singledispatch:
         _sequence_to_pydf_dispatcher.register(type(first_element), to_pydf)
 
     common_params["first_element"] = first_element
@@ -989,6 +989,8 @@ def dataclasses_to_pydf(
     infer_schema_length: int | None,
     **kwargs: Any,
 ) -> PyDataFrame:
+    from dataclasses import astuple
+
     if schema:
         column_names, schema_overrides = _unpack_schema(schema, schema_overrides)
         schema_override = {
@@ -1007,7 +1009,9 @@ def dataclasses_to_pydf(
             schema_override[col] = Utf8
 
     pydf = PyDataFrame.read_rows(
-        [astuple(dc) for dc in data], infer_schema_length, schema_override or None
+        [astuple(dc) for dc in data],
+        infer_schema_length,
+        schema_override or None,
     )
     if schema_override:
         structs = {c: tp for c, tp in schema_override.items() if isinstance(tp, Struct)}

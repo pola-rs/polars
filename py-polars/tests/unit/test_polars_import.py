@@ -47,9 +47,8 @@ def test_polars_import() -> None:
     # ensure that we have not broken lazy-loading (numpy, pandas, pyarrow, etc).
     lazy_modules = [dep for dep in pl.dependencies.__all__ if not dep.startswith("_")]
     for mod in lazy_modules:
-        assert (
-            not df_import["import"].str.starts_with(mod).any()
-        ), f"lazy-loading regression: found {mod!r} at import time"
+        not_imported = not df_import["import"].str.starts_with(mod).any()
+        assert not_imported, f"lazy-loading regression: found {mod!r} at import time"
 
     # ensure that we do not have an import speed regression.
     with pl.Config() as cfg:
