@@ -43,87 +43,18 @@ impl Default for StartBy {
     }
 }
 
-/// Based on the given `Window`, which has an
-/// - every
-/// - period
-/// - offset
-/// window boundaries are created. And every window boundary we search for the values
-/// that fit that window by the given `ClosedWindow`. The groups are return as `GroupTuples`
-/// together with the lower bound and upper bound timestamps. These timestamps indicate the start (lower)
-/// and end (upper) of the window of that group.
-///
-/// If `include_boundaries` is `false` those `lower` and `upper` vectors will be empty.
-#[allow(clippy::too_many_arguments)]
-pub fn groupby_windows(
-    window: Window,
-    time: &[i64],
-    closed_window: ClosedWindow,
-    tu: TimeUnit,
-    tz: &Option<TimeZone>,
-    include_lower_bound: bool,
-    include_upper_bound: bool,
-    start_by: StartBy,
-) -> (GroupsSlice, Vec<i64>, Vec<i64>) {
-    let start = time[0];
-    // the boundary we define here is not yet correct. It doesn't take 'period' into account
-    // and it doesn't have the proper starting point. This boundary is used as a proxy to find
-    // the proper 'boundary' in  'window.get_overlapping_bounds_iter'.
-    let boundary = if time.len() > 1 {
-        // +1 because left or closed boundary could match the next window if it is on the boundary
-        let stop = time[time.len() - 1] + 1;
-        Bounds::new_checked(start, stop)
-    } else {
-        let stop = start + 1;
-        Bounds::new_checked(start, stop)
-    };
-
-    let size = if include_lower_bound || include_upper_bound {
-        match tu {
-            TimeUnit::Nanoseconds => window.estimate_overlapping_bounds_ns(boundary),
-            TimeUnit::Microseconds => window.estimate_overlapping_bounds_us(boundary),
-            TimeUnit::Milliseconds => window.estimate_overlapping_bounds_ms(boundary),
-        }
-    } else {
-        0
-    };
-    let size_lower = if include_lower_bound { size } else { 0 };
-    let size_upper = if include_upper_bound { size } else { 0 };
-    let mut lower_bound = Vec::with_capacity(size_lower);
-    let mut upper_bound = Vec::with_capacity(size_upper);
-
-    let mut groups = match tu {
-        TimeUnit::Nanoseconds => {
-            Vec::with_capacity(window.estimate_overlapping_bounds_ns(boundary))
-        }
-        TimeUnit::Microseconds => {
-            Vec::with_capacity(window.estimate_overlapping_bounds_us(boundary))
-        }
-        TimeUnit::Milliseconds => {
-            Vec::with_capacity(window.estimate_overlapping_bounds_ms(boundary))
-        }
-    };
-    let mut start_offset = 0;
-
-    // ffs, this requires a huge overhaul...
-    // let overlapping_bounds_iter = match tz {
-    //     #[cfg(feature = "timezones")]
-    //     Some(tz) => {
-    //         match parse_offset(tz) {
-    //             Ok(tz) => window.get_overlapping_bounds_iter(boundary, tu, Some(&tz.clone()), start_by),
-    //             Err(_) => unreachable!()
-    //             // Err(_) => match parse_offset(tz) {
-    //             //     Ok(tz) => window.get_overlapping_bounds_iter(boundary, tu, Some(&tz), start_by),
-    //             //     _ => unreachable!(),
-    //             // },
-    //         }
-    //     }
-    //     _ => window.get_overlapping_bounds_iter(boundary, tu, NO_TIMEZONE, start_by),
-    // };
-
-    use arrow::temporal_conversions::{
-        parse_offset, 
-    };
-    for bi in window.get_overlapping_bounds_iter(boundary, tu, Some(&parse_offset(&tz.as_ref().unwrap()).unwrap()), start_by).unwrap(){
+fn my_awesome_fn<'a, T: TimeZoneTrait>(
+        bounds_iter: BoundsIter<'a, T>,
+        mut start_offset: usize,
+        time: &[i64],
+        closed_window: ClosedWindow,
+        include_lower_bound: bool,
+        include_upper_bound: bool,
+        lower_bound: &mut Vec<i64>,
+        upper_bound: &mut Vec<i64>,
+        groups: &mut Vec<[u32; 2]>,
+    ) {
+    for bi in bounds_iter{
         let mut skip_window = false;
         // find starting point of window
         while start_offset < time.len() {
@@ -186,6 +117,120 @@ pub fn groupby_windows(
         }
         groups.push([first, len])
     }
+}
+
+/// Based on the given `Window`, which has an
+/// - every
+/// - period
+/// - offset
+/// window boundaries are created. And every window boundary we search for the values
+/// that fit that window by the given `ClosedWindow`. The groups are return as `GroupTuples`
+/// together with the lower bound and upper bound timestamps. These timestamps indicate the start (lower)
+/// and end (upper) of the window of that group.
+///
+/// If `include_boundaries` is `false` those `lower` and `upper` vectors will be empty.
+#[allow(clippy::too_many_arguments)]
+pub fn groupby_windows(
+    window: Window,
+    time: &[i64],
+    closed_window: ClosedWindow,
+    tu: TimeUnit,
+    tz: &Option<TimeZone>,
+    include_lower_bound: bool,
+    include_upper_bound: bool,
+    start_by: StartBy,
+) -> (GroupsSlice, Vec<i64>, Vec<i64>) {
+    let start = time[0];
+    // the boundary we define here is not yet correct. It doesn't take 'period' into account
+    // and it doesn't have the proper starting point. This boundary is used as a proxy to find
+    // the proper 'boundary' in  'window.get_overlapping_bounds_iter'.
+    let boundary = if time.len() > 1 {
+        // +1 because left or closed boundary could match the next window if it is on the boundary
+        let stop = time[time.len() - 1] + 1;
+        Bounds::new_checked(start, stop)
+    } else {
+        let stop = start + 1;
+        Bounds::new_checked(start, stop)
+    };
+
+    let size = if include_lower_bound || include_upper_bound {
+        match tu {
+            TimeUnit::Nanoseconds => window.estimate_overlapping_bounds_ns(boundary),
+            TimeUnit::Microseconds => window.estimate_overlapping_bounds_us(boundary),
+            TimeUnit::Milliseconds => window.estimate_overlapping_bounds_ms(boundary),
+        }
+    } else {
+        0
+    };
+    let size_lower = if include_lower_bound { size } else { 0 };
+    let size_upper = if include_upper_bound { size } else { 0 };
+    let mut lower_bound = Vec::with_capacity(size_lower);
+    let mut upper_bound = Vec::with_capacity(size_upper);
+
+    let mut groups = match tu {
+        TimeUnit::Nanoseconds => {
+            Vec::with_capacity(window.estimate_overlapping_bounds_ns(boundary))
+        }
+        TimeUnit::Microseconds => {
+            Vec::with_capacity(window.estimate_overlapping_bounds_us(boundary))
+        }
+        TimeUnit::Milliseconds => {
+            Vec::with_capacity(window.estimate_overlapping_bounds_ms(boundary))
+        }
+    };
+    let mut start_offset = 0;
+
+    // ffs, this requires a huge overhaul...
+    match tz {
+        #[cfg(feature = "timezones")]
+        Some(tz) => {
+            match parse_offset(tz) {
+                Ok(tz) => {
+                    my_awesome_fn(
+                        window.get_overlapping_bounds_iter(boundary, tu, Some(&tz), start_by).unwrap(),
+                        start_offset,
+                        time,
+                        closed_window,
+                        include_lower_bound,
+                        include_upper_bound,
+                        &mut lower_bound,
+                        &mut upper_bound,
+                        &mut groups
+                    );
+                }
+                Err(_) => match parse_offset(tz) {
+                    Ok(tz) => {
+                        my_awesome_fn(
+                            window.get_overlapping_bounds_iter(boundary, tu, Some(&tz), start_by).unwrap(),
+                            start_offset,
+                            time,
+                            closed_window,
+                            include_lower_bound,
+                            include_upper_bound,
+                            &mut lower_bound,
+                            &mut upper_bound,
+                            &mut groups
+                        );
+                    }
+                    _ => unreachable!(),
+                },
+            }
+        }
+        _ => {
+            my_awesome_fn(
+                window.get_overlapping_bounds_iter(boundary, tu, NO_TIMEZONE, start_by).unwrap(),
+                start_offset,
+                time,
+                closed_window,
+                include_lower_bound,
+                include_upper_bound,
+                &mut lower_bound,
+                &mut upper_bound,
+                &mut groups
+            );
+        }
+    };
+
     (groups, lower_bound, upper_bound)
 }
 

@@ -1,8 +1,9 @@
 use std::cmp::Ordering;
 use std::ops::Mul;
 
+
 use chrono::{
-    TimeZone as TimeZoneTrait
+    NaiveDate, Datelike, Timelike, NaiveTime, Weekday, NaiveDateTime, TimeZone as TimeZoneTrait
 };
 use polars_arrow::export::arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
