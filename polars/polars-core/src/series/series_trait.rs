@@ -198,9 +198,8 @@ pub trait SeriesTrait:
     }
 
     /// Get the lengths of the underlying chunks
-    fn chunk_lengths(&self) -> ChunkIdIter {
-        invalid_operation_panic!(chunk_lengths, self)
-    }
+    fn chunk_lengths(&self) -> ChunkIdIter;
+
     /// Name of series.
     fn name(&self) -> &str;
 
