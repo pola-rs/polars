@@ -4,7 +4,7 @@ GroupBy
 
 This namespace is available after calling :code:`DataFrame.groupby(...)`.
 
-.. currentmodule:: polars.internals.dataframe.groupby
+.. currentmodule:: polars.dataframe.groupby
 .. autosummary::
    :toctree: api/
 

@@ -126,7 +126,7 @@ def test_init_inputs(monkeypatch: Any) -> None:
         pl.Series("bigint", [2**64])
 
     # numpy not available
-    monkeypatch.setattr(pl.internals.series.series, "_check_for_numpy", lambda x: False)
+    monkeypatch.setattr(pl.series.series, "_check_for_numpy", lambda x: False)
     with pytest.raises(ValueError):
         pl.DataFrame(np.array([1, 2, 3]), schema=["a"])
 
@@ -1022,9 +1022,7 @@ def test_shape() -> None:
 
 @pytest.mark.parametrize("arrow_available", [True, False])
 def test_create_list_series(arrow_available: bool, monkeypatch: Any) -> None:
-    monkeypatch.setattr(
-        pl.internals.series.series, "_PYARROW_AVAILABLE", arrow_available
-    )
+    monkeypatch.setattr(pl.series.series, "_PYARROW_AVAILABLE", arrow_available)
     a = [[1, 2], None, [None, 3]]
     s = pl.Series("", a)
     assert s.to_list() == a
@@ -1443,7 +1441,7 @@ def test_bitwise() -> None:
 def test_to_numpy(monkeypatch: Any) -> None:
     for writable in [False, True]:
         for flag in [False, True]:
-            monkeypatch.setattr(pl.internals.series.series, "_PYARROW_AVAILABLE", flag)
+            monkeypatch.setattr(pl.series.series, "_PYARROW_AVAILABLE", flag)
 
             np_array = pl.Series("a", [1, 2, 3], pl.UInt8).to_numpy(writable=writable)
 
@@ -1525,9 +1523,9 @@ def test_from_sequences(monkeypatch: Any) -> None:
     ]
 
     for vals in values:
-        monkeypatch.setattr(pl.internals.series.series, "_PYARROW_AVAILABLE", False)
+        monkeypatch.setattr(pl.series.series, "_PYARROW_AVAILABLE", False)
         a = pl.Series("a", vals)
-        monkeypatch.setattr(pl.internals.series.series, "_PYARROW_AVAILABLE", True)
+        monkeypatch.setattr(pl.series.series, "_PYARROW_AVAILABLE", True)
         b = pl.Series("a", vals)
         assert_series_equal(a, b)
         assert a.to_list() == vals

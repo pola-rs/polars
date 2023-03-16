@@ -5,6 +5,13 @@ The modules within `polars.internals` are interdependent. To prevent cyclical im
 they all import from each other via this __init__ file using
 `import polars.internals as pli`. The imports below are being shared across this module.
 """
+from polars.dataframe import DataFrame, wrap_df
+from polars.expr import (
+    Expr,
+    expr_to_lit_or_expr,
+    selection_to_pyexpr_list,
+    wrap_expr,
+)
 from polars.internals.anonymous_scan import (
     _deser_and_exec,
     _scan_ipc_fsspec,
@@ -12,13 +19,6 @@ from polars.internals.anonymous_scan import (
     _scan_pyarrow_dataset,
 )
 from polars.internals.batched import BatchedCsvReader
-from polars.internals.dataframe import DataFrame, wrap_df
-from polars.internals.expr import (
-    Expr,
-    expr_to_lit_or_expr,
-    selection_to_pyexpr_list,
-    wrap_expr,
-)
 from polars.internals.functions import concat, date_range
 from polars.internals.io import (
     _is_local_file,
@@ -45,9 +45,9 @@ from polars.internals.lazy_functions import (
     select,
     struct,
 )
-from polars.internals.lazyframe import LazyFrame, wrap_ldf
-from polars.internals.series import Series, wrap_s
 from polars.internals.whenthen import WhenThen, WhenThenThen, when
+from polars.lazyframe import LazyFrame, wrap_ldf
+from polars.series import Series, wrap_s
 
 __all__ = [
     "DataFrame",

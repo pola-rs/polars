@@ -26,13 +26,13 @@ from polars.datatypes import (
 )
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
-from polars.internals.expr.binary import ExprBinaryNameSpace
-from polars.internals.expr.categorical import ExprCatNameSpace
-from polars.internals.expr.datetime import ExprDateTimeNameSpace
-from polars.internals.expr.list import ExprListNameSpace
-from polars.internals.expr.meta import ExprMetaNameSpace
-from polars.internals.expr.string import ExprStringNameSpace
-from polars.internals.expr.struct import ExprStructNameSpace
+from polars.expr.binary import ExprBinaryNameSpace
+from polars.expr.categorical import ExprCatNameSpace
+from polars.expr.datetime import ExprDateTimeNameSpace
+from polars.expr.list import ExprListNameSpace
+from polars.expr.meta import ExprMetaNameSpace
+from polars.expr.string import ExprStringNameSpace
+from polars.expr.struct import ExprStructNameSpace
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 from polars.utils.meta import threadpool_size
@@ -3415,7 +3415,7 @@ class Expr:
         """
         Flatten a list or string column.
 
-        Alias for :func:`polars.internals.expr.list.ExprListNameSpace.explode`.
+        Alias for :func:`polars.expr.list.ExprListNameSpace.explode`.
 
         Examples
         --------

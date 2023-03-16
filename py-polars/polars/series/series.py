@@ -62,14 +62,14 @@ from polars.internals.construction import (
     sequence_to_pyseries,
     series_to_pyseries,
 )
-from polars.internals.series.binary import BinaryNameSpace
-from polars.internals.series.categorical import CatNameSpace
-from polars.internals.series.datetime import DateTimeNameSpace
-from polars.internals.series.list import ListNameSpace
-from polars.internals.series.string import StringNameSpace
-from polars.internals.series.struct import StructNameSpace
-from polars.internals.series.utils import expr_dispatch, get_ffi_func
 from polars.internals.slice import PolarsSlice
+from polars.series.binary import BinaryNameSpace
+from polars.series.categorical import CatNameSpace
+from polars.series.datetime import DateTimeNameSpace
+from polars.series.list import ListNameSpace
+from polars.series.string import StringNameSpace
+from polars.series.struct import StructNameSpace
+from polars.series.utils import expr_dispatch, get_ffi_func
 from polars.utils.convert import (
     _date_to_pl_date,
     _datetime_to_pl_timestamp,
@@ -98,7 +98,6 @@ if TYPE_CHECKING:
     import sys
 
     from polars.datatypes import OneOrMoreDataTypes, PolarsDataType
-    from polars.internals.series._numpy import SeriesView
     from polars.internals.type_aliases import (
         ClosedInterval,
         ComparisonOperator,
@@ -112,6 +111,7 @@ if TYPE_CHECKING:
         SizeUnit,
         TimeUnit,
     )
+    from polars.series._numpy import SeriesView
 
     if sys.version_info >= (3, 11):
         from typing import Self
@@ -2994,7 +2994,7 @@ class Series:
         if not ignore_nulls:
             assert not self.has_validity()
 
-        from polars.internals.series._numpy import SeriesView, _ptr_to_numpy
+        from polars.series._numpy import SeriesView, _ptr_to_numpy
 
         ptr_type = dtype_to_ctype(self.dtype)
         ptr = self._s.as_single_ptr()
