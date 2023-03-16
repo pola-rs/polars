@@ -5,9 +5,9 @@ from typing import TYPE_CHECKING
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
-    from polars import internals as pli
     from polars.internals.type_aliases import TransferEncoding
     from polars.polars import PySeries
+    from polars.series.series import Series
 
 
 @expr_dispatch
@@ -16,10 +16,10 @@ class BinaryNameSpace:
 
     _accessor = "bin"
 
-    def __init__(self, series: pli.Series):
+    def __init__(self, series: Series):
         self._s: PySeries = series._s
 
-    def contains(self, lit: bytes) -> pli.Series:
+    def contains(self, lit: bytes) -> Series:
         """
         Check if binaries in Series contain a binary substring.
 
@@ -34,7 +34,7 @@ class BinaryNameSpace:
 
         """
 
-    def ends_with(self, sub: bytes) -> pli.Series:
+    def ends_with(self, sub: bytes) -> Series:
         """
         Check if string values end with a binary substring.
 
@@ -45,7 +45,7 @@ class BinaryNameSpace:
 
         """
 
-    def starts_with(self, sub: bytes) -> pli.Series:
+    def starts_with(self, sub: bytes) -> Series:
         """
         Check if values start with a binary substring.
 
@@ -56,7 +56,7 @@ class BinaryNameSpace:
 
         """
 
-    def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> pli.Series:
+    def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> Series:
         """
         Decode a value using the provided encoding.
 
@@ -70,7 +70,7 @@ class BinaryNameSpace:
 
         """
 
-    def encode(self, encoding: TransferEncoding) -> pli.Series:
+    def encode(self, encoding: TransferEncoding) -> Series:
         """
         Encode a value using the provided encoding.
 

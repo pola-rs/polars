@@ -11,6 +11,7 @@ from polars.datatypes import dtype_to_ffiname
 if TYPE_CHECKING:
     from polars.datatypes import PolarsDataType
     from polars.polars import PySeries
+    from polars.series.series import Series
 
     if sys.version_info >= (3, 10):
         from typing import ParamSpec
@@ -19,7 +20,7 @@ if TYPE_CHECKING:
 
     T = TypeVar("T")
     P = ParamSpec("P")
-    SeriesMethod = Callable[..., pli.Series]
+    SeriesMethod = Callable[..., Series]
 
 
 class _EmptyBytecodeHelper:
@@ -89,7 +90,7 @@ def call_expr(func: SeriesMethod) -> SeriesMethod:
     """Dispatch Series method to an expression implementation."""
 
     @wraps(func)  # type: ignore[arg-type]
-    def wrapper(self: Any, *args: P.args, **kwargs: P.kwargs) -> pli.Series:
+    def wrapper(self: Any, *args: P.args, **kwargs: P.kwargs) -> Series:
         s = pli.wrap_s(self._s)
         expr = pli.col(s.name)
         namespace = getattr(self, "_accessor", None)

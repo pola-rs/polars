@@ -10,8 +10,10 @@ from polars.utils.decorators import deprecated_alias, redirect
 if TYPE_CHECKING:
     from datetime import date, datetime, time, timedelta
 
+    from polars.expr.expr import Expr
     from polars.internals.type_aliases import EpochTimeUnit, TimeUnit
     from polars.polars import PySeries
+    from polars.series.series import Series
 
 
 @redirect(
@@ -27,7 +29,7 @@ class DateTimeNameSpace:
 
     _accessor = "dt"
 
-    def __init__(self, series: pli.Series):
+    def __init__(self, series: Series):
         self._s: PySeries = series._s
 
     def __getitem__(self, item: int) -> date | datetime:
@@ -130,7 +132,7 @@ class DateTimeNameSpace:
             return _to_python_datetime(int(out), s.dtype, s.time_unit)
         return None
 
-    def strftime(self, fmt: str) -> pli.Series:
+    def strftime(self, fmt: str) -> Series:
         """
         Format Date/datetime with a formatting rule.
 
@@ -168,7 +170,7 @@ class DateTimeNameSpace:
 
         """
 
-    def year(self) -> pli.Series:
+    def year(self) -> Series:
         """
         Extract the year from the underlying date representation.
 
@@ -203,7 +205,7 @@ class DateTimeNameSpace:
 
         """
 
-    def iso_year(self) -> pli.Series:
+    def iso_year(self) -> Series:
         """
         Extract ISO year from underlying Date representation.
 
@@ -229,7 +231,7 @@ class DateTimeNameSpace:
 
         """
 
-    def quarter(self) -> pli.Series:
+    def quarter(self) -> Series:
         """
         Extract quarter from underlying Date representation.
 
@@ -268,7 +270,7 @@ class DateTimeNameSpace:
 
         """
 
-    def month(self) -> pli.Series:
+    def month(self) -> Series:
         """
         Extract the month from the underlying date representation.
 
@@ -308,7 +310,7 @@ class DateTimeNameSpace:
 
         """
 
-    def week(self) -> pli.Series:
+    def week(self) -> Series:
         """
         Extract the week from the underlying date representation.
 
@@ -348,7 +350,7 @@ class DateTimeNameSpace:
 
         """
 
-    def weekday(self) -> pli.Series:
+    def weekday(self) -> Series:
         """
         Extract the week day from the underlying date representation.
 
@@ -393,7 +395,7 @@ class DateTimeNameSpace:
 
         """
 
-    def day(self) -> pli.Series:
+    def day(self) -> Series:
         """
         Extract the day from the underlying date representation.
 
@@ -435,7 +437,7 @@ class DateTimeNameSpace:
 
         """
 
-    def ordinal_day(self) -> pli.Series:
+    def ordinal_day(self) -> Series:
         """
         Extract ordinal day from underlying date representation.
 
@@ -473,7 +475,7 @@ class DateTimeNameSpace:
 
         """
 
-    def hour(self) -> pli.Series:
+    def hour(self) -> Series:
         """
         Extract the hour from the underlying DateTime representation.
 
@@ -512,7 +514,7 @@ class DateTimeNameSpace:
 
         """
 
-    def minute(self) -> pli.Series:
+    def minute(self) -> Series:
         """
         Extract the minutes from the underlying DateTime representation.
 
@@ -549,7 +551,7 @@ class DateTimeNameSpace:
 
         """
 
-    def second(self, fractional: bool = False) -> pli.Series:
+    def second(self, fractional: bool = False) -> Series:
         """
         Extract seconds from underlying DateTime representation.
 
@@ -614,7 +616,7 @@ class DateTimeNameSpace:
 
         """
 
-    def millisecond(self) -> pli.Series:
+    def millisecond(self) -> Series:
         """
         Extract the milliseconds from the underlying DateTime representation.
 
@@ -661,7 +663,7 @@ class DateTimeNameSpace:
 
         """
 
-    def microsecond(self) -> pli.Series:
+    def microsecond(self) -> Series:
         """
         Extract the microseconds from the underlying DateTime representation.
 
@@ -708,7 +710,7 @@ class DateTimeNameSpace:
 
         """
 
-    def nanosecond(self) -> pli.Series:
+    def nanosecond(self) -> Series:
         """
         Extract the nanoseconds from the underlying DateTime representation.
 
@@ -755,7 +757,7 @@ class DateTimeNameSpace:
 
         """
 
-    def timestamp(self, tu: TimeUnit = "us") -> pli.Series:
+    def timestamp(self, tu: TimeUnit = "us") -> Series:
         """
         Return a timestamp in the given time unit.
 
@@ -797,7 +799,7 @@ class DateTimeNameSpace:
 
         """
 
-    def epoch(self, tu: EpochTimeUnit = "us") -> pli.Series:
+    def epoch(self, tu: EpochTimeUnit = "us") -> Series:
         """
         Get the time passed since the Unix EPOCH in the give time unit.
 
@@ -839,7 +841,7 @@ class DateTimeNameSpace:
 
         """
 
-    def with_time_unit(self, tu: TimeUnit) -> pli.Series:
+    def with_time_unit(self, tu: TimeUnit) -> Series:
         """
         Set time unit a Series of dtype Datetime or Duration.
 
@@ -876,7 +878,7 @@ class DateTimeNameSpace:
 
         """
 
-    def cast_time_unit(self, tu: TimeUnit) -> pli.Series:
+    def cast_time_unit(self, tu: TimeUnit) -> Series:
         """
         Cast the underlying data to another time unit. This may lose precision.
 
@@ -919,7 +921,7 @@ class DateTimeNameSpace:
         """
 
     @deprecated_alias(tz="time_zone")
-    def convert_time_zone(self, time_zone: str) -> pli.Series:
+    def convert_time_zone(self, time_zone: str) -> Series:
         """
         Convert to given time zone for a Series of type Datetime.
 
@@ -960,7 +962,7 @@ class DateTimeNameSpace:
         )
 
     @deprecated_alias(tz="time_zone")
-    def replace_time_zone(self, time_zone: str | None) -> pli.Series:
+    def replace_time_zone(self, time_zone: str | None) -> Series:
         """
         Replace time zone for a Series of type Datetime.
 
@@ -1039,7 +1041,7 @@ class DateTimeNameSpace:
             .to_series()
         )
 
-    def days(self) -> pli.Series:
+    def days(self) -> Series:
         """
         Extract the days from a Duration type.
 
@@ -1070,7 +1072,7 @@ class DateTimeNameSpace:
 
         """
 
-    def hours(self) -> pli.Series:
+    def hours(self) -> Series:
         """
         Extract the hours from a Duration type.
 
@@ -1103,7 +1105,7 @@ class DateTimeNameSpace:
 
         """
 
-    def minutes(self) -> pli.Series:
+    def minutes(self) -> Series:
         """
         Extract the minutes from a Duration type.
 
@@ -1136,7 +1138,7 @@ class DateTimeNameSpace:
 
         """
 
-    def seconds(self) -> pli.Series:
+    def seconds(self) -> Series:
         """
         Extract the seconds from a Duration type.
 
@@ -1173,7 +1175,7 @@ class DateTimeNameSpace:
 
         """
 
-    def milliseconds(self) -> pli.Series:
+    def milliseconds(self) -> Series:
         """
         Extract the milliseconds from a Duration type.
 
@@ -1206,7 +1208,7 @@ class DateTimeNameSpace:
 
         """
 
-    def microseconds(self) -> pli.Series:
+    def microseconds(self) -> Series:
         """
         Extract the microseconds from a Duration type.
 
@@ -1239,7 +1241,7 @@ class DateTimeNameSpace:
 
         """
 
-    def nanoseconds(self) -> pli.Series:
+    def nanoseconds(self) -> Series:
         """
         Extract the nanoseconds from a Duration type.
 
@@ -1272,7 +1274,7 @@ class DateTimeNameSpace:
 
         """
 
-    def offset_by(self, by: str) -> pli.Series:
+    def offset_by(self, by: str) -> Series:
         """
         Offset this date by a relative time offset.
 
@@ -1345,7 +1347,7 @@ class DateTimeNameSpace:
         self,
         every: str | timedelta,
         offset: str | timedelta | None = None,
-    ) -> pli.Series:
+    ) -> Series:
         """
         Divide the date/ datetime range into buckets.
 
@@ -1453,7 +1455,7 @@ class DateTimeNameSpace:
         self,
         every: str | timedelta,
         offset: str | timedelta | None = None,
-    ) -> pli.Series:
+    ) -> Series:
         """
         Divide the date/ datetime range into buckets.
 
@@ -1549,7 +1551,7 @@ class DateTimeNameSpace:
 
         """
 
-    def combine(self, tm: time | pli.Series, tu: TimeUnit = "us") -> pli.Expr:
+    def combine(self, tm: time | Series, tu: TimeUnit = "us") -> Expr:
         """
         Create a naive Datetime from an existing Date/Datetime expression and a Time.
 

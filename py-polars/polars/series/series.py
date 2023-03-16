@@ -97,7 +97,9 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
 
+    from polars.dataframe.frame import DataFrame
     from polars.datatypes import OneOrMoreDataTypes, PolarsDataType
+    from polars.expr.expr import Expr
     from polars.internals.type_aliases import (
         ClosedInterval,
         ComparisonOperator,
@@ -555,14 +557,14 @@ class Series:
         return self._from_pyseries(f(other))
 
     @overload
-    def __add__(self, other: pli.DataFrame) -> pli.DataFrame:  # type: ignore[misc]
+    def __add__(self, other: DataFrame) -> DataFrame:  # type: ignore[misc]
         ...
 
     @overload
     def __add__(self, other: Any) -> Self:
         ...
 
-    def __add__(self, other: Any) -> Self | pli.DataFrame:
+    def __add__(self, other: Any) -> Self | DataFrame:
         if isinstance(other, str):
             other = Series("", [other])
         elif isinstance(other, pli.DataFrame):
@@ -597,14 +599,14 @@ class Series:
         return NotImplemented
 
     @overload
-    def __mul__(self, other: pli.DataFrame) -> pli.DataFrame:  # type: ignore[misc]
+    def __mul__(self, other: DataFrame) -> DataFrame:  # type: ignore[misc]
         ...
 
     @overload
     def __mul__(self, other: Any) -> Series:
         ...
 
-    def __mul__(self, other: Any) -> Series | pli.DataFrame:
+    def __mul__(self, other: Any) -> Series | DataFrame:
         if self.is_temporal():
             raise ValueError("first cast to integer before multiplying datelike dtypes")
         elif isinstance(other, pli.DataFrame):
@@ -1104,7 +1106,7 @@ class Series:
     def drop_nans(self) -> Series:
         """Drop NaN values."""
 
-    def to_frame(self, name: str | None = None) -> pli.DataFrame:
+    def to_frame(self, name: str | None = None) -> DataFrame:
         """
         Cast this Series to a DataFrame.
 
@@ -1145,7 +1147,7 @@ class Series:
             return pli.wrap_df(PyDataFrame([self.rename(name)._s]))
         return pli.wrap_df(PyDataFrame([self._s]))
 
-    def describe(self) -> pli.DataFrame:
+    def describe(self) -> DataFrame:
         """
         Quick summary statistics of a series.
 
@@ -1388,7 +1390,7 @@ class Series:
         """
         return self._s.quantile(quantile, interpolation)
 
-    def to_dummies(self, separator: str = "_") -> pli.DataFrame:
+    def to_dummies(self, separator: str = "_") -> DataFrame:
         """
         Get dummy/indicator variables.
 
@@ -1421,7 +1423,7 @@ class Series:
         labels: list[str] | None = None,
         break_point_label: str = "break_point",
         category_label: str = "category",
-    ) -> pli.DataFrame:
+    ) -> DataFrame:
         """
         Bin values into discrete values.
 
@@ -1504,7 +1506,7 @@ class Series:
         )
         return result
 
-    def value_counts(self, sort: bool = False) -> pli.DataFrame:
+    def value_counts(self, sort: bool = False) -> DataFrame:
         """
         Count the unique values in a Series.
 
@@ -1575,7 +1577,7 @@ class Series:
         return pli.select(pli.lit(self).entropy(base, normalize)).to_series()[0]
 
     def cumulative_eval(
-        self, expr: pli.Expr, min_periods: int = 1, parallel: bool = False
+        self, expr: Expr, min_periods: int = 1, parallel: bool = False
     ) -> Series:
         """
         Run an expression over a sliding window that increases `1` slot every iteration.
@@ -2290,7 +2292,7 @@ class Series:
         """
 
     def take(
-        self, indices: int | list[int] | pli.Expr | Series | np.ndarray[Any, Any]
+        self, indices: int | list[int] | Expr | Series | np.ndarray[Any, Any]
     ) -> Series:
         """
         Take values by index.
@@ -2812,8 +2814,8 @@ class Series:
 
     def is_between(
         self,
-        start: pli.Expr | datetime | date | time | int | float | str,
-        end: pli.Expr | datetime | date | time | int | float | str,
+        start: Expr | datetime | date | time | int | float | str,
+        end: Expr | datetime | date | time | int | float | str,
         closed: ClosedInterval = "both",
     ) -> Series:
         """
@@ -3374,7 +3376,7 @@ class Series:
         """
         return self._from_pyseries(self._s.clone())
 
-    def fill_nan(self, fill_value: int | float | pli.Expr | None) -> Series:
+    def fill_nan(self, fill_value: int | float | Expr | None) -> Series:
         """
         Fill floating point NaN value with a fill value.
 
@@ -3891,7 +3893,7 @@ class Series:
 
         """
 
-    def shift_and_fill(self, periods: int, fill_value: int | pli.Expr) -> Series:
+    def shift_and_fill(self, periods: int, fill_value: int | Expr) -> Series:
         """
         Shift the values by a given period and fill the resulting null values.
 

@@ -7,6 +7,7 @@ from polars.internals import expr_to_lit_or_expr, selection_to_pyexpr_list
 from polars.utils.decorators import deprecated_alias
 
 if TYPE_CHECKING:
+    from polars.dataframe.frame import DataFrame
     from polars.datatypes import SchemaDict
     from polars.internals.type_aliases import IntoExpr, RollingInterpolationMethod
     from polars.polars import PyLazyGroupBy
@@ -136,7 +137,7 @@ class LazyGroupBy(Generic[LDF]):
     @deprecated_alias(f="function")
     def apply(
         self,
-        function: Callable[[pli.DataFrame], pli.DataFrame],
+        function: Callable[[DataFrame], DataFrame],
         schema: SchemaDict | None,
     ) -> LDF:
         """

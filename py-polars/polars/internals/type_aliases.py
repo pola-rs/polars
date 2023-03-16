@@ -11,10 +11,12 @@ else:
     from typing_extensions import Literal
 
 if TYPE_CHECKING:
-    from polars import internals as pli
     from polars.dependencies import numpy as np
     from polars.dependencies import pandas as pd
     from polars.dependencies import pyarrow as pa
+    from polars.expr.expr import Expr
+    from polars.internals.whenthen import WhenThen, WhenThenThen
+    from polars.series.series import Series
 
     if sys.version_info >= (3, 10):
         from typing import TypeAlias
@@ -23,14 +25,14 @@ if TYPE_CHECKING:
 
 
 # Types that qualify as expressions (eg: for use in 'select', 'with_columns'...)
-PolarsExprType: TypeAlias = "pli.Expr | pli.WhenThen | pli.WhenThenThen"
+PolarsExprType: TypeAlias = "Expr | WhenThen | WhenThenThen"
 
 # literal types that are allowed in expressions (auto-converted to pl.lit)
 PythonLiteral: TypeAlias = Union[
     str, int, float, bool, date, time, datetime, timedelta, bytes, Decimal
 ]
 
-IntoExpr: TypeAlias = "PolarsExprType | PythonLiteral | pli.Series | None"
+IntoExpr: TypeAlias = "PolarsExprType | PythonLiteral | Series | None"
 ComparisonOperator: TypeAlias = Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"]
 
 # User-facing string literal types
@@ -96,4 +98,4 @@ DbWriteEngine: TypeAlias = Literal["sqlalchemy", "adbc"]
 DbWriteMode: TypeAlias = Literal["replace", "append", "fail"]
 
 # type signature for allowed frame init
-FrameInitTypes: TypeAlias = "Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | pli.Series] | Sequence[Any] | np.ndarray[Any, Any] | pa.Table | pd.DataFrame | pli.Series"
+FrameInitTypes: TypeAlias = "Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series] | Sequence[Any] | np.ndarray[Any, Any] | pa.Table | pd.DataFrame"

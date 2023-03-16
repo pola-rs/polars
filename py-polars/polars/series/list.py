@@ -9,8 +9,10 @@ from polars.utils.decorators import deprecate_nonkeyword_arguments
 if TYPE_CHECKING:
     from datetime import date, datetime, time
 
+    from polars.expr.expr import Expr
     from polars.internals.type_aliases import NullBehavior, ToStructStrategy
     from polars.polars import PySeries
+    from polars.series.series import Series
 
 
 @expr_dispatch
@@ -19,10 +21,10 @@ class ListNameSpace:
 
     _accessor = "arr"
 
-    def __init__(self, series: pli.Series):
+    def __init__(self, series: Series):
         self._s: PySeries = series._s
 
-    def lengths(self) -> pli.Series:
+    def lengths(self) -> Series:
         """
         Get the length of the arrays as UInt32.
 
@@ -39,20 +41,20 @@ class ListNameSpace:
 
         """
 
-    def sum(self) -> pli.Series:
+    def sum(self) -> Series:
         """Sum all the arrays in the list."""
 
-    def max(self) -> pli.Series:
+    def max(self) -> Series:
         """Compute the max value of the arrays in the list."""
 
-    def min(self) -> pli.Series:
+    def min(self) -> Series:
         """Compute the min value of the arrays in the list."""
 
-    def mean(self) -> pli.Series:
+    def mean(self) -> Series:
         """Compute the mean value of the arrays in the list."""
 
     @deprecate_nonkeyword_arguments()
-    def sort(self, descending: bool = False) -> pli.Series:
+    def sort(self, descending: bool = False) -> Series:
         """
         Sort the arrays in this column.
 
@@ -87,13 +89,13 @@ class ListNameSpace:
             .to_series()
         )
 
-    def reverse(self) -> pli.Series:
+    def reverse(self) -> Series:
         """Reverse the arrays in the list."""
 
-    def unique(self) -> pli.Series:
+    def unique(self) -> Series:
         """Get the unique/distinct values in the list."""
 
-    def concat(self, other: list[pli.Series] | pli.Series | list[Any]) -> pli.Series:
+    def concat(self, other: list[Series] | Series | list[Any]) -> Series:
         """
         Concat the arrays in a Series dtype List in linear time.
 
@@ -104,7 +106,7 @@ class ListNameSpace:
 
         """
 
-    def get(self, index: int | pli.Series | list[int]) -> pli.Series:
+    def get(self, index: int | Series | list[int]) -> Series:
         """
         Get the value by index in the sublists.
 
@@ -120,8 +122,8 @@ class ListNameSpace:
         """
 
     def take(
-        self, index: pli.Series | list[int] | list[list[int]], null_on_oob: bool = False
-    ) -> pli.Series:
+        self, index: Series | list[int] | list[list[int]], null_on_oob: bool = False
+    ) -> Series:
         """
         Take sublists by multiple indices.
 
@@ -140,10 +142,10 @@ class ListNameSpace:
 
         """
 
-    def __getitem__(self, item: int) -> pli.Series:
+    def __getitem__(self, item: int) -> Series:
         return self.get(item)
 
-    def join(self, separator: str) -> pli.Series:
+    def join(self, separator: str) -> Series:
         """
         Join all string items in a sublist and place a separator between them.
 
@@ -171,13 +173,13 @@ class ListNameSpace:
 
         """
 
-    def first(self) -> pli.Series:
+    def first(self) -> Series:
         """Get the first value of the sublists."""
 
-    def last(self) -> pli.Series:
+    def last(self) -> Series:
         """Get the last value of the sublists."""
 
-    def contains(self, item: float | str | bool | int | date | datetime) -> pli.Series:
+    def contains(self, item: float | str | bool | int | date | datetime) -> Series:
         """
         Check if sublists contain the given item.
 
@@ -192,7 +194,7 @@ class ListNameSpace:
 
         """
 
-    def arg_min(self) -> pli.Series:
+    def arg_min(self) -> Series:
         """
         Retrieve the index of the minimal value in every sublist.
 
@@ -202,7 +204,7 @@ class ListNameSpace:
 
         """
 
-    def arg_max(self) -> pli.Series:
+    def arg_max(self) -> Series:
         """
         Retrieve the index of the maximum value in every sublist.
 
@@ -212,7 +214,7 @@ class ListNameSpace:
 
         """
 
-    def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> pli.Series:
+    def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Series:
         """
         Calculate the n-th discrete difference of every sublist.
 
@@ -252,7 +254,7 @@ class ListNameSpace:
 
         """
 
-    def shift(self, periods: int = 1) -> pli.Series:
+    def shift(self, periods: int = 1) -> Series:
         """
         Shift values by the given period.
 
@@ -274,7 +276,7 @@ class ListNameSpace:
 
         """
 
-    def slice(self, offset: int, length: int | None = None) -> pli.Series:
+    def slice(self, offset: int, length: int | None = None) -> Series:
         """
         Slice every sublist.
 
@@ -299,7 +301,7 @@ class ListNameSpace:
 
         """
 
-    def head(self, n: int = 5) -> pli.Series:
+    def head(self, n: int = 5) -> Series:
         """
         Slice the first `n` values of every sublist.
 
@@ -321,7 +323,7 @@ class ListNameSpace:
 
         """
 
-    def tail(self, n: int = 5) -> pli.Series:
+    def tail(self, n: int = 5) -> Series:
         """
         Slice the last `n` values of every sublist.
 
@@ -343,7 +345,7 @@ class ListNameSpace:
 
         """
 
-    def explode(self) -> pli.Series:
+    def explode(self) -> Series:
         """
         Returns a column with a separate row for every list element.
 
@@ -373,8 +375,8 @@ class ListNameSpace:
         """
 
     def count_match(
-        self, element: float | str | bool | int | date | datetime | time | pli.Expr
-    ) -> pli.Expr:
+        self, element: float | str | bool | int | date | datetime | time | Expr
+    ) -> Expr:
         """
         Count how often the value produced by ``element`` occurs.
 
@@ -389,7 +391,7 @@ class ListNameSpace:
         self,
         n_field_strategy: ToStructStrategy = "first_non_null",
         name_generator: Callable[[int], str] | None = None,
-    ) -> pli.Series:
+    ) -> Series:
         """
         Convert the series of type ``List`` to a series of type ``Struct``.
 
@@ -441,7 +443,7 @@ class ListNameSpace:
             .to_series()
         )
 
-    def eval(self, expr: pli.Expr, parallel: bool = False) -> pli.Series:
+    def eval(self, expr: Expr, parallel: bool = False) -> Series:
         """
         Run any polars expression against the lists' elements.
 

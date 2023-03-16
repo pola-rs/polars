@@ -62,7 +62,9 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
 
+    from polars.dataframe.frame import DataFrame
     from polars.datatypes import PolarsDataType, SchemaDict
+    from polars.expr.expr import Expr
     from polars.internals.type_aliases import (
         CorrelationMethod,
         EpochTimeUnit,
@@ -70,6 +72,8 @@ if TYPE_CHECKING:
         RollingInterpolationMethod,
         TimeUnit,
     )
+    from polars.lazyframe.frame import LazyFrame
+    from polars.series.series import Series
 
     if sys.version_info >= (3, 8):
         from typing import Literal
@@ -80,7 +84,7 @@ if TYPE_CHECKING:
 def col(
     name: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType],
     *more_names: str | PolarsDataType,
-) -> pli.Expr:
+) -> Expr:
     """
     Return an expression representing column(s) in a dataframe.
 
@@ -249,7 +253,7 @@ def col(
         )
 
 
-def element() -> pli.Expr:
+def element() -> Expr:
     """
     Alias for an element being evaluated in an `eval` expression.
 
@@ -294,21 +298,21 @@ def element() -> pli.Expr:
 
 
 @overload
-def count(column: str) -> pli.Expr:
+def count(column: str) -> Expr:
     ...
 
 
 @overload
-def count(column: pli.Series) -> int:
+def count(column: Series) -> int:
     ...
 
 
 @overload
-def count(column: None = None) -> pli.Expr:
+def count(column: None = None) -> Expr:
     ...
 
 
-def count(column: str | pli.Series | None = None) -> pli.Expr | int:
+def count(column: str | Series | None = None) -> Expr | int:
     """
     Count the number of values in this column/context.
 
@@ -353,7 +357,7 @@ def count(column: str | pli.Series | None = None) -> pli.Expr | int:
     return col(column).count()
 
 
-def list_(name: str) -> pli.Expr:
+def list_(name: str) -> Expr:
     """
     Aggregate to list.
 
@@ -367,16 +371,16 @@ def list_(name: str) -> pli.Expr:
 
 
 @overload
-def std(column: str, ddof: int = 1) -> pli.Expr:
+def std(column: str, ddof: int = 1) -> Expr:
     ...
 
 
 @overload
-def std(column: pli.Series, ddof: int = 1) -> float | None:
+def std(column: Series, ddof: int = 1) -> float | None:
     ...
 
 
-def std(column: str | pli.Series, ddof: int = 1) -> pli.Expr | float | None:
+def std(column: str | Series, ddof: int = 1) -> Expr | float | None:
     """
     Get the standard deviation.
 
@@ -402,16 +406,16 @@ def std(column: str | pli.Series, ddof: int = 1) -> pli.Expr | float | None:
 
 
 @overload
-def var(column: str, ddof: int = 1) -> pli.Expr:
+def var(column: str, ddof: int = 1) -> Expr:
     ...
 
 
 @overload
-def var(column: pli.Series, ddof: int = 1) -> float | None:
+def var(column: Series, ddof: int = 1) -> float | None:
     ...
 
 
-def var(column: str | pli.Series, ddof: int = 1) -> pli.Expr | float | None:
+def var(column: str | Series, ddof: int = 1) -> Expr | float | None:
     """
     Get the variance.
 
@@ -437,16 +441,16 @@ def var(column: str | pli.Series, ddof: int = 1) -> pli.Expr | float | None:
 
 
 @overload
-def max(column: str | Sequence[pli.Expr | str]) -> pli.Expr:
+def max(column: str | Sequence[Expr | str]) -> Expr:
     ...
 
 
 @overload
-def max(column: pli.Series) -> int | float:
+def max(column: Series) -> int | float:
     ...
 
 
-def max(column: str | Sequence[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
+def max(column: str | Sequence[Expr | str] | Series) -> Expr | Any:
     """
     Get the maximum value. Can be used horizontally or vertically.
 
@@ -523,19 +527,19 @@ def max(column: str | Sequence[pli.Expr | str] | pli.Series) -> pli.Expr | Any:
 
 @overload
 def min(
-    column: str | Sequence[pli.Expr | str | date | datetime | int | float],
-) -> pli.Expr:
+    column: str | Sequence[Expr | str | date | datetime | int | float],
+) -> Expr:
     ...
 
 
 @overload
-def min(column: pli.Series) -> int | float:
+def min(column: Series) -> int | float:
     ...
 
 
 def min(
-    column: str | Sequence[pli.Expr | str | date | datetime | int | float] | pli.Series,
-) -> pli.Expr | Any:
+    column: str | Sequence[Expr | str | date | datetime | int | float] | Series,
+) -> Expr | Any:
     """
     Get the minimum value.
 
@@ -609,18 +613,18 @@ def min(
 
 
 @overload
-def sum(column: str | Sequence[pli.Expr | str] | pli.Expr) -> pli.Expr:
+def sum(column: str | Sequence[Expr | str] | Expr) -> Expr:
     ...
 
 
 @overload
-def sum(column: pli.Series) -> int | float:
+def sum(column: Series) -> int | float:
     ...
 
 
 def sum(
-    column: str | Sequence[pli.Expr | str] | pli.Series | pli.Expr,
-) -> pli.Expr | Any:
+    column: str | Sequence[Expr | str] | Series | Expr,
+) -> Expr | Any:
     """
     Sum values in a column/Series, or horizontally across list of columns/expressions.
 
@@ -728,16 +732,16 @@ def sum(
 
 
 @overload
-def mean(column: str) -> pli.Expr:
+def mean(column: str) -> Expr:
     ...
 
 
 @overload
-def mean(column: pli.Series) -> float:
+def mean(column: Series) -> float:
     ...
 
 
-def mean(column: str | pli.Series) -> pli.Expr | float | None:
+def mean(column: str | Series) -> Expr | float | None:
     """
     Get the mean value.
 
@@ -763,16 +767,16 @@ def mean(column: str | pli.Series) -> pli.Expr | float | None:
 
 
 @overload
-def avg(column: str) -> pli.Expr:
+def avg(column: str) -> Expr:
     ...
 
 
 @overload
-def avg(column: pli.Series) -> float:
+def avg(column: Series) -> float:
     ...
 
 
-def avg(column: str | pli.Series) -> pli.Expr | float:
+def avg(column: str | Series) -> Expr | float:
     """
     Alias for mean.
 
@@ -796,16 +800,16 @@ def avg(column: str | pli.Series) -> pli.Expr | float:
 
 
 @overload
-def median(column: str) -> pli.Expr:
+def median(column: str) -> Expr:
     ...
 
 
 @overload
-def median(column: pli.Series) -> float | int:
+def median(column: Series) -> float | int:
     ...
 
 
-def median(column: str | pli.Series) -> pli.Expr | float | int | None:
+def median(column: str | Series) -> Expr | float | int | None:
     """
     Get the median value.
 
@@ -831,16 +835,16 @@ def median(column: str | pli.Series) -> pli.Expr | float | int | None:
 
 
 @overload
-def n_unique(column: str) -> pli.Expr:
+def n_unique(column: str) -> Expr:
     ...
 
 
 @overload
-def n_unique(column: pli.Series) -> int:
+def n_unique(column: Series) -> int:
     ...
 
 
-def n_unique(column: str | pli.Series) -> pli.Expr | int:
+def n_unique(column: str | Series) -> Expr | int:
     """
     Count unique values.
 
@@ -866,21 +870,21 @@ def n_unique(column: str | pli.Series) -> pli.Expr | int:
 
 
 @overload
-def first(column: str) -> pli.Expr:
+def first(column: str) -> Expr:
     ...
 
 
 @overload
-def first(column: pli.Series) -> Any:
+def first(column: Series) -> Any:
     ...
 
 
 @overload
-def first(column: None = None) -> pli.Expr:
+def first(column: None = None) -> Expr:
     ...
 
 
-def first(column: str | pli.Series | None = None) -> pli.Expr | Any:
+def first(column: str | Series | None = None) -> Expr | Any:
     """
     Get the first value.
 
@@ -931,21 +935,21 @@ def first(column: str | pli.Series | None = None) -> pli.Expr | Any:
 
 
 @overload
-def last(column: str) -> pli.Expr:
+def last(column: str) -> Expr:
     ...
 
 
 @overload
-def last(column: pli.Series) -> Any:
+def last(column: Series) -> Any:
     ...
 
 
 @overload
-def last(column: None = None) -> pli.Expr:
+def last(column: None = None) -> Expr:
     ...
 
 
-def last(column: str | pli.Series | None = None) -> pli.Expr:
+def last(column: str | Series | None = None) -> Expr:
     """
     Get the last value.
 
@@ -994,16 +998,16 @@ def last(column: str | pli.Series | None = None) -> pli.Expr:
 
 
 @overload
-def head(column: str, n: int = ...) -> pli.Expr:
+def head(column: str, n: int = ...) -> Expr:
     ...
 
 
 @overload
-def head(column: pli.Series, n: int = ...) -> pli.Series:
+def head(column: Series, n: int = ...) -> Series:
     ...
 
 
-def head(column: str | pli.Series, n: int = 10) -> pli.Expr | pli.Series:
+def head(column: str | Series, n: int = 10) -> Expr | Series:
     """
     Get the first `n` rows.
 
@@ -1053,16 +1057,16 @@ def head(column: str | pli.Series, n: int = 10) -> pli.Expr | pli.Series:
 
 
 @overload
-def tail(column: str, n: int = ...) -> pli.Expr:
+def tail(column: str, n: int = ...) -> Expr:
     ...
 
 
 @overload
-def tail(column: pli.Series, n: int = ...) -> pli.Series:
+def tail(column: Series, n: int = ...) -> Series:
     ...
 
 
-def tail(column: str | pli.Series, n: int = 10) -> pli.Expr | pli.Series:
+def tail(column: str | Series, n: int = 10) -> Expr | Series:
     """
     Get the last `n` rows.
 
@@ -1114,7 +1118,7 @@ def tail(column: str | pli.Series, n: int = 10) -> pli.Expr | pli.Series:
 @deprecate_nonkeyword_arguments(allowed_args=["value", "dtype"])
 def lit(
     value: Any, dtype: PolarsDataType | None = None, allow_object: bool = False
-) -> pli.Expr:
+) -> Expr:
     """
     Return an expression representing a literal value.
 
@@ -1220,18 +1224,18 @@ def lit(
 
 
 @overload
-def cumsum(column: str | Sequence[pli.Expr | str] | pli.Expr) -> pli.Expr:
+def cumsum(column: str | Sequence[Expr | str] | Expr) -> Expr:
     ...
 
 
 @overload
-def cumsum(column: pli.Series) -> int | float:
+def cumsum(column: Series) -> int | float:
     ...
 
 
 def cumsum(
-    column: str | Sequence[pli.Expr | str] | pli.Series | pli.Expr,
-) -> pli.Expr | Any:
+    column: str | Sequence[Expr | str] | Series | Expr,
+) -> Expr | Any:
     """
     Cumulatively sum values in a column/Series, or horizontally across list of columns/expressions.
 
@@ -1311,8 +1315,8 @@ def cumsum(
 
 @deprecate_nonkeyword_arguments(allowed_args=["a", "b", "ddof"])
 def spearman_rank_corr(
-    a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1, propagate_nans: bool = False
-) -> pli.Expr:
+    a: str | Expr, b: str | Expr, ddof: int = 1, propagate_nans: bool = False
+) -> Expr:
     """
     Compute the spearman rank correlation between two columns.
 
@@ -1366,7 +1370,7 @@ def spearman_rank_corr(
     )
 
 
-def pearson_corr(a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1) -> pli.Expr:
+def pearson_corr(a: str | Expr, b: str | Expr, ddof: int = 1) -> Expr:
     """
     Compute the pearson's correlation between two columns.
 
@@ -1412,13 +1416,13 @@ def pearson_corr(a: str | pli.Expr, b: str | pli.Expr, ddof: int = 1) -> pli.Exp
 
 
 def corr(
-    a: str | pli.Expr,
-    b: str | pli.Expr,
+    a: str | Expr,
+    b: str | Expr,
     *,
     method: CorrelationMethod = "pearson",
     ddof: int = 1,
     propagate_nans: bool = False,
-) -> pli.Expr:
+) -> Expr:
     """
     Compute the pearson's or spearman rank correlation correlation between two columns.
 
@@ -1482,7 +1486,7 @@ def corr(
         )
 
 
-def cov(a: str | pli.Expr, b: str | pli.Expr) -> pli.Expr:
+def cov(a: str | Expr, b: str | Expr) -> Expr:
     """
     Compute the covariance between two columns/ expressions.
 
@@ -1516,10 +1520,10 @@ def cov(a: str | pli.Expr, b: str | pli.Expr) -> pli.Expr:
 
 @deprecated_alias(f="function")
 def map(
-    exprs: Sequence[str] | Sequence[pli.Expr],
-    function: Callable[[Sequence[pli.Series]], pli.Series],
+    exprs: Sequence[str] | Sequence[Expr],
+    function: Callable[[Sequence[Series]], Series],
     return_dtype: PolarsDataType | None = None,
-) -> pli.Expr:
+) -> Expr:
     """
     Map a custom function over multiple columns/expressions.
 
@@ -1580,11 +1584,11 @@ def map(
 @deprecated_alias(f="function")
 @deprecate_nonkeyword_arguments(allowed_args=["exprs", "function", "return_dtype"])
 def apply(
-    exprs: Sequence[str | pli.Expr],
-    function: Callable[[Sequence[pli.Series]], pli.Series | Any],
+    exprs: Sequence[str | Expr],
+    function: Callable[[Sequence[Series]], Series | Any],
     return_dtype: PolarsDataType | None = None,
     returns_scalar: bool = True,
-) -> pli.Expr:
+) -> Expr:
     """
     Apply a custom/user-defined function (UDF) in a GroupBy context.
 
@@ -1662,9 +1666,9 @@ def apply(
 @deprecated_alias(f="function")
 def fold(
     acc: IntoExpr,
-    function: Callable[[pli.Series, pli.Series], pli.Series],
-    exprs: Sequence[pli.Expr | str] | pli.Expr,
-) -> pli.Expr:
+    function: Callable[[Series, Series], Series],
+    exprs: Sequence[Expr | str] | Expr,
+) -> Expr:
     """
     Accumulate over multiple columns horizontally/ row wise with a left fold.
 
@@ -1770,9 +1774,9 @@ def fold(
 
 @deprecated_alias(f="function")
 def reduce(
-    function: Callable[[pli.Series, pli.Series], pli.Series],
-    exprs: Sequence[pli.Expr | str] | pli.Expr,
-) -> pli.Expr:
+    function: Callable[[Series, Series], Series],
+    exprs: Sequence[Expr | str] | Expr,
+) -> Expr:
     """
     Accumulate over multiple columns horizontally/ row wise with a left fold.
 
@@ -1837,10 +1841,10 @@ def reduce(
 @deprecate_nonkeyword_arguments()
 def cumfold(
     acc: IntoExpr,
-    function: Callable[[pli.Series, pli.Series], pli.Series],
-    exprs: Sequence[pli.Expr | str] | pli.Expr,
+    function: Callable[[Series, Series], Series],
+    exprs: Sequence[Expr | str] | Expr,
     include_init: bool = False,
-) -> pli.Expr:
+) -> Expr:
     """
     Cumulatively accumulate over multiple columns horizontally/ row wise with a left fold.
 
@@ -1913,9 +1917,9 @@ def cumfold(
 
 @deprecated_alias(f="function")
 def cumreduce(
-    function: Callable[[pli.Series, pli.Series], pli.Series],
-    exprs: Sequence[pli.Expr | str] | pli.Expr,
-) -> pli.Expr:
+    function: Callable[[Series, Series], Series],
+    exprs: Sequence[Expr | str] | Expr,
+) -> Expr:
     """
     Cumulatively accumulate over multiple columns horizontally/ row wise with a left fold.
 
@@ -1974,7 +1978,7 @@ def cumreduce(
     return pli.wrap_expr(pycumreduce(function, exprs))
 
 
-def any(name: str | Sequence[str] | Sequence[pli.Expr] | pli.Expr) -> pli.Expr:
+def any(name: str | Sequence[str] | Sequence[Expr] | Expr) -> Expr:
     """
     Evaluate columnwise or elementwise with a bitwise OR operation.
 
@@ -2024,7 +2028,7 @@ def any(name: str | Sequence[str] | Sequence[pli.Expr] | pli.Expr) -> pli.Expr:
 def exclude(
     columns: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType],
     *more_columns: str | PolarsDataType,
-) -> pli.Expr:
+) -> Expr:
     """
     Represent all columns except for the given columns.
 
@@ -2094,7 +2098,7 @@ def exclude(
     return col("*").exclude(columns, *more_columns)
 
 
-def all(name: str | Sequence[pli.Expr] | pli.Expr | None = None) -> pli.Expr:
+def all(name: str | Sequence[Expr] | Expr | None = None) -> Expr:
     """
     Do one of two things.
 
@@ -2134,16 +2138,16 @@ def all(name: str | Sequence[pli.Expr] | pli.Expr | None = None) -> pli.Expr:
         )
 
 
-def groups(column: str) -> pli.Expr:
+def groups(column: str) -> Expr:
     """Syntactic sugar for `pl.col("foo").agg_groups()`."""
     return col(column).agg_groups()
 
 
 def quantile(
     column: str,
-    quantile: float | pli.Expr,
+    quantile: float | Expr,
     interpolation: RollingInterpolationMethod = "nearest",
-) -> pli.Expr:
+) -> Expr:
     """
     Syntactic sugar for `pl.col("foo").quantile(..)`.
 
@@ -2162,47 +2166,47 @@ def quantile(
 
 @overload
 def arange(
-    low: int | pli.Expr | pli.Series,
-    high: int | pli.Expr | pli.Series,
+    low: int | Expr | Series,
+    high: int | Expr | Series,
     step: int = ...,
     *,
     eager: Literal[False],
-) -> pli.Expr:
+) -> Expr:
     ...
 
 
 @overload
 def arange(
-    low: int | pli.Expr | pli.Series,
-    high: int | pli.Expr | pli.Series,
+    low: int | Expr | Series,
+    high: int | Expr | Series,
     step: int = ...,
     *,
     eager: Literal[True],
     dtype: PolarsDataType | None = ...,
-) -> pli.Series:
+) -> Series:
     ...
 
 
 @overload
 def arange(
-    low: int | pli.Expr | pli.Series,
-    high: int | pli.Expr | pli.Series,
+    low: int | Expr | Series,
+    high: int | Expr | Series,
     step: int = ...,
     *,
     eager: bool = ...,
     dtype: PolarsDataType | None = ...,
-) -> pli.Expr | pli.Series:
+) -> Expr | Series:
     ...
 
 
 def arange(
-    low: int | pli.Expr | pli.Series,
-    high: int | pli.Expr | pli.Series,
+    low: int | Expr | Series,
+    high: int | Expr | Series,
     step: int = 1,
     *,
     eager: bool = False,
     dtype: PolarsDataType | None = None,
-) -> pli.Expr | pli.Series:
+) -> Expr | Series:
     """
     Create a range expression (or Series).
 
@@ -2250,7 +2254,7 @@ def arange(
 def arg_sort_by(
     exprs: IntoExpr | Iterable[IntoExpr],
     descending: bool | Sequence[bool] = False,
-) -> pli.Expr:
+) -> Expr:
     """
     Return the row indices that would sort the columns.
 
@@ -2310,9 +2314,9 @@ def arg_sort_by(
 
 @deprecated_alias(reverse="descending")
 def argsort_by(
-    exprs: pli.Expr | str | Sequence[pli.Expr | str],
+    exprs: Expr | str | Sequence[Expr | str],
     descending: Sequence[bool] | bool = False,
-) -> pli.Expr:
+) -> Expr:
     """
     Find the indexes that would sort the columns.
 
@@ -2341,15 +2345,15 @@ def argsort_by(
 
 def duration(
     *,
-    days: pli.Expr | str | int | None = None,
-    seconds: pli.Expr | str | int | None = None,
-    nanoseconds: pli.Expr | str | int | None = None,
-    microseconds: pli.Expr | str | int | None = None,
-    milliseconds: pli.Expr | str | int | None = None,
-    minutes: pli.Expr | str | int | None = None,
-    hours: pli.Expr | str | int | None = None,
-    weeks: pli.Expr | str | int | None = None,
-) -> pli.Expr:
+    days: Expr | str | int | None = None,
+    seconds: Expr | str | int | None = None,
+    nanoseconds: Expr | str | int | None = None,
+    microseconds: Expr | str | int | None = None,
+    milliseconds: Expr | str | int | None = None,
+    minutes: Expr | str | int | None = None,
+    hours: Expr | str | int | None = None,
+    weeks: Expr | str | int | None = None,
+) -> Expr:
     """
     Create polars `Duration` from distinct time components.
 
@@ -2423,14 +2427,14 @@ def duration(
 
 
 def datetime_(
-    year: pli.Expr | str | int,
-    month: pli.Expr | str | int,
-    day: pli.Expr | str | int,
-    hour: pli.Expr | str | int | None = None,
-    minute: pli.Expr | str | int | None = None,
-    second: pli.Expr | str | int | None = None,
-    microsecond: pli.Expr | str | int | None = None,
-) -> pli.Expr:
+    year: Expr | str | int,
+    month: Expr | str | int,
+    day: Expr | str | int,
+    hour: Expr | str | int | None = None,
+    minute: Expr | str | int | None = None,
+    second: Expr | str | int | None = None,
+    microsecond: Expr | str | int | None = None,
+) -> Expr:
     """
     Create a Polars literal expression of type Datetime.
 
@@ -2483,10 +2487,10 @@ def datetime_(
 
 
 def date_(
-    year: pli.Expr | str | int,
-    month: pli.Expr | str | int,
-    day: pli.Expr | str | int,
-) -> pli.Expr:
+    year: Expr | str | int,
+    month: Expr | str | int,
+    day: Expr | str | int,
+) -> Expr:
     """
     Create a Polars literal expression of type Date.
 
@@ -2509,7 +2513,7 @@ def date_(
 
 @deprecated_alias(sep="separator")
 @deprecate_nonkeyword_arguments()
-def concat_str(exprs: IntoExpr | Iterable[IntoExpr], separator: str = "") -> pli.Expr:
+def concat_str(exprs: IntoExpr | Iterable[IntoExpr], separator: str = "") -> Expr:
     """
     Horizontally concatenate columns into a single string column.
 
@@ -2559,7 +2563,7 @@ def concat_str(exprs: IntoExpr | Iterable[IntoExpr], separator: str = "") -> pli
     return pli.wrap_expr(_concat_str(exprs, separator))
 
 
-def format(fstring: str, *args: pli.Expr | str) -> pli.Expr:
+def format(fstring: str, *args: Expr | str) -> Expr:
     """
     Format expressions as a string.
 
@@ -2613,7 +2617,7 @@ def format(fstring: str, *args: pli.Expr | str) -> pli.Expr:
     return concat_str(exprs, separator="")
 
 
-def concat_list(exprs: Sequence[str | pli.Expr | pli.Series] | pli.Expr) -> pli.Expr:
+def concat_list(exprs: Sequence[str | Expr | Series] | Expr) -> Expr:
     """
     Concat the arrays in a Series dtype List in linear time.
 
@@ -2662,7 +2666,7 @@ def concat_list(exprs: Sequence[str | pli.Expr | pli.Series] | pli.Expr) -> pli.
 
 @deprecate_nonkeyword_arguments()
 def collect_all(
-    lazy_frames: Sequence[pli.LazyFrame],
+    lazy_frames: Sequence[LazyFrame],
     type_coercion: bool = True,
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
@@ -2671,7 +2675,7 @@ def collect_all(
     slice_pushdown: bool = True,
     common_subplan_elimination: bool = True,
     streaming: bool = False,
-) -> list[pli.DataFrame]:
+) -> list[DataFrame]:
     """
     Collect multiple LazyFrames at the same time.
 
@@ -2735,7 +2739,7 @@ def select(
     exprs: IntoExpr | Iterable[IntoExpr] | None = None,
     *more_exprs: IntoExpr,
     **named_exprs: IntoExpr,
-) -> pli.DataFrame:
+) -> DataFrame:
     """
     Run polars expressions without a context.
 
@@ -2781,7 +2785,7 @@ def struct(  # type: ignore[misc]
     eager: Literal[False] = ...,
     schema: SchemaDict | None = ...,
     **named_exprs: IntoExpr,
-) -> pli.Expr:
+) -> Expr:
     ...
 
 
@@ -2791,7 +2795,7 @@ def struct(
     eager: Literal[True] = ...,
     schema: SchemaDict | None = ...,
     **named_exprs: IntoExpr,
-) -> pli.Series:
+) -> Series:
     ...
 
 
@@ -2801,7 +2805,7 @@ def struct(
     eager: bool = ...,
     schema: SchemaDict | None = ...,
     **named_exprs: IntoExpr,
-) -> pli.Expr | pli.Series:
+) -> Expr | Series:
     ...
 
 
@@ -2811,7 +2815,7 @@ def struct(
     eager: bool = False,
     schema: SchemaDict | None = None,
     **named_exprs: IntoExpr,
-) -> pli.Expr | pli.Series:
+) -> Expr | Series:
     """
     Collect columns into a struct column.
 
@@ -2891,43 +2895,43 @@ def struct(
 @overload
 def repeat(
     value: float | int | str | bool | None,
-    n: pli.Expr | int,
+    n: Expr | int,
     *,
     eager: Literal[False] = ...,
     name: str | None = ...,
-) -> pli.Expr:
+) -> Expr:
     ...
 
 
 @overload
 def repeat(
     value: float | int | str | bool | None,
-    n: pli.Expr | int,
+    n: Expr | int,
     *,
     eager: Literal[True],
     name: str | None = ...,
-) -> pli.Series:
+) -> Series:
     ...
 
 
 @overload
 def repeat(
     value: float | int | str | bool | None,
-    n: pli.Expr | int,
+    n: Expr | int,
     *,
     eager: bool,
     name: str | None,
-) -> pli.Expr | pli.Series:
+) -> Expr | Series:
     ...
 
 
 def repeat(
     value: float | int | str | bool | None,
-    n: pli.Expr | int,
+    n: Expr | int,
     *,
     eager: bool = False,
     name: str | None = None,
-) -> pli.Expr | pli.Series:
+) -> Expr | Series:
     """
     Repeat a single value n times.
 
@@ -2963,25 +2967,21 @@ def repeat(
 
 
 @overload
-def arg_where(
-    condition: pli.Expr | pli.Series, eager: Literal[False] = ...
-) -> pli.Expr:
+def arg_where(condition: Expr | Series, eager: Literal[False] = ...) -> Expr:
     ...
 
 
 @overload
-def arg_where(condition: pli.Expr | pli.Series, eager: Literal[True]) -> pli.Series:
+def arg_where(condition: Expr | Series, eager: Literal[True]) -> Series:
     ...
 
 
 @overload
-def arg_where(condition: pli.Expr | pli.Series, eager: bool) -> pli.Expr | pli.Series:
+def arg_where(condition: Expr | Series, eager: bool) -> Expr | Series:
     ...
 
 
-def arg_where(
-    condition: pli.Expr | pli.Series, eager: bool = False
-) -> pli.Expr | pli.Series:
+def arg_where(condition: Expr | Series, eager: bool = False) -> Expr | Series:
     """
     Return indices where `condition` evaluates `True`.
 
@@ -3027,7 +3027,7 @@ def arg_where(
         return pli.wrap_expr(py_arg_where(condition._pyexpr))
 
 
-def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> pli.Expr:
+def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
     """
     Folds the columns from left to right, keeping the first non-null value.
 
@@ -3081,20 +3081,18 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> pli
 
 
 @overload
-def from_epoch(column: str | pli.Expr, unit: EpochTimeUnit = ...) -> pli.Expr:
+def from_epoch(column: str | Expr, unit: EpochTimeUnit = ...) -> Expr:
     ...
 
 
 @overload
-def from_epoch(
-    column: pli.Series | Sequence[int], unit: EpochTimeUnit = ...
-) -> pli.Series:
+def from_epoch(column: Series | Sequence[int], unit: EpochTimeUnit = ...) -> Series:
     ...
 
 
 def from_epoch(
-    column: str | pli.Expr | pli.Series | Sequence[int], unit: EpochTimeUnit = "s"
-) -> pli.Expr | pli.Series:
+    column: str | Expr | Series | Sequence[int], unit: EpochTimeUnit = "s"
+) -> Expr | Series:
     """
     Utility function that parses an epoch timestamp (or Unix time) to Polars Date(time).
 

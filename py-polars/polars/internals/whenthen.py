@@ -10,7 +10,9 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import when as pywhen
 
 if TYPE_CHECKING:
+    from polars.expr.expr import Expr
     from polars.internals.type_aliases import PolarsExprType, PythonLiteral
+    from polars.series.series import Series
 
 
 class WhenThenThen:
@@ -19,14 +21,14 @@ class WhenThenThen:
     def __init__(self, pywhenthenthen: Any):
         self.pywhenthenthen = pywhenthenthen
 
-    def when(self, predicate: pli.Expr | bool) -> WhenThenThen:
+    def when(self, predicate: Expr | bool) -> WhenThenThen:
         """Start another "when, then, otherwise" layer."""
         predicate = pli.expr_to_lit_or_expr(predicate)
         return WhenThenThen(self.pywhenthenthen.when(predicate._pyexpr))
 
     def then(
         self,
-        expr: (PolarsExprType | PythonLiteral | pli.Series | None),
+        expr: (PolarsExprType | PythonLiteral | Series | None),
     ) -> WhenThenThen:
         """
         Values to return in case of the predicate being `True`.
@@ -42,8 +44,8 @@ class WhenThenThen:
 
     def otherwise(
         self,
-        expr: (PolarsExprType | PythonLiteral | pli.Series | None),
-    ) -> pli.Expr:
+        expr: (PolarsExprType | PythonLiteral | Series | None),
+    ) -> Expr:
         """
         Values to return in case of the predicate being `False`.
 
@@ -57,7 +59,7 @@ class WhenThenThen:
         return pli.wrap_expr(self.pywhenthenthen.otherwise(expr._pyexpr))
 
     @typing.no_type_check
-    def __getattr__(self, item) -> pli.Expr:
+    def __getattr__(self, item) -> Expr:
         expr = self.otherwise(None)  # noqa: F841
         return eval(f"expr.{item}")
 
@@ -68,7 +70,7 @@ class WhenThen:
     def __init__(self, pywhenthen: Any):
         self._pywhenthen = pywhenthen
 
-    def when(self, predicate: pli.Expr | bool | pli.Series) -> WhenThenThen:
+    def when(self, predicate: Expr | bool | Series) -> WhenThenThen:
         """Start another "when, then, otherwise" layer."""
         predicate = pli.expr_to_lit_or_expr(predicate)
         return WhenThenThen(self._pywhenthen.when(predicate._pyexpr))
@@ -78,11 +80,11 @@ class WhenThen:
         expr: (
             PolarsExprType
             | PythonLiteral
-            | pli.Series
-            | Iterable[PolarsExprType | PythonLiteral | pli.Series]
+            | Series
+            | Iterable[PolarsExprType | PythonLiteral | Series]
             | None
         ),
-    ) -> pli.Expr:
+    ) -> Expr:
         """
         Values to return in case of the predicate being `False`.
 
@@ -96,7 +98,7 @@ class WhenThen:
         return pli.wrap_expr(self._pywhenthen.otherwise(expr._pyexpr))
 
     @typing.no_type_check
-    def __getattr__(self, item) -> pli.Expr:
+    def __getattr__(self, item) -> Expr:
         expr = self.otherwise(None)  # noqa: F841
         return eval(f"expr.{item}")
 
@@ -112,8 +114,8 @@ class When:
         expr: (
             PolarsExprType
             | PythonLiteral
-            | pli.Series
-            | Iterable[PolarsExprType | PythonLiteral | pli.Series]
+            | Series
+            | Iterable[PolarsExprType | PythonLiteral | Series]
             | None
         ),
     ) -> WhenThen:
@@ -131,7 +133,7 @@ class When:
         return WhenThen(pywhenthen)
 
 
-def when(expr: pli.Expr | bool | pli.Series) -> When:
+def when(expr: Expr | bool | Series) -> When:
     """
     Start a "when, then, otherwise" expression.
 

@@ -6,13 +6,13 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 if TYPE_CHECKING:
-    from polars import internals as pli
+    from polars.series.series import Series
 
 
 # https://numpy.org/doc/stable/user/basics.subclassing.html#slightly-more-realistic-example-attribute-added-to-existing-array
 class SeriesView(np.ndarray):  # type: ignore[type-arg]
     def __new__(
-        cls, input_array: np.ndarray[Any, Any], owned_series: pli.Series
+        cls, input_array: np.ndarray[Any, Any], owned_series: Series
     ) -> SeriesView:
         # Input array is an already formed ndarray instance
         # We first cast to be our class type
