@@ -99,8 +99,27 @@ impl SlicePushDown {
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<ALogicalPlan> {
         use ALogicalPlan::*;
-
         match (lp, state) {
+            (AnonymousScan {
+                function,
+                file_info,
+                output_schema,
+                predicate,
+                mut options,
+            },
+                Some(state)) if function.allows_slice_pushdown() && function.allows_predicate_pushdown() => {
+
+                options.n_rows = Some(state.len as usize);
+                options.skip_rows = Some(state.offset as usize);
+                    let lp = AnonymousScan {
+                        function,
+                        file_info,
+                        output_schema,
+                        predicate,
+                        options,
+                    };
+                    Ok(lp)
+            },
             (AnonymousScan {
                 function,
                 file_info,
