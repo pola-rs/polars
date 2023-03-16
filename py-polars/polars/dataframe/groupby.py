@@ -483,7 +483,7 @@ class GroupBy(Generic[DF]):
         └────────┴───────┘
 
         """
-        return self.agg(pli.lazy_functions.count())
+        return self.agg(pli.count())
 
     def first(self) -> DF:
         """
