@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import sys
 from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING, cast, no_type_check
 
@@ -20,15 +19,12 @@ from polars.testing import (
 )
 
 if TYPE_CHECKING:
+    from zoneinfo import ZoneInfo
+
     from polars.datatypes import PolarsTemporalType
     from polars.internals.type_aliases import TimeUnit
-
-if sys.version_info >= (3, 9):
-    from zoneinfo import ZoneInfo
 else:
-    # Import from submodule due to typing issue with backports.zoneinfo package:
-    # https://github.com/pganssle/zoneinfo/issues/125
-    from backports.zoneinfo._zoneinfo import ZoneInfo
+    from polars.utils.convert import get_zoneinfo as ZoneInfo
 
 
 def test_fill_null() -> None:
