@@ -3,7 +3,8 @@ Core Polars functionality.
 
 The modules within `polars.internals` are interdependent. To prevent cyclical imports,
 they all import from each other via this __init__ file using
-`import polars.internals as pli`. The imports below are being shared across this module.
+`from polars import internals as pli`. The imports below are being shared across this
+module.
 """
 from polars.dataframe import DataFrame, wrap_df
 from polars.expr import (

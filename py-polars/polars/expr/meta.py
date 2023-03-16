@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-import polars.internals as pli
+from typing import TYPE_CHECKING
+
+from polars import internals as pli
+
+if TYPE_CHECKING:
+    from polars.expr.expr import Expr
 
 
 class ExprMetaNameSpace:
@@ -8,16 +13,16 @@ class ExprMetaNameSpace:
 
     _accessor = "meta"
 
-    def __init__(self, expr: pli.Expr):
+    def __init__(self, expr: Expr):
         self._pyexpr = expr._pyexpr
 
-    def __eq__(self, other: ExprMetaNameSpace | pli.Expr) -> bool:  # type: ignore[override]
+    def __eq__(self, other: ExprMetaNameSpace | Expr) -> bool:  # type: ignore[override]
         return self._pyexpr.meta_eq(other._pyexpr)
 
-    def __ne__(self, other: ExprMetaNameSpace | pli.Expr) -> bool:  # type: ignore[override]
+    def __ne__(self, other: ExprMetaNameSpace | Expr) -> bool:  # type: ignore[override]
         return not self == other
 
-    def pop(self) -> list[pli.Expr]:
+    def pop(self) -> list[Expr]:
         """
         Pop the latest expression and return the input(s) of the popped expression.
 
@@ -45,7 +50,7 @@ class ExprMetaNameSpace:
         """
         return self._pyexpr.meta_output_name()
 
-    def undo_aliases(self) -> pli.Expr:
+    def undo_aliases(self) -> Expr:
         """Undo any renaming operation like ``alias`` or ``keep_name``."""
         return pli.wrap_expr(self._pyexpr.meta_undo_aliases())
 

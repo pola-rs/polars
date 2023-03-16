@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import polars.internals as pli
+from polars import internals as pli
 from polars.series.utils import expr_dispatch
 from polars.utils.convert import _to_python_datetime
 from polars.utils.decorators import deprecated_alias, redirect

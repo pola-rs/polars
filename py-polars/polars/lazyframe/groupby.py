@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Callable, Generic, Iterable, TypeVar
 
-import polars.internals as pli
+from polars import internals as pli
 from polars.internals import expr_to_lit_or_expr, selection_to_pyexpr_list
 from polars.utils.decorators import deprecated_alias
 

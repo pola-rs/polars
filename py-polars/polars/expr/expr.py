@@ -44,6 +44,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
 
+    from polars.dataframe.frame import DataFrame
     from polars.datatypes import PolarsDataType
     from polars.internals.type_aliases import (
         ApplyStrategy,
@@ -57,7 +58,9 @@ if TYPE_CHECKING:
         RollingInterpolationMethod,
         SearchSortedSide,
     )
+    from polars.lazyframe.frame import LazyFrame
     from polars.polars import PyExpr
+    from polars.series.series import Series
 
     if sys.version_info >= (3, 11):
         from typing import Concatenate, ParamSpec, Self
@@ -253,7 +256,7 @@ class Expr:
     def __rmod__(self, other: Any) -> Self:
         return self._from_pyexpr(self._to_pyexpr(other) % self._pyexpr)
 
-    def __pow__(self, power: int | float | pli.Series | Expr) -> Self:
+    def __pow__(self, power: int | float | Series | Expr) -> Self:
         return self.pow(power)
 
     def __rpow__(self, base: int | float | Expr) -> Expr:
@@ -311,7 +314,7 @@ class Expr:
                 f"Numpy ufunc can only be used with one expression, {num_expr} given. Use `pl.reduce` to call numpy functions over multiple expressions."
             )
 
-        def function(s: pli.Series) -> pli.Series:  # pragma: no cover
+        def function(s: Series) -> Series:  # pragma: no cover
             args = [inp if not isinstance(inp, Expr) else s for inp in inputs]
             return ufunc(*args, **kwargs)
 
@@ -2006,7 +2009,7 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.arg_min())
 
     def search_sorted(
-        self, element: Expr | int | float | pli.Series, side: SearchSortedSide = "any"
+        self, element: Expr | int | float | Series, side: SearchSortedSide = "any"
     ) -> Self:
         """
         Find indices where elements should be inserted to maintain order.
@@ -2166,7 +2169,7 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.sort_by(by, descending))
 
     def take(
-        self, indices: int | list[int] | Expr | pli.Series | np.ndarray[Any, Any]
+        self, indices: int | list[int] | Expr | Series | np.ndarray[Any, Any]
     ) -> Self:
         """
         Take values by index.
@@ -3195,7 +3198,7 @@ class Expr:
     @deprecate_nonkeyword_arguments(allowed_args=["self", "function", "return_dtype"])
     def map(
         self,
-        function: Callable[[pli.Series], pli.Series | Any],
+        function: Callable[[Series], Series | Any],
         return_dtype: PolarsDataType | None = None,
         agg_list: bool = False,
     ) -> Self:
@@ -3246,7 +3249,7 @@ class Expr:
     @deprecate_nonkeyword_arguments(allowed_args=["self", "function", "return_dtype"])
     def apply(
         self,
-        function: Callable[[pli.Series], pli.Series] | Callable[[Any], Any],
+        function: Callable[[Series], Series] | Callable[[Any], Any],
         return_dtype: PolarsDataType | None = None,
         skip_nulls: bool = True,
         pass_name: bool = False,
@@ -3355,8 +3358,8 @@ class Expr:
         # input x: Series of type list containing the group values
         if pass_name:
 
-            def wrap_f(x: pli.Series) -> pli.Series:  # pragma: no cover
-                def inner(s: pli.Series) -> pli.Series:  # pragma: no cover
+            def wrap_f(x: Series) -> Series:  # pragma: no cover
+                def inner(s: Series) -> Series:  # pragma: no cover
                     s.rename(x.name, in_place=True)
                     return function(s)
 
@@ -3364,7 +3367,7 @@ class Expr:
 
         else:
 
-            def wrap_f(x: pli.Series) -> pli.Series:  # pragma: no cover
+            def wrap_f(x: Series) -> Series:  # pragma: no cover
                 return x.apply(
                     function, return_dtype=return_dtype, skip_nulls=skip_nulls
                 )
@@ -3373,7 +3376,7 @@ class Expr:
             return self.map(wrap_f, agg_list=True, return_dtype=return_dtype)
         elif strategy == "threading":
 
-            def wrap_threading(x: pli.Series) -> pli.Series:
+            def wrap_threading(x: Series) -> Series:
                 df = x.to_frame("x")
 
                 n_threads = threadpool_size()
@@ -3387,7 +3390,7 @@ class Expr:
                         for i in range(n_threads)
                     ]
 
-                def get_lazy_promise(df: pli.DataFrame) -> pli.LazyFrame:
+                def get_lazy_promise(df: DataFrame) -> LazyFrame:
                     return df.lazy().select(
                         pli.col("x").map(
                             wrap_f, agg_list=True, return_dtype=return_dtype
@@ -3558,7 +3561,7 @@ class Expr:
         """
         return self.head(n)
 
-    def pow(self, exponent: int | float | pli.Series | Expr) -> Self:
+    def pow(self, exponent: int | float | Series | Expr) -> Self:
         """
         Raise expression to the power of exponent.
 
@@ -3582,7 +3585,7 @@ class Expr:
         exponent = expr_to_lit_or_expr(exponent)
         return self._from_pyexpr(self._pyexpr.pow(exponent._pyexpr))
 
-    def is_in(self, other: Expr | Sequence[Any] | str | pli.Series) -> Self:
+    def is_in(self, other: Expr | Sequence[Any] | str | Series) -> Self:
         """
         Check if elements of this expression are present in the other Series.
 
@@ -3872,7 +3875,7 @@ class Expr:
 
         """
 
-        def inspect(s: pli.Series) -> pli.Series:  # pragma: no cover
+        def inspect(s: Series) -> Series:  # pragma: no cover
             print(fmt.format(s))
             return s
 
@@ -4698,7 +4701,7 @@ class Expr:
 
     def rolling_apply(
         self,
-        function: Callable[[pli.Series], Any],
+        function: Callable[[Series], Any],
         window_size: int,
         weights: list[float] | None = None,
         min_periods: int | None = None,
@@ -6444,7 +6447,7 @@ class Expr:
             remap_key_column: str,
             remapping: dict[Any, Any],
             input_dtype: PolarsDataType,
-        ) -> pli.Series:
+        ) -> Series:
             """
             Convert remapping dict key values to `Series` with `input_dtype`.
 
@@ -6478,7 +6481,7 @@ class Expr:
 
         # Use two functions to save unneeded work.
         # This factors out allocations and branches.
-        def inner_with_default(s: pli.Series) -> pli.Series:
+        def inner_with_default(s: Series) -> Series:
             # Convert Series to:
             #   - multicolumn DataFrame, if Series is a Struct.
             #   - one column DataFrame in other cases.
@@ -6522,7 +6525,7 @@ class Expr:
                 .to_series()
             )
 
-        def inner(s: pli.Series) -> pli.Series:
+        def inner(s: Series) -> Series:
             column = s.name
             input_dtype = s.dtype
             remap_key_column = f"__POLARS_REMAP_KEY_{column}"

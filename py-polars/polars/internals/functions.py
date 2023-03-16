@@ -25,8 +25,12 @@ if TYPE_CHECKING:
     import sys
     from datetime import date
 
+    from polars.dataframe.frame import DataFrame
     from polars.datatypes import PolarsDataType
+    from polars.expr.expr import Expr
     from polars.internals.type_aliases import ClosedInterval, ConcatMethod, TimeUnit
+    from polars.lazyframe.frame import LazyFrame
+    from polars.series.series import Series
 
     if sys.version_info >= (3, 8):
         from typing import Literal
@@ -35,11 +39,11 @@ if TYPE_CHECKING:
 
 
 def get_dummies(
-    df: pli.DataFrame,
+    df: DataFrame,
     *,
     columns: str | Sequence[str] | None = None,
     separator: str = "_",
-) -> pli.DataFrame:
+) -> DataFrame:
     """
     Convert categorical variables into dummy/indicator variables.
 
@@ -87,56 +91,53 @@ def get_dummies(
 
 @overload
 def concat(
-    items: Iterable[pli.DataFrame],
+    items: Iterable[DataFrame],
     rechunk: bool = True,
     how: ConcatMethod = "vertical",
     parallel: bool = True,
-) -> pli.DataFrame:
+) -> DataFrame:
     ...
 
 
 @overload
 def concat(
-    items: Iterable[pli.Series],
+    items: Iterable[Series],
     rechunk: bool = True,
     how: ConcatMethod = "vertical",
     parallel: bool = True,
-) -> pli.Series:
+) -> Series:
     ...
 
 
 @overload
 def concat(
-    items: Iterable[pli.LazyFrame],
+    items: Iterable[LazyFrame],
     rechunk: bool = True,
     how: ConcatMethod = "vertical",
     parallel: bool = True,
-) -> pli.LazyFrame:
+) -> LazyFrame:
     ...
 
 
 @overload
 def concat(
-    items: Iterable[pli.Expr],
+    items: Iterable[Expr],
     rechunk: bool = True,
     how: ConcatMethod = "vertical",
     parallel: bool = True,
-) -> pli.Expr:
+) -> Expr:
     ...
 
 
 @deprecate_nonkeyword_arguments()
 def concat(
     items: (
-        Iterable[pli.DataFrame]
-        | Iterable[pli.Series]
-        | Iterable[pli.LazyFrame]
-        | Iterable[pli.Expr]
+        Iterable[DataFrame] | Iterable[Series] | Iterable[LazyFrame] | Iterable[Expr]
     ),
     rechunk: bool = True,
     how: ConcatMethod = "vertical",
     parallel: bool = True,
-) -> pli.DataFrame | pli.Series | pli.LazyFrame | pli.Expr:
+) -> DataFrame | Series | LazyFrame | Expr:
     """
     Aggregate multiple Dataframes/Series to a single DataFrame/Series.
 
@@ -239,7 +240,7 @@ def concat(
     if not len(elems) > 0:
         raise ValueError("cannot concat empty list")
 
-    out: pli.Series | pli.DataFrame | pli.LazyFrame | pli.Expr
+    out: Series | DataFrame | LazyFrame | Expr
     first = elems[0]
     if isinstance(first, pli.DataFrame):
         if how == "vertical":
@@ -290,8 +291,8 @@ def _interval_granularity(interval: str) -> str:
 
 @overload
 def date_range(
-    low: pli.Expr,
-    high: date | datetime | pli.Expr | str,
+    low: Expr,
+    high: date | datetime | Expr | str,
     interval: str | timedelta = ...,
     *,
     lazy: Literal[False] = ...,
@@ -299,14 +300,14 @@ def date_range(
     name: str | None = ...,
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
-) -> pli.Expr:
+) -> Expr:
     ...
 
 
 @overload
 def date_range(
-    low: date | datetime | pli.Expr | str,
-    high: pli.Expr,
+    low: date | datetime | Expr | str,
+    high: Expr,
     interval: str | timedelta = ...,
     *,
     lazy: Literal[False] = ...,
@@ -314,7 +315,7 @@ def date_range(
     name: str | None = ...,
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
-) -> pli.Expr:
+) -> Expr:
     ...
 
 
@@ -329,14 +330,14 @@ def date_range(
     name: str | None = ...,
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
-) -> pli.Series:
+) -> Series:
     ...
 
 
 @overload
 def date_range(
-    low: date | datetime | pli.Expr | str,
-    high: date | datetime | pli.Expr | str,
+    low: date | datetime | Expr | str,
+    high: date | datetime | Expr | str,
     interval: str | timedelta = ...,
     *,
     lazy: Literal[True],
@@ -344,13 +345,13 @@ def date_range(
     name: str | None = None,
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
-) -> pli.Expr:
+) -> Expr:
     ...
 
 
 def date_range(
-    low: date | datetime | pli.Expr | str,
-    high: date | datetime | pli.Expr | str,
+    low: date | datetime | Expr | str,
+    high: date | datetime | Expr | str,
     interval: str | timedelta = "1d",
     *,
     lazy: bool = False,
@@ -358,7 +359,7 @@ def date_range(
     name: str | None = None,
     time_unit: TimeUnit | None = None,
     time_zone: str | None = None,
-) -> pli.Series | pli.Expr:
+) -> Series | Expr:
     """
     Create a range of type `Datetime` (or `Date`).
 
@@ -503,12 +504,12 @@ def date_range(
 
 
 def cut(
-    s: pli.Series,
+    s: Series,
     bins: list[float],
     labels: list[str] | None = None,
     break_point_label: str = "break_point",
     category_label: str = "category",
-) -> pli.DataFrame:
+) -> DataFrame:
     """
     Bin values into discrete values.
 
@@ -570,31 +571,31 @@ def cut(
 
 @overload
 def align_frames(
-    *frames: pli.DataFrame,
-    on: str | pli.Expr | Sequence[str] | Sequence[pli.Expr] | Sequence[str | pli.Expr],
-    select: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
+    *frames: DataFrame,
+    on: str | Expr | Sequence[str] | Sequence[Expr] | Sequence[str | Expr],
+    select: str | Expr | Sequence[str | Expr] | None = None,
     descending: bool | Sequence[bool] = False,
-) -> list[pli.DataFrame]:
+) -> list[DataFrame]:
     ...
 
 
 @overload
 def align_frames(
-    *frames: pli.LazyFrame,
-    on: str | pli.Expr | Sequence[str] | Sequence[pli.Expr] | Sequence[str | pli.Expr],
-    select: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
+    *frames: LazyFrame,
+    on: str | Expr | Sequence[str] | Sequence[Expr] | Sequence[str | Expr],
+    select: str | Expr | Sequence[str | Expr] | None = None,
     descending: bool | Sequence[bool] = False,
-) -> list[pli.LazyFrame]:
+) -> list[LazyFrame]:
     ...
 
 
 @deprecated_alias(reverse="descending")
 def align_frames(
-    *frames: pli.DataFrame | pli.LazyFrame,
-    on: str | pli.Expr | Sequence[str] | Sequence[pli.Expr] | Sequence[str | pli.Expr],
-    select: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
+    *frames: DataFrame | LazyFrame,
+    on: str | Expr | Sequence[str] | Sequence[Expr] | Sequence[str | Expr],
+    select: str | Expr | Sequence[str | Expr] | None = None,
     descending: bool | Sequence[bool] = False,
-) -> list[pli.DataFrame] | list[pli.LazyFrame]:
+) -> list[DataFrame] | list[LazyFrame]:
     r"""
     Align a sequence of frames using the unique values from one or more columns as a key.
 
@@ -753,7 +754,7 @@ def align_frames(
     return [df.collect() for df in aligned_frames] if eager else aligned_frames
 
 
-def ones(n: int, dtype: PolarsDataType | None = None) -> pli.Series:
+def ones(n: int, dtype: PolarsDataType | None = None) -> Series:
     """
     Return a new Series of given length and type, filled with ones.
 
@@ -789,7 +790,7 @@ def ones(n: int, dtype: PolarsDataType | None = None) -> pli.Series:
     return s.new_from_index(0, n)
 
 
-def zeros(n: int, dtype: PolarsDataType | None = None) -> pli.Series:
+def zeros(n: int, dtype: PolarsDataType | None = None) -> Series:
     """
     Return a new Series of given length and type, filled with zeros.
 

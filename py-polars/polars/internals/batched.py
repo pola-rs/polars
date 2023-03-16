@@ -4,7 +4,7 @@ import contextlib
 from pathlib import Path
 from typing import TYPE_CHECKING, Sequence
 
-import polars.internals as pli
+from polars import internals as pli
 from polars.datatypes import (
     N_INFER_DEFAULT,
     py_type_to_dtype,
@@ -20,6 +20,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PyBatchedCsv
 
 if TYPE_CHECKING:
+    from polars.dataframe.frame import DataFrame
     from polars.datatypes import PolarsDataType, SchemaDict
     from polars.internals.type_aliases import CsvEncoding
 
@@ -101,7 +102,7 @@ class BatchedCsvReader:
         )
         self.new_columns = new_columns
 
-    def next_batches(self, n: int) -> list[pli.DataFrame] | None:
+    def next_batches(self, n: int) -> list[DataFrame] | None:
         """
         Read ``n`` batches from the reader.
 

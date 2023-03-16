@@ -12,7 +12,7 @@ from typing import (
     cast,
 )
 
-import polars.internals as pli
+from polars import internals as pli
 from polars.convert import from_arrow
 from polars.datatypes import N_INFER_DEFAULT, Utf8
 from polars.internals import DataFrame, LazyFrame

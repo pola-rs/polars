@@ -1,8 +1,15 @@
-from typing import Union
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Union
 
 from polars import internals as pli
 
-FrameOrSeries = Union["pli.DataFrame", "pli.Series"]
+if TYPE_CHECKING:
+    from polars.dataframe.frame import DataFrame
+    from polars.lazyframe.frame import LazyFrame
+    from polars.series.series import Series
+
+    FrameOrSeries = Union["DataFrame", "Series"]
 
 
 class PolarsSlice:
@@ -24,22 +31,22 @@ class PolarsSlice:
         self.obj = obj
 
     @staticmethod
-    def _as_original(lazy: "pli.LazyFrame", original: FrameOrSeries) -> FrameOrSeries:
+    def _as_original(lazy: LazyFrame, original: FrameOrSeries) -> FrameOrSeries:
         """Return lazy variant back to its original type."""
         frame = lazy.collect()
         return frame if isinstance(original, pli.DataFrame) else frame.to_series()
 
     @staticmethod
-    def _lazify(obj: FrameOrSeries) -> "pli.LazyFrame":
+    def _lazify(obj: FrameOrSeries) -> LazyFrame:
         """Make lazy to ensure efficient/consistent handling."""
         return obj.to_frame().lazy() if isinstance(obj, pli.Series) else obj.lazy()
 
-    def _slice_positive(self, obj: "pli.LazyFrame") -> "pli.LazyFrame":
+    def _slice_positive(self, obj: LazyFrame) -> LazyFrame:
         """Logic for slices with positive stride."""
         # note: at this point stride is guaranteed to be > 1
         return obj.slice(self.start, self.slice_length).take_every(self.stride)
 
-    def _slice_negative(self, obj: "pli.LazyFrame") -> "pli.LazyFrame":
+    def _slice_negative(self, obj: LazyFrame) -> LazyFrame:
         """Logic for slices with negative stride."""
         stride = abs(self.stride)
         lazyslice = obj.slice(self.stop + 1, self.slice_length).reverse()
@@ -111,12 +118,12 @@ class LazyPolarsSlice:
 
     """
 
-    obj: "pli.LazyFrame"
+    obj: LazyFrame
 
-    def __init__(self, obj: "pli.LazyFrame"):
+    def __init__(self, obj: LazyFrame):
         self.obj = obj
 
-    def apply(self, s: slice) -> "pli.LazyFrame":
+    def apply(self, s: slice) -> LazyFrame:
         """
         Apply a slice operation.
 

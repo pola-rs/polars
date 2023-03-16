@@ -3,7 +3,7 @@ from __future__ import annotations
 import textwrap
 from typing import Any
 
-import polars.internals as pli
+from polars import internals as pli
 from polars.datatypes import (
     Boolean,
     Categorical,

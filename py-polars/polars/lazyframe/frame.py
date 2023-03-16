@@ -68,7 +68,9 @@ if TYPE_CHECKING:
 
     import pyarrow as pa
 
+    from polars.dataframe.frame import DataFrame
     from polars.datatypes import PolarsDataType, SchemaDefinition, SchemaDict
+    from polars.expr.expr import Expr
     from polars.internals.type_aliases import (
         AsofJoinStrategy,
         ClosedInterval,
@@ -85,6 +87,7 @@ if TYPE_CHECKING:
         StartBy,
         UniqueKeepStrategy,
     )
+    from polars.series.series import Series
 
     if sys.version_info >= (3, 10):
         from typing import Concatenate, ParamSpec
@@ -1103,7 +1106,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         """
 
-        def inspect(s: pli.DataFrame) -> pli.DataFrame:
+        def inspect(s: DataFrame) -> DataFrame:
             print(fmt.format(s))
             return s
 
@@ -1225,7 +1228,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         truncate_nodes: int = 0,
         figsize: tuple[int, int] = (18, 8),
         streaming: bool = False,
-    ) -> tuple[pli.DataFrame, pli.DataFrame]:
+    ) -> tuple[DataFrame, DataFrame]:
         """
         Profile a LazyFrame.
 
@@ -1365,7 +1368,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         common_subplan_elimination: bool = True,
         streaming: bool = False,
-    ) -> pli.DataFrame:
+    ) -> DataFrame:
         """
         Collect into a DataFrame.
 
@@ -1453,7 +1456,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         simplify_expression: bool = True,
         no_optimization: bool = False,
         slice_pushdown: bool = True,
-    ) -> pli.DataFrame:
+    ) -> DataFrame:
         """
         Persists a LazyFrame at the provided path.
 
@@ -1549,7 +1552,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         simplify_expression: bool = True,
         no_optimization: bool = False,
         slice_pushdown: bool = True,
-    ) -> pli.DataFrame:
+    ) -> DataFrame:
         """
         Persists a LazyFrame at the provided path.
 
@@ -1620,7 +1623,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         common_subplan_elimination: bool = True,
         streaming: bool = False,
-    ) -> pli.DataFrame:
+    ) -> DataFrame:
         """
         Collect a small number of rows for debugging purposes.
 
@@ -1796,7 +1799,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self._from_pyldf(self._ldf.clone())
 
-    def filter(self, predicate: pli.Expr | str | pli.Series | list[bool]) -> Self:
+    def filter(self, predicate: Expr | str | Series | list[bool]) -> Self:
         """
         Filter the rows in the DataFrame based on a predicate expression.
 
@@ -2510,9 +2513,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def join_asof(
         self,
         other: LazyFrame,
-        left_on: str | None | pli.Expr = None,
-        right_on: str | None | pli.Expr = None,
-        on: str | None | pli.Expr = None,
+        left_on: str | None | Expr = None,
+        right_on: str | None | Expr = None,
+        on: str | None | Expr = None,
         by_left: str | Sequence[str] | None = None,
         by_right: str | Sequence[str] | None = None,
         by: str | Sequence[str] | None = None,
@@ -2692,9 +2695,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def join(
         self,
         other: LazyFrame,
-        left_on: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
-        right_on: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
-        on: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
+        left_on: str | Expr | Sequence[str | Expr] | None = None,
+        right_on: str | Expr | Sequence[str | Expr] | None = None,
+        on: str | Expr | Sequence[str | Expr] | None = None,
         how: JoinStrategy = "inner",
         suffix: str = "_right",
         allow_parallel: bool = True,
@@ -2838,12 +2841,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             str
             | PolarsExprType
             | PythonLiteral
-            | pli.Series
-            | Iterable[str | PolarsExprType | PythonLiteral | pli.Series | None]
+            | Series
+            | Iterable[str | PolarsExprType | PythonLiteral | Series | None]
             | None
         ) = None,
-        *more_exprs: str | PolarsExprType | PythonLiteral | pli.Series | None,
-        **named_exprs: str | PolarsExprType | PythonLiteral | pli.Series | None,
+        *more_exprs: str | PolarsExprType | PythonLiteral | Series | None,
+        **named_exprs: str | PolarsExprType | PythonLiteral | Series | None,
     ) -> Self:
         """
         Add columns to this DataFrame.
@@ -3249,7 +3252,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def shift_and_fill(
         self,
         periods: int,
-        fill_value: pli.Expr | int | str | float,
+        fill_value: Expr | int | str | float,
     ) -> Self:
         """
         Shift the values by a given period and fill the resulting null values.
@@ -3726,7 +3729,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return self.select(pli.all().fill_null(value, strategy, limit))
 
-    def fill_nan(self, fill_value: int | float | pli.Expr | None) -> Self:
+    def fill_nan(self, fill_value: int | float | Expr | None) -> Self:
         """
         Fill floating point NaN values.
 
@@ -3961,7 +3964,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def quantile(
         self,
-        quantile: float | pli.Expr,
+        quantile: float | Expr,
         interpolation: RollingInterpolationMethod = "nearest",
     ) -> Self:
         """
@@ -3998,8 +4001,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def explode(
         self,
-        columns: str | Sequence[str] | pli.Expr | Sequence[pli.Expr],
-        *more_columns: str | pli.Expr,
+        columns: str | Sequence[str] | Expr | Sequence[Expr],
+        *more_columns: str | Expr,
     ) -> Self:
         """
         Explode the dataframe to long format by exploding the given columns.
@@ -4278,7 +4281,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @deprecate_nonkeyword_arguments()
     def map(
         self,
-        function: Callable[[pli.DataFrame], pli.DataFrame],
+        function: Callable[[DataFrame], DataFrame],
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         slice_pushdown: bool = True,

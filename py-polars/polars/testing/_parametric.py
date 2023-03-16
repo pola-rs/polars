@@ -26,7 +26,7 @@ from hypothesis.strategies import (
 )
 from hypothesis.strategies._internal.utils import defines_strategy
 
-import polars.internals as pli
+from polars import internals as pli
 from polars.datatypes import (
     Boolean,
     Categorical,

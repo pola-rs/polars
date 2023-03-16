@@ -24,7 +24,7 @@ with suppress(ImportError):
     from polars.polars import parquet_schema as _parquet_schema
 
 if TYPE_CHECKING:
-    import polars.internals as pli
+    from polars.dataframe.frame import DataFrame
     from polars.datatypes import PolarsDataType
 
 
@@ -245,7 +245,7 @@ def _is_local_file(file: str) -> bool:
         return False
 
 
-def _update_columns(df: pli.DataFrame, new_columns: list[str]) -> pli.DataFrame:
+def _update_columns(df: DataFrame, new_columns: list[str]) -> DataFrame:
     if df.width > len(new_columns):
         cols = df.columns
         for i, name in enumerate(new_columns):

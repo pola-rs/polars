@@ -5,7 +5,7 @@ import sys
 from functools import wraps
 from typing import TYPE_CHECKING, Any, Callable, TypeVar
 
-import polars.internals as pli
+from polars import internals as pli
 from polars.datatypes import dtype_to_ffiname
 
 if TYPE_CHECKING:

@@ -13,7 +13,7 @@ from typing import (
     overload,
 )
 
-import polars.internals as pli
+from polars import internals as pli
 from polars.datatypes import (
     FLOAT_DTYPES,
     INTEGER_DTYPES,
@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from xlsxwriter import Workbook
     from xlsxwriter.worksheet import Worksheet
 
+    from polars.dataframe.frame import DataFrame
     from polars.datatypes import OneOrMoreDataTypes, PolarsDataType
 
     if sys.version_info >= (3, 10):
@@ -67,7 +68,7 @@ ConditionalFormatDict: TypeAlias = Dict[
 ]
 
 
-def _adjacent_cols(df: pli.DataFrame, cols: Iterable[str]) -> bool:
+def _adjacent_cols(df: DataFrame, cols: Iterable[str]) -> bool:
     """Indicate if the given columns are all adjacent to one another."""
     idxs = sorted(df.find_idx_by_name(col) for col in cols)
     return idxs == sorted(range(min(idxs), max(idxs) + 1))
@@ -89,7 +90,7 @@ def _unpack_multi_column_dict(
 
 
 def _xl_apply_conditional_formats(
-    df: pli.DataFrame,
+    df: DataFrame,
     workbook: Workbook,
     worksheet: Worksheet,
     conditional_formats: ConditionalFormatDict,
@@ -131,7 +132,7 @@ def _xl_apply_conditional_formats(
 
 @overload
 def _xl_column_range(  # type: ignore[misc]
-    df: pli.DataFrame,
+    df: DataFrame,
     table_start: tuple[int, int],
     col: str | tuple[int, int],
     has_header: bool,
@@ -142,7 +143,7 @@ def _xl_column_range(  # type: ignore[misc]
 
 @overload
 def _xl_column_range(
-    df: pli.DataFrame,
+    df: DataFrame,
     table_start: tuple[int, int],
     col: str | tuple[int, int],
     has_header: bool,
@@ -152,7 +153,7 @@ def _xl_column_range(
 
 
 def _xl_column_range(
-    df: pli.DataFrame,
+    df: DataFrame,
     table_start: tuple[int, int],
     col: str | tuple[int, int],
     has_header: bool,
@@ -174,7 +175,7 @@ def _xl_column_range(
 
 
 def _xl_column_multi_range(
-    df: pli.DataFrame,
+    df: DataFrame,
     table_start: tuple[int, int],
     cols: Iterable[str],
     has_header: bool,
@@ -189,8 +190,8 @@ def _xl_column_multi_range(
 
 
 def _xl_inject_dummy_table_columns(
-    df: pli.DataFrame, options: dict[str, Sequence[str] | dict[str, Any]]
-) -> pli.DataFrame:
+    df: DataFrame, options: dict[str, Sequence[str] | dict[str, Any]]
+) -> DataFrame:
     """Insert dummy frame columns in order to create empty/named table columns."""
     df_original_columns = set(df.columns)
     df_select_cols = df.columns.copy()
@@ -224,7 +225,7 @@ def _xl_inject_dummy_table_columns(
 
 def _xl_inject_sparklines(
     ws: Worksheet,
-    df: pli.DataFrame,
+    df: DataFrame,
     table_start: tuple[int, int],
     col: str,
     has_header: bool,
@@ -275,14 +276,14 @@ def _xl_rowcols_to_range(*row_col_pairs: int) -> list[str]:
 
 
 def _xl_setup_table_columns(
-    df: pli.DataFrame,
+    df: DataFrame,
     wb: Workbook,
     column_totals: ColumnTotalsDefinition | None = None,
     column_formats: dict[str | tuple[str, ...], str] | None = None,
     dtype_formats: dict[OneOrMoreDataTypes, str] | None = None,
     sparklines: dict[str, Sequence[str] | dict[str, Any]] | None = None,
     float_precision: int = 3,
-) -> tuple[list[dict[str, Any]], pli.DataFrame]:
+) -> tuple[list[dict[str, Any]], DataFrame]:
     """Setup and unify all column-related formatting/defaults."""
     column_totals = _unpack_multi_column_dict(column_totals)  # type: ignore[assignment]
     column_formats = _unpack_multi_column_dict(column_formats)  # type: ignore[assignment]

@@ -7,7 +7,7 @@ from polars.convert import from_arrow
 from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 
 if TYPE_CHECKING:
-    import polars.internals as pli
+    from polars import internals as pli
     from polars.internals.type_aliases import DbReadEngine
 
 

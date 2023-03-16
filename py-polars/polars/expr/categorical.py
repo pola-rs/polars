@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import polars.internals as pli
+from polars import internals as pli
 
 if TYPE_CHECKING:
+    from polars.expr.expr import Expr
     from polars.internals.type_aliases import CategoricalOrdering
 
 
@@ -13,10 +14,10 @@ class ExprCatNameSpace:
 
     _accessor = "cat"
 
-    def __init__(self, expr: pli.Expr):
+    def __init__(self, expr: Expr):
         self._pyexpr = expr._pyexpr
 
-    def set_ordering(self, ordering: CategoricalOrdering) -> pli.Expr:
+    def set_ordering(self, ordering: CategoricalOrdering) -> Expr:
         """
         Determine how this categorical series should be sorted.
 
