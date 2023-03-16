@@ -201,7 +201,7 @@ impl<'a, T: TimeZoneTrait> BoundsIter<'a, T>{
                     let (from, to, offset): (
                         fn(i64) -> NaiveDateTime,
                         fn(NaiveDateTime) -> i64,
-                        fn(&Duration, i64, Option<&FixedOffset>) -> PolarsResult<i64>,
+                        fn(&Duration, i64, Option<&'a T>) -> PolarsResult<i64>,
                     ) = match tu {
                         TimeUnit::Nanoseconds => (
                             timestamp_ns_to_datetime,
@@ -222,22 +222,33 @@ impl<'a, T: TimeZoneTrait> BoundsIter<'a, T>{
                     // find beginning of the week.
                     let mut boundary = boundary;
                     let dt = from(boundary.start);
-                    // let tz = match tz {
-                    //     Some(tz) => tz,
-                    //     None => chrono_tz::UTC,
-                    // };
-                    let tz = chrono::Utc;
-                    let dt = dt.and_local_timezone(tz).unwrap();
-                    let dt = dt.beginning_of_week();
-                    let dt = dt.naive_utc();
-                    let start = to(dt);
-                    // apply the 'offset'
-                    // TODO
-                    let start = offset(&window.offset, start, NO_TIMEZONE).unwrap();
-                    // and compute the end of the window defined by the 'period'
-                    let stop = offset(&window.period, start, NO_TIMEZONE).unwrap();
-                    boundary.start = start;
-                    boundary.stop = stop;
+                    match tz {
+                        Some(tz) => {
+                            let dt = dt.and_local_timezone(tz.clone()).unwrap();
+                            let dt = dt.beginning_of_week();
+                            let dt = dt.naive_utc();
+                            let start = to(dt);
+                            // apply the 'offset'
+                            let start = offset(&window.offset, start, Some(tz))?;
+                            // and compute the end of the window defined by the 'period'
+                            let stop = offset(&window.period, start, Some(&tz))?;
+                            boundary.start = start;
+                            boundary.stop = stop;
+                        }
+                        None => {
+                            let tz = chrono::Utc;
+                            let dt = dt.and_local_timezone(tz).unwrap();
+                            let dt = dt.beginning_of_week();
+                            let dt = dt.naive_utc();
+                            let start = to(dt);
+                            // apply the 'offset'
+                            let start = offset(&window.offset, start, None::<&T>).unwrap();
+                            // and compute the end of the window defined by the 'period'
+                            let stop = offset(&window.period, start, None::<&T>).unwrap();
+                            boundary.start = start;
+                            boundary.stop = stop;
+                        }
+                    };
                     boundary
                 }
                 #[cfg(not(feature = "timezones"))]
