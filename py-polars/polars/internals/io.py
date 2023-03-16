@@ -24,7 +24,7 @@ with suppress(ImportError):
     from polars.polars import parquet_schema as _parquet_schema
 
 if TYPE_CHECKING:
-    import polars.internals as pli
+    from polars import internals as pli
     from polars.datatypes import PolarsDataType
 
 

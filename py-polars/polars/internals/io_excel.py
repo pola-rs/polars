@@ -13,7 +13,7 @@ from typing import (
     overload,
 )
 
-import polars.internals as pli
+from polars import internals as pli
 from polars.datatypes import (
     FLOAT_DTYPES,
     INTEGER_DTYPES,

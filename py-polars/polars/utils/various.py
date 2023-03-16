@@ -7,7 +7,7 @@ import sys
 from collections.abc import MappingView, Sized
 from typing import TYPE_CHECKING, Any, Generator, Iterable, Sequence, TypeVar
 
-import polars.internals as pli
+from polars import internals as pli
 from polars.datatypes import Int64, is_polars_dtype
 
 with contextlib.suppress(ImportError):  # Module not available when building docs

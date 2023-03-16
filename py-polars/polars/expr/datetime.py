@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import time
 from typing import TYPE_CHECKING
 
-import polars.internals as pli
+from polars import internals as pli
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import deprecated_alias, redirect

@@ -9,13 +9,14 @@ from typing import (
     TypeVar,
 )
 
-import polars.internals as pli
+from polars import internals as pli
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import deprecated_alias, redirect
 
 if TYPE_CHECKING:
     from datetime import timedelta
 
+    from polars.dataframe import DataFrame
     from polars.internals.type_aliases import (
         ClosedInterval,
         IntoExpr,
@@ -236,7 +237,7 @@ class GroupBy(Generic[DF]):
         return self.df.__class__._from_pydf(df._df)
 
     @deprecated_alias(f="function")
-    def apply(self, function: Callable[[pli.DataFrame], pli.DataFrame]) -> DF:
+    def apply(self, function: Callable[[DataFrame], DataFrame]) -> DF:
         """
         Apply a custom/user-defined function (UDF) over the groups as a sub-DataFrame.
 

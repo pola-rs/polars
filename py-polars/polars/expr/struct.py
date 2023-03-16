@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Sequence
 
-import polars.internals as pli
+from polars import internals as pli
 
 
 class ExprStructNameSpace:

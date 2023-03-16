@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import polars.internals as pli
+from polars import internals as pli
 
 if TYPE_CHECKING:
     from polars.internals.type_aliases import CategoricalOrdering

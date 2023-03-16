@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import polars.internals as pli
+from polars import internals as pli
 
 
 class ExprMetaNameSpace:

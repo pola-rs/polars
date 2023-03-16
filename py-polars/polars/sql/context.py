@@ -1,6 +1,6 @@
 import contextlib
 
-import polars.internals as pli
+from polars import internals as pli
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PySQLContext

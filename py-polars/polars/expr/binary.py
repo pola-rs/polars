@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import polars.internals as pli
+from polars import internals as pli
 
 if TYPE_CHECKING:
+    from polars.expr.expr import Expr
     from polars.internals.type_aliases import TransferEncoding
 
 
@@ -13,10 +14,10 @@ class ExprBinaryNameSpace:
 
     _accessor = "bin"
 
-    def __init__(self, expr: pli.Expr):
+    def __init__(self, expr: Expr):
         self._pyexpr = expr._pyexpr
 
-    def contains(self, lit: bytes) -> pli.Expr:
+    def contains(self, lit: bytes) -> Expr:
         """
         Check if binaries in Series contain a binary substring.
 
@@ -32,7 +33,7 @@ class ExprBinaryNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.binary_contains(lit))
 
-    def ends_with(self, sub: bytes) -> pli.Expr:
+    def ends_with(self, sub: bytes) -> Expr:
         """
         Check if string values end with a binary substring.
 
@@ -44,7 +45,7 @@ class ExprBinaryNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.binary_ends_with(sub))
 
-    def starts_with(self, sub: bytes) -> pli.Expr:
+    def starts_with(self, sub: bytes) -> Expr:
         """
         Check if values start with a binary substring.
 
@@ -56,7 +57,7 @@ class ExprBinaryNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.binary_starts_with(sub))
 
-    def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> pli.Expr:
+    def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> Expr:
         """
         Decode a value using the provided encoding.
 
@@ -78,7 +79,7 @@ class ExprBinaryNameSpace:
                 f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
             )
 
-    def encode(self, encoding: TransferEncoding) -> pli.Expr:
+    def encode(self, encoding: TransferEncoding) -> Expr:
         """
         Encode a value using the provided encoding.
 

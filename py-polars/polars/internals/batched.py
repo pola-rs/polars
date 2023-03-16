@@ -4,7 +4,7 @@ import contextlib
 from pathlib import Path
 from typing import TYPE_CHECKING, Sequence
 
-import polars.internals as pli
+from polars import internals as pli
 from polars.datatypes import (
     N_INFER_DEFAULT,
     py_type_to_dtype,
