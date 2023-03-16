@@ -46,7 +46,10 @@ if TYPE_CHECKING:
 
     from polars.dataframe.frame import DataFrame
     from polars.datatypes import PolarsDataType
-    from polars.internals.type_aliases import (
+    from polars.lazyframe.frame import LazyFrame
+    from polars.polars import PyExpr
+    from polars.series.series import Series
+    from polars.type_aliases import (
         ApplyStrategy,
         ClosedInterval,
         FillNullStrategy,
@@ -58,9 +61,6 @@ if TYPE_CHECKING:
         RollingInterpolationMethod,
         SearchSortedSide,
     )
-    from polars.lazyframe.frame import LazyFrame
-    from polars.polars import PyExpr
-    from polars.series.series import Series
 
     if sys.version_info >= (3, 11):
         from typing import Concatenate, ParamSpec, Self

@@ -13,7 +13,7 @@ from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_a
 if TYPE_CHECKING:
     from polars.datatypes import SchemaDefinition, SchemaDict
     from polars.dependencies import numpy as np
-    from polars.internals.type_aliases import Orientation
+    from polars.type_aliases import Orientation
 
 
 @deprecated_alias(columns="schema")

@@ -24,7 +24,7 @@ else:
 
 if TYPE_CHECKING:
     from polars.datatypes import PolarsTemporalType
-    from polars.internals.type_aliases import TimeUnit
+    from polars.type_aliases import TimeUnit
 
 
 def test_str_strptime() -> None:

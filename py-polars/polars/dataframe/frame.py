@@ -116,7 +116,8 @@ if TYPE_CHECKING:
         SchemaDict,
     )
     from polars.internals.io_excel import ColumnTotalsDefinition, ConditionalFormatDict
-    from polars.internals.type_aliases import (
+    from polars.series.series import Series
+    from polars.type_aliases import (
         AsofJoinStrategy,
         AvroCompression,
         ClosedInterval,
@@ -140,7 +141,6 @@ if TYPE_CHECKING:
         UniqueKeepStrategy,
         UnstackDirection,
     )
-    from polars.series.series import Series
 
     if sys.version_info >= (3, 8):
         from typing import Literal

@@ -28,9 +28,9 @@ if TYPE_CHECKING:
     from polars.dataframe.frame import DataFrame
     from polars.datatypes import PolarsDataType
     from polars.expr.expr import Expr
-    from polars.internals.type_aliases import ClosedInterval, ConcatMethod, TimeUnit
     from polars.lazyframe.frame import LazyFrame
     from polars.series.series import Series
+    from polars.type_aliases import ClosedInterval, ConcatMethod, TimeUnit
 
     if sys.version_info >= (3, 8):
         from typing import Literal

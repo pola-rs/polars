@@ -8,7 +8,7 @@ from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_a
 
 if TYPE_CHECKING:
     from polars.dataframe.frame import DataFrame
-    from polars.internals.type_aliases import DbReadEngine
+    from polars.type_aliases import DbReadEngine
 
 
 def read_database(

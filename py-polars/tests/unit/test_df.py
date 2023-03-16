@@ -24,7 +24,7 @@ from polars.testing import (
 from polars.testing.parametric import columns
 
 if TYPE_CHECKING:
-    from polars.internals.type_aliases import JoinStrategy, UniqueKeepStrategy
+    from polars.type_aliases import JoinStrategy, UniqueKeepStrategy
 
 if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo

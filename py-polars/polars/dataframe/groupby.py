@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from datetime import timedelta
 
     from polars.dataframe import DataFrame
-    from polars.internals.type_aliases import (
+    from polars.type_aliases import (
         ClosedInterval,
         IntoExpr,
         RollingInterpolationMethod,

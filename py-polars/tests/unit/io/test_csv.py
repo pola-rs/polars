@@ -24,7 +24,7 @@ from polars.testing import (
 from polars.utils.various import normalise_filepath
 
 if TYPE_CHECKING:
-    from polars.internals.type_aliases import TimeUnit
+    from polars.type_aliases import TimeUnit
 
 
 @pytest.fixture()

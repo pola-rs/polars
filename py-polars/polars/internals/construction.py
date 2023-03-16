@@ -62,8 +62,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     from polars.dataframe.frame import DataFrame
     from polars.datatypes import PolarsDataType, SchemaDefinition, SchemaDict
-    from polars.internals.type_aliases import Orientation
     from polars.series.series import Series
+    from polars.type_aliases import Orientation
 
 if version_info >= (3, 10):
 

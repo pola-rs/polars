@@ -5,9 +5,9 @@ from typing import TYPE_CHECKING
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
-    from polars.internals.type_aliases import TransferEncoding
     from polars.polars import PySeries
     from polars.series.series import Series
+    from polars.type_aliases import TransferEncoding
 
 
 @expr_dispatch

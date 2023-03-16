@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from polars.datatypes import PolarsDataType
-    from polars.internals.type_aliases import SizeUnit
+    from polars.type_aliases import SizeUnit
 
     if sys.version_info >= (3, 10):
         from typing import ParamSpec, TypeGuard

@@ -100,7 +100,8 @@ if TYPE_CHECKING:
     from polars.dataframe.frame import DataFrame
     from polars.datatypes import OneOrMoreDataTypes, PolarsDataType
     from polars.expr.expr import Expr
-    from polars.internals.type_aliases import (
+    from polars.series._numpy import SeriesView
+    from polars.type_aliases import (
         ClosedInterval,
         ComparisonOperator,
         FillNullStrategy,
@@ -113,7 +114,6 @@ if TYPE_CHECKING:
         SizeUnit,
         TimeUnit,
     )
-    from polars.series._numpy import SeriesView
 
     if sys.version_info >= (3, 11):
         from typing import Self

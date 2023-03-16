@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from decimal import Decimal
 
     from polars.datatypes import PolarsDataType
-    from polars.internals.type_aliases import TimeUnit
+    from polars.type_aliases import TimeUnit
 
     if sys.version_info >= (3, 10):
         from typing import ParamSpec

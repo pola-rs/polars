@@ -71,7 +71,8 @@ if TYPE_CHECKING:
     from polars.dataframe.frame import DataFrame
     from polars.datatypes import PolarsDataType, SchemaDefinition, SchemaDict
     from polars.expr.expr import Expr
-    from polars.internals.type_aliases import (
+    from polars.series.series import Series
+    from polars.type_aliases import (
         AsofJoinStrategy,
         ClosedInterval,
         CsvEncoding,
@@ -87,7 +88,6 @@ if TYPE_CHECKING:
         StartBy,
         UniqueKeepStrategy,
     )
-    from polars.series.series import Series
 
     if sys.version_info >= (3, 10):
         from typing import Concatenate, ParamSpec

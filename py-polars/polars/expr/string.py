@@ -15,7 +15,7 @@ from polars.datatypes import (
 if TYPE_CHECKING:
     from polars.datatypes import PolarsDataType, PolarsTemporalType
     from polars.expr.expr import Expr
-    from polars.internals.type_aliases import TransferEncoding
+    from polars.type_aliases import TransferEncoding
 
 
 class ExprStringNameSpace:

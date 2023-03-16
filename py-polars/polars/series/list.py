@@ -10,9 +10,9 @@ if TYPE_CHECKING:
     from datetime import date, datetime, time
 
     from polars.expr.expr import Expr
-    from polars.internals.type_aliases import NullBehavior, ToStructStrategy
     from polars.polars import PySeries
     from polars.series.series import Series
+    from polars.type_aliases import NullBehavior, ToStructStrategy
 
 
 @expr_dispatch

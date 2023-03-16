@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from io import BytesIO
 
     from polars.datatypes import PolarsDataType, SchemaDict
-    from polars.internals.type_aliases import CsvEncoding
+    from polars.type_aliases import CsvEncoding
 
 
 @deprecate_nonkeyword_arguments()

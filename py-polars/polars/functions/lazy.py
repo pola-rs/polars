@@ -65,15 +65,15 @@ if TYPE_CHECKING:
     from polars.dataframe.frame import DataFrame
     from polars.datatypes import PolarsDataType, SchemaDict
     from polars.expr.expr import Expr
-    from polars.internals.type_aliases import (
+    from polars.lazyframe.frame import LazyFrame
+    from polars.series.series import Series
+    from polars.type_aliases import (
         CorrelationMethod,
         EpochTimeUnit,
         IntoExpr,
         RollingInterpolationMethod,
         TimeUnit,
     )
-    from polars.lazyframe.frame import LazyFrame
-    from polars.series.series import Series
 
     if sys.version_info >= (3, 8):
         from typing import Literal

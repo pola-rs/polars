@@ -9,8 +9,8 @@ from polars.utils.decorators import deprecated_alias
 if TYPE_CHECKING:
     from polars.dataframe.frame import DataFrame
     from polars.datatypes import SchemaDict
-    from polars.internals.type_aliases import IntoExpr, RollingInterpolationMethod
     from polars.polars import PyLazyGroupBy
+    from polars.type_aliases import IntoExpr, RollingInterpolationMethod
 
 LDF = TypeVar("LDF", bound="pli.LazyFrame")
 

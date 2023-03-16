@@ -26,7 +26,7 @@ from polars.internals.construction import iterable_to_pyseries
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.internals.type_aliases import EpochTimeUnit, TimeUnit
+    from polars.type_aliases import EpochTimeUnit, TimeUnit
 
 
 def test_cum_agg() -> None:
