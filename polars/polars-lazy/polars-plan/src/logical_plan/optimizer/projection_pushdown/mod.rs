@@ -106,7 +106,7 @@ fn add_str_to_accumulated(
     expr_arena: &mut Arena<AExpr>,
 ) {
     // if empty: all columns are already projected.
-    if !acc_projections.is_empty() {
+    if !acc_projections.is_empty() && !projected_names.contains(name) {
         let node = expr_arena.add(AExpr::Column(Arc::from(name)));
         add_expr_to_accumulated(node, acc_projections, projected_names, expr_arena);
     }
@@ -561,15 +561,28 @@ impl ProjectionPushDown {
             }
             Distinct { input, options } => {
                 // make sure that the set of unique columns is projected
-                if let Some(subset) = options.subset.as_ref() {
-                    subset.iter().for_each(|name| {
-                        add_str_to_accumulated(
-                            name,
-                            &mut acc_projections,
-                            &mut projected_names,
-                            expr_arena,
-                        )
-                    })
+                if !acc_projections.is_empty() {
+                    if let Some(subset) = options.subset.as_ref() {
+                        subset.iter().for_each(|name| {
+                            add_str_to_accumulated(
+                                name,
+                                &mut acc_projections,
+                                &mut projected_names,
+                                expr_arena,
+                            )
+                        })
+                    } else {
+                        // the distint needs all columns
+                        let input_schema = lp_arena.get(input).schema(lp_arena);
+                        for name in input_schema.iter_names() {
+                            add_str_to_accumulated(
+                                name.as_str(),
+                                &mut acc_projections,
+                                &mut projected_names,
+                                expr_arena,
+                            )
+                        }
+                    }
                 }
 
                 self.pushdown_and_assign(

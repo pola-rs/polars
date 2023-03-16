@@ -253,3 +253,18 @@ def test_merge_sorted_projection_pd() -> None:
     ).collect().to_dict(False) == {
         "bar": ["false", "nice", "afk", "onion", "lukas", "patrick"]
     }
+
+
+def test_distinct_projection_pd_7578() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": ["0", "1", "2", "1", "2"],
+            "bar": ["a", "a", "a", "b", "b"],
+        }
+    )
+
+    q = df.lazy().unique().groupby("bar").agg(pl.count())
+    assert q.collect().sort("bar").to_dict(False) == {
+        "bar": ["a", "b"],
+        "count": [3, 2],
+    }
