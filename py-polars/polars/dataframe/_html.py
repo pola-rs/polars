@@ -1,10 +1,11 @@
 """Module for formatting output data in HTML."""
 from __future__ import annotations
 
-import html
 import os
 from textwrap import dedent
 from typing import TYPE_CHECKING, Iterable
+
+from polars.dependencies import html
 
 if TYPE_CHECKING:
     from types import TracebackType

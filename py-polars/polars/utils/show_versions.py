@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import importlib
-import platform
 import sys
 
 from polars.utils.meta import get_index_type
@@ -32,6 +31,9 @@ def show_versions() -> None:
     xlsxwriter: 3.0.8
 
     """
+    # note: we import 'platform' here as a micro-optimisation for initial import
+    import platform
+
     print("---Version info---")
     print(f"Polars: {get_polars_version()}")
     print(f"Index type: {get_index_type()}")

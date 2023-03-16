@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import contextlib
 import os
-import subprocess
 import typing
 import warnings
 from datetime import date, datetime, time, timedelta
@@ -42,6 +41,7 @@ from polars.datatypes import (
     Utf8,
     py_type_to_dtype,
 )
+from polars.dependencies import subprocess
 from polars.internals import selection_to_pyexpr_list
 from polars.internals.slice import LazyPolarsSlice
 from polars.lazyframe.groupby import LazyGroupBy

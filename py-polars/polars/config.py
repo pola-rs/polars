@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import contextlib
-import json
 import os
 from typing import TYPE_CHECKING
+
+from polars.dependencies import json
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import set_float_fmt as _set_float_fmt

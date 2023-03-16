@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import pickle
 from functools import partial
 from typing import TYPE_CHECKING, Any, cast
 
 import polars as pl
 from polars import internals as pli
+from polars.dependencies import pickle
 from polars.dependencies import pyarrow as pa  # noqa: TCH001
 
 if TYPE_CHECKING:
