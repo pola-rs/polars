@@ -23,8 +23,7 @@ else:
     from backports.zoneinfo._zoneinfo import ZoneInfo
 
 if TYPE_CHECKING:
-    from polars.datatypes import PolarsTemporalType
-    from polars.type_aliases import TimeUnit
+    from polars.type_aliases import PolarsTemporalType, TimeUnit
 
 
 def test_str_strptime() -> None:

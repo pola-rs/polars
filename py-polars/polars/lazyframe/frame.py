@@ -69,7 +69,6 @@ if TYPE_CHECKING:
     import pyarrow as pa
 
     from polars.dataframe.frame import DataFrame
-    from polars.datatypes import PolarsDataType, SchemaDefinition, SchemaDict
     from polars.expr.expr import Expr
     from polars.series.series import Series
     from polars.type_aliases import (
@@ -82,9 +81,12 @@ if TYPE_CHECKING:
         JoinStrategy,
         Orientation,
         ParallelStrategy,
+        PolarsDataType,
         PolarsExprType,
         PythonLiteral,
         RollingInterpolationMethod,
+        SchemaDefinition,
+        SchemaDict,
         StartBy,
         UniqueKeepStrategy,
     )

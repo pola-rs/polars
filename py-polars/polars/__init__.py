@@ -42,7 +42,6 @@ from polars.datatypes import (
     List,
     Null,
     Object,
-    PolarsDataType,
     Struct,
     Time,
     UInt8,
@@ -156,6 +155,7 @@ from polars.series import wrap_s  # noqa: F401
 from polars.series.series import Series
 from polars.sql import SQLContext
 from polars.string_cache import StringCache, toggle_string_cache, using_string_cache
+from polars.type_aliases import PolarsDataType
 from polars.utils import (
     build_info,
     get_idx_type,
@@ -207,7 +207,6 @@ __all__ = [
     "List",
     "Null",
     "Object",
-    "PolarsDataType",
     "Struct",
     "Time",
     "UInt16",
@@ -223,6 +222,8 @@ __all__ = [
     "INTEGER_DTYPES",
     "NUMERIC_DTYPES",
     "TEMPORAL_DTYPES",
+    # polars.type_aliases
+    "PolarsDataType",
     # polars.io
     "read_avro",
     "read_csv",

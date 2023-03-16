@@ -6,11 +6,10 @@ from polars import internals as pli
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
-    from polars.datatypes import PolarsDataType, PolarsTemporalType
     from polars.expr.expr import Expr
     from polars.polars import PySeries
     from polars.series.series import Series
-    from polars.type_aliases import TransferEncoding
+    from polars.type_aliases import PolarsDataType, PolarsTemporalType, TransferEncoding
 
 
 @expr_dispatch

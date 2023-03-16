@@ -27,8 +27,7 @@ if TYPE_CHECKING:
     from collections.abc import Reversible
     from pathlib import Path
 
-    from polars.datatypes import PolarsDataType
-    from polars.type_aliases import SizeUnit
+    from polars.type_aliases import PolarsDataType, SizeUnit
 
     if sys.version_info >= (3, 10):
         from typing import ParamSpec, TypeGuard

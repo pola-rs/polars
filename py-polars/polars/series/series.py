@@ -98,7 +98,6 @@ if TYPE_CHECKING:
     import sys
 
     from polars.dataframe.frame import DataFrame
-    from polars.datatypes import OneOrMoreDataTypes, PolarsDataType
     from polars.expr.expr import Expr
     from polars.series._numpy import SeriesView
     from polars.type_aliases import (
@@ -107,6 +106,8 @@ if TYPE_CHECKING:
         FillNullStrategy,
         InterpolationMethod,
         NullBehavior,
+        OneOrMoreDataTypes,
+        PolarsDataType,
         PythonLiteral,
         RankMethod,
         RollingInterpolationMethod,

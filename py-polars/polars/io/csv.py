@@ -24,8 +24,7 @@ from polars.utils.various import handle_projection_columns, normalise_filepath
 if TYPE_CHECKING:
     from io import BytesIO
 
-    from polars.datatypes import PolarsDataType, SchemaDict
-    from polars.type_aliases import CsvEncoding
+    from polars.type_aliases import CsvEncoding, PolarsDataType, SchemaDict
 
 
 @deprecate_nonkeyword_arguments()

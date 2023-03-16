@@ -3,7 +3,17 @@ from __future__ import annotations
 import sys
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Mapping, Sequence, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Iterable,
+    List,
+    Mapping,
+    Sequence,
+    Tuple,
+    Type,
+    Union,
+)
 
 if sys.version_info >= (3, 8):
     from typing import Literal
@@ -11,6 +21,7 @@ else:
     from typing_extensions import Literal
 
 if TYPE_CHECKING:
+    from polars.datatypes import DataType, DataTypeClass, TemporalType
     from polars.dependencies import numpy as np
     from polars.dependencies import pandas as pd
     from polars.dependencies import pyarrow as pa
@@ -23,16 +34,42 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import TypeAlias
 
+# Data types
+PolarsDataType: TypeAlias = Union["DataTypeClass", "DataType"]
+PolarsTemporalType: TypeAlias = Union[Type["TemporalType"], "TemporalType"]
+OneOrMoreDataTypes: TypeAlias = Union[PolarsDataType, Iterable[PolarsDataType]]
+PythonDataType: TypeAlias = Union[
+    Type[int],
+    Type[float],
+    Type[bool],
+    Type[str],
+    Type[date],
+    Type[time],
+    Type[datetime],
+    Type[timedelta],
+    Type[List[Any]],
+    Type[Tuple[Any, ...]],
+    Type[bytes],
+    Type[Decimal],
+    Type[None],
+]
+
+SchemaDefinition: TypeAlias = Union[
+    Sequence[str],
+    Mapping[str, Union[PolarsDataType, PythonDataType]],
+    Sequence[Union[str, Tuple[str, Union[PolarsDataType, PythonDataType, None]]]],
+]
+SchemaDict: TypeAlias = Mapping[str, PolarsDataType]
 
 # Types that qualify as expressions (eg: for use in 'select', 'with_columns'...)
-PolarsExprType: TypeAlias = "Expr | WhenThen | WhenThenThen"
+PolarsExprType: TypeAlias = Union["Expr", "WhenThen", "WhenThenThen"]
 
 # literal types that are allowed in expressions (auto-converted to pl.lit)
 PythonLiteral: TypeAlias = Union[
     str, int, float, bool, date, time, datetime, timedelta, bytes, Decimal
 ]
 
-IntoExpr: TypeAlias = "PolarsExprType | PythonLiteral | Series | None"
+IntoExpr: TypeAlias = Union[PolarsExprType, PythonLiteral, "Series", None]
 ComparisonOperator: TypeAlias = Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"]
 
 # User-facing string literal types
@@ -98,4 +135,10 @@ DbWriteEngine: TypeAlias = Literal["sqlalchemy", "adbc"]
 DbWriteMode: TypeAlias = Literal["replace", "append", "fail"]
 
 # type signature for allowed frame init
-FrameInitTypes: TypeAlias = "Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series] | Sequence[Any] | np.ndarray[Any, Any] | pa.Table | pd.DataFrame"
+FrameInitTypes: TypeAlias = Union[
+    Mapping[str, Union[Sequence[object], Mapping[str, Sequence[object]], "Series"]],
+    Sequence[Any],
+    "np.ndarray[Any, Any]",
+    "pa.Table",
+    "pd.DataFrame",
+]

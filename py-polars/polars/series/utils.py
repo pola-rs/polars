@@ -9,9 +9,9 @@ from polars import internals as pli
 from polars.datatypes import dtype_to_ffiname
 
 if TYPE_CHECKING:
-    from polars.datatypes import PolarsDataType
     from polars.polars import PySeries
     from polars.series.series import Series
+    from polars.type_aliases import PolarsDataType
 
     if sys.version_info >= (3, 10):
         from typing import ParamSpec

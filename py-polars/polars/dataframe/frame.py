@@ -109,12 +109,6 @@ if TYPE_CHECKING:
     from pyarrow.interchange.dataframe import _PyArrowDataFrame
     from xlsxwriter import Workbook
 
-    from polars.datatypes import (
-        OneOrMoreDataTypes,
-        PolarsDataType,
-        SchemaDefinition,
-        SchemaDict,
-    )
     from polars.internals.io_excel import ColumnTotalsDefinition, ConditionalFormatDict
     from polars.series.series import Series
     from polars.type_aliases import (
@@ -131,11 +125,15 @@ if TYPE_CHECKING:
         IpcCompression,
         JoinStrategy,
         NullStrategy,
+        OneOrMoreDataTypes,
         Orientation,
         ParallelStrategy,
         ParquetCompression,
         PivotAgg,
+        PolarsDataType,
         RollingInterpolationMethod,
+        SchemaDefinition,
+        SchemaDict,
         SizeUnit,
         StartBy,
         UniqueKeepStrategy,

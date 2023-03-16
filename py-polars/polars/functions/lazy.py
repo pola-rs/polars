@@ -63,7 +63,6 @@ if TYPE_CHECKING:
     import sys
 
     from polars.dataframe.frame import DataFrame
-    from polars.datatypes import PolarsDataType, SchemaDict
     from polars.expr.expr import Expr
     from polars.lazyframe.frame import LazyFrame
     from polars.series.series import Series
@@ -71,7 +70,9 @@ if TYPE_CHECKING:
         CorrelationMethod,
         EpochTimeUnit,
         IntoExpr,
+        PolarsDataType,
         RollingInterpolationMethod,
+        SchemaDict,
         TimeUnit,
     )
 

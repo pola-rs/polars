@@ -45,7 +45,6 @@ if TYPE_CHECKING:
     import sys
 
     from polars.dataframe.frame import DataFrame
-    from polars.datatypes import PolarsDataType
     from polars.lazyframe.frame import LazyFrame
     from polars.polars import PyExpr
     from polars.series.series import Series
@@ -56,6 +55,7 @@ if TYPE_CHECKING:
         InterpolationMethod,
         IntoExpr,
         NullBehavior,
+        PolarsDataType,
         PythonLiteral,
         RankMethod,
         RollingInterpolationMethod,
