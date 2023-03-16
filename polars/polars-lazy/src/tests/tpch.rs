@@ -48,7 +48,6 @@ fn partsupp() -> LazyFrame {
 }
 
 #[test]
-#[cfg(feature = "cse")]
 fn test_q2() -> PolarsResult<()> {
     let q1 = part()
         .inner_join(partsupp(), "p_partkey", "ps_partkey")

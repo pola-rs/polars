@@ -431,14 +431,14 @@ mod test {
     #[test]
     fn test_read_io_reader() {
         let path = "../../examples/datasets/foods1.csv";
-        let mut file = std::fs::File::open(path).unwrap();
+        let file = std::fs::File::open(path).unwrap();
         let mut reader = CsvReader::from_path(path).unwrap().with_chunk_size(5);
 
         let mut reader = reader.batched_borrowed_read().unwrap();
         let batches = reader.next_batches(5).unwrap().unwrap();
         assert_eq!(batches.len(), 5);
         let df = concat_df(&batches).unwrap();
-        let mut expected = CsvReader::new(file).finish().unwrap();
+        let expected = CsvReader::new(file).finish().unwrap();
         assert!(df.frame_equal(&expected))
     }
 }

@@ -150,6 +150,7 @@ fn test_auto_list_agg() -> PolarsResult<()> {
     Ok(())
 }
 #[test]
+#[cfg(feature = "rolling_window")]
 fn test_power_in_agg_list1() -> PolarsResult<()> {
     let df = fruits_cars();
 
@@ -191,6 +192,7 @@ fn test_power_in_agg_list1() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "rolling_window")]
 fn test_power_in_agg_list2() -> PolarsResult<()> {
     let df = fruits_cars();
 

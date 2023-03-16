@@ -298,7 +298,7 @@ class LazyFrame:
         cls,
         source: str,
         has_header: bool = True,
-        sep: str = ",",
+        separator: str = ",",
         comment_char: str | None = None,
         quote_char: str | None = r'"',
         skip_rows: int = 0,
@@ -339,7 +339,7 @@ class LazyFrame:
         self = cls.__new__(cls)
         self._ldf = PyLazyFrame.new_from_csv(
             source,
-            sep,
+            separator,
             has_header,
             ignore_errors,
             skip_rows,

@@ -577,6 +577,11 @@ def test_head_tail_limit() -> None:
     assert df.tail(-8).rows() == [(8, 8), (9, 9)]
     assert len(df.tail(-6)) == 4
 
+    # negative values out of bounds
+    assert len(df.head(-12)) == 0
+    assert len(df.limit(-12)) == 0
+    assert len(df.tail(-12)) == 0
+
 
 def test_pipe() -> None:
     df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, None, 8]})
@@ -1756,18 +1761,6 @@ def test_groupby_cat_list() -> None:
     out = grouped.str.explode()
     assert out.dtype == pl.Categorical
     assert out[0] == "a"
-
-    # test if we can also correctly fmt the categorical in list
-    assert (
-        str(grouped)
-        == """shape: (3,)
-Series: 'cat_column' [list[cat]]
-[
-	["a", "b"]
-	["b", "a"]
-	["b"]
-]"""
-    )
 
 
 def test_groupby_agg_n_unique_floats() -> None:

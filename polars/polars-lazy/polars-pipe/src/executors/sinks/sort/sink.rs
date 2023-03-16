@@ -1,27 +1,27 @@
 use std::any::Any;
 use std::collections::VecDeque;
-use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
+use polars_core::config::verbose;
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{AnyValue, SchemaRef, Series, SortOptions};
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_plan::prelude::SortArguments;
-use polars_utils::atomic::SyncCounter;
-use polars_utils::sys::MEMINFO;
 
+use crate::executors::sinks::memory::MemTracker;
 use crate::executors::sinks::sort::io::{block_thread_until_io_thread_done, IOThread};
 use crate::executors::sinks::sort::ooc::sort_ooc;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
+use crate::pipeline::morsels_per_sink;
 
 pub struct SortSink {
     schema: SchemaRef,
     chunks: VecDeque<DataFrame>,
-    free_mem: SyncCounter,
-    // Total memory used by sort sink
-    mem_total: SyncCounter,
-    // sort in memory or out of core
+    // Stores available memory in the system at the start of this sink.
+    // and stores the memory used by this this sink.
+    mem_track: MemTracker,
+    // sort in-memory or out-of-core
     ooc: bool,
     // when ooc, we write to disk using an IO thread
     io_thread: Arc<Mutex<Option<IOThread>>>,
@@ -36,12 +36,12 @@ impl SortSink {
     pub(crate) fn new(sort_idx: usize, sort_args: SortArguments, schema: SchemaRef) -> Self {
         // for testing purposes
         let ooc = std::env::var("POLARS_FORCE_OOC_SORT").is_ok();
+        let n_morsels_per_sink = morsels_per_sink();
 
         let mut out = Self {
             schema,
             chunks: Default::default(),
-            free_mem: SyncCounter::new(0),
-            mem_total: SyncCounter::new(0),
+            mem_track: MemTracker::new(n_morsels_per_sink),
             ooc,
             io_thread: Default::default(),
             sort_idx,
@@ -55,14 +55,10 @@ impl SortSink {
         out
     }
 
-    fn refresh_memory(&self) {
-        if self.free_mem.load(Ordering::Relaxed) == 0 {
-            self.free_mem
-                .store(MEMINFO.free() as usize, Ordering::Relaxed);
-        }
-    }
-
     fn init_ooc(&mut self) -> PolarsResult<()> {
+        if verbose() {
+            eprintln!("OOC sort started");
+        }
         self.ooc = true;
 
         // start IO thread
@@ -74,11 +70,10 @@ impl SortSink {
     }
 
     fn store_chunk(&mut self, chunk: DataChunk) -> PolarsResult<()> {
-        let chunk_bytes = chunk.data.estimated_size();
-
         if !self.ooc {
-            let used = self.mem_total.fetch_add(chunk_bytes, Ordering::Relaxed);
-            let free = self.free_mem.load(Ordering::Relaxed);
+            let chunk_bytes = chunk.data.estimated_size();
+            let used = self.mem_track.fetch_add(chunk_bytes);
+            let free = self.mem_track.get_available();
 
             // we need some free memory to be able to sort
             // so we keep 3x the sort data size before we go out of core
@@ -112,9 +107,6 @@ impl SortSink {
 
 impl Sink for SortSink {
     fn sink(&mut self, _context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
-        if !self.ooc {
-            self.refresh_memory();
-        }
         self.store_chunk(chunk)?;
 
         if self.ooc {
@@ -139,8 +131,7 @@ impl Sink for SortSink {
         Box::new(Self {
             schema: self.schema.clone(),
             chunks: Default::default(),
-            free_mem: self.free_mem.clone(),
-            mem_total: self.mem_total.clone(),
+            mem_track: self.mem_track.clone(),
             ooc: self.ooc,
             io_thread: self.io_thread.clone(),
             sort_idx: self.sort_idx,
@@ -150,17 +141,11 @@ impl Sink for SortSink {
     }
 
     fn finalize(&mut self, _context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
-        // safety: we are the final thread and will drop only once.
-        unsafe {
-            self.mem_total.manual_drop();
-            self.free_mem.manual_drop();
-        }
-
         if self.ooc {
             let lock = self.io_thread.lock().unwrap();
             let io_thread = lock.as_ref().unwrap();
 
-            let dist = Series::from_any_values("", &self.dist_sample).unwrap();
+            let dist = Series::from_any_values("", &self.dist_sample, false).unwrap();
             let dist = dist.sort_with(SortOptions {
                 descending: self.sort_args.descending[0],
                 nulls_last: self.sort_args.nulls_last,

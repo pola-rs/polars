@@ -1028,7 +1028,7 @@ mod test {
     fn new_series_from_empty_structs() {
         let dtype = DataType::Struct(vec![]);
         let empties = vec![AnyValue::StructOwned(Box::new((vec![], vec![]))); 3];
-        let s = Series::from_any_values_and_dtype("", &empties, &dtype).unwrap();
+        let s = Series::from_any_values_and_dtype("", &empties, &dtype, false).unwrap();
         assert_eq!(s.len(), 3);
     }
     #[test]

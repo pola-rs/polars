@@ -103,16 +103,19 @@ impl DataFrame {
         names: &[SmartString],
     ) -> PolarsResult<DataFrame> {
         let (mut l_df, r_df) = self.cross_join_dfs(other, None, false)?;
-        l_df.get_columns_mut().extend_from_slice(&r_df.columns);
 
-        l_df.get_columns_mut()
-            .iter_mut()
-            .zip(names)
-            .for_each(|(s, name)| {
-                if s.name() != name {
-                    s.rename(name);
-                }
-            });
+        unsafe {
+            l_df.get_columns_mut().extend_from_slice(&r_df.columns);
+
+            l_df.get_columns_mut()
+                .iter_mut()
+                .zip(names)
+                .for_each(|(s, name)| {
+                    if s.name() != name {
+                        s.rename(name);
+                    }
+                });
+        }
         Ok(l_df)
     }
 

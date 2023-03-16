@@ -59,7 +59,6 @@ from polars.exceptions import (
     ShapeError,
     StructFieldNotFoundError,
 )
-from polars.internals import BatchedCsvReader
 
 # TODO remove need for wrap_df
 from polars.internals.dataframe import (
@@ -185,7 +184,6 @@ __all__ = [
     "ShapeError",
     "StructFieldNotFoundError",
     # core classes
-    "BatchedCsvReader",
     "DataFrame",
     "Expr",
     "LazyFrame",
@@ -218,7 +216,6 @@ __all__ = [
     "UInt8",
     "Unknown",
     "Utf8",
-    "get_idx_type",
     # polars.datatypes: dtype groups
     "DATETIME_DTYPES",
     "DURATION_DTYPES",

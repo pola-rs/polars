@@ -90,10 +90,12 @@ pub trait ExprEvalExtension: IntoExpr + Sized {
                     .map(|len| {
                         let s = s.slice(0, len);
                         if (len - s.null_count()) >= min_periods {
-                            df_container.get_columns_mut().push(s);
-                            let out = phys_expr.evaluate(&df_container, &state)?;
-                            df_container.get_columns_mut().clear();
-                            finish(out)
+                            unsafe {
+                                df_container.get_columns_mut().push(s);
+                                let out = phys_expr.evaluate(&df_container, &state)?;
+                                df_container.get_columns_mut().clear();
+                                finish(out)
+                            }
                         } else {
                             Ok(AnyValue::Null)
                         }

@@ -493,7 +493,9 @@ impl<'a> AnyValueBuffer<'a> {
             Float32(b) => b.finish().into_series(),
             Float64(b) => b.finish().into_series(),
             Utf8(b) => b.finish().into_series(),
-            All(dtype, vals) => Series::from_any_values_and_dtype("", &vals, &dtype).unwrap(),
+            All(dtype, vals) => {
+                Series::from_any_values_and_dtype("", &vals, &dtype, false).unwrap()
+            }
         }
     }
 

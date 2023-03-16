@@ -2,6 +2,7 @@ use polars_arrow::utils::CustomIterTools;
 use polars_core::export::rayon::prelude::*;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
+use polars_core::series::IsSorted;
 use polars_core::POOL;
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
@@ -106,7 +107,7 @@ impl Wrap<&DataFrame> {
         by: Vec<Series>,
         options: &RollingGroupOptions,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
-        let time = self.0.column(&options.index_column)?;
+        let time = self.0.column(&options.index_column)?.clone();
         let time_type = time.dtype();
 
         if time.null_count() > 0 {
@@ -211,7 +212,7 @@ impl Wrap<&DataFrame> {
 
     fn impl_groupby_dynamic(
         &self,
-        dt: Series,
+        mut dt: Series,
         mut by: Vec<Series>,
         options: &DynamicGroupOptions,
         tu: TimeUnit,
@@ -220,6 +221,9 @@ impl Wrap<&DataFrame> {
         if dt.is_empty() {
             return dt.cast(time_type).map(|s| (s, by, GroupsProxy::default()));
         }
+        // a requirement for the index
+        // so we can set this such that downstream code has this info
+        dt.set_sorted_flag(IsSorted::Ascending);
 
         let w = Window::new(options.every, options.period, options.offset);
         let dt = dt.datetime().unwrap();
@@ -437,6 +441,9 @@ impl Wrap<&DataFrame> {
         time_type: &DataType,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
         let mut dt = dt.rechunk();
+        // a requirement for the index
+        // so we can set this such that downstream code has this info
+        dt.set_sorted_flag(IsSorted::Ascending);
 
         let groups = if by.is_empty() {
             let dt = dt.datetime().unwrap();

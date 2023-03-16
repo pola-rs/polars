@@ -236,3 +236,35 @@ def test_asof_join_projection_() -> None:
             5.0,
         ],
     }
+
+
+def test_merge_sorted_projection_pd() -> None:
+    lf = pl.LazyFrame(
+        {
+            "foo": [1, 2, 3, 4],
+            "bar": ["patrick", "lukas", "onion", "afk"],
+        }
+    ).sort("foo")
+
+    lf2 = pl.LazyFrame({"foo": [5, 6], "bar": ["nice", "false"]}).sort("foo")
+
+    assert (
+        lf.merge_sorted(lf2, key="foo").reverse().select(["bar"])
+    ).collect().to_dict(False) == {
+        "bar": ["false", "nice", "afk", "onion", "lukas", "patrick"]
+    }
+
+
+def test_distinct_projection_pd_7578() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": ["0", "1", "2", "1", "2"],
+            "bar": ["a", "a", "a", "b", "b"],
+        }
+    )
+
+    q = df.lazy().unique().groupby("bar").agg(pl.count())
+    assert q.collect().sort("bar").to_dict(False) == {
+        "bar": ["a", "b"],
+        "count": [3, 2],
+    }

@@ -13,7 +13,7 @@ impl MemInfo {
     pub fn free(&self) -> u64 {
         let mut sys = self.sys.lock().unwrap();
         sys.refresh_memory();
-        sys.free_memory()
+        sys.available_memory()
     }
 }
 

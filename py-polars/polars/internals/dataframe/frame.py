@@ -675,7 +675,7 @@ class DataFrame:
         source: str | Path | BinaryIO | bytes,
         has_header: bool = True,
         columns: Sequence[int] | Sequence[str] | None = None,
-        sep: str = ",",
+        separator: str = ",",
         comment_char: str | None = None,
         quote_char: str | None = r'"',
         skip_rows: int = 0,
@@ -749,7 +749,7 @@ class DataFrame:
             scan = scan_csv(
                 source,
                 has_header=has_header,
-                sep=sep,
+                separator=separator,
                 comment_char=comment_char,
                 quote_char=quote_char,
                 skip_rows=skip_rows,
@@ -787,7 +787,7 @@ class DataFrame:
             n_rows,
             skip_rows,
             projection,
-            sep,
+            separator,
             rechunk,
             columns,
             encoding,
@@ -2229,7 +2229,7 @@ class DataFrame:
         self,
         file: None = None,
         has_header: bool = ...,
-        sep: str = ...,
+        separator: str = ...,
         quote: str = ...,
         batch_size: int = ...,
         datetime_format: str | None = ...,
@@ -2245,7 +2245,7 @@ class DataFrame:
         self,
         file: BytesIO | str | Path,
         has_header: bool = ...,
-        sep: str = ...,
+        separator: str = ...,
         quote: str = ...,
         batch_size: int = ...,
         datetime_format: str | None = ...,
@@ -2256,12 +2256,13 @@ class DataFrame:
     ) -> None:
         ...
 
+    @deprecated_alias(sep="separator")
     @deprecate_nonkeyword_arguments(allowed_args=["self", "file"])
     def write_csv(
         self,
         file: BytesIO | str | Path | None = None,
         has_header: bool = True,
-        sep: str = ",",
+        separator: str = ",",
         quote: str = '"',
         batch_size: int = 1024,
         datetime_format: str | None = None,
@@ -2280,7 +2281,7 @@ class DataFrame:
             (default), the output is returned as a string instead.
         has_header
             Whether to include header in the CSV output.
-        sep
+        separator
             Separate CSV fields with this symbol.
         quote
             Byte to use as quoting character.
@@ -2318,10 +2319,10 @@ class DataFrame:
         ...     }
         ... )
         >>> path: pathlib.Path = dirpath / "new_file.csv"
-        >>> df.write_csv(path, sep=",")
+        >>> df.write_csv(path, separator=",")
 
         """
-        if len(sep) > 1:
+        if len(separator) > 1:
             raise ValueError("only single byte separator is allowed")
         elif len(quote) > 1:
             raise ValueError("only single byte quote char is allowed")
@@ -2333,7 +2334,7 @@ class DataFrame:
             self._df.write_csv(
                 buffer,
                 has_header,
-                ord(sep),
+                ord(separator),
                 ord(quote),
                 batch_size,
                 datetime_format,
@@ -2350,7 +2351,7 @@ class DataFrame:
         self._df.write_csv(
             file,
             has_header,
-            ord(sep),
+            ord(separator),
             ord(quote),
             batch_size,
             datetime_format,
@@ -3732,46 +3733,15 @@ class DataFrame:
             length = self.height - offset + length
         return self._from_pydf(self._df.slice(offset, length))
 
-    def limit(self, n: int = 5) -> Self:
+    def head(self, n: int = 5) -> Self:
         """
         Get the first `n` rows.
 
-        Alias for :func:`DataFrame.head`.
-
         Parameters
         ----------
         n
-            Number of rows to return.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {"foo": [1, 2, 3, 4, 5, 6], "bar": ["a", "b", "c", "d", "e", "f"]}
-        ... )
-        >>> df.limit(4)
-        shape: (4, 2)
-        ┌─────┬─────┐
-        │ foo ┆ bar │
-        │ --- ┆ --- │
-        │ i64 ┆ str │
-        ╞═════╪═════╡
-        │ 1   ┆ a   │
-        │ 2   ┆ b   │
-        │ 3   ┆ c   │
-        │ 4   ┆ d   │
-        └─────┴─────┘
-
-        """
-        return self.head(n)
-
-    def head(self, n: int = 5) -> Self:
-        """
-        Get the first `n` rows (if negative, returns all rows except the last `n`).
-
-        Parameters
-        ----------
-        n
-            Number of rows to return.
+            Number of rows to return. If a negative value is passed, return all rows
+            except the last ``abs(n)``.
 
         See Also
         --------
@@ -3798,7 +3768,7 @@ class DataFrame:
         │ 3   ┆ 8   ┆ c   │
         └─────┴─────┴─────┘
 
-        Negative values of ``head`` return all rows _except_ the last abs(n).
+        Pass a negative value to get all rows `except` the last ``abs(n)``.
 
         >>> df.head(-3)
         shape: (2, 3)
@@ -3810,19 +3780,21 @@ class DataFrame:
         │ 1   ┆ 6   ┆ a   │
         │ 2   ┆ 7   ┆ b   │
         └─────┴─────┴─────┘
+
         """
         if n < 0:
-            n = len(self) + n
+            n = max(0, self.height + n)
         return self._from_pydf(self._df.head(n))
 
     def tail(self, n: int = 5) -> Self:
         """
-        Get the last `n` rows (if negative, returns all rows except the first `n`).
+        Get the last `n` rows.
 
         Parameters
         ----------
         n
-            Number of rows to return.
+            Number of rows to return. If a negative value is passed, return all rows
+            except the first ``abs(n)``.
 
         See Also
         --------
@@ -3849,7 +3821,7 @@ class DataFrame:
         │ 5   ┆ 10  ┆ e   │
         └─────┴─────┴─────┘
 
-        Negative values of ``tail`` return all rows _except_ the first abs(n).
+        Pass a negative value to get all rows `except` the first ``abs(n)``.
 
         >>> df.tail(-3)
         shape: (2, 3)
@@ -3861,10 +3833,30 @@ class DataFrame:
         │ 4   ┆ 9   ┆ d   │
         │ 5   ┆ 10  ┆ e   │
         └─────┴─────┴─────┘
+
         """
         if n < 0:
-            n = len(self) + n
+            n = max(0, self.height + n)
         return self._from_pydf(self._df.tail(n))
+
+    def limit(self, n: int = 5) -> Self:
+        """
+        Get the first `n` rows.
+
+        Alias for :func:`DataFrame.head`.
+
+        Parameters
+        ----------
+        n
+            Number of rows to return. If a negative value is passed, return all rows
+            except the last ``abs(n)``.
+
+        See Also
+        --------
+        head
+
+        """
+        return self.head(n)
 
     def drop_nulls(self, subset: str | Sequence[str] | None = None) -> Self:
         """

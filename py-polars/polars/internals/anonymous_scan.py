@@ -67,17 +67,10 @@ def _scan_pyarrow_dataset_impl(
 
         _filter = eval(predicate)
     if n_rows:
-        dfs = []
-        total_rows = 0
-        for rb in ds.to_batches(
-            columns=with_columns, filter=_filter, batch_size=n_rows
-        ):
-            df = pl.DataFrame(dict(zip(rb.schema.names, rb.columns)))
-            total_rows += df.height
-            dfs.append(df)
-            if total_rows > n_rows:
-                break
-        return pli.concat(dfs, rechunk=False).head(n_rows)
+        return cast(
+            pli.DataFrame,
+            pl.from_arrow(ds.head(n_rows, columns=with_columns, filter=_filter)),
+        )
 
     return cast(
         pli.DataFrame, pl.from_arrow(ds.to_table(columns=with_columns, filter=_filter))

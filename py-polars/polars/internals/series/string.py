@@ -629,7 +629,9 @@ class StringNameSpace:
         s = pli.wrap_s(self._s)
         return s.to_frame().select(pli.col(s.name).str.splitn(by, n)).to_series()
 
-    def replace(self, pattern: str, value: str, literal: bool = False) -> pli.Series:
+    def replace(
+        self, pattern: str, value: str, literal: bool = False, *, n: int = 1
+    ) -> pli.Series:
         r"""
         Replace first matching regex/literal substring with a new string value.
 
@@ -641,6 +643,8 @@ class StringNameSpace:
             Substring to replace.
         literal
              Treat pattern as a literal string.
+        n
+            Number of matches to replace
 
         See Also
         --------

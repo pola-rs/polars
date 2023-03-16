@@ -1,4 +1,5 @@
 use polars_core::frame::explode::MeltArgs;
+#[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 
 use super::*;
@@ -1558,6 +1559,7 @@ fn test_exclude_regex() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "rank")]
 fn test_groupby_rank() -> PolarsResult<()> {
     let df = fruits_cars();
     let out = df
@@ -1647,6 +1649,7 @@ fn test_single_group_result() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "rank")]
 fn test_single_ranked_group() -> PolarsResult<()> {
     // tests type consistency of rank algorithm
     let df = df!["group" => [1, 2, 2],
@@ -1675,6 +1678,7 @@ fn test_single_ranked_group() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "diff")]
 fn empty_df() -> PolarsResult<()> {
     let df = fruits_cars();
     let df = df.filter(&BooleanChunked::full("", false, df.height()))?;

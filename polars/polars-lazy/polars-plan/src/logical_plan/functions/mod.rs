@@ -236,12 +236,14 @@ impl FunctionNode {
         }
     }
 
-    pub(crate) fn additional_projection_pd_columns(&self) -> &[Arc<str>] {
+    pub(crate) fn additional_projection_pd_columns(&self) -> Cow<[Arc<str>]> {
         use FunctionNode::*;
         match self {
-            Unnest { columns } => columns.as_ref(),
-            Explode { columns, .. } => columns.as_ref(),
-            _ => &[],
+            Unnest { columns } => Cow::Borrowed(columns.as_ref()),
+            Explode { columns, .. } => Cow::Borrowed(columns.as_ref()),
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted { column, .. } => Cow::Owned(vec![column.clone()]),
+            _ => Cow::Borrowed(&[]),
         }
     }
 

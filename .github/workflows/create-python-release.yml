@@ -159,11 +159,6 @@ jobs:
           rm py-polars/README.md
           cp README.md py-polars/README.md
 
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: nightly-2023-03-10
-
       - name: Set up Rust targets
         run: rustup target add aarch64-apple-darwin
 
@@ -190,11 +185,6 @@ jobs:
   #       run: |
   #         rm py-polars/README.md
   #         cp README.md py-polars/README.md
-
-  #     - name: Set up Rust
-  #       uses: dtolnay/rust-toolchain@master
-  #       with:
-  #         toolchain: nightly-2023-03-10
 
   #     - name: Set up Rust targets
   #       run: rustup target add aarch64-apple-darwin

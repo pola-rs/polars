@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import sys
 from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING, cast, no_type_check
 
@@ -20,15 +19,12 @@ from polars.testing import (
 )
 
 if TYPE_CHECKING:
+    from zoneinfo import ZoneInfo
+
     from polars.datatypes import PolarsTemporalType
     from polars.internals.type_aliases import TimeUnit
-
-if sys.version_info >= (3, 9):
-    from zoneinfo import ZoneInfo
 else:
-    # Import from submodule due to typing issue with backports.zoneinfo package:
-    # https://github.com/pganssle/zoneinfo/issues/125
-    from backports.zoneinfo._zoneinfo import ZoneInfo
+    from polars.utils.convert import get_zoneinfo as ZoneInfo
 
 
 def test_fill_null() -> None:
@@ -847,7 +843,15 @@ def test_rolling() -> None:
         assert out["min_a"].to_list() == [3, 3, 3, 3, 2, 1]
 
 
-def test_upsample() -> None:
+@pytest.mark.parametrize(
+    ("time_zone", "tzinfo"),
+    [
+        (None, None),
+        ("Europe/Warsaw", ZoneInfo("Europe/Warsaw")),
+        ("+01:00", timezone(timedelta(hours=1))),
+    ],
+)
+def test_upsample(time_zone: str | None, tzinfo: ZoneInfo | timezone | None) -> None:
     df = pl.DataFrame(
         {
             "time": [
@@ -859,7 +863,7 @@ def test_upsample() -> None:
             "admin": ["Åland", "Netherlands", "Åland", "Netherlands"],
             "test2": [0, 1, 2, 3],
         }
-    ).with_columns(pl.col("time").dt.replace_time_zone("UTC"))
+    ).with_columns(pl.col("time").dt.replace_time_zone(time_zone))
 
     up = df.upsample(
         time_column="time", every="1mo", by="admin", maintain_order=True
@@ -890,9 +894,45 @@ def test_upsample() -> None:
             ],
             "test2": [0, 0, 0, 2, 1, 1, 3],
         }
-    ).with_columns(pl.col("time").dt.replace_time_zone("UTC"))
+    ).with_columns(pl.col("time").dt.replace_time_zone(time_zone))
 
     assert_frame_equal(up, expected)
+
+
+@pytest.mark.parametrize("time_zone", [None, "US/Central"])
+@pytest.mark.parametrize(
+    ("offset", "expected_time", "expected_values"),
+    [
+        (
+            None,
+            [datetime(2021, 11, 6), datetime(2021, 11, 7), datetime(2021, 11, 8)],
+            [1, 2, 3],
+        ),
+        ("1d", [datetime(2021, 11, 7), datetime(2021, 11, 8)], [2, 3]),
+    ],
+)
+def test_upsample_crossing_dst(
+    time_zone: str | None,
+    offset: str | None,
+    expected_time: list[datetime],
+    expected_values: list[int],
+) -> None:
+    df = pl.DataFrame(
+        {
+            "time": pl.date_range(
+                datetime(2021, 11, 6), datetime(2021, 11, 8), time_zone=time_zone
+            ),
+            "values": [1, 2, 3],
+        }
+    )
+    result = df.upsample(time_column="time", every="1d", offset=offset)
+    expected = pl.DataFrame(
+        {
+            "time": expected_time,
+            "values": expected_values,
+        }
+    ).with_columns(pl.col("time").dt.replace_time_zone(time_zone))
+    assert_frame_equal(result, expected)
 
 
 @pytest.mark.parametrize(

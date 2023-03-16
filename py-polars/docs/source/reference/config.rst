@@ -13,6 +13,7 @@ Config options
     Config.set_ascii_tables
     Config.set_fmt_float
     Config.set_fmt_str_lengths
+    Config.set_streaming_chunk_size
     Config.set_tbl_cell_alignment
     Config.set_tbl_cols
     Config.set_tbl_column_data_type_inline
