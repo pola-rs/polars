@@ -339,3 +339,20 @@ def test_streaming_unique(monkeypatch: Any, capfd: Any) -> None:
     assert_frame_equal(q.collect(streaming=True), q.collect(streaming=False))
     (_, err) = capfd.readouterr()
     assert "df -> re-project-sink -> sort_multiple" in err
+
+
+@pytest.mark.write_disk()
+def test_streaming_sort(monkeypatch: Any, capfd: Any) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    monkeypatch.setenv("POLARS_FORCE_OOC_SORT", "1")
+    # this creates a lot of duplicate partitions and triggers: #7568
+    assert (
+        pl.Series(np.random.randint(0, 100, 100))
+        .to_frame("s")
+        .lazy()
+        .sort("s")
+        .collect(streaming=True)["s"]
+        .is_sorted()
+    )
+    (_, err) = capfd.readouterr()
+    assert "df -> sort" in err
