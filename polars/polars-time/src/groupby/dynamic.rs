@@ -220,11 +220,6 @@ impl Wrap<&DataFrame> {
         let w = Window::new(options.every, options.period, options.offset);
         let dt = dt.datetime().unwrap();
         let tz = dt.time_zone();
-        let dt = match tz {
-            #[cfg(feature = "timezones")]
-            Some(_) => dt.replace_time_zone(None)?,
-            _ => dt.clone(),
-        };
 
         let mut lower_bound = None;
         let mut upper_bound = None;
@@ -262,6 +257,7 @@ impl Wrap<&DataFrame> {
                 ts,
                 options.closed_window,
                 tu,
+                tz,
                 include_lower_bound,
                 include_upper_bound,
                 options.start_by,
@@ -293,6 +289,7 @@ impl Wrap<&DataFrame> {
                                     ts,
                                     options.closed_window,
                                     tu,
+                                    tz,
                                     include_lower_bound,
                                     include_upper_bound,
                                     options.start_by,
@@ -322,6 +319,7 @@ impl Wrap<&DataFrame> {
                                     ts,
                                     options.closed_window,
                                     tu,
+                                    tz,
                                     include_lower_bound,
                                     include_upper_bound,
                                     options.start_by,
@@ -356,6 +354,7 @@ impl Wrap<&DataFrame> {
                                     ts,
                                     options.closed_window,
                                     tu,
+                                    tz,
                                     include_lower_bound,
                                     include_upper_bound,
                                     options.start_by,
@@ -377,6 +376,7 @@ impl Wrap<&DataFrame> {
                                     ts,
                                     options.closed_window,
                                     tu,
+                                    tz,
                                     include_lower_bound,
                                     include_upper_bound,
                                     options.start_by,
@@ -393,7 +393,7 @@ impl Wrap<&DataFrame> {
             }
         };
 
-        let dt = unsafe { dt.into_series().agg_first(&groups) };
+        let dt = unsafe { dt.clone().into_series().agg_first(&groups) };
         let mut dt = dt.datetime().unwrap().as_ref().clone();
         for key in by.iter_mut() {
             *key = unsafe { key.agg_first(&groups) };
@@ -409,43 +409,17 @@ impl Wrap<&DataFrame> {
 
         if let (true, Some(lower), Some(higher)) = (options.include_boundaries, lower, upper_bound)
         {
-            match tz {
-                #[cfg(feature = "timezones")]
-                Some(tz) => by.push(
-                    lower
-                        .into_datetime(tu, None)
-                        .replace_time_zone(Some(tz))?
-                        .into_series(),
-                ),
-                _ => by.push(lower.into_datetime(tu, None).into_series()),
-            };
-            let s = match tz {
-                #[cfg(feature = "timezones")]
-                Some(tz) => Int64Chunked::new_vec(UP_NAME, higher)
-                    .into_datetime(tu, None)
-                    .replace_time_zone(Some(tz))?
-                    .into_series(),
-                _ => Int64Chunked::new_vec(UP_NAME, higher)
-                    .into_datetime(tu, None)
-                    .into_series(),
-            };
+            by.push(lower.into_datetime(tu, tz.clone()).into_series());
+            let s = Int64Chunked::new_vec(UP_NAME, higher)
+                .into_datetime(tu, tz.clone())
+                .into_series();
             by.push(s);
         }
 
-        match tz {
-            #[cfg(feature = "timezones")]
-            Some(tz) => dt
-                .into_datetime(tu, None)
-                .replace_time_zone(Some(tz))?
-                .into_series()
-                .cast(time_type)
-                .map(|s| (s, by, groups)),
-            _ => dt
-                .into_datetime(tu, None)
-                .into_series()
-                .cast(time_type)
-                .map(|s| (s, by, groups)),
-        }
+        dt.into_datetime(tu, None)
+            .into_series()
+            .cast(time_type)
+            .map(|s| (s, by, groups))
     }
 
     /// Returns: time_keys, keys, groupsproxy
