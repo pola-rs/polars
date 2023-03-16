@@ -1035,53 +1035,59 @@ def test_default_negative_every_offset_dynamic_groupby(tzinfo: ZoneInfo | None) 
     )
     assert_frame_equal(out, expected)
 
+
 @pytest.mark.parametrize(
-    ('rule', 'offset'),
+    ("rule", "offset"),
     [
-        ('1h', timedelta(hours=2)),
-        ('1d', timedelta(days=2)),
-        ('1w', timedelta(weeks=2)),
-    ]
+        ("1h", timedelta(hours=2)),
+        ("1d", timedelta(days=2)),
+        ("1w", timedelta(weeks=2)),
+    ],
 )
 def test_groupby_dynamic_crossing_dst(rule: str, offset: timedelta) -> None:
     start_dt = datetime(2021, 11, 7)
     end_dt = start_dt + offset
-    date_range =pl.date_range(start_dt, end_dt,rule, time_zone="US/Central")
-    df = pl.DataFrame({"time":date_range, "value": range(len(date_range))})
+    date_range = pl.date_range(start_dt, end_dt, rule, time_zone="US/Central")
+    df = pl.DataFrame({"time": date_range, "value": range(len(date_range))})
     result = df.groupby_dynamic("time", every=rule).agg(pl.col("value").mean())
-    expected = pl.DataFrame({
-        'time': date_range,
-        'value': range(len(date_range))
-    }, schema_overrides={'value': pl.Float64}
+    expected = pl.DataFrame(
+        {"time": date_range, "value": range(len(date_range))},
+        schema_overrides={"value": pl.Float64},
     )
     assert_frame_equal(result, expected)
+
 
 def test_groupby_dynamic_startby_monday_crossing_dst() -> None:
     start_dt = datetime(2021, 11, 7)
     end_dt = datetime(2021, 11, 14)
-    date_range =pl.date_range(start_dt, end_dt,'1d', time_zone="US/Central")
-    df = pl.DataFrame({"time":date_range, "value": range(len(date_range))})
-    result = df.groupby_dynamic("time", every='1w', start_by='monday').agg(pl.col("value").mean())
-    expected = pl.DataFrame({
-        'time': [datetime(2021, 11, 1, tzinfo=ZoneInfo('US/Central')), datetime(2021, 11, 8, tzinfo=ZoneInfo('US/Central'))],
-        'value': [0., 4.]
-    },
+    date_range = pl.date_range(start_dt, end_dt, "1d", time_zone="US/Central")
+    df = pl.DataFrame({"time": date_range, "value": range(len(date_range))})
+    result = df.groupby_dynamic("time", every="1w", start_by="monday").agg(
+        pl.col("value").mean()
+    )
+    expected = pl.DataFrame(
+        {
+            "time": [
+                datetime(2021, 11, 1, tzinfo=ZoneInfo("US/Central")),
+                datetime(2021, 11, 8, tzinfo=ZoneInfo("US/Central")),
+            ],
+            "value": [0.0, 4.0],
+        },
     )
     assert_frame_equal(result, expected)
+
 
 def test_groupby_dynamic_monthly_crossing_dst() -> None:
     start_dt = datetime(2021, 11, 1)
     end_dt = datetime(2021, 12, 1)
-    date_range =pl.date_range(start_dt, end_dt, '1mo', time_zone="US/Central")
-    df = pl.DataFrame({"time":date_range, "value": range(len(date_range))})
-    result = df.groupby_dynamic("time", every='1mo').agg(pl.col("value").mean())
-    expected = pl.DataFrame({
-        'time': date_range,
-        'value': range(len(date_range))
-    }, schema_overrides={'value': pl.Float64}
+    date_range = pl.date_range(start_dt, end_dt, "1mo", time_zone="US/Central")
+    df = pl.DataFrame({"time": date_range, "value": range(len(date_range))})
+    result = df.groupby_dynamic("time", every="1mo").agg(pl.col("value").mean())
+    expected = pl.DataFrame(
+        {"time": date_range, "value": range(len(date_range))},
+        schema_overrides={"value": pl.Float64},
     )
     assert_frame_equal(result, expected)
-
 
 
 def test_asof_join_tolerance_grouper() -> None:
