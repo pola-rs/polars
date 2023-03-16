@@ -1,12 +1,10 @@
 use std::cmp::Ordering;
+
+#[cfg(feature = "timezones")]
+use arrow::temporal_conversions::parse_offset;
 use chrono::TimeZone as TimeZoneTrait;
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
-#[cfg(feature = "timezones")]
-use arrow::temporal_conversions::{
-    parse_offset,
-};
-
 use polars_arrow::trusted_len::TrustedLen;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::export::rayon::prelude::*;
@@ -43,18 +41,19 @@ impl Default for StartBy {
     }
 }
 
-fn my_awesome_fn<'a, T: TimeZoneTrait>(
-        bounds_iter: BoundsIter<'a, T>,
-        mut start_offset: usize,
-        time: &[i64],
-        closed_window: ClosedWindow,
-        include_lower_bound: bool,
-        include_upper_bound: bool,
-        lower_bound: &mut Vec<i64>,
-        upper_bound: &mut Vec<i64>,
-        groups: &mut Vec<[u32; 2]>,
-    ) {
-    for bi in bounds_iter{
+#[allow(clippy::too_many_arguments)]
+fn my_awesome_fn<T: TimeZoneTrait>(
+    bounds_iter: BoundsIter<'_, T>,
+    mut start_offset: usize,
+    time: &[i64],
+    closed_window: ClosedWindow,
+    include_lower_bound: bool,
+    include_upper_bound: bool,
+    lower_bound: &mut Vec<i64>,
+    upper_bound: &mut Vec<i64>,
+    groups: &mut Vec<[IdxSize; 2]>,
+) {
+    for bi in bounds_iter {
         let mut skip_window = false;
         // find starting point of window
         while start_offset < time.len() {
@@ -183,11 +182,28 @@ pub fn groupby_windows(
     // ffs, this requires a huge overhaul...
     match tz {
         #[cfg(feature = "timezones")]
-        Some(tz) => {
-            match tz.parse::<Tz>() {
+        Some(tz) => match tz.parse::<Tz>() {
+            Ok(tz) => {
+                my_awesome_fn(
+                    window
+                        .get_overlapping_bounds_iter(boundary, tu, Some(&tz), start_by)
+                        .unwrap(),
+                    start_offset,
+                    time,
+                    closed_window,
+                    include_lower_bound,
+                    include_upper_bound,
+                    &mut lower_bound,
+                    &mut upper_bound,
+                    &mut groups,
+                );
+            }
+            Err(_) => match parse_offset(tz) {
                 Ok(tz) => {
                     my_awesome_fn(
-                        window.get_overlapping_bounds_iter(boundary, tu, Some(&tz), start_by).unwrap(),
+                        window
+                            .get_overlapping_bounds_iter(boundary, tu, Some(&tz), start_by)
+                            .unwrap(),
                         start_offset,
                         time,
                         closed_window,
@@ -195,30 +211,17 @@ pub fn groupby_windows(
                         include_upper_bound,
                         &mut lower_bound,
                         &mut upper_bound,
-                        &mut groups
+                        &mut groups,
                     );
                 }
-                Err(_) => match parse_offset(tz) {
-                    Ok(tz) => {
-                        my_awesome_fn(
-                            window.get_overlapping_bounds_iter(boundary, tu, Some(&tz), start_by).unwrap(),
-                            start_offset,
-                            time,
-                            closed_window,
-                            include_lower_bound,
-                            include_upper_bound,
-                            &mut lower_bound,
-                            &mut upper_bound,
-                            &mut groups
-                        );
-                    }
-                    _ => unreachable!(),
-                },
-            }
-        }
+                _ => unreachable!(),
+            },
+        },
         _ => {
             my_awesome_fn(
-                window.get_overlapping_bounds_iter(boundary, tu, NO_TIMEZONE, start_by).unwrap(),
+                window
+                    .get_overlapping_bounds_iter(boundary, tu, NO_TIMEZONE, start_by)
+                    .unwrap(),
                 start_offset,
                 time,
                 closed_window,
@@ -226,7 +229,7 @@ pub fn groupby_windows(
                 include_upper_bound,
                 &mut lower_bound,
                 &mut upper_bound,
-                &mut groups
+                &mut groups,
             );
         }
     };

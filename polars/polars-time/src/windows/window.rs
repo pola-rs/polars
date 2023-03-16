@@ -57,7 +57,11 @@ impl Window {
     }
 
     #[inline]
-    pub fn truncate_no_offset_ms(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> PolarsResult<i64> {
+    pub fn truncate_no_offset_ms(
+        &self,
+        t: i64,
+        tz: Option<&impl TimeZoneTrait>,
+    ) -> PolarsResult<i64> {
         self.every.truncate_ms(t, tz)
     }
 
@@ -94,7 +98,11 @@ impl Window {
     /// - etc.
     ///
     /// But for 2w3d, it does not make sense to start it on a different lower bound, so we start at `t`
-    pub fn get_earliest_bounds_ns(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> PolarsResult<Bounds> {
+    pub fn get_earliest_bounds_ns(
+        &self,
+        t: i64,
+        tz: Option<&impl TimeZoneTrait>,
+    ) -> PolarsResult<Bounds> {
         let start = if !self.every.months_only()
             && self.every.duration_ns() > NANOSECONDS * SECONDS_IN_DAY
         {
@@ -109,7 +117,11 @@ impl Window {
         Ok(Bounds::new_checked(start, stop))
     }
 
-    pub fn get_earliest_bounds_us(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> PolarsResult<Bounds> {
+    pub fn get_earliest_bounds_us(
+        &self,
+        t: i64,
+        tz: Option<&impl TimeZoneTrait>,
+    ) -> PolarsResult<Bounds> {
         let start = if !self.every.months_only()
             && self.every.duration_us() > MICROSECONDS * SECONDS_IN_DAY
         {
@@ -121,7 +133,11 @@ impl Window {
         Ok(Bounds::new_checked(start, stop))
     }
 
-    pub fn get_earliest_bounds_ms(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> PolarsResult<Bounds> {
+    pub fn get_earliest_bounds_ms(
+        &self,
+        t: i64,
+        tz: Option<&impl TimeZoneTrait>,
+    ) -> PolarsResult<Bounds> {
         let start = if !self.every.months_only()
             && self.every.duration_ms() > MILLISECONDS * SECONDS_IN_DAY
         {
@@ -161,16 +177,16 @@ impl Window {
     }
 }
 
-pub struct BoundsIter<'a, T: TimeZoneTrait>{
+pub struct BoundsIter<'a, T: TimeZoneTrait> {
     window: Window,
     // wrapping boundary
     boundary: Bounds,
     // boundary per window iterator
     bi: Bounds,
     tu: TimeUnit,
-    tz: Option<&'a T>
+    tz: Option<&'a T>,
 }
-impl<'a, T: TimeZoneTrait> BoundsIter<'a, T>{
+impl<'a, T: TimeZoneTrait> BoundsIter<'a, T> {
     fn new(
         window: Window,
         boundary: Bounds,
@@ -231,7 +247,7 @@ impl<'a, T: TimeZoneTrait> BoundsIter<'a, T>{
                             // apply the 'offset'
                             let start = offset(&window.offset, start, Some(tz))?;
                             // and compute the end of the window defined by the 'period'
-                            let stop = offset(&window.period, start, Some(&tz))?;
+                            let stop = offset(&window.period, start, Some(tz))?;
                             boundary.start = start;
                             boundary.stop = stop;
                         }

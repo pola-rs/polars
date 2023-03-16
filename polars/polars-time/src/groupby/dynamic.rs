@@ -247,7 +247,6 @@ impl Wrap<&DataFrame> {
                 }
                 _ => unreachable!(),
             };
-        
 
         let groups = if by.is_empty() {
             let vals = dt.downcast_iter().next().unwrap();
