@@ -35,20 +35,26 @@ impl Window {
         self.offset.add_ns(t, tz)
     }
 
-    pub fn truncate_no_offset_ns(&self, t: i64) -> i64 {
-        // TODO
-        self.every.truncate_ns(t, NO_TIMEZONE).unwrap()
+    pub fn truncate_no_offset_ns(
+        &self,
+        t: i64,
+        tz: Option<&impl TimeZoneTrait>,
+    ) -> PolarsResult<i64> {
+        self.every.truncate_ns(t, tz)
     }
 
-    /// Truncate the given ns timestamp by the window boundary.
+    /// Truncate the given us timestamp by the window boundary.
     pub fn truncate_us(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> PolarsResult<i64> {
         let t = self.every.truncate_us(t, tz)?;
         self.offset.add_us(t, tz)
     }
 
-    pub fn truncate_no_offset_us(&self, t: i64) -> i64 {
-        // TODO remove unwrap once time zone is respected
-        self.every.truncate_us(t, NO_TIMEZONE).unwrap()
+    pub fn truncate_no_offset_us(
+        &self,
+        t: i64,
+        tz: Option<&impl TimeZoneTrait>,
+    ) -> PolarsResult<i64> {
+        self.every.truncate_us(t, tz)
     }
 
     pub fn truncate_ms(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> PolarsResult<i64> {
@@ -238,7 +244,7 @@ impl<'a, T: TimeZoneTrait> BoundsIter<'a, T> {
                     // find beginning of the week.
                     let mut boundary = boundary;
                     let dt = from(boundary.start);
-                    match tz {
+                    (boundary.start, boundary.stop) = match tz {
                         Some(tz) => {
                             let dt = dt.and_local_timezone(tz.clone()).unwrap();
                             let dt = dt.beginning_of_week();
@@ -248,8 +254,7 @@ impl<'a, T: TimeZoneTrait> BoundsIter<'a, T> {
                             let start = offset(&window.offset, start, Some(tz))?;
                             // and compute the end of the window defined by the 'period'
                             let stop = offset(&window.period, start, Some(tz))?;
-                            boundary.start = start;
-                            boundary.stop = stop;
+                            (start, stop)
                         }
                         None => {
                             let tz = chrono::Utc;
@@ -261,8 +266,7 @@ impl<'a, T: TimeZoneTrait> BoundsIter<'a, T> {
                             let start = offset(&window.offset, start, None::<&T>).unwrap();
                             // and compute the end of the window defined by the 'period'
                             let stop = offset(&window.period, start, None::<&T>).unwrap();
-                            boundary.start = start;
-                            boundary.stop = stop;
+                            (start, stop)
                         }
                     };
                     boundary
@@ -290,7 +294,8 @@ impl<'a, T: TimeZoneTrait> Iterator for BoundsIter<'a, T> {
         if self.bi.start < self.boundary.stop {
             let out = self.bi;
             match self.tu {
-                // TODO remove unwrap once time zone is respected
+                // TODO: find some way to propagate error instead of unwrapping?
+                // Issue is that `next` needs to return `Option`.
                 TimeUnit::Nanoseconds => {
                     self.bi.start = self.window.every.add_ns(self.bi.start, self.tz).unwrap();
                     self.bi.stop = self.window.every.add_ns(self.bi.stop, self.tz).unwrap();

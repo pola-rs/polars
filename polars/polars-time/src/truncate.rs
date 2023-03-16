@@ -23,7 +23,7 @@ impl PolarsTruncate for DatetimeChunked {
 
         self.apply_on_tz_corrected(|ca| {
             Ok(ca
-                // TODO
+                // TODO remove unwrap once time zone is respected
                 .apply(|t| func(&w, t, NO_TIMEZONE).unwrap())
                 .into_datetime(self.time_unit(), self.time_zone().clone()))
         })
@@ -38,7 +38,7 @@ impl PolarsTruncate for DateChunked {
         let w = Window::new(every, every, offset);
         self.apply(|t| {
             const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
-            // TODO
+            // TODO remove unwrap once time zone is respected
             (w.truncate_ms(MSECS_IN_DAY * t as i64, NO_TIMEZONE).unwrap() / MSECS_IN_DAY) as i32
         })
         .into_date()

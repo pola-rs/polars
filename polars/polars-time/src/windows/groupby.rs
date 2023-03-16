@@ -42,7 +42,7 @@ impl Default for StartBy {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn my_awesome_fn<T: TimeZoneTrait>(
+fn update_groups_and_bounds<T: TimeZoneTrait>(
     bounds_iter: BoundsIter<'_, T>,
     mut start_offset: usize,
     time: &[i64],
@@ -179,12 +179,11 @@ pub fn groupby_windows(
     };
     let start_offset = 0;
 
-    // ffs, this requires a huge overhaul...
     match tz {
         #[cfg(feature = "timezones")]
         Some(tz) => match tz.parse::<Tz>() {
             Ok(tz) => {
-                my_awesome_fn(
+                update_groups_and_bounds(
                     window
                         .get_overlapping_bounds_iter(boundary, tu, Some(&tz), start_by)
                         .unwrap(),
@@ -200,7 +199,7 @@ pub fn groupby_windows(
             }
             Err(_) => match parse_offset(tz) {
                 Ok(tz) => {
-                    my_awesome_fn(
+                    update_groups_and_bounds(
                         window
                             .get_overlapping_bounds_iter(boundary, tu, Some(&tz), start_by)
                             .unwrap(),
@@ -218,7 +217,7 @@ pub fn groupby_windows(
             },
         },
         _ => {
-            my_awesome_fn(
+            update_groups_and_bounds(
                 window
                     .get_overlapping_bounds_iter(boundary, tu, NO_TIMEZONE, start_by)
                     .unwrap(),

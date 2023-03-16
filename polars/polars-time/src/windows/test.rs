@@ -147,7 +147,7 @@ fn test_offset() {
         Duration::parse("-2m"),
     );
 
-    let b = w.get_earliest_bounds_ns(t, &None);
+    let b = w.get_earliest_bounds_ns(t, NO_TIMEZONE).unwrap();
     let start = NaiveDate::from_ymd_opt(2020, 1, 1)
         .unwrap()
         .and_hms_opt(23, 58, 0)
@@ -187,7 +187,7 @@ fn test_boundaries() {
     );
 
     // earliest bound is first datapoint: 2021-12-16 00:00:00
-    let b = w.get_earliest_bounds_ns(ts[0], &None);
+    let b = w.get_earliest_bounds_ns(ts[0], NO_TIMEZONE).unwrap();
     assert_eq!(b.start, start.timestamp_nanos());
 
     // test closed: "both" (includes both ends of the interval)
@@ -363,7 +363,7 @@ fn test_boundaries_2() {
     let w = Window::new(Duration::parse("2h"), Duration::parse("1h"), offset);
 
     // earliest bound is first datapoint: 2021-12-16 00:00:00 + 30m offset: 2021-12-16 00:30:00
-    let b = w.get_earliest_bounds_ns(ts[0], &None);
+    let b = w.get_earliest_bounds_ns(ts[0], NO_TIMEZONE).unwrap();
 
     assert_eq!(b.start, start.timestamp_nanos() + offset.duration_ns());
 
@@ -471,7 +471,7 @@ fn test_boundaries_ms() {
     );
 
     // earliest bound is first datapoint: 2021-12-16 00:00:00
-    let b = w.get_earliest_bounds_ms(ts[0], &None);
+    let b = w.get_earliest_bounds_ms(ts[0], NO_TIMEZONE).unwrap();
     assert_eq!(b.start, start.timestamp_millis());
 
     // test closed: "both" (includes both ends of the interval)
