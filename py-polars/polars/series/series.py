@@ -3820,10 +3820,38 @@ class Series:
         """
         Apply a custom/user-defined function (UDF) over elements in this Series.
 
-        Returns a new Series.
+        If the function returns a different datatype, the return_dtype arg should
+        be set, otherwise the method will fail.
 
-        If the function returns another datatype, the return_dtype arg should be set,
-        otherwise the method will fail.
+        Implementing logic using a Python function is almost always _significantly_
+        slower and more memory intensive than implementing the same logic using
+        the native expression API because:
+
+        - The native expression engine runs in Rust; UDFs run in Python.
+        - Use of Python UDFs forces the DataFrame to be materialized in memory.
+        - Polars-native expressions can be parallelised (UDFs typically cannot).
+        - Polars-native expressions can be logically optimised (UDFs cannot).
+
+        Wherever possible you should strongly prefer the native expression API
+        to achieve the best performance.
+
+        Parameters
+        ----------
+        function
+            Custom function or lambda.
+        return_dtype
+            Output datatype. If none is given, the same datatype as this Series will be
+            used.
+        skip_nulls
+            Nulls will be skipped and not passed to the python function.
+            This is faster because python can be skipped and because we call
+            more specialized functions.
+
+        Notes
+        -----
+        If your function is expensive and you don't want it to be called more than
+        once for a given input, consider applying an ``@lru_cache`` decorator to it.
+        With suitable data you may achieve order-of-magnitude speedups (or more).
 
         Examples
         --------
@@ -3836,18 +3864,6 @@ class Series:
                 12
                 13
         ]
-
-        Parameters
-        ----------
-        function
-            function or lambda.
-        return_dtype
-            Output datatype. If none is given, the same datatype as this Series will be
-            used.
-        skip_nulls
-            Nulls will be skipped and not passed to the python function.
-            This is faster because python can be skipped and because we call
-            more specialized functions.
 
         Returns
         -------
