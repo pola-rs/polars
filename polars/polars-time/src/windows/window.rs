@@ -2,8 +2,6 @@
 use chrono::NaiveDateTime;
 use chrono::TimeZone as TimeZoneTrait;
 #[cfg(feature = "timezones")]
-use chrono_tz::Tz;
-#[cfg(feature = "timezones")]
 use now::DateTimeNow;
 use polars_arrow::export::arrow::temporal_conversions::*;
 use polars_core::prelude::*;

@@ -4,14 +4,6 @@ use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::POOL;
-#[cfg(feature = "timezones")]
-use chrono_tz::Tz;
-#[cfg(feature = "timezones")]
-use arrow::temporal_conversions::{
-    parse_offset, timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
-};
-#[cfg(feature = "timezones")]
-use chrono::TimeZone as TimeZoneTrait;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;

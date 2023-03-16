@@ -345,36 +345,61 @@ impl Duration {
             // truncate by ns/us/ms
             (0, 0, 0, _) => {
                 let duration = nsecs_to_unit(self.nsecs);
-                let mut remainder = match tz {
-                    #[cfg(feature = "timezones")]
-                    Some(tz) => {
-                        datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz))
-                            % duration
-                    }
-                    _ => t % duration,
-                };
+                let mut remainder = t % duration;
                 if remainder < 0 {
                     remainder += duration
                 }
-                Ok(t - remainder)
+                match tz {
+                    #[cfg(feature = "timezones")]
+                    Some(tz) => {
+                        Ok(datetime_to_timestamp(localize_datetime(timestamp_to_datetime(t - remainder), tz)?))
+                    }
+                    _ => Ok(t - remainder)
+                }
             }
             // truncate by weeks
             (0, _, 0, 0) => {
-                let dt = timestamp_to_datetime(t).date();
+                let dt = match tz {
+                    #[cfg(feature = "timezones")]
+                    Some(tz) => {
+                        unlocalize_datetime(timestamp_to_datetime(t), tz).date()
+                    }
+                    _ => timestamp_to_datetime(t).date(),
+                };
                 let week_timestamp = dt.week(Weekday::Mon);
                 let first_day_of_week =
                     week_timestamp.first_day() - chrono::Duration::weeks(self.weeks - 1);
-
-                Ok(datetime_to_timestamp(first_day_of_week.and_time(NaiveTime::default())))
+                match tz {
+                    #[cfg(feature = "timezones")]
+                    Some(tz) => {
+                        Ok(datetime_to_timestamp(localize_datetime(first_day_of_week.and_time(NaiveTime::default()), tz)?))
+                    }
+                    _ => {
+                        Ok(datetime_to_timestamp(first_day_of_week.and_time(NaiveTime::default())))
+                    }
+                }
             }
             // truncate by days
             (0, 0, _, 0) => {
+                let t = match tz {
+                    #[cfg(feature = "timezones")]
+                    Some(tz) => {
+                        datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz))
+                    }
+                    _ => t,
+                };
                 let duration = self.days * nsecs_to_unit(NS_DAY);
                 let mut remainder = t % duration;
                 if remainder < 0 {
                     remainder += duration
                 }
-                Ok(t - remainder)
+                match tz {
+                    #[cfg(feature = "timezones")]
+                    Some(tz) => {
+                        Ok(datetime_to_timestamp(localize_datetime(timestamp_to_datetime(t - remainder), tz)?))
+                    }
+                    _ => Ok(t - remainder)
+                }
             }
             // truncate by months
             (_, 0, 0, 0) => {
