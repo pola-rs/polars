@@ -250,6 +250,11 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
                 ca.apply_kernel(&|arr| Box::new(replace::replace_lit_n_char(arr, n, pat, val)))
             );
         }
+        if pat.len() == val.len() {
+            return Ok(
+                ca.apply_kernel(&|arr| Box::new(replace::replace_lit_n_str(arr, n, pat, val)))
+            );
+        }
 
         // amortize allocation
         let mut buf = String::new();
@@ -297,6 +302,11 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
             return Ok(
                 ca.apply_kernel(&|arr| Box::new(replace::replace_lit_single_char(arr, pat, val)))
             );
+        }
+        if pat.len() == val.len() {
+            return Ok(ca.apply_kernel(&|arr| {
+                Box::new(replace::replace_lit_n_str(arr, usize::MAX, pat, val))
+            }));
         }
 
         // amortize allocation

@@ -41,6 +41,9 @@ pub(super) fn replace_lit_n_char(
     let end = (offsets[offsets.len() - 1]) as usize;
 
     let mut values = values.as_slice()[start..end].to_vec();
+    // ensure the offsets are corrected in case of sliced arrays
+    let offsets = correct_offsets(offsets, start as i64);
+
     let mut offsets_iter = offsets.iter();
     // ignore the first
     let _ = offsets_iter.next().unwrap();
@@ -63,7 +66,49 @@ pub(super) fn replace_lit_n_char(
             }
         }
     }
-    // ensure the offsets are corrected in case of sliced arrays
+    unsafe { Utf8Array::new_unchecked(arr.data_type().clone(), offsets, values.into(), validity) }
+}
+
+pub(super) fn replace_lit_n_str(
+    arr: &Utf8Array<i64>,
+    n: usize,
+    pat: &str,
+    val: &str,
+) -> Utf8Array<i64> {
+    assert_eq!(pat.len(), val.len());
+    let values = arr.values();
+    let offsets = arr.offsets().clone();
+    let validity = arr.validity().cloned();
+    let start = offsets[0] as usize;
+    let end = (offsets[offsets.len() - 1]) as usize;
+
+    let mut values = values.as_slice()[start..end].to_vec();
+    // // ensure the offsets are corrected in case of sliced arrays
     let offsets = correct_offsets(offsets, start as i64);
+    let mut offsets_iter = offsets.iter();
+
+    // overwrite previous every iter
+    let mut previous = *offsets_iter.next().unwrap();
+
+    let values_str = unsafe { std::str::from_utf8_unchecked_mut(&mut values) };
+    for &end in offsets_iter {
+        let substr = unsafe { values_str.get_unchecked_mut(previous as usize..end as usize) };
+
+        for (start, part) in substr.match_indices(pat).take(n) {
+            let len = part.len();
+            // safety:
+            // this violates the aliasing rules
+            // if this become a problem we must implement our own `match_indices`
+            // that works on pointers instead of references.
+            unsafe {
+                let bytes = std::slice::from_raw_parts_mut(
+                    substr.as_bytes().as_ptr().add(start) as *mut u8,
+                    len,
+                );
+                bytes.copy_from_slice(val.as_bytes());
+            }
+        }
+        previous = end;
+    }
     unsafe { Utf8Array::new_unchecked(arr.data_type().clone(), offsets, values.into(), validity) }
 }
