@@ -43,8 +43,8 @@ from polars.datatypes import (
 )
 from polars.dependencies import subprocess
 from polars.internals import selection_to_pyexpr_list
-from polars.internals.slice import LazyPolarsSlice
 from polars.lazyframe.groupby import LazyGroupBy
+from polars.slice import LazyPolarsSlice
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import (
     deprecate_nonkeyword_arguments,

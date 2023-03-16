@@ -62,7 +62,6 @@ from polars.internals.construction import (
     sequence_to_pyseries,
     series_to_pyseries,
 )
-from polars.internals.slice import PolarsSlice
 from polars.series.binary import BinaryNameSpace
 from polars.series.categorical import CatNameSpace
 from polars.series.datetime import DateTimeNameSpace
@@ -70,6 +69,7 @@ from polars.series.list import ListNameSpace
 from polars.series.string import StringNameSpace
 from polars.series.struct import StructNameSpace
 from polars.series.utils import expr_dispatch, get_ffi_func
+from polars.slice import PolarsSlice
 from polars.utils.convert import (
     _date_to_pl_date,
     _datetime_to_pl_timestamp,

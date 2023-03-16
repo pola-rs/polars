@@ -76,7 +76,7 @@ from polars.internals.io_excel import (
     _xl_setup_workbook,
     _xl_unique_table_name,
 )
-from polars.internals.slice import PolarsSlice
+from polars.slice import PolarsSlice
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import (
     deprecate_nonkeyword_arguments,
