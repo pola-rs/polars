@@ -71,7 +71,7 @@ pub(super) fn sort_ooc(
         })
         .collect::<std::io::Result<Vec<_>>>()?;
 
-    let source = SortSource::new(files, idx, descending, slice, partitions);
+    let source = SortSource::new(files, idx, descending, slice);
     Ok(FinalizedSink::Source(Box::new(source)))
 }
 
