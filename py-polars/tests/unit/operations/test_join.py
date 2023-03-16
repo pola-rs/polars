@@ -12,7 +12,7 @@ import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.internals.type_aliases import JoinStrategy
+    from polars.type_aliases import JoinStrategy
 
 
 def test_semi_anti_join() -> None:

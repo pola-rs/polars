@@ -13,22 +13,8 @@ from polars.expr import (
     selection_to_pyexpr_list,
     wrap_expr,
 )
-from polars.internals.anonymous_scan import (
-    _deser_and_exec,
-    _scan_ipc_fsspec,
-    _scan_parquet_fsspec,
-    _scan_pyarrow_dataset,
-)
-from polars.internals.batched import BatchedCsvReader
-from polars.internals.functions import concat, date_range
-from polars.internals.io import (
-    _is_local_file,
-    _prepare_file_arg,
-    _update_columns,
-    read_ipc_schema,
-    read_parquet_schema,
-)
-from polars.internals.lazy_functions import (
+from polars.functions.eager import concat, date_range
+from polars.functions.lazy import (
     all,
     arange,
     arg_sort_by,
@@ -46,7 +32,21 @@ from polars.internals.lazy_functions import (
     select,
     struct,
 )
-from polars.internals.whenthen import WhenThen, WhenThenThen, when
+from polars.functions.whenthen import WhenThen, WhenThenThen, when
+from polars.internals.anonymous_scan import (
+    _deser_and_exec,
+    _scan_ipc_fsspec,
+    _scan_parquet_fsspec,
+    _scan_pyarrow_dataset,
+)
+from polars.internals.batched import BatchedCsvReader
+from polars.internals.io import (
+    _is_local_file,
+    _prepare_file_arg,
+    _update_columns,
+    read_ipc_schema,
+    read_parquet_schema,
+)
 from polars.lazyframe import LazyFrame, wrap_ldf
 from polars.series import Series, wrap_s
 

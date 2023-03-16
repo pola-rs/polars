@@ -21,8 +21,7 @@ from polars.testing import (
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
-    from polars.datatypes import PolarsTemporalType
-    from polars.internals.type_aliases import TimeUnit
+    from polars.type_aliases import PolarsTemporalType, TimeUnit
 else:
     from polars.utils.convert import get_zoneinfo as ZoneInfo
 

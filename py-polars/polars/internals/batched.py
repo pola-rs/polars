@@ -21,8 +21,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     from polars.dataframe.frame import DataFrame
-    from polars.datatypes import PolarsDataType, SchemaDict
-    from polars.internals.type_aliases import CsvEncoding
+    from polars.type_aliases import CsvEncoding, PolarsDataType, SchemaDict
 
 
 class BatchedCsvReader:

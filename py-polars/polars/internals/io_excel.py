@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from xlsxwriter.worksheet import Worksheet
 
     from polars.dataframe.frame import DataFrame
-    from polars.datatypes import OneOrMoreDataTypes, PolarsDataType
+    from polars.type_aliases import OneOrMoreDataTypes, PolarsDataType
 
     if sys.version_info >= (3, 10):
         from typing import Literal, TypeAlias

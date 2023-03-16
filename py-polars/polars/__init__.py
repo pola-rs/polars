@@ -42,7 +42,6 @@ from polars.datatypes import (
     List,
     Null,
     Object,
-    PolarsDataType,
     Struct,
     Time,
     UInt8,
@@ -66,7 +65,7 @@ from polars.exceptions import (
     StructFieldNotFoundError,
 )
 from polars.expr.expr import Expr
-from polars.internals.functions import (
+from polars.functions.eager import (
     align_frames,
     concat,
     cut,
@@ -75,8 +74,7 @@ from polars.internals.functions import (
     ones,
     zeros,
 )
-from polars.internals.io import read_ipc_schema, read_parquet_schema
-from polars.internals.lazy_functions import (
+from polars.functions.lazy import (
     all,
     any,
     apply,
@@ -125,10 +123,11 @@ from polars.internals.lazy_functions import (
     tail,
     var,
 )
-from polars.internals.lazy_functions import date_ as date
-from polars.internals.lazy_functions import datetime_ as datetime
-from polars.internals.lazy_functions import list_ as list
-from polars.internals.whenthen import when
+from polars.functions.lazy import date_ as date
+from polars.functions.lazy import datetime_ as datetime
+from polars.functions.lazy import list_ as list
+from polars.functions.whenthen import when
+from polars.internals.io import read_ipc_schema, read_parquet_schema
 from polars.io import (
     read_avro,
     read_csv,
@@ -156,6 +155,7 @@ from polars.series import wrap_s  # noqa: F401
 from polars.series.series import Series
 from polars.sql import SQLContext
 from polars.string_cache import StringCache, toggle_string_cache, using_string_cache
+from polars.type_aliases import PolarsDataType
 from polars.utils import (
     build_info,
     get_idx_type,
@@ -207,7 +207,6 @@ __all__ = [
     "List",
     "Null",
     "Object",
-    "PolarsDataType",
     "Struct",
     "Time",
     "UInt16",
@@ -223,6 +222,8 @@ __all__ = [
     "INTEGER_DTYPES",
     "NUMERIC_DTYPES",
     "TEMPORAL_DTYPES",
+    # polars.type_aliases
+    "PolarsDataType",
     # polars.io
     "read_avro",
     "read_csv",

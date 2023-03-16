@@ -6,7 +6,7 @@ from polars import internals as pli
 
 if TYPE_CHECKING:
     from polars.expr.expr import Expr
-    from polars.internals.type_aliases import CategoricalOrdering
+    from polars.type_aliases import CategoricalOrdering
 
 
 class ExprCatNameSpace:

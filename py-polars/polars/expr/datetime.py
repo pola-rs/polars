@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from datetime import timedelta
 
     from polars.expr.expr import Expr
-    from polars.internals.type_aliases import EpochTimeUnit, TimeUnit
+    from polars.type_aliases import EpochTimeUnit, TimeUnit
 
 
 @redirect(

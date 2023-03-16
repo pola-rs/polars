@@ -13,7 +13,7 @@ from polars.utils.various import normalise_filepath
 if TYPE_CHECKING:
     from io import BytesIO
 
-    from polars.internals.type_aliases import ParallelStrategy
+    from polars.type_aliases import ParallelStrategy
 
 
 @deprecate_nonkeyword_arguments()

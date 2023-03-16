@@ -55,9 +55,9 @@ if TYPE_CHECKING:
     from hypothesis.strategies import DrawFn, SearchStrategy
 
     from polars.dataframe.frame import DataFrame
-    from polars.datatypes import OneOrMoreDataTypes, PolarsDataType
     from polars.lazyframe.frame import LazyFrame
     from polars.series.series import Series
+    from polars.type_aliases import OneOrMoreDataTypes, PolarsDataType
 
 
 # Default profile (eg: running locally)

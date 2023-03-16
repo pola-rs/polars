@@ -76,7 +76,7 @@ from polars.internals.io_excel import (
     _xl_setup_workbook,
     _xl_unique_table_name,
 )
-from polars.internals.slice import PolarsSlice
+from polars.slice import PolarsSlice
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import (
     deprecate_nonkeyword_arguments,
@@ -109,14 +109,9 @@ if TYPE_CHECKING:
     from pyarrow.interchange.dataframe import _PyArrowDataFrame
     from xlsxwriter import Workbook
 
-    from polars.datatypes import (
-        OneOrMoreDataTypes,
-        PolarsDataType,
-        SchemaDefinition,
-        SchemaDict,
-    )
     from polars.internals.io_excel import ColumnTotalsDefinition, ConditionalFormatDict
-    from polars.internals.type_aliases import (
+    from polars.series.series import Series
+    from polars.type_aliases import (
         AsofJoinStrategy,
         AvroCompression,
         ClosedInterval,
@@ -130,17 +125,20 @@ if TYPE_CHECKING:
         IpcCompression,
         JoinStrategy,
         NullStrategy,
+        OneOrMoreDataTypes,
         Orientation,
         ParallelStrategy,
         ParquetCompression,
         PivotAgg,
+        PolarsDataType,
         RollingInterpolationMethod,
+        SchemaDefinition,
+        SchemaDict,
         SizeUnit,
         StartBy,
         UniqueKeepStrategy,
         UnstackDirection,
     )
-    from polars.series.series import Series
 
     if sys.version_info >= (3, 8):
         from typing import Literal

@@ -25,7 +25,7 @@ with suppress(ImportError):
 
 if TYPE_CHECKING:
     from polars.dataframe.frame import DataFrame
-    from polars.datatypes import PolarsDataType
+    from polars.type_aliases import PolarsDataType
 
 
 def _check_empty(b: BytesIO, context: str, read_position: int | None = None) -> BytesIO:

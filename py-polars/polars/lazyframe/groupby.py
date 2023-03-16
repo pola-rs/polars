@@ -8,9 +8,8 @@ from polars.utils.decorators import deprecated_alias
 
 if TYPE_CHECKING:
     from polars.dataframe.frame import DataFrame
-    from polars.datatypes import SchemaDict
-    from polars.internals.type_aliases import IntoExpr, RollingInterpolationMethod
     from polars.polars import PyLazyGroupBy
+    from polars.type_aliases import IntoExpr, RollingInterpolationMethod, SchemaDict
 
 LDF = TypeVar("LDF", bound="pli.LazyFrame")
 
@@ -368,7 +367,7 @@ class LazyGroupBy(Generic[LDF]):
         └────────┴───────┘
 
         """
-        return self.agg(pli.lazy_functions.count())
+        return self.agg(pli.count())
 
     def first(self) -> LDF:
         """

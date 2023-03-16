@@ -43,8 +43,8 @@ from polars.datatypes import (
 )
 from polars.dependencies import subprocess
 from polars.internals import selection_to_pyexpr_list
-from polars.internals.slice import LazyPolarsSlice
 from polars.lazyframe.groupby import LazyGroupBy
+from polars.slice import LazyPolarsSlice
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import (
     deprecate_nonkeyword_arguments,
@@ -69,9 +69,9 @@ if TYPE_CHECKING:
     import pyarrow as pa
 
     from polars.dataframe.frame import DataFrame
-    from polars.datatypes import PolarsDataType, SchemaDefinition, SchemaDict
     from polars.expr.expr import Expr
-    from polars.internals.type_aliases import (
+    from polars.series.series import Series
+    from polars.type_aliases import (
         AsofJoinStrategy,
         ClosedInterval,
         CsvEncoding,
@@ -81,13 +81,15 @@ if TYPE_CHECKING:
         JoinStrategy,
         Orientation,
         ParallelStrategy,
+        PolarsDataType,
         PolarsExprType,
         PythonLiteral,
         RollingInterpolationMethod,
+        SchemaDefinition,
+        SchemaDict,
         StartBy,
         UniqueKeepStrategy,
     )
-    from polars.series.series import Series
 
     if sys.version_info >= (3, 10):
         from typing import Concatenate, ParamSpec

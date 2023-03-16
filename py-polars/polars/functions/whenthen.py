@@ -11,8 +11,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     from polars.expr.expr import Expr
-    from polars.internals.type_aliases import PolarsExprType, PythonLiteral
     from polars.series.series import Series
+    from polars.type_aliases import PolarsExprType, PythonLiteral
 
 
 class WhenThenThen:

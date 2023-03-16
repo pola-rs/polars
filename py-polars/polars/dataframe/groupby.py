@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from datetime import timedelta
 
     from polars.dataframe import DataFrame
-    from polars.internals.type_aliases import (
+    from polars.type_aliases import (
         ClosedInterval,
         IntoExpr,
         RollingInterpolationMethod,
@@ -483,7 +483,7 @@ class GroupBy(Generic[DF]):
         └────────┴───────┘
 
         """
-        return self.agg(pli.lazy_functions.count())
+        return self.agg(pli.count())
 
     def first(self) -> DF:
         """

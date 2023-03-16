@@ -10,7 +10,7 @@ from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.internals.type_aliases import TimeUnit
+    from polars.type_aliases import TimeUnit
 
 
 @pytest.fixture()
