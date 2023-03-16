@@ -9,7 +9,9 @@ from polars.utils.decorators import redirect
 from polars.utils.various import sphinx_accessor
 
 if TYPE_CHECKING:
+    from polars.dataframe.frame import DataFrame
     from polars.polars import PySeries
+    from polars.series.series import Series
 elif os.getenv("BUILDING_SPHINX_DOCS"):
     property = sphinx_accessor
 
@@ -21,10 +23,10 @@ class StructNameSpace:
 
     _accessor = "struct"
 
-    def __init__(self, series: pli.Series):
+    def __init__(self, series: Series):
         self._s: PySeries = series._s
 
-    def __getitem__(self, item: int | str) -> pli.Series:
+    def __getitem__(self, item: int | str) -> Series:
         if isinstance(item, int):
             return self.field(self.fields[item])
         elif isinstance(item, str):
@@ -42,7 +44,7 @@ class StructNameSpace:
             return []
         return self._s.struct_fields()
 
-    def field(self, name: str) -> pli.Series:
+    def field(self, name: str) -> Series:
         """
         Retrieve one of the fields of this `Struct` as a new Series.
 
@@ -53,7 +55,7 @@ class StructNameSpace:
 
         """
 
-    def rename_fields(self, names: Sequence[str]) -> pli.Series:
+    def rename_fields(self, names: Sequence[str]) -> Series:
         """
         Rename the fields of the struct.
 
@@ -64,7 +66,7 @@ class StructNameSpace:
 
         """
 
-    def unnest(self) -> pli.DataFrame:
+    def unnest(self) -> DataFrame:
         """
         Convert this struct Series to a DataFrame with a separate column for each field.
 

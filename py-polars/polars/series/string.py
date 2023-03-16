@@ -7,8 +7,10 @@ from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     from polars.datatypes import PolarsDataType, PolarsTemporalType
+    from polars.expr.expr import Expr
     from polars.internals.type_aliases import TransferEncoding
     from polars.polars import PySeries
+    from polars.series.series import Series
 
 
 @expr_dispatch
@@ -17,7 +19,7 @@ class StringNameSpace:
 
     _accessor = "str"
 
-    def __init__(self, series: pli.Series):
+    def __init__(self, series: Series):
         self._s: PySeries = series._s
 
     def strptime(
@@ -29,7 +31,7 @@ class StringNameSpace:
         cache: bool = True,
         tz_aware: bool = False,
         utc: bool = False,
-    ) -> pli.Series:
+    ) -> Series:
         """
         Parse a Series of dtype Utf8 to a Date/Datetime Series.
 
@@ -109,7 +111,7 @@ class StringNameSpace:
 
         """
 
-    def lengths(self) -> pli.Series:
+    def lengths(self) -> Series:
         """
         Get length of the string values in the Series (as number of bytes).
 
@@ -137,7 +139,7 @@ class StringNameSpace:
 
         """
 
-    def n_chars(self) -> pli.Series:
+    def n_chars(self) -> Series:
         """
         Get length of the string values in the Series (as number of chars).
 
@@ -165,7 +167,7 @@ class StringNameSpace:
 
         """
 
-    def concat(self, delimiter: str = "-") -> pli.Series:
+    def concat(self, delimiter: str = "-") -> Series:
         """
         Vertically concat the values in the Series to a single string value.
 
@@ -186,8 +188,8 @@ class StringNameSpace:
         """
 
     def contains(
-        self, pattern: str | pli.Expr, literal: bool = False, strict: bool = True
-    ) -> pli.Series:
+        self, pattern: str | Expr, literal: bool = False, strict: bool = True
+    ) -> Series:
         """
         Check if strings in Series contain a substring that matches a regex.
 
@@ -229,7 +231,7 @@ class StringNameSpace:
 
         """
 
-    def ends_with(self, sub: str | pli.Expr) -> pli.Series:
+    def ends_with(self, sub: str | Expr) -> Series:
         """
         Check if string values end with a substring.
 
@@ -257,7 +259,7 @@ class StringNameSpace:
 
         """
 
-    def starts_with(self, sub: str | pli.Expr) -> pli.Series:
+    def starts_with(self, sub: str | Expr) -> Series:
         """
         Check if string values start with a substring.
 
@@ -285,7 +287,7 @@ class StringNameSpace:
 
         """
 
-    def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> pli.Series:
+    def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> Series:
         """
         Decode a value using the provided encoding.
 
@@ -299,7 +301,7 @@ class StringNameSpace:
 
         """
 
-    def encode(self, encoding: TransferEncoding) -> pli.Series:
+    def encode(self, encoding: TransferEncoding) -> Series:
         """
         Encode a value using the provided encoding.
 
@@ -326,7 +328,7 @@ class StringNameSpace:
 
         """
 
-    def json_extract(self, dtype: PolarsDataType | None = None) -> pli.Series:
+    def json_extract(self, dtype: PolarsDataType | None = None) -> Series:
         """
         Parse string values as JSON.
 
@@ -357,7 +359,7 @@ class StringNameSpace:
 
         """
 
-    def json_path_match(self, json_path: str) -> pli.Series:
+    def json_path_match(self, json_path: str) -> Series:
         """
         Extract the first match of json string with provided JSONPath expression.
 
@@ -395,7 +397,7 @@ class StringNameSpace:
 
         """
 
-    def extract(self, pattern: str, group_index: int = 1) -> pli.Series:
+    def extract(self, pattern: str, group_index: int = 1) -> Series:
         r"""
         Extract the target capture group from provided patterns.
 
@@ -437,7 +439,7 @@ class StringNameSpace:
 
         """
 
-    def extract_all(self, pattern: str | pli.Series) -> pli.Series:
+    def extract_all(self, pattern: str | Series) -> Series:
         r"""
         Extracts all matches for the given regex pattern.
 
@@ -467,7 +469,7 @@ class StringNameSpace:
 
         """
 
-    def count_match(self, pattern: str) -> pli.Series:
+    def count_match(self, pattern: str) -> Series:
         r"""
         Count all successive non-overlapping regex matches.
 
@@ -494,7 +496,7 @@ class StringNameSpace:
 
         """
 
-    def split(self, by: str, inclusive: bool = False) -> pli.Series:
+    def split(self, by: str, inclusive: bool = False) -> Series:
         """
         Split the string by a substring.
 
@@ -511,7 +513,7 @@ class StringNameSpace:
 
         """
 
-    def split_exact(self, by: str, n: int, inclusive: bool = False) -> pli.Series:
+    def split_exact(self, by: str, n: int, inclusive: bool = False) -> Series:
         """
         Split the string by a substring using ``n`` splits.
 
@@ -570,7 +572,7 @@ class StringNameSpace:
 
         """
 
-    def splitn(self, by: str, n: int) -> pli.Series:
+    def splitn(self, by: str, n: int) -> Series:
         """
         Split the string by a substring, restricted to returning at most ``n`` items.
 
@@ -631,7 +633,7 @@ class StringNameSpace:
 
     def replace(
         self, pattern: str, value: str, literal: bool = False, *, n: int = 1
-    ) -> pli.Series:
+    ) -> Series:
         r"""
         Replace first matching regex/literal substring with a new string value.
 
@@ -663,9 +665,7 @@ class StringNameSpace:
 
         """
 
-    def replace_all(
-        self, pattern: str, value: str, literal: bool = False
-    ) -> pli.Series:
+    def replace_all(self, pattern: str, value: str, literal: bool = False) -> Series:
         """
         Replace all matching regex/literal substrings with a new string value.
 
@@ -695,7 +695,7 @@ class StringNameSpace:
 
         """
 
-    def strip(self, matches: str | None = None) -> pli.Series:
+    def strip(self, matches: str | None = None) -> Series:
         r"""
         Remove leading and trailing characters.
 
@@ -730,7 +730,7 @@ class StringNameSpace:
 
         """
 
-    def lstrip(self, matches: str | None = None) -> pli.Series:
+    def lstrip(self, matches: str | None = None) -> Series:
         r"""
         Remove leading characters.
 
@@ -765,7 +765,7 @@ class StringNameSpace:
 
         """
 
-    def rstrip(self, matches: str | None = None) -> pli.Series:
+    def rstrip(self, matches: str | None = None) -> Series:
         r"""
         Remove trailing characters.
 
@@ -800,7 +800,7 @@ class StringNameSpace:
 
         """
 
-    def zfill(self, alignment: int) -> pli.Series:
+    def zfill(self, alignment: int) -> Series:
         """
         Fills the string with zeroes.
 
@@ -818,7 +818,7 @@ class StringNameSpace:
 
         """
 
-    def ljust(self, width: int, fillchar: str = " ") -> pli.Series:
+    def ljust(self, width: int, fillchar: str = " ") -> Series:
         """
         Return the string left justified in a string of length ``width``.
 
@@ -847,7 +847,7 @@ class StringNameSpace:
 
         """
 
-    def rjust(self, width: int, fillchar: str = " ") -> pli.Series:
+    def rjust(self, width: int, fillchar: str = " ") -> Series:
         """
         Return the string right justified in a string of length ``width``.
 
@@ -876,13 +876,13 @@ class StringNameSpace:
 
         """
 
-    def to_lowercase(self) -> pli.Series:
+    def to_lowercase(self) -> Series:
         """Modify the strings to their lowercase equivalent."""
 
-    def to_uppercase(self) -> pli.Series:
+    def to_uppercase(self) -> Series:
         """Modify the strings to their uppercase equivalent."""
 
-    def slice(self, offset: int, length: int | None = None) -> pli.Series:
+    def slice(self, offset: int, length: int | None = None) -> Series:
         """
         Create subslices of the string values of a Utf8 Series.
 
@@ -926,7 +926,7 @@ class StringNameSpace:
 
         """
 
-    def explode(self) -> pli.Series:
+    def explode(self) -> Series:
         """
         Returns a column with a separate row for every string character.
 
@@ -951,7 +951,7 @@ class StringNameSpace:
 
         """
 
-    def parse_int(self, radix: int = 2, strict: bool = True) -> pli.Series:
+    def parse_int(self, radix: int = 2, strict: bool = True) -> Series:
         r"""
         Parse integers with base radix from strings.
 
