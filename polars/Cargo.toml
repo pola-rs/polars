@@ -201,6 +201,7 @@ dtype-date = [
   "polars-io/dtype-date",
   "polars-time/dtype-date",
   "polars-core/dtype-date",
+  "polars-ops/dtype-date",
 ]
 dtype-datetime = [
   "polars-core/dtype-datetime",
@@ -214,6 +215,7 @@ dtype-duration = [
   "polars-lazy/dtype-duration",
   "polars-time/dtype-duration",
   "polars-core/dtype-duration",
+  "polars-ops/dtype-duration",
 ]
 dtype-time = ["polars-core/dtype-time", "polars-io/dtype-time", "polars-time/dtype-time", "polars-ops/dtype-time"]
 dtype-i8 = ["polars-core/dtype-i8", "polars-lazy/dtype-i8", "polars-ops/dtype-i8"]

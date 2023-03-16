@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -228,4 +228,23 @@ def test_pivot_temporal_logical_types() -> None:
         ],
         "a": [0, 0, 0, None, None, None, None, None],
         "b": [None, None, None, 0, 0, 0, 0, 0],
+    }
+
+
+def test_pivot_negative_duration() -> None:
+    df1 = pl.DataFrame({"root": [date(2020, i, 15) for i in (1, 2)]})
+    df2 = pl.DataFrame({"delta": [timedelta(days=i) for i in (-2, -1, 0, 1)]})
+
+    df = df1.join(df2, how="cross").with_columns(
+        [pl.Series(name="value", values=range(len(df1) * len(df2)))]
+    )
+    assert df.pivot(index="delta", columns="root", values="value").to_dict(False) == {
+        "delta": [
+            timedelta(days=-2),
+            timedelta(days=-1),
+            timedelta(0),
+            timedelta(days=1),
+        ],
+        "2020-01-15": [0, 1, 2, 3],
+        "2020-02-15": [4, 5, 6, 7],
     }
