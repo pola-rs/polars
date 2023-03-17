@@ -86,7 +86,7 @@ class HTMLFormatter:
                 for c in self.col_idx:
                     with Tag(self.elements, "th"):
                         if c == -1:
-                            self.elements.append("...")
+                            self.elements.append("&hellip;")
                         else:
                             self.elements.append(columns[c])
             with Tag(self.elements, "tr"):
@@ -94,7 +94,7 @@ class HTMLFormatter:
                 for c in self.col_idx:
                     with Tag(self.elements, "td"):
                         if c == -1:
-                            self.elements.append("...")
+                            self.elements.append("&hellip;")
                         else:
                             self.elements.append(dtypes[c])
 
@@ -107,7 +107,7 @@ class HTMLFormatter:
                     for c in self.col_idx:
                         with Tag(self.elements, "td"):
                             if r == -1 or c == -1:
-                                self.elements.append("...")
+                                self.elements.append("&hellip;")
                             else:
                                 series = self.df[:, c]
 

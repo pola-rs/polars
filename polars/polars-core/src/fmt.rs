@@ -87,7 +87,7 @@ macro_rules! format_array {
                 if v == v_trunc {
                     write!(f, "\t{}\n", v)?;
                 } else {
-                    write!(f, "\t{}...\n", v_trunc)?;
+                    write!(f, "\t{}…\n", v_trunc)?;
                 }
             } else {
                 write!(f, "\t{}\n", v)?;
@@ -101,7 +101,7 @@ macro_rules! format_array {
                     write_fn(v, $f)?;
                 }
             }
-            write!($f, "\t...\n")?;
+            write!($f, "\t…\n")?;
             if limit > 1 {
                 for i in ($a.len() - (limit + 1) / 2)..$a.len() {
                     let v = $a.get_any_value(i).unwrap();
@@ -207,7 +207,7 @@ where
                     Some(val) => writeln!(f, "\t{val}")?,
                 };
             }
-            writeln!(f, "\t...")?;
+            writeln!(f, "\t…")?;
             for i in (0..limit / 2).rev() {
                 match taker.get(self.len() - i - 1) {
                     None => writeln!(f, "\tnull")?,
@@ -335,7 +335,7 @@ fn make_str_val(v: &str, truncate: usize) -> String {
     if v == v_trunc {
         v.to_string()
     } else {
-        format!("{v_trunc}...")
+        format!("{v_trunc}…")
     }
 }
 
@@ -352,7 +352,7 @@ fn prepare_row(
         row_str.push(make_str_val(v, str_truncate));
     }
     if reduce_columns {
-        row_str.push("...".to_string());
+        row_str.push("…".to_string());
     }
     for v in row[row.len() - n_last..].iter() {
         row_str.push(make_str_val(v, str_truncate));
@@ -442,8 +442,8 @@ impl Display for DataFrame {
                 constraints.push(tbl_lower_bounds(l));
             }
             if reduce_columns {
-                names.push("...".into());
-                constraints.push(tbl_lower_bounds(5));
+                names.push("…".into());
+                constraints.push(tbl_lower_bounds(3));
             }
             for field in fields[self.width() - n_last..].iter() {
                 let (s, l) = field_to_str(field);
@@ -490,7 +490,7 @@ impl Display for DataFrame {
                             .collect();
                         rows.push(prepare_row(row, n_first, n_last, str_truncate));
                     }
-                    let dots = rows[0].iter().map(|_| "...".to_string()).collect();
+                    let dots = rows[0].iter().map(|_| "…".to_string()).collect();
                     rows.push(dots);
                     if max_n_rows > 1 {
                         for i in (height - (max_n_rows + 1) / 2)..height {
@@ -518,7 +518,7 @@ impl Display for DataFrame {
                     }
                 }
             } else if height > 0 {
-                let dots: Vec<String> = self.columns.iter().map(|_| "...".to_string()).collect();
+                let dots: Vec<String> = self.columns.iter().map(|_| "…".to_string()).collect();
                 table.add_row(dots);
             }
 
@@ -603,6 +603,7 @@ fn fmt_integer<T: Num + NumCast + Display>(
 }
 
 const SCIENTIFIC_BOUND: f64 = 999999.0;
+
 fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt::Result {
     let v: f64 = NumCast::from(v).unwrap();
     if matches!(get_float_fmt(), FloatFmt::Full) {
@@ -854,7 +855,7 @@ macro_rules! impl_fmt_list {
                 $self.get_any_value(2).unwrap()
             ),
             _ => format!(
-                "[{}, {}, ... {}]",
+                "[{}, {}, … {}]",
                 $self.get_any_value(0).unwrap(),
                 $self.get_any_value(1).unwrap(),
                 $self.get_any_value($self.len() - 1).unwrap()
