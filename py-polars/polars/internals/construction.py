@@ -722,7 +722,7 @@ def sequence_to_pydf(
 
 
 def _sequence_of_series_to_pydf(
-    first_element: Any,
+    first_element: Series,
     data: Sequence[Any],
     schema: SchemaDefinition | None,
     schema_overrides: SchemaDict | None,
@@ -947,7 +947,7 @@ def _sequence_of_elements_to_pydf(
 
 
 def _sequence_of_numpy_to_pydf(
-    first_element: pd.Series | pd.DatetimeIndex,
+    first_element: np.ndarray[Any, Any],
     **kwargs: Any,
 ) -> PyDataFrame:
     to_pydf = (
