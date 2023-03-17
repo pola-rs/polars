@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use polars_utils::sys::MEMINFO;
 
-const TO_MB: usize = 2<<19;
+const TO_MB: usize = 2 << 19;
 
 #[derive(Clone)]
 pub(super) struct MemTracker {
@@ -12,7 +12,7 @@ pub(super) struct MemTracker {
     used_by_node: Arc<AtomicUsize>,
     fetch_count: Arc<AtomicUsize>,
     thread_count: usize,
-    available_at_start: usize
+    available_at_start: usize,
 }
 
 impl MemTracker {
@@ -22,11 +22,10 @@ impl MemTracker {
             used_by_node: Default::default(),
             fetch_count: Arc::new(AtomicUsize::new(1)),
             thread_count,
-            available_at_start: 0
+            available_at_start: 0,
         };
-        let available =  MEMINFO.free() as usize;
-        out.available_mem
-            .store(available, Ordering::Relaxed);
+        let available = MEMINFO.free() as usize;
+        out.available_mem.store(available, Ordering::Relaxed);
         out.available_at_start = available;
         out
     }

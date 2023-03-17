@@ -9,25 +9,25 @@ use polars_core::export::ahash::RandomState;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked};
+use polars_core::utils::arrow::bitmap::utils::set_bit_unchecked;
+use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked, split_df_as_ref};
 use polars_core::POOL;
 use polars_utils::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 use rayon::prelude::*;
-use polars_arrow::export::arrow::array::MutableBooleanArray;
 
 use super::aggregates::AggregateFn;
 use crate::executors::sinks::groupby::aggregates::AggregateFunction;
 use crate::executors::sinks::groupby::physical_agg_to_logical;
 use crate::executors::sinks::groupby::string::{apply_aggregate, write_agg_idx};
 use crate::executors::sinks::groupby::utils::compute_slices;
+use crate::executors::sinks::memory::MemTracker;
 use crate::executors::sinks::utils::load_vec;
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
-use crate::executors::sinks::memory::MemTracker;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
-use crate::pipeline::morsels_per_sink;
+use crate::pipeline::{morsels_per_sink, PARTITION_SIZE};
 
 // hash + value
 #[derive(Eq, Copy, Clone)]
@@ -80,6 +80,10 @@ pub struct PrimitiveGroupbySink<K: PolarsNumericType> {
     mem_track: MemTracker,
     // sort in-memory or out-of-core
     ooc: bool,
+    // bitmap that indicates the rows that are processed ooc
+    // will be mmap converted to `BooleanArray`.
+    ooc_filter: Vec<u8>,
+    agg_idx_ooc: Vec<IdxSize>,
 }
 
 impl<K: PolarsNumericType> PrimitiveGroupbySink<K>
@@ -119,13 +123,31 @@ where
             slice,
             sort_partitions: vec![],
             mem_track: MemTracker::new(n_morsels_per_sink),
-            ooc
+            ooc,
+            ooc_filter: vec![],
+            agg_idx_ooc: vec![],
         }
     }
 
     #[inline]
     fn number_of_aggs(&self) -> usize {
         self.aggregation_columns.len()
+    }
+
+    fn check_memory_usage(&mut self) {
+        if self.mem_track.free_memory_fraction_since_start() < 0.25 {
+            self.init_ooc()
+        }
+    }
+
+    fn reset_ooc_filter_rows(&mut self, len: usize) {
+        // todo! single pass
+        self.ooc_filter.fill(0);
+        self.ooc_filter.resize_with(len / 8 + 1, || 0)
+    }
+
+    fn get_ooc_filter(&self, len: usize) -> BooleanChunked {
+        unsafe { BooleanChunked::mmap_slice("", &self.ooc_filter, 0, len) }
     }
 
     fn pre_finalize(&mut self) -> PolarsResult<Vec<DataFrame>> {
@@ -201,7 +223,6 @@ where
 
         let k = K::Native::get_k(self.hb.clone());
         let pre_agg_len = self.pre_agg_partitions.len();
-        let num_aggs = self.number_of_aggs() as IdxSize;
 
         for group in &self.sort_partitions {
             let [offset, length] = group;
@@ -217,7 +238,9 @@ where
                 &self.agg_fns,
             );
 
-            for (i, aggregation_s) in (0..num_aggs).zip(&self.aggregation_series) {
+            for (i, aggregation_s) in
+                (0..self.number_of_aggs() as IdxSize).zip(&self.aggregation_series)
+            {
                 let agg_fn = unsafe {
                     self.aggregators
                         .get_unchecked_release_mut((agg_idx + i) as usize)
@@ -226,6 +249,7 @@ where
             }
         }
         self.aggregation_series.clear();
+        self.check_memory_usage();
         Ok(SinkResult::CanHaveMoreInput)
     }
 
@@ -234,56 +258,96 @@ where
         todo!()
     }
 
-    fn prepare_key_and_aggregation_series(&mut self, context: &PExecutionContext, chunk: &DataChunk) -> PolarsResult<Series> {
-        let s = self
-            .key
-            .evaluate(&chunk, context.execution_state.as_any())?;
+    fn prepare_key_and_aggregation_series(
+        &mut self,
+        context: &PExecutionContext,
+        chunk: &DataChunk,
+    ) -> PolarsResult<Series> {
+        let s = self.key.evaluate(chunk, context.execution_state.as_any())?;
         let s = s.to_physical_repr();
         let s = s.rechunk();
 
-        // cow -> &series -> &dyn series_trait -> &chunkedarray
-        let ca: &ChunkedArray<K> = s.as_ref().as_ref();
-
         // todo! ammortize allocation
         for phys_e in self.aggregation_columns.iter() {
-            let s = phys_e.evaluate(&chunk, context.execution_state.as_any())?;
+            let s = phys_e.evaluate(chunk, context.execution_state.as_any())?;
             let s = s.to_physical_repr();
             self.aggregation_series.push(s.rechunk());
         }
         Ok(s)
     }
 
-    fn sink_ooc(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
+    fn aggregate(&mut self, agg_idxs: &[IdxSize], chunk: &DataChunk) {
+        let chunk_idx = chunk.chunk_index;
+        for (agg_i, aggregation_s) in (0..self.number_of_aggs()).zip(&self.aggregation_series) {
+            let has_physical_agg = self.agg_fns[agg_i].has_physical_agg();
+            apply_aggregate(
+                agg_i,
+                chunk_idx,
+                agg_idxs,
+                aggregation_s,
+                has_physical_agg,
+                &mut self.aggregators,
+            );
+        }
+
+        self.aggregation_series.clear();
+    }
+
+    fn sink_ooc(
+        &mut self,
+        context: &PExecutionContext,
+        chunk: DataChunk,
+    ) -> PolarsResult<SinkResult> {
         let s = self.prepare_key_and_aggregation_series(context, &chunk)?;
         // cow -> &series -> &dyn series_trait -> &chunkedarray
         let ca: &ChunkedArray<K> = s.as_ref().as_ref();
 
-        let num_aggs = self.number_of_aggs();
+        // ensure the hashes are set
         s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
 
         let arr = ca.downcast_iter().next().unwrap();
         let pre_agg_len = self.pre_agg_partitions.len();
 
-        // idx of rows that are not yet in the table. We will not grow the table but sink these rows to disk and aggregate them later
-        let mut is_in_table = MutableBooleanArray::with_capacity(ca.len());
-        is_in_table.exten
-        let mut sink_idx = vec![];
         let mut agg_idx_buf = vec![];
 
+        // set all bits to false
+        self.reset_ooc_filter_rows(ca.len());
+
+        // different from standard sink
+        // we only set aggregation idx when the entry in the hashmap already
+        // exists. This way we don't grow the hashmap
+        // rows that are not processed are sinked to disk and loaded in a second pass
         for (iteration_idx, (opt_v, &h)) in arr.iter().zip(self.hashes.iter()).enumerate() {
             let opt_v = opt_v.copied();
-            if let Some(agg_idx) = try_insert_and_get(
-                h,
-                opt_v,
-                pre_agg_len,
-                &mut self.pre_agg_partitions,
-            ) {
+            if let Some(agg_idx) =
+                try_insert_and_get(h, opt_v, pre_agg_len, &mut self.pre_agg_partitions)
+            {
                 agg_idx_buf.push(agg_idx);
             } else {
-                sink_idx.push(iteration_idx as IdxSize)
+                // set this row to true: e.g. processed ooc
+                unsafe {
+                    // safety: bchk doesn't understand this borrow does not alias because it borrows from self
+                    let ooc_filter = std::slice::from_raw_parts_mut(
+                        self.ooc_filter.as_ptr() as *mut u8,
+                        self.ooc_filter.len(),
+                    );
+                    // safety: we correctly set the length in `reset_in_memory_rows`
+                    set_bit_unchecked(ooc_filter, iteration_idx, true)
+                }
             }
         }
 
+        // needed for bchk
+        let agg_idxs = std::mem::take(&mut self.agg_idx_ooc);
+        self.aggregate(&agg_idxs, &chunk);
+        self.agg_idx_ooc = agg_idxs;
+
+        // reset the agg_idx buf
+        self.agg_idx_ooc.clear();
+
+        let ooc_filter = self.get_ooc_filter(ca.len());
+        let df = chunk.data._filter_seq(&ooc_filter).unwrap();
+        let partitions = split_df_as_ref(&df, PARTITION_SIZE)?;
 
         Ok(SinkResult::CanHaveMoreInput)
     }
@@ -295,6 +359,10 @@ where
     ChunkedArray<K>: IntoSeries,
 {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
+        if self.ooc {
+            return self.sink_ooc(context, chunk);
+        }
+
         let s = self.prepare_key_and_aggregation_series(context, &chunk)?;
         // cow -> &series -> &dyn series_trait -> &chunkedarray
         let ca: &ChunkedArray<K> = s.as_ref().as_ref();
@@ -304,7 +372,6 @@ where
             return self.sink_sorted(ca, chunk);
         }
 
-        let num_aggs = self.number_of_aggs();
         s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
 
         // this reuses the hashes buffer as [u64] as idx buffer as [idxsize]
@@ -336,24 +403,10 @@ where
 
         // note that this slice looks into the self.hashes buffer
         let agg_idxs = unsafe { std::slice::from_raw_parts(agg_idx_ptr, ca.len()) };
-
-        for (agg_i, aggregation_s) in (0..num_aggs).zip(&self.aggregation_series) {
-            let has_physical_agg = self.agg_fns[agg_i].has_physical_agg();
-            apply_aggregate(
-                agg_i,
-                chunk.chunk_index,
-                agg_idxs,
-                aggregation_s,
-                has_physical_agg,
-                &mut self.aggregators,
-            );
-        }
+        self.aggregate(agg_idxs, &chunk);
 
         self.aggregation_series.clear();
-
-        if self.mem_track.free_memory_fraction_since_start() < 0.25 || true {
-            self.init_ooc()
-        }
+        self.check_memory_usage();
         Ok(SinkResult::CanHaveMoreInput)
     }
 
@@ -471,8 +524,8 @@ fn try_insert_and_get<T>(
     pre_agg_len: usize,
     pre_agg_partitions: &mut Vec<PlIdHashMap<Key<Option<T>>, IdxSize>>,
 ) -> Option<IdxSize>
-    where
-        T: NumericNative + FxHash,
+where
+    T: NumericNative + FxHash,
 {
     let part = hash_to_partition(h, pre_agg_len);
     let current_partition = unsafe { pre_agg_partitions.get_unchecked_release_mut(part) };
@@ -481,9 +534,7 @@ fn try_insert_and_get<T>(
         .raw_entry_mut()
         .from_hash(h, |k| k.value == opt_v);
     match entry {
-        RawEntryMut::Vacant(_) => {
-            None
-        }
+        RawEntryMut::Vacant(_) => None,
         RawEntryMut::Occupied(entry) => Some(*entry.get()),
     }
 }
