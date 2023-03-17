@@ -1126,8 +1126,9 @@ def test_is_in() -> None:
     out = s.is_in([])
     assert out.to_list() == [False]  # one element?
 
-    out = s.is_in(["x", "y", "z"])
-    assert out.to_list() == [False, False, False]
+    for x_y_z in (["x", "y", "z"], {"x", "y", "z"}):
+        out = s.is_in(x_y_z)
+        assert out.to_list() == [False, False, False]
 
     df = pl.DataFrame({"a": [1.0, 2.0], "b": [1, 4], "c": ["e", "d"]})
     assert df.select(pl.col("a").is_in(pl.col("b"))).to_series().to_list() == [
