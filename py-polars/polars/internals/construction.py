@@ -790,7 +790,7 @@ def _sequence_to_pydf_dispatcher(
         to_pydf = _sequence_of_pandas_to_pydf
 
     elif dataclasses.is_dataclass(first_element):
-        to_pydf = dataclasses_to_pydf
+        to_pydf = _sequence_of_dataclasses_to_pydf
     else:
         to_pydf = _sequence_of_elements_to_pydf
 
@@ -985,7 +985,7 @@ def _sequence_of_pandas_to_pydf(
     return PyDataFrame(data_series)
 
 
-def dataclasses_to_pydf(
+def _sequence_of_dataclasses_to_pydf(
     first_element: Any,
     data: Sequence[Any],
     schema: SchemaDefinition | None,
