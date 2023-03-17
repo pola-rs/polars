@@ -1,7 +1,7 @@
 use polars::prelude::*;
 
 fn main() -> PolarsResult<()> {
-    let df = LazyFrame::scan_parquet("../datasets/foods1.parquet", ScanArgsParquet::default())?
+    let df = LazyFrame::scan_parquet("../datasets/foods1.parquet", ParquetOptions::default())?
         .select([
             // select all columns
             all(),

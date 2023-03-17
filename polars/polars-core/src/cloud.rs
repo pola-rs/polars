@@ -31,9 +31,24 @@ use crate::error::{PolarsError, PolarsResult};
 #[allow(dead_code)]
 type Configs<T> = Vec<(T, String)>;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
-/// Options to conect to various cloud providers.
+/// Options to connect to various cloud providers.
+/// 
+/// # Example
+/// 
+/// ```rust
+/// use awscreds::Credentials;
+/// use polars::prelude::cloud::AmazonS3ConfigKey as Key;
+/// use polars::prelude::cloud::CloudOptions;
+/// 
+/// let cred = Credentials::default().unwrap();
+/// let cloud_options = CloudOptions::default().with_aws([
+///   (Key::AccessKeyId, &cred.access_key.unwrap()),
+///   (Key::SecretAccessKey, &cred.secret_key.unwrap()),
+///   (Key::Region, &"us-west-2".into()),
+/// ]);
+/// ```
 pub struct CloudOptions {
     #[cfg(feature = "aws")]
     aws: Option<Configs<AmazonS3ConfigKey>>,

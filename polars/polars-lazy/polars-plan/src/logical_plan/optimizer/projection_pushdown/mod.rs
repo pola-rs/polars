@@ -449,7 +449,6 @@ impl ProjectionPushDown {
                 file_info,
                 predicate,
                 mut options,
-                cloud_options,
                 ..
             } => {
                 let with_columns = get_scan_columns(&mut acc_projections, expr_arena);
@@ -471,7 +470,6 @@ impl ProjectionPushDown {
                     output_schema,
                     predicate,
                     options,
-                    cloud_options,
                 };
                 Ok(lp)
             }

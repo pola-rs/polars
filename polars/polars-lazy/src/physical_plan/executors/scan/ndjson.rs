@@ -8,11 +8,10 @@ impl AnonymousScan for LazyJsonLineReader {
         let schema = scan_opts.output_schema.unwrap_or(scan_opts.schema);
         JsonLineReader::from_path(&self.path)?
             .with_schema(&schema)
-            .with_rechunk(self.rechunk)
-            .with_chunk_size(self.batch_size)
-            .low_memory(self.low_memory)
+            .with_rechunk(self.options.rechunk)
+            .with_chunk_size(self.options.batch_size)
+            .low_memory(self.options.low_memory)
             .with_n_rows(scan_opts.n_rows)
-            .with_chunk_size(self.batch_size)
             .finish()
     }
 

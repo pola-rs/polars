@@ -179,13 +179,17 @@ impl PyLazyFrame {
     ) -> PyResult<Self> {
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
 
-        let lf = LazyJsonLineReader::new(path)
-            .with_infer_schema_length(infer_schema_length)
-            .with_batch_size(batch_size)
-            .with_n_rows(n_rows)
-            .low_memory(low_memory)
-            .with_rechunk(rechunk)
-            .with_row_count(row_count)
+        let options = JsonLineOptions {
+            infer_schema_length,
+            batch_size,
+            n_rows,
+            low_memory,
+            rechunk,
+            row_count,
+            ..Default::default()
+        };
+
+        let lf = LazyJsonLineReader::new(path, options)
             .finish()
             .map_err(PyPolarsErr::from)?;
         Ok(lf.into())
@@ -303,7 +307,7 @@ impl PyLazyFrame {
             .map(|po| extract_cloud_options(&path, po))
             .transpose()?;
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
-        let args = ScanArgsParquet {
+        let args = ParquetOptions {
             n_rows,
             cache,
             parallel: parallel.0,
@@ -312,6 +316,7 @@ impl PyLazyFrame {
             low_memory,
             cloud_options,
             use_statistics,
+            ..Default::default()
         };
         let lf = LazyFrame::scan_parquet(path, args).map_err(PyPolarsErr::from)?;
         Ok(lf.into())
@@ -329,7 +334,7 @@ impl PyLazyFrame {
         memory_map: bool,
     ) -> PyResult<Self> {
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
-        let args = ScanArgsIpc {
+        let args = IpcOptions {
             n_rows,
             cache,
             rechunk,

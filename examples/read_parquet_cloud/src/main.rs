@@ -10,13 +10,15 @@ fn main() -> PolarsResult<()> {
     let cred = Credentials::default().unwrap();
 
     // Propagate the credentials and other cloud options.
-    let mut args = ScanArgsParquet::default();
+    let mut args = ParquetOptions::default();
+
     let cloud_options = cloud::CloudOptions::default().with_aws([
         (Key::AccessKeyId, &cred.access_key.unwrap()),
         (Key::SecretAccessKey, &cred.secret_key.unwrap()),
         (Key::Region, &"us-west-2".into()),
     ]);
     args.cloud_options = Some(cloud_options);
+
     let df = LazyFrame::scan_parquet(TEST_S3, args)?
         .with_streaming(true)
         .select([

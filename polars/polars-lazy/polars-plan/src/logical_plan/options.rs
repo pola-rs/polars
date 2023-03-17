@@ -1,12 +1,15 @@
 use std::path::PathBuf;
 
+#[cfg(feature = "parquet")]
+use polars_core::cloud::CloudOptions;
 use polars_core::prelude::*;
 #[cfg(feature = "csv-file")]
 use polars_io::csv::{CsvEncoding, NullValues};
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcCompression;
 #[cfg(feature = "parquet")]
-use polars_io::parquet::ParquetCompression;
+use polars_io::parquet::{ParquetCompression, ParallelStrategy};
+
 use polars_io::RowCount;
 #[cfg(feature = "dynamic_groupby")]
 use polars_time::{DynamicGroupOptions, RollingGroupOptions};
@@ -40,19 +43,84 @@ pub struct CsvParserOptions {
     pub file_counter: FileCount,
 }
 
+#[cfg(feature = "json")]
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct JsonLineOptions {
+    /// Number of rows to read in each batch.
+    pub batch_size: Option<usize>,
+    /// Maximum number of lines to read to infer schema.
+    ///
+    /// If schema is inferred wrongly (e.g. as [DataType::Int64] instead of [DataType::Float64],
+    /// try to increase the number of lines used to infer the schema or override
+    pub infer_schema_length: Option<usize>,
+    /// Reduce memory pressure at the expense of performance.
+    pub low_memory: bool,
+    /// Stop reading from JSON file after reading ``n_rows``.
+    /// During multi-threaded parsing, an upper bound of ``n_rows``
+    /// rows cannot be guaranteed.
+    pub n_rows: Option<usize>,
+    /// Reallocate to contiguous memory when all chunks/ files are parsed.
+    pub rechunk: bool,
+    /// If not None, this will insert a row count column with give name into the LazyFrame.
+    pub row_count: Option<RowCount>,
+    pub schema: Option<Schema>,
+}
+
+impl Default for JsonLineOptions {
+    fn default() -> Self {
+        Self {
+            batch_size: None,
+            low_memory: false,
+            rechunk: true,
+            schema: None,
+            row_count: None,
+            infer_schema_length: Some(1000),
+            n_rows: None,
+        }
+    }
+}
+
 #[cfg(feature = "parquet")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ParquetOptions {
-    pub n_rows: Option<usize>,
-    pub with_columns: Option<Arc<Vec<String>>>,
+    /// Cache the result after reading.
     pub cache: bool,
-    pub parallel: polars_io::parquet::ParallelStrategy,
-    pub rechunk: bool,
-    pub row_count: Option<RowCount>,
+    /// Options for reading from cloud storage.
+    pub cloud_options: Option<CloudOptions>,
     pub file_counter: FileCount,
+    /// Reduce memory pressure at the expense of performance.
     pub low_memory: bool,
+    /// Stop reading from parquet file after reading ``n_rows``.
+    pub n_rows: Option<usize>,
+    /// This determines the direction of parallelism. [ParallelStrategy::Auto] will try to determine the
+    /// optimal direction.
+    pub parallel: ParallelStrategy,
+    /// Reallocate to contiguous memory when all chunks/ files are parsed.
+    pub rechunk: bool,
+    /// If not None, this will insert a row count column into the LazyFrame
+    pub row_count: Option<RowCount>,
+    /// Use statistics in the parquet to determine if pages can be skipped from reading.
     pub use_statistics: bool,
+    pub with_columns: Option<Arc<Vec<String>>>,
+}
+
+impl Default for ParquetOptions {
+    fn default() -> Self {
+        Self {
+            n_rows: None,
+            cache: true,
+            parallel: Default::default(),
+            rechunk: true,
+            row_count: None,
+            low_memory: false,
+            use_statistics: true,
+            with_columns: None,
+            file_counter: Default::default(),
+            cloud_options: None,
+        }
+    }
 }
 
 #[cfg(feature = "parquet")]
@@ -83,15 +151,32 @@ pub struct IpcWriterOptions {
 
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct IpcScanOptions {
-    pub n_rows: Option<usize>,
-    pub with_columns: Option<Arc<Vec<String>>>,
+pub struct IpcOptions {
+    /// Cache the result after reading.
     pub cache: bool,
-    pub row_count: Option<RowCount>,
-    pub rechunk: bool,
+    /// Try to memory map the file. This can greatly improve performance on repeated
+    /// queries as the OS may cache pages.
+    /// Only uncompressed IPC files can be memory mapped.
     pub memmap: bool,
+    /// Stop reading from IPC file after reading ``n_rows``.
+    pub n_rows: Option<usize>,
+    /// Reallocate to contiguous memory when all chunks/ files are parsed.
+    pub rechunk: bool,
+    /// If not None, this will insert a row count column into the LazyFrame
+    pub row_count: Option<RowCount>,
 }
 
+impl Default for IpcOptions {
+    fn default() -> Self {
+        Self {
+            n_rows: None,
+            cache: true,
+            rechunk: true,
+            row_count: None,
+            memmap: true,
+        }
+    }
+}
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct IpcScanOptionsInner {
@@ -104,15 +189,15 @@ pub struct IpcScanOptionsInner {
     pub memmap: bool,
 }
 
-impl From<IpcScanOptions> for IpcScanOptionsInner {
-    fn from(options: IpcScanOptions) -> Self {
+impl From<IpcOptions> for IpcScanOptionsInner {
+    fn from(options: IpcOptions) -> Self {
         Self {
             n_rows: options.n_rows,
-            with_columns: options.with_columns,
             cache: options.cache,
             row_count: options.row_count,
             rechunk: options.rechunk,
             file_counter: Default::default(),
+            with_columns: None,
             memmap: options.memmap,
         }
     }

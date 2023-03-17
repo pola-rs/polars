@@ -151,7 +151,7 @@ fn test_parquet_globbing() -> PolarsResult<()> {
     let glob = "../../examples/datasets/*.parquet";
     let df = LazyFrame::scan_parquet(
         glob,
-        ScanArgsParquet {
+        ParquetOptions {
             n_rows: None,
             cache: true,
             parallel: Default::default(),
@@ -175,12 +175,9 @@ fn test_ipc_globbing() -> PolarsResult<()> {
     let glob = "../../examples/datasets/*.ipc";
     let df = LazyFrame::scan_ipc(
         glob,
-        ScanArgsIpc {
-            n_rows: None,
-            cache: true,
+        IpcOptions {
             rechunk: false,
-            row_count: None,
-            memmap: true,
+            ..Default::default()
         },
     )?
     .collect()?;
@@ -244,7 +241,9 @@ fn test_ndjson_globbing() -> PolarsResult<()> {
     // for side effects
     init_files();
     let glob = "../../examples/datasets/*.ndjson";
-    let df = LazyJsonLineReader::new(glob.into()).finish()?.collect()?;
+    let df = LazyJsonLineReader::new(glob, Default::default())
+        .finish()?
+        .collect()?;
     assert_eq!(df.shape(), (54, 4));
     let cal = df.column("calories")?;
     assert_eq!(cal.get(0)?, AnyValue::Int64(45));

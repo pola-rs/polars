@@ -4,11 +4,11 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use polars_core::prelude::*;
-use polars_lazy::frame::LazyFrame;
 #[cfg(feature = "ipc")]
-use polars_lazy::frame::ScanArgsIpc;
+use polars_lazy::frame::IpcOptions;
+use polars_lazy::frame::LazyFrame;
 #[cfg(feature = "parquet")]
-use polars_lazy::frame::ScanArgsParquet;
+use polars_lazy::frame::ParquetOptions;
 #[cfg(feature = "csv")]
 use polars_lazy::frame::{LazyCsvReader, LazyFileListReader};
 use polars_sql::SQLContext;
@@ -87,9 +87,9 @@ fn create_dataframe_from_filename(filename: &str) -> PolarsResult<LazyFrame> {
         #[cfg(feature = "csv")]
         Some("csv") => LazyCsvReader::new(filename).finish(),
         #[cfg(feature = "parquet")]
-        Some("parquet") => LazyFrame::scan_parquet(filename, ScanArgsParquet::default()),
+        Some("parquet") => LazyFrame::scan_parquet(filename, ParquetOptions::default()),
         #[cfg(feature = "ipc")]
-        Some("ipc") => LazyFrame::scan_ipc(filename, ScanArgsIpc::default()),
+        Some("ipc") => LazyFrame::scan_ipc(filename, IpcOptions::default()),
         None => polars_bail!(
             ComputeError: "unable to infer dataframe format from filename \"{}\"; \"\
             either specify a dataframe name registered with \\rd or an absolute path to a file",

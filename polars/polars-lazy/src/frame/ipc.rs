@@ -6,51 +6,24 @@ use polars_io::RowCount;
 use crate::prelude::*;
 
 #[derive(Clone)]
-pub struct ScanArgsIpc {
-    pub n_rows: Option<usize>,
-    pub cache: bool,
-    pub rechunk: bool,
-    pub row_count: Option<RowCount>,
-    pub memmap: bool,
-}
-
-impl Default for ScanArgsIpc {
-    fn default() -> Self {
-        Self {
-            n_rows: None,
-            cache: true,
-            rechunk: true,
-            row_count: None,
-            memmap: true,
-        }
-    }
-}
-
-#[derive(Clone)]
 struct LazyIpcReader {
-    args: ScanArgsIpc,
+    options: IpcOptions,
     path: PathBuf,
 }
 
 impl LazyIpcReader {
-    fn new(path: PathBuf, args: ScanArgsIpc) -> Self {
-        Self { args, path }
+    fn new(path: PathBuf, options: IpcOptions) -> Self {
+        Self { options, path }
     }
 }
 
 impl LazyFileListReader for LazyIpcReader {
     fn finish_no_glob(self) -> PolarsResult<LazyFrame> {
-        let args = self.args;
+        let options = self.options;
         let path = self.path;
-        let options = IpcScanOptions {
-            n_rows: args.n_rows,
-            cache: args.cache,
-            with_columns: None,
-            row_count: None,
-            rechunk: args.rechunk,
-            memmap: args.memmap,
-        };
-        let row_count = args.row_count;
+
+        let row_count = options.row_count.clone();
+
         let mut lf: LazyFrame = LogicalPlanBuilder::scan_ipc(path, options)?.build().into();
         lf.opt_state.file_caching = true;
 
@@ -72,26 +45,29 @@ impl LazyFileListReader for LazyIpcReader {
     }
 
     fn rechunk(&self) -> bool {
-        self.args.rechunk
+        self.options.rechunk
     }
 
     fn with_rechunk(mut self, toggle: bool) -> Self {
-        self.args.rechunk = toggle;
+        self.options.rechunk = toggle;
         self
     }
 
     fn n_rows(&self) -> Option<usize> {
-        self.args.n_rows
+        self.options.n_rows
     }
 
     fn row_count(&self) -> Option<&RowCount> {
-        self.args.row_count.as_ref()
+        self.options.row_count.as_ref()
     }
 }
 
 impl LazyFrame {
-    /// Create a LazyFrame directly from a ipc scan.
-    pub fn scan_ipc(path: impl AsRef<Path>, args: ScanArgsIpc) -> PolarsResult<Self> {
-        LazyIpcReader::new(path.as_ref().to_owned(), args).finish()
+    /// Lazily read from an Arrow IPC (Feather v2) file or multiple files via glob patterns.
+    /// 
+    /// This allows the query optimizer to push down predicates and projections to the scan
+    /// level, thereby potentially reducing memory overhead.
+    pub fn scan_ipc(path: impl AsRef<Path>, options: IpcOptions) -> PolarsResult<Self> {
+        LazyIpcReader::new(path.as_ref().to_owned(), options).finish()
     }
 }

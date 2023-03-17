@@ -4,8 +4,6 @@ use std::fmt::Debug;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-#[cfg(feature = "parquet")]
-use polars_core::cloud::CloudOptions;
 use polars_core::prelude::*;
 
 use crate::logical_plan::LogicalPlan::DataFrameScan;
@@ -152,7 +150,6 @@ pub enum LogicalPlan {
         file_info: FileInfo,
         predicate: Option<Expr>,
         options: ParquetOptions,
-        cloud_options: Option<CloudOptions>,
     },
     #[cfg(feature = "ipc")]
     IpcScan {

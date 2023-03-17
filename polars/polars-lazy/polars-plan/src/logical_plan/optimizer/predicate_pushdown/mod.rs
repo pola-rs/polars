@@ -267,7 +267,6 @@ impl PredicatePushDown {
                 output_schema,
                 predicate,
                 options,
-                cloud_options,
             } => {
                 let local_predicates = partition_by_full_context(&mut acc_predicates, expr_arena);
 
@@ -279,7 +278,6 @@ impl PredicatePushDown {
                     output_schema,
                     predicate,
                     options,
-                    cloud_options,
                 };
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }

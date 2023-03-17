@@ -1,3 +1,4 @@
+pub use options::*;
 pub(crate) use polars_ops::prelude::*;
 #[cfg(feature = "rolling_window")]
 pub(crate) use polars_time::chunkedarray::{RollingOptions, RollingOptionsImpl};

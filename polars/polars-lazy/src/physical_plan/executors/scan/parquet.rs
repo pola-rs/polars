@@ -1,7 +1,5 @@
 use std::path::PathBuf;
 
-use polars_core::cloud::CloudOptions;
-
 use super::*;
 
 #[allow(dead_code)]
@@ -10,7 +8,6 @@ pub struct ParquetExec {
     schema: SchemaRef,
     predicate: Option<Arc<dyn PhysicalExpr>>,
     options: ParquetOptions,
-    cloud_options: Option<CloudOptions>,
 }
 
 impl ParquetExec {
@@ -19,14 +16,12 @@ impl ParquetExec {
         schema: SchemaRef,
         predicate: Option<Arc<dyn PhysicalExpr>>,
         options: ParquetOptions,
-        cloud_options: Option<CloudOptions>,
     ) -> Self {
         ParquetExec {
             path,
             schema,
             predicate,
             options,
-            cloud_options,
         }
     }
 

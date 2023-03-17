@@ -2,67 +2,29 @@ use std::path::{Path, PathBuf};
 
 use polars_core::cloud::CloudOptions;
 use polars_core::prelude::*;
-use polars_io::parquet::ParallelStrategy;
 use polars_io::RowCount;
 
 use crate::prelude::*;
 
 #[derive(Clone)]
-pub struct ScanArgsParquet {
-    pub n_rows: Option<usize>,
-    pub cache: bool,
-    pub parallel: ParallelStrategy,
-    pub rechunk: bool,
-    pub row_count: Option<RowCount>,
-    pub low_memory: bool,
-    pub cloud_options: Option<CloudOptions>,
-    pub use_statistics: bool,
-}
-
-impl Default for ScanArgsParquet {
-    fn default() -> Self {
-        Self {
-            n_rows: None,
-            cache: true,
-            parallel: Default::default(),
-            rechunk: true,
-            row_count: None,
-            low_memory: false,
-            cloud_options: None,
-            use_statistics: true,
-        }
-    }
-}
-
-#[derive(Clone)]
 struct LazyParquetReader {
-    args: ScanArgsParquet,
+    args: ParquetOptions,
     path: PathBuf,
 }
 
 impl LazyParquetReader {
-    fn new(path: PathBuf, args: ScanArgsParquet) -> Self {
+    fn new(path: PathBuf, args: ParquetOptions) -> Self {
         Self { args, path }
     }
 }
 
 impl LazyFileListReader for LazyParquetReader {
     fn finish_no_glob(self) -> PolarsResult<LazyFrame> {
-        let row_count = self.args.row_count;
-        let path = self.path;
-        let mut lf: LazyFrame = LogicalPlanBuilder::scan_parquet(
-            path,
-            self.args.n_rows,
-            self.args.cache,
-            self.args.parallel,
-            None,
-            self.args.rechunk,
-            self.args.low_memory,
-            self.args.cloud_options,
-            self.args.use_statistics,
-        )?
-        .build()
-        .into();
+        let row_count = self.args.row_count.clone();
+
+        let mut lf: LazyFrame = LogicalPlanBuilder::scan_parquet(self.path, self.args)?
+            .build()
+            .into();
 
         // it is a bit hacky, but this row_count function updates the schema
         if let Some(row_count) = row_count {
@@ -109,7 +71,7 @@ impl LazyFrame {
     #[deprecated(note = "please use `concat_lf` instead")]
     pub fn scan_parquet_files<P: AsRef<Path>>(
         paths: Vec<P>,
-        args: ScanArgsParquet,
+        args: ParquetOptions,
     ) -> PolarsResult<Self> {
         let reader = LazyParquetReader::new(
             paths.first().expect("got no files").as_ref().to_owned(),
@@ -129,7 +91,7 @@ impl LazyFrame {
     }
 
     /// Create a LazyFrame directly from a parquet scan.
-    pub fn scan_parquet(path: impl AsRef<Path>, args: ScanArgsParquet) -> PolarsResult<Self> {
+    pub fn scan_parquet(path: impl AsRef<Path>, args: ParquetOptions) -> PolarsResult<Self> {
         LazyParquetReader::new(path.as_ref().to_owned(), args).finish()
     }
 }

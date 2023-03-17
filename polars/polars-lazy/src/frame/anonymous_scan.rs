@@ -25,6 +25,7 @@ impl Default for ScanArgsAnonymous {
         }
     }
 }
+
 impl LazyFrame {
     pub fn anonymous_scan(
         function: Arc<dyn AnonymousScan>,

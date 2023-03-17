@@ -9,40 +9,32 @@ const fn base_path() -> &'static str {
 
 fn region() -> LazyFrame {
     let base_path = base_path();
-    LazyFrame::scan_ipc(
-        format!("{base_path}/region.feather"),
-        ScanArgsIpc::default(),
-    )
-    .unwrap()
+    LazyFrame::scan_ipc(format!("{base_path}/region.feather"), IpcOptions::default()).unwrap()
 }
 fn nation() -> LazyFrame {
     let base_path = base_path();
-    LazyFrame::scan_ipc(
-        format!("{base_path}/nation.feather"),
-        ScanArgsIpc::default(),
-    )
-    .unwrap()
+    LazyFrame::scan_ipc(format!("{base_path}/nation.feather"), IpcOptions::default()).unwrap()
 }
 
 fn supplier() -> LazyFrame {
     let base_path = base_path();
     LazyFrame::scan_ipc(
         format!("{base_path}/supplier.feather"),
-        ScanArgsIpc::default(),
+        IpcOptions::default(),
     )
     .unwrap()
 }
 
 fn part() -> LazyFrame {
     let base_path = base_path();
-    LazyFrame::scan_ipc(format!("{base_path}/part.feather"), ScanArgsIpc::default()).unwrap()
+    LazyFrame::scan_ipc(format!("{base_path}/part.feather"), IpcOptions::default()).unwrap()
 }
 
 fn partsupp() -> LazyFrame {
     let base_path = base_path();
     LazyFrame::scan_ipc(
         format!("{base_path}/partsupp.feather"),
-        ScanArgsIpc::default(),
+        IpcOptions::default(),
     )
     .unwrap()
 }

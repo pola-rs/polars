@@ -1,8 +1,6 @@
 #[cfg(feature = "csv-file")]
 use std::io::{Read, Seek};
 
-#[cfg(feature = "parquet")]
-use polars_core::cloud::CloudOptions;
 use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
@@ -113,14 +111,7 @@ impl LogicalPlanBuilder {
     #[allow(clippy::too_many_arguments)]
     pub fn scan_parquet<P: Into<std::path::PathBuf>>(
         path: P,
-        n_rows: Option<usize>,
-        cache: bool,
-        parallel: polars_io::parquet::ParallelStrategy,
-        row_count: Option<RowCount>,
-        rechunk: bool,
-        low_memory: bool,
-        cloud_options: Option<CloudOptions>,
-        use_statistics: bool,
+        args: ParquetOptions,
     ) -> PolarsResult<Self> {
         use polars_io::{is_cloud_url, SerReader as _};
 
@@ -135,7 +126,7 @@ impl LogicalPlanBuilder {
             {
                 let uri = path.to_string_lossy();
                 let (schema, num_rows) =
-                    ParquetAsyncReader::file_info(&uri, cloud_options.as_ref())?;
+                    ParquetAsyncReader::file_info(&uri, args.cloud_options.as_ref())?;
                 Ok(FileInfo {
                     schema: Arc::new(schema),
                     row_estimation: (Some(num_rows), num_rows),
@@ -157,18 +148,7 @@ impl LogicalPlanBuilder {
             path,
             file_info,
             predicate: None,
-            options: ParquetOptions {
-                n_rows,
-                with_columns: None,
-                cache,
-                parallel,
-                row_count,
-                rechunk,
-                file_counter: Default::default(),
-                low_memory,
-                use_statistics,
-            },
-            cloud_options,
+            options: args,
         }
         .into())
     }
@@ -176,7 +156,7 @@ impl LogicalPlanBuilder {
     #[cfg(feature = "ipc")]
     pub fn scan_ipc<P: Into<std::path::PathBuf>>(
         path: P,
-        options: IpcScanOptions,
+        options: IpcOptions,
     ) -> PolarsResult<Self> {
         use polars_io::SerReader as _;
 

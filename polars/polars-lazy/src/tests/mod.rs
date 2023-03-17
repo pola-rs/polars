@@ -109,7 +109,7 @@ fn scan_foods_parquet(parallel: bool) -> LazyFrame {
         ParallelStrategy::None
     };
 
-    let args = ScanArgsParquet {
+    let args = ParquetOptions {
         n_rows: None,
         cache: false,
         parallel,

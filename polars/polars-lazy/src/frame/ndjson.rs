@@ -2,46 +2,34 @@ use std::path::{Path, PathBuf};
 
 use polars_core::prelude::*;
 use polars_io::RowCount;
+use polars_plan::prelude::JsonLineOptions;
 
 use super::{LazyFileListReader, LazyFrame, ScanArgsAnonymous};
 
 #[derive(Clone)]
 pub struct LazyJsonLineReader {
     pub(crate) path: PathBuf,
-    pub(crate) batch_size: Option<usize>,
-    pub(crate) low_memory: bool,
-    pub(crate) rechunk: bool,
-    pub(crate) schema: Option<Schema>,
-    pub(crate) row_count: Option<RowCount>,
-    pub(crate) infer_schema_length: Option<usize>,
-    pub(crate) n_rows: Option<usize>,
+    pub(crate) options: JsonLineOptions,
 }
 
 impl LazyJsonLineReader {
-    pub fn new(path: String) -> Self {
-        // TODO: Change argument type to impl AsRef<Path>
+    pub fn new(path: impl AsRef<Path>, options: JsonLineOptions) -> Self {
         LazyJsonLineReader {
-            path: path.into(),
-            batch_size: None,
-            low_memory: false,
-            rechunk: true,
-            schema: None,
-            row_count: None,
-            infer_schema_length: Some(100),
-            n_rows: None,
+            path: path.as_ref().to_owned(),
+            options,
         }
     }
     /// Add a `row_count` column.
     #[must_use]
     pub fn with_row_count(mut self, row_count: Option<RowCount>) -> Self {
-        self.row_count = row_count;
+        self.options.row_count = row_count;
         self
     }
     /// Try to stop parsing when `n` rows are parsed. During multithreaded parsing the upper bound `n` cannot
     /// be guaranteed.
     #[must_use]
     pub fn with_n_rows(mut self, num_rows: Option<usize>) -> Self {
-        self.n_rows = num_rows;
+        self.options.n_rows = num_rows;
         self
     }
     /// Set the number of rows to use when inferring the json schema.
@@ -49,26 +37,26 @@ impl LazyJsonLineReader {
     /// Setting to `None` will do a full table scan, very slow.
     #[must_use]
     pub fn with_infer_schema_length(mut self, num_rows: Option<usize>) -> Self {
-        self.infer_schema_length = num_rows;
+        self.options.infer_schema_length = num_rows;
         self
     }
     /// Set the JSON file's schema
     #[must_use]
     pub fn with_schema(mut self, schema: Schema) -> Self {
-        self.schema = Some(schema);
+        self.options.schema = Some(schema);
         self
     }
 
     /// Reduce memory usage in expensive of performance
     #[must_use]
     pub fn low_memory(mut self, toggle: bool) -> Self {
-        self.low_memory = toggle;
+        self.options.low_memory = toggle;
         self
     }
 
     #[must_use]
     pub fn with_batch_size(mut self, batch_size: Option<usize>) -> Self {
-        self.batch_size = batch_size;
+        self.options.batch_size = batch_size;
         self
     }
 }
@@ -77,10 +65,10 @@ impl LazyFileListReader for LazyJsonLineReader {
     fn finish_no_glob(self) -> PolarsResult<LazyFrame> {
         let options = ScanArgsAnonymous {
             name: "JSON SCAN",
-            infer_schema_length: self.infer_schema_length,
-            n_rows: self.n_rows,
-            row_count: self.row_count.clone(),
-            schema: self.schema.clone(),
+            infer_schema_length: self.options.infer_schema_length,
+            n_rows: self.options.n_rows,
+            row_count: self.options.row_count.clone(),
+            schema: self.options.schema.clone(),
             ..ScanArgsAnonymous::default()
         };
 
@@ -97,24 +85,33 @@ impl LazyFileListReader for LazyJsonLineReader {
     }
 
     fn rechunk(&self) -> bool {
-        self.rechunk
+        self.options.rechunk
     }
 
     /// Rechunk the memory to contiguous chunks when parsing is done.
     #[must_use]
     fn with_rechunk(mut self, toggle: bool) -> Self {
-        self.rechunk = toggle;
+        self.options.rechunk = toggle;
         self
     }
 
     /// Try to stop parsing when `n` rows are parsed. During multithreaded parsing the upper bound `n` cannot
     /// be guaranteed.
     fn n_rows(&self) -> Option<usize> {
-        self.n_rows
+        self.options.n_rows
     }
 
     /// Add a `row_count` column.
     fn row_count(&self) -> Option<&RowCount> {
-        self.row_count.as_ref()
+        self.options.row_count.as_ref()
+    }
+}
+
+impl LazyFrame {
+    /// Lazily read from a newline delimited JSON file or multiple files via glob patterns.
+    /// This allows the query optimizer to push down predicates and projections to the scan
+    /// level, thereby potentially reducing memory overhead.
+    pub fn scan_ndjson(path: impl AsRef<Path>, options: JsonLineOptions) -> PolarsResult<Self> {
+        LazyJsonLineReader::new(path, options).finish()
     }
 }

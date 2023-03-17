@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use polars_core::cloud::CloudOptions;
 use polars_core::error::PolarsResult;
 use polars_core::schema::*;
 use polars_core::POOL;
@@ -25,7 +24,6 @@ impl ParquetSource {
     pub(crate) fn new(
         path: PathBuf,
         options: ParquetOptions,
-        cloud_options: Option<CloudOptions>,
         schema: &Schema,
         verbose: bool,
     ) -> PolarsResult<Self> {
@@ -54,7 +52,7 @@ impl ParquetSource {
             #[cfg(feature = "async")]
             {
                 let uri = path.to_string_lossy();
-                ParquetAsyncReader::from_uri(&uri, cloud_options.as_ref())?
+                ParquetAsyncReader::from_uri(&uri, options.cloud_options.as_ref())?
                     .with_n_rows(options.n_rows)
                     .with_row_count(options.row_count)
                     .with_projection(projection)
