@@ -540,15 +540,12 @@ impl ToPyObject for Wrap<&DecimalChunked> {
         let py_precision = self.0.precision().unwrap_or(39).to_object(py);
         let iter = self.0.into_iter().map(|opt_v| {
             opt_v.map(|v| {
+                // TODO! use anyvalue so that we have a single impl.
                 let mut buf = [0_u8; 48];
                 let n_digits = decimal_to_digits(v.abs(), &mut buf);
+                let digits = PyTuple::new(py, buf.into_iter().take(n_digits));
                 convert
-                    .call1((
-                        v.is_negative() as u8,
-                        &buf[..n_digits],
-                        &py_precision,
-                        &py_scale,
-                    ))
+                    .call1((v.is_negative() as u8, digits, &py_precision, &py_scale))
                     .unwrap()
             })
         });
