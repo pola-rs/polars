@@ -506,25 +506,25 @@ class ExprListNameSpace:
         >>> df = pl.DataFrame({"n": [[1, 2, 3, 4], [10, 2, 1]]})
         >>> df.select(pl.col("n").arr.diff())
         shape: (2, 1)
-        ┌──────────────────┐
-        │ n                │
-        │ ---              │
-        │ list[i64]        │
-        ╞══════════════════╡
-        │ [null, 1, ... 1] │
-        │ [null, -8, -1]   │
-        └──────────────────┘
+        ┌────────────────┐
+        │ n              │
+        │ ---            │
+        │ list[i64]      │
+        ╞════════════════╡
+        │ [null, 1, … 1] │
+        │ [null, -8, -1] │
+        └────────────────┘
 
         >>> df.select(pl.col("n").arr.diff(n=2))
         shape: (2, 1)
-        ┌─────────────────────┐
-        │ n                   │
-        │ ---                 │
-        │ list[i64]           │
-        ╞═════════════════════╡
-        │ [null, null, ... 2] │
-        │ [null, null, -9]    │
-        └─────────────────────┘
+        ┌───────────────────┐
+        │ n                 │
+        │ ---               │
+        │ list[i64]         │
+        ╞═══════════════════╡
+        │ [null, null, … 2] │
+        │ [null, null, -9]  │
+        └───────────────────┘
 
         >>> df.select(pl.col("n").arr.diff(n=2, null_behavior="drop"))
         shape: (2, 1)
@@ -556,7 +556,7 @@ class ExprListNameSpace:
         shape: (2,)
         Series: 'a' [list[i64]]
         [
-            [null, 1, ... 3]
+            [null, 1, … 3]
             [null, 10, 2]
         ]
 

@@ -232,7 +232,7 @@ class ListNameSpace:
         shape: (2,)
         Series: 'a' [list[i64]]
         [
-            [null, 1, ... 1]
+            [null, 1, … 1]
             [null, -8, -1]
         ]
 
@@ -240,7 +240,7 @@ class ListNameSpace:
         shape: (2,)
         Series: 'a' [list[i64]]
         [
-            [null, null, ... 2]
+            [null, null, … 2]
             [null, null, -9]
         ]
 
@@ -270,7 +270,7 @@ class ListNameSpace:
         shape: (2,)
         Series: 'a' [list[i64]]
         [
-            [null, 1, ... 3]
+            [null, 1, … 3]
             [null, 10, 2]
         ]
 
