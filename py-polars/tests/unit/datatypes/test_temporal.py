@@ -2489,6 +2489,14 @@ def test_round_by_week() -> None:
     }
 
 
+@pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu", "+01:00"])
+def test_round_by_day_datetime(time_zone: str | None) -> None:
+    ser = pl.Series([datetime(2021, 11, 7, 3)]).dt.replace_time_zone(time_zone)
+    result = ser.dt.round("1d")
+    expected = pl.Series([datetime(2021, 11, 7)]).dt.replace_time_zone(time_zone)
+    assert_series_equal(result, expected)
+
+
 def test_cast_time_to_duration() -> None:
     assert pl.Series([time(hour=0, minute=0, second=2)]).cast(
         pl.Duration

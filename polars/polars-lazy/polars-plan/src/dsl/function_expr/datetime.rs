@@ -1,3 +1,7 @@
+#[cfg(feature = "timezones")]
+use chrono_tz::Tz;
+#[cfg(feature = "timezones")]
+use polars_core::utils::arrow::temporal_conversions::parse_offset;
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -129,8 +133,34 @@ pub(super) fn round(s: &Series, every: &str, offset: &str) -> PolarsResult<Serie
     let every = Duration::parse(every);
     let offset = Duration::parse(offset);
     Ok(match s.dtype() {
-        DataType::Datetime(_, _) => s.datetime().unwrap().round(every, offset).into_series(),
-        DataType::Date => s.date().unwrap().round(every, offset).into_series(),
+        DataType::Datetime(_, tz) => match tz {
+            #[cfg(feature = "timezones")]
+            Some(tz) => match tz.parse::<Tz>() {
+                Ok(tz) => s
+                    .datetime()
+                    .unwrap()
+                    .round(every, offset, Some(&tz))?
+                    .into_series(),
+                Err(_) => match parse_offset(tz) {
+                    Ok(tz) => s
+                        .datetime()
+                        .unwrap()
+                        .round(every, offset, Some(&tz))?
+                        .into_series(),
+                    Err(_) => unreachable!(),
+                },
+            },
+            _ => s
+                .datetime()
+                .unwrap()
+                .round(every, offset, NO_TIMEZONE)?
+                .into_series(),
+        },
+        DataType::Date => s
+            .date()
+            .unwrap()
+            .round(every, offset, NO_TIMEZONE)?
+            .into_series(),
         dt => polars_bail!(opq = round, got = dt, expected = "date/datetime"),
     })
 }
