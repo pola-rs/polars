@@ -2959,7 +2959,7 @@ class DataFrame:
             # this conversion to pandas as zero-copy
             # so we can utilize their sql utils for free
             self.to_pandas(use_pyarrow_extension_array=True).to_sql(
-                name=table_name, con=engine, if_exists=if_exists
+                name=table_name, con=engine, if_exists=if_exists, index=False
             )
 
         else:
