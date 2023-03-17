@@ -1,3 +1,4 @@
+use chrono::TimeZone as TimeZoneTrait;
 use polars_arrow::export::arrow::temporal_conversions::{MILLISECONDS, SECONDS_IN_DAY};
 use polars_core::prelude::*;
 
@@ -5,13 +6,13 @@ use crate::prelude::*;
 
 pub trait PolarsRound {
     #[must_use]
-    fn round(&self, every: Duration, offset: Duration) -> Self;
+    fn round(&self, every: Duration, offset: Duration, tz: Option<&impl TimeZoneTrait>) -> Self;
 }
 
 #[cfg(feature = "dtype-datetime")]
 impl PolarsRound for DatetimeChunked {
     #[must_use]
-    fn round(&self, every: Duration, offset: Duration) -> Self {
+    fn round(&self, every: Duration, offset: Duration, tz: Option<&impl TimeZoneTrait>) -> Self {
         let w = Window::new(every, every, offset);
 
         let func = match self.time_unit() {
@@ -20,8 +21,7 @@ impl PolarsRound for DatetimeChunked {
             TimeUnit::Milliseconds => Window::round_ms,
         };
 
-        // TODO remove unwrap once time zone is respected
-        self.apply(|t| func(&w, t, NO_TIMEZONE).unwrap())
+        self.apply(|t| func(&w, t, tz).unwrap())
             .into_datetime(self.time_unit(), self.time_zone().clone())
     }
 }
@@ -29,7 +29,7 @@ impl PolarsRound for DatetimeChunked {
 #[cfg(feature = "dtype-date")]
 impl PolarsRound for DateChunked {
     #[must_use]
-    fn round(&self, every: Duration, offset: Duration) -> Self {
+    fn round(&self, every: Duration, offset: Duration, _tz: Option<&impl TimeZoneTrait>) -> Self {
         let w = Window::new(every, every, offset);
         self.apply(|t| {
             const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;

@@ -1634,6 +1634,7 @@ version = "0.27.2"
 dependencies = [
  "ahash",
  "chrono",
+ "chrono-tz 0.8.1",
  "once_cell",
  "polars-arrow",
  "polars-core",
@@ -1716,7 +1717,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.16.13"
+version = "0.16.14"
 dependencies = [
  "ahash",
  "bincode",
