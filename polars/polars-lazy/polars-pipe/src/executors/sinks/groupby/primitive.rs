@@ -15,6 +15,7 @@ use polars_utils::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 use rayon::prelude::*;
+use polars_arrow::export::arrow::array::MutableBooleanArray;
 
 use super::aggregates::AggregateFn;
 use crate::executors::sinks::groupby::aggregates::AggregateFunction;
@@ -23,8 +24,10 @@ use crate::executors::sinks::groupby::string::{apply_aggregate, write_agg_idx};
 use crate::executors::sinks::groupby::utils::compute_slices;
 use crate::executors::sinks::utils::load_vec;
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
+use crate::executors::sinks::memory::MemTracker;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
+use crate::pipeline::morsels_per_sink;
 
 // hash + value
 #[derive(Eq, Copy, Clone)]
@@ -71,6 +74,12 @@ pub struct PrimitiveGroupbySink<K: PolarsNumericType> {
     slice: Option<(i64, usize)>,
     // for sorted fast paths
     sort_partitions: Vec<[IdxSize; 2]>,
+
+    // Stores available memory in the system at the start of this sink.
+    // and stores the memory used by this this sink.
+    mem_track: MemTracker,
+    // sort in-memory or out-of-core
+    ooc: bool,
 }
 
 impl<K: PolarsNumericType> PrimitiveGroupbySink<K>
@@ -86,8 +95,10 @@ where
         output_schema: SchemaRef,
         slice: Option<(i64, usize)>,
     ) -> Self {
+        let ooc = std::env::var("POLARS_FORCE_OOC_GROUPBY").is_ok();
         let hb = RandomState::default();
         let partitions = _set_partition_size();
+        let n_morsels_per_sink = morsels_per_sink();
 
         let pre_agg = load_vec(partitions, || PlIdHashMap::with_capacity(HASHMAP_INIT_SIZE));
         let aggregators =
@@ -107,6 +118,8 @@ where
             hashes: vec![],
             slice,
             sort_partitions: vec![],
+            mem_track: MemTracker::new(n_morsels_per_sink),
+            ooc
         }
     }
 
@@ -215,14 +228,13 @@ where
         self.aggregation_series.clear();
         Ok(SinkResult::CanHaveMoreInput)
     }
-}
 
-impl<K: PolarsNumericType> Sink for PrimitiveGroupbySink<K>
-where
-    K::Native: Hash + Eq + Debug + FxHash,
-    ChunkedArray<K>: IntoSeries,
-{
-    fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
+    fn init_ooc(&mut self) {
+        self.ooc = true;
+        todo!()
+    }
+
+    fn prepare_key_and_aggregation_series(&mut self, context: &PExecutionContext, chunk: &DataChunk) -> PolarsResult<Series> {
         let s = self
             .key
             .evaluate(&chunk, context.execution_state.as_any())?;
@@ -238,6 +250,54 @@ where
             let s = s.to_physical_repr();
             self.aggregation_series.push(s.rechunk());
         }
+        Ok(s)
+    }
+
+    fn sink_ooc(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
+        let s = self.prepare_key_and_aggregation_series(context, &chunk)?;
+        // cow -> &series -> &dyn series_trait -> &chunkedarray
+        let ca: &ChunkedArray<K> = s.as_ref().as_ref();
+
+        let num_aggs = self.number_of_aggs();
+        s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
+
+        let arr = ca.downcast_iter().next().unwrap();
+        let pre_agg_len = self.pre_agg_partitions.len();
+
+        // idx of rows that are not yet in the table. We will not grow the table but sink these rows to disk and aggregate them later
+        let mut is_in_table = MutableBooleanArray::with_capacity(ca.len());
+        is_in_table.exten
+        let mut sink_idx = vec![];
+        let mut agg_idx_buf = vec![];
+
+        for (iteration_idx, (opt_v, &h)) in arr.iter().zip(self.hashes.iter()).enumerate() {
+            let opt_v = opt_v.copied();
+            if let Some(agg_idx) = try_insert_and_get(
+                h,
+                opt_v,
+                pre_agg_len,
+                &mut self.pre_agg_partitions,
+            ) {
+                agg_idx_buf.push(agg_idx);
+            } else {
+                sink_idx.push(iteration_idx as IdxSize)
+            }
+        }
+
+
+        Ok(SinkResult::CanHaveMoreInput)
+    }
+}
+
+impl<K: PolarsNumericType> Sink for PrimitiveGroupbySink<K>
+where
+    K::Native: Hash + Eq + Debug + FxHash,
+    ChunkedArray<K>: IntoSeries,
+{
+    fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
+        let s = self.prepare_key_and_aggregation_series(context, &chunk)?;
+        // cow -> &series -> &dyn series_trait -> &chunkedarray
+        let ca: &ChunkedArray<K> = s.as_ref().as_ref();
 
         // sorted fast path
         if matches!(ca.is_sorted_flag2(), IsSorted::Ascending) && ca.null_count() == 0 {
@@ -245,9 +305,9 @@ where
         }
 
         let num_aggs = self.number_of_aggs();
-
         s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
 
+        // this reuses the hashes buffer as [u64] as idx buffer as [idxsize]
         // write the hashes to self.hashes buffer
         // s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
         // now we have written hashes, we take the pointer to this buffer
@@ -270,7 +330,7 @@ where
             );
             // # Safety
             // we write to the hashes buffer we iterate over at the moment.
-            // this is sound because we writes are trailing from iteration
+            // this is sound because the writes are trailing from iteration
             unsafe { write_agg_idx(agg_idx_ptr, iteration_idx, agg_idx) };
         }
 
@@ -290,6 +350,10 @@ where
         }
 
         self.aggregation_series.clear();
+
+        if self.mem_track.free_memory_fraction_since_start() < 0.25 || true {
+            self.init_ooc()
+        }
         Ok(SinkResult::CanHaveMoreInput)
     }
 
@@ -398,5 +462,28 @@ where
             offset
         }
         RawEntryMut::Occupied(entry) => *entry.get(),
+    }
+}
+
+fn try_insert_and_get<T>(
+    h: u64,
+    opt_v: Option<T>,
+    pre_agg_len: usize,
+    pre_agg_partitions: &mut Vec<PlIdHashMap<Key<Option<T>>, IdxSize>>,
+) -> Option<IdxSize>
+    where
+        T: NumericNative + FxHash,
+{
+    let part = hash_to_partition(h, pre_agg_len);
+    let current_partition = unsafe { pre_agg_partitions.get_unchecked_release_mut(part) };
+
+    let entry = current_partition
+        .raw_entry_mut()
+        .from_hash(h, |k| k.value == opt_v);
+    match entry {
+        RawEntryMut::Vacant(_) => {
+            None
+        }
+        RawEntryMut::Occupied(entry) => Some(*entry.get()),
     }
 }
