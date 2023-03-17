@@ -139,13 +139,13 @@ pub(super) fn round(s: &Series, every: &str, offset: &str) -> PolarsResult<Serie
                 Ok(tz) => s
                     .datetime()
                     .unwrap()
-                    .round(every, offset, Some(&tz))
+                    .round(every, offset, Some(&tz))?
                     .into_series(),
                 Err(_) => match parse_offset(tz) {
                     Ok(tz) => s
                         .datetime()
                         .unwrap()
-                        .round(every, offset, Some(&tz))
+                        .round(every, offset, Some(&tz))?
                         .into_series(),
                     Err(_) => unreachable!(),
                 },
@@ -153,13 +153,13 @@ pub(super) fn round(s: &Series, every: &str, offset: &str) -> PolarsResult<Serie
             _ => s
                 .datetime()
                 .unwrap()
-                .round(every, offset, NO_TIMEZONE)
+                .round(every, offset, NO_TIMEZONE)?
                 .into_series(),
         },
         DataType::Date => s
             .date()
             .unwrap()
-            .round(every, offset, NO_TIMEZONE)
+            .round(every, offset, NO_TIMEZONE)?
             .into_series(),
         dt => polars_bail!(opq = round, got = dt, expected = "date/datetime"),
     })
