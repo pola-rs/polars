@@ -76,3 +76,17 @@ def test_init_decimal_dtype() -> None:
     _ = pl.DataFrame(
         {"a": [D("-0.01"), D("1.2345678"), D("500")]}, schema={"a": pl.Decimal}
     )
+
+
+def test_decimal_cast() -> None:
+    df = pl.DataFrame(
+        {
+            "decimals": [
+                D("2"),
+                D("2"),
+            ],
+        }
+    )
+    assert df.with_columns(pl.col("decimals").cast(pl.Float32).alias("b2")).to_dict(
+        False
+    ) == {"decimals": [D("2"), D("2")], "b2": [2.0, 2.0]}
