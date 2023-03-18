@@ -38,6 +38,8 @@ pub(super) fn date_offset(s: Series, offset: Duration) -> PolarsResult<Series> {
             match tz {
                 #[cfg(feature = "timezones")]
                 Some(tz) => match tz.parse::<Tz>() {
+                    // TODO write `try_apply_mut` and use that instead of `apply_mut`,
+                    // then remove `unwrap`.
                     Ok(tz) => {
                         ca.0.apply_mut(|v| adder(tu)(&offset, v, Some(&tz)).unwrap())
                     }
