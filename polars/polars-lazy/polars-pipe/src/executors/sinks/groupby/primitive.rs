@@ -6,6 +6,7 @@ use std::sync::Mutex;
 use hashbrown::hash_map::RawEntryMut;
 use num_traits::NumCast;
 use polars_arrow::kernels::sort_partition::partition_to_groups_amortized;
+use polars_core::config::verbose;
 use polars_core::export::ahash::RandomState;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
@@ -19,17 +20,16 @@ use polars_utils::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 use rayon::prelude::*;
-use polars_core::config::verbose;
 
 use super::aggregates::AggregateFn;
 use crate::executors::sinks::groupby::aggregates::AggregateFunction;
 use crate::executors::sinks::groupby::physical_agg_to_logical;
 use crate::executors::sinks::groupby::string::{apply_aggregate, write_agg_idx};
 use crate::executors::sinks::groupby::utils::compute_slices;
+use crate::executors::sinks::io::IOThread;
 use crate::executors::sinks::memory::MemTracker;
 use crate::executors::sinks::utils::load_vec;
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
-use crate::executors::sinks::io::IOThread;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
 use crate::pipeline::{morsels_per_sink, PARTITION_SIZE};
@@ -91,6 +91,7 @@ pub struct PrimitiveGroupbySink<K: PolarsNumericType> {
     agg_idx_ooc: Vec<IdxSize>,
     // when ooc, we write to disk using an IO thread
     io_thread: Arc<Mutex<Option<IOThread>>>,
+    partitions: Option<Arc<[IdxSize]>>,
 }
 
 impl<K: PolarsNumericType> PrimitiveGroupbySink<K>
@@ -105,9 +106,10 @@ where
         input_schema: SchemaRef,
         output_schema: SchemaRef,
         slice: Option<(i64, usize)>,
-        io_thread: Option<Arc<Mutex<Option<IOThread>>>>
+        io_thread: Option<Arc<Mutex<Option<IOThread>>>>,
     ) -> Self {
         let ooc = std::env::var("POLARS_FORCE_OOC_GROUPBY").is_ok();
+
         let hb = RandomState::default();
         let partitions = _set_partition_size();
         let n_morsels_per_sink = morsels_per_sink();
@@ -116,7 +118,7 @@ where
         let aggregators =
             Vec::with_capacity(HASHMAP_INIT_SIZE * aggregation_columns.len() * partitions);
 
-        Self {
+        let mut out = Self {
             thread_no: 0,
             pre_agg_partitions: pre_agg,
             aggregators,
@@ -134,8 +136,13 @@ where
             ooc,
             ooc_filter: vec![],
             agg_idx_ooc: vec![],
-            io_thread: io_thread.unwrap_or_default()
+            io_thread: io_thread.unwrap_or_default(),
+            partitions: None,
+        };
+        if ooc {
+            out.init_ooc().unwrap();
         }
+        out
     }
 
     #[inline]
@@ -300,9 +307,10 @@ where
 
     fn init_ooc(&mut self) -> PolarsResult<()> {
         if verbose() {
-            eprintln!("OOC sort started");
+            eprintln!("OOC groupby started");
         }
         self.ooc = true;
+        self.partitions = Some(Arc::from_iter((0 as IdxSize)..(PARTITION_SIZE as IdxSize)));
 
         // start IO thread
         let mut iot = self.io_thread.lock().unwrap();
@@ -367,6 +375,7 @@ where
         let ooc_filter = self.get_ooc_filter(ca.len());
         let df = chunk.data._filter_seq(&ooc_filter).unwrap();
         let partitions = split_df_as_ref(&df, PARTITION_SIZE)?;
+        self.dump(partitions);
 
         Ok(SinkResult::CanHaveMoreInput)
     }
@@ -374,7 +383,13 @@ where
     fn dump(&self, partitions: Vec<DataFrame>) {
         let iot = self.io_thread.lock().unwrap();
         let iot = iot.as_ref().unwrap();
-        // iot.dump_iter()
+
+        let part_idx = unsafe {
+            self.partitions
+                .as_ref()
+                .map(|parts| IdxCa::mmap_slice("", parts.as_ref()))
+        };
+        iot.dump_iter(part_idx, Box::new(partitions.into_iter()))
     }
 }
 
@@ -493,7 +508,7 @@ where
             self.input_schema.clone(),
             self.output_schema.clone(),
             self.slice,
-            Some(self.io_thread.clone())
+            Some(self.io_thread.clone()),
         );
         new.hb = self.hb.clone();
         new.thread_no = thread_no;

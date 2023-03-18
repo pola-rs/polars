@@ -1,3 +1,5 @@
+extern crate core;
+
 #[cfg(feature = "compile")]
 mod executors;
 #[cfg(feature = "compile")]

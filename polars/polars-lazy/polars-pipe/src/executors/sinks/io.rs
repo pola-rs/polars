@@ -18,8 +18,7 @@ type Payload = (Option<IdxCa>, DfIter);
 /// A helper that can be used to spill to disk
 pub(crate) struct IOThread {
     sender: Sender<Payload>,
-    // ensures the directory is not GC'ed
-    _lockfile: LockFile,
+    _lockfile: Arc<LockFile>,
     pub(in crate::executors::sinks) dir: PathBuf,
     pub(in crate::executors::sinks) sent: Arc<AtomicUsize>,
     pub(in crate::executors::sinks) total: Arc<AtomicUsize>,
@@ -85,7 +84,7 @@ impl IOThread {
         std::fs::create_dir_all(&dir)?;
 
         let lockfile_path = get_lockfile_path(&dir);
-        let lockfile = LockFile::new(lockfile_path)?;
+        let lockfile = Arc::new(LockFile::new(lockfile_path)?);
 
         // we need some pushback otherwise we still could go OOM.
         let (sender, receiver) = bounded::<Payload>(POOL.current_num_threads() * 2);
@@ -95,7 +94,12 @@ impl IOThread {
 
         let dir2 = dir.clone();
         let total2 = total.clone();
+        let lockfile2 = lockfile.clone();
         std::thread::spawn(move || {
+            // this moves the lockfile in the thread
+            // we keep one in the thread and one in the `IoThread` struct
+            let _keep_hold_on_lockfile = lockfile2;
+
             let mut count = 0usize;
             while let Ok((partitions, iter)) = receiver.recv() {
                 if let Some(partitions) = partitions {
@@ -152,6 +156,13 @@ impl IOThread {
     }
 }
 
+impl Drop for IOThread {
+    fn drop(&mut self) {
+        // we drop the lockfile explicitly as the thread GC will leak.
+        std::fs::remove_file(&self._lockfile.path).unwrap();
+    }
+}
+
 pub(in crate::executors::sinks) fn block_thread_until_io_thread_done(io_thread: &IOThread) {
     // get number sent
     let sent = io_thread.sent.load(Ordering::Relaxed);
@@ -177,6 +188,6 @@ impl LockFile {
 
 impl Drop for LockFile {
     fn drop(&mut self) {
-        std::fs::remove_file(&self.path).unwrap()
+        let _ = std::fs::remove_file(&self.path);
     }
 }
