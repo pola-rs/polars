@@ -237,22 +237,24 @@ pub fn groupby_windows(
 }
 
 // this assumes that the starting point is alwa
-pub(crate) fn groupby_values_iter_full_lookbehind(
+pub(crate) fn groupby_values_iter_full_lookbehind<'a>(
     period: Duration,
     offset: Duration,
-    time: &[i64],
+    time: &'a [i64],
     closed_window: ClosedWindow,
     tu: TimeUnit,
+    tz: Option<impl TimeZoneTrait + 'a>,
     start_offset: usize,
-) -> impl Iterator<Item = (IdxSize, IdxSize)> + TrustedLen + '_ {
+) -> impl Iterator<Item = (IdxSize, IdxSize)> + TrustedLen + 'a {
     debug_assert!(offset.duration_ns() >= period.duration_ns());
     debug_assert!(offset.negative);
-
-    let add = match tu {
-        TimeUnit::Nanoseconds => Duration::add_ns,
-        TimeUnit::Microseconds => Duration::add_us,
-        TimeUnit::Milliseconds => Duration::add_ms,
-    };
+    fn add<T: TimeZoneTrait>(tu: TimeUnit) -> fn(&Duration, i64, Option<&T>) -> PolarsResult<i64> {
+        match tu {
+            TimeUnit::Nanoseconds => Duration::add_ns,
+            TimeUnit::Microseconds => Duration::add_us,
+            TimeUnit::Milliseconds => Duration::add_ms,
+        }
+    }
 
     let mut last_lookbehind_i = 0;
     let mut last = i64::MIN;
@@ -265,9 +267,8 @@ pub(crate) fn groupby_values_iter_full_lookbehind(
             }
             last = *lower;
             i += start_offset;
-            // TODO remove unwrap once time zone is respected
-            let lower = add(&offset, *lower, NO_TIMEZONE).unwrap();
-            let upper = add(&period, lower, NO_TIMEZONE).unwrap();
+            let lower = add(tu)(&offset, *lower, tz.as_ref()).unwrap();
+            let upper = add(tu)(&period, lower, tz.as_ref()).unwrap();
 
             let b = Bounds::new(lower, upper);
 
@@ -456,6 +457,7 @@ pub(crate) fn groupby_values_iter<'a>(
     time: &'a [i64],
     closed_window: ClosedWindow,
     tu: TimeUnit,
+    tz: Option<impl TimeZoneTrait + 'a>,
 ) -> Box<dyn TrustedLen<Item = (IdxSize, IdxSize)> + 'a> {
     partially_check_sorted(time);
     // we have a (partial) lookbehind window
@@ -463,7 +465,7 @@ pub(crate) fn groupby_values_iter<'a>(
         // only lookbehind
         if offset.nanoseconds() == period.nanoseconds() {
             let iter =
-                groupby_values_iter_full_lookbehind(period, offset, time, closed_window, tu, 0);
+                groupby_values_iter_full_lookbehind(period, offset, time, closed_window, tu, tz, 0);
             Box::new(iter)
         }
         // partial lookbehind
@@ -508,12 +510,14 @@ pub fn groupby_values(
                         .copied()
                         .map(|(base_offset, len)| {
                             let upper_bound = base_offset + len;
+                            // TODO respect time zone
                             let iter = groupby_values_iter_full_lookbehind(
                                 period,
                                 offset,
                                 &time[..upper_bound],
                                 closed_window,
                                 tu,
+                                NO_TIMEZONE.copied(),
                                 base_offset,
                             );
                             iter.map(|(offset, len)| [offset as IdxSize, len])
