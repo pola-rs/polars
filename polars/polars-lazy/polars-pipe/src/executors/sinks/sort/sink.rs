@@ -9,8 +9,8 @@ use polars_core::prelude::{AnyValue, SchemaRef, Series, SortOptions};
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_plan::prelude::SortArguments;
 
+use crate::executors::sinks::io::{block_thread_until_io_thread_done, IOThread};
 use crate::executors::sinks::memory::MemTracker;
-use crate::executors::sinks::sort::io::{block_thread_until_io_thread_done, IOThread};
 use crate::executors::sinks::sort::ooc::sort_ooc;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
 use crate::pipeline::morsels_per_sink;
@@ -64,7 +64,7 @@ impl SortSink {
         // start IO thread
         let mut iot = self.io_thread.lock().unwrap();
         if iot.is_none() {
-            *iot = Some(IOThread::try_new(self.schema.clone())?)
+            *iot = Some(IOThread::try_new(self.schema.clone(), "sort")?)
         }
         Ok(())
     }

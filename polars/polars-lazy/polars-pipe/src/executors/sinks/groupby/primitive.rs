@@ -10,7 +10,9 @@ use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::arrow::bitmap::utils::set_bit_unchecked;
-use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked, split_df_as_ref};
+use polars_core::utils::{
+    _set_partition_size, accumulate_dataframes_vertical_unchecked, split_df_as_ref,
+};
 use polars_core::POOL;
 use polars_utils::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
