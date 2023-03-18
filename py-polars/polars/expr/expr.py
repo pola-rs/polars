@@ -6466,6 +6466,11 @@ class Expr:
                     dtype=input_dtype,
                     strict=True,
                 )
+                if input_dtype != remap_key_s.dtype:
+                    raise ValueError(
+                        f"Remapping keys could not be converted to {input_dtype}: found {remap_key_s.dtype}"
+                    )
+
             except TypeError as exc:
                 raise ValueError(
                     f"Remapping keys could not be converted to {input_dtype}: {str(exc)}"
