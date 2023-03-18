@@ -23,10 +23,11 @@ use rayon::prelude::*;
 
 use super::aggregates::AggregateFn;
 use crate::executors::sinks::groupby::aggregates::AggregateFunction;
+use crate::executors::sinks::groupby::ooc::GroupBySource;
 use crate::executors::sinks::groupby::physical_agg_to_logical;
 use crate::executors::sinks::groupby::string::{apply_aggregate, write_agg_idx};
 use crate::executors::sinks::groupby::utils::compute_slices;
-use crate::executors::sinks::io::IOThread;
+use crate::executors::sinks::io::{block_thread_until_io_thread_done, IOThread};
 use crate::executors::sinks::memory::MemTracker;
 use crate::executors::sinks::utils::load_vec;
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
@@ -109,7 +110,29 @@ where
         io_thread: Option<Arc<Mutex<Option<IOThread>>>>,
     ) -> Self {
         let ooc = std::env::var("POLARS_FORCE_OOC_GROUPBY").is_ok();
+        Self::new_inner(
+            key,
+            aggregation_columns,
+            agg_fns,
+            input_schema,
+            output_schema,
+            slice,
+            io_thread,
+            ooc,
+        )
+    }
 
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new_inner(
+        key: Arc<dyn PhysicalPipedExpr>,
+        aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
+        agg_fns: Vec<AggregateFunction>,
+        input_schema: SchemaRef,
+        output_schema: SchemaRef,
+        slice: Option<(i64, usize)>,
+        io_thread: Option<Arc<Mutex<Option<IOThread>>>>,
+        ooc: bool,
+    ) -> Self {
         let hb = RandomState::default();
         let partitions = _set_partition_size();
         let n_morsels_per_sink = morsels_per_sink();
@@ -491,17 +514,37 @@ where
 
     fn finalize(&mut self, _context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         let dfs = self.pre_finalize()?;
-        if dfs.is_empty() {
-            return Ok(FinalizedSink::Finished(DataFrame::from(
-                self.output_schema.as_ref(),
-            )));
+        let df = if dfs.is_empty() {
+            DataFrame::from(self.output_schema.as_ref())
+        } else {
+            let mut df = accumulate_dataframes_vertical_unchecked(dfs);
+            // re init to check duplicates
+            unsafe { DataFrame::new(std::mem::take(df.get_columns_mut())) }?
+        };
+
+        if self.ooc {
+            let mut iot = self.io_thread.lock().unwrap();
+            // make sure that we reset the shared states
+            // the OOC groupby will call split as well and it should
+            // not send continue spilling to disk
+            let iot = iot.take().unwrap();
+            self.ooc = false;
+
+            // we wait until all chunks are spilled
+            block_thread_until_io_thread_done(&iot);
+
+            Ok(FinalizedSink::Source(Box::new(GroupBySource::new(
+                iot,
+                df,
+                self.split(0),
+            )?)))
+        } else {
+            Ok(FinalizedSink::Finished(df))
         }
-        let mut df = accumulate_dataframes_vertical_unchecked(dfs);
-        unsafe { DataFrame::new(std::mem::take(df.get_columns_mut())).map(FinalizedSink::Finished) }
     }
 
     fn split(&self, thread_no: usize) -> Box<dyn Sink> {
-        let mut new = Self::new(
+        let mut new = Self::new_inner(
             self.key.clone(),
             self.aggregation_columns.clone(),
             self.agg_fns.iter().map(|func| func.split2()).collect(),
@@ -509,6 +552,7 @@ where
             self.output_schema.clone(),
             self.slice,
             Some(self.io_thread.clone()),
+            self.ooc,
         );
         new.hb = self.hb.clone();
         new.thread_no = thread_no;
