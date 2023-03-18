@@ -731,7 +731,7 @@ def sequence_to_pydf(
 
 
 def _sequence_of_series_to_pydf(
-    first_element: Any,
+    first_element: Series,
     data: Sequence[Any],
     schema: SchemaDefinition | None,
     schema_overrides: SchemaDict | None,
@@ -799,7 +799,7 @@ def _sequence_to_pydf_dispatcher(
         to_pydf = _sequence_of_pandas_to_pydf
 
     elif dataclasses.is_dataclass(first_element):
-        to_pydf = dataclasses_to_pydf
+        to_pydf = _sequence_of_dataclasses_to_pydf
     else:
         to_pydf = _sequence_of_elements_to_pydf
 
@@ -956,7 +956,7 @@ def _sequence_of_elements_to_pydf(
 
 
 def _sequence_of_numpy_to_pydf(
-    first_element: pd.Series | pd.DatetimeIndex,
+    first_element: np.ndarray[Any, Any],
     **kwargs: Any,
 ) -> PyDataFrame:
     to_pydf = (
@@ -994,7 +994,7 @@ def _sequence_of_pandas_to_pydf(
     return PyDataFrame(data_series)
 
 
-def dataclasses_to_pydf(
+def _sequence_of_dataclasses_to_pydf(
     first_element: Any,
     data: Sequence[Any],
     schema: SchemaDefinition | None,
