@@ -15,28 +15,8 @@ pub(in crate::executors::sinks) type DfIter =
 // The Option<IdxCa> are the partitions it should be written to, if any
 type Payload = (Option<IdxCa>, DfIter);
 
-struct LockFile {
-    path: PathBuf,
-}
-
-impl LockFile {
-    fn new(path: PathBuf) -> PolarsResult<Self> {
-        if File::create(&path).is_ok() {
-            Ok(Self { path })
-        } else {
-            polars_bail!(ComputeError: "could not create lockfile")
-        }
-    }
-}
-
-impl Drop for LockFile {
-    fn drop(&mut self) {
-        std::fs::remove_file(&self.path).unwrap()
-    }
-}
-
 /// A helper that can be used to spill to disk
-pub(in crate::executors::sinks) struct IOThread {
+pub(crate) struct IOThread {
     sender: Sender<Payload>,
     // ensures the directory is not GC'ed
     _lockfile: LockFile,
@@ -87,7 +67,9 @@ fn gc_thread(operation_name: &'static str) {
 
 impl IOThread {
     pub(in crate::executors::sinks) fn try_new(
+        // Schema of the file that will be dumped to disk
         schema: SchemaRef,
+        // Will be used as subdirectory name in `~/.polars/`
         operation_name: &'static str,
     ) -> PolarsResult<Self> {
         let uuid = SystemTime::now()
@@ -176,5 +158,25 @@ pub(in crate::executors::sinks) fn block_thread_until_io_thread_done(io_thread: 
     // get number processed
     while io_thread.total.load(Ordering::Relaxed) != sent {
         std::thread::park_timeout(Duration::from_millis(6))
+    }
+}
+
+struct LockFile {
+    path: PathBuf,
+}
+
+impl LockFile {
+    fn new(path: PathBuf) -> PolarsResult<Self> {
+        if File::create(&path).is_ok() {
+            Ok(Self { path })
+        } else {
+            polars_bail!(ComputeError: "could not create lockfile")
+        }
+    }
+}
+
+impl Drop for LockFile {
+    fn drop(&mut self) {
+        std::fs::remove_file(&self.path).unwrap()
     }
 }

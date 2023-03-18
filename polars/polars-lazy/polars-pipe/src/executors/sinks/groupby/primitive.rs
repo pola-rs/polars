@@ -1,6 +1,7 @@
 use std::any::Any;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
+use std::sync::Mutex;
 
 use hashbrown::hash_map::RawEntryMut;
 use num_traits::NumCast;
@@ -18,6 +19,7 @@ use polars_utils::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 use rayon::prelude::*;
+use polars_core::config::verbose;
 
 use super::aggregates::AggregateFn;
 use crate::executors::sinks::groupby::aggregates::AggregateFunction;
@@ -27,6 +29,7 @@ use crate::executors::sinks::groupby::utils::compute_slices;
 use crate::executors::sinks::memory::MemTracker;
 use crate::executors::sinks::utils::load_vec;
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
+use crate::executors::sinks::io::IOThread;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
 use crate::pipeline::{morsels_per_sink, PARTITION_SIZE};
@@ -86,6 +89,8 @@ pub struct PrimitiveGroupbySink<K: PolarsNumericType> {
     // will be mmap converted to `BooleanArray`.
     ooc_filter: Vec<u8>,
     agg_idx_ooc: Vec<IdxSize>,
+    // when ooc, we write to disk using an IO thread
+    io_thread: Arc<Mutex<Option<IOThread>>>,
 }
 
 impl<K: PolarsNumericType> PrimitiveGroupbySink<K>
@@ -100,6 +105,7 @@ where
         input_schema: SchemaRef,
         output_schema: SchemaRef,
         slice: Option<(i64, usize)>,
+        io_thread: Option<Arc<Mutex<Option<IOThread>>>>
     ) -> Self {
         let ooc = std::env::var("POLARS_FORCE_OOC_GROUPBY").is_ok();
         let hb = RandomState::default();
@@ -128,6 +134,7 @@ where
             ooc,
             ooc_filter: vec![],
             agg_idx_ooc: vec![],
+            io_thread: io_thread.unwrap_or_default()
         }
     }
 
@@ -136,10 +143,11 @@ where
         self.aggregation_columns.len()
     }
 
-    fn check_memory_usage(&mut self) {
+    fn check_memory_usage(&mut self) -> PolarsResult<()> {
         if self.mem_track.free_memory_fraction_since_start() < 0.25 {
-            self.init_ooc()
+            self.init_ooc()?
         }
+        Ok(())
     }
 
     fn reset_ooc_filter_rows(&mut self, len: usize) {
@@ -251,13 +259,8 @@ where
             }
         }
         self.aggregation_series.clear();
-        self.check_memory_usage();
+        self.check_memory_usage()?;
         Ok(SinkResult::CanHaveMoreInput)
-    }
-
-    fn init_ooc(&mut self) {
-        self.ooc = true;
-        todo!()
     }
 
     fn prepare_key_and_aggregation_series(
@@ -293,6 +296,20 @@ where
         }
 
         self.aggregation_series.clear();
+    }
+
+    fn init_ooc(&mut self) -> PolarsResult<()> {
+        if verbose() {
+            eprintln!("OOC sort started");
+        }
+        self.ooc = true;
+
+        // start IO thread
+        let mut iot = self.io_thread.lock().unwrap();
+        if iot.is_none() {
+            *iot = Some(IOThread::try_new(self.input_schema.clone(), "groupby")?)
+        }
+        Ok(())
     }
 
     fn sink_ooc(
@@ -353,6 +370,12 @@ where
 
         Ok(SinkResult::CanHaveMoreInput)
     }
+
+    fn dump(&self, partitions: Vec<DataFrame>) {
+        let iot = self.io_thread.lock().unwrap();
+        let iot = iot.as_ref().unwrap();
+        // iot.dump_iter()
+    }
 }
 
 impl<K: PolarsNumericType> Sink for PrimitiveGroupbySink<K>
@@ -408,7 +431,7 @@ where
         self.aggregate(agg_idxs, &chunk);
 
         self.aggregation_series.clear();
-        self.check_memory_usage();
+        self.check_memory_usage()?;
         Ok(SinkResult::CanHaveMoreInput)
     }
 
@@ -470,6 +493,7 @@ where
             self.input_schema.clone(),
             self.output_schema.clone(),
             self.slice,
+            Some(self.io_thread.clone())
         );
         new.hb = self.hb.clone();
         new.thread_no = thread_no;
