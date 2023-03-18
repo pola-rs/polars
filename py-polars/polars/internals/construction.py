@@ -21,6 +21,7 @@ from typing import (
 from polars import internals as pli
 from polars.datatypes import (
     N_INFER_DEFAULT,
+    Boolean,
     Categorical,
     Date,
     Datetime,
@@ -247,6 +248,44 @@ def iterable_to_pyseries(
     return series._s
 
 
+def _construct_series_with_fallbacks(
+    constructor: Callable[[str, Sequence[Any], bool], PySeries],
+    name: str,
+    values: Sequence[Any],
+    strict: bool,
+) -> PySeries:
+    """Construct Series, with fallbacks for basic type mismatch (eg: bool/int)."""
+    while True:
+        try:
+            return constructor(name, values, strict)
+        except TypeError as exc:
+            str_val = str(exc)
+
+            # from x to float
+            # error message can be:
+            #   - integers: "'float' object cannot be interpreted as an integer"
+            if "'float'" in str_val:
+                constructor = py_type_to_constructor(float)
+
+            # from x to string
+            # error message can be:
+            #   - integers: "'str' object cannot be interpreted as an integer"
+            #   - floats: "must be real number, not str"
+            elif "'str'" in str_val or str_val == "must be real number, not str":
+                constructor = py_type_to_constructor(str)
+
+            # from x to int
+            # error message can be:
+            #   - bools: "'int' object cannot be converted to 'PyBool'"
+            elif str_val == "'int' object cannot be converted to 'PyBool'":
+                constructor = py_type_to_constructor(int)
+
+            elif "decimal.Decimal" in str_val:
+                constructor = py_type_to_constructor(PyDecimal)
+            else:
+                raise exc
+
+
 def sequence_to_pyseries(
     name: str,
     values: Sequence[Any],
@@ -300,10 +339,11 @@ def sequence_to_pyseries(
         and (python_dtype is None)
     ):
         constructor = polars_type_to_constructor(dtype)
-        pyseries = constructor(name, values, strict)
+        pyseries = _construct_series_with_fallbacks(constructor, name, values, strict)
 
-        if dtype in (Date, Datetime, Duration, Time, Categorical):
-            pyseries = pyseries.cast(dtype, True)
+        if dtype in (Date, Datetime, Duration, Time, Categorical, Boolean):
+            if pyseries.dtype() != dtype:
+                pyseries = pyseries.cast(dtype, True)
         return pyseries
 
     elif dtype == Struct:
@@ -379,38 +419,7 @@ def sequence_to_pyseries(
                 except RuntimeError:
                     return sequence_from_anyvalue_or_object(name, values)
 
-            while True:
-                try:
-                    return constructor(name, values, strict)
-                except TypeError as exc:
-                    str_val = str(exc)
-
-                    # from x to float
-                    # error message can be:
-                    #   - integers: "'float' object cannot be interpreted as an integer"
-                    if "'float'" in str_val:
-                        constructor = py_type_to_constructor(float)
-
-                    # from x to string
-                    # error message can be:
-                    #   - integers: "'str' object cannot be interpreted as an integer"
-                    #   - floats: "must be real number, not str"
-                    elif (
-                        "'str'" in str_val or str_val == "must be real number, not str"
-                    ):
-                        constructor = py_type_to_constructor(str)
-
-                    # from x to int
-                    # error message can be:
-                    #   - bools: "'int' object cannot be converted to 'PyBool'"
-                    elif str_val == "'int' object cannot be converted to 'PyBool'":
-                        constructor = py_type_to_constructor(int)
-
-                    elif "decimal.Decimal" in str_val:
-                        constructor = py_type_to_constructor(PyDecimal)
-
-                    else:
-                        raise exc
+            return _construct_series_with_fallbacks(constructor, name, values, strict)
 
 
 @deprecated_alias(nan_to_none="nan_to_null")

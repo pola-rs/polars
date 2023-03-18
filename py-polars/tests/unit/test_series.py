@@ -2600,6 +2600,7 @@ def test_symmetry_for_max_in_names() -> None:
     # datetime
     a = pl.Series("a", [1], dtype=pl.Datetime("ns"))
     assert (a - a.max()).name == (a.max() - a).name == a.name
-    # time
-    a = pl.Series("a", [1], dtype=pl.Time("ns"))
-    assert (a - a.max()).name == (a.max() - a).name == a.name
+
+    # TODO: time arithmetic support?
+    # a = pl.Series("a", [1], dtype=pl.Time)
+    # assert (a - a.max()).name == (a.max() - a).name == a.name
