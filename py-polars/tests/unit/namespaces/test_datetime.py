@@ -4,10 +4,10 @@ from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
-from polars.datatypes import DTYPE_TEMPORAL_UNITS
-from polars.testing import assert_series_equal
 
 import polars as pl
+from polars.datatypes import DTYPE_TEMPORAL_UNITS
+from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
     from polars.type_aliases import TimeUnit

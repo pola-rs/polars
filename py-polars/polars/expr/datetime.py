@@ -3,11 +3,10 @@ from __future__ import annotations
 from datetime import time
 from typing import TYPE_CHECKING
 
+from polars import internals as pli
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import deprecated_alias, redirect
-
-from polars import internals as pli
 
 if TYPE_CHECKING:
     from datetime import timedelta
@@ -413,8 +412,7 @@ class ExprDateTimeNameSpace:
 
     def is_leap_year(self) -> pli.Expr:
         """
-        Determine whether the year obtained from the underlying date
-        representation is a leap year.
+        Determine whether the year of the underlying date is a leap year.
 
         Applies to Date and Datetime columns.
 
