@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import textwrap
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from polars import functions as F
 from polars import internals as pli
@@ -14,12 +14,9 @@ from polars.datatypes import (
     dtype_to_py_type,
 )
 from polars.exceptions import ComputeError, InvalidAssert
+from polars.lazyframe import LazyFrame
+from polars.series import Series
 from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
-
-if TYPE_CHECKING:
-    from polars.dataframe.frame import DataFrame
-    from polars.lazyframe.frame import LazyFrame
-    from polars.series.series import Series
 
 
 @deprecate_nonkeyword_arguments()
@@ -71,10 +68,10 @@ def assert_frame_equal(
     >>> assert_frame_equal(df1, df2)  # doctest: +SKIP
     AssertionError: Values for column 'a' are different.
     """
-    if isinstance(left, pli.LazyFrame) and isinstance(right, pli.LazyFrame):
+    if isinstance(left, LazyFrame) and isinstance(right, LazyFrame):
         left, right = left.collect(), right.collect()
         obj = "LazyFrames"
-    elif isinstance(left, pli.DataFrame) and isinstance(right, pli.DataFrame):
+    elif isinstance(left, DataFrame) and isinstance(right, DataFrame):
         obj = "DataFrames"
     else:
         raise_assert_detail("Inputs", "Unexpected input types", type(left), type(right))
@@ -233,8 +230,8 @@ def assert_series_equal(
 
     """
     if not (
-        isinstance(left, pli.Series)  # type: ignore[redundant-expr]
-        and isinstance(right, pli.Series)
+        isinstance(left, Series)  # type: ignore[redundant-expr]
+        and isinstance(right, Series)
     ):
         raise_assert_detail("Inputs", "Unexpected input types", type(left), type(right))
 
