@@ -230,8 +230,8 @@ class DateTimeNameSpace:
                 2002-01-01 00:00:00
         ]
         >>> date.dt.is_leap_year()
-        shape: (2,)
-        Series: '' [i32]
+        shape: (3,)
+        Series: '' [bool]
         [
                 true
                 false
