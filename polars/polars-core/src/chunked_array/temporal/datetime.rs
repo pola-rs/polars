@@ -118,27 +118,6 @@ impl DatetimeChunked {
         }
     }
 
-    pub fn apply_on_tz_corrected<F>(&self, mut func: F) -> PolarsResult<DatetimeChunked>
-    where
-        F: FnMut(DatetimeChunked) -> PolarsResult<DatetimeChunked>,
-    {
-        #[allow(unused_mut)]
-        let mut ca = self.clone();
-        #[cfg(feature = "timezones")]
-        if self.time_zone().is_some() {
-            ca = self.replace_time_zone(Some("UTC"))?
-        }
-        let out = func(ca)?;
-
-        #[cfg(feature = "timezones")]
-        if let Some(tz) = self.time_zone() {
-            return out
-                .convert_time_zone("UTC".to_string())?
-                .replace_time_zone(Some(tz));
-        }
-        Ok(out)
-    }
-
     #[cfg(feature = "timezones")]
     pub fn replace_time_zone(&self, time_zone: Option<&str>) -> PolarsResult<DatetimeChunked> {
         match (self.time_zone(), time_zone) {
