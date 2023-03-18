@@ -4,7 +4,7 @@ from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO, overload
 
-from polars.io.csv import read_csv
+from polars.io.csv.functions import read_csv
 from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 from polars.utils.various import normalise_filepath
 

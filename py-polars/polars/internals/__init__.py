@@ -39,7 +39,6 @@ from polars.internals.anonymous_scan import (
     _scan_parquet_fsspec,
     _scan_pyarrow_dataset,
 )
-from polars.internals.batched import BatchedCsvReader
 from polars.internals.io import (
     _is_local_file,
     _prepare_file_arg,

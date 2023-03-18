@@ -16,8 +16,8 @@ from polars import internals as pli
 from polars.convert import from_arrow
 from polars.datatypes import N_INFER_DEFAULT, Utf8
 from polars.internals import DataFrame, LazyFrame
-from polars.internals.batched import BatchedCsvReader
 from polars.internals.io import _prepare_file_arg
+from polars.io.csv.batched_reader import BatchedCsvReader
 from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 from polars.utils.various import handle_projection_columns, normalise_filepath
 
