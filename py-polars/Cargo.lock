@@ -1633,6 +1633,7 @@ name = "polars-plan"
 version = "0.27.2"
 dependencies = [
  "ahash",
+ "arrow2",
  "chrono",
  "chrono-tz 0.8.1",
  "once_cell",
