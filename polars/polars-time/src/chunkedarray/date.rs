@@ -1,6 +1,5 @@
 use polars_arrow::export::arrow::temporal_conversions::{MILLISECONDS, SECONDS_IN_DAY};
 
-use super::super::windows::calendar;
 use super::*;
 
 pub(crate) fn naive_date_to_date(nd: NaiveDate) -> i32 {
@@ -24,13 +23,8 @@ pub trait DateMethods: AsDate {
     /// Extract year from underlying NaiveDate representation.
     /// Returns whether the year is a leap year.
     fn is_leap_year(&self) -> BooleanChunked {
-        let ca = self.year();
-        let mut out: BooleanChunked = ca
-            .into_iter()
-            .map(|y_opt| y_opt.map(calendar::is_leap_year))
-            .collect();
-        out.rename(ca.name());
-        out
+        let ca = self.as_date();
+        ca.apply_kernel_cast::<BooleanType>(&date_to_is_leap_year)
     }
 
     /// This year number might not match the calendar year number.
