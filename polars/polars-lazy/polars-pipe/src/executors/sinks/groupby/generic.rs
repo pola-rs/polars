@@ -231,33 +231,45 @@ impl GenericGroupbySink {
             Ok(dfs)
         })
     }
+
+    fn evaluate_keys_aggs_and_hashes(
+        &mut self,
+        context: &PExecutionContext,
+        chunk: &DataChunk,
+    ) -> PolarsResult<()> {
+        // todo! amortize allocation
+        for phys_e in self.aggregation_columns.iter() {
+            let s = phys_e.evaluate(chunk, context.execution_state.as_any())?;
+            let s = s.to_physical_repr();
+            self.aggregation_series.push(s.rechunk());
+        }
+        for phys_e in self.key_columns.iter() {
+            let s = phys_e.evaluate(chunk, context.execution_state.as_any())?;
+            let s = s.to_physical_repr();
+            self.keys_series.push(s.rechunk());
+        }
+
+        // write the hashes to self.hashes buffer
+        hash_series(&self.keys_series, &mut self.hashes, &self.hb);
+        Ok(())
+    }
 }
 
 impl Sink for GenericGroupbySink {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
         let num_aggs = self.number_of_aggs();
 
-        // todo! amortize allocation
-        for phys_e in self.aggregation_columns.iter() {
-            let s = phys_e.evaluate(&chunk, context.execution_state.as_any())?;
-            let s = s.to_physical_repr();
-            self.aggregation_series.push(s.rechunk());
-        }
-        for phys_e in self.key_columns.iter() {
-            let s = phys_e.evaluate(&chunk, context.execution_state.as_any())?;
-            let s = s.to_physical_repr();
-            self.keys_series.push(s.rechunk());
-        }
+        self.evaluate_keys_aggs_and_hashes(context, &chunk)?;
 
+        // we cannot a factor these out in a method
+        // bchk complains about mutable borrrows.
+
+        // iterators over anyvalues
         let mut agg_iters = self
             .aggregation_series
             .iter()
             .map(|s| s.phys_iter())
             .collect::<Vec<_>>();
-
-        // write the hashes to self.hashes buffer
-        hash_series(&self.keys_series, &mut self.hashes, &self.hb);
-
         // iterators over anyvalues
         let mut key_iters = self
             .keys_series

@@ -21,9 +21,6 @@ pub(super) struct OocState {
     pub(super) agg_idx_ooc: Vec<IdxSize>,
     // when ooc, we write to disk using an IO thread
     pub(super) io_thread: Arc<Mutex<Option<IOThread>>>,
-    // This slice holds the partition numbers
-    // this will materialize into `IdxCa` with memmap
-    partitions: Option<Arc<[IdxSize]>>,
 }
 
 impl OocState {
@@ -34,7 +31,6 @@ impl OocState {
             ooc_filter: vec![],
             agg_idx_ooc: vec![],
             io_thread: io_thread.unwrap_or_default(),
-            partitions: None,
         }
     }
 
@@ -43,7 +39,6 @@ impl OocState {
             eprintln!("OOC groupby started");
         }
         self.ooc = true;
-        self.partitions = Some(Arc::from_iter((0 as IdxSize)..(PARTITION_SIZE as IdxSize)));
 
         // start IO thread
         let mut iot = self.io_thread.lock().unwrap();
@@ -55,14 +50,6 @@ impl OocState {
 
     pub(super) fn get_ooc_filter(&self, len: usize) -> BooleanChunked {
         unsafe { BooleanChunked::mmap_slice("", &self.ooc_filter, 0, len) }
-    }
-
-    pub(super) fn partitions(&self) -> Option<IdxCa> {
-        unsafe {
-            self.partitions
-                .as_ref()
-                .map(|parts| IdxCa::mmap_slice("", parts.as_ref()))
-        }
     }
 
     pub(super) fn reset_ooc_filter_rows(&mut self, len: usize) {
@@ -78,11 +65,36 @@ impl OocState {
         Ok(())
     }
 
-    pub(super) fn dump(&self, partitions: Vec<DataFrame>) {
+    pub(super) fn dump(&self, data: DataFrame, hashes: &mut [u64]) {
+        // we filter the rows that are not processed
+        // these rows are spilled to disk
+        let mask = self.get_ooc_filter(data.height());
+        let df = data._filter_seq(&mask).unwrap();
+
+        // determine partitions
+        let parts = unsafe { UInt64Chunked::mmap_slice("", hashes) };
+        let parts = parts.filter(&mask).unwrap();
+        let parts = parts.apply_in_place(|h| h & (PARTITION_SIZE as u64 - 1));
+
+        let gt = parts.group_tuples(false, false).unwrap();
+
+        let mut part_idx = Vec::with_capacity(PARTITION_SIZE);
+        let partitioned = gt
+            .unwrap_idx()
+            .iter()
+            .map(|(first, group)| {
+                let partition = unsafe { *hashes.get_unchecked(first as usize) };
+                part_idx.push(partition as IdxSize);
+
+                // groups are in bounds
+                unsafe { df._take_unchecked_slice(group, false) }
+            })
+            .collect::<Vec<_>>();
+
         let iot = self.io_thread.lock().unwrap();
         let iot = iot.as_ref().unwrap();
+        let part_idx = Some(IdxCa::from_vec("", part_idx));
 
-        let part_idx = self.partitions();
-        iot.dump_iter(part_idx, Box::new(partitions.into_iter()))
+        iot.dump_iter(part_idx, Box::new(partitioned.into_iter()))
     }
 }

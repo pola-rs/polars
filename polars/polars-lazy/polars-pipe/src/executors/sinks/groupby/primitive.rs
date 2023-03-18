@@ -11,9 +11,7 @@ use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::arrow::bitmap::utils::set_bit_unchecked;
-use polars_core::utils::{
-    _set_partition_size, accumulate_dataframes_vertical_unchecked, split_df_as_ref,
-};
+use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked};
 use polars_core::POOL;
 use polars_utils::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
@@ -32,7 +30,6 @@ use crate::executors::sinks::utils::load_vec;
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
-use crate::pipeline::PARTITION_SIZE;
 
 // hash + value
 #[derive(Eq, Copy, Clone)]
@@ -346,11 +343,7 @@ where
 
         // reset the agg_idx buf
         self.ooc_state.agg_idx_ooc.clear();
-
-        let ooc_filter = self.ooc_state.get_ooc_filter(ca.len());
-        let df = chunk.data._filter_seq(&ooc_filter).unwrap();
-        let partitions = split_df_as_ref(&df, PARTITION_SIZE)?;
-        self.ooc_state.dump(partitions);
+        self.ooc_state.dump(chunk.data, &mut self.hashes);
 
         Ok(SinkResult::CanHaveMoreInput)
     }
