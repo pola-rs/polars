@@ -1,5 +1,6 @@
 use std::any::Any;
 use std::hash::{Hash, Hasher};
+use std::sync::Mutex;
 
 use hashbrown::hash_map::RawEntryMut;
 use num_traits::NumCast;
@@ -15,8 +16,10 @@ use rayon::prelude::*;
 
 use super::aggregates::AggregateFn;
 use crate::executors::sinks::groupby::aggregates::AggregateFunction;
+use crate::executors::sinks::groupby::ooc_state::OocState;
 use crate::executors::sinks::groupby::physical_agg_to_logical;
 use crate::executors::sinks::groupby::utils::compute_slices;
+use crate::executors::sinks::io::IOThread;
 use crate::executors::sinks::utils::{hash_series, load_vec};
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
@@ -77,6 +80,7 @@ pub struct GenericGroupbySink {
     keys_series: Vec<Series>,
     hashes: Vec<u64>,
     slice: Option<(i64, usize)>,
+    ooc_state: OocState,
 }
 
 impl GenericGroupbySink {
@@ -87,6 +91,30 @@ impl GenericGroupbySink {
         input_schema: SchemaRef,
         output_schema: SchemaRef,
         slice: Option<(i64, usize)>,
+    ) -> Self {
+        let ooc = std::env::var("POLARS_FORCE_OOC_GROUPBY").is_ok();
+        Self::new_inner(
+            key_columns,
+            aggregation_columns,
+            agg_fns,
+            input_schema,
+            output_schema,
+            slice,
+            None,
+            ooc,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new_inner(
+        key_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
+        aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
+        agg_fns: Vec<AggregateFunction>,
+        input_schema: SchemaRef,
+        output_schema: SchemaRef,
+        slice: Option<(i64, usize)>,
+        io_thread: Option<Arc<Mutex<Option<IOThread>>>>,
+        ooc: bool,
     ) -> Self {
         let hb = RandomState::default();
         let partitions = _set_partition_size();
@@ -99,7 +127,7 @@ impl GenericGroupbySink {
             Vec::with_capacity(HASHMAP_INIT_SIZE * aggregation_columns.len())
         });
 
-        Self {
+        let mut out = Self {
             thread_no: 0,
             pre_agg_partitions: pre_agg,
             keys,
@@ -114,7 +142,12 @@ impl GenericGroupbySink {
             keys_series: vec![],
             hashes: vec![],
             slice,
+            ooc_state: OocState::new(io_thread, ooc),
+        };
+        if ooc {
+            out.ooc_state.init_ooc(out.input_schema.clone()).unwrap();
         }
+        out
     }
 
     #[inline]
@@ -310,7 +343,7 @@ impl Sink for GenericGroupbySink {
     }
 
     fn combine(&mut self, other: &mut dyn Sink) {
-        // don't parallel this as this is already done in parallel.
+        // don't parallelize this as this is already done in parallel.
 
         let other = other.as_any().downcast_ref::<Self>().unwrap();
         let n_partitions = self.pre_agg_partitions.len();
@@ -401,13 +434,15 @@ impl Sink for GenericGroupbySink {
     }
 
     fn split(&self, thread_no: usize) -> Box<dyn Sink> {
-        let mut new = Self::new(
+        let mut new = Self::new_inner(
             self.key_columns.clone(),
             self.aggregation_columns.clone(),
             self.agg_fns.iter().map(|func| func.split2()).collect(),
             self.input_schema.clone(),
             self.output_schema.clone(),
             self.slice,
+            Some(self.ooc_state.io_thread.clone()),
+            self.ooc_state.ooc,
         );
         new.hb = self.hb.clone();
         new.thread_no = thread_no;
