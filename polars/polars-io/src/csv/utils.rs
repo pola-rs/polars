@@ -290,16 +290,38 @@ pub fn infer_file_schema(
             }
             final_headers
         } else {
-            let mut column_names: Vec<String> = byterecord
-                .enumerate()
-                .map(|(i, _s)| format!("column_{}", i + 1))
-                .collect();
-            // needed because SplitLines does not return the \n char, so SplitFields does not catch
-            // the latest value if ending with a delimiter.
-            if header_line.ends_with(&[delimiter]) {
-                column_names.push(format!("column_{}", column_names.len() + 1))
-            }
-            column_names
+            // re-init lines so that the header line is included in column and type inference.
+            lines = SplitLines::new(bytes, quote_char.unwrap_or(b'"'), eol_char).skip(*skip_rows);
+            let max_column_count = (&mut lines)
+                .take(max_read_rows.unwrap_or(usize::MAX))
+                .skip(skip_rows_after_header)
+                .map(|line| {
+                    let s = SplitFields::new(line, delimiter, quote_char, eol_char);
+                    // needed because SplitLines does not return the \n char, so SplitFields does not catch
+                    // the latest value if ending with a delimiter.
+                    if line.ends_with(&[delimiter]) {
+                        s.count() + 1
+                    } else {
+                        s.count()
+                    }
+                })
+                .max()
+                // Iterator can be empty if max_read_lines (infer_schema_length) is set to 0 or
+                // if there is only one line without an eol.
+                // A test for at least one existing line was already done when searching for the header.
+                .unwrap_or_else(|| {
+                    if header_line.ends_with(&[delimiter]) {
+                        byterecord.count() + 1
+                    } else {
+                        byterecord.count()
+                    }
+                });
+            // reset iterator
+            lines = SplitLines::new(bytes, quote_char.unwrap_or(b'"'), eol_char).skip(*skip_rows);
+
+            (0..max_column_count)
+                .map(|i| format!("column_{}", i + 1))
+                .collect()
         }
     } else if has_header && !bytes.is_empty() {
         // there was no new line char. So we copy the whole buf and add one
@@ -325,10 +347,6 @@ pub fn infer_file_schema(
     } else {
         polars_bail!(NoData: "empty CSV");
     };
-    if !has_header {
-        // re-init lines so that the header is included in type inference.
-        lines = SplitLines::new(bytes, quote_char.unwrap_or(b'"'), eol_char).skip(*skip_rows);
-    }
 
     let header_length = headers.len();
     // keep track of inferred field types

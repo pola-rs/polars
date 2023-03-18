@@ -130,6 +130,8 @@ def read_csv(
         inferred dtype for those columns with ``dtypes``.
         If set to 0, all columns will be read as ``pl.Utf8``.
         If set to ``None``, a full table scan will be done (slow).
+        If ``has_header == False``, this value is also used to determine the
+        number of columns. If set to 0, only the first row will be used.
     batch_size
         Number of lines to read into the buffer at once.
         Modify this to change performance.
@@ -476,6 +478,8 @@ def read_csv_batched(
         Maximum number of lines to read to infer schema.
         If set to 0, all columns will be read as ``pl.Utf8``.
         If set to ``None``, a full table scan will be done (slow).
+        If ``has_header == False``, this value is also used to determine the
+        number of columns. If set to 0, only the first row will be used.
     batch_size
         Number of lines to read into the buffer at once.
 
@@ -757,6 +761,8 @@ def scan_csv(
         Maximum number of lines to read to infer schema.
         If set to 0, all columns will be read as ``pl.Utf8``.
         If set to ``None``, a full table scan will be done (slow).
+        If ``has_header == False``, this value is also used to determine the
+        number of columns. If set to 0, only the first row will be used.
     n_rows
         Stop reading from CSV file after reading ``n_rows``.
     encoding : {'utf8', 'utf8-lossy'}

@@ -1304,3 +1304,55 @@ def test_read_csv_n_rows_outside_heuristic() -> None:
 
     f.seek(0)
     assert pl.read_csv(f, n_rows=2048, has_header=False).shape == (2048, 4)
+
+
+def test_csv_no_header_and_variable_number_of_columns() -> None:
+    # 1505
+    csv_middle_column_longest = textwrap.dedent(
+        """\
+        a,b,c
+        d,e,f,g,1,i
+        j,k,l,m,2
+        """
+    ).encode()
+
+    expected_df = {
+        "column_1": ["a", "d", "j"],
+        "column_2": ["b", "e", "k"],
+        "column_3": ["c", "f", "l"],
+        "column_4": [None, "g", "m"],
+        "column_5": [None, 1, 2],
+        "column_6": [None, "i", None],
+    }
+
+    df = pl.read_csv(csv_middle_column_longest, has_header=False)
+    assert df.to_dict(False) == expected_df
+
+    df = pl.read_csv(csv_middle_column_longest, has_header=False, infer_schema_length=2)
+    assert df.to_dict(False) == expected_df
+
+    # with infer_schema_length == 0, only the first row is used
+    df = pl.read_csv(csv_middle_column_longest, has_header=False, infer_schema_length=0)
+    assert df.to_dict(False) == {
+        "column_1": ["a", "d", "j"],
+        "column_2": ["b", "e", "k"],
+        "column_3": ["c", "f", "l"],
+    }
+
+    csv_first_column_longest = textwrap.dedent(
+        """\
+        a,b,c,d,1,f
+        g,h,i
+        j,k,l,m,2
+        """
+    ).encode()
+
+    df = pl.read_csv(csv_first_column_longest, has_header=False)
+    assert df.to_dict(False) == {
+        "column_1": ["a", "g", "j"],
+        "column_2": ["b", "h", "k"],
+        "column_3": ["c", "i", "l"],
+        "column_4": ["d", None, "m"],
+        "column_5": [1, None, 2],
+        "column_6": ["f", None, None],
+    }
