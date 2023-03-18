@@ -4,10 +4,10 @@ from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
-
-import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.testing import assert_series_equal
+
+import polars as pl
 
 if TYPE_CHECKING:
     from polars.type_aliases import TimeUnit
@@ -271,6 +271,28 @@ def test_date_time_combine() -> None:
         "d3": pl.Datetime("us"),
     }
     assert df.schema == expected_schema
+
+
+def test_is_leap_year() -> None:
+    assert pl.date_range(
+        datetime(1990, 1, 1), datetime(2004, 1, 1), "1y"
+    ).dt.is_leap_year().to_list() == [
+        False,
+        False,
+        True,  # 1992
+        False,
+        False,
+        False,
+        True,  # 1996
+        False,
+        False,
+        False,
+        True,  # 2000
+        False,
+        False,
+        False,
+        True,  # 2004
+    ]
 
 
 def test_quarter() -> None:

@@ -2,18 +2,20 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars import internals as pli
 from polars.series.utils import expr_dispatch
 from polars.utils.convert import _to_python_datetime
 from polars.utils.decorators import deprecated_alias, redirect
 
+from polars import internals as pli
+
 if TYPE_CHECKING:
     from datetime import date, datetime, time, timedelta
 
-    from polars.expr.expr import Expr
-    from polars.polars import PySeries
+    from polars.internals.type_aliases import EpochTimeUnit, TimeUnit
     from polars.series.series import Series
     from polars.type_aliases import EpochTimeUnit, TimeUnit
+
+    from polars.polars import PySeries
 
 
 @redirect(
@@ -201,6 +203,42 @@ class DateTimeNameSpace:
         [
                 2001
                 2002
+        ]
+
+        """
+
+    def is_leap_year(self) -> Series:
+        """
+        Determine whether the year obtained from the underlying date
+        representation is a leap year.
+
+        Applies to Date and Datetime columns.
+
+        Returns
+        -------
+        Leap year info as Boolean
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> start = datetime(2000, 1, 1)
+        >>> stop = datetime(2002, 1, 1)
+        >>> date = pl.date_range(start, stop, interval="1y")
+        >>> date
+        shape: (3,)
+        Series: '' [datetime[μs]]
+        [
+                2000-01-01 00:00:00
+                2001-01-01 00:00:00
+                2002-01-01 00:00:00
+        ]
+        >>> date.dt.is_leap_year()
+        shape: (2,)
+        Series: '' [i32]
+        [
+                true
+                false
+                false
         ]
 
         """

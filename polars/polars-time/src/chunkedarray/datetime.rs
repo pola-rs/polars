@@ -5,6 +5,7 @@ use arrow::error::Result as ArrowResult;
 use polars_arrow::export::arrow;
 use polars_core::prelude::*;
 
+use super::super::windows::calendar;
 use super::*;
 
 fn cast_and_apply<
@@ -39,6 +40,18 @@ pub trait DatetimeMethods: AsDatetime {
     /// Returns the year number in the calendar date.
     fn year(&self) -> Int32Chunked {
         cast_and_apply(self.as_datetime(), temporal::year)
+    }
+
+    /// Extract year from underlying NaiveDate representation.
+    /// Returns whether the year is a leap year.
+    fn is_leap_year(&self) -> BooleanChunked {
+        let ca = self.year();
+        let mut out: BooleanChunked = ca
+            .into_iter()
+            .map(|y_opt| y_opt.map(calendar::is_leap_year))
+            .collect();
+        out.rename(ca.name());
+        out
     }
 
     fn iso_year(&self) -> Int32Chunked {
