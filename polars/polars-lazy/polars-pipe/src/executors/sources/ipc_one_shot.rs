@@ -28,7 +28,6 @@ impl Source for IpcSourceOneShot {
             Ok(SourceResult::Finished)
         } else {
             let df = self.reader.take().unwrap().finish()?;
-            dbg!(&df);
             Ok(SourceResult::GotMoreData(vec![DataChunk::new(0, df)]))
         }
     }
