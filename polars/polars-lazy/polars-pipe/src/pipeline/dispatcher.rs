@@ -19,11 +19,18 @@ pub struct PipeLine {
     sources: Vec<Box<dyn Source>>,
     operators: Vec<Vec<Box<dyn Operator>>>,
     operator_nodes: Vec<Node>,
-    // offset in the operators vec
-    // node of the sink
+    // - offset in the operators vec
+    //   at that point the sink should be called.
+    //   the pipeline will first call the operators on that point and then
+    //   push the result in the sink.
+    // - node of the sink
     sinks: Vec<(usize, Vec<Box<dyn Sink>>)>,
+    // are used to identify the sink shared with other pipeline branches
     sink_nodes: Vec<Node>,
     rh_sides: Vec<PipeLine>,
+
+    // this is a correction as there may be more `operators` than nodes
+    // as during construction, source may have inserted operators
     operator_offset: usize,
     verbose: bool,
 }
@@ -33,6 +40,7 @@ impl PipeLine {
         sources: Vec<Box<dyn Source>>,
         operators: Vec<Box<dyn Operator>>,
         operator_nodes: Vec<Node>,
+        // (offset, node (for identification), sink)
         sink_and_nodes: Vec<(usize, Node, Box<dyn Sink>)>,
         operator_offset: usize,
         verbose: bool,
@@ -64,6 +72,24 @@ impl PipeLine {
             operator_offset,
             verbose,
         }
+    }
+
+    /// Create a pipeline only consisting of a single branch that always finishes with a sink
+    pub fn new_simple(
+        sources: Vec<Box<dyn Source>>,
+        operators: Vec<Box<dyn Operator>>,
+        sink: Box<dyn Sink>,
+        verbose: bool,
+    ) -> Self {
+        let operators_len = operators.len();
+        Self::new(
+            sources,
+            operators,
+            vec![],
+            vec![(operators_len, Node::default(), sink)],
+            0,
+            verbose,
+        )
     }
 
     /// Add a parent
@@ -133,7 +159,6 @@ impl PipeLine {
     ) -> PolarsResult<SinkResult> {
         debug_assert!(!operators.is_empty());
         let mut in_process = vec![];
-
         let operator_offset = 0usize;
         in_process.push((operator_offset, chunk));
 
@@ -309,7 +334,7 @@ impl PipeLine {
                     // latest sink_node will be the operator, as the left side of the join
                     // always finishes that branch.
                     if let Some(sink_node) = sink_nodes.pop() {
-                        // if dummy that should be replaces is not found in this branch
+                        // if placeholder that should be replaced is not found in this branch
                         // we push it to the operators stack that should be replaced
                         // on the next branch of the pipeline we first check this stack.
                         // this only happens if we reorder joins

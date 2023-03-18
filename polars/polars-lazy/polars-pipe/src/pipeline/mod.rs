@@ -11,3 +11,7 @@ pub use crate::executors::sinks::groupby::aggregates::can_convert_to_hash_agg;
 pub(crate) fn morsels_per_sink() -> usize {
     POOL.current_num_threads()
 }
+
+// Number of OOC partitions.
+// proxy for RAM size multiplier
+pub const PARTITION_SIZE: usize = 32;

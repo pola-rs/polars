@@ -1,4 +1,3 @@
-mod io;
 mod ooc;
 mod sink;
 mod sink_multiple;

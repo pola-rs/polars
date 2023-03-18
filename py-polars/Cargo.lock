@@ -78,7 +78,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.16.0"
-source = "git+https://github.com/ritchie46/arrow2?branch=polars_2023-03-15#adf4571d52a38a86719182d3953b34ac5a7b0bb9"
+source = "git+https://github.com/ritchie46/arrow2?branch=polars_2023-03-17#e03da95ae5f9c95f256b6f473095c53f3c6f5165"
 dependencies = [
  "ahash",
  "arrow-format",
