@@ -616,10 +616,8 @@ fn parse_dates(mut df: DataFrame, fixed_schema: &Schema) -> DataFrame {
                         return ca.into_series();
                     }
                     s
-                },
-                _ => {
-                    s
                 }
+                _ => s,
             }
         })
         .collect::<Vec<_>>();
