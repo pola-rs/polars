@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import PanicException
 from polars.testing import assert_frame_equal
 
 
@@ -101,6 +102,60 @@ def test_scan_csv_schema_overwrite_and_small_dtypes_overwrite(
         "fats_g_foo",
         "sugars_g_foo",
     ]
+
+
+@pytest.mark.parametrize("file_name", ["foods1.csv", "foods*.csv"])
+def test_scan_csv_schema_new_columns_dtypes(
+    io_files_path: Path, file_name: str
+) -> None:
+    file_path = io_files_path / file_name
+
+    for dtype in [pl.Int8, pl.UInt8, pl.Int16, pl.UInt16]:
+        # assign 'new_columns', providing partial dtype overrides
+        df1 = pl.scan_csv(
+            file_path,
+            dtypes={"calories": pl.Utf8, "sugars": dtype},
+            new_columns=["category", "calories", "fats", "sugars"],
+        ).collect()
+        assert df1.dtypes == [pl.Utf8, pl.Utf8, pl.Float64, dtype]
+        assert df1.columns == ["category", "calories", "fats", "sugars"]
+
+        # assign 'new_columns' with 'dtypes' list
+        df2 = pl.scan_csv(
+            file_path,
+            dtypes=[pl.Utf8, pl.Utf8, pl.Float64, dtype],
+            new_columns=["category", "calories", "fats", "sugars"],
+        ).collect()
+        assert df1.rows() == df2.rows()
+
+    # rename existing columns, then lazy-select disjoint cols
+    df3 = pl.scan_csv(
+        file_path,
+        new_columns=["colw", "colx", "coly", "colz"],
+    )
+    assert df3.dtypes == [pl.Utf8, pl.Int64, pl.Float64, pl.Int64]
+    assert df3.columns == ["colw", "colx", "coly", "colz"]
+    assert (
+        df3.select(["colz", "colx"]).collect().rows()
+        == df1.select(["sugars", pl.col("calories").cast(pl.Int64)]).rows()
+    )
+
+    # expect same number of column names as there are columns in the file
+    with pytest.raises(PanicException, match="should be equal"):
+        pl.scan_csv(
+            file_path,
+            dtypes=[pl.Utf8, pl.Utf8],
+            new_columns=["category", "calories"],
+        ).collect()
+
+    # cannot set both 'new_columns' and 'with_column_names'
+    with pytest.raises(ValueError, match="mutually.exclusive"):
+        pl.scan_csv(
+            file_path,
+            dtypes=[pl.Utf8, pl.Utf8],
+            new_columns=["category", "calories", "fats", "sugars"],
+            with_column_names=lambda cols: [col.capitalize() for col in cols],
+        ).collect()
 
 
 def test_lazy_n_rows(foods_file_path: Path) -> None:
