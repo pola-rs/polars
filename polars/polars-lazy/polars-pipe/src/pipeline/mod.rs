@@ -14,4 +14,8 @@ pub(crate) fn morsels_per_sink() -> usize {
 
 // Number of OOC partitions.
 // proxy for RAM size multiplier
-pub const PARTITION_SIZE: usize = 64;
+pub(crate) const PARTITION_SIZE: usize = 64;
+
+// env vars
+pub(crate) static FORCE_OOC_GROUPBY: &str = "POLARS_FORCE_OOC_GROUPBY";
+pub(crate) static FORCE_OOC_SORT: &str = "POLARS_FORCE_OOC_SORT";

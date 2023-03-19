@@ -13,7 +13,7 @@ use crate::executors::sinks::io::{block_thread_until_io_thread_done, IOThread};
 use crate::executors::sinks::memory::MemTracker;
 use crate::executors::sinks::sort::ooc::sort_ooc;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
-use crate::pipeline::morsels_per_sink;
+use crate::pipeline::{morsels_per_sink, FORCE_OOC_SORT};
 
 pub struct SortSink {
     schema: SchemaRef,
@@ -35,7 +35,7 @@ pub struct SortSink {
 impl SortSink {
     pub(crate) fn new(sort_idx: usize, sort_args: SortArguments, schema: SchemaRef) -> Self {
         // for testing purposes
-        let ooc = std::env::var("POLARS_FORCE_OOC_SORT").is_ok();
+        let ooc = std::env::var(FORCE_OOC_SORT).is_ok();
         let n_morsels_per_sink = morsels_per_sink();
 
         let mut out = Self {

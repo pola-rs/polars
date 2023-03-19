@@ -25,6 +25,7 @@ use crate::executors::sinks::utils::load_vec;
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
+use crate::pipeline::FORCE_OOC_GROUPBY;
 
 // we store a hashmap per partition (partitioned by hash)
 // the hashmap contains indexes as keys and as values
@@ -71,7 +72,7 @@ impl Utf8GroupbySink {
         output_schema: SchemaRef,
         slice: Option<(i64, usize)>,
     ) -> Self {
-        let ooc = std::env::var("POLARS_FORCE_OOC_GROUPBY").is_ok();
+        let ooc = std::env::var(FORCE_OOC_GROUPBY).is_ok();
         Self::new_inner(
             key_column,
             aggregation_columns,
@@ -228,10 +229,85 @@ impl Utf8GroupbySink {
 
         current_partition
     }
+
+    fn sink_ooc(
+        &mut self,
+        context: &PExecutionContext,
+        chunk: DataChunk,
+    ) -> PolarsResult<SinkResult> {
+        let s = self.prepare_key_and_aggregation_series(context, &chunk)?;
+
+        // take containers to please bchk
+        // we put them back once done
+        let hashes = std::mem::take(&mut self.hashes);
+        let keys = std::mem::take(&mut self.keys);
+        let agg_fns = std::mem::take(&mut self.agg_fns);
+        let mut aggregators = std::mem::take(&mut self.aggregators);
+
+        // write the hashes to self.hashes buffer
+        // s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
+        // now we have written hashes, we take the pointer to this buffer
+        // we will write the aggregation_function indexes in the same buffer
+        // this is unsafe and we must check that we only write the hashes that
+        // already read/taken. So we write on the slots we just read
+        let agg_idx_ptr = hashes.as_ptr() as *mut u64 as *mut IdxSize;
+        // array of the keys
+        let keys_arr = s.utf8().unwrap().downcast_iter().next().unwrap().clone();
+
+        // set all bits to false
+        self.ooc_state.reset_ooc_filter_rows(chunk.data.height());
+
+        let mut processed = 0;
+        for (iteration_idx, (key_val, &h)) in keys_arr.iter().zip(&hashes).enumerate() {
+            let current_partition = self.get_partitions(h);
+            let entry = get_entry(key_val, h, current_partition, &keys);
+
+            match entry {
+                RawEntryMut::Vacant(_) => {
+                    // set this row to true: e.g. processed ooc
+                    // safety: we correctly set the length with `reset_ooc_filter_rows`
+                    unsafe {
+                        self.ooc_state.set_row_as_ooc(iteration_idx);
+                    }
+                }
+                RawEntryMut::Occupied(entry) => {
+                    let agg_idx = *entry.get();
+                    // # Safety
+                    // we write to the hashes buffer we iterate over at the moment.
+                    // this is sound because we writes are trailing from iteration
+                    unsafe { write_agg_idx(agg_idx_ptr, processed, agg_idx) };
+                    processed += 1;
+                }
+            };
+        }
+
+        // note that this slice looks into the self.hashes buffer
+        let agg_idxs = unsafe { std::slice::from_raw_parts(agg_idx_ptr, keys_arr.len()) };
+
+        apply_aggregation(
+            agg_idxs,
+            &chunk,
+            self.number_of_aggs(),
+            &self.aggregation_series,
+            &agg_fns,
+            &mut aggregators,
+        );
+        self.aggregation_series.clear();
+        self.hashes = hashes;
+        self.keys = keys;
+        self.agg_fns = agg_fns;
+        self.aggregators = aggregators;
+        self.hashes.clear();
+        self.ooc_state.check_memory_usage(&self.input_schema)?;
+        Ok(SinkResult::CanHaveMoreInput)
+    }
 }
 
 impl Sink for Utf8GroupbySink {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
+        if self.ooc_state.ooc {
+            return self.sink_ooc(context, chunk);
+        }
         let s = self.prepare_key_and_aggregation_series(context, &chunk)?;
 
         // take containers to please bchk
