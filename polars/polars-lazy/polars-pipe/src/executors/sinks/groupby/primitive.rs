@@ -253,6 +253,7 @@ where
         Ok(SinkResult::CanHaveMoreInput)
     }
 
+    // we don't yet hash here as the sorted fast path doesn't need hashes
     fn prepare_key_and_aggregation_series(
         &mut self,
         context: &PExecutionContext,
@@ -271,23 +272,6 @@ where
         Ok(s)
     }
 
-    fn aggregate(&mut self, agg_idxs: &[IdxSize], chunk: &DataChunk) {
-        let chunk_idx = chunk.chunk_index;
-        for (agg_i, aggregation_s) in (0..self.number_of_aggs()).zip(&self.aggregation_series) {
-            let has_physical_agg = self.agg_fns[agg_i].has_physical_agg();
-            apply_aggregate(
-                agg_i,
-                chunk_idx,
-                agg_idxs,
-                aggregation_s,
-                has_physical_agg,
-                &mut self.aggregators,
-            );
-        }
-
-        self.aggregation_series.clear();
-    }
-
     fn sink_ooc(
         &mut self,
         context: &PExecutionContext,
@@ -303,21 +287,33 @@ where
         let arr = ca.downcast_iter().next().unwrap();
         let pre_agg_len = self.pre_agg_partitions.len();
 
-        let mut agg_idx_buf = vec![];
-
         // set all bits to false
         self.ooc_state.reset_ooc_filter_rows(ca.len());
+
+        // this reuses the hashes buffer as [u64] as idx buffer as [idxsize]
+        // write the hashes to self.hashes buffer
+        // s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
+        // now we have written hashes, we take the pointer to this buffer
+        // we will write the aggregation_function indexes in the same buffer
+        // this is unsafe and we must check that we only write the hashes that
+        // already read/taken. So we write on the slots we just read
+        let agg_idx_ptr = self.hashes.as_ptr() as *mut i64 as *mut IdxSize;
 
         // different from standard sink
         // we only set aggregation idx when the entry in the hashmap already
         // exists. This way we don't grow the hashmap
         // rows that are not processed are sinked to disk and loaded in a second pass
+        let mut processed = 0;
         for (iteration_idx, (opt_v, &h)) in arr.iter().zip(self.hashes.iter()).enumerate() {
             let opt_v = opt_v.copied();
             if let Some(agg_idx) =
                 try_insert_and_get(h, opt_v, pre_agg_len, &mut self.pre_agg_partitions)
             {
-                agg_idx_buf.push(agg_idx);
+                // # Safety
+                // we write to the hashes buffer we iterate over at the moment.
+                // this is sound because the writes are trailing from iteration
+                unsafe { write_agg_idx(agg_idx_ptr, processed, agg_idx) };
+                processed += 1;
             } else {
                 // set this row to true: e.g. processed ooc
                 // safety: we correctly set the length with `reset_ooc_filter_rows`
@@ -327,13 +323,16 @@ where
             }
         }
 
-        // needed for bchk
-        let agg_idxs = std::mem::take(&mut self.ooc_state.agg_idx_ooc);
-        self.aggregate(&agg_idxs, &chunk);
-        self.ooc_state.agg_idx_ooc = agg_idxs;
+        let agg_idxs = unsafe { std::slice::from_raw_parts(agg_idx_ptr, processed) };
+        apply_aggregation(
+            &agg_idxs,
+            &chunk,
+            self.number_of_aggs(),
+            &self.aggregation_series,
+            &self.agg_fns,
+            &mut self.aggregators,
+        );
 
-        // reset the agg_idx buf
-        self.ooc_state.agg_idx_ooc.clear();
         self.ooc_state.dump(chunk.data, &mut self.hashes);
 
         Ok(SinkResult::CanHaveMoreInput)
@@ -390,7 +389,14 @@ where
 
         // note that this slice looks into the self.hashes buffer
         let agg_idxs = unsafe { std::slice::from_raw_parts(agg_idx_ptr, ca.len()) };
-        self.aggregate(agg_idxs, &chunk);
+        apply_aggregation(
+            &agg_idxs,
+            &chunk,
+            self.number_of_aggs(),
+            &self.aggregation_series,
+            &self.agg_fns,
+            &mut self.aggregators,
+        );
 
         self.aggregation_series.clear();
         self.ooc_state.check_memory_usage(&self.input_schema)?;
@@ -545,5 +551,27 @@ where
     match entry {
         RawEntryMut::Vacant(_) => None,
         RawEntryMut::Occupied(entry) => Some(*entry.get()),
+    }
+}
+
+pub(super) fn apply_aggregation(
+    agg_idxs: &[IdxSize],
+    chunk: &DataChunk,
+    num_aggs: usize,
+    aggregation_series: &[Series],
+    agg_fns: &[AggregateFunction],
+    aggregators: &mut Vec<AggregateFunction>,
+) {
+    let chunk_idx = chunk.chunk_index;
+    for (agg_i, aggregation_s) in (0..num_aggs).zip(aggregation_series) {
+        let has_physical_agg = agg_fns[agg_i].has_physical_agg();
+        apply_aggregate(
+            agg_i,
+            chunk_idx,
+            agg_idxs,
+            aggregation_s,
+            has_physical_agg,
+            aggregators,
+        );
     }
 }

@@ -19,7 +19,6 @@ pub(super) struct OocState {
     // bitmap that indicates the rows that are processed ooc
     // will be mmap converted to `BooleanArray`.
     pub(super) ooc_filter: Vec<u8>,
-    pub(super) agg_idx_ooc: Vec<IdxSize>,
     // when ooc, we write to disk using an IO thread
     pub(super) io_thread: Arc<Mutex<Option<IOThread>>>,
 }
@@ -30,7 +29,6 @@ impl OocState {
             mem_track: MemTracker::new(morsels_per_sink()),
             ooc,
             ooc_filter: vec![],
-            agg_idx_ooc: vec![],
             io_thread: io_thread.unwrap_or_default(),
         }
     }

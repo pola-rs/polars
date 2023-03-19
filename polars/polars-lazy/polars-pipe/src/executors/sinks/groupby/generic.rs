@@ -256,6 +256,7 @@ impl GenericGroupbySink {
         Ok(())
     }
 
+    #[inline]
     fn get_partitions(
         &mut self,
         h: u64,
