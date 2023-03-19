@@ -323,6 +323,14 @@ def test_date_offset() -> None:
     assert df["date_min"].to_list() == expected_dates
 
 
+@pytest.mark.parametrize("time_zone", ["US/Central", None])
+def test_offset_by_crossing_dst(time_zone: str | None) -> None:
+    ser = pl.Series([datetime(2021, 11, 7)]).dt.replace_time_zone(time_zone)
+    result = ser.dt.offset_by("1d")
+    expected = pl.Series([datetime(2021, 11, 8)]).dt.replace_time_zone(time_zone)
+    assert_series_equal(result, expected)
+
+
 def test_year_empty_df() -> None:
     df = pl.DataFrame(pl.Series(name="date", dtype=pl.Date))
     assert df.select(pl.col("date").dt.year()).dtypes == [pl.Int32]

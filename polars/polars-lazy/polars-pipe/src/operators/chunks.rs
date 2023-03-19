@@ -9,6 +9,9 @@ pub struct DataChunk {
 }
 
 impl DataChunk {
+    pub(crate) fn new(chunk_index: IdxSize, data: DataFrame) -> Self {
+        Self { chunk_index, data }
+    }
     pub(crate) fn with_data(&self, data: DataFrame) -> Self {
         DataChunk {
             chunk_index: self.chunk_index,

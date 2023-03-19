@@ -10,6 +10,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
+    Collection,
     Iterable,
     NoReturn,
     Sequence,
@@ -2497,7 +2498,7 @@ class Series:
 
         """
 
-    def is_in(self, other: Series | Sequence[Any]) -> Series:
+    def is_in(self, other: Series | Collection[Any]) -> Series:
         """
         Check if elements of this Series are in the other Series.
 

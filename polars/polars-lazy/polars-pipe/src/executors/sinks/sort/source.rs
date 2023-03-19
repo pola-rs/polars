@@ -71,7 +71,7 @@ impl Source for SortSource {
                 let dfs = POOL.install(|| {
                     files
                         .par_iter()
-                        .map(read_df)
+                        .map(|entry| read_df(&entry.path()))
                         .collect::<PolarsResult<Vec<DataFrame>>>()
                 })?;
                 let df = accumulate_dataframes_vertical_unchecked(dfs);

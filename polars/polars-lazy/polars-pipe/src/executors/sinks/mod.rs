@@ -1,6 +1,7 @@
 #[cfg(feature = "parquet")]
 mod file_sink;
 pub(crate) mod groupby;
+mod io;
 mod joins;
 mod memory;
 mod ordered;

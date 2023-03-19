@@ -128,8 +128,34 @@ pub(super) fn truncate(s: &Series, every: &str, offset: &str) -> PolarsResult<Se
     let every = Duration::parse(every);
     let offset = Duration::parse(offset);
     Ok(match s.dtype() {
-        DataType::Datetime(_, _) => s.datetime().unwrap().truncate(every, offset).into_series(),
-        DataType::Date => s.date().unwrap().truncate(every, offset).into_series(),
+        DataType::Datetime(_, tz) => match tz {
+            #[cfg(feature = "timezones")]
+            Some(tz) => match tz.parse::<Tz>() {
+                Ok(tz) => s
+                    .datetime()
+                    .unwrap()
+                    .truncate(every, offset, Some(&tz))?
+                    .into_series(),
+                Err(_) => match parse_offset(tz) {
+                    Ok(tz) => s
+                        .datetime()
+                        .unwrap()
+                        .truncate(every, offset, Some(&tz))?
+                        .into_series(),
+                    Err(_) => unreachable!(),
+                },
+            },
+            _ => s
+                .datetime()
+                .unwrap()
+                .truncate(every, offset, NO_TIMEZONE)?
+                .into_series(),
+        },
+        DataType::Date => s
+            .date()
+            .unwrap()
+            .truncate(every, offset, NO_TIMEZONE)?
+            .into_series(),
         dt => polars_bail!(opq = round, got = dt, expected = "date/datetime"),
     })
 }
