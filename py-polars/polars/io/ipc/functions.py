@@ -4,8 +4,8 @@ import contextlib
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO
 
+from polars import internals as pli
 from polars.dependencies import _PYARROW_AVAILABLE
-from polars.internals import DataFrame, LazyFrame
 from polars.io._utils import _prepare_file_arg
 from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 from polars.utils.various import normalise_filepath
@@ -16,6 +16,7 @@ with contextlib.suppress(ImportError):
 if TYPE_CHECKING:
     from io import BytesIO
 
+    from polars import DataFrame, LazyFrame
     from polars.type_aliases import PolarsDataType
 
 
@@ -93,14 +94,14 @@ def read_ipc(
             import pyarrow.feather
 
             tbl = pa.feather.read_table(data, memory_map=memory_map, columns=columns)
-            df = DataFrame._from_arrow(tbl, rechunk=rechunk)
+            df = pli.DataFrame._from_arrow(tbl, rechunk=rechunk)
             if row_count_name is not None:
                 df = df.with_row_count(row_count_name, row_count_offset)
             if n_rows is not None:
                 df = df.slice(0, n_rows)
             return df
 
-        return DataFrame._read_ipc(
+        return pli.DataFrame._read_ipc(
             data,
             columns=columns,
             n_rows=n_rows,
@@ -175,7 +176,7 @@ def scan_ipc(
         Only uncompressed IPC files can be memory mapped.
 
     """
-    return LazyFrame._scan_ipc(
+    return pli.LazyFrame._scan_ipc(
         source,
         n_rows=n_rows,
         cache=cache,

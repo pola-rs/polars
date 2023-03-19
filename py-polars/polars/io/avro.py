@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, BinaryIO
 
-from polars.dataframe import DataFrame
+from polars import internals as pli
 from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 
 if TYPE_CHECKING:
     from io import BytesIO
     from pathlib import Path
+
+    from polars import DataFrame
 
 
 @deprecate_nonkeyword_arguments()
@@ -35,4 +37,4 @@ def read_avro(
     DataFrame
 
     """
-    return DataFrame._read_avro(source, n_rows=n_rows, columns=columns)
+    return pli.DataFrame._read_avro(source, n_rows=n_rows, columns=columns)

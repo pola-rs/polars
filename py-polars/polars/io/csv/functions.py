@@ -9,12 +9,10 @@ from typing import (
     Mapping,
     Sequence,
     TextIO,
-    cast,
 )
 
-from polars.convert import from_arrow
+from polars import internals as pli
 from polars.datatypes import N_INFER_DEFAULT, Utf8
-from polars.internals import DataFrame, LazyFrame
 from polars.io._utils import _prepare_file_arg
 from polars.io.csv._utils import _check_arg_is_1byte, _update_columns
 from polars.io.csv.batched_reader import BatchedCsvReader
@@ -24,6 +22,7 @@ from polars.utils.various import handle_projection_columns, normalise_filepath
 if TYPE_CHECKING:
     from io import BytesIO
 
+    from polars import DataFrame, LazyFrame
     from polars.type_aliases import CsvEncoding, PolarsDataType, SchemaDict
 
 
@@ -258,7 +257,7 @@ def read_csv(
                 [f"column_{int(column[1:]) + 1}" for column in tbl.column_names]
             )
 
-        df = cast(DataFrame, from_arrow(tbl, rechunk=rechunk))
+        df = pli.DataFrame._from_arrow(tbl, rechunk=rechunk)
         if new_columns:
             return _update_columns(df, new_columns)
         return df
@@ -357,7 +356,7 @@ def read_csv(
     with _prepare_file_arg(
         source, encoding=encoding, use_pyarrow=False, **storage_options
     ) as data:
-        df = DataFrame._read_csv(
+        df = pli.DataFrame._read_csv(
             data,
             has_header=has_header,
             columns=columns if columns else projection,
@@ -883,7 +882,7 @@ def scan_csv(
     if isinstance(source, (str, Path)):
         source = normalise_filepath(source)
 
-    return LazyFrame._scan_csv(
+    return pli.LazyFrame._scan_csv(
         source,
         has_header=has_header,
         separator=separator,
