@@ -717,7 +717,7 @@ fn test_rolling_lookback() {
             &dates,
             closed_window,
             tu,
-            NO_TIMEZONE,
+            NO_TIMEZONE.copied(),
             0,
         )
         .collect::<Vec<_>>();
