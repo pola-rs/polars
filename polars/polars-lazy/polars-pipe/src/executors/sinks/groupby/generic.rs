@@ -9,7 +9,7 @@ use polars_core::export::ahash::RandomState;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
 use polars_core::series::SeriesPhysIter;
-use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked};
+use polars_core::utils::_set_partition_size;
 use polars_core::{IdBuildHasher, POOL};
 use polars_utils::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
@@ -20,7 +20,7 @@ use super::aggregates::AggregateFn;
 use crate::executors::sinks::groupby::aggregates::AggregateFunction;
 use crate::executors::sinks::groupby::ooc_state::OocState;
 use crate::executors::sinks::groupby::physical_agg_to_logical;
-use crate::executors::sinks::groupby::utils::compute_slices;
+use crate::executors::sinks::groupby::utils::{compute_slices, finalize_groupby};
 use crate::executors::sinks::io::IOThread;
 use crate::executors::sinks::utils::{hash_series, load_vec};
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
@@ -549,13 +549,18 @@ impl Sink for GenericGroupbySink {
 
     fn finalize(&mut self, _context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         let dfs = self.pre_finalize()?;
-        if dfs.is_empty() {
-            return Ok(FinalizedSink::Finished(DataFrame::from(
-                self.output_schema.as_ref(),
-            )));
-        }
-        let mut df = accumulate_dataframes_vertical_unchecked(dfs);
-        unsafe { DataFrame::new(std::mem::take(df.get_columns_mut())).map(FinalizedSink::Finished) }
+        let split = if self.ooc_state.ooc {
+            Some(self.split(0))
+        } else {
+            None
+        };
+        finalize_groupby(
+            dfs,
+            &self.output_schema,
+            &mut self.ooc_state,
+            self.slice,
+            split,
+        )
     }
 
     fn as_any(&mut self) -> &mut dyn Any {

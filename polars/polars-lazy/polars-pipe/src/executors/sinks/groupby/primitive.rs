@@ -10,7 +10,7 @@ use polars_core::export::ahash::RandomState;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked};
+use polars_core::utils::_set_partition_size;
 use polars_core::POOL;
 use polars_utils::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
@@ -19,12 +19,11 @@ use rayon::prelude::*;
 
 use super::aggregates::AggregateFn;
 use crate::executors::sinks::groupby::aggregates::AggregateFunction;
-use crate::executors::sinks::groupby::ooc::GroupBySource;
 use crate::executors::sinks::groupby::ooc_state::OocState;
 use crate::executors::sinks::groupby::physical_agg_to_logical;
 use crate::executors::sinks::groupby::string::{apply_aggregate, write_agg_idx};
-use crate::executors::sinks::groupby::utils::compute_slices;
-use crate::executors::sinks::io::{block_thread_until_io_thread_done, IOThread};
+use crate::executors::sinks::groupby::utils::{compute_slices, finalize_groupby};
+use crate::executors::sinks::io::IOThread;
 use crate::executors::sinks::utils::load_vec;
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
@@ -297,7 +296,7 @@ where
         // we will write the aggregation_function indexes in the same buffer
         // this is unsafe and we must check that we only write the hashes that
         // already read/taken. So we write on the slots we just read
-        let agg_idx_ptr = self.hashes.as_ptr() as *mut i64 as *mut IdxSize;
+        let agg_idx_ptr = self.hashes.as_ptr() as *mut u64 as *mut IdxSize;
 
         // different from standard sink
         // we only set aggregation idx when the entry in the hashmap already
@@ -366,7 +365,7 @@ where
         // we will write the aggregation_function indexes in the same buffer
         // this is unsafe and we must check that we only write the hashes that
         // already read/taken. So we write on the slots we just read
-        let agg_idx_ptr = self.hashes.as_ptr() as *mut i64 as *mut IdxSize;
+        let agg_idx_ptr = self.hashes.as_ptr() as *mut u64 as *mut IdxSize;
 
         let arr = ca.downcast_iter().next().unwrap();
         let pre_agg_len = self.pre_agg_partitions.len();
@@ -443,34 +442,18 @@ where
 
     fn finalize(&mut self, _context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         let dfs = self.pre_finalize()?;
-        let df = if dfs.is_empty() {
-            DataFrame::from(self.output_schema.as_ref())
+        let split = if self.ooc_state.ooc {
+            Some(self.split(0))
         } else {
-            let mut df = accumulate_dataframes_vertical_unchecked(dfs);
-            // re init to check duplicates
-            unsafe { DataFrame::new(std::mem::take(df.get_columns_mut())) }?
+            None
         };
-
-        if self.ooc_state.ooc {
-            let mut iot = self.ooc_state.io_thread.lock().unwrap();
-            // make sure that we reset the shared states
-            // the OOC groupby will call split as well and it should
-            // not send continue spilling to disk
-            let iot = iot.take().unwrap();
-            self.ooc_state.ooc = false;
-
-            // we wait until all chunks are spilled
-            block_thread_until_io_thread_done(&iot);
-
-            Ok(FinalizedSink::Source(Box::new(GroupBySource::new(
-                iot,
-                df,
-                self.split(0),
-                self.slice,
-            )?)))
-        } else {
-            Ok(FinalizedSink::Finished(df))
-        }
+        finalize_groupby(
+            dfs,
+            &self.output_schema,
+            &mut self.ooc_state,
+            self.slice,
+            split,
+        )
     }
 
     fn split(&self, thread_no: usize) -> Box<dyn Sink> {
