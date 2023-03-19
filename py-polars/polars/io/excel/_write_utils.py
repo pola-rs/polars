@@ -2,16 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Dict,
-    Iterable,
-    Sequence,
-    Tuple,
-    Union,
-    overload,
-)
+from typing import TYPE_CHECKING, Any, Iterable, Sequence, overload
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -24,24 +15,28 @@ from polars.datatypes import (
 )
 from polars.exceptions import DuplicateError
 
-
-def _cluster(iterable: Iterable[Any], n: int = 2) -> Iterable[Any]:
-    return zip(*[iter(iterable)] * n)
-
-
 if TYPE_CHECKING:
     import sys
 
     from xlsxwriter import Workbook
     from xlsxwriter.worksheet import Worksheet
 
-    from polars.dataframe.frame import DataFrame
-    from polars.type_aliases import OneOrMoreDataTypes, PolarsDataType
+    from polars import DataFrame
+    from polars.type_aliases import (
+        ColumnTotalsDefinition,
+        ConditionalFormatDict,
+        OneOrMoreDataTypes,
+        PolarsDataType,
+    )
 
-    if sys.version_info >= (3, 10):
-        from typing import Literal, TypeAlias
+    if sys.version_info >= (3, 8):
+        from typing import Literal
     else:
-        from typing_extensions import Literal, TypeAlias
+        from typing_extensions import Literal
+
+
+def _cluster(iterable: Iterable[Any], n: int = 2) -> Iterable[Any]:
+    return zip(*[iter(iterable)] * n)
 
 
 _XL_DEFAULT_FLOAT_FORMAT_ = "#,##0.{zeros};[Red]-#,##0.{zeros}"
@@ -53,19 +48,6 @@ _XL_DEFAULT_DTYPE_FORMATS_: dict[PolarsDataType, str] = {
 }
 for tp in INTEGER_DTYPES:
     _XL_DEFAULT_DTYPE_FORMATS_[tp] = _XL_DEFAULT_INTEGER_FORMAT_
-
-
-ColumnTotalsDefinition: TypeAlias = Union[
-    # dict of colname(s) to str, a sequence of str, or a boolean
-    Dict[Union[str, Tuple[str, ...]], str],
-    Sequence[str],
-    bool,
-]
-ConditionalFormatDict: TypeAlias = Dict[
-    # dict of colname(s) to str, dict, or sequence of str/dict
-    Union[str, Tuple[str, ...]],
-    Union[str, Union[Dict[str, Any], Sequence[Union[str, Dict[str, Any]]]]],
-]
 
 
 def _adjacent_cols(df: DataFrame, cols: Iterable[str]) -> bool:

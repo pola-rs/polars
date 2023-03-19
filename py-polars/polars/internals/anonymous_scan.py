@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 from polars.dependencies import pickle
 
 if TYPE_CHECKING:
-    from polars.dataframe.frame import DataFrame
+    from polars import DataFrame
 
 
 def _deser_and_exec(

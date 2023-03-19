@@ -67,7 +67,8 @@ from polars.internals.construction import (
     sequence_to_pydf,
     series_to_pydf,
 )
-from polars.internals.io_excel import (
+from polars.io._utils import _is_local_file
+from polars.io.excel._write_utils import (
     _unpack_multi_column_dict,
     _xl_apply_conditional_formats,
     _xl_inject_sparklines,
@@ -76,7 +77,6 @@ from polars.internals.io_excel import (
     _xl_setup_workbook,
     _xl_unique_table_name,
 )
-from polars.io._utils import _is_local_file
 from polars.slice import PolarsSlice
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import (
@@ -110,13 +110,14 @@ if TYPE_CHECKING:
     from pyarrow.interchange.dataframe import _PyArrowDataFrame
     from xlsxwriter import Workbook
 
-    from polars.internals.io_excel import ColumnTotalsDefinition, ConditionalFormatDict
     from polars.series.series import Series
     from polars.type_aliases import (
         AsofJoinStrategy,
         AvroCompression,
         ClosedInterval,
+        ColumnTotalsDefinition,
         ComparisonOperator,
+        ConditionalFormatDict,
         CsvEncoding,
         DbWriteEngine,
         DbWriteMode,

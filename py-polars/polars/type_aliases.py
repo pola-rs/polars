@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import (
     TYPE_CHECKING,
     Any,
+    Dict,
     Iterable,
     List,
     Mapping,
@@ -141,4 +142,17 @@ FrameInitTypes: TypeAlias = Union[
     "np.ndarray[Any, Any]",
     "pa.Table",
     "pd.DataFrame",
+]
+
+# Excel IO
+ColumnTotalsDefinition: TypeAlias = Union[
+    # dict of colname(s) to str, a sequence of str, or a boolean
+    Dict[Union[str, Tuple[str, ...]], str],
+    Sequence[str],
+    bool,
+]
+ConditionalFormatDict: TypeAlias = Dict[
+    # dict of colname(s) to str, dict, or sequence of str/dict
+    Union[str, Tuple[str, ...]],
+    Union[str, Union[Dict[str, Any], Sequence[Union[str, Dict[str, Any]]]]],
 ]
