@@ -57,16 +57,6 @@ from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoRowsReturned, TooManyRowsReturned
-from polars.internals.construction import (
-    _post_apply_columns,
-    arrow_to_pydf,
-    dict_to_pydf,
-    iterable_to_pydf,
-    numpy_to_pydf,
-    pandas_to_pydf,
-    sequence_to_pydf,
-    series_to_pydf,
-)
 from polars.io._utils import _is_local_file
 from polars.io.excel._write_utils import (
     _unpack_multi_column_dict,
@@ -78,6 +68,16 @@ from polars.io.excel._write_utils import (
     _xl_unique_table_name,
 )
 from polars.slice import PolarsSlice
+from polars.utils._construction import (
+    _post_apply_columns,
+    arrow_to_pydf,
+    dict_to_pydf,
+    iterable_to_pydf,
+    numpy_to_pydf,
+    pandas_to_pydf,
+    sequence_to_pydf,
+    series_to_pydf,
+)
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import (
     deprecate_nonkeyword_arguments,

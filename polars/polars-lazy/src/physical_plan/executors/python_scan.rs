@@ -21,8 +21,8 @@ impl Executor for PythonScanExec {
         let n_rows = self.options.n_rows.take();
         Python::with_gil(|py| {
             let pl = PyModule::import(py, "polars").unwrap();
-            let pli = pl.getattr("internals").unwrap();
-            let deser_and_exec = pli.getattr("_deser_and_exec").unwrap();
+            let utils = pl.getattr("utils").unwrap();
+            let deser_and_exec = utils.getattr("_deserialize_and_execute").unwrap();
 
             let bytes = PyBytes::new(py, &self.options.scan_fn);
 

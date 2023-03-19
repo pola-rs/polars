@@ -61,8 +61,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PyDataFrame, PySeries
 
 if TYPE_CHECKING:
-    from polars.dataframe.frame import DataFrame
-    from polars.series.series import Series
+    from polars.dataframe import DataFrame
+    from polars.series import Series
     from polars.type_aliases import (
         Orientation,
         PolarsDataType,

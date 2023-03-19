@@ -1,10 +1,8 @@
 """
-Core Polars functionality.
+Re-export Polars functionality to avoid cyclical imports.
 
-The modules within `polars.internals` are interdependent. To prevent cyclical imports,
-they all import from each other via this __init__ file using
-`from polars import internals as pli`. The imports below are being shared across this
-module.
+If you run into cyclical imports, export functionality in this module, then import this
+module using `from polars import internals as pli`.
 """
 from polars.dataframe import DataFrame, wrap_df
 from polars.expr import (
@@ -33,7 +31,6 @@ from polars.functions.lazy import (
     struct,
 )
 from polars.functions.whenthen import WhenThen, WhenThenThen, when
-from polars.internals.anonymous_scan import _deser_and_exec
 from polars.lazyframe import LazyFrame, wrap_ldf
 from polars.series import Series, wrap_s
 
@@ -69,5 +66,4 @@ __all__ = [
     "wrap_s",
     "WhenThen",
     "WhenThenThen",
-    "_deser_and_exec",
 ]
