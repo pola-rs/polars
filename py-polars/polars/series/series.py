@@ -19,6 +19,14 @@ from typing import (
 )
 
 from polars import internals as pli
+from polars._construction import (
+    arrow_to_pyseries,
+    iterable_to_pyseries,
+    numpy_to_pyseries,
+    pandas_to_pyseries,
+    sequence_to_pyseries,
+    series_to_pyseries,
+)
 from polars.datatypes import (
     Boolean,
     Categorical,
@@ -55,14 +63,6 @@ from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import ShapeError
-from polars.internals.construction import (
-    arrow_to_pyseries,
-    iterable_to_pyseries,
-    numpy_to_pyseries,
-    pandas_to_pyseries,
-    sequence_to_pyseries,
-    series_to_pyseries,
-)
 from polars.series.binary import BinaryNameSpace
 from polars.series.categorical import CatNameSpace
 from polars.series.datetime import DateTimeNameSpace

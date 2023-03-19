@@ -25,6 +25,16 @@ from typing import (
 )
 
 from polars import internals as pli
+from polars._construction import (
+    _post_apply_columns,
+    arrow_to_pydf,
+    dict_to_pydf,
+    iterable_to_pydf,
+    numpy_to_pydf,
+    pandas_to_pydf,
+    sequence_to_pydf,
+    series_to_pydf,
+)
 from polars.dataframe._html import NotebookFormatter
 from polars.dataframe.groupby import DynamicGroupBy, GroupBy, RollingGroupBy
 from polars.datatypes import (
@@ -57,16 +67,6 @@ from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoRowsReturned, TooManyRowsReturned
-from polars.internals.construction import (
-    _post_apply_columns,
-    arrow_to_pydf,
-    dict_to_pydf,
-    iterable_to_pydf,
-    numpy_to_pydf,
-    pandas_to_pydf,
-    sequence_to_pydf,
-    series_to_pydf,
-)
 from polars.io._utils import _is_local_file
 from polars.io.excel._write_utils import (
     _unpack_multi_column_dict,

@@ -10,6 +10,7 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
+from polars._construction import iterable_to_pyseries
 from polars.datatypes import (
     Date,
     Datetime,
@@ -22,7 +23,6 @@ from polars.datatypes import (
     UInt64,
 )
 from polars.exceptions import ShapeError
-from polars.internals.construction import iterable_to_pyseries
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
