@@ -550,18 +550,19 @@ impl Sink for GenericGroupbySink {
 
     fn finalize(&mut self, _context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         let dfs = self.pre_finalize()?;
-        let split = if self.ooc_state.ooc {
-            Some(self.split(0))
+        let payload = if self.ooc_state.ooc {
+            let mut iot = self.ooc_state.io_thread.lock().unwrap();
+            // make sure that we reset the shared states
+            // the OOC groupby will call split as well and it should
+            // not send continue spilling to disk
+            let iot = iot.take().unwrap();
+            self.ooc_state.ooc = false;
+
+            Some((iot, self.split(0)))
         } else {
             None
         };
-        finalize_groupby(
-            dfs,
-            &self.output_schema,
-            &mut self.ooc_state,
-            self.slice,
-            split,
-        )
+        finalize_groupby(dfs, &self.output_schema, self.slice, payload)
     }
 
     fn as_any(&mut self) -> &mut dyn Any {

@@ -96,6 +96,8 @@ impl Source for GroupBySource {
                             chunk_idx, df,
                         )]))
                     }
+                    // recursively out of core path
+                    FinalizedSink::Source(mut src) => src.get_batches(context),
                     _ => unreachable!(),
                 }
             }
