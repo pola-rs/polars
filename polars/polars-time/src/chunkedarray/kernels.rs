@@ -230,7 +230,7 @@ to_temporal_unit!(
     i64,
     ArrowDataType::Int32
 );
-#[cfg(feature = "dtype-date")]
+#[cfg(feature = "dtype-datetime")]
 to_boolean_temporal_unit!(
     datetime_to_is_leap_year_ns,
     year,
@@ -238,7 +238,7 @@ to_boolean_temporal_unit!(
     timestamp_ns_to_datetime,
     i64
 );
-#[cfg(feature = "dtype-date")]
+#[cfg(feature = "dtype-datetime")]
 to_boolean_temporal_unit!(
     datetime_to_is_leap_year_us,
     year,
@@ -246,7 +246,7 @@ to_boolean_temporal_unit!(
     timestamp_us_to_datetime,
     i64
 );
-#[cfg(feature = "dtype-date")]
+#[cfg(feature = "dtype-datetime")]
 to_boolean_temporal_unit!(
     datetime_to_is_leap_year_ms,
     year,
