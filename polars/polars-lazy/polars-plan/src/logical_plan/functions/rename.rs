@@ -14,11 +14,11 @@ pub(super) fn rename_impl(
         // the column might be removed due to projection pushdown
         // so we only update if we can find it.
         if let Some(pos) = pos {
-            df.get_columns_mut()[*pos].rename(name);
+            unsafe { df.get_columns_mut()[*pos].rename(name) };
         }
     }
     // recreate dataframe so we check duplicates
-    let columns = std::mem::take(df.get_columns_mut());
+    let columns = unsafe { std::mem::take(df.get_columns_mut()) };
     DataFrame::new(columns)
 }
 

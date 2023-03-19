@@ -600,22 +600,24 @@ where
 
 #[cfg(feature = "temporal")]
 fn parse_dates(mut df: DataFrame, fixed_schema: &Schema) -> DataFrame {
-    let cols = std::mem::take(df.get_columns_mut())
+    let cols = unsafe { std::mem::take(df.get_columns_mut()) }
         .into_par_iter()
         .map(|s| {
-            if let Ok(ca) = s.utf8() {
-                // don't change columns that are in the fixed schema.
-                if fixed_schema.index_of(s.name()).is_some() {
-                    return s;
-                }
+            match s.dtype() {
+                DataType::Utf8 => {
+                    let ca = s.utf8().unwrap();
+                    // don't change columns that are in the fixed schema.
+                    if fixed_schema.index_of(s.name()).is_some() {
+                        return s;
+                    }
 
-                #[cfg(feature = "dtype-time")]
-                if let Ok(ca) = ca.as_time(None, false) {
-                    return ca.into_series();
+                    #[cfg(feature = "dtype-time")]
+                    if let Ok(ca) = ca.as_time(None, false) {
+                        return ca.into_series();
+                    }
+                    s
                 }
-                s
-            } else {
-                s
+                _ => s,
             }
         })
         .collect::<Vec<_>>();

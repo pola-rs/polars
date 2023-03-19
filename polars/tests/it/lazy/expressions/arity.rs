@@ -279,6 +279,7 @@ fn test_binary_over_3930() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "rank")]
 fn test_ternary_aggregation_set_literals() -> PolarsResult<()> {
     let df = df![
         "name" => ["a", "b", "a", "b"],

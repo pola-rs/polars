@@ -18,7 +18,7 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars.internals.type_aliases import ClosedInterval
+    from polars.type_aliases import ClosedInterval
 
 
 @pytest.fixture()
@@ -571,3 +571,22 @@ def test_rolling_skew_window_offset() -> None:
     assert (pl.arange(0, 20, eager=True) ** 2).rolling_skew(20)[
         -1
     ] == 0.6612545648596286
+
+
+def test_rolling_kernels_groupby_dynamic_7548() -> None:
+    assert pl.DataFrame(
+        {"time": pl.arange(0, 4, eager=True), "value": pl.arange(0, 4, eager=True)}
+    ).groupby_dynamic("time", every="1i", period="3i").agg(
+        pl.col("value"),
+        pl.col("value").min().alias("min_value"),
+        pl.col("value").max().alias("max_value"),
+        pl.col("value").sum().alias("sum_value"),
+    ).to_dict(
+        False
+    ) == {
+        "time": [0, 1, 2, 3],
+        "value": [[0, 1, 2], [1, 2, 3], [2, 3], [3]],
+        "min_value": [0, 1, 2, 3],
+        "max_value": [2, 3, 3, 3],
+        "sum_value": [3, 6, 5, 3],
+    }

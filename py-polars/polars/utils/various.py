@@ -7,11 +7,15 @@ import sys
 from collections.abc import MappingView, Sized
 from typing import TYPE_CHECKING, Any, Generator, Iterable, Sequence, TypeVar
 
-import polars.internals as pli
+from polars import internals as pli
 from polars.datatypes import Int64, is_polars_dtype
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyExpr
+
+if TYPE_CHECKING:
+    from polars.expr.expr import Expr
+    from polars.series.series import Series
 
 
 # note: reversed views don't match as instances of MappingView
@@ -23,8 +27,7 @@ if TYPE_CHECKING:
     from collections.abc import Reversible
     from pathlib import Path
 
-    from polars.datatypes import PolarsDataType
-    from polars.internals.type_aliases import SizeUnit
+    from polars.type_aliases import PolarsDataType, SizeUnit
 
     if sys.version_info >= (3, 10):
         from typing import ParamSpec, TypeGuard
@@ -36,8 +39,8 @@ if TYPE_CHECKING:
 
 
 def _process_null_values(
-    null_values: None | str | list[str] | dict[str, str] = None,
-) -> None | str | list[str] | list[tuple[str, str]]:
+    null_values: None | str | Sequence[str] | dict[str, str] = None,
+) -> None | str | Sequence[str] | list[tuple[str, str]]:
     if isinstance(null_values, dict):
         return list(null_values.items())
     else:
@@ -72,7 +75,7 @@ def is_int_sequence(val: object) -> TypeGuard[Sequence[int]]:
     return isinstance(val, Sequence) and _is_iterable_of(val, int)
 
 
-def is_expr_sequence(val: object) -> TypeGuard[Sequence[pli.Expr]]:
+def is_expr_sequence(val: object) -> TypeGuard[Sequence[Expr]]:
     """Check whether the given object is a sequence of Exprs."""
     return isinstance(val, Sequence) and _is_iterable_of(val, pli.Expr)
 
@@ -98,7 +101,7 @@ def is_str_sequence(
 
 def range_to_series(
     name: str, rng: range, dtype: PolarsDataType | None = Int64
-) -> pli.Series:
+) -> Series:
     """Fast conversion of the given range to a Series."""
     return pli.arange(
         low=rng.start,

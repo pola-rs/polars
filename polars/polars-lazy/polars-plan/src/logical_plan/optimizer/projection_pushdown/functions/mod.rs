@@ -75,7 +75,7 @@ pub(super) fn process_functions(
                 let original_acc_projection_len = acc_projections.len();
 
                 // add columns needed for the function.
-                for name in function.additional_projection_pd_columns() {
+                for name in function.additional_projection_pd_columns().as_ref() {
                     let node = expr_arena.add(AExpr::Column(name.clone()));
                     add_expr_to_accumulated(
                         node,

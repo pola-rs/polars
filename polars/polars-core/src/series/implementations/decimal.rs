@@ -36,6 +36,10 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         self.0.rename(name)
     }
 
+    fn chunk_lengths(&self) -> ChunkIdIter {
+        self.0.chunk_id()
+    }
+
     fn name(&self) -> &str {
         self.0.name()
     }

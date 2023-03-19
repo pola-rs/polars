@@ -5,7 +5,7 @@ pub(super) fn drop_impl(mut df: DataFrame, names: &[SmartString]) -> PolarsResul
         // ignore names that are not in there
         // they might already be removed by projection pushdown
         if let Some(idx) = df.find_idx_by_name(name) {
-            let _ = df.get_columns_mut().remove(idx);
+            let _ = unsafe { df.get_columns_mut().remove(idx) };
         }
     }
 

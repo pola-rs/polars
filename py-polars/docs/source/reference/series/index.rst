@@ -9,7 +9,6 @@ This page gives an overview of all public Series methods.
    :hidden:
 
    aggregation
-   array
    attributes
    binary
    boolean
@@ -17,11 +16,12 @@ This page gives an overview of all public Series methods.
    computation
    descriptive
    export
+   list
    modify_select
    miscellaneous
-   strings
+   string
    struct
-   timeseries
+   temporal
 
 .. currentmodule:: polars
 

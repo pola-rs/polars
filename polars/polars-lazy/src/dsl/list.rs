@@ -96,7 +96,7 @@ pub trait ListNameSpaceExtension: IntoListNameSpace + Sized {
 
                 lst.into_iter()
                     .map(|s| {
-                        s.and_then(|s| {
+                        s.and_then(|s| unsafe {
                             df_container.get_columns_mut().push(s);
                             let out = phys_expr.evaluate(&df_container, &state);
                             df_container.get_columns_mut().clear();

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import textwrap
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import polars.internals as pli
+from polars import internals as pli
 from polars.datatypes import (
     Boolean,
     Categorical,
@@ -15,12 +15,17 @@ from polars.datatypes import (
 from polars.exceptions import ComputeError, InvalidAssert
 from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 
+if TYPE_CHECKING:
+    from polars.dataframe.frame import DataFrame
+    from polars.lazyframe.frame import LazyFrame
+    from polars.series.series import Series
+
 
 @deprecate_nonkeyword_arguments()
 @deprecated_alias(check_column_names="check_column_order")
 def assert_frame_equal(
-    left: pli.DataFrame | pli.LazyFrame,
-    right: pli.DataFrame | pli.LazyFrame,
+    left: DataFrame | LazyFrame,
+    right: DataFrame | LazyFrame,
     check_dtype: bool = True,
     check_exact: bool = False,
     rtol: float = 1.0e-5,
@@ -120,8 +125,8 @@ def assert_frame_equal(
 
 @deprecate_nonkeyword_arguments()
 def assert_frame_not_equal(
-    left: pli.DataFrame | pli.LazyFrame,
-    right: pli.DataFrame | pli.LazyFrame,
+    left: DataFrame | LazyFrame,
+    right: DataFrame | LazyFrame,
     check_dtype: bool = True,
     check_exact: bool = False,
     rtol: float = 1.0e-5,
@@ -186,8 +191,8 @@ def assert_frame_not_equal(
 
 @deprecate_nonkeyword_arguments()
 def assert_series_equal(
-    left: pli.Series,
-    right: pli.Series,
+    left: Series,
+    right: Series,
     check_dtype: bool = True,
     check_names: bool = True,
     check_exact: bool = False,
@@ -245,8 +250,8 @@ def assert_series_equal(
 
 @deprecate_nonkeyword_arguments()
 def assert_series_not_equal(
-    left: pli.Series,
-    right: pli.Series,
+    left: Series,
+    right: Series,
     check_dtype: bool = True,
     check_names: bool = True,
     check_exact: bool = False,
@@ -303,8 +308,8 @@ def assert_series_not_equal(
 
 
 def _assert_series_inner(
-    left: pli.Series,
-    right: pli.Series,
+    left: Series,
+    right: Series,
     check_dtype: bool,
     check_exact: bool,
     nans_compare_equal: bool,
@@ -398,9 +403,7 @@ def is_categorical_dtype(data_type: Any) -> bool:
     )
 
 
-def assert_frame_equal_local_categoricals(
-    df_a: pli.DataFrame, df_b: pli.DataFrame
-) -> None:
+def assert_frame_equal_local_categoricals(df_a: DataFrame, df_b: DataFrame) -> None:
     """Assert frame equal for frames containing categoricals."""
     for (a_name, a_value), (b_name, b_value) in zip(
         df_a.schema.items(), df_b.schema.items()

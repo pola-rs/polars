@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::BTreeSet;
 
 use polars_arrow::error::to_compute_err;
 use polars_core::prelude::*;
@@ -85,7 +86,6 @@ impl SQLContext {
     /// execute the 'FROM' part of the query
     fn execute_from_statement(&mut self, tbl_expr: &TableWithJoins) -> PolarsResult<LazyFrame> {
         let (tbl_name, mut lf) = self.get_table(&tbl_expr.relation)?;
-
         if !tbl_expr.joins.is_empty() {
             for tbl in &tbl_expr.joins {
                 let (join_tbl_name, join_tbl) = self.get_table(&tbl.relation)?;
@@ -129,7 +129,6 @@ impl SQLContext {
             .ok_or_else(|| polars_err!(ComputeError: "no table name provided in query"))?;
 
         let lf = self.execute_from_statement(sql_tbl)?;
-
         let mut contains_wildcard = false;
 
         // Filter Expression
@@ -306,7 +305,18 @@ impl SQLContext {
 
         // remove the groupby keys as polars adds those implicitly
         let mut aggregation_projection = Vec::with_capacity(projections.len());
-        for e in projections {
+        let mut aliases: BTreeSet<&str> = BTreeSet::new();
+
+        for mut e in projections {
+            // if it is a simple expression & has alias,
+            // we must defer the aliasing until after the groupby
+            if e.clone().meta().is_simple_projection() {
+                if let Expr::Alias(expr, name) = e {
+                    aliases.insert(name);
+                    e = expr
+                }
+            }
+
             let field = e.to_field(&schema_before, Context::Default)?;
             if groupby_keys_schema.get(&field.name).is_none() {
                 aggregation_projection.push(e.clone())
@@ -314,16 +324,14 @@ impl SQLContext {
         }
 
         let aggregated = lf.groupby(groupby_keys).agg(&aggregation_projection);
-
         let projection_schema =
             expressions_to_schema(projections, &schema_before, Context::Default)?;
-
         // a final projection to get the proper order
         let final_projection = projection_schema
             .iter_names()
             .zip(projections)
             .map(|(name, projection_expr)| {
-                if groupby_keys_schema.get(name).is_some() {
+                if groupby_keys_schema.get(name).is_some() || aliases.contains(name.as_str()) {
                     projection_expr.clone()
                 } else {
                     col(name)
@@ -331,7 +339,7 @@ impl SQLContext {
             })
             .collect::<Vec<_>>();
 
-        Ok(aggregated.select(final_projection))
+        Ok(aggregated.select(&final_projection))
     }
 }
 

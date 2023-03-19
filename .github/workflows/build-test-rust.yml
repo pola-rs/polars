@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+        run: rustup override set stable
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
@@ -32,9 +32,7 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: nightly-2023-03-10
+        run: rustup show
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
@@ -56,10 +54,7 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: nightly-2023-03-10
-          components: rustfmt, clippy, miri
+        run: rustup component add rustfmt clippy miri
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
@@ -100,9 +95,7 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: nightly-2023-03-10
+        run: rustup show
 
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2

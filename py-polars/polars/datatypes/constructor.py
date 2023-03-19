@@ -15,7 +15,7 @@ except ImportError:
     _DOCUMENTING = True
 
 if TYPE_CHECKING:
-    from polars.datatypes import PolarsDataType
+    from polars.type_aliases import PolarsDataType
 
 if not _DOCUMENTING:
     _POLARS_TYPE_TO_CONSTRUCTOR: dict[

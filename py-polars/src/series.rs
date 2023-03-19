@@ -13,6 +13,7 @@ use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::list_construction::py_seq_to_list;
 use crate::prelude::*;
+use crate::py_modules::POLARS;
 use crate::set::set_at_idx;
 use crate::{apply_method_all_arrow_series2, arrow_interop, raise_err};
 
@@ -224,10 +225,14 @@ impl From<Series> for PySeries {
 )]
 impl PySeries {
     #[staticmethod]
-    pub fn new_from_anyvalues(name: &str, val: Vec<Wrap<AnyValue<'_>>>) -> PyResult<PySeries> {
+    pub fn new_from_anyvalues(
+        name: &str,
+        val: Vec<Wrap<AnyValue<'_>>>,
+        strict: bool,
+    ) -> PyResult<PySeries> {
         let avs = slice_extract_wrapped(&val);
         // from anyvalues is fallible
-        let s = Series::from_any_values(name, avs).map_err(PyPolarsErr::from)?;
+        let s = Series::from_any_values(name, avs, strict).map_err(PyPolarsErr::from)?;
         Ok(s.into())
     }
 
@@ -274,13 +279,14 @@ impl PySeries {
     pub fn new_decimal(
         name: &str,
         val: Vec<Wrap<AnyValue<'_>>>,
-        _strict: bool,
+        strict: bool,
     ) -> PyResult<PySeries> {
         // TODO: do we have to respect 'strict' here? it's possible if we want to
         let avs = slice_extract_wrapped(&val);
         // create a fake dtype with a placeholder "none" scale, to be inferred later
         let dtype = DataType::Decimal(None, None);
-        let s = Series::from_any_values_and_dtype(name, avs, &dtype).map_err(PyPolarsErr::from)?;
+        let s = Series::from_any_values_and_dtype(name, avs, &dtype, strict)
+            .map_err(PyPolarsErr::from)?;
         Ok(s.into())
     }
 
@@ -409,7 +415,19 @@ impl PySeries {
     }
 
     pub fn get_idx(&self, py: Python, idx: usize) -> PyResult<PyObject> {
-        Ok(Wrap(self.series.get(idx).map_err(PyPolarsErr::from)?).into_py(py))
+        let av = self.series.get(idx).map_err(PyPolarsErr::from)?;
+        if let AnyValue::List(s) = av {
+            let pyseries = PySeries::new(s);
+            let out = POLARS
+                .getattr(py, "wrap_s")
+                .unwrap()
+                .call1(py, (pyseries,))
+                .unwrap();
+
+            Ok(out.into_py(py))
+        } else {
+            Ok(Wrap(self.series.get(idx).map_err(PyPolarsErr::from)?).into_py(py))
+        }
     }
 
     pub fn bitand(&self, other: &PySeries) -> PyResult<Self> {
@@ -1069,8 +1087,11 @@ impl PySeries {
         Ok(PySeries::new(s))
     }
 
-    pub fn to_dummies(&self, sep: Option<&str>) -> PyResult<PyDataFrame> {
-        let df = self.series.to_dummies(sep).map_err(PyPolarsErr::from)?;
+    pub fn to_dummies(&self, separator: Option<&str>) -> PyResult<PyDataFrame> {
+        let df = self
+            .series
+            .to_dummies(separator)
+            .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
 

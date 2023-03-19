@@ -314,3 +314,9 @@ def test_err_on_categorical_asof_join_by_arg() -> None:
         match=r"joins/or comparisons on categoricals can only happen if they were created under the same global string cache",
     ):
         df1.join_asof(df2, on="time", by="cat")
+
+
+def test_categorical_list_get_item() -> None:
+    out = pl.Series([["a"]]).cast(pl.List(pl.Categorical)).item()
+    assert isinstance(out, pl.Series)
+    assert out.dtype == pl.Categorical

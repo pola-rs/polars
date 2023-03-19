@@ -178,7 +178,7 @@ fn deserialize_all<'a>(json: &Value, dtype: &DataType) -> PolarsResult<AnyValue<
                 .iter()
                 .map(|val| deserialize_all(val, inner_dtype))
                 .collect::<PolarsResult<_>>()?;
-            let s = Series::from_any_values_and_dtype("", &vals, inner_dtype)?;
+            let s = Series::from_any_values_and_dtype("", &vals, inner_dtype, false)?;
             AnyValue::List(s)
         }
         #[cfg(feature = "dtype-struct")]

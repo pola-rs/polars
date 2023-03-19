@@ -7,6 +7,7 @@ mod round;
 pub mod series;
 mod truncate;
 mod upsample;
+mod utils;
 mod windows;
 
 use chrono::FixedOffset;

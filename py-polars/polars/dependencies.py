@@ -140,6 +140,12 @@ def _lazy_import(module_name: str) -> tuple[ModuleType, bool]:
 
 
 if TYPE_CHECKING:
+    import dataclasses
+    import html
+    import json
+    import pickle
+    import subprocess
+
     import deltalake
     import fsspec
     import hypothesis
@@ -152,12 +158,20 @@ if TYPE_CHECKING:
     else:
         from backports import zoneinfo
 else:
+    # infrequently-used builtins
+    dataclasses, _ = _lazy_import("dataclasses")
+    html, _ = _lazy_import("html")
+    json, _ = _lazy_import("json")
+    pickle, _ = _lazy_import("pickle")
+    subprocess, _ = _lazy_import("subprocess")
+
+    # heavy third party libs
+    deltalake, _DELTALAKE_AVAILABLE = _lazy_import("deltalake")
     fsspec, _FSSPEC_AVAILABLE = _lazy_import("fsspec")
+    hypothesis, _HYPOTHESIS_AVAILABLE = _lazy_import("hypothesis")
     numpy, _NUMPY_AVAILABLE = _lazy_import("numpy")
     pandas, _PANDAS_AVAILABLE = _lazy_import("pandas")
     pyarrow, _PYARROW_AVAILABLE = _lazy_import("pyarrow")
-    hypothesis, _HYPOTHESIS_AVAILABLE = _lazy_import("hypothesis")
-    deltalake, _DELTALAKE_AVAILABLE = _lazy_import("deltalake")
     zoneinfo, _ZONEINFO_AVAILABLE = (
         _lazy_import("zoneinfo")
         if sys.version_info >= (3, 9)
@@ -188,21 +202,30 @@ def _check_for_pyarrow(obj: Any) -> bool:
 
 
 __all__ = [
+    # lazy-load rarely-used/heavy builtins (for fast startup)
+    "dataclasses",
+    "html",
+    "json",
+    "pickle",
+    "subprocess",
+    # lazy-load third party libs
+    "deltalake",
     "fsspec",
     "numpy",
     "pandas",
     "pyarrow",
-    "deltalake",
     "zoneinfo",
-    "_LazyModule",
-    "_FSSPEC_AVAILABLE",
-    "_NUMPY_AVAILABLE",
+    # lazy utilities
     "_check_for_numpy",
-    "_PANDAS_AVAILABLE",
     "_check_for_pandas",
-    "_PYARROW_AVAILABLE",
     "_check_for_pyarrow",
-    "_ZONEINFO_AVAILABLE",
-    "_HYPOTHESIS_AVAILABLE",
+    "_LazyModule",
+    # exported flags/guards
     "_DELTALAKE_AVAILABLE",
+    "_FSSPEC_AVAILABLE",
+    "_HYPOTHESIS_AVAILABLE",
+    "_NUMPY_AVAILABLE",
+    "_PANDAS_AVAILABLE",
+    "_PYARROW_AVAILABLE",
+    "_ZONEINFO_AVAILABLE",
 ]

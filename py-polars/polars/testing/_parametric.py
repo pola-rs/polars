@@ -26,7 +26,7 @@ from hypothesis.strategies import (
 )
 from hypothesis.strategies._internal.utils import defines_strategy
 
-import polars.internals as pli
+from polars import internals as pli
 from polars.datatypes import (
     Boolean,
     Categorical,
@@ -54,7 +54,10 @@ from polars.testing.asserts import is_categorical_dtype
 if TYPE_CHECKING:
     from hypothesis.strategies import DrawFn, SearchStrategy
 
-    from polars.datatypes import OneOrMoreDataTypes, PolarsDataType
+    from polars.dataframe.frame import DataFrame
+    from polars.lazyframe.frame import LazyFrame
+    from polars.series.series import Series
+    from polars.type_aliases import OneOrMoreDataTypes, PolarsDataType
 
 
 # Default profile (eg: running locally)
@@ -167,7 +170,7 @@ class column:
 
     name: str
     dtype: PolarsDataType | None = None
-    strategy: SearchStrategy[pli.Series | int] | None = None
+    strategy: SearchStrategy[Series | int] | None = None
     null_probability: float | None = None
     unique: bool = False
 
@@ -309,7 +312,7 @@ def series(
     chunked: bool | None = None,
     allowed_dtypes: Sequence[PolarsDataType] | None = None,
     excluded_dtypes: Sequence[PolarsDataType] | None = None,
-) -> SearchStrategy[pli.Series]:
+) -> SearchStrategy[Series]:
     """
     Strategy for producing a polars Series.
 
@@ -388,7 +391,7 @@ def series(
     null_probability = float(null_probability or 0.0)
 
     @composite
-    def draw_series(draw: DrawFn) -> pli.Series:
+    def draw_series(draw: DrawFn) -> Series:
         with StringCache():
             # create/assign series dtype and retrieve matching strategy
             series_dtype = (
@@ -468,7 +471,7 @@ def dataframes(
     allow_infinities: bool = True,
     allowed_dtypes: Sequence[PolarsDataType] | None = None,
     excluded_dtypes: Sequence[PolarsDataType] | None = None,
-) -> SearchStrategy[pli.DataFrame | pli.LazyFrame]:
+) -> SearchStrategy[DataFrame | LazyFrame]:
     """
     Provides a strategy for producing a DataFrame or LazyFrame.
 
@@ -572,7 +575,7 @@ def dataframes(
     ]
 
     @composite
-    def draw_frames(draw: DrawFn) -> pli.DataFrame | pli.LazyFrame:
+    def draw_frames(draw: DrawFn) -> DataFrame | LazyFrame:
         with StringCache():
             # if not given, create 'n' cols with random dtypes
             if cols is None or isinstance(cols, int):

@@ -4,7 +4,7 @@ import contextlib
 from pathlib import Path
 from typing import TYPE_CHECKING, Sequence
 
-import polars.internals as pli
+from polars import internals as pli
 from polars.datatypes import (
     N_INFER_DEFAULT,
     py_type_to_dtype,
@@ -20,8 +20,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PyBatchedCsv
 
 if TYPE_CHECKING:
-    from polars.datatypes import PolarsDataType, SchemaDict
-    from polars.internals.type_aliases import CsvEncoding
+    from polars.dataframe.frame import DataFrame
+    from polars.type_aliases import CsvEncoding, PolarsDataType, SchemaDict
 
 
 class BatchedCsvReader:
@@ -30,12 +30,12 @@ class BatchedCsvReader:
         source: str | Path,
         has_header: bool = True,
         columns: Sequence[int] | Sequence[str] | None = None,
-        sep: str = ",",
+        separator: str = ",",
         comment_char: str | None = None,
         quote_char: str | None = r'"',
         skip_rows: int = 0,
         dtypes: None | (SchemaDict | Sequence[PolarsDataType]) = None,
-        null_values: str | list[str] | dict[str, str] | None = None,
+        null_values: str | Sequence[str] | dict[str, str] | None = None,
         missing_utf8_is_empty_string: bool = False,
         ignore_errors: bool = False,
         try_parse_dates: bool = False,
@@ -51,7 +51,7 @@ class BatchedCsvReader:
         row_count_offset: int = 0,
         sample_size: int = 1024,
         eol_char: str = "\n",
-        new_columns: list[str] | None = None,
+        new_columns: Sequence[str] | None = None,
     ):
         path: str | None
         if isinstance(source, (str, Path)):
@@ -80,7 +80,7 @@ class BatchedCsvReader:
             n_rows=n_rows,
             skip_rows=skip_rows,
             projection=projection,
-            sep=sep,
+            separator=separator,
             rechunk=rechunk,
             columns=columns,
             encoding=encoding,
@@ -101,7 +101,7 @@ class BatchedCsvReader:
         )
         self.new_columns = new_columns
 
-    def next_batches(self, n: int) -> list[pli.DataFrame] | None:
+    def next_batches(self, n: int) -> list[DataFrame] | None:
         """
         Read ``n`` batches from the reader.
 
@@ -117,7 +117,9 @@ class BatchedCsvReader:
         Examples
         --------
         >>> reader = pl.read_csv_batched(
-        ...     "./tpch/tables_scale_100/lineitem.tbl", sep="|", try_parse_dates=True
+        ...     "./tpch/tables_scale_100/lineitem.tbl",
+        ...     separator="|",
+        ...     try_parse_dates=True,
         ... )  # doctest: +SKIP
         >>> reader.next_batches(5)  # doctest: +SKIP
 

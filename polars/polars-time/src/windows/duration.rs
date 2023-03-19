@@ -1,8 +1,6 @@
 use std::cmp::Ordering;
 use std::ops::Mul;
 
-#[cfg(feature = "timezones")]
-use chrono::LocalResult;
 use chrono::{
     Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeZone as TimeZoneTrait, Timelike, Weekday,
 };
@@ -10,8 +8,6 @@ use polars_arrow::export::arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
 };
 use polars_core::export::arrow::temporal_conversions::MICROSECONDS;
-#[cfg(feature = "timezones")]
-use polars_core::prelude::polars_bail;
 use polars_core::prelude::{
     datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us, PolarsResult,
 };
@@ -23,6 +19,8 @@ use super::calendar::{
     is_leap_year, last_day_of_month, NS_DAY, NS_HOUR, NS_MICROSECOND, NS_MILLISECOND, NS_MINUTE,
     NS_SECOND, NS_WEEK,
 };
+#[cfg(feature = "timezones")]
+use crate::utils::{localize_datetime, unlocalize_datetime};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -51,29 +49,6 @@ impl Ord for Duration {
     fn cmp(&self, other: &Self) -> Ordering {
         self.duration_ns().cmp(&other.duration_ns())
     }
-}
-
-#[cfg(feature = "timezones")]
-pub(crate) fn localize_datetime(
-    ndt: NaiveDateTime,
-    tz: &impl TimeZoneTrait,
-) -> PolarsResult<NaiveDateTime> {
-    // e.g. '2021-01-01 03:00' -> '2021-01-01 03:00CDT'
-    match tz.from_local_datetime(&ndt) {
-        LocalResult::Single(tz) => Ok(tz.naive_utc()),
-        LocalResult::Ambiguous(_, _) => {
-            polars_bail!(ComputeError: "ambiguous timestamps are not (yet) supported")
-        }
-        LocalResult::None => {
-            polars_bail!(ComputeError: "non-existent timestamps are not (yet) supported")
-        }
-    }
-}
-
-#[cfg(feature = "timezones")]
-fn unlocalize_datetime(ndt: NaiveDateTime, tz: &impl TimeZoneTrait) -> NaiveDateTime {
-    // e.g. '2021-01-01 03:00CDT' -> '2021-01-01 03:00'
-    tz.from_utc_datetime(&ndt).naive_local()
 }
 
 impl Duration {
@@ -352,10 +327,11 @@ impl Duration {
     pub fn truncate_impl<F, G, J>(
         &self,
         t: i64,
+        tz: Option<&impl TimeZoneTrait>,
         nsecs_to_unit: F,
         timestamp_to_datetime: G,
         datetime_to_timestamp: J,
-    ) -> i64
+    ) -> PolarsResult<i64>
     where
         F: Fn(i64) -> i64,
         G: Fn(i64) -> NaiveDateTime,
@@ -365,34 +341,78 @@ impl Duration {
             (0, 0, 0, 0) => panic!("duration may not be zero"),
             // truncate by ns/us/ms
             (0, 0, 0, _) => {
+                let t = match tz {
+                    #[cfg(feature = "timezones")]
+                    Some(tz) => {
+                        datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz))
+                    }
+                    _ => t,
+                };
                 let duration = nsecs_to_unit(self.nsecs);
                 let mut remainder = t % duration;
                 if remainder < 0 {
                     remainder += duration
                 }
-                t - remainder
+                match tz {
+                    #[cfg(feature = "timezones")]
+                    Some(tz) => Ok(datetime_to_timestamp(localize_datetime(
+                        timestamp_to_datetime(t - remainder),
+                        tz,
+                    )?)),
+                    _ => Ok(t - remainder),
+                }
             }
             // truncate by weeks
             (0, _, 0, 0) => {
-                let dt = timestamp_to_datetime(t).date();
+                let dt = match tz {
+                    #[cfg(feature = "timezones")]
+                    Some(tz) => unlocalize_datetime(timestamp_to_datetime(t), tz).date(),
+                    _ => timestamp_to_datetime(t).date(),
+                };
                 let week_timestamp = dt.week(Weekday::Mon);
                 let first_day_of_week =
                     week_timestamp.first_day() - chrono::Duration::weeks(self.weeks - 1);
-
-                datetime_to_timestamp(first_day_of_week.and_time(NaiveTime::default()))
+                match tz {
+                    #[cfg(feature = "timezones")]
+                    Some(tz) => Ok(datetime_to_timestamp(localize_datetime(
+                        first_day_of_week.and_time(NaiveTime::default()),
+                        tz,
+                    )?)),
+                    _ => Ok(datetime_to_timestamp(
+                        first_day_of_week.and_time(NaiveTime::default()),
+                    )),
+                }
             }
             // truncate by days
             (0, 0, _, 0) => {
+                let t = match tz {
+                    #[cfg(feature = "timezones")]
+                    Some(tz) => {
+                        datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz))
+                    }
+                    _ => t,
+                };
                 let duration = self.days * nsecs_to_unit(NS_DAY);
                 let mut remainder = t % duration;
                 if remainder < 0 {
                     remainder += duration
                 }
-                t - remainder
+                match tz {
+                    #[cfg(feature = "timezones")]
+                    Some(tz) => Ok(datetime_to_timestamp(localize_datetime(
+                        timestamp_to_datetime(t - remainder),
+                        tz,
+                    )?)),
+                    _ => Ok(t - remainder),
+                }
             }
             // truncate by months
             (_, 0, 0, 0) => {
-                let ts = timestamp_to_datetime(t);
+                let ts = match tz {
+                    #[cfg(feature = "timezones")]
+                    Some(tz) => unlocalize_datetime(timestamp_to_datetime(t), tz),
+                    _ => timestamp_to_datetime(t),
+                };
                 let (year, month) = (ts.year(), ts.month());
 
                 // determine the total number of months and truncate
@@ -405,7 +425,11 @@ impl Duration {
                 let (year, month) = ((total / 12), ((total % 12) + 1) as u32);
 
                 let dt = new_datetime(year, month, 1, 0, 0, 0, 0);
-                datetime_to_timestamp(dt)
+                match tz {
+                    #[cfg(feature = "timezones")]
+                    Some(tz) => Ok(datetime_to_timestamp(localize_datetime(dt, tz)?)),
+                    _ => Ok(datetime_to_timestamp(dt)),
+                }
             }
             _ => panic!("duration may not mix month, weeks and nanosecond units"),
         }
@@ -413,9 +437,10 @@ impl Duration {
 
     // Truncate the given ns timestamp by the window boundary.
     #[inline]
-    pub fn truncate_ns(&self, t: i64) -> i64 {
+    pub fn truncate_ns(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> PolarsResult<i64> {
         self.truncate_impl(
             t,
+            tz,
             |nsecs| nsecs,
             timestamp_ns_to_datetime,
             datetime_to_timestamp_ns,
@@ -424,9 +449,10 @@ impl Duration {
 
     // Truncate the given ns timestamp by the window boundary.
     #[inline]
-    pub fn truncate_us(&self, t: i64) -> i64 {
+    pub fn truncate_us(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> PolarsResult<i64> {
         self.truncate_impl(
             t,
+            tz,
             |nsecs| nsecs / 1000,
             timestamp_us_to_datetime,
             datetime_to_timestamp_us,
@@ -435,9 +461,10 @@ impl Duration {
 
     // Truncate the given ms timestamp by the window boundary.
     #[inline]
-    pub fn truncate_ms(&self, t: i64) -> i64 {
+    pub fn truncate_ms(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> PolarsResult<i64> {
         self.truncate_impl(
             t,
+            tz,
             |nsecs| nsecs / 1_000_000,
             timestamp_ms_to_datetime,
             datetime_to_timestamp_ms,

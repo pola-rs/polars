@@ -50,7 +50,7 @@ fsspec = ["fsspec"]
 connectorx = ["connectorx"]
 xlsx2csv = ["xlsx2csv >= 0.8.0"]
 openpyxl = ["openpyxl >= 3.0.0"]
-deltalake = ["deltalake >= 0.6.2"]
+deltalake = ["deltalake >= 0.8.0"]
 timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
 matplotlib = ["matplotlib"]
 sqlalchemy = ["sqlalchemy", "pandas"]
@@ -144,6 +144,8 @@ ignore = [
   "SIM102", # Use a single `if` statement instead of nested `if` statements
   # ruff
   "RUF005", # unpack-instead-of-concatenating-to-collection-literal
+  # pycodestyle
+  "W191", # Indentation contains tabs - disabled because of https://github.com/charliermarsh/ruff/issues/3438
   # TODO: Remove errors below to further improve docstring linting
   # Ordered from most common to least common errors.
   "D105",

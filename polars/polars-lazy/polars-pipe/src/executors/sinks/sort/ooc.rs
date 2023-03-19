@@ -1,4 +1,4 @@
-use std::fs::DirEntry;
+use std::path::Path;
 
 use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;
@@ -8,12 +8,11 @@ use polars_io::SerReader;
 use polars_ops::prelude::*;
 use rayon::prelude::*;
 
-use crate::executors::sinks::sort::io::{block_thread_until_io_thread_done, DfIter, IOThread};
+use crate::executors::sinks::io::{block_thread_until_io_thread_done, DfIter, IOThread};
 use crate::executors::sinks::sort::source::SortSource;
 use crate::operators::FinalizedSink;
 
-pub(super) fn read_df(entry: &DirEntry) -> PolarsResult<DataFrame> {
-    let path = entry.path();
+pub(super) fn read_df(path: &Path) -> PolarsResult<DataFrame> {
     let file = std::fs::File::open(path)?;
     IpcReader::new(file).set_rechunk(false).finish()
 }
@@ -39,7 +38,13 @@ pub(super) fn sort_ooc(
             let files = &files[*offset..*offset + *len];
 
             for entry in files {
-                let df = read_df(entry)?;
+                let path = entry.path();
+
+                // don't read the lock file
+                if path.ends_with(".lock") {
+                    continue;
+                }
+                let df = read_df(&path)?;
 
                 let sort_col = &df.get_columns()[idx];
                 let assigned_parts = det_partitions(sort_col, &partitions, descending);
@@ -71,7 +76,7 @@ pub(super) fn sort_ooc(
         })
         .collect::<std::io::Result<Vec<_>>>()?;
 
-    let source = SortSource::new(files, idx, descending, slice, partitions);
+    let source = SortSource::new(files, idx, descending, slice);
     Ok(FinalizedSink::Source(Box::new(source)))
 }
 

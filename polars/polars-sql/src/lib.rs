@@ -694,4 +694,117 @@ mod test {
         assert_eq!(df_2.height(), 27);
         assert_eq!(df_2.width(), 4);
     }
+
+    #[test]
+    #[cfg(feature = "csv")]
+    fn iss_7436() {
+        let mut context = SQLContext::try_new().unwrap();
+        let sql = r#"
+            CREATE TABLE foods AS
+            SELECT *
+            FROM read_csv('../../examples/datasets/foods1.csv')"#;
+        context.execute(sql).unwrap().collect().unwrap();
+        let df_sql = context
+            .execute(
+                r#"
+            SELECT 
+                "fats_g" AS fats,
+                AVG(calories) OVER (PARTITION BY "category") AS avg_calories_by_category
+            FROM foods
+            LIMIT 5
+            "#,
+            )
+            .unwrap()
+            .collect()
+            .unwrap();
+        let expected = LazyCsvReader::new("../../examples/datasets/foods1.csv")
+            .finish()
+            .unwrap()
+            .select(&[
+                col("fats_g").alias("fats"),
+                col("calories")
+                    .mean()
+                    .over(vec![col("category")])
+                    .alias("avg_calories_by_category"),
+            ])
+            .limit(5)
+            .collect()
+            .unwrap();
+        assert!(df_sql.frame_equal(&expected));
+    }
+
+    #[test]
+    #[cfg(feature = "csv")]
+    fn iss_7437() -> PolarsResult<()> {
+        let mut context = SQLContext::try_new()?;
+        let sql = r#"
+            CREATE TABLE foods AS
+            SELECT *
+            FROM read_csv('../../examples/datasets/foods1.csv')"#;
+        context.execute(sql)?.collect()?;
+
+        let df_sql = context
+            .execute(
+                r#"
+                SELECT "category" as category
+                FROM foods
+                GROUP BY "category"
+        "#,
+            )?
+            .collect()?
+            .sort(&["category"], vec![false])?;
+
+        let expected = LazyCsvReader::new("../../examples/datasets/foods1.csv")
+            .finish()?
+            .groupby(vec![col("category").alias("category")])
+            .agg(vec![])
+            .collect()?
+            .sort(&["category"], vec![false])?;
+
+        assert!(df_sql.frame_equal(&expected));
+        Ok(())
+    }
+    #[test]
+    #[cfg(feature = "ipc")]
+    fn test_groupby_2() -> PolarsResult<()> {
+        let mut context = SQLContext::try_new()?;
+        let sql = r#"
+        CREATE TABLE foods AS
+        SELECT *
+        FROM read_ipc('../../examples/datasets/foods1.ipc')"#;
+
+        context.execute(sql)?.collect()?;
+        let sql = r#"   
+        SELECT
+            category,
+            count(category) as count,
+            max(calories),
+            min(fats_g)
+        FROM foods
+        GROUP BY category
+        ORDER BY count, category DESC
+        LIMIT 2"#;
+
+        let df_sql = context.execute(sql)?;
+        let df_sql = df_sql.collect()?;
+        let expected =
+            LazyFrame::scan_ipc("../../examples/datasets/foods1.ipc", Default::default())?
+                .select(&[col("*")])
+                .groupby(vec![col("category")])
+                .agg(vec![
+                    col("category").count().alias("count"),
+                    col("calories").max(),
+                    col("fats_g").min(),
+                ])
+                .sort_by_exprs(
+                    vec![col("count"), col("category")],
+                    vec![false, true],
+                    false,
+                )
+                .limit(2);
+        let lp = expected.clone().describe_optimized_plan()?;
+        let expected = expected.collect()?;
+        assert!(df_sql.frame_equal(&expected));
+        Ok(())
+    }
 }

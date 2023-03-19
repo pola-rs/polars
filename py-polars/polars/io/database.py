@@ -7,8 +7,8 @@ from polars.convert import from_arrow
 from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 
 if TYPE_CHECKING:
-    import polars.internals as pli
-    from polars.internals.type_aliases import DbReadEngine
+    from polars.dataframe.frame import DataFrame
+    from polars.type_aliases import DbReadEngine
 
 
 def read_database(
@@ -20,7 +20,7 @@ def read_database(
     partition_num: int | None = None,
     protocol: str | None = None,
     engine: DbReadEngine = "connectorx",
-) -> pli.DataFrame:
+) -> DataFrame:
     """
     Read a SQL query into a DataFrame.
 
@@ -119,7 +119,7 @@ def read_sql(
     protocol: str | None = None,
     *,
     engine: DbReadEngine = "connectorx",
-) -> pli.DataFrame:
+) -> DataFrame:
     """
     Read a SQL query into a DataFrame.
 
@@ -213,7 +213,7 @@ def _read_sql_connectorx(
     partition_range: tuple[int, int] | None = None,
     partition_num: int | None = None,
     protocol: str | None = None,
-) -> pli.DataFrame:
+) -> DataFrame:
     try:
         import connectorx as cx
     except ImportError:
@@ -234,7 +234,7 @@ def _read_sql_connectorx(
     return from_arrow(tbl)  # type: ignore[return-value]
 
 
-def _read_sql_adbc(query: str, connection_uri: str) -> pli.DataFrame:
+def _read_sql_adbc(query: str, connection_uri: str) -> DataFrame:
     with _open_adbc_connection(connection_uri) as conn:
         cursor = conn.cursor()
         cursor.execute(query)

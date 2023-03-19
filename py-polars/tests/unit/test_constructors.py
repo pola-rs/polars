@@ -32,9 +32,9 @@ def test_init_dict() -> None:
         assert df.shape == (0, 2)
         assert df.schema == {"a": pl.Date, "b": pl.Utf8}
 
-    # List of empty list/tuple
-    df = pl.DataFrame({"a": [[]], "b": [()]})
-    expected = {"a": pl.List(pl.Float64), "b": pl.List(pl.Float64)}
+    # List of empty list
+    df = pl.DataFrame({"a": [[]], "b": [[]]})
+    expected = {"a": pl.List(pl.Int32), "b": pl.List(pl.Int32)}
     assert df.schema == expected
     assert df.rows() == [([], [])]
 
@@ -264,9 +264,7 @@ def test_init_ndarray(monkeypatch: Any) -> None:
         _ = pl.DataFrame(np.array([[1, 2], [3, 4]]), schema=["a"])
 
     # NumPy not available
-    monkeypatch.setattr(
-        pl.internals.dataframe.frame, "_check_for_numpy", lambda x: False
-    )
+    monkeypatch.setattr(pl.dataframe.frame, "_check_for_numpy", lambda x: False)
     with pytest.raises(ValueError):
         pl.DataFrame(np.array([1, 2, 3]), schema=["a"])
 
@@ -488,9 +486,7 @@ def test_init_pandas(monkeypatch: Any) -> None:
     assert df.rows() == [(datetime(2022, 10, 31, 10, 30, 45, 123456),)]
 
     # pandas is not available
-    monkeypatch.setattr(
-        pl.internals.dataframe.frame, "_check_for_pandas", lambda x: False
-    )
+    monkeypatch.setattr(pl.dataframe.frame, "_check_for_pandas", lambda x: False)
     with pytest.raises(ValueError):
         pl.DataFrame(pandas_df)
 
@@ -632,7 +628,9 @@ def test_upcast_primitive_and_strings() -> None:
     assert pl.Series([1, 1.0, "1.0"]).dtype == pl.Utf8
     assert pl.Series([True, 1]).dtype == pl.Int64
     assert pl.Series([True, 1.0]).dtype == pl.Float64
-    assert pl.Series([True, "1.0"]).dtype == pl.Utf8
+    assert pl.Series([True, 1], dtype=pl.Boolean).dtype == pl.Boolean
+    assert pl.Series([False, 1.0], dtype=pl.Boolean).dtype == pl.Boolean
+    assert pl.Series([False, "1.0"]).dtype == pl.Utf8
     assert pl.from_dict({"a": [1, 2.1, 3], "b": [4, 5, 6.4]}).dtypes == [
         pl.Float64,
         pl.Float64,
@@ -938,3 +936,9 @@ def test_init_with_explicit_binary_schema() -> None:
     s = pl.Series("a", [b"hello", b"world"], dtype=pl.Binary)
     assert s.dtype == pl.Binary
     assert s.to_list() == [b"hello", b"world"]
+
+
+def test_nested_categorical() -> None:
+    s = pl.Series([["a"]], dtype=pl.List(pl.Categorical))
+    assert s.to_list() == [["a"]]
+    assert s.dtype == pl.List(pl.Categorical)

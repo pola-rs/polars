@@ -10,7 +10,9 @@ description = "Lazy query engine for the Polars DataFrame library"
 
 [dependencies]
 ahash.workspace = true
+arrow.workspace = true
 chrono = { version = "0.4", optional = true }
+chrono-tz = { version = "0.8", optional = true }
 futures = { version = "0.3.25", optional = true }
 once_cell.workspace = true
 polars-arrow = { version = "0.27.2", path = "../../polars-arrow" }
@@ -61,7 +63,7 @@ list_take = ["polars-ops/list_take"]
 list_count = ["polars-ops/list_count"]
 trigonometry = []
 sign = []
-timezones = ["polars-time/timezones", "polars-core/timezones", "regex"]
+timezones = ["chrono-tz", "polars-time/timezones", "polars-core/timezones", "regex"]
 binary_encoding = ["polars-ops/binary_encoding"]
 true_div = []
 

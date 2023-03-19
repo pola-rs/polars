@@ -9,26 +9,12 @@ from typing import TYPE_CHECKING, Any, Callable, Sequence, TypeVar, overload
 from polars.datatypes import Date, Datetime
 from polars.dependencies import _ZONEINFO_AVAILABLE, zoneinfo
 
-# This code block is due to a typing issue with backports.zoneinfo package:
-# https://github.com/pganssle/zoneinfo/issues/125
-if sys.version_info >= (3, 9):
-    from zoneinfo import ZoneInfo
-elif _ZONEINFO_AVAILABLE:
-    from backports.zoneinfo._zoneinfo import ZoneInfo
-
-
-# note: reversed views don't match as instances of MappingView
-if sys.version_info >= (3, 11):
-    _views: list[Reversible[Any]] = [{}.keys(), {}.values(), {}.items()]
-    _reverse_mapping_views = tuple(type(reversed(view)) for view in _views)
-
 if TYPE_CHECKING:
     from collections.abc import Reversible
     from datetime import date, tzinfo
     from decimal import Decimal
 
-    from polars.datatypes import PolarsDataType
-    from polars.internals.type_aliases import TimeUnit
+    from polars.type_aliases import PolarsDataType, TimeUnit
 
     if sys.version_info >= (3, 10):
         from typing import ParamSpec
@@ -37,6 +23,29 @@ if TYPE_CHECKING:
 
     P = ParamSpec("P")
     T = TypeVar("T")
+
+    # the below shenanigans with ZoneInfo are all to handle a
+    # typing issue in py < 3.9 while preserving lazy-loading
+    if sys.version_info >= (3, 9):
+        from zoneinfo import ZoneInfo
+    elif _ZONEINFO_AVAILABLE:
+        from backports.zoneinfo._zoneinfo import ZoneInfo
+
+    def get_zoneinfo(key: str) -> ZoneInfo:
+        pass
+
+else:
+    from functools import lru_cache
+
+    @lru_cache(None)
+    def get_zoneinfo(key: str) -> ZoneInfo:
+        return zoneinfo.ZoneInfo(key)
+
+
+# note: reversed views don't match as instances of MappingView
+if sys.version_info >= (3, 11):
+    _views: list[Reversible[Any]] = [{}.keys(), {}.values(), {}.items()]
+    _reverse_mapping_views = tuple(type(reversed(view)) for view in _views)
 
 
 @overload
@@ -175,7 +184,7 @@ def _to_python_datetime(
                     "Install polars[timezone] to handle datetimes with timezones."
                 )
 
-            utc = ZoneInfo("UTC")
+            utc = get_zoneinfo("UTC")
             if tu == "ns":
                 # nanoseconds to seconds
                 dt = datetime.fromtimestamp(0, tz=utc) + timedelta(
@@ -199,7 +208,7 @@ def _localize(dt: datetime, tz: str) -> datetime:
     # zone info installation should already be checked
     _tzinfo: ZoneInfo | tzinfo
     try:
-        _tzinfo = ZoneInfo(tz)
+        _tzinfo = get_zoneinfo(tz)
     except zoneinfo.ZoneInfoNotFoundError:
         # try fixed offset, which is not supported by ZoneInfo
         _tzinfo = _parse_fixed_tz_offset(tz)

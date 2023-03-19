@@ -1,4 +1,5 @@
 use super::*;
+use crate::chunked_array::cast::cast_chunks;
 use crate::prelude::*;
 
 pub type DecimalChunked = Logical<DecimalType, Int128Type>;
@@ -71,9 +72,14 @@ impl LogicalType for DecimalChunked {
                 return self.0.cast(dtype); // no conversion or checks needed
             }
         }
-        polars_bail!(
-            InvalidOperation: "cannot cast {} to {}", self.2.as_ref().unwrap(), dtype
-        );
+        let chunks = cast_chunks(&self.chunks, dtype, true)?;
+        unsafe {
+            Ok(Series::from_chunks_and_dtype_unchecked(
+                self.name(),
+                chunks,
+                dtype,
+            ))
+        }
     }
 }
 

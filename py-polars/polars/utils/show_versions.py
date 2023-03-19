@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import importlib
-import platform
 import sys
 
 from polars.utils.meta import get_index_type
@@ -32,6 +31,9 @@ def show_versions() -> None:
     xlsxwriter: 3.0.8
 
     """
+    # note: we import 'platform' here as a micro-optimisation for initial import
+    import platform
+
     print("---Version info---")
     print(f"Polars: {get_polars_version()}")
     print(f"Index type: {get_index_type()}")
@@ -63,9 +65,15 @@ def _get_dependency_info() -> dict[str, str]:
 def _get_dependency_version(dep_name: str) -> str:
     try:
         module = importlib.import_module(dep_name)
-        module_version = getattr(module, "__version__", "<version not detected>")
     except ImportError:
         return "<not installed>"
 
-    # all our dependencies (as of 2022-08-11) implement __version__
+    if hasattr(module, "__version__"):
+        module_version = module.__version__
+    elif sys.version_info >= (3, 8):
+        # importlib.metadata was introduced in Python 3.8
+        module_version = importlib.metadata.version(dep_name)
+    else:
+        module_version = "<version not detected>"
+
     return module_version

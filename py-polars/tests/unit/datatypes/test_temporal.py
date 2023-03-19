@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import sys
 from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING, cast, no_type_check
 
@@ -20,15 +19,11 @@ from polars.testing import (
 )
 
 if TYPE_CHECKING:
-    from polars.datatypes import PolarsTemporalType
-    from polars.internals.type_aliases import TimeUnit
-
-if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo
+
+    from polars.type_aliases import PolarsTemporalType, TimeUnit
 else:
-    # Import from submodule due to typing issue with backports.zoneinfo package:
-    # https://github.com/pganssle/zoneinfo/issues/125
-    from backports.zoneinfo._zoneinfo import ZoneInfo
+    from polars.utils.convert import get_zoneinfo as ZoneInfo
 
 
 def test_fill_null() -> None:
@@ -847,7 +842,15 @@ def test_rolling() -> None:
         assert out["min_a"].to_list() == [3, 3, 3, 3, 2, 1]
 
 
-def test_upsample() -> None:
+@pytest.mark.parametrize(
+    ("time_zone", "tzinfo"),
+    [
+        (None, None),
+        ("Europe/Warsaw", ZoneInfo("Europe/Warsaw")),
+        ("+01:00", timezone(timedelta(hours=1))),
+    ],
+)
+def test_upsample(time_zone: str | None, tzinfo: ZoneInfo | timezone | None) -> None:
     df = pl.DataFrame(
         {
             "time": [
@@ -859,7 +862,7 @@ def test_upsample() -> None:
             "admin": ["Åland", "Netherlands", "Åland", "Netherlands"],
             "test2": [0, 1, 2, 3],
         }
-    ).with_columns(pl.col("time").dt.replace_time_zone("UTC"))
+    ).with_columns(pl.col("time").dt.replace_time_zone(time_zone))
 
     up = df.upsample(
         time_column="time", every="1mo", by="admin", maintain_order=True
@@ -890,9 +893,45 @@ def test_upsample() -> None:
             ],
             "test2": [0, 0, 0, 2, 1, 1, 3],
         }
-    ).with_columns(pl.col("time").dt.replace_time_zone("UTC"))
+    ).with_columns(pl.col("time").dt.replace_time_zone(time_zone))
 
     assert_frame_equal(up, expected)
+
+
+@pytest.mark.parametrize("time_zone", [None, "US/Central"])
+@pytest.mark.parametrize(
+    ("offset", "expected_time", "expected_values"),
+    [
+        (
+            None,
+            [datetime(2021, 11, 6), datetime(2021, 11, 7), datetime(2021, 11, 8)],
+            [1, 2, 3],
+        ),
+        ("1d", [datetime(2021, 11, 7), datetime(2021, 11, 8)], [2, 3]),
+    ],
+)
+def test_upsample_crossing_dst(
+    time_zone: str | None,
+    offset: str | None,
+    expected_time: list[datetime],
+    expected_values: list[int],
+) -> None:
+    df = pl.DataFrame(
+        {
+            "time": pl.date_range(
+                datetime(2021, 11, 6), datetime(2021, 11, 8), time_zone=time_zone
+            ),
+            "values": [1, 2, 3],
+        }
+    )
+    result = df.upsample(time_column="time", every="1d", offset=offset)
+    expected = pl.DataFrame(
+        {
+            "time": expected_time,
+            "values": expected_values,
+        }
+    ).with_columns(pl.col("time").dt.replace_time_zone(time_zone))
+    assert_frame_equal(result, expected)
 
 
 @pytest.mark.parametrize(
@@ -994,6 +1033,60 @@ def test_default_negative_every_offset_dynamic_groupby(tzinfo: ZoneInfo | None) 
         }
     )
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    ("rule", "offset"),
+    [
+        ("1h", timedelta(hours=2)),
+        ("1d", timedelta(days=2)),
+        ("1w", timedelta(weeks=2)),
+    ],
+)
+def test_groupby_dynamic_crossing_dst(rule: str, offset: timedelta) -> None:
+    start_dt = datetime(2021, 11, 7)
+    end_dt = start_dt + offset
+    date_range = pl.date_range(start_dt, end_dt, rule, time_zone="US/Central")
+    df = pl.DataFrame({"time": date_range, "value": range(len(date_range))})
+    result = df.groupby_dynamic("time", every=rule).agg(pl.col("value").mean())
+    expected = pl.DataFrame(
+        {"time": date_range, "value": range(len(date_range))},
+        schema_overrides={"value": pl.Float64},
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_groupby_dynamic_startby_monday_crossing_dst() -> None:
+    start_dt = datetime(2021, 11, 7)
+    end_dt = datetime(2021, 11, 14)
+    date_range = pl.date_range(start_dt, end_dt, "1d", time_zone="US/Central")
+    df = pl.DataFrame({"time": date_range, "value": range(len(date_range))})
+    result = df.groupby_dynamic("time", every="1w", start_by="monday").agg(
+        pl.col("value").mean()
+    )
+    expected = pl.DataFrame(
+        {
+            "time": [
+                datetime(2021, 11, 1, tzinfo=ZoneInfo("US/Central")),
+                datetime(2021, 11, 8, tzinfo=ZoneInfo("US/Central")),
+            ],
+            "value": [0.0, 4.0],
+        },
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_groupby_dynamic_monthly_crossing_dst() -> None:
+    start_dt = datetime(2021, 11, 1)
+    end_dt = datetime(2021, 12, 1)
+    date_range = pl.date_range(start_dt, end_dt, "1mo", time_zone="US/Central")
+    df = pl.DataFrame({"time": date_range, "value": range(len(date_range))})
+    result = df.groupby_dynamic("time", every="1mo").agg(pl.col("value").mean())
+    expected = pl.DataFrame(
+        {"time": date_range, "value": range(len(date_range))},
+        schema_overrides={"value": pl.Float64},
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_asof_join_tolerance_grouper() -> None:
@@ -2394,6 +2487,14 @@ def test_round_by_week() -> None:
         "7d": [date(1998, 4, 9), date(2022, 12, 1)],
         "1w": [date(1998, 4, 13), date(2022, 11, 28)],
     }
+
+
+@pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu", "+01:00"])
+def test_round_by_day_datetime(time_zone: str | None) -> None:
+    ser = pl.Series([datetime(2021, 11, 7, 3)]).dt.replace_time_zone(time_zone)
+    result = ser.dt.round("1d")
+    expected = pl.Series([datetime(2021, 11, 7)]).dt.replace_time_zone(time_zone)
+    assert_series_equal(result, expected)
 
 
 def test_cast_time_to_duration() -> None:

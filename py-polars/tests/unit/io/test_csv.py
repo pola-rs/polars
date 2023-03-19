@@ -24,7 +24,7 @@ from polars.testing import (
 from polars.utils.various import normalise_filepath
 
 if TYPE_CHECKING:
-    from polars.internals.type_aliases import TimeUnit
+    from polars.type_aliases import TimeUnit
 
 
 @pytest.fixture()
@@ -688,7 +688,7 @@ def test_empty_string_missing_round_trip() -> None:
 def test_write_csv_delimiter() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
     f = io.BytesIO()
-    df.write_csv(f, sep="\t")
+    df.write_csv(f, separator="\t")
     f.seek(0)
     assert f.read() == b"a\tb\n1\t1\n2\t2\n3\t3\n"
 
@@ -764,7 +764,9 @@ def test_glob_csv(df_no_lists: pl.DataFrame) -> None:
 
 def test_csv_whitespace_delimiter_at_start_do_not_skip() -> None:
     csv = "\t\t\t\t0\t1"
-    assert pl.read_csv(csv.encode(), sep="\t", has_header=False).to_dict(False) == {
+    assert pl.read_csv(csv.encode(), separator="\t", has_header=False).to_dict(
+        False
+    ) == {
         "column_1": [None],
         "column_2": [None],
         "column_3": [None],
@@ -776,7 +778,9 @@ def test_csv_whitespace_delimiter_at_start_do_not_skip() -> None:
 
 def test_csv_whitespace_delimiter_at_end_do_not_skip() -> None:
     csv = "0\t1\t\t\t\t"
-    assert pl.read_csv(csv.encode(), sep="\t", has_header=False).to_dict(False) == {
+    assert pl.read_csv(csv.encode(), separator="\t", has_header=False).to_dict(
+        False
+    ) == {
         "column_1": [0],
         "column_2": [1],
         "column_3": [None],
@@ -1152,7 +1156,7 @@ def test_csv_quoted_missing() -> None:
         '"1"|"Free text without a linebreak"|""|"789"\n'
         '"0"|"Free text with \ntwo \nlinebreaks"|"101112"|"131415"'
     )
-    result = pl.read_csv(csv.encode(), sep="|", dtypes={"col3": pl.Int32})
+    result = pl.read_csv(csv.encode(), separator="|", dtypes={"col3": pl.Int32})
     expected = pl.DataFrame(
         {
             "col1": [0, 1, 0],

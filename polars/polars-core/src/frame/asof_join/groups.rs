@@ -653,15 +653,18 @@ impl DataFrame {
 
         let mut left_by = self.select(left_by)?;
         let mut right_by = other.select(right_by)?;
-        for (l, r) in left_by
-            .get_columns_mut()
-            .iter_mut()
-            .zip(right_by.get_columns_mut().iter_mut())
-        {
-            #[cfg(feature = "dtype-categorical")]
-            _check_categorical_src(l.dtype(), r.dtype())?;
-            *l = l.to_physical_repr().into_owned();
-            *r = r.to_physical_repr().into_owned();
+
+        unsafe {
+            for (l, r) in left_by
+                .get_columns_mut()
+                .iter_mut()
+                .zip(right_by.get_columns_mut().iter_mut())
+            {
+                #[cfg(feature = "dtype-categorical")]
+                _check_categorical_src(l.dtype(), r.dtype())?;
+                *l = l.to_physical_repr().into_owned();
+                *r = r.to_physical_repr().into_owned();
+            }
         }
 
         let left_by_s = left_by.get_columns()[0].to_physical_repr().into_owned();

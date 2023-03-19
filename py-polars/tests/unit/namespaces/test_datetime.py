@@ -10,7 +10,7 @@ from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
-    from polars.internals.type_aliases import TimeUnit
+    from polars.type_aliases import TimeUnit
 
 
 @pytest.fixture()
@@ -299,6 +299,14 @@ def test_date_offset() -> None:
     # Assert that the 'date_min' column contains the expected list of dates
     expected_dates = [datetime(year, 11, 1, 0, 0) for year in range(1998, 2019)]
     assert df["date_min"].to_list() == expected_dates
+
+
+@pytest.mark.parametrize("time_zone", ["US/Central", None])
+def test_offset_by_crossing_dst(time_zone: str | None) -> None:
+    ser = pl.Series([datetime(2021, 11, 7)]).dt.replace_time_zone(time_zone)
+    result = ser.dt.offset_by("1d")
+    expected = pl.Series([datetime(2021, 11, 8)]).dt.replace_time_zone(time_zone)
+    assert_series_equal(result, expected)
 
 
 def test_year_empty_df() -> None:

@@ -324,7 +324,8 @@ where
                             agg_fns,
                             input_schema,
                             output_schema.clone(),
-                            options.slice
+                            options.slice,
+                            None
                         )) as Box<dyn Sink>
                     })
                 }

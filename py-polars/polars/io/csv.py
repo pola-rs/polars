@@ -12,7 +12,7 @@ from typing import (
     cast,
 )
 
-import polars.internals as pli
+from polars import internals as pli
 from polars.convert import from_arrow
 from polars.datatypes import N_INFER_DEFAULT, Utf8
 from polars.internals import DataFrame, LazyFrame
@@ -24,23 +24,22 @@ from polars.utils.various import handle_projection_columns, normalise_filepath
 if TYPE_CHECKING:
     from io import BytesIO
 
-    from polars.datatypes import PolarsDataType, SchemaDict
-    from polars.internals.type_aliases import CsvEncoding
+    from polars.type_aliases import CsvEncoding, PolarsDataType, SchemaDict
 
 
 @deprecate_nonkeyword_arguments()
-@deprecated_alias(file="source", parse_dates="try_parse_dates")
+@deprecated_alias(file="source", sep="separator", parse_dates="try_parse_dates")
 def read_csv(
     source: str | TextIO | BytesIO | Path | BinaryIO | bytes,
     has_header: bool = True,
     columns: Sequence[int] | Sequence[str] | None = None,
-    new_columns: list[str] | None = None,
-    sep: str = ",",
+    new_columns: Sequence[str] | None = None,
+    separator: str = ",",
     comment_char: str | None = None,
     quote_char: str | None = r'"',
     skip_rows: int = 0,
-    dtypes: Mapping[str, PolarsDataType] | list[PolarsDataType] | None = None,
-    null_values: str | list[str] | dict[str, str] | None = None,
+    dtypes: Mapping[str, PolarsDataType] | Sequence[PolarsDataType] | None = None,
+    null_values: str | Sequence[str] | dict[str, str] | None = None,
     missing_utf8_is_empty_string: bool = False,
     ignore_errors: bool = False,
     try_parse_dates: bool = False,
@@ -90,7 +89,7 @@ def read_csv(
         Rename columns right after parsing the CSV file. If the given
         list is shorter than the width of the DataFrame the remaining
         columns will have their original name.
-    sep
+    separator
         Single byte character to use as delimiter in the file.
     comment_char
         Single byte character that indicates the start of a comment line,
@@ -184,7 +183,7 @@ def read_csv(
     scan_csv : Lazily read from a CSV file or multiple files via glob patterns.
 
     """
-    _check_arg_is_1byte("sep", sep, False)
+    _check_arg_is_1byte("separator", separator, False)
     _check_arg_is_1byte("comment_char", comment_char, False)
     _check_arg_is_1byte("quote_char", quote_char, True)
     _check_arg_is_1byte("eol_char", eol_char, False)
@@ -241,7 +240,7 @@ def read_csv(
                     encoding=encoding,
                 ),
                 pa.csv.ParseOptions(
-                    delimiter=sep,
+                    delimiter=separator,
                     quote_char=quote_char if quote_char else False,
                     double_quote=quote_char is not None and quote_char == '"',
                 ),
@@ -362,7 +361,7 @@ def read_csv(
             data,
             has_header=has_header,
             columns=columns if columns else projection,
-            sep=sep,
+            separator=separator,
             comment_char=comment_char,
             quote_char=quote_char,
             skip_rows=skip_rows,
@@ -391,18 +390,18 @@ def read_csv(
 
 
 @deprecate_nonkeyword_arguments()
-@deprecated_alias(file="source")
+@deprecated_alias(file="source", sep="separator")
 def read_csv_batched(
     source: str | Path,
     has_header: bool = True,
     columns: Sequence[int] | Sequence[str] | None = None,
-    new_columns: list[str] | None = None,
-    sep: str = ",",
+    new_columns: Sequence[str] | None = None,
+    separator: str = ",",
     comment_char: str | None = None,
     quote_char: str | None = r'"',
     skip_rows: int = 0,
-    dtypes: Mapping[str, PolarsDataType] | list[PolarsDataType] | None = None,
-    null_values: str | list[str] | dict[str, str] | None = None,
+    dtypes: Mapping[str, PolarsDataType] | Sequence[PolarsDataType] | None = None,
+    null_values: str | Sequence[str] | dict[str, str] | None = None,
     missing_utf8_is_empty_string: bool = False,
     ignore_errors: bool = False,
     try_parse_dates: bool = False,
@@ -447,7 +446,7 @@ def read_csv_batched(
         Rename columns right after parsing the CSV file. If the given
         list is shorter than the width of the DataFrame the remaining
         columns will have their original name.
-    sep
+    separator
         Single byte character to use as delimiter in the file.
     comment_char
         Single byte character that indicates the start of a comment line,
@@ -526,7 +525,7 @@ def read_csv_batched(
     Examples
     --------
     >>> reader = pl.read_csv_batched(
-    ...     "./tpch/tables_scale_100/lineitem.tbl", sep="|", try_parse_dates=True
+    ...     "./tpch/tables_scale_100/lineitem.tbl", separator="|", try_parse_dates=True
     ... )  # doctest: +SKIP
     >>> batches = reader.next_batches(5)  # doctest: +SKIP
     >>> for df in batches:  # doctest: +SKIP
@@ -663,7 +662,7 @@ def read_csv_batched(
         source,
         has_header=has_header,
         columns=columns if columns else projection,
-        sep=sep,
+        separator=separator,
         comment_char=comment_char,
         quote_char=quote_char,
         skip_rows=skip_rows,
@@ -689,16 +688,16 @@ def read_csv_batched(
 
 
 @deprecate_nonkeyword_arguments()
-@deprecated_alias(file="source", parse_dates="try_parse_dates")
+@deprecated_alias(file="source", sep="separator", parse_dates="try_parse_dates")
 def scan_csv(
     source: str | Path,
     has_header: bool = True,
-    sep: str = ",",
+    separator: str = ",",
     comment_char: str | None = None,
     quote_char: str | None = r'"',
     skip_rows: int = 0,
-    dtypes: SchemaDict | None = None,
-    null_values: str | list[str] | dict[str, str] | None = None,
+    dtypes: SchemaDict | Sequence[PolarsDataType] | None = None,
+    null_values: str | Sequence[str] | dict[str, str] | None = None,
     missing_utf8_is_empty_string: bool = False,
     ignore_errors: bool = False,
     cache: bool = True,
@@ -713,6 +712,7 @@ def scan_csv(
     row_count_offset: int = 0,
     try_parse_dates: bool = False,
     eol_char: str = "\n",
+    new_columns: Sequence[str] | None = None,
 ) -> LazyFrame:
     """
     Lazily read from a CSV file or multiple files via glob patterns.
@@ -730,7 +730,7 @@ def scan_csv(
         If set to False, column names will be autogenerated in the
         following format: ``column_x``, with ``x`` being an
         enumeration over every column in the dataset starting at 1.
-    sep
+    separator
         Single byte character to use as delimiter in the file.
     comment_char
         Single byte character that indicates the start of a comment line,
@@ -742,7 +742,9 @@ def scan_csv(
         Start reading after ``skip_rows`` lines. The header will be parsed at this
         offset.
     dtypes
-        Overwrite dtypes during inference.
+        Overwrite dtypes during inference; should be a {colname:dtype,} dict or,
+        if providing a list of strings to ``new_columns``, a list of dtypes of
+        the same length.
     null_values
         Values to interpret as null values. You can provide a:
 
@@ -760,9 +762,8 @@ def scan_csv(
     cache
         Cache the result after reading.
     with_column_names
-        Apply a function over the column names.
-        This can be used to update a schema just in time, thus before
-        scanning.
+        Apply a function over the column names just in time (when they are determined);
+        this function will receive (and should return) a list of column names.
     infer_schema_length
         Maximum number of lines to read to infer schema.
         If set to 0, all columns will be read as ``pl.Utf8``.
@@ -784,11 +785,15 @@ def scan_csv(
     row_count_offset
         Offset to start the row_count column (only used if the name is set).
     try_parse_dates
-        Try to automatically parse dates. Most ISO8601-like time zone naive formats can
-        be inferred, as well as a handful of others. If this does not succeed,
+        Try to automatically parse dates. Most ISO8601-like time zone naive formats
+        can be inferred, as well as a handful of others. If this does not succeed,
         the column remains of data type ``pl.Utf8``.
     eol_char
         Single byte end of line character
+    new_columns
+        Provide an explicit list of string column names to use (for example, when
+        scanning a headerless CSV file). Note that unlike ``read_csv`` it is considered
+        an error to provide fewer column names than there are columns in the file.
 
     Returns
     -------
@@ -816,13 +821,13 @@ def scan_csv(
     We can use ``with_column_names`` to modify the header before scanning:
 
     >>> df = pl.DataFrame(
-    ...     {"BrEeZaH": [1, 2, 3, 4], "LaNgUaGe": ["is", "terrible", "to", "read"]}
+    ...     {"BrEeZaH": [1, 2, 3, 4], "LaNgUaGe": ["is", "hard", "to", "read"]}
     ... )
     >>> path: pathlib.Path = dirpath / "mydf.csv"
     >>> df.write_csv(path)
     >>> pl.scan_csv(
     ...     path, with_column_names=lambda cols: [col.lower() for col in cols]
-    ... ).fetch()
+    ... ).collect()
     shape: (4, 2)
     ┌─────────┬──────────┐
     │ breezah ┆ language │
@@ -830,13 +835,48 @@ def scan_csv(
     │ i64     ┆ str      │
     ╞═════════╪══════════╡
     │ 1       ┆ is       │
-    │ 2       ┆ terrible │
+    │ 2       ┆ hard     │
     │ 3       ┆ to       │
     │ 4       ┆ read     │
     └─────────┴──────────┘
 
+    You can also simply replace column names (or provide them if the file has none)
+    by passing a list of new column names to the ``new_columns`` parameter:
+
+    >>> df.write_csv(path)
+    >>> pl.scan_csv(
+    ...     path,
+    ...     new_columns=["idx", "txt"],
+    ...     dtypes=[pl.UInt16, pl.Utf8],
+    ... ).collect()
+    shape: (4, 2)
+    ┌─────┬──────┐
+    │ idx ┆ txt  │
+    │ --- ┆ ---  │
+    │ u16 ┆ str  │
+    ╞═════╪══════╡
+    │ 1   ┆ is   │
+    │ 2   ┆ hard │
+    │ 3   ┆ to   │
+    │ 4   ┆ read │
+    └─────┴──────┘
+
     """
-    _check_arg_is_1byte("sep", sep, False)
+    if not new_columns and isinstance(dtypes, Sequence):
+        raise TypeError(f"Expected 'dtypes' dict; found {type(dtypes)}")
+    elif new_columns:
+        if with_column_names:
+            raise ValueError(
+                "Cannot set both 'with_column_names' and 'new_columns'; mutually exclusive"
+            )
+        if dtypes and isinstance(dtypes, Sequence):
+            dtypes = dict(zip(new_columns, dtypes))
+
+        # wrap new column names as a callable
+        def with_column_names(_cols: list[str]) -> list[str]:
+            return new_columns  # type: ignore[return-value]
+
+    _check_arg_is_1byte("separator", separator, False)
     _check_arg_is_1byte("comment_char", comment_char, False)
     _check_arg_is_1byte("quote_char", quote_char, True)
 
@@ -846,11 +886,11 @@ def scan_csv(
     return LazyFrame._scan_csv(
         source,
         has_header=has_header,
-        sep=sep,
+        separator=separator,
         comment_char=comment_char,
         quote_char=quote_char,
         skip_rows=skip_rows,
-        dtypes=dtypes,
+        dtypes=dtypes,  # type: ignore[arg-type]
         null_values=null_values,
         missing_utf8_is_empty_string=missing_utf8_is_empty_string,
         ignore_errors=ignore_errors,

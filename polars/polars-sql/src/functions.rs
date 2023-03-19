@@ -360,8 +360,12 @@ impl SqlFunctionVisitor<'_> {
         let function = self.0;
         let args = extract_args(function);
         if let FunctionArgExpr::Expr(sql_expr) = args[0] {
-            let expr = apply_window_spec(parse_sql_expr(sql_expr)?, &function.over)?;
-            Ok(f(expr))
+            // parse the inner sql expr -- e.g. SUM(a) -> a
+            let expr = parse_sql_expr(sql_expr)?;
+            // apply the function on the inner expr -- e.g. SUM(a) -> SUM
+            let expr = f(expr);
+            // apply the window spec if present
+            apply_window_spec(expr, &function.over)
         } else {
             not_supported_error(function.name.0[0].value.as_str(), &args)
         }

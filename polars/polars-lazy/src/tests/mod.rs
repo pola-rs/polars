@@ -1,24 +1,17 @@
-#[cfg(feature = "test")]
 mod aggregations;
-#[cfg(feature = "test")]
 mod arity;
-#[cfg(all(feature = "test", feature = "strings", feature = "cse"))]
+#[cfg(all(feature = "strings", feature = "cse"))]
 mod cse;
 #[cfg(feature = "parquet")]
 mod io;
-#[cfg(feature = "test")]
 mod logical;
-#[cfg(feature = "test")]
 mod optimization_checks;
-#[cfg(feature = "test")]
 mod predicate_queries;
-#[cfg(feature = "test")]
 mod projection_queries;
-#[cfg(feature = "test")]
 mod queries;
 #[cfg(feature = "streaming")]
 mod streaming;
-#[cfg(feature = "strings")]
+#[cfg(all(feature = "strings", feature = "cse"))]
 mod tpch;
 
 fn get_arenas() -> (Arena<AExpr>, Arena<ALogicalPlan>) {

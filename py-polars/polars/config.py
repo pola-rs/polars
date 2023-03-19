@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import contextlib
-import json
 import os
 from typing import TYPE_CHECKING
+
+from polars.dependencies import json
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import set_float_fmt as _set_float_fmt
@@ -38,6 +39,7 @@ POLARS_CFG_ENV_VARS = {
     "POLARS_TABLE_WIDTH",
     "POLARS_VERBOSE",
     "POLARS_ACTIVATE_DECIMAL",
+    "POLARS_STREAMING_CHUNK_SIZE",
 }
 
 
@@ -159,7 +161,7 @@ class Config:
     @classmethod
     def set_ascii_tables(cls, active: bool = True) -> type[Config]:
         """
-        Use ASCII characters to print table outlines (set False to revert to UTF8).
+        Use ASCII characters to display table outlines (set False to revert to UTF8).
 
         Examples
         --------
@@ -191,12 +193,12 @@ class Config:
     @classmethod
     def set_fmt_str_lengths(cls, n: int) -> type[Config]:
         """
-        Set the number of characters used to print string values.
+        Set the number of characters used to display string values.
 
         Parameters
         ----------
         n : int
-            number of characters to print
+            number of characters to display
 
         """
         os.environ["POLARS_FMT_STR_LEN"] = str(n)
@@ -245,12 +247,12 @@ class Config:
     @classmethod
     def set_tbl_cols(cls, n: int) -> type[Config]:
         """
-        Set the number of columns used to print tables.
+        Set the number of columns that are visible when displaying tables.
 
         Parameters
         ----------
         n : int
-            number of columns to print. If n<0 print all the columns.
+            number of columns to display; if ``n < 0`` (eg: -1), display all columns.
 
         Examples
         --------
@@ -513,8 +515,8 @@ class Config:
         Parameters
         ----------
         n : int
-            number of rows to print; if n < 0, prints all rows (DataFrame) and
-            all elements (Series).
+            number of rows to display; if ``n < 0`` (eg: -1), display all
+            rows (DataFrame) and all elements (Series).
 
         Examples
         --------
@@ -530,7 +532,7 @@ class Config:
         # │ f64 ┆ bool  │
         # ╞═════╪═══════╡
         # │ 1.0 ┆ true  │
-        # │ ... ┆ ...   │
+        # │ …   ┆ …     │
         # │ 5.0 ┆ false │
         # └─────┴───────┘
 
@@ -585,4 +587,24 @@ class Config:
 
         """
         os.environ["POLARS_ACTIVATE_DECIMAL"] = "1"
+        return cls
+
+    @classmethod
+    def set_streaming_chunk_size(cls, size: int) -> type[Config]:
+        """
+        Overwrite chunk size used in ``streaming`` engine.
+
+        By default, the chunk size is determined by the schema
+        and size of the thread pool. For some datasets (esp.
+        when you have large string elements) this can be too
+        optimistic and lead to Out of Memory errors.
+
+        Parameters
+        ----------
+        size
+            Number of rows per chunk. Every thread will process chunks
+            of this size.
+
+        """
+        os.environ["POLARS_STREAMING_CHUNK_SIZE"] = str(size)
         return cls

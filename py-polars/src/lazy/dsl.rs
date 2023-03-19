@@ -689,11 +689,11 @@ impl PyExpr {
     }
 
     #[cfg(feature = "lazy_regex")]
-    pub fn str_replace(&self, pat: PyExpr, val: PyExpr, literal: bool) -> PyExpr {
+    pub fn str_replace_n(&self, pat: PyExpr, val: PyExpr, literal: bool, n: i64) -> PyExpr {
         self.inner
             .clone()
             .str()
-            .replace(pat.inner, val.inner, literal)
+            .replace_n(pat.inner, val.inner, literal, n)
             .into()
     }
 

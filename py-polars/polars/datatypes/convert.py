@@ -66,8 +66,7 @@ else:
     UnionType = type(Union[int, float])
 
 if TYPE_CHECKING:
-    from polars.datatypes.type_aliases import PolarsDataType, PythonDataType, SchemaDict
-    from polars.internals.type_aliases import TimeUnit
+    from polars.type_aliases import PolarsDataType, PythonDataType, SchemaDict, TimeUnit
 
     if sys.version_info >= (3, 8):
         from typing import Literal

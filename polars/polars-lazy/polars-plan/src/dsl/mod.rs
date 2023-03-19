@@ -6,7 +6,7 @@ pub use cat::*;
 mod arithmetic;
 pub mod binary;
 #[cfg(feature = "temporal")]
-mod dt;
+pub mod dt;
 mod expr;
 mod from;
 pub(crate) mod function_expr;
@@ -1089,7 +1089,7 @@ impl Expr {
     /// │ 1      ┆ 16     │
     /// │ 2      ┆ 13     │
     /// │ 2      ┆ 13     │
-    /// │ ...    ┆ ...    │
+    /// │ …      ┆ …      │
     /// │ 1      ┆ 16     │
     /// │ 2      ┆ 13     │
     /// │ 3      ┆ 15     │

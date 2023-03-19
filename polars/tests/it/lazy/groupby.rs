@@ -1,3 +1,4 @@
+#[cfg(feature = "rank")]
 use polars_core::series::ops::NullBehavior;
 // used only if feature="dtype-duration", "dtype-struct"
 #[allow(unused_imports)]
@@ -6,6 +7,7 @@ use polars_core::SINGLE_LOCK;
 use super::*;
 
 #[test]
+#[cfg(feature = "rank")]
 fn test_filter_sort_diff_2984() -> PolarsResult<()> {
     // make sort that sort doest not oob if filter returns no values
     let df = df![
@@ -54,6 +56,7 @@ fn test_filter_after_tail() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "diff")]
 fn test_filter_diff_arithmetic() -> PolarsResult<()> {
     let df = df![
         "user" => [1, 1, 1, 1, 2],
@@ -97,6 +100,7 @@ fn test_groupby_lit_agg() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "diff")]
 fn test_groupby_agg_list_with_not_aggregated() -> PolarsResult<()> {
     let df = df![
     "group" => ["a", "a", "a", "a", "a", "a", "b", "b", "b", "b", "b", "b"],

@@ -347,6 +347,8 @@ impl OptimizationRule for TypeCoercionRule {
                 unpack!(early_escape(&type_left, &type_other));
 
                 let casted_expr = match (&type_left, &type_other) {
+                    // types are equal, do nothing
+                    (a, b) if a == b => return Ok(None),
                     // cast both local and global string cache
                     // note that there might not yet be a rev
                     #[cfg(feature = "dtype-categorical")]
@@ -357,6 +359,9 @@ impl OptimizationRule for TypeCoercionRule {
                             // does not matter
                             strict: false,
                         }
+                    }
+                    (dt, DataType::Utf8) => {
+                        polars_bail!(ComputeError: "cannot compare {:?} to {:?} type in 'is_in' operation", dt, type_other)
                     }
                     (DataType::List(_), _) | (_, DataType::List(_)) => return Ok(None),
                     #[cfg(feature = "dtype-struct")]
@@ -372,7 +377,7 @@ impl OptimizationRule for TypeCoercionRule {
                             strict: false,
                         }
                     }
-                    // types are equal, do nothing
+                    // do nothing
                     _ => return Ok(None),
                 };
 

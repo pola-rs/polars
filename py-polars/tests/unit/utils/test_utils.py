@@ -18,7 +18,7 @@ from polars.utils.decorators import deprecate_nonkeyword_arguments
 from polars.utils.various import parse_version
 
 if TYPE_CHECKING:
-    from polars.internals.type_aliases import TimeUnit
+    from polars.type_aliases import TimeUnit
 
 
 @pytest.mark.parametrize(

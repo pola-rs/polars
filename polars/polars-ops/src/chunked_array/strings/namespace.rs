@@ -109,77 +109,27 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     /// rather than before.
     /// The original string is returned if width is less than or equal to `s.len()`.
     #[cfg(feature = "string_justify")]
-    fn zfill<'a>(&'a self, alignment: usize) -> Utf8Chunked {
+    fn zfill(&self, alignment: usize) -> Utf8Chunked {
         let ca = self.as_utf8();
-
-        let f = |s: &'a str| {
-            let alignment = alignment.saturating_sub(s.len());
-            if alignment == 0 {
-                return Cow::Borrowed(s);
-            }
-            if let Some(stripped) = s.strip_prefix('-') {
-                Cow::Owned(format!(
-                    "-{:0alignment$}{value}",
-                    0,
-                    alignment = alignment,
-                    value = stripped
-                ))
-            } else {
-                Cow::Owned(format!(
-                    "{:0alignment$}{value}",
-                    0,
-                    alignment = alignment,
-                    value = s
-                ))
-            }
-        };
-        ca.apply(f)
+        justify::zfill(ca, alignment)
     }
 
     /// Return the string left justified in a string of length width.
     /// Padding is done using the specified `fillchar`,
     /// The original string is returned if width is less than or equal to `s.len()`.
     #[cfg(feature = "string_justify")]
-    fn ljust<'a>(&'a self, width: usize, fillchar: char) -> Utf8Chunked {
+    fn ljust(&self, width: usize, fillchar: char) -> Utf8Chunked {
         let ca = self.as_utf8();
-
-        let f = |s: &'a str| {
-            let padding = width.saturating_sub(s.len());
-            if padding == 0 {
-                Cow::Borrowed(s)
-            } else {
-                let mut buf = String::with_capacity(width);
-                buf.push_str(s);
-                for _ in 0..padding {
-                    buf.push(fillchar)
-                }
-                Cow::Owned(buf)
-            }
-        };
-        ca.apply(f)
+        justify::ljust(ca, width, fillchar)
     }
 
     /// Return the string right justified in a string of length width.
     /// Padding is done using the specified `fillchar`,
     /// The original string is returned if width is less than or equal to `s.len()`.
     #[cfg(feature = "string_justify")]
-    fn rjust<'a>(&'a self, width: usize, fillchar: char) -> Utf8Chunked {
+    fn rjust(&self, width: usize, fillchar: char) -> Utf8Chunked {
         let ca = self.as_utf8();
-
-        let f = |s: &'a str| {
-            let padding = width.saturating_sub(s.len());
-            if padding == 0 {
-                Cow::Borrowed(s)
-            } else {
-                let mut buf = String::with_capacity(width);
-                for _ in 0..padding {
-                    buf.push(fillchar)
-                }
-                buf.push_str(s);
-                Cow::Owned(buf)
-            }
-        };
-        ca.apply(f)
+        justify::rjust(ca, width, fillchar)
     }
 
     /// Check if strings contain a regex pattern.
@@ -239,7 +189,23 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     }
 
     /// Replace the leftmost literal (sub)string with another string
-    fn replace_literal<'a>(&'a self, pat: &str, val: &str) -> PolarsResult<Utf8Chunked> {
+    fn replace_literal<'a>(&'a self, pat: &str, val: &str, n: usize) -> PolarsResult<Utf8Chunked> {
+        let ca = self.as_utf8();
+
+        // for single bytes we can replace on the whole values buffer
+        if pat.len() == 1 && val.len() == 1 {
+            let pat = pat.as_bytes()[0];
+            let val = val.as_bytes()[0];
+            return Ok(
+                ca.apply_kernel(&|arr| Box::new(replace::replace_lit_n_char(arr, n, pat, val)))
+            );
+        }
+        if pat.len() == val.len() {
+            return Ok(
+                ca.apply_kernel(&|arr| Box::new(replace::replace_lit_n_str(arr, n, pat, val)))
+            );
+        }
+
         // amortize allocation
         let mut buf = String::new();
 
@@ -249,7 +215,7 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
 
             // See: str.replacen
             let mut last_end = 0;
-            if let Some((start, part)) = s.match_indices(pat).next() {
+            for (start, part) in s.match_indices(pat).take(n) {
                 changed = true;
                 buf.push_str(unsafe { s.get_unchecked(last_end..start) });
                 buf.push_str(val);
@@ -266,7 +232,6 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
                 s
             }
         };
-        let ca = self.as_utf8();
         Ok(ca.apply_mut(f))
     }
 
@@ -279,6 +244,21 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
 
     /// Replace all matching literal (sub)strings with another string
     fn replace_literal_all<'a>(&'a self, pat: &str, val: &str) -> PolarsResult<Utf8Chunked> {
+        let ca = self.as_utf8();
+        // for single bytes we can replace on the whole values buffer
+        if pat.len() == 1 && val.len() == 1 {
+            let pat = pat.as_bytes()[0];
+            let val = val.as_bytes()[0];
+            return Ok(
+                ca.apply_kernel(&|arr| Box::new(replace::replace_lit_single_char(arr, pat, val)))
+            );
+        }
+        if pat.len() == val.len() {
+            return Ok(ca.apply_kernel(&|arr| {
+                Box::new(replace::replace_lit_n_str(arr, usize::MAX, pat, val))
+            }));
+        }
+
         // amortize allocation
         let mut buf = String::new();
 
@@ -306,7 +286,6 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
             }
         };
 
-        let ca = self.as_utf8();
         Ok(ca.apply_mut(f))
     }
 
@@ -385,14 +364,14 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     #[must_use]
     fn to_lowercase(&self) -> Utf8Chunked {
         let ca = self.as_utf8();
-        ca.apply(|s| str::to_lowercase(s).into())
+        case::to_lowercase(ca)
     }
 
     /// Modify the strings to their uppercase equivalent
     #[must_use]
     fn to_uppercase(&self) -> Utf8Chunked {
         let ca = self.as_utf8();
-        ca.apply(|s| str::to_uppercase(s).into())
+        case::to_uppercase(ca)
     }
 
     /// Concat with the values from a second Utf8Chunked

@@ -212,11 +212,11 @@ def test_sorted_flag() -> None:
 
     # ensure we don't panic for these types
     # struct
-    pl.Series([{"a": 1}]).set_sorted(True)
+    pl.Series([{"a": 1}]).set_sorted(descending=True)
     # list
-    pl.Series([[{"a": 1}]]).set_sorted(True)
+    pl.Series([[{"a": 1}]]).set_sorted(descending=True)
     # object
-    pl.Series([{"a": 1}], dtype=pl.Object).set_sorted(True)
+    pl.Series([{"a": 1}], dtype=pl.Object).set_sorted(descending=True)
 
 
 def test_sorted_fast_paths() -> None:

@@ -11,8 +11,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 
 if TYPE_CHECKING:
-    from polars.datatypes.type_aliases import PolarsDataType, PythonDataType, SchemaDict
-    from polars.internals.type_aliases import TimeUnit
+    from polars.type_aliases import PolarsDataType, PythonDataType, SchemaDict, TimeUnit
 
 
 class DataTypeClass(type):
