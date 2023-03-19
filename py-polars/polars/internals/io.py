@@ -10,7 +10,6 @@ from typing import (
     BinaryIO,
     ContextManager,
     Iterator,
-    Sequence,
     TextIO,
     overload,
 )
@@ -25,7 +24,6 @@ with suppress(ImportError):
     from polars.polars import parquet_schema as _parquet_schema
 
 if TYPE_CHECKING:
-    from polars.dataframe.frame import DataFrame
     from polars.type_aliases import PolarsDataType
 
 
@@ -244,13 +242,3 @@ def _is_local_file(file: str) -> bool:
         return True
     except StopIteration:
         return False
-
-
-def _update_columns(df: DataFrame, new_columns: Sequence[str]) -> DataFrame:
-    if df.width > len(new_columns):
-        cols = df.columns
-        for i, name in enumerate(new_columns):
-            cols[i] = name
-        new_columns = cols
-    df.columns = list(new_columns)
-    return df

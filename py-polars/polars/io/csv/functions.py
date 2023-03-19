@@ -12,11 +12,11 @@ from typing import (
     cast,
 )
 
-from polars import internals as pli
 from polars.convert import from_arrow
 from polars.datatypes import N_INFER_DEFAULT, Utf8
 from polars.internals import DataFrame, LazyFrame
 from polars.internals.io import _prepare_file_arg
+from polars.io.csv._utils import _check_arg_is_1byte, _update_columns
 from polars.io.csv.batched_reader import BatchedCsvReader
 from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 from polars.utils.various import handle_projection_columns, normalise_filepath
@@ -260,7 +260,7 @@ def read_csv(
 
         df = cast(DataFrame, from_arrow(tbl, rechunk=rechunk))
         if new_columns:
-            return pli._update_columns(df, new_columns)
+            return _update_columns(df, new_columns)
         return df
 
     if projection and dtypes and isinstance(dtypes, list):
@@ -385,7 +385,7 @@ def read_csv(
         )
 
     if new_columns:
-        return pli._update_columns(df, new_columns)
+        return _update_columns(df, new_columns)
     return df
 
 
@@ -907,21 +907,3 @@ def scan_csv(
         try_parse_dates=try_parse_dates,
         eol_char=eol_char,
     )
-
-
-def _check_arg_is_1byte(
-    arg_name: str, arg: str | None, can_be_empty: bool = False
-) -> None:
-    if isinstance(arg, str):
-        arg_byte_length = len(arg.encode("utf-8"))
-        if can_be_empty:
-            if arg_byte_length > 1:
-                raise ValueError(
-                    f'{arg_name}="{arg}" should be a single byte character or empty,'
-                    f" but is {arg_byte_length} bytes long."
-                )
-        elif arg_byte_length != 1:
-            raise ValueError(
-                f'{arg_name}="{arg}" should be a single byte character, but is'
-                f" {arg_byte_length} bytes long."
-            )

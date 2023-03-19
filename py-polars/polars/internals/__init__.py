@@ -42,7 +42,6 @@ from polars.internals.anonymous_scan import (
 from polars.internals.io import (
     _is_local_file,
     _prepare_file_arg,
-    _update_columns,
     read_ipc_schema,
     read_parquet_schema,
 )
@@ -90,5 +89,4 @@ __all__ = [
     "_scan_pyarrow_dataset",
     "_scan_ipc_fsspec",
     "_scan_parquet_fsspec",
-    "_update_columns",
 ]
