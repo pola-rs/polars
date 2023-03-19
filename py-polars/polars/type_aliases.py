@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import (
     TYPE_CHECKING,
     Any,
+    Dict,
     Iterable,
     List,
     Mapping,
@@ -25,9 +26,9 @@ if TYPE_CHECKING:
     from polars.dependencies import numpy as np
     from polars.dependencies import pandas as pd
     from polars.dependencies import pyarrow as pa
-    from polars.expr.expr import Expr
+    from polars.expr import Expr
     from polars.functions.whenthen import WhenThen, WhenThenThen
-    from polars.series.series import Series
+    from polars.series import Series
 
     if sys.version_info >= (3, 10):
         from typing import TypeAlias
@@ -141,4 +142,17 @@ FrameInitTypes: TypeAlias = Union[
     "np.ndarray[Any, Any]",
     "pa.Table",
     "pd.DataFrame",
+]
+
+# Excel IO
+ColumnTotalsDefinition: TypeAlias = Union[
+    # dict of colname(s) to str, a sequence of str, or a boolean
+    Dict[Union[str, Tuple[str, ...]], str],
+    Sequence[str],
+    bool,
+]
+ConditionalFormatDict: TypeAlias = Dict[
+    # dict of colname(s) to str, dict, or sequence of str/dict
+    Union[str, Tuple[str, ...]],
+    Union[str, Union[Dict[str, Any], Sequence[Union[str, Dict[str, Any]]]]],
 ]

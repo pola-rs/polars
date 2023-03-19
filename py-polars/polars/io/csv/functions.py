@@ -9,21 +9,21 @@ from typing import (
     Mapping,
     Sequence,
     TextIO,
-    cast,
 )
 
 from polars import internals as pli
-from polars.convert import from_arrow
 from polars.datatypes import N_INFER_DEFAULT, Utf8
-from polars.internals import DataFrame, LazyFrame
-from polars.internals.batched import BatchedCsvReader
-from polars.internals.io import _prepare_file_arg
+from polars.io._utils import _prepare_file_arg
+from polars.io.csv._utils import _check_arg_is_1byte, _update_columns
+from polars.io.csv.batched_reader import BatchedCsvReader
 from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 from polars.utils.various import handle_projection_columns, normalise_filepath
 
 if TYPE_CHECKING:
     from io import BytesIO
 
+    from polars.dataframe import DataFrame
+    from polars.lazyframe import LazyFrame
     from polars.type_aliases import CsvEncoding, PolarsDataType, SchemaDict
 
 
@@ -258,9 +258,9 @@ def read_csv(
                 [f"column_{int(column[1:]) + 1}" for column in tbl.column_names]
             )
 
-        df = cast(DataFrame, from_arrow(tbl, rechunk=rechunk))
+        df = pli.DataFrame._from_arrow(tbl, rechunk=rechunk)
         if new_columns:
-            return pli._update_columns(df, new_columns)
+            return _update_columns(df, new_columns)
         return df
 
     if projection and dtypes and isinstance(dtypes, list):
@@ -357,7 +357,7 @@ def read_csv(
     with _prepare_file_arg(
         source, encoding=encoding, use_pyarrow=False, **storage_options
     ) as data:
-        df = DataFrame._read_csv(
+        df = pli.DataFrame._read_csv(
             data,
             has_header=has_header,
             columns=columns if columns else projection,
@@ -385,7 +385,7 @@ def read_csv(
         )
 
     if new_columns:
-        return pli._update_columns(df, new_columns)
+        return _update_columns(df, new_columns)
     return df
 
 
@@ -883,7 +883,7 @@ def scan_csv(
     if isinstance(source, (str, Path)):
         source = normalise_filepath(source)
 
-    return LazyFrame._scan_csv(
+    return pli.LazyFrame._scan_csv(
         source,
         has_header=has_header,
         separator=separator,
@@ -907,21 +907,3 @@ def scan_csv(
         try_parse_dates=try_parse_dates,
         eol_char=eol_char,
     )
-
-
-def _check_arg_is_1byte(
-    arg_name: str, arg: str | None, can_be_empty: bool = False
-) -> None:
-    if isinstance(arg, str):
-        arg_byte_length = len(arg.encode("utf-8"))
-        if can_be_empty:
-            if arg_byte_length > 1:
-                raise ValueError(
-                    f'{arg_name}="{arg}" should be a single byte character or empty,'
-                    f" but is {arg_byte_length} bytes long."
-                )
-        elif arg_byte_length != 1:
-            raise ValueError(
-                f'{arg_name}="{arg}" should be a single byte character, but is'
-                f" {arg_byte_length} bytes long."
-            )

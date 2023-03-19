@@ -3,13 +3,16 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from polars import internals as pli
 from polars.datatypes import N_INFER_DEFAULT
-from polars.internals import DataFrame, LazyFrame
 from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 from polars.utils.various import normalise_filepath
 
 if TYPE_CHECKING:
     from io import IOBase
+
+    from polars.dataframe import DataFrame
+    from polars.lazyframe import LazyFrame
 
 
 @deprecated_alias(file="source")
@@ -23,7 +26,7 @@ def read_ndjson(source: str | Path | IOBase) -> DataFrame:
         Path to a file or a file-like object.
 
     """
-    return DataFrame._read_ndjson(source)
+    return pli.DataFrame._read_ndjson(source)
 
 
 @deprecate_nonkeyword_arguments()
@@ -68,7 +71,7 @@ def scan_ndjson(
     if isinstance(source, (str, Path)):
         source = normalise_filepath(source)
 
-    return LazyFrame._scan_ndjson(
+    return pli.LazyFrame._scan_ndjson(
         source,
         infer_schema_length=infer_schema_length,
         batch_size=batch_size,

@@ -33,20 +33,7 @@ from polars.functions.lazy import (
     struct,
 )
 from polars.functions.whenthen import WhenThen, WhenThenThen, when
-from polars.internals.anonymous_scan import (
-    _deser_and_exec,
-    _scan_ipc_fsspec,
-    _scan_parquet_fsspec,
-    _scan_pyarrow_dataset,
-)
-from polars.internals.batched import BatchedCsvReader
-from polars.internals.io import (
-    _is_local_file,
-    _prepare_file_arg,
-    _update_columns,
-    read_ipc_schema,
-    read_parquet_schema,
-)
+from polars.internals.anonymous_scan import _deser_and_exec
 from polars.lazyframe import LazyFrame, wrap_ldf
 from polars.series import Series, wrap_s
 
@@ -60,7 +47,6 @@ __all__ = [
     "arg_where",
     "arg_sort_by",
     "argsort_by",
-    "BatchedCsvReader",
     "coalesce",
     "col",
     "collect_all",
@@ -73,8 +59,6 @@ __all__ = [
     "format",
     "from_epoch",
     "lit",
-    "read_ipc_schema",
-    "read_parquet_schema",
     "select",
     "selection_to_pyexpr_list",
     "struct",
@@ -86,10 +70,4 @@ __all__ = [
     "WhenThen",
     "WhenThenThen",
     "_deser_and_exec",
-    "_is_local_file",
-    "_prepare_file_arg",
-    "_scan_pyarrow_dataset",
-    "_scan_ipc_fsspec",
-    "_scan_parquet_fsspec",
-    "_update_columns",
 ]
