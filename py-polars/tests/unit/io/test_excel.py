@@ -62,9 +62,7 @@ def test_basic_datatypes_openpyxl_read_excel() -> None:
     df.write_excel(xls)
     # check if can be read as it was written
     # we use openpyxl because type inference is better
-    df_by_default = pl.read_excel(  # type: ignore[call-overload]
-        xls, engine="openpyxl"
-    )
+    df_by_default = pl.read_excel(xls, engine="openpyxl")  # type: ignore[call-overload]
     df_by_sheet_id = pl.read_excel(  # type: ignore[call-overload]
         xls, sheet_id=0, engine="openpyxl"
     )
