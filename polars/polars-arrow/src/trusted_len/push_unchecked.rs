@@ -41,6 +41,7 @@ pub trait PushUnchecked<T> {
 impl<T> PushUnchecked<T> for Vec<T> {
     #[inline]
     unsafe fn push_unchecked(&mut self, value: T) {
+        debug_assert!(self.capacity() > self.len());
         let end = self.as_mut_ptr().add(self.len());
         std::ptr::write(end, value);
         self.set_len(self.len() + 1);
