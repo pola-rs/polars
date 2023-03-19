@@ -57,6 +57,7 @@ from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoRowsReturned, TooManyRowsReturned
+from polars.functions import lazy as lazy_functions
 from polars.io._utils import _is_local_file
 from polars.io.excel._write_utils import (
     _unpack_multi_column_dict,
@@ -5938,9 +5939,9 @@ class DataFrame:
         if how == "horizontal":
             df = (
                 df.with_columns(
-                    (pli.arange(0, n_cols * n_rows, eager=True) % n_cols).alias(
-                        "__sort_order"
-                    ),
+                    (
+                        lazy_functions.arange(0, n_cols * n_rows, eager=True) % n_cols
+                    ).alias("__sort_order"),
                 )
                 .sort("__sort_order")
                 .drop("__sort_order")
@@ -7237,7 +7238,7 @@ class DataFrame:
             expr = pli.expr_to_lit_or_expr(subset[0], str_to_lit=False)
         else:
             struct_fields = pli.all() if (subset is None) else subset
-            expr = pli.struct(struct_fields)  # type: ignore[call-overload]
+            expr = lazy_functions.struct(struct_fields)  # type: ignore[call-overload]
 
         df = self.lazy().select(expr.n_unique()).collect()
         return 0 if df.is_empty() else df.row(0)[0]

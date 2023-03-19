@@ -42,6 +42,7 @@ from polars.datatypes import (
     py_type_to_dtype,
 )
 from polars.dependencies import subprocess
+from polars.functions import lazy as lazy_functions
 from polars.internals import selection_to_pyexpr_list
 from polars.io._utils import _is_local_file
 from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
@@ -4581,9 +4582,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             self.join(other.select(list(union_names)), on=on, how=how, suffix=tmp_name)  # type: ignore[arg-type]
             .with_columns(
                 [
-                    pli.coalesce([column_name + tmp_name, pli.col(column_name)]).alias(
-                        column_name
-                    )
+                    lazy_functions.coalesce(
+                        [column_name + tmp_name, pli.col(column_name)]
+                    ).alias(column_name)
                     for column_name in right_added_names
                 ]
             )

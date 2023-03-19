@@ -14,11 +14,9 @@ from polars.expr import (
 from polars.functions.eager import concat, date_range
 from polars.functions.lazy import (
     all,
-    arange,
     arg_sort_by,
     arg_where,
     argsort_by,
-    coalesce,
     col,
     collect_all,
     concat_list,
@@ -28,7 +26,6 @@ from polars.functions.lazy import (
     from_epoch,
     lit,
     select,
-    struct,
 )
 from polars.functions.whenthen import WhenThen, WhenThenThen, when
 from polars.lazyframe import LazyFrame, wrap_ldf
@@ -40,11 +37,9 @@ __all__ = [
     "LazyFrame",
     "Series",
     "all",
-    "arange",
     "arg_where",
     "arg_sort_by",
     "argsort_by",
-    "coalesce",
     "col",
     "collect_all",
     "concat",
@@ -58,7 +53,6 @@ __all__ = [
     "lit",
     "select",
     "selection_to_pyexpr_list",
-    "struct",
     "when",
     "wrap_df",
     "wrap_expr",
