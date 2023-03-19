@@ -4,10 +4,10 @@ from io import StringIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO, overload
 
+from polars.internals import DataFrame
 from polars.io.csv import read_csv
 from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 from polars.utils.various import normalise_filepath
-from polars.internals import DataFrame
 
 if TYPE_CHECKING:
     import sys
@@ -97,6 +97,8 @@ def read_excel(
     Returns
     -------
     DataFrame | dict[str, DataFrame]
+
+
     Examples
     --------
     Read "My Datasheet" sheet from Excel sheet file to a DataFrame.
