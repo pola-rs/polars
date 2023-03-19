@@ -252,9 +252,9 @@ __all__ = [
     "using_string_cache",
     # polars.config
     "Config",
-    # polars.internals.whenthen
+    # polars.functions.whenthen
     "when",
-    # polars.internals.functions
+    # polars.functions
     "align_frames",
     "arg_where",
     "concat",
@@ -265,7 +265,7 @@ __all__ = [
     "ones",
     "repeat",
     "zeros",
-    # polars.internals.lazy_functions
+    # polars.functions.lazy
     "all",
     "any",
     "apply",
@@ -313,7 +313,6 @@ __all__ = [
     "sum",
     "tail",
     "var",
-    "var",
     # polars.convert
     "from_arrow",
     "from_dataframe",
@@ -322,9 +321,9 @@ __all__ = [
     "from_numpy",
     "from_pandas",
     "from_records",
-    # sql
+    # polars.sql
     "SQLContext",
-    # utils
+    # polars.utils
     "build_info",
     "get_idx_type",
     "get_index_type",
