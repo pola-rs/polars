@@ -53,6 +53,7 @@ from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import ComputeError, ShapeError
+from polars.utils.convert import _tzinfo_to_str
 from polars.utils.decorators import deprecated_alias
 from polars.utils.meta import threadpool_size
 from polars.utils.various import _is_generator, arrlen, range_to_series
@@ -375,7 +376,7 @@ def sequence_to_pyseries(
             else:
                 s = pli.wrap_s(py_series).dt.cast_time_unit(time_unit)
             if dtype == Datetime and value.tzinfo is not None:
-                tz = str(value.tzinfo)
+                tz = _tzinfo_to_str(value.tzinfo)
                 dtype_tz = dtype.tz  # type: ignore[union-attr]
                 if dtype_tz is not None and tz != dtype_tz:
                     raise ValueError(

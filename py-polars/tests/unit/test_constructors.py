@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import sys
 import typing
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from random import shuffle
 from typing import Any
@@ -12,7 +13,15 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
+from polars.dependencies import _ZONEINFO_AVAILABLE
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if sys.version_info >= (3, 9):
+    from zoneinfo import ZoneInfo
+elif _ZONEINFO_AVAILABLE:
+    # Import from submodule due to typing issue with backports.zoneinfo package:
+    # https://github.com/pganssle/zoneinfo/issues/125
+    from backports.zoneinfo._zoneinfo import ZoneInfo
 
 
 def test_init_dict() -> None:
@@ -440,6 +449,16 @@ def test_init_1d_sequence() -> None:
         [datetime(2020, 1, 1, tzinfo=timezone.utc)], schema={"ts": pl.Datetime("ms")}
     )
     assert df.schema == {"ts": pl.Datetime("ms", "UTC")}
+    df = pl.DataFrame(
+        [datetime(2020, 1, 1, tzinfo=timezone(timedelta(hours=1)))],
+        schema={"ts": pl.Datetime("ms")},
+    )
+    assert df.schema == {"ts": pl.Datetime("ms", "+01:00")}
+    df = pl.DataFrame(
+        [datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu"))],
+        schema={"ts": pl.Datetime("ms")},
+    )
+    assert df.schema == {"ts": pl.Datetime("ms", "Asia/Kathmandu")}
 
 
 def test_init_pandas(monkeypatch: Any) -> None:

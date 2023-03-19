@@ -7,7 +7,11 @@ from typing import TYPE_CHECKING, Iterable, Sequence, overload
 
 from polars import internals as pli
 from polars.datatypes import Date
-from polars.utils.convert import _datetime_to_pl_timestamp, _timedelta_to_pl_duration
+from polars.utils.convert import (
+    _datetime_to_pl_timestamp,
+    _timedelta_to_pl_duration,
+    _tzinfo_to_str,
+)
 from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -476,13 +480,13 @@ def date_range(
             )
 
         if time_zone is not None and low.tzinfo is not None:
-            if str(low.tzinfo) != time_zone:
+            if _tzinfo_to_str(low.tzinfo) != time_zone:
                 raise ValueError(
                     "Given time_zone is different from that of timezone aware datetimes."
                     f" Given: '{time_zone}', got: '{low.tzinfo}'."
                 )
-        if time_zone is None:
-            time_zone = str(low.tzinfo)
+        if time_zone is None and low.tzinfo is not None:
+            time_zone = _tzinfo_to_str(low.tzinfo)
 
     tu: TimeUnit
     if time_unit is not None:
