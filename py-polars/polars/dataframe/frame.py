@@ -80,6 +80,7 @@ from polars.utils._construction import (
     sequence_to_pydf,
     series_to_pydf,
 )
+from polars.utils._parse_expr_input import expr_to_lit_or_expr
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import (
     deprecate_nonkeyword_arguments,
@@ -7236,7 +7237,7 @@ class DataFrame:
             subset = [subset]
 
         if isinstance(subset, Sequence) and len(subset) == 1:
-            expr = pli.expr_to_lit_or_expr(subset[0], str_to_lit=False)
+            expr = expr_to_lit_or_expr(subset[0], str_to_lit=False)
         else:
             struct_fields = F.all() if (subset is None) else subset
             expr = F.struct(struct_fields)  # type: ignore[call-overload]
