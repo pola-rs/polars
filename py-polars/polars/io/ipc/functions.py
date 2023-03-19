@@ -1,15 +1,22 @@
 from __future__ import annotations
 
+import contextlib
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO
 
 from polars.dependencies import _PYARROW_AVAILABLE
 from polars.internals import DataFrame, LazyFrame
-from polars.internals.io import _prepare_file_arg
+from polars.io._utils import _prepare_file_arg
 from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
+from polars.utils.various import normalise_filepath
+
+with contextlib.suppress(ImportError):
+    from polars.polars import ipc_schema as _ipc_schema
 
 if TYPE_CHECKING:
     from io import BytesIO
-    from pathlib import Path
+
+    from polars.type_aliases import PolarsDataType
 
 
 @deprecate_nonkeyword_arguments()
@@ -102,6 +109,27 @@ def read_ipc(
             rechunk=rechunk,
             memory_map=memory_map,
         )
+
+
+@deprecated_alias(file="source")
+def read_ipc_schema(source: str | BinaryIO | Path | bytes) -> dict[str, PolarsDataType]:
+    """
+    Get the schema of an IPC file without reading data.
+
+    Parameters
+    ----------
+    source
+        Path to a file or a file-like object.
+
+    Returns
+    -------
+    Dictionary mapping column names to datatypes
+
+    """
+    if isinstance(source, (str, Path)):
+        source = normalise_filepath(source)
+
+    return _ipc_schema(source)
 
 
 @deprecate_nonkeyword_arguments()

@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import glob
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager
 from io import BytesIO, StringIO
 from pathlib import Path
 from typing import (
-    TYPE_CHECKING,
     Any,
     BinaryIO,
     ContextManager,
@@ -16,36 +15,15 @@ from typing import (
 
 from polars.dependencies import _FSSPEC_AVAILABLE, fsspec
 from polars.exceptions import NoDataError
-from polars.utils.decorators import deprecated_alias
 from polars.utils.various import normalise_filepath
 
-with suppress(ImportError):
-    from polars.polars import ipc_schema as _ipc_schema
-    from polars.polars import parquet_schema as _parquet_schema
 
-if TYPE_CHECKING:
-    from polars.type_aliases import PolarsDataType
-
-
-def _check_empty(b: BytesIO, context: str, read_position: int | None = None) -> BytesIO:
-    if not b.getbuffer().nbytes:
-        hint = (
-            f" (buffer position = {read_position}; try seek(0) before reading?)"
-            if context in ("StringIO", "BytesIO") and read_position
-            else ""
-        )
-        raise NoDataError(f"empty CSV data from {context}{hint}")
-    return b
-
-
-def _process_http_file(path: str, encoding: str | None = None) -> BytesIO:
-    from urllib.request import urlopen
-
-    with urlopen(path) as f:
-        if not encoding or encoding in {"utf8", "utf8-lossy"}:
-            return BytesIO(f.read())
-        else:
-            return BytesIO(f.read().decode(encoding).encode("utf8"))
+def _is_local_file(file: str) -> bool:
+    try:
+        next(glob.iglob(file, recursive=True))
+        return True
+    except StopIteration:
+        return False
 
 
 @overload
@@ -192,53 +170,22 @@ def _prepare_file_arg(
     return managed_file(file)
 
 
-@deprecated_alias(file="source")
-def read_ipc_schema(source: str | BinaryIO | Path | bytes) -> dict[str, PolarsDataType]:
-    """
-    Get the schema of an IPC file without reading data.
-
-    Parameters
-    ----------
-    source
-        Path to a file or a file-like object.
-
-    Returns
-    -------
-    Dictionary mapping column names to datatypes
-
-    """
-    if isinstance(source, (str, Path)):
-        source = normalise_filepath(source)
-
-    return _ipc_schema(source)
+def _check_empty(b: BytesIO, context: str, read_position: int | None = None) -> BytesIO:
+    if not b.getbuffer().nbytes:
+        hint = (
+            f" (buffer position = {read_position}; try seek(0) before reading?)"
+            if context in ("StringIO", "BytesIO") and read_position
+            else ""
+        )
+        raise NoDataError(f"empty CSV data from {context}{hint}")
+    return b
 
 
-@deprecated_alias(file="source")
-def read_parquet_schema(
-    source: str | BinaryIO | Path | bytes,
-) -> dict[str, PolarsDataType]:
-    """
-    Get the schema of a Parquet file without reading data.
+def _process_http_file(path: str, encoding: str | None = None) -> BytesIO:
+    from urllib.request import urlopen
 
-    Parameters
-    ----------
-    source
-        Path to a file or a file-like object.
-
-    Returns
-    -------
-    Dictionary mapping column names to datatypes
-
-    """
-    if isinstance(source, (str, Path)):
-        source = normalise_filepath(source)
-
-    return _parquet_schema(source)
-
-
-def _is_local_file(file: str) -> bool:
-    try:
-        next(glob.iglob(file, recursive=True))
-        return True
-    except StopIteration:
-        return False
+    with urlopen(path) as f:
+        if not encoding or encoding in {"utf8", "utf8-lossy"}:
+            return BytesIO(f.read())
+        else:
+            return BytesIO(f.read().decode(encoding).encode("utf8"))

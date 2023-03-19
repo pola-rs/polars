@@ -76,6 +76,7 @@ from polars.internals.io_excel import (
     _xl_setup_workbook,
     _xl_unique_table_name,
 )
+from polars.io._utils import _is_local_file
 from polars.slice import PolarsSlice
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import (
@@ -833,7 +834,7 @@ class DataFrame:
         if isinstance(columns, str):
             columns = [columns]
 
-        if isinstance(source, str) and "*" in source and pli._is_local_file(source):
+        if isinstance(source, str) and "*" in source and _is_local_file(source):
             from polars import scan_parquet
 
             scan = scan_parquet(
@@ -946,7 +947,7 @@ class DataFrame:
         if isinstance(columns, str):
             columns = [columns]
 
-        if isinstance(source, str) and "*" in source and pli._is_local_file(source):
+        if isinstance(source, str) and "*" in source and _is_local_file(source):
             from polars import scan_ipc
 
             scan = scan_ipc(

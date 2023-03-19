@@ -15,7 +15,7 @@ from typing import (
 from polars.convert import from_arrow
 from polars.datatypes import N_INFER_DEFAULT, Utf8
 from polars.internals import DataFrame, LazyFrame
-from polars.internals.io import _prepare_file_arg
+from polars.io._utils import _prepare_file_arg
 from polars.io.csv._utils import _check_arg_is_1byte, _update_columns
 from polars.io.csv.batched_reader import BatchedCsvReader
 from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
