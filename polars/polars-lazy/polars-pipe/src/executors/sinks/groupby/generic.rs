@@ -4,11 +4,13 @@ use std::sync::Mutex;
 
 use hashbrown::hash_map::RawEntryMut;
 use num_traits::NumCast;
+use polars_arrow::trusted_len::PushUnchecked;
 use polars_core::export::ahash::RandomState;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
+use polars_core::series::SeriesPhysIter;
 use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked};
-use polars_core::POOL;
+use polars_core::{IdBuildHasher, POOL};
 use polars_utils::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
@@ -253,63 +255,61 @@ impl GenericGroupbySink {
         hash_series(&self.keys_series, &mut self.hashes, &self.hb);
         Ok(())
     }
+
+    fn get_partitions(
+        &mut self,
+        h: u64,
+    ) -> (
+        &mut PlIdHashMap<Key, IdxSize>,
+        &mut Vec<AggregateFunction>,
+        &mut Vec<AnyValue<'static>>,
+    ) {
+        let partition = hash_to_partition(h, self.pre_agg_partitions.len());
+        let current_partition =
+            unsafe { self.pre_agg_partitions.get_unchecked_release_mut(partition) };
+        let current_aggregators = unsafe { self.aggregators.get_unchecked_release_mut(partition) };
+        let current_key_values = unsafe { self.keys.get_unchecked_release_mut(partition) };
+
+        (current_partition, current_aggregators, current_key_values)
+    }
 }
 
 impl Sink for GenericGroupbySink {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
         let num_aggs = self.number_of_aggs();
-
+        let num_keys = self.number_of_keys();
         self.evaluate_keys_aggs_and_hashes(context, &chunk)?;
 
         // we cannot a factor these out in a method
         // bchk complains about mutable borrrows.
 
-        // iterators over anyvalues
-        let mut agg_iters = self
-            .aggregation_series
-            .iter()
-            .map(|s| s.phys_iter())
-            .collect::<Vec<_>>();
-        // iterators over anyvalues
-        let mut key_iters = self
-            .keys_series
-            .iter()
-            .map(|s| s.phys_iter())
-            .collect::<Vec<_>>();
+        let keys_series = std::mem::take(&mut self.keys_series);
+        let aggregation_series = std::mem::take(&mut self.aggregation_series);
+        let hashes = std::mem::take(&mut self.hashes);
+        let agg_fns = std::mem::take(&mut self.agg_fns);
+
+        let (mut key_iters, mut agg_iters) = get_iters(&keys_series, &aggregation_series);
 
         // a small buffer that holds the current key values
         // if we groupby 2 keys, this holds 2 anyvalues.
         let mut current_tuple = Vec::with_capacity(self.keys.len());
 
-        for &h in &self.hashes {
+        for &h in &hashes {
             // load the keys in the buffer
             current_tuple.clear();
             for key_iter in key_iters.iter_mut() {
-                unsafe { current_tuple.push(key_iter.next().unwrap_unchecked_release()) }
+                unsafe { current_tuple.push_unchecked(key_iter.next().unwrap_unchecked_release()) }
             }
 
-            let partition = hash_to_partition(h, self.pre_agg_partitions.len());
-            let current_partition =
-                unsafe { self.pre_agg_partitions.get_unchecked_release_mut(partition) };
-            let current_aggregators =
-                unsafe { self.aggregators.get_unchecked_release_mut(partition) };
-            let current_key_values = unsafe { self.keys.get_unchecked_release_mut(partition) };
-
-            let entry = current_partition.raw_entry_mut().from_hash(h, |key| {
-                key.hash == h && {
-                    let idx = key.idx as usize;
-                    if self.keys_series.len() > 1 {
-                        current_tuple.iter().enumerate().all(|(i, key)| unsafe {
-                            current_key_values.get_unchecked_release(i + idx) == key
-                        })
-                    } else {
-                        unsafe {
-                            current_key_values.get_unchecked_release(idx)
-                                == current_tuple.get_unchecked_release(0)
-                        }
-                    }
-                }
-            });
+            let (current_partition, current_aggregators, current_key_values) =
+                self.get_partitions(h);
+            let entry = get_entry(
+                h,
+                &mut current_tuple,
+                current_partition,
+                current_key_values,
+                num_keys,
+            );
 
             let agg_idx = match entry {
                 RawEntryMut::Vacant(entry) => {
@@ -332,22 +332,27 @@ impl Sink for GenericGroupbySink {
                         )
                     };
                     // initialize the aggregators
-                    for agg_fn in &self.agg_fns {
+                    for agg_fn in &agg_fns {
                         current_aggregators.push(agg_fn.split2())
                     }
                     value_offset
                 }
                 RawEntryMut::Occupied(entry) => *entry.get(),
             };
-            for (i, agg_iter) in (0..num_aggs).zip(agg_iters.iter_mut()) {
-                let i = agg_idx as usize + i;
-                let agg_fn = unsafe { current_aggregators.get_unchecked_release_mut(i) };
-
-                agg_fn.pre_agg(chunk.chunk_index, agg_iter.as_mut())
-            }
+            apply_aggregation(
+                agg_idx,
+                num_aggs,
+                chunk.chunk_index,
+                &mut agg_iters,
+                current_aggregators,
+            );
         }
         drop(agg_iters);
         drop(key_iters);
+        self.aggregation_series = aggregation_series;
+        self.keys_series = keys_series;
+        self.hashes = hashes;
+        self.agg_fns = agg_fns;
         self.aggregation_series.clear();
         self.keys_series.clear();
         self.hashes.clear();
@@ -477,5 +482,58 @@ impl Sink for GenericGroupbySink {
     }
     fn fmt(&self) -> &str {
         "generic_groupby"
+    }
+}
+
+#[inline]
+fn get_entry<'a>(
+    h: u64,
+    current_tuple: &mut Vec<AnyValue>,
+    current_partition: &'a mut PlIdHashMap<Key, IdxSize>,
+    current_key_values: &Vec<AnyValue>,
+    n_keys: usize,
+) -> RawEntryMut<'a, Key, IdxSize, IdBuildHasher> {
+    current_partition.raw_entry_mut().from_hash(h, |key| {
+        key.hash == h && {
+            let idx = key.idx as usize;
+            if n_keys > 1 {
+                current_tuple.iter().enumerate().all(|(i, key)| unsafe {
+                    current_key_values.get_unchecked_release(i + idx) == key
+                })
+            } else {
+                unsafe {
+                    current_key_values.get_unchecked_release(idx)
+                        == current_tuple.get_unchecked_release(0)
+                }
+            }
+        }
+    })
+}
+fn get_iters<'a>(
+    key_series: &'a [Series],
+    aggregation_series: &'a [Series],
+) -> (Vec<SeriesPhysIter<'a>>, Vec<SeriesPhysIter<'a>>) {
+    (
+        key_series.iter().map(|s| s.phys_iter()).collect::<Vec<_>>(),
+        aggregation_series
+            .iter()
+            .map(|s| s.phys_iter())
+            .collect::<Vec<_>>(),
+    )
+}
+
+#[inline]
+fn apply_aggregation(
+    agg_idx: IdxSize,
+    num_aggs: usize,
+    chunk_index: IdxSize,
+    agg_iters: &mut [SeriesPhysIter],
+    current_aggregators: &mut [AggregateFunction],
+) {
+    for (i, agg_iter) in (0..num_aggs).zip(agg_iters.iter_mut()) {
+        let i = agg_idx as usize + i;
+        let agg_fn = unsafe { current_aggregators.get_unchecked_release_mut(i) };
+
+        agg_fn.pre_agg(chunk_index, agg_iter.as_mut())
     }
 }
