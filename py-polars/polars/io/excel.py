@@ -7,12 +7,11 @@ from typing import TYPE_CHECKING, Any, BinaryIO, overload
 from polars.io.csv import read_csv
 from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 from polars.utils.various import normalise_filepath
+from polars.internals import DataFrame
 
 if TYPE_CHECKING:
     import sys
     from io import BytesIO
-
-    from polars.internals import DataFrame
 
     if sys.version_info >= (3, 8):
         from typing import Literal
@@ -60,7 +59,7 @@ def read_excel(
 @deprecated_alias(file="source")
 def read_excel(
     source: str | BytesIO | Path | BinaryIO | bytes,
-    sheet_id: int | None = 1,
+    sheet_id: int | None = 0,
     sheet_name: str | None = None,
     xlsx2csv_options: dict[str, Any] | None = None,
     read_csv_options: dict[str, Any] | None = None,
@@ -92,7 +91,7 @@ def read_excel(
         "infer_schema_length": None}``
     engine
         Library used to parse Excel, either openpyxl or xlsx2csv (default is xlsx2csv).
-        Please not that xlsx2csv converts first to csv, making type inference worse
+        Please note that xlsx2csv converts first to csv, making type inference worse
         than openpyxl. To remedy that, you can use the extra options defined on
         `xlsx2csv_options` and `read_csv_options`
     Returns
@@ -162,7 +161,7 @@ def read_excel(
         engine_sheet_id = sheet_id
     elif engine == "xlsx2csv" or engine is None:  # default
         try:
-            import xlsx2csv  # type: ignore[import]
+            import xlsx2csv
         except ImportError:
             raise ImportError(
                 "xlsx2csv is not installed. Please run `pip install xlsx2csv`."
