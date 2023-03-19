@@ -37,7 +37,12 @@ fn gc_thread(operation_name: &'static str) {
         let dir = resolve_homedir(Path::new(&format!("~/.polars/{operation_name}/")));
 
         // if the directory does not exist, there is nothing to clean
-        for entry in std::fs::read_dir(dir).unwrap() {
+        let rd = match std::fs::read_dir(&dir) {
+            Ok(rd) => rd,
+            _ => panic!("cannot find {:?}", dir),
+        };
+
+        for entry in rd {
             let path = entry.unwrap().path();
             if path.is_dir() {
                 let lockfile_path = get_lockfile_path(&path);

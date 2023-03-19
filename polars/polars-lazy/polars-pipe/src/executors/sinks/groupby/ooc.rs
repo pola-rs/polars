@@ -66,9 +66,15 @@ impl Source for GroupBySource {
                 }
 
                 // read the files in the partition into sources
-                let sources = std::fs::read_dir(partition_dir.path())?
-                    .map(|entry| {
-                        let path = entry?.path();
+                // ensure we read in the right order
+                let mut files = std::fs::read_dir(partition_dir.path())?
+                    .map(|e| e.map(|e| e.path()))
+                    .collect::<Result<Vec<_>, _>>()?;
+                files.sort_unstable();
+
+                let sources = files
+                    .iter()
+                    .map(|path| {
                         Ok(Box::new(IpcSourceOneShot::new(path.as_path())?) as Box<dyn Source>)
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;

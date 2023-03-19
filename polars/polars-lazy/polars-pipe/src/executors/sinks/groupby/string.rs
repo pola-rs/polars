@@ -239,7 +239,7 @@ impl Utf8GroupbySink {
 
         // take containers to please bchk
         // we put them back once done
-        let hashes = std::mem::take(&mut self.hashes);
+        let mut hashes = std::mem::take(&mut self.hashes);
         let keys = std::mem::take(&mut self.keys);
         let agg_fns = std::mem::take(&mut self.agg_fns);
         let mut aggregators = std::mem::take(&mut self.aggregators);
@@ -282,7 +282,7 @@ impl Utf8GroupbySink {
         }
 
         // note that this slice looks into the self.hashes buffer
-        let agg_idxs = unsafe { std::slice::from_raw_parts(agg_idx_ptr, keys_arr.len()) };
+        let agg_idxs = unsafe { std::slice::from_raw_parts(agg_idx_ptr, processed) };
 
         apply_aggregation(
             agg_idxs,
@@ -292,6 +292,8 @@ impl Utf8GroupbySink {
             &agg_fns,
             &mut aggregators,
         );
+        self.ooc_state.dump(chunk.data, &mut hashes);
+
         self.aggregation_series.clear();
         self.hashes = hashes;
         self.keys = keys;

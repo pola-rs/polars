@@ -288,7 +288,7 @@ impl GenericGroupbySink {
         // we put them back once done
         let keys_series = std::mem::take(&mut self.keys_series);
         let aggregation_series = std::mem::take(&mut self.aggregation_series);
-        let hashes = std::mem::take(&mut self.hashes);
+        let mut hashes = std::mem::take(&mut self.hashes);
         let agg_fns = std::mem::take(&mut self.agg_fns);
 
         let (mut key_iters, mut agg_iters) = get_iters(&keys_series, &aggregation_series);
@@ -340,6 +340,7 @@ impl GenericGroupbySink {
                 }
             };
         }
+        self.ooc_state.dump(chunk.data, &mut hashes);
         drop(agg_iters);
         drop(key_iters);
         self.aggregation_series = aggregation_series;
