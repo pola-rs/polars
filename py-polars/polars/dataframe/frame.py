@@ -24,6 +24,7 @@ from typing import (
     overload,
 )
 
+from polars import functions as F
 from polars import internals as pli
 from polars.dataframe._html import NotebookFormatter
 from polars.dataframe.groupby import DynamicGroupBy, GroupBy, RollingGroupBy
@@ -57,7 +58,7 @@ from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoRowsReturned, TooManyRowsReturned
-from polars.functions import lazy as lazy_functions
+from polars.functions.lazy import col, lit
 from polars.io._utils import _is_local_file
 from polars.io.excel._write_utils import (
     _unpack_multi_column_dict,
@@ -1228,21 +1229,21 @@ class DataFrame:
             raise ValueError("DataFrame dimensions do not match")
 
         suffix = "__POLARS_CMP_OTHER"
-        other_renamed = other.select(pli.all().suffix(suffix))
-        combined = pli.concat([self, other_renamed], how="horizontal")
+        other_renamed = other.select(F.all().suffix(suffix))
+        combined = F.concat([self, other_renamed], how="horizontal")
 
         if op == "eq":
-            expr = [pli.col(n) == pli.col(f"{n}{suffix}") for n in self.columns]
+            expr = [F.col(n) == F.col(f"{n}{suffix}") for n in self.columns]
         elif op == "neq":
-            expr = [pli.col(n) != pli.col(f"{n}{suffix}") for n in self.columns]
+            expr = [F.col(n) != F.col(f"{n}{suffix}") for n in self.columns]
         elif op == "gt":
-            expr = [pli.col(n) > pli.col(f"{n}{suffix}") for n in self.columns]
+            expr = [F.col(n) > F.col(f"{n}{suffix}") for n in self.columns]
         elif op == "lt":
-            expr = [pli.col(n) < pli.col(f"{n}{suffix}") for n in self.columns]
+            expr = [F.col(n) < F.col(f"{n}{suffix}") for n in self.columns]
         elif op == "gt_eq":
-            expr = [pli.col(n) >= pli.col(f"{n}{suffix}") for n in self.columns]
+            expr = [F.col(n) >= F.col(f"{n}{suffix}") for n in self.columns]
         elif op == "lt_eq":
-            expr = [pli.col(n) <= pli.col(f"{n}{suffix}") for n in self.columns]
+            expr = [F.col(n) <= F.col(f"{n}{suffix}") for n in self.columns]
         else:
             raise ValueError(f"got unexpected comparison operator: {op}")
 
@@ -1255,25 +1256,25 @@ class DataFrame:
     ) -> Self:
         """Compare a DataFrame with a non-DataFrame object."""
         if op == "eq":
-            return self.select(pli.all() == other)
+            return self.select(F.all() == other)
         elif op == "neq":
-            return self.select(pli.all() != other)
+            return self.select(F.all() != other)
         elif op == "gt":
-            return self.select(pli.all() > other)
+            return self.select(F.all() > other)
         elif op == "lt":
-            return self.select(pli.all() < other)
+            return self.select(F.all() < other)
         elif op == "gt_eq":
-            return self.select(pli.all() >= other)
+            return self.select(F.all() >= other)
         elif op == "lt_eq":
-            return self.select(pli.all() <= other)
+            return self.select(F.all() <= other)
         else:
             raise ValueError(f"got unexpected comparison operator: {op}")
 
     def _div(self, other: Any, floordiv: bool) -> Self:
         if isinstance(other, pli.Series):
             if floordiv:
-                return self.select(pli.all() // pli.lit(other))
-            return self.select(pli.all() / pli.lit(other))
+                return self.select(F.all() // lit(other))
+            return self.select(F.all() / lit(other))
 
         elif not isinstance(other, DataFrame):
             s = _prepare_other_arg(other, length=len(self))
@@ -1290,8 +1291,8 @@ class DataFrame:
         )
         if floordiv:
             int_casts = [
-                pli.col(col).cast(tp)
-                for i, (col, tp) in enumerate(self.schema.items())
+                col(column).cast(tp)
+                for i, (column, tp) in enumerate(self.schema.items())
                 if tp in INTEGER_DTYPES and orig_dtypes[i] in INTEGER_DTYPES
             ]
             if int_casts:
@@ -1358,7 +1359,7 @@ class DataFrame:
 
     def __radd__(self, other: DataFrame | Series | int | float | bool | str) -> Self:
         if isinstance(other, str):
-            return self.select((pli.lit(other) + pli.col("*")).keep_name())
+            return self.select((lit(other) + F.col("*")).keep_name())
         return self + other
 
     def __sub__(self, other: DataFrame | Series | int | float) -> Self:
@@ -1427,10 +1428,10 @@ class DataFrame:
                             if idxs.dtype in {Int8, Int16, Int32}:
                                 idxs = idxs.cast(Int64)
 
-                        idxs = pli.select(
-                            pli.when(pli.lit(idxs) < 0)
-                            .then(self.shape[dim] + pli.lit(idxs))
-                            .otherwise(pli.lit(idxs))
+                        idxs = F.select(
+                            F.when(lit(idxs) < 0)
+                            .then(self.shape[dim] + lit(idxs))
+                            .otherwise(lit(idxs))
                         ).to_series()
 
                 return idxs.cast(idx_type)
@@ -2723,23 +2724,23 @@ class DataFrame:
         # additional column-level properties
         hidden_columns = hidden_columns or ()
         if isinstance(column_widths, int):
-            column_widths = {col: column_widths for col in df.columns}
+            column_widths = {column: column_widths for column in df.columns}
         column_widths = _unpack_multi_column_dict(column_widths or {})  # type: ignore[assignment]
 
-        for col in df.columns:
-            col_idx, options = table_start[1] + df.find_idx_by_name(col), {}
-            if col in hidden_columns:
+        for column in df.columns:
+            col_idx, options = table_start[1] + df.find_idx_by_name(column), {}
+            if column in hidden_columns:
                 options = {"hidden": True}
-            if col in column_widths:  # type: ignore[operator]
+            if column in column_widths:  # type: ignore[operator]
                 ws.set_column_pixels(
-                    col_idx, col_idx, column_widths[col], None, options  # type: ignore[index]
+                    col_idx, col_idx, column_widths[column], None, options  # type: ignore[index]
                 )
             elif options:
                 ws.set_column(col_idx, col_idx, None, None, options)
 
         # finally, inject any sparklines into the table
-        for col, params in (sparklines or {}).items():
-            _xl_inject_sparklines(ws, df, table_start, col, has_header, params)
+        for column, params in (sparklines or {}).items():
+            _xl_inject_sparklines(ws, df, table_start, column, has_header, params)
 
         # worksheet options
         if hide_gridlines:
@@ -3140,7 +3141,7 @@ class DataFrame:
         └─────┴─────┘
 
         """
-        return self.select(pli.col("*").reverse())
+        return self.select(F.col("*").reverse())
 
     def rename(self, mapping: dict[str, str]) -> Self:
         """
@@ -3444,7 +3445,7 @@ class DataFrame:
             return self.__class__(columns)
 
         summary = self._from_pydf(
-            pli.concat(
+            F.concat(
                 [
                     describe_cast(
                         self.__class__({c: [len(self)] for c in self.columns})
@@ -5736,21 +5737,21 @@ class DataFrame:
 
         if isinstance(aggregate_function, str):
             if aggregate_function == "first":
-                aggregate_function = pli.element().first()
+                aggregate_function = F.element().first()
             elif aggregate_function == "sum":
-                aggregate_function = pli.element().sum()
+                aggregate_function = F.element().sum()
             elif aggregate_function == "max":
-                aggregate_function = pli.element().max()
+                aggregate_function = F.element().max()
             elif aggregate_function == "min":
-                aggregate_function = pli.element().min()
+                aggregate_function = F.element().min()
             elif aggregate_function == "mean":
-                aggregate_function = pli.element().mean()
+                aggregate_function = F.element().mean()
             elif aggregate_function == "median":
-                aggregate_function = pli.element().median()
+                aggregate_function = F.element().median()
             elif aggregate_function == "last":
-                aggregate_function = pli.element().last()
+                aggregate_function = F.element().last()
             elif aggregate_function == "count":
-                aggregate_function = pli.count()
+                aggregate_function = F.count()
             else:
                 raise ValueError(
                     f"Invalid input for `aggregate_function` argument: {aggregate_function!r}"
@@ -5939,9 +5940,9 @@ class DataFrame:
         if how == "horizontal":
             df = (
                 df.with_columns(
-                    (
-                        lazy_functions.arange(0, n_cols * n_rows, eager=True) % n_cols
-                    ).alias("__sort_order"),
+                    (F.arange(0, n_cols * n_rows, eager=True) % n_cols).alias(
+                        "__sort_order"
+                    ),
                 )
                 .sort("__sort_order")
                 .drop("__sort_order")
@@ -7009,7 +7010,7 @@ class DataFrame:
         └─────┴──────┴─────┘
 
         """
-        return self.select(pli.all().product())
+        return self.select(F.all().product())
 
     def quantile(
         self, quantile: float, interpolation: RollingInterpolationMethod = "nearest"
@@ -7230,15 +7231,15 @@ class DataFrame:
 
         """
         if isinstance(subset, str):
-            subset = [pli.col(subset)]
+            subset = [F.col(subset)]
         elif isinstance(subset, pli.Expr):
             subset = [subset]
 
         if isinstance(subset, Sequence) and len(subset) == 1:
             expr = pli.expr_to_lit_or_expr(subset[0], str_to_lit=False)
         else:
-            struct_fields = pli.all() if (subset is None) else subset
-            expr = lazy_functions.struct(struct_fields)  # type: ignore[call-overload]
+            struct_fields = F.all() if (subset is None) else subset
+            expr = F.struct(struct_fields)  # type: ignore[call-overload]
 
         df = self.lazy().select(expr.n_unique()).collect()
         return 0 if df.is_empty() else df.row(0)[0]
@@ -7808,7 +7809,7 @@ class DataFrame:
         └─────┴─────┘
 
         """
-        return self.select(pli.col("*").take_every(n))
+        return self.select(F.col("*").take_every(n))
 
     def hash_rows(
         self,
@@ -7885,7 +7886,7 @@ class DataFrame:
         └─────┴──────┴─────┘
 
         """
-        return self.select(pli.col("*").interpolate())
+        return self.select(F.col("*").interpolate())
 
     def is_empty(self) -> bool:
         """

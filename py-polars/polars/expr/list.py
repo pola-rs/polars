@@ -3,13 +3,14 @@ from __future__ import annotations
 import copy
 from typing import TYPE_CHECKING, Any, Callable
 
+from polars import functions as F
 from polars import internals as pli
 from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time
 
-    from polars.expr.expr import Expr
+    from polars.expr import Expr
     from polars.type_aliases import NullBehavior, ToStructStrategy
 
 
@@ -257,7 +258,7 @@ class ExprListNameSpace:
         other_list = [other] if not isinstance(other, list) else copy.copy(other)  # type: ignore[arg-type]
 
         other_list.insert(0, pli.wrap_expr(self._pyexpr))
-        return pli.concat_list(other_list)
+        return F.concat_list(other_list)
 
     def get(self, index: int | Expr | str) -> Expr:
         """

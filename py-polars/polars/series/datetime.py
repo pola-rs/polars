@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from polars import functions as F
 from polars import internals as pli
 from polars.series.utils import expr_dispatch
 from polars.utils.convert import _to_python_datetime
@@ -957,7 +958,7 @@ class DateTimeNameSpace:
         return (
             pli.wrap_s(self._s)
             .to_frame()
-            .select(pli.col(self._s.name()).dt.convert_time_zone(time_zone))
+            .select(F.col(self._s.name()).dt.convert_time_zone(time_zone))
             .to_series()
         )
 
@@ -1037,7 +1038,7 @@ class DateTimeNameSpace:
         return (
             pli.wrap_s(self._s)
             .to_frame()
-            .select(pli.col(self._s.name()).dt.replace_time_zone(time_zone))
+            .select(F.col(self._s.name()).dt.replace_time_zone(time_zone))
             .to_series()
         )
 

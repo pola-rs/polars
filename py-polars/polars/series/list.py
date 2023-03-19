@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Callable
 
+from polars import functions as F
 from polars import internals as pli
 from polars.series.utils import expr_dispatch
 from polars.utils.decorators import deprecate_nonkeyword_arguments
@@ -85,7 +86,7 @@ class ListNameSpace:
         return (
             pli.wrap_s(self._s)
             .to_frame()
-            .select(pli.col(self._s.name()).arr.sort(descending=descending))
+            .select(F.col(self._s.name()).arr.sort(descending=descending))
             .to_series()
         )
 
@@ -436,7 +437,7 @@ class ListNameSpace:
         return (
             s.to_frame()
             .select(
-                pli.col(s.name).arr.to_struct(
+                F.col(s.name).arr.to_struct(
                     n_field_strategy, name_generator, upper_bound=0
                 )
             )

@@ -5,6 +5,7 @@ import sys
 from functools import wraps
 from typing import TYPE_CHECKING, Any, Callable, TypeVar
 
+from polars import functions as F
 from polars import internals as pli
 from polars.datatypes import dtype_to_ffiname
 
@@ -92,7 +93,7 @@ def call_expr(func: SeriesMethod) -> SeriesMethod:
     @wraps(func)  # type: ignore[arg-type]
     def wrapper(self: Any, *args: P.args, **kwargs: P.kwargs) -> Series:
         s = pli.wrap_s(self._s)
-        expr = pli.col(s.name)
+        expr = F.col(s.name)
         namespace = getattr(self, "_accessor", None)
         if namespace is not None:
             expr = getattr(expr, namespace)
