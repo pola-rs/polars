@@ -25,16 +25,6 @@ from typing import (
 )
 
 from polars import internals as pli
-from polars._construction import (
-    _post_apply_columns,
-    arrow_to_pydf,
-    dict_to_pydf,
-    iterable_to_pydf,
-    numpy_to_pydf,
-    pandas_to_pydf,
-    sequence_to_pydf,
-    series_to_pydf,
-)
 from polars.dataframe._html import NotebookFormatter
 from polars.dataframe.groupby import DynamicGroupBy, GroupBy, RollingGroupBy
 from polars.datatypes import (
@@ -78,6 +68,16 @@ from polars.io.excel._write_utils import (
     _xl_unique_table_name,
 )
 from polars.slice import PolarsSlice
+from polars.utils._construction import (
+    _post_apply_columns,
+    arrow_to_pydf,
+    dict_to_pydf,
+    iterable_to_pydf,
+    numpy_to_pydf,
+    pandas_to_pydf,
+    sequence_to_pydf,
+    series_to_pydf,
+)
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import (
     deprecate_nonkeyword_arguments,

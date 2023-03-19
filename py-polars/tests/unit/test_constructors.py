@@ -108,7 +108,7 @@ def test_init_dataclasses_and_namedtuple() -> None:
     from dataclasses import dataclass
     from typing import NamedTuple
 
-    from polars._construction import dataclass_type_hints
+    from polars.utils._construction import dataclass_type_hints
 
     @dataclass
     class TradeDC:
@@ -920,7 +920,7 @@ def test_nested_schema_construction() -> None:
 
 
 def test_arrow_to_pyseries_with_one_chunk_does_not_copy_data() -> None:
-    from polars._construction import arrow_to_pyseries
+    from polars.utils._construction import arrow_to_pyseries
 
     original_array = pa.chunked_array([[1, 2, 3]], type=pa.int64())
     pyseries = arrow_to_pyseries("", original_array)
