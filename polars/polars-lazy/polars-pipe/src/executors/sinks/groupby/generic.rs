@@ -295,7 +295,7 @@ impl GenericGroupbySink {
 
         // a small buffer that holds the current key values
         // if we groupby 2 keys, this holds 2 anyvalues.
-        let mut current_tuple = Vec::with_capacity(self.keys.len());
+        let mut current_tuple = Vec::with_capacity(num_keys);
 
         // set all bits to false
         self.ooc_state.reset_ooc_filter_rows(chunk.data.height());
@@ -373,7 +373,7 @@ impl Sink for GenericGroupbySink {
 
         // a small buffer that holds the current key values
         // if we groupby 2 keys, this holds 2 anyvalues.
-        let mut current_tuple = Vec::with_capacity(self.keys.len());
+        let mut current_tuple = Vec::with_capacity(self.key_columns.len());
 
         for &h in &hashes {
             // load the keys in the buffer
