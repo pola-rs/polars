@@ -254,7 +254,7 @@ impl Sink for Utf8GroupbySink {
         let agg_idxs = unsafe { std::slice::from_raw_parts(agg_idx_ptr, keys_arr.len()) };
 
         apply_aggregation(
-            &agg_idxs,
+            agg_idxs,
             &chunk,
             self.number_of_aggs(),
             &self.aggregation_series,

@@ -13,6 +13,7 @@ pub(super) struct GroupBySource {
     partitions: std::fs::ReadDir,
     groupby_sink: Box<dyn Sink>,
     chunk_idx: IdxSize,
+    slice: Option<(usize, usize)>,
 }
 
 impl GroupBySource {
@@ -20,8 +21,15 @@ impl GroupBySource {
         io_thread: IOThread,
         already_finished: DataFrame,
         groupby_sink: Box<dyn Sink>,
+        slice: Option<(i64, usize)>,
     ) -> PolarsResult<Self> {
         let partitions = std::fs::read_dir(&io_thread.dir)?;
+
+        if let Some(slice) = slice {
+            if slice.0 < 0 {
+                polars_bail!(ComputeError: "negative slice not supported with out-of-core groupby")
+            }
+        }
 
         Ok(Self {
             _io_thread: io_thread,
@@ -29,6 +37,7 @@ impl GroupBySource {
             partitions,
             groupby_sink,
             chunk_idx: 0,
+            slice: slice.map(|slice| (slice.0 as usize, slice.1)),
         })
     }
 }
@@ -37,6 +46,10 @@ impl Source for GroupBySource {
     fn get_batches(&mut self, context: &PExecutionContext) -> PolarsResult<SourceResult> {
         let chunk_idx = self.chunk_idx;
         self.chunk_idx += 1;
+
+        if self.slice == Some((0, 0)) {
+            return Ok(SourceResult::Finished);
+        }
 
         if let Some(df) = self.already_finished.take() {
             return Ok(SourceResult::GotMoreData(vec![DataChunk::new(
@@ -65,7 +78,20 @@ impl Source for GroupBySource {
                     PipeLine::new_simple(sources, vec![], self.groupby_sink.split(0), verbose());
 
                 match pipe.run_pipeline(context)? {
-                    FinalizedSink::Finished(df) => {
+                    FinalizedSink::Finished(mut df) => {
+                        if let Some(slice) = &mut self.slice {
+                            let height = df.height();
+                            if slice.0 >= height {
+                                slice.0 -= height;
+                                return self.get_batches(context);
+                            } else {
+                                df = df.slice(slice.0 as i64, slice.1);
+                                slice.0 = 0;
+                                slice.1 = slice.1.saturating_sub(height);
+                            }
+                        }
+
+                        // TODO! repartition if df is > chunk_size
                         Ok(SourceResult::GotMoreData(vec![DataChunk::new(
                             chunk_idx, df,
                         )]))

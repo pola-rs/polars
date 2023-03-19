@@ -1,6 +1,15 @@
 use hashbrown::HashMap;
 use polars_core::utils::slice_offsets;
 
+pub(super) fn default_slices<K, V, HB>(
+    pre_agg_partitions: &[HashMap<K, V, HB>],
+) -> Vec<Option<(usize, usize)>> {
+    pre_agg_partitions
+        .iter()
+        .map(|agg_map| Some((0, agg_map.len())))
+        .collect()
+}
+
 pub(super) fn compute_slices<K, V, HB>(
     pre_agg_partitions: &[HashMap<K, V, HB>],
     slice: Option<(i64, usize)>,
@@ -10,6 +19,11 @@ pub(super) fn compute_slices<K, V, HB>(
             .iter()
             .map(|agg_map| agg_map.len())
             .sum::<usize>();
+
+        if total_len <= slice_len {
+            return default_slices(pre_agg_partitions);
+        }
+
         let (mut offset, mut len) = slice_offsets(offset, slice_len, total_len);
 
         pre_agg_partitions
@@ -27,9 +41,6 @@ pub(super) fn compute_slices<K, V, HB>(
             })
             .collect::<Vec<_>>()
     } else {
-        pre_agg_partitions
-            .iter()
-            .map(|agg_map| Some((0, agg_map.len())))
-            .collect()
+        default_slices(pre_agg_partitions)
     }
 }

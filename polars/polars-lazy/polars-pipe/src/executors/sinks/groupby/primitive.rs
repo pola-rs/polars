@@ -325,7 +325,7 @@ where
 
         let agg_idxs = unsafe { std::slice::from_raw_parts(agg_idx_ptr, processed) };
         apply_aggregation(
-            &agg_idxs,
+            agg_idxs,
             &chunk,
             self.number_of_aggs(),
             &self.aggregation_series,
@@ -348,7 +348,6 @@ where
         if self.ooc_state.ooc {
             return self.sink_ooc(context, chunk);
         }
-
         let s = self.prepare_key_and_aggregation_series(context, &chunk)?;
         // cow -> &series -> &dyn series_trait -> &chunkedarray
         let ca: &ChunkedArray<K> = s.as_ref().as_ref();
@@ -390,7 +389,7 @@ where
         // note that this slice looks into the self.hashes buffer
         let agg_idxs = unsafe { std::slice::from_raw_parts(agg_idx_ptr, ca.len()) };
         apply_aggregation(
-            &agg_idxs,
+            agg_idxs,
             &chunk,
             self.number_of_aggs(),
             &self.aggregation_series,
@@ -467,6 +466,7 @@ where
                 iot,
                 df,
                 self.split(0),
+                self.slice,
             )?)))
         } else {
             Ok(FinalizedSink::Finished(df))
@@ -560,7 +560,7 @@ pub(super) fn apply_aggregation(
     num_aggs: usize,
     aggregation_series: &[Series],
     agg_fns: &[AggregateFunction],
-    aggregators: &mut Vec<AggregateFunction>,
+    aggregators: &mut [AggregateFunction],
 ) {
     let chunk_idx = chunk.chunk_index;
     for (agg_i, aggregation_s) in (0..num_aggs).zip(aggregation_series) {

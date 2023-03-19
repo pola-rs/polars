@@ -88,7 +88,8 @@ impl OocState {
             .unwrap_idx()
             .iter()
             .map(|(first, group)| {
-                let partition = unsafe { *hashes.get_unchecked(first as usize) };
+                let partition =
+                    unsafe { *hashes.get_unchecked(first as usize) } & (PARTITION_SIZE as u64 - 1);
                 part_idx.push(partition as IdxSize);
 
                 // groups are in bounds
