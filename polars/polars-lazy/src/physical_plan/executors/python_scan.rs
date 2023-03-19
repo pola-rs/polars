@@ -22,7 +22,7 @@ impl Executor for PythonScanExec {
         Python::with_gil(|py| {
             let pl = PyModule::import(py, "polars").unwrap();
             let utils = pl.getattr("utils").unwrap();
-            let deser_and_exec = utils.getattr("_deser_and_exec").unwrap();
+            let deser_and_exec = utils.getattr("_deserialize_and_execute").unwrap();
 
             let bytes = PyBytes::new(py, &self.options.scan_fn);
 

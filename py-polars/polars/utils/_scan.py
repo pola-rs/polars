@@ -5,10 +5,10 @@ from typing import TYPE_CHECKING, Any
 from polars.dependencies import pickle
 
 if TYPE_CHECKING:
-    from polars import DataFrame
+    from polars.dataframe import DataFrame
 
 
-def _deser_and_exec(
+def _deserialize_and_execute(
     buf: bytes, with_columns: list[str] | None, *args: Any
 ) -> DataFrame:
     """
