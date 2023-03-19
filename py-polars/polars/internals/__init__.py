@@ -33,7 +33,6 @@ from polars.functions.lazy import (
     struct,
 )
 from polars.functions.whenthen import WhenThen, WhenThenThen, when
-from polars.internals.anonymous_scan import _deser_and_exec
 from polars.lazyframe import LazyFrame, wrap_ldf
 from polars.series import Series, wrap_s
 
@@ -69,5 +68,4 @@ __all__ = [
     "wrap_s",
     "WhenThen",
     "WhenThenThen",
-    "_deser_and_exec",
 ]
