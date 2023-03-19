@@ -11,8 +11,9 @@ from polars.exceptions import NoDataError
 from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 
 if TYPE_CHECKING:
-    from polars import DataFrame, Series
+    from polars.dataframe import DataFrame
     from polars.dependencies import numpy as np
+    from polars.series import Series
     from polars.type_aliases import Orientation, SchemaDefinition, SchemaDict
 
 

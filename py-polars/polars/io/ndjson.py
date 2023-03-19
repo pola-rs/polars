@@ -11,7 +11,8 @@ from polars.utils.various import normalise_filepath
 if TYPE_CHECKING:
     from io import IOBase
 
-    from polars import DataFrame, LazyFrame
+    from polars.dataframe import DataFrame
+    from polars.lazyframe import LazyFrame
 
 
 @deprecated_alias(file="source")

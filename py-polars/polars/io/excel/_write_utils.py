@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from xlsxwriter import Workbook
     from xlsxwriter.worksheet import Worksheet
 
-    from polars import DataFrame
+    from polars.dataframe import DataFrame
     from polars.type_aliases import (
         ColumnTotalsDefinition,
         ConditionalFormatDict,

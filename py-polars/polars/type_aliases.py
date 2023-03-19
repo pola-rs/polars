@@ -26,9 +26,9 @@ if TYPE_CHECKING:
     from polars.dependencies import numpy as np
     from polars.dependencies import pandas as pd
     from polars.dependencies import pyarrow as pa
-    from polars.expr.expr import Expr
+    from polars.expr import Expr
     from polars.functions.whenthen import WhenThen, WhenThenThen
-    from polars.series.series import Series
+    from polars.series import Series
 
     if sys.version_info >= (3, 10):
         from typing import TypeAlias

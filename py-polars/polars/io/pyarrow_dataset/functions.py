@@ -8,7 +8,7 @@ from polars.utils.decorators import deprecate_nonkeyword_arguments
 
 if TYPE_CHECKING:
     from polars.dependencies import pyarrow as pa
-    from polars.internals import LazyFrame
+    from polars.lazyframe import LazyFrame
 
 
 def scan_pyarrow_dataset(

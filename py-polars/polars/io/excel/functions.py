@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     import sys
     from io import BytesIO
 
-    from polars.internals import DataFrame
+    from polars.dataframe import DataFrame
 
     if sys.version_info >= (3, 8):
         from typing import Literal

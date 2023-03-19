@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from io import BytesIO
     from pathlib import Path
 
-    from polars import DataFrame
+    from polars.dataframe import DataFrame
 
 
 @deprecate_nonkeyword_arguments()

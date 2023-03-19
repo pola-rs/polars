@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from io import IOBase
     from pathlib import Path
 
-    from polars import DataFrame
+    from polars.dataframe import DataFrame
 
 
 @deprecated_alias(file="source")
