@@ -10,7 +10,6 @@ use polars_core::export::ahash::RandomState;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_core::utils::arrow::bitmap::utils::set_bit_unchecked;
 use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked};
 use polars_core::POOL;
 use polars_utils::hash_to_partition;
@@ -313,9 +312,6 @@ where
         // we only set aggregation idx when the entry in the hashmap already
         // exists. This way we don't grow the hashmap
         // rows that are not processed are sinked to disk and loaded in a second pass
-
-        // bchk doesn't understand this borrow does not alias because it borrows from self
-        let ooc_filter_ptr = self.ooc_state.ooc_filter.as_ptr() as *mut u8;
         for (iteration_idx, (opt_v, &h)) in arr.iter().zip(self.hashes.iter()).enumerate() {
             let opt_v = opt_v.copied();
             if let Some(agg_idx) =
@@ -324,14 +320,9 @@ where
                 agg_idx_buf.push(agg_idx);
             } else {
                 // set this row to true: e.g. processed ooc
+                // safety: we correctly set the length with `reset_ooc_filter_rows`
                 unsafe {
-                    // safety: bchk doesn't understand this borrow does not alias because it borrows from self
-                    let ooc_filter = std::slice::from_raw_parts_mut(
-                        ooc_filter_ptr,
-                        self.ooc_state.ooc_filter.len(),
-                    );
-                    // safety: we correctly set the length in `reset_in_memory_rows`
-                    set_bit_unchecked(ooc_filter, iteration_idx, true)
+                    self.ooc_state.set_row_as_ooc(iteration_idx);
                 }
             }
         }

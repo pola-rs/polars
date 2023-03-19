@@ -1,5 +1,6 @@
 use std::sync::Mutex;
 
+use polars_arrow::export::arrow::bitmap::utils::set_bit_unchecked;
 use polars_core::config::verbose;
 use polars_core::prelude::*;
 
@@ -63,6 +64,12 @@ impl OocState {
             self.init_ooc(schema.clone())?
         }
         Ok(())
+    }
+
+    #[inline]
+    pub(super) unsafe fn set_row_as_ooc(&mut self, idx: usize) {
+        // safety: should set the length in `reset_in_memory_rows`
+        set_bit_unchecked(&mut self.ooc_filter, idx, true)
     }
 
     pub(super) fn dump(&self, data: DataFrame, hashes: &mut [u64]) {

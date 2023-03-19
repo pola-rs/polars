@@ -272,17 +272,96 @@ impl GenericGroupbySink {
 
         (current_partition, current_aggregators, current_key_values)
     }
-}
 
-impl Sink for GenericGroupbySink {
-    fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
+    fn sink_ooc(
+        &mut self,
+        context: &PExecutionContext,
+        chunk: DataChunk,
+    ) -> PolarsResult<SinkResult> {
         let num_aggs = self.number_of_aggs();
         let num_keys = self.number_of_keys();
         self.evaluate_keys_aggs_and_hashes(context, &chunk)?;
 
-        // we cannot a factor these out in a method
-        // bchk complains about mutable borrrows.
+        // take containers to please bchk
+        // we put them back once done
+        let keys_series = std::mem::take(&mut self.keys_series);
+        let aggregation_series = std::mem::take(&mut self.aggregation_series);
+        let hashes = std::mem::take(&mut self.hashes);
+        let agg_fns = std::mem::take(&mut self.agg_fns);
 
+        let (mut key_iters, mut agg_iters) = get_iters(&keys_series, &aggregation_series);
+
+        // a small buffer that holds the current key values
+        // if we groupby 2 keys, this holds 2 anyvalues.
+        let mut current_tuple = Vec::with_capacity(self.keys.len());
+
+        // set all bits to false
+        self.ooc_state.reset_ooc_filter_rows(chunk.data.height());
+
+        for (iteration_idx, &h) in hashes.iter().enumerate() {
+            // load the keys in the buffer
+            current_tuple.clear();
+            for key_iter in key_iters.iter_mut() {
+                unsafe { current_tuple.push_unchecked(key_iter.next().unwrap_unchecked_release()) }
+            }
+
+            let (current_partition, current_aggregators, current_key_values) =
+                self.get_partitions(h);
+            let entry = get_entry(
+                h,
+                &mut current_tuple,
+                current_partition,
+                current_key_values,
+                num_keys,
+            );
+
+            match entry {
+                // if the slot does not exist, we do not add it but instead
+                // we sink these rows to disk
+                RawEntryMut::Vacant(_) => {
+                    // set this row to true: e.g. processed ooc
+                    // safety: we correctly set the length with `reset_ooc_filter_rows`
+                    unsafe {
+                        self.ooc_state.set_row_as_ooc(iteration_idx);
+                    }
+                }
+                RawEntryMut::Occupied(entry) => {
+                    let agg_idx = *entry.get();
+
+                    apply_aggregation(
+                        agg_idx,
+                        num_aggs,
+                        chunk.chunk_index,
+                        &mut agg_iters,
+                        current_aggregators,
+                    );
+                }
+            };
+        }
+        drop(agg_iters);
+        drop(key_iters);
+        self.aggregation_series = aggregation_series;
+        self.keys_series = keys_series;
+        self.hashes = hashes;
+        self.agg_fns = agg_fns;
+        self.aggregation_series.clear();
+        self.keys_series.clear();
+        self.hashes.clear();
+        Ok(SinkResult::CanHaveMoreInput)
+    }
+}
+
+impl Sink for GenericGroupbySink {
+    fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
+        if self.ooc_state.ooc {
+            return self.sink_ooc(context, chunk);
+        }
+        let num_aggs = self.number_of_aggs();
+        let num_keys = self.number_of_keys();
+        self.evaluate_keys_aggs_and_hashes(context, &chunk)?;
+
+        // take containers to please bchk
+        // we put them back once done
         let keys_series = std::mem::take(&mut self.keys_series);
         let aggregation_series = std::mem::take(&mut self.aggregation_series);
         let hashes = std::mem::take(&mut self.hashes);
@@ -356,6 +435,7 @@ impl Sink for GenericGroupbySink {
         self.aggregation_series.clear();
         self.keys_series.clear();
         self.hashes.clear();
+        self.ooc_state.check_memory_usage(&self.input_schema)?;
         Ok(SinkResult::CanHaveMoreInput)
     }
 
