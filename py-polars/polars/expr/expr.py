@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import contextlib
 import math
+import operator
 import os
 import random
 import warnings
 from datetime import date, datetime, time, timedelta
+from functools import reduce
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -204,14 +206,11 @@ class Expr:
     def __abs__(self) -> Self:
         return self.abs()
 
-    def __invert__(self) -> Self:
-        return self.is_not()
+    def __add__(self, other: Any) -> Self:
+        return self._from_pyexpr(self._pyexpr + self._to_pyexpr(other))
 
-    def __xor__(self, other: Expr) -> Self:
-        return self._from_pyexpr(self._pyexpr._xor(self._to_pyexpr(other)))
-
-    def __rxor__(self, other: Expr) -> Self:
-        return self._from_pyexpr(self._pyexpr._xor(self._to_pyexpr(other)))
+    def __radd__(self, other: Any) -> Self:
+        return self._from_pyexpr(self._to_pyexpr(other) + self._pyexpr)
 
     def __and__(self, other: Expr) -> Self:
         return self._from_pyexpr(self._pyexpr._and(self._to_pyexpr(other)))
@@ -219,35 +218,8 @@ class Expr:
     def __rand__(self, other: Any) -> Self:
         return self._from_pyexpr(self._pyexpr._and(self._to_pyexpr(other)))
 
-    def __or__(self, other: Expr) -> Self:
-        return self._from_pyexpr(self._pyexpr._or(self._to_pyexpr(other)))
-
-    def __ror__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._to_pyexpr(other)._or(self._pyexpr))
-
-    def __add__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._pyexpr + self._to_pyexpr(other))
-
-    def __radd__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._to_pyexpr(other) + self._pyexpr)
-
-    def __sub__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._pyexpr - self._to_pyexpr(other))
-
-    def __rsub__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._to_pyexpr(other) - self._pyexpr)
-
-    def __mul__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._pyexpr * self._to_pyexpr(other))
-
-    def __rmul__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._to_pyexpr(other) * self._pyexpr)
-
-    def __truediv__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._pyexpr / self._to_pyexpr(other))
-
-    def __rtruediv__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._to_pyexpr(other) / self._pyexpr)
+    def __eq__(self, other: Any) -> Self:  # type: ignore[override]
+        return self._from_pyexpr(self._pyexpr.eq(self._to_expr(other)._pyexpr))
 
     def __floordiv__(self, other: Any) -> Self:
         return self._from_pyexpr(self._pyexpr // self._to_pyexpr(other))
@@ -255,59 +227,139 @@ class Expr:
     def __rfloordiv__(self, other: Any) -> Self:
         return self._from_pyexpr(self._to_pyexpr(other) // self._pyexpr)
 
+    def __ge__(self, other: Any) -> Self:
+        return self._from_pyexpr(self._pyexpr.gt_eq(self._to_expr(other)._pyexpr))
+
+    def __gt__(self, other: Any) -> Self:
+        return self._from_pyexpr(self._pyexpr.gt(self._to_expr(other)._pyexpr))
+
+    def __invert__(self) -> Self:
+        return self.is_not()
+
+    def __le__(self, other: Any) -> Self:
+        return self._from_pyexpr(self._pyexpr.lt_eq(self._to_expr(other)._pyexpr))
+
+    def __lt__(self, other: Any) -> Self:
+        return self._from_pyexpr(self._pyexpr.lt(self._to_expr(other)._pyexpr))
+
     def __mod__(self, other: Any) -> Self:
         return self._from_pyexpr(self._pyexpr % self._to_pyexpr(other))
 
     def __rmod__(self, other: Any) -> Self:
         return self._from_pyexpr(self._to_pyexpr(other) % self._pyexpr)
 
-    def __pow__(self, power: int | float | Series | Expr) -> Self:
-        return self.pow(power)
+    def __mul__(self, other: Any) -> Self:
+        return self._from_pyexpr(self._pyexpr * self._to_pyexpr(other))
 
-    def __rpow__(self, base: int | float | Expr) -> Expr:
-        return pli.expr_to_lit_or_expr(base) ** self
-
-    def __ge__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._pyexpr.gt_eq(self._to_expr(other)._pyexpr))
-
-    def __le__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._pyexpr.lt_eq(self._to_expr(other)._pyexpr))
-
-    def __eq__(self, other: Any) -> Self:  # type: ignore[override]
-        return self._from_pyexpr(self._pyexpr.eq(self._to_expr(other)._pyexpr))
+    def __rmul__(self, other: Any) -> Self:
+        return self._from_pyexpr(self._to_pyexpr(other) * self._pyexpr)
 
     def __ne__(self, other: Any) -> Self:  # type: ignore[override]
         return self._from_pyexpr(self._pyexpr.neq(self._to_expr(other)._pyexpr))
 
-    def __lt__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._pyexpr.lt(self._to_expr(other)._pyexpr))
-
-    def __gt__(self, other: Any) -> Self:
-        return self._from_pyexpr(self._pyexpr.gt(self._to_expr(other)._pyexpr))
-
-    def ge(self, other: Any) -> Self:
-        return self.__ge__(other)
-
-    def le(self, other: Any) -> Self:
-        return self.__le__(other)
-
-    def eq(self, other: Any) -> Self:
-        return self.__eq__(other)
-
-    def ne(self, other: Any) -> Self:
-        return self.__ne__(other)
-
-    def lt(self, other: Any) -> Self:
-        return self.__lt__(other)
-
-    def gt(self, other: Any) -> Self:
-        return self.__gt__(other)
-
     def __neg__(self) -> Expr:
         return F.lit(0) - self
 
+    def __or__(self, other: Expr) -> Self:
+        return self._from_pyexpr(self._pyexpr._or(self._to_pyexpr(other)))
+
+    def __ror__(self, other: Any) -> Self:
+        return self._from_pyexpr(self._to_pyexpr(other)._or(self._pyexpr))
+
     def __pos__(self) -> Expr:
         return F.lit(0) + self
+
+    def __pow__(self, power: int | float | Series | Expr) -> Self:
+        return self.pow(power)
+
+    def __rpow__(self, base: int | float | Expr) -> Expr:
+        return expr_to_lit_or_expr(base) ** self
+
+    def __sub__(self, other: Any) -> Self:
+        return self._from_pyexpr(self._pyexpr - self._to_pyexpr(other))
+
+    def __rsub__(self, other: Any) -> Self:
+        return self._from_pyexpr(self._to_pyexpr(other) - self._pyexpr)
+
+    def __truediv__(self, other: Any) -> Self:
+        return self._from_pyexpr(self._pyexpr / self._to_pyexpr(other))
+
+    def __rtruediv__(self, other: Any) -> Self:
+        return self._from_pyexpr(self._to_pyexpr(other) / self._pyexpr)
+
+    def __xor__(self, other: Expr) -> Self:
+        return self._from_pyexpr(self._pyexpr._xor(self._to_pyexpr(other)))
+
+    def __rxor__(self, other: Expr) -> Self:
+        return self._from_pyexpr(self._pyexpr._xor(self._to_pyexpr(other)))
+
+    # conjunction
+    def and_(self, *others: Any) -> Self:
+        """Method equivalent of operator expression ``expr & other1 & other2 & ...``."""
+        return reduce(operator.and_, (self,) + others)
+
+    def or_(self, *others: Any) -> Self:
+        """Method equivalent of operator expression ``expr | other1 | other2 | ...``."""
+        return reduce(operator.or_, (self,) + others)
+
+    # comparison
+    def eq(self, other: Any) -> Self:
+        """Method equivalent of operator expression ``expr == other``."""
+        return self.__eq__(other)
+
+    def ge(self, other: Any) -> Self:
+        """Method equivalent of operator expression ``expr >= other``."""
+        return self.__ge__(other)
+
+    def gt(self, other: Any) -> Self:
+        """Method equivalent of operator expression ``expr > other``."""
+        return self.__gt__(other)
+
+    def le(self, other: Any) -> Self:
+        """Method equivalent of operator expression ``expr <= other``."""
+        return self.__le__(other)
+
+    def lt(self, other: Any) -> Self:
+        """Method equivalent of operator expression ``expr < other``."""
+        return self.__lt__(other)
+
+    def ne(self, other: Any) -> Self:
+        """Method equivalent of operator expression ``expr != other``."""
+        return self.__ne__(other)
+
+    # math / binary
+    def floordiv(self, other: Any) -> Self:
+        """Method equivalent of operator expression ``expr // other``."""
+        return self.__floordiv__(other)
+
+    def mod(self, other: Any) -> Self:
+        """Method equivalent of operator expression ``expr % other``."""
+        return self.__mod__(other)
+
+    def mul(self, other: Any) -> Self:
+        """Method equivalent of operator expression ``expr * other``."""
+        return self.__mul__(other)
+
+    def sub(self, other: Any) -> Self:
+        """Method equivalent of operator expression ``expr - other``."""
+        return self.__sub__(other)
+
+    def truediv(self, other: Any) -> Self:
+        """Method equivalent of operator expression ``expr / other``."""
+        return self.__truediv__(other)
+
+    def xor(self, other: Any) -> Self:
+        """Method equivalent of operator expression ``expr ^ other``."""
+        return self.__xor__(other)
+
+    # state
+    def __getstate__(self) -> Any:
+        return self._pyexpr.__getstate__()
+
+    def __setstate__(self, state: Any) -> None:
+        # init with a dummy
+        self._pyexpr = F.lit(0)._pyexpr
+        self._pyexpr.__setstate__(state)
 
     def __array_ufunc__(
         self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
@@ -324,14 +376,6 @@ class Expr:
             return ufunc(*args, **kwargs)
 
         return self.map(function)
-
-    def __getstate__(self) -> Any:
-        return self._pyexpr.__getstate__()
-
-    def __setstate__(self, state: Any) -> None:
-        # init with a dummy
-        self._pyexpr = F.lit(0)._pyexpr
-        self._pyexpr.__setstate__(state)
 
     def to_physical(self) -> Self:
         """
@@ -2170,7 +2214,7 @@ class Expr:
             descending = [descending]
         by = selection_to_pyexpr_list(by)
         if more_by:
-            by.extend(pli.selection_to_pyexpr_list(more_by))
+            by.extend(selection_to_pyexpr_list(more_by))
         return self._from_pyexpr(self._pyexpr.sort_by(by, descending))
 
     def take(
@@ -2221,7 +2265,7 @@ class Expr:
             indices = cast("np.ndarray[Any, Any]", indices)
             indices_lit = F.lit(pli.Series("", indices, dtype=UInt32))
         else:
-            indices_lit = pli.expr_to_lit_or_expr(indices, str_to_lit=False)
+            indices_lit = expr_to_lit_or_expr(indices, str_to_lit=False)
         return self._from_pyexpr(self._pyexpr.take(indices_lit._pyexpr))
 
     def shift(self, periods: int = 1) -> Self:
@@ -6585,6 +6629,15 @@ class Expr:
         return ExprListNameSpace(self)
 
     @property
+    def bin(self) -> ExprBinaryNameSpace:
+        """
+        Create an object namespace of all binary related methods.
+
+        See the individual method pages for full details
+        """
+        return ExprBinaryNameSpace(self)
+
+    @property
     def cat(self) -> ExprCatNameSpace:
         """
         Create an object namespace of all categorical related methods.
@@ -6648,15 +6701,6 @@ class Expr:
 
         """
         return ExprStringNameSpace(self)
-
-    @property
-    def bin(self) -> ExprBinaryNameSpace:
-        """
-        Create an object namespace of all binary related methods.
-
-        See the individual method pages for full details
-        """
-        return ExprBinaryNameSpace(self)
 
     @property
     def struct(self) -> ExprStructNameSpace:

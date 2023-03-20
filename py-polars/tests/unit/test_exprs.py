@@ -4,6 +4,7 @@ import random
 import sys
 import typing
 from datetime import datetime, timedelta, timezone
+from itertools import permutations
 from typing import Any, cast
 
 if sys.version_info >= (3, 9):
@@ -26,6 +27,13 @@ from polars.datatypes import (
     TEMPORAL_DTYPES,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
+
+
+def test_arg_true() -> None:
+    df = pl.DataFrame({"a": [1, 1, 2, 1]})
+    res = df.select((pl.col("a") == 1).arg_true())
+    expected = pl.DataFrame([pl.Series("a", [0, 1, 3], dtype=pl.UInt32)])
+    assert_frame_equal(res, expected)
 
 
 def test_col_select() -> None:
@@ -347,20 +355,23 @@ def test_power_by_expression() -> None:
         {"a": [1, None, None, 4, 5, 6], "b": [1, 2, None, 4, None, 6]}
     ).select(
         [
-            (pl.col("a") ** pl.col("b")).alias("pow"),
-            (2 ** pl.col("b")).alias("pow_left"),
+            pl.col("a").pow(pl.col("b")).alias("pow_expr"),
+            (pl.col("a") ** pl.col("b")).alias("pow_op"),
+            (2 ** pl.col("b")).alias("pow_op_left"),
         ]
     )
 
-    assert out["pow"].to_list() == [
-        1.0,
-        None,
-        None,
-        256.0,
-        None,
-        46656.0,
-    ]
-    assert out["pow_left"].to_list() == [
+    for pow_col in ("pow_expr", "pow_op"):
+        assert out[pow_col].to_list() == [
+            1.0,
+            None,
+            None,
+            256.0,
+            None,
+            46656.0,
+        ]
+
+    assert out["pow_op_left"].to_list() == [
         2.0,
         4.0,
         None,
@@ -760,8 +771,80 @@ def test_exclude_invalid_input(input: tuple[Any, ...]) -> None:
         df.select(pl.all().exclude(*input))
 
 
-def test_arg_true() -> None:
-    df = pl.DataFrame({"a": [1, 1, 2, 1]})
-    res = df.select((pl.col("a") == 1).arg_true())
-    expected = pl.DataFrame([pl.Series("a", [0, 1, 3], dtype=pl.UInt32)])
-    assert_frame_equal(res, expected)
+def test_operators_vs_expressions() -> None:
+    df = pl.DataFrame(
+        data={
+            "x": [5, 6, 7, 4, 8],
+            "y": [1.5, 2.5, 1.0, 4.0, -5.75],
+            "z": [-9, 2, -1, 4, 8],
+        }
+    )
+    for c1, c2 in permutations("xyz", r=2):
+        df_op = df.select(
+            a=pl.col(c1) == pl.col(c2),
+            b=pl.col(c1) // pl.col(c2),
+            c=pl.col(c1) > pl.col(c2),
+            d=pl.col(c1) >= pl.col(c2),
+            e=pl.col(c1) < pl.col(c2),
+            f=pl.col(c1) <= pl.col(c2),
+            g=pl.col(c1) % pl.col(c2),
+            h=pl.col(c1) != pl.col(c2),
+            i=pl.col(c1) - pl.col(c2),
+            j=pl.col(c1) / pl.col(c2),
+        )
+        df_expr = df.select(
+            a=pl.col(c1).eq(pl.col(c2)),
+            b=pl.col(c1).floordiv(pl.col(c2)),
+            c=pl.col(c1).gt(pl.col(c2)),
+            d=pl.col(c1).ge(pl.col(c2)),
+            e=pl.col(c1).lt(pl.col(c2)),
+            f=pl.col(c1).le(pl.col(c2)),
+            g=pl.col(c1).mod(pl.col(c2)),
+            h=pl.col(c1).ne(pl.col(c2)),
+            i=pl.col(c1).sub(pl.col(c2)),
+            j=pl.col(c1).truediv(pl.col(c2)),
+        )
+        assert_frame_equal(df_op, df_expr)
+
+    # xor - only int cols
+    assert_frame_equal(
+        df.select(pl.col("x") ^ pl.col("z")),
+        df.select(pl.col("x").xor(pl.col("z"))),
+    )
+
+    # and (&) or (|) chains
+    assert_frame_equal(
+        df.select(
+            all=(pl.col("x") >= pl.col("z")).and_(
+                pl.col("y") >= pl.col("z"),
+                pl.col("y") == pl.col("y"),
+                pl.col("z") <= pl.col("x"),
+                pl.col("y") != pl.col("x"),
+            )
+        ),
+        df.select(
+            all=(
+                (pl.col("x") >= pl.col("z"))
+                & (pl.col("y") >= pl.col("z"))
+                & (pl.col("y") == pl.col("y"))
+                & (pl.col("z") <= pl.col("x"))
+                & (pl.col("y") != pl.col("x"))
+            )
+        ),
+    )
+
+    assert_frame_equal(
+        df.select(
+            any=(pl.col("x") == pl.col("y")).or_(
+                pl.col("x") == pl.col("y"),
+                pl.col("y") == pl.col("z"),
+                pl.col("y").cast(int) == pl.col("z"),
+            )
+        ),
+        df.select(
+            any=(pl.col("x") == pl.col("y"))
+            | (pl.col("x") == pl.col("y"))
+            | (pl.col("y") == pl.col("z"))
+            | (pl.col("y").cast(int) == pl.col("z"))
+        ),
+    )
