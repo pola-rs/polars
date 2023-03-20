@@ -1,10 +1,11 @@
 use polars_core::config::verbose;
 use polars_core::prelude::*;
+use polars_core::utils::split_df;
 
 use crate::executors::sinks::io::IOThread;
 use crate::executors::sources::IpcSourceOneShot;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, Source, SourceResult};
-use crate::pipeline::PipeLine;
+use crate::pipeline::{morsels_per_sink, PipeLine};
 
 pub(super) struct GroupBySource {
     // holding this keeps the lockfile in place
@@ -13,6 +14,7 @@ pub(super) struct GroupBySource {
     partitions: std::fs::ReadDir,
     groupby_sink: Box<dyn Sink>,
     chunk_idx: IdxSize,
+    morsels_per_sink: usize,
     slice: Option<(usize, usize)>,
 }
 
@@ -37,6 +39,7 @@ impl GroupBySource {
             partitions,
             groupby_sink,
             chunk_idx: 0,
+            morsels_per_sink: morsels_per_sink(),
             slice: slice.map(|slice| (slice.0 as usize, slice.1)),
         })
     }
@@ -44,14 +47,13 @@ impl GroupBySource {
 
 impl Source for GroupBySource {
     fn get_batches(&mut self, context: &PExecutionContext) -> PolarsResult<SourceResult> {
-        let chunk_idx = self.chunk_idx;
-        self.chunk_idx += 1;
-
         if self.slice == Some((0, 0)) {
             return Ok(SourceResult::Finished);
         }
 
         if let Some(df) = self.already_finished.take() {
+            let chunk_idx = self.chunk_idx;
+            self.chunk_idx += 1;
             return Ok(SourceResult::GotMoreData(vec![DataChunk::new(
                 chunk_idx, df,
             )]));
@@ -97,10 +99,21 @@ impl Source for GroupBySource {
                             }
                         }
 
-                        // TODO! repartition if df is > chunk_size
-                        Ok(SourceResult::GotMoreData(vec![DataChunk::new(
-                            chunk_idx, df,
-                        )]))
+                        let dfs = split_df(&mut df, self.morsels_per_sink).unwrap();
+                        let chunks = dfs
+                            .into_iter()
+                            .map(|data| {
+                                let chunk = DataChunk {
+                                    chunk_index: self.chunk_idx,
+                                    data,
+                                };
+                                self.chunk_idx += 1;
+
+                                chunk
+                            })
+                            .collect::<Vec<_>>();
+
+                        Ok(SourceResult::GotMoreData(chunks))
                     }
                     // recursively out of core path
                     FinalizedSink::Source(mut src) => src.get_batches(context),
