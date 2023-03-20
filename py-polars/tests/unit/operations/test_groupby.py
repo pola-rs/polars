@@ -343,6 +343,30 @@ def test_groupby_rolling_negative_offset_3914() -> None:
     ]
 
 
+@pytest.mark.parametrize("time_zone", [None, "US/Central", "+01:00"])
+def test_groupby_rolling_negative_offset_crossing_dst(time_zone: str | None) -> None:
+    df = pl.DataFrame(
+        {
+            "datetime": pl.date_range(
+                datetime(2021, 11, 6), datetime(2021, 11, 9), "1d", time_zone=time_zone
+            ),
+            "value": [1, 4, 9, 155],
+        }
+    )
+    result = df.groupby_rolling(index_column="datetime", period="2d", offset="-1d").agg(
+        pl.col("value")
+    )
+    expected = pl.DataFrame(
+        {
+            "datetime": pl.date_range(
+                datetime(2021, 11, 6), datetime(2021, 11, 9), "1d", time_zone=time_zone
+            ),
+            "value": [[1, 4], [4, 9], [9, 155], [155]],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
 def test_groupby_signed_transmutes() -> None:
     df = pl.DataFrame({"foo": [-1, -2, -3, -4, -5], "bar": [500, 600, 700, 800, 900]})
 

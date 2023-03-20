@@ -644,6 +644,7 @@ fn test_rolling_lookback() {
         &dates,
         ClosedWindow::Right,
         TimeUnit::Milliseconds,
+        NO_TIMEZONE.copied(),
     );
     assert_eq!(dates.len(), groups.len());
     assert_eq!(groups[0], [0, 1]); // bound: 22:00 -> 24:00     time: 24:00
@@ -663,6 +664,7 @@ fn test_rolling_lookback() {
         &dates,
         ClosedWindow::Right,
         TimeUnit::Milliseconds,
+        NO_TIMEZONE.copied(),
     );
     assert_eq!(dates.len(), groups.len());
     assert_eq!(groups[0], [0, 3]);
@@ -682,6 +684,7 @@ fn test_rolling_lookback() {
         &dates,
         ClosedWindow::Right,
         TimeUnit::Milliseconds,
+        NO_TIMEZONE.copied(),
     );
     assert_eq!(dates.len(), groups.len());
     assert_eq!(groups[0], [0, 5]);
@@ -703,11 +706,26 @@ fn test_rolling_lookback() {
         ClosedWindow::None,
     ] {
         let offset = Duration::parse("0h");
-        let g0 =
-            groupby_values_iter_full_lookahead(period, offset, &dates, closed_window, tu, 0, None)
-                .collect::<Vec<_>>();
-        let g1 = groupby_values_iter_partial_lookbehind(period, offset, &dates, closed_window, tu)
-            .collect::<Vec<_>>();
+        let g0 = groupby_values_iter_full_lookahead(
+            period,
+            offset,
+            &dates,
+            closed_window,
+            tu,
+            NO_TIMEZONE.copied(),
+            0,
+            None,
+        )
+        .collect::<Vec<_>>();
+        let g1 = groupby_values_iter_partial_lookbehind(
+            period,
+            offset,
+            &dates,
+            closed_window,
+            tu,
+            NO_TIMEZONE.copied(),
+        )
+        .collect::<Vec<_>>();
         assert_eq!(g0, g1);
 
         let offset = Duration::parse("-2h");
@@ -721,8 +739,15 @@ fn test_rolling_lookback() {
             0,
         )
         .collect::<Vec<_>>();
-        let g1 = groupby_values_iter_partial_lookbehind(period, offset, &dates, closed_window, tu)
-            .collect::<Vec<_>>();
+        let g1 = groupby_values_iter_partial_lookbehind(
+            period,
+            offset,
+            &dates,
+            closed_window,
+            tu,
+            NO_TIMEZONE.copied(),
+        )
+        .collect::<Vec<_>>();
         assert_eq!(g0, g1);
     }
 }
