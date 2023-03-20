@@ -191,6 +191,9 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     /// Replace the leftmost literal (sub)string with another string
     fn replace_literal<'a>(&'a self, pat: &str, val: &str, n: usize) -> PolarsResult<Utf8Chunked> {
         let ca = self.as_utf8();
+        if ca.is_empty() {
+            return Ok(ca.clone());
+        }
 
         // for single bytes we can replace on the whole values buffer
         if pat.len() == 1 && val.len() == 1 {
@@ -245,6 +248,9 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     /// Replace all matching literal (sub)strings with another string
     fn replace_literal_all<'a>(&'a self, pat: &str, val: &str) -> PolarsResult<Utf8Chunked> {
         let ca = self.as_utf8();
+        if ca.is_empty() {
+            return Ok(ca.clone());
+        }
         // for single bytes we can replace on the whole values buffer
         if pat.len() == 1 && val.len() == 1 {
             let pat = pat.as_bytes()[0];
