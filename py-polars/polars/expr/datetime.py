@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import time
 from typing import TYPE_CHECKING
 
+from polars import functions as F
 from polars import internals as pli
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
 from polars.utils.convert import _timedelta_to_pl_duration
@@ -966,7 +967,7 @@ class ExprDateTimeNameSpace:
         """
         sec = pli.wrap_expr(self._pyexpr.second())
         return (
-            sec + (pli.wrap_expr(self._pyexpr.nanosecond()) / pli.lit(1_000_000_000.0))
+            sec + (pli.wrap_expr(self._pyexpr.nanosecond()) / F.lit(1_000_000_000.0))
             if fractional
             else sec
         )

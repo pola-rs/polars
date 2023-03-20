@@ -1,15 +1,10 @@
 from __future__ import annotations
 
-from typing import (
-    TYPE_CHECKING,
-    Callable,
-    Generic,
-    Iterable,
-    Iterator,
-    TypeVar,
-)
+from typing import TYPE_CHECKING, Callable, Generic, Iterable, Iterator, TypeVar
 
+from polars import functions as F
 from polars import internals as pli
+from polars.functions.whenthen import WhenThen, WhenThenThen
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import deprecated_alias, redirect
 
@@ -25,7 +20,7 @@ if TYPE_CHECKING:
     )
 
 # A type variable used to refer to a polars.DataFrame or any subclass of it
-DF = TypeVar("DF", bound="pli.DataFrame")
+DF = TypeVar("DF", bound="DataFrame")
 
 
 @redirect({"agg_list": "all"})
@@ -104,17 +99,17 @@ class GroupBy(Generic[DF]):
             self.df.lazy()
             .with_row_count(name=temp_col)
             .groupby(self.by, *self.more_by, maintain_order=self.maintain_order)
-            .agg(pli.col(temp_col))
+            .agg(F.col(temp_col))
             .collect(no_optimization=True)
         )
 
-        group_names = groups_df.select(pli.all().exclude(temp_col))
+        group_names = groups_df.select(F.all().exclude(temp_col))
 
         # When grouping by a single column, group name is a single value
         # When grouping by multiple columns, group name is a tuple of values
         self._group_names: Iterator[object] | Iterator[tuple[object, ...]]
         if (
-            isinstance(self.by, (str, pli.Expr, pli.WhenThen, pli.WhenThenThen))
+            isinstance(self.by, (str, pli.Expr, WhenThen, WhenThenThen))
             and not self.more_by
         ):
             self._group_names = iter(group_names.to_series())
@@ -454,7 +449,7 @@ class GroupBy(Generic[DF]):
         └─────┴───────────┘
 
         """
-        return self.agg(pli.all())
+        return self.agg(F.all())
 
     def count(self) -> DF:
         """
@@ -483,7 +478,7 @@ class GroupBy(Generic[DF]):
         └────────┴───────┘
 
         """
-        return self.agg(pli.count())
+        return self.agg(F.count())
 
     def first(self) -> DF:
         """
@@ -512,7 +507,7 @@ class GroupBy(Generic[DF]):
         └────────┴─────┴──────┴───────┘
 
         """
-        return self.agg(pli.all().first())
+        return self.agg(F.all().first())
 
     def last(self) -> DF:
         """
@@ -541,7 +536,7 @@ class GroupBy(Generic[DF]):
         └────────┴─────┴──────┴───────┘
 
         """
-        return self.agg(pli.all().last())
+        return self.agg(F.all().last())
 
     def max(self) -> DF:
         """
@@ -570,7 +565,7 @@ class GroupBy(Generic[DF]):
         └────────┴─────┴──────┴──────┘
 
         """
-        return self.agg(pli.all().max())
+        return self.agg(F.all().max())
 
     def mean(self) -> DF:
         """
@@ -599,7 +594,7 @@ class GroupBy(Generic[DF]):
         └────────┴─────┴──────────┴──────────┘
 
         """
-        return self.agg(pli.all().mean())
+        return self.agg(F.all().mean())
 
     def median(self) -> DF:
         """
@@ -626,7 +621,7 @@ class GroupBy(Generic[DF]):
         └────────┴─────┴──────┘
 
         """
-        return self.agg(pli.all().median())
+        return self.agg(F.all().median())
 
     def min(self) -> DF:
         """
@@ -655,7 +650,7 @@ class GroupBy(Generic[DF]):
         └────────┴─────┴──────┴───────┘
 
         """
-        return self.agg(pli.all().min())
+        return self.agg(F.all().min())
 
     def n_unique(self) -> DF:
         """
@@ -682,7 +677,7 @@ class GroupBy(Generic[DF]):
         └────────┴─────┴─────┘
 
         """
-        return self.agg(pli.all().n_unique())
+        return self.agg(F.all().n_unique())
 
     def quantile(
         self, quantile: float, interpolation: RollingInterpolationMethod = "nearest"
@@ -719,7 +714,7 @@ class GroupBy(Generic[DF]):
         └────────┴─────┴──────┘
 
         """
-        return self.agg(pli.all().quantile(quantile, interpolation=interpolation))
+        return self.agg(F.all().quantile(quantile, interpolation=interpolation))
 
     def sum(self) -> DF:
         """
@@ -748,7 +743,7 @@ class GroupBy(Generic[DF]):
         └────────┴─────┴──────┴─────┘
 
         """
-        return self.agg(pli.all().sum())
+        return self.agg(F.all().sum())
 
 
 class RollingGroupBy(Generic[DF]):
@@ -790,11 +785,11 @@ class RollingGroupBy(Generic[DF]):
                 closed=self.closed,
                 by=self.by,
             )
-            .agg(pli.col(temp_col))
+            .agg(F.col(temp_col))
             .collect(no_optimization=True)
         )
 
-        group_names = groups_df.select(pli.all().exclude(temp_col))
+        group_names = groups_df.select(F.all().exclude(temp_col))
 
         # When grouping by a single column, group name is a single value
         # When grouping by multiple columns, group name is a tuple of values
@@ -892,11 +887,11 @@ class DynamicGroupBy(Generic[DF]):
                 by=self.by,
                 start_by=self.start_by,
             )
-            .agg(pli.col(temp_col))
+            .agg(F.col(temp_col))
             .collect(no_optimization=True)
         )
 
-        group_names = groups_df.select(pli.all().exclude(temp_col))
+        group_names = groups_df.select(F.all().exclude(temp_col))
 
         # When grouping by a single column, group name is a single value
         # When grouping by multiple columns, group name is a tuple of values

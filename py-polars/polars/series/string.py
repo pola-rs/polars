@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from polars import functions as F
 from polars import internals as pli
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
-    from polars.expr.expr import Expr
+    from polars.expr import Expr
     from polars.polars import PySeries
-    from polars.series.series import Series
+    from polars.series import Series
     from polars.type_aliases import PolarsDataType, PolarsTemporalType, TransferEncoding
 
 
@@ -628,7 +629,7 @@ class StringNameSpace:
 
         """
         s = pli.wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).str.splitn(by, n)).to_series()
+        return s.to_frame().select(F.col(s.name).str.splitn(by, n)).to_series()
 
     def replace(
         self, pattern: str, value: str, literal: bool = False, *, n: int = 1

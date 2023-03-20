@@ -20,6 +20,7 @@ from typing import (
     cast,
 )
 
+from polars import functions as F
 from polars import internals as pli
 from polars.datatypes import (
     Struct,
@@ -36,6 +37,7 @@ from polars.expr.list import ExprListNameSpace
 from polars.expr.meta import ExprMetaNameSpace
 from polars.expr.string import ExprStringNameSpace
 from polars.expr.struct import ExprStructNameSpace
+from polars.functions.whenthen import WhenThen, WhenThenThen
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 from polars.utils.meta import threadpool_size
@@ -85,7 +87,7 @@ def selection_to_pyexpr_list(
         return []
 
     if isinstance(
-        exprs, (str, Expr, pli.Series, pli.WhenThen, pli.WhenThenThen)
+        exprs, (str, Expr, pli.Series, WhenThen, WhenThenThen)
     ) or not isinstance(exprs, Iterable):
         return [
             expr_to_lit_or_expr(exprs, str_to_lit=False, structify=structify)._pyexpr,
@@ -134,17 +136,17 @@ def expr_to_lit_or_expr(
     if isinstance(expr, Expr):
         pass
     elif isinstance(expr, str) and not str_to_lit:
-        expr = pli.col(expr)
+        expr = F.col(expr)
     elif (
         isinstance(expr, (int, float, str, pli.Series, datetime, date, time, timedelta))
         or expr is None
     ):
-        expr = pli.lit(expr)
+        expr = F.lit(expr)
         structify = False
     elif isinstance(expr, list):
-        expr = pli.lit(pli.Series("", [expr]))
+        expr = F.lit(pli.Series("", [expr]))
         structify = False
-    elif isinstance(expr, (pli.WhenThen, pli.WhenThenThen)):
+    elif isinstance(expr, (WhenThen, WhenThenThen)):
         expr = expr.otherwise(None)  # implicitly add the null branch.
     else:
         raise TypeError(
@@ -156,7 +158,7 @@ def expr_to_lit_or_expr(
         unaliased_expr = expr.meta.undo_aliases()
         if unaliased_expr.meta.has_multiple_outputs():
             expr_name = expr_output_name(expr)
-            expr = pli.struct(expr if expr_name is None else unaliased_expr)
+            expr = F.struct(expr if expr_name is None else unaliased_expr)
             name = name or expr_name
 
     return expr if name is None else expr.alias(name)
@@ -184,7 +186,7 @@ class Expr:
     def _to_expr(self, other: Any) -> Expr:
         if isinstance(other, Expr):
             return other
-        return pli.lit(other)
+        return F.lit(other)
 
     def _repr_html_(self) -> str:
         return self._pyexpr.to_str()
@@ -302,10 +304,10 @@ class Expr:
         return self.__gt__(other)
 
     def __neg__(self) -> Expr:
-        return pli.lit(0) - self
+        return F.lit(0) - self
 
     def __pos__(self) -> Expr:
-        return pli.lit(0) + self
+        return F.lit(0) + self
 
     def __array_ufunc__(
         self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
@@ -328,7 +330,7 @@ class Expr:
 
     def __setstate__(self, state: Any) -> None:
         # init with a dummy
-        self._pyexpr = pli.lit(0)._pyexpr
+        self._pyexpr = F.lit(0)._pyexpr
         self._pyexpr.__setstate__(state)
 
     def to_physical(self) -> Self:
@@ -1249,9 +1251,9 @@ class Expr:
 
         """
         if not isinstance(offset, Expr):
-            offset = pli.lit(offset)
+            offset = F.lit(offset)
         if not isinstance(length, Expr):
-            length = pli.lit(length)
+            length = F.lit(length)
         return self._from_pyexpr(self._pyexpr.slice(offset._pyexpr, length._pyexpr))
 
     def append(self, other: Expr, upcast: bool = True) -> Self:
@@ -2217,7 +2219,7 @@ class Expr:
             _check_for_numpy(indices) and isinstance(indices, np.ndarray)
         ):
             indices = cast("np.ndarray[Any, Any]", indices)
-            indices_lit = pli.lit(pli.Series("", indices, dtype=UInt32))
+            indices_lit = F.lit(pli.Series("", indices, dtype=UInt32))
         else:
             indices_lit = pli.expr_to_lit_or_expr(indices, str_to_lit=False)
         return self._from_pyexpr(self._pyexpr.take(indices_lit._pyexpr))
@@ -3398,9 +3400,7 @@ class Expr:
 
                 def get_lazy_promise(df: DataFrame) -> LazyFrame:
                     return df.lazy().select(
-                        pli.col("x").map(
-                            wrap_f, agg_list=True, return_dtype=return_dtype
-                        )
+                        F.col("x").map(wrap_f, agg_list=True, return_dtype=return_dtype)
                     )
 
                 # create partitions with LazyFrames
@@ -3413,8 +3413,8 @@ class Expr:
                     partition_df = df[a:b]
                     partitions.append(get_lazy_promise(partition_df))
 
-                out = [df.to_series() for df in pli.collect_all(partitions)]
-                return pli.concat(out, rechunk=False)
+                out = [df.to_series() for df in F.collect_all(partitions)]
+                return F.concat(out, rechunk=False)
 
             return self.map(wrap_threading, agg_list=True, return_dtype=return_dtype)
         else:
@@ -3625,7 +3625,7 @@ class Expr:
         if isinstance(other, Collection) and not isinstance(other, str):
             if isinstance(other, (Set, FrozenSet)):
                 other = sorted(other)
-            other = pli.lit(None) if len(other) == 0 else pli.lit(pli.Series(other))
+            other = F.lit(None) if len(other) == 0 else F.lit(pli.Series(other))
         else:
             other = expr_to_lit_or_expr(other, str_to_lit=False)
         return self._from_pyexpr(self._pyexpr.is_in(other._pyexpr))
@@ -6522,14 +6522,14 @@ class Expr:
                             ]
                         )
                         .lazy()
-                        .with_columns(pli.lit(True).alias(is_remapped_column)),
+                        .with_columns(F.lit(True).alias(is_remapped_column)),
                         how="left",
                         left_on=column,
                         right_on=remap_key_column,
                     )
                     .select(
-                        pli.when(pli.col(is_remapped_column).is_not_null())
-                        .then(pli.col(remap_value_column))
+                        F.when(F.col(is_remapped_column).is_not_null())
+                        .then(F.col(remap_value_column))
                         .otherwise(default)
                         .alias(column)
                     )
@@ -6561,7 +6561,7 @@ class Expr:
                             ]
                         )
                         .lazy()
-                        .with_columns(pli.lit(True).alias(is_remapped_column)),
+                        .with_columns(F.lit(True).alias(is_remapped_column)),
                         how="left",
                         left_on=column,
                         right_on=remap_key_column,

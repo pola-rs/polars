@@ -3,6 +3,7 @@ from __future__ import annotations
 import textwrap
 from typing import TYPE_CHECKING, Any
 
+from polars import functions as F
 from polars import internals as pli
 from polars.datatypes import (
     Boolean,
@@ -335,9 +336,7 @@ def _assert_series_inner(
     unequal = left != right
     if unequal.any() and nans_compare_equal and comparing_float_dtypes:
         # handle NaN values (which compare unequal to themselves)
-        unequal = unequal & ~(
-            (left.is_nan() & right.is_nan()).fill_null(pli.lit(False))
-        )
+        unequal = unequal & ~((left.is_nan() & right.is_nan()).fill_null(F.lit(False)))
 
     # assert exact, or with tolerance
     if unequal.any():
@@ -415,7 +414,7 @@ def assert_frame_equal_local_categoricals(df_a: DataFrame, df_b: DataFrame) -> N
             print(f"{a_value} != {b_value}")
             raise AssertionError
 
-    cat_to_str = pli.col(Categorical).cast(str)
+    cat_to_str = F.col(Categorical).cast(str)
     assert_frame_equal(df_a.with_columns(cat_to_str), df_b.with_columns(cat_to_str))
-    cat_to_phys = pli.col(Categorical).to_physical()
+    cat_to_phys = F.col(Categorical).to_physical()
     assert_frame_equal(df_a.with_columns(cat_to_phys), df_b.with_columns(cat_to_phys))

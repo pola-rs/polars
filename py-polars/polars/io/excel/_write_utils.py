@@ -4,7 +4,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, Sequence, overload
 
-from polars import internals as pli
+from polars import functions as F
 from polars.datatypes import (
     FLOAT_DTYPES,
     INTEGER_DTYPES,
@@ -198,7 +198,7 @@ def _xl_inject_dummy_table_columns(
 
     df = df.select(
         [
-            (col if col in df_original_columns else pli.lit(None).alias(col))
+            (col if col in df_original_columns else F.lit(None).alias(col))
             for col in df_select_cols
         ]
     )

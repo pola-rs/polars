@@ -18,6 +18,7 @@ from typing import (
     overload,
 )
 
+from polars import functions as F
 from polars import internals as pli
 from polars.datatypes import (
     Boolean,
@@ -592,8 +593,8 @@ class Series:
         if self.is_temporal():
             raise ValueError("first cast to integer before dividing datelike dtypes")
         if not isinstance(other, pli.Expr):
-            other = pli.lit(other)
-        return self.to_frame().select(pli.col(self.name) // other).to_series()
+            other = F.lit(other)
+        return self.to_frame().select(F.col(self.name) // other).to_series()
 
     def __invert__(self) -> Self:
         if self.dtype == Boolean:
@@ -665,14 +666,14 @@ class Series:
             )
         if _check_for_numpy(power) and isinstance(power, np.ndarray):
             power = Series(power)
-        return self.to_frame().select(pli.col(self.name).pow(power)).to_series()
+        return self.to_frame().select(F.col(self.name).pow(power)).to_series()
 
     def __rpow__(self, other: Any) -> Series:
         if self.is_temporal():
             raise ValueError(
                 "first cast to integer before raising datelike dtypes to a power"
             )
-        return self.to_frame().select(other ** pli.col(self.name)).to_series()
+        return self.to_frame().select(other ** F.col(self.name)).to_series()
 
     def __matmul__(self, other: Any) -> float | Series | None:
         if isinstance(other, Sequence) or (
@@ -748,9 +749,9 @@ class Series:
                         return (
                             idxs.to_frame()
                             .select(
-                                pli.when(pli.col(idxs.name) < 0)
-                                .then(self.len() + pli.col(idxs.name))
-                                .otherwise(pli.col(idxs.name))
+                                F.when(F.col(idxs.name) < 0)
+                                .then(self.len() + F.col(idxs.name))
+                                .otherwise(F.col(idxs.name))
                                 .cast(idx_type)
                             )
                             .to_series(0)
@@ -1076,7 +1077,7 @@ class Series:
         Boolean literal
 
         """
-        return self.to_frame().select(pli.col(self.name).any()).to_series()[0]
+        return self.to_frame().select(F.col(self.name).any()).to_series()[0]
 
     def all(self) -> bool:
         """
@@ -1087,7 +1088,7 @@ class Series:
         Boolean literal
 
         """
-        return self.to_frame().select(pli.col(self.name).all()).to_series()[0]
+        return self.to_frame().select(F.col(self.name).all()).to_series()[0]
 
     def log(self, base: float = math.e) -> Series:
         """Compute the logarithm to a given base."""
@@ -1265,7 +1266,7 @@ class Series:
 
     def product(self) -> int | float:
         """Reduce this Series to the product value."""
-        return self.to_frame().select(pli.col(self.name).product()).to_series()[0]
+        return self.to_frame().select(F.col(self.name).product()).to_series()[0]
 
     def min(self) -> int | float | date | datetime | timedelta | time | str | None:
         """
@@ -1301,7 +1302,7 @@ class Series:
         whereas polars defaults to ignoring them.
 
         """
-        return self.to_frame().select(pli.col(self.name).nan_max()).item()
+        return self.to_frame().select(F.col(self.name).nan_max()).item()
 
     def nan_min(self) -> int | float | date | datetime | timedelta | str:
         """
@@ -1311,7 +1312,7 @@ class Series:
         whereas polars defaults to ignoring them.
 
         """
-        return self.to_frame().select(pli.col(self.name).nan_min()).item()
+        return self.to_frame().select(F.col(self.name).nan_min()).item()
 
     def std(self, ddof: int = 1) -> float | None:
         """
@@ -1333,7 +1334,7 @@ class Series:
         """
         if not self.is_numeric():
             return None
-        return self.to_frame().select(pli.col(self.name).std(ddof)).to_series()[0]
+        return self.to_frame().select(F.col(self.name).std(ddof)).to_series()[0]
 
     def var(self, ddof: int = 1) -> float | None:
         """
@@ -1355,7 +1356,7 @@ class Series:
         """
         if not self.is_numeric():
             return None
-        return self.to_frame().select(pli.col(self.name).var(ddof)).to_series()[0]
+        return self.to_frame().select(F.col(self.name).var(ddof)).to_series()[0]
 
     def median(self) -> float | None:
         """
@@ -1486,14 +1487,14 @@ class Series:
             cuts_df = cuts_df.with_columns(Series(category_label, labels))
         else:
             cuts_df = cuts_df.with_columns(
-                pli.format(
+                F.format(
                     "({}, {}]",
-                    pli.col(break_point_label).shift_and_fill(1, float("-inf")),
-                    pli.col(break_point_label),
+                    F.col(break_point_label).shift_and_fill(1, float("-inf")),
+                    F.col(break_point_label),
                 ).alias(category_label)
             )
 
-        cuts_df = cuts_df.with_columns(pli.col(category_label).cast(Categorical))
+        cuts_df = cuts_df.with_columns(F.col(category_label).cast(Categorical))
 
         result = (
             self.cast(Float64)
@@ -1576,7 +1577,7 @@ class Series:
         0.8568409950394724
 
         """
-        return pli.select(pli.lit(self).entropy(base, normalize)).to_series()[0]
+        return F.select(F.lit(self).entropy(base, normalize)).to_series()[0]
 
     def cumulative_eval(
         self, expr: Expr, min_periods: int = 1, parallel: bool = False
@@ -1968,7 +1969,7 @@ class Series:
         """
         if n < 0:
             n = max(0, self.len() + n)
-        return self.to_frame().select(pli.col(self.name).head(n)).to_series()
+        return self.to_frame().select(F.col(self.name).head(n)).to_series()
 
     def tail(self, n: int = 10) -> Series:
         """
@@ -2009,7 +2010,7 @@ class Series:
         """
         if n < 0:
             n = max(0, self.len() + n)
-        return self.to_frame().select(pli.col(self.name).tail(n)).to_series()
+        return self.to_frame().select(F.col(self.name).tail(n)).to_series()
 
     def limit(self, n: int = 10) -> Series:
         """
@@ -2110,7 +2111,7 @@ class Series:
         """
         return (
             self.to_frame()
-            .select(pli.col(self._s.name()).top_k(k=k, descending=descending))
+            .select(F.col(self._s.name()).top_k(k=k, descending=descending))
             .to_series()
         )
 
@@ -2145,9 +2146,7 @@ class Series:
         return (
             self.to_frame()
             .select(
-                pli.col(self.name).arg_sort(
-                    descending=descending, nulls_last=nulls_last
-                )
+                F.col(self.name).arg_sort(descending=descending, nulls_last=nulls_last)
             )
             .to_series()
         )
@@ -2266,9 +2265,9 @@ class Series:
 
         """
         if isinstance(element, (int, float)):
-            return pli.select(pli.lit(self).search_sorted(element, side)).item()
+            return F.select(F.lit(self).search_sorted(element, side)).item()
         element = Series(element)
-        return pli.select(pli.lit(self).search_sorted(element, side)).to_series()
+        return F.select(F.lit(self).search_sorted(element, side)).to_series()
 
     def unique(self, maintain_order: bool = False) -> Series:
         """
@@ -2316,7 +2315,7 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).take(indices)).to_series()
+        return self.to_frame().select(F.col(self.name).take(indices)).to_series()
 
     def null_count(self) -> int:
         """Count the null values in this Series."""
@@ -2567,7 +2566,7 @@ class Series:
         ]
 
         """
-        return pli.arg_where(self, eager=True)
+        return F.arg_where(self, eager=True)
 
     def is_unique(self) -> Series:
         """
@@ -2875,13 +2874,13 @@ class Series:
 
         """
         if isinstance(start, str):
-            start = pli.lit(start)
+            start = F.lit(start)
         if isinstance(end, str):
-            end = pli.lit(end)
+            end = F.lit(end)
 
         return (
             self.to_frame()
-            .select(pli.col(self.name).is_between(start, end, closed))
+            .select(F.col(self.name).is_between(start, end, closed))
             .to_series()
         )
 
@@ -4016,9 +4015,7 @@ class Series:
         return (
             self.to_frame()
             .select(
-                pli.col(self.name).rolling_min(
-                    window_size, weights, min_periods, center
-                )
+                F.col(self.name).rolling_min(window_size, weights, min_periods, center)
             )
             .to_series()
         )
@@ -4068,9 +4065,7 @@ class Series:
         return (
             self.to_frame()
             .select(
-                pli.col(self.name).rolling_max(
-                    window_size, weights, min_periods, center
-                )
+                F.col(self.name).rolling_max(window_size, weights, min_periods, center)
             )
             .to_series()
         )
@@ -4120,9 +4115,7 @@ class Series:
         return (
             self.to_frame()
             .select(
-                pli.col(self.name).rolling_mean(
-                    window_size, weights, min_periods, center
-                )
+                F.col(self.name).rolling_mean(window_size, weights, min_periods, center)
             )
             .to_series()
         )
@@ -4172,9 +4165,7 @@ class Series:
         return (
             self.to_frame()
             .select(
-                pli.col(self.name).rolling_sum(
-                    window_size, weights, min_periods, center
-                )
+                F.col(self.name).rolling_sum(window_size, weights, min_periods, center)
             )
             .to_series()
         )
@@ -4225,9 +4216,7 @@ class Series:
         return (
             self.to_frame()
             .select(
-                pli.col(self.name).rolling_std(
-                    window_size, weights, min_periods, center
-                )
+                F.col(self.name).rolling_std(window_size, weights, min_periods, center)
             )
             .to_series()
         )
@@ -4278,9 +4267,7 @@ class Series:
         return (
             self.to_frame()
             .select(
-                pli.col(self.name).rolling_var(
-                    window_size, weights, min_periods, center
-                )
+                F.col(self.name).rolling_var(window_size, weights, min_periods, center)
             )
             .to_series()
         )
@@ -4380,7 +4367,7 @@ class Series:
         return (
             self.to_frame()
             .select(
-                pli.col(self.name).rolling_median(
+                F.col(self.name).rolling_median(
                     window_size, weights, min_periods, center
                 )
             )
@@ -4449,7 +4436,7 @@ class Series:
         return (
             self.to_frame()
             .select(
-                pli.col(self.name).rolling_quantile(
+                F.col(self.name).rolling_quantile(
                     quantile, interpolation, window_size, weights, min_periods, center
                 )
             )
@@ -4739,7 +4726,7 @@ class Series:
         """
         return (
             self.to_frame()
-            .select(pli.col(self._s.name()).rank(method=method, descending=descending))
+            .select(F.col(self._s.name()).rank(method=method, descending=descending))
             .to_series()
         )
 

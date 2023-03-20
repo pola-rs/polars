@@ -2,16 +2,17 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Callable, Generic, Iterable, TypeVar
 
-from polars import internals as pli
+from polars import functions as F
 from polars.internals import expr_to_lit_or_expr, selection_to_pyexpr_list
 from polars.utils.decorators import deprecated_alias
 
 if TYPE_CHECKING:
-    from polars.dataframe.frame import DataFrame
+    from polars.dataframe import DataFrame
+    from polars.lazyframe import LazyFrame
     from polars.polars import PyLazyGroupBy
     from polars.type_aliases import IntoExpr, RollingInterpolationMethod, SchemaDict
 
-LDF = TypeVar("LDF", bound="pli.LazyFrame")
+LDF = TypeVar("LDF", bound="LazyFrame")
 
 
 class LazyGroupBy(Generic[LDF]):
@@ -338,7 +339,7 @@ class LazyGroupBy(Generic[LDF]):
         └─────┴───────────┘
 
         """
-        return self.agg(pli.all())
+        return self.agg(F.all())
 
     def count(self) -> LDF:
         """
@@ -367,7 +368,7 @@ class LazyGroupBy(Generic[LDF]):
         └────────┴───────┘
 
         """
-        return self.agg(pli.count())
+        return self.agg(F.count())
 
     def first(self) -> LDF:
         """
@@ -396,7 +397,7 @@ class LazyGroupBy(Generic[LDF]):
         └────────┴─────┴──────┴───────┘
 
         """
-        return self.agg(pli.all().first())
+        return self.agg(F.all().first())
 
     def last(self) -> LDF:
         """
@@ -425,7 +426,7 @@ class LazyGroupBy(Generic[LDF]):
         └────────┴─────┴──────┴───────┘
 
         """
-        return self.agg(pli.all().last())
+        return self.agg(F.all().last())
 
     def max(self) -> LDF:
         """
@@ -454,7 +455,7 @@ class LazyGroupBy(Generic[LDF]):
         └────────┴─────┴──────┴──────┘
 
         """
-        return self.agg(pli.all().max())
+        return self.agg(F.all().max())
 
     def mean(self) -> LDF:
         """
@@ -483,7 +484,7 @@ class LazyGroupBy(Generic[LDF]):
         └────────┴─────┴──────────┴──────────┘
 
         """
-        return self.agg(pli.all().mean())
+        return self.agg(F.all().mean())
 
     def median(self) -> LDF:
         """
@@ -510,7 +511,7 @@ class LazyGroupBy(Generic[LDF]):
         └────────┴─────┴──────┘
 
         """
-        return self.agg(pli.all().median())
+        return self.agg(F.all().median())
 
     def min(self) -> LDF:
         """
@@ -539,7 +540,7 @@ class LazyGroupBy(Generic[LDF]):
         └────────┴─────┴──────┴───────┘
 
         """
-        return self.agg(pli.all().min())
+        return self.agg(F.all().min())
 
     def n_unique(self) -> LDF:
         """
@@ -566,7 +567,7 @@ class LazyGroupBy(Generic[LDF]):
         └────────┴─────┴─────┘
 
         """
-        return self.agg(pli.all().n_unique())
+        return self.agg(F.all().n_unique())
 
     def quantile(
         self, quantile: float, interpolation: RollingInterpolationMethod = "nearest"
@@ -603,7 +604,7 @@ class LazyGroupBy(Generic[LDF]):
         └────────┴─────┴──────┘
 
         """
-        return self.agg(pli.all().quantile(quantile, interpolation=interpolation))
+        return self.agg(F.all().quantile(quantile, interpolation=interpolation))
 
     def sum(self) -> LDF:
         """
@@ -632,4 +633,4 @@ class LazyGroupBy(Generic[LDF]):
         └────────┴─────┴──────┴─────┘
 
         """
-        return self.agg(pli.all().sum())
+        return self.agg(F.all().sum())

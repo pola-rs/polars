@@ -18,6 +18,7 @@ from typing import (
     overload,
 )
 
+from polars import functions as F
 from polars import internals as pli
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
@@ -1331,16 +1332,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 if max_val > 1e9:
                     unit = "s"
                     timings_ = timings_.with_columns(
-                        pli.col(["start", "end"]) / 1_000_000
+                        F.col(["start", "end"]) / 1_000_000
                     )
                 elif max_val > 1e6:
                     unit = "ms"
-                    timings_ = timings_.with_columns(pli.col(["start", "end"]) / 1000)
+                    timings_ = timings_.with_columns(F.col(["start", "end"]) / 1000)
                 else:
                     unit = "us"
                 if truncate_nodes > 0:
                     timings_ = timings_.with_columns(
-                        pli.col("node").str.slice(0, truncate_nodes) + "..."
+                        F.col("node").str.slice(0, truncate_nodes) + "..."
                     )
 
                 max_in_unit = timings_["end"][0]
@@ -2671,9 +2672,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             tolerance_num = tolerance
 
         if not isinstance(left_on, pli.Expr):
-            left_on = pli.col(left_on)
+            left_on = F.col(left_on)
         if not isinstance(right_on, pli.Expr):
-            right_on = pli.col(right_on)
+            right_on = F.col(right_on)
 
         return self._from_pyldf(
             self._ldf.join_asof(
@@ -3302,7 +3303,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         """
         if not isinstance(fill_value, pli.Expr):
-            fill_value = pli.lit(fill_value)
+            fill_value = F.lit(fill_value)
         return self._from_pyldf(self._ldf.shift_and_fill(periods, fill_value._pyexpr))
 
     def slice(self, offset: int, length: int | None = None) -> Self:
@@ -3603,7 +3604,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┘
 
         """
-        return self.select(pli.col("*").take_every(n))
+        return self.select(F.col("*").take_every(n))
 
     @deprecate_nonkeyword_arguments(allowed_args=["self", "value", "strategy", "limit"])
     def fill_null(
@@ -3728,11 +3729,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 dtypes = [Utf8, Categorical]
             else:
                 # fallback; anything not explicitly handled above
-                dtypes = [infer_dtype(pli.lit(value))]
+                dtypes = [infer_dtype(F.lit(value))]
 
-            return self.with_columns(pli.col(dtypes).fill_null(value, strategy, limit))
+            return self.with_columns(F.col(dtypes).fill_null(value, strategy, limit))
 
-        return self.select(pli.all().fill_null(value, strategy, limit))
+        return self.select(F.all().fill_null(value, strategy, limit))
 
     def fill_nan(self, fill_value: int | float | Expr | None) -> Self:
         """
@@ -3771,7 +3772,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         """
         if not isinstance(fill_value, pli.Expr):
-            fill_value = pli.lit(fill_value)
+            fill_value = F.lit(fill_value)
         return self._from_pyldf(self._ldf.fill_nan(fill_value._pyexpr))
 
     def std(self, ddof: int = 1) -> Self:
@@ -4398,7 +4399,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴──────┴─────┘
 
         """
-        return self.select(pli.col("*").interpolate())
+        return self.select(F.col("*").interpolate())
 
     @deprecated_alias(names="columns")
     def unnest(self, columns: str | Sequence[str], *more_columns: str) -> Self:
@@ -4581,7 +4582,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             self.join(other.select(list(union_names)), on=on, how=how, suffix=tmp_name)  # type: ignore[arg-type]
             .with_columns(
                 [
-                    pli.coalesce([column_name + tmp_name, pli.col(column_name)]).alias(
+                    F.coalesce([column_name + tmp_name, F.col(column_name)]).alias(
                         column_name
                     )
                     for column_name in right_added_names
