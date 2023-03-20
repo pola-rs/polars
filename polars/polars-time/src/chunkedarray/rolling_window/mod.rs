@@ -68,6 +68,7 @@ pub struct RollingOptionsImpl<'a> {
     pub center: bool,
     pub by: Option<&'a [i64]>,
     pub tu: Option<TimeUnit>,
+    pub tz: Option<&'a TimeZone>,
     pub closed_window: Option<ClosedWindow>,
 }
 
@@ -87,6 +88,7 @@ impl From<RollingOptions> for RollingOptionsImpl<'static> {
             center: options.center,
             by: None,
             tu: None,
+            tz: None,
             closed_window: None,
         }
     }
@@ -120,6 +122,7 @@ impl Default for RollingOptionsImpl<'static> {
             center: false,
             by: None,
             tu: None,
+            tz: None,
             closed_window: None,
         }
     }
@@ -225,7 +228,15 @@ fn rolling_agg<T>(
         Option<&[f64]>,
     ) -> ArrayRef,
     rolling_agg_fn_dynamic: Option<
-        &dyn Fn(&[T::Native], Duration, Duration, &[i64], ClosedWindow, TimeUnit) -> ArrayRef,
+        &dyn Fn(
+            &[T::Native],
+            Duration,
+            Duration,
+            &[i64],
+            ClosedWindow,
+            TimeUnit,
+            Option<&TimeZone>,
+        ) -> ArrayRef,
     >,
 ) -> PolarsResult<Series>
 where
@@ -274,7 +285,7 @@ where
             "'rolling by' not yet supported for this expression, consider using 'groupby_rolling'",
         );
 
-        func(values, duration, offset, by, closed_window, tu)
+        func(values, duration, offset, by, closed_window, tu, options.tz)
     };
     Series::try_from((ca.name(), arr))
 }

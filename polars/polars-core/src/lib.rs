@@ -30,6 +30,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use once_cell::sync::Lazy;
 use rayon::{ThreadPool, ThreadPoolBuilder};
+pub use vector_hasher::IdBuildHasher;
 
 #[cfg(feature = "dtype-categorical")]
 pub use crate::chunked_array::logical::categorical::stringcache::*;

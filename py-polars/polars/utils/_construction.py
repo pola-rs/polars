@@ -18,6 +18,7 @@ from typing import (
     get_type_hints,
 )
 
+from polars import functions as F
 from polars import internals as pli
 from polars.datatypes import (
     N_INFER_DEFAULT,
@@ -61,8 +62,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PyDataFrame, PySeries
 
 if TYPE_CHECKING:
-    from polars.dataframe.frame import DataFrame
-    from polars.series.series import Series
+    from polars.dataframe import DataFrame
+    from polars.series import Series
     from polars.type_aliases import (
         Orientation,
         PolarsDataType,
@@ -526,18 +527,18 @@ def _post_apply_columns(
     column_casts = []
     for i, col in enumerate(columns):
         if dtypes.get(col) == Categorical != pydf_dtypes[i]:
-            column_casts.append(pli.col(col).cast(Categorical)._pyexpr)
+            column_casts.append(F.col(col).cast(Categorical)._pyexpr)
         elif structs and col in structs and structs[col] != pydf_dtypes[i]:
-            column_casts.append(pli.col(col).cast(structs[col])._pyexpr)
+            column_casts.append(F.col(col).cast(structs[col])._pyexpr)
         elif dtypes.get(col) not in (None, Unknown) and dtypes[col] != pydf_dtypes[i]:
-            column_casts.append(pli.col(col).cast(dtypes[col])._pyexpr)
+            column_casts.append(F.col(col).cast(dtypes[col])._pyexpr)
 
     if column_casts or column_subset:
         pydf = pydf.lazy()
         if column_casts:
             pydf = pydf.with_columns(column_casts)
         if column_subset:
-            pydf = pydf.select([pli.col(col)._pyexpr for col in column_subset])
+            pydf = pydf.select([F.col(col)._pyexpr for col in column_subset])
         pydf = pydf.collect()
 
     return pydf
@@ -1184,14 +1185,12 @@ def arrow_to_pydf(
     reset_order = False
     if len(dictionary_cols) > 0:
         df = pli.wrap_df(pydf)
-        df = df.with_columns(
-            [pli.lit(s).alias(s.name) for s in dictionary_cols.values()]
-        )
+        df = df.with_columns([F.lit(s).alias(s.name) for s in dictionary_cols.values()])
         reset_order = True
 
     if len(struct_cols) > 0:
         df = pli.wrap_df(pydf)
-        df = df.with_columns([pli.lit(s).alias(s.name) for s in struct_cols.values()])
+        df = df.with_columns([F.lit(s).alias(s.name) for s in struct_cols.values()])
         reset_order = True
 
     if reset_order:

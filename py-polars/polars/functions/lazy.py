@@ -2341,7 +2341,7 @@ def argsort_by(
         DeprecationWarning,
         stacklevel=2,
     )
-    return pli.arg_sort_by(exprs, descending=descending)
+    return arg_sort_by(exprs, descending=descending)
 
 
 def duration(
@@ -2888,7 +2888,7 @@ def struct(
         expr = expr.cast(Struct(schema))
 
     if eager:
-        return pli.select(expr).to_series()
+        return select(expr).to_series()
     else:
         return expr
 
@@ -3020,9 +3020,7 @@ def arg_where(condition: Expr | Series, eager: bool = False) -> Expr | Series:
                 "expected 'Series' in 'arg_where' if 'eager=True', got"
                 f" {type(condition)}"
             )
-        return (
-            condition.to_frame().select(arg_where(pli.col(condition.name))).to_series()
-        )
+        return condition.to_frame().select(arg_where(col(condition.name))).to_series()
     else:
         condition = pli.expr_to_lit_or_expr(condition, str_to_lit=True)
         return pli.wrap_expr(py_arg_where(condition._pyexpr))

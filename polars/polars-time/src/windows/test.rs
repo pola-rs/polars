@@ -711,8 +711,16 @@ fn test_rolling_lookback() {
         assert_eq!(g0, g1);
 
         let offset = Duration::parse("-2h");
-        let g0 = groupby_values_iter_full_lookbehind(period, offset, &dates, closed_window, tu, 0)
-            .collect::<Vec<_>>();
+        let g0 = groupby_values_iter_full_lookbehind(
+            period,
+            offset,
+            &dates,
+            closed_window,
+            tu,
+            NO_TIMEZONE.copied(),
+            0,
+        )
+        .collect::<Vec<_>>();
         let g1 = groupby_values_iter_partial_lookbehind(period, offset, &dates, closed_window, tu)
             .collect::<Vec<_>>();
         assert_eq!(g0, g1);

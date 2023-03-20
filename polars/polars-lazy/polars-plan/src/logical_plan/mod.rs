@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::fmt::Debug;
 #[cfg(any(feature = "ipc", feature = "csv-file", feature = "parquet"))]
 use std::path::PathBuf;
@@ -269,43 +268,6 @@ impl Default for LogicalPlan {
 }
 
 impl LogicalPlan {
-    pub fn schema(&self) -> PolarsResult<Cow<'_, SchemaRef>> {
-        use LogicalPlan::*;
-        match self {
-            #[cfg(feature = "python")]
-            PythonScan { options } => Ok(Cow::Borrowed(&options.schema)),
-            Union { inputs, .. } => inputs[0].schema(),
-            Cache { input, .. } => input.schema(),
-            Sort { input, .. } => input.schema(),
-            #[cfg(feature = "parquet")]
-            ParquetScan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
-            #[cfg(feature = "ipc")]
-            IpcScan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
-            DataFrameScan { schema, .. } => Ok(Cow::Borrowed(schema)),
-            AnonymousScan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
-            Selection { input, .. } => input.schema(),
-            #[cfg(feature = "csv-file")]
-            CsvScan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
-            Projection { schema, .. } => Ok(Cow::Borrowed(schema)),
-            LocalProjection { schema, .. } => Ok(Cow::Borrowed(schema)),
-            Aggregate { schema, .. } => Ok(Cow::Borrowed(schema)),
-            Join { schema, .. } => Ok(Cow::Borrowed(schema)),
-            HStack { schema, .. } => Ok(Cow::Borrowed(schema)),
-            Distinct { input, .. } | FileSink { input, .. } => input.schema(),
-            Slice { input, .. } => input.schema(),
-            MapFunction {
-                input, function, ..
-            } => {
-                let input_schema = input.schema()?;
-                match input_schema {
-                    Cow::Owned(schema) => Ok(Cow::Owned(function.schema(&schema)?.into_owned())),
-                    Cow::Borrowed(schema) => function.schema(schema),
-                }
-            }
-            Error { err, .. } => Err(err.take()),
-            ExtContext { schema, .. } => Ok(Cow::Borrowed(schema)),
-        }
-    }
     pub fn describe(&self) -> String {
         format!("{self:#?}")
     }

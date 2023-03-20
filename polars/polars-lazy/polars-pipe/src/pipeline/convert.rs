@@ -325,7 +325,6 @@ where
                             input_schema,
                             output_schema.clone(),
                             options.slice,
-                            None
                         )) as Box<dyn Sink>
                     })
                 }

@@ -461,6 +461,7 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
         use TemporalFunction::*;
         match func {
             Year => map!(datetime::year),
+            IsLeapYear => map!(datetime::is_leap_year),
             IsoYear => map!(datetime::iso_year),
             Month => map!(datetime::month),
             Quarter => map!(datetime::quarter),

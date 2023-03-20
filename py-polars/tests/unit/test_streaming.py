@@ -356,3 +356,60 @@ def test_streaming_sort(monkeypatch: Any, capfd: Any) -> None:
     )
     (_, err) = capfd.readouterr()
     assert "df -> sort" in err
+
+
+@pytest.mark.write_disk()
+def test_streaming_groupby_ooc(monkeypatch: Any) -> None:
+    np.random.seed(1)
+    s = pl.Series("a", np.random.randint(0, 10, 100))
+
+    for env in ["POLARS_FORCE_OOC_SORT", "_NO_OP"]:
+        monkeypatch.setenv(env, "1")
+        q = (
+            s.to_frame()
+            .lazy()
+            .groupby("a")
+            .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
+            .sort("a")
+        )
+
+        assert q.collect(streaming=True).to_dict(False) == {
+            "a": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+            "a_first": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+            "a_last": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        }
+
+        q = (
+            s.cast(str)
+            .to_frame()
+            .lazy()
+            .groupby("a")
+            .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
+            .sort("a")
+        )
+
+        assert q.collect(streaming=True).to_dict(False) == {
+            "a": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
+            "a_first": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
+            "a_last": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
+        }
+
+        q = (
+            pl.DataFrame(
+                {
+                    "a": s,
+                    "b": s.rename("b"),
+                }
+            )
+            .lazy()
+            .groupby(["a", "b"])
+            .agg(pl.first("a").alias("a_first"), pl.last("a").alias("a_last"))
+            .sort("a")
+        )
+
+        assert q.collect(streaming=True).to_dict(False) == {
+            "a": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+            "b": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+            "a_first": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+            "a_last": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+        }

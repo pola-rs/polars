@@ -1,13 +1,16 @@
 use std::any::Any;
 use std::hash::{Hash, Hasher};
+use std::sync::Mutex;
 
 use hashbrown::hash_map::RawEntryMut;
 use num_traits::NumCast;
+use polars_arrow::trusted_len::PushUnchecked;
 use polars_core::export::ahash::RandomState;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
-use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked};
-use polars_core::POOL;
+use polars_core::series::SeriesPhysIter;
+use polars_core::utils::_set_partition_size;
+use polars_core::{IdBuildHasher, POOL};
 use polars_utils::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
@@ -15,12 +18,15 @@ use rayon::prelude::*;
 
 use super::aggregates::AggregateFn;
 use crate::executors::sinks::groupby::aggregates::AggregateFunction;
+use crate::executors::sinks::groupby::ooc_state::OocState;
 use crate::executors::sinks::groupby::physical_agg_to_logical;
-use crate::executors::sinks::groupby::utils::compute_slices;
+use crate::executors::sinks::groupby::utils::{compute_slices, finalize_groupby};
+use crate::executors::sinks::io::IOThread;
 use crate::executors::sinks::utils::{hash_series, load_vec};
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
+use crate::pipeline::FORCE_OOC_GROUPBY;
 
 // This is the hash and the Index offset in the linear buffer
 #[derive(Copy, Clone)]
@@ -77,6 +83,7 @@ pub struct GenericGroupbySink {
     keys_series: Vec<Series>,
     hashes: Vec<u64>,
     slice: Option<(i64, usize)>,
+    ooc_state: OocState,
 }
 
 impl GenericGroupbySink {
@@ -87,6 +94,30 @@ impl GenericGroupbySink {
         input_schema: SchemaRef,
         output_schema: SchemaRef,
         slice: Option<(i64, usize)>,
+    ) -> Self {
+        let ooc = std::env::var(FORCE_OOC_GROUPBY).is_ok();
+        Self::new_inner(
+            key_columns,
+            aggregation_columns,
+            agg_fns,
+            input_schema,
+            output_schema,
+            slice,
+            None,
+            ooc,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new_inner(
+        key_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
+        aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
+        agg_fns: Vec<AggregateFunction>,
+        input_schema: SchemaRef,
+        output_schema: SchemaRef,
+        slice: Option<(i64, usize)>,
+        io_thread: Option<Arc<Mutex<Option<IOThread>>>>,
+        ooc: bool,
     ) -> Self {
         let hb = RandomState::default();
         let partitions = _set_partition_size();
@@ -99,7 +130,7 @@ impl GenericGroupbySink {
             Vec::with_capacity(HASHMAP_INIT_SIZE * aggregation_columns.len())
         });
 
-        Self {
+        let mut out = Self {
             thread_no: 0,
             pre_agg_partitions: pre_agg,
             keys,
@@ -114,7 +145,12 @@ impl GenericGroupbySink {
             keys_series: vec![],
             hashes: vec![],
             slice,
+            ooc_state: OocState::new(io_thread, ooc),
+        };
+        if ooc {
+            out.ooc_state.init_ooc(out.input_schema.clone()).unwrap();
         }
+        out
     }
 
     #[inline]
@@ -198,73 +234,164 @@ impl GenericGroupbySink {
             Ok(dfs)
         })
     }
-}
 
-impl Sink for GenericGroupbySink {
-    fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
-        let num_aggs = self.number_of_aggs();
-
+    fn evaluate_keys_aggs_and_hashes(
+        &mut self,
+        context: &PExecutionContext,
+        chunk: &DataChunk,
+    ) -> PolarsResult<()> {
         // todo! amortize allocation
         for phys_e in self.aggregation_columns.iter() {
-            let s = phys_e.evaluate(&chunk, context.execution_state.as_any())?;
+            let s = phys_e.evaluate(chunk, context.execution_state.as_any())?;
             let s = s.to_physical_repr();
             self.aggregation_series.push(s.rechunk());
         }
         for phys_e in self.key_columns.iter() {
-            let s = phys_e.evaluate(&chunk, context.execution_state.as_any())?;
+            let s = phys_e.evaluate(chunk, context.execution_state.as_any())?;
             let s = s.to_physical_repr();
             self.keys_series.push(s.rechunk());
         }
 
-        let mut agg_iters = self
-            .aggregation_series
-            .iter()
-            .map(|s| s.phys_iter())
-            .collect::<Vec<_>>();
-
         // write the hashes to self.hashes buffer
         hash_series(&self.keys_series, &mut self.hashes, &self.hb);
+        Ok(())
+    }
 
-        // iterators over anyvalues
-        let mut key_iters = self
-            .keys_series
-            .iter()
-            .map(|s| s.phys_iter())
-            .collect::<Vec<_>>();
+    #[inline]
+    fn get_partitions(
+        &mut self,
+        h: u64,
+    ) -> (
+        &mut PlIdHashMap<Key, IdxSize>,
+        &mut Vec<AggregateFunction>,
+        &mut Vec<AnyValue<'static>>,
+    ) {
+        let partition = hash_to_partition(h, self.pre_agg_partitions.len());
+        let current_partition =
+            unsafe { self.pre_agg_partitions.get_unchecked_release_mut(partition) };
+        let current_aggregators = unsafe { self.aggregators.get_unchecked_release_mut(partition) };
+        let current_key_values = unsafe { self.keys.get_unchecked_release_mut(partition) };
+
+        (current_partition, current_aggregators, current_key_values)
+    }
+
+    fn sink_ooc(
+        &mut self,
+        context: &PExecutionContext,
+        chunk: DataChunk,
+    ) -> PolarsResult<SinkResult> {
+        let num_aggs = self.number_of_aggs();
+        let num_keys = self.number_of_keys();
+        self.evaluate_keys_aggs_and_hashes(context, &chunk)?;
+
+        // take containers to please bchk
+        // we put them back once done
+        let keys_series = std::mem::take(&mut self.keys_series);
+        let aggregation_series = std::mem::take(&mut self.aggregation_series);
+        let mut hashes = std::mem::take(&mut self.hashes);
+        let agg_fns = std::mem::take(&mut self.agg_fns);
+
+        let (mut key_iters, mut agg_iters) = get_iters(&keys_series, &aggregation_series);
 
         // a small buffer that holds the current key values
         // if we groupby 2 keys, this holds 2 anyvalues.
-        let mut current_tuple = Vec::with_capacity(self.keys.len());
+        let mut current_tuple = Vec::with_capacity(num_keys);
 
-        for &h in &self.hashes {
+        // set all bits to false
+        self.ooc_state.reset_ooc_filter_rows(chunk.data.height());
+
+        for (iteration_idx, &h) in hashes.iter().enumerate() {
             // load the keys in the buffer
             current_tuple.clear();
             for key_iter in key_iters.iter_mut() {
-                unsafe { current_tuple.push(key_iter.next().unwrap_unchecked_release()) }
+                unsafe { current_tuple.push_unchecked(key_iter.next().unwrap_unchecked_release()) }
             }
 
-            let partition = hash_to_partition(h, self.pre_agg_partitions.len());
-            let current_partition =
-                unsafe { self.pre_agg_partitions.get_unchecked_release_mut(partition) };
-            let current_aggregators =
-                unsafe { self.aggregators.get_unchecked_release_mut(partition) };
-            let current_key_values = unsafe { self.keys.get_unchecked_release_mut(partition) };
+            let (current_partition, current_aggregators, current_key_values) =
+                self.get_partitions(h);
+            let entry = get_entry(
+                h,
+                &mut current_tuple,
+                current_partition,
+                current_key_values,
+                num_keys,
+            );
 
-            let entry = current_partition.raw_entry_mut().from_hash(h, |key| {
-                key.hash == h && {
-                    let idx = key.idx as usize;
-                    if self.keys_series.len() > 1 {
-                        current_tuple.iter().enumerate().all(|(i, key)| unsafe {
-                            current_key_values.get_unchecked_release(i + idx) == key
-                        })
-                    } else {
-                        unsafe {
-                            current_key_values.get_unchecked_release(idx)
-                                == current_tuple.get_unchecked_release(0)
-                        }
+            match entry {
+                // if the slot does not exist, we do not add it but instead
+                // we sink these rows to disk
+                RawEntryMut::Vacant(_) => {
+                    // set this row to true: e.g. processed ooc
+                    // safety: we correctly set the length with `reset_ooc_filter_rows`
+                    unsafe {
+                        self.ooc_state.set_row_as_ooc(iteration_idx);
                     }
                 }
-            });
+                RawEntryMut::Occupied(entry) => {
+                    let agg_idx = *entry.get();
+
+                    apply_aggregation(
+                        agg_idx,
+                        num_aggs,
+                        chunk.chunk_index,
+                        &mut agg_iters,
+                        current_aggregators,
+                    );
+                }
+            };
+        }
+        self.ooc_state.dump(chunk.data, &mut hashes);
+        drop(agg_iters);
+        drop(key_iters);
+        self.aggregation_series = aggregation_series;
+        self.keys_series = keys_series;
+        self.hashes = hashes;
+        self.agg_fns = agg_fns;
+        self.aggregation_series.clear();
+        self.keys_series.clear();
+        self.hashes.clear();
+        Ok(SinkResult::CanHaveMoreInput)
+    }
+}
+
+impl Sink for GenericGroupbySink {
+    fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
+        if self.ooc_state.ooc {
+            return self.sink_ooc(context, chunk);
+        }
+        let num_aggs = self.number_of_aggs();
+        let num_keys = self.number_of_keys();
+        self.evaluate_keys_aggs_and_hashes(context, &chunk)?;
+
+        // take containers to please bchk
+        // we put them back once done
+        let keys_series = std::mem::take(&mut self.keys_series);
+        let aggregation_series = std::mem::take(&mut self.aggregation_series);
+        let hashes = std::mem::take(&mut self.hashes);
+        let agg_fns = std::mem::take(&mut self.agg_fns);
+
+        let (mut key_iters, mut agg_iters) = get_iters(&keys_series, &aggregation_series);
+
+        // a small buffer that holds the current key values
+        // if we groupby 2 keys, this holds 2 anyvalues.
+        let mut current_tuple = Vec::with_capacity(self.key_columns.len());
+
+        for &h in &hashes {
+            // load the keys in the buffer
+            current_tuple.clear();
+            for key_iter in key_iters.iter_mut() {
+                unsafe { current_tuple.push_unchecked(key_iter.next().unwrap_unchecked_release()) }
+            }
+
+            let (current_partition, current_aggregators, current_key_values) =
+                self.get_partitions(h);
+            let entry = get_entry(
+                h,
+                &mut current_tuple,
+                current_partition,
+                current_key_values,
+                num_keys,
+            );
 
             let agg_idx = match entry {
                 RawEntryMut::Vacant(entry) => {
@@ -287,30 +414,36 @@ impl Sink for GenericGroupbySink {
                         )
                     };
                     // initialize the aggregators
-                    for agg_fn in &self.agg_fns {
+                    for agg_fn in &agg_fns {
                         current_aggregators.push(agg_fn.split2())
                     }
                     value_offset
                 }
                 RawEntryMut::Occupied(entry) => *entry.get(),
             };
-            for (i, agg_iter) in (0..num_aggs).zip(agg_iters.iter_mut()) {
-                let i = agg_idx as usize + i;
-                let agg_fn = unsafe { current_aggregators.get_unchecked_release_mut(i) };
-
-                agg_fn.pre_agg(chunk.chunk_index, agg_iter.as_mut())
-            }
+            apply_aggregation(
+                agg_idx,
+                num_aggs,
+                chunk.chunk_index,
+                &mut agg_iters,
+                current_aggregators,
+            );
         }
         drop(agg_iters);
         drop(key_iters);
+        self.aggregation_series = aggregation_series;
+        self.keys_series = keys_series;
+        self.hashes = hashes;
+        self.agg_fns = agg_fns;
         self.aggregation_series.clear();
         self.keys_series.clear();
         self.hashes.clear();
+        self.ooc_state.check_memory_usage(&self.input_schema)?;
         Ok(SinkResult::CanHaveMoreInput)
     }
 
     fn combine(&mut self, other: &mut dyn Sink) {
-        // don't parallel this as this is already done in parallel.
+        // don't parallelize this as this is already done in parallel.
 
         let other = other.as_any().downcast_ref::<Self>().unwrap();
         let n_partitions = self.pre_agg_partitions.len();
@@ -401,13 +534,15 @@ impl Sink for GenericGroupbySink {
     }
 
     fn split(&self, thread_no: usize) -> Box<dyn Sink> {
-        let mut new = Self::new(
+        let mut new = Self::new_inner(
             self.key_columns.clone(),
             self.aggregation_columns.clone(),
             self.agg_fns.iter().map(|func| func.split2()).collect(),
             self.input_schema.clone(),
             self.output_schema.clone(),
             self.slice,
+            Some(self.ooc_state.io_thread.clone()),
+            self.ooc_state.ooc,
         );
         new.hb = self.hb.clone();
         new.thread_no = thread_no;
@@ -416,13 +551,19 @@ impl Sink for GenericGroupbySink {
 
     fn finalize(&mut self, _context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         let dfs = self.pre_finalize()?;
-        if dfs.is_empty() {
-            return Ok(FinalizedSink::Finished(DataFrame::from(
-                self.output_schema.as_ref(),
-            )));
-        }
-        let mut df = accumulate_dataframes_vertical_unchecked(dfs);
-        unsafe { DataFrame::new(std::mem::take(df.get_columns_mut())).map(FinalizedSink::Finished) }
+        let payload = if self.ooc_state.ooc {
+            let mut iot = self.ooc_state.io_thread.lock().unwrap();
+            // make sure that we reset the shared states
+            // the OOC groupby will call split as well and it should
+            // not send continue spilling to disk
+            let iot = iot.take().unwrap();
+            self.ooc_state.ooc = false;
+
+            Some((iot, self.split(0)))
+        } else {
+            None
+        };
+        finalize_groupby(dfs, &self.output_schema, self.slice, payload)
     }
 
     fn as_any(&mut self) -> &mut dyn Any {
@@ -430,5 +571,58 @@ impl Sink for GenericGroupbySink {
     }
     fn fmt(&self) -> &str {
         "generic_groupby"
+    }
+}
+
+#[inline]
+fn get_entry<'a>(
+    h: u64,
+    current_tuple: &mut Vec<AnyValue>,
+    current_partition: &'a mut PlIdHashMap<Key, IdxSize>,
+    current_key_values: &Vec<AnyValue>,
+    n_keys: usize,
+) -> RawEntryMut<'a, Key, IdxSize, IdBuildHasher> {
+    current_partition.raw_entry_mut().from_hash(h, |key| {
+        key.hash == h && {
+            let idx = key.idx as usize;
+            if n_keys > 1 {
+                current_tuple.iter().enumerate().all(|(i, key)| unsafe {
+                    current_key_values.get_unchecked_release(i + idx) == key
+                })
+            } else {
+                unsafe {
+                    current_key_values.get_unchecked_release(idx)
+                        == current_tuple.get_unchecked_release(0)
+                }
+            }
+        }
+    })
+}
+fn get_iters<'a>(
+    key_series: &'a [Series],
+    aggregation_series: &'a [Series],
+) -> (Vec<SeriesPhysIter<'a>>, Vec<SeriesPhysIter<'a>>) {
+    (
+        key_series.iter().map(|s| s.phys_iter()).collect::<Vec<_>>(),
+        aggregation_series
+            .iter()
+            .map(|s| s.phys_iter())
+            .collect::<Vec<_>>(),
+    )
+}
+
+#[inline]
+fn apply_aggregation(
+    agg_idx: IdxSize,
+    num_aggs: usize,
+    chunk_index: IdxSize,
+    agg_iters: &mut [SeriesPhysIter],
+    current_aggregators: &mut [AggregateFunction],
+) {
+    for (i, agg_iter) in (0..num_aggs).zip(agg_iters.iter_mut()) {
+        let i = agg_idx as usize + i;
+        let agg_fn = unsafe { current_aggregators.get_unchecked_release_mut(i) };
+
+        agg_fn.pre_agg(chunk_index, agg_iter.as_mut())
     }
 }

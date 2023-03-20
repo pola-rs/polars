@@ -3,6 +3,7 @@ Utility functions.
 
 Functions that are part of the public API are re-exported here.
 """
+from polars.utils._scan import _deserialize_and_execute
 from polars.utils.build_info import build_info
 from polars.utils.convert import (
     _date_to_pl_date,
@@ -24,6 +25,7 @@ __all__ = [
     "threadpool_size",
     # Required for Rust bindings
     "_date_to_pl_date",
+    "_deserialize_and_execute",
     "_time_to_pl_time",
     "_timedelta_to_pl_timedelta",
     "_to_python_datetime",

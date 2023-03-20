@@ -22,8 +22,8 @@ from polars.datatypes import (
     UInt64,
 )
 from polars.exceptions import ShapeError
-from polars.internals.construction import iterable_to_pyseries
 from polars.testing import assert_frame_equal, assert_series_equal
+from polars.utils._construction import iterable_to_pyseries
 
 if TYPE_CHECKING:
     from polars.type_aliases import EpochTimeUnit, TimeUnit

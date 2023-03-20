@@ -107,7 +107,9 @@ impl Duration {
         let mut unit = String::with_capacity(2);
         while let Some((i, mut ch)) = iter.next() {
             if !ch.is_ascii_digit() {
-                let n = duration[start..i].parse::<i64>().unwrap();
+                let n = duration[start..i]
+                    .parse::<i64>()
+                    .expect("expected an integer in the duration string");
 
                 loop {
                     if ch.is_ascii_alphabetic() {

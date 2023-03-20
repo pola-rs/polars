@@ -3,12 +3,12 @@ from __future__ import annotations
 import warnings
 from typing import TYPE_CHECKING
 
-from polars.internals import _scan_pyarrow_dataset
+from polars.io.pyarrow_dataset.anonymous_scan import _scan_pyarrow_dataset
 from polars.utils.decorators import deprecate_nonkeyword_arguments
 
 if TYPE_CHECKING:
     from polars.dependencies import pyarrow as pa
-    from polars.internals import LazyFrame
+    from polars.lazyframe import LazyFrame
 
 
 def scan_pyarrow_dataset(

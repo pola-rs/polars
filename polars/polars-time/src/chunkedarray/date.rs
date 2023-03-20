@@ -20,6 +20,13 @@ pub trait DateMethods: AsDate {
         ca.apply_kernel_cast::<Int32Type>(&date_to_year)
     }
 
+    /// Extract year from underlying NaiveDate representation.
+    /// Returns whether the year is a leap year.
+    fn is_leap_year(&self) -> BooleanChunked {
+        let ca = self.as_date();
+        ca.apply_kernel_cast::<BooleanType>(&date_to_is_leap_year)
+    }
+
     /// This year number might not match the calendar year number.
     fn iso_year(&self) -> Int32Chunked {
         let ca = self.as_date();

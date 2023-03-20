@@ -7,6 +7,7 @@ import sys
 from collections.abc import MappingView, Sized
 from typing import TYPE_CHECKING, Any, Generator, Iterable, Sequence, TypeVar
 
+from polars import functions as F
 from polars import internals as pli
 from polars.datatypes import Int64, is_polars_dtype
 
@@ -103,7 +104,7 @@ def range_to_series(
     name: str, rng: range, dtype: PolarsDataType | None = Int64
 ) -> Series:
     """Fast conversion of the given range to a Series."""
-    return pli.arange(
+    return F.arange(
         low=rng.start,
         high=rng.stop,
         step=rng.step,

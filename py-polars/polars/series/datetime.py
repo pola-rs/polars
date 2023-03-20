@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from polars import functions as F
 from polars import internals as pli
 from polars.series.utils import expr_dispatch
 from polars.utils.convert import _to_python_datetime
@@ -201,6 +202,41 @@ class DateTimeNameSpace:
         [
                 2001
                 2002
+        ]
+
+        """
+
+    def is_leap_year(self) -> Series:
+        """
+        Determine whether the year of the underlying date representation is a leap year.
+
+        Applies to Date and Datetime columns.
+
+        Returns
+        -------
+        Leap year info as Boolean
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> start = datetime(2000, 1, 1)
+        >>> stop = datetime(2002, 1, 1)
+        >>> date = pl.date_range(start, stop, interval="1y")
+        >>> date
+        shape: (3,)
+        Series: '' [datetime[μs]]
+        [
+                2000-01-01 00:00:00
+                2001-01-01 00:00:00
+                2002-01-01 00:00:00
+        ]
+        >>> date.dt.is_leap_year()
+        shape: (3,)
+        Series: '' [bool]
+        [
+                true
+                false
+                false
         ]
 
         """
@@ -957,7 +993,7 @@ class DateTimeNameSpace:
         return (
             pli.wrap_s(self._s)
             .to_frame()
-            .select(pli.col(self._s.name()).dt.convert_time_zone(time_zone))
+            .select(F.col(self._s.name()).dt.convert_time_zone(time_zone))
             .to_series()
         )
 
@@ -1037,7 +1073,7 @@ class DateTimeNameSpace:
         return (
             pli.wrap_s(self._s)
             .to_frame()
-            .select(pli.col(self._s.name()).dt.replace_time_zone(time_zone))
+            .select(F.col(self._s.name()).dt.replace_time_zone(time_zone))
             .to_series()
         )
 

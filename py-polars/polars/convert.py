@@ -2,16 +2,18 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Mapping, Sequence, overload
 
+from polars import internals as pli
 from polars.datatypes import N_INFER_DEFAULT
 from polars.dependencies import _PYARROW_AVAILABLE
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoDataError
-from polars.internals import DataFrame, Series
 from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 
 if TYPE_CHECKING:
+    from polars.dataframe import DataFrame
     from polars.dependencies import numpy as np
+    from polars.series import Series
     from polars.type_aliases import Orientation, SchemaDefinition, SchemaDict
 
 
@@ -65,7 +67,9 @@ def from_dict(
     └─────┴─────┘
 
     """
-    return DataFrame._from_dict(data, schema=schema, schema_overrides=schema_overrides)
+    return pli.DataFrame._from_dict(
+        data, schema=schema, schema_overrides=schema_overrides
+    )
 
 
 @deprecate_nonkeyword_arguments(allowed_args=["data", "schema"])
@@ -164,7 +168,7 @@ def from_dicts(
     if not data and not (schema or schema_overrides):
         raise NoDataError("No rows. Cannot infer schema.")
 
-    return DataFrame(
+    return pli.DataFrame(
         data,
         schema=schema,
         schema_overrides=schema_overrides,
@@ -232,7 +236,7 @@ def from_records(
     └─────┴─────┘
 
     """
-    return DataFrame._from_records(
+    return pli.DataFrame._from_records(
         data,
         schema=schema,
         schema_overrides=schema_overrides,
@@ -298,7 +302,7 @@ def from_numpy(
     └─────┴─────┘
 
     """
-    return DataFrame._from_numpy(
+    return pli.DataFrame._from_numpy(
         data, schema=schema, orient=orient, schema_overrides=schema_overrides
     )
 
@@ -375,11 +379,11 @@ def from_arrow(
 
     """
     if isinstance(data, pa.Table):
-        return DataFrame._from_arrow(
+        return pli.DataFrame._from_arrow(
             data, rechunk=rechunk, schema=schema, schema_overrides=schema_overrides
         )
     elif isinstance(data, (pa.Array, pa.ChunkedArray)):
-        return Series._from_arrow("", data, rechunk)
+        return pli.Series._from_arrow("", data, rechunk)
     else:
         raise ValueError(f"expected Arrow Table or Array, got {type(data)}.")
 
@@ -476,9 +480,9 @@ def from_pandas(
 
     """  # noqa: W505
     if isinstance(data, (pd.Series, pd.DatetimeIndex)):
-        return Series._from_pandas("", data, nan_to_null=nan_to_null)
+        return pli.Series._from_pandas("", data, nan_to_null=nan_to_null)
     elif isinstance(data, pd.DataFrame):
-        return DataFrame._from_pandas(
+        return pli.DataFrame._from_pandas(
             data,
             rechunk=rechunk,
             nan_to_null=nan_to_null,
@@ -515,7 +519,7 @@ def from_dataframe(df: Any, allow_copy: bool = True) -> DataFrame:
     efficient method of conversion.
 
     """
-    if isinstance(df, DataFrame):
+    if isinstance(df, pli.DataFrame):
         return df
     if not hasattr(df, "__dataframe__"):
         raise TypeError(

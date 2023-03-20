@@ -92,7 +92,7 @@ BatchedCsvReader
 ~~~~~~~~~~~~~~~~
 This reader comes available by calling `pl.read_csv_batched`.
 
-.. currentmodule:: polars.internals.batched
+.. currentmodule:: polars.io.csv.batched_reader
 
 .. autosummary::
    :toctree: api/
