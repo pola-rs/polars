@@ -791,6 +791,8 @@ def test_operators_vs_expressions() -> None:
             h=pl.col(c1) != pl.col(c2),
             i=pl.col(c1) - pl.col(c2),
             j=pl.col(c1) / pl.col(c2),
+            k=pl.col(c1) * pl.col(c2),
+            l=pl.col(c1) + pl.col(c2),
         )
         df_expr = df.select(
             a=pl.col(c1).eq(pl.col(c2)),
@@ -803,6 +805,8 @@ def test_operators_vs_expressions() -> None:
             h=pl.col(c1).ne(pl.col(c2)),
             i=pl.col(c1).sub(pl.col(c2)),
             j=pl.col(c1).truediv(pl.col(c2)),
+            k=pl.col(c1).mul(pl.col(c2)),
+            l=pl.col(c1).add(pl.col(c2)),
         )
         assert_frame_equal(df_op, df_expr)
 
