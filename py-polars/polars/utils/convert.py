@@ -245,3 +245,11 @@ def _create_decimal_with_prec(
 ) -> Callable[[tuple[int, Sequence[int], int]], Decimal]:
     # pre-cache contexts so we don't have to spend time on recreating them every time
     return Context(prec=precision).create_decimal
+
+
+def _tzinfo_to_str(tzinfo: tzinfo) -> str:
+    if tzinfo == timezone.utc:
+        return "UTC"
+    if isinstance(tzinfo, timezone):
+        return str(tzinfo).replace("UTC", "")
+    return str(tzinfo)

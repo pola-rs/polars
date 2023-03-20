@@ -13,6 +13,7 @@ from polars.utils.convert import (
     _to_python_decimal,
     _to_python_time,
     _to_python_timedelta,
+    _tzinfo_to_str,
 )
 from polars.utils.meta import get_idx_type, get_index_type, threadpool_size
 from polars.utils.show_versions import show_versions
@@ -32,4 +33,5 @@ __all__ = [
     "_to_python_decimal",
     "_to_python_time",
     "_to_python_timedelta",
+    "_tzinfo_to_str",
 ]
