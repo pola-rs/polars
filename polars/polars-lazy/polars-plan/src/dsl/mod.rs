@@ -1405,9 +1405,13 @@ impl Expr {
                         options.weights.is_none(),
                         ComputeError: "`weights` is not supported in 'rolling by' expression"
                     );
-                    if matches!(by.dtype(), DataType::Datetime(_, _)) {
-                        by = by.cast(&DataType::Datetime(TimeUnit::Microseconds, None))?;
-                    }
+                    let (by, tz) = match by.dtype() {
+                        DataType::Datetime(_, tz) => (
+                            by.cast(&DataType::Datetime(TimeUnit::Microseconds, None))?,
+                            tz,
+                        ),
+                        _ => (by.clone(), &None),
+                    };
                     let by = by.datetime().unwrap();
                     let by_values = by.cont_slice().map_err(|_| {
                         polars_err!(
@@ -1424,6 +1428,7 @@ impl Expr {
                         center: options.center,
                         by: Some(by_values),
                         tu: Some(tu),
+                        tz: tz.as_ref(),
                         closed_window: options.closed_window,
                     };
 
