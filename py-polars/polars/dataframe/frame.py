@@ -57,17 +57,8 @@ from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoRowsReturned, TooManyRowsReturned
-from polars.internals.construction import (
-    _post_apply_columns,
-    arrow_to_pydf,
-    dict_to_pydf,
-    iterable_to_pydf,
-    numpy_to_pydf,
-    pandas_to_pydf,
-    sequence_to_pydf,
-    series_to_pydf,
-)
-from polars.internals.io_excel import (
+from polars.io._utils import _is_local_file
+from polars.io.excel._write_utils import (
     _unpack_multi_column_dict,
     _xl_apply_conditional_formats,
     _xl_inject_sparklines,
@@ -77,6 +68,16 @@ from polars.internals.io_excel import (
     _xl_unique_table_name,
 )
 from polars.slice import PolarsSlice
+from polars.utils._construction import (
+    _post_apply_columns,
+    arrow_to_pydf,
+    dict_to_pydf,
+    iterable_to_pydf,
+    numpy_to_pydf,
+    pandas_to_pydf,
+    sequence_to_pydf,
+    series_to_pydf,
+)
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import (
     deprecate_nonkeyword_arguments,
@@ -109,13 +110,14 @@ if TYPE_CHECKING:
     from pyarrow.interchange.dataframe import _PyArrowDataFrame
     from xlsxwriter import Workbook
 
-    from polars.internals.io_excel import ColumnTotalsDefinition, ConditionalFormatDict
     from polars.series.series import Series
     from polars.type_aliases import (
         AsofJoinStrategy,
         AvroCompression,
         ClosedInterval,
+        ColumnTotalsDefinition,
         ComparisonOperator,
+        ConditionalFormatDict,
         CsvEncoding,
         DbWriteEngine,
         DbWriteMode,
@@ -833,7 +835,7 @@ class DataFrame:
         if isinstance(columns, str):
             columns = [columns]
 
-        if isinstance(source, str) and "*" in source and pli._is_local_file(source):
+        if isinstance(source, str) and "*" in source and _is_local_file(source):
             from polars import scan_parquet
 
             scan = scan_parquet(
@@ -946,7 +948,7 @@ class DataFrame:
         if isinstance(columns, str):
             columns = [columns]
 
-        if isinstance(source, str) and "*" in source and pli._is_local_file(source):
+        if isinstance(source, str) and "*" in source and _is_local_file(source):
             from polars import scan_ipc
 
             scan = scan_ipc(

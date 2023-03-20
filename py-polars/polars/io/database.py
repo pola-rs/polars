@@ -7,7 +7,7 @@ from polars.convert import from_arrow
 from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 
 if TYPE_CHECKING:
-    from polars.dataframe.frame import DataFrame
+    from polars.dataframe import DataFrame
     from polars.type_aliases import DbReadEngine
 
 

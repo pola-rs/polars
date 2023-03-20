@@ -14,6 +14,18 @@ pub(crate) const FMT_TABLE_INLINE_COLUMN_DATA_TYPE: &str =
     "POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE";
 pub(crate) const FMT_TABLE_ROUNDED_CORNERS: &str = "POLARS_FMT_TABLE_ROUNDED_CORNERS";
 
+// Other env vars
+#[cfg(feature = "dtype-decimal")]
+pub(crate) const DECIMAL_ACTIVE: &str = "POLARS_ACTIVATE_DECIMAL";
+
+#[cfg(feature = "dtype-decimal")]
+pub(crate) fn decimal_is_active() -> bool {
+    match std::env::var(DECIMAL_ACTIVE) {
+        Ok(val) => val == "1",
+        _ => false,
+    }
+}
+
 pub fn verbose() -> bool {
     std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("0") == "1"
 }

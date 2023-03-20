@@ -17,6 +17,7 @@ The following methods are available under the `expr.dt` attribute.
     Expr.dt.epoch
     Expr.dt.hour
     Expr.dt.hours
+    Expr.dt.is_leap_year
     Expr.dt.iso_year
     Expr.dt.microsecond
     Expr.dt.microseconds

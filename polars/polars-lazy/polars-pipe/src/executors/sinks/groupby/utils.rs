@@ -1,5 +1,19 @@
 use hashbrown::HashMap;
-use polars_core::utils::slice_offsets;
+use polars_core::prelude::*;
+use polars_core::utils::{accumulate_dataframes_vertical_unchecked, slice_offsets};
+
+use crate::executors::sinks::groupby::ooc::GroupBySource;
+use crate::executors::sinks::io::{block_thread_until_io_thread_done, IOThread};
+use crate::operators::{FinalizedSink, Sink};
+
+pub(super) fn default_slices<K, V, HB>(
+    pre_agg_partitions: &[HashMap<K, V, HB>],
+) -> Vec<Option<(usize, usize)>> {
+    pre_agg_partitions
+        .iter()
+        .map(|agg_map| Some((0, agg_map.len())))
+        .collect()
+}
 
 pub(super) fn compute_slices<K, V, HB>(
     pre_agg_partitions: &[HashMap<K, V, HB>],
@@ -10,6 +24,11 @@ pub(super) fn compute_slices<K, V, HB>(
             .iter()
             .map(|agg_map| agg_map.len())
             .sum::<usize>();
+
+        if total_len <= slice_len {
+            return default_slices(pre_agg_partitions);
+        }
+
         let (mut offset, mut len) = slice_offsets(offset, slice_len, total_len);
 
         pre_agg_partitions
@@ -27,9 +46,33 @@ pub(super) fn compute_slices<K, V, HB>(
             })
             .collect::<Vec<_>>()
     } else {
-        pre_agg_partitions
-            .iter()
-            .map(|agg_map| Some((0, agg_map.len())))
-            .collect()
+        default_slices(pre_agg_partitions)
+    }
+}
+
+pub(super) fn finalize_groupby(
+    dfs: Vec<DataFrame>,
+    output_schema: &Schema,
+    slice: Option<(i64, usize)>,
+    ooc_payload: Option<(IOThread, Box<dyn Sink>)>,
+) -> PolarsResult<FinalizedSink> {
+    let df = if dfs.is_empty() {
+        DataFrame::from(output_schema)
+    } else {
+        let mut df = accumulate_dataframes_vertical_unchecked(dfs);
+        // re init to check duplicates
+        unsafe { DataFrame::new(std::mem::take(df.get_columns_mut())) }?
+    };
+
+    match ooc_payload {
+        None => Ok(FinalizedSink::Finished(df)),
+        Some((iot, sink)) => {
+            // we wait until all chunks are spilled
+            block_thread_until_io_thread_done(&iot);
+
+            Ok(FinalizedSink::Source(Box::new(GroupBySource::new(
+                iot, df, sink, slice,
+            )?)))
+        }
     }
 }

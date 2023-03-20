@@ -1,19 +1,25 @@
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO
 
+from polars import internals as pli
 from polars.convert import from_arrow
 from polars.dependencies import _PYARROW_AVAILABLE
-from polars.internals import DataFrame, LazyFrame
-from polars.internals.io import _prepare_file_arg
+from polars.io._utils import _prepare_file_arg
 from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 from polars.utils.various import normalise_filepath
+
+with contextlib.suppress(ImportError):
+    from polars.polars import parquet_schema as _parquet_schema
 
 if TYPE_CHECKING:
     from io import BytesIO
 
-    from polars.type_aliases import ParallelStrategy
+    from polars.dataframe import DataFrame
+    from polars.lazyframe import LazyFrame
+    from polars.type_aliases import ParallelStrategy, PolarsDataType
 
 
 @deprecate_nonkeyword_arguments()
@@ -117,7 +123,7 @@ def read_parquet(
                 )
             )
 
-        return DataFrame._read_parquet(
+        return pli.DataFrame._read_parquet(
             source_prep,
             columns=columns,
             n_rows=n_rows,
@@ -128,6 +134,29 @@ def read_parquet(
             use_statistics=use_statistics,
             rechunk=rechunk,
         )
+
+
+@deprecated_alias(file="source")
+def read_parquet_schema(
+    source: str | BinaryIO | Path | bytes,
+) -> dict[str, PolarsDataType]:
+    """
+    Get the schema of a Parquet file without reading data.
+
+    Parameters
+    ----------
+    source
+        Path to a file or a file-like object.
+
+    Returns
+    -------
+    Dictionary mapping column names to datatypes
+
+    """
+    if isinstance(source, (str, Path)):
+        source = normalise_filepath(source)
+
+    return _parquet_schema(source)
 
 
 @deprecate_nonkeyword_arguments()
@@ -184,7 +213,7 @@ def scan_parquet(
     if isinstance(source, (str, Path)):
         source = normalise_filepath(source)
 
-    return LazyFrame._scan_parquet(
+    return pli.LazyFrame._scan_parquet(
         source,
         n_rows=n_rows,
         cache=cache,

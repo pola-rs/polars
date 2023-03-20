@@ -113,11 +113,13 @@ def test_init_dict() -> None:
         assert df.to_dict(False)["field"][0] == test[0]["field"]
 
 
-def test_init_dataclasses_and_namedtuple() -> None:
+def test_init_dataclasses_and_namedtuple(monkeypatch: Any) -> None:
     from dataclasses import dataclass
     from typing import NamedTuple
 
-    from polars.internals.construction import dataclass_type_hints
+    monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
+
+    from polars.utils._construction import dataclass_type_hints
 
     @dataclass
     class TradeDC:
@@ -938,9 +940,11 @@ def test_nested_schema_construction() -> None:
     }
 
 
-def test_array_to_pyseries_with_one_chunk_does_not_copy_data() -> None:
+def test_arrow_to_pyseries_with_one_chunk_does_not_copy_data() -> None:
+    from polars.utils._construction import arrow_to_pyseries
+
     original_array = pa.chunked_array([[1, 2, 3]], type=pa.int64())
-    pyseries = pl.internals.construction.arrow_to_pyseries("", original_array)
+    pyseries = arrow_to_pyseries("", original_array)
     assert (
         pyseries.get_chunks()[0]._get_ptr()
         == original_array.chunks[0].buffers()[1].address

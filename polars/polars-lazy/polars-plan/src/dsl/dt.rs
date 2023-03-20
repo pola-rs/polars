@@ -102,6 +102,12 @@ impl DateLikeNameSpace {
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Year))
     }
 
+    // Compute whether the year of a Date/Datetime is a leap year.
+    pub fn is_leap_year(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::IsLeapYear))
+    }
+
     /// Get the iso-year of a Date/Datetime.
     /// This may not correspond with a calendar year.
     pub fn iso_year(self) -> Expr {

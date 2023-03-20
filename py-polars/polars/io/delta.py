@@ -10,7 +10,8 @@ from polars.io.pyarrow_dataset import scan_pyarrow_dataset
 from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 
 if TYPE_CHECKING:
-    from polars.internals import DataFrame, LazyFrame
+    from polars.dataframe import DataFrame
+    from polars.lazyframe import LazyFrame
 
 
 @deprecate_nonkeyword_arguments()

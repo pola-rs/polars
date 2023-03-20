@@ -55,14 +55,6 @@ from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import ShapeError
-from polars.internals.construction import (
-    arrow_to_pyseries,
-    iterable_to_pyseries,
-    numpy_to_pyseries,
-    pandas_to_pyseries,
-    sequence_to_pyseries,
-    series_to_pyseries,
-)
 from polars.series.binary import BinaryNameSpace
 from polars.series.categorical import CatNameSpace
 from polars.series.datetime import DateTimeNameSpace
@@ -71,6 +63,14 @@ from polars.series.string import StringNameSpace
 from polars.series.struct import StructNameSpace
 from polars.series.utils import expr_dispatch, get_ffi_func
 from polars.slice import PolarsSlice
+from polars.utils._construction import (
+    arrow_to_pyseries,
+    iterable_to_pyseries,
+    numpy_to_pyseries,
+    pandas_to_pyseries,
+    sequence_to_pyseries,
+    series_to_pyseries,
+)
 from polars.utils.convert import (
     _date_to_pl_date,
     _datetime_to_pl_timestamp,

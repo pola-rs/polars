@@ -43,6 +43,9 @@ from polars.datatypes import (
 )
 from polars.dependencies import subprocess
 from polars.internals import selection_to_pyexpr_list
+from polars.io._utils import _is_local_file
+from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
+from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
 from polars.lazyframe.groupby import LazyGroupBy
 from polars.slice import LazyPolarsSlice
 from polars.utils.convert import _timedelta_to_pl_duration
@@ -392,8 +395,8 @@ class LazyFrame:
 
         """
         # try fsspec scanner
-        if not pli._is_local_file(source):
-            scan = pli._scan_parquet_fsspec(source, storage_options)
+        if not _is_local_file(source):
+            scan = _scan_parquet_fsspec(source, storage_options)
             if n_rows:
                 scan = scan.head(n_rows)
             if row_count_name is not None:
@@ -440,8 +443,8 @@ class LazyFrame:
             source = normalise_filepath(source)
 
         # try fsspec scanner
-        if not pli._is_local_file(source):
-            scan = pli._scan_ipc_fsspec(source, storage_options)
+        if not _is_local_file(source):
+            scan = _scan_ipc_fsspec(source, storage_options)
             if n_rows:
                 scan = scan.head(n_rows)
             if row_count_name is not None:

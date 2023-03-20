@@ -22,7 +22,7 @@ use std::sync::Arc;
 use ahash::RandomState;
 use arrow::compute::aggregate::estimated_bytes_size;
 pub use from::*;
-pub use iterator::SeriesIter;
+pub use iterator::{SeriesIter, SeriesPhysIter};
 use num_traits::NumCast;
 use rayon::prelude::*;
 pub use series_trait::{IsSorted, *};

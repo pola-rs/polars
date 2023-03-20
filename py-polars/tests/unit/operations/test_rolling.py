@@ -92,6 +92,30 @@ def test_rolling_skew() -> None:
     )
 
 
+@pytest.mark.parametrize("time_zone", [None, "US/Central", "+01:00"])
+@pytest.mark.parametrize(
+    ("rolling_fn", "expected_values"),
+    [
+        ("rolling_mean", [None, 1.0, 2.0, 3.0, 4.0, 5.0]),
+        ("rolling_sum", [None, 1, 2, 3, 4, 5]),
+        ("rolling_min", [None, 1, 2, 3, 4, 5]),
+        ("rolling_max", [None, 1, 2, 3, 4, 5]),
+        ("rolling_std", [None, 0.0, 0.0, 0.0, 0.0, 0.0]),
+        ("rolling_var", [None, 0.0, 0.0, 0.0, 0.0, 0.0]),
+    ],
+)
+def test_rolling_crossing_dst(
+    time_zone: str | None, rolling_fn: str, expected_values: list[int | None | float]
+) -> None:
+    ts = pl.date_range(
+        datetime(2021, 11, 5), datetime(2021, 11, 10), "1d", time_zone="UTC"
+    ).dt.replace_time_zone(time_zone)
+    df = pl.DataFrame({"ts": ts, "value": [1, 2, 3, 4, 5, 6]})
+    result = df.with_columns(getattr(pl.col("value"), rolling_fn)("1d", by="ts"))
+    expected = pl.DataFrame({"ts": ts, "value": expected_values})
+    assert_frame_equal(result, expected)
+
+
 def test_rolling_extrema() -> None:
     # sorted data and nulls flags trigger different kernels
     df = (

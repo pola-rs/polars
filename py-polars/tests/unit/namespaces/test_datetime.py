@@ -273,6 +273,28 @@ def test_date_time_combine() -> None:
     assert df.schema == expected_schema
 
 
+def test_is_leap_year() -> None:
+    assert pl.date_range(
+        datetime(1990, 1, 1), datetime(2004, 1, 1), "1y"
+    ).dt.is_leap_year().to_list() == [
+        False,
+        False,
+        True,  # 1992
+        False,
+        False,
+        False,
+        True,  # 1996
+        False,
+        False,
+        False,
+        True,  # 2000
+        False,
+        False,
+        False,
+        True,  # 2004
+    ]
+
+
 def test_quarter() -> None:
     assert pl.date_range(
         datetime(2022, 1, 1), datetime(2022, 12, 1), "1mo"

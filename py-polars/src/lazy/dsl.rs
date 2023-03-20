@@ -942,6 +942,9 @@ impl PyExpr {
     pub fn year(&self) -> PyExpr {
         self.clone().inner.dt().year().into()
     }
+    pub fn is_leap_year(&self) -> PyExpr {
+        self.clone().inner.dt().is_leap_year().into()
+    }
     pub fn iso_year(&self) -> PyExpr {
         self.clone().inner.dt().iso_year().into()
     }

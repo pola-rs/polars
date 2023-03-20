@@ -107,6 +107,16 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
         };
         apply_in_place_impl(self.name(), chunks, f)
     }
+
+    /// Cast a numeric array to another numeric data type and apply a function in place.
+    /// This saves an allocation.
+    pub fn apply_in_place<F>(mut self, f: F) -> Self
+    where
+        F: Fn(T::Native) -> T::Native + Copy,
+    {
+        let chunks = std::mem::take(&mut self.chunks);
+        apply_in_place_impl(self.name(), chunks, f)
+    }
 }
 
 impl<T: PolarsNumericType> ChunkedArray<T> {
