@@ -104,9 +104,11 @@ def test_init_dict() -> None:
         assert df.to_dict(False)["field"][0] == test[0]["field"]
 
 
-def test_init_dataclasses_and_namedtuple() -> None:
+def test_init_dataclasses_and_namedtuple(monkeypatch: Any) -> None:
     from dataclasses import dataclass
     from typing import NamedTuple
+
+    monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
 
     from polars.utils._construction import dataclass_type_hints
 
