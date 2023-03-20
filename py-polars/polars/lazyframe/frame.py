@@ -109,10 +109,6 @@ if TYPE_CHECKING:
     P = ParamSpec("P")
 
 
-def wrap_ldf(ldf: PyLazyFrame) -> LazyFrame:
-    return LazyFrame._from_pyldf(ldf)
-
-
 @redirect(
     {
         "cleared": "clear",

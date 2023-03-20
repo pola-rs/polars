@@ -136,10 +136,6 @@ ArrayLike = Union[
 ]
 
 
-def wrap_s(s: PySeries) -> Series:
-    return Series._from_pyseries(s)
-
-
 @redirect(
     {
         "cleared": "clear",

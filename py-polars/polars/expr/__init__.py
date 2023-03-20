@@ -1,6 +1,5 @@
-from polars.expr.expr import Expr, wrap_expr
+from polars.expr.expr import Expr
 
 __all__ = [
     "Expr",
-    "wrap_expr",
 ]

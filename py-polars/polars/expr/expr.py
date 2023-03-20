@@ -82,10 +82,6 @@ elif os.getenv("BUILDING_SPHINX_DOCS"):
     property = sphinx_accessor
 
 
-def wrap_expr(pyexpr: PyExpr) -> Expr:
-    return Expr._from_pyexpr(pyexpr)
-
-
 class Expr:
     """Expressions that can be used in various contexts."""
 

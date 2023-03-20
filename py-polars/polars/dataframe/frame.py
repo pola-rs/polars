@@ -174,10 +174,6 @@ if TYPE_CHECKING:
     P = ParamSpec("P")
 
 
-def wrap_df(df: PyDataFrame) -> DataFrame:
-    return DataFrame._from_pydf(df)
-
-
 @redirect(
     {
         "cleared": "clear",
