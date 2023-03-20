@@ -21,6 +21,7 @@ from polars.datatypes import (
 )
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
+from polars.utils._parse_expr_input import expr_to_lit_or_expr, selection_to_pyexpr_list
 from polars.utils.convert import (
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
@@ -522,7 +523,7 @@ def max(column: str | Sequence[Expr | str] | Series) -> Expr | Any:
     elif isinstance(column, str):
         return col(column).max()
     else:
-        exprs = pli.selection_to_pyexpr_list(column)
+        exprs = selection_to_pyexpr_list(column)
         return pli.wrap_expr(_max_exprs(exprs))
 
 
@@ -609,7 +610,7 @@ def min(
     elif isinstance(column, str):
         return col(column).min()
     else:
-        exprs = pli.selection_to_pyexpr_list(column)
+        exprs = selection_to_pyexpr_list(column)
         return pli.wrap_expr(_min_exprs(exprs))
 
 
@@ -725,7 +726,7 @@ def sum(
     elif isinstance(column, str):
         return col(column).sum()
     elif isinstance(column, Sequence):
-        exprs = pli.selection_to_pyexpr_list(column)
+        exprs = selection_to_pyexpr_list(column)
         return pli.wrap_expr(_sum_exprs(exprs))
     else:
         # (Expr): use u32 as that will not cast to float as eagerly
@@ -1574,7 +1575,7 @@ def map(
     │ 4   ┆ 7   ┆ 12    │
     └─────┴─────┴───────┘
     """
-    exprs = pli.selection_to_pyexpr_list(exprs)
+    exprs = selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(
         _map_mul(
             exprs, function, return_dtype, apply_groups=False, returns_scalar=False
@@ -1652,7 +1653,7 @@ def apply(
     │ 4   ┆ 7   ┆ 16        │
     └─────┴─────┴───────────┘
     """
-    exprs = pli.selection_to_pyexpr_list(exprs)
+    exprs = selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(
         _map_mul(
             exprs,
@@ -1765,11 +1766,11 @@ def fold(
     └─────┴─────┘
     """
     # in case of pl.col("*")
-    acc = pli.expr_to_lit_or_expr(acc, str_to_lit=True)
+    acc = expr_to_lit_or_expr(acc, str_to_lit=True)
     if isinstance(exprs, pli.Expr):
         exprs = [exprs]
 
-    exprs = pli.selection_to_pyexpr_list(exprs)
+    exprs = selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(pyfold(acc._pyexpr, function, exprs))
 
 
@@ -1834,7 +1835,7 @@ def reduce(
     if isinstance(exprs, pli.Expr):
         exprs = [exprs]
 
-    exprs = pli.selection_to_pyexpr_list(exprs)
+    exprs = selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(pyreduce(function, exprs))
 
 
@@ -1908,11 +1909,11 @@ def cumfold(
 
     """  # noqa: W505
     # in case of pl.col("*")
-    acc = pli.expr_to_lit_or_expr(acc, str_to_lit=True)
+    acc = expr_to_lit_or_expr(acc, str_to_lit=True)
     if isinstance(exprs, pli.Expr):
         exprs = [exprs]
 
-    exprs = pli.selection_to_pyexpr_list(exprs)
+    exprs = selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(pycumfold(acc._pyexpr, function, exprs, include_init))
 
 
@@ -1975,7 +1976,7 @@ def cumreduce(
     if isinstance(exprs, pli.Expr):
         exprs = [exprs]
 
-    exprs = pli.selection_to_pyexpr_list(exprs)
+    exprs = selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(pycumreduce(function, exprs))
 
 
@@ -2233,8 +2234,8 @@ def arange(
         Apply an explicit integer dtype to the resulting expression (default is Int64).
 
     """
-    low = pli.expr_to_lit_or_expr(low, str_to_lit=False)
-    high = pli.expr_to_lit_or_expr(high, str_to_lit=False)
+    low = expr_to_lit_or_expr(low, str_to_lit=False)
+    high = expr_to_lit_or_expr(high, str_to_lit=False)
     range_expr = pli.wrap_expr(pyarange(low._pyexpr, high._pyexpr, step))
 
     if dtype is not None and dtype != Int64:
@@ -2307,7 +2308,7 @@ def arg_sort_by(
     └─────┘
 
     """
-    exprs = pli.selection_to_pyexpr_list(exprs)
+    exprs = selection_to_pyexpr_list(exprs)
     if isinstance(descending, bool):
         descending = [descending] * len(exprs)
     return pli.wrap_expr(py_arg_sort_by(exprs, descending))
@@ -2397,21 +2398,21 @@ def duration(
 
     """  # noqa: W505
     if hours is not None:
-        hours = pli.expr_to_lit_or_expr(hours, str_to_lit=False)._pyexpr
+        hours = expr_to_lit_or_expr(hours, str_to_lit=False)._pyexpr
     if minutes is not None:
-        minutes = pli.expr_to_lit_or_expr(minutes, str_to_lit=False)._pyexpr
+        minutes = expr_to_lit_or_expr(minutes, str_to_lit=False)._pyexpr
     if seconds is not None:
-        seconds = pli.expr_to_lit_or_expr(seconds, str_to_lit=False)._pyexpr
+        seconds = expr_to_lit_or_expr(seconds, str_to_lit=False)._pyexpr
     if milliseconds is not None:
-        milliseconds = pli.expr_to_lit_or_expr(milliseconds, str_to_lit=False)._pyexpr
+        milliseconds = expr_to_lit_or_expr(milliseconds, str_to_lit=False)._pyexpr
     if microseconds is not None:
-        microseconds = pli.expr_to_lit_or_expr(microseconds, str_to_lit=False)._pyexpr
+        microseconds = expr_to_lit_or_expr(microseconds, str_to_lit=False)._pyexpr
     if nanoseconds is not None:
-        nanoseconds = pli.expr_to_lit_or_expr(nanoseconds, str_to_lit=False)._pyexpr
+        nanoseconds = expr_to_lit_or_expr(nanoseconds, str_to_lit=False)._pyexpr
     if days is not None:
-        days = pli.expr_to_lit_or_expr(days, str_to_lit=False)._pyexpr
+        days = expr_to_lit_or_expr(days, str_to_lit=False)._pyexpr
     if weeks is not None:
-        weeks = pli.expr_to_lit_or_expr(weeks, str_to_lit=False)._pyexpr
+        weeks = expr_to_lit_or_expr(weeks, str_to_lit=False)._pyexpr
 
     return pli.wrap_expr(
         py_duration(
@@ -2461,18 +2462,18 @@ def datetime_(
     Expr of type `pl.Datetime`
 
     """
-    year_expr = pli.expr_to_lit_or_expr(year, str_to_lit=False)
-    month_expr = pli.expr_to_lit_or_expr(month, str_to_lit=False)
-    day_expr = pli.expr_to_lit_or_expr(day, str_to_lit=False)
+    year_expr = expr_to_lit_or_expr(year, str_to_lit=False)
+    month_expr = expr_to_lit_or_expr(month, str_to_lit=False)
+    day_expr = expr_to_lit_or_expr(day, str_to_lit=False)
 
     if hour is not None:
-        hour = pli.expr_to_lit_or_expr(hour, str_to_lit=False)._pyexpr
+        hour = expr_to_lit_or_expr(hour, str_to_lit=False)._pyexpr
     if minute is not None:
-        minute = pli.expr_to_lit_or_expr(minute, str_to_lit=False)._pyexpr
+        minute = expr_to_lit_or_expr(minute, str_to_lit=False)._pyexpr
     if second is not None:
-        second = pli.expr_to_lit_or_expr(second, str_to_lit=False)._pyexpr
+        second = expr_to_lit_or_expr(second, str_to_lit=False)._pyexpr
     if microsecond is not None:
-        microsecond = pli.expr_to_lit_or_expr(microsecond, str_to_lit=False)._pyexpr
+        microsecond = expr_to_lit_or_expr(microsecond, str_to_lit=False)._pyexpr
 
     return pli.wrap_expr(
         py_datetime(
@@ -2560,7 +2561,7 @@ def concat_str(exprs: IntoExpr | Iterable[IntoExpr], separator: str = "") -> Exp
     └─────┴──────┴──────┴───────────────┘
 
     """
-    exprs = pli.selection_to_pyexpr_list(exprs)
+    exprs = selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(_concat_str(exprs, separator))
 
 
@@ -2609,7 +2610,7 @@ def format(fstring: str, *args: Expr | str) -> Expr:
     arguments = iter(args)
     for i, s in enumerate(fstring.split("{}")):
         if i > 0:
-            e = pli.expr_to_lit_or_expr(next(arguments), str_to_lit=False)
+            e = expr_to_lit_or_expr(next(arguments), str_to_lit=False)
             exprs.append(e)
 
         if len(s) > 0:
@@ -2661,7 +2662,7 @@ def concat_list(exprs: Sequence[str | Expr | Series] | Expr) -> Expr:
     └───────────────────┘
 
     """
-    exprs = pli.selection_to_pyexpr_list(exprs)
+    exprs = selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(_concat_lst(exprs))
 
 
@@ -2876,10 +2877,10 @@ def struct(
     {'my_struct': Struct([Field('p', Int64), Field('q', Boolean)])}
 
     """
-    exprs = pli.selection_to_pyexpr_list(exprs)
+    exprs = selection_to_pyexpr_list(exprs)
     if named_exprs:
         exprs.extend(
-            pli.expr_to_lit_or_expr(expr, name=name, str_to_lit=False)._pyexpr
+            expr_to_lit_or_expr(expr, name=name, str_to_lit=False)._pyexpr
             for name, expr in named_exprs.items()
         )
 
@@ -3022,7 +3023,7 @@ def arg_where(condition: Expr | Series, eager: bool = False) -> Expr | Series:
             )
         return condition.to_frame().select(arg_where(col(condition.name))).to_series()
     else:
-        condition = pli.expr_to_lit_or_expr(condition, str_to_lit=True)
+        condition = expr_to_lit_or_expr(condition, str_to_lit=True)
         return pli.wrap_expr(py_arg_where(condition._pyexpr))
 
 
@@ -3073,9 +3074,9 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
     └──────┴──────┴──────┴──────┘
 
     """
-    exprs = pli.selection_to_pyexpr_list(exprs)
+    exprs = selection_to_pyexpr_list(exprs)
     if more_exprs:
-        exprs.extend(pli.selection_to_pyexpr_list(more_exprs))
+        exprs.extend(selection_to_pyexpr_list(more_exprs))
     return pli.wrap_expr(_coalesce_exprs(exprs))
 
 

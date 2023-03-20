@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Iterable, Sequence, overload
 
 from polars import internals as pli
 from polars.datatypes import Date
+from polars.utils._parse_expr_input import expr_to_lit_or_expr
 from polars.utils.convert import (
     _datetime_to_pl_timestamp,
     _timedelta_to_pl_duration,
@@ -463,8 +464,8 @@ def date_range(
         interval = interval.replace(" ", "")
 
     if isinstance(low, (str, pli.Expr)) or isinstance(high, (str, pli.Expr)) or lazy:
-        low = pli.expr_to_lit_or_expr(low, str_to_lit=False)._pyexpr
-        high = pli.expr_to_lit_or_expr(high, str_to_lit=False)._pyexpr
+        low = expr_to_lit_or_expr(low, str_to_lit=False)._pyexpr
+        high = expr_to_lit_or_expr(high, str_to_lit=False)._pyexpr
         return pli.wrap_expr(
             _py_date_range_lazy(low, high, interval, closed, name, time_zone)
         )

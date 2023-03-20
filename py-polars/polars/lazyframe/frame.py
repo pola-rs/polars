@@ -43,12 +43,12 @@ from polars.datatypes import (
     py_type_to_dtype,
 )
 from polars.dependencies import subprocess
-from polars.internals import selection_to_pyexpr_list
 from polars.io._utils import _is_local_file
 from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
 from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
 from polars.lazyframe.groupby import LazyGroupBy
 from polars.slice import LazyPolarsSlice
+from polars.utils._parse_expr_input import expr_to_lit_or_expr, selection_to_pyexpr_list
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import (
     deprecate_nonkeyword_arguments,
@@ -1212,9 +1212,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if isinstance(by, str) and not more_by:
             return self._from_pyldf(self._ldf.sort(by, descending, nulls_last))
 
-        by = pli.selection_to_pyexpr_list(by)
+        by = selection_to_pyexpr_list(by)
         if more_by:
-            by.extend(pli.selection_to_pyexpr_list(more_by))
+            by.extend(selection_to_pyexpr_list(more_by))
 
         if isinstance(descending, bool):
             descending = [descending]
@@ -1867,9 +1867,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             predicate = pli.Series(predicate)
 
         return self._from_pyldf(
-            self._ldf.filter(
-                pli.expr_to_lit_or_expr(predicate, str_to_lit=False)._pyexpr
-            )
+            self._ldf.filter(expr_to_lit_or_expr(predicate, str_to_lit=False)._pyexpr)
         )
 
     def select(
@@ -1986,12 +1984,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
 
-        exprs = pli.selection_to_pyexpr_list(exprs, structify=structify)
+        exprs = selection_to_pyexpr_list(exprs, structify=structify)
         if more_exprs:
-            exprs.extend(pli.selection_to_pyexpr_list(more_exprs, structify=structify))
+            exprs.extend(selection_to_pyexpr_list(more_exprs, structify=structify))
         if named_exprs:
             exprs.extend(
-                pli.expr_to_lit_or_expr(
+                expr_to_lit_or_expr(
                     expr, structify=structify, name=name, str_to_lit=False
                 )._pyexpr
                 for name, expr in named_exprs.items()
@@ -3003,12 +3001,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
 
-        exprs = pli.selection_to_pyexpr_list(exprs, structify=structify)
+        exprs = selection_to_pyexpr_list(exprs, structify=structify)
         if more_exprs:
-            exprs.extend(pli.selection_to_pyexpr_list(more_exprs, structify=structify))
+            exprs.extend(selection_to_pyexpr_list(more_exprs, structify=structify))
         if named_exprs:
             exprs.extend(
-                pli.expr_to_lit_or_expr(
+                expr_to_lit_or_expr(
                     expr, structify=structify, name=name, str_to_lit=False
                 )._pyexpr
                 for name, expr in named_exprs.items()
@@ -4002,7 +4000,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┘
 
         """
-        quantile = pli.expr_to_lit_or_expr(quantile, str_to_lit=False)
+        quantile = expr_to_lit_or_expr(quantile, str_to_lit=False)
         return self._from_pyldf(self._ldf.quantile(quantile._pyexpr, interpolation))
 
     def explode(
@@ -4047,9 +4045,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────────┴─────────┘
 
         """
-        columns = pli.selection_to_pyexpr_list(columns)
+        columns = selection_to_pyexpr_list(columns)
         if more_columns:
-            columns.extend(pli.selection_to_pyexpr_list(more_columns))
+            columns.extend(selection_to_pyexpr_list(more_columns))
         return self._from_pyldf(self._ldf.explode(columns))
 
     @deprecate_nonkeyword_arguments(

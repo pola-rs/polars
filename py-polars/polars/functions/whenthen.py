@@ -5,6 +5,7 @@ import typing
 from typing import TYPE_CHECKING, Any, Iterable
 
 from polars import internals as pli
+from polars.utils._parse_expr_input import expr_to_lit_or_expr
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import when as pywhen
@@ -23,7 +24,7 @@ class WhenThenThen:
 
     def when(self, predicate: Expr | bool) -> WhenThenThen:
         """Start another "when, then, otherwise" layer."""
-        predicate = pli.expr_to_lit_or_expr(predicate)
+        predicate = expr_to_lit_or_expr(predicate)
         return WhenThenThen(self.pywhenthenthen.when(predicate._pyexpr))
 
     def then(
@@ -39,7 +40,7 @@ class WhenThenThen:
         otherwise : Values to return in case of the predicate being `False`.
 
         """
-        expr_ = pli.expr_to_lit_or_expr(expr)
+        expr_ = expr_to_lit_or_expr(expr)
         return WhenThenThen(self.pywhenthenthen.then(expr_._pyexpr))
 
     def otherwise(
@@ -55,7 +56,7 @@ class WhenThenThen:
         then : Values to return in case of the predicate being `True`.
 
         """
-        expr = pli.expr_to_lit_or_expr(expr)
+        expr = expr_to_lit_or_expr(expr)
         return pli.wrap_expr(self.pywhenthenthen.otherwise(expr._pyexpr))
 
     @typing.no_type_check
@@ -72,7 +73,7 @@ class WhenThen:
 
     def when(self, predicate: Expr | bool | Series) -> WhenThenThen:
         """Start another "when, then, otherwise" layer."""
-        predicate = pli.expr_to_lit_or_expr(predicate)
+        predicate = expr_to_lit_or_expr(predicate)
         return WhenThenThen(self._pywhenthen.when(predicate._pyexpr))
 
     def otherwise(
@@ -94,7 +95,7 @@ class WhenThen:
         then : Values to return in case of the predicate being `True`.
 
         """
-        expr = pli.expr_to_lit_or_expr(expr)
+        expr = expr_to_lit_or_expr(expr)
         return pli.wrap_expr(self._pywhenthen.otherwise(expr._pyexpr))
 
     @typing.no_type_check
@@ -128,7 +129,7 @@ class When:
         otherwise : Values to return in case of the predicate being `False`.
 
         """
-        expr = pli.expr_to_lit_or_expr(expr)
+        expr = expr_to_lit_or_expr(expr)
         pywhenthen = self._pywhen.then(expr._pyexpr)
         return WhenThen(pywhenthen)
 
@@ -183,6 +184,6 @@ def when(expr: Expr | bool | Series) -> When:
     otherwise : Values to return in case of the predicate being `False`.
 
     """
-    expr = pli.expr_to_lit_or_expr(expr)
+    expr = expr_to_lit_or_expr(expr)
     pw = pywhen(expr._pyexpr)
     return When(pw)

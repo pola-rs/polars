@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from polars import functions as F
 from polars import internals as pli
+from polars.utils._parse_expr_input import expr_to_lit_or_expr
 from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 
 if TYPE_CHECKING:
@@ -289,7 +290,7 @@ class ExprListNameSpace:
         └──────┘
 
         """
-        index = pli.expr_to_lit_or_expr(index, str_to_lit=False)._pyexpr
+        index = expr_to_lit_or_expr(index, str_to_lit=False)._pyexpr
         return pli.wrap_expr(self._pyexpr.lst_get(index))
 
     def take(
@@ -316,7 +317,7 @@ class ExprListNameSpace:
         """
         if isinstance(index, list):
             index = pli.Series(index)
-        index = pli.expr_to_lit_or_expr(index, str_to_lit=False)._pyexpr
+        index = expr_to_lit_or_expr(index, str_to_lit=False)._pyexpr
         return pli.wrap_expr(self._pyexpr.lst_take(index, null_on_oob))
 
     def __getitem__(self, item: int) -> Expr:
@@ -398,7 +399,7 @@ class ExprListNameSpace:
 
         """
         return pli.wrap_expr(
-            self._pyexpr.arr_contains(pli.expr_to_lit_or_expr(item)._pyexpr)
+            self._pyexpr.arr_contains(expr_to_lit_or_expr(item)._pyexpr)
         )
 
     def join(self, separator: str) -> Expr:
@@ -590,8 +591,8 @@ class ExprListNameSpace:
         ]
 
         """
-        offset = pli.expr_to_lit_or_expr(offset, str_to_lit=False)._pyexpr
-        length = pli.expr_to_lit_or_expr(length, str_to_lit=False)._pyexpr
+        offset = expr_to_lit_or_expr(offset, str_to_lit=False)._pyexpr
+        length = expr_to_lit_or_expr(length, str_to_lit=False)._pyexpr
         return pli.wrap_expr(self._pyexpr.lst_slice(offset, length))
 
     def head(self, n: int | str | Expr = 5) -> Expr:
@@ -638,7 +639,7 @@ class ExprListNameSpace:
         ]
 
         """
-        offset = -pli.expr_to_lit_or_expr(n, str_to_lit=False)
+        offset = -expr_to_lit_or_expr(n, str_to_lit=False)
         return self.slice(offset, n)
 
     def explode(self) -> Expr:
@@ -704,7 +705,7 @@ class ExprListNameSpace:
 
         """
         return pli.wrap_expr(
-            self._pyexpr.lst_count_match(pli.expr_to_lit_or_expr(element)._pyexpr)
+            self._pyexpr.lst_count_match(expr_to_lit_or_expr(element)._pyexpr)
         )
 
     def to_struct(

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Callable, Generic, Iterable, TypeVar
 
 from polars import functions as F
-from polars.internals import expr_to_lit_or_expr, selection_to_pyexpr_list
+from polars.utils._parse_expr_input import expr_to_lit_or_expr, selection_to_pyexpr_list
 from polars.utils.decorators import deprecated_alias
 
 if TYPE_CHECKING:

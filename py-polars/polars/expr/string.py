@@ -11,6 +11,7 @@ from polars.datatypes import (
     is_polars_dtype,
     py_type_to_dtype,
 )
+from polars.utils._parse_expr_input import expr_to_lit_or_expr
 
 if TYPE_CHECKING:
     from polars.expr.expr import Expr
@@ -555,7 +556,7 @@ class ExprStringNameSpace:
         ends_with : Check if string values end with a substring.
 
         """
-        pattern = pli.expr_to_lit_or_expr(pattern, str_to_lit=True)._pyexpr
+        pattern = expr_to_lit_or_expr(pattern, str_to_lit=True)._pyexpr
         return pli.wrap_expr(self._pyexpr.str_contains(pattern, literal, strict))
 
     def ends_with(self, sub: str | Expr) -> Expr:
@@ -602,7 +603,7 @@ class ExprStringNameSpace:
         starts_with : Check if string values start with a substring.
 
         """
-        sub = pli.expr_to_lit_or_expr(sub, str_to_lit=True)._pyexpr
+        sub = expr_to_lit_or_expr(sub, str_to_lit=True)._pyexpr
         return pli.wrap_expr(self._pyexpr.str_ends_with(sub))
 
     def starts_with(self, sub: str | Expr) -> Expr:
@@ -649,7 +650,7 @@ class ExprStringNameSpace:
         ends_with : Check if string values end with a substring.
 
         """
-        sub = pli.expr_to_lit_or_expr(sub, str_to_lit=True)._pyexpr
+        sub = expr_to_lit_or_expr(sub, str_to_lit=True)._pyexpr
         return pli.wrap_expr(self._pyexpr.str_starts_with(sub))
 
     def json_extract(self, dtype: PolarsDataType | None = None) -> Expr:
@@ -877,7 +878,7 @@ class ExprStringNameSpace:
         └────────────────┘
 
         """
-        pattern = pli.expr_to_lit_or_expr(pattern, str_to_lit=True)
+        pattern = expr_to_lit_or_expr(pattern, str_to_lit=True)
         return pli.wrap_expr(self._pyexpr.str_extract_all(pattern._pyexpr))
 
     def count_match(self, pattern: str) -> Expr:
@@ -1123,8 +1124,8 @@ class ExprStringNameSpace:
         └─────┴────────┘
 
         """
-        pattern = pli.expr_to_lit_or_expr(pattern, str_to_lit=True)
-        value = pli.expr_to_lit_or_expr(value, str_to_lit=True)
+        pattern = expr_to_lit_or_expr(pattern, str_to_lit=True)
+        value = expr_to_lit_or_expr(value, str_to_lit=True)
         return pli.wrap_expr(
             self._pyexpr.str_replace_n(pattern._pyexpr, value._pyexpr, literal, n)
         )
@@ -1163,8 +1164,8 @@ class ExprStringNameSpace:
         └─────┴─────────┘
 
         """
-        pattern = pli.expr_to_lit_or_expr(pattern, str_to_lit=True)
-        value = pli.expr_to_lit_or_expr(value, str_to_lit=True)
+        pattern = expr_to_lit_or_expr(pattern, str_to_lit=True)
+        value = expr_to_lit_or_expr(value, str_to_lit=True)
         return pli.wrap_expr(
             self._pyexpr.str_replace_all(pattern._pyexpr, value._pyexpr, literal)
         )
