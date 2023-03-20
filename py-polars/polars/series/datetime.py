@@ -205,6 +205,41 @@ class DateTimeNameSpace:
 
         """
 
+    def is_leap_year(self) -> Series:
+        """
+        Determine whether the year of the underlying date representation is a leap year.
+
+        Applies to Date and Datetime columns.
+
+        Returns
+        -------
+        Leap year info as Boolean
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> start = datetime(2000, 1, 1)
+        >>> stop = datetime(2002, 1, 1)
+        >>> date = pl.date_range(start, stop, interval="1y")
+        >>> date
+        shape: (3,)
+        Series: '' [datetime[μs]]
+        [
+                2000-01-01 00:00:00
+                2001-01-01 00:00:00
+                2002-01-01 00:00:00
+        ]
+        >>> date.dt.is_leap_year()
+        shape: (3,)
+        Series: '' [bool]
+        [
+                true
+                false
+                false
+        ]
+
+        """
+
     def iso_year(self) -> Series:
         """
         Extract ISO year from underlying Date representation.

@@ -263,6 +263,19 @@ pub trait TemporalMethods: AsSeries {
         }
     }
 
+    /// Extract year from underlying NaiveDateTime representation.
+    /// Returns whether the year is a leap year.
+    fn is_leap_year(&self) -> PolarsResult<BooleanChunked> {
+        let s = self.as_series();
+        match s.dtype() {
+            #[cfg(feature = "dtype-date")]
+            DataType::Date => s.date().map(|ca| ca.is_leap_year()),
+            #[cfg(feature = "dtype-datetime")]
+            DataType::Datetime(_, _) => s.datetime().map(|ca| ca.is_leap_year()),
+            dt => polars_bail!(opq = is_leap_year, dt),
+        }
+    }
+
     /// Extract quarter from underlying NaiveDateTime representation.
     /// Quarters range from 1 to 4.
     fn quarter(&self) -> PolarsResult<UInt32Chunked> {

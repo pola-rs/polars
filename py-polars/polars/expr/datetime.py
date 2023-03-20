@@ -410,6 +410,48 @@ class ExprDateTimeNameSpace:
         """
         return pli.wrap_expr(self._pyexpr.year())
 
+    def is_leap_year(self) -> pli.Expr:
+        """
+        Determine whether the year of the underlying date is a leap year.
+
+        Applies to Date and Datetime columns.
+
+        Returns
+        -------
+        Leap year info as Boolean
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> start = datetime(2000, 1, 1)
+        >>> stop = datetime(2002, 1, 1)
+        >>> df = pl.DataFrame({"date": pl.date_range(start, stop, interval="1y")})
+        >>> df
+        shape: (3, 1)
+        ┌─────────────────────┐
+        │ date                │
+        │ ---                 │
+        │ datetime[μs]        │
+        ╞═════════════════════╡
+        │ 2000-01-01 00:00:00 │
+        │ 2001-01-01 00:00:00 │
+        │ 2002-01-01 00:00:00 │
+        └─────────────────────┘
+        >>> df.select(pl.col("date").dt.is_leap_year())
+        shape: (3, 1)
+        ┌───────┐
+        │ date  │
+        │ ---   │
+        │ bool  │
+        ╞═══════╡
+        │ true  │
+        │ false │
+        │ false │
+        └───────┘
+
+        """
+        return pli.wrap_expr(self._pyexpr.is_leap_year())
+
     def iso_year(self) -> Expr:
         """
         Extract ISO year from underlying Date representation.

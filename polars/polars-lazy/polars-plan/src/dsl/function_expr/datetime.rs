@@ -12,6 +12,7 @@ use super::*;
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum TemporalFunction {
     Year,
+    IsLeapYear,
     IsoYear,
     Quarter,
     Month,
@@ -46,6 +47,7 @@ impl Display for TemporalFunction {
         use TemporalFunction::*;
         let s = match self {
             Year => "year",
+            IsLeapYear => "is_leap_year",
             IsoYear => "iso_year",
             Quarter => "quarter",
             Month => "month",
@@ -75,6 +77,9 @@ impl Display for TemporalFunction {
 
 pub(super) fn year(s: &Series) -> PolarsResult<Series> {
     s.year().map(|ca| ca.into_series())
+}
+pub(super) fn is_leap_year(s: &Series) -> PolarsResult<Series> {
+    s.is_leap_year().map(|ca| ca.into_series())
 }
 pub(super) fn iso_year(s: &Series) -> PolarsResult<Series> {
     s.iso_year().map(|ca| ca.into_series())
