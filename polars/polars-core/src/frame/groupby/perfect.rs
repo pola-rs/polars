@@ -14,7 +14,7 @@ where
     // Use the indexes as perfect groups
     pub fn group_tuples_perfect(
         &self,
-        max: IdxSize,
+        max: usize,
         multithreaded: bool,
         group_capacity: usize,
     ) -> GroupsProxy {
@@ -22,9 +22,9 @@ where
             todo!()
         }
 
-        let mut groups = Vec::with_capacity(max as usize);
-        let mut first = vec![0 as IdxSize; max as usize];
-        groups.resize_with(max as usize, || Vec::with_capacity(group_capacity));
+        let mut groups = Vec::with_capacity(max);
+        let mut first = vec![0 as IdxSize; max];
+        groups.resize_with(max, || Vec::with_capacity(group_capacity));
 
         let mut row_nr = 0 as IdxSize;
         for arr in self.downcast_iter() {

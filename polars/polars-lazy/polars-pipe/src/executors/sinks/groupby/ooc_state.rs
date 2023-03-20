@@ -81,7 +81,7 @@ impl OocState {
         let parts = parts.filter(&mask).unwrap();
         let parts = parts.apply_in_place(|h| h & (PARTITION_SIZE as u64 - 1));
         let gt = parts.group_tuples_perfect(
-            (PARTITION_SIZE - 1) as u64,
+            PARTITION_SIZE - 1,
             false,
             (parts.len() / PARTITION_SIZE) * 2,
         );
