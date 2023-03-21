@@ -444,7 +444,7 @@ def test_file_path_truncate_err() -> None:
     content = "lskdfj".join(str(i) for i in range(25))
     with pytest.raises(
         FileNotFoundError,
-        match=r"\.\.\.42jfdksl32jfdksl22jfdksl12jfdksl02jfdksl91jfdksl81jfdksl71jfdksl61jfdksl51jfdksl41jfdksl",
+        match=r"\.\.\.lskdfj14lskdfj15lskdfj16lskdfj17lskdfj18lskdfj19lskdfj20lskdfj21lskdfj22lskdfj23lskdfj24",
     ):
         pl.read_csv(content)
 
