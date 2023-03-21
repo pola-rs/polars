@@ -1,6 +1,6 @@
 use std::any::Any;
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 
 use polars_core::config::verbose;
 use polars_core::error::PolarsResult;
@@ -24,7 +24,8 @@ pub struct SortSink {
     // sort in-memory or out-of-core
     ooc: bool,
     // when ooc, we write to disk using an IO thread
-    io_thread: Arc<Mutex<Option<IOThread>>>,
+    // RwLock as we want to have multiple readers at once.
+    io_thread: Arc<RwLock<Option<IOThread>>>,
     // location in the dataframe of the columns to sort by
     sort_idx: usize,
     sort_args: SortArguments,
@@ -62,7 +63,7 @@ impl SortSink {
         self.ooc = true;
 
         // start IO thread
-        let mut iot = self.io_thread.lock().unwrap();
+        let mut iot = self.io_thread.write().unwrap();
         if iot.is_none() {
             *iot = Some(IOThread::try_new(self.schema.clone(), "sort")?)
         }
@@ -96,7 +97,7 @@ impl SortSink {
                 };
                 self.dist_sample.push(sample);
 
-                let iot = self.io_thread.lock().unwrap();
+                let iot = self.io_thread.read().unwrap();
                 let iot = iot.as_ref().unwrap();
                 iot.dump_chunk(df)
             }
@@ -142,7 +143,7 @@ impl Sink for SortSink {
 
     fn finalize(&mut self, _context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         if self.ooc {
-            let lock = self.io_thread.lock().unwrap();
+            let lock = self.io_thread.read().unwrap();
             let io_thread = lock.as_ref().unwrap();
 
             let dist = Series::from_any_values("", &self.dist_sample, false).unwrap();

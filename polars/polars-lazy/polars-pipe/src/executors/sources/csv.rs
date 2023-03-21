@@ -7,9 +7,9 @@ use polars_io::csv::read_impl::{BatchedCsvReaderMmap, BatchedCsvReaderRead};
 use polars_io::csv::{CsvEncoding, CsvReader};
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::prelude::CsvParserOptions;
-use crate::pipeline::determine_chunk_size;
 
 use super::*;
+use crate::pipeline::determine_chunk_size;
 
 pub(crate) struct CsvSource {
     #[allow(dead_code)]
