@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any, BinaryIO
 
 from polars import internals as pli
 from polars.convert import from_arrow
-from polars.dataframe import DataFrame
 from polars.dependencies import _PYARROW_AVAILABLE
 from polars.io._utils import _prepare_file_arg
 from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias

@@ -7,9 +7,7 @@ from collections.abc import MappingView, Sized
 from typing import TYPE_CHECKING, Any, Generator, Iterable, Sequence, TypeVar
 
 from polars import functions as F
-from polars import internals as pli
 from polars.datatypes import Int64, is_polars_dtype
-from polars.functions.lazy import arange
 
 if TYPE_CHECKING:
     from polars.series.series import Series

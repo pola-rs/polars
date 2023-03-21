@@ -4,7 +4,7 @@ import textwrap
 from typing import Any
 
 from polars import functions as F
-from polars import internals as pli
+from polars.dataframe import DataFrame
 from polars.datatypes import (
     Boolean,
     Categorical,
