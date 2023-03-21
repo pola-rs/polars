@@ -433,7 +433,9 @@ impl Duration {
                     _ => Ok(datetime_to_timestamp(dt)),
                 }
             }
-            _ => polars_bail!(ComputeError: "duration may not mix month, weeks and nanosecond units"),
+            _ => {
+                polars_bail!(ComputeError: "duration may not mix month, weeks and nanosecond units")
+            }
         }
     }
 
