@@ -11,8 +11,8 @@ use polars_io::{is_cloud_url, SerReader};
 use polars_plan::prelude::ParquetOptions;
 use polars_utils::IdxSize;
 
-use crate::determine_chunk_size;
 use crate::operators::{DataChunk, PExecutionContext, Source, SourceResult};
+use crate::pipeline::determine_chunk_size;
 
 pub struct ParquetSource {
     batched_reader: BatchedParquetReader,

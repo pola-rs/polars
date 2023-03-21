@@ -21,7 +21,7 @@ fn err_missing_feature(feature: &str, scheme: &str) -> BuildResult {
         "feature '{}' must be enabled in order to use '{}' cloud urls", feature, scheme,
     );
 }
-#[cfg(not(feature = "azure"))]
+#[cfg(any(feature = "azure", feature = "aws", feature = "gcp"))]
 fn err_missing_configuration(feature: &str, scheme: &str) -> BuildResult {
     polars_bail!(
         ComputeError:
