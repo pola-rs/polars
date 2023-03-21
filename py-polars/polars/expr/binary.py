@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars import internals as pli
+from polars.utils._wrap import wrap_expr
 
 if TYPE_CHECKING:
     from polars.expr.expr import Expr
@@ -31,7 +31,7 @@ class ExprBinaryNameSpace:
         Boolean mask
 
         """
-        return pli.wrap_expr(self._pyexpr.binary_contains(lit))
+        return wrap_expr(self._pyexpr.binary_contains(lit))
 
     def ends_with(self, sub: bytes) -> Expr:
         """
@@ -43,7 +43,7 @@ class ExprBinaryNameSpace:
             Suffix substring.
 
         """
-        return pli.wrap_expr(self._pyexpr.binary_ends_with(sub))
+        return wrap_expr(self._pyexpr.binary_ends_with(sub))
 
     def starts_with(self, sub: bytes) -> Expr:
         """
@@ -55,7 +55,7 @@ class ExprBinaryNameSpace:
             Prefix substring.
 
         """
-        return pli.wrap_expr(self._pyexpr.binary_starts_with(sub))
+        return wrap_expr(self._pyexpr.binary_starts_with(sub))
 
     def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> Expr:
         """
@@ -71,9 +71,9 @@ class ExprBinaryNameSpace:
 
         """
         if encoding == "hex":
-            return pli.wrap_expr(self._pyexpr.binary_hex_decode(strict))
+            return wrap_expr(self._pyexpr.binary_hex_decode(strict))
         elif encoding == "base64":
-            return pli.wrap_expr(self._pyexpr.binary_base64_decode(strict))
+            return wrap_expr(self._pyexpr.binary_base64_decode(strict))
         else:
             raise ValueError(
                 f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
@@ -94,9 +94,9 @@ class ExprBinaryNameSpace:
 
         """
         if encoding == "hex":
-            return pli.wrap_expr(self._pyexpr.binary_hex_encode())
+            return wrap_expr(self._pyexpr.binary_hex_encode())
         elif encoding == "base64":
-            return pli.wrap_expr(self._pyexpr.binary_base64_encode())
+            return wrap_expr(self._pyexpr.binary_base64_encode())
         else:
             raise ValueError(
                 f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"

@@ -54,6 +54,7 @@ from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import ComputeError, ShapeError
+from polars.utils._wrap import wrap_df, wrap_s
 from polars.utils.convert import _tzinfo_to_str
 from polars.utils.decorators import deprecated_alias
 from polars.utils.meta import threadpool_size
@@ -373,9 +374,9 @@ def sequence_to_pyseries(
             # we store the values internally as UTC and set the timezone
             py_series = PySeries.new_from_anyvalues(name, values, strict)
             if time_unit is None:
-                s = pli.wrap_s(py_series)
+                s = wrap_s(py_series)
             else:
-                s = pli.wrap_s(py_series).dt.cast_time_unit(time_unit)
+                s = wrap_s(py_series).dt.cast_time_unit(time_unit)
             if dtype == Datetime and value.tzinfo is not None:
                 tz = _tzinfo_to_str(value.tzinfo)
                 dtype_tz = dtype.tz  # type: ignore[union-attr]
@@ -1158,10 +1159,10 @@ def arrow_to_pydf(
         column = coerce_arrow(column)
         if pa.types.is_dictionary(column.type):
             ps = arrow_to_pyseries(name, column, rechunk)
-            dictionary_cols[i] = pli.wrap_s(ps)
+            dictionary_cols[i] = wrap_s(ps)
         elif isinstance(column.type, pa.StructType) and column.num_chunks > 1:
             ps = arrow_to_pyseries(name, column, rechunk)
-            struct_cols[i] = pli.wrap_s(ps)
+            struct_cols[i] = wrap_s(ps)
         else:
             data_dict[name] = column
 
@@ -1185,12 +1186,12 @@ def arrow_to_pydf(
 
     reset_order = False
     if len(dictionary_cols) > 0:
-        df = pli.wrap_df(pydf)
+        df = wrap_df(pydf)
         df = df.with_columns([F.lit(s).alias(s.name) for s in dictionary_cols.values()])
         reset_order = True
 
     if len(struct_cols) > 0:
-        df = pli.wrap_df(pydf)
+        df = wrap_df(pydf)
         df = df.with_columns([F.lit(s).alias(s.name) for s in struct_cols.values()])
         reset_order = True
 

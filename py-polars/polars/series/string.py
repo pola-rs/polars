@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from polars import functions as F
-from polars import internals as pli
 from polars.series.utils import expr_dispatch
+from polars.utils._wrap import wrap_s
 
 if TYPE_CHECKING:
     from polars.expr import Expr
@@ -628,7 +628,7 @@ class StringNameSpace:
         Struct of Utf8 type
 
         """
-        s = pli.wrap_s(self._s)
+        s = wrap_s(self._s)
         return s.to_frame().select(F.col(s.name).str.splitn(by, n)).to_series()
 
     def replace(

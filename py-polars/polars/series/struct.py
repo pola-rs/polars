@@ -3,8 +3,8 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING, Sequence
 
-from polars import internals as pli
 from polars.series.utils import expr_dispatch
+from polars.utils._wrap import wrap_df
 from polars.utils.decorators import redirect
 from polars.utils.various import sphinx_accessor
 
@@ -85,4 +85,4 @@ class StructNameSpace:
         └─────┴─────┘
 
         """
-        return pli.wrap_df(self._s.struct_unnest())
+        return wrap_df(self._s.struct_unnest())

@@ -81,6 +81,7 @@ from polars.utils._construction import (
     series_to_pydf,
 )
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
+from polars.utils._wrap import wrap_ldf, wrap_s
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import (
     deprecate_nonkeyword_arguments,
@@ -1601,7 +1602,7 @@ class DataFrame:
         # select single column
         # df["foo"]
         if isinstance(item, str):
-            return pli.wrap_s(self._df.column(item))
+            return wrap_s(self._df.column(item))
 
         # df[idx]
         if isinstance(item, int):
@@ -2096,7 +2097,7 @@ class DataFrame:
         """
         if index < 0:
             index = len(self.columns) + index
-        return pli.wrap_s(self._df.select_at_idx(index))
+        return wrap_s(self._df.select_at_idx(index))
 
     @overload
     def write_json(
@@ -5037,7 +5038,7 @@ class DataFrame:
         if is_df:
             return self._from_pydf(out)
         else:
-            return self._from_pydf(pli.wrap_s(out).to_frame()._df)
+            return self._from_pydf(wrap_s(out).to_frame()._df)
 
     @deprecate_nonkeyword_arguments()
     def hstack(
@@ -5280,7 +5281,7 @@ class DataFrame:
         ]
 
         """
-        return pli.wrap_s(self._df.drop_in_place(name))
+        return wrap_s(self._df.drop_in_place(name))
 
     def clear(self, n: int = 0) -> Self:
         """
@@ -5427,7 +5428,7 @@ class DataFrame:
         ]]
 
         """
-        return [pli.wrap_s(s) for s in self._df.get_columns()]
+        return [wrap_s(s) for s in self._df.get_columns()]
 
     def get_column(self, name: str) -> Series:
         """
@@ -6243,7 +6244,7 @@ class DataFrame:
         │ 1   ┆ x   │
         └─────┴─────┘
         """
-        return pli.wrap_s(self._df.is_duplicated())
+        return wrap_s(self._df.is_duplicated())
 
     def is_unique(self) -> Series:
         """
@@ -6280,7 +6281,7 @@ class DataFrame:
         │ 3   ┆ z   │
         └─────┴─────┘
         """
-        return pli.wrap_s(self._df.is_unique())
+        return wrap_s(self._df.is_unique())
 
     def lazy(self) -> pli.LazyFrame:
         """
@@ -6320,7 +6321,7 @@ class DataFrame:
         <polars.LazyFrame object at ...>
 
         """
-        return pli.wrap_ldf(self._df.lazy())
+        return wrap_ldf(self._df.lazy())
 
     def select(
         self,
@@ -6676,7 +6677,7 @@ class DataFrame:
         if axis == 0:
             return self._from_pydf(self._df.max())
         if axis == 1:
-            return pli.wrap_s(self._df.hmax())
+            return wrap_s(self._df.hmax())
         raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
 
     @overload
@@ -6718,7 +6719,7 @@ class DataFrame:
         if axis == 0:
             return self._from_pydf(self._df.min())
         if axis == 1:
-            return pli.wrap_s(self._df.hmin())
+            return wrap_s(self._df.hmin())
         raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
 
     @overload
@@ -6795,7 +6796,7 @@ class DataFrame:
         if axis == 0:
             return self._from_pydf(self._df.sum())
         if axis == 1:
-            return pli.wrap_s(self._df.hsum(null_strategy))
+            return wrap_s(self._df.hsum(null_strategy))
         raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
 
     @overload
@@ -6873,7 +6874,7 @@ class DataFrame:
         if axis == 0:
             return self._from_pydf(self._df.mean())
         if axis == 1:
-            return pli.wrap_s(self._df.hmean(null_strategy))
+            return wrap_s(self._df.hmean(null_strategy))
         raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
 
     def std(self, ddof: int = 1) -> Self:
@@ -7854,7 +7855,7 @@ class DataFrame:
         k1 = seed_1 if seed_1 is not None else seed
         k2 = seed_2 if seed_2 is not None else seed
         k3 = seed_3 if seed_3 is not None else seed
-        return pli.wrap_s(self._df.hash_rows(k0, k1, k2, k3))
+        return wrap_s(self._df.hash_rows(k0, k1, k2, k3))
 
     def interpolate(self) -> Self:
         """
@@ -7929,7 +7930,7 @@ class DataFrame:
         ]
 
         """
-        return pli.wrap_s(self._df.to_struct(name))
+        return wrap_s(self._df.to_struct(name))
 
     @deprecated_alias(names="columns")
     def unnest(self, columns: str | Sequence[str], *more_columns: str) -> Self:

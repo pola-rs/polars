@@ -22,6 +22,7 @@ from polars.datatypes import (
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
 from polars.utils._parse_expr_input import expr_to_lit_or_expr, selection_to_pyexpr_list
+from polars.utils._wrap import wrap_df, wrap_expr
 from polars.utils.convert import (
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
@@ -220,30 +221,30 @@ def col(
         if isinstance(name, str):
             names_str = [name]
             names_str.extend(more_names)  # type: ignore[arg-type]
-            return pli.wrap_expr(pycols(names_str))
+            return wrap_expr(pycols(names_str))
         elif is_polars_dtype(name):
             dtypes = [name]
             dtypes.extend(more_names)
-            return pli.wrap_expr(_dtype_cols(dtypes))
+            return wrap_expr(_dtype_cols(dtypes))
         else:
             raise TypeError(
                 f"Invalid input for `col`. Expected `str` or `DataType`, got {type(name)!r}"
             )
 
     if isinstance(name, str):
-        return pli.wrap_expr(pycol(name))
+        return wrap_expr(pycol(name))
     elif is_polars_dtype(name):
-        return pli.wrap_expr(_dtype_cols([name]))
+        return wrap_expr(_dtype_cols([name]))
     elif isinstance(name, Iterable):
         names = list(name)
         if not names:
-            return pli.wrap_expr(pycols(names))
+            return wrap_expr(pycols(names))
 
         item = names[0]
         if isinstance(item, str):
-            return pli.wrap_expr(pycols(names))
+            return wrap_expr(pycols(names))
         elif is_polars_dtype(item):
-            return pli.wrap_expr(_dtype_cols(names))
+            return wrap_expr(_dtype_cols(names))
         else:
             raise TypeError(
                 "Invalid input for `col`. Expected iterable of type `str` or `DataType`,"
@@ -352,7 +353,7 @@ def count(column: str | Series | None = None) -> Expr | int:
 
     """
     if column is None:
-        return pli.wrap_expr(_count())
+        return wrap_expr(_count())
 
     if isinstance(column, pli.Series):
         return column.len()
@@ -524,7 +525,7 @@ def max(column: str | Sequence[Expr | str] | Series) -> Expr | Any:
         return col(column).max()
     else:
         exprs = selection_to_pyexpr_list(column)
-        return pli.wrap_expr(_max_exprs(exprs))
+        return wrap_expr(_max_exprs(exprs))
 
 
 @overload
@@ -611,7 +612,7 @@ def min(
         return col(column).min()
     else:
         exprs = selection_to_pyexpr_list(column)
-        return pli.wrap_expr(_min_exprs(exprs))
+        return wrap_expr(_min_exprs(exprs))
 
 
 @overload
@@ -727,7 +728,7 @@ def sum(
         return col(column).sum()
     elif isinstance(column, Sequence):
         exprs = selection_to_pyexpr_list(column)
-        return pli.wrap_expr(_sum_exprs(exprs))
+        return wrap_expr(_sum_exprs(exprs))
     else:
         # (Expr): use u32 as that will not cast to float as eagerly
         return fold(lit(0).cast(UInt32), lambda a, b: a + b, column).alias("sum")
@@ -926,7 +927,7 @@ def first(column: str | Series | None = None) -> Expr | Any:
 
     """
     if column is None:
-        return pli.wrap_expr(_first())
+        return wrap_expr(_first())
 
     if isinstance(column, pli.Series):
         if column.len() > 0:
@@ -989,7 +990,7 @@ def last(column: str | Series | None = None) -> Expr:
 
     """
     if column is None:
-        return pli.wrap_expr(_last())
+        return wrap_expr(_last())
 
     if isinstance(column, pli.Series):
         if column.len() > 0:
@@ -1192,7 +1193,7 @@ def lit(
     elif isinstance(value, pli.Series):
         name = value.name
         value = value._s
-        e = pli.wrap_expr(pylit(value, allow_object))
+        e = wrap_expr(pylit(value, allow_object))
         if name == "":
             return e
         return e.alias(name)
@@ -1201,7 +1202,7 @@ def lit(
         return lit(pli.Series("", value))
 
     if dtype:
-        return pli.wrap_expr(pylit(value, allow_object)).cast(dtype)
+        return wrap_expr(pylit(value, allow_object)).cast(dtype)
 
     try:
         # numpy literals like np.float32(0) have item/dtype
@@ -1222,7 +1223,7 @@ def lit(
 
     except AttributeError:
         item = value
-    return pli.wrap_expr(pylit(item, allow_object))
+    return wrap_expr(pylit(item, allow_object))
 
 
 @overload
@@ -1367,9 +1368,7 @@ def spearman_rank_corr(
         a = col(a)
     if isinstance(b, str):
         b = col(b)
-    return pli.wrap_expr(
-        pyspearman_rank_corr(a._pyexpr, b._pyexpr, ddof, propagate_nans)
-    )
+    return wrap_expr(pyspearman_rank_corr(a._pyexpr, b._pyexpr, ddof, propagate_nans))
 
 
 def pearson_corr(a: str | Expr, b: str | Expr, ddof: int = 1) -> Expr:
@@ -1414,7 +1413,7 @@ def pearson_corr(a: str | Expr, b: str | Expr, ddof: int = 1) -> Expr:
         a = col(a)
     if isinstance(b, str):
         b = col(b)
-    return pli.wrap_expr(pypearson_corr(a._pyexpr, b._pyexpr, ddof))
+    return wrap_expr(pypearson_corr(a._pyexpr, b._pyexpr, ddof))
 
 
 def corr(
@@ -1477,9 +1476,9 @@ def corr(
         b = col(b)
 
     if method == "pearson":
-        return pli.wrap_expr(pypearson_corr(a._pyexpr, b._pyexpr, ddof))
+        return wrap_expr(pypearson_corr(a._pyexpr, b._pyexpr, ddof))
     elif method == "spearman":
-        return pli.wrap_expr(
+        return wrap_expr(
             pyspearman_rank_corr(a._pyexpr, b._pyexpr, ddof, propagate_nans)
         )
     else:
@@ -1517,7 +1516,7 @@ def cov(a: str | Expr, b: str | Expr) -> Expr:
         a = col(a)
     if isinstance(b, str):
         b = col(b)
-    return pli.wrap_expr(pycov(a._pyexpr, b._pyexpr))
+    return wrap_expr(pycov(a._pyexpr, b._pyexpr))
 
 
 @deprecated_alias(f="function")
@@ -1576,7 +1575,7 @@ def map(
     └─────┴─────┴───────┘
     """
     exprs = selection_to_pyexpr_list(exprs)
-    return pli.wrap_expr(
+    return wrap_expr(
         _map_mul(
             exprs, function, return_dtype, apply_groups=False, returns_scalar=False
         )
@@ -1654,7 +1653,7 @@ def apply(
     └─────┴─────┴───────────┘
     """
     exprs = selection_to_pyexpr_list(exprs)
-    return pli.wrap_expr(
+    return wrap_expr(
         _map_mul(
             exprs,
             function,
@@ -1771,7 +1770,7 @@ def fold(
         exprs = [exprs]
 
     exprs = selection_to_pyexpr_list(exprs)
-    return pli.wrap_expr(pyfold(acc._pyexpr, function, exprs))
+    return wrap_expr(pyfold(acc._pyexpr, function, exprs))
 
 
 @deprecated_alias(f="function")
@@ -1836,7 +1835,7 @@ def reduce(
         exprs = [exprs]
 
     exprs = selection_to_pyexpr_list(exprs)
-    return pli.wrap_expr(pyreduce(function, exprs))
+    return wrap_expr(pyreduce(function, exprs))
 
 
 @deprecated_alias(f="function")
@@ -1914,7 +1913,7 @@ def cumfold(
         exprs = [exprs]
 
     exprs = selection_to_pyexpr_list(exprs)
-    return pli.wrap_expr(pycumfold(acc._pyexpr, function, exprs, include_init))
+    return wrap_expr(pycumfold(acc._pyexpr, function, exprs, include_init))
 
 
 @deprecated_alias(f="function")
@@ -1977,7 +1976,7 @@ def cumreduce(
         exprs = [exprs]
 
     exprs = selection_to_pyexpr_list(exprs)
-    return pli.wrap_expr(pycumreduce(function, exprs))
+    return wrap_expr(pycumreduce(function, exprs))
 
 
 def any(name: str | Sequence[str] | Sequence[Expr] | Expr) -> Expr:
@@ -2236,7 +2235,7 @@ def arange(
     """
     low = expr_to_lit_or_expr(low, str_to_lit=False)
     high = expr_to_lit_or_expr(high, str_to_lit=False)
-    range_expr = pli.wrap_expr(pyarange(low._pyexpr, high._pyexpr, step))
+    range_expr = wrap_expr(pyarange(low._pyexpr, high._pyexpr, step))
 
     if dtype is not None and dtype != Int64:
         range_expr = range_expr.cast(dtype)
@@ -2311,7 +2310,7 @@ def arg_sort_by(
     exprs = selection_to_pyexpr_list(exprs)
     if isinstance(descending, bool):
         descending = [descending] * len(exprs)
-    return pli.wrap_expr(py_arg_sort_by(exprs, descending))
+    return wrap_expr(py_arg_sort_by(exprs, descending))
 
 
 @deprecated_alias(reverse="descending")
@@ -2414,7 +2413,7 @@ def duration(
     if weeks is not None:
         weeks = expr_to_lit_or_expr(weeks, str_to_lit=False)._pyexpr
 
-    return pli.wrap_expr(
+    return wrap_expr(
         py_duration(
             days,
             seconds,
@@ -2475,7 +2474,7 @@ def datetime_(
     if microsecond is not None:
         microsecond = expr_to_lit_or_expr(microsecond, str_to_lit=False)._pyexpr
 
-    return pli.wrap_expr(
+    return wrap_expr(
         py_datetime(
             year_expr._pyexpr,
             month_expr._pyexpr,
@@ -2562,7 +2561,7 @@ def concat_str(exprs: IntoExpr | Iterable[IntoExpr], separator: str = "") -> Exp
 
     """
     exprs = selection_to_pyexpr_list(exprs)
-    return pli.wrap_expr(_concat_str(exprs, separator))
+    return wrap_expr(_concat_str(exprs, separator))
 
 
 def format(fstring: str, *args: Expr | str) -> Expr:
@@ -2663,7 +2662,7 @@ def concat_list(exprs: Sequence[str | Expr | Series] | Expr) -> Expr:
 
     """
     exprs = selection_to_pyexpr_list(exprs)
-    return pli.wrap_expr(_concat_lst(exprs))
+    return wrap_expr(_concat_lst(exprs))
 
 
 @deprecate_nonkeyword_arguments()
@@ -2732,7 +2731,7 @@ def collect_all(
     out = _collect_all(prepared)
 
     # wrap the pydataframes into dataframe
-    result = [pli.wrap_df(pydf) for pydf in out]
+    result = [wrap_df(pydf) for pydf in out]
 
     return result
 
@@ -2884,7 +2883,7 @@ def struct(
             for name, expr in named_exprs.items()
         )
 
-    expr = pli.wrap_expr(_as_struct(exprs))
+    expr = wrap_expr(_as_struct(exprs))
     if schema:
         expr = expr.cast(Struct(schema))
 
@@ -2965,7 +2964,7 @@ def repeat(
     else:
         if isinstance(n, int):
             n = lit(n)
-        return pli.wrap_expr(_repeat(value, n._pyexpr))
+        return wrap_expr(_repeat(value, n._pyexpr))
 
 
 @overload
@@ -3024,7 +3023,7 @@ def arg_where(condition: Expr | Series, eager: bool = False) -> Expr | Series:
         return condition.to_frame().select(arg_where(col(condition.name))).to_series()
     else:
         condition = expr_to_lit_or_expr(condition, str_to_lit=True)
-        return pli.wrap_expr(py_arg_where(condition._pyexpr))
+        return wrap_expr(py_arg_where(condition._pyexpr))
 
 
 def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
@@ -3077,7 +3076,7 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
     exprs = selection_to_pyexpr_list(exprs)
     if more_exprs:
         exprs.extend(selection_to_pyexpr_list(more_exprs))
-    return pli.wrap_expr(_coalesce_exprs(exprs))
+    return wrap_expr(_coalesce_exprs(exprs))
 
 
 @overload
