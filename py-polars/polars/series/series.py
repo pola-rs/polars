@@ -72,6 +72,7 @@ from polars.utils._construction import (
     sequence_to_pyseries,
     series_to_pyseries,
 )
+from polars.utils._wrap import wrap_df
 from polars.utils.convert import (
     _date_to_pl_date,
     _datetime_to_pl_timestamp,
@@ -134,10 +135,6 @@ ArrayLike = Union[
     "pd.Series",
     "pd.DatetimeIndex",
 ]
-
-
-def wrap_s(s: PySeries) -> Series:
-    return Series._from_pyseries(s)
 
 
 @redirect(
@@ -1147,8 +1144,8 @@ class Series:
 
         """
         if isinstance(name, str):
-            return pli.wrap_df(PyDataFrame([self.rename(name)._s]))
-        return pli.wrap_df(PyDataFrame([self._s]))
+            return wrap_df(PyDataFrame([self.rename(name)._s]))
+        return wrap_df(PyDataFrame([self._s]))
 
     def describe(self) -> DataFrame:
         """
@@ -1418,7 +1415,7 @@ class Series:
         └─────┴─────┴─────┘
 
         """
-        return pli.wrap_df(self._s.to_dummies(separator))
+        return wrap_df(self._s.to_dummies(separator))
 
     def cut(
         self,
@@ -1534,7 +1531,7 @@ class Series:
         └─────┴────────┘
 
         """
-        return pli.wrap_df(self._s.value_counts(sort))
+        return wrap_df(self._s.value_counts(sort))
 
     def unique_counts(self) -> Series:
         """

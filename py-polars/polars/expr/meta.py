@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars import internals as pli
+from polars.utils._wrap import wrap_expr
 
 if TYPE_CHECKING:
     from polars.expr.expr import Expr
@@ -33,7 +33,7 @@ class ExprMetaNameSpace:
         For instance in a ``fold`` expression.
 
         """
-        return [pli.wrap_expr(e) for e in self._pyexpr.meta_pop()]
+        return [wrap_expr(e) for e in self._pyexpr.meta_pop()]
 
     def root_names(self) -> list[str]:
         """Get a list with the root column name."""
@@ -52,7 +52,7 @@ class ExprMetaNameSpace:
 
     def undo_aliases(self) -> Expr:
         """Undo any renaming operation like ``alias`` or ``keep_name``."""
-        return pli.wrap_expr(self._pyexpr.meta_undo_aliases())
+        return wrap_expr(self._pyexpr.meta_undo_aliases())
 
     def has_multiple_outputs(self) -> bool:
         """Whether this expression expands into multiple expressions."""

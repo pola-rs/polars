@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars import internals as pli
 from polars.datatypes import (
     DataType,
     Date,
@@ -12,6 +11,7 @@ from polars.datatypes import (
     py_type_to_dtype,
 )
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
+from polars.utils._wrap import wrap_expr
 
 if TYPE_CHECKING:
     from polars.expr.expr import Expr
@@ -115,11 +115,11 @@ class ExprStringNameSpace:
             raise ValueError(f"expected: {DataType} got: {datatype}")
 
         if datatype == Date:
-            return pli.wrap_expr(self._pyexpr.str_parse_date(fmt, strict, exact, cache))
+            return wrap_expr(self._pyexpr.str_parse_date(fmt, strict, exact, cache))
         elif datatype == Datetime:
             tu = datatype.tu  # type: ignore[union-attr]
             tz = datatype.tz  # type: ignore[union-attr]
-            dtcol = pli.wrap_expr(
+            dtcol = wrap_expr(
                 self._pyexpr.str_parse_datetime(
                     fmt,
                     strict,
@@ -133,7 +133,7 @@ class ExprStringNameSpace:
             )
             return dtcol if (tu is None) else dtcol.dt.cast_time_unit(tu)
         elif datatype == Time:
-            return pli.wrap_expr(self._pyexpr.str_parse_time(fmt, strict, exact, cache))
+            return wrap_expr(self._pyexpr.str_parse_time(fmt, strict, exact, cache))
         else:  # pragma: no cover
             raise ValueError("dtype should be of type {Date, Datetime, Time}")
 
@@ -168,7 +168,7 @@ class ExprStringNameSpace:
         └──────┴────────┴────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.str_lengths())
+        return wrap_expr(self._pyexpr.str_lengths())
 
     def n_chars(self) -> Expr:
         """
@@ -201,7 +201,7 @@ class ExprStringNameSpace:
         └──────┴────────┴────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.str_n_chars())
+        return wrap_expr(self._pyexpr.str_n_chars())
 
     def concat(self, delimiter: str = "-") -> Expr:
         """
@@ -230,7 +230,7 @@ class ExprStringNameSpace:
         └──────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.str_concat(delimiter))
+        return wrap_expr(self._pyexpr.str_concat(delimiter))
 
     def to_uppercase(self) -> Expr:
         """
@@ -251,7 +251,7 @@ class ExprStringNameSpace:
         └─────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.str_to_uppercase())
+        return wrap_expr(self._pyexpr.str_to_uppercase())
 
     def to_lowercase(self) -> Expr:
         """
@@ -272,7 +272,7 @@ class ExprStringNameSpace:
         └─────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.str_to_lowercase())
+        return wrap_expr(self._pyexpr.str_to_lowercase())
 
     def strip(self, matches: str | None = None) -> Expr:
         r"""
@@ -314,7 +314,7 @@ class ExprStringNameSpace:
         └─────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.str_strip(matches))
+        return wrap_expr(self._pyexpr.str_strip(matches))
 
     def lstrip(self, matches: str | None = None) -> Expr:
         r"""
@@ -356,7 +356,7 @@ class ExprStringNameSpace:
         └─────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.str_lstrip(matches))
+        return wrap_expr(self._pyexpr.str_lstrip(matches))
 
     def rstrip(self, matches: str | None = None) -> Expr:
         r"""
@@ -398,7 +398,7 @@ class ExprStringNameSpace:
         └─────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.str_rstrip(matches))
+        return wrap_expr(self._pyexpr.str_rstrip(matches))
 
     def zfill(self, alignment: int) -> Expr:
         """
@@ -442,7 +442,7 @@ class ExprStringNameSpace:
         └─────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.str_zfill(alignment))
+        return wrap_expr(self._pyexpr.str_zfill(alignment))
 
     def ljust(self, width: int, fillchar: str = " ") -> Expr:
         """
@@ -476,7 +476,7 @@ class ExprStringNameSpace:
         └──────────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.str_ljust(width, fillchar))
+        return wrap_expr(self._pyexpr.str_ljust(width, fillchar))
 
     def rjust(self, width: int, fillchar: str = " ") -> Expr:
         """
@@ -510,7 +510,7 @@ class ExprStringNameSpace:
         └──────────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.str_rjust(width, fillchar))
+        return wrap_expr(self._pyexpr.str_rjust(width, fillchar))
 
     def contains(
         self, pattern: str | Expr, literal: bool = False, strict: bool = True
@@ -557,7 +557,7 @@ class ExprStringNameSpace:
 
         """
         pattern = expr_to_lit_or_expr(pattern, str_to_lit=True)._pyexpr
-        return pli.wrap_expr(self._pyexpr.str_contains(pattern, literal, strict))
+        return wrap_expr(self._pyexpr.str_contains(pattern, literal, strict))
 
     def ends_with(self, sub: str | Expr) -> Expr:
         """
@@ -604,7 +604,7 @@ class ExprStringNameSpace:
 
         """
         sub = expr_to_lit_or_expr(sub, str_to_lit=True)._pyexpr
-        return pli.wrap_expr(self._pyexpr.str_ends_with(sub))
+        return wrap_expr(self._pyexpr.str_ends_with(sub))
 
     def starts_with(self, sub: str | Expr) -> Expr:
         """
@@ -651,7 +651,7 @@ class ExprStringNameSpace:
 
         """
         sub = expr_to_lit_or_expr(sub, str_to_lit=True)._pyexpr
-        return pli.wrap_expr(self._pyexpr.str_starts_with(sub))
+        return wrap_expr(self._pyexpr.str_starts_with(sub))
 
     def json_extract(self, dtype: PolarsDataType | None = None) -> Expr:
         """
@@ -691,7 +691,7 @@ class ExprStringNameSpace:
         """
         if dtype is not None:
             dtype = py_type_to_dtype(dtype)
-        return pli.wrap_expr(self._pyexpr.str_json_extract(dtype))
+        return wrap_expr(self._pyexpr.str_json_extract(dtype))
 
     def json_path_match(self, json_path: str) -> Expr:
         """
@@ -733,7 +733,7 @@ class ExprStringNameSpace:
         └──────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.str_json_path_match(json_path))
+        return wrap_expr(self._pyexpr.str_json_path_match(json_path))
 
     def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> Expr:
         """
@@ -749,9 +749,9 @@ class ExprStringNameSpace:
 
         """
         if encoding == "hex":
-            return pli.wrap_expr(self._pyexpr.str_hex_decode(strict))
+            return wrap_expr(self._pyexpr.str_hex_decode(strict))
         elif encoding == "base64":
-            return pli.wrap_expr(self._pyexpr.str_base64_decode(strict))
+            return wrap_expr(self._pyexpr.str_base64_decode(strict))
         else:
             raise ValueError(
                 f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
@@ -787,9 +787,9 @@ class ExprStringNameSpace:
 
         """
         if encoding == "hex":
-            return pli.wrap_expr(self._pyexpr.str_hex_encode())
+            return wrap_expr(self._pyexpr.str_hex_encode())
         elif encoding == "base64":
-            return pli.wrap_expr(self._pyexpr.str_base64_encode())
+            return wrap_expr(self._pyexpr.str_base64_encode())
         else:
             raise ValueError(
                 f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
@@ -840,7 +840,7 @@ class ExprStringNameSpace:
         └─────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.str_extract(pattern, group_index))
+        return wrap_expr(self._pyexpr.str_extract(pattern, group_index))
 
     def extract_all(self, pattern: str | Expr) -> Expr:
         r"""
@@ -879,7 +879,7 @@ class ExprStringNameSpace:
 
         """
         pattern = expr_to_lit_or_expr(pattern, str_to_lit=True)
-        return pli.wrap_expr(self._pyexpr.str_extract_all(pattern._pyexpr))
+        return wrap_expr(self._pyexpr.str_extract_all(pattern._pyexpr))
 
     def count_match(self, pattern: str) -> Expr:
         r"""
@@ -913,7 +913,7 @@ class ExprStringNameSpace:
         └──────────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.count_match(pattern))
+        return wrap_expr(self._pyexpr.count_match(pattern))
 
     def split(self, by: str, inclusive: bool = False) -> Expr:
         """
@@ -947,8 +947,8 @@ class ExprStringNameSpace:
 
         """
         if inclusive:
-            return pli.wrap_expr(self._pyexpr.str_split_inclusive(by))
-        return pli.wrap_expr(self._pyexpr.str_split(by))
+            return wrap_expr(self._pyexpr.str_split_inclusive(by))
+        return wrap_expr(self._pyexpr.str_split(by))
 
     def split_exact(self, by: str, n: int, inclusive: bool = False) -> Expr:
         """
@@ -1017,8 +1017,8 @@ class ExprStringNameSpace:
 
         """
         if inclusive:
-            return pli.wrap_expr(self._pyexpr.str_split_exact_inclusive(by, n))
-        return pli.wrap_expr(self._pyexpr.str_split_exact(by, n))
+            return wrap_expr(self._pyexpr.str_split_exact_inclusive(by, n))
+        return wrap_expr(self._pyexpr.str_split_exact(by, n))
 
     def splitn(self, by: str, n: int) -> Expr:
         """
@@ -1079,7 +1079,7 @@ class ExprStringNameSpace:
         Struct of Utf8 type
 
         """
-        return pli.wrap_expr(self._pyexpr.str_splitn(by, n))
+        return wrap_expr(self._pyexpr.str_splitn(by, n))
 
     def replace(
         self,
@@ -1126,7 +1126,7 @@ class ExprStringNameSpace:
         """
         pattern = expr_to_lit_or_expr(pattern, str_to_lit=True)
         value = expr_to_lit_or_expr(value, str_to_lit=True)
-        return pli.wrap_expr(
+        return wrap_expr(
             self._pyexpr.str_replace_n(pattern._pyexpr, value._pyexpr, literal, n)
         )
 
@@ -1166,7 +1166,7 @@ class ExprStringNameSpace:
         """
         pattern = expr_to_lit_or_expr(pattern, str_to_lit=True)
         value = expr_to_lit_or_expr(value, str_to_lit=True)
-        return pli.wrap_expr(
+        return wrap_expr(
             self._pyexpr.str_replace_all(pattern._pyexpr, value._pyexpr, literal)
         )
 
@@ -1223,7 +1223,7 @@ class ExprStringNameSpace:
         └─────────────┴──────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.str_slice(offset, length))
+        return wrap_expr(self._pyexpr.str_slice(offset, length))
 
     def explode(self) -> Expr:
         """
@@ -1252,7 +1252,7 @@ class ExprStringNameSpace:
         └─────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.explode())
+        return wrap_expr(self._pyexpr.explode())
 
     def parse_int(self, radix: int = 2, strict: bool = True) -> Expr:
         """
@@ -1305,4 +1305,4 @@ class ExprStringNameSpace:
         └───────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.str_parse_int(radix, strict))
+        return wrap_expr(self._pyexpr.str_parse_int(radix, strict))

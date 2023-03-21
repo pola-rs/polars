@@ -49,6 +49,7 @@ from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
 from polars.lazyframe.groupby import LazyGroupBy
 from polars.slice import LazyPolarsSlice
 from polars.utils._parse_expr_input import expr_to_lit_or_expr, selection_to_pyexpr_list
+from polars.utils._wrap import wrap_df
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import (
     deprecate_nonkeyword_arguments,
@@ -107,10 +108,6 @@ if TYPE_CHECKING:
 
     T = TypeVar("T")
     P = ParamSpec("P")
-
-
-def wrap_ldf(ldf: PyLazyFrame) -> LazyFrame:
-    return LazyFrame._from_pyldf(ldf)
 
 
 @redirect(
@@ -1318,7 +1315,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             streaming,
         )
         df, timings = ldf.profile()
-        (df, timings) = pli.wrap_df(df), pli.wrap_df(timings)
+        (df, timings) = wrap_df(df), wrap_df(timings)
 
         if show_plot:
             try:
@@ -1444,7 +1441,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             common_subplan_elimination,
             streaming,
         )
-        return pli.wrap_df(ldf.collect())
+        return wrap_df(ldf.collect())
 
     def sink_parquet(
         self,
@@ -1702,7 +1699,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             common_subplan_elimination,
             streaming,
         )
-        return pli.wrap_df(lf.fetch(n_rows))
+        return wrap_df(lf.fetch(n_rows))
 
     def lazy(self) -> Self:
         """

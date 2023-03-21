@@ -1,6 +1,5 @@
-from polars.dataframe.frame import DataFrame, wrap_df
+from polars.dataframe.frame import DataFrame
 
 __all__ = [
     "DataFrame",
-    "wrap_df",
 ]
