@@ -281,6 +281,10 @@ impl ChunkCast for ListChunked {
                             )
                         })
                     }
+                    #[cfg(feature = "dtype-categorical")]
+                    (dt, Categorical(None)) => {
+                        polars_bail!(ComputeError: "cannot cast list inner type: '{:?}' to Categorical", dt)
+                    }
                     _ if phys_child.is_primitive() => {
                         let mut ca = if child_type.to_physical() != self.inner_dtype().to_physical()
                         {
