@@ -1825,7 +1825,6 @@ class Expr:
         ...     {
         ...         "group": ["one", "one", "one", "two", "two", "two"],
         ...         "value": [1, 98, 2, 3, 99, 4],
-        ...         "value": [1, 98, 2, 3, 99, 4],
         ...     }
         ... )
         >>> df.groupby("group").agg(pl.col("value").sort())  # doctest: +IGNORE_RESULT
