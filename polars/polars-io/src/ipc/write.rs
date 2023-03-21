@@ -30,8 +30,8 @@ use crate::WriterFactory;
 /// ```
 #[must_use]
 pub struct IpcWriter<W> {
-    writer: W,
-    compression: Option<IpcCompression>,
+    pub(super) writer: W,
+    pub(super) compression: Option<IpcCompression>,
 }
 
 impl<W: Write> IpcWriter<W> {

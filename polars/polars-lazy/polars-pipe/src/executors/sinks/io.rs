@@ -9,6 +9,8 @@ use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
 use polars_core::POOL;
 use polars_io::prelude::*;
+use tokio::runtime;
+use tokio_util::compat::*;
 
 pub(in crate::executors::sinks) type DfIter =
     Box<dyn ExactSizeIterator<Item = DataFrame> + Sync + Send>;
@@ -100,45 +102,52 @@ impl IOThread {
         let dir2 = dir.clone();
         let total2 = total.clone();
         let lockfile2 = lockfile.clone();
+
         std::thread::spawn(move || {
-            // this moves the lockfile in the thread
-            // we keep one in the thread and one in the `IoThread` struct
-            let _keep_hold_on_lockfile = lockfile2;
+            // Create the runtime
+            let rt = runtime::Builder::new_current_thread().build().unwrap();
 
-            let mut count = 0usize;
-            while let Ok((partitions, iter)) = receiver.recv() {
-                if let Some(partitions) = partitions {
-                    for (part, df) in partitions.into_no_null_iter().zip(iter) {
+            rt.block_on(async {
+                // this moves the lockfile in the thread
+                // we keep one in the thread and one in the `IoThread` struct
+                let _keep_hold_on_lockfile = lockfile2;
+
+                let mut count = 0usize;
+                while let Ok((partitions, iter)) = receiver.recv() {
+                    if let Some(partitions) = partitions {
+                        for (part, df) in partitions.into_no_null_iter().zip(iter) {
+                            let mut path = dir2.clone();
+                            path.push(format!("{part}"));
+
+                            let _ = std::fs::create_dir(&path);
+                            path.push(format!("{count}.ipc"));
+
+                            let file = tokio::fs::File::create(path).await.unwrap().compat();
+                            let writer = IpcWriter::new_async(file);
+                            let mut writer = writer.batched_async(&schema).unwrap();
+                            writer.write_batch(&df).await.unwrap();
+                            writer.finish().await.unwrap();
+                            count += 1;
+                        }
+                    } else {
                         let mut path = dir2.clone();
-                        path.push(format!("{part}"));
-
-                        let _ = std::fs::create_dir(&path);
                         path.push(format!("{count}.ipc"));
 
-                        let file = std::fs::File::create(path).unwrap();
-                        let writer = IpcWriter::new(file);
-                        let mut writer = writer.batched(&schema).unwrap();
-                        writer.write_batch(&df).unwrap();
-                        writer.finish().unwrap();
+                        let file = tokio::fs::File::create(path).await.unwrap().compat();
+                        // let file = std::fs::File::create(path).unwrap();
+                        let writer = IpcWriter::new_async(file);
+                        let mut writer = writer.batched_async(&schema).unwrap();
+
+                        for df in iter {
+                            writer.write_batch(&df).await.unwrap();
+                        }
+                        writer.finish().await.unwrap();
+
                         count += 1;
                     }
-                } else {
-                    let mut path = dir2.clone();
-                    path.push(format!("{count}.ipc"));
-
-                    let file = std::fs::File::create(path).unwrap();
-                    let writer = IpcWriter::new(file);
-                    let mut writer = writer.batched(&schema).unwrap();
-
-                    for df in iter {
-                        writer.write_batch(&df).unwrap();
-                    }
-                    writer.finish().unwrap();
-
-                    count += 1;
+                    total2.store(count, Ordering::Relaxed);
                 }
-                total2.store(count, Ordering::Relaxed);
-            }
+            })
         });
 
         Ok(Self {

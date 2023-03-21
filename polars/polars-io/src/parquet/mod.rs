@@ -14,7 +14,7 @@
 //! }
 //! ```
 //!
-#[cfg(feature = "async")]
+#[cfg(feature = "cloud")]
 pub(super) mod async_impl;
 pub(super) mod mmap;
 pub mod predicates;
