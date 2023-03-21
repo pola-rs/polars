@@ -1789,7 +1789,7 @@ impl DataFrame {
     pub fn sort_impl(
         &self,
         by_column: Vec<Series>,
-        descending: Vec<bool>,
+        mut descending: Vec<bool>,
         nulls_last: bool,
         slice: Option<(i64, usize)>,
         parallel: bool,
@@ -1799,6 +1799,10 @@ impl DataFrame {
         }
 
         if let Some((0, k)) = slice {
+            // reverse as top_k expects the largest
+            for v in descending.iter_mut() {
+                *v = !*v;
+            }
             return self.top_k_impl(k, descending, by_column, nulls_last);
         }
 

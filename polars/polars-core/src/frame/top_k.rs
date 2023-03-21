@@ -1,5 +1,4 @@
 use std::cmp::Ordering;
-use std::collections::BinaryHeap;
 
 use polars_error::PolarsResult;
 use polars_utils::iter::EnumerateIdxTrait;
@@ -12,7 +11,7 @@ use crate::prelude::sort::arg_sort_multiple::_get_rows_encoded;
 use crate::prelude::*;
 use crate::utils::NoNull;
 
-#[derive(Eq, PartialOrd)]
+#[derive(Eq)]
 struct CompareRow<'a> {
     idx: IdxSize,
     bytes: &'a [u8],
@@ -27,6 +26,12 @@ impl PartialEq for CompareRow<'_> {
 impl Ord for CompareRow<'_> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.bytes.cmp(other.bytes)
+    }
+}
+
+impl PartialOrd for CompareRow<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.bytes.partial_cmp(other.bytes)
     }
 }
 
@@ -51,20 +56,15 @@ impl DataFrame {
     ) -> PolarsResult<DataFrame> {
         let encoded = _get_rows_encoded(&by_column, &descending, nulls_last)?;
         let arr = encoded.into_array();
+        let mut rows = arr
+            .values_iter()
+            .enumerate_idx()
+            .map(|(idx, bytes)| CompareRow { idx, bytes })
+            .collect::<Vec<_>>();
+        let (lower, _el, _upper) = rows.select_nth_unstable(k);
+        lower.sort_unstable();
 
-        let len = self.height();
-        let k = std::cmp::min(k, len);
-        let mut heap = BinaryHeap::with_capacity(len);
-
-        for (idx, bytes) in arr.values_iter().enumerate_idx() {
-            heap.push(CompareRow { idx, bytes })
-        }
-        let idx: NoNull<IdxCa> = (0..k)
-            .map(|_| {
-                let cmp_row = heap.pop().unwrap();
-                cmp_row.idx
-            })
-            .collect();
+        let idx: NoNull<IdxCa> = lower.iter().map(|cmp_row| cmp_row.idx).collect();
 
         unsafe { Ok(self.take_unchecked(&idx.into_inner())) }
     }
