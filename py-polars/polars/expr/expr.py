@@ -244,6 +244,10 @@ class Expr:
         return self.__ne__(other)
 
     # math / binary
+    def add(self, other: Any) -> Self:
+        """Method equivalent of operator expression ``expr + other``."""
+        return self.__add__(other)
+
     def floordiv(self, other: Any) -> Self:
         """Method equivalent of operator expression ``expr // other``."""
         return self.__floordiv__(other)
