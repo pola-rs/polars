@@ -39,7 +39,7 @@ dtype-struct = ["polars-core/dtype-struct"]
 fmt = ["polars-core/fmt"]
 lazy = []
 parquet = ["polars-core/parquet", "arrow/io_parquet", "arrow/io_parquet_compression", "memmap"]
-async = ["async-trait", "futures", "object_store", "tokio", "url"]
+async = ["async-trait", "futures", "object_store", "tokio", "url", "arrow/io_ipc_write_async", "polars-error/regex"]
 aws = ["object_store/aws", "async", "polars-core/aws"]
 azure = ["object_store/azure", "async", "polars-core/azure"]
 gcp = ["object_store/gcp", "async", "polars-core/gcp"]
@@ -69,6 +69,7 @@ object_store = { version = "0.5.3", default-features = false, optional = true }
 once_cell = "1"
 polars-arrow = { version = "0.27.2", path = "../polars-arrow" }
 polars-core = { version = "0.27.2", path = "../polars-core", features = ["private"], default-features = false }
+polars-error = { version = "0.27.2", path = "../polars-error", default-features = false }
 polars-time = { version = "0.27.2", path = "../polars-time", features = ["private"], default-features = false, optional = true }
 polars-utils = { version = "0.27.2", path = "../polars-utils" }
 rayon.workspace = true
