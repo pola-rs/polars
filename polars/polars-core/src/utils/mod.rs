@@ -194,7 +194,7 @@ pub fn split_df_as_ref(df: &DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>>
     for i in 0..n {
         let offset = i * chunk_size;
         let len = if i == (n - 1) {
-            total_len - offset
+            total_len.saturating_sub(offset)
         } else {
             chunk_size
         };

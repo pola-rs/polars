@@ -170,8 +170,8 @@ name = "polars"
 crate-type = ["cdylib"]
 
 [profile.release]
-# codegen-units = 1
-# lto = "fat"
+codegen-units = 1
+lto = "fat"
 
 # This is ignored here; would be set in .cargo/config.toml.
 # Should not be used when packaging
