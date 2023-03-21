@@ -2121,6 +2121,13 @@ def test_date_range_with_unsupported_datetimes() -> None:
         )
 
 
+def test_date_range_descending() -> None:
+    with pytest.raises(ComputeError, match="'start' cannot be greater than 'stop'"):
+        pl.date_range(datetime(2000, 3, 20), datetime(2000, 3, 5), interval="1h")
+    with pytest.raises(ComputeError, match="'interval' cannot be negative"):
+        pl.date_range(datetime(2000, 3, 20), datetime(2000, 3, 21), interval="-1h")
+
+
 def test_logical_nested_take() -> None:
     frame = pl.DataFrame(
         {

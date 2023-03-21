@@ -24,11 +24,12 @@ pub fn date_range_impl(
     tu: TimeUnit,
     _tz: Option<&TimeZone>,
 ) -> PolarsResult<DatetimeChunked> {
-    let s = if start > stop {
-        IsSorted::Descending
-    } else {
-        IsSorted::Ascending
-    };
+    if start > stop {
+        polars_bail!(ComputeError: "'start' cannot be greater than 'stop'")
+    }
+    if every.negative {
+        polars_bail!(ComputeError: "'interval' cannot be negative")
+    }
     let mut out = match _tz {
         #[cfg(feature = "timezones")]
         Some(tz) => match tz.parse::<chrono_tz::Tz>() {
@@ -61,7 +62,7 @@ pub fn date_range_impl(
         .into_datetime(tu, None),
     };
 
-    out.set_sorted_flag(s);
+    out.set_sorted_flag(IsSorted::Ascending);
     Ok(out)
 }
 
