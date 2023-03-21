@@ -80,13 +80,15 @@ class _LazyModule(ModuleType):
             # import the module and return the requested attribute
             module = self._import()
             return getattr(module, attr)
-        else:
-            # user has not installed the proxied module
-            if re.match(r"^__\w+__$", attr):
-                # allow some minimal introspection on private module
-                # attrs to avoid unnecessary error-handling elsewhere
-                return None
 
+        # user has not installed the proxied/lazy module
+        elif attr == "__name__":
+            return self._module_name
+        elif re.match(r"^__\w+__$", attr) and attr != "__version__":
+            # allow some minimal introspection on private module
+            # attrs to avoid unnecessary error-handling elsewhere
+            return None
+        else:
             # all other attribute access raises a helpful exception
             pfx = self._mod_pfx.get(self._module_name, "")
             raise ModuleNotFoundError(
