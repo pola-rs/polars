@@ -114,7 +114,8 @@ if TYPE_CHECKING:
     from pyarrow.interchange.dataframe import _PyArrowDataFrame
     from xlsxwriter import Workbook
 
-    from polars.series.series import Series
+    from polars.lazyframe import LazyFrame
+    from polars.series import Series
     from polars.type_aliases import (
         AsofJoinStrategy,
         AvroCompression,
@@ -6283,7 +6284,7 @@ class DataFrame:
         """
         return wrap_s(self._df.is_unique())
 
-    def lazy(self) -> pli.LazyFrame:
+    def lazy(self) -> LazyFrame:
         """
         Start a lazy query from this point. This returns a `LazyFrame` object.
 
