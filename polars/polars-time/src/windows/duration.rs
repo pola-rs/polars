@@ -9,7 +9,8 @@ use polars_arrow::export::arrow::temporal_conversions::{
 };
 use polars_core::export::arrow::temporal_conversions::MICROSECONDS;
 use polars_core::prelude::{
-    datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us, PolarsResult,
+    datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us, polars_bail,
+    PolarsResult,
 };
 use polars_core::utils::arrow::temporal_conversions::NANOSECONDS;
 #[cfg(feature = "serde")]
@@ -340,7 +341,7 @@ impl Duration {
         J: Fn(NaiveDateTime) -> i64,
     {
         match (self.months, self.weeks, self.days, self.nsecs) {
-            (0, 0, 0, 0) => panic!("duration may not be zero"),
+            (0, 0, 0, 0) => polars_bail!(ComputeError: "duration may not be zero"),
             // truncate by ns/us/ms
             (0, 0, 0, _) => {
                 let t = match tz {
@@ -433,7 +434,9 @@ impl Duration {
                     _ => Ok(datetime_to_timestamp(dt)),
                 }
             }
-            _ => panic!("duration may not mix month, weeks and nanosecond units"),
+            _ => {
+                polars_bail!(ComputeError: "duration may not mix month, weeks and nanosecond units")
+            }
         }
     }
 
