@@ -6,7 +6,7 @@ from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     from polars.polars import PySeries
-    from polars.series.series import Series
+    from polars.series import Series
     from polars.type_aliases import TransferEncoding
 
 

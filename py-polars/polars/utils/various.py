@@ -10,7 +10,7 @@ from polars import functions as F
 from polars.datatypes import Int64, is_polars_dtype
 
 if TYPE_CHECKING:
-    from polars.series.series import Series
+    from polars.series import Series
 
 
 # note: reversed views don't match as instances of MappingView

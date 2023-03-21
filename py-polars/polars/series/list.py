@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
     from polars.expr.expr import Expr
     from polars.polars import PySeries
-    from polars.series.series import Series
+    from polars.series import Series
     from polars.type_aliases import NullBehavior, ToStructStrategy
 
 

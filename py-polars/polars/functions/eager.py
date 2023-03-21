@@ -31,10 +31,10 @@ if TYPE_CHECKING:
     import sys
     from datetime import date
 
-    from polars.dataframe.frame import DataFrame
+    from polars.dataframe import DataFrame
     from polars.expr.expr import Expr
-    from polars.lazyframe.frame import LazyFrame
-    from polars.series.series import Series
+    from polars.lazyframe import LazyFrame
+    from polars.series import Series
     from polars.type_aliases import (
         ClosedInterval,
         ConcatMethod,

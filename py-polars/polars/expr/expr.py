@@ -52,10 +52,10 @@ if TYPE_CHECKING:
     import sys
     from datetime import date, datetime, time
 
-    from polars.dataframe.frame import DataFrame
-    from polars.lazyframe.frame import LazyFrame
+    from polars.dataframe import DataFrame
+    from polars.lazyframe import LazyFrame
     from polars.polars import PyExpr
-    from polars.series.series import Series
+    from polars.series import Series
     from polars.type_aliases import (
         ApplyStrategy,
         ClosedInterval,

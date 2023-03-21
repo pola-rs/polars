@@ -114,6 +114,7 @@ if TYPE_CHECKING:
     from pyarrow.interchange.dataframe import _PyArrowDataFrame
     from xlsxwriter import Workbook
 
+    from polars.expr import Expr
     from polars.lazyframe import LazyFrame
     from polars.series import Series
     from polars.type_aliases import (
@@ -3229,7 +3230,7 @@ class DataFrame:
 
     def filter(
         self,
-        predicate: (pli.Expr | str | Series | list[bool] | np.ndarray[Any, Any] | bool),
+        predicate: (Expr | str | Series | list[bool] | np.ndarray[Any, Any] | bool),
     ) -> Self:
         """
         Filter the rows in the DataFrame based on a predicate expression.
@@ -4666,9 +4667,9 @@ class DataFrame:
     def join_asof(
         self,
         other: DataFrame,
-        left_on: str | None | pli.Expr = None,
-        right_on: str | None | pli.Expr = None,
-        on: str | None | pli.Expr = None,
+        left_on: str | None | Expr = None,
+        right_on: str | None | Expr = None,
+        on: str | None | Expr = None,
         by_left: str | Sequence[str] | None = None,
         by_right: str | Sequence[str] | None = None,
         by: str | Sequence[str] | None = None,
@@ -4820,9 +4821,9 @@ class DataFrame:
     def join(
         self,
         other: DataFrame,
-        left_on: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
-        right_on: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
-        on: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
+        left_on: str | Expr | Sequence[str | Expr] | None = None,
+        right_on: str | Expr | Sequence[str | Expr] | None = None,
+        on: str | Expr | Sequence[str | Expr] | None = None,
         how: JoinStrategy = "inner",
         suffix: str = "_right",
     ) -> Self:
@@ -5553,7 +5554,7 @@ class DataFrame:
             ._df
         )
 
-    def fill_nan(self, fill_value: pli.Expr | int | float | None) -> Self:
+    def fill_nan(self, fill_value: Expr | int | float | None) -> Self:
         """
         Fill floating point NaN values by an Expression evaluation.
 
@@ -5603,8 +5604,8 @@ class DataFrame:
 
     def explode(
         self,
-        columns: str | Sequence[str] | pli.Expr | Sequence[pli.Expr],
-        *more_columns: str | pli.Expr,
+        columns: str | Sequence[str] | Expr | Sequence[Expr],
+        *more_columns: str | Expr,
     ) -> Self:
         """
         Explode the dataframe to long format by exploding the given columns.
@@ -5675,7 +5676,7 @@ class DataFrame:
         values: Sequence[str] | str,
         index: Sequence[str] | str,
         columns: Sequence[str] | str,
-        aggregate_function: PivotAgg | pli.Expr = "first",
+        aggregate_function: PivotAgg | Expr = "first",
         maintain_order: bool = True,
         sort_columns: bool = False,
         separator: str = "_",
@@ -7171,9 +7172,7 @@ class DataFrame:
             ._df
         )
 
-    def n_unique(
-        self, subset: str | pli.Expr | Sequence[str | pli.Expr] | None = None
-    ) -> int:
+    def n_unique(self, subset: str | Expr | Sequence[str | Expr] | None = None) -> int:
         """
         Return the number of unique rows, or the number of unique row-subsets.
 
@@ -7442,7 +7441,7 @@ class DataFrame:
         self,
         index: int | None = ...,
         *,
-        by_predicate: pli.Expr | None = ...,
+        by_predicate: Expr | None = ...,
         named: Literal[False] = ...,
     ) -> tuple[Any, ...]:
         ...
@@ -7452,7 +7451,7 @@ class DataFrame:
         self,
         index: int | None = ...,
         *,
-        by_predicate: pli.Expr | None = ...,
+        by_predicate: Expr | None = ...,
         named: Literal[True],
     ) -> dict[str, Any]:
         ...
@@ -7461,7 +7460,7 @@ class DataFrame:
         self,
         index: int | None = None,
         *,
-        by_predicate: pli.Expr | None = None,
+        by_predicate: Expr | None = None,
         named: bool = False,
     ) -> tuple[Any, ...] | dict[str, Any]:
         """
