@@ -191,7 +191,7 @@ pub enum EitherRustPythonFile {
 
 fn no_such_file_err(file_path: &str) -> PyResult<()> {
     let msg = if file_path.len() > 88 {
-        let file_path: String = file_path.chars().rev().take(88).collect();
+        let file_path: &str = &file_path[file_path.len() - 88..];
         format!("No such file or directory: ...{file_path}",)
     } else {
         format!("No such file or directory: {file_path}",)
