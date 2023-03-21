@@ -5,8 +5,8 @@ use polars_core::utils::_split_offsets;
 use polars_core::POOL;
 use polars_plan::prelude::*;
 
-use crate::determine_chunk_size;
 use crate::operators::{DataChunk, Operator, OperatorResult, PExecutionContext};
+use crate::pipeline::determine_chunk_size;
 
 #[derive(Clone)]
 pub struct FunctionOperator {

@@ -176,7 +176,7 @@ def test_streaming_categoricals_5921() -> None:
             .with_columns(pl.col("X").cast(pl.Categorical))
             .groupby("X")
             .agg(pl.col("Y").min())
-            .sort("X")
+            .sort("Y", descending=True)
             .collect(streaming=True)
         )
 
@@ -185,7 +185,7 @@ def test_streaming_categoricals_5921() -> None:
             .with_columns(pl.col("X").cast(pl.Categorical))
             .groupby("X")
             .agg(pl.col("Y").min())
-            .sort("X")
+            .sort("Y", descending=True)
         )
 
     for out in [out_eager, out_lazy]:

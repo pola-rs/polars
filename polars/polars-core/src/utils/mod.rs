@@ -179,7 +179,7 @@ pub fn flatten_series(s: &Series) -> Vec<Series> {
 
 pub fn split_df_as_ref(df: &DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>> {
     let total_len = df.height();
-    let chunk_size = std::cmp::min(total_len / n, 3);
+    let chunk_size = std::cmp::max(total_len / n, 3);
 
     if df.n_chunks() == n
         && df.get_columns()[0]
@@ -194,7 +194,7 @@ pub fn split_df_as_ref(df: &DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>>
     for i in 0..n {
         let offset = i * chunk_size;
         let len = if i == (n - 1) {
-            total_len - offset
+            total_len.saturating_sub(offset)
         } else {
             chunk_size
         };

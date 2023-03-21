@@ -3,7 +3,7 @@
 
 #[cfg(feature = "avro")]
 pub mod avro;
-#[cfg(feature = "async")]
+#[cfg(feature = "cloud")]
 mod cloud;
 #[cfg(any(feature = "csv-file", feature = "json"))]
 pub mod csv;
@@ -15,7 +15,7 @@ pub mod ipc;
 pub mod json;
 #[cfg(feature = "json")]
 pub mod ndjson_core;
-#[cfg(feature = "async")]
+#[cfg(feature = "cloud")]
 pub use crate::cloud::glob as async_glob;
 
 #[cfg(any(

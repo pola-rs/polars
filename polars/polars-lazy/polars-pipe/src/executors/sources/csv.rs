@@ -9,7 +9,7 @@ use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::prelude::CsvParserOptions;
 
 use super::*;
-use crate::determine_chunk_size;
+use crate::pipeline::determine_chunk_size;
 
 pub(crate) struct CsvSource {
     #[allow(dead_code)]

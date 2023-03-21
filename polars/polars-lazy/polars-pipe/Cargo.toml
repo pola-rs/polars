@@ -15,7 +15,7 @@ hashbrown.workspace = true
 num-traits.workspace = true
 polars-arrow = { version = "0.27.2", path = "../../polars-arrow", default-features = false }
 polars-core = { version = "0.27.2", path = "../../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
-polars-io = { version = "0.27.2", path = "../../polars-io", default-features = false, features = ["ipc"] }
+polars-io = { version = "0.27.2", path = "../../polars-io", default-features = false, features = ["ipc", "async"] }
 polars-ops = { version = "0.27.2", path = "../../polars-ops", features = ["search_sorted"] }
 polars-plan = { version = "0.27.2", path = "../polars-plan", default-features = false, features = ["compile"] }
 polars-row = { version = "0.27.2", path = "../../polars-row" }

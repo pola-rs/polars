@@ -36,7 +36,7 @@ default = ["compile", "private"]
 parquet = ["polars-core/parquet", "polars-io/parquet", "polars-plan/parquet", "polars-pipe/parquet"]
 async = [
   "polars-plan/async",
-  "polars-io/async",
+  "polars-io/cloud",
   "polars-pipe/async",
   "streaming",
 ]

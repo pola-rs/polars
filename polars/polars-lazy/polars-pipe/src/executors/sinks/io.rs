@@ -7,8 +7,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crossbeam_channel::{bounded, Sender};
 use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
-use polars_core::POOL;
 use polars_io::prelude::*;
+
+use crate::pipeline::morsels_per_sink;
 
 pub(in crate::executors::sinks) type DfIter =
     Box<dyn ExactSizeIterator<Item = DataFrame> + Sync + Send>;
@@ -22,6 +23,7 @@ pub(crate) struct IOThread {
     pub(in crate::executors::sinks) dir: PathBuf,
     pub(in crate::executors::sinks) sent: Arc<AtomicUsize>,
     pub(in crate::executors::sinks) total: Arc<AtomicUsize>,
+    pub(in crate::executors::sinks) thread_local_count: Arc<AtomicUsize>,
 }
 
 fn get_lockfile_path(dir: &Path) -> PathBuf {
@@ -81,21 +83,23 @@ impl IOThread {
             .unwrap()
             .as_nanos();
 
+        let dir = resolve_homedir(Path::new(&format!("~/.polars/{operation_name}/{uuid}")));
+        std::fs::create_dir_all(&dir)?;
+
+        // make sure we create lockfile before we GC
+        let lockfile_path = get_lockfile_path(&dir);
+        let lockfile = Arc::new(LockFile::new(lockfile_path)?);
+
         // start a thread that will clean up old dumps.
         // TODO: if we will have more ooc in the future  we will have a dedicated GC thread
         gc_thread(operation_name);
 
-        let dir = resolve_homedir(Path::new(&format!("~/.polars/{operation_name}/{uuid}")));
-        std::fs::create_dir_all(&dir)?;
-
-        let lockfile_path = get_lockfile_path(&dir);
-        let lockfile = Arc::new(LockFile::new(lockfile_path)?);
-
         // we need some pushback otherwise we still could go OOM.
-        let (sender, receiver) = bounded::<Payload>(POOL.current_num_threads() * 2);
+        let (sender, receiver) = bounded::<Payload>(morsels_per_sink() * 2);
 
         let sent: Arc<AtomicUsize> = Default::default();
         let total: Arc<AtomicUsize> = Default::default();
+        let thread_local_count: Arc<AtomicUsize> = Default::default();
 
         let dir2 = dir.clone();
         let total2 = total.clone();
@@ -147,13 +151,29 @@ impl IOThread {
             sent,
             total,
             _lockfile: lockfile,
+            thread_local_count,
         })
     }
 
-    pub(in crate::executors::sinks) fn dump_chunk(&self, df: DataFrame) {
-        let iter = Box::new(std::iter::once(df));
-        self.dump_iter(None, iter)
+    pub(in crate::executors::sinks) fn dump_chunk(&self, mut df: DataFrame) {
+        // if IO thread is blocked
+        // we write locally on this thread
+        if self.sender.is_full() {
+            let mut path = self.dir.clone();
+            let count = self.thread_local_count.fetch_add(1, Ordering::Relaxed);
+            // thread local name we start with an underscore to ensure we don't get
+            // duplicates
+            path.push(format!("_{count}.ipc"));
+
+            let file = std::fs::File::create(path).unwrap();
+            let mut writer = IpcWriter::new(file);
+            writer.finish(&mut df).unwrap();
+        } else {
+            let iter = Box::new(std::iter::once(df));
+            self.dump_iter(None, iter)
+        }
     }
+
     pub(in crate::executors::sinks) fn dump_iter(&self, partition: Option<IdxCa>, iter: DfIter) {
         let add = iter.size_hint().1.unwrap();
         self.sender.send((partition, iter)).unwrap();
