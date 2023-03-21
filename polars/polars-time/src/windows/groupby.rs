@@ -301,18 +301,21 @@ pub(crate) fn groupby_values_iter_full_lookbehind<'a>(
 }
 
 // this one is correct for all lookbehind/lookaheads, but is slower
-pub(crate) fn groupby_values_iter_window_behind_t(
+pub(crate) fn groupby_values_iter_window_behind_t<'a>(
     period: Duration,
     offset: Duration,
-    time: &[i64],
+    time: &'a [i64],
     closed_window: ClosedWindow,
     tu: TimeUnit,
-) -> impl Iterator<Item = (IdxSize, IdxSize)> + TrustedLen + '_ {
-    let add = match tu {
-        TimeUnit::Nanoseconds => Duration::add_ns,
-        TimeUnit::Microseconds => Duration::add_us,
-        TimeUnit::Milliseconds => Duration::add_ms,
-    };
+    tz: Option<impl TimeZoneTrait + 'a>,
+) -> impl Iterator<Item = (IdxSize, IdxSize)> + TrustedLen + 'a {
+    fn add<T: TimeZoneTrait>(tu: TimeUnit) -> fn(&Duration, i64, Option<&T>) -> PolarsResult<i64> {
+        match tu {
+            TimeUnit::Nanoseconds => Duration::add_ns,
+            TimeUnit::Microseconds => Duration::add_us,
+            TimeUnit::Milliseconds => Duration::add_ms,
+        }
+    }
 
     let mut lagging_offset = 0;
     let mut last = i64::MIN;
@@ -321,9 +324,8 @@ pub(crate) fn groupby_values_iter_window_behind_t(
             panic!("index column of 'groupby_rolling' must be sorted!")
         }
         last = *lower;
-        // TODO remove unwrap once time zone is respected
-        let lower = add(&offset, *lower, NO_TIMEZONE).unwrap();
-        let upper = add(&period, lower, NO_TIMEZONE).unwrap();
+        let lower = add(tu)(&offset, *lower, tz.as_ref()).unwrap();
+        let upper = add(tu)(&period, lower, tz.as_ref()).unwrap();
 
         let b = Bounds::new(lower, upper);
         if b.is_future(time[0], closed_window) {
@@ -356,18 +358,21 @@ pub(crate) fn groupby_values_iter_window_behind_t(
 }
 
 // this one is correct for all lookbehind/lookaheads, but is slower
-pub(crate) fn groupby_values_iter_partial_lookbehind(
+pub(crate) fn groupby_values_iter_partial_lookbehind<'a>(
     period: Duration,
     offset: Duration,
-    time: &[i64],
+    time: &'a [i64],
     closed_window: ClosedWindow,
     tu: TimeUnit,
-) -> impl Iterator<Item = (IdxSize, IdxSize)> + TrustedLen + '_ {
-    let add = match tu {
-        TimeUnit::Nanoseconds => Duration::add_ns,
-        TimeUnit::Microseconds => Duration::add_us,
-        TimeUnit::Milliseconds => Duration::add_ms,
-    };
+    tz: Option<impl TimeZoneTrait + 'a>,
+) -> impl Iterator<Item = (IdxSize, IdxSize)> + TrustedLen + 'a {
+    fn add<T: TimeZoneTrait>(tu: TimeUnit) -> fn(&Duration, i64, Option<&T>) -> PolarsResult<i64> {
+        match tu {
+            TimeUnit::Nanoseconds => Duration::add_ns,
+            TimeUnit::Microseconds => Duration::add_us,
+            TimeUnit::Milliseconds => Duration::add_ms,
+        }
+    }
 
     let mut lagging_offset = 0;
     let mut last = i64::MIN;
@@ -376,9 +381,8 @@ pub(crate) fn groupby_values_iter_partial_lookbehind(
             panic!("index column of 'groupby_rolling' must be sorted!")
         }
         last = *lower;
-        // TODO remove unwrap once time zone is respected
-        let lower = add(&offset, *lower, NO_TIMEZONE).unwrap();
-        let upper = add(&period, lower, NO_TIMEZONE).unwrap();
+        let lower = add(tu)(&offset, *lower, tz.as_ref()).unwrap();
+        let upper = add(tu)(&period, lower, tz.as_ref()).unwrap();
 
         let b = Bounds::new(lower, upper);
 
@@ -398,23 +402,27 @@ pub(crate) fn groupby_values_iter_partial_lookbehind(
     })
 }
 
-pub(crate) fn groupby_values_iter_full_lookahead(
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn groupby_values_iter_full_lookahead<'a>(
     period: Duration,
     offset: Duration,
-    time: &[i64],
+    time: &'a [i64],
     closed_window: ClosedWindow,
     tu: TimeUnit,
+    tz: Option<impl TimeZoneTrait + 'a>,
     start_offset: usize,
     upper_bound: Option<usize>,
-) -> impl Iterator<Item = (IdxSize, IdxSize)> + TrustedLen + '_ {
+) -> impl Iterator<Item = (IdxSize, IdxSize)> + TrustedLen + 'a {
     let upper_bound = upper_bound.unwrap_or(time.len());
     debug_assert!(!offset.negative);
 
-    let add = match tu {
-        TimeUnit::Nanoseconds => Duration::add_ns,
-        TimeUnit::Microseconds => Duration::add_us,
-        TimeUnit::Milliseconds => Duration::add_ms,
-    };
+    fn add<T: TimeZoneTrait>(tu: TimeUnit) -> fn(&Duration, i64, Option<&T>) -> PolarsResult<i64> {
+        match tu {
+            TimeUnit::Nanoseconds => Duration::add_ns,
+            TimeUnit::Microseconds => Duration::add_us,
+            TimeUnit::Milliseconds => Duration::add_ms,
+        }
+    }
 
     let mut last = i64::MIN;
     time[start_offset..upper_bound]
@@ -426,9 +434,8 @@ pub(crate) fn groupby_values_iter_full_lookahead(
             }
             last = *lower;
             i += start_offset;
-            // TODO remove unwrap once time zone is respected
-            let lower = add(&offset, *lower, NO_TIMEZONE).unwrap();
-            let upper = add(&period, lower, NO_TIMEZONE).unwrap();
+            let lower = add(tu)(&offset, *lower, tz.as_ref()).unwrap();
+            let upper = add(tu)(&period, lower, tz.as_ref()).unwrap();
 
             let b = Bounds::new(lower, upper);
 
@@ -471,12 +478,20 @@ pub(crate) fn groupby_values_iter<'a>(
         // partial lookbehind
         else {
             let iter =
-                groupby_values_iter_partial_lookbehind(period, offset, time, closed_window, tu);
+                groupby_values_iter_partial_lookbehind(period, offset, time, closed_window, tu, tz);
             Box::new(iter)
         }
     } else {
-        let iter =
-            groupby_values_iter_full_lookahead(period, offset, time, closed_window, tu, 0, None);
+        let iter = groupby_values_iter_full_lookahead(
+            period,
+            offset,
+            time,
+            closed_window,
+            tu,
+            tz,
+            0,
+            None,
+        );
         Box::new(iter)
     }
 }
@@ -486,12 +501,13 @@ pub(crate) fn groupby_values_iter<'a>(
 ///     - timestamp (lower bound)
 ///     - timestamp + period (upper bound)
 /// where timestamps are the individual values in the array `time`
-pub fn groupby_values(
+pub fn groupby_values<'a>(
     period: Duration,
     offset: Duration,
-    time: &[i64],
+    time: &'a [i64],
     closed_window: ClosedWindow,
     tu: TimeUnit,
+    tz: Option<impl TimeZoneTrait + 'a + std::marker::Sync + std::marker::Send>,
 ) -> GroupsSlice {
     partially_check_sorted(time);
     let thread_offsets = _split_offsets(time.len(), POOL.current_num_threads());
@@ -510,14 +526,13 @@ pub fn groupby_values(
                         .copied()
                         .map(|(base_offset, len)| {
                             let upper_bound = base_offset + len;
-                            // TODO respect time zone
                             let iter = groupby_values_iter_full_lookbehind(
                                 period,
                                 offset,
                                 &time[..upper_bound],
                                 closed_window,
                                 tu,
-                                NO_TIMEZONE.copied(),
+                                tz.clone(),
                                 base_offset,
                             );
                             iter.map(|(offset, len)| [offset as IdxSize, len])
@@ -531,8 +546,14 @@ pub fn groupby_values(
             // ---------------t---
             //  [---]
             else {
-                let iter =
-                    groupby_values_iter_window_behind_t(period, offset, time, closed_window, tu);
+                let iter = groupby_values_iter_window_behind_t(
+                    period,
+                    offset,
+                    time,
+                    closed_window,
+                    tu,
+                    tz,
+                );
                 iter.map(|(offset, len)| [offset, len]).collect_trusted()
             }
         }
@@ -544,7 +565,7 @@ pub fn groupby_values(
         //  [---]
         else {
             let iter =
-                groupby_values_iter_partial_lookbehind(period, offset, time, closed_window, tu);
+                groupby_values_iter_partial_lookbehind(period, offset, time, closed_window, tu, tz);
             iter.map(|(offset, len)| [offset, len]).collect_trusted()
         }
     } else {
@@ -561,6 +582,7 @@ pub fn groupby_values(
                         time,
                         closed_window,
                         tu,
+                        tz.clone(),
                         lower_bound,
                         Some(upper_bound),
                     );
