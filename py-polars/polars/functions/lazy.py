@@ -64,10 +64,10 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
 
-    from polars.dataframe.frame import DataFrame
+    from polars.dataframe import DataFrame
     from polars.expr.expr import Expr
-    from polars.lazyframe.frame import LazyFrame
-    from polars.series.series import Series
+    from polars.lazyframe import LazyFrame
+    from polars.series import Series
     from polars.type_aliases import (
         CorrelationMethod,
         EpochTimeUnit,

@@ -9,7 +9,7 @@ SQL
 
 
 .. py:class:: SQLContext
-    :canonical: polars.internals.sql.SQLContext
+    :canonical: polars.sql.SQLContext
 
     Run SQL query against a LazyFrame.
 

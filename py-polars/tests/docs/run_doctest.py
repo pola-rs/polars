@@ -50,7 +50,7 @@ def doctest_teardown(d: doctest.DocTest) -> None:
 
 def modules_in_path(p: Path) -> Iterator[ModuleType]:
     for file in p.rglob("*.py"):
-        # Construct path as string for import, for instance "internals.frame"
+        # Construct path as string for import, for instance "dataframe.frame"
         # The -3 drops the ".py"
         file_name_import = ".".join(file.relative_to(p).parts)[:-3]
         temp_module = importlib.import_module(p.name + "." + file_name_import)

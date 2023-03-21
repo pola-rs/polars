@@ -12,7 +12,7 @@ from polars.utils._wrap import wrap_s
 
 if TYPE_CHECKING:
     from polars.polars import PySeries
-    from polars.series.series import Series
+    from polars.series import Series
     from polars.type_aliases import PolarsDataType
 
     if sys.version_info >= (3, 10):

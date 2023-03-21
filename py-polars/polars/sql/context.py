@@ -9,8 +9,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PySQLContext
 
 if TYPE_CHECKING:
-    from polars.dataframe.frame import DataFrame
-    from polars.lazyframe.frame import LazyFrame
+    from polars.dataframe import DataFrame
+    from polars.lazyframe import LazyFrame
 
 
 class SQLContext:

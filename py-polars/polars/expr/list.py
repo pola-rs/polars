@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from datetime import date, datetime, time
 
     from polars.expr import Expr
+    from polars.series import Series
     from polars.type_aliases import NullBehavior, ToStructStrategy
 
 
@@ -220,9 +221,7 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.lst_unique())
 
-    def concat(
-        self, other: list[Expr | str] | Expr | str | pli.Series | list[Any]
-    ) -> Expr:
+    def concat(self, other: list[Expr | str] | Expr | str | Series | list[Any]) -> Expr:
         """
         Concat the arrays in a Series dtype List in linear time.
 
@@ -256,7 +255,7 @@ class ExprListNameSpace:
         ):
             return self.concat(pli.Series([other]))
 
-        other_list: list[Expr | str | pli.Series]
+        other_list: list[Expr | str | Series]
         other_list = [other] if not isinstance(other, list) else copy.copy(other)  # type: ignore[arg-type]
 
         other_list.insert(0, wrap_expr(self._pyexpr))
@@ -296,7 +295,7 @@ class ExprListNameSpace:
 
     def take(
         self,
-        index: Expr | pli.Series | list[int] | list[list[int]],
+        index: Expr | Series | list[int] | list[list[int]],
         null_on_oob: bool = False,
     ) -> Expr:
         """

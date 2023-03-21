@@ -73,9 +73,9 @@ if TYPE_CHECKING:
 
     import pyarrow as pa
 
-    from polars.dataframe.frame import DataFrame
+    from polars.dataframe import DataFrame
     from polars.expr.expr import Expr
-    from polars.series.series import Series
+    from polars.series import Series
     from polars.type_aliases import (
         AsofJoinStrategy,
         ClosedInterval,

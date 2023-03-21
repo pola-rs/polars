@@ -48,7 +48,7 @@ from polars.datatypes import (
     is_polars_dtype,
     py_type_to_dtype,
 )
-from polars.series.series import Series
+from polars.series import Series
 from polars.string_cache import StringCache
 from polars.testing.asserts import is_categorical_dtype
 
