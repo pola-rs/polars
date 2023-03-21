@@ -30,7 +30,11 @@ impl Window {
     }
 
     /// Truncate the given ns timestamp by the window boundary.
-    pub fn truncate_ns(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> PolarsResult<i64> {
+    pub fn truncate_ns(
+        &self,
+        t: i64,
+        tz: Option<&(impl TimeZoneTrait + std::fmt::Display + std::fmt::Debug)>,
+    ) -> PolarsResult<i64> {
         let t = self.every.truncate_ns(t, tz)?;
         self.offset.add_ns(t, tz)
     }
@@ -38,13 +42,17 @@ impl Window {
     pub fn truncate_no_offset_ns(
         &self,
         t: i64,
-        tz: Option<&impl TimeZoneTrait>,
+        tz: Option<&(impl TimeZoneTrait + std::fmt::Display + std::fmt::Debug)>,
     ) -> PolarsResult<i64> {
         self.every.truncate_ns(t, tz)
     }
 
     /// Truncate the given us timestamp by the window boundary.
-    pub fn truncate_us(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> PolarsResult<i64> {
+    pub fn truncate_us(
+        &self,
+        t: i64,
+        tz: Option<&(impl TimeZoneTrait + std::fmt::Display + std::fmt::Debug)>,
+    ) -> PolarsResult<i64> {
         let t = self.every.truncate_us(t, tz)?;
         self.offset.add_us(t, tz)
     }
@@ -52,12 +60,16 @@ impl Window {
     pub fn truncate_no_offset_us(
         &self,
         t: i64,
-        tz: Option<&impl TimeZoneTrait>,
+        tz: Option<&(impl TimeZoneTrait + std::fmt::Display + std::fmt::Debug)>,
     ) -> PolarsResult<i64> {
         self.every.truncate_us(t, tz)
     }
 
-    pub fn truncate_ms(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> PolarsResult<i64> {
+    pub fn truncate_ms(
+        &self,
+        t: i64,
+        tz: Option<&(impl TimeZoneTrait + std::fmt::Display + std::fmt::Debug)>,
+    ) -> PolarsResult<i64> {
         let t = self.every.truncate_ms(t, tz)?;
         self.offset.add_ms(t, tz)
     }
@@ -66,26 +78,38 @@ impl Window {
     pub fn truncate_no_offset_ms(
         &self,
         t: i64,
-        tz: Option<&impl TimeZoneTrait>,
+        tz: Option<&(impl TimeZoneTrait + std::fmt::Display + std::fmt::Debug)>,
     ) -> PolarsResult<i64> {
         self.every.truncate_ms(t, tz)
     }
 
     /// Round the given ns timestamp by the window boundary.
-    pub fn round_ns(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> PolarsResult<i64> {
+    pub fn round_ns(
+        &self,
+        t: i64,
+        tz: Option<&(impl TimeZoneTrait + std::fmt::Display + std::fmt::Debug)>,
+    ) -> PolarsResult<i64> {
         let t = t + self.every.duration_ns() / 2_i64;
         self.truncate_ns(t, tz)
     }
 
     /// Round the given us timestamp by the window boundary.
-    pub fn round_us(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> PolarsResult<i64> {
+    pub fn round_us(
+        &self,
+        t: i64,
+        tz: Option<&(impl TimeZoneTrait + std::fmt::Display + std::fmt::Debug)>,
+    ) -> PolarsResult<i64> {
         let t = t + self.every.duration_ns()
             / (2 * timeunit_scale(ArrowTimeUnit::Nanosecond, ArrowTimeUnit::Microsecond) as i64);
         self.truncate_us(t, tz)
     }
 
     /// Round the given ms timestamp by the window boundary.
-    pub fn round_ms(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> PolarsResult<i64> {
+    pub fn round_ms(
+        &self,
+        t: i64,
+        tz: Option<&(impl TimeZoneTrait + std::fmt::Display + std::fmt::Debug)>,
+    ) -> PolarsResult<i64> {
         let t = t + self.every.duration_ns()
             / (2 * timeunit_scale(ArrowTimeUnit::Nanosecond, ArrowTimeUnit::Millisecond) as i64);
         self.truncate_ms(t, tz)
@@ -107,7 +131,7 @@ impl Window {
     pub fn get_earliest_bounds_ns(
         &self,
         t: i64,
-        tz: Option<&impl TimeZoneTrait>,
+        tz: Option<&(impl TimeZoneTrait + std::fmt::Display + std::fmt::Debug)>,
     ) -> PolarsResult<Bounds> {
         let start = if !self.every.months_only()
             && self.every.duration_ns() > NANOSECONDS * SECONDS_IN_DAY
@@ -126,7 +150,7 @@ impl Window {
     pub fn get_earliest_bounds_us(
         &self,
         t: i64,
-        tz: Option<&impl TimeZoneTrait>,
+        tz: Option<&(impl TimeZoneTrait + std::fmt::Display + std::fmt::Debug)>,
     ) -> PolarsResult<Bounds> {
         let start = if !self.every.months_only()
             && self.every.duration_us() > MICROSECONDS * SECONDS_IN_DAY
@@ -142,7 +166,7 @@ impl Window {
     pub fn get_earliest_bounds_ms(
         &self,
         t: i64,
-        tz: Option<&impl TimeZoneTrait>,
+        tz: Option<&(impl TimeZoneTrait + std::fmt::Display + std::fmt::Debug)>,
     ) -> PolarsResult<Bounds> {
         let start = if !self.every.months_only()
             && self.every.duration_ms() > MILLISECONDS * SECONDS_IN_DAY
@@ -172,7 +196,10 @@ impl Window {
             + self.period.duration_ms() / self.every.duration_ms()) as usize
     }
 
-    pub fn get_overlapping_bounds_iter<'a, T: TimeZoneTrait>(
+    pub fn get_overlapping_bounds_iter<
+        'a,
+        T: TimeZoneTrait + std::fmt::Display + std::fmt::Debug,
+    >(
         &self,
         boundary: Bounds,
         tu: TimeUnit,
@@ -183,7 +210,7 @@ impl Window {
     }
 }
 
-pub struct BoundsIter<'a, T: TimeZoneTrait> {
+pub struct BoundsIter<'a, T: TimeZoneTrait + std::fmt::Display + std::fmt::Debug> {
     window: Window,
     // wrapping boundary
     boundary: Bounds,
@@ -192,7 +219,7 @@ pub struct BoundsIter<'a, T: TimeZoneTrait> {
     tu: TimeUnit,
     tz: Option<&'a T>,
 }
-impl<'a, T: TimeZoneTrait> BoundsIter<'a, T> {
+impl<'a, T: TimeZoneTrait + std::fmt::Display + std::fmt::Debug> BoundsIter<'a, T> {
     fn new(
         window: Window,
         boundary: Bounds,
@@ -287,7 +314,7 @@ impl<'a, T: TimeZoneTrait> BoundsIter<'a, T> {
     }
 }
 
-impl<'a, T: TimeZoneTrait> Iterator for BoundsIter<'a, T> {
+impl<'a, T: TimeZoneTrait + std::fmt::Display + std::fmt::Debug> Iterator for BoundsIter<'a, T> {
     type Item = Bounds;
 
     fn next(&mut self) -> Option<Self::Item> {

@@ -25,7 +25,7 @@ pub(super) fn date_offset(s: Series, offset: Duration) -> PolarsResult<Series> {
                 me.datetime().unwrap().clone()
             };
 
-            fn adder<T: TimeZoneTrait>(
+            fn adder<T: TimeZoneTrait + std::fmt::Display + std::fmt::Debug>(
                 tu: TimeUnit,
             ) -> fn(&Duration, i64, Option<&T>) -> PolarsResult<i64> {
                 match tu {
