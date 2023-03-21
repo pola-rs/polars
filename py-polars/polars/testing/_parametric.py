@@ -26,7 +26,7 @@ from hypothesis.strategies import (
 )
 from hypothesis.strategies._internal.utils import defines_strategy
 
-from polars import internals as pli
+from polars.dataframe import DataFrame
 from polars.datatypes import (
     Boolean,
     Categorical,
@@ -48,17 +48,15 @@ from polars.datatypes import (
     is_polars_dtype,
     py_type_to_dtype,
 )
+from polars.series.series import Series
 from polars.string_cache import StringCache
 from polars.testing.asserts import is_categorical_dtype
 
 if TYPE_CHECKING:
     from hypothesis.strategies import DrawFn, SearchStrategy
 
-    from polars.dataframe.frame import DataFrame
-    from polars.lazyframe.frame import LazyFrame
-    from polars.series.series import Series
+    from polars.lazyframe import LazyFrame
     from polars.type_aliases import OneOrMoreDataTypes, PolarsDataType
-
 
 # Default profile (eg: running locally)
 common_settings = {"print_blob": True, "deadline": None}
@@ -440,7 +438,7 @@ def series(
                         series_values[idx] = None
 
             # init series with strategy-generated data
-            s = pli.Series(
+            s = Series(
                 name=series_name,
                 dtype=series_dtype,
                 values=series_values,
@@ -614,7 +612,7 @@ def dataframes(
             frame_columns = [
                 c.name if (c.dtype is None) else (c.name, c.dtype) for c in coldefs
             ]
-            df = pli.DataFrame(
+            df = DataFrame(
                 data={
                     c.name: draw(
                         series(
