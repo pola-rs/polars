@@ -674,6 +674,13 @@ def test_csv_schema_offset(foods_file_path: Path) -> None:
     assert df.shape == (3, 4)
     assert df.dtypes == [pl.Utf8, pl.Int64, pl.Int64, pl.Int64]
 
+    df = pl.scan_csv(
+        foods_file_path, skip_rows_after_header=24, infer_schema_length=1
+    ).collect()
+    assert df.columns == ["category", "calories", "fats_g", "sugars_g"]
+    assert df.shape == (3, 4)
+    assert df.dtypes == [pl.Utf8, pl.Int64, pl.Int64, pl.Int64]
+
 
 def test_empty_string_missing_round_trip() -> None:
     df = pl.DataFrame({"varA": ["A", "", None], "varB": ["B", "", None]})
