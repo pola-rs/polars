@@ -1,4 +1,3 @@
-use chrono::TimeZone as TimeZoneTrait;
 use polars_arrow::export::arrow::temporal_conversions::{MILLISECONDS, SECONDS_IN_DAY};
 use polars_core::prelude::*;
 
@@ -9,7 +8,7 @@ pub trait PolarsRound {
         &self,
         every: Duration,
         offset: Duration,
-        tz: Option<&(impl TimeZoneTrait + std::fmt::Display + std::fmt::Debug)>,
+        tz: Option<&impl PolarsTimeZone>,
     ) -> PolarsResult<Self>
     where
         Self: Sized;
@@ -21,7 +20,7 @@ impl PolarsRound for DatetimeChunked {
         &self,
         every: Duration,
         offset: Duration,
-        tz: Option<&(impl TimeZoneTrait + std::fmt::Display + std::fmt::Debug)>,
+        tz: Option<&impl PolarsTimeZone>,
     ) -> PolarsResult<Self> {
         let w = Window::new(every, every, offset);
 
@@ -42,7 +41,7 @@ impl PolarsRound for DateChunked {
         &self,
         every: Duration,
         offset: Duration,
-        _tz: Option<&(impl TimeZoneTrait + std::fmt::Display + std::fmt::Debug)>,
+        _tz: Option<&impl PolarsTimeZone>,
     ) -> PolarsResult<Self> {
         let w = Window::new(every, every, offset);
         Ok(self

@@ -2,7 +2,6 @@ use std::cmp::Ordering;
 
 #[cfg(feature = "timezones")]
 use arrow::temporal_conversions::parse_offset;
-use chrono::TimeZone as TimeZoneTrait;
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
 use polars_arrow::trusted_len::TrustedLen;
@@ -42,7 +41,7 @@ impl Default for StartBy {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn update_groups_and_bounds<T: TimeZoneTrait + std::fmt::Display + std::fmt::Debug>(
+fn update_groups_and_bounds<T: PolarsTimeZone>(
     bounds_iter: BoundsIter<'_, T>,
     mut start_offset: usize,
     time: &[i64],
@@ -243,14 +242,12 @@ pub(crate) fn groupby_values_iter_full_lookbehind<'a>(
     time: &'a [i64],
     closed_window: ClosedWindow,
     tu: TimeUnit,
-    tz: Option<impl TimeZoneTrait + 'a + std::fmt::Display + std::fmt::Debug>,
+    tz: Option<impl PolarsTimeZone + 'a>,
     start_offset: usize,
 ) -> impl Iterator<Item = (IdxSize, IdxSize)> + TrustedLen + 'a {
     debug_assert!(offset.duration_ns() >= period.duration_ns());
     debug_assert!(offset.negative);
-    fn add<T: TimeZoneTrait + std::fmt::Display + std::fmt::Debug>(
-        tu: TimeUnit,
-    ) -> fn(&Duration, i64, Option<&T>) -> PolarsResult<i64> {
+    fn add<T: PolarsTimeZone>(tu: TimeUnit) -> fn(&Duration, i64, Option<&T>) -> PolarsResult<i64> {
         match tu {
             TimeUnit::Nanoseconds => Duration::add_ns,
             TimeUnit::Microseconds => Duration::add_us,
@@ -309,11 +306,9 @@ pub(crate) fn groupby_values_iter_window_behind_t<'a>(
     time: &'a [i64],
     closed_window: ClosedWindow,
     tu: TimeUnit,
-    tz: Option<impl TimeZoneTrait + 'a + std::fmt::Display + std::fmt::Debug>,
+    tz: Option<impl PolarsTimeZone + 'a>,
 ) -> impl Iterator<Item = (IdxSize, IdxSize)> + TrustedLen + 'a {
-    fn add<T: TimeZoneTrait + std::fmt::Display + std::fmt::Debug>(
-        tu: TimeUnit,
-    ) -> fn(&Duration, i64, Option<&T>) -> PolarsResult<i64> {
+    fn add<T: PolarsTimeZone>(tu: TimeUnit) -> fn(&Duration, i64, Option<&T>) -> PolarsResult<i64> {
         match tu {
             TimeUnit::Nanoseconds => Duration::add_ns,
             TimeUnit::Microseconds => Duration::add_us,
@@ -368,11 +363,9 @@ pub(crate) fn groupby_values_iter_partial_lookbehind<'a>(
     time: &'a [i64],
     closed_window: ClosedWindow,
     tu: TimeUnit,
-    tz: Option<impl TimeZoneTrait + 'a + std::fmt::Display + std::fmt::Debug>,
+    tz: Option<impl PolarsTimeZone + 'a>,
 ) -> impl Iterator<Item = (IdxSize, IdxSize)> + TrustedLen + 'a {
-    fn add<T: TimeZoneTrait + std::fmt::Display + std::fmt::Debug>(
-        tu: TimeUnit,
-    ) -> fn(&Duration, i64, Option<&T>) -> PolarsResult<i64> {
+    fn add<T: PolarsTimeZone>(tu: TimeUnit) -> fn(&Duration, i64, Option<&T>) -> PolarsResult<i64> {
         match tu {
             TimeUnit::Nanoseconds => Duration::add_ns,
             TimeUnit::Microseconds => Duration::add_us,
@@ -415,16 +408,14 @@ pub(crate) fn groupby_values_iter_full_lookahead<'a>(
     time: &'a [i64],
     closed_window: ClosedWindow,
     tu: TimeUnit,
-    tz: Option<impl TimeZoneTrait + 'a + std::fmt::Display + std::fmt::Debug>,
+    tz: Option<impl PolarsTimeZone + 'a>,
     start_offset: usize,
     upper_bound: Option<usize>,
 ) -> impl Iterator<Item = (IdxSize, IdxSize)> + TrustedLen + 'a {
     let upper_bound = upper_bound.unwrap_or(time.len());
     debug_assert!(!offset.negative);
 
-    fn add<T: TimeZoneTrait + std::fmt::Display + std::fmt::Debug>(
-        tu: TimeUnit,
-    ) -> fn(&Duration, i64, Option<&T>) -> PolarsResult<i64> {
+    fn add<T: PolarsTimeZone>(tu: TimeUnit) -> fn(&Duration, i64, Option<&T>) -> PolarsResult<i64> {
         match tu {
             TimeUnit::Nanoseconds => Duration::add_ns,
             TimeUnit::Microseconds => Duration::add_us,
@@ -472,7 +463,7 @@ pub(crate) fn groupby_values_iter<'a>(
     time: &'a [i64],
     closed_window: ClosedWindow,
     tu: TimeUnit,
-    tz: Option<impl TimeZoneTrait + 'a + std::fmt::Display + std::fmt::Debug>,
+    tz: Option<impl PolarsTimeZone + 'a>,
 ) -> Box<dyn TrustedLen<Item = (IdxSize, IdxSize)> + 'a> {
     partially_check_sorted(time);
     // we have a (partial) lookbehind window
@@ -515,14 +506,7 @@ pub fn groupby_values<'a>(
     time: &'a [i64],
     closed_window: ClosedWindow,
     tu: TimeUnit,
-    tz: Option<
-        impl TimeZoneTrait
-            + 'a
-            + std::marker::Sync
-            + std::marker::Send
-            + std::fmt::Display
-            + std::fmt::Debug,
-    >,
+    tz: Option<impl PolarsTimeZone + 'a + std::marker::Sync + std::marker::Send>,
 ) -> GroupsSlice {
     partially_check_sorted(time);
     let thread_offsets = _split_offsets(time.len(), POOL.current_num_threads());
