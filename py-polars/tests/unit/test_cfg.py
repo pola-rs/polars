@@ -6,6 +6,7 @@ from typing import Iterator
 import pytest
 
 import polars as pl
+from polars.config import _get_float_fmt
 from polars.testing import assert_frame_equal
 
 
@@ -416,6 +417,7 @@ def test_config_load_save() -> None:
     # set some config options...
     pl.Config.set_tbl_cols(12)
     pl.Config.set_verbose(True)
+    pl.Config.set_fmt_float("full")
     assert os.environ.get("POLARS_VERBOSE") == "1"
 
     cfg = pl.Config.save()
@@ -433,6 +435,7 @@ def test_config_load_save() -> None:
     # ...and confirm the saved options were set.
     assert os.environ.get("POLARS_FMT_MAX_COLS") == "12"
     assert os.environ.get("POLARS_VERBOSE") == "1"
+    assert _get_float_fmt() == "full"
 
     # restore all default options (unsets from env)
     pl.Config.restore_defaults()
@@ -442,6 +445,7 @@ def test_config_load_save() -> None:
 
     assert os.environ.get("POLARS_FMT_MAX_COLS") is None
     assert os.environ.get("POLARS_VERBOSE") is None
+    assert _get_float_fmt() == "mixed"
 
 
 def test_config_scope() -> None:

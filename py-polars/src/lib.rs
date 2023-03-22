@@ -594,6 +594,16 @@ fn set_float_fmt(fmt: &str) -> PyResult<()> {
     Ok(())
 }
 
+#[pyfunction]
+fn get_float_fmt() -> PyResult<String> {
+    use polars_core::fmt::{get_float_fmt, FloatFmt};
+    let strfmt = match get_float_fmt() {
+        FloatFmt::Full => "full",
+        FloatFmt::Mixed => "mixed",
+    };
+    Ok(strfmt.to_string())
+}
+
 #[pymodule]
 fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add("ArrowError", py.get_type::<ArrowErrorException>())
@@ -692,5 +702,6 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(get_index_type)).unwrap();
     m.add_wrapped(wrap_pyfunction!(coalesce_exprs)).unwrap();
     m.add_wrapped(wrap_pyfunction!(set_float_fmt)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(get_float_fmt)).unwrap();
     Ok(())
 }

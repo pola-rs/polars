@@ -81,6 +81,7 @@ CsvEncoding: TypeAlias = Literal["utf8", "utf8-lossy"]
 FillNullStrategy: TypeAlias = Literal[
     "forward", "backward", "min", "max", "mean", "zero", "one"
 ]
+FloatFmt: TypeAlias = Literal["full", "mixed"]
 IpcCompression: TypeAlias = Literal["uncompressed", "lz4", "zstd"]
 NullBehavior: TypeAlias = Literal["ignore", "drop"]
 NullStrategy: TypeAlias = Literal["ignore", "propagate"]
