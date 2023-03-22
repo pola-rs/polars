@@ -26,7 +26,9 @@ pub mod groupby;
 pub mod hash_join;
 #[cfg(feature = "rows")]
 pub mod row;
+mod top_k;
 mod upstream_traits;
+
 pub use chunks::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -1795,6 +1797,11 @@ impl DataFrame {
         if self.height() == 0 {
             return Ok(self.clone());
         }
+
+        if let Some((0, k)) = slice {
+            return self.top_k_impl(k, descending, by_column, nulls_last);
+        }
+
         // a lot of indirection in both sorting and take
         let mut df = self.clone();
         let df = df.as_single_chunk_par();
