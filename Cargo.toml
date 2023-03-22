@@ -34,6 +34,7 @@ bitflags = "1.3"
 once_cell = "1"
 memchr = "2"
 smartstring = { version = "1" }
+multiversion = "0.7"
 
 [workspace.dependencies.arrow]
 package = "arrow2"
@@ -41,7 +42,7 @@ package = "arrow2"
 git = "https://github.com/ritchie46/arrow2"
 # rev = "f258a3e06ac408aebe7a7a497694729dc65a5e46"
 # path = "../arrow2"
-branch = "polars_2023-03-21"
+branch = "polars_2023-03-22"
 version = "0.16"
 default-features = false
 features = [

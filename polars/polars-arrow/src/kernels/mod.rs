@@ -2,6 +2,8 @@ use std::iter::Enumerate;
 
 use arrow::array::BooleanArray;
 use arrow::bitmap::utils::BitChunks;
+#[cfg(feature = "simd")]
+pub mod agg_mean;
 pub mod concatenate;
 pub mod ewm;
 pub mod float;
@@ -17,6 +19,7 @@ pub mod string;
 pub mod take_agg;
 #[cfg(feature = "timezones")]
 mod time;
+
 #[cfg(feature = "timezones")]
 pub use time::replace_timezone;
 

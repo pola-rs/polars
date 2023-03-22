@@ -172,34 +172,47 @@ where
             _ => {
                 let null_count = self.null_count();
                 let len = self.len();
-                if null_count == len {
-                    None
-                } else {
-                    let mut acc = 0.0;
-                    let len = (len - null_count) as f64;
+                match null_count {
+                    nc if nc == len => None,
+                    #[cfg(feature = "simd")]
+                    _ => {
+                        // TODO: investigate if we need a stable mean
+                        // because of SIMD memory locations and associativity.
+                        // similar to sum
+                        let mut sum = 0.0;
+                        for arr in self.downcast_iter() {
+                            sum += polars_arrow::kernels::agg_mean::sum_as_f64(arr);
+                        }
+                        Some(sum / (len - null_count) as f64)
+                    }
+                    #[cfg(not(feature = "simd"))]
+                    _ => {
+                        let mut acc = 0.0;
+                        let len = (len - null_count) as f64;
 
-                    for arr in self.downcast_iter() {
-                        if arr.null_count() > 0 {
-                            for v in arr.into_iter().flatten() {
-                                // safety
-                                // all these types can be coerced to f64
-                                unsafe {
-                                    let val = v.to_f64().unwrap_unchecked();
-                                    acc += val
+                        for arr in self.downcast_iter() {
+                            if arr.null_count() > 0 {
+                                for v in arr.into_iter().flatten() {
+                                    // safety
+                                    // all these types can be coerced to f64
+                                    unsafe {
+                                        let val = v.to_f64().unwrap_unchecked();
+                                        acc += val
+                                    }
                                 }
-                            }
-                        } else {
-                            for v in arr.values().as_slice() {
-                                // safety
-                                // all these types can be coerced to f64
-                                unsafe {
-                                    let val = v.to_f64().unwrap_unchecked();
-                                    acc += val
+                            } else {
+                                for v in arr.values().as_slice() {
+                                    // safety
+                                    // all these types can be coerced to f64
+                                    unsafe {
+                                        let val = v.to_f64().unwrap_unchecked();
+                                        acc += val
+                                    }
                                 }
                             }
                         }
+                        Some(acc / len)
                     }
-                    Some(acc / len)
                 }
             }
         }
