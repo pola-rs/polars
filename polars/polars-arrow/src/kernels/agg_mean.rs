@@ -9,7 +9,7 @@ use num_traits::ToPrimitive;
 use crate::utils::with_match_primitive_type;
 
 #[multiversion(targets = "simd")]
-fn nonnull_mean<T>(values: &[T]) -> f64
+fn nonnull_sum_as_f64<T>(values: &[T]) -> f64
 where
     T: NativeType + SimdElement + ToPrimitive + std::iter::Sum<T>,
 {
@@ -21,24 +21,16 @@ where
         reduced += chunk.cast::<f64>();
     }
 
-    (reduced.reduce_sum()
+    reduced.reduce_sum()
         + head.iter().copied().sum::<T>().to_f64().unwrap()
-        + tail.iter().copied().sum::<T>().to_f64().unwrap())
-        / values.len() as f64
+        + tail.iter().copied().sum::<T>().to_f64().unwrap()
 }
 
-pub fn primitive_no_null_sum_as_f64<T>(array: &PrimitiveArray<T>) -> f64
-where
-    T: NativeType + SimdElement + ToPrimitive + std::iter::Sum<T>,
-{
-    assert_eq!(array.null_count(), 0);
-    nonnull_mean(array.values())
-}
 pub fn no_null_sum_as_f64(values: &dyn Array) -> f64 {
     if let Primitive(primitive) = values.data_type().to_physical_type() {
         with_match_primitive_type!(primitive, |$T| {
             let arr: &PrimitiveArray<$T> = values.as_any().downcast_ref().unwrap();
-            nonnull_mean(arr.values())
+            nonnull_sum_as_f64(arr.values())
         })
     } else {
         unreachable!()

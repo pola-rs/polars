@@ -78,7 +78,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.16.0"
-source = "git+https://github.com/ritchie46/arrow2?branch=polars_2023-03-21#a49a36e313abe15237027b1d830e6345b49a8bbe"
+source = "git+https://github.com/ritchie46/arrow2?branch=polars_2023-03-22#dd53a883e9091edeed670789207edda14f5a0f5f"
 dependencies = [
  "ahash",
  "arrow-format",
@@ -86,7 +86,7 @@ dependencies = [
  "base64",
  "bytemuck",
  "chrono",
- "chrono-tz 0.6.3",
+ "chrono-tz",
  "dyn-clone",
  "either",
  "ethnum",
@@ -108,7 +108,7 @@ dependencies = [
  "simdutf8",
  "streaming-iterator",
  "strength_reduce",
- "zstd",
+ "zstd 0.12.3+zstd.1.5.2",
 ]
 
 [[package]]
@@ -309,35 +309,13 @@ dependencies = [
 
 [[package]]
 name = "chrono-tz"
-version = "0.6.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29c39203181991a7dd4343b8005bd804e7a9a37afb8ac070e43771e8c820bbde"
-dependencies = [
- "chrono",
- "chrono-tz-build 0.0.3",
- "phf",
-]
-
-[[package]]
-name = "chrono-tz"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fa48fa079165080f11d7753fd0bc175b7d391f276b965fe4b55bfad67856e463"
 dependencies = [
  "chrono",
- "chrono-tz-build 0.1.0",
+ "chrono-tz-build",
  "phf",
-]
-
-[[package]]
-name = "chrono-tz-build"
-version = "0.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f509c3a87b33437b05e2458750a0700e5bdd6956176773e6c7d6dd15a283a0c"
-dependencies = [
- "parse-zoneinfo",
- "phf",
- "phf_codegen",
 ]
 
 [[package]]
@@ -1207,22 +1185,24 @@ dependencies = [
 
 [[package]]
 name = "multiversion"
-version = "0.6.1"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "025c962a3dd3cc5e0e520aa9c612201d127dcdf28616974961a649dca64f5373"
+checksum = "e6a87eede2251ca235e5573086d01d2ab6b59dfaea54c2be10f9320980f7e8f7"
 dependencies = [
  "multiversion-macros",
+ "target-features",
 ]
 
 [[package]]
 name = "multiversion-macros"
-version = "0.6.1"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a8a3e2bde382ebf960c1f3e79689fa5941625fe9bf694a1cb64af3e85faff3af"
+checksum = "1af1abf82261d780d114014eff4b555e47d823f3b84f893c4388572b40e089fb"
 dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+ "target-features",
 ]
 
 [[package]]
@@ -1389,7 +1369,7 @@ dependencies = [
  "seq-macro",
  "snap",
  "streaming-decompression",
- "zstd",
+ "zstd 0.11.2+zstd.1.5.2",
 ]
 
 [[package]]
@@ -1443,7 +1423,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1fb5f6f826b772a8d4c0394209441e7d37cbbb967ae9c7e0e8134365c9ee676"
 dependencies = [
  "siphasher",
- "uncased",
 ]
 
 [[package]]
@@ -1493,8 +1472,9 @@ version = "0.27.2"
 dependencies = [
  "arrow2",
  "chrono",
- "chrono-tz 0.8.1",
+ "chrono-tz",
  "hashbrown 0.13.2",
+ "multiversion",
  "num-traits",
  "polars-error",
  "serde",
@@ -1509,7 +1489,7 @@ dependencies = [
  "arrow2",
  "bitflags",
  "chrono",
- "chrono-tz 0.8.1",
+ "chrono-tz",
  "comfy-table",
  "hashbrown 0.13.2",
  "indexmap",
@@ -1551,7 +1531,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "chrono",
- "chrono-tz 0.8.1",
+ "chrono-tz",
  "dirs",
  "fast-float",
  "flate2",
@@ -1639,7 +1619,7 @@ dependencies = [
  "ahash",
  "arrow2",
  "chrono",
- "chrono-tz 0.8.1",
+ "chrono-tz",
  "once_cell",
  "polars-arrow",
  "polars-core",
@@ -1683,7 +1663,7 @@ dependencies = [
  "arrow2",
  "atoi",
  "chrono",
- "chrono-tz 0.8.1",
+ "chrono-tz",
  "now",
  "once_cell",
  "polars-arrow",
@@ -2208,6 +2188,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "target-features"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "24840de800c1707d75c800893dbd727a5e1501ce921944e602f0698167491e36"
+
+[[package]]
 name = "target-lexicon"
 version = "0.12.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2289,15 +2275,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f4f7f0dd8d50a853a531c426359045b1998f04219d88799810762cd4ad314234"
 dependencies = [
  "serde",
-]
-
-[[package]]
-name = "uncased"
-version = "0.9.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09b01702b0fd0b3fadcf98e098780badda8742d4f4a7676615cad90e8ac73622"
-dependencies = [
- "version_check",
 ]
 
 [[package]]
@@ -2580,7 +2557,16 @@ version = "0.11.2+zstd.1.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20cc960326ece64f010d2d2107537f26dc589a6573a316bd5b1dba685fa5fde4"
 dependencies = [
- "zstd-safe",
+ "zstd-safe 5.0.2+zstd.1.5.2",
+]
+
+[[package]]
+name = "zstd"
+version = "0.12.3+zstd.1.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "76eea132fb024e0e13fd9c2f5d5d595d8a967aa72382ac2f9d39fcc95afd0806"
+dependencies = [
+ "zstd-safe 6.0.4+zstd.1.5.4",
 ]
 
 [[package]]
@@ -2588,6 +2574,16 @@ name = "zstd-safe"
 version = "5.0.2+zstd.1.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d2a5585e04f9eea4b2a3d1eca508c4dee9592a89ef6f450c11719da0726f4db"
+dependencies = [
+ "libc",
+ "zstd-sys",
+]
+
+[[package]]
+name = "zstd-safe"
+version = "6.0.4+zstd.1.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7afb4b54b8910cf5447638cb54bf4e8a65cbedd783af98b98c62ffe91f185543"
 dependencies = [
  "libc",
  "zstd-sys",
