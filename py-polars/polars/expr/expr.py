@@ -2124,6 +2124,22 @@ class Expr:
         │ b     ┆ [2, 4]    │
         └───────┴───────────┘
 
+        Take a single row from each group where a column attains its minimal value
+        within that group.
+
+        >>> df.groupby("group").agg(
+        ...     pl.all().sort_by("value2").first()
+        ... )  # doctest: +IGNORE_RESULT
+        shape: (2, 3)
+        ┌───────┬────────┬────────┐
+        │ group ┆ value1 ┆ value2 |
+        │ ---   ┆ ---    ┆ ---    │
+        │ str   ┆ i64    ┆ i64    |
+        ╞═══════╪════════╪════════╡
+        │ a     ┆ 3      ┆ 7      |
+        │ b     ┆ 2      ┆ 5      |
+        └───────┴────────┴────────┘
+
         """
         if isinstance(descending, bool):
             descending = [descending]
