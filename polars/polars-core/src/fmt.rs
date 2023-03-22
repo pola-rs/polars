@@ -35,7 +35,7 @@ pub enum FloatFmt {
 }
 static FLOAT_FMT: AtomicU8 = AtomicU8::new(FloatFmt::Mixed as u8);
 
-fn get_float_fmt() -> FloatFmt {
+pub fn get_float_fmt() -> FloatFmt {
     match FLOAT_FMT.load(Ordering::Relaxed) {
         0 => FloatFmt::Mixed,
         1 => FloatFmt::Full,
