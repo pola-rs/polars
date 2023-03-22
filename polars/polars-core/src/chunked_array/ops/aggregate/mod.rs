@@ -173,6 +173,7 @@ where
                 let null_count = self.null_count();
                 let len = self.len();
                 match null_count {
+                    nc if nc == len => None,
                     #[cfg(feature = "simd")]
                     0 => {
                         // TODO: investigate if we need a stable mean
@@ -185,7 +186,6 @@ where
                         }
                         Some(sum / len)
                     }
-                    nc if nc == len => None,
                     _ => {
                         let mut acc = 0.0;
                         let len = (len - null_count) as f64;

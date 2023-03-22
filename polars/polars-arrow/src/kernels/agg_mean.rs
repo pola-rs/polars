@@ -27,6 +27,7 @@ where
 }
 
 pub fn no_null_sum_as_f64(values: &dyn Array) -> f64 {
+    debug_assert_eq!(values.null_count(), 0);
     if let Primitive(primitive) = values.data_type().to_physical_type() {
         with_match_primitive_type!(primitive, |$T| {
             let arr: &PrimitiveArray<$T> = values.as_any().downcast_ref().unwrap();
