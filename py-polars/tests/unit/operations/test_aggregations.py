@@ -124,3 +124,10 @@ def test_quantile_vs_numpy() -> None:
                 assert np.isclose(
                     pl.Series(a).quantile(q, interpolation="linear"), np_result
                 )
+
+
+@typing.no_type_check
+def test_mean_overflow() -> None:
+    assert np.isclose(
+        pl.Series([9_223_372_036_854_775_800, 100]).mean(), 4.611686018427388e18
+    )
