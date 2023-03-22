@@ -456,7 +456,7 @@ impl Wrap<&DataFrame> {
         by: Vec<Series>,
         options: &RollingGroupOptions,
         tu: TimeUnit,
-        tz: Option<impl PolarsTimeZone + std::marker::Sync + std::marker::Send>,
+        tz: Option<impl PolarsTimeZone>,
         time_type: &DataType,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
         let mut dt = dt.rechunk();

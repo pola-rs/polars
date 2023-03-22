@@ -506,7 +506,7 @@ pub fn groupby_values<'a>(
     time: &'a [i64],
     closed_window: ClosedWindow,
     tu: TimeUnit,
-    tz: Option<impl PolarsTimeZone + 'a + std::marker::Sync + std::marker::Send>,
+    tz: Option<impl PolarsTimeZone + 'a>,
 ) -> GroupsSlice {
     partially_check_sorted(time);
     let thread_offsets = _split_offsets(time.len(), POOL.current_num_threads());
