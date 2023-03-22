@@ -3,8 +3,6 @@ use arrow::temporal_conversions::parse_offset;
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
 #[cfg(feature = "date_offset")]
-use polars_arrow::PolarsTimeZone;
-#[cfg(feature = "date_offset")]
 use polars_time::prelude::*;
 
 use super::*;

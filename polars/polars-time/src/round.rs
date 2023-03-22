@@ -1,5 +1,4 @@
 use polars_arrow::export::arrow::temporal_conversions::{MILLISECONDS, SECONDS_IN_DAY};
-use polars_arrow::PolarsTimeZone;
 use polars_core::prelude::*;
 
 use crate::prelude::*;
