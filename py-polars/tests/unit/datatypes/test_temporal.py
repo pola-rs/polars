@@ -352,6 +352,20 @@ def test_datetime_consistency() -> None:
         (test_data[2], 123456000),
         (test_data[3], 999999000),
     ]
+    # Similar to above, but check for no error when crossing DST
+    test_data = [
+        datetime(2021, 11, 7, 0, 0, tzinfo=ZoneInfo("US/Central")),
+        datetime(2021, 11, 7, 1, 0, tzinfo=ZoneInfo("US/Central")),
+        datetime(2021, 11, 7, 1, 0, fold=1, tzinfo=ZoneInfo("US/Central")),
+        datetime(2021, 11, 7, 2, 0, tzinfo=ZoneInfo("US/Central")),
+    ]
+    ddf = pl.DataFrame({"dtm": test_data})
+    assert ddf.rows() == [
+        (test_data[0],),
+        (test_data[1],),
+        (test_data[2],),
+        (test_data[3],),
+    ]
 
 
 def test_timezone() -> None:
