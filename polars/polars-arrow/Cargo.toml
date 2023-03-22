@@ -10,7 +10,7 @@ description = "Arrow interfaces for Polars DataFrame library"
 
 [dependencies]
 arrow.workspace = true
-chrono = { version = "0.4", default-features = false, features = ["std"], optional = true }
+chrono = { version = "0.4", default-features = false, features = ["std"] }
 chrono-tz = { version = "0.8", optional = true }
 hashbrown.workspace = true
 num-traits.workspace = true
@@ -26,4 +26,4 @@ temporal = ["arrow/compute_temporal"]
 bigidx = []
 performant = []
 like = ["arrow/compute_like"]
-timezones = ["chrono-tz", "chrono"]
+timezones = ["chrono-tz"]

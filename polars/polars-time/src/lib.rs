@@ -22,9 +22,3 @@ pub use windows::duration::Duration;
 pub use windows::groupby::ClosedWindow;
 pub use windows::window::Window;
 pub const NO_TIMEZONE: Option<&FixedOffset> = None;
-#[cfg(feature = "timezones")]
-use chrono_tz::Tz;
-pub trait PolarsTimeZone: chrono::TimeZone + std::fmt::Debug + std::fmt::Display {}
-impl PolarsTimeZone for FixedOffset {}
-#[cfg(feature = "timezones")]
-impl PolarsTimeZone for Tz {}
