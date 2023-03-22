@@ -1789,7 +1789,7 @@ impl DataFrame {
     pub fn sort_impl(
         &self,
         by_column: Vec<Series>,
-        mut descending: Vec<bool>,
+        descending: Vec<bool>,
         nulls_last: bool,
         slice: Option<(i64, usize)>,
         parallel: bool,
