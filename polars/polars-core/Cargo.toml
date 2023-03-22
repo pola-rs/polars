@@ -10,7 +10,7 @@ description = "Core of the Polars DataFrame library"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-simd = ["arrow/simd"]
+simd = ["arrow/simd", "polars-arrow/simd"]
 nightly = ["simd", "hashbrown/nightly", "polars-utils/nightly", "polars-arrow/nightly"]
 avx512 = []
 docs = []
