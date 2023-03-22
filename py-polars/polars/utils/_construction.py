@@ -385,7 +385,7 @@ def sequence_to_pyseries(
                         "Given time_zone is different from that of timezone aware datetimes."
                         f" Given: '{dtype_tz}', got: '{tz}'."
                     )
-                return s.dt.replace_time_zone(tz)._s
+                return s.dt.replace_time_zone("UTC").dt.convert_time_zone(tz)._s
             return s._s
 
         elif (
