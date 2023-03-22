@@ -175,17 +175,17 @@ where
                 match null_count {
                     nc if nc == len => None,
                     #[cfg(feature = "simd")]
-                    0 => {
+                    _ => {
                         // TODO: investigate if we need a stable mean
                         // because of SIMD memory locations and associativity.
                         // similar to sum
-                        let len = self.len() as f64;
                         let mut sum = 0.0;
                         for arr in self.downcast_iter() {
-                            sum += polars_arrow::kernels::agg_mean::no_null_sum_as_f64(arr);
+                            sum += polars_arrow::kernels::agg_mean::sum_as_f64(arr);
                         }
-                        Some(sum / len)
+                        Some(sum / (len - null_count) as f64)
                     }
+                    #[cfg(not(feature = "simd"))]
                     _ => {
                         let mut acc = 0.0;
                         let len = (len - null_count) as f64;

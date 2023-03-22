@@ -131,3 +131,16 @@ def test_mean_overflow() -> None:
     assert np.isclose(
         pl.Series([9_223_372_036_854_775_800, 100]).mean(), 4.611686018427388e18
     )
+
+
+def test_mean_null_simd() -> None:
+    for dtype in [int, float]:
+        df = (
+            pl.Series(np.random.randint(0, 100, 1000))
+            .cast(dtype)
+            .to_frame("a")
+            .select(pl.when(pl.col("a") > 40).then(pl.col("a")))
+        )
+
+    s = df["a"]
+    assert s.mean() == s.to_pandas().mean()
