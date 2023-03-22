@@ -1799,10 +1799,6 @@ impl DataFrame {
         }
 
         if let Some((0, k)) = slice {
-            // reverse as top_k expects the largest
-            for v in descending.iter_mut() {
-                *v = !*v;
-            }
             return self.top_k_impl(k, descending, by_column, nulls_last);
         }
 
