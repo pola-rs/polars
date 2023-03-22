@@ -3,14 +3,14 @@ from __future__ import annotations
 import contextlib
 from typing import TYPE_CHECKING
 
-from polars import internals as pli
+from polars.utils._wrap import wrap_ldf
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PySQLContext
 
 if TYPE_CHECKING:
-    from polars.dataframe.frame import DataFrame
-    from polars.lazyframe.frame import LazyFrame
+    from polars.dataframe import DataFrame
+    from polars.lazyframe import LazyFrame
 
 
 class SQLContext:
@@ -51,7 +51,7 @@ class SQLContext:
             A SQL query
 
         """
-        return pli.wrap_ldf(self._ctxt.execute(query))
+        return wrap_ldf(self._ctxt.execute(query))
 
     def query(self, query: str) -> DataFrame:
         return self.execute(query).collect()

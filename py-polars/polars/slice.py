@@ -5,9 +5,9 @@ from typing import TYPE_CHECKING, Union
 from polars import internals as pli
 
 if TYPE_CHECKING:
-    from polars.dataframe.frame import DataFrame
-    from polars.lazyframe.frame import LazyFrame
-    from polars.series.series import Series
+    from polars.dataframe import DataFrame
+    from polars.lazyframe import LazyFrame
+    from polars.series import Series
 
     FrameOrSeries = Union["DataFrame", "Series"]
 

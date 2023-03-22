@@ -8,10 +8,11 @@ from typing import TYPE_CHECKING, Any, Callable, TypeVar
 from polars import functions as F
 from polars import internals as pli
 from polars.datatypes import dtype_to_ffiname
+from polars.utils._wrap import wrap_s
 
 if TYPE_CHECKING:
     from polars.polars import PySeries
-    from polars.series.series import Series
+    from polars.series import Series
     from polars.type_aliases import PolarsDataType
 
     if sys.version_info >= (3, 10):
@@ -92,7 +93,7 @@ def call_expr(func: SeriesMethod) -> SeriesMethod:
 
     @wraps(func)  # type: ignore[arg-type]
     def wrapper(self: Any, *args: P.args, **kwargs: P.kwargs) -> Series:
-        s = pli.wrap_s(self._s)
+        s = wrap_s(self._s)
         expr = F.col(s.name)
         namespace = getattr(self, "_accessor", None)
         if namespace is not None:

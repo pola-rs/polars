@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from polars import functions as F
-from polars import internals as pli
 from polars.series.utils import expr_dispatch
+from polars.utils._wrap import wrap_s
 from polars.utils.convert import _to_python_datetime
 from polars.utils.decorators import deprecated_alias, redirect
 
@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
     from polars.expr.expr import Expr
     from polars.polars import PySeries
-    from polars.series.series import Series
+    from polars.series import Series
     from polars.type_aliases import EpochTimeUnit, TimeUnit
 
 
@@ -34,7 +34,7 @@ class DateTimeNameSpace:
         self._s: PySeries = series._s
 
     def __getitem__(self, item: int) -> date | datetime:
-        s = pli.wrap_s(self._s)
+        s = wrap_s(self._s)
         return s[item]
 
     def min(self) -> date | datetime | timedelta | None:
@@ -57,7 +57,7 @@ class DateTimeNameSpace:
         datetime.datetime(2001, 1, 1, 0, 0)
 
         """
-        return pli.wrap_s(self._s).min()  # type: ignore[return-value]
+        return wrap_s(self._s).min()  # type: ignore[return-value]
 
     def max(self) -> date | datetime | timedelta | None:
         """
@@ -79,7 +79,7 @@ class DateTimeNameSpace:
         datetime.datetime(2001, 1, 3, 0, 0)
 
         """
-        return pli.wrap_s(self._s).max()  # type: ignore[return-value]
+        return wrap_s(self._s).max()  # type: ignore[return-value]
 
     def median(self) -> date | datetime | timedelta | None:
         """
@@ -101,7 +101,7 @@ class DateTimeNameSpace:
         datetime.datetime(2001, 1, 2, 0, 0)
 
         """
-        s = pli.wrap_s(self._s)
+        s = wrap_s(self._s)
         out = s.median()
         if out is not None:
             return _to_python_datetime(int(out), s.dtype, s.time_unit)
@@ -127,7 +127,7 @@ class DateTimeNameSpace:
         datetime.datetime(2001, 1, 2, 0, 0)
 
         """
-        s = pli.wrap_s(self._s)
+        s = wrap_s(self._s)
         out = s.mean()
         if out is not None:
             return _to_python_datetime(int(out), s.dtype, s.time_unit)
@@ -991,7 +991,7 @@ class DateTimeNameSpace:
         ]
         """
         return (
-            pli.wrap_s(self._s)
+            wrap_s(self._s)
             .to_frame()
             .select(F.col(self._s.name()).dt.convert_time_zone(time_zone))
             .to_series()
@@ -1071,7 +1071,7 @@ class DateTimeNameSpace:
 
         """
         return (
-            pli.wrap_s(self._s)
+            wrap_s(self._s)
             .to_frame()
             .select(F.col(self._s.name()).dt.replace_time_zone(time_zone))
             .to_series()

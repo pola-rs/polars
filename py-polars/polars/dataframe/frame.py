@@ -81,6 +81,7 @@ from polars.utils._construction import (
     series_to_pydf,
 )
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
+from polars.utils._wrap import wrap_ldf, wrap_s
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import (
     deprecate_nonkeyword_arguments,
@@ -113,7 +114,9 @@ if TYPE_CHECKING:
     from pyarrow.interchange.dataframe import _PyArrowDataFrame
     from xlsxwriter import Workbook
 
-    from polars.series.series import Series
+    from polars.expr import Expr
+    from polars.lazyframe import LazyFrame
+    from polars.series import Series
     from polars.type_aliases import (
         AsofJoinStrategy,
         AvroCompression,
@@ -172,10 +175,6 @@ if TYPE_CHECKING:
 
     T = TypeVar("T")
     P = ParamSpec("P")
-
-
-def wrap_df(df: PyDataFrame) -> DataFrame:
-    return DataFrame._from_pydf(df)
 
 
 @redirect(
@@ -1605,7 +1604,7 @@ class DataFrame:
         # select single column
         # df["foo"]
         if isinstance(item, str):
-            return pli.wrap_s(self._df.column(item))
+            return wrap_s(self._df.column(item))
 
         # df[idx]
         if isinstance(item, int):
@@ -2100,7 +2099,7 @@ class DataFrame:
         """
         if index < 0:
             index = len(self.columns) + index
-        return pli.wrap_s(self._df.select_at_idx(index))
+        return wrap_s(self._df.select_at_idx(index))
 
     @overload
     def write_json(
@@ -3231,7 +3230,7 @@ class DataFrame:
 
     def filter(
         self,
-        predicate: (pli.Expr | str | Series | list[bool] | np.ndarray[Any, Any] | bool),
+        predicate: (Expr | str | Series | list[bool] | np.ndarray[Any, Any] | bool),
     ) -> Self:
         """
         Filter the rows in the DataFrame based on a predicate expression.
@@ -4668,9 +4667,9 @@ class DataFrame:
     def join_asof(
         self,
         other: DataFrame,
-        left_on: str | None | pli.Expr = None,
-        right_on: str | None | pli.Expr = None,
-        on: str | None | pli.Expr = None,
+        left_on: str | None | Expr = None,
+        right_on: str | None | Expr = None,
+        on: str | None | Expr = None,
         by_left: str | Sequence[str] | None = None,
         by_right: str | Sequence[str] | None = None,
         by: str | Sequence[str] | None = None,
@@ -4822,9 +4821,9 @@ class DataFrame:
     def join(
         self,
         other: DataFrame,
-        left_on: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
-        right_on: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
-        on: str | pli.Expr | Sequence[str | pli.Expr] | None = None,
+        left_on: str | Expr | Sequence[str | Expr] | None = None,
+        right_on: str | Expr | Sequence[str | Expr] | None = None,
+        on: str | Expr | Sequence[str | Expr] | None = None,
         how: JoinStrategy = "inner",
         suffix: str = "_right",
     ) -> Self:
@@ -5041,7 +5040,7 @@ class DataFrame:
         if is_df:
             return self._from_pydf(out)
         else:
-            return self._from_pydf(pli.wrap_s(out).to_frame()._df)
+            return self._from_pydf(wrap_s(out).to_frame()._df)
 
     @deprecate_nonkeyword_arguments()
     def hstack(
@@ -5284,7 +5283,7 @@ class DataFrame:
         ]
 
         """
-        return pli.wrap_s(self._df.drop_in_place(name))
+        return wrap_s(self._df.drop_in_place(name))
 
     def clear(self, n: int = 0) -> Self:
         """
@@ -5431,7 +5430,7 @@ class DataFrame:
         ]]
 
         """
-        return [pli.wrap_s(s) for s in self._df.get_columns()]
+        return [wrap_s(s) for s in self._df.get_columns()]
 
     def get_column(self, name: str) -> Series:
         """
@@ -5555,7 +5554,7 @@ class DataFrame:
             ._df
         )
 
-    def fill_nan(self, fill_value: pli.Expr | int | float | None) -> Self:
+    def fill_nan(self, fill_value: Expr | int | float | None) -> Self:
         """
         Fill floating point NaN values by an Expression evaluation.
 
@@ -5605,8 +5604,8 @@ class DataFrame:
 
     def explode(
         self,
-        columns: str | Sequence[str] | pli.Expr | Sequence[pli.Expr],
-        *more_columns: str | pli.Expr,
+        columns: str | Sequence[str] | Expr | Sequence[Expr],
+        *more_columns: str | Expr,
     ) -> Self:
         """
         Explode the dataframe to long format by exploding the given columns.
@@ -5677,7 +5676,7 @@ class DataFrame:
         values: Sequence[str] | str,
         index: Sequence[str] | str,
         columns: Sequence[str] | str,
-        aggregate_function: PivotAgg | pli.Expr = "first",
+        aggregate_function: PivotAgg | Expr = "first",
         maintain_order: bool = True,
         sort_columns: bool = False,
         separator: str = "_",
@@ -6247,7 +6246,7 @@ class DataFrame:
         │ 1   ┆ x   │
         └─────┴─────┘
         """
-        return pli.wrap_s(self._df.is_duplicated())
+        return wrap_s(self._df.is_duplicated())
 
     def is_unique(self) -> Series:
         """
@@ -6284,9 +6283,9 @@ class DataFrame:
         │ 3   ┆ z   │
         └─────┴─────┘
         """
-        return pli.wrap_s(self._df.is_unique())
+        return wrap_s(self._df.is_unique())
 
-    def lazy(self) -> pli.LazyFrame:
+    def lazy(self) -> LazyFrame:
         """
         Start a lazy query from this point. This returns a `LazyFrame` object.
 
@@ -6324,7 +6323,7 @@ class DataFrame:
         <polars.LazyFrame object at ...>
 
         """
-        return pli.wrap_ldf(self._df.lazy())
+        return wrap_ldf(self._df.lazy())
 
     def select(
         self,
@@ -6680,7 +6679,7 @@ class DataFrame:
         if axis == 0:
             return self._from_pydf(self._df.max())
         if axis == 1:
-            return pli.wrap_s(self._df.hmax())
+            return wrap_s(self._df.hmax())
         raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
 
     @overload
@@ -6722,7 +6721,7 @@ class DataFrame:
         if axis == 0:
             return self._from_pydf(self._df.min())
         if axis == 1:
-            return pli.wrap_s(self._df.hmin())
+            return wrap_s(self._df.hmin())
         raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
 
     @overload
@@ -6799,7 +6798,7 @@ class DataFrame:
         if axis == 0:
             return self._from_pydf(self._df.sum())
         if axis == 1:
-            return pli.wrap_s(self._df.hsum(null_strategy))
+            return wrap_s(self._df.hsum(null_strategy))
         raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
 
     @overload
@@ -6877,7 +6876,7 @@ class DataFrame:
         if axis == 0:
             return self._from_pydf(self._df.mean())
         if axis == 1:
-            return pli.wrap_s(self._df.hmean(null_strategy))
+            return wrap_s(self._df.hmean(null_strategy))
         raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
 
     def std(self, ddof: int = 1) -> Self:
@@ -7173,9 +7172,7 @@ class DataFrame:
             ._df
         )
 
-    def n_unique(
-        self, subset: str | pli.Expr | Sequence[str | pli.Expr] | None = None
-    ) -> int:
+    def n_unique(self, subset: str | Expr | Sequence[str | Expr] | None = None) -> int:
         """
         Return the number of unique rows, or the number of unique row-subsets.
 
@@ -7444,7 +7441,7 @@ class DataFrame:
         self,
         index: int | None = ...,
         *,
-        by_predicate: pli.Expr | None = ...,
+        by_predicate: Expr | None = ...,
         named: Literal[False] = ...,
     ) -> tuple[Any, ...]:
         ...
@@ -7454,7 +7451,7 @@ class DataFrame:
         self,
         index: int | None = ...,
         *,
-        by_predicate: pli.Expr | None = ...,
+        by_predicate: Expr | None = ...,
         named: Literal[True],
     ) -> dict[str, Any]:
         ...
@@ -7463,7 +7460,7 @@ class DataFrame:
         self,
         index: int | None = None,
         *,
-        by_predicate: pli.Expr | None = None,
+        by_predicate: Expr | None = None,
         named: bool = False,
     ) -> tuple[Any, ...] | dict[str, Any]:
         """
@@ -7858,7 +7855,7 @@ class DataFrame:
         k1 = seed_1 if seed_1 is not None else seed
         k2 = seed_2 if seed_2 is not None else seed
         k3 = seed_3 if seed_3 is not None else seed
-        return pli.wrap_s(self._df.hash_rows(k0, k1, k2, k3))
+        return wrap_s(self._df.hash_rows(k0, k1, k2, k3))
 
     def interpolate(self) -> Self:
         """
@@ -7933,7 +7930,7 @@ class DataFrame:
         ]
 
         """
-        return pli.wrap_s(self._df.to_struct(name))
+        return wrap_s(self._df.to_struct(name))
 
     @deprecated_alias(names="columns")
     def unnest(self, columns: str | Sequence[str], *more_columns: str) -> Self:

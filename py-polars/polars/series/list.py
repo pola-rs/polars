@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Callable
 
 from polars import functions as F
-from polars import internals as pli
 from polars.series.utils import expr_dispatch
+from polars.utils._wrap import wrap_s
 from polars.utils.decorators import deprecate_nonkeyword_arguments
 
 if TYPE_CHECKING:
@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
     from polars.expr.expr import Expr
     from polars.polars import PySeries
-    from polars.series.series import Series
+    from polars.series import Series
     from polars.type_aliases import NullBehavior, ToStructStrategy
 
 
@@ -84,7 +84,7 @@ class ListNameSpace:
 
         """
         return (
-            pli.wrap_s(self._s)
+            wrap_s(self._s)
             .to_frame()
             .select(F.col(self._s.name()).arr.sort(descending=descending))
             .to_series()
@@ -433,7 +433,7 @@ class ListNameSpace:
         """
         # We set the upper bound to 0.
         # No need to create the proper schema in eager mode.
-        s = pli.wrap_s(self)
+        s = wrap_s(self)
         return (
             s.to_frame()
             .select(

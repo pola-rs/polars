@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextlib
 import os
 import re
 import sys
@@ -8,15 +7,10 @@ from collections.abc import MappingView, Sized
 from typing import TYPE_CHECKING, Any, Generator, Iterable, Sequence, TypeVar
 
 from polars import functions as F
-from polars import internals as pli
 from polars.datatypes import Int64, is_polars_dtype
 
-with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyExpr
-
 if TYPE_CHECKING:
-    from polars.expr.expr import Expr
-    from polars.series.series import Series
+    from polars.series import Series
 
 
 # note: reversed views don't match as instances of MappingView
@@ -74,16 +68,6 @@ def is_dtype_sequence(val: object) -> TypeGuard[Sequence[PolarsDataType]]:
 def is_int_sequence(val: object) -> TypeGuard[Sequence[int]]:
     """Check whether the given sequence is a sequence of integers."""
     return isinstance(val, Sequence) and _is_iterable_of(val, int)
-
-
-def is_expr_sequence(val: object) -> TypeGuard[Sequence[Expr]]:
-    """Check whether the given object is a sequence of Exprs."""
-    return isinstance(val, Sequence) and _is_iterable_of(val, pli.Expr)
-
-
-def is_pyexpr_sequence(val: object) -> TypeGuard[Sequence[PyExpr]]:
-    """Check whether the given object is a sequence of PyExprs."""
-    return isinstance(val, Sequence) and _is_iterable_of(val, PyExpr)
 
 
 def is_str_sequence(

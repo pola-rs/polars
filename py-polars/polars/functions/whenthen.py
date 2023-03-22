@@ -4,15 +4,15 @@ import contextlib
 import typing
 from typing import TYPE_CHECKING, Any, Iterable
 
-from polars import internals as pli
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
+from polars.utils._wrap import wrap_expr
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import when as pywhen
 
 if TYPE_CHECKING:
     from polars.expr.expr import Expr
-    from polars.series.series import Series
+    from polars.series import Series
     from polars.type_aliases import PolarsExprType, PythonLiteral
 
 
@@ -57,7 +57,7 @@ class WhenThenThen:
 
         """
         expr = expr_to_lit_or_expr(expr)
-        return pli.wrap_expr(self.pywhenthenthen.otherwise(expr._pyexpr))
+        return wrap_expr(self.pywhenthenthen.otherwise(expr._pyexpr))
 
     @typing.no_type_check
     def __getattr__(self, item) -> Expr:
@@ -96,7 +96,7 @@ class WhenThen:
 
         """
         expr = expr_to_lit_or_expr(expr)
-        return pli.wrap_expr(self._pywhenthen.otherwise(expr._pyexpr))
+        return wrap_expr(self._pywhenthen.otherwise(expr._pyexpr))
 
     @typing.no_type_check
     def __getattr__(self, item) -> Expr:

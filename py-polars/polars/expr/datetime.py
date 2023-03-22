@@ -7,13 +7,14 @@ from polars import functions as F
 from polars import internals as pli
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
+from polars.utils._wrap import wrap_expr
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import deprecated_alias, redirect
 
 if TYPE_CHECKING:
     from datetime import timedelta
 
-    from polars.expr.expr import Expr
+    from polars.expr import Expr
     from polars.type_aliases import EpochTimeUnit, TimeUnit
 
 
@@ -139,7 +140,7 @@ class ExprDateTimeNameSpace:
         if offset is None:
             offset = "0ns"
 
-        return pli.wrap_expr(
+        return wrap_expr(
             self._pyexpr.dt_truncate(
                 _timedelta_to_pl_duration(every),
                 _timedelta_to_pl_duration(offset),
@@ -259,7 +260,7 @@ class ExprDateTimeNameSpace:
         if offset is None:
             offset = "0ns"
 
-        return pli.wrap_expr(
+        return wrap_expr(
             self._pyexpr.dt_round(
                 _timedelta_to_pl_duration(every),
                 _timedelta_to_pl_duration(offset),
@@ -325,7 +326,7 @@ class ExprDateTimeNameSpace:
                 f"Expected 'tm' to be a python time or polars expression, found {tm!r}"
             )
         tm = expr_to_lit_or_expr(tm)
-        return pli.wrap_expr(self._pyexpr.dt_combine(tm._pyexpr, tu))
+        return wrap_expr(self._pyexpr.dt_combine(tm._pyexpr, tu))
 
     def strftime(self, fmt: str) -> Expr:
         """
@@ -364,7 +365,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴─────────────────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.strftime(fmt))
+        return wrap_expr(self._pyexpr.strftime(fmt))
 
     def year(self) -> Expr:
         """
@@ -410,9 +411,9 @@ class ExprDateTimeNameSpace:
         └──────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.year())
+        return wrap_expr(self._pyexpr.year())
 
-    def is_leap_year(self) -> pli.Expr:
+    def is_leap_year(self) -> Expr:
         """
         Determine whether the year of the underlying date is a leap year.
 
@@ -452,7 +453,7 @@ class ExprDateTimeNameSpace:
         └───────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.is_leap_year())
+        return wrap_expr(self._pyexpr.is_leap_year())
 
     def iso_year(self) -> Expr:
         """
@@ -497,7 +498,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴──────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.iso_year())
+        return wrap_expr(self._pyexpr.iso_year())
 
     def quarter(self) -> Expr:
         """
@@ -541,7 +542,7 @@ class ExprDateTimeNameSpace:
         └──────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.quarter())
+        return wrap_expr(self._pyexpr.quarter())
 
     def month(self) -> Expr:
         """
@@ -586,7 +587,7 @@ class ExprDateTimeNameSpace:
         └──────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.month())
+        return wrap_expr(self._pyexpr.month())
 
     def week(self) -> Expr:
         """
@@ -631,7 +632,7 @@ class ExprDateTimeNameSpace:
         └──────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.week())
+        return wrap_expr(self._pyexpr.week())
 
     def weekday(self) -> Expr:
         """
@@ -681,7 +682,7 @@ class ExprDateTimeNameSpace:
         └─────────┴──────────────┴─────────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.weekday())
+        return wrap_expr(self._pyexpr.weekday())
 
     def day(self) -> Expr:
         """
@@ -732,7 +733,7 @@ class ExprDateTimeNameSpace:
         └─────────┴──────────────┴─────────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.day())
+        return wrap_expr(self._pyexpr.day())
 
     def ordinal_day(self) -> Expr:
         """
@@ -783,7 +784,7 @@ class ExprDateTimeNameSpace:
         └─────────┴──────────────┴─────────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.ordinal_day())
+        return wrap_expr(self._pyexpr.ordinal_day())
 
     def hour(self) -> Expr:
         """
@@ -827,7 +828,7 @@ class ExprDateTimeNameSpace:
         └──────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.hour())
+        return wrap_expr(self._pyexpr.hour())
 
     def minute(self) -> Expr:
         """
@@ -873,7 +874,7 @@ class ExprDateTimeNameSpace:
         └──────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.minute())
+        return wrap_expr(self._pyexpr.minute())
 
     def second(self, fractional: bool = False) -> Expr:
         """
@@ -966,9 +967,9 @@ class ExprDateTimeNameSpace:
         └──────┘
 
         """
-        sec = pli.wrap_expr(self._pyexpr.second())
+        sec = wrap_expr(self._pyexpr.second())
         return (
-            sec + (pli.wrap_expr(self._pyexpr.nanosecond()) / F.lit(1_000_000_000.0))
+            sec + (wrap_expr(self._pyexpr.nanosecond()) / F.lit(1_000_000_000.0))
             if fractional
             else sec
         )
@@ -984,7 +985,7 @@ class ExprDateTimeNameSpace:
         Milliseconds as UInt32
 
         """
-        return pli.wrap_expr(self._pyexpr.millisecond())
+        return wrap_expr(self._pyexpr.millisecond())
 
     def microsecond(self) -> Expr:
         """
@@ -1030,7 +1031,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────────┴──────────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.microsecond())
+        return wrap_expr(self._pyexpr.microsecond())
 
     def nanosecond(self) -> Expr:
         """
@@ -1043,7 +1044,7 @@ class ExprDateTimeNameSpace:
         Nanoseconds as UInt32
 
         """
-        return pli.wrap_expr(self._pyexpr.nanosecond())
+        return wrap_expr(self._pyexpr.nanosecond())
 
     def epoch(self, tu: EpochTimeUnit = "us") -> Expr:
         """
@@ -1082,9 +1083,9 @@ class ExprDateTimeNameSpace:
         if tu in DTYPE_TEMPORAL_UNITS:
             return self.timestamp(tu)  # type: ignore[arg-type]
         elif tu == "s":
-            return pli.wrap_expr(self._pyexpr.dt_epoch_seconds())
+            return wrap_expr(self._pyexpr.dt_epoch_seconds())
         elif tu == "d":
-            return pli.wrap_expr(self._pyexpr).cast(Date).cast(Int32)
+            return wrap_expr(self._pyexpr).cast(Date).cast(Int32)
         else:
             raise ValueError(
                 f"tu must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {tu}"
@@ -1124,7 +1125,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴─────────────────┴──────────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.timestamp(tu))
+        return wrap_expr(self._pyexpr.timestamp(tu))
 
     def with_time_unit(self, tu: TimeUnit) -> Expr:
         """
@@ -1166,7 +1167,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴───────────────────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.dt_with_time_unit(tu))
+        return wrap_expr(self._pyexpr.dt_with_time_unit(tu))
 
     def cast_time_unit(self, tu: TimeUnit) -> Expr:
         """
@@ -1206,7 +1207,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴─────────────────────┴─────────────────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.dt_cast_time_unit(tu))
+        return wrap_expr(self._pyexpr.dt_cast_time_unit(tu))
 
     @deprecated_alias(tz="time_zone")
     def convert_time_zone(self, time_zone: str) -> Expr:
@@ -1250,7 +1251,7 @@ class ExprDateTimeNameSpace:
         │ 2020-05-01 00:00:00 UTC ┆ 2020-05-01 01:00:00 BST     │
         └─────────────────────────┴─────────────────────────────┘
         """
-        return pli.wrap_expr(self._pyexpr.dt_convert_time_zone(time_zone))
+        return wrap_expr(self._pyexpr.dt_convert_time_zone(time_zone))
 
     @deprecated_alias(tz="time_zone")
     def replace_time_zone(self, time_zone: str | None) -> Expr:
@@ -1300,7 +1301,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────────────┴────────────────────────────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.dt_replace_time_zone(time_zone))
+        return wrap_expr(self._pyexpr.dt_replace_time_zone(time_zone))
 
     def days(self) -> Expr:
         """
@@ -1338,7 +1339,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴───────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.duration_days())
+        return wrap_expr(self._pyexpr.duration_days())
 
     def hours(self) -> Expr:
         """
@@ -1377,7 +1378,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴────────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.duration_hours())
+        return wrap_expr(self._pyexpr.duration_hours())
 
     def minutes(self) -> Expr:
         """
@@ -1416,7 +1417,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴──────────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.duration_minutes())
+        return wrap_expr(self._pyexpr.duration_minutes())
 
     def seconds(self) -> Expr:
         """
@@ -1456,7 +1457,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴──────────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.duration_seconds())
+        return wrap_expr(self._pyexpr.duration_seconds())
 
     def milliseconds(self) -> Expr:
         """
@@ -1500,7 +1501,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────────┴───────────────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.duration_milliseconds())
+        return wrap_expr(self._pyexpr.duration_milliseconds())
 
     def microseconds(self) -> Expr:
         """
@@ -1544,7 +1545,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────────┴───────────────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.duration_microseconds())
+        return wrap_expr(self._pyexpr.duration_microseconds())
 
     def nanoseconds(self) -> Expr:
         """
@@ -1588,7 +1589,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────────┴──────────────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.duration_nanoseconds())
+        return wrap_expr(self._pyexpr.duration_nanoseconds())
 
     def offset_by(self, by: str) -> Expr:
         """
@@ -1650,4 +1651,4 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴─────────────────────┘
 
         """
-        return pli.wrap_expr(self._pyexpr.dt_offset_by(by))
+        return wrap_expr(self._pyexpr.dt_offset_by(by))

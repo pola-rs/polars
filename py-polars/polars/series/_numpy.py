@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 if TYPE_CHECKING:
-    from polars.series.series import Series
+    from polars.series import Series
 
 
 # https://numpy.org/doc/stable/user/basics.subclassing.html#slightly-more-realistic-example-attribute-added-to-existing-array

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Iterable, Sequence, overload
 from polars import internals as pli
 from polars.datatypes import Date
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
+from polars.utils._wrap import wrap_df, wrap_expr, wrap_ldf, wrap_s
 from polars.utils.convert import (
     _datetime_to_pl_timestamp,
     _timedelta_to_pl_duration,
@@ -30,10 +31,10 @@ if TYPE_CHECKING:
     import sys
     from datetime import date
 
-    from polars.dataframe.frame import DataFrame
+    from polars.dataframe import DataFrame
     from polars.expr.expr import Expr
-    from polars.lazyframe.frame import LazyFrame
-    from polars.series.series import Series
+    from polars.lazyframe import LazyFrame
+    from polars.series import Series
     from polars.type_aliases import (
         ClosedInterval,
         ConcatMethod,
@@ -253,11 +254,11 @@ def concat(
     first = elems[0]
     if isinstance(first, pli.DataFrame):
         if how == "vertical":
-            out = pli.wrap_df(_concat_df(elems))
+            out = wrap_df(_concat_df(elems))
         elif how == "diagonal":
-            out = pli.wrap_df(_diag_concat_df(elems))
+            out = wrap_df(_diag_concat_df(elems))
         elif how == "horizontal":
-            out = pli.wrap_df(_hor_concat_df(elems))
+            out = wrap_df(_hor_concat_df(elems))
         else:
             raise ValueError(
                 f"how must be one of {{'vertical', 'diagonal', 'horizontal'}}, "
@@ -265,15 +266,15 @@ def concat(
             )
     elif isinstance(first, pli.LazyFrame):
         if how == "vertical":
-            return pli.wrap_ldf(_concat_lf(elems, rechunk, parallel))
+            return wrap_ldf(_concat_lf(elems, rechunk, parallel))
         if how == "diagonal":
-            return pli.wrap_ldf(_diag_concat_lf(elems, rechunk, parallel))
+            return wrap_ldf(_diag_concat_lf(elems, rechunk, parallel))
         else:
             raise ValueError(
                 "Lazy only allows {{'vertical', 'diagonal'}} concat strategy."
             )
     elif isinstance(first, pli.Series):
-        out = pli.wrap_s(_concat_series(elems))
+        out = wrap_s(_concat_series(elems))
     elif isinstance(first, pli.Expr):
         out = first
         for e in elems[1:]:
@@ -466,7 +467,7 @@ def date_range(
     if isinstance(low, (str, pli.Expr)) or isinstance(high, (str, pli.Expr)) or lazy:
         low = expr_to_lit_or_expr(low, str_to_lit=False)._pyexpr
         high = expr_to_lit_or_expr(high, str_to_lit=False)._pyexpr
-        return pli.wrap_expr(
+        return wrap_expr(
             _py_date_range_lazy(low, high, interval, closed, name, time_zone)
         )
 
@@ -499,7 +500,7 @@ def date_range(
 
     start = _datetime_to_pl_timestamp(low, tu)
     stop = _datetime_to_pl_timestamp(high, tu)
-    dt_range = pli.wrap_s(
+    dt_range = wrap_s(
         _py_date_range(start, stop, interval, closed, name, tu, time_zone)
     )
     if (

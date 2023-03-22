@@ -1,6 +1,5 @@
-from polars.series.series import Series, wrap_s
+from polars.series.series import Series
 
 __all__ = [
     "Series",
-    "wrap_s",
 ]
