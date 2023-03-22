@@ -397,7 +397,7 @@ impl PySeries {
             if val == v_trunc {
                 val
             } else {
-                format!("{v_trunc}...")
+                format!("{v_trunc}…")
             }
         } else {
             val

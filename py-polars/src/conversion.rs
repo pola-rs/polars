@@ -638,14 +638,19 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                         // windows
                         #[cfg(target_arch = "windows")]
                         let (seconds, microseconds) = {
-                            let kwargs = PyDict::new(py);
-                            kwargs.set_item("tzinfo", py.None())?;
-                            let dt = ob.call_method("replace", (), Some(kwargs))?;
-                            let localize = UTILS.getattr("_localize").unwrap();
-                            let loc_tz = localize.call1((dt, "UTC"));
+                            let tzinfo = ob.getattr("tzinfo")?;
+                            let dt = if tzinfo.is_none() {
+                                let kwargs = PyDict::new(py);
+                                kwargs.set_item("tzinfo", py.None())?;
+                                let dt = ob.call_method("replace", (), Some(kwargs))?;
+                                let localize = UTILS.getattr("_localize").unwrap();
+                                localize.call1((dt, "UTC"))
+                            } else {
+                                ob
+                            };
                             let kwargs = PyDict::new(py);
                             kwargs.set_item("microsecond", 0)?;
-                            let seconds = loc_tz
+                            let seconds = dt
                                 .call_method("replace", (), Some(kwargs))?
                                 .call_method0("timestamp")?;
                             let microseconds = dt.getattr("microsecond")?.extract::<i64>()?;
@@ -656,10 +661,14 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                         let (seconds, microseconds) = {
                             let datetime = PyModule::import(py, "datetime")?;
                             let timezone = datetime.getattr("timezone")?;
-                            let kwargs = PyDict::new(py);
-                            kwargs.set_item("tzinfo", timezone.getattr("utc")?)?;
-                            let dt = ob.call_method("replace", (), Some(kwargs))?;
-
+                            let tzinfo = ob.getattr("tzinfo")?;
+                            let dt = if tzinfo.is_none() {
+                                let kwargs = PyDict::new(py);
+                                kwargs.set_item("tzinfo", timezone.getattr("utc")?)?;
+                                ob.call_method("replace", (), Some(kwargs))?
+                            } else {
+                                ob
+                            };
                             let kwargs = PyDict::new(py);
                             kwargs.set_item("microsecond", 0)?;
                             let seconds = dt

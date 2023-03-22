@@ -1,8 +1,8 @@
 use std::fmt::Write;
 use std::sync::Arc;
 
-use polars_arrow::bit_util::unset_bit_raw;
 use polars_arrow::export::arrow::array::PrimitiveArray;
+use polars_core::export::arrow::bitmap::Bitmap;
 use polars_core::frame::groupby::{GroupBy, GroupsProxy};
 use polars_core::frame::hash_join::{
     default_join_ids, private_left_join_multiple_keys, JoinOptIds,
@@ -10,7 +10,6 @@ use polars_core::frame::hash_join::{
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
-use polars_core::utils::arrow::bitmap::MutableBitmap;
 use polars_core::{downcast_as_macro_arg_physical, POOL};
 use polars_utils::format_smartstring;
 use polars_utils::sort::perfect_sort;
@@ -550,9 +549,10 @@ impl PhysicalExpr for WindowExpr {
                 // we try to flatten/extend the array by repeating the aggregated value n times
                 // where n is the number of members in that group. That way we can try to reuse
                 // the same map by arg_sort logic as done for listed aggregations
+                let update_groups = !matches!(&ac.update_groups, UpdateGroups::No);
                 match (
                     &ac.update_groups,
-                    set_by_groups(&out_column, &ac.groups, df.height()),
+                    set_by_groups(&out_column, &ac.groups, df.height(), update_groups),
                 ) {
                     // for aggregations that reduce like sum, mean, first and are numeric
                     // we take the group locations to directly map them to the right place
@@ -664,7 +664,15 @@ fn cache_gb(gb: GroupBy, state: &ExecutionState, cache_key: &str) {
 }
 
 /// Simple reducing aggregation can be set by the groups
-fn set_by_groups(s: &Series, groups: &GroupsProxy, len: usize) -> Option<Series> {
+fn set_by_groups(
+    s: &Series,
+    groups: &GroupsProxy,
+    len: usize,
+    update_groups: bool,
+) -> Option<Series> {
+    if update_groups {
+        return None;
+    }
     if s.dtype().to_physical().is_numeric() {
         let dtype = s.dtype();
         let s = s.to_physical_repr();
@@ -747,13 +755,15 @@ where
         unsafe { values.set_len(len) }
         Some(ChunkedArray::new_vec(ca.name(), values).into_series())
     } else {
-        let mut validity = MutableBitmap::with_capacity(len);
-        validity.extend_constant(len, true);
-        let validity_ptr = validity.as_slice_mut().as_mut_ptr();
+        // We don't use a mutable bitmap as bits will have have race conditions!
+        // A single byte might alias if we write from single threads.
+        let mut validity: Vec<bool> = Vec::with_capacity(len);
+        let validity_ptr = validity.as_mut_ptr();
         let sync_ptr_validity = unsafe { SyncPtr::new(validity_ptr) };
 
         let n_threads = POOL.current_num_threads();
         let offsets = _split_offsets(ca.len(), n_threads);
+
         match groups {
             GroupsProxy::Idx(groups) => offsets.par_iter().for_each(|(offset, offset_len)| {
                 let offset = *offset;
@@ -761,6 +771,7 @@ where
                 let ca = ca.slice(offset as i64, offset_len);
                 let groups = &groups.all()[offset..offset + offset_len];
                 let values_ptr = sync_ptr_values.get();
+                let validity_ptr = sync_ptr_validity.get();
 
                 ca.into_iter().zip(groups.iter()).for_each(|(opt_v, g)| {
                     for idx in g {
@@ -770,10 +781,11 @@ where
                             match opt_v {
                                 Some(v) => {
                                     *values_ptr.add(idx) = v;
+                                    *validity_ptr.add(idx) = true;
                                 }
                                 None => {
                                     *values_ptr.add(idx) = T::Native::default();
-                                    unset_bit_raw(sync_ptr_validity.get(), idx)
+                                    *validity_ptr.add(idx) = false;
                                 }
                             };
                         }
@@ -787,6 +799,7 @@ where
                     let ca = ca.slice(offset as i64, offset_len);
                     let groups = &groups[offset..offset + offset_len];
                     let values_ptr = sync_ptr_values.get();
+                    let validity_ptr = sync_ptr_validity.get();
 
                     for (opt_v, [start, g_len]) in ca.into_iter().zip(groups.iter()) {
                         let start = *start as usize;
@@ -797,10 +810,11 @@ where
                                 match opt_v {
                                     Some(v) => {
                                         *values_ptr.add(idx) = v;
+                                        *validity_ptr.add(idx) = true;
                                     }
                                     None => {
                                         *values_ptr.add(idx) = T::Native::default();
-                                        unset_bit_raw(sync_ptr_validity.get(), idx)
+                                        *validity_ptr.add(idx) = false;
                                     }
                                 };
                             }
@@ -811,10 +825,12 @@ where
         }
         // safety: we have written all slots
         unsafe { values.set_len(len) }
+        unsafe { validity.set_len(len) }
+        let validity = Bitmap::from(validity);
         let arr = PrimitiveArray::new(
             T::get_dtype().to_physical().to_arrow(),
             values.into(),
-            Some(validity.into()),
+            Some(validity),
         );
         Some(Series::try_from((ca.name(), arr.boxed())).unwrap())
     }

@@ -53,7 +53,7 @@ def test_init_inputs(monkeypatch: Any) -> None:
     assert pl.Series([]).dtype == pl.Float32
     assert pl.Series(dtype_if_empty=pl.Utf8).dtype == pl.Utf8
     assert pl.Series([], dtype_if_empty=pl.UInt16).dtype == pl.UInt16
-    # "== []" will be cast to empty Series with Utf8 dtype.
+    # note: "== []" will be cast to empty Series with Utf8 dtype.
     assert_series_equal(
         pl.Series([], dtype_if_empty=pl.Utf8) == [], pl.Series("", dtype=pl.Boolean)
     )
@@ -91,6 +91,16 @@ def test_init_inputs(monkeypatch: Any) -> None:
         assert res.dtype == pl.List(pl.Float32)
         assert res[0].to_list() == [1.0, 2.0]
         assert res[1].to_list() == [3.0, None]
+
+    # numpy from arange, with/without dtype
+    two_ints = np.arange(2, dtype=np.int64)
+    three_ints = np.arange(3, dtype=np.int64)
+    for res in (
+        pl.Series("a", [two_ints, three_ints]),
+        pl.Series("a", [two_ints, three_ints], dtype=pl.List(pl.Int64)),
+    ):
+        assert res.dtype == pl.List(pl.Int64)
+        assert res.to_list() == [[0, 1], [0, 1, 2]]
 
     assert pl.Series(
         values=np.array([["foo", "bar"], ["foo2", "bar2"]])

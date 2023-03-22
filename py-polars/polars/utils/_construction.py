@@ -385,17 +385,8 @@ def sequence_to_pyseries(
                         "Given time_zone is different from that of timezone aware datetimes."
                         f" Given: '{dtype_tz}', got: '{tz}'."
                     )
-                return s.dt.replace_time_zone(tz)._s
+                return s.dt.replace_time_zone("UTC").dt.convert_time_zone(tz)._s
             return s._s
-
-        elif python_dtype in (list, tuple):
-            if isinstance(dtype, Object):
-                return PySeries.new_object(name, values, strict)
-            if dtype:
-                return sequence_from_anyvalue_or_object(name, values).cast(
-                    dtype, strict=False
-                )
-            return sequence_from_anyvalue_or_object(name, values)
 
         elif (
             _check_for_numpy(value)
@@ -407,6 +398,15 @@ def sequence_to_pyseries(
                 [numpy_to_pyseries("", v, strict, nan_to_null) for v in values],
                 strict,
             )
+
+        elif python_dtype in (list, tuple):
+            if isinstance(dtype, Object):
+                return PySeries.new_object(name, values, strict)
+            if dtype:
+                return sequence_from_anyvalue_or_object(name, values).cast(
+                    dtype, strict=False
+                )
+            return sequence_from_anyvalue_or_object(name, values)
 
         elif python_dtype == pli.Series:
             return PySeries.new_series_list(name, [v._s for v in values], strict)
