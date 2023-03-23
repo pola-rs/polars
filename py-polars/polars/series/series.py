@@ -1515,7 +1515,7 @@ class Series:
 
         Examples
         --------
-        >>> pl.Series("a", range(-5, 3))
+        >>> a = pl.Series("a", range(-5, 3))
         >>> a.qcut([0.0, 0.25, 0.75])
         shape: (8, 3)
         ┌──────┬─────────────┬───────────────┐
