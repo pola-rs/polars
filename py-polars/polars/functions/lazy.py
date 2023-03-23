@@ -73,6 +73,7 @@ if TYPE_CHECKING:
         EpochTimeUnit,
         IntoExpr,
         PolarsDataType,
+        PythonLiteral,
         RollingInterpolationMethod,
         SchemaDict,
         TimeUnit,
@@ -529,35 +530,44 @@ def max(column: str | Sequence[Expr | str] | Series) -> Expr | Any:
 
 
 @overload
-def min(
-    column: str | Sequence[Expr | str | date | datetime | int | float],
-) -> Expr:
+def min(exprs: Series) -> PythonLiteral | None:  # type: ignore[misc]
     ...
 
 
 @overload
-def min(column: Series) -> int | float:
+def min(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
     ...
 
 
+@deprecated_alias(column="exprs")
 def min(
-    column: str | Sequence[Expr | str | date | datetime | int | float] | Series,
-) -> Expr | Any:
+    exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr
+) -> Expr | PythonLiteral | None:
     """
     Get the minimum value.
 
-    column
+    Parameters
+    ----------
+    exprs
         Column(s) to be used in aggregation. Will lead to different behavior based on
         the input:
+
         - Union[str, Series] -> aggregate the sum value of that column.
         - List[Expr] -> aggregate the min value horizontally.
+    *more_exprs
+        ...
 
     Examples
     --------
-    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
+    Get the minimum value by columns with a string column name.
 
-    Get the minimum value by columns with a string column name
-
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [1, 8, 3],
+    ...         "b": [4, 5, 2],
+    ...         "c": ["foo", "bar", "foo"],
+    ...     }
+    ... )
     >>> df.select(pl.min("a"))
     shape: (1, 1)
     ┌─────┐
@@ -568,7 +578,7 @@ def min(
     │ 1   │
     └─────┘
 
-    Get the minimum value by row with a list of columns/expressions
+    Get the minimum value by row with a list of columns/expressions.
 
     >>> df.select(pl.min(["a", "b"]))
     shape: (3, 1)
@@ -606,13 +616,18 @@ def min(
     └─────┴─────┘
 
     """
-    if isinstance(column, pli.Series):
-        return column.min()
-    elif isinstance(column, str):
-        return col(column).min()
-    else:
-        exprs = selection_to_pyexpr_list(column)
-        return wrap_expr(_min_exprs(exprs))
+    if not more_exprs:
+        if isinstance(exprs, pli.Series):
+            return exprs.min()
+        elif isinstance(exprs, str):
+            return col(exprs).min()
+        elif not isinstance(exprs, Iterable):
+            return lit(exprs).min()
+
+    exprs = selection_to_pyexpr_list(exprs)
+    if more_exprs:
+        exprs.extend(selection_to_pyexpr_list(more_exprs))
+    return wrap_expr(_min_exprs(exprs))
 
 
 @overload
@@ -2946,7 +2961,7 @@ def repeat(
         Evaluate immediately and return a ``Series``. If set to ``False`` (default),
         return an expression instead.
     name
-        Only used in `eager` mode. As expression, us `alias`
+        Only used in `eager` mode. As expression, use `alias`
 
     """
     if eager:

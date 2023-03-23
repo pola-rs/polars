@@ -1084,7 +1084,7 @@ def test_lazy_functions() -> None:
     assert np.isclose(pl.max(df["b"]), expected)
     expected = 1
     assert np.isclose(out.to_series(3), expected)
-    assert np.isclose(pl.min(df["b"]), expected)
+    assert np.isclose(pl.min(df["b"]), expected)  # type: ignore[arg-type]
     expected = 6
     assert np.isclose(out.to_series(4), expected)
     assert np.isclose(pl.sum(df["b"]), expected)
