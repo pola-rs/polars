@@ -644,6 +644,8 @@ def test_map_dict() -> None:
 
     int_dict = {1: "b", 3: "d"}
     int_with_none_dict = {1: "b", 3: "d", None: "e"}
+    int_with_only_none_values_dict = {3: None}
+    empty_dict = {}
 
     assert (
         df.with_columns(pl.col("int").map_dict(int_dict).alias("remapped")).to_dict(
@@ -663,6 +665,28 @@ def test_map_dict() -> None:
         "int": [None, 1, None, 3],
         "country_code": ["FR", None, "ES", "DE"],
         "remapped": ["e", "b", "e", "d"],
+    }
+
+    assert (
+        df.with_columns(
+            pl.col("int")
+            .map_dict(int_with_only_none_values_dict, default=6)
+            .alias("remapped")
+        ).to_dict(False)
+    ) == {
+        "int": [None, 1, None, 3],
+        "country_code": ["FR", None, "ES", "DE"],
+        "remapped": [6, 6, 6, None],
+    }
+
+    assert (
+        df.with_columns(
+            pl.col("int").map_dict(empty_dict, default=pl.first()).alias("remapped")
+        ).to_dict(False)
+    ) == {
+        "int": [None, 1, None, 3],
+        "country_code": ["FR", None, "ES", "DE"],
+        "remapped": [None, 1, None, 3],
     }
 
     float_dict = {1.0: "b", 3.0: "d"}

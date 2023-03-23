@@ -6483,6 +6483,11 @@ class Expr:
             is_remapped_column = f"__POLARS_REMAP_IS_REMAPPED_{column}"
 
             remap_key_s = _remap_key_series(remap_key_column, remapping, input_dtype)
+            remap_value_s = pli.Series(
+                remap_value_column,
+                list(remapping.values()),
+                dtype_if_empty=input_dtype,
+            )
 
             return (
                 (
@@ -6491,9 +6496,7 @@ class Expr:
                         pli.DataFrame(
                             [
                                 remap_key_s,
-                                pli.Series(
-                                    remap_value_column, list(remapping.values())
-                                ),
+                                remap_value_s,
                             ]
                         )
                         .lazy()
@@ -6521,6 +6524,11 @@ class Expr:
             is_remapped_column = f"__POLARS_REMAP_IS_REMAPPED_{column}"
 
             remap_key_s = _remap_key_series(remap_key_column, remapping, input_dtype)
+            remap_value_s = pli.Series(
+                remap_value_column,
+                list(remapping.values()),
+                dtype_if_empty=input_dtype,
+            )
 
             return (
                 (
@@ -6530,9 +6538,7 @@ class Expr:
                         pli.DataFrame(
                             [
                                 remap_key_s,
-                                pli.Series(
-                                    remap_value_column, list(remapping.values())
-                                ),
+                                remap_value_s,
                             ]
                         )
                         .lazy()
