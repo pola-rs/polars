@@ -20,6 +20,9 @@ pub enum TemporalFunction {
     WeekDay,
     Day,
     OrdinalDay,
+    Time,
+    Date,
+    Datetime,
     Hour,
     Minute,
     Second,
@@ -55,6 +58,9 @@ impl Display for TemporalFunction {
             WeekDay => "weekday",
             Day => "day",
             OrdinalDay => "ordinal_day",
+            Time => "time",
+            Date => "date",
+            Datetime => "datetime",
             Hour => "hour",
             Minute => "minute",
             Second => "second",
@@ -101,6 +107,45 @@ pub(super) fn day(s: &Series) -> PolarsResult<Series> {
 }
 pub(super) fn ordinal_day(s: &Series) -> PolarsResult<Series> {
     s.ordinal_day().map(|ca| ca.into_series())
+}
+pub(super) fn time(s: &Series) -> PolarsResult<Series> {
+    match s.dtype() {
+        #[cfg(feature = "timezones")]
+        DataType::Datetime(_, Some(_)) => s
+            .datetime()
+            .unwrap()
+            .replace_time_zone(None)?
+            .cast(&DataType::Time),
+        DataType::Datetime(_, _) => s.datetime().unwrap().cast(&DataType::Time),
+        DataType::Date => s.datetime().unwrap().cast(&DataType::Time),
+        DataType::Time => Ok(s.clone()),
+        dtype => polars_bail!(ComputeError: "expected Datetime, Date, or Time, got {}", dtype),
+    }
+}
+pub(super) fn date(s: &Series) -> PolarsResult<Series> {
+    match s.dtype() {
+        #[cfg(feature = "timezones")]
+        DataType::Datetime(_, Some(_)) => s
+            .datetime()
+            .unwrap()
+            .replace_time_zone(None)?
+            .cast(&DataType::Date),
+        DataType::Datetime(_, _) => s.datetime().unwrap().cast(&DataType::Date),
+        DataType::Date => Ok(s.clone()),
+        dtype => polars_bail!(ComputeError: "expected Datetime or Date, got {}", dtype),
+    }
+}
+pub(super) fn datetime(s: &Series) -> PolarsResult<Series> {
+    match s.dtype() {
+        #[cfg(feature = "timezones")]
+        DataType::Datetime(tu, Some(_)) => s
+            .datetime()
+            .unwrap()
+            .replace_time_zone(None)?
+            .cast(&DataType::Datetime(*tu, None)),
+        DataType::Datetime(tu, _) => s.datetime().unwrap().cast(&DataType::Datetime(*tu, None)),
+        dtype => polars_bail!(ComputeError: "expected Datetime, got {}", dtype),
+    }
 }
 pub(super) fn hour(s: &Series) -> PolarsResult<Series> {
     s.hour().map(|ca| ca.into_series())

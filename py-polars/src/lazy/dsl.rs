@@ -966,6 +966,15 @@ impl PyExpr {
     pub fn ordinal_day(&self) -> PyExpr {
         self.clone().inner.dt().ordinal_day().into()
     }
+    pub fn time(&self) -> PyExpr {
+        self.clone().inner.dt().time().into()
+    }
+    pub fn date(&self) -> PyExpr {
+        self.clone().inner.dt().date().into()
+    }
+    pub fn datetime(&self) -> PyExpr {
+        self.clone().inner.dt().datetime().into()
+    }
     pub fn hour(&self) -> PyExpr {
         self.clone().inner.dt().hour().into()
     }
