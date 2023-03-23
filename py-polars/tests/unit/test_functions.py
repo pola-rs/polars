@@ -343,3 +343,17 @@ def test_min() -> None:
 
     result = df.select(pl.min("a", 3))
     assert_frame_equal(result, pl.DataFrame({"min": [1, 3]}))
+
+
+def test_max() -> None:
+    s = pl.Series([1, 2, 3])
+    assert pl.max(s) == 3
+
+    df = pl.DataFrame({"a": [1, 4], "b": [3, 2]})
+    assert df.select(pl.max("a")).item() == 4
+
+    result = df.select(pl.max(["a", "b"]))
+    assert_frame_equal(result, pl.DataFrame({"max": [3, 4]}))
+
+    result = df.select(pl.max("a", 3))
+    assert_frame_equal(result, pl.DataFrame({"max": [3, 4]}))

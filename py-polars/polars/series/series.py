@@ -1278,7 +1278,7 @@ class Series:
         """
         return self._s.min()
 
-    def max(self) -> int | float | date | datetime | timedelta | time | str | None:
+    def max(self) -> PythonLiteral | None:
         """
         Get the maximum value in this Series.
 

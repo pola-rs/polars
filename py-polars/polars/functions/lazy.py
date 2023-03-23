@@ -445,26 +445,31 @@ def var(column: str | Series, ddof: int = 1) -> Expr | float | None:
 
 
 @overload
-def max(column: str | Sequence[Expr | str]) -> Expr:
+def max(exprs: Series) -> Expr:
     ...
 
 
 @overload
-def max(column: Series) -> int | float:
+def max(
+    exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr
+) -> PythonLiteral | None:
     ...
 
 
-def max(column: str | Sequence[Expr | str] | Series) -> Expr | Any:
+@deprecated_alias(column="exprs")
+def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | Any:
     """
     Get the maximum value. Can be used horizontally or vertically.
 
     Parameters
     ----------
-    column
+    exprs
         Column(s) to be used in aggregation. Will lead to different behavior based on
         the input:
         - Union[str, Series] -> aggregate the maximum value of that column.
         - List[Expr] -> aggregate the maximum value horizontally.
+    *more_exprs
+        ...
 
     Examples
     --------
@@ -520,13 +525,18 @@ def max(column: str | Sequence[Expr | str] | Series) -> Expr | Any:
     └─────┴─────┘
 
     """
-    if isinstance(column, pli.Series):
-        return column.max()
-    elif isinstance(column, str):
-        return col(column).max()
-    else:
-        exprs = selection_to_pyexpr_list(column)
-        return wrap_expr(_max_exprs(exprs))
+    if not more_exprs:
+        if isinstance(exprs, pli.Series):
+            return exprs.max()
+        elif isinstance(exprs, str):
+            return col(exprs).max()
+        elif not isinstance(exprs, Iterable):
+            return lit(exprs).max()
+
+    exprs = selection_to_pyexpr_list(exprs)
+    if more_exprs:
+        exprs.extend(selection_to_pyexpr_list(more_exprs))
+    return wrap_expr(_max_exprs(exprs))
 
 
 @overload
