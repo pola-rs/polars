@@ -4445,7 +4445,7 @@ class DataFrame:
         by: IntoExpr | Iterable[IntoExpr],
         *more_by: IntoExpr,
         maintain_order: bool = False,
-    ) -> GroupBy[Self]:
+    ) -> GroupBy:
         """
         Start a groupby operation.
 
@@ -4579,7 +4579,7 @@ class DataFrame:
         offset: str | timedelta | None = None,
         closed: ClosedInterval = "right",
         by: IntoExpr | Iterable[IntoExpr] | None = None,
-    ) -> RollingGroupBy[Self]:
+    ) -> RollingGroupBy:
         """
         Create rolling groups based on a time column.
 
@@ -4693,7 +4693,7 @@ class DataFrame:
         closed: ClosedInterval = "left",
         by: IntoExpr | Iterable[IntoExpr] | None = None,
         start_by: StartBy = "window",
-    ) -> DynamicGroupBy[Self]:
+    ) -> DynamicGroupBy:
         """
         Group based on a time value (or index value of type Int32, Int64).
 
