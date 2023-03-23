@@ -1446,11 +1446,6 @@ class Series:
         -------
         DataFrame
 
-        Warnings
-        --------
-        This functionality is experimental and may change without it being considered a
-        breaking change.
-
         Examples
         --------
         >>> a = pl.Series("a", [v / 10 for v in range(-30, 30, 5)])
@@ -1482,41 +1477,72 @@ class Series:
                 maintain_order,
             )
         )
-        var_nm = self.name
 
-        cuts_df = (
-            Series(break_point_label, bins, dtype=Float64)
-            .extend_constant(float("inf"), 1)
-            .to_frame()
-        )
+    def qcut(
+        self,
+        quantiles: list[float],
+        labels: list[str] | None = None,
+        break_point_label: str = "break_point",
+        category_label: str = "category",
+        maintain_order: bool = False,
+    ) -> DataFrame:
+        """
+        Bin values into discrete values.
 
-        if labels:
-            if len(labels) != len(bins) + 1:
-                raise ValueError("expected more labels")
-            cuts_df = cuts_df.with_columns(Series(category_label, labels))
-        else:
-            cuts_df = cuts_df.with_columns(
-                F.format(
-                    "({}, {}]",
-                    F.col(break_point_label).shift_and_fill(1, float("-inf")),
-                    F.col(break_point_label),
-                ).alias(category_label)
+        Parameters
+        ----------
+        quantiles
+            Quaniles to create.
+            We expect quantiles ``0.0 <= quantile <= 1``
+        labels
+            Labels to assign to the quantiles. If given the length of labels must be
+            len(bins) + 1.
+        break_point_label
+            Name given to the breakpoint column.
+        category_label
+            Name given to the category column.
+        maintain_order
+            Keep the order of the original `Series`.
+
+        Returns
+        -------
+        DataFrame
+
+        Warnings
+        --------
+        This functionality is experimental and may change without it being considered a
+        breaking change.
+
+        Examples
+        --------
+        >>> pl.Series("a", range(-5, 3))
+        >>> a.qcut([0.0, 0.25, 0.75])
+        shape: (8, 3)
+        ┌──────┬─────────────┬───────────────┐
+        │ a    ┆ break_point ┆ category      │
+        │ ---  ┆ ---         ┆ ---           │
+        │ f64  ┆ f64         ┆ cat           │
+        ╞══════╪═════════════╪═══════════════╡
+        │ -5.0 ┆ -5.0        ┆ (-inf, -5.0]  │
+        │ -4.0 ┆ -3.25       ┆ (-5.0, -3.25] │
+        │ -3.0 ┆ 0.25        ┆ (-3.25, 0.25] │
+        │ -2.0 ┆ 0.25        ┆ (-3.25, 0.25] │
+        │ -1.0 ┆ 0.25        ┆ (-3.25, 0.25] │
+        │ 0.0  ┆ 0.25        ┆ (-3.25, 0.25] │
+        │ 1.0  ┆ inf         ┆ (0.25, inf]   │
+        │ 2.0  ┆ inf         ┆ (0.25, inf]   │
+        └──────┴─────────────┴───────────────┘
+
+        """
+        return wrap_df(
+            self._s.qcut(
+                Series(quantiles, dtype=Float64)._s,
+                labels,
+                break_point_label,
+                category_label,
+                maintain_order,
             )
-
-        cuts_df = cuts_df.with_columns(F.col(category_label).cast(Categorical))
-
-        result = (
-            self.cast(Float64)
-            .sort()
-            .to_frame()
-            .join_asof(
-                cuts_df,
-                left_on=var_nm,
-                right_on=break_point_label,
-                strategy="forward",
-            )
         )
-        return result
 
     def value_counts(self, sort: bool = False) -> DataFrame:
         """

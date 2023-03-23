@@ -117,6 +117,50 @@ pub fn hist(
         .sort(["category"], false)
 }
 
+pub fn qcut(
+    s: &Series,
+    quantiles: &[f64],
+    labels: Option<Vec<&str>>,
+    break_point_label: Option<&str>,
+    category_label: Option<&str>,
+    maintain_order: bool,
+) -> PolarsResult<DataFrame> {
+    let s = s.cast(&DataType::Float64)?;
+
+    // amortize quantile computation
+    let s_sorted = s.sort(false);
+    let ca = s_sorted.f64().unwrap();
+
+    let mut bins = Vec::with_capacity(quantiles.len());
+    for quantile in quantiles {
+        if let Some(qunatile) = ca.quantile(*quantile, QuantileInterpolOptions::Linear)? {
+            bins.push(qunatile)
+        }
+    }
+
+    let bins = Series::new("", bins);
+    if maintain_order {
+        cut(
+            &s,
+            bins,
+            labels,
+            break_point_label,
+            category_label,
+            maintain_order,
+        )
+    } else {
+        // already sorted, saves an extra sort
+        cut(
+            &s_sorted,
+            bins,
+            labels,
+            break_point_label,
+            category_label,
+            maintain_order,
+        )
+    }
+}
+
 pub fn cut(
     s: &Series,
     mut bins: Series,
