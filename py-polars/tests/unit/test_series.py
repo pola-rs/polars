@@ -2598,6 +2598,17 @@ def test_cut() -> None:
     ]
 
 
+def test_cut_maintain_order() -> None:
+    np.random.seed(1)
+    a = pl.Series("a", np.random.randint(0, 10, 10))
+    out = a.cut(bins=[-1, 1], maintain_order=True)
+    assert out["a"].cast(int).series_equal(a)
+    assert (
+        str(out.to_dict(False))
+        == "{'a': [5.0, 8.0, 9.0, 5.0, 0.0, 0.0, 1.0, 7.0, 6.0, 9.0], 'break_point': [inf, inf, inf, inf, 1.0, 1.0, 1.0, inf, inf, inf], 'category': ['(1.0, inf]', '(1.0, inf]', '(1.0, inf]', '(1.0, inf]', '(-1.0, 1.0]', '(-1.0, 1.0]', '(-1.0, 1.0]', '(1.0, inf]', '(1.0, inf]', '(1.0, inf]']}"
+    )
+
+
 def test_symmetry_for_max_in_names() -> None:
     # int
     a = pl.Series("a", [1])

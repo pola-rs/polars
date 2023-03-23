@@ -117,82 +117,29 @@ pub fn hist(
         .sort(["category"], false)
 }
 
-#[test]
-fn test_hist_integer() -> Result<()> {
-    let df = df!(
-        "value" => [3, 3, 5, 5, 6]
-    )?;
-
-    let series = &df[0];
-    let out = hist(series, None, Some(6), Some(1.0), Some(7.0))?;
-
-    let expected = df!(
-        "break_point" => [1, 2, 3, 4, 5, 6, i32::MAX],
-        "category"    => [
-            "(-2147483648.0, 1.0]",
-            "(1.0, 2.0]",
-            "(2.0, 3.0]",
-            "(3.0, 4.0]",
-            "(4.0, 5.0]",
-            "(5.0, 6.0]",
-            "(6.0, 2147483647.0]"
-        ],
-        "value_count" => [0, 0, 2, 0, 2, 1, 0]
-    )?;
-
-    assert!(out.frame_equal_missing(&expected));
-
-    Ok(())
-}
-
-#[test]
-fn test_hist_float() -> Result<()> {
-    let df = df!(
-        "value" => [1.0, 3.4, 3.2, 6.3, 7.0]
-    )?;
-
-    let series = &df[0];
-    let bins = Series::new("bins", [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]);
-    let out = hist(series, Some(&bins), None, None, None)?;
-
-    let expected = df!(
-        "break_point" => [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, f64::INFINITY],
-        "category"    => [
-            "(-inf, 1.0]",
-            "(1.0, 2.0]",
-            "(2.0, 3.0]",
-            "(3.0, 4.0]",
-            "(4.0, 5.0]",
-            "(5.0, 6.0]",
-            "(6.0, 7.0]",
-            "(7.0, inf]"
-        ],
-        "value_count" => [1, 0, 0, 2, 0, 0, 2, 0]
-    )?;
-
-    assert!(out.frame_equal_missing(&expected));
-
-    Ok(())
-}
-
 pub fn cut(
     s: &Series,
-    bins: Vec<f64>,
+    mut bins: Series,
     labels: Option<Vec<&str>>,
     break_point_label: Option<&str>,
     category_label: Option<&str>,
+    maintain_order: bool,
 ) -> PolarsResult<DataFrame> {
     let var_name = s.name();
     let breakpoint_str = break_point_label.unwrap_or("break_point");
     let category_str = category_label.unwrap_or("category");
+
+    let bins_len = bins.len();
+
+    bins.rename(breakpoint_str);
     let cuts_df = df![
-        breakpoint_str => Series::new(breakpoint_str, &bins)
+        breakpoint_str => bins.cast(&DataType::Float64).map_err(|_| PolarsError::ComputeError("expected numeric bins".into()))?
             .extend_constant(AnyValue::Float64(f64::INFINITY), 1)?
     ]?;
 
     let cuts_df = if let Some(labels) = labels {
         polars_ensure!(
-            labels.len() == (bins.len() + 1),
+            labels.len() == (bins_len + 1),
             ShapeMismatch: "labels count must equal bins count",
         );
         cuts_df
@@ -212,85 +159,94 @@ pub fn cut(
     }
     .collect()?;
 
+    const ROW_COUNT: &str = "__POLARS_IDX";
+
     let cuts = cuts_df
         .lazy()
-        .with_columns([
-            col(category_str).cast(DataType::Categorical(None)),
-            col(breakpoint_str).cast(s.dtype().to_owned()),
-        ])
+        .with_columns([col(category_str).cast(DataType::Categorical(None))])
         .collect()?;
 
-    s.cast(&DataType::Float64)?
-        .sort(false)
-        .into_frame()
-        .join_asof(
-            &cuts,
-            var_name,
-            breakpoint_str,
-            AsofStrategy::Forward,
-            None,
-            None,
-        )
-}
+    let mut frame = s.cast(&DataType::Float64)?.into_frame();
 
-#[test]
-fn test_cut_f32() -> Result<()> {
-    let samples: Vec<f32> = (0..12).map(|i| -3.0 + i as f32 * 0.5).collect();
-    let series = Series::new("a", samples);
+    if maintain_order {
+        frame = frame.with_row_count(ROW_COUNT, None)?;
+    }
 
-    let out = cut(&series, vec![-1.0, 1.0], None, None, None)?;
-
-    let expected = df!(
-        "a"           => [-3.0, -2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5],
-        "break_point" => [-1.0, -1.0, -1.0, -1.0, -1.0,  1.0, 1.0, 1.0, 1.0, f64::INFINITY, f64::INFINITY, f64::INFINITY],
-        "category"    => [
-            "(-inf, -1.0]",
-            "(-inf, -1.0]",
-            "(-inf, -1.0]",
-            "(-inf, -1.0]",
-            "(-inf, -1.0]",
-            "(-1.0, 1.0]",
-            "(-1.0, 1.0]",
-            "(-1.0, 1.0]",
-            "(-1.0, 1.0]",
-            "(1.0, inf]",
-            "(1.0, inf]",
-            "(1.0, inf]"
-        ]
+    let out = frame.sort(vec![var_name], vec![false])?.join_asof(
+        &cuts,
+        var_name,
+        breakpoint_str,
+        AsofStrategy::Forward,
+        None,
+        None,
     )?;
 
-    assert!(out.frame_equal_missing(&expected));
-
-    Ok(())
+    if maintain_order {
+        out.sort([ROW_COUNT], false)?.drop(ROW_COUNT)
+    } else {
+        Ok(out)
+    }
 }
 
-#[test]
-fn test_cut_f64() -> Result<()> {
-    let samples: Vec<f64> = (0..12).map(|i| -3.0 + i as f64 * 0.5).collect();
-    let series = Series::new("a", samples);
+#[cfg(test)]
+mod test {
+    use super::*;
 
-    let out = cut(&series, vec![-1.0, 1.0], None, None, None)?;
+    #[test]
+    fn test_hist_integer() -> Result<()> {
+        let df = df!(
+            "value" => [3, 3, 5, 5, 6]
+        )?;
 
-    let expected = df!(
-        "a"           => [-3.0, -2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5],
-        "break_point" => [-1.0, -1.0, -1.0, -1.0, -1.0,  1.0, 1.0, 1.0, 1.0, f64::INFINITY, f64::INFINITY, f64::INFINITY],
-        "category"    => [
-            "(-inf, -1.0]",
-            "(-inf, -1.0]",
-            "(-inf, -1.0]",
-            "(-inf, -1.0]",
-            "(-inf, -1.0]",
-            "(-1.0, 1.0]",
-            "(-1.0, 1.0]",
-            "(-1.0, 1.0]",
-            "(-1.0, 1.0]",
-            "(1.0, inf]",
-            "(1.0, inf]",
-            "(1.0, inf]"
-        ]
-    )?;
+        let series = &df[0];
+        let out = hist(series, None, Some(6), Some(1.0), Some(7.0))?;
 
-    assert!(out.frame_equal_missing(&expected));
+        let expected = df!(
+            "break_point" => [1, 2, 3, 4, 5, 6, i32::MAX],
+            "category"    => [
+                "(-2147483648.0, 1.0]",
+                "(1.0, 2.0]",
+                "(2.0, 3.0]",
+                "(3.0, 4.0]",
+                "(4.0, 5.0]",
+                "(5.0, 6.0]",
+                "(6.0, 2147483647.0]"
+            ],
+            "value_count" => [0, 0, 2, 0, 2, 1, 0]
+        )?;
 
-    Ok(())
+        assert!(out.frame_equal_missing(&expected));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_hist_float() -> Result<()> {
+        let df = df!(
+            "value" => [1.0, 3.4, 3.2, 6.3, 7.0]
+        )?;
+
+        let series = &df[0];
+        let bins = Series::new("bins", [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]);
+        let out = hist(series, Some(&bins), None, None, None)?;
+
+        let expected = df!(
+            "break_point" => [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, f64::INFINITY],
+            "category"    => [
+                "(-inf, 1.0]",
+                "(1.0, 2.0]",
+                "(2.0, 3.0]",
+                "(3.0, 4.0]",
+                "(4.0, 5.0]",
+                "(5.0, 6.0]",
+                "(6.0, 7.0]",
+                "(7.0, inf]"
+            ],
+            "value_count" => [1, 0, 0, 2, 0, 0, 2, 0]
+        )?;
+
+        assert!(out.frame_equal_missing(&expected));
+
+        Ok(())
+    }
 }

@@ -1467,6 +1467,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-algo"
+version = "0.27.2"
+dependencies = [
+ "polars-core",
+ "polars-lazy",
+ "polars-ops",
+]
+
+[[package]]
 name = "polars-arrow"
 version = "0.27.2"
 dependencies = [
@@ -1717,6 +1726,7 @@ dependencies = [
  "numpy",
  "once_cell",
  "polars",
+ "polars-algo",
  "polars-core",
  "polars-lazy",
  "pyo3",
