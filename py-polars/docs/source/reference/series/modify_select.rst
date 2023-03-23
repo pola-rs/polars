@@ -27,6 +27,7 @@ Manipulation/selection
     Series.filter
     Series.floor
     Series.head
+    Series.hist
     Series.interpolate
     Series.item
     Series.limit
