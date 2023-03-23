@@ -2618,34 +2618,30 @@ def format(fstring: str, *args: Expr | str) -> Expr:
     return concat_str(exprs, separator="")
 
 
-def concat_list(exprs: Sequence[str | Expr | Series] | Expr) -> Expr:
+def concat_list(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
     """
-    Concat the arrays in a Series dtype List in linear time.
+    Horizontally concatenate columns into a single list column.
+
+    Operates in linear time.
 
     Parameters
     ----------
     exprs
-        Columns to concat into a List Series
+        Columns to concatenate into a single list column. Accepts expression input.
+        Strings are parsed as column names, other non-expression inputs are parsed as
+        literals.
+    *more_exprs
+        Additional columns to concatenate into a single list column, specified as
+        positional arguments.
 
     Examples
     --------
     Create lagged columns and collect them into a list. This mimics a rolling window.
 
-    >>> df = pl.DataFrame(
-    ...     {
-    ...         "A": [1.0, 2.0, 9.0, 2.0, 13.0],
-    ...     }
-    ... )
-    >>> (
-    ...     df.with_columns(
-    ...         [pl.col("A").shift(i).alias(f"A_lag_{i}") for i in range(3)]
-    ...     ).select(
-    ...         [
-    ...             pl.concat_list([f"A_lag_{i}" for i in range(3)][::-1]).alias(
-    ...                 "A_rolling"
-    ...             )
-    ...         ]
-    ...     )
+    >>> df = pl.DataFrame({"A": [1.0, 2.0, 9.0, 2.0, 13.0]})
+    >>> df = df.select([pl.col("A").shift(i).alias(f"A_lag_{i}") for i in range(3)])
+    >>> df.select(
+    ...     pl.concat_list([f"A_lag_{i}" for i in range(3)][::-1]).alias("A_rolling")
     ... )
     shape: (5, 1)
     ┌───────────────────┐
@@ -2662,6 +2658,8 @@ def concat_list(exprs: Sequence[str | Expr | Series] | Expr) -> Expr:
 
     """
     exprs = selection_to_pyexpr_list(exprs)
+    if more_exprs:
+        exprs.extend(selection_to_pyexpr_list(more_exprs))
     return wrap_expr(_concat_lst(exprs))
 
 
