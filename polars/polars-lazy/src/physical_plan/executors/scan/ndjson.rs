@@ -4,6 +4,9 @@ use super::*;
 use crate::prelude::{AnonymousScan, AnonymousScanOptions, LazyJsonLineReader};
 
 impl AnonymousScan for LazyJsonLineReader {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
     fn scan(&self, scan_opts: AnonymousScanOptions) -> PolarsResult<DataFrame> {
         let schema = scan_opts.output_schema.unwrap_or(scan_opts.schema);
         JsonLineReader::from_path(&self.path)?
