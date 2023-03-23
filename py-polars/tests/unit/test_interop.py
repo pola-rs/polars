@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import typing
+import warnings
 from datetime import date, datetime
 from typing import Any, cast, no_type_check
 
@@ -133,6 +134,14 @@ def test_from_pandas() -> None:
     out = pl.from_pandas(df, schema_overrides=overrides)
     for col, dtype in overrides.items():
         assert out.schema[col] == dtype
+
+    # empty and/or all null values, no pandas dtype
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", Warning)
+
+        for nulls in ([], [None], [None, None], [None, None, None]):
+            srs = pl.from_pandas(pd.Series(nulls))
+            assert nulls == srs.to_list()
 
 
 def test_from_pandas_nan_to_null() -> None:

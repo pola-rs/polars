@@ -429,20 +429,20 @@ def sequence_to_pyseries(
 def _pandas_series_to_arrow(
     values: pd.Series | pd.DatetimeIndex,
     nan_to_null: bool = True,
-    min_len: int | None = None,
+    length: int | None = None,
 ) -> pa.Array:
     """
     Convert a pandas Series to an Arrow Array.
 
     Parameters
     ----------
-    values : :class:`pandas.Series` or :class:`pandas.DatetimeIndex`
+    values : :class:`pandas.Series` or :class:`pandas.DatetimeIndex`.
         Series to convert to arrow
     nan_to_null : bool, default = True
-        Interpret `NaN` as missing values
-    min_len : int, optional
-        in case of null values, this length will be used to create a dummy f64 array
-        (with all values set to null)
+        Interpret `NaN` as missing values.
+    length : int, optional
+        in case all values are null, create a null array of this length.
+        if unset, length is inferred from values.
 
     Returns
     -------
@@ -455,7 +455,7 @@ def _pandas_series_to_arrow(
         if isinstance(first_non_none, str):
             return pa.array(values, pa.large_utf8(), from_pandas=nan_to_null)
         elif first_non_none is None:
-            return pa.nulls(min_len, pa.large_utf8())
+            return pa.nulls(length or len(values), pa.large_utf8())
         return pa.array(values, from_pandas=nan_to_null)
     elif dtype:
         return pa.array(values, from_pandas=nan_to_null)
@@ -1357,12 +1357,12 @@ def pandas_to_pydf(
             arrow_dict[str(idxcol)] = _pandas_series_to_arrow(
                 data.index.get_level_values(idxcol),
                 nan_to_null=nan_to_null,
-                min_len=length,
+                length=length,
             )
 
     for col in data.columns:
         arrow_dict[str(col)] = _pandas_series_to_arrow(
-            data[col], nan_to_null=nan_to_null, min_len=length
+            data[col], nan_to_null=nan_to_null, length=length
         )
 
     arrow_table = pa.table(arrow_dict)
