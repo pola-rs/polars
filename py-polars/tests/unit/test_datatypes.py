@@ -84,10 +84,10 @@ def test_dtypes_hashable() -> None:
         (pl.Datetime, "Datetime"),
         (
             pl.Datetime(time_zone="Europe/Amsterdam"),
-            "Datetime(tu='us', tz='Europe/Amsterdam')",
+            "Datetime(time_unit='us', time_zone='Europe/Amsterdam')",
         ),
         (pl.List(pl.Int8), "List(Int8)"),
-        (pl.List(pl.Duration(time_unit="ns")), "List(Duration(tu='ns'))"),
+        (pl.List(pl.Duration(time_unit="ns")), "List(Duration(time_unit='ns'))"),
         (pl.Struct, "Struct"),
         (
             pl.Struct({"name": pl.Utf8, "ids": pl.List(pl.UInt32)}),
