@@ -672,7 +672,7 @@ mod test {
 
     #[test]
     fn test_add_ns() {
-        use crate::NO_TIMEZONE;
+        use polars_arrow::time_zone::NO_TIMEZONE;
         let t = 1;
         let seven_days = Duration::parse("7d");
         let one_week = Duration::parse("1w");
