@@ -1423,6 +1423,7 @@ class Series:
         labels: list[str] | None = None,
         break_point_label: str = "break_point",
         category_label: str = "category",
+        maintain_order: bool = False,
     ) -> DataFrame:
         """
         Bin values into discrete values.
@@ -1438,6 +1439,8 @@ class Series:
             Name given to the breakpoint column.
         category_label
             Name given to the category column.
+        maintain_order
+            Keep the order of the original `Series`.
 
         Returns
         -------
@@ -1470,6 +1473,15 @@ class Series:
         └──────┴─────────────┴──────────────┘
 
         """
+        return wrap_df(
+            self._s.cut(
+                Series(break_point_label, bins, dtype=Float64)._s,
+                labels,
+                break_point_label,
+                category_label,
+                maintain_order,
+            )
+        )
         var_nm = self.name
 
         cuts_df = (

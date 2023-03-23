@@ -1,4 +1,5 @@
 use numpy::PyArray1;
+use polars_algo::cut;
 use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::series::IsSorted;
 use polars_core::utils::{flatten_series, CustomIterTools};
@@ -1215,6 +1216,27 @@ impl PySeries {
 
     pub fn clear(&self) -> Self {
         self.series.clear().into()
+    }
+
+    #[pyo3(signature = (bins, labels, break_point_label, category_label, maintain_order))]
+    pub fn cut(
+        &self,
+        bins: Self,
+        labels: Option<Vec<&str>>,
+        break_point_label: Option<&str>,
+        category_label: Option<&str>,
+        maintain_order: bool,
+    ) -> PyResult<PyDataFrame> {
+        let out = cut(
+            &self.series,
+            bins.series,
+            labels,
+            break_point_label,
+            category_label,
+            maintain_order,
+        )
+        .map_err(PyPolarsErr::from)?;
+        Ok(out.into())
     }
 }
 
