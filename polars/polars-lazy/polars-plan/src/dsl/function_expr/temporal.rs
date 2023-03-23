@@ -1,9 +1,9 @@
 #[cfg(feature = "timezones")]
 use arrow::temporal_conversions::parse_offset;
-#[cfg(feature = "date_offset")]
-use chrono::TimeZone as TimeZoneTrait;
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
+#[cfg(feature = "date_offset")]
+use polars_arrow::PolarsTimeZone;
 #[cfg(feature = "date_offset")]
 use polars_time::prelude::*;
 
@@ -25,7 +25,7 @@ pub(super) fn date_offset(s: Series, offset: Duration) -> PolarsResult<Series> {
                 me.datetime().unwrap().clone()
             };
 
-            fn adder<T: TimeZoneTrait>(
+            fn adder<T: PolarsTimeZone>(
                 tu: TimeUnit,
             ) -> fn(&Duration, i64, Option<&T>) -> PolarsResult<i64> {
                 match tu {

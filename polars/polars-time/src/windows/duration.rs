@@ -1,12 +1,11 @@
 use std::cmp::Ordering;
 use std::ops::Mul;
 
-use chrono::{
-    Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeZone as TimeZoneTrait, Timelike, Weekday,
-};
+use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Weekday};
 use polars_arrow::export::arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
 };
+use polars_arrow::PolarsTimeZone;
 use polars_core::export::arrow::temporal_conversions::MICROSECONDS;
 use polars_core::prelude::{
     datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us, polars_bail,
@@ -330,7 +329,7 @@ impl Duration {
     pub fn truncate_impl<F, G, J>(
         &self,
         t: i64,
-        tz: Option<&impl TimeZoneTrait>,
+        tz: Option<&impl PolarsTimeZone>,
         nsecs_to_unit: F,
         timestamp_to_datetime: G,
         datetime_to_timestamp: J,
@@ -442,7 +441,7 @@ impl Duration {
 
     // Truncate the given ns timestamp by the window boundary.
     #[inline]
-    pub fn truncate_ns(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> PolarsResult<i64> {
+    pub fn truncate_ns(&self, t: i64, tz: Option<&impl PolarsTimeZone>) -> PolarsResult<i64> {
         self.truncate_impl(
             t,
             tz,
@@ -454,7 +453,7 @@ impl Duration {
 
     // Truncate the given ns timestamp by the window boundary.
     #[inline]
-    pub fn truncate_us(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> PolarsResult<i64> {
+    pub fn truncate_us(&self, t: i64, tz: Option<&impl PolarsTimeZone>) -> PolarsResult<i64> {
         self.truncate_impl(
             t,
             tz,
@@ -466,7 +465,7 @@ impl Duration {
 
     // Truncate the given ms timestamp by the window boundary.
     #[inline]
-    pub fn truncate_ms(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> PolarsResult<i64> {
+    pub fn truncate_ms(&self, t: i64, tz: Option<&impl PolarsTimeZone>) -> PolarsResult<i64> {
         self.truncate_impl(
             t,
             tz,
@@ -479,7 +478,7 @@ impl Duration {
     fn add_impl_month_week_or_day<F, G, J>(
         &self,
         t: i64,
-        tz: Option<&impl TimeZoneTrait>,
+        tz: Option<&impl PolarsTimeZone>,
         nsecs_to_unit: F,
         timestamp_to_datetime: G,
         datetime_to_timestamp: J,
@@ -579,7 +578,7 @@ impl Duration {
         Ok(new_t)
     }
 
-    pub fn add_ns(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> PolarsResult<i64> {
+    pub fn add_ns(&self, t: i64, tz: Option<&impl PolarsTimeZone>) -> PolarsResult<i64> {
         let d = self;
         let new_t = self.add_impl_month_week_or_day(
             t,
@@ -592,7 +591,7 @@ impl Duration {
         Ok(new_t? + nsecs)
     }
 
-    pub fn add_us(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> PolarsResult<i64> {
+    pub fn add_us(&self, t: i64, tz: Option<&impl PolarsTimeZone>) -> PolarsResult<i64> {
         let d = self;
         let new_t = self.add_impl_month_week_or_day(
             t,
@@ -605,7 +604,7 @@ impl Duration {
         Ok(new_t? + nsecs / 1_000)
     }
 
-    pub fn add_ms(&self, t: i64, tz: Option<&impl TimeZoneTrait>) -> PolarsResult<i64> {
+    pub fn add_ms(&self, t: i64, tz: Option<&impl PolarsTimeZone>) -> PolarsResult<i64> {
         let d = self;
         let new_t = self.add_impl_month_week_or_day(
             t,

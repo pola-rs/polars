@@ -1,6 +1,6 @@
-use chrono::TimeZone as TimeZoneTrait;
 #[cfg(feature = "dtype-date")]
 use polars_arrow::export::arrow::temporal_conversions::{MILLISECONDS, SECONDS_IN_DAY};
+use polars_arrow::PolarsTimeZone;
 use polars_core::prelude::*;
 
 use crate::prelude::*;
@@ -10,7 +10,7 @@ pub trait PolarsTruncate {
         &self,
         every: Duration,
         offset: Duration,
-        tz: Option<&impl TimeZoneTrait>,
+        tz: Option<&impl PolarsTimeZone>,
     ) -> PolarsResult<Self>
     where
         Self: Sized;
@@ -22,7 +22,7 @@ impl PolarsTruncate for DatetimeChunked {
         &self,
         every: Duration,
         offset: Duration,
-        tz: Option<&impl TimeZoneTrait>,
+        tz: Option<&impl PolarsTimeZone>,
     ) -> PolarsResult<Self> {
         let w = Window::new(every, every, offset);
 
@@ -44,7 +44,7 @@ impl PolarsTruncate for DateChunked {
         &self,
         every: Duration,
         offset: Duration,
-        _tz: Option<&impl TimeZoneTrait>,
+        _tz: Option<&impl PolarsTimeZone>,
     ) -> PolarsResult<Self> {
         let w = Window::new(every, every, offset);
         Ok(self

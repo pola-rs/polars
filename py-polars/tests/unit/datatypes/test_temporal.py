@@ -2116,7 +2116,8 @@ def test_tzaware_date_range_with_fixed_offset() -> None:
 
 def test_date_range_with_unsupported_datetimes() -> None:
     with pytest.raises(
-        ComputeError, match=r"ambiguous timestamps are not \(yet\) supported"
+        ComputeError,
+        match=r"datetime '2021-11-07 01:00:00' is ambiguous in time zone 'US/Central'",
     ):
         pl.date_range(
             datetime(2021, 11, 7, 1),
@@ -2125,7 +2126,8 @@ def test_date_range_with_unsupported_datetimes() -> None:
             time_zone="US/Central",
         )
     with pytest.raises(
-        ComputeError, match=r"non-existent timestamps are not \(yet\) supported"
+        ComputeError,
+        match=r"datetime '2021-03-28 02:30:00' is non-existent in time zone 'Europe/Vienna'",
     ):
         pl.date_range(
             datetime(2021, 3, 28, 2, 30),

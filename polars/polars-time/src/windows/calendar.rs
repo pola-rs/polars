@@ -1,4 +1,4 @@
-use chrono::TimeZone as TimeZoneTrait;
+use polars_arrow::PolarsTimeZone;
 use polars_core::prelude::*;
 
 use crate::prelude::*;
@@ -41,7 +41,7 @@ pub fn date_range(
     every: Duration,
     closed: ClosedWindow,
     tu: TimeUnit,
-    tz: Option<&impl TimeZoneTrait>,
+    tz: Option<&impl PolarsTimeZone>,
 ) -> PolarsResult<Vec<i64>> {
     let size = match tu {
         TimeUnit::Nanoseconds => ((stop - start) / every.duration_ns() + 1) as usize,
