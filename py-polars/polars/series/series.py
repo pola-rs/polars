@@ -1487,7 +1487,7 @@ class Series:
         maintain_order: bool = False,
     ) -> DataFrame:
         """
-        Bin values into discrete values.
+        Bin values into discrete values based on their quantiles.
 
         Parameters
         ----------
@@ -1543,6 +1543,54 @@ class Series:
                 maintain_order,
             )
         )
+
+    def hist(
+        self,
+        bins: list[float] | None = None,
+        bin_count: int | None = None,
+    ) -> DataFrame:
+        """
+        Bin values into buckets and count their occurrences.
+
+        Parameters
+        ----------
+        bins
+            Discretizations to make.
+            If None given, we determine the boundaries based on the data.
+        bin_count
+            If no bins provided, this will be used to determine
+            the distance of the bins
+
+        Returns
+        -------
+        DataFrame
+
+        Warnings
+        --------
+        This functionality is experimental and may change without it being considered a
+        breaking change.
+
+        Examples
+        --------
+        >>> a = pl.Series("a", [1, 3, 8, 8, 2, 1, 3])
+        >>> a.hist(bin_count=4)
+        shape: (5, 3)
+        ┌─────────────┬─────────────┬─────────┐
+        │ break_point ┆ category    ┆ a_count │
+        │ ---         ┆ ---         ┆ ---     │
+        │ f64         ┆ cat         ┆ u32     │
+        ╞═════════════╪═════════════╪═════════╡
+        │ 0.0         ┆ (-inf, 0.0] ┆ 0       │
+        │ 2.25        ┆ (0.0, 2.25] ┆ 3       │
+        │ 4.5         ┆ (2.25, 4.5] ┆ 2       │
+        │ 6.75        ┆ (4.5, 6.75] ┆ 0       │
+        │ inf         ┆ (6.75, inf] ┆ 2       │
+        └─────────────┴─────────────┴─────────┘
+
+        """
+        if bins:
+            bins = Series(bins, dtype=Float64)._s
+        return wrap_df(self._s.hist(bins, bin_count))
 
     def value_counts(self, sort: bool = False) -> DataFrame:
         """

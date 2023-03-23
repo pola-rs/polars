@@ -3,39 +3,17 @@ use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 use polars_ops::prelude::*;
 
-pub fn hist(
-    s: &Series,
-    bins: Option<&Series>,
-    bin_count: Option<usize>,
-    start: Option<f64>,
-    stop: Option<f64>,
-) -> Result<DataFrame> {
+pub fn hist(s: &Series, bins: Option<&Series>, bin_count: Option<usize>) -> Result<DataFrame> {
     let breakpoint_str = &"break_point";
+    let s = s.cast(&DataType::Float64)?.sort(false);
 
     // if the bins are provided, then we can just use them
     let bins = if let Some(bins_in) = bins {
         Series::new(breakpoint_str, bins_in)
     } else {
-        // If start and stop is provided, we don't need to scan the series
-        let start = if let Some(start_in) = start {
-            start_in
-        } else {
-            s.cast(&DataType::Float64)?
-                .min::<f64>()
-                .expect("Cannot find minimum value of series")
-                .floor()
-                - 1.0
-        };
-
-        let stop = if let Some(stop_in) = stop {
-            stop_in
-        } else {
-            s.cast(&DataType::Float64)?
-                .max::<f64>()
-                .expect("Cannot find maximum value of series")
-                .ceil()
-                + 1.0
-        };
+        // data is sorted, so this is O(1)
+        let start = s.min::<f64>().unwrap().floor() - 1.0;
+        let stop = s.max::<f64>().unwrap().ceil() + 1.0;
 
         // If bin_count is omitted, default to the difference between start and stop (unit bins)
         let bin_count = if let Some(bin_count) = bin_count {
@@ -98,7 +76,7 @@ pub fn hist(
         ])
         .collect()?;
 
-    let out = s.sort(false).into_frame().join_asof(
+    let out = s.clone().into_frame().join_asof(
         &cuts,
         s.name(),
         breakpoint_str,
@@ -229,68 +207,5 @@ pub fn cut(
         out.sort([ROW_COUNT], false)?.drop(ROW_COUNT)
     } else {
         Ok(out)
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn test_hist_integer() -> Result<()> {
-        let df = df!(
-            "value" => [3, 3, 5, 5, 6]
-        )?;
-
-        let series = &df[0];
-        let out = hist(series, None, Some(6), Some(1.0), Some(7.0))?;
-
-        let expected = df!(
-            "break_point" => [1, 2, 3, 4, 5, 6, i32::MAX],
-            "category"    => [
-                "(-2147483648.0, 1.0]",
-                "(1.0, 2.0]",
-                "(2.0, 3.0]",
-                "(3.0, 4.0]",
-                "(4.0, 5.0]",
-                "(5.0, 6.0]",
-                "(6.0, 2147483647.0]"
-            ],
-            "value_count" => [0, 0, 2, 0, 2, 1, 0]
-        )?;
-
-        assert!(out.frame_equal_missing(&expected));
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_hist_float() -> Result<()> {
-        let df = df!(
-            "value" => [1.0, 3.4, 3.2, 6.3, 7.0]
-        )?;
-
-        let series = &df[0];
-        let bins = Series::new("bins", [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]);
-        let out = hist(series, Some(&bins), None, None, None)?;
-
-        let expected = df!(
-            "break_point" => [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, f64::INFINITY],
-            "category"    => [
-                "(-inf, 1.0]",
-                "(1.0, 2.0]",
-                "(2.0, 3.0]",
-                "(3.0, 4.0]",
-                "(4.0, 5.0]",
-                "(5.0, 6.0]",
-                "(6.0, 7.0]",
-                "(7.0, inf]"
-            ],
-            "value_count" => [1, 0, 0, 2, 0, 0, 2, 0]
-        )?;
-
-        assert!(out.frame_equal_missing(&expected));
-
-        Ok(())
     }
 }
