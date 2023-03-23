@@ -1,8 +1,8 @@
 #[cfg(feature = "timezones")]
 use arrow::temporal_conversions::parse_offset;
-use chrono::TimeZone as TimeZoneTrait;
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
+use polars_arrow::time_zone::PolarsTimeZone;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::export::rayon::prelude::*;
 use polars_core::frame::groupby::GroupsProxy;
@@ -457,7 +457,7 @@ impl Wrap<&DataFrame> {
         by: Vec<Series>,
         options: &RollingGroupOptions,
         tu: TimeUnit,
-        tz: Option<impl TimeZoneTrait + std::marker::Sync + std::marker::Send>,
+        tz: Option<impl PolarsTimeZone>,
         time_type: &DataType,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
         let mut dt = dt.rechunk();

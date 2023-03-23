@@ -13,5 +13,6 @@ pub mod is_valid;
 pub mod kernels;
 pub mod prelude;
 pub mod slice;
+pub mod time_zone;
 pub mod trusted_len;
 pub mod utils;
