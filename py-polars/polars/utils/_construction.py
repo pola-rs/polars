@@ -359,6 +359,14 @@ def sequence_to_pyseries(
         ).to_struct(name)
     else:
         if python_dtype is None:
+            if value is None and dtype_if_empty:
+                # Create a series with a dtype_if_empty dtype for a sequence which
+                # contains only None values.
+                constructor = polars_type_to_constructor(dtype_if_empty)
+                return _construct_series_with_fallbacks(
+                    constructor, name, values, strict
+                )
+
             # generic default dtype
             python_dtype = float if value is None else type(value)
 
