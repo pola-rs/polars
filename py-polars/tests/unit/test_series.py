@@ -2610,6 +2610,13 @@ def test_cut_maintain_order() -> None:
     )
 
 
+def test_qcut() -> None:
+    assert (
+        str(pl.Series("a", range(-5, 3)).qcut([0.0, 0.25, 0.75]).to_dict(False))
+        == "{'a': [-5.0, -4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0], 'break_point': [-5.0, -3.25, 0.25, 0.25, 0.25, 0.25, inf, inf], 'category': ['(-inf, -5.0]', '(-5.0, -3.25]', '(-3.25, 0.25]', '(-3.25, 0.25]', '(-3.25, 0.25]', '(-3.25, 0.25]', '(0.25, inf]', '(0.25, inf]']}"
+    )
+
+
 def test_symmetry_for_max_in_names() -> None:
     # int
     a = pl.Series("a", [1])

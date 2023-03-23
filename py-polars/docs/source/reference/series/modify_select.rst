@@ -31,6 +31,7 @@ Manipulation/selection
     Series.item
     Series.limit
     Series.new_from_index
+    Series.qcut
     Series.rechunk
     Series.rename
     Series.reshape
