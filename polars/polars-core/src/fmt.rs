@@ -92,7 +92,7 @@ macro_rules! format_array {
             } else {
                 write!(f, "\t{}\n", v)?;
             };
-            Ok(())
+            Ok::<(), std::fmt::Error>(())
         };
         if limit < $a.len() {
             if limit > 0 {
