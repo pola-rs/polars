@@ -1491,6 +1491,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "comfy-table",
+ "either",
  "hashbrown 0.13.2",
  "indexmap",
  "itoap",
@@ -1582,6 +1583,7 @@ version = "0.27.2"
 dependencies = [
  "arrow2",
  "base64",
+ "either",
  "hex",
  "jsonpath_lib",
  "memchr",
