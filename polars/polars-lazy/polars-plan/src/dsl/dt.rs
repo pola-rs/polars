@@ -165,7 +165,7 @@ impl DateLikeNameSpace {
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Time))
     }
 
-    /// Get the (local) date of a Datetime
+    /// Get the (local) date of a Date/Datetime
     pub fn date(self) -> Expr {
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Date))
