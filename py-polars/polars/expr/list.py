@@ -197,9 +197,14 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.lst_reverse())
 
-    def unique(self) -> Expr:
+    def unique(self, maintain_order: bool = False) -> Expr:
         """
         Get the unique/distinct values in the list.
+
+        Parameters
+        ----------
+        maintain_order
+            Maintain order of data. This requires more work.
 
         Examples
         --------
@@ -219,7 +224,7 @@ class ExprListNameSpace:
         └───────────┘
 
         """
-        return wrap_expr(self._pyexpr.lst_unique())
+        return wrap_expr(self._pyexpr.lst_unique(maintain_order))
 
     def concat(self, other: list[Expr | str] | Expr | str | Series | list[Any]) -> Expr:
         """

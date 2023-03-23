@@ -93,8 +93,16 @@ class ListNameSpace:
     def reverse(self) -> Series:
         """Reverse the arrays in the list."""
 
-    def unique(self) -> Series:
-        """Get the unique/distinct values in the list."""
+    def unique(self, maintain_order: bool = False) -> Series:
+        """
+        Get the unique/distinct values in the list.
+
+        Parameters
+        ----------
+        maintain_order
+            Maintain order of data. This requires more work.
+
+        """
 
     def concat(self, other: list[Series] | Series | list[Any]) -> Series:
         """

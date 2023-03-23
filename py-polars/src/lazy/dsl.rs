@@ -1524,21 +1524,17 @@ impl PyExpr {
     }
 
     fn lst_reverse(&self) -> Self {
-        self.inner
-            .clone()
-            .arr()
-            .reverse()
-            .with_fmt("arr.reverse")
-            .into()
+        self.inner.clone().arr().reverse().into()
     }
 
-    fn lst_unique(&self) -> Self {
-        self.inner
-            .clone()
-            .arr()
-            .unique()
-            .with_fmt("arr.unique")
-            .into()
+    fn lst_unique(&self, maintain_order: bool) -> Self {
+        let e = self.inner.clone();
+
+        if maintain_order {
+            e.arr().unique_stable().into()
+        } else {
+            e.arr().unique().into()
+        }
     }
 
     fn lst_get(&self, index: PyExpr) -> Self {

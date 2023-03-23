@@ -105,6 +105,16 @@ impl ListNameSpace {
             .with_fmt("arr.unique")
     }
 
+    /// Keep only the unique values in every sublist.
+    pub fn unique_stable(self) -> Expr {
+        self.0
+            .map(
+                move |s| Ok(Some(s.list()?.lst_unique_stable()?.into_series())),
+                GetOutput::same_type(),
+            )
+            .with_fmt("arr.unique_stable")
+    }
+
     /// Get items in every sublist by index.
     pub fn get(self, index: Expr) -> Expr {
         self.0
