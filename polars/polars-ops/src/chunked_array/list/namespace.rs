@@ -247,6 +247,11 @@ pub trait ListNameSpaceImpl: AsList {
         ca.try_apply_amortized(|s| s.as_ref().unique())
     }
 
+    fn lst_unique_stable(&self) -> PolarsResult<ListChunked> {
+        let ca = self.as_list();
+        ca.try_apply_amortized(|s| s.as_ref().unique_stable())
+    }
+
     fn lst_arg_min(&self) -> IdxCa {
         let ca = self.as_list();
         let mut out: IdxCa = ca

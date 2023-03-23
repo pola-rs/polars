@@ -405,3 +405,11 @@ def test_list_take_logical_type() -> None:
         "foo": [["foo", "foo", "bar"], ["foo", "foo", "bar"]],
         "bar": [[5.0, 10.0, 12.0], [5.0, 10.0, 12.0]],
     }
+
+
+def test_list_unique() -> None:
+    assert (
+        pl.Series([[1, 1, 2, 2, 3], [3, 3, 3, 2, 1, 2]])
+        .arr.unique(maintain_order=True)
+        .series_equal(pl.Series([[1, 2, 3], [3, 2, 1]]))
+    )
