@@ -1,4 +1,4 @@
-use polars_arrow::PolarsTimeZone;
+use polars_arrow::time_zone::PolarsTimeZone;
 use polars_core::prelude::*;
 
 use crate::prelude::*;

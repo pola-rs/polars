@@ -5,7 +5,7 @@ use arrow::temporal_conversions::{
 #[cfg(feature = "timezones")]
 use chrono::{LocalResult, NaiveDateTime};
 #[cfg(feature = "timezones")]
-use polars_arrow::PolarsTimeZone;
+use polars_arrow::time_zone::PolarsTimeZone;
 #[cfg(feature = "timezones")]
 use polars_core::prelude::{polars_bail, PolarsResult, TimeUnit};
 

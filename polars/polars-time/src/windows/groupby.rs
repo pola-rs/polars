@@ -4,9 +4,9 @@ use std::cmp::Ordering;
 use arrow::temporal_conversions::parse_offset;
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
+use polars_arrow::time_zone::PolarsTimeZone;
 use polars_arrow::trusted_len::TrustedLen;
 use polars_arrow::utils::CustomIterTools;
-use polars_arrow::PolarsTimeZone;
 use polars_core::export::rayon::prelude::*;
 use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;

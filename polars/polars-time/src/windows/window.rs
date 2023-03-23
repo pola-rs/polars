@@ -3,7 +3,7 @@ use chrono::NaiveDateTime;
 #[cfg(feature = "timezones")]
 use now::DateTimeNow;
 use polars_arrow::export::arrow::temporal_conversions::*;
-use polars_arrow::PolarsTimeZone;
+use polars_arrow::time_zone::PolarsTimeZone;
 use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::{timeunit_scale, SECONDS_IN_DAY};
 
