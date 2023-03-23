@@ -434,6 +434,8 @@ impl OptimizationRule for TypeCoercionRule {
                 let (self_ae, type_self) =
                     unpack!(get_aexpr_and_type(expr_arena, self_node, &input_schema));
 
+                // TODO remove: false positive
+                #[allow(clippy::redundant_clone)]
                 let mut super_type = type_self.clone();
                 for other in &input[1..] {
                     let (other, type_other) =
