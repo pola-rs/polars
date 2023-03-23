@@ -251,6 +251,7 @@ def test_arg_sort_rank_nans() -> None:
 
 
 def test_top_k() -> None:
+    # expression
     s = pl.Series([3, 1, 2, 5, 8])
 
     assert s.top_k(3).to_list() == [8, 5, 3]
@@ -259,6 +260,24 @@ def test_top_k() -> None:
     # 5886
     df = pl.DataFrame({"test": [4, 3, 2, 1]})
     assert_frame_equal(df.select(pl.col("test").top_k(10)), df)
+
+    # dataframe
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4, 2, 2],
+            "b": [3, 2, 1, 4, 3, 2],
+        }
+    )
+
+    assert df.top_k(3, by=["a", "b"]).to_dict(False) == {"a": [4, 3, 2], "b": [4, 1, 3]}
+
+    assert df.top_k(
+        3,
+        by=["a", "b"],
+        descending=True,
+    ).to_dict(
+        False
+    ) == {"a": [1, 2, 2], "b": [3, 2, 2]}
 
 
 def test_sorted_flag_unset_by_arithmetic_4937() -> None:
