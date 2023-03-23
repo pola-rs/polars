@@ -7,6 +7,7 @@ use smartstring::alias::String as SmartString;
 
 use crate::datatypes::IdxCa;
 use crate::frame::DataFrame;
+use crate::prelude::sort::_broadcast_descending;
 use crate::prelude::sort::arg_sort_multiple::_get_rows_encoded;
 use crate::prelude::*;
 use crate::utils::NoNull;
@@ -50,10 +51,11 @@ impl DataFrame {
     pub(crate) fn top_k_impl(
         &self,
         k: usize,
-        descending: Vec<bool>,
+        mut descending: Vec<bool>,
         by_column: Vec<Series>,
         nulls_last: bool,
     ) -> PolarsResult<DataFrame> {
+        _broadcast_descending(by_column.len(), &mut descending);
         let encoded = _get_rows_encoded(&by_column, &descending, nulls_last)?;
         let arr = encoded.into_array();
         let mut rows = arr

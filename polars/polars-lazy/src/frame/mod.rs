@@ -252,6 +252,23 @@ impl LazyFrame {
         }
     }
 
+    pub fn top_k<E: AsRef<[Expr]>, B: AsRef<[bool]>>(
+        self,
+        k: IdxSize,
+        by_exprs: E,
+        descending: B,
+        nulls_last: bool,
+    ) -> Self {
+        let mut descending = descending.as_ref().to_vec();
+        // top-k is reverse from sort
+        for v in &mut descending {
+            *v = !*v;
+        }
+        // this will optimize to top-k
+        self.sort_by_exprs(by_exprs, descending, nulls_last)
+            .slice(0, k)
+    }
+
     /// Reverse the DataFrame
     ///
     /// # Example
