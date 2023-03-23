@@ -3,6 +3,7 @@ mod arg_sort;
 pub mod arg_sort_multiple;
 #[cfg(feature = "dtype-categorical")]
 mod categorical;
+mod slice;
 
 use std::cmp::Ordering;
 use std::hint::unreachable_unchecked;
@@ -18,6 +19,7 @@ use polars_arrow::kernels::rolling::compare_fn_nan_max;
 use polars_arrow::prelude::{FromData, ValueSize};
 use polars_arrow::trusted_len::PushUnchecked;
 use rayon::prelude::*;
+pub use slice::*;
 
 use crate::prelude::compare_inner::PartialOrdInner;
 #[cfg(feature = "sort_multiple")]
@@ -28,15 +30,18 @@ use crate::utils::{CustomIterTools, NoNull};
 use crate::POOL;
 
 /// Reverse sorting when there are no nulls
+#[inline]
 fn order_descending<T: Ord>(a: &T, b: &T) -> Ordering {
     b.cmp(a)
 }
 
 /// Default sorting when there are no nulls
+#[inline]
 fn order_ascending<T: Ord>(a: &T, b: &T) -> Ordering {
     a.cmp(b)
 }
 
+#[inline]
 fn order_ascending_flt<T: Float>(a: &T, b: &T) -> Ordering {
     a.partial_cmp(b).unwrap_or_else(|| {
         match (a.is_nan(), b.is_nan()) {
@@ -49,10 +54,12 @@ fn order_ascending_flt<T: Float>(a: &T, b: &T) -> Ordering {
     })
 }
 
+#[inline]
 fn order_descending_flt<T: Float>(a: &T, b: &T) -> Ordering {
     order_ascending_flt(b, a)
 }
 
+#[inline]
 fn sort_branch<T, Fd, Fr>(
     slice: &mut [T],
     descending: bool,
@@ -92,7 +99,7 @@ where
     );
 }
 
-pub fn arg_sort_branch<T, Fd, Fr>(
+pub(crate) fn arg_sort_branch<T, Fd, Fr>(
     slice: &mut [T],
     descending: bool,
     ascending_order_fn: Fd,
@@ -114,20 +121,6 @@ pub fn arg_sort_branch<T, Fd, Fr>(
             false => slice.sort_by(ascending_order_fn),
         }
     }
-}
-
-fn memcpy_values<T>(ca: &ChunkedArray<T>) -> Vec<T::Native>
-where
-    T: PolarsNumericType,
-{
-    let len = ca.len();
-    let mut vals = Vec::with_capacity(len);
-
-    ca.downcast_iter().for_each(|arr| {
-        let values = arr.values().as_slice();
-        vals.extend_from_slice(values);
-    });
-    vals
 }
 
 macro_rules! sort_with_fast_path {
@@ -174,7 +167,7 @@ where
 {
     sort_with_fast_path!(ca, options);
     if ca.null_count() == 0 {
-        let mut vals = memcpy_values(ca);
+        let mut vals = ca.to_vec_null_aware().left().unwrap();
 
         sort_branch(
             vals.as_mut_slice(),
