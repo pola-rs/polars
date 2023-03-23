@@ -445,38 +445,36 @@ def var(column: str | Series, ddof: int = 1) -> Expr | float | None:
 
 
 @overload
-def max(exprs: Series) -> Expr:
+def max(exprs: Series) -> PythonLiteral | None:  # type: ignore[misc]
     ...
 
 
 @overload
-def max(
-    exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr
-) -> PythonLiteral | None:
+def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
     ...
 
 
 @deprecated_alias(column="exprs")
 def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | Any:
     """
-    Get the maximum value. Can be used horizontally or vertically.
+    Get the maximum value.
+
+    If a single column is passed, get the maximum value of that column (vertical).
+    If multiple columns are passed, get the maximum value of each row (horizontal).
 
     Parameters
     ----------
     exprs
-        Column(s) to be used in aggregation. Will lead to different behavior based on
-        the input:
-        - Union[str, Series] -> aggregate the maximum value of that column.
-        - List[Expr] -> aggregate the maximum value horizontally.
+        Column(s) to use in the aggregation. Accepts expression input. Strings are
+        parsed as column names, other non-expression inputs are parsed as literals.
     *more_exprs
-        ...
+        Additional columns to use in the aggregation, specified as positional arguments.
 
     Examples
     --------
+    Get the maximum value by columns with a string column name.
+
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
-
-    Get the maximum value by columns with a string column name
-
     >>> df.select(pl.max("a"))
     shape: (1, 1)
     ┌─────┐
@@ -487,7 +485,7 @@ def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | A
     │ 8   │
     └─────┘
 
-    Get the maximum value by row with a list of columns/expressions
+    Get the maximum value by row with a list of columns/expressions.
 
     >>> df.select(pl.max(["a", "b"]))
     shape: (3, 1)
@@ -556,16 +554,16 @@ def min(
     """
     Get the minimum value.
 
+    If a single column is passed, get the minimum value of that column (vertical).
+    If multiple columns are passed, get the minimum value of each row (horizontal).
+
     Parameters
     ----------
     exprs
-        Column(s) to be used in aggregation. Will lead to different behavior based on
-        the input:
-
-        - Union[str, Series] -> aggregate the sum value of that column.
-        - List[Expr] -> aggregate the min value horizontally.
+        Column(s) to use in the aggregation. Accepts expression input. Strings are
+        parsed as column names, other non-expression inputs are parsed as literals.
     *more_exprs
-        ...
+        Additional columns to use in the aggregation, specified as positional arguments.
 
     Examples
     --------
