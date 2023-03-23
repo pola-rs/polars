@@ -32,6 +32,7 @@ Manipulation/selection
     Expr.limit
     Expr.lower_bound
     Expr.map_dict
+    Expr.pipe
     Expr.rechunk
     Expr.reinterpret
     Expr.repeat_by
