@@ -2565,58 +2565,6 @@ def test_from_epoch_seq_input() -> None:
     assert_series_equal(result, expected)
 
 
-def test_cut() -> None:
-    a = pl.Series("a", [v / 10 for v in range(-30, 30, 5)])
-    out = a.cut(bins=[-1, 1])
-
-    assert out.shape == (12, 3)
-    assert out.filter(pl.col("break_point") < 1e9).to_dict(False) == {
-        "a": [-3.0, -2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0],
-        "break_point": [-1.0, -1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0],
-        "category": [
-            "(-inf, -1.0]",
-            "(-inf, -1.0]",
-            "(-inf, -1.0]",
-            "(-inf, -1.0]",
-            "(-inf, -1.0]",
-            "(-1.0, 1.0]",
-            "(-1.0, 1.0]",
-            "(-1.0, 1.0]",
-            "(-1.0, 1.0]",
-        ],
-    }
-
-    # test cut on integers #4939
-    inf = float("inf")
-    df = pl.DataFrame({"a": list(range(5))})
-    ser = df.select("a").to_series()
-    assert ser.cut(bins=[-1, 1]).rows() == [
-        (0.0, 1.0, "(-1.0, 1.0]"),
-        (1.0, 1.0, "(-1.0, 1.0]"),
-        (2.0, inf, "(1.0, inf]"),
-        (3.0, inf, "(1.0, inf]"),
-        (4.0, inf, "(1.0, inf]"),
-    ]
-
-
-def test_cut_maintain_order() -> None:
-    np.random.seed(1)
-    a = pl.Series("a", np.random.randint(0, 10, 10))
-    out = a.cut(bins=[-1, 1], maintain_order=True)
-    assert out["a"].cast(int).series_equal(a)
-    assert (
-        str(out.to_dict(False))
-        == "{'a': [5.0, 8.0, 9.0, 5.0, 0.0, 0.0, 1.0, 7.0, 6.0, 9.0], 'break_point': [inf, inf, inf, inf, 1.0, 1.0, 1.0, inf, inf, inf], 'category': ['(1.0, inf]', '(1.0, inf]', '(1.0, inf]', '(1.0, inf]', '(-1.0, 1.0]', '(-1.0, 1.0]', '(-1.0, 1.0]', '(1.0, inf]', '(1.0, inf]', '(1.0, inf]']}"
-    )
-
-
-def test_qcut() -> None:
-    assert (
-        str(pl.Series("a", range(-5, 3)).qcut([0.0, 0.25, 0.75]).to_dict(False))
-        == "{'a': [-5.0, -4.0, -3.0, -2.0, -1.0, 0.0, 1.0, 2.0], 'break_point': [-5.0, -3.25, 0.25, 0.25, 0.25, 0.25, inf, inf], 'category': ['(-inf, -5.0]', '(-5.0, -3.25]', '(-3.25, 0.25]', '(-3.25, 0.25]', '(-3.25, 0.25]', '(-3.25, 0.25]', '(0.25, inf]', '(0.25, inf]']}"
-    )
-
-
 def test_symmetry_for_max_in_names() -> None:
     # int
     a = pl.Series("a", [1])

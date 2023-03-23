@@ -1,5 +1,5 @@
 use numpy::PyArray1;
-use polars_algo::{cut, qcut};
+use polars_algo::{cut, hist, qcut};
 use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::series::IsSorted;
 use polars_core::utils::{flatten_series, CustomIterTools};
@@ -1265,6 +1265,12 @@ impl PySeries {
             maintain_order,
         )
         .map_err(PyPolarsErr::from)?;
+        Ok(out.into())
+    }
+
+    pub fn hist(&self, bins: Option<Self>, bin_count: Option<usize>) -> PyResult<PyDataFrame> {
+        let bins = bins.map(|s| s.series);
+        let out = hist(&self.series, bins.as_ref(), bin_count).map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
 }
