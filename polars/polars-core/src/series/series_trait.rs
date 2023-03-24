@@ -164,9 +164,7 @@ pub(crate) mod private {
             &self,
             _mask: &BooleanChunked,
             _other: &Series,
-        ) -> PolarsResult<Series> {
-            invalid_operation_panic!(zip_with_same_type, self)
-        }
+        ) -> PolarsResult<Series>;
         #[cfg(feature = "sort_multiple")]
         fn arg_sort_multiple(&self, _by: &[Series], _descending: &[bool]) -> PolarsResult<IdxCa> {
             polars_bail!(opq = arg_sort_multiple, self._dtype());
