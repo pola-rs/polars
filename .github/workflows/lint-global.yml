@@ -2,10 +2,6 @@ name: Lint global
 
 on:
   pull_request:
-    paths:
-      - '**.md'
-      - '**.toml'
-      - .github/workflows/lint-global.yml
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -16,4 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: dprint/check@v2.2
+      - name: Lint Markdown and TOML
+        uses: dprint/check@v2.2
+      - name: Spell Check with Typos
+        uses: crate-ci/typos@master
