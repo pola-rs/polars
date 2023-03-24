@@ -1272,7 +1272,7 @@ impl Expr {
     /// Get a mask of the first unique value.
     pub fn is_first(self) -> Expr {
         self.apply(
-            |s| is_first(&s).map(|s| Some(s.into_series())),
+            |s| polars_ops::prelude::is_first(&s).map(|s| Some(s.into_series())),
             GetOutput::from_type(DataType::Boolean),
         )
         .with_fmt("is_first")
