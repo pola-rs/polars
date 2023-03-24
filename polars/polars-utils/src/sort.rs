@@ -15,7 +15,7 @@ use crate::IdxSize;
 /// - The left indices are placed at the location right points to.
 ///
 /// # Safety
-/// The caller must ensure that the right indexes fo `&[(_, IdxSize)]` are integers ranging from `0..idx.len`
+/// The caller must ensure that the right indexes for `&[(_, IdxSize)]` are integers ranging from `0..idx.len`
 #[cfg(not(target_family = "wasm"))]
 pub unsafe fn perfect_sort(pool: &ThreadPool, idx: &[(IdxSize, IdxSize)], out: &mut Vec<IdxSize>) {
     let chunk_size = std::cmp::max(

@@ -2422,14 +2422,14 @@ def test_getitem() -> None:
     # 5343
     df = pl.DataFrame(
         {
-            f"fo{col}": [n**col for n in range(5)]  # 5 rows
+            f"foo{col}": [n**col for n in range(5)]  # 5 rows
             for col in range(12)  # 12 columns
         }
     )
     assert df[4, 4] == 256
     assert df[4, 5] == 1024
-    assert_frame_equal(df[4, [2]], pl.DataFrame({"fo2": [16]}))
-    assert_frame_equal(df[4, [5]], pl.DataFrame({"fo5": [1024]}))
+    assert_frame_equal(df[4, [2]], pl.DataFrame({"foo2": [16]}))
+    assert_frame_equal(df[4, [5]], pl.DataFrame({"foo5": [1024]}))
 
 
 @pytest.mark.parametrize(
