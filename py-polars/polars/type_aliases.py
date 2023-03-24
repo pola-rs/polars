@@ -107,7 +107,7 @@ SizeUnit: TypeAlias = Literal[
 ]
 StartBy: TypeAlias = Literal["window", "datapoint", "monday"]
 TimeUnit: TypeAlias = Literal["ns", "us", "ms"]
-UniqueKeepStrategy: TypeAlias = Literal["first", "last", "none"]
+UniqueKeepStrategy: TypeAlias = Literal["first", "last", "any", "none"]
 UnstackDirection: TypeAlias = Literal["vertical", "horizontal"]
 ApplyStrategy: TypeAlias = Literal["thread_local", "threading"]
 

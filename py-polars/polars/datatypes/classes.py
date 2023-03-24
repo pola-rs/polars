@@ -225,7 +225,7 @@ class Datetime(TemporalType):
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
-        return f"{class_name}(tu={self.tu!r}, tz={self.tz!r})"
+        return f"{class_name}(time_unit={self.tu!r}, time_zone={self.tz!r})"
 
 
 class Duration(TemporalType):
@@ -259,7 +259,7 @@ class Duration(TemporalType):
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
-        return f"{class_name}(tu={self.tu!r})"
+        return f"{class_name}(time_unit={self.tu!r})"
 
 
 class Categorical(DataType):

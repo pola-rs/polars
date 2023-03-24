@@ -353,32 +353,41 @@ impl PredicatePushDown {
                 input,
                 options
             } => {
-                // currently the distinct operation only keeps the first occurrences.
-                // this may have influence on the pushed down predicates. If the pushed down predicates
-                // contain a binary expression (thus depending on values in multiple columns)
-                // the final result may differ if it is pushed down.
 
-                let mut root_count = 0;
+                if matches!(options.keep_strategy, UniqueKeepStrategy::Any | UniqueKeepStrategy::None) {
+                    // currently the distinct operation only keeps the first occurrences.
+                    // this may have influence on the pushed down predicates. If the pushed down predicates
+                    // contain a binary expression (thus depending on values in multiple columns)
+                    // the final result may differ if it is pushed down.
 
-                // if this condition is called more than once, its a binary or ternary operation.
-                let condition = |_| {
-                    if root_count == 0 {
-                        root_count += 1;
-                        false
-                    } else {
-                        true
-                    }
-                };
-                let mut local_predicates =
-                    transfer_to_local_by_name(expr_arena, &mut acc_predicates, condition);
-                local_predicates.extend_from_slice(&transfer_to_local_by_node(&mut acc_predicates, |node| predicate_is_pushdown_boundary(node, expr_arena)));
+                    let mut root_count = 0;
 
-                self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
-                let lp = Distinct {
-                    input,
-                    options
-                };
-                Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
+                    // if this condition is called more than once, its a binary or ternary operation.
+                    let condition = |_| {
+                        if root_count == 0 {
+                            root_count += 1;
+                            false
+                        } else {
+                            true
+                        }
+                    };
+                    let mut local_predicates =
+                        transfer_to_local_by_name(expr_arena, &mut acc_predicates, condition);
+                    local_predicates.extend_from_slice(&transfer_to_local_by_node(&mut acc_predicates, |node| predicate_is_pushdown_boundary(node, expr_arena)));
+
+                    self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
+                    let lp = Distinct {
+                        input,
+                        options
+                    };
+                    Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
+                } else {
+                    let lp = Distinct {
+                        input,
+                        options
+                    };
+                    self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+                }
             }
             Join {
                 input_left,

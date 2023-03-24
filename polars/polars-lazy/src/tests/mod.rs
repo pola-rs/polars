@@ -151,29 +151,3 @@ pub(crate) fn get_df() -> DataFrame {
         .unwrap();
     df
 }
-
-#[test]
-fn test_foo() -> PolarsResult<()> {
-    let dfa: DataFrame = df![
-        "a" => [1, 2, 2],
-        "b" => ["bleft", "bleft", "bleft"]
-    ]?;
-    let dfb: DataFrame = df![
-        "a" => ["ar", "ar", "ar"],
-        "b" => [1, 2, 2]
-    ]?;
-
-    let out = dfa
-        .lazy()
-        .join(
-            dfb.lazy(),
-            [col("a")],
-            [col("b")],
-            JoinType::AsOf(Default::default()),
-        )
-        .select([col("a"), col("b")])
-        .collect()?;
-
-    dbg!(out);
-    Ok(())
-}

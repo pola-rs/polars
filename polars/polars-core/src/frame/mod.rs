@@ -60,6 +60,9 @@ pub enum UniqueKeepStrategy {
     Last,
     /// Keep None of the unique rows.
     None,
+    /// Keep any of the unique rows
+    /// This allows more optimizations
+    Any,
 }
 
 /// A contiguous growable collection of `Series` that have the same length.
@@ -3015,7 +3018,7 @@ impl DataFrame {
         };
 
         let columns = match (keep, maintain_order) {
-            (UniqueKeepStrategy::First, true) => {
+            (UniqueKeepStrategy::First | UniqueKeepStrategy::Any, true) => {
                 let gb = self.groupby_stable(names)?;
                 let groups = gb.get_groups();
                 let (offset, len) = slice.unwrap_or((0, groups.len()));
@@ -3044,7 +3047,7 @@ impl DataFrame {
                 let last_idx = last_idx.sort(false);
                 return Ok(unsafe { self.take_unchecked(&last_idx) });
             }
-            (UniqueKeepStrategy::First, false) => {
+            (UniqueKeepStrategy::First | UniqueKeepStrategy::Any, false) => {
                 let gb = self.groupby(names)?;
                 let groups = gb.get_groups();
                 let (offset, len) = slice.unwrap_or((0, groups.len()));

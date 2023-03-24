@@ -73,6 +73,7 @@ if TYPE_CHECKING:
         EpochTimeUnit,
         IntoExpr,
         PolarsDataType,
+        PythonLiteral,
         RollingInterpolationMethod,
         SchemaDict,
         TimeUnit,
@@ -444,33 +445,36 @@ def var(column: str | Series, ddof: int = 1) -> Expr | float | None:
 
 
 @overload
-def max(column: str | Sequence[Expr | str]) -> Expr:
+def max(exprs: Series) -> PythonLiteral | None:  # type: ignore[misc]
     ...
 
 
 @overload
-def max(column: Series) -> int | float:
+def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
     ...
 
 
-def max(column: str | Sequence[Expr | str] | Series) -> Expr | Any:
+@deprecated_alias(column="exprs")
+def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | Any:
     """
-    Get the maximum value. Can be used horizontally or vertically.
+    Get the maximum value.
+
+    If a single column is passed, get the maximum value of that column (vertical).
+    If multiple columns are passed, get the maximum value of each row (horizontal).
 
     Parameters
     ----------
-    column
-        Column(s) to be used in aggregation. Will lead to different behavior based on
-        the input:
-        - Union[str, Series] -> aggregate the maximum value of that column.
-        - List[Expr] -> aggregate the maximum value horizontally.
+    exprs
+        Column(s) to use in the aggregation. Accepts expression input. Strings are
+        parsed as column names, other non-expression inputs are parsed as literals.
+    *more_exprs
+        Additional columns to use in the aggregation, specified as positional arguments.
 
     Examples
     --------
+    Get the maximum value by columns with a string column name.
+
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
-
-    Get the maximum value by columns with a string column name
-
     >>> df.select(pl.max("a"))
     shape: (1, 1)
     ┌─────┐
@@ -481,7 +485,7 @@ def max(column: str | Sequence[Expr | str] | Series) -> Expr | Any:
     │ 8   │
     └─────┘
 
-    Get the maximum value by row with a list of columns/expressions
+    Get the maximum value by row with a list of columns/expressions.
 
     >>> df.select(pl.max(["a", "b"]))
     shape: (3, 1)
@@ -519,45 +523,59 @@ def max(column: str | Sequence[Expr | str] | Series) -> Expr | Any:
     └─────┴─────┘
 
     """
-    if isinstance(column, pli.Series):
-        return column.max()
-    elif isinstance(column, str):
-        return col(column).max()
-    else:
-        exprs = selection_to_pyexpr_list(column)
-        return wrap_expr(_max_exprs(exprs))
+    if not more_exprs:
+        if isinstance(exprs, pli.Series):
+            return exprs.max()
+        elif isinstance(exprs, str):
+            return col(exprs).max()
+        elif not isinstance(exprs, Iterable):
+            return lit(exprs).max()
+
+    exprs = selection_to_pyexpr_list(exprs)
+    if more_exprs:
+        exprs.extend(selection_to_pyexpr_list(more_exprs))
+    return wrap_expr(_max_exprs(exprs))
 
 
 @overload
-def min(
-    column: str | Sequence[Expr | str | date | datetime | int | float],
-) -> Expr:
+def min(exprs: Series) -> PythonLiteral | None:  # type: ignore[misc]
     ...
 
 
 @overload
-def min(column: Series) -> int | float:
+def min(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
     ...
 
 
+@deprecated_alias(column="exprs")
 def min(
-    column: str | Sequence[Expr | str | date | datetime | int | float] | Series,
-) -> Expr | Any:
+    exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr
+) -> Expr | PythonLiteral | None:
     """
     Get the minimum value.
 
-    column
-        Column(s) to be used in aggregation. Will lead to different behavior based on
-        the input:
-        - Union[str, Series] -> aggregate the sum value of that column.
-        - List[Expr] -> aggregate the min value horizontally.
+    If a single column is passed, get the minimum value of that column (vertical).
+    If multiple columns are passed, get the minimum value of each row (horizontal).
+
+    Parameters
+    ----------
+    exprs
+        Column(s) to use in the aggregation. Accepts expression input. Strings are
+        parsed as column names, other non-expression inputs are parsed as literals.
+    *more_exprs
+        Additional columns to use in the aggregation, specified as positional arguments.
 
     Examples
     --------
-    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
+    Get the minimum value by columns with a string column name.
 
-    Get the minimum value by columns with a string column name
-
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [1, 8, 3],
+    ...         "b": [4, 5, 2],
+    ...         "c": ["foo", "bar", "foo"],
+    ...     }
+    ... )
     >>> df.select(pl.min("a"))
     shape: (1, 1)
     ┌─────┐
@@ -568,7 +586,7 @@ def min(
     │ 1   │
     └─────┘
 
-    Get the minimum value by row with a list of columns/expressions
+    Get the minimum value by row with a list of columns/expressions.
 
     >>> df.select(pl.min(["a", "b"]))
     shape: (3, 1)
@@ -606,13 +624,18 @@ def min(
     └─────┴─────┘
 
     """
-    if isinstance(column, pli.Series):
-        return column.min()
-    elif isinstance(column, str):
-        return col(column).min()
-    else:
-        exprs = selection_to_pyexpr_list(column)
-        return wrap_expr(_min_exprs(exprs))
+    if not more_exprs:
+        if isinstance(exprs, pli.Series):
+            return exprs.min()
+        elif isinstance(exprs, str):
+            return col(exprs).min()
+        elif not isinstance(exprs, Iterable):
+            return lit(exprs).min()
+
+    exprs = selection_to_pyexpr_list(exprs)
+    if more_exprs:
+        exprs.extend(selection_to_pyexpr_list(more_exprs))
+    return wrap_expr(_min_exprs(exprs))
 
 
 @overload
@@ -2618,34 +2641,30 @@ def format(fstring: str, *args: Expr | str) -> Expr:
     return concat_str(exprs, separator="")
 
 
-def concat_list(exprs: Sequence[str | Expr | Series] | Expr) -> Expr:
+def concat_list(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
     """
-    Concat the arrays in a Series dtype List in linear time.
+    Horizontally concatenate columns into a single list column.
+
+    Operates in linear time.
 
     Parameters
     ----------
     exprs
-        Columns to concat into a List Series
+        Columns to concatenate into a single list column. Accepts expression input.
+        Strings are parsed as column names, other non-expression inputs are parsed as
+        literals.
+    *more_exprs
+        Additional columns to concatenate into a single list column, specified as
+        positional arguments.
 
     Examples
     --------
     Create lagged columns and collect them into a list. This mimics a rolling window.
 
-    >>> df = pl.DataFrame(
-    ...     {
-    ...         "A": [1.0, 2.0, 9.0, 2.0, 13.0],
-    ...     }
-    ... )
-    >>> (
-    ...     df.with_columns(
-    ...         [pl.col("A").shift(i).alias(f"A_lag_{i}") for i in range(3)]
-    ...     ).select(
-    ...         [
-    ...             pl.concat_list([f"A_lag_{i}" for i in range(3)][::-1]).alias(
-    ...                 "A_rolling"
-    ...             )
-    ...         ]
-    ...     )
+    >>> df = pl.DataFrame({"A": [1.0, 2.0, 9.0, 2.0, 13.0]})
+    >>> df = df.select([pl.col("A").shift(i).alias(f"A_lag_{i}") for i in range(3)])
+    >>> df.select(
+    ...     pl.concat_list([f"A_lag_{i}" for i in range(3)][::-1]).alias("A_rolling")
     ... )
     shape: (5, 1)
     ┌───────────────────┐
@@ -2662,6 +2681,8 @@ def concat_list(exprs: Sequence[str | Expr | Series] | Expr) -> Expr:
 
     """
     exprs = selection_to_pyexpr_list(exprs)
+    if more_exprs:
+        exprs.extend(selection_to_pyexpr_list(more_exprs))
     return wrap_expr(_concat_lst(exprs))
 
 
@@ -2946,7 +2967,7 @@ def repeat(
         Evaluate immediately and return a ``Series``. If set to ``False`` (default),
         return an expression instead.
     name
-        Only used in `eager` mode. As expression, us `alias`
+        Only used in `eager` mode. As expression, use `alias`
 
     """
     if eager:

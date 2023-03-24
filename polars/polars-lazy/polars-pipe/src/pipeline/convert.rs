@@ -256,11 +256,14 @@ where
                                 groupby_out_schema.with_column(name.clone(), dtype.clone());
                                 let col = expr_arena.add(AExpr::Column(Arc::from(name.as_str())));
                                 Some(match options.keep_strategy {
-                                    UniqueKeepStrategy::First | UniqueKeepStrategy::None => {
+                                    UniqueKeepStrategy::First | UniqueKeepStrategy::Any => {
                                         expr_arena.add(AExpr::Agg(AAggExpr::First(col)))
                                     }
                                     UniqueKeepStrategy::Last => {
                                         expr_arena.add(AExpr::Agg(AAggExpr::Last(col)))
+                                    }
+                                    UniqueKeepStrategy::None => {
+                                        unreachable!()
                                     }
                                 })
                             }
