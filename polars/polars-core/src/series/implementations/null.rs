@@ -48,6 +48,10 @@ impl PrivateSeries for NullChunked {
     fn _dtype(&self) -> &DataType {
         &DataType::Null
     }
+
+    fn zip_with_same_type(&self, _mask: &BooleanChunked, _other: &Series) -> PolarsResult<Series> {
+        Ok(self.clone().into_series())
+    }
 }
 
 impl SeriesTrait for NullChunked {

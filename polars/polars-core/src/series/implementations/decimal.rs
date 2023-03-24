@@ -29,6 +29,14 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
     fn _dtype(&self) -> &DataType {
         self.0.dtype()
     }
+
+    fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
+        Ok(self
+            .0
+            .zip_with(mask, other.as_ref().as_ref())?
+            .into_decimal_unchecked(self.0.precision(), self.0.scale())
+            .into_series())
+    }
 }
 
 impl SeriesTrait for SeriesWrap<DecimalChunked> {
