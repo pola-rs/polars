@@ -786,6 +786,15 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.ordinal_day())
 
+    def time(self) -> Expr:
+        return wrap_expr(self._pyexpr.time())
+
+    def date(self) -> Expr:
+        return wrap_expr(self._pyexpr.date())
+
+    def datetime(self) -> Expr:
+        return wrap_expr(self._pyexpr.datetime())
+
     def hour(self) -> Expr:
         """
         Extract hour from underlying DateTime representation.

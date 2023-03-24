@@ -155,6 +155,12 @@ impl FunctionExpr {
                     | Millisecond | Microsecond | Nanosecond | Second => DataType::UInt32,
                     TimeStamp(_) => DataType::Int64,
                     IsLeapYear => DataType::Boolean,
+                    Time => DataType::Time,
+                    Date => DataType::Date,
+                    Datetime => match same_type().unwrap().dtype {
+                        DataType::Datetime(tu, _) => DataType::Datetime(tu, None),
+                        dtype => polars_bail!(ComputeError: "expected Datetime, got {}", dtype),
+                    },
                     Truncate(..) => same_type().unwrap().dtype,
                     Round(..) => same_type().unwrap().dtype,
                     #[cfg(feature = "timezones")]

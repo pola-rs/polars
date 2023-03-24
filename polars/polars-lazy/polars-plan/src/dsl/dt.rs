@@ -159,6 +159,24 @@ impl DateLikeNameSpace {
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::OrdinalDay))
     }
 
+    /// Get the (local) time of a Date/Datetime/Time
+    pub fn time(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Time))
+    }
+
+    /// Get the (local) date of a Date/Datetime
+    pub fn date(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Date))
+    }
+
+    /// Get the (local) datetime of a Datetime
+    pub fn datetime(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::Datetime))
+    }
+
     /// Get the hour of a Datetime/Time64
     pub fn hour(self) -> Expr {
         self.0

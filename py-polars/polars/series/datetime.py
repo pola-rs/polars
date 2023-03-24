@@ -9,7 +9,7 @@ from polars.utils.convert import _to_python_datetime
 from polars.utils.decorators import deprecated_alias, redirect
 
 if TYPE_CHECKING:
-    from datetime import date, datetime, time, timedelta
+    import datetime as dt
 
     from polars.expr.expr import Expr
     from polars.polars import PySeries
@@ -33,11 +33,11 @@ class DateTimeNameSpace:
     def __init__(self, series: Series):
         self._s: PySeries = series._s
 
-    def __getitem__(self, item: int) -> date | datetime:
+    def __getitem__(self, item: int) -> dt.date | dt.datetime:
         s = wrap_s(self._s)
         return s[item]
 
-    def min(self) -> date | datetime | timedelta | None:
+    def min(self) -> dt.date | dt.datetime | dt.timedelta | None:
         """
         Return minimum as python DateTime.
 
@@ -59,7 +59,7 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s).min()  # type: ignore[return-value]
 
-    def max(self) -> date | datetime | timedelta | None:
+    def max(self) -> dt.date | dt.datetime | dt.timedelta | None:
         """
         Return maximum as python DateTime.
 
@@ -81,7 +81,7 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s).max()  # type: ignore[return-value]
 
-    def median(self) -> date | datetime | timedelta | None:
+    def median(self) -> dt.date | dt.datetime | dt.timedelta | None:
         """
         Return median as python DateTime.
 
@@ -107,7 +107,7 @@ class DateTimeNameSpace:
             return _to_python_datetime(int(out), s.dtype, s.time_unit)
         return None
 
-    def mean(self) -> date | datetime | None:
+    def mean(self) -> dt.date | dt.datetime | None:
         """
         Return mean as python DateTime.
 
@@ -509,6 +509,96 @@ class DateTimeNameSpace:
                 60
         ]
 
+        """
+
+    def time(self) -> Series:
+        """
+        Extract (local) time.
+
+        Applies to Date/Datetime/Time columns.
+
+        Returns
+        -------
+        Time Series
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> ser = pl.Series([datetime(2021, 1, 2, 5)]).dt.replace_time_zone(
+        ...     "Asia/Kathmandu"
+        ... )
+        >>> ser
+        shape: (1,)
+        Series: '' [datetime[μs, Asia/Kathmandu]]
+        [
+                2021-01-02 05:00:00 +0545
+        ]
+        >>> ser.dt.time()
+        shape: (1,)
+        Series: '' [time]
+        [
+                05:00:00
+        ]
+        """
+
+    def date(self) -> Series:
+        """
+        Extract (local) date.
+
+        Applies to Date/Datetime columns.
+
+        Returns
+        -------
+        Date Series
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> ser = pl.Series([datetime(2021, 1, 2, 5)]).dt.replace_time_zone(
+        ...     "Asia/Kathmandu"
+        ... )
+        >>> ser
+        shape: (1,)
+        Series: '' [datetime[μs, Asia/Kathmandu]]
+        [
+                2021-01-02 05:00:00 +0545
+        ]
+        >>> ser.dt.date()
+        shape: (1,)
+        Series: '' [date]
+        [
+                2021-01-02
+        ]
+        """
+
+    def datetime(self) -> Series:
+        """
+        Extract (local) datetime.
+
+        Applies to Datetime columns.
+
+        Returns
+        -------
+        Datetime Series
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> ser = pl.Series([datetime(2021, 1, 2, 5)]).dt.replace_time_zone(
+        ...     "Asia/Kathmandu"
+        ... )
+        >>> ser
+        shape: (1,)
+        Series: '' [datetime[μs, Asia/Kathmandu]]
+        [
+                2021-01-02 05:00:00 +0545
+        ]
+        >>> ser.dt.datetime()
+        shape: (1,)
+        Series: '' [datetime[μs]]
+        [
+                2021-01-02 05:00:00
+        ]
         """
 
     def hour(self) -> Series:
@@ -1381,8 +1471,8 @@ class DateTimeNameSpace:
 
     def truncate(
         self,
-        every: str | timedelta,
-        offset: str | timedelta | None = None,
+        every: str | dt.timedelta,
+        offset: str | dt.timedelta | None = None,
     ) -> Series:
         """
         Divide the date/ datetime range into buckets.
@@ -1489,8 +1579,8 @@ class DateTimeNameSpace:
 
     def round(
         self,
-        every: str | timedelta,
-        offset: str | timedelta | None = None,
+        every: str | dt.timedelta,
+        offset: str | dt.timedelta | None = None,
     ) -> Series:
         """
         Divide the date/ datetime range into buckets.
@@ -1587,7 +1677,7 @@ class DateTimeNameSpace:
 
         """
 
-    def combine(self, tm: time | Series, tu: TimeUnit = "us") -> Expr:
+    def combine(self, tm: dt.time | Series, tu: TimeUnit = "us") -> Expr:
         """
         Create a naive Datetime from an existing Date/Datetime expression and a Time.
 

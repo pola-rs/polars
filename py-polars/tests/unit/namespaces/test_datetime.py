@@ -7,6 +7,7 @@ import pytest
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
+from polars.exceptions import ComputeError
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
@@ -68,6 +69,51 @@ def test_strptime_extract_times(
     s = series_of_str_dates.str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S.%9f")
 
     assert_series_equal(getattr(s.dt, unit_attr)(), expected)
+
+
+@pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu", "+03:00"])
+@pytest.mark.parametrize(
+    ("attribute", "expected"),
+    [
+        ("date", date(2022, 1, 1)),
+        ("time", time(23)),
+    ],
+)
+def test_dt_date_and_time(
+    attribute: str, time_zone: None | str, expected: date | time
+) -> None:
+    ser = pl.Series([datetime(2022, 1, 1, 23)]).dt.replace_time_zone(time_zone)
+    result = getattr(ser.dt, attribute)().item()
+    assert result == expected
+
+
+@pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu", "+03:00"])
+@pytest.mark.parametrize("time_unit", ["us", "ns", "ms"])
+def test_dt_datetime(time_zone: str | None, time_unit: TimeUnit) -> None:
+    ser = (
+        pl.Series([datetime(2022, 1, 1, 23)])
+        .dt.cast_time_unit(time_unit)
+        .dt.replace_time_zone(time_zone)
+    )
+    result = ser.dt.datetime()
+    expected = datetime(2022, 1, 1, 23)
+    assert result.dtype == pl.Datetime(time_unit, None)
+    assert result.item() == expected
+
+
+def test_dt_datetime_date_time_invalid() -> None:
+    with pytest.raises(ComputeError, match="expected Datetime"):
+        pl.Series([date(2021, 1, 2)]).dt.datetime()
+    with pytest.raises(ComputeError, match="expected Datetime or Date"):
+        pl.Series([time(23)]).dt.date()
+    with pytest.raises(ComputeError, match="expected Datetime"):
+        pl.Series([time(23)]).dt.datetime()
+    with pytest.raises(ComputeError, match="expected Datetime or Date"):
+        pl.Series([timedelta(1)]).dt.date()
+    with pytest.raises(ComputeError, match="expected Datetime"):
+        pl.Series([timedelta(1)]).dt.datetime()
+    with pytest.raises(ComputeError, match="expected Datetime, Date, or Time"):
+        pl.Series([timedelta(1)]).dt.time()
 
 
 @pytest.mark.parametrize(
