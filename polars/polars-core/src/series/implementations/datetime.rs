@@ -162,7 +162,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         self.0.group_tuples(multithreaded, sorted)
     }
-    #[cfg(feature = "sort_multiple")]
+
     fn arg_sort_multiple(&self, by: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {
         self.0.deref().arg_sort_multiple(by, descending)
     }

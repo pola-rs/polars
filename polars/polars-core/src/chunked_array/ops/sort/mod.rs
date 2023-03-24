@@ -1,5 +1,5 @@
 mod arg_sort;
-#[cfg(feature = "sort_multiple")]
+
 pub mod arg_sort_multiple;
 #[cfg(feature = "dtype-categorical")]
 mod categorical;
@@ -9,7 +9,6 @@ use std::cmp::Ordering;
 use std::hint::unreachable_unchecked;
 use std::iter::FromIterator;
 
-#[cfg(feature = "sort_multiple")]
 pub(crate) use arg_sort_multiple::argsort_multiple_row_fmt;
 use arrow::bitmap::MutableBitmap;
 use arrow::buffer::Buffer;
@@ -22,7 +21,6 @@ use rayon::prelude::*;
 pub use slice::*;
 
 use crate::prelude::compare_inner::PartialOrdInner;
-#[cfg(feature = "sort_multiple")]
 use crate::prelude::sort::arg_sort_multiple::{arg_sort_multiple_impl, args_validate};
 use crate::prelude::*;
 use crate::series::IsSorted;
@@ -287,7 +285,6 @@ where
     }
 }
 
-#[cfg(feature = "sort_multiple")]
 fn arg_sort_multiple_numeric<T: PolarsNumericType>(
     ca: &ChunkedArray<T>,
     other: &[Series],
@@ -327,7 +324,6 @@ where
         arg_sort_numeric(self, options)
     }
 
-    #[cfg(feature = "sort_multiple")]
     /// # Panics
     ///
     /// This function is very opinionated.
@@ -353,7 +349,6 @@ impl ChunkSort<Float32Type> for Float32Chunked {
         arg_sort_numeric(self, options)
     }
 
-    #[cfg(feature = "sort_multiple")]
     /// # Panics
     ///
     /// This function is very opinionated.
@@ -379,7 +374,6 @@ impl ChunkSort<Float64Type> for Float64Chunked {
         arg_sort_numeric(self, options)
     }
 
-    #[cfg(feature = "sort_multiple")]
     /// # Panics
     ///
     /// This function is very opinionated.
@@ -515,7 +509,6 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
         self.as_binary().arg_sort(options)
     }
 
-    #[cfg(feature = "sort_multiple")]
     /// # Panics
     ///
     /// This function is very opinionated. On the implementation of `ChunkedArray<T>` for numeric types,
@@ -641,7 +634,6 @@ impl ChunkSort<BinaryType> for BinaryChunked {
         )
     }
 
-    #[cfg(feature = "sort_multiple")]
     /// # Panics
     ///
     /// This function is very opinionated. On the implementation of `ChunkedArray<T>` for numeric types,
@@ -705,7 +697,6 @@ impl ChunkSort<BooleanType> for BooleanChunked {
     }
 }
 
-#[cfg(feature = "sort_multiple")]
 pub(crate) fn convert_sort_column_multi_sort(
     s: &Series,
     row_ordering: bool,
@@ -743,7 +734,6 @@ pub fn _broadcast_descending(n_cols: usize, descending: &mut Vec<bool>) {
     }
 }
 
-#[cfg(feature = "sort_multiple")]
 pub(crate) fn prepare_arg_sort(
     columns: Vec<Series>,
     mut descending: Vec<bool>,
@@ -854,7 +844,6 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "sort_multiple")]
     #[cfg_attr(miri, ignore)]
     fn test_arg_sort_multiple() -> PolarsResult<()> {
         let a = Int32Chunked::new("a", &[1, 2, 1, 1, 3, 4, 3, 3]);

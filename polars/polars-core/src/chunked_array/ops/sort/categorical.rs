@@ -119,7 +119,7 @@ impl CategoricalChunked {
     }
 
     /// Retrieve the indexes need to sort this and the other arrays.
-    #[cfg(feature = "sort_multiple")]
+
     pub(crate) fn arg_sort_multiple(
         &self,
         other: &[Series],
@@ -184,7 +184,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "sort_multiple")]
+
     fn test_cat_lexical_sort_multiple() -> PolarsResult<()> {
         let init = &["c", "b", "a", "a"];
 

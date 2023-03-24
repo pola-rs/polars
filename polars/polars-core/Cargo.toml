@@ -17,7 +17,7 @@ docs = []
 temporal = ["regex", "chrono", "polars-error/regex"]
 random = ["rand", "rand_distr"]
 default = ["docs", "temporal", "private"]
-lazy = ["sort_multiple"]
+lazy = []
 
 # ~40% faster collect, needed until trustedlength iter stabilizes
 # more fast paths, slower compilation
@@ -78,7 +78,6 @@ semi_anti_join = []
 chunked_ids = []
 describe = []
 timezones = ["chrono-tz", "arrow/chrono-tz", "polars-arrow/timezones"]
-
 dynamic_groupby = ["dtype-datetime", "dtype-date"]
 
 # opt-in datatypes for Series
@@ -105,7 +104,6 @@ serde-lazy = ["serde", "polars-arrow/serde", "indexmap/serde", "smartstring/serd
 docs-selection = [
   "ndarray",
   "is_in",
-  "sort_multiple",
   "rows",
   "docs",
   "strings",
