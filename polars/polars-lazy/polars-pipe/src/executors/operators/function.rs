@@ -62,7 +62,7 @@ impl Operator for FunctionOperator {
             // ideal chunk size we want to have
             // we cannot rely on input chunk size as that can increase due to multiple explode calls
             // for instance.
-            let chunk_size_ambition = determine_chunk_size(input_height, self.n_threads)?;
+            let chunk_size_ambition = determine_chunk_size(chunk.data.width(), self.n_threads)?;
 
             if self.offsets.is_empty() {
                 let n = input_height / self.chunk_size;

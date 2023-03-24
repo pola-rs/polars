@@ -65,7 +65,6 @@ pub(super) fn process_functions(
             args,
             input,
             acc_projections,
-            projected_names,
             projections_seen,
             lp_arena,
             expr_arena,
