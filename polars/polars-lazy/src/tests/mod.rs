@@ -154,24 +154,16 @@ pub(crate) fn get_df() -> DataFrame {
 
 #[test]
 fn test_foo() -> PolarsResult<()> {
-    let dfa: DataFrame = df![
-        "a" => [1, 2, 2],
-        "b" => ["bleft", "bleft", "bleft"]
-    ]?;
-    let dfb: DataFrame = df![
-        "a" => ["ar", "ar", "ar"],
-        "b" => [1, 2, 2]
+    let df: DataFrame = df![
+        "a" => [2, 2, 2, 2, 1],
+        "b" => [1, 2, 3, 4, 1],
+        "c" => [1, 0, 0, 4, 0]
     ]?;
 
-    let out = dfa
+    let out = df
         .lazy()
-        .join(
-            dfb.lazy(),
-            [col("a")],
-            [col("b")],
-            JoinType::AsOf(Default::default()),
-        )
-        .select([col("a"), col("b")])
+        .groupby([col("a")])
+        .agg([(col("b") - col("b").filter(col("c").gt(lit(0))).mean()).sum()])
         .collect()?;
 
     dbg!(out);
