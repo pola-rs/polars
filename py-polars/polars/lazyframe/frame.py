@@ -4088,7 +4088,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         maintain_order: bool = True,
         subset: str | Sequence[str] | None = None,
-        keep: UniqueKeepStrategy = "first",
+        keep: UniqueKeepStrategy = "any",
     ) -> Self:
         """
         Drop duplicate rows from this dataframe.
@@ -4103,8 +4103,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         subset
             Column name(s) to consider when identifying duplicates.
             If set to ``None`` (default), use all columns.
-        keep : {'first', 'last', 'none'}
+        keep : {'first', 'last', 'any', 'none'}
             Which of the duplicate rows to keep.
+
+            * 'any': Does not give any guarantee of which row is kept.
+                     This allows more optimizations.
+            * 'none': Don't keep duplicate rows.
+            * 'first': Keep first unique row.
+            * 'last': Keep last unique row.
 
         Returns
         -------
