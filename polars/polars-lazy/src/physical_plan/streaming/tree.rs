@@ -21,7 +21,7 @@ pub(super) struct Branch {
 /// Represents a subquery tree of pipelines.
 type Tree<'a> = &'a [Branch];
 
-/// We validate a tree in order to check if it is elegible for streaming.
+/// We validate a tree in order to check if it is eligible for streaming.
 /// It could be that a join branch wasn't added during collection of branches
 /// (because it contained a non-streamable node). This function checks if every join
 /// node has a match.

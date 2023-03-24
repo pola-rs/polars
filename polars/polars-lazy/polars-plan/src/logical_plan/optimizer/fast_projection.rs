@@ -77,7 +77,7 @@ impl OptimizationRule for FastProjectionAndCollapse {
                         },
                     }),
                     // cleanup projections set in projection pushdown just above caches
-                    // they are nto needed.
+                    // they are not needed.
                     cache_lp @ Cache { .. } => {
                         if cache_lp.schema(lp_arena).len() == columns.len() {
                             Some(cache_lp.clone())

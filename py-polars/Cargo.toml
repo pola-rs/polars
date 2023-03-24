@@ -102,7 +102,7 @@ all = [
   "list_count",
 ]
 
-# we cannot conditionaly activate simd
+# we cannot conditionally activate simd
 # https://github.com/rust-lang/cargo/issues/1197
 # so we have an indirection and compile
 # with --no-default-features --features=all for targets without simd

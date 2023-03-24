@@ -56,7 +56,7 @@ fn is_streamable_sort(args: &SortArguments) -> bool {
 }
 
 fn is_streamable(node: Node, expr_arena: &Arena<AExpr>, context: Context) -> bool {
-    // check weather leaf colum is Col or Lit
+    // check whether leaf column is Col or Lit
     let mut seen_column = false;
     let mut seen_lit_range = false;
     let all = expr_arena.iter(node).all(|(_, ae)| match ae {

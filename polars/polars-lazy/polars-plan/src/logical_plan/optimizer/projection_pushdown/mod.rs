@@ -572,7 +572,7 @@ impl ProjectionPushDown {
                             )
                         })
                     } else {
-                        // the distint needs all columns
+                        // distinct needs all columns
                         let input_schema = lp_arena.get(input).schema(lp_arena);
                         for name in input_schema.iter_names() {
                             add_str_to_accumulated(

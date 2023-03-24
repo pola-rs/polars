@@ -214,7 +214,7 @@ impl ParsedBuffer for Utf8Field {
             false => {
                 if matches!(self.encoding, CsvEncoding::LossyUtf8) {
                     // Safety:
-                    // we extended to data_len + n_writen
+                    // we extended to data_len + n_written
                     // so the bytes are initialized
                     debug_assert!(self.data.capacity() >= data_len + n_written);
                     let slice = unsafe {

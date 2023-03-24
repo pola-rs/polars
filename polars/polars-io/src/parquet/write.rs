@@ -124,7 +124,7 @@ where
     /// Set the compression used. Defaults to `Lz4Raw`.
     ///
     /// The default compression `Lz4Raw` has very good performance, but may not yet been supported
-    /// by older readers. If you want more compatability guarantees, consider using `Snappy`.
+    /// by older readers. If you want more compatibility guarantees, consider using `Snappy`.
     pub fn with_compression(mut self, compression: ParquetCompression) -> Self {
         self.compression = compression.into();
         self

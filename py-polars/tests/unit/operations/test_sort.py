@@ -470,7 +470,7 @@ def test_sort_args() -> None:
     assert_frame_equal(result, df)
 
 
-def test_sort_type_coersion_6892() -> None:
+def test_sort_type_coercion_6892() -> None:
     df = pl.DataFrame({"a": [2, 1], "b": [2, 3]})
     assert df.lazy().sort(pl.col("a") // 2).collect().to_dict(False) == {
         "a": [1, 2],

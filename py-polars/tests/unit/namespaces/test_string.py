@@ -75,11 +75,11 @@ def test_str_decode_exception() -> None:
 
 
 def test_str_replace_str_replace_all() -> None:
-    s = pl.Series(["hello", "world", "test", "root"])
-    expected = pl.Series(["hell0", "w0rld", "test", "r0ot"])
+    s = pl.Series(["hello", "world", "test", "rooted"])
+    expected = pl.Series(["hell0", "w0rld", "test", "r0oted"])
     assert_series_equal(s.str.replace("o", "0"), expected)
 
-    expected = pl.Series(["hell0", "w0rld", "test", "r00t"])
+    expected = pl.Series(["hell0", "w0rld", "test", "r00ted"])
     assert_series_equal(s.str.replace_all("o", "0"), expected)
 
 

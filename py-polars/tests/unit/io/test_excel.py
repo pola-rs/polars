@@ -37,7 +37,7 @@ def test_read_excel_all_sheets(excel_file_path: Path) -> None:
 
 # the parameters don't change the data, only the formatting, so we expect
 # the same result each time. however, it's important to validate that the
-# parameter permutations don't raise exceptions, or interfere wth the
+# parameter permutations don't raise exceptions, or interfere with the
 # values written to the worksheet, so test multiple variations.
 @pytest.mark.parametrize(
     "write_params",

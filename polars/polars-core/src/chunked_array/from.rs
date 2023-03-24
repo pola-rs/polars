@@ -12,7 +12,7 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
     match dtype {
         #[cfg(feature = "dtype-categorical")]
         // arrow dictionaries are not nested as dictionaries, but only by their keys, so we must
-        // change the list-value array to the keys and store the dicitonary values in the datatype.
+        // change the list-value array to the keys and store the dictionary values in the datatype.
         // if a global string cache is set, we also must modify the keys.
         DataType::List(inner) if *inner == DataType::Categorical(None) => {
             use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;

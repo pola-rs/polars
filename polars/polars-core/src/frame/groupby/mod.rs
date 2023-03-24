@@ -1019,13 +1019,13 @@ mod test {
 
         // Create a series for every group name.
         for series_name in &series_names {
-            let serie = Series::new(series_name, series_content.as_ref());
-            series.push(serie);
+            let group_series = Series::new(series_name, series_content.as_ref());
+            series.push(group_series);
         }
 
         // Create a series for the aggregation column.
-        let serie = Series::new("N", [1, 2, 3, 3, 4].as_ref());
-        series.push(serie);
+        let agg_series = Series::new("N", [1, 2, 3, 3, 4].as_ref());
+        series.push(agg_series);
 
         // Create the dataframe with the computed series.
         let df = DataFrame::new(series).unwrap();

@@ -3274,7 +3274,7 @@ class Expr:
             This is more expensive.
         strategy : {'thread_local', 'threading'}
             This functionality is in `alpha` stage. This may be removed
-            /changed without it being considdered a breaking change.
+            /changed without it being considered a breaking change.
 
             - 'thread_local': run the python function on a single thread.
             - 'threading': run the python function on separate threads. Use with

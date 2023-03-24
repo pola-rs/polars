@@ -452,13 +452,13 @@ impl DataFrame {
 
     /// Returns true if the chunks of the columns do not align and re-chunking should be done
     pub fn should_rechunk(&self) -> bool {
-        let mut chunk_lenghts = self.columns.iter().map(|s| s.chunk_lengths());
-        match chunk_lenghts.next() {
+        let mut chunk_lengths = self.columns.iter().map(|s| s.chunk_lengths());
+        match chunk_lengths.next() {
             None => false,
             Some(first_column_chunk_lengths) => {
                 // Fast Path for single Chunk Series
                 if first_column_chunk_lengths.len() == 1 {
-                    return chunk_lenghts.any(|cl| cl.len() != 1);
+                    return chunk_lengths.any(|cl| cl.len() != 1);
                 }
                 // Always rechunk if we have more chunks than rows.
                 // except when we have an empty df containing a single chunk
@@ -469,7 +469,7 @@ impl DataFrame {
                 }
                 // Slow Path for multi Chunk series
                 let v: Vec<_> = first_column_chunk_lengths.collect();
-                for cl in chunk_lenghts {
+                for cl in chunk_lengths {
                     if cl.enumerate().any(|(idx, el)| Some(&el) != v.get(idx)) {
                         return true;
                     }

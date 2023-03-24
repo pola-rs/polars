@@ -177,7 +177,7 @@ impl FetchRowGroups for FetchRowGroupsFromObjectStore {
             .get(row_groups.clone())
             .map_or_else(
                 || Err(polars_err!(
-                    ComputeError: "cannot acess slice {0}..{1}", row_groups.start, row_groups.end,
+                    ComputeError: "cannot access slice {0}..{1}", row_groups.start, row_groups.end,
                 )),
                 Ok,
             )?;

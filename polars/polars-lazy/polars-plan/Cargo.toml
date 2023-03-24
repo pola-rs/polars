@@ -28,7 +28,7 @@ serde = { version = "1", features = ["derive", "rc"], optional = true }
 smartstring.workspace = true
 
 [features]
-# debuging utility
+# debugging utility
 debugging = []
 python = ["pyo3"]
 # make sure we don't compile unneeded things even though
