@@ -404,7 +404,7 @@ impl From<StringFunction> for FunctionExpr {
 #[cfg(feature = "regex")]
 fn get_pat(pat: &Utf8Chunked) -> PolarsResult<&str> {
     pat.get(0).ok_or_else(
-        || polars_err!(ComputeError: "pattern may not be 'null' in 'replace' expression"),
+        || polars_err!(ComputeError: "pattern cannot be 'null' in 'replace' expression"),
     )
 }
 
@@ -444,7 +444,7 @@ fn replace_n<'a>(
         (1, 1) => {
             let pat = get_pat(pat)?;
             let val = val.get(0).ok_or_else(
-                || polars_err!(ComputeError: "value may not be 'null' in 'replace' expression"),
+                || polars_err!(ComputeError: "value cannot be 'null' in 'replace' expression"),
             )?;
             let literal = literal || is_literal_pat(pat);
 
@@ -504,7 +504,7 @@ fn replace_all<'a>(
         (1, 1) => {
             let pat = get_pat(pat)?;
             let val = val.get(0).ok_or_else(
-                || polars_err!(ComputeError: "value may not be 'null' in 'replace' expression"),
+                || polars_err!(ComputeError: "value cannot be 'null' in 'replace' expression"),
             )?;
             let literal = literal || is_literal_pat(pat);
 

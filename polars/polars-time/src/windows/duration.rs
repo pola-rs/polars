@@ -340,7 +340,7 @@ impl Duration {
         J: Fn(NaiveDateTime) -> i64,
     {
         match (self.months, self.weeks, self.days, self.nsecs) {
-            (0, 0, 0, 0) => polars_bail!(ComputeError: "duration may not be zero"),
+            (0, 0, 0, 0) => polars_bail!(ComputeError: "duration cannot be zero"),
             // truncate by ns/us/ms
             (0, 0, 0, _) => {
                 let t = match tz {
