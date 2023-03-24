@@ -4354,9 +4354,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Setting this to ``False`` will not do this check, but may lead to hard to
             debug bugs.
         streamable
-            Whether the function that is given is eligible ot running in the streaming
-            engine. That means that the function must produce the same result if it
-            is exectuted on batches as it would when executed on the full dataset.
+            Whether the function that is given is eligible to be running with the
+            streaming engine. That means that the function must produce the same result
+            when it is executed in batches or when it is be executed on the full
+            dataset.
 
         Warnings
         --------

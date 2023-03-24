@@ -325,7 +325,7 @@ pub fn infer_file_schema(
         .take(match max_read_rows {
             Some(max_read_rows) => {
                 if max_read_rows <= (usize::MAX - skip_rows_after_header) {
-                    // read skip_rows_after_header more rows for infering
+                    // read skip_rows_after_header more rows for inferring
                     // the correct schema as the first skip_rows_after_header
                     // rows will be skipped
                     max_read_rows + skip_rows_after_header

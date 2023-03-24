@@ -64,7 +64,7 @@ fn execute_projection_cached_window_fns(
     // String: partition_name,
     // u32: index,
     // bool: flatten (we must run those first because they need a sorted group tuples.
-    //       if we cache the group tuples we must ensure we cast the sorted onces.
+    //       if we cache the group tuples we must ensure we cast the sorted ones.
     let mut windows: Vec<(String, Vec<(u32, bool, Arc<dyn PhysicalExpr>)>)> = vec![];
     let mut other = Vec::with_capacity(exprs.len());
 

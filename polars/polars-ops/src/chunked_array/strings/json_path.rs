@@ -49,7 +49,7 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
             .apply_on_opt(|opt_s| opt_s.and_then(|s| extract_json(&pat, s))))
     }
 
-    /// Returns the infered DataType for JSON values for each row
+    /// Returns the inferred DataType for JSON values for each row
     /// in the Utf8Chunked, with an optional number of rows to inspect.
     /// When None is passed for the number of rows, all rows are inspected.
     fn json_infer(&self, number_of_rows: Option<usize>) -> PolarsResult<DataType> {

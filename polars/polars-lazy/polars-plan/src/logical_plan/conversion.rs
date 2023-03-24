@@ -875,7 +875,7 @@ pub fn node_to_lp_cloned(
     mut lp_arena: &Arena<ALogicalPlan>,
 ) -> LogicalPlan {
     // we borrow again mutably only to make the types happy
-    // we want to intialize `to_lp` from a mutable and a immutable lp_arena
+    // we want to initialize `to_lp` from a mutable and a immutable lp_arena
     // by borrowing an immutable mutably, we still are immutable down the line.
     let alp = lp_arena.get(node).clone();
     alp.into_lp(

@@ -297,7 +297,7 @@ def test_all_null_cast_5826() -> None:
     assert out.item() is None
 
 
-def test_emtpy_list_eval_schema_5734() -> None:
+def test_empty_list_eval_schema_5734() -> None:
     df = pl.DataFrame({"a": [[{"b": 1, "c": 2}]]})
     assert df.filter(False).select(
         pl.col("a").arr.eval(pl.element().struct.field("b"))
@@ -345,7 +345,7 @@ def test_from_dicts_empty() -> None:
         pl.from_dicts([])
 
 
-def test_duration_divison_schema() -> None:
+def test_duration_division_schema() -> None:
     df = pl.DataFrame({"a": [1]})
     q = (
         df.lazy()

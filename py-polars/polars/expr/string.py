@@ -1267,7 +1267,7 @@ class ExprStringNameSpace:
             Default: 2.
 
         strict
-            Bool, Defult=True will raise any ParseError or overflow as ComputeError.
+            Bool, Default=True will raise any ParseError or overflow as ComputeError.
             False silently convert to Null.
 
         Returns

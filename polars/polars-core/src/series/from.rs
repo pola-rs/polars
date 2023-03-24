@@ -290,7 +290,7 @@ impl Series {
             #[cfg(feature = "dtype-struct")]
             ArrowDataType::Struct(_) => {
                 let arr = if chunks.len() > 1 {
-                    // don't spuriously call this. This triggers a read on mmaped data
+                    // don't spuriously call this. This triggers a read on memmapped data
                     concatenate_owned_unchecked(&chunks).unwrap() as ArrayRef
                 } else {
                     chunks[0].clone()

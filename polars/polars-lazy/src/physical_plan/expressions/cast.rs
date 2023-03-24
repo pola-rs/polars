@@ -43,7 +43,7 @@ impl PhysicalExpr for CastExpr {
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
 
         match ac.agg_state() {
-            // this will not explode and potentially increase memory due ot overlapping groups
+            // this will not explode and potentially increase memory due to overlapping groups
             AggState::AggregatedList(s) => {
                 let ca = s.list().unwrap();
                 let casted = ca.apply_to_inner(&|s| self.finish(&s))?;

@@ -467,7 +467,7 @@ def test_with_column_duplicates() -> None:
         assert df.with_columns([pl.all().alias("same")]).columns == ["a", "b", "same"]
 
 
-def test_skipp_nulls_err() -> None:
+def test_skip_nulls_err() -> None:
     df = pl.DataFrame({"foo": [None, None]})
 
     with pytest.raises(

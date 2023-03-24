@@ -145,7 +145,7 @@ impl GenericJoinProbe {
         context: &PExecutionContext,
         chunk: &DataChunk,
     ) -> PolarsResult<OperatorResult> {
-        // A left join holds the right table als build table
+        // A left join holds the right table as build table
         // and streams the left table through. This allows us to maintain
         // the left table order
 

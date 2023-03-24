@@ -33,7 +33,7 @@ type Configs<T> = Vec<(T, String)>;
 
 #[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
-/// Options to conect to various cloud providers.
+/// Options to connect to various cloud providers.
 pub struct CloudOptions {
     #[cfg(feature = "aws")]
     aws: Option<Configs<AmazonS3ConfigKey>>,
