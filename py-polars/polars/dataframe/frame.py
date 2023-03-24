@@ -68,6 +68,7 @@ from polars.io.excel._write_utils import (
     _xl_setup_table_options,
     _xl_setup_workbook,
     _xl_unique_table_name,
+    _XLFormatCache,
 )
 from polars.slice import PolarsSlice
 from polars.utils._construction import (
@@ -140,6 +141,7 @@ if TYPE_CHECKING:
         PivotAgg,
         PolarsDataType,
         RollingInterpolationMethod,
+        RowTotalsDefinition,
         SchemaDefinition,
         SchemaDict,
         SizeUnit,
@@ -2409,6 +2411,7 @@ class DataFrame:
         conditional_formats: ConditionalFormatDict | None = None,
         column_totals: ColumnTotalsDefinition | None = None,
         column_widths: dict[str | tuple[str, ...], int] | int | None = None,
+        row_totals: RowTotalsDefinition | None = None,
         row_heights: dict[int | tuple[int, ...], int] | int | None = None,
         sparklines: dict[str, Sequence[str] | dict[str, Any]] | None = None,
         float_precision: int = 3,
@@ -2465,7 +2468,7 @@ class DataFrame:
             * Finally, you can also supply a list made up from the above options
               in order to apply *more* than one conditional format to the same range.
         column_totals : {bool, list, dict}
-            Add a total row to the exported table.
+            Add a column-total row to the exported table.
 
             * If True, all numeric columns will have an associated total using "sum".
             * If passing a list of colnames, only those given will have a total.
@@ -2475,6 +2478,15 @@ class DataFrame:
             A ``{colname:int,}`` dict or single integer that sets (or overrides if
             autofitting) table column widths in integer pixel units. If given as an
             integer the same value is used for all table columns.
+        row_totals : {dict, bool}
+            Add a row-total column to the right-hand side of the exported table.
+
+            * If True, a column called "total" will be added at the end of the table
+              that applies a "sum" function row-wise across all numeric columns.
+            * If passing a list/sequence of column names, only the matching columns
+              will participate in the sum.
+            * Can also pass a ``{colname:columns,}`` dictionary to create one or
+              more total columns with distinct names, referencing different columns.
         row_heights : {dict, int}
             An int or ``{row_index:int,}`` dictionary that sets the height of the given
             rows (if providing a dictionary) or all rows (if providing an integer) that
@@ -2652,6 +2664,7 @@ class DataFrame:
         ...         },
         ...     },
         ...     column_totals=["q1", "q2", "q3", "q4"],
+        ...     row_totals=True,
         ...     hide_gridlines=True,
         ... )
 
@@ -2669,14 +2682,18 @@ class DataFrame:
         df, is_empty = self, not len(self)
 
         # setup table format/columns
+        fmt_cache = _XLFormatCache(wb)
         table_style, table_options = _xl_setup_table_options(table_style)
-        table_columns, df = _xl_setup_table_columns(
+        table_name = table_name or _xl_unique_table_name(wb)
+        table_columns, column_formats, df = _xl_setup_table_columns(
             df=df,
             wb=wb,
+            format_cache=fmt_cache,
             column_formats=column_formats,
             column_totals=column_totals,
             dtype_formats=dtype_formats,
             float_precision=float_precision,
+            row_totals=row_totals,
             sparklines=sparklines,
         )
 
@@ -2694,31 +2711,43 @@ class DataFrame:
             table_start[1] + len(df.columns) - 1,
         )
 
-        # write table/formats into the target sheet
+        # write table structure and formats into the target sheet
         if not is_empty or has_header:
-            frame_data = [[None] * len(df.columns)] if is_empty else df.rows()
             ws.add_table(
                 *table_start,
                 *table_finish,
                 {
-                    "data": frame_data,
                     "style": table_style,
                     "columns": table_columns,
                     "header_row": has_header,
                     "autofilter": autofilter,
                     "total_row": bool(column_totals) and not is_empty,
-                    "name": table_name or _xl_unique_table_name(wb),
+                    "name": table_name,
                     **table_options,
                 },
             )
+
+            # write data into the table range, column-wise
+            if not is_empty:
+                column_start = [table_start[0] + int(has_header), table_start[1]]
+                for c in df.columns:
+                    if c in self.columns:
+                        ws.write_column(
+                            *column_start,
+                            data=df[c].to_list(),
+                            cell_format=column_formats.get(c),
+                        )
+                    column_start[1] += 1
+
+            # apply conditional formats
             if conditional_formats:
                 _xl_apply_conditional_formats(
                     df=df,
-                    workbook=wb,
-                    worksheet=ws,
+                    ws=ws,
                     conditional_formats=conditional_formats,
                     table_start=table_start,
                     has_header=has_header,
+                    format_cache=fmt_cache,
                 )
 
         # additional column-level properties
