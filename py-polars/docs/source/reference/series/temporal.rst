@@ -12,6 +12,8 @@ The following methods are available under the `Series.dt` attribute.
     Series.dt.cast_time_unit
     Series.dt.replace_time_zone
     Series.dt.combine
+    Series.dt.date
+    Series.dt.datetime
     Series.dt.day
     Series.dt.days
     Series.dt.epoch
@@ -39,6 +41,7 @@ The following methods are available under the `Series.dt` attribute.
     Series.dt.second
     Series.dt.seconds
     Series.dt.strftime
+    Series.dt.time
     Series.dt.timestamp
     Series.dt.truncate
     Series.dt.week
