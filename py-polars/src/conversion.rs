@@ -1182,9 +1182,10 @@ impl FromPyObject<'_> for Wrap<UniqueKeepStrategy> {
             "first" => UniqueKeepStrategy::First,
             "last" => UniqueKeepStrategy::Last,
             "none" => UniqueKeepStrategy::None,
+            "any" => UniqueKeepStrategy::Any,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "keep must be one of {{'first', 'last'}}, got {v}",
+                    "keep must be one of {{'first', 'last', 'any', 'none'}}, got {v}",
                 )))
             }
         };

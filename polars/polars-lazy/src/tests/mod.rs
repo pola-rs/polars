@@ -151,21 +151,3 @@ pub(crate) fn get_df() -> DataFrame {
         .unwrap();
     df
 }
-
-#[test]
-fn test_foo() -> PolarsResult<()> {
-    let df: DataFrame = df![
-        "a" => [2, 2, 2, 2, 1],
-        "b" => [1, 2, 3, 4, 1],
-        "c" => [1, 0, 0, 4, 0]
-    ]?;
-
-    let out = df
-        .lazy()
-        .groupby([col("a")])
-        .agg([(col("b") - col("b").filter(col("c").gt(lit(0))).mean()).sum()])
-        .collect()?;
-
-    dbg!(out);
-    Ok(())
-}
