@@ -483,7 +483,7 @@ def test_err_on_time_datetime_cast() -> None:
 
 
 def test_invalid_inner_type_cast_list() -> None:
-    s = pl.Series([[-1, 1]]).cast(pl.List(pl.Categorical))
+    s = pl.Series([[-1, 1]])
     with pytest.raises(
         pl.ComputeError, match=r"cannot cast list inner type: 'Int64' to Categorical"
     ):
