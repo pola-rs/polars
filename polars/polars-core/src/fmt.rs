@@ -590,8 +590,8 @@ impl Display for DataFrame {
         {
             write!(
                 f,
-                "shape: {:?}\nto see more, compile with the 'fmt' or 'fmt_no_tty' feature",
-                formatted_shape
+                "shape: ({} x {})\nto see more, compile with the 'fmt' or 'fmt_no_tty' feature",
+                nrows_pretty, ncols_pretty
             )?;
         }
 
