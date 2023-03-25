@@ -4,7 +4,13 @@ import os
 import re
 import sys
 from collections.abc import MappingView, Sized
+from enum import Enum
 from typing import TYPE_CHECKING, Any, Generator, Iterable, Sequence, TypeVar
+
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal
 
 from polars import functions as F
 from polars.datatypes import Int64, is_polars_dtype
@@ -213,3 +219,16 @@ class sphinx_accessor(property):
             )
         except AttributeError:
             return None  # type: ignore[return-value]
+
+
+class _NoDefault(Enum):
+    # "borrowed" from
+    # https://github.com/pandas-dev/pandas/blob/e7859983a814b1823cf26e3b491ae2fa3be47c53/pandas/_libs/lib.pyx#L2736-L2748
+    no_default = "NO_DEFAULT"
+
+    def __repr__(self) -> str:
+        return "<no_default>"
+
+
+no_default = _NoDefault.no_default  # Sentinel indicating the default value.
+NoDefault = Literal[_NoDefault.no_default]
