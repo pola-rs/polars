@@ -141,7 +141,7 @@ def test_pivot_multiple_values_column_names_5116() -> None:
         }
     )
 
-    with pytest.raises(ComputeError, match="found multiple elements in group"):
+    with pytest.raises(ComputeError, match="found multiple elements in the same group"):
         result = df.pivot(
             values=["x1", "x2"],
             index="c1",
@@ -177,7 +177,7 @@ def test_pivot_floats() -> None:
         }
     )
 
-    with pytest.raises(ComputeError, match="found multiple elements in group"):
+    with pytest.raises(ComputeError, match="found multiple elements in the same group"):
         result = df.pivot(
             values="price", index="weight", columns="quantity", aggregate_function=None
         )

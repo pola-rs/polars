@@ -212,8 +212,8 @@ fn pivot_impl(
                 use PivotAgg::*;
                 let value_agg = unsafe {
                     match &agg_fn {
-                        None => match (value_col.len() > groups.len()) {
-                            true => polars_bail!(ComputeError: "found multiple elements in group, please specify a different aggregation function"),
+                        None => match value_col.len() > groups.len() {
+                            true => polars_bail!(ComputeError: "found multiple elements in the same group, please specify an aggregation function"),
                             false => value_col.agg_first(&groups),
                         }
                         Some(agg_fn) => match agg_fn {
