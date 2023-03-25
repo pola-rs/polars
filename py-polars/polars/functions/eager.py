@@ -553,7 +553,7 @@ def cut(
     --------
     >>> a = pl.Series("a", [v / 10 for v in range(-30, 30, 5)])
     >>> pl.cut(a, bins=[-1, 1])
-    shape: (12, 3)
+    shape: (12 x 3)
     ┌──────┬─────────────┬──────────────┐
     │ a    ┆ break_point ┆ category     │
     │ ---  ┆ ---         ┆ ---          │

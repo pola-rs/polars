@@ -480,7 +480,7 @@ class ExprDateTimeNameSpace:
         ...         pl.col("date").dt.iso_year().alias("iso_year"),
         ...     ]
         ... )
-        shape: (11, 2)
+        shape: (11 x 2)
         ┌─────────────────────┬──────────┐
         │ date                ┆ iso_year │
         │ ---                 ┆ ---      │
@@ -1022,7 +1022,7 @@ class ExprDateTimeNameSpace:
         ...         pl.col("date").dt.microsecond().alias("microseconds"),
         ...     ]
         ... )
-        shape: (1001, 2)
+        shape: (1,001 x 2)
         ┌─────────────────────────┬──────────────┐
         │ date                    ┆ microseconds │
         │ ---                     ┆ ---          │
@@ -1492,7 +1492,7 @@ class ExprDateTimeNameSpace:
         ...         pl.col("date").diff().dt.milliseconds().alias("milliseconds_diff"),
         ...     ]
         ... )
-        shape: (1001, 2)
+        shape: (1,001 x 2)
         ┌─────────────────────────┬───────────────────┐
         │ date                    ┆ milliseconds_diff │
         │ ---                     ┆ ---               │
@@ -1536,7 +1536,7 @@ class ExprDateTimeNameSpace:
         ...         pl.col("date").diff().dt.microseconds().alias("microseconds_diff"),
         ...     ]
         ... )
-        shape: (1001, 2)
+        shape: (1,001 x 2)
         ┌─────────────────────────┬───────────────────┐
         │ date                    ┆ microseconds_diff │
         │ ---                     ┆ ---               │
@@ -1580,7 +1580,7 @@ class ExprDateTimeNameSpace:
         ...         pl.col("date").diff().dt.nanoseconds().alias("nanoseconds_diff"),
         ...     ]
         ... )
-        shape: (1001, 2)
+        shape: (1,001 x 2)
         ┌─────────────────────────┬──────────────────┐
         │ date                    ┆ nanoseconds_diff │
         │ ---                     ┆ ---              │

@@ -20,7 +20,7 @@ quit                \q          Exit
 
 >> register taxis /home/ritchie46/example/csv-benchmark/yellow_tripdata_2010-01.parquet
 Added dataframe "taxis" from file /home/ritchie46/example/csv-benchmark/yellow_tripdata_2010-01.parquet
-shape: (14863778, 18)
+shape: (14,863,778 x 18)
 ┌───────────┬─────────────────────┬─────────────────────┬─────────────────┬─────┬─────────┬────────────┬──────────────┬──────────────┐
 │ vendor_id ┆ pickup_datetime     ┆ dropoff_datetime    ┆ passenger_count ┆ ... ┆ mta_tax ┆ tip_amount ┆ tolls_amount ┆ total_amount │
 │ ---       ┆ ---                 ┆ ---                 ┆ ---             ┆     ┆ ---     ┆ ---        ┆ ---          ┆ ---          │

@@ -3905,7 +3905,7 @@ class Expr:
         >>> df_new_grid.join(
         ...     df_original_grid, on="grid_points", how="left"
         ... ).with_columns(pl.col("values").interpolate())
-        shape: (10, 2)
+        shape: (10 x 2)
         ┌─────────────┬────────┐
         │ grid_points ┆ values │
         │ ---         ┆ ---    │

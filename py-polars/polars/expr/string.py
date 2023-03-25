@@ -424,7 +424,7 @@ class ExprStringNameSpace:
         ...     }
         ... )
         >>> df.with_columns(pl.col("num").cast(str).str.zfill(5))
-        shape: (11, 1)
+        shape: (11 x 1)
         ┌─────────┐
         │ num     │
         │ ---     │
