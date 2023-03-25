@@ -114,7 +114,7 @@ def col(
     ...     }
     ... )
     >>> df.select(pl.col("foo"))
-    shape: (3 x 1)
+    shape: (3, 1)
     ┌─────┐
     │ foo │
     │ --- │
@@ -128,7 +128,7 @@ def col(
     Use the wildcard ``*`` to represent all columns.
 
     >>> df.select(pl.col("*"))
-    shape: (3 x 4)
+    shape: (3, 4)
     ┌─────┬───────────┬─────┬─────┐
     │ ham ┆ hamburger ┆ foo ┆ bar │
     │ --- ┆ ---       ┆ --- ┆ --- │
@@ -139,7 +139,7 @@ def col(
     │ 3   ┆ 33        ┆ 1   ┆ c   │
     └─────┴───────────┴─────┴─────┘
     >>> df.select(pl.col("*").exclude("ham"))
-    shape: (3 x 3)
+    shape: (3, 3)
     ┌───────────┬─────┬─────┐
     │ hamburger ┆ foo ┆ bar │
     │ ---       ┆ --- ┆ --- │
@@ -153,7 +153,7 @@ def col(
     Regular expression input is supported.
 
     >>> df.select(pl.col("^ham.*$"))
-    shape: (3 x 2)
+    shape: (3, 2)
     ┌─────┬───────────┐
     │ ham ┆ hamburger │
     │ --- ┆ ---       │
@@ -167,7 +167,7 @@ def col(
     Multiple columns can be represented by passing a list of names.
 
     >>> df.select(pl.col(["hamburger", "foo"]))
-    shape: (3 x 2)
+    shape: (3, 2)
     ┌───────────┬─────┐
     │ hamburger ┆ foo │
     │ ---       ┆ --- │
@@ -181,7 +181,7 @@ def col(
     Or use positional arguments to represent multiple columns in the same way.
 
     >>> df.select(pl.col("hamburger", "foo"))
-    shape: (3 x 2)
+    shape: (3, 2)
     ┌───────────┬─────┐
     │ hamburger ┆ foo │
     │ ---       ┆ --- │
@@ -195,7 +195,7 @@ def col(
     Easily select all columns that match a certain data type by passing that datatype.
 
     >>> df.select(pl.col(pl.Utf8))
-    shape: (3 x 1)
+    shape: (3, 1)
     ┌─────┐
     │ bar │
     │ --- │
@@ -206,7 +206,7 @@ def col(
     │ c   │
     └─────┘
     >>> df.select(pl.col(pl.Int64, pl.Float64))
-    shape: (3 x 3)
+    shape: (3, 3)
     ┌─────┬───────────┬─────┐
     │ ham ┆ hamburger ┆ foo │
     │ --- ┆ ---       ┆ --- │
@@ -269,7 +269,7 @@ def element() -> Expr:
     >>> df.with_columns(
     ...     pl.concat_list(["a", "b"]).arr.eval(pl.element().rank()).alias("rank")
     ... )
-    shape: (3 x 3)
+    shape: (3, 3)
     ┌─────┬─────┬────────────┐
     │ a   ┆ b   ┆ rank       │
     │ --- ┆ --- ┆ ---        │
@@ -286,7 +286,7 @@ def element() -> Expr:
     >>> df.with_columns(
     ...     pl.concat_list(["a", "b"]).arr.eval(pl.element() * 2).alias("a_b_doubled")
     ... )
-    shape: (3 x 3)
+    shape: (3, 3)
     ┌─────┬─────┬─────────────┐
     │ a   ┆ b   ┆ a_b_doubled │
     │ --- ┆ --- ┆ ---         │
@@ -333,7 +333,7 @@ def count(column: str | Series | None = None) -> Expr | int:
     --------
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
     >>> df.select(pl.count())
-    shape: (1 x 1)
+    shape: (1, 1)
     ┌───────┐
     │ count │
     │ ---   │
@@ -342,7 +342,7 @@ def count(column: str | Series | None = None) -> Expr | int:
     │ 3     │
     └───────┘
     >>> df.groupby("c", maintain_order=True).agg(pl.count())
-    shape: (2 x 2)
+    shape: (2, 2)
     ┌─────┬───────┐
     │ c   ┆ count │
     │ --- ┆ ---   │
@@ -392,7 +392,7 @@ def std(column: str | Series, ddof: int = 1) -> Expr | float | None:
     --------
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
     >>> df.select(pl.std("a"))
-    shape: (1 x 1)
+    shape: (1, 1)
     ┌──────────┐
     │ a        │
     │ ---      │
@@ -427,7 +427,7 @@ def var(column: str | Series, ddof: int = 1) -> Expr | float | None:
     --------
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
     >>> df.select(pl.var("a"))
-    shape: (1 x 1)
+    shape: (1, 1)
     ┌──────┐
     │ a    │
     │ ---  │
@@ -476,7 +476,7 @@ def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | A
 
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
     >>> df.select(pl.max("a"))
-    shape: (1 x 1)
+    shape: (1, 1)
     ┌─────┐
     │ a   │
     │ --- │
@@ -488,7 +488,7 @@ def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | A
     Get the maximum value by row with a list of columns/expressions.
 
     >>> df.select(pl.max(["a", "b"]))
-    shape: (3 x 1)
+    shape: (3, 1)
     ┌─────┐
     │ max │
     │ --- │
@@ -503,7 +503,7 @@ def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | A
     or a regular expression selector like ``pl.sum(regex)``:
 
     >>> df.select(pl.col(["a", "b"]).max())
-    shape: (1 x 2)
+    shape: (1, 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
     │ --- ┆ --- │
@@ -513,7 +513,7 @@ def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | A
     └─────┴─────┘
 
     >>> df.select(pl.max("^.*[ab]$"))
-    shape: (1 x 2)
+    shape: (1, 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
     │ --- ┆ --- │
@@ -577,7 +577,7 @@ def min(
     ...     }
     ... )
     >>> df.select(pl.min("a"))
-    shape: (1 x 1)
+    shape: (1, 1)
     ┌─────┐
     │ a   │
     │ --- │
@@ -589,7 +589,7 @@ def min(
     Get the minimum value by row with a list of columns/expressions.
 
     >>> df.select(pl.min(["a", "b"]))
-    shape: (3 x 1)
+    shape: (3, 1)
     ┌─────┐
     │ min │
     │ --- │
@@ -604,7 +604,7 @@ def min(
     or a regular expression selector like ``pl.sum(regex)``:
 
     >>> df.select(pl.col(["a", "b"]).min())
-    shape: (1 x 2)
+    shape: (1, 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
     │ --- ┆ --- │
@@ -614,7 +614,7 @@ def min(
     └─────┴─────┘
 
     >>> df.select(pl.min("^.*[ab]$"))
-    shape: (1 x 2)
+    shape: (1, 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
     │ --- ┆ --- │
@@ -681,7 +681,7 @@ def sum(
     ...     }
     ... )
     >>> df
-    shape: (2 x 3)
+    shape: (2, 3)
     ┌─────┬─────┬─────┐
     │ a   ┆ b   ┆ c   │
     │ --- ┆ --- ┆ --- │
@@ -694,7 +694,7 @@ def sum(
     Sum a column by name:
 
     >>> df.select(pl.sum("a"))
-    shape: (1 x 1)
+    shape: (1, 1)
     ┌─────┐
     │ a   │
     │ --- │
@@ -706,7 +706,7 @@ def sum(
     Sum a list of columns/expressions horizontally:
 
     >>> df.with_columns(pl.sum(["a", "c"]))
-    shape: (2 x 4)
+    shape: (2, 4)
     ┌─────┬─────┬─────┬─────┐
     │ a   ┆ b   ┆ c   ┆ sum │
     │ --- ┆ --- ┆ --- ┆ --- │
@@ -725,7 +725,7 @@ def sum(
     or a regular expression selector like ``pl.sum(regex)``:
 
     >>> df.select(pl.col(["a", "c"]).sum())
-    shape: (1 x 2)
+    shape: (1, 2)
     ┌─────┬─────┐
     │ a   ┆ c   │
     │ --- ┆ --- │
@@ -735,7 +735,7 @@ def sum(
     └─────┴─────┘
 
     >>> df.select(pl.sum("^.*[bc]$"))
-    shape: (1 x 2)
+    shape: (1, 2)
     ┌─────┬─────┐
     │ b   ┆ c   │
     │ --- ┆ --- │
@@ -775,7 +775,7 @@ def mean(column: str | Series) -> Expr | float | None:
     --------
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
     >>> df.select(pl.mean("a"))
-    shape: (1 x 1)
+    shape: (1, 1)
     ┌─────┐
     │ a   │
     │ --- │
@@ -810,7 +810,7 @@ def avg(column: str | Series) -> Expr | float:
     --------
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
     >>> df.select(pl.avg("a"))
-    shape: (1 x 1)
+    shape: (1, 1)
     ┌─────┐
     │ a   │
     │ --- │
@@ -843,7 +843,7 @@ def median(column: str | Series) -> Expr | float | int | None:
     --------
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
     >>> df.select(pl.median("a"))
-    shape: (1 x 1)
+    shape: (1, 1)
     ┌─────┐
     │ a   │
     │ --- │
@@ -878,7 +878,7 @@ def n_unique(column: str | Series) -> Expr | int:
     --------
     >>> df = pl.DataFrame({"a": [1, 8, 1], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
     >>> df.select(pl.n_unique("a"))
-    shape: (1 x 1)
+    shape: (1, 1)
     ┌─────┐
     │ a   │
     │ --- │
@@ -926,7 +926,7 @@ def first(column: str | Series | None = None) -> Expr | Any:
     --------
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
     >>> df.select(pl.first())
-    shape: (3 x 1)
+    shape: (3, 1)
     ┌─────┐
     │ a   │
     │ --- │
@@ -937,7 +937,7 @@ def first(column: str | Series | None = None) -> Expr | Any:
     │ 3   │
     └─────┘
     >>> df.select(pl.first("a"))
-    shape: (1 x 1)
+    shape: (1, 1)
     ┌─────┐
     │ a   │
     │ --- │
@@ -989,7 +989,7 @@ def last(column: str | Series | None = None) -> Expr:
     --------
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
     >>> df.select(pl.last())
-    shape: (3 x 1)
+    shape: (3, 1)
     ┌─────┐
     │ c   │
     │ --- │
@@ -1000,7 +1000,7 @@ def last(column: str | Series | None = None) -> Expr:
     │ foo │
     └─────┘
     >>> df.select(pl.last("a"))
-    shape: (1 x 1)
+    shape: (1, 1)
     ┌─────┐
     │ a   │
     │ --- │
@@ -1048,7 +1048,7 @@ def head(column: str | Series, n: int = 10) -> Expr | Series:
     --------
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
     >>> df.select(pl.head("a"))
-    shape: (3 x 1)
+    shape: (3, 1)
     ┌─────┐
     │ a   │
     │ --- │
@@ -1059,7 +1059,7 @@ def head(column: str | Series, n: int = 10) -> Expr | Series:
     │ 3   │
     └─────┘
     >>> df.select(pl.head("a", 2))
-    shape: (2 x 1)
+    shape: (2, 1)
     ┌─────┐
     │ a   │
     │ --- │
@@ -1107,7 +1107,7 @@ def tail(column: str | Series, n: int = 10) -> Expr | Series:
     --------
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
     >>> df.select(pl.tail("a"))
-    shape: (3 x 1)
+    shape: (3, 1)
     ┌─────┐
     │ a   │
     │ --- │
@@ -1118,7 +1118,7 @@ def tail(column: str | Series, n: int = 10) -> Expr | Series:
     │ 3   │
     └─────┘
     >>> df.select(pl.tail("a", 2))
-    shape: (2 x 1)
+    shape: (2, 1)
     ┌─────┐
     │ a   │
     │ --- │
@@ -1294,7 +1294,7 @@ def cumsum(
     ...     }
     ... )
     >>> df
-    shape: (2 x 3)
+    shape: (2, 3)
     ┌─────┬─────┬─────┐
     │ a   ┆ b   ┆ c   │
     │ --- ┆ --- ┆ --- │
@@ -1307,7 +1307,7 @@ def cumsum(
     Cumulatively sum a column by name:
 
     >>> df.select(pl.cumsum("a"))
-    shape: (2 x 1)
+    shape: (2, 1)
     ┌─────┐
     │ a   │
     │ --- │
@@ -1320,7 +1320,7 @@ def cumsum(
     Cumulatively sum a list of columns/expressions horizontally:
 
     >>> df.with_columns(pl.cumsum(["a", "c"]))
-    shape: (2 x 4)
+    shape: (2, 4)
     ┌─────┬─────┬─────┬───────────┐
     │ a   ┆ b   ┆ c   ┆ cumsum    │
     │ --- ┆ --- ┆ --- ┆ ---       │
@@ -1373,7 +1373,7 @@ def spearman_rank_corr(
     --------
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
     >>> df.select(pl.spearman_rank_corr("a", "b"))
-    shape: (1 x 1)
+    shape: (1, 1)
     ┌─────┐
     │ a   │
     │ --- │
@@ -1418,7 +1418,7 @@ def pearson_corr(a: str | Expr, b: str | Expr, ddof: int = 1) -> Expr:
     --------
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
     >>> df.select(pl.pearson_corr("a", "b"))
-    shape: (1 x 1)
+    shape: (1, 1)
     ┌──────────┐
     │ a        │
     │ ---      │
@@ -1471,7 +1471,7 @@ def corr(
 
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
     >>> df.select(pl.corr("a", "b"))
-    shape: (1 x 1)
+    shape: (1, 1)
     ┌──────────┐
     │ a        │
     │ ---      │
@@ -1484,7 +1484,7 @@ def corr(
 
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
     >>> df.select(pl.corr("a", "b", method="spearman"))
-    shape: (1 x 1)
+    shape: (1, 1)
     ┌─────┐
     │ a   │
     │ --- │
@@ -1525,7 +1525,7 @@ def cov(a: str | Expr, b: str | Expr) -> Expr:
     --------
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
     >>> df.select(pl.cov("a", "b"))
-    shape: (1 x 1)
+    shape: (1, 1)
     ┌─────┐
     │ a   │
     │ --- │
@@ -1585,7 +1585,7 @@ def map(
     ...         )
     ...     ).alias("a+b+c")
     ... )
-    shape: (4 x 3)
+    shape: (4, 3)
     ┌─────┬─────┬───────┐
     │ a   ┆ b   ┆ a+b+c │
     │ --- ┆ --- ┆ ---   │
@@ -1648,7 +1648,7 @@ def apply(
     ...     }
     ... )
     >>> df
-    shape: (4 x 2)
+    shape: (4, 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
     │ --- ┆ --- │
@@ -1663,7 +1663,7 @@ def apply(
     Calculate product of ``a``.
 
     >>> df.with_columns(pl.col("a").apply(lambda x: x * x).alias("product_a"))
-    shape: (4 x 3)
+    shape: (4, 3)
     ┌─────┬─────┬───────────┐
     │ a   ┆ b   ┆ product_a │
     │ --- ┆ --- ┆ ---       │
@@ -1722,7 +1722,7 @@ def fold(
     ...     }
     ... )
     >>> df
-    shape: (3 x 3)
+    shape: (3, 3)
     ┌─────┬─────┬─────┐
     │ a   ┆ b   ┆ c   │
     │ --- ┆ --- ┆ --- │
@@ -1740,7 +1740,7 @@ def fold(
     ...         "sum"
     ...     ),
     ... )
-    shape: (3 x 1)
+    shape: (3, 1)
     ┌─────┐
     │ sum │
     │ --- │
@@ -1760,7 +1760,7 @@ def fold(
     ...     }
     ... )
     >>> df
-    shape: (3 x 2)
+    shape: (3, 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
     │ --- ┆ --- │
@@ -1778,7 +1778,7 @@ def fold(
     ...         exprs=pl.col("*") > 1,
     ...     )
     ... )
-    shape: (1 x 2)
+    shape: (1, 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
     │ --- ┆ --- │
@@ -1825,7 +1825,7 @@ def reduce(
     ...     }
     ... )
     >>> df
-    shape: (3 x 2)
+    shape: (3, 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
     │ --- ┆ --- │
@@ -1841,7 +1841,7 @@ def reduce(
     >>> df.select(
     ...     pl.reduce(f=lambda acc, x: acc + x, exprs=pl.col("*")).alias("sum"),
     ... )
-    shape: (3 x 1)
+    shape: (3, 1)
     ┌─────┐
     │ sum │
     │ --- │
@@ -1902,7 +1902,7 @@ def cumfold(
     ...     }
     ... )
     >>> df
-    shape: (3 x 3)
+    shape: (3, 3)
     ┌─────┬─────┬─────┐
     │ a   ┆ b   ┆ c   │
     │ --- ┆ --- ┆ --- │
@@ -1918,7 +1918,7 @@ def cumfold(
     ...         acc=pl.lit(1), f=lambda acc, x: acc + x, exprs=pl.col("*")
     ...     ).alias("cumfold"),
     ... )
-    shape: (3 x 1)
+    shape: (3, 1)
     ┌───────────┐
     │ cumfold   │
     │ ---       │
@@ -1967,7 +1967,7 @@ def cumreduce(
     ...     }
     ... )
     >>> df
-    shape: (3 x 3)
+    shape: (3, 3)
     ┌─────┬─────┬─────┐
     │ a   ┆ b   ┆ c   │
     │ --- ┆ --- ┆ --- │
@@ -1983,7 +1983,7 @@ def cumreduce(
     ...         "cumreduce"
     ...     ),
     ... )
-    shape: (3 x 1)
+    shape: (3, 1)
     ┌───────────┐
     │ cumreduce │
     │ ---       │
@@ -2016,7 +2016,7 @@ def any(name: str | Sequence[str] | Sequence[Expr] | Expr) -> Expr:
     ...     }
     ... )
     >>> df
-    shape: (3 x 3)
+    shape: (3, 3)
     ┌───────┬───────┬───────┐
     │ a     ┆ b     ┆ c     │
     │ ---   ┆ ---   ┆ ---   │
@@ -2031,7 +2031,7 @@ def any(name: str | Sequence[str] | Sequence[Expr] | Expr) -> Expr:
     is true.
 
     >>> df.select(pl.any("*"))
-    shape: (1 x 3)
+    shape: (1, 3)
     ┌──────┬───────┬──────┐
     │ a    ┆ b     ┆ c    │
     │ ---  ┆ ---   ┆ ---  │
@@ -2079,7 +2079,7 @@ def exclude(
     ...     }
     ... )
     >>> df.select(pl.exclude("ba"))
-    shape: (3 x 2)
+    shape: (3, 2)
     ┌─────┬──────┐
     │ aa  ┆ cc   │
     │ --- ┆ ---  │
@@ -2093,7 +2093,7 @@ def exclude(
     Exclude by regex, e.g. removing all columns whose names end with the letter "a":
 
     >>> df.select(pl.exclude("^.*a$"))
-    shape: (3 x 1)
+    shape: (3, 1)
     ┌──────┐
     │ cc   │
     │ ---  │
@@ -2107,7 +2107,7 @@ def exclude(
     Exclude by dtype(s), e.g. removing all columns of type Int64 or Float64:
 
     >>> df.select(pl.exclude([pl.Int64, pl.Float64]))
-    shape: (3 x 1)
+    shape: (3, 1)
     ┌──────┐
     │ ba   │
     │ ---  │
@@ -2142,7 +2142,7 @@ def all(name: str | Sequence[Expr] | Expr | None = None) -> Expr:
     ...     {"a": [1, 2, 3], "b": ["hello", "foo", "bar"], "c": [1, 1, 1]}
     ... )
     >>> df.select(pl.all().sum())
-    shape: (1 x 3)
+    shape: (1, 3)
     ┌─────┬──────┬─────┐
     │ a   ┆ b    ┆ c   │
     │ --- ┆ ---  ┆ --- │
@@ -2302,7 +2302,7 @@ def arg_sort_by(
     ...     }
     ... )
     >>> df.select(pl.arg_sort_by("a"))
-    shape: (4 x 1)
+    shape: (4, 1)
     ┌─────┐
     │ a   │
     │ --- │
@@ -2317,7 +2317,7 @@ def arg_sort_by(
     Compute the arg sort by multiple columns by passing a list of columns.
 
     >>> df.select(pl.arg_sort_by(["a", "b"], descending=True))
-    shape: (4 x 1)
+    shape: (4, 1)
     ┌─────┐
     │ a   │
     │ --- │
@@ -2405,7 +2405,7 @@ def duration(
     ...         (pl.col("datetime") + pl.duration(hours="add")).alias("add_hours"),
     ...     ]
     ... )  # doctest: +IGNORE_RESULT
-    shape: (2 x 5)
+    shape: (2, 5)
     ┌────────────┬────────────┬─────────────────────┬──────────────┬─────────────────────┐
     │ add_weeks  ┆ add_days   ┆ add_seconds         ┆ add_millisec ┆ add_hours           │
     │ ---        ┆ ---        ┆ ---                 ┆ onds         ┆ ---                 │
@@ -2571,7 +2571,7 @@ def concat_str(exprs: IntoExpr | Iterable[IntoExpr], separator: str = "") -> Exp
     ...         separator=" ",
     ...     ).alias("full_sentence"),
     ... )
-    shape: (3 x 4)
+    shape: (3, 4)
     ┌─────┬──────┬──────┬───────────────┐
     │ a   ┆ b    ┆ c    ┆ full_sentence │
     │ --- ┆ ---  ┆ ---  ┆ ---           │
@@ -2612,7 +2612,7 @@ def format(fstring: str, *args: Expr | str) -> Expr:
     ...         pl.format("foo_{}_bar_{}", pl.col("a"), "b").alias("fmt"),
     ...     ]
     ... )
-    shape: (3 x 1)
+    shape: (3, 1)
     ┌─────────────┐
     │ fmt         │
     │ ---         │
@@ -2666,7 +2666,7 @@ def concat_list(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> 
     >>> df.select(
     ...     pl.concat_list([f"A_lag_{i}" for i in range(3)][::-1]).alias("A_rolling")
     ... )
-    shape: (5 x 1)
+    shape: (5, 1)
     ┌───────────────────┐
     │ A_rolling         │
     │ ---               │
@@ -2786,7 +2786,7 @@ def select(
     >>> foo = pl.Series("foo", [1, 2, 3])
     >>> bar = pl.Series("bar", [3, 2, 1])
     >>> pl.select(pl.min([foo, bar]))
-    shape: (3 x 1)
+    shape: (3, 1)
     ┌─────┐
     │ min │
     │ --- │
@@ -2868,7 +2868,7 @@ def struct(
     ...     }
     ... )
     >>> df.select(pl.struct(pl.all()).alias("my_struct"))
-    shape: (2 x 1)
+    shape: (2, 1)
     ┌─────────────────────┐
     │ my_struct           │
     │ ---                 │
@@ -2881,7 +2881,7 @@ def struct(
     Collect selected columns into a struct by passing a list of columns.
 
     >>> df.select(pl.struct(["int", False]).alias("my_struct"))
-    shape: (2 x 1)
+    shape: (2, 1)
     ┌───────────┐
     │ my_struct │
     │ ---       │
@@ -3069,7 +3069,7 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
     ...     }
     ... )
     >>> df.with_columns(pl.coalesce(["a", "b", "c", 10]).alias("d"))
-    shape: (4 x 4)
+    shape: (4, 4)
     ┌──────┬──────┬──────┬─────┐
     │ a    ┆ b    ┆ c    ┆ d   │
     │ ---  ┆ ---  ┆ ---  ┆ --- │
@@ -3081,7 +3081,7 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
     │ null ┆ null ┆ null ┆ 10  │
     └──────┴──────┴──────┴─────┘
     >>> df.with_columns(pl.coalesce(pl.col(["a", "b", "c"]), 10.0).alias("d"))
-    shape: (4 x 4)
+    shape: (4, 4)
     ┌──────┬──────┬──────┬──────┐
     │ a    ┆ b    ┆ c    ┆ d    │
     │ ---  ┆ ---  ┆ ---  ┆ ---  │
@@ -3134,7 +3134,7 @@ def from_epoch(
     --------
     >>> df = pl.DataFrame({"timestamp": [1666683077, 1666683099]}).lazy()
     >>> df.select(pl.from_epoch(pl.col("timestamp"), unit="s")).collect()
-    shape: (2 x 1)
+    shape: (2, 1)
     ┌─────────────────────┐
     │ timestamp           │
     │ ---                 │

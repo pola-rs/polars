@@ -98,7 +98,7 @@ class ExprStringNameSpace:
         ...     .fill_null(pl.col("date").str.strptime(pl.Date, "%D", strict=False))
         ...     .fill_null(pl.col("date").str.strptime(pl.Date, "%c", strict=False))
         ... )
-        shape: (4 x 1)
+        shape: (4, 1)
         ┌────────────┐
         │ date       │
         │ ---        │
@@ -155,7 +155,7 @@ class ExprStringNameSpace:
         ...     ]
         ... )
         >>> df
-        shape: (4 x 3)
+        shape: (4, 3)
         ┌──────┬────────┬────────┐
         │ s    ┆ length ┆ nchars │
         │ ---  ┆ ---    ┆ ---    │
@@ -188,7 +188,7 @@ class ExprStringNameSpace:
         ...     ]
         ... )
         >>> df
-        shape: (4 x 3)
+        shape: (4, 3)
         ┌──────┬────────┬────────┐
         │ s    ┆ nchars ┆ length │
         │ ---  ┆ ---    ┆ ---    │
@@ -220,7 +220,7 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame({"foo": [1, None, 2]})
         >>> df.select(pl.col("foo").str.concat("-"))
-        shape: (1 x 1)
+        shape: (1, 1)
         ┌──────────┐
         │ foo      │
         │ ---      │
@@ -240,7 +240,7 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame({"foo": ["cat", "dog"]})
         >>> df.select(pl.col("foo").str.to_uppercase())
-        shape: (2 x 1)
+        shape: (2, 1)
         ┌─────┐
         │ foo │
         │ --- │
@@ -261,7 +261,7 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame({"foo": ["CAT", "DOG"]})
         >>> df.select(pl.col("foo").str.to_lowercase())
-        shape: (2 x 1)
+        shape: (2, 1)
         ┌─────┐
         │ foo │
         │ --- │
@@ -289,7 +289,7 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame({"foo": [" hello ", "\tworld"]})
         >>> df.select(pl.col("foo").str.strip())
-        shape: (2 x 1)
+        shape: (2, 1)
         ┌───────┐
         │ foo   │
         │ ---   │
@@ -303,7 +303,7 @@ class ExprStringNameSpace:
         will not be stripped automatically when doing so.
 
         >>> df.select(pl.col("foo").str.strip("od\t"))
-        shape: (2 x 1)
+        shape: (2, 1)
         ┌─────────┐
         │ foo     │
         │ ---     │
@@ -331,7 +331,7 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame({"foo": [" hello ", "\tworld"]})
         >>> df.select(pl.col("foo").str.lstrip())
-        shape: (2 x 1)
+        shape: (2, 1)
         ┌────────┐
         │ foo    │
         │ ---    │
@@ -345,7 +345,7 @@ class ExprStringNameSpace:
         will not be stripped automatically when doing so.
 
         >>> df.select(pl.col("foo").str.lstrip("wod\t"))
-        shape: (2 x 1)
+        shape: (2, 1)
         ┌─────────┐
         │ foo     │
         │ ---     │
@@ -373,7 +373,7 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame({"foo": [" hello ", "world\t"]})
         >>> df.select(pl.col("foo").str.rstrip())
-        shape: (2 x 1)
+        shape: (2, 1)
         ┌────────┐
         │ foo    │
         │ ---    │
@@ -387,7 +387,7 @@ class ExprStringNameSpace:
         will not be stripped automatically when doing so.
 
         >>> df.select(pl.col("foo").str.rstrip("wod\t"))
-        shape: (2 x 1)
+        shape: (2, 1)
         ┌─────────┐
         │ foo     │
         │ ---     │
@@ -424,7 +424,7 @@ class ExprStringNameSpace:
         ...     }
         ... )
         >>> df.with_columns(pl.col("num").cast(str).str.zfill(5))
-        shape: (11 x 1)
+        shape: (11, 1)
         ┌─────────┐
         │ num     │
         │ ---     │
@@ -463,7 +463,7 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame({"a": ["cow", "monkey", None, "hippopotamus"]})
         >>> df.select(pl.col("a").str.ljust(8, "*"))
-        shape: (4 x 1)
+        shape: (4, 1)
         ┌──────────────┐
         │ a            │
         │ ---          │
@@ -497,7 +497,7 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame({"a": ["cow", "monkey", None, "hippopotamus"]})
         >>> df.select(pl.col("a").str.rjust(8, "*"))
-        shape: (4 x 1)
+        shape: (4, 1)
         ┌──────────────┐
         │ a            │
         │ ---          │
@@ -538,7 +538,7 @@ class ExprStringNameSpace:
         ...         pl.col("a").str.contains("rab$", literal=True).alias("literal"),
         ...     ]
         ... )
-        shape: (4 x 3)
+        shape: (4, 3)
         ┌─────────────┬───────┬─────────┐
         │ a           ┆ regex ┆ literal │
         │ ---         ┆ ---   ┆ ---     │
@@ -574,7 +574,7 @@ class ExprStringNameSpace:
         >>> df.with_columns(
         ...     pl.col("fruits").str.ends_with("go").alias("has_suffix"),
         ... )
-        shape: (3 x 2)
+        shape: (3, 2)
         ┌────────┬────────────┐
         │ fruits ┆ has_suffix │
         │ ---    ┆ ---        │
@@ -588,7 +588,7 @@ class ExprStringNameSpace:
         Using ``ends_with`` as a filter condition:
 
         >>> df.filter(pl.col("fruits").str.ends_with("go"))
-        shape: (1 x 1)
+        shape: (1, 1)
         ┌────────┐
         │ fruits │
         │ ---    │
@@ -621,7 +621,7 @@ class ExprStringNameSpace:
         >>> df.with_columns(
         ...     pl.col("fruits").str.starts_with("app").alias("has_prefix"),
         ... )
-        shape: (3 x 2)
+        shape: (3, 2)
         ┌────────┬────────────┐
         │ fruits ┆ has_prefix │
         │ ---    ┆ ---        │
@@ -635,7 +635,7 @@ class ExprStringNameSpace:
         Using ``starts_with`` as a filter condition:
 
         >>> df.filter(pl.col("fruits").str.starts_with("app"))
-        shape: (1 x 1)
+        shape: (1, 1)
         ┌────────┐
         │ fruits │
         │ ---    │
@@ -672,7 +672,7 @@ class ExprStringNameSpace:
         ... )
         >>> dtype = pl.Struct([pl.Field("a", pl.Int64), pl.Field("b", pl.Boolean)])
         >>> df.select(pl.col("json").str.json_extract(dtype))
-        shape: (3 x 1)
+        shape: (3, 1)
         ┌─────────────┐
         │ json        │
         │ ---         │
@@ -719,7 +719,7 @@ class ExprStringNameSpace:
         ...     {"json_val": ['{"a":"1"}', None, '{"a":2}', '{"a":2.1}', '{"a":true}']}
         ... )
         >>> df.select(pl.col("json_val").str.json_path_match("$.a"))
-        shape: (5 x 1)
+        shape: (5, 1)
         ┌──────────┐
         │ json_val │
         │ ---      │
@@ -774,7 +774,7 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame({"strings": ["foo", "bar", None]})
         >>> df.select(pl.col("strings").str.encode("hex"))
-        shape: (3 x 1)
+        shape: (3, 1)
         ┌─────────┐
         │ strings │
         │ ---     │
@@ -828,7 +828,7 @@ class ExprStringNameSpace:
         ...         pl.col("a").str.extract(r"candidate=(\w+)", 1),
         ...     ]
         ... )
-        shape: (3 x 1)
+        shape: (3, 1)
         ┌─────────┐
         │ a       │
         │ ---     │
@@ -867,7 +867,7 @@ class ExprStringNameSpace:
         ...         pl.col("foo").str.extract_all(r"(\d+)").alias("extracted_nrs"),
         ...     ]
         ... )
-        shape: (2 x 1)
+        shape: (2, 1)
         ┌────────────────┐
         │ extracted_nrs  │
         │ ---            │
@@ -902,7 +902,7 @@ class ExprStringNameSpace:
         ...         pl.col("foo").str.count_match(r"\d").alias("count_digits"),
         ...     ]
         ... )
-        shape: (2 x 1)
+        shape: (2, 1)
         ┌──────────────┐
         │ count_digits │
         │ ---          │
@@ -930,7 +930,7 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame({"s": ["foo bar", "foo-bar", "foo bar baz"]})
         >>> df.select(pl.col("s").str.split(by=" "))
-        shape: (3 x 1)
+        shape: (3, 1)
         ┌───────────────────────┐
         │ s                     │
         │ ---                   │
@@ -975,7 +975,7 @@ class ExprStringNameSpace:
         ...         pl.col("x").str.split_exact("_", 1).alias("fields"),
         ...     ]
         ... )
-        shape: (4 x 1)
+        shape: (4, 1)
         ┌─────────────┐
         │ fields      │
         │ ---         │
@@ -999,7 +999,7 @@ class ExprStringNameSpace:
         ...         .alias("fields"),
         ...     ]
         ... ).unnest("fields")
-        shape: (4 x 3)
+        shape: (4, 3)
         ┌──────┬────────────┬─────────────┐
         │ x    ┆ first_part ┆ second_part │
         │ ---  ┆ ---        ┆ ---         │
@@ -1039,7 +1039,7 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame({"s": ["foo bar", None, "foo-bar", "foo bar baz"]})
         >>> df.select(pl.col("s").str.splitn(" ", 2).alias("fields"))
-        shape: (4 x 1)
+        shape: (4, 1)
         ┌───────────────────┐
         │ fields            │
         │ ---               │
@@ -1062,7 +1062,7 @@ class ExprStringNameSpace:
         ...         .alias("fields"),
         ...     ]
         ... ).unnest("fields")
-        shape: (4 x 3)
+        shape: (4, 3)
         ┌─────────────┬────────────┬─────────────┐
         │ s           ┆ first_part ┆ second_part │
         │ ---         ┆ ---        ┆ ---         │
@@ -1113,7 +1113,7 @@ class ExprStringNameSpace:
         >>> df.with_columns(
         ...     pl.col("text").str.replace(r"abc\b", "ABC")
         ... )  # doctest: +IGNORE_RESULT
-        shape: (2 x 2)
+        shape: (2, 2)
         ┌─────┬────────┐
         │ id  ┆ text   │
         │ --- ┆ ---    │
@@ -1153,7 +1153,7 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame({"id": [1, 2], "text": ["abcabc", "123a123"]})
         >>> df.with_columns(pl.col("text").str.replace_all("a", "-"))
-        shape: (2 x 2)
+        shape: (2, 2)
         ┌─────┬─────────┐
         │ id  ┆ text    │
         │ --- ┆ ---     │
@@ -1193,7 +1193,7 @@ class ExprStringNameSpace:
         >>> df.with_columns(
         ...     pl.col("s").str.slice(-3).alias("s_sliced"),
         ... )
-        shape: (4 x 2)
+        shape: (4, 2)
         ┌─────────────┬──────────┐
         │ s           ┆ s_sliced │
         │ ---         ┆ ---      │
@@ -1210,7 +1210,7 @@ class ExprStringNameSpace:
         >>> df.with_columns(
         ...     pl.col("s").str.slice(4, length=3).alias("s_sliced"),
         ... )
-        shape: (4 x 2)
+        shape: (4, 2)
         ┌─────────────┬──────────┐
         │ s           ┆ s_sliced │
         │ ---         ┆ ---      │
@@ -1237,7 +1237,7 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame({"a": ["foo", "bar"]})
         >>> df.select(pl.col("a").str.explode())
-        shape: (6 x 1)
+        shape: (6, 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -1278,7 +1278,7 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame({"bin": ["110", "101", "010", "invalid"]})
         >>> df.select(pl.col("bin").str.parse_int(2, False))
-        shape: (4 x 1)
+        shape: (4, 1)
         ┌──────┐
         │ bin  │
         │ ---  │
@@ -1292,7 +1292,7 @@ class ExprStringNameSpace:
 
         >>> df = pl.DataFrame({"hex": ["fa1e", "ff00", "cafe", None]})
         >>> df.select(pl.col("hex").str.parse_int(16, True))
-        shape: (4 x 1)
+        shape: (4, 1)
         ┌───────┐
         │ hex   │
         │ ---   │

@@ -1,8 +1,8 @@
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use std::borrow::Cow;
-use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
 use std::sync::atomic::{AtomicU8, Ordering};
+use std::{fmt, str};
 
 #[cfg(any(
     feature = "dtype-date",
@@ -20,7 +20,6 @@ use comfy_table::modifiers::*;
 use comfy_table::presets::*;
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use comfy_table::*;
-use num_format::{Locale, ToFormattedString};
 use num_traits::{Num, NumCast};
 
 use crate::config::*;
@@ -53,7 +52,7 @@ macro_rules! format_array {
         write!(
             $f,
             "shape: ({},)\n{}: '{}' [{}]\n[\n",
-            $a.len().to_formatted_string(&Locale::en),
+            fmt_uint(&$a.len()),
             $array_type,
             $name,
             $dtype
@@ -134,7 +133,7 @@ fn format_object_array(
             write!(
                 f,
                 "shape: ({},)\n{}: '{}' [o][{}]\n[\n",
-                object.len().to_formatted_string(&Locale::en),
+                fmt_uint(&object.len()),
                 array_type,
                 name,
                 inner_type
@@ -365,6 +364,24 @@ fn env_is_true(varname: &str) -> bool {
     std::env::var(varname).as_deref().unwrap_or("0") == "1"
 }
 
+fn fmt_uint(num: &usize) -> String {
+    // Return a string with thousands separated by _
+    // e.g. 1_000_000
+    num.to_string()
+        .as_bytes()
+        .rchunks(3)
+        .rev()
+        .map(str::from_utf8)
+        .collect::<Result<Vec<&str>, _>>()
+        .unwrap()
+        .join("_") // separator
+}
+
+fn fmt_df_shape((shape0, shape1): &(usize, usize)) -> String {
+    // e.g. (1_000_000, 4_000)
+    format!("({}, {})", fmt_uint(&shape0), fmt_uint(&shape1))
+}
+
 impl Display for DataFrame {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
@@ -573,16 +590,14 @@ impl Display for DataFrame {
             }
 
             // establish 'shape' information (above/below/hidden)
-            let (nrows, ncols) = self.shape();
-            let nrows_pretty = nrows.to_formatted_string(&Locale::en);
-            let ncols_pretty = ncols.to_formatted_string(&Locale::en);
+            let shape_str = fmt_df_shape(&self.shape());
 
             if env_is_true(FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION) {
                 write!(f, "{table}")?;
             } else if env_is_true(FMT_TABLE_DATAFRAME_SHAPE_BELOW) {
-                write!(f, "{table}\nshape: ({} x {})", nrows_pretty, ncols_pretty)?;
+                write!(f, "{table}\nshape: {}", shape_str)?;
             } else {
-                write!(f, "shape: ({} x {})\n{}", nrows_pretty, ncols_pretty, table)?;
+                write!(f, "shape: {}\n{}", shape_str, table)?;
             }
         }
 

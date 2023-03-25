@@ -56,7 +56,7 @@ def from_dict(
     --------
     >>> df = pl.from_dict({"a": [1, 2], "b": [3, 4]})
     >>> df
-    shape: (2 x 2)
+    shape: (2, 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
     │ --- ┆ --- │
@@ -119,7 +119,7 @@ def from_dicts(
     >>> data = [{"a": 1, "b": 4}, {"a": 2, "b": 5}, {"a": 3, "b": 6}]
     >>> df = pl.from_dicts(data)
     >>> df
-    shape: (3 x 2)
+    shape: (3, 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
     │ --- ┆ --- │
@@ -134,7 +134,7 @@ def from_dicts(
 
     >>> df = pl.from_dicts(data, schema={"a": pl.Int32})
     >>> df
-    shape: (3 x 1)
+    shape: (3, 1)
     ┌─────┐
     │ a   │
     │ --- │
@@ -153,7 +153,7 @@ def from_dicts(
     ...     schema=["a", "b", "c", "d"],
     ...     schema_overrides={"c": pl.Float64, "d": pl.Utf8},
     ... )
-    shape: (3 x 4)
+    shape: (3, 4)
     ┌─────┬─────┬──────┬──────┐
     │ a   ┆ b   ┆ c    ┆ d    │
     │ --- ┆ --- ┆ ---  ┆ ---  │
@@ -224,7 +224,7 @@ def from_records(
     >>> data = [[1, 2, 3], [4, 5, 6]]
     >>> df = pl.from_records(data, schema=["a", "b"])
     >>> df
-    shape: (3 x 2)
+    shape: (3, 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
     │ --- ┆ --- │
@@ -290,7 +290,7 @@ def from_numpy(
     >>> data = np.array([[1, 2, 3], [4, 5, 6]])
     >>> df = pl.from_numpy(data, schema=["a", "b"], orient="col")
     >>> df
-    shape: (3 x 2)
+    shape: (3, 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
     │ --- ┆ --- │
@@ -352,7 +352,7 @@ def from_arrow(
     >>> data = pa.table({"a": [1, 2, 3], "b": [4, 5, 6]})
     >>> df = pl.from_arrow(data)
     >>> df
-    shape: (3 x 2)
+    shape: (3, 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
     │ --- ┆ --- │
@@ -454,7 +454,7 @@ def from_pandas(
     >>> pd_df = pd.DataFrame([[1, 2, 3], [4, 5, 6]], columns=["a", "b", "c"])
     >>> df = pl.from_pandas(pd_df)
     >>> df
-        shape: (2 x 3)
+        shape: (2, 3)
     ┌─────┬─────┬─────┐
     │ a   ┆ b   ┆ c   │
     │ --- ┆ --- ┆ --- │

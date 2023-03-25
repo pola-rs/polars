@@ -419,7 +419,7 @@ class ListNameSpace:
         --------
         >>> df = pl.DataFrame({"a": [[1, 2, 3], [1, 2]]})
         >>> df.select([pl.col("a").arr.to_struct()])
-        shape: (2 x 1)
+        shape: (2, 1)
         ┌────────────┐
         │ a          │
         │ ---        │
@@ -474,7 +474,7 @@ class ListNameSpace:
         >>> df.with_columns(
         ...     pl.concat_list(["a", "b"]).arr.eval(pl.element().rank()).alias("rank")
         ... )
-        shape: (3 x 3)
+        shape: (3, 3)
         ┌─────┬─────┬────────────┐
         │ a   ┆ b   ┆ rank       │
         │ --- ┆ --- ┆ ---        │

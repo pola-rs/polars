@@ -1120,7 +1120,7 @@ class Series:
         >>> s = pl.Series("a", [123, 456])
         >>> df = s.to_frame()
         >>> df
-        shape: (2 x 1)
+        shape: (2, 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -1132,7 +1132,7 @@ class Series:
 
         >>> df = s.to_frame("xyz")
         >>> df
-        shape: (2 x 1)
+        shape: (2, 1)
         ┌─────┐
         │ xyz │
         │ --- │
@@ -1162,7 +1162,7 @@ class Series:
         --------
         >>> series_num = pl.Series([1, 2, 3, 4, 5])
         >>> series_num.describe()
-        shape: (6 x 2)
+        shape: (6, 2)
         ┌────────────┬──────────┐
         │ statistic  ┆ value    │
         │ ---        ┆ ---      │
@@ -1178,7 +1178,7 @@ class Series:
 
         >>> series_str = pl.Series(["a", "a", None, "b", "c"])
         >>> series_str.describe()
-        shape: (3 x 2)
+        shape: (3, 2)
         ┌────────────┬───────┐
         │ statistic  ┆ value │
         │ ---        ┆ ---   │
@@ -1403,7 +1403,7 @@ class Series:
         --------
         >>> s = pl.Series("a", [1, 2, 3])
         >>> s.to_dummies()
-        shape: (3 x 3)
+        shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ a_1 ┆ a_2 ┆ a_3 │
         │ --- ┆ --- ┆ --- │
@@ -1450,7 +1450,7 @@ class Series:
         --------
         >>> a = pl.Series("a", [v / 10 for v in range(-30, 30, 5)])
         >>> a.cut(bins=[-1, 1])
-        shape: (12 x 3)
+        shape: (12, 3)
         ┌──────┬─────────────┬──────────────┐
         │ a    ┆ break_point ┆ category     │
         │ ---  ┆ ---         ┆ ---          │
@@ -1517,7 +1517,7 @@ class Series:
         --------
         >>> a = pl.Series("a", range(-5, 3))
         >>> a.qcut([0.0, 0.25, 0.75])
-        shape: (8 x 3)
+        shape: (8, 3)
         ┌──────┬─────────────┬───────────────┐
         │ a    ┆ break_point ┆ category      │
         │ ---  ┆ ---         ┆ ---           │
@@ -1574,7 +1574,7 @@ class Series:
         --------
         >>> a = pl.Series("a", [1, 3, 8, 8, 2, 1, 3])
         >>> a.hist(bin_count=4)
-        shape: (5 x 3)
+        shape: (5, 3)
         ┌─────────────┬─────────────┬─────────┐
         │ break_point ┆ category    ┆ a_count │
         │ ---         ┆ ---         ┆ ---     │
@@ -1605,7 +1605,7 @@ class Series:
         --------
         >>> s = pl.Series("a", [1, 2, 2, 3])
         >>> s.value_counts().sort(by="a")
-        shape: (3 x 2)
+        shape: (3, 2)
         ┌─────┬────────┐
         │ a   ┆ counts │
         │ --- ┆ ---    │
@@ -3291,7 +3291,7 @@ class Series:
         >>> s.to_frame().select(
         ...     pl.when(pl.col("a") == 2).then(10).otherwise(pl.col("a"))
         ... )
-        shape: (3 x 1)
+        shape: (3, 1)
         ┌─────────┐
         │ literal │
         │ ---     │
@@ -3365,7 +3365,7 @@ class Series:
         >>> s.to_frame().with_row_count("row_nr").select(
         ...     pl.when(pl.col("row_nr") == 1).then(10).otherwise(pl.col("a"))
         ... )
-        shape: (3 x 1)
+        shape: (3, 1)
         ┌─────────┐
         │ literal │
         │ ---     │

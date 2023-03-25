@@ -97,7 +97,7 @@ class StringNameSpace:
         ...         .fill_null(pl.col("date").str.strptime(pl.Date, "%c", strict=False))
         ...     )
         ... )
-        shape: (4 x 1)
+        shape: (4, 1)
         ┌────────────┐
         │ date       │
         │ ---        │
@@ -426,7 +426,7 @@ class StringNameSpace:
         ...     }
         ... )
         >>> df.select([pl.col("a").str.extract(r"candidate=(\w+)", 1)])
-        shape: (3 x 1)
+        shape: (3, 1)
         ┌─────────┐
         │ a       │
         │ ---     │
@@ -554,7 +554,7 @@ class StringNameSpace:
         ...     .to_frame()
         ...     .unnest("fields")
         ... )
-        shape: (4 x 2)
+        shape: (4, 2)
         ┌────────────┬─────────────┐
         │ first_part ┆ second_part │
         │ ---        ┆ ---         │
@@ -611,7 +611,7 @@ class StringNameSpace:
         ...     .to_frame()
         ...     .unnest("fields")
         ... )
-        shape: (4 x 2)
+        shape: (4, 2)
         ┌────────────┬─────────────┐
         │ first_part ┆ second_part │
         │ ---        ┆ ---         │

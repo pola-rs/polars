@@ -43,7 +43,7 @@ def scan_pyarrow_dataset(
     ...     .select(["bools", "floats", "date"])
     ...     .collect()
     ... )  # doctest: +SKIP
-    shape: (1 x 3)
+    shape: (1, 3)
     ┌───────┬────────┬────────────┐
     │ bools ┆ floats ┆ date       │
     │ ---   ┆ ---    ┆ ---        │
@@ -87,7 +87,7 @@ def scan_ds(ds: pa.dataset.Dataset, allow_pyarrow_filter: bool = True) -> LazyFr
     ...     .select(["bools", "floats", "date"])
     ...     .collect()
     ... )  # doctest: +SKIP
-    shape: (1 x 3)
+    shape: (1, 3)
     ┌───────┬────────┬────────────┐
     │ bools ┆ floats ┆ date       │
     │ ---   ┆ ---    ┆ ---        │

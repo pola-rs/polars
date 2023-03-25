@@ -33,7 +33,7 @@ class ExprListNameSpace:
         --------
         >>> df = pl.DataFrame({"foo": [1, 2], "bar": [["a", "b"], ["c"]]})
         >>> df.select(pl.col("bar").arr.lengths())
-        shape: (2 x 1)
+        shape: (2, 1)
         ┌─────┐
         │ bar │
         │ --- │
@@ -54,7 +54,7 @@ class ExprListNameSpace:
         --------
         >>> df = pl.DataFrame({"values": [[1], [2, 3]]})
         >>> df.select(pl.col("values").arr.sum())
-        shape: (2 x 1)
+        shape: (2, 1)
         ┌────────┐
         │ values │
         │ ---    │
@@ -75,7 +75,7 @@ class ExprListNameSpace:
         --------
         >>> df = pl.DataFrame({"values": [[1], [2, 3]]})
         >>> df.select(pl.col("values").arr.max())
-        shape: (2 x 1)
+        shape: (2, 1)
         ┌────────┐
         │ values │
         │ ---    │
@@ -96,7 +96,7 @@ class ExprListNameSpace:
         --------
         >>> df = pl.DataFrame({"values": [[1], [2, 3]]})
         >>> df.select(pl.col("values").arr.min())
-        shape: (2 x 1)
+        shape: (2, 1)
         ┌────────┐
         │ values │
         │ ---    │
@@ -117,7 +117,7 @@ class ExprListNameSpace:
         --------
         >>> df = pl.DataFrame({"values": [[1], [2, 3]]})
         >>> df.select(pl.col("values").arr.mean())
-        shape: (2 x 1)
+        shape: (2, 1)
         ┌────────┐
         │ values │
         │ ---    │
@@ -149,7 +149,7 @@ class ExprListNameSpace:
         ...     }
         ... )
         >>> df.select(pl.col("a").arr.sort())
-        shape: (2 x 1)
+        shape: (2, 1)
         ┌───────────┐
         │ a         │
         │ ---       │
@@ -159,7 +159,7 @@ class ExprListNameSpace:
         │ [1, 2, 9] │
         └───────────┘
         >>> df.select(pl.col("a").arr.sort(reverse=True))
-        shape: (2 x 1)
+        shape: (2, 1)
         ┌───────────┐
         │ a         │
         │ ---       │
@@ -184,7 +184,7 @@ class ExprListNameSpace:
         ...     }
         ... )
         >>> df.select(pl.col("a").arr.reverse())
-        shape: (2 x 1)
+        shape: (2, 1)
         ┌───────────┐
         │ a         │
         │ ---       │
@@ -214,7 +214,7 @@ class ExprListNameSpace:
         ...     }
         ... )
         >>> df.select(pl.col("a").arr.unique())
-        shape: (1 x 1)
+        shape: (1, 1)
         ┌───────────┐
         │ a         │
         │ ---       │
@@ -244,7 +244,7 @@ class ExprListNameSpace:
         ...     }
         ... )
         >>> df.select(pl.col("a").arr.concat("b"))
-        shape: (2 x 1)
+        shape: (2, 1)
         ┌─────────────────┐
         │ a               │
         │ ---             │
@@ -283,7 +283,7 @@ class ExprListNameSpace:
         --------
         >>> df = pl.DataFrame({"foo": [[3, 2, 1], [], [1, 2]]})
         >>> df.select(pl.col("foo").arr.get(0))
-        shape: (3 x 1)
+        shape: (3, 1)
         ┌──────┐
         │ foo  │
         │ ---  │
@@ -336,7 +336,7 @@ class ExprListNameSpace:
         --------
         >>> df = pl.DataFrame({"foo": [[3, 2, 1], [], [1, 2]]})
         >>> df.select(pl.col("foo").arr.first())
-        shape: (3 x 1)
+        shape: (3, 1)
         ┌──────┐
         │ foo  │
         │ ---  │
@@ -358,7 +358,7 @@ class ExprListNameSpace:
         --------
         >>> df = pl.DataFrame({"foo": [[3, 2, 1], [], [1, 2]]})
         >>> df.select(pl.col("foo").arr.last())
-        shape: (3 x 1)
+        shape: (3, 1)
         ┌──────┐
         │ foo  │
         │ ---  │
@@ -391,7 +391,7 @@ class ExprListNameSpace:
         --------
         >>> df = pl.DataFrame({"foo": [[3, 2, 1], [], [1, 2]]})
         >>> df.select(pl.col("foo").arr.contains(1))
-        shape: (3 x 1)
+        shape: (3, 1)
         ┌───────┐
         │ foo   │
         │ ---   │
@@ -424,7 +424,7 @@ class ExprListNameSpace:
         --------
         >>> df = pl.DataFrame({"s": [["a", "b", "c"], ["x", "y"]]})
         >>> df.select(pl.col("s").arr.join(" "))
-        shape: (2 x 1)
+        shape: (2, 1)
         ┌───────┐
         │ s     │
         │ ---   │
@@ -453,7 +453,7 @@ class ExprListNameSpace:
         ...     }
         ... )
         >>> df.select(pl.col("a").arr.arg_min())
-        shape: (2 x 1)
+        shape: (2, 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -482,7 +482,7 @@ class ExprListNameSpace:
         ...     }
         ... )
         >>> df.select(pl.col("a").arr.arg_max())
-        shape: (2 x 1)
+        shape: (2, 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -510,7 +510,7 @@ class ExprListNameSpace:
         --------
         >>> df = pl.DataFrame({"n": [[1, 2, 3, 4], [10, 2, 1]]})
         >>> df.select(pl.col("n").arr.diff())
-        shape: (2 x 1)
+        shape: (2, 1)
         ┌────────────────┐
         │ n              │
         │ ---            │
@@ -521,7 +521,7 @@ class ExprListNameSpace:
         └────────────────┘
 
         >>> df.select(pl.col("n").arr.diff(n=2))
-        shape: (2 x 1)
+        shape: (2, 1)
         ┌───────────────────┐
         │ n                 │
         │ ---               │
@@ -532,7 +532,7 @@ class ExprListNameSpace:
         └───────────────────┘
 
         >>> df.select(pl.col("n").arr.diff(n=2, null_behavior="drop"))
-        shape: (2 x 1)
+        shape: (2, 1)
         ┌───────────┐
         │ n         │
         │ ---       │
@@ -661,7 +661,7 @@ class ExprListNameSpace:
         --------
         >>> df = pl.DataFrame({"a": [[1, 2, 3], [4, 5, 6]]})
         >>> df.select(pl.col("a").arr.explode())
-        shape: (6 x 1)
+        shape: (6, 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -693,7 +693,7 @@ class ExprListNameSpace:
         --------
         >>> df = pl.DataFrame({"listcol": [[0], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]})
         >>> df.select(pl.col("listcol").arr.count_match(2).alias("number_of_twos"))
-        shape: (5 x 1)
+        shape: (5, 1)
         ┌────────────────┐
         │ number_of_twos │
         │ ---            │
@@ -740,7 +740,7 @@ class ExprListNameSpace:
         --------
         >>> df = pl.DataFrame({"a": [[1, 2, 3], [1, 2]]})
         >>> df.select([pl.col("a").arr.to_struct()])
-        shape: (2 x 1)
+        shape: (2, 1)
         ┌────────────┐
         │ a          │
         │ ---        │
@@ -786,7 +786,7 @@ class ExprListNameSpace:
         >>> df.with_columns(
         ...     pl.concat_list(["a", "b"]).arr.eval(pl.element().rank()).alias("rank")
         ... )
-        shape: (3 x 3)
+        shape: (3, 3)
         ┌─────┬─────┬────────────┐
         │ a   ┆ b   ┆ rank       │
         │ --- ┆ --- ┆ ---        │

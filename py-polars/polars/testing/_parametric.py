@@ -553,7 +553,7 @@ def dataframes(
     ...     size=2,
     ... )
     >>> df_strategy.example()  # doctest: +SKIP
-    shape: (2 x 2)
+    shape: (2, 2)
     ┌───────────┬────────────┐
     │ x         ┆ y          │
     │ ---       ┆ ---        │

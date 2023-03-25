@@ -80,7 +80,7 @@ def get_dummies(
     ...     }
     ... )
     >>> pl.get_dummies(df.to_dummies(), columns=["foo", "bar"])
-    shape: (2 x 6)
+    shape: (2, 6)
     ┌───────┬───────┬───────┬───────┬───────┬───────┐
     │ foo_1 ┆ foo_2 ┆ bar_3 ┆ bar_4 ┆ ham_a ┆ ham_b │
     │ ---   ┆ ---   ┆ ---   ┆ ---   ┆ ---   ┆ ---   │
@@ -174,7 +174,7 @@ def concat(
     >>> df1 = pl.DataFrame({"a": [1], "b": [3]})
     >>> df2 = pl.DataFrame({"a": [2], "b": [4]})
     >>> pl.concat([df1, df2])
-    shape: (2 x 2)
+    shape: (2, 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
     │ --- ┆ --- │
@@ -204,7 +204,7 @@ def concat(
     ...     ],
     ...     how="horizontal",
     ... )
-    shape: (2 x 5)
+    shape: (2, 5)
     ┌─────┬─────┬─────┬─────┬─────┐
     │ l1  ┆ l2  ┆ r1  ┆ r2  ┆ r3  │
     │ --- ┆ --- ┆ --- ┆ --- ┆ --- │
@@ -233,7 +233,7 @@ def concat(
     ...     ],
     ...     how="diagonal",
     ... )
-    shape: (2 x 3)
+    shape: (2, 3)
     ┌─────┬──────┬──────┐
     │ a   ┆ b    ┆ d    │
     │ --- ┆ ---  ┆ ---  │
@@ -553,7 +553,7 @@ def cut(
     --------
     >>> a = pl.Series("a", [v / 10 for v in range(-30, 30, 5)])
     >>> pl.cut(a, bins=[-1, 1])
-    shape: (12 x 3)
+    shape: (12, 3)
     ┌──────┬─────────────┬──────────────┐
     │ a    ┆ break_point ┆ category     │
     │ ---  ┆ ---         ┆ ---          │
@@ -659,7 +659,7 @@ def align_frames(
     >>> pl.Config.set_tbl_formatting("UTF8_FULL")  # doctest: +IGNORE_RESULT
     #
     # df1                              df2                              df3
-    # shape: (3 x 3)                    shape: (3 x 3)                    shape: (2 x 3)
+    # shape: (3, 3)                    shape: (3, 3)                    shape: (2, 3)
     # ┌────────────┬─────┬──────┐      ┌────────────┬─────┬──────┐      ┌────────────┬─────┬─────┐
     # │ dt         ┆ x   ┆ y    │      │ dt         ┆ x   ┆ y    │      │ dt         ┆ x   ┆ y   │
     # │ ---        ┆ --- ┆ ---  │      │ ---        ┆ --- ┆ ---  │      │ ---        ┆ --- ┆ --- │
@@ -680,7 +680,7 @@ def align_frames(
     ... )  # doctest: +IGNORE_RESULT
     #
     # df1                              df2                              df3
-    # shape: (3 x 3)                    shape: (3 x 3)                    shape: (3 x 3)
+    # shape: (3, 3)                    shape: (3, 3)                    shape: (3, 3)
     # ┌────────────┬─────┬──────┐      ┌────────────┬─────┬──────┐      ┌────────────┬──────┬──────┐
     # │ dt         ┆ x   ┆ y    │      │ dt         ┆ x   ┆ y    │      │ dt         ┆ x    ┆ y    │
     # │ ---        ┆ --- ┆ ---  │      │ ---        ┆ --- ┆ ---  │      │ ---        ┆ ---  ┆ ---  │
@@ -701,7 +701,7 @@ def align_frames(
     ... )  # doctest: +IGNORE_RESULT
     #
     # af1                 af2                 af3
-    # shape: (3 x 3)       shape: (3 x 3)       shape: (3 x 3)
+    # shape: (3, 3)       shape: (3, 3)       shape: (3, 3)
     # ┌─────┬──────┐      ┌─────┬──────┐      ┌──────┬──────┐
     # │ x   ┆ y    │      │ x   ┆ y    │      │ x    ┆ y    │
     # │ --- ┆ ---  │      │ --- ┆ ---  │      │ ---  ┆ ---  │
@@ -718,7 +718,7 @@ def align_frames(
     Now data is aligned, and you can easily calculate the row-wise dot product:
 
     >>> (af1 * af2 * af3).fill_null(0).select(pl.sum(pl.col("*")).alias("dot"))
-    shape: (3 x 1)
+    shape: (3, 1)
     ┌───────┐
     │ dot   │
     │ ---   │

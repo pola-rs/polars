@@ -828,7 +828,7 @@ def scan_csv(
     >>> pl.scan_csv(
     ...     path, with_column_names=lambda cols: [col.lower() for col in cols]
     ... ).collect()
-    shape: (4 x 2)
+    shape: (4, 2)
     ┌─────────┬──────────┐
     │ breezah ┆ language │
     │ ---     ┆ ---      │
@@ -849,7 +849,7 @@ def scan_csv(
     ...     new_columns=["idx", "txt"],
     ...     dtypes=[pl.UInt16, pl.Utf8],
     ... ).collect()
-    shape: (4 x 2)
+    shape: (4, 2)
     ┌─────┬──────┐
     │ idx ┆ txt  │
     │ --- ┆ ---  │
