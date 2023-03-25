@@ -153,12 +153,10 @@ where
 {
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         // sorted path
-        if self.is_sorted_ascending_flag()
-            || self.is_sorted_descending_flag() && self.chunks().len() == 1
-        {
+        if self.is_sorted_ascending_flag() || self.is_sorted_descending_flag() {
             // don't have to pass `sorted` arg, GroupSlice is always sorted.
             return Ok(GroupsProxy::Slice {
-                groups: self.create_groups_from_sorted(multithreaded),
+                groups: self.rechunk().create_groups_from_sorted(multithreaded),
                 rolling: false,
             });
         }
