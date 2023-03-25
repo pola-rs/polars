@@ -134,7 +134,7 @@ fn format_object_array(
             write!(
                 f,
                 "shape: ({},)\n{}: '{}' [o][{}]\n[\n",
-                object.len(),
+                object.len().to_formatted_string(&Locale::en),
                 array_type,
                 name,
                 inner_type
@@ -590,8 +590,8 @@ impl Display for DataFrame {
         {
             write!(
                 f,
-                "shape: ({} x {})\nto see more, compile with the 'fmt' or 'fmt_no_tty' feature",
-                nrows_pretty, ncols_pretty
+                "shape: {:?}\nto see more, compile with the 'fmt' or 'fmt_no_tty' feature",
+                self.shape()
             )?;
         }
 
