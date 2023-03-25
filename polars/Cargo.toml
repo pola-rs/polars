@@ -244,7 +244,6 @@ docs-selection = [
   "ipc_streaming",
   "dtype-full",
   "is_in",
-  "sort_multiple",
   "rows",
   "docs",
   "strings",

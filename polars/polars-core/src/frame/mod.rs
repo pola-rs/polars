@@ -35,10 +35,7 @@ use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
 
 use crate::frame::groupby::GroupsIndicator;
-#[cfg(feature = "sort_multiple")]
-use crate::prelude::sort::argsort_multiple_row_fmt;
-#[cfg(feature = "sort_multiple")]
-use crate::prelude::sort::prepare_arg_sort;
+use crate::prelude::sort::{argsort_multiple_row_fmt, prepare_arg_sort};
 use crate::series::IsSorted;
 #[cfg(feature = "row_hash")]
 use crate::vector_hasher::df_rows_to_hashes_threaded;
@@ -1837,19 +1834,11 @@ impl DataFrame {
                 s.arg_sort(options)
             }
             _ => {
-                #[cfg(feature = "sort_multiple")]
-                {
-                    if nulls_last || std::env::var("POLARS_ROW_FMT_SORT").is_ok() {
-                        argsort_multiple_row_fmt(&by_column, descending, nulls_last, parallel)?
-                    } else {
-                        let (first, by_column, descending) =
-                            prepare_arg_sort(by_column, descending)?;
-                        first.arg_sort_multiple(&by_column, &descending)?
-                    }
-                }
-                #[cfg(not(feature = "sort_multiple"))]
-                {
-                    panic!("activate `sort_multiple` feature gate to enable this functionality");
+                if nulls_last || std::env::var("POLARS_ROW_FMT_SORT").is_ok() {
+                    argsort_multiple_row_fmt(&by_column, descending, nulls_last, parallel)?
+                } else {
+                    let (first, by_column, descending) = prepare_arg_sort(by_column, descending)?;
+                    first.arg_sort_multiple(&by_column, &descending)?
                 }
             }
         };

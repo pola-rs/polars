@@ -160,12 +160,15 @@ pub(crate) mod private {
         fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsProxy> {
             invalid_operation_panic!(group_tuples, self)
         }
+        #[cfg(feature = "zip_with")]
         fn zip_with_same_type(
             &self,
             _mask: &BooleanChunked,
             _other: &Series,
-        ) -> PolarsResult<Series>;
-        #[cfg(feature = "sort_multiple")]
+        ) -> PolarsResult<Series> {
+            invalid_operation_panic!(zip_with_same_type, self)
+        }
+
         fn arg_sort_multiple(&self, _by: &[Series], _descending: &[bool]) -> PolarsResult<IdxCa> {
             polars_bail!(opq = arg_sort_multiple, self._dtype());
         }
