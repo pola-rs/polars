@@ -379,7 +379,7 @@ fn fmt_uint(num: &usize) -> String {
 
 fn fmt_df_shape((shape0, shape1): &(usize, usize)) -> String {
     // e.g. (1_000_000, 4_000)
-    format!("({}, {})", fmt_uint(&shape0), fmt_uint(&shape1))
+    format!("({}, {})", fmt_uint(shape0), fmt_uint(shape1))
 }
 
 impl Display for DataFrame {
