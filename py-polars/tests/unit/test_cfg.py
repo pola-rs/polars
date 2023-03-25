@@ -24,7 +24,7 @@ def test_ascii_tables() -> None:
     with pl.Config() as cfg:
         cfg.set_ascii_tables(True)
         assert (
-            str(df) == "shape: (3, 3)\n"
+            str(df) == "shape: (3 x 3)\n"
             "+-----+-----+-----+\n"
             "| a   | b   | c   |\n"
             "| --- | --- | --- |\n"
@@ -38,7 +38,7 @@ def test_ascii_tables() -> None:
 
     # confirm back to utf8 default after scope-exit
     assert (
-        str(df) == "shape: (3, 3)\n"
+        str(df) == "shape: (3 x 3)\n"
         "┌─────┬─────┬─────┐\n"
         "│ a   ┆ b   ┆ c   │\n"
         "│ --- ┆ --- ┆ --- │\n"
@@ -56,7 +56,7 @@ def test_hide_header_elements() -> None:
 
     pl.Config.set_tbl_hide_column_data_types(True)
     assert (
-        str(df) == "shape: (3, 3)\n"
+        str(df) == "shape: (3 x 3)\n"
         "┌─────┬─────┬─────┐\n"
         "│ a   ┆ b   ┆ c   │\n"
         "╞═════╪═════╪═════╡\n"
@@ -68,7 +68,7 @@ def test_hide_header_elements() -> None:
 
     pl.Config.set_tbl_hide_column_data_types(False).set_tbl_hide_column_names(True)
     assert (
-        str(df) == "shape: (3, 3)\n"
+        str(df) == "shape: (3 x 3)\n"
         "┌─────┬─────┬─────┐\n"
         "│ i64 ┆ i64 ┆ i64 │\n"
         "╞═════╪═════╪═════╡\n"
@@ -106,7 +106,7 @@ def test_set_tbl_rows() -> None:
 
     pl.Config.set_tbl_rows(0)
     assert (
-        str(df) == "shape: (4, 3)\n"
+        str(df) == "shape: (4 x 3)\n"
         "┌─────┬─────┬─────┐\n"
         "│ a   ┆ b   ┆ c   │\n"
         "│ --- ┆ --- ┆ --- │\n"
@@ -119,7 +119,7 @@ def test_set_tbl_rows() -> None:
 
     pl.Config.set_tbl_rows(1)
     assert (
-        str(df) == "shape: (4, 3)\n"
+        str(df) == "shape: (4 x 3)\n"
         "┌─────┬─────┬─────┐\n"
         "│ a   ┆ b   ┆ c   │\n"
         "│ --- ┆ --- ┆ --- │\n"
@@ -133,7 +133,7 @@ def test_set_tbl_rows() -> None:
 
     pl.Config.set_tbl_rows(2)
     assert (
-        str(df) == "shape: (4, 3)\n"
+        str(df) == "shape: (4 x 3)\n"
         "┌─────┬─────┬─────┐\n"
         "│ a   ┆ b   ┆ c   │\n"
         "│ --- ┆ --- ┆ --- │\n"
@@ -156,7 +156,7 @@ def test_set_tbl_rows() -> None:
 
     pl.Config.set_tbl_rows(3)
     assert (
-        str(df) == "shape: (4, 3)\n"
+        str(df) == "shape: (4 x 3)\n"
         "┌─────┬─────┬─────┐\n"
         "│ a   ┆ b   ┆ c   │\n"
         "│ --- ┆ --- ┆ --- │\n"
@@ -181,7 +181,7 @@ def test_set_tbl_rows() -> None:
 
     pl.Config.set_tbl_rows(4)
     assert (
-        str(df) == "shape: (4, 3)\n"
+        str(df) == "shape: (4 x 3)\n"
         "┌─────┬─────┬─────┐\n"
         "│ a   ┆ b   ┆ c   │\n"
         "│ --- ┆ --- ┆ --- │\n"
@@ -215,7 +215,7 @@ def test_set_tbl_rows() -> None:
 
     pl.Config.set_tbl_rows(3)
     assert (
-        str(df) == "shape: (5, 3)\n"
+        str(df) == "shape: (5 x 3)\n"
         "┌─────┬─────┬─────┐\n"
         "│ a   ┆ b   ┆ c   │\n"
         "│ --- ┆ --- ┆ --- │\n"
@@ -243,7 +243,7 @@ def test_set_tbl_rows() -> None:
 
     pl.Config.set_tbl_hide_dtype_separator(True)
     assert (
-        str(df) == "shape: (5, 3)\n"
+        str(df) == "shape: (5 x 3)\n"
         "┌─────┬─────┬─────┐\n"
         "│ a   ┆ b   ┆ c   │\n"
         "│ i64 ┆ i64 ┆ i64 │\n"
@@ -267,7 +267,7 @@ def test_set_tbl_formats() -> None:
     )
     pl.Config().set_tbl_formatting("ASCII_MARKDOWN")
     assert str(df) == (
-        "shape: (3, 3)\n"
+        "shape: (3 x 3)\n"
         "| foo | bar | ham |\n"
         "| --- | --- | --- |\n"
         "| i64 | f64 | str |\n"
@@ -281,7 +281,7 @@ def test_set_tbl_formats() -> None:
     with pl.Config() as cfg:
         cfg.set_tbl_hide_dtype_separator(True)
         assert str(df) == (
-            "shape: (3, 3)\n"
+            "shape: (3 x 3)\n"
             "+-----------------+\n"
             "| foo   bar   ham |\n"
             "| i64   f64   str |\n"
@@ -296,7 +296,7 @@ def test_set_tbl_formats() -> None:
     with pl.Config() as cfg:
         cfg.set_tbl_formatting("NOTHING").set_tbl_hide_column_data_types(True)
         assert str(df) == (
-            "shape: (3, 3)\n"
+            "shape: (3 x 3)\n"
             " foo  bar  ham \n"
             " 1    6.0  a   \n"
             " 2    7.0  b   \n"
@@ -305,7 +305,7 @@ def test_set_tbl_formats() -> None:
 
     # after scope, expect previous style
     assert str(df) == (
-        "shape: (3, 3)\n"
+        "shape: (3 x 3)\n"
         "+-----------------+\n"
         "| foo   bar   ham |\n"
         "| ---   ---   --- |\n"
@@ -353,12 +353,12 @@ def test_shape_below_table_and_inlined_dtype() -> None:
         "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
         "│ 2       ┆ 4       ┆ 6       │\n"
         "╰─────────┴─────────┴─────────╯\n"
-        "shape: (2, 3)"
+        "shape: (2 x 3)"
     )
 
     pl.Config.set_tbl_dataframe_shape_below(False)
     assert (
-        str(df) == "shape: (2, 3)\n"
+        str(df) == "shape: (2 x 3)\n"
         "╭─────────┬─────────┬─────────╮\n"
         "│ a (i64) ┆ b (i64) ┆ c (i64) │\n"
         "╞═════════╪═════════╪═════════╡\n"
@@ -373,7 +373,7 @@ def test_shape_below_table_and_inlined_dtype() -> None:
         .set_tbl_cell_alignment("RIGHT")
     )
     assert (
-        str(df) == "shape: (2, 3)\n"
+        str(df) == "shape: (2 x 3)\n"
         "┌─────┬─────┬─────┐\n"
         "│   a ┆   b ┆   c │\n"
         "│ --- ┆ --- ┆ --- │\n"
@@ -383,6 +383,81 @@ def test_shape_below_table_and_inlined_dtype() -> None:
         "├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤\n"
         "│   2 ┆   4 ┆   6 │\n"
         "└─────┴─────┴─────┘"
+    )
+
+
+def test_shape_format_for_big_numbers() -> None:
+    df = pl.DataFrame({"a": range(1, 1001), "b": range(1001, 1001 + 1000)})
+
+    pl.Config.set_tbl_column_data_type_inline(True).set_tbl_dataframe_shape_below(True)
+    pl.Config.set_tbl_formatting("UTF8_FULL", rounded_corners=True)
+    assert (
+        str(df) == ""
+        "╭─────────┬─────────╮\n"
+        "│ a (i64) ┆ b (i64) │\n"
+        "╞═════════╪═════════╡\n"
+        "│ 1       ┆ 1001    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 2       ┆ 1002    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 3       ┆ 1003    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 4       ┆ 1004    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ …       ┆ …       │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 997     ┆ 1997    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 998     ┆ 1998    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 999     ┆ 1999    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 1000    ┆ 2000    │\n"
+        "╰─────────┴─────────╯\n"
+        "shape: (1,000 x 2)"
+    )
+
+    pl.Config.set_tbl_column_data_type_inline(True).set_tbl_dataframe_shape_below(False)
+    assert (
+        str(df) == "shape: (1,000 x 2)\n"
+        "╭─────────┬─────────╮\n"
+        "│ a (i64) ┆ b (i64) │\n"
+        "╞═════════╪═════════╡\n"
+        "│ 1       ┆ 1001    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 2       ┆ 1002    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 3       ┆ 1003    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 4       ┆ 1004    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ …       ┆ …       │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 997     ┆ 1997    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 998     ┆ 1998    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 999     ┆ 1999    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 1000    ┆ 2000    │\n"
+        "╰─────────┴─────────╯"
+    )
+
+    pl.Config.set_tbl_rows(0)
+    ser = pl.Series("ser", range(1000))
+    assert str(ser) == "shape: (1,000,)\n" "Series: 'ser' [i64]\n" "[\n" "\t…\n" "]"
+
+    pl.Config.set_tbl_rows(1)
+    pl.Config.set_tbl_cols(1)
+    df = pl.DataFrame({str(col_num): 1 for col_num in range(1000)})
+
+    assert (
+        str(df) == "shape: (1 x 1,000)\n"
+        "╭─────────┬───╮\n"
+        "│ 0 (i64) ┆ … │\n"
+        "╞═════════╪═══╡\n"
+        "│ 1       ┆ … │\n"
+        "╰─────────┴───╯"
     )
 
 

@@ -20,6 +20,7 @@ use comfy_table::modifiers::*;
 use comfy_table::presets::*;
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use comfy_table::*;
+use num_format::{Locale, ToFormattedString};
 use num_traits::{Num, NumCast};
 
 use crate::config::*;
@@ -52,7 +53,7 @@ macro_rules! format_array {
         write!(
             $f,
             "shape: ({},)\n{}: '{}' [{}]\n[\n",
-            $a.len(),
+            $a.len().to_formatted_string(&Locale::en),
             $array_type,
             $name,
             $dtype
@@ -572,12 +573,16 @@ impl Display for DataFrame {
             }
 
             // establish 'shape' information (above/below/hidden)
+            let (nrows, ncols) = self.shape();
+            let nrows_pretty = nrows.to_formatted_string(&Locale::en);
+            let ncols_pretty = ncols.to_formatted_string(&Locale::en);
+
             if env_is_true(FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION) {
                 write!(f, "{table}")?;
             } else if env_is_true(FMT_TABLE_DATAFRAME_SHAPE_BELOW) {
-                write!(f, "{table}\nshape: {:?}", self.shape())?;
+                write!(f, "{table}\nshape: ({} x {})", nrows_pretty, ncols_pretty)?;
             } else {
-                write!(f, "shape: {:?}\n{}", self.shape(), table)?;
+                write!(f, "shape: ({} x {})\n{}", nrows_pretty, ncols_pretty, table)?;
             }
         }
 
@@ -586,7 +591,7 @@ impl Display for DataFrame {
             write!(
                 f,
                 "shape: {:?}\nto see more, compile with the 'fmt' or 'fmt_no_tty' feature",
-                self.shape()
+                formatted_shape
             )?;
         }
 
