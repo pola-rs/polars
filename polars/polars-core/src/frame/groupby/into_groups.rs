@@ -40,6 +40,7 @@ where
     let group_size_hint = 0;
 
     if multithreaded && group_multithreaded(ca) {
+        return groupby_threaded_partitioned(ca, sorted);
         let n_partitions = _set_partition_size() as u64;
 
         // use the arrays as iterators

@@ -1,4 +1,5 @@
 use std::hash::{BuildHasher, Hash};
+use std::vec::IntoIter;
 
 use hashbrown::hash_map::{Entry, RawEntryMut};
 use hashbrown::HashMap;
@@ -10,7 +11,7 @@ use crate::datatypes::PlHashMap;
 use crate::frame::groupby::{GroupsIdx, IdxItem};
 use crate::prelude::compare_inner::PartialEqInner;
 use crate::prelude::*;
-use crate::utils::{split_df, CustomIterTools};
+use crate::utils::{split_df, CustomIterTools, _split_offsets};
 use crate::vector_hasher::{
     df_rows_to_hashes_threaded, this_partition, AsU64, IdBuildHasher, IdxHash,
 };
@@ -84,6 +85,102 @@ where
     } else {
         GroupsProxy::Idx(hash_tbl.into_values().collect())
     }
+}
+
+impl<T: PolarsDataType> ChunkedArray<T> {
+    fn par_apply<F, K>(&self, n_threads: usize, func: F) -> Vec<K>
+    where F: Fn(usize, Self) -> K + Send + Sync,
+    K: Send
+    {
+        _split_offsets(self.len(), n_threads).par_iter().map(|(offset, len)| {
+            let ca= self.slice(*offset as i64, *len);
+            func(*offset, ca)
+        }).collect()
+    }
+
+}
+
+type GroupHashMap<K> = PlHashMap<K, (IdxSize, Vec<IdxSize>)>;
+
+pub(crate) fn groupby_threaded_partitioned<T>(
+    ca: &ChunkedArray<T>,
+    sorted: bool
+) -> GroupsProxy
+where T: PolarsNumericType,
+      T::Native: Send + Hash + Eq
+{
+    POOL.install(|| {
+    let mut partitioned = ca.par_apply(POOL.current_num_threads(), apply_partition_no_null);
+    let reduced = partitioned.into_par_iter().reduce_with(|(offset_lhs, mut lhs), (offset_rhs, mut rhs)| {
+        if offset_lhs < offset_rhs {
+            combine(&mut lhs, rhs);
+            (offset_lhs, lhs)
+        } else {
+            combine(&mut rhs, lhs);
+            (offset_rhs, rhs)
+        }
+    }).unwrap().1;
+    let groups = reduced.into_values().map(|v| v).collect::<Vec<_>>();
+
+    finish_group_order(vec![groups], sorted)
+    })
+}
+
+fn combine<K>(lhs: &mut GroupHashMap<K>, rhs: GroupHashMap<K>)
+where K: Hash + Eq + Copy
+{
+    let hasher = lhs.hasher().clone();
+    for (k, v) in rhs.into_iter() {
+        let hash = hasher.hash_single(k);
+        let entry = lhs.raw_entry_mut().from_key_hashed_nocheck(hash, &k);
+
+        match entry {
+            RawEntryMut::Vacant(entry) => {
+                entry.insert_with_hasher(hash, k, v, |k| {
+                    hasher.hash_single(k)
+                });
+            }
+            RawEntryMut::Occupied(mut entry) => {
+                let lhs_v = entry.get_mut();
+                lhs_v.1.extend_from_slice(&v.1);
+            }
+        }
+    }
+}
+
+fn apply_partition_no_null<T>(offset: usize, ca: ChunkedArray<T>) -> (usize, GroupHashMap<T::Native>)
+    where T: PolarsNumericType,
+T::Native: Send + Hash + Eq
+{
+    let mut hash_tbl: PlHashMap<T::Native, (IdxSize, Vec<IdxSize>)> =
+        PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
+    let hasher = hash_tbl.hasher().clone();
+
+    let mut cnt = offset as IdxSize;
+    for arr in ca.downcast_iter() {
+        arr.values_iter().for_each(|k| {
+            let idx = cnt;
+            cnt += 1;
+
+            let hash = hasher.hash_single(k);
+            let entry = hash_tbl.raw_entry_mut().from_key_hashed_nocheck(hash, k);
+
+            match entry {
+                RawEntryMut::Vacant(entry) => {
+                    let mut tuples = vec![];
+                    tuples.push(idx);
+                    entry.insert_with_hasher(hash, *k, (idx, tuples), |k| {
+                        hasher.hash_single(k)
+                    });
+                }
+                RawEntryMut::Occupied(mut entry) => {
+                    let v = entry.get_mut();
+                    v.1.push(idx);
+                }
+            }
+        });
+    }
+    (offset, hash_tbl)
 }
 
 /// Determine group tuples over different threads. The hash of the key is used to determine the partitions.
