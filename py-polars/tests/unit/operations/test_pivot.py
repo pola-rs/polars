@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
-from polars.exceptions import PanicException
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -141,7 +141,7 @@ def test_pivot_multiple_values_column_names_5116() -> None:
         }
     )
 
-    with pytest.raises(PanicException, match="found multiple elements in group"):
+    with pytest.raises(ComputeError, match="found multiple elements in group"):
         result = df.pivot(
             values=["x1", "x2"],
             index="c1",
@@ -177,7 +177,7 @@ def test_pivot_floats() -> None:
         }
     )
 
-    with pytest.raises(PanicException, match="found multiple elements in group"):
+    with pytest.raises(ComputeError, match="found multiple elements in group"):
         result = df.pivot(
             values="price", index="weight", columns="quantity", aggregate_function=None
         )

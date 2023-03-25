@@ -212,7 +212,10 @@ fn pivot_impl(
                 use PivotAgg::*;
                 let value_agg = unsafe {
                     match &agg_fn {
-                        None => value_col._agg_single(&groups)?,
+                        None => match (value_col.len() > groups.len()) {
+                            true => polars_bail!(ComputeError: "found multiple elements in group, please specify a different aggregation function"),
+                            false => value_col.agg_first(&groups),
+                        }
                         Some(agg_fn) => match agg_fn {
                             Sum => value_col.agg_sum(&groups),
                             Min => value_col.agg_min(&groups),
