@@ -143,7 +143,6 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         self.0.logical().group_tuples(multithreaded, sorted)
     }
 
-    #[cfg(feature = "sort_multiple")]
     fn arg_sort_multiple(&self, by: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {
         self.0.arg_sort_multiple(by, descending)
     }

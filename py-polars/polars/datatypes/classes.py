@@ -211,6 +211,11 @@ class Datetime(TemporalType):
         self.tu = time_unit or "us"
         self.tz = time_zone
 
+        if self.tu not in ("ms", "us", "ns"):
+            raise ValueError(
+                f"Invalid time_unit; expected one of {{'ns','us','ms'}}, got {self.tu!r}"
+            )
+
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # allow comparing object instances to class
         if type(other) is DataTypeClass and issubclass(other, Datetime):
@@ -244,6 +249,10 @@ class Duration(TemporalType):
 
         """
         self.tu = time_unit
+        if self.tu not in ("ms", "us", "ns"):
+            raise ValueError(
+                f"Invalid time_unit; expected one of {{'ns','us','ms'}}, got {self.tu!r}"
+            )
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # allow comparing object instances to class

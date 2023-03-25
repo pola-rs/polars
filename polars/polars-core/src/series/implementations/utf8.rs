@@ -96,7 +96,6 @@ impl private::PrivateSeries for SeriesWrap<Utf8Chunked> {
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
     }
 
-    #[cfg(feature = "sort_multiple")]
     fn arg_sort_multiple(&self, by: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {
         self.0.arg_sort_multiple(by, descending)
     }

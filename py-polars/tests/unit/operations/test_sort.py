@@ -548,3 +548,9 @@ def test_sort_by_logical() -> None:
     assert df.groupby("name").agg([pl.col("num").sort_by(["dt1", "dt2"])]).sort(
         "name"
     ).to_dict(False) == {"name": ["a", "b"], "num": [[3, 1], [4]]}
+
+
+def test_limit_larger_than_sort() -> None:
+    assert pl.LazyFrame({"a": [1]}).sort("a").limit(30).collect().to_dict(False) == {
+        "a": [1]
+    }
