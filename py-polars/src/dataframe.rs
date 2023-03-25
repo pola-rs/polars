@@ -1122,22 +1122,26 @@ impl PyDataFrame {
         values: Vec<String>,
         index: Vec<String>,
         columns: Vec<String>,
-        aggregate_expr: PyExpr,
         maintain_order: bool,
         sort_columns: bool,
+        aggregate_expr: Option<PyExpr>,
         separator: Option<&str>,
     ) -> PyResult<Self> {
         let fun = match maintain_order {
             true => pivot_stable,
             false => pivot,
         };
+        let agg_expr = match aggregate_expr {
+            Some(aggregate_expr) => Some(aggregate_expr.inner),
+            None => None,
+        };
         let df = fun(
             &self.df,
             values,
             index,
             columns,
-            aggregate_expr.inner,
             sort_columns,
+            agg_expr,
             separator,
         )
         .map_err(PyPolarsErr::from)?;

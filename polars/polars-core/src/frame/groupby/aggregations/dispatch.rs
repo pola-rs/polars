@@ -205,4 +205,39 @@ impl Series {
         };
         self.restore_logical(out)
     }
+
+    #[doc(hidden)]
+    // Takes the single element (if there is one) per group.
+    // Panics if there are multiple elements.
+    pub unsafe fn _agg_single(&self, groups: &GroupsProxy) -> PolarsResult<Series> {
+        let out = match groups {
+            GroupsProxy::Idx(groups) => {
+                let mut iter = groups.all().iter().map(|idx| {
+                    if idx.is_empty() {
+                        None
+                    } else {
+                        match idx.len() {
+                            1 => Some(idx[0] as usize),
+                            _ => panic!("found multiple elements in group, please specify a different aggregation function"),
+                        }
+                    }
+                });
+                self.take_opt_iter_unchecked(&mut iter)
+            }
+            GroupsProxy::Slice { groups, .. } => {
+                let mut iter = groups.iter().map(|&[first, len]| {
+                    if len == 0 {
+                        None
+                    } else {
+                        match len {
+                            1 => Some(first as usize),
+                            _ => panic!("found multiple elements in group, please specify a different aggregation function"),
+                        }
+                    }
+                });
+                self.take_opt_iter_unchecked(&mut iter)
+            }
+        };
+        Ok(self.restore_logical(out))
+    }
 }

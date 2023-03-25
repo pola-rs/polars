@@ -81,8 +81,8 @@ pub fn pivot<I0, S0, I1, S1, I2, S2>(
     values: I0,
     index: I1,
     columns: I2,
-    agg_fn: PivotAgg,
     sort_columns: bool,
+    agg_fn: Option<PivotAgg>,
     separator: Option<&str>,
 ) -> PolarsResult<DataFrame>
 where
@@ -127,8 +127,8 @@ pub fn pivot_stable<I0, S0, I1, S1, I2, S2>(
     values: I0,
     index: I1,
     columns: I2,
-    agg_fn: PivotAgg,
     sort_columns: bool,
+    agg_fn: Option<PivotAgg>,
     separator: Option<&str>,
 ) -> PolarsResult<DataFrame>
 where
@@ -175,7 +175,7 @@ fn pivot_impl(
     // the rows of this nested groupby will be pivoted as header column values
     columns: &[String],
     // aggregation function
-    agg_fn: PivotAgg,
+    agg_fn: Option<PivotAgg>,
     sort_columns: bool,
     stable: bool,
     // used as separator/delimiter in generated column names.
@@ -211,24 +211,27 @@ fn pivot_impl(
 
                 use PivotAgg::*;
                 let value_agg = unsafe {
-                    match agg_fn {
-                        Sum => value_col.agg_sum(&groups),
-                        Min => value_col.agg_min(&groups),
-                        Max => value_col.agg_max(&groups),
-                        Last => value_col.agg_last(&groups),
-                        First => value_col.agg_first(&groups),
-                        Mean => value_col.agg_mean(&groups),
-                        Median => value_col.agg_median(&groups),
-                        Count => groups.group_count().into_series(),
-                        Expr(ref expr) => {
-                            let name = expr.root_name()?;
-                            let mut value_col = value_col.clone();
-                            value_col.rename(name);
-                            let tmp_df = DataFrame::new_no_checks(vec![value_col]);
-                            let mut aggregated = expr.evaluate(&tmp_df, &groups)?;
-                            aggregated.rename(value_col_name);
-                            aggregated
-                        }
+                    match &agg_fn {
+                        None => value_col._agg_single(&groups)?,
+                        Some(agg_fn) => match agg_fn {
+                            Sum => value_col.agg_sum(&groups),
+                            Min => value_col.agg_min(&groups),
+                            Max => value_col.agg_max(&groups),
+                            Last => value_col.agg_last(&groups),
+                            First => value_col.agg_first(&groups),
+                            Mean => value_col.agg_mean(&groups),
+                            Median => value_col.agg_median(&groups),
+                            Count => groups.group_count().into_series(),
+                            Expr(ref expr) => {
+                                let name = expr.root_name()?;
+                                let mut value_col = value_col.clone();
+                                value_col.rename(name);
+                                let tmp_df = DataFrame::new_no_checks(vec![value_col]);
+                                let mut aggregated = expr.evaluate(&tmp_df, &groups)?;
+                                aggregated.rename(value_col_name);
+                                aggregated
+                            }
+                        },
                     }
                 };
 

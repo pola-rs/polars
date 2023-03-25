@@ -6,6 +6,7 @@ import math
 import os
 import random
 import typing
+import warnings
 from collections.abc import Sized
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -71,6 +72,7 @@ from polars.io.excel._write_utils import (
     _XLFormatCache,
 )
 from polars.slice import PolarsSlice
+from polars.utils import no_default
 from polars.utils._construction import (
     _post_apply_columns,
     arrow_to_pydf,
@@ -149,6 +151,7 @@ if TYPE_CHECKING:
         UniqueKeepStrategy,
         UnstackDirection,
     )
+    from polars.utils import NoDefault
 
     if sys.version_info >= (3, 8):
         from typing import Literal
@@ -5743,7 +5746,7 @@ class DataFrame:
         values: Sequence[str] | str,
         index: Sequence[str] | str,
         columns: Sequence[str] | str,
-        aggregate_function: PivotAgg | Expr = "first",
+        aggregate_function: PivotAgg | Expr | None | NoDefault = no_default,
         maintain_order: bool = True,
         sort_columns: bool = False,
         separator: str = "_",
@@ -5802,36 +5805,50 @@ class DataFrame:
         if isinstance(columns, str):
             columns = [columns]
 
+        if aggregate_function is no_default:
+            warnings.warn(
+                "In a future version of polars, the default `aggregation_function` "
+                "will change from 'first' to None. Please pass `'first'` to keep the "
+                "current behaviour, or `None` to accept the new one.",
+                DeprecationWarning,
+                stacklevel=4,
+            )
+            aggregate_function = "first"
+
         if isinstance(aggregate_function, str):
             if aggregate_function == "first":
-                aggregate_function = F.element().first()
+                aggregate_expr = F.element().first()._pyexpr
             elif aggregate_function == "sum":
-                aggregate_function = F.element().sum()
+                aggregate_expr = F.element().sum()._pyexpr
             elif aggregate_function == "max":
-                aggregate_function = F.element().max()
+                aggregate_expr = F.element().max()._pyexpr
             elif aggregate_function == "min":
-                aggregate_function = F.element().min()
+                aggregate_expr = F.element().min()._pyexpr
             elif aggregate_function == "mean":
-                aggregate_function = F.element().mean()
+                aggregate_expr = F.element().mean()._pyexpr
             elif aggregate_function == "median":
-                aggregate_function = F.element().median()
+                aggregate_expr = F.element().median()._pyexpr
             elif aggregate_function == "last":
-                aggregate_function = F.element().last()
+                aggregate_expr = F.element().last()._pyexpr
             elif aggregate_function == "count":
-                aggregate_function = F.count()
+                aggregate_expr = F.count()._pyexpr
             else:
                 raise ValueError(
                     f"Invalid input for `aggregate_function` argument: {aggregate_function!r}"
                 )
+        elif aggregate_function is None:
+            aggregate_expr = None
+        else:
+            aggregate_expr = aggregate_function._pyexpr
 
         return self._from_pydf(
             self._df.pivot_expr(
                 values,
                 index,
                 columns,
-                aggregate_function._pyexpr,
                 maintain_order,
                 sort_columns,
+                aggregate_expr,
                 separator,
             )
         )
