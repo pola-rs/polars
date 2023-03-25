@@ -74,7 +74,7 @@ class StructNameSpace:
         --------
         >>> s = pl.Series([{"a": 1, "b": 2}, {"a": 3, "b": 4}])
         >>> s.struct.unnest()
-        shape: (2, 2)
+        shape: (2 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │

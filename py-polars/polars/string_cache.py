@@ -46,7 +46,7 @@ class StringCache:
     ...     df_join = df1.join(df2, how="inner", on="color")
     ...
     >>> df_join
-    shape: (3, 3)
+    shape: (3 x 3)
     ┌────────┬───────┬──────┐
     │ color  ┆ uint8 ┆ char │
     │ ---    ┆ ---   ┆ ---  │

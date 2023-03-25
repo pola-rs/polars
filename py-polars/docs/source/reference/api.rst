@@ -63,7 +63,7 @@ Examples
                 ]
             )
 
-            # shape: (3, 1)   shape: (3, 2)
+            # shape: (3 x 1)   shape: (3 x 2)
             # ┌──────────┐    ┌───────────────┬──────────────────┐
             # │ column_0 │    │ hi there      ┆ bye              │
             # │ ---      │    │ ---           ┆ ---              │
@@ -129,7 +129,7 @@ Examples
 
             ldf.types.upcast_integer_types()
 
-            # shape: (2, 3)          shape: (2, 3)
+            # shape: (2 x 3)          shape: (2 x 3)
             # ┌─────┬─────┬─────┐    ┌─────┬─────┬─────┐
             # │ a   ┆ b   ┆ c   │    │ a   ┆ b   ┆ c   │
             # │ --- ┆ --- ┆ --- │    │ --- ┆ --- ┆ --- │

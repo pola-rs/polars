@@ -320,7 +320,7 @@ class Expr:
         ...         .alias("vals_physical"),
         ...     ]
         ... )
-        shape: (4, 2)
+        shape: (4 x 2)
         ┌──────┬───────────────┐
         │ vals ┆ vals_physical │
         │ ---  ┆ ---           │
@@ -347,7 +347,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"TF": [True, False], "FF": [False, False]})
         >>> df.select(pl.all().any())
-        shape: (1, 2)
+        shape: (1 x 2)
         ┌──────┬───────┐
         │ TF   ┆ FF    │
         │ ---  ┆ ---   │
@@ -376,7 +376,7 @@ class Expr:
         ...     {"TT": [True, True], "TF": [True, False], "FF": [False, False]}
         ... )
         >>> df.select(pl.col("*").all())
-        shape: (1, 3)
+        shape: (1 x 3)
         ┌──────┬───────┬───────┐
         │ TT   ┆ TF    ┆ FF    │
         │ ---  ┆ ---   ┆ ---   │
@@ -400,7 +400,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1, 1, 2, 1]})
         >>> df.select((pl.col("a") == 1).arg_true())
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -427,7 +427,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"values": [1.0, 2.0, 4.0]})
         >>> df.select(pl.col("values").sqrt())
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌──────────┐
         │ values   │
         │ ---      │
@@ -449,7 +449,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"values": [1.0, 2.0, 4.0]})
         >>> df.select(pl.col("values").log10())
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌─────────┐
         │ values  │
         │ ---     │
@@ -471,7 +471,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"values": [1.0, 2.0, 4.0]})
         >>> df.select(pl.col("values").exp())
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌──────────┐
         │ values   │
         │ ---      │
@@ -503,7 +503,7 @@ class Expr:
         ...     }
         ... )
         >>> df
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌─────┬──────┐
         │ a   ┆ b    │
         │ --- ┆ ---  │
@@ -519,7 +519,7 @@ class Expr:
         ...         pl.col("b").alias("foo"),
         ...     ]
         ... )
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌─────┬──────┐
         │ bar ┆ foo  │
         │ --- ┆ ---  │
@@ -562,7 +562,7 @@ class Expr:
         ...     }
         ... )
         >>> df
-        shape: (3, 3)
+        shape: (3 x 3)
         ┌─────┬──────┬──────┐
         │ aa  ┆ ba   ┆ cc   │
         │ --- ┆ ---  ┆ ---  │
@@ -576,7 +576,7 @@ class Expr:
         Exclude by column name(s):
 
         >>> df.select(pl.all().exclude("ba"))
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌─────┬──────┐
         │ aa  ┆ cc   │
         │ --- ┆ ---  │
@@ -590,7 +590,7 @@ class Expr:
         Exclude by regex, e.g. removing all columns whose names end with the letter "a":
 
         >>> df.select(pl.all().exclude("^.*a$"))
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌──────┐
         │ cc   │
         │ ---  │
@@ -604,7 +604,7 @@ class Expr:
         Exclude by dtype(s), e.g. removing all columns of type Int64 or Float64:
 
         >>> df.select(pl.all().exclude([pl.Int64, pl.Float64]))
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌──────┐
         │ ba   │
         │ ---  │
@@ -670,7 +670,7 @@ class Expr:
         Keep original column name to undo an alias operation.
 
         >>> df.with_columns([(pl.col("a") * 9).alias("c").keep_name()])
-        shape: (2, 2)
+        shape: (2 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -685,7 +685,7 @@ class Expr:
         errors.
 
         >>> df.select([(pl.lit(10) / pl.all()).keep_name()])
-        shape: (2, 2)
+        shape: (2 x 2)
         ┌──────┬──────────┐
         │ a    ┆ b        │
         │ ---  ┆ ---      │
@@ -724,7 +724,7 @@ class Expr:
         ...
         >>> df = pl.DataFrame({"a": ["a: 1", "b: 2", "c: 3"]})
         >>> df.with_columns(pl.col("a").pipe(extract_number))
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -753,7 +753,7 @@ class Expr:
         ...     }
         ... )
         >>> df
-        shape: (5, 4)
+        shape: (5 x 4)
         ┌─────┬────────┬─────┬────────┐
         │ A   ┆ fruits ┆ B   ┆ cars   │
         │ --- ┆ ---    ┆ --- ┆ ---    │
@@ -771,7 +771,7 @@ class Expr:
         ...         pl.all().reverse().prefix("reverse_"),
         ...     ]
         ... )
-        shape: (5, 8)
+        shape: (5 x 8)
         ┌─────┬────────┬─────┬────────┬───────────┬────────────────┬───────────┬──────────────┐
         │ A   ┆ fruits ┆ B   ┆ cars   ┆ reverse_A ┆ reverse_fruits ┆ reverse_B ┆ reverse_cars │
         │ --- ┆ ---    ┆ --- ┆ ---    ┆ ---       ┆ ---            ┆ ---       ┆ ---          │
@@ -802,7 +802,7 @@ class Expr:
         ...     }
         ... )
         >>> df
-        shape: (5, 4)
+        shape: (5 x 4)
         ┌─────┬────────┬─────┬────────┐
         │ A   ┆ fruits ┆ B   ┆ cars   │
         │ --- ┆ ---    ┆ --- ┆ ---    │
@@ -820,7 +820,7 @@ class Expr:
         ...         pl.all().reverse().suffix("_reverse"),
         ...     ]
         ... )
-        shape: (5, 8)
+        shape: (5 x 8)
         ┌─────┬────────┬─────┬────────┬───────────┬────────────────┬───────────┬──────────────┐
         │ A   ┆ fruits ┆ B   ┆ cars   ┆ A_reverse ┆ fruits_reverse ┆ B_reverse ┆ cars_reverse │
         │ --- ┆ ---    ┆ --- ┆ ---    ┆ ---       ┆ ---            ┆ ---       ┆ ---          │
@@ -857,7 +857,7 @@ class Expr:
         >>> df.select(
         ...     pl.all().reverse().map_alias(lambda colName: colName + "_reverse")
         ... )
-        shape: (2, 2)
+        shape: (2 x 2)
         ┌───────────┬───────────┐
         │ A_reverse ┆ B_reverse │
         │ ---       ┆ ---       │
@@ -883,7 +883,7 @@ class Expr:
         ...     }
         ... )
         >>> df
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌───────┬──────┐
         │ a     ┆ b    │
         │ ---   ┆ ---  │
@@ -894,7 +894,7 @@ class Expr:
         │ false ┆ null │
         └───────┴──────┘
         >>> df.select(pl.col("a").is_not())
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌───────┐
         │ a     │
         │ ---   │
@@ -921,7 +921,7 @@ class Expr:
         ...     }
         ... )
         >>> df.with_columns(pl.all().is_null().suffix("_isnull"))  # nan != null
-        shape: (5, 4)
+        shape: (5 x 4)
         ┌──────┬─────┬──────────┬──────────┐
         │ a    ┆ b   ┆ a_isnull ┆ b_isnull │
         │ ---  ┆ --- ┆ ---      ┆ ---      │
@@ -950,7 +950,7 @@ class Expr:
         ...     }
         ... )
         >>> df.with_columns(pl.all().is_not_null().suffix("_not_null"))  # nan != null
-        shape: (5, 4)
+        shape: (5 x 4)
         ┌──────┬─────┬────────────┬────────────┐
         │ a    ┆ b   ┆ a_not_null ┆ b_not_null │
         │ ---  ┆ --- ┆ ---        ┆ ---        │
@@ -984,7 +984,7 @@ class Expr:
         ...     }
         ... )
         >>> df.select(pl.all().is_finite())
-        shape: (2, 2)
+        shape: (2 x 2)
         ┌──────┬───────┐
         │ A    ┆ B     │
         │ ---  ┆ ---   │
@@ -1015,7 +1015,7 @@ class Expr:
         ...     }
         ... )
         >>> df.select(pl.all().is_infinite())
-        shape: (2, 2)
+        shape: (2 x 2)
         ┌───────┬───────┐
         │ A     ┆ B     │
         │ ---   ┆ ---   │
@@ -1046,7 +1046,7 @@ class Expr:
         ...     }
         ... )
         >>> df.with_columns(pl.col(pl.Float64).is_nan().suffix("_isnan"))
-        shape: (5, 3)
+        shape: (5 x 3)
         ┌──────┬─────┬─────────┐
         │ a    ┆ b   ┆ b_isnan │
         │ ---  ┆ --- ┆ ---     │
@@ -1080,7 +1080,7 @@ class Expr:
         ...     }
         ... )
         >>> df.with_columns(pl.col(pl.Float64).is_not_nan().suffix("_is_not_nan"))
-        shape: (5, 3)
+        shape: (5 x 3)
         ┌──────┬─────┬──────────────┐
         │ a    ┆ b   ┆ b_is_not_nan │
         │ ---  ┆ --- ┆ ---          │
@@ -1118,7 +1118,7 @@ class Expr:
         ...     }
         ... )
         >>> df.groupby("group", maintain_order=True).agg(pl.col("value").agg_groups())
-        shape: (2, 2)
+        shape: (2 x 2)
         ┌───────┬───────────┐
         │ group ┆ value     │
         │ ---   ┆ ---       │
@@ -1139,7 +1139,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [8, 9, 10], "b": [None, 4, 4]})
         >>> df.select(pl.all().count())  # counts nulls
-        shape: (1, 2)
+        shape: (1 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -1166,7 +1166,7 @@ class Expr:
         ...     }
         ... )
         >>> df.select(pl.all().len())  # counts nulls
-        shape: (1, 2)
+        shape: (1 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -1199,7 +1199,7 @@ class Expr:
         ...     }
         ... )
         >>> df.select(pl.all().slice(1, 2))
-        shape: (2, 2)
+        shape: (2 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -1238,7 +1238,7 @@ class Expr:
         ...     }
         ... )
         >>> df.select(pl.all().head(1).append(pl.all().tail(1)))
-        shape: (2, 2)
+        shape: (2 x 2)
         ┌─────┬──────┐
         │ a   ┆ b    │
         │ --- ┆ ---  │
@@ -1263,7 +1263,7 @@ class Expr:
         Create a Series with 3 nulls, append column a then rechunk
 
         >>> df.select(pl.repeat(None, 3).append(pl.col("a")).rechunk())
-        shape: (6, 1)
+        shape: (6 x 1)
         ┌─────────┐
         │ literal │
         │ ---     │
@@ -1298,7 +1298,7 @@ class Expr:
         ...     }
         ... )
         >>> df.select(pl.col("b").drop_nulls())
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌─────┐
         │ b   │
         │ --- │
@@ -1330,7 +1330,7 @@ class Expr:
         ...     }
         ... )
         >>> df.select(pl.col("b").drop_nans())
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌──────┐
         │ b    │
         │ ---  │
@@ -1367,7 +1367,7 @@ class Expr:
         ...         pl.col("a").cumsum(reverse=True).alias("a_reverse"),
         ...     ]
         ... )
-        shape: (4, 2)
+        shape: (4 x 2)
         ┌─────┬───────────┐
         │ a   ┆ a_reverse │
         │ --- ┆ ---       │
@@ -1391,7 +1391,7 @@ class Expr:
         ...         .alias("value_cumsum_all_filled"),
         ...     ]
         ... )
-        shape: (8, 3)
+        shape: (8 x 3)
         ┌────────┬──────────────┬─────────────────────────┐
         │ values ┆ value_cumsum ┆ value_cumsum_all_filled │
         │ ---    ┆ ---          ┆ ---                     │
@@ -1433,7 +1433,7 @@ class Expr:
         ...         pl.col("a").cumprod(reverse=True).alias("a_reverse"),
         ...     ]
         ... )
-        shape: (4, 2)
+        shape: (4 x 2)
         ┌─────┬───────────┐
         │ a   ┆ a_reverse │
         │ --- ┆ ---       │
@@ -1466,7 +1466,7 @@ class Expr:
         ...         pl.col("a").cummin(reverse=True).alias("a_reverse"),
         ...     ]
         ... )
-        shape: (4, 2)
+        shape: (4 x 2)
         ┌─────┬───────────┐
         │ a   ┆ a_reverse │
         │ --- ┆ ---       │
@@ -1499,7 +1499,7 @@ class Expr:
         ...         pl.col("a").cummax(reverse=True).alias("a_reverse"),
         ...     ]
         ... )
-        shape: (4, 2)
+        shape: (4 x 2)
         ┌─────┬───────────┐
         │ a   ┆ a_reverse │
         │ --- ┆ ---       │
@@ -1523,7 +1523,7 @@ class Expr:
         ...         .alias("value_cummax_all_filled"),
         ...     ]
         ... )
-        shape: (8, 3)
+        shape: (8 x 3)
         ┌────────┬──────────────┬─────────────────────────┐
         │ values ┆ value_cummax ┆ value_cummax_all_filled │
         │ ---    ┆ ---          ┆ ---                     │
@@ -1562,7 +1562,7 @@ class Expr:
         ...         pl.col("a").cumcount(reverse=True).alias("a_reverse"),
         ...     ]
         ... )
-        shape: (4, 2)
+        shape: (4 x 2)
         ┌─────┬───────────┐
         │ a   ┆ a_reverse │
         │ --- ┆ ---       │
@@ -1587,7 +1587,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [0.3, 0.5, 1.0, 1.1]})
         >>> df.select(pl.col("a").floor())
-        shape: (4, 1)
+        shape: (4 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -1612,7 +1612,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [0.3, 0.5, 1.0, 1.1]})
         >>> df.select(pl.col("a").ceil())
-        shape: (4, 1)
+        shape: (4 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -1640,7 +1640,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [0.33, 0.52, 1.02, 1.17]})
         >>> df.select(pl.col("a").round(1))
-        shape: (4, 1)
+        shape: (4 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -1673,7 +1673,7 @@ class Expr:
         ...     }
         ... )
         >>> df.select(pl.col("a").dot(pl.col("b")))
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -1701,7 +1701,7 @@ class Expr:
         ...     }
         ... )
         >>> df.select(pl.all().mode())  # doctest: +IGNORE_RESULT
-        shape: (2, 2)
+        shape: (2 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -1740,7 +1740,7 @@ class Expr:
         ...         pl.col("b").cast(pl.Int32),
         ...     ]
         ... )
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -1779,7 +1779,7 @@ class Expr:
         ...     }
         ... )
         >>> df.select(pl.col("a").sort())
-        shape: (4, 1)
+        shape: (4 x 1)
         ┌──────┐
         │ a    │
         │ ---  │
@@ -1791,7 +1791,7 @@ class Expr:
         │ 3    │
         └──────┘
         >>> df.select(pl.col("a").sort(descending=True))
-        shape: (4, 1)
+        shape: (4 x 1)
         ┌──────┐
         │ a    │
         │ ---  │
@@ -1803,7 +1803,7 @@ class Expr:
         │ 1    │
         └──────┘
         >>> df.select(pl.col("a").sort(nulls_last=True))
-        shape: (4, 1)
+        shape: (4 x 1)
         ┌──────┐
         │ a    │
         │ ---  │
@@ -1824,7 +1824,7 @@ class Expr:
         ...     }
         ... )
         >>> df.groupby("group").agg(pl.col("value").sort())  # doctest: +IGNORE_RESULT
-        shape: (2, 2)
+        shape: (2 x 2)
         ┌───────┬────────────┐
         │ group ┆ value      │
         │ ---   ┆ ---        │
@@ -1868,7 +1868,7 @@ class Expr:
         ...         pl.col("value").top_k(descending=True).alias("bottom_k"),
         ...     ]
         ... )
-        shape: (5, 2)
+        shape: (5 x 2)
         ┌───────┬──────────┐
         │ top_k ┆ bottom_k │
         │ ---   ┆ ---      │
@@ -1910,7 +1910,7 @@ class Expr:
         ...     }
         ... )
         >>> df.select(pl.col("a").arg_sort())
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -1936,7 +1936,7 @@ class Expr:
         ...     }
         ... )
         >>> df.select(pl.col("a").arg_max())
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -1960,7 +1960,7 @@ class Expr:
         ...     }
         ... )
         >>> df.select(pl.col("a").arg_min())
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -2003,7 +2003,7 @@ class Expr:
         ...         pl.col("values").search_sorted(6).alias("six"),
         ...     ]
         ... )
-        shape: (1, 3)
+        shape: (1 x 3)
         ┌──────┬───────┬─────┐
         │ zero ┆ three ┆ six │
         │ ---  ┆ ---   ┆ --- │
@@ -2052,7 +2052,7 @@ class Expr:
         ...     }
         ... )
         >>> df.select(pl.col("group").sort_by("value1"))
-        shape: (4, 1)
+        shape: (4 x 1)
         ┌───────┐
         │ group │
         │ ---   │
@@ -2067,7 +2067,7 @@ class Expr:
         Sorting by expressions is also supported.
 
         >>> df.select(pl.col("group").sort_by(pl.col("value1") + pl.col("value2")))
-        shape: (4, 1)
+        shape: (4 x 1)
         ┌───────┐
         │ group │
         │ ---   │
@@ -2082,7 +2082,7 @@ class Expr:
         Sort by multiple columns by passing a list of columns.
 
         >>> df.select(pl.col("group").sort_by(["value1", "value2"], descending=True))
-        shape: (4, 1)
+        shape: (4 x 1)
         ┌───────┐
         │ group │
         │ ---   │
@@ -2097,7 +2097,7 @@ class Expr:
         Or use positional arguments to sort by multiple columns in the same way.
 
         >>> df.select(pl.col("group").sort_by("value1", "value2"))
-        shape: (4, 1)
+        shape: (4 x 1)
         ┌───────┐
         │ group │
         │ ---   │
@@ -2114,7 +2114,7 @@ class Expr:
         >>> df.groupby("group").agg(
         ...     pl.col("value1").sort_by("value2")
         ... )  # doctest: +IGNORE_RESULT
-        shape: (2, 2)
+        shape: (2 x 2)
         ┌───────┬───────────┐
         │ group ┆ value1    │
         │ ---   ┆ ---       │
@@ -2130,7 +2130,7 @@ class Expr:
         >>> df.groupby("group").agg(
         ...     pl.all().sort_by("value2").first()
         ... )  # doctest: +IGNORE_RESULT
-        shape: (2, 3)
+        shape: (2 x 3)
         ┌───────┬────────┬────────┐
         │ group ┆ value1 ┆ value2 |
         │ ---   ┆ ---    ┆ ---    │
@@ -2179,7 +2179,7 @@ class Expr:
         ...     }
         ... )
         >>> df.groupby("group", maintain_order=True).agg(pl.col("value").take(1))
-        shape: (2, 2)
+        shape: (2 x 2)
         ┌───────┬───────┐
         │ group ┆ value │
         │ ---   ┆ ---   │
@@ -2212,7 +2212,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4]})
         >>> df.select(pl.col("foo").shift(1))
-        shape: (4, 1)
+        shape: (4 x 1)
         ┌──────┐
         │ foo  │
         │ ---  │
@@ -2246,7 +2246,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4]})
         >>> df.select(pl.col("foo").shift_and_fill(1, "a"))
-        shape: (4, 1)
+        shape: (4 x 1)
         ┌─────┐
         │ foo │
         │ --- │
@@ -2294,7 +2294,7 @@ class Expr:
         ...     }
         ... )
         >>> df.fill_null(strategy="zero")
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -2305,7 +2305,7 @@ class Expr:
         │ 0   ┆ 6   │
         └─────┴─────┘
         >>> df.fill_null(99)
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -2316,7 +2316,7 @@ class Expr:
         │ 99  ┆ 6   │
         └─────┴─────┘
         >>> df.fill_null(strategy="forward")
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -2359,7 +2359,7 @@ class Expr:
         ...     }
         ... )
         >>> df.fill_nan("zero")
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌──────┬──────┐
         │ a    ┆ b    │
         │ ---  ┆ ---  │
@@ -2392,7 +2392,7 @@ class Expr:
         ...     }
         ... )
         >>> df.select(pl.all().forward_fill())
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -2424,7 +2424,7 @@ class Expr:
         ...     }
         ... )
         >>> df.select(pl.all().backward_fill())
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌──────┬─────┐
         │ a    ┆ b   │
         │ ---  ┆ --- │
@@ -2458,7 +2458,7 @@ class Expr:
         ...         pl.all().reverse().suffix("_reverse"),
         ...     ]
         ... )
-        shape: (5, 8)
+        shape: (5 x 8)
         ┌─────┬────────┬─────┬────────┬───────────┬────────────────┬───────────┬──────────────┐
         │ A   ┆ fruits ┆ B   ┆ cars   ┆ A_reverse ┆ fruits_reverse ┆ B_reverse ┆ cars_reverse │
         │ --- ┆ ---    ┆ --- ┆ ---    ┆ ---       ┆ ---            ┆ ---       ┆ ---          │
@@ -2487,7 +2487,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [-1, 0, 1]})
         >>> df.select(pl.col("a").std())
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -2512,7 +2512,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [-1, 0, 1]})
         >>> df.select(pl.col("a").var())
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -2532,7 +2532,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [-1, float("nan"), 1]})
         >>> df.select(pl.col("a").max())
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -2552,7 +2552,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [-1, float("nan"), 1]})
         >>> df.select(pl.col("a").min())
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌──────┐
         │ a    │
         │ ---  │
@@ -2575,7 +2575,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [0, float("nan")]})
         >>> df.select(pl.col("a").nan_max())
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -2598,7 +2598,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [0, float("nan")]})
         >>> df.select(pl.col("a").nan_min())
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -2623,7 +2623,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [-1, 0, 1]})
         >>> df.select(pl.col("a").sum())
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -2643,7 +2643,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [-1, 0, 1]})
         >>> df.select(pl.col("a").mean())
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -2663,7 +2663,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [-1, 0, 1]})
         >>> df.select(pl.col("a").median())
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -2683,7 +2683,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
         >>> df.select(pl.col("a").product())
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -2703,7 +2703,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
         >>> df.select(pl.col("a").n_unique())
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -2728,7 +2728,7 @@ class Expr:
         ...     }
         ... )
         >>> df.select(pl.all().null_count())
-        shape: (1, 2)
+        shape: (1 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -2753,7 +2753,7 @@ class Expr:
         ...     }
         ... )
         >>> df.select(pl.col("a").arg_unique())
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -2764,7 +2764,7 @@ class Expr:
         │ 2   │
         └─────┘
         >>> df.select(pl.col("b").arg_unique())
-        shape: (2, 1)
+        shape: (2 x 1)
         ┌─────┐
         │ b   │
         │ --- │
@@ -2790,7 +2790,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
         >>> df.select(pl.col("a").unique())  # doctest: +IGNORE_RESULT
-        shape: (2, 1)
+        shape: (2 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -2800,7 +2800,7 @@ class Expr:
         │ 1   │
         └─────┘
         >>> df.select(pl.col("a").unique(maintain_order=True))
-        shape: (2, 1)
+        shape: (2 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -2823,7 +2823,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
         >>> df.select(pl.col("a").first())
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -2843,7 +2843,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
         >>> df.select(pl.col("a").last())
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -2886,7 +2886,7 @@ class Expr:
         ...     }
         ... )
         >>> df.with_columns(pl.col("c").max().over("a").suffix("_max"))
-        shape: (5, 4)
+        shape: (5 x 4)
         ┌─────┬─────┬─────┬───────┐
         │ a   ┆ b   ┆ c   ┆ c_max │
         │ --- ┆ --- ┆ --- ┆ ---   │
@@ -2902,7 +2902,7 @@ class Expr:
         Expression input is supported.
 
         >>> df.with_columns(pl.col("c").max().over(pl.col("b") // 2).suffix("_max"))
-        shape: (5, 4)
+        shape: (5 x 4)
         ┌─────┬─────┬─────┬───────┐
         │ a   ┆ b   ┆ c   ┆ c_max │
         │ --- ┆ --- ┆ --- ┆ ---   │
@@ -2918,7 +2918,7 @@ class Expr:
         Group by multiple columns by passing a list of column names or expressions.
 
         >>> df.with_columns(pl.col("c").min().over(["a", "b"]).suffix("_min"))
-        shape: (5, 4)
+        shape: (5 x 4)
         ┌─────┬─────┬─────┬───────┐
         │ a   ┆ b   ┆ c   ┆ c_min │
         │ --- ┆ --- ┆ --- ┆ ---   │
@@ -2934,7 +2934,7 @@ class Expr:
         Or use positional arguments to group by multiple columns in the same way.
 
         >>> df.with_columns(pl.col("c").min().over("a", pl.col("b") % 2).suffix("_min"))
-        shape: (5, 4)
+        shape: (5 x 4)
         ┌─────┬─────┬─────┬───────┐
         │ a   ┆ b   ┆ c   ┆ c_min │
         │ --- ┆ --- ┆ --- ┆ ---   │
@@ -2961,7 +2961,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
         >>> df.select(pl.col("a").is_unique())
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌───────┐
         │ a     │
         │ ---   │
@@ -2991,7 +2991,7 @@ class Expr:
         ...     }
         ... )
         >>> df.with_columns(pl.col("num").is_first().alias("is_first"))
-        shape: (5, 2)
+        shape: (5 x 2)
         ┌─────┬──────────┐
         │ num ┆ is_first │
         │ --- ┆ ---      │
@@ -3015,7 +3015,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
         >>> df.select(pl.col("a").is_duplicated())
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌───────┐
         │ a     │
         │ ---   │
@@ -3048,7 +3048,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [0, 1, 2, 3, 4, 5]})
         >>> df.select(pl.col("a").quantile(0.3))
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -3057,7 +3057,7 @@ class Expr:
         │ 1.0 │
         └─────┘
         >>> df.select(pl.col("a").quantile(0.3, interpolation="higher"))
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -3066,7 +3066,7 @@ class Expr:
         │ 2.0 │
         └─────┘
         >>> df.select(pl.col("a").quantile(0.3, interpolation="lower"))
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -3075,7 +3075,7 @@ class Expr:
         │ 1.0 │
         └─────┘
         >>> df.select(pl.col("a").quantile(0.3, interpolation="midpoint"))
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -3084,7 +3084,7 @@ class Expr:
         │ 1.5 │
         └─────┘
         >>> df.select(pl.col("a").quantile(0.3, interpolation="linear"))
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -3123,7 +3123,7 @@ class Expr:
         ...         pl.col("b").filter(pl.col("b") >= 2).sum().alias("gte"),
         ...     ]
         ... ).sort("group_col")
-        shape: (2, 3)
+        shape: (2 x 3)
         ┌───────────┬──────┬─────┐
         │ group_col ┆ lt   ┆ gte │
         │ ---       ┆ ---  ┆ --- │
@@ -3161,7 +3161,7 @@ class Expr:
         ...         pl.col("b").where(pl.col("b") >= 2).sum().alias("gte"),
         ...     ]
         ... ).sort("group_col")
-        shape: (2, 3)
+        shape: (2 x 3)
         ┌───────────┬──────┬─────┐
         │ group_col ┆ lt   ┆ gte │
         │ ---       ┆ ---  ┆ --- │
@@ -3211,7 +3211,7 @@ class Expr:
         ...     }
         ... )
         >>> df.select(pl.all().map(lambda x: x.to_numpy().argmax()))
-        shape: (1, 2)
+        shape: (1 x 2)
         ┌──────┬────────┐
         │ sine ┆ cosine │
         │ ---  ┆ ---    │
@@ -3297,7 +3297,7 @@ class Expr:
         >>> df.with_columns(
         ...     pl.col("a").apply(lambda x: x * 2).alias("a_times_2"),
         ... )
-        shape: (4, 3)
+        shape: (4 x 3)
         ┌─────┬─────┬───────────┐
         │ a   ┆ b   ┆ a_times_2 │
         │ --- ┆ --- ┆ ---       │
@@ -3320,7 +3320,7 @@ class Expr:
         >>> df.lazy().groupby("b", maintain_order=True).agg(
         ...     pl.col("a").apply(lambda x: x.sum())
         ... ).collect()
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌─────┬─────┐
         │ b   ┆ a   │
         │ --- ┆ --- │
@@ -3410,7 +3410,7 @@ class Expr:
         ...     }
         ... )
         >>> df.groupby("group").agg(pl.col("values").flatten())  # doctest: +SKIP
-        shape: (2, 2)
+        shape: (2 x 2)
         ┌───────┬───────────┐
         │ group ┆ values    │
         │ ---   ┆ ---       │
@@ -3460,7 +3460,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7, 8, 9]})
         >>> df.select(pl.col("foo").take_every(3))
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌─────┐
         │ foo │
         │ --- │
@@ -3487,7 +3487,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7]})
         >>> df.head(3)
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌─────┐
         │ foo │
         │ --- │
@@ -3514,7 +3514,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7]})
         >>> df.tail(3)
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌─────┐
         │ foo │
         │ --- │
@@ -3550,7 +3550,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4]})
         >>> df.select(pl.col("foo").pow(3))
-        shape: (4, 1)
+        shape: (4 x 1)
         ┌──────┐
         │ foo  │
         │ ---  │
@@ -3585,7 +3585,7 @@ class Expr:
         ...     {"sets": [[1, 2, 3], [1, 2], [9, 10]], "optional_members": [1, 2, 3]}
         ... )
         >>> df.select([pl.col("optional_members").is_in("sets").alias("contains")])
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌──────────┐
         │ contains │
         │ ---      │
@@ -3631,7 +3631,7 @@ class Expr:
         ...     }
         ... )
         >>> df.select(pl.col("a").repeat_by("n"))
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌─────────────────┐
         │ a               │
         │ ---             │
@@ -3672,7 +3672,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"num": [1, 2, 3, 4, 5]})
         >>> df.with_columns(pl.col("num").is_between(2, 4).alias("is_between"))
-        shape: (5, 2)
+        shape: (5 x 2)
         ┌─────┬────────────┐
         │ num ┆ is_between │
         │ --- ┆ ---        │
@@ -3690,7 +3690,7 @@ class Expr:
         >>> df.with_columns(
         ...     pl.col("num").is_between(2, 4, closed="left").alias("is_between")
         ... )
-        shape: (5, 2)
+        shape: (5 x 2)
         ┌─────┬────────────┐
         │ num ┆ is_between │
         │ --- ┆ ---        │
@@ -3713,7 +3713,7 @@ class Expr:
         ...     .is_between(pl.lit("a"), pl.lit("c"), closed="both")
         ...     .alias("is_between")
         ... )
-        shape: (5, 2)
+        shape: (5 x 2)
         ┌─────┬────────────┐
         │ a   ┆ is_between │
         │ --- ┆ ---        │
@@ -3776,7 +3776,7 @@ class Expr:
         ...     }
         ... )
         >>> df.with_columns(pl.all().hash(10, 20, 30, 40))  # doctest: +IGNORE_RESULT
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌──────────────────────┬──────────────────────┐
         │ a                    ┆ b                    │
         │ ---                  ┆ ---                  │
@@ -3816,7 +3816,7 @@ class Expr:
         ...         pl.col("a").alias("original"),
         ...     ]
         ... )
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌───────────────┬──────────┐
         │ reinterpreted ┆ original │
         │ ---           ┆ ---      │
@@ -3845,7 +3845,7 @@ class Expr:
             2
             4
         ]
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌─────┐
         │ bar │
         │ --- │
@@ -3885,7 +3885,7 @@ class Expr:
         ...     }
         ... )
         >>> df.select(pl.all().interpolate())
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -3995,7 +3995,7 @@ class Expr:
         ...         pl.col("A").rolling_min(window_size=2),
         ...     ]
         ... )
-        shape: (6, 1)
+        shape: (6 x 1)
         ┌──────┐
         │ A    │
         │ ---  │
@@ -4089,7 +4089,7 @@ class Expr:
         ...         pl.col("A").rolling_max(window_size=2),
         ...     ]
         ... )
-        shape: (6, 1)
+        shape: (6 x 1)
         ┌──────┐
         │ A    │
         │ ---  │
@@ -4183,7 +4183,7 @@ class Expr:
         ...         pl.col("A").rolling_mean(window_size=2),
         ...     ]
         ... )
-        shape: (6, 1)
+        shape: (6 x 1)
         ┌──────┐
         │ A    │
         │ ---  │
@@ -4277,7 +4277,7 @@ class Expr:
         ...         pl.col("A").rolling_sum(window_size=2),
         ...     ]
         ... )
-        shape: (6, 1)
+        shape: (6 x 1)
         ┌──────┐
         │ A    │
         │ ---  │
@@ -4371,7 +4371,7 @@ class Expr:
         ...         pl.col("A").rolling_std(window_size=3),
         ...     ]
         ... )
-        shape: (6, 1)
+        shape: (6 x 1)
         ┌──────────┐
         │ A        │
         │ ---      │
@@ -4465,7 +4465,7 @@ class Expr:
         ...         pl.col("A").rolling_var(window_size=3),
         ...     ]
         ... )
-        shape: (6, 1)
+        shape: (6 x 1)
         ┌──────────┐
         │ A        │
         │ ---      │
@@ -4555,7 +4555,7 @@ class Expr:
         ...         pl.col("A").rolling_median(window_size=3),
         ...     ]
         ... )
-        shape: (6, 1)
+        shape: (6 x 1)
         ┌──────┐
         │ A    │
         │ ---  │
@@ -4651,7 +4651,7 @@ class Expr:
         ...         pl.col("A").rolling_quantile(quantile=0.33, window_size=3),
         ...     ]
         ... )
-        shape: (6, 1)
+        shape: (6 x 1)
         ┌──────┐
         │ A    │
         │ ---  │
@@ -4729,7 +4729,7 @@ class Expr:
         ...         pl.col("A").rolling_apply(lambda s: s.std(), window_size=3),
         ...     ]
         ... )
-         shape: (5, 1)
+         shape: (5 x 1)
         ┌──────────┐
         │ A        │
         │ ---      │
@@ -4779,7 +4779,7 @@ class Expr:
         ...     }
         ... )
         >>> df.select(pl.col("A").abs())
-        shape: (4, 1)
+        shape: (4 x 1)
         ┌─────┐
         │ A   │
         │ --- │
@@ -4824,7 +4824,7 @@ class Expr:
         ...     }
         ... )
         >>> df.select(pl.col("a").argsort())
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -4877,7 +4877,7 @@ class Expr:
 
         >>> df = pl.DataFrame({"a": [3, 6, 1, 1, 6]})
         >>> df.select(pl.col("a").rank())
-        shape: (5, 1)
+        shape: (5 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -4894,7 +4894,7 @@ class Expr:
 
         >>> df = pl.DataFrame({"a": [3, 6, 1, 1, 6]})
         >>> df.select(pl.col("a").rank("ordinal"))
-        shape: (5, 1)
+        shape: (5 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -4925,7 +4925,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"int": [20, 10, 30, 25, 35]})
         >>> df.with_columns(change=pl.col("int").diff())
-        shape: (5, 2)
+        shape: (5 x 2)
         ┌─────┬────────┐
         │ int ┆ change │
         │ --- ┆ ---    │
@@ -4939,7 +4939,7 @@ class Expr:
         └─────┴────────┘
 
         >>> df.with_columns(change=pl.col("int").diff(n=2))
-        shape: (5, 2)
+        shape: (5 x 2)
         ┌─────┬────────┐
         │ int ┆ change │
         │ --- ┆ ---    │
@@ -4953,7 +4953,7 @@ class Expr:
         └─────┴────────┘
 
         >>> df.select(pl.col("int").diff(n=2, null_behavior="drop").alias("diff"))
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌──────┐
         │ diff │
         │ ---  │
@@ -4989,7 +4989,7 @@ class Expr:
         ...     }
         ... )
         >>> df.with_columns(pl.col("a").pct_change().alias("pct_change"))
-        shape: (5, 2)
+        shape: (5 x 2)
         ┌──────┬────────────┐
         │ a    ┆ pct_change │
         │ ---  ┆ ---        │
@@ -5047,7 +5047,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3, 2, 1]})
         >>> df.select(pl.col("a").skew())
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌──────────┐
         │ a        │
         │ ---      │
@@ -5083,7 +5083,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3, 2, 1]})
         >>> df.select(pl.col("a").kurtosis())
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌───────────┐
         │ a         │
         │ ---       │
@@ -5115,7 +5115,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"foo": [-50, 5, None, 50]})
         >>> df.with_columns(pl.col("foo").clip(1, 10).alias("foo_clipped"))
-        shape: (4, 2)
+        shape: (4 x 2)
         ┌──────┬─────────────┐
         │ foo  ┆ foo_clipped │
         │ ---  ┆ ---         │
@@ -5148,7 +5148,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"foo": [-50, 5, None, 50]})
         >>> df.with_columns(pl.col("foo").clip_min(0).alias("foo_clipped"))
-        shape: (4, 2)
+        shape: (4 x 2)
         ┌──────┬─────────────┐
         │ foo  ┆ foo_clipped │
         │ ---  ┆ ---         │
@@ -5181,7 +5181,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"foo": [-50, 5, None, 50]})
         >>> df.with_columns(pl.col("foo").clip_max(0).alias("foo_clipped"))
-        shape: (4, 2)
+        shape: (4 x 2)
         ┌──────┬─────────────┐
         │ foo  ┆ foo_clipped │
         │ ---  ┆ ---         │
@@ -5207,7 +5207,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3, 2, 1]})
         >>> df.select(pl.col("a").lower_bound())
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌──────────────────────┐
         │ a                    │
         │ ---                  │
@@ -5230,7 +5230,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3, 2, 1]})
         >>> df.select(pl.col("a").upper_bound())
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌─────────────────────┐
         │ a                   │
         │ ---                 │
@@ -5258,7 +5258,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [-9.0, -0.0, 0.0, 4.0, None]})
         >>> df.select(pl.col("a").sign())
-        shape: (5, 1)
+        shape: (5 x 1)
         ┌──────┐
         │ a    │
         │ ---  │
@@ -5286,7 +5286,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [0.0]})
         >>> df.select(pl.col("a").sin())
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -5310,7 +5310,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [0.0]})
         >>> df.select(pl.col("a").cos())
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -5334,7 +5334,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1.0]})
         >>> df.select(pl.col("a").tan().round(2))
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌──────┐
         │ a    │
         │ ---  │
@@ -5358,7 +5358,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1.0]})
         >>> df.select(pl.col("a").arcsin())
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌──────────┐
         │ a        │
         │ ---      │
@@ -5382,7 +5382,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [0.0]})
         >>> df.select(pl.col("a").arccos())
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌──────────┐
         │ a        │
         │ ---      │
@@ -5406,7 +5406,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1.0]})
         >>> df.select(pl.col("a").arctan())
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌──────────┐
         │ a        │
         │ ---      │
@@ -5430,7 +5430,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1.0]})
         >>> df.select(pl.col("a").sinh())
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌──────────┐
         │ a        │
         │ ---      │
@@ -5454,7 +5454,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1.0]})
         >>> df.select(pl.col("a").cosh())
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌──────────┐
         │ a        │
         │ ---      │
@@ -5478,7 +5478,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1.0]})
         >>> df.select(pl.col("a").tanh())
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌──────────┐
         │ a        │
         │ ---      │
@@ -5502,7 +5502,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1.0]})
         >>> df.select(pl.col("a").arcsinh())
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌──────────┐
         │ a        │
         │ ---      │
@@ -5526,7 +5526,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1.0]})
         >>> df.select(pl.col("a").arccosh())
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -5550,7 +5550,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1.0]})
         >>> df.select(pl.col("a").arctanh())
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -5587,7 +5587,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7, 8, 9]})
         >>> df.select(pl.col("foo").reshape((3, 3)))
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌───────────┐
         │ foo       │
         │ ---       │
@@ -5615,7 +5615,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
         >>> df.select(pl.col("a").shuffle(seed=1))
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -5661,7 +5661,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
         >>> df.select(pl.col("a").sample(frac=1.0, with_replacement=True, seed=1))
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌─────┐
         │ a   │
         │ --- │
@@ -5761,7 +5761,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
         >>> df.select(pl.col("a").ewm_mean(com=1))
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌──────────┐
         │ a        │
         │ ---      │
@@ -5852,7 +5852,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
         >>> df.select(pl.col("a").ewm_std(com=1))
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌──────────┐
         │ a        │
         │ ---      │
@@ -5943,7 +5943,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
         >>> df.select(pl.col("a").ewm_var(com=1))
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌──────────┐
         │ a        │
         │ ---      │
@@ -5976,7 +5976,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"values": [1, 2, 3]})
         >>> df.select((pl.col("values") - 1).extend_constant(99, n=2))
-        shape: (5, 1)
+        shape: (5 x 1)
         ┌────────┐
         │ values │
         │ ---    │
@@ -6023,7 +6023,7 @@ class Expr:
         ...         pl.col("id").value_counts(sort=True),
         ...     ]
         ... )
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌───────────┐
         │ id        │
         │ ---       │
@@ -6056,7 +6056,7 @@ class Expr:
         ...         pl.col("id").unique_counts(),
         ...     ]
         ... )
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌─────┐
         │ id  │
         │ --- │
@@ -6083,7 +6083,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
         >>> df.select(pl.col("a").log(base=2))
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌──────────┐
         │ a        │
         │ ---      │
@@ -6114,7 +6114,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
         >>> df.select(pl.col("a").entropy(base=2))
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌──────────┐
         │ a        │
         │ ---      │
@@ -6123,7 +6123,7 @@ class Expr:
         │ 1.459148 │
         └──────────┘
         >>> df.select(pl.col("a").entropy(base=2, normalize=False))
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌───────────┐
         │ a         │
         │ ---       │
@@ -6170,7 +6170,7 @@ class Expr:
         ...         )
         ...     ]
         ... )
-        shape: (5, 1)
+        shape: (5 x 1)
         ┌────────┐
         │ values │
         │ ---    │
@@ -6209,7 +6209,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"values": [1, 2, 3]})
         >>> df.select(pl.col("values").set_sorted().max())
-        shape: (1, 1)
+        shape: (1 x 1)
         ┌────────┐
         │ values │
         │ ---    │
@@ -6237,7 +6237,7 @@ class Expr:
         ...     }
         ... )
         >>> df.select(pl.all().list())
-        shape: (1, 2)
+        shape: (1 x 2)
         ┌───────────┬───────────┐
         │ a         ┆ b         │
         │ ---       ┆ ---       │
@@ -6270,7 +6270,7 @@ class Expr:
         ...         "h": [True, None, False],
         ...     }
         ... ).select(pl.all().shrink_dtype())
-        shape: (3, 8)
+        shape: (3 x 8)
         ┌─────┬────────────┬────────────┬──────┬──────┬─────┬──────┬───────┐
         │ a   ┆ b          ┆ c          ┆ d    ┆ e    ┆ f   ┆ g    ┆ h     │
         │ --- ┆ ---        ┆ ---        ┆ ---  ┆ ---  ┆ --- ┆ ---  ┆ ---   │
@@ -6318,7 +6318,7 @@ class Expr:
         ...     }
         ... ).with_row_count()
         >>> df
-        shape: (4, 2)
+        shape: (4 x 2)
         ┌────────┬──────────────┐
         │ row_nr ┆ country_code │
         │ ---    ┆ ---          │
@@ -6333,7 +6333,7 @@ class Expr:
         >>> df.with_columns(
         ...     pl.col("country_code").map_dict(country_code_dict).alias("remapped")
         ... )
-        shape: (4, 3)
+        shape: (4 x 3)
         ┌────────┬──────────────┬───────────────┐
         │ row_nr ┆ country_code ┆ remapped      │
         │ ---    ┆ ---          ┆ ---           │
@@ -6352,7 +6352,7 @@ class Expr:
         ...     .map_dict(country_code_dict, default="unknown")
         ...     .alias("remapped")
         ... )
-        shape: (4, 3)
+        shape: (4 x 3)
         ┌────────┬──────────────┬───────────────┐
         │ row_nr ┆ country_code ┆ remapped      │
         │ ---    ┆ ---          ┆ ---           │
@@ -6371,7 +6371,7 @@ class Expr:
         ...     .map_dict(country_code_dict, default=pl.first())
         ...     .alias("remapped")
         ... )
-        shape: (4, 3)
+        shape: (4 x 3)
         ┌────────┬──────────────┬───────────────┐
         │ row_nr ┆ country_code ┆ remapped      │
         │ ---    ┆ ---          ┆ ---           │
@@ -6390,7 +6390,7 @@ class Expr:
         ...     .map_dict(country_code_dict, default=pl.col("country_code"))
         ...     .alias("remapped")
         ... )
-        shape: (4, 3)
+        shape: (4 x 3)
         ┌────────┬──────────────┬───────────────┐
         │ row_nr ┆ country_code ┆ remapped      │
         │ ---    ┆ ---          ┆ ---           │
@@ -6412,7 +6412,7 @@ class Expr:
         ...         default=pl.col("row_nr").cast(pl.Utf8),
         ...     )
         ... )
-        shape: (4, 2)
+        shape: (4 x 2)
         ┌────────┬───────────────┐
         │ row_nr ┆ country_code  │
         │ ---    ┆ ---           │
@@ -6587,7 +6587,7 @@ class Expr:
         ...     pl.col("values").cast(pl.Categorical)
         ... )
         >>> df.select(pl.col("values").cat.set_ordering(ordering="physical"))
-        shape: (2, 1)
+        shape: (2 x 1)
         ┌────────┐
         │ values │
         │ ---    │
@@ -6626,7 +6626,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"letters": ["a", "b"]})
         >>> df.select(pl.col("letters").str.to_uppercase())
-        shape: (2, 1)
+        shape: (2 x 1)
         ┌─────────┐
         │ letters │
         │ ---     │
@@ -6661,7 +6661,7 @@ class Expr:
         ...     .to_frame()
         ... )
         >>> df.select(pl.col("my_struct").struct.field("str"))
-        shape: (2, 1)
+        shape: (2 x 1)
         ┌─────┐
         │ str │
         │ --- │

@@ -40,7 +40,7 @@ class ExprCatNameSpace:
         ...     ]
         ... )
         >>> df.sort(["cats", "vals"])
-        shape: (5, 2)
+        shape: (5 x 2)
         ┌──────┬──────┐
         │ cats ┆ vals │
         │ ---  ┆ ---  │

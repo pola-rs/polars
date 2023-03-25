@@ -58,7 +58,7 @@ class LazyGroupBy(Generic[LDF]):
         ...     }
         ... ).lazy()
         >>> ldf.groupby("a").agg(pl.col("b").sum()).collect()  # doctest: +IGNORE_RESULT
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -74,7 +74,7 @@ class LazyGroupBy(Generic[LDF]):
         >>> ldf.groupby("a").agg(
         ...     [pl.sum("b"), pl.mean("c")]
         ... ).collect()  # doctest: +IGNORE_RESULT
-        shape: (3, 3)
+        shape: (3 x 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
         │ --- ┆ --- ┆ --- │
@@ -91,7 +91,7 @@ class LazyGroupBy(Generic[LDF]):
         ...     pl.sum("b").suffix("_sum"),
         ...     (pl.col("c") ** 2).mean().suffix("_mean_squared"),
         ... ).collect()  # doctest: +IGNORE_RESULT
-        shape: (3, 3)
+        shape: (3 x 3)
         ┌─────┬───────┬────────────────┐
         │ a   ┆ b_sum ┆ c_mean_squared │
         │ --- ┆ ---   ┆ ---            │
@@ -108,7 +108,7 @@ class LazyGroupBy(Generic[LDF]):
         ...     b_sum=pl.sum("b"),
         ...     c_mean_squared=(pl.col("c") ** 2).mean(),
         ... ).collect()  # doctest: +IGNORE_RESULT
-        shape: (3, 3)
+        shape: (3 x 3)
         ┌─────┬───────┬────────────────┐
         │ a   ┆ b_sum ┆ c_mean_squared │
         │ --- ┆ ---   ┆ ---            │
@@ -175,7 +175,7 @@ class LazyGroupBy(Generic[LDF]):
         ...     }
         ... )
         >>> df
-        shape: (5, 3)
+        shape: (5 x 3)
         ┌─────┬───────┬──────────┐
         │ id  ┆ color ┆ shape    │
         │ --- ┆ ---   ┆ ---      │
@@ -196,7 +196,7 @@ class LazyGroupBy(Generic[LDF]):
         ...     .apply(lambda group_df: group_df.sample(2), schema=None)
         ...     .collect()
         ... )  # doctest: +IGNORE_RESULT
-        shape: (4, 3)
+        shape: (4 x 3)
         ┌─────┬───────┬──────────┐
         │ id  ┆ color ┆ shape    │
         │ --- ┆ ---   ┆ ---      │
@@ -237,7 +237,7 @@ class LazyGroupBy(Generic[LDF]):
         ...     }
         ... )
         >>> df
-        shape: (6, 2)
+        shape: (6 x 2)
         ┌─────────┬─────┐
         │ letters ┆ nrs │
         │ ---     ┆ --- │
@@ -251,7 +251,7 @@ class LazyGroupBy(Generic[LDF]):
         │ b       ┆ 6   │
         └─────────┴─────┘
         >>> df.groupby("letters").head(2).sort("letters")
-        shape: (5, 2)
+        shape: (5 x 2)
         ┌─────────┬─────┐
         │ letters ┆ nrs │
         │ ---     ┆ --- │
@@ -285,7 +285,7 @@ class LazyGroupBy(Generic[LDF]):
         ...     }
         ... )
         >>> df
-        shape: (6, 2)
+        shape: (6 x 2)
         ┌─────────┬─────┐
         │ letters ┆ nrs │
         │ ---     ┆ --- │
@@ -299,7 +299,7 @@ class LazyGroupBy(Generic[LDF]):
         │ b       ┆ 6   │
         └─────────┴─────┘
         >>> df.groupby("letters").tail(2).sort("letters")
-         shape: (5, 2)
+         shape: (5 x 2)
         ┌─────────┬─────┐
         │ letters ┆ nrs │
         │ ---     ┆ --- │
@@ -328,7 +328,7 @@ class LazyGroupBy(Generic[LDF]):
         ...     }
         ... ).lazy()
         >>> ldf.groupby("a", maintain_order=True).all().collect()
-        shape: (2, 2)
+        shape: (2 x 2)
         ┌─────┬───────────┐
         │ a   ┆ b         │
         │ --- ┆ ---       │
@@ -356,7 +356,7 @@ class LazyGroupBy(Generic[LDF]):
         ...     }
         ... ).lazy()
         >>> ldf.groupby("d", maintain_order=True).count().collect()
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌────────┬───────┐
         │ d      ┆ count │
         │ ---    ┆ ---   │
@@ -385,7 +385,7 @@ class LazyGroupBy(Generic[LDF]):
         ...     }
         ... ).lazy()
         >>> ldf.groupby("d", maintain_order=True).first().collect()
-        shape: (3, 4)
+        shape: (3 x 4)
         ┌────────┬─────┬──────┬───────┐
         │ d      ┆ a   ┆ b    ┆ c     │
         │ ---    ┆ --- ┆ ---  ┆ ---   │
@@ -414,7 +414,7 @@ class LazyGroupBy(Generic[LDF]):
         ...     }
         ... ).lazy()
         >>> ldf.groupby("d", maintain_order=True).last().collect()
-        shape: (3, 4)
+        shape: (3 x 4)
         ┌────────┬─────┬──────┬───────┐
         │ d      ┆ a   ┆ b    ┆ c     │
         │ ---    ┆ --- ┆ ---  ┆ ---   │
@@ -443,7 +443,7 @@ class LazyGroupBy(Generic[LDF]):
         ...     }
         ... ).lazy()
         >>> ldf.groupby("d", maintain_order=True).max().collect()
-        shape: (3, 4)
+        shape: (3 x 4)
         ┌────────┬─────┬──────┬──────┐
         │ d      ┆ a   ┆ b    ┆ c    │
         │ ---    ┆ --- ┆ ---  ┆ ---  │
@@ -472,7 +472,7 @@ class LazyGroupBy(Generic[LDF]):
         ...     }
         ... ).lazy()
         >>> ldf.groupby("d", maintain_order=True).mean().collect()
-        shape: (3, 4)
+        shape: (3 x 4)
         ┌────────┬─────┬──────────┬──────────┐
         │ d      ┆ a   ┆ b        ┆ c        │
         │ ---    ┆ --- ┆ ---      ┆ ---      │
@@ -500,7 +500,7 @@ class LazyGroupBy(Generic[LDF]):
         ...     }
         ... ).lazy()
         >>> ldf.groupby("d", maintain_order=True).median().collect()
-        shape: (2, 3)
+        shape: (2 x 3)
         ┌────────┬─────┬──────┐
         │ d      ┆ a   ┆ b    │
         │ ---    ┆ --- ┆ ---  │
@@ -528,7 +528,7 @@ class LazyGroupBy(Generic[LDF]):
         ...     }
         ... ).lazy()
         >>> ldf.groupby("d", maintain_order=True).min().collect()
-        shape: (3, 4)
+        shape: (3 x 4)
         ┌────────┬─────┬──────┬───────┐
         │ d      ┆ a   ┆ b    ┆ c     │
         │ ---    ┆ --- ┆ ---  ┆ ---   │
@@ -556,7 +556,7 @@ class LazyGroupBy(Generic[LDF]):
         ...     }
         ... ).lazy()
         >>> ldf.groupby("d", maintain_order=True).n_unique().collect()
-        shape: (2, 3)
+        shape: (2 x 3)
         ┌────────┬─────┬─────┐
         │ d      ┆ a   ┆ b   │
         │ ---    ┆ --- ┆ --- │
@@ -592,7 +592,7 @@ class LazyGroupBy(Generic[LDF]):
         ...     }
         ... ).lazy()
         >>> ldf.groupby("d", maintain_order=True).quantile(1).collect()
-        shape: (3, 3)
+        shape: (3 x 3)
         ┌────────┬─────┬──────┐
         │ d      ┆ a   ┆ b    │
         │ ---    ┆ --- ┆ ---  │
@@ -621,7 +621,7 @@ class LazyGroupBy(Generic[LDF]):
         ...     }
         ... ).lazy()
         >>> ldf.groupby("d", maintain_order=True).sum().collect()
-        shape: (3, 4)
+        shape: (3 x 4)
         ┌────────┬─────┬──────┬─────┐
         │ d      ┆ a   ┆ b    ┆ c   │
         │ ---    ┆ --- ┆ ---  ┆ --- │

@@ -106,7 +106,7 @@ def register_expr_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     ...         pl.col("n").pow_n.nearest(p=2).alias("nearest_pow2"),
     ...     ]
     ... )
-    shape: (4, 4)
+    shape: (4 x 4)
     ┌────────┬───────────┬───────────┬──────────────┐
     │ n      ┆ next_pow2 ┆ prev_pow2 ┆ nearest_pow2 │
     │ ---    ┆ ---       ┆ ---       ┆ ---          │
@@ -165,7 +165,7 @@ def register_dataframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     ...     orient="row",
     ... )
     >>> df
-    shape: (4, 4)
+    shape: (4 x 4)
     ┌─────┬─────┬─────┬─────┐
     │ a1  ┆ a2  ┆ b1  ┆ b2  │
     │ --- ┆ --- ┆ --- ┆ --- │
@@ -177,7 +177,7 @@ def register_dataframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     │ yz  ┆ 6   ┆ 7   ┆ 8   │
     └─────┴─────┴─────┴─────┘
     >>> df.split.by_first_letter_of_column_names()
-    [shape: (4, 2)
+    [shape: (4 x 2)
     ┌─────┬─────┐
     │ a1  ┆ a2  │
     │ --- ┆ --- │
@@ -188,7 +188,7 @@ def register_dataframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     │ yy  ┆ 5   │
     │ yz  ┆ 6   │
     └─────┴─────┘,
-    shape: (4, 2)
+    shape: (4 x 2)
     ┌─────┬─────┐
     │ b1  ┆ b2  │
     │ --- ┆ --- │
@@ -200,7 +200,7 @@ def register_dataframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     │ 7   ┆ 8   │
     └─────┴─────┘]
     >>> df.split.by_first_letter_of_column_values("a1")
-    [shape: (2, 4)
+    [shape: (2 x 4)
     ┌─────┬─────┬─────┬─────┐
     │ a1  ┆ a2  ┆ b1  ┆ b2  │
     │ --- ┆ --- ┆ --- ┆ --- │
@@ -208,7 +208,7 @@ def register_dataframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     ╞═════╪═════╪═════╪═════╡
     │ xx  ┆ 2   ┆ 3   ┆ 4   │
     │ xy  ┆ 4   ┆ 5   ┆ 6   │
-    └─────┴─────┴─────┴─────┘, shape: (2, 4)
+    └─────┴─────┴─────┴─────┘, shape: (2 x 4)
     ┌─────┬─────┬─────┬─────┐
     │ a1  ┆ a2  ┆ b1  ┆ b2  │
     │ --- ┆ --- ┆ --- ┆ --- │
@@ -262,7 +262,7 @@ def register_lazyframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     ... ).lazy()
     >>>
     >>> ldf.collect()
-    shape: (2, 3)
+    shape: (2 x 3)
     ┌─────┬─────┬─────┐
     │ a   ┆ b   ┆ c   │
     │ --- ┆ --- ┆ --- │
@@ -272,7 +272,7 @@ def register_lazyframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     │ 2   ┆ 4   ┆ 6.7 │
     └─────┴─────┴─────┘
     >>> ldf.types.upcast_integer_types().collect()
-    shape: (2, 3)
+    shape: (2 x 3)
     ┌─────┬─────┬─────┐
     │ a   ┆ b   ┆ c   │
     │ --- ┆ --- ┆ --- │
@@ -289,7 +289,7 @@ def register_lazyframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     ... ).lazy()
     >>>
     >>> ldf.collect()
-    shape: (4, 4)
+    shape: (4 x 4)
     ┌─────┬─────┬─────┬─────┐
     │ a1  ┆ a2  ┆ b1  ┆ b2  │
     │ --- ┆ --- ┆ --- ┆ --- │
@@ -301,7 +301,7 @@ def register_lazyframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     │ yz  ┆ 6   ┆ 7   ┆ 8   │
     └─────┴─────┴─────┴─────┘
     >>> [ldf.collect() for ldf in ldf.types.split_by_column_dtypes()]
-    [shape: (4, 1)
+    [shape: (4 x 1)
     ┌─────┐
     │ a1  │
     │ --- │
@@ -311,7 +311,7 @@ def register_lazyframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     │ xy  │
     │ yy  │
     │ yz  │
-    └─────┘, shape: (4, 3)
+    └─────┘, shape: (4 x 3)
     ┌─────┬─────┬─────┐
     │ a2  ┆ b1  ┆ b2  │
     │ --- ┆ --- ┆ --- │

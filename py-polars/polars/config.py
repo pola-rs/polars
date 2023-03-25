@@ -210,7 +210,7 @@ class Config:
         >>> df = pl.DataFrame({"abc": [1.0, 2.5, 5.0], "xyz": [True, False, True]})
         >>> pl.Config.set_ascii_tables(True)  # doctest: +SKIP
         # ...
-        # shape: (3, 2)        shape: (3, 2)
+        # shape: (3 x 2)        shape: (3 x 2)
         # ┌─────┬───────┐      +-----+-------+
         # │ abc ┆ xyz   │      | abc | xyz   |
         # │ --- ┆ ---   │      | --- | ---   |
@@ -301,7 +301,7 @@ class Config:
         ... )
         >>> pl.Config.set_tbl_cell_alignment("RIGHT")  # doctest: +SKIP
         # ...
-        # shape: (3, 2)
+        # shape: (3 x 2)
         # ┌────────────┬────────────┐
         # │ column_abc ┆ column_xyz │
         # │        --- ┆        --- │
@@ -373,7 +373,7 @@ class Config:
         >>> df = pl.DataFrame({"abc": [1.0, 2.5, 5.0], "xyz": [True, False, True]})
         >>> pl.Config.set_tbl_column_data_type_inline(True)  # doctest: +SKIP
         # ...
-        # shape: (3, 2)        shape: (3, 2)
+        # shape: (3 x 2)        shape: (3 x 2)
         # ┌─────┬───────┐      ┌───────────┬────────────┐
         # │ abc ┆ xyz   │      │ abc (f64) ┆ xyz (bool) │
         # │ --- ┆ ---   │      ╞═══════════╪════════════╡
@@ -398,7 +398,7 @@ class Config:
         >>> df = pl.DataFrame({"abc": [1.0, 2.5, 5.0], "xyz": [True, False, True]})
         >>> pl.Config.set_tbl_dataframe_shape_below(True)  # doctest: +SKIP
         # ...
-        # shape: (3, 2)        ┌─────┬───────┐
+        # shape: (3 x 2)        ┌─────┬───────┐
         # ┌─────┬───────┐      │ abc ┆ xyz   │
         # │ abc ┆ xyz   │      │ --- ┆ ---   │
         # │ --- ┆ ---   │      │ f64 ┆ bool  │
@@ -407,7 +407,7 @@ class Config:
         # │ 1.0 ┆ true  │      │ 2.5 ┆ false │
         # │ 2.5 ┆ false │      │ 5.0 ┆ true  │
         # │ 5.0 ┆ true  │      └─────┴───────┘
-        # └─────┴───────┘      shape: (3, 2)
+        # └─────┴───────┘      shape: (3 x 2)
 
         """
         os.environ["POLARS_FMT_TABLE_DATAFRAME_SHAPE_BELOW"] = str(int(active))
@@ -487,7 +487,7 @@ class Config:
         >>> df = pl.DataFrame({"abc": [1.0, 2.5, 5.0], "xyz": [True, False, True]})
         >>> pl.Config.set_tbl_hide_column_data_types(True)  # doctest: +SKIP
         # ...
-        # shape: (3, 2)        shape: (3, 2)
+        # shape: (3 x 2)        shape: (3 x 2)
         # ┌─────┬───────┐      ┌─────┬───────┐
         # │ abc ┆ xyz   │      │ abc ┆ xyz   │
         # │ --- ┆ ---   │      ╞═════╪═══════╡
@@ -512,7 +512,7 @@ class Config:
         >>> df = pl.DataFrame({"abc": [1.0, 2.5, 5.0], "xyz": [True, False, True]})
         >>> pl.Config.set_tbl_hide_column_names(True)  # doctest: +SKIP
         # ...
-        # shape: (3, 2)        shape: (3, 2)
+        # shape: (3 x 2)        shape: (3 x 2)
         # ┌─────┬───────┐      ┌─────┬───────┐
         # │ abc ┆ xyz   │      │ f64 ┆ bool  │
         # │ --- ┆ ---   │      ╞═════╪═══════╡
@@ -537,7 +537,7 @@ class Config:
         >>> df = pl.DataFrame({"abc": [1.0, 2.5, 5.0], "xyz": [True, False, True]})
         >>> pl.Config.set_tbl_hide_dtype_separator(True)  # doctest: +SKIP
         # ...
-        # shape: (3, 2)        shape: (3, 2)
+        # shape: (3 x 2)        shape: (3 x 2)
         # ┌─────┬───────┐      ┌─────┬───────┐
         # │ abc ┆ xyz   │      │ abc ┆ xyz   │
         # │ --- ┆ ---   │      │ f64 ┆ bool  │
@@ -566,7 +566,7 @@ class Config:
         >>> df = pl.DataFrame({"abc": [1.0, 2.5, 5.0], "xyz": [True, False, True]})
         >>> pl.Config.set_tbl_hide_dataframe_shape(True)  # doctest: +SKIP
         # ...
-        # shape: (3, 2)        ┌─────┬───────┐
+        # shape: (3 x 2)        ┌─────┬───────┐
         # ┌─────┬───────┐      │ abc ┆ xyz   │
         # │ abc ┆ xyz   │      │ --- ┆ ---   │
         # │ --- ┆ ---   │      │ f64 ┆ bool  │
@@ -601,7 +601,7 @@ class Config:
         ... )
         >>> pl.Config.set_tbl_rows(2)  # doctest: +SKIP
         # ...
-        # shape: (4, 2)
+        # shape: (4 x 2)
         # ┌─────┬───────┐
         # │ abc ┆ xyz   │
         # │ --- ┆ ---   │

@@ -147,7 +147,7 @@ def when(expr: Expr | bool | Series) -> When:
     >>> df.with_columns(
     ...     pl.when(pl.col("foo") > 2).then(pl.lit(1)).otherwise(pl.lit(-1))
     ... )
-    shape: (3, 3)
+    shape: (3 x 3)
     ┌─────┬─────┬─────────┐
     │ foo ┆ bar ┆ literal │
     │ --- ┆ --- ┆ ---     │
@@ -167,7 +167,7 @@ def when(expr: Expr | bool | Series) -> When:
     ...     .then(4)
     ...     .otherwise(-1)
     ... )
-    shape: (3, 3)
+    shape: (3 x 3)
     ┌─────┬─────┬─────────┐
     │ foo ┆ bar ┆ literal │
     │ --- ┆ --- ┆ ---     │

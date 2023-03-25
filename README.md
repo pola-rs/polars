@@ -81,7 +81,7 @@ To learn more, read the [User Guide](https://pola-rs.github.io/polars-book/).
 ...     pl.col("A").reverse().over("fruits").alias("rev_A_by_fruits"),
 ...     pl.col("A").sort_by("B").over("fruits").alias("sort_A_by_B_by_fruits"),
 ... )
-shape: (5, 8)
+shape: (5 x 8)
 ┌──────────┬──────────┬──────────────┬─────┬─────────────┬─────────────┬─────────────┬─────────────┐
 │ fruits   ┆ cars     ┆ literal_stri ┆ B   ┆ sum_A_by_ca ┆ sum_A_by_fr ┆ rev_A_by_fr ┆ sort_A_by_B │
 │ ---      ┆ ---      ┆ ng_fruits    ┆ --- ┆ rs          ┆ uits        ┆ uits        ┆ _by_fruits  │

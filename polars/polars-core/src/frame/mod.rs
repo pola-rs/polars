@@ -361,7 +361,7 @@ impl DataFrame {
     /// Output:
     ///
     /// ```text
-    ///  shape: (4, 2)
+    ///  shape: (4 x 2)
     ///  +-----+----------+
     ///  | Id  | Name     |
     ///  | --- | ---      |
@@ -800,7 +800,7 @@ impl DataFrame {
     /// Output:
     ///
     /// ```text
-    /// shape: (3, 3)
+    /// shape: (3 x 3)
     /// +---------+--------+----------+
     /// | Element | Proton | Electron |
     /// | ---     | ---    | ---      |
@@ -842,7 +842,7 @@ impl DataFrame {
     /// Output:
     ///
     /// ```text
-    /// shape: (5, 2)
+    /// shape: (5 x 2)
     /// +-----------+-------------------+
     /// | Element   | Melting Point (K) |
     /// | ---       | ---               |
@@ -888,7 +888,7 @@ impl DataFrame {
     /// Output:
     ///
     /// ```text
-    /// shape: (5, 2)
+    /// shape: (5 x 2)
     /// +-----------+-------------------+
     /// | Element   | Melting Point (K) |
     /// | ---       | ---               |
@@ -1009,7 +1009,7 @@ impl DataFrame {
     /// Output:
     ///
     /// ```text
-    /// shape: (1, 2)
+    /// shape: (1 x 2)
     /// +---------+---------------------+
     /// | Country | Tax revenue (% GDP) |
     /// | ---     | ---                 |
@@ -2235,7 +2235,7 @@ impl DataFrame {
     /// ```
     /// Output:
     /// ```text
-    /// shape: (3, 2)
+    /// shape: (3 x 2)
     /// +-------+-------+
     /// | Fruit | Color |
     /// | ---   | ---   |
@@ -2306,7 +2306,7 @@ impl DataFrame {
     /// Output:
     ///
     /// ```text
-    /// shape: (3, 4)
+    /// shape: (3 x 4)
     /// +--------------------+---------------+---------------+------------+
     /// | Rank by GDP (2021) | Continent     | Country       | Capital    |
     /// | ---                | ---           | ---           | ---        |
@@ -2348,7 +2348,7 @@ impl DataFrame {
     /// Output:
     ///
     /// ```text
-    /// shape: (2, 3)
+    /// shape: (2 x 3)
     /// +-------------+--------------------+---------+
     /// | Rank (2021) | Apple Price (€/kg) | Country |
     /// | ---         | ---                | ---     |
@@ -2454,7 +2454,7 @@ impl DataFrame {
     /// Output:
     ///
     /// ```text
-    /// shape: (8, 4)
+    /// shape: (8 x 4)
     /// ┌────────────┬─────────────┬─────────┬────────┐
     /// │ describe   ┆ categorical ┆ numeric ┆ object │
     /// │ ---        ┆ ---         ┆ ---     ┆ ---    │
@@ -2556,7 +2556,7 @@ impl DataFrame {
     /// Output:
     ///
     /// ```text
-    /// shape: (1, 2)
+    /// shape: (1 x 2)
     /// +---------+---------+
     /// | Die n°1 | Die n°2 |
     /// | ---     | ---     |
@@ -2591,7 +2591,7 @@ impl DataFrame {
     /// Output:
     ///
     /// ```text
-    /// shape: (1, 2)
+    /// shape: (1 x 2)
     /// +-------------------+--------------------+
     /// | Die n°1           | Die n°2            |
     /// | ---               | ---                |
@@ -2625,7 +2625,7 @@ impl DataFrame {
     /// Output:
     ///
     /// ```text
-    /// shape: (1, 2)
+    /// shape: (1 x 2)
     /// +---------+---------+
     /// | Die n°1 | Die n°2 |
     /// | ---     | ---     |
@@ -2659,7 +2659,7 @@ impl DataFrame {
     /// Output:
     ///
     /// ```text
-    /// shape: (1, 2)
+    /// shape: (1 x 2)
     /// +---------+---------+
     /// | Die n°1 | Die n°2 |
     /// | ---     | ---     |
@@ -2693,7 +2693,7 @@ impl DataFrame {
     /// Output:
     ///
     /// ```text
-    /// shape: (1, 2)
+    /// shape: (1 x 2)
     /// +---------+---------+
     /// | Die n°1 | Die n°2 |
     /// | ---     | ---     |
@@ -2727,7 +2727,7 @@ impl DataFrame {
     /// Output:
     ///
     /// ```text
-    /// shape: (1, 2)
+    /// shape: (1 x 2)
     /// +---------+---------+
     /// | Die n°1 | Die n°2 |
     /// | ---     | ---     |
@@ -2761,7 +2761,7 @@ impl DataFrame {
     /// Output:
     ///
     /// ```text
-    /// shape: (1, 2)
+    /// shape: (1 x 2)
     /// +---------+---------+
     /// | Die n°1 | Die n°2 |
     /// | ---     | ---     |

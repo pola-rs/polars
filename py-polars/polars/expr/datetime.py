@@ -83,7 +83,7 @@ class ExprDateTimeNameSpace:
         ...     start, stop, timedelta(minutes=225), name="dates"
         ... ).to_frame()
         >>> df
-        shape: (7, 1)
+        shape: (7 x 1)
         ┌─────────────────────┐
         │ dates               │
         │ ---                 │
@@ -98,7 +98,7 @@ class ExprDateTimeNameSpace:
         │ 2001-01-01 22:30:00 │
         └─────────────────────┘
         >>> df.select(pl.col("dates").dt.truncate("1h"))
-        shape: (7, 1)
+        shape: (7 x 1)
         ┌─────────────────────┐
         │ dates               │
         │ ---                 │
@@ -121,7 +121,7 @@ class ExprDateTimeNameSpace:
         >>> stop = datetime(2001, 1, 1, 1)
         >>> df = pl.date_range(start, stop, "10m", name="dates").to_frame()
         >>> df.select(["dates", pl.col("dates").dt.truncate("30m").alias("truncate")])
-        shape: (7, 2)
+        shape: (7 x 2)
         ┌─────────────────────┬─────────────────────┐
         │ dates               ┆ truncate            │
         │ ---                 ┆ ---                 │
@@ -203,7 +203,7 @@ class ExprDateTimeNameSpace:
         ...     start, stop, timedelta(minutes=225), name="dates"
         ... ).to_frame()
         >>> df
-        shape: (7, 1)
+        shape: (7 x 1)
         ┌─────────────────────┐
         │ dates               │
         │ ---                 │
@@ -218,7 +218,7 @@ class ExprDateTimeNameSpace:
         │ 2001-01-01 22:30:00 │
         └─────────────────────┘
         >>> df.select(pl.col("dates").dt.round("1h"))
-        shape: (7, 1)
+        shape: (7 x 1)
         ┌─────────────────────┐
         │ dates               │
         │ ---                 │
@@ -241,7 +241,7 @@ class ExprDateTimeNameSpace:
         >>> stop = datetime(2001, 1, 1, 1)
         >>> df = pl.date_range(start, stop, "10m", name="dates").to_frame()
         >>> df.select(["dates", pl.col("dates").dt.round("30m").alias("round")])
-        shape: (7, 2)
+        shape: (7 x 2)
         ┌─────────────────────┬─────────────────────┐
         │ dates               ┆ round               │
         │ ---                 ┆ ---                 │
@@ -295,7 +295,7 @@ class ExprDateTimeNameSpace:
         ...     }
         ... )
         >>> df
-        shape: (2, 3)
+        shape: (2 x 3)
         ┌─────────────────────┬────────────┬──────────────┐
         │ dtm                 ┆ dt         ┆ tm           │
         │ ---                 ┆ ---        ┆ ---          │
@@ -311,7 +311,7 @@ class ExprDateTimeNameSpace:
         ...         pl.col("dt").dt.combine(time(4, 5, 6)).alias("d3"),
         ...     ]
         ... )
-        shape: (2, 3)
+        shape: (2 x 3)
         ┌─────────────────────────┬─────────────────────────┬─────────────────────┐
         │ d1                      ┆ d2                      ┆ d3                  │
         │ ---                     ┆ ---                     ┆ ---                 │
@@ -353,7 +353,7 @@ class ExprDateTimeNameSpace:
         ...         .alias("date_formatted"),
         ...     ]
         ... )
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌─────────────────────┬─────────────────────┐
         │ date                ┆ date_formatted      │
         │ ---                 ┆ ---                 │
@@ -386,7 +386,7 @@ class ExprDateTimeNameSpace:
         >>> stop = datetime(2002, 7, 1)
         >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=180))})
         >>> df
-        shape: (4, 1)
+        shape: (4 x 1)
         ┌─────────────────────┐
         │ date                │
         │ ---                 │
@@ -398,7 +398,7 @@ class ExprDateTimeNameSpace:
         │ 2002-06-25 00:00:00 │
         └─────────────────────┘
         >>> df.select(pl.col("date").dt.year())
-        shape: (4, 1)
+        shape: (4 x 1)
         ┌──────┐
         │ date │
         │ ---  │
@@ -430,7 +430,7 @@ class ExprDateTimeNameSpace:
         >>> stop = datetime(2002, 1, 1)
         >>> df = pl.DataFrame({"date": pl.date_range(start, stop, interval="1y")})
         >>> df
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌─────────────────────┐
         │ date                │
         │ ---                 │
@@ -441,7 +441,7 @@ class ExprDateTimeNameSpace:
         │ 2002-01-01 00:00:00 │
         └─────────────────────┘
         >>> df.select(pl.col("date").dt.is_leap_year())
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌───────┐
         │ date  │
         │ ---   │
@@ -519,7 +519,7 @@ class ExprDateTimeNameSpace:
         >>> stop = datetime(2002, 6, 1)
         >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=180))})
         >>> df
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌─────────────────────┐
         │ date                │
         │ ---                 │
@@ -530,7 +530,7 @@ class ExprDateTimeNameSpace:
         │ 2001-12-27 00:00:00 │
         └─────────────────────┘
         >>> df.select(pl.col("date").dt.quarter())
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌──────┐
         │ date │
         │ ---  │
@@ -564,7 +564,7 @@ class ExprDateTimeNameSpace:
         >>> stop = datetime(2001, 4, 1)
         >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=31))})
         >>> df
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌─────────────────────┐
         │ date                │
         │ ---                 │
@@ -575,7 +575,7 @@ class ExprDateTimeNameSpace:
         │ 2001-03-04 00:00:00 │
         └─────────────────────┘
         >>> df.select(pl.col("date").dt.month())
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌──────┐
         │ date │
         │ ---  │
@@ -609,7 +609,7 @@ class ExprDateTimeNameSpace:
         >>> stop = datetime(2001, 4, 1)
         >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=31))})
         >>> df
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌─────────────────────┐
         │ date                │
         │ ---                 │
@@ -620,7 +620,7 @@ class ExprDateTimeNameSpace:
         │ 2001-03-04 00:00:00 │
         └─────────────────────┘
         >>> df.select(pl.col("date").dt.week())
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌──────┐
         │ date │
         │ ---  │
@@ -653,7 +653,7 @@ class ExprDateTimeNameSpace:
         >>> stop = datetime(2001, 1, 9)
         >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=3))})
         >>> df
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌─────────────────────┐
         │ date                │
         │ ---                 │
@@ -670,7 +670,7 @@ class ExprDateTimeNameSpace:
         ...         pl.col("date").dt.ordinal_day().alias("day_of_year"),
         ...     ]
         ... )
-        shape: (3, 3)
+        shape: (3 x 3)
         ┌─────────┬──────────────┬─────────────┐
         │ weekday ┆ day_of_month ┆ day_of_year │
         │ ---     ┆ ---          ┆ ---         │
@@ -704,7 +704,7 @@ class ExprDateTimeNameSpace:
         >>> stop = datetime(2001, 1, 9)
         >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=3))})
         >>> df
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌─────────────────────┐
         │ date                │
         │ ---                 │
@@ -721,7 +721,7 @@ class ExprDateTimeNameSpace:
         ...         pl.col("date").dt.ordinal_day().alias("day_of_year"),
         ...     ]
         ... )
-        shape: (3, 3)
+        shape: (3 x 3)
         ┌─────────┬──────────────┬─────────────┐
         │ weekday ┆ day_of_month ┆ day_of_year │
         │ ---     ┆ ---          ┆ ---         │
@@ -755,7 +755,7 @@ class ExprDateTimeNameSpace:
         >>> stop = datetime(2001, 1, 9)
         >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=3))})
         >>> df
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌─────────────────────┐
         │ date                │
         │ ---                 │
@@ -772,7 +772,7 @@ class ExprDateTimeNameSpace:
         ...         pl.col("date").dt.ordinal_day().alias("day_of_year"),
         ...     ]
         ... )
-        shape: (3, 3)
+        shape: (3 x 3)
         ┌─────────┬──────────────┬─────────────┐
         │ weekday ┆ day_of_month ┆ day_of_year │
         │ ---     ┆ ---          ┆ ---         │
@@ -814,7 +814,7 @@ class ExprDateTimeNameSpace:
         >>> stop = datetime(2001, 1, 2)
         >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(hours=12))})
         >>> df
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌─────────────────────┐
         │ date                │
         │ ---                 │
@@ -825,7 +825,7 @@ class ExprDateTimeNameSpace:
         │ 2001-01-02 00:00:00 │
         └─────────────────────┘
         >>> df.select(pl.col("date").dt.hour())
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌──────┐
         │ date │
         │ ---  │
@@ -860,7 +860,7 @@ class ExprDateTimeNameSpace:
         ...     {"date": pl.date_range(start, stop, timedelta(minutes=2))}
         ... )
         >>> df
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌─────────────────────┐
         │ date                │
         │ ---                 │
@@ -871,7 +871,7 @@ class ExprDateTimeNameSpace:
         │ 2001-01-01 00:04:00 │
         └─────────────────────┘
         >>> df.select(pl.col("date").dt.minute())
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌──────┐
         │ date │
         │ ---  │
@@ -912,7 +912,7 @@ class ExprDateTimeNameSpace:
         ...     }
         ... )
         >>> df
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌────────────────────────────┐
         │ date                       │
         │ ---                        │
@@ -923,7 +923,7 @@ class ExprDateTimeNameSpace:
         │ 2001-01-01 00:00:05.765431 │
         └────────────────────────────┘
         >>> df.select(pl.col("date").dt.second().alias("secs"))
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌──────┐
         │ secs │
         │ ---  │
@@ -935,7 +935,7 @@ class ExprDateTimeNameSpace:
         └──────┘
 
         >>> df.select(pl.col("date").dt.second(fractional=True).alias("secs"))
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌──────────┐
         │ secs     │
         │ ---      │
@@ -953,7 +953,7 @@ class ExprDateTimeNameSpace:
         ...     {"date": pl.date_range(start, stop, timedelta(seconds=2))}
         ... )
         >>> df
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌─────────────────────┐
         │ date                │
         │ ---                 │
@@ -964,7 +964,7 @@ class ExprDateTimeNameSpace:
         │ 2001-01-01 00:00:04 │
         └─────────────────────┘
         >>> df.select(pl.col("date").dt.second())
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌──────┐
         │ date │
         │ ---  │
@@ -1077,7 +1077,7 @@ class ExprDateTimeNameSpace:
         ...         pl.col("date").dt.epoch(tu="s").alias("epoch_s"),
         ...     ]
         ... )
-        shape: (3, 3)
+        shape: (3 x 3)
         ┌─────────────────────┬─────────────────┬───────────┐
         │ date                ┆ epoch_ns        ┆ epoch_s   │
         │ ---                 ┆ ---             ┆ ---       │
@@ -1122,7 +1122,7 @@ class ExprDateTimeNameSpace:
         ...         pl.col("date").dt.timestamp(tu="ms").alias("timestamp_ms"),
         ...     ]
         ... )
-        shape: (3, 3)
+        shape: (3 x 3)
         ┌─────────────────────┬─────────────────┬──────────────┐
         │ date                ┆ timestamp_ns    ┆ timestamp_ms │
         │ ---                 ┆ ---             ┆ ---          │
@@ -1164,7 +1164,7 @@ class ExprDateTimeNameSpace:
         ...         pl.col("date").dt.with_time_unit(tu="us").alias("tu_us"),
         ...     ]
         ... )
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌─────────────────────┬───────────────────────┐
         │ date                ┆ tu_us                 │
         │ ---                 ┆ ---                   │
@@ -1204,7 +1204,7 @@ class ExprDateTimeNameSpace:
         ...         pl.col("date").dt.cast_time_unit(tu="ns").alias("tu_ns"),
         ...     ]
         ... )
-        shape: (3, 3)
+        shape: (3 x 3)
         ┌─────────────────────┬─────────────────────┬─────────────────────┐
         │ date                ┆ tu_ms               ┆ tu_ns               │
         │ ---                 ┆ ---                 ┆ ---                 │
@@ -1249,7 +1249,7 @@ class ExprDateTimeNameSpace:
         ...         .alias("London"),
         ...     ]
         ... )
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌─────────────────────────┬─────────────────────────────┐
         │ date                    ┆ London                      │
         │ ---                     ┆ ---                         │
@@ -1296,7 +1296,7 @@ class ExprDateTimeNameSpace:
         ...         .alias("London_to_Amsterdam"),
         ...     ]
         ... )
-        shape: (5, 2)
+        shape: (5 x 2)
         ┌─────────────────────────────┬────────────────────────────────┐
         │ london_timezone             ┆ London_to_Amsterdam            │
         │ ---                         ┆ ---                            │
@@ -1336,7 +1336,7 @@ class ExprDateTimeNameSpace:
         ...         pl.col("date").diff().dt.days().alias("days_diff"),
         ...     ]
         ... )
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌─────────────────────┬───────────┐
         │ date                ┆ days_diff │
         │ ---                 ┆ ---       │
@@ -1374,7 +1374,7 @@ class ExprDateTimeNameSpace:
         ...         pl.col("date").diff().dt.hours().alias("hours_diff"),
         ...     ]
         ... )
-        shape: (4, 2)
+        shape: (4 x 2)
         ┌─────────────────────┬────────────┐
         │ date                ┆ hours_diff │
         │ ---                 ┆ ---        │
@@ -1413,7 +1413,7 @@ class ExprDateTimeNameSpace:
         ...         pl.col("date").diff().dt.minutes().alias("minutes_diff"),
         ...     ]
         ... )
-        shape: (4, 2)
+        shape: (4 x 2)
         ┌─────────────────────┬──────────────┐
         │ date                ┆ minutes_diff │
         │ ---                 ┆ ---          │
@@ -1452,7 +1452,7 @@ class ExprDateTimeNameSpace:
         ...         pl.col("date").diff().dt.seconds().alias("seconds_diff"),
         ...     ]
         ... )
-        shape: (5, 2)
+        shape: (5 x 2)
         ┌─────────────────────┬──────────────┐
         │ date                ┆ seconds_diff │
         │ ---                 ┆ ---          │
@@ -1645,7 +1645,7 @@ class ExprDateTimeNameSpace:
         ...         pl.col("dates").dt.offset_by("-1y2mo").alias("date_min"),
         ...     ]
         ... )
-        shape: (6, 2)
+        shape: (6 x 2)
         ┌─────────────────────┬─────────────────────┐
         │ date_plus_1y        ┆ date_min            │
         │ ---                 ┆ ---                 │

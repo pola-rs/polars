@@ -51,7 +51,7 @@ pub trait DataFrameJoinOps: IntoDf {
     /// Output:
     ///
     /// ```text
-    /// shape: (3, 3)
+    /// shape: (3 x 3)
     /// +--------+----------------------+---------------------+
     /// | Fruit  | Phosphorus (mg/100g) | Potassium (mg/100g) |
     /// | ---    | ---                  | ---                 |
@@ -389,7 +389,7 @@ pub trait DataFrameJoinOps: IntoDf {
     /// Output:
     ///
     /// ```text
-    /// shape: (5, 2)
+    /// shape: (5 x 2)
     /// +-----------------+--------+
     /// | Wavelength (nm) | Color  |
     /// | ---             | ---    |

@@ -46,7 +46,7 @@ class ExprStructNameSpace:
         ...     }
         ... ).select(pl.struct(["aaa", "bbb", "ccc", "ddd"]).alias("struct_col"))
         >>> df
-        shape: (2, 1)
+        shape: (2 x 1)
         ┌──────────────────────┐
         │ struct_col           │
         │ ---                  │
@@ -59,7 +59,7 @@ class ExprStructNameSpace:
         Retrieve struct field(s) as Series:
 
         >>> df.select(pl.col("struct_col").struct.field("bbb"))
-        shape: (2, 1)
+        shape: (2 x 1)
         ┌─────┐
         │ bbb │
         │ --- │
@@ -73,7 +73,7 @@ class ExprStructNameSpace:
         ...     pl.col("struct_col").struct.field("bbb"),
         ...     pl.col("struct_col").struct.field("ddd"),
         ... )
-        shape: (2, 2)
+        shape: (2 x 2)
         ┌─────┬───────────┐
         │ bbb ┆ ddd       │
         │ --- ┆ ---       │
@@ -106,7 +106,7 @@ class ExprStructNameSpace:
         ...     }
         ... ).select(pl.struct(["aaa", "bbb", "ccc", "ddd"]).alias("struct_col"))
         >>> df
-        shape: (2, 1)
+        shape: (2 x 1)
         ┌──────────────────────┐
         │ struct_col           │
         │ ---                  │
@@ -117,7 +117,7 @@ class ExprStructNameSpace:
         └──────────────────────┘
 
         >>> df.unnest("struct_col")
-        shape: (2, 4)
+        shape: (2 x 4)
         ┌─────┬─────┬──────┬───────────┐
         │ aaa ┆ bbb ┆ ccc  ┆ ddd       │
         │ --- ┆ --- ┆ ---  ┆ ---       │
@@ -133,7 +133,7 @@ class ExprStructNameSpace:
         ...     pl.col("struct_col").struct.rename_fields(["www", "xxx", "yyy", "zzz"])
         ... )
         >>> df.unnest("struct_col")
-        shape: (2, 4)
+        shape: (2 x 4)
         ┌─────┬─────┬──────┬───────────┐
         │ www ┆ xxx ┆ yyy  ┆ zzz       │
         │ --- ┆ --- ┆ ---  ┆ ---       │

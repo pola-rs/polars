@@ -168,7 +168,7 @@ class LazyFrame:
     >>> data = {"a": [1, 2], "b": [3, 4]}
     >>> lf = pl.LazyFrame(data)
     >>> lf.collect()
-    shape: (2, 2)
+    shape: (2 x 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
     │ --- ┆ --- │
@@ -189,7 +189,7 @@ class LazyFrame:
     >>> data = {"col1": [0, 2], "col2": [3, 7]}
     >>> lf2 = pl.LazyFrame(data, schema={"col1": pl.Float32, "col2": pl.Int64})
     >>> lf2.collect()
-    shape: (2, 2)
+    shape: (2 x 2)
     ┌──────┬──────┐
     │ col1 ┆ col2 │
     │ ---  ┆ ---  │
@@ -204,7 +204,7 @@ class LazyFrame:
     >>> data = {"col1": [1, 2], "col2": [3, 4]}
     >>> lf3 = pl.LazyFrame(data, schema=[("col1", pl.Float32), ("col2", pl.Int64)])
     >>> lf3.collect()
-    shape: (2, 2)
+    shape: (2 x 2)
     ┌──────┬──────┐
     │ col1 ┆ col2 │
     │ ---  ┆ ---  │
@@ -222,7 +222,7 @@ class LazyFrame:
     ... ]
     >>> lf4 = pl.LazyFrame(data)
     >>> lf4.collect()
-    shape: (2, 2)
+    shape: (2 x 2)
     ┌──────┬──────┐
     │ col1 ┆ col2 │
     │ ---  ┆ ---  │
@@ -238,7 +238,7 @@ class LazyFrame:
     >>> data = np.array([(1, 2), (3, 4)], dtype=np.int64)
     >>> lf5 = pl.LazyFrame(data, schema=["a", "b"], orient="col")
     >>> lf5.collect()
-    shape: (2, 2)
+    shape: (2 x 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
     │ --- ┆ --- │
@@ -253,7 +253,7 @@ class LazyFrame:
     >>> data = [[1, 2, 3], [4, 5, 6]]
     >>> lf6 = pl.LazyFrame(data, schema=["a", "b", "c"])
     >>> lf6.collect()
-    shape: (2, 3)
+    shape: (2 x 3)
     ┌─────┬─────┬─────┐
     │ a   ┆ b   ┆ c   │
     │ --- ┆ --- ┆ --- │
@@ -771,7 +771,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.pipe(cast_str_to_int, col_name="b").collect()
-        shape: (4, 2)
+        shape: (4 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -790,7 +790,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.collect()
-        shape: (2, 2)
+        shape: (2 x 2)
         ┌─────┬─────┐
         │ b   ┆ a   │
         │ --- ┆ --- │
@@ -800,7 +800,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2   ┆ 4   │
         └─────┴─────┘
         >>> lf.pipe(lambda tdf: tdf.select(sorted(tdf.columns))).collect()
-        shape: (2, 2)
+        shape: (2 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -1151,7 +1151,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.sort("a").collect()
-        shape: (3, 3)
+        shape: (3 x 3)
         ┌──────┬─────┬─────┐
         │ a    ┆ b   ┆ c   │
         │ ---  ┆ --- ┆ --- │
@@ -1165,7 +1165,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Sorting by expressions is also supported.
 
         >>> lf.sort(pl.col("a") + pl.col("b") * 2, nulls_last=True).collect()
-        shape: (3, 3)
+        shape: (3 x 3)
         ┌──────┬─────┬─────┐
         │ a    ┆ b   ┆ c   │
         │ ---  ┆ --- ┆ --- │
@@ -1179,7 +1179,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Sort by multiple columns by passing a list of columns.
 
         >>> lf.sort(["c", "a"], descending=True).collect()
-        shape: (3, 3)
+        shape: (3 x 3)
         ┌──────┬─────┬─────┐
         │ a    ┆ b   ┆ c   │
         │ ---  ┆ --- ┆ --- │
@@ -1193,7 +1193,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Or use positional arguments to sort by multiple columns in the same way.
 
         >>> lf.sort("c", "a", descending=[False, True]).collect()
-        shape: (3, 3)
+        shape: (3 x 3)
         ┌──────┬─────┬─────┐
         │ a    ┆ b   ┆ c   │
         │ ---  ┆ --- ┆ --- │
@@ -1310,7 +1310,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf.groupby("a", maintain_order=True).agg(pl.all().sum()).sort(
         ...     "a"
         ... ).profile()  # doctest: +SKIP
-        (shape: (3, 3)
+        (shape: (3 x 3)
          ┌─────┬─────┬─────┐
          │ a   ┆ b   ┆ c   │
          │ --- ┆ --- ┆ --- │
@@ -1320,7 +1320,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
          │ b   ┆ 11  ┆ 10  │
          │ c   ┆ 6   ┆ 1   │
          └─────┴─────┴─────┘,
-         shape: (3, 3)
+         shape: (3 x 3)
          ┌────────────────────────┬───────┬──────┐
          │ node                   ┆ start ┆ end  │
          │ ---                    ┆ ---   ┆ ---  │
@@ -1442,7 +1442,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.groupby("a", maintain_order=True).agg(pl.all().sum()).collect()
-        shape: (3, 3)
+        shape: (3 x 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
         │ --- ┆ --- ┆ --- │
@@ -1704,7 +1704,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.groupby("a", maintain_order=True).agg(pl.all().sum()).fetch(2)
-        shape: (2, 3)
+        shape: (2 x 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
         │ --- ┆ --- ┆ --- │
@@ -1787,7 +1787,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.clear().fetch()
-        shape: (0, 3)
+        shape: (0 x 3)
         ┌─────┬─────┬──────┐
         │ a   ┆ b   ┆ c    │
         │ --- ┆ --- ┆ ---  │
@@ -1796,7 +1796,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┴──────┘
 
         >>> lf.clear(2).fetch()
-        shape: (2, 3)
+        shape: (2 x 3)
         ┌──────┬──────┬──────┐
         │ a    ┆ b    ┆ c    │
         │ ---  ┆ ---  ┆ ---  │
@@ -1855,7 +1855,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Filter on one condition:
 
         >>> lf.filter(pl.col("foo") < 3).collect()
-        shape: (2, 3)
+        shape: (2 x 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
@@ -1868,7 +1868,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Filter on multiple conditions:
 
         >>> lf.filter((pl.col("foo") < 3) & (pl.col("ham") == "a")).collect()
-        shape: (1, 3)
+        shape: (1 x 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
@@ -1880,7 +1880,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Filter on an OR condition:
 
         >>> lf.filter((pl.col("foo") == 1) | (pl.col("ham") == "c")).collect()
-        shape: (2, 3)
+        shape: (2 x 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
@@ -1930,7 +1930,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.select("foo").collect()
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌─────┐
         │ foo │
         │ --- │
@@ -1944,7 +1944,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Multiple columns can be selected by passing a list of column names.
 
         >>> lf.select(["foo", "bar"]).collect()
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌─────┬─────┐
         │ foo ┆ bar │
         │ --- ┆ --- │
@@ -1959,7 +1959,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         list. Expressions are also accepted.
 
         >>> lf.select(pl.col("foo"), pl.col("bar") + 1).collect()
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌─────┬─────┐
         │ foo ┆ bar │
         │ --- ┆ --- │
@@ -1975,7 +1975,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf.select(
         ...     threshold=pl.when(pl.col("foo") > 2).then(10).otherwise(0)
         ... ).collect()
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌───────────┐
         │ threshold │
         │ ---       │
@@ -1995,7 +1995,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         is_odd=(pl.col(pl.INTEGER_DTYPES) % 2).suffix("_is_odd"),
         ...     ).collect()
         ...
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌───────────┐
         │ is_odd    │
         │ ---       │
@@ -2060,7 +2060,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.groupby("a").agg(pl.col("b").sum()).collect()  # doctest: +IGNORE_RESULT
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -2075,7 +2075,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         the input.
 
         >>> lf.groupby("a", maintain_order=True).agg(pl.col("c")).collect()
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌─────┬───────────┐
         │ a   ┆ c         │
         │ --- ┆ ---       │
@@ -2089,7 +2089,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Group by multiple columns by passing a list of column names.
 
         >>> lf.groupby(["a", "b"]).agg(pl.max("c")).collect()  # doctest: +SKIP
-        shape: (4, 3)
+        shape: (4 x 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
         │ --- ┆ --- ┆ --- │
@@ -2107,7 +2107,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf.groupby("a", pl.col("b") // 2).agg(
         ...     pl.col("c").mean()
         ... ).collect()  # doctest: +SKIP
-        shape: (3, 3)
+        shape: (3 x 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
         │ --- ┆ --- ┆ --- │
@@ -2214,7 +2214,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> assert out["max_a"].to_list() == [3, 7, 7, 9, 9, 1]
         >>> assert out["min_a"].to_list() == [3, 3, 3, 3, 2, 1]
         >>> out
-        shape: (6, 4)
+        shape: (6 x 4)
         ┌─────────────────────┬───────┬───────┬───────┐
         │ dt                  ┆ sum_a ┆ min_a ┆ max_a │
         │ ---                 ┆ ---   ┆ ---   ┆ ---   │
@@ -2348,7 +2348,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.collect()
-        shape: (7, 2)
+        shape: (7 x 2)
         ┌─────────────────────┬─────┐
         │ time                ┆ n   │
         │ ---                 ┆ --- │
@@ -2371,7 +2371,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         pl.col("time").max().alias("time_max"),
         ...     ]
         ... ).collect()
-        shape: (4, 3)
+        shape: (4 x 3)
         ┌─────────────────────┬─────────────────────┬─────────────────────┐
         │ time                ┆ time_min            ┆ time_max            │
         │ ---                 ┆ ---                 ┆ ---                 │
@@ -2388,7 +2388,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf.groupby_dynamic(
         ...     "time", every="1h", include_boundaries=True, closed="right"
         ... ).agg([pl.col("time").count().alias("time_count")]).collect()
-        shape: (4, 4)
+        shape: (4 x 4)
         ┌─────────────────────┬─────────────────────┬─────────────────────┬────────────┐
         │ _lower_boundary     ┆ _upper_boundary     ┆ time                ┆ time_count │
         │ ---                 ┆ ---                 ┆ ---                 ┆ ---        │
@@ -2409,7 +2409,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         pl.col("time").alias("time_agg_list"),
         ...     ]
         ... ).collect()
-        shape: (4, 3)
+        shape: (4 x 3)
         ┌─────────────────────┬────────────┬───────────────────────────────────┐
         │ time                ┆ time_count ┆ time_agg_list                     │
         │ ---                 ┆ ---        ┆ ---                               │
@@ -2426,7 +2426,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf.groupby_dynamic("time", every="1h", closed="both").agg(
         ...     pl.col("time").count().alias("time_count")
         ... ).collect()
-        shape: (5, 2)
+        shape: (5 x 2)
         ┌─────────────────────┬────────────┐
         │ time                ┆ time_count │
         │ ---                 ┆ ---        │
@@ -2452,7 +2452,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.collect()
-        shape: (7, 2)
+        shape: (7 x 2)
         ┌─────────────────────┬────────┐
         │ time                ┆ groups │
         │ ---                 ┆ ---    │
@@ -2475,7 +2475,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         include_boundaries=True,
         ...     )
         ... ).agg([pl.col("time").count().alias("time_count")]).collect()
-        shape: (7, 5)
+        shape: (7 x 5)
         ┌────────┬─────────────────────┬─────────────────────┬─────────────────────┬────────────┐
         │ groups ┆ _lower_boundary     ┆ _upper_boundary     ┆ time                ┆ time_count │
         │ ---    ┆ ---                 ┆ ---                 ┆ ---                 ┆ ---        │
@@ -2505,7 +2505,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     include_boundaries=True,
         ...     closed="right",
         ... ).agg(pl.col("A").alias("A_agg_list")).collect()
-        shape: (3, 4)
+        shape: (3 x 4)
         ┌─────────────────┬─────────────────┬─────┬─────────────────┐
         │ _lower_boundary ┆ _upper_boundary ┆ idx ┆ A_agg_list      │
         │ ---             ┆ ---             ┆ --- ┆ ---             │
@@ -2652,7 +2652,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> population.join_asof(
         ...     gdp, left_on="date", right_on="date", strategy="backward"
         ... ).collect()
-        shape: (4, 3)
+        shape: (4 x 3)
         ┌─────────────────────┬────────────┬──────┐
         │ date                ┆ population ┆ gdp  │
         │ ---                 ┆ ---        ┆ ---  │
@@ -2780,7 +2780,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.join(other_lf, on="ham").collect()
-        shape: (2, 4)
+        shape: (2 x 4)
         ┌─────┬─────┬─────┬───────┐
         │ foo ┆ bar ┆ ham ┆ apple │
         │ --- ┆ --- ┆ --- ┆ ---   │
@@ -2790,7 +2790,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2   ┆ 7.0 ┆ b   ┆ y     │
         └─────┴─────┴─────┴───────┘
         >>> lf.join(other_lf, on="ham", how="outer").collect()
-        shape: (4, 4)
+        shape: (4 x 4)
         ┌──────┬──────┬─────┬───────┐
         │ foo  ┆ bar  ┆ ham ┆ apple │
         │ ---  ┆ ---  ┆ --- ┆ ---   │
@@ -2802,7 +2802,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 3    ┆ 8.0  ┆ c   ┆ null  │
         └──────┴──────┴─────┴───────┘
         >>> lf.join(other_lf, on="ham", how="left").collect()
-        shape: (3, 4)
+        shape: (3 x 4)
         ┌─────┬─────┬─────┬───────┐
         │ foo ┆ bar ┆ ham ┆ apple │
         │ --- ┆ --- ┆ --- ┆ ---   │
@@ -2813,7 +2813,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 3   ┆ 8.0 ┆ c   ┆ null  │
         └─────┴─────┴─────┴───────┘
         >>> lf.join(other_lf, on="ham", how="semi").collect()
-        shape: (2, 3)
+        shape: (2 x 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
@@ -2823,7 +2823,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2   ┆ 7.0 ┆ b   │
         └─────┴─────┴─────┘
         >>> lf.join(other_lf, on="ham", how="anti").collect()
-        shape: (1, 3)
+        shape: (1 x 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
@@ -2917,7 +2917,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.with_columns((pl.col("a") ** 2).alias("a^2")).collect()
-        shape: (4, 4)
+        shape: (4 x 4)
         ┌─────┬──────┬───────┬──────┐
         │ a   ┆ b    ┆ c     ┆ a^2  │
         │ --- ┆ ---  ┆ ---   ┆ ---  │
@@ -2932,7 +2932,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Added columns will replace existing columns with the same name.
 
         >>> lf.with_columns(pl.col("a").cast(pl.Float64)).collect()
-        shape: (4, 3)
+        shape: (4 x 3)
         ┌─────┬──────┬───────┐
         │ a   ┆ b    ┆ c     │
         │ --- ┆ ---  ┆ ---   │
@@ -2953,7 +2953,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         (pl.col("c").is_not()).alias("not c"),
         ...     ]
         ... ).collect()
-        shape: (4, 6)
+        shape: (4 x 6)
         ┌─────┬──────┬───────┬──────┬──────┬───────┐
         │ a   ┆ b    ┆ c     ┆ a^2  ┆ b/2  ┆ not c │
         │ --- ┆ ---  ┆ ---   ┆ ---  ┆ ---  ┆ ---   │
@@ -2972,7 +2972,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     (pl.col("b") / 2).alias("b/2"),
         ...     (pl.col("c").is_not()).alias("not c"),
         ... ).collect()
-        shape: (4, 6)
+        shape: (4 x 6)
         ┌─────┬──────┬───────┬──────┬──────┬───────┐
         │ a   ┆ b    ┆ c     ┆ a^2  ┆ b/2  ┆ not c │
         │ --- ┆ ---  ┆ ---   ┆ ---  ┆ ---  ┆ ---   │
@@ -2990,7 +2990,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     ab=pl.col("a") * pl.col("b"),
         ...     not_c=pl.col("c").is_not(),
         ... ).collect()
-        shape: (4, 5)
+        shape: (4 x 5)
         ┌─────┬──────┬───────┬──────┬───────┐
         │ a   ┆ b    ┆ c     ┆ ab   ┆ not_c │
         │ --- ┆ ---  ┆ ---   ┆ ---  ┆ ---   │
@@ -3011,7 +3011,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         diffs=pl.col(["a", "b"]).diff().suffix("_diff"),
         ...     ).collect()
         ...
-        shape: (4, 3)
+        shape: (4 x 3)
         ┌─────┬──────┬─────────────┐
         │ a   ┆ b    ┆ diffs       │
         │ --- ┆ ---  ┆ ---         │
@@ -3062,7 +3062,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf.with_context(lf_other).select(
         ...     pl.col("b") + pl.col("c").first()
         ... ).collect()
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌──────┐
         │ b    │
         │ ---  │
@@ -3084,7 +3084,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> test_lf.with_context(train_lf.select(pl.all().suffix("_train"))).select(
         ...     pl.col("feature_0").fill_null(pl.col("feature_0_train").median())
         ... ).collect()
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌───────────┐
         │ feature_0 │
         │ ---       │
@@ -3124,7 +3124,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.drop("ham").collect()
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌─────┬─────┐
         │ foo ┆ bar │
         │ --- ┆ --- │
@@ -3138,7 +3138,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Drop multiple columns by passing a list of column names.
 
         >>> lf.drop(["bar", "ham"]).collect()
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌─────┐
         │ foo │
         │ --- │
@@ -3152,7 +3152,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Or use positional arguments to drop multiple columns in the same way.
 
         >>> lf.drop("foo", "bar").collect()
-        shape: (3, 1)
+        shape: (3 x 1)
         ┌─────┐
         │ ham │
         │ --- │
@@ -3195,7 +3195,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.rename({"foo": "apple"}).collect()
-        shape: (3, 3)
+        shape: (3 x 3)
         ┌───────┬─────┬─────┐
         │ apple ┆ bar ┆ ham │
         │ ---   ┆ --- ┆ --- │
@@ -3224,7 +3224,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.reverse().collect()
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌─────┬─────┐
         │ key ┆ val │
         │ --- ┆ --- │
@@ -3256,7 +3256,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.shift(periods=1).collect()
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌──────┬──────┐
         │ a    ┆ b    │
         │ ---  ┆ ---  │
@@ -3267,7 +3267,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 3    ┆ 4    │
         └──────┴──────┘
         >>> lf.shift(periods=-1).collect()
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌──────┬──────┐
         │ a    ┆ b    │
         │ ---  ┆ ---  │
@@ -3305,7 +3305,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.shift_and_fill(periods=1, fill_value=0).collect()
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -3316,7 +3316,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 3   ┆ 4   │
         └─────┴─────┘
         >>> lf.shift_and_fill(periods=-1, fill_value=0).collect()
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -3354,7 +3354,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.slice(1, 2).collect()
-        shape: (2, 3)
+        shape: (2 x 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
         │ --- ┆ --- ┆ --- │
@@ -3397,7 +3397,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.limit().collect()
-        shape: (5, 2)
+        shape: (5 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -3410,7 +3410,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 5   ┆ 11  │
         └─────┴─────┘
         >>> lf.limit(2).collect()
-        shape: (2, 2)
+        shape: (2 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -3447,7 +3447,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.head().collect()
-        shape: (5, 2)
+        shape: (5 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -3460,7 +3460,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 5   ┆ 11  │
         └─────┴─────┘
         >>> lf.head(2).collect()
-        shape: (2, 2)
+        shape: (2 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -3491,7 +3491,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.tail().collect()
-        shape: (5, 2)
+        shape: (5 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -3504,7 +3504,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 6   ┆ 12  │
         └─────┴─────┘
         >>> lf.tail(2).collect()
-        shape: (2, 2)
+        shape: (2 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -3530,7 +3530,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.last().collect()
-        shape: (1, 2)
+        shape: (1 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -3555,7 +3555,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.first().collect()
-        shape: (1, 2)
+        shape: (1 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -3592,7 +3592,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.with_row_count().collect()
-        shape: (3, 3)
+        shape: (3 x 3)
         ┌────────┬─────┬─────┐
         │ row_nr ┆ a   ┆ b   │
         │ ---    ┆ --- ┆ --- │
@@ -3619,7 +3619,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.take_every(2).collect()
-        shape: (2, 2)
+        shape: (2 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -3664,7 +3664,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.fill_null(99).collect()
-        shape: (4, 2)
+        shape: (4 x 2)
         ┌─────┬──────┐
         │ a   ┆ b    │
         │ --- ┆ ---  │
@@ -3676,7 +3676,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4   ┆ 13.0 │
         └─────┴──────┘
         >>> lf.fill_null(strategy="forward").collect()
-        shape: (4, 2)
+        shape: (4 x 2)
         ┌─────┬──────┐
         │ a   ┆ b    │
         │ --- ┆ ---  │
@@ -3689,7 +3689,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴──────┘
 
         >>> lf.fill_null(strategy="max").collect()
-        shape: (4, 2)
+        shape: (4 x 2)
         ┌─────┬──────┐
         │ a   ┆ b    │
         │ --- ┆ ---  │
@@ -3702,7 +3702,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴──────┘
 
         >>> lf.fill_null(strategy="zero").collect()
-        shape: (4, 2)
+        shape: (4 x 2)
         ┌─────┬──────┐
         │ a   ┆ b    │
         │ --- ┆ ---  │
@@ -3784,7 +3784,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.fill_nan(99).collect()
-        shape: (4, 2)
+        shape: (4 x 2)
         ┌──────┬──────┐
         │ a    ┆ b    │
         │ ---  ┆ ---  │
@@ -3814,7 +3814,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.std().collect()
-        shape: (1, 2)
+        shape: (1 x 2)
         ┌──────────┬─────┐
         │ a        ┆ b   │
         │ ---      ┆ --- │
@@ -3823,7 +3823,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1.290994 ┆ 0.5 │
         └──────────┴─────┘
         >>> lf.std(ddof=0).collect()
-        shape: (1, 2)
+        shape: (1 x 2)
         ┌──────────┬──────────┐
         │ a        ┆ b        │
         │ ---      ┆ ---      │
@@ -3848,7 +3848,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.var().collect()
-        shape: (1, 2)
+        shape: (1 x 2)
         ┌──────────┬──────┐
         │ a        ┆ b    │
         │ ---      ┆ ---  │
@@ -3857,7 +3857,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1.666667 ┆ 0.25 │
         └──────────┴──────┘
         >>> lf.var(ddof=0).collect()
-        shape: (1, 2)
+        shape: (1 x 2)
         ┌──────┬────────┐
         │ a    ┆ b      │
         │ ---  ┆ ---    │
@@ -3882,7 +3882,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.max().collect()
-        shape: (1, 2)
+        shape: (1 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -3907,7 +3907,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.min().collect()
-        shape: (1, 2)
+        shape: (1 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -3932,7 +3932,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.sum().collect()
-        shape: (1, 2)
+        shape: (1 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -3957,7 +3957,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.mean().collect()
-        shape: (1, 2)
+        shape: (1 x 2)
         ┌─────┬──────┐
         │ a   ┆ b    │
         │ --- ┆ ---  │
@@ -3982,7 +3982,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.median().collect()
-        shape: (1, 2)
+        shape: (1 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -4018,7 +4018,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.quantile(0.7).collect()
-        shape: (1, 2)
+        shape: (1 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -4056,7 +4056,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.explode("numbers").collect()
-        shape: (8, 2)
+        shape: (8 x 2)
         ┌─────────┬─────────┐
         │ letters ┆ numbers │
         │ ---     ┆ ---     │
@@ -4131,7 +4131,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.unique().collect()
-        shape: (3, 3)
+        shape: (3 x 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
@@ -4142,7 +4142,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 3   ┆ a   ┆ b   │
         └─────┴─────┴─────┘
         >>> lf.unique(subset=["bar", "ham"]).collect()
-        shape: (1, 3)
+        shape: (1 x 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
@@ -4151,7 +4151,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1   ┆ a   ┆ b   │
         └─────┴─────┴─────┘
         >>> lf.unique(keep="last").collect()
-        shape: (3, 3)
+        shape: (3 x 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
@@ -4189,7 +4189,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.drop_nulls().collect()
-        shape: (2, 3)
+        shape: (2 x 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
         │ --- ┆ --- ┆ --- │
@@ -4212,7 +4212,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.collect()
-        shape: (4, 3)
+        shape: (4 x 3)
         ┌──────┬──────┬──────┐
         │ a    ┆ b    ┆ c    │
         │ ---  ┆ ---  ┆ ---  │
@@ -4227,7 +4227,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Drop a row only if all values are null:
 
         >>> lf.filter(~pl.all(pl.all().is_null())).collect()
-        shape: (3, 3)
+        shape: (3 x 3)
         ┌──────┬─────┬──────┐
         │ a    ┆ b   ┆ c    │
         │ ---  ┆ --- ┆ ---  │
@@ -4288,7 +4288,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.melt(id_vars="a", value_vars=["b", "c"]).collect()
-        shape: (6, 3)
+        shape: (6 x 3)
         ┌─────┬──────────┬───────┐
         │ a   ┆ variable ┆ value │
         │ --- ┆ ---      ┆ ---   │
@@ -4377,7 +4377,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.map(lambda x: 2 * x).collect()
-        shape: (2, 2)
+        shape: (2 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -4419,7 +4419,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> lf.interpolate().collect()
-        shape: (4, 3)
+        shape: (4 x 3)
         ┌─────┬──────┬─────┐
         │ foo ┆ bar  ┆ baz │
         │ --- ┆ ---  ┆ --- │
@@ -4462,7 +4462,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... ).select("before", pl.struct(pl.col("^t_.$")).alias("t_struct"), "after")
         >>> df.collect()
-        shape: (2, 3)
+        shape: (2 x 3)
         ┌────────┬─────────────────────┬───────┐
         │ before ┆ t_struct            ┆ after │
         │ ---    ┆ ---                 ┆ ---   │
@@ -4472,7 +4472,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ bar    ┆ {2,"b",null,[3]}    ┆ womp  │
         └────────┴─────────────────────┴───────┘
         >>> df.unnest("t_struct").collect()
-        shape: (2, 6)
+        shape: (2 x 6)
         ┌────────┬─────┬─────┬──────┬───────────┬───────┐
         │ before ┆ t_a ┆ t_b ┆ t_c  ┆ t_d       ┆ after │
         │ ---    ┆ --- ┆ --- ┆ ---  ┆ ---       ┆ ---   │
@@ -4545,7 +4545,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> df
-        shape: (4, 2)
+        shape: (4 x 2)
         ┌─────┬─────┐
         │ A   ┆ B   │
         │ --- ┆ --- │
@@ -4563,7 +4563,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> new_df
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌──────┬─────┐
         │ B    ┆ C   │
         │ ---  ┆ --- │
@@ -4574,7 +4574,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 6    ┆ 9   │
         └──────┴─────┘
         >>> df.update(new_df)
-        shape: (4, 2)
+        shape: (4 x 2)
         ┌─────┬─────┐
         │ A   ┆ B   │
         │ --- ┆ --- │

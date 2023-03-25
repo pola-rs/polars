@@ -74,7 +74,7 @@ class GroupBy(Generic[DF]):
         ...     print(data)
         ...
         a
-        shape: (2, 2)
+        shape: (2 x 2)
         ┌─────┬─────┐
         │ foo ┆ bar │
         │ --- ┆ --- │
@@ -84,7 +84,7 @@ class GroupBy(Generic[DF]):
         │ a   ┆ 2   │
         └─────┴─────┘
         b
-        shape: (1, 2)
+        shape: (1 x 2)
         ┌─────┬─────┐
         │ foo ┆ bar │
         │ --- ┆ --- │
@@ -163,7 +163,7 @@ class GroupBy(Generic[DF]):
         ...     }
         ... )
         >>> df.groupby("a").agg(pl.col("b").sum())  # doctest: +IGNORE_RESULT
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
         │ --- ┆ --- │
@@ -177,7 +177,7 @@ class GroupBy(Generic[DF]):
         Compute multiple aggregates at once by passing a list of expressions.
 
         >>> df.groupby("a").agg([pl.sum("b"), pl.mean("c")])  # doctest: +IGNORE_RESULT
-        shape: (3, 3)
+        shape: (3 x 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
         │ --- ┆ --- ┆ --- │
@@ -194,7 +194,7 @@ class GroupBy(Generic[DF]):
         ...     pl.sum("b").suffix("_sum"),
         ...     (pl.col("c") ** 2).mean().suffix("_mean_squared"),
         ... )  # doctest: +IGNORE_RESULT
-        shape: (3, 3)
+        shape: (3 x 3)
         ┌─────┬───────┬────────────────┐
         │ a   ┆ b_sum ┆ c_mean_squared │
         │ --- ┆ ---   ┆ ---            │
@@ -211,7 +211,7 @@ class GroupBy(Generic[DF]):
         ...     b_sum=pl.sum("b"),
         ...     c_mean_squared=(pl.col("c") ** 2).mean(),
         ... )  # doctest: +IGNORE_RESULT
-        shape: (3, 3)
+        shape: (3 x 3)
         ┌─────┬───────┬────────────────┐
         │ a   ┆ b_sum ┆ c_mean_squared │
         │ --- ┆ ---   ┆ ---            │
@@ -267,7 +267,7 @@ class GroupBy(Generic[DF]):
         ...     }
         ... )
         >>> df
-        shape: (5, 3)
+        shape: (5 x 3)
         ┌─────┬───────┬──────────┐
         │ id  ┆ color ┆ shape    │
         │ --- ┆ ---   ┆ ---      │
@@ -285,7 +285,7 @@ class GroupBy(Generic[DF]):
         >>> df.groupby("color").apply(
         ...     lambda group_df: group_df.sample(2)
         ... )  # doctest: +IGNORE_RESULT
-        shape: (4, 3)
+        shape: (4 x 3)
         ┌─────┬───────┬──────────┐
         │ id  ┆ color ┆ shape    │
         │ --- ┆ ---   ┆ ---      │
@@ -340,7 +340,7 @@ class GroupBy(Generic[DF]):
         ...     }
         ... )
         >>> df
-        shape: (6, 2)
+        shape: (6 x 2)
         ┌─────────┬─────┐
         │ letters ┆ nrs │
         │ ---     ┆ --- │
@@ -354,7 +354,7 @@ class GroupBy(Generic[DF]):
         │ b       ┆ 6   │
         └─────────┴─────┘
         >>> df.groupby("letters").head(2).sort("letters")
-        shape: (5, 2)
+        shape: (5 x 2)
         ┌─────────┬─────┐
         │ letters ┆ nrs │
         │ ---     ┆ --- │
@@ -394,7 +394,7 @@ class GroupBy(Generic[DF]):
         ...     }
         ... )
         >>> df
-        shape: (6, 2)
+        shape: (6 x 2)
         ┌─────────┬─────┐
         │ letters ┆ nrs │
         │ ---     ┆ --- │
@@ -408,7 +408,7 @@ class GroupBy(Generic[DF]):
         │ b       ┆ 6   │
         └─────────┴─────┘
         >>> df.groupby("letters").tail(2).sort("letters")
-        shape: (5, 2)
+        shape: (5 x 2)
         ┌─────────┬─────┐
         │ letters ┆ nrs │
         │ ---     ┆ --- │
@@ -438,7 +438,7 @@ class GroupBy(Generic[DF]):
         --------
         >>> df = pl.DataFrame({"a": ["one", "two", "one", "two"], "b": [1, 2, 3, 4]})
         >>> df.groupby("a", maintain_order=True).all()
-        shape: (2, 2)
+        shape: (2 x 2)
         ┌─────┬───────────┐
         │ a   ┆ b         │
         │ --- ┆ ---       │
@@ -466,7 +466,7 @@ class GroupBy(Generic[DF]):
         ...     }
         ... )
         >>> df.groupby("d", maintain_order=True).count()
-        shape: (3, 2)
+        shape: (3 x 2)
         ┌────────┬───────┐
         │ d      ┆ count │
         │ ---    ┆ ---   │
@@ -495,7 +495,7 @@ class GroupBy(Generic[DF]):
         ...     }
         ... )
         >>> df.groupby("d", maintain_order=True).first()
-        shape: (3, 4)
+        shape: (3 x 4)
         ┌────────┬─────┬──────┬───────┐
         │ d      ┆ a   ┆ b    ┆ c     │
         │ ---    ┆ --- ┆ ---  ┆ ---   │
@@ -524,7 +524,7 @@ class GroupBy(Generic[DF]):
         ...     }
         ... )
         >>> df.groupby("d", maintain_order=True).last()
-        shape: (3, 4)
+        shape: (3 x 4)
         ┌────────┬─────┬──────┬───────┐
         │ d      ┆ a   ┆ b    ┆ c     │
         │ ---    ┆ --- ┆ ---  ┆ ---   │
@@ -553,7 +553,7 @@ class GroupBy(Generic[DF]):
         ...     }
         ... )
         >>> df.groupby("d", maintain_order=True).max()
-        shape: (3, 4)
+        shape: (3 x 4)
         ┌────────┬─────┬──────┬──────┐
         │ d      ┆ a   ┆ b    ┆ c    │
         │ ---    ┆ --- ┆ ---  ┆ ---  │
@@ -582,7 +582,7 @@ class GroupBy(Generic[DF]):
         ...     }
         ... )
         >>> df.groupby("d", maintain_order=True).mean()
-        shape: (3, 4)
+        shape: (3 x 4)
         ┌────────┬─────┬──────────┬──────────┐
         │ d      ┆ a   ┆ b        ┆ c        │
         │ ---    ┆ --- ┆ ---      ┆ ---      │
@@ -610,7 +610,7 @@ class GroupBy(Generic[DF]):
         ...     }
         ... )
         >>> df.groupby("d", maintain_order=True).median()
-        shape: (2, 3)
+        shape: (2 x 3)
         ┌────────┬─────┬──────┐
         │ d      ┆ a   ┆ b    │
         │ ---    ┆ --- ┆ ---  │
@@ -638,7 +638,7 @@ class GroupBy(Generic[DF]):
         ...     }
         ... )
         >>> df.groupby("d", maintain_order=True).min()
-        shape: (3, 4)
+        shape: (3 x 4)
         ┌────────┬─────┬──────┬───────┐
         │ d      ┆ a   ┆ b    ┆ c     │
         │ ---    ┆ --- ┆ ---  ┆ ---   │
@@ -666,7 +666,7 @@ class GroupBy(Generic[DF]):
         ...     }
         ... )
         >>> df.groupby("d", maintain_order=True).n_unique()
-        shape: (2, 3)
+        shape: (2 x 3)
         ┌────────┬─────┬─────┐
         │ d      ┆ a   ┆ b   │
         │ ---    ┆ --- ┆ --- │
@@ -702,7 +702,7 @@ class GroupBy(Generic[DF]):
         ...     }
         ... )
         >>> df.groupby("d", maintain_order=True).quantile(1)
-        shape: (3, 3)
+        shape: (3 x 3)
         ┌────────┬─────┬──────┐
         │ d      ┆ a   ┆ b    │
         │ ---    ┆ --- ┆ ---  │
@@ -731,7 +731,7 @@ class GroupBy(Generic[DF]):
         ...     }
         ... )
         >>> df.groupby("d", maintain_order=True).sum()
-        shape: (3, 4)
+        shape: (3 x 4)
         ┌────────┬─────┬──────┬─────┐
         │ d      ┆ a   ┆ b    ┆ c   │
         │ ---    ┆ --- ┆ ---  ┆ --- │
