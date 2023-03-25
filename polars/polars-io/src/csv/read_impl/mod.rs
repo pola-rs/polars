@@ -351,9 +351,12 @@ impl<'a> CoreReader<'a> {
         mut bytes: &'b [u8],
         logging: bool,
         set_upper_bound: bool,
-    ) -> (&'b [u8], usize) {
+    ) -> (&'b [u8], usize, Option<&'b [u8]>) {
         // initial row guess. We use the line statistic to guess the number of rows to allocate
         let mut total_rows = 128;
+
+        // if we set an upper bound on bytes, keep a reference to the bytes beyond the bound
+        let mut remaining_bytes = None;
 
         // if None, there are less then 128 rows in the file and the statistics don't matter that much
         if let Some((mean, std)) = get_line_stats(
@@ -369,6 +372,7 @@ impl<'a> CoreReader<'a> {
             }
 
             // x % upper bound of byte length per line assuming normally distributed
+            // this upper bound assumption is not guaranteed to be accurate
             let line_length_upper_bound = mean + 1.1 * std;
             total_rows = (bytes.len() as f32 / (mean - 0.01 * std)) as usize;
 
@@ -389,7 +393,8 @@ impl<'a> CoreReader<'a> {
                         self.eol_char,
                     ) {
                         if set_upper_bound {
-                            bytes = &bytes[..n_bytes + pos]
+                            (bytes, remaining_bytes) =
+                                (&bytes[..n_bytes + pos], Some(&bytes[n_bytes + pos..]))
                         }
                     }
                 }
@@ -398,7 +403,7 @@ impl<'a> CoreReader<'a> {
                 eprintln!("initial row estimate: {total_rows}")
             }
         }
-        (bytes, total_rows)
+        (bytes, total_rows, remaining_bytes)
     }
 
     #[allow(clippy::type_complexity)]
@@ -407,11 +412,19 @@ impl<'a> CoreReader<'a> {
         n_threads: &mut usize,
         bytes: &'a [u8],
         logging: bool,
-    ) -> PolarsResult<(Vec<(usize, usize)>, usize, usize, Option<usize>, &'a [u8])> {
+    ) -> PolarsResult<(
+        Vec<(usize, usize)>,
+        usize,
+        usize,
+        Option<usize>,
+        &'a [u8],
+        Option<&'a [u8]>,
+    )> {
         // Make the variable mutable so that we can reassign the sliced file to this variable.
         let (bytes, starting_point_offset) = self.find_starting_point(bytes, self.eol_char)?;
 
-        let (bytes, total_rows) = self.estimate_rows_and_set_upper_bound(bytes, logging, true);
+        let (bytes, total_rows, remaining_bytes) =
+            self.estimate_rows_and_set_upper_bound(bytes, logging, true);
         if total_rows == 128 {
             *n_threads = 1;
 
@@ -442,7 +455,14 @@ impl<'a> CoreReader<'a> {
             );
         }
 
-        Ok((chunks, chunk_size, total_rows, starting_point_offset, bytes))
+        Ok((
+            chunks,
+            chunk_size,
+            total_rows,
+            starting_point_offset,
+            bytes,
+            remaining_bytes,
+        ))
     }
     fn get_projection(&mut self) -> Vec<usize> {
         // we also need to sort the projection to have predictable output.
@@ -502,7 +522,7 @@ impl<'a> CoreReader<'a> {
         predicate: Option<&Arc<dyn PhysicalIoExpr>>,
     ) -> PolarsResult<DataFrame> {
         let logging = verbose();
-        let (file_chunks, chunk_size, total_rows, starting_point_offset, bytes) =
+        let (file_chunks, chunk_size, total_rows, starting_point_offset, bytes, remaining_bytes) =
             self.determine_file_chunks_and_statistics(&mut n_threads, bytes, logging)?;
         let projection = self.get_projection();
         let str_columns = self.get_string_columns(&projection)?;
@@ -682,6 +702,67 @@ impl<'a> CoreReader<'a> {
                     })
                     .collect::<PolarsResult<Vec<_>>>()
             })?;
+            if let (Some(n_rows), Some(remaining_bytes)) = (self.n_rows, remaining_bytes) {
+                let rows_already_read = dfs.iter().map(|x| x.0.height()).sum::<usize>();
+                if rows_already_read < n_rows {
+                    dfs.push({
+                        let mut df = {
+                            let remaining_rows = n_rows - rows_already_read;
+                            // estimate the buffer size required for the remaining rows from the
+                            // rows already read (adding a 10% margin of error)
+                            let estimated_chunk_size =
+                                (bytes.len() as f64 / rows_already_read as f64
+                                    * remaining_rows as f64
+                                    * 1.1) as usize;
+                            let mut buffers = init_buffers(
+                                &projection,
+                                estimated_chunk_size,
+                                self.schema.as_ref(),
+                                &str_capacities,
+                                self.quote_char,
+                                self.encoding,
+                                self.ignore_errors,
+                            )?;
+
+                            parse_lines(
+                                remaining_bytes,
+                                0,
+                                self.delimiter,
+                                self.comment_char,
+                                self.quote_char,
+                                self.eol_char,
+                                self.null_values.as_ref(),
+                                self.missing_is_null,
+                                &projection,
+                                &mut buffers,
+                                self.ignore_errors,
+                                remaining_rows - 1,
+                                self.schema.len(),
+                                self.schema.as_ref(),
+                            )?;
+
+                            DataFrame::new_no_checks(
+                                buffers
+                                    .into_iter()
+                                    .map(|buf| buf.into_series())
+                                    .collect::<PolarsResult<_>>()?,
+                            )
+                        };
+
+                        // update the running str bytes statistics
+                        if !self.low_memory {
+                            update_string_stats(&str_capacities, &str_columns, &df)?;
+                        }
+
+                        cast_columns(&mut df, &self.to_cast, false)?;
+                        if let Some(rc) = &self.row_count {
+                            df.with_row_count_mut(&rc.name, Some(rc.offset));
+                        }
+                        let n_read = df.height() as IdxSize;
+                        (df, n_read)
+                    });
+                }
+            }
             if self.row_count.is_some() {
                 update_row_counts(&mut dfs, 0)
             }
