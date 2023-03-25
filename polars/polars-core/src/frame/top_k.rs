@@ -63,10 +63,16 @@ impl DataFrame {
             .enumerate_idx()
             .map(|(idx, bytes)| CompareRow { idx, bytes })
             .collect::<Vec<_>>();
-        let (lower, _el, _upper) = rows.select_nth_unstable(k);
-        lower.sort_unstable();
 
-        let idx: NoNull<IdxCa> = lower.iter().map(|cmp_row| cmp_row.idx).collect();
+        let sorted = if k >= self.height() {
+            &rows
+        } else {
+            let (lower, _el, _upper) = rows.select_nth_unstable(k);
+            lower.sort_unstable();
+            &*lower
+        };
+
+        let idx: NoNull<IdxCa> = sorted.iter().map(|cmp_row| cmp_row.idx).collect();
 
         unsafe { Ok(self.take_unchecked(&idx.into_inner())) }
     }
