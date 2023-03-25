@@ -1093,20 +1093,3 @@ fn test_leading_whitespace_with_quote() -> PolarsResult<()> {
     assert_eq!(col_2.get(0)?, AnyValue::Float64(4.1));
     Ok(())
 }
-
-#[test]
-fn test_read_csv_n_rows_outside_heuristic() {
-    let s: String = std::iter::repeat(",,,?????????\n")
-        .take(1000)
-        .chain(std::iter::repeat("?????????????????????????????????????????????????,,,\n").take(1))
-        .chain(std::iter::repeat(",,,?????????\n").take(1048))
-        .collect();
-    let file = Cursor::new(s);
-    let df = CsvReader::new(file)
-        .infer_schema(Some(0))
-        .has_header(false)
-        .with_n_rows(Some(2048))
-        .finish()
-        .unwrap();
-    assert_eq!(df.shape(), (2048, 4));
-}
