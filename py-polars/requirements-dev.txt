@@ -18,7 +18,7 @@ connectorx==0.3.2a2; python_version >= '3.8'  # Latest full release is broken - 
 
 # Tooling
 hypothesis==6.68.2
-maturin==0.14.10
+maturin==v1.0.0-beta.5
 pytest==7.2.0
 pytest-cov==4.0.0
 pytest-xdist==3.2.0

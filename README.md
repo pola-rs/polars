@@ -178,7 +178,7 @@ If you want a bleeding edge release or maximal performance you should compile **
 This can be done by going through the following steps in sequence:
 
 1. Install the latest [Rust compiler](https://www.rust-lang.org/tools/install)
-2. Install [maturin](https://maturin.rs/): `pip install maturin`
+2. Install [maturin](https://maturin.rs/): `pip install maturin==v1.0.0-beta.5`
 3. Choose any of:
    - Fastest binary, very long compile times:
      ```sh
