@@ -1580,7 +1580,7 @@ class ExprDateTimeNameSpace:
         ...         pl.col("date").diff().dt.nanoseconds().alias("nanoseconds_diff"),
         ...     ]
         ... )
-        shape: (1_001 2)
+        shape: (1_001, 2)
         ┌─────────────────────────┬──────────────────┐
         │ date                    ┆ nanoseconds_diff │
         │ ---                     ┆ ---              │
