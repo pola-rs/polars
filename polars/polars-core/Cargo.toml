@@ -102,7 +102,46 @@ python = []
 
 serde-lazy = ["serde", "polars-arrow/serde", "indexmap/serde", "smartstring/serde", "chrono/serde"]
 
-docs-selection = ["ndarray", "is_in", "sort_multiple", "rows", "docs", "strings", "object", "lazy", "temporal", "random", "zip_with", "round_series", "checked_arithmetic", "repeat_by", "is_first", "is_last", "asof_join", "cross_join", "dot_product", "concat_str", "row_hash", "mode", "cum_agg", "rolling_window", "diff", "moment", "dtype-categorical", "rank", "diagonal_concat", "horizontal_concat", "abs", "dataframe_arithmetic", "product", "unique_counts", "describe", "chunked_ids", "semi_anti_join", "partition_by"]
+docs-selection = [
+  "ndarray",
+  "is_in",
+  "sort_multiple",
+  "rows",
+  "docs",
+  "strings",
+  "object",
+  "lazy",
+  "temporal",
+  "random",
+  "zip_with",
+  "round_series",
+  "checked_arithmetic",
+  "repeat_by",
+  "is_first",
+  "is_last",
+  "asof_join",
+  "cross_join",
+  "dot_product",
+  "concat_str",
+  "row_hash",
+  "mode",
+  "cum_agg",
+  "rolling_window",
+  "diff",
+  "moment",
+  "dtype-categorical",
+  "rank",
+  "diagonal_concat",
+  "horizontal_concat",
+  "abs",
+  "dataframe_arithmetic",
+  "product",
+  "unique_counts",
+  "describe",
+  "chunked_ids",
+  "semi_anti_join",
+  "partition_by",
+]
 
 # Cloud support.
 "async" = ["url"]
