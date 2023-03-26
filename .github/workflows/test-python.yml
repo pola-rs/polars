@@ -35,8 +35,8 @@ jobs:
 
       - name: Create virtual environment
         run: |
-          python -m venv venv
-          echo "$GITHUB_WORKSPACE/py-polars/venv/bin" >> $GITHUB_PATH
+          python -m venv .venv
+          echo "$GITHUB_WORKSPACE/py-polars/.venv/bin" >> $GITHUB_PATH
 
       - name: Install dependencies
         run: |
