@@ -252,7 +252,6 @@ where
     let arr = if options.window_size.parsed_int {
         let options: RollingOptionsFixedWindow = options.into();
         check_input(options.window_size, options.min_periods)?;
-        let ca = ca.rechunk();
 
         match ca.null_count() {
             0 => rolling_agg_fn(
