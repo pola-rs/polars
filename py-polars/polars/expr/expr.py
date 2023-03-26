@@ -1756,7 +1756,7 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.cast(dtype, strict))
 
     @deprecated_alias(reverse="descending")
-    @deprecate_nonkeyword_arguments()
+    @deprecate_nonkeyword_arguments(stacklevel=3)
     def sort(self, descending: bool = False, nulls_last: bool = False) -> Self:
         """
         Sort this column.
@@ -1885,7 +1885,7 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.top_k(k, descending))
 
     @deprecated_alias(reverse="descending")
-    @deprecate_nonkeyword_arguments()
+    @deprecate_nonkeyword_arguments(stacklevel=3)
     def arg_sort(self, descending: bool = False, nulls_last: bool = False) -> Self:
         """
         Get the index values that would sort this column.
@@ -3175,7 +3175,9 @@ class Expr:
         return self.filter(predicate)
 
     @deprecated_alias(f="function")
-    @deprecate_nonkeyword_arguments(allowed_args=["self", "function", "return_dtype"])
+    @deprecate_nonkeyword_arguments(
+        allowed_args=["self", "function", "return_dtype"], stacklevel=3
+    )
     def map(
         self,
         function: Callable[[Series], Series | Any],
@@ -3226,7 +3228,9 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.map(function, return_dtype, agg_list))
 
     @deprecated_alias(f="function")
-    @deprecate_nonkeyword_arguments(allowed_args=["self", "function", "return_dtype"])
+    @deprecate_nonkeyword_arguments(
+        allowed_args=["self", "function", "return_dtype"], stacklevel=3
+    )
     def apply(
         self,
         function: Callable[[Series], Series] | Callable[[Any], Any],

@@ -31,6 +31,7 @@ fmt: venv  ## Run autoformatting and linting
 	$(VENV_BIN)/blackdoc .
 	$(VENV_BIN)/ruff .
 	$(VENV_BIN)/typos ..
+	$(VENV_BIN)/python scripts/check_decorators_stacklevels.py
 	cargo fmt --all
 	-dprint fmt
 	-$(VENV_BIN)/mypy

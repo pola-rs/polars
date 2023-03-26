@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 
 @deprecate_nonkeyword_arguments()
-@deprecated_alias(file="source")
+@deprecated_alias(file="source", stacklevel=4)
 def read_avro(
     source: str | Path | BytesIO | BinaryIO,
     columns: list[int] | list[str] | None = None,

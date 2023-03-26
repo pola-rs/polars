@@ -73,7 +73,7 @@ def from_dict(
 
 
 @deprecate_nonkeyword_arguments(allowed_args=["data", "schema"])
-@deprecated_alias(dicts="data")
+@deprecated_alias(dicts="data", stacklevel=4)
 def from_dicts(
     data: Sequence[dict[str, Any]],
     infer_schema_length: int | None = N_INFER_DEFAULT,
@@ -413,7 +413,7 @@ def from_pandas(
 
 
 @deprecate_nonkeyword_arguments()
-@deprecated_alias(nan_to_none="nan_to_null", df="data")
+@deprecated_alias(nan_to_none="nan_to_null", df="data", stacklevel=4)
 def from_pandas(
     data: pd.DataFrame | pd.Series | pd.DatetimeIndex,
     rechunk: bool = True,
