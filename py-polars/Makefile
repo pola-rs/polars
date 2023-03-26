@@ -15,7 +15,7 @@ venv:  ## Set up virtual environment and install requirements
 	$(MAKE) requirements
 
 .PHONY: requirements
-requirements: ## Install/refresh all project requirements
+requirements: venv  ## Install/refresh all project requirements
 	$(VENV_BIN)/python -m pip install --upgrade pip
 	$(VENV_BIN)/pip install -r requirements-dev.txt
 	$(VENV_BIN)/pip install -r requirements-lint.txt
