@@ -87,7 +87,7 @@ make test
 
 This will do a number of things:
 
-- Use Python to create a virtual environment in the `py-polars/venv` folder.
+- Use Python to create a virtual environment in the `py-polars/.venv` folder.
 - Use [pip](https://pip.pypa.io/) to install all Python dependencies for development, linting, and building documentation.
 - Use Rust to compile and install Polars in your virtual environment.
 - Use [pytest](https://docs.pytest.org/) to run the Python unittests in your virtual environment
