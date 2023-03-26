@@ -10,8 +10,12 @@ else
 	VENV_BIN=$(VENV)/bin
 endif
 
-venv:  ## Set up virtual environment
+venv:  ## Set up virtual environment and install requirements
 	python3 -m venv $(VENV)
+	$(MAKE) requirements
+
+.PHONY: requirements
+requirements: venv  ## Install/refresh all project requirements
 	$(VENV_BIN)/python -m pip install --upgrade pip
 	$(VENV_BIN)/pip install -r requirements-dev.txt
 	$(VENV_BIN)/pip install -r requirements-lint.txt
