@@ -553,10 +553,10 @@ def test_map_dict() -> None:
         None: "Not specified",
     }
     df = pl.DataFrame(
-        {
-            "int": [None, 1, None, 3],
-            "country_code": ["FR", None, "ES", "DE"],
-        }
+        [
+            pl.Series("int", [None, 1, None, 3], dtype=pl.Int16),
+            pl.Series("country_code", ["FR", None, "ES", "DE"], dtype=pl.Utf8),
+        ]
     )
 
     assert_frame_equal(
@@ -567,7 +567,7 @@ def test_map_dict() -> None:
         ),
         pl.DataFrame(
             [
-                pl.Series("int", [None, 1, None, 3], dtype=pl.Int64),
+                pl.Series("int", [None, 1, None, 3], dtype=pl.Int16),
                 pl.Series("country_code", ["FR", None, "ES", "DE"], dtype=pl.Utf8),
                 pl.Series(
                     "remapped",
@@ -586,7 +586,7 @@ def test_map_dict() -> None:
         ),
         pl.DataFrame(
             [
-                pl.Series("int", [None, 1, None, 3], dtype=pl.Int64),
+                pl.Series("int", [None, 1, None, 3], dtype=pl.Int16),
                 pl.Series("country_code", ["FR", None, "ES", "DE"], dtype=pl.Utf8),
                 pl.Series(
                     "remapped",
@@ -603,7 +603,7 @@ def test_map_dict() -> None:
         ),
         pl.DataFrame(
             [
-                pl.Series("int", [None, 1, None, 3], dtype=pl.Int64),
+                pl.Series("int", [None, 1, None, 3], dtype=pl.Int16),
                 pl.Series("country_code", ["FR", None, "ES", "DE"], dtype=pl.Utf8),
                 pl.Series(
                     "remapped",
@@ -626,7 +626,7 @@ def test_map_dict() -> None:
         pl.DataFrame(
             [
                 pl.Series("row_nr", [0, 1, 2, 3], dtype=pl.UInt32),
-                pl.Series("int", [None, 1, None, 3], dtype=pl.Int64),
+                pl.Series("int", [None, 1, None, 3], dtype=pl.Int16),
                 pl.Series("country_code", ["FR", None, "ES", "DE"], dtype=pl.Utf8),
                 pl.Series(
                     "remapped",
@@ -647,12 +647,12 @@ def test_map_dict() -> None:
             ),
             pl.DataFrame(
                 [
-                    pl.Series("int", [None, 1, None, 3], dtype=pl.Int64),
+                    pl.Series("int", [None, 1, None, 3], dtype=pl.Int16),
                     pl.Series("country_code", ["FR", None, "ES", "DE"], dtype=pl.Utf8),
                     pl.Series(
                         "remapped",
                         ["France", "Not specified", "ES", "Germany"],
-                        dtype=pl.Utf8,
+                        dtype=pl.Categorical,
                     ),
                 ]
             ),
@@ -671,18 +671,31 @@ def test_map_dict() -> None:
             ).collect(),
             pl.DataFrame(
                 [
-                    pl.Series("int", [None, 1, None, 3], dtype=pl.Int64),
+                    pl.Series("int", [None, 1, None, 3], dtype=pl.Int16),
                     pl.Series(
                         "country_code", ["FR", None, "ES", "DE"], dtype=pl.Categorical
                     ),
                     pl.Series(
                         "remapped",
                         ["France", "Not specified", "ES", "Germany"],
-                        dtype=pl.Utf8,
+                        dtype=pl.Categorical,
                     ),
                 ]
             ),
         )
+
+    int_to_int_dict = {1: 5, 3: 7}
+
+    assert_frame_equal(
+        df.with_columns(pl.col("int").map_dict(int_to_int_dict).alias("remapped")),
+        pl.DataFrame(
+            [
+                pl.Series("int", [None, 1, None, 3], dtype=pl.Int16),
+                pl.Series("country_code", ["FR", None, "ES", "DE"], dtype=pl.Utf8),
+                pl.Series("remapped", [None, 5, None, 7], dtype=pl.Int16),
+            ]
+        ),
+    )
 
     int_dict = {1: "b", 3: "d"}
 
@@ -690,7 +703,7 @@ def test_map_dict() -> None:
         df.with_columns(pl.col("int").map_dict(int_dict).alias("remapped")),
         pl.DataFrame(
             [
-                pl.Series("int", [None, 1, None, 3], dtype=pl.Int64),
+                pl.Series("int", [None, 1, None, 3], dtype=pl.Int16),
                 pl.Series("country_code", ["FR", None, "ES", "DE"], dtype=pl.Utf8),
                 pl.Series("remapped", [None, "b", None, "d"], dtype=pl.Utf8),
             ]
@@ -703,7 +716,7 @@ def test_map_dict() -> None:
         df.with_columns(pl.col("int").map_dict(int_with_none_dict).alias("remapped")),
         pl.DataFrame(
             [
-                pl.Series("int", [None, 1, None, 3], dtype=pl.Int64),
+                pl.Series("int", [None, 1, None, 3], dtype=pl.Int16),
                 pl.Series("country_code", ["FR", None, "ES", "DE"], dtype=pl.Utf8),
                 pl.Series("remapped", ["e", "b", "e", "d"], dtype=pl.Utf8),
             ]
@@ -720,9 +733,37 @@ def test_map_dict() -> None:
         ),
         pl.DataFrame(
             [
-                pl.Series("int", [None, 1, None, 3], dtype=pl.Int64),
+                pl.Series("int", [None, 1, None, 3], dtype=pl.Int16),
                 pl.Series("country_code", ["FR", None, "ES", "DE"], dtype=pl.Utf8),
-                pl.Series("remapped", [6, 6, 6, None], dtype=pl.Int64),
+                pl.Series("remapped", [6, 6, 6, None], dtype=pl.Int16),
+            ]
+        ),
+    )
+
+    assert_frame_equal(
+        df.with_columns(
+            pl.col("int")
+            .map_dict(int_with_only_none_values_dict, default=6, dtype=pl.Int32)
+            .alias("remapped")
+        ),
+        pl.DataFrame(
+            [
+                pl.Series("int", [None, 1, None, 3], dtype=pl.Int16),
+                pl.Series("country_code", ["FR", None, "ES", "DE"], dtype=pl.Utf8),
+                pl.Series("remapped", [6, 6, 6, None], dtype=pl.Int32),
+            ]
+        ),
+    )
+
+    assert_frame_equal(
+        df.with_columns(
+            pl.col("int").map_dict(int_with_only_none_values_dict).alias("remapped")
+        ),
+        pl.DataFrame(
+            [
+                pl.Series("int", [None, 1, None, 3], dtype=pl.Int16),
+                pl.Series("country_code", ["FR", None, "ES", "DE"], dtype=pl.Utf8),
+                pl.Series("remapped", [None, None, None, None], dtype=pl.Int16),
             ]
         ),
     )
@@ -735,9 +776,9 @@ def test_map_dict() -> None:
         ),
         pl.DataFrame(
             [
-                pl.Series("int", [None, 1, None, 3], dtype=pl.Int64),
+                pl.Series("int", [None, 1, None, 3], dtype=pl.Int16),
                 pl.Series("country_code", ["FR", None, "ES", "DE"], dtype=pl.Utf8),
-                pl.Series("remapped", [None, 1, None, 3], dtype=pl.Int64),
+                pl.Series("remapped", [None, 1, None, 3], dtype=pl.Int16),
             ]
         ),
     )
@@ -745,7 +786,7 @@ def test_map_dict() -> None:
     float_dict = {1.0: "b", 3.0: "d"}
 
     with pytest.raises(
-        pl.ComputeError, match="Remapping keys could not be converted to Int64: "
+        pl.ComputeError, match="Remapping keys could not be converted to Int16: "
     ):
         df.with_columns(pl.col("int").map_dict(float_dict))
 
