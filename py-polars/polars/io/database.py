@@ -109,7 +109,7 @@ def read_database(
 
 
 @deprecated_alias(sql="query")
-@deprecate_nonkeyword_arguments()
+@deprecate_nonkeyword_arguments(stacklevel=3)
 def read_sql(
     query: list[str] | str,
     connection_uri: str,

@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 
 @deprecate_nonkeyword_arguments()
-@deprecated_alias(table_uri="source")
+@deprecated_alias(table_uri="source", stacklevel=4)
 def read_delta(
     source: str,
     version: int | None = None,
@@ -142,7 +142,7 @@ def read_delta(
 
 
 @deprecate_nonkeyword_arguments()
-@deprecated_alias(table_uri="source")
+@deprecated_alias(table_uri="source", stacklevel=4)
 def scan_delta(
     source: str,
     version: int | None = None,

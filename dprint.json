@@ -4,7 +4,8 @@
   ],
   "excludes": [
     "**/target",
-    "py-polars/venv"
+    "py-polars/.pytest_cache",
+    "py-polars/.venv"
   ],
   "plugins": [
     "https://plugins.dprint.dev/markdown-0.15.2.wasm",

@@ -2173,7 +2173,7 @@ class Series:
             return self._from_pyseries(self._s.sort(descending))
 
     @deprecated_alias(reverse="descending")
-    @deprecate_nonkeyword_arguments(allowed_args=["self", "n"])
+    @deprecate_nonkeyword_arguments(allowed_args=["self", "n"], stacklevel=3)
     def top_k(self, k: int = 5, descending: bool = False) -> Series:
         r"""
         Return the `k` largest elements.
@@ -2199,7 +2199,7 @@ class Series:
         )
 
     @deprecated_alias(reverse="descending")
-    @deprecate_nonkeyword_arguments()
+    @deprecate_nonkeyword_arguments(stacklevel=3)
     def arg_sort(self, descending: bool = False, nulls_last: bool = False) -> Series:
         """
         Get the index values that would sort this Series.
@@ -3894,7 +3894,9 @@ class Series:
         """
 
     @deprecated_alias(func="function")
-    @deprecate_nonkeyword_arguments(allowed_args=["self", "function", "return_dtype"])
+    @deprecate_nonkeyword_arguments(
+        allowed_args=["self", "function", "return_dtype"], stacklevel=3
+    )
     def apply(
         self,
         function: Callable[[Any], Any],
@@ -4748,7 +4750,7 @@ class Series:
         """
 
     @deprecated_alias(reverse="descending")
-    @deprecate_nonkeyword_arguments(allowed_args=["self", "method"])
+    @deprecate_nonkeyword_arguments(allowed_args=["self", "method"], stacklevel=3)
     def rank(self, method: RankMethod = "average", descending: bool = False) -> Series:
         """
         Assign ranks to data, dealing with ties appropriately.
@@ -5098,6 +5100,7 @@ class Series:
         remapping: dict[Any, Any],
         *,
         default: Any = None,
+        dtype: PolarsDataType | None = None,
     ) -> Self:
         """
         Replace values in the Series using a remapping dictionary.
@@ -5109,6 +5112,8 @@ class Series:
         default
             Value to use when the remapping dict does not contain the lookup value.
             Use ``pl.first()``, to keep the original value.
+        dtype
+            Override output dtype.
 
         Examples
         --------
@@ -5153,6 +5158,18 @@ class Series:
             "???"
             "Japan"
             "Netherlands"
+        ]
+
+        Override output dtype:
+
+        >>> s = pl.Series("int8", [5, 2, 3], dtype=pl.Int8)
+        >>> s.map_dict({2: 7}, default=pl.first(), dtype=pl.Int16)
+        shape: (3,)
+        Series: 'int8' [i16]
+        [
+            5
+            7
+            3
         ]
 
         """
@@ -5481,7 +5498,7 @@ class Series:
         """
 
     @deprecated_alias(reverse="descending")
-    @deprecate_nonkeyword_arguments()
+    @deprecate_nonkeyword_arguments(stacklevel=3)
     def set_sorted(self, descending: bool = False) -> Self:
         """
         Flags the Series as 'sorted'.

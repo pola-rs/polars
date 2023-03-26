@@ -2,7 +2,7 @@
 
 PYTHONPATH=
 SHELL=/bin/bash
-VENV = venv
+VENV = .venv
 
 ifeq ($(OS),Windows_NT)
 	VENV_BIN=$(VENV)/Scripts
@@ -10,27 +10,32 @@ else
 	VENV_BIN=$(VENV)/bin
 endif
 
-venv:  ## Set up virtual environment
+.venv:  ## Set up virtual environment and install requirements
 	python3 -m venv $(VENV)
+	$(MAKE) requirements
+
+.PHONY: requirements
+requirements: .venv  ## Install/refresh all project requirements
 	$(VENV_BIN)/python -m pip install --upgrade pip
 	$(VENV_BIN)/pip install -r requirements-dev.txt
 	$(VENV_BIN)/pip install -r requirements-lint.txt
 	$(VENV_BIN)/pip install -r docs/requirements-docs.txt
 
 .PHONY: build
-build: venv  ## Compile and install Polars for development
+build: .venv  ## Compile and install Polars for development
 	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop
 
 .PHONY: build-release
-build-release: venv  ## Compile and install a faster Polars binary
+build-release: .venv  ## Compile and install a faster Polars binary
 	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --release
 
 .PHONY: fmt
-fmt: venv  ## Run autoformatting and linting
+fmt: .venv  ## Run autoformatting and linting
 	$(VENV_BIN)/black .
 	$(VENV_BIN)/blackdoc .
 	$(VENV_BIN)/ruff .
 	$(VENV_BIN)/typos ..
+	$(VENV_BIN)/python scripts/check_decorators_stacklevels.py
 	cargo fmt --all
 	-dprint fmt
 	-$(VENV_BIN)/mypy
@@ -43,25 +48,25 @@ clippy:  ## Run clippy
 pre-commit: fmt clippy  ## Run all code quality checks
 
 .PHONY: test
-test: venv build  ## Run fast unittests
+test: .venv build  ## Run fast unittests
 	$(VENV_BIN)/pytest -n auto --dist worksteal
 
 .PHONY: doctest
-doctest: venv build  ## Run doctests
+doctest: .venv build  ## Run doctests
 	$(VENV_BIN)/python tests/docs/run_doctest.py
 
 .PHONY: test-all
-test-all: venv build  ## Run all tests
+test-all: .venv build  ## Run all tests
 	$(VENV_BIN)/pytest -n auto --dist worksteal -m "slow or not slow"
 	$(VENV_BIN)/python tests/docs/run_doctest.py
 
 .PHONY: coverage
-coverage: venv build  ## Run tests and report coverage
+coverage: .venv build  ## Run tests and report coverage
 	$(VENV_BIN)/pytest --cov -n auto --dist worksteal -m "not benchmark"
 
 .PHONY: clean
 clean:  ## Clean up caches and build artifacts
-	@rm -rf venv/
+	@rm -rf .venv/
 	@rm -rf target/
 	@rm -rf docs/build/
 	@rm -rf docs/source/reference/api/

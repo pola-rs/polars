@@ -2497,6 +2497,31 @@ def test_map_dict() -> None:
         pl.Series("s", [-1, 22, None, 44, -5]),
     )
 
+    assert_series_equal(
+        s.cast(pl.Int16).map_dict(remap_int),
+        pl.Series("s", [None, 22, None, 44, None], dtype=pl.Int16),
+    )
+
+    assert_series_equal(
+        s.cast(pl.Int16).map_dict(remap_int, default=pl.first()),
+        pl.Series("s", [-1, 22, None, 44, -5], dtype=pl.Int16),
+    )
+
+    assert_series_equal(
+        s.cast(pl.Int16).map_dict(remap_int, default=pl.first(), dtype=pl.Float32),
+        pl.Series("s", [-1.0, 22.0, None, 44.0, -5.0], dtype=pl.Float32),
+    )
+
+    assert_series_equal(
+        s.cast(pl.Int16).map_dict(remap_int, default=9),
+        pl.Series("s", [9, 22, 9, 44, 9], dtype=pl.Int16),
+    )
+
+    assert_series_equal(
+        s.cast(pl.Int16).map_dict(remap_int, default=9, dtype=pl.Float32),
+        pl.Series("s", [9.0, 22.0, 9.0, 44.0, 9.0], dtype=pl.Float32),
+    )
+
 
 @pytest.mark.parametrize(
     ("dtype", "lower", "upper"),

@@ -528,7 +528,7 @@ class DataFrame:
         )
 
     @classmethod
-    @deprecated_alias(columns="schema")
+    @deprecated_alias(columns="schema", stacklevel=4)
     def _from_numpy(
         cls,
         data: np.ndarray[Any, Any],
@@ -573,7 +573,7 @@ class DataFrame:
         )
 
     @classmethod
-    @deprecated_alias(columns="schema")
+    @deprecated_alias(columns="schema", stacklevel=4)
     def _from_arrow(
         cls,
         data: pa.Table,
@@ -2259,7 +2259,7 @@ class DataFrame:
         ...
 
     @deprecated_alias(sep="separator")
-    @deprecate_nonkeyword_arguments(allowed_args=["self", "file"])
+    @deprecate_nonkeyword_arguments(allowed_args=["self", "file"], stacklevel=3)
     def write_csv(
         self,
         file: BytesIO | str | Path | None = None,
@@ -5020,7 +5020,9 @@ class DataFrame:
         )
 
     @deprecated_alias(f="function")
-    @deprecate_nonkeyword_arguments(allowed_args=["self", "function", "return_dtype"])
+    @deprecate_nonkeyword_arguments(
+        allowed_args=["self", "function", "return_dtype"], stacklevel=3
+    )
     def apply(
         self,
         function: Callable[[tuple[Any, ...]], Any],
@@ -5739,7 +5741,8 @@ class DataFrame:
 
     @deprecated_alias(aggregate_fn="aggregate_function")
     @deprecate_nonkeyword_arguments(
-        allowed_args=["self", "values", "index", "columns", "aggregate_function"]
+        allowed_args=["self", "values", "index", "columns", "aggregate_function"],
+        stacklevel=3,
     )
     def pivot(
         self,
@@ -5807,8 +5810,8 @@ class DataFrame:
 
         if aggregate_function is no_default:
             warnings.warn(
-                "In a future version of polars, the default `aggregation_function` "
-                "will change from 'first' to None. Please pass `'first'` to keep the "
+                "In a future version of polars, the default `aggregate_function` "
+                "will change from `'first'` to `None`. Please pass `'first'` to keep the "
                 "current behaviour, or `None` to accept the new one.",
                 DeprecationWarning,
                 stacklevel=4,

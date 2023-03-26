@@ -1606,7 +1606,9 @@ def map(
 
 
 @deprecated_alias(f="function")
-@deprecate_nonkeyword_arguments(allowed_args=["exprs", "function", "return_dtype"])
+@deprecate_nonkeyword_arguments(
+    allowed_args=["exprs", "function", "return_dtype"], stacklevel=3
+)
 def apply(
     exprs: Sequence[str | Expr],
     function: Callable[[Sequence[Series]], Series | Any],
@@ -1862,7 +1864,7 @@ def reduce(
 
 
 @deprecated_alias(f="function")
-@deprecate_nonkeyword_arguments()
+@deprecate_nonkeyword_arguments(stacklevel=3)
 def cumfold(
     acc: IntoExpr,
     function: Callable[[Series, Series], Series],
@@ -2274,7 +2276,7 @@ def arange(
 
 
 @deprecated_alias(reverse="descending")
-@deprecate_nonkeyword_arguments()
+@deprecate_nonkeyword_arguments(stacklevel=3)
 def arg_sort_by(
     exprs: IntoExpr | Iterable[IntoExpr],
     descending: bool | Sequence[bool] = False,
@@ -2536,7 +2538,7 @@ def date_(
 
 
 @deprecated_alias(sep="separator")
-@deprecate_nonkeyword_arguments()
+@deprecate_nonkeyword_arguments(stacklevel=3)
 def concat_str(exprs: IntoExpr | Iterable[IntoExpr], separator: str = "") -> Expr:
     """
     Horizontally concatenate columns into a single string column.

@@ -131,7 +131,7 @@ class ExprListNameSpace:
         return wrap_expr(self._pyexpr.lst_mean())
 
     @deprecate_nonkeyword_arguments()
-    @deprecated_alias(reverse="descending")
+    @deprecated_alias(reverse="descending", stacklevel=4)
     def sort(self, descending: bool = False) -> Expr:
         """
         Sort the arrays in this column.
