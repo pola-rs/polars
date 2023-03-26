@@ -28,7 +28,9 @@ if TYPE_CHECKING:
 
 
 @deprecate_nonkeyword_arguments()
-@deprecated_alias(file="source", sep="separator", parse_dates="try_parse_dates")
+@deprecated_alias(
+    file="source", sep="separator", parse_dates="try_parse_dates", stacklevel=4
+)
 def read_csv(
     source: str | TextIO | BytesIO | Path | BinaryIO | bytes,
     has_header: bool = True,
@@ -387,7 +389,7 @@ def read_csv(
 
 
 @deprecate_nonkeyword_arguments()
-@deprecated_alias(file="source", sep="separator")
+@deprecated_alias(file="source", sep="separator", stacklevel=4)
 def read_csv_batched(
     source: str | Path,
     has_header: bool = True,
@@ -682,7 +684,9 @@ def read_csv_batched(
 
 
 @deprecate_nonkeyword_arguments()
-@deprecated_alias(file="source", sep="separator", parse_dates="try_parse_dates")
+@deprecated_alias(
+    file="source", sep="separator", parse_dates="try_parse_dates", stacklevel=4
+)
 def scan_csv(
     source: str | Path,
     has_header: bool = True,

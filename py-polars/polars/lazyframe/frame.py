@@ -4316,7 +4316,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
 
     @deprecated_alias(f="function")
-    @deprecate_nonkeyword_arguments()
+    @deprecate_nonkeyword_arguments(stacklevel=3)
     def map(
         self,
         function: Callable[[DataFrame], DataFrame],

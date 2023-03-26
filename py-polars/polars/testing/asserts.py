@@ -20,7 +20,7 @@ from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_a
 
 
 @deprecate_nonkeyword_arguments()
-@deprecated_alias(check_column_names="check_column_order")
+@deprecated_alias(check_column_names="check_column_order", stacklevel=4)
 def assert_frame_equal(
     left: DataFrame | LazyFrame,
     right: DataFrame | LazyFrame,

@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 
 @deprecate_nonkeyword_arguments()
-@deprecated_alias(file="source")
+@deprecated_alias(file="source", stacklevel=4)
 def read_ipc(
     source: str | BinaryIO | BytesIO | Path | bytes,
     columns: list[int] | list[str] | None = None,
@@ -135,7 +135,7 @@ def read_ipc_schema(source: str | BinaryIO | Path | bytes) -> dict[str, PolarsDa
 
 
 @deprecate_nonkeyword_arguments()
-@deprecated_alias(file="source")
+@deprecated_alias(file="source", stacklevel=4)
 def scan_ipc(
     source: str | Path,
     n_rows: int | None = None,

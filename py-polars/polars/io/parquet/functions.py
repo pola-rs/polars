@@ -160,7 +160,7 @@ def read_parquet_schema(
 
 
 @deprecate_nonkeyword_arguments()
-@deprecated_alias(file="source")
+@deprecated_alias(file="source", stacklevel=4)
 def scan_parquet(
     source: str | Path,
     n_rows: int | None = None,
