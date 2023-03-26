@@ -15,6 +15,7 @@ Conversion
     from_numpy
     from_pandas
     from_records
+    from_repr
 
 Eager/Lazy functions
 ~~~~~~~~~~~~~~~~~~~~
