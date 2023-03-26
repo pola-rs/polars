@@ -691,3 +691,32 @@ def test_groupby_multiple_column_reference() -> None:
         "gr": ["a", "b"],
         "val": [[1, 101, 10100], [20, 2020, 202000]],
     }
+
+
+@pytest.mark.parametrize(
+    ("aggregation", "args", "expected_values", "expected_dtype"),
+    [
+        ("first", [], [1, None], pl.Int64),
+        ("last", [], [1, None], pl.Int64),
+        ("max", [], [1, None], pl.Int64),
+        ("mean", [], [1.0, None], pl.Float64),
+        ("median", [], [1.0, None], pl.Float64),
+        ("min", [], [1, None], pl.Int64),
+        ("n_unique", [], [1, None], pl.UInt32),
+        ("quantile", [0.5], [1.0, None], pl.Float64),
+    ],
+)
+def test_groupby_empty_groups(
+    aggregation: str,
+    args: list[object],
+    expected_values: list[object],
+    expected_dtype: pl.DataType,
+) -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [1, 2]})
+    result = df.groupby("b", maintain_order=True).agg(
+        getattr(pl.col("a").filter(pl.col("b") != 2), aggregation)(*args)
+    )
+    expected = pl.DataFrame({"b": [1, 2], "a": expected_values}).with_columns(
+        pl.col("a").cast(expected_dtype)
+    )
+    assert_frame_equal(result, expected)
