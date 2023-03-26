@@ -178,6 +178,29 @@ def when(expr: Expr | bool | Series) -> When:
     │ 4   ┆ 0   ┆ 1       │
     └─────┴─────┴─────────┘
 
+    Chained `when, thens` should be read as `if, elif, ... elif, else`, not
+    as `if, if, ... if, else`.
+    Note how in the example above for the second row in the dataframe, where
+    `foo=3` and `bar=4`, the first `when` evaluates to `True`, and therefore
+    the second `when`, which is also `True`, is not evaluated.
+
+    The `otherwise` at the end is optional. If left out, any rows where none
+    of the `when` expressions evaluate to True, are set to `null`:
+
+    >>> df.with_columns(
+    ...     pl.when(pl.col("foo") > 2).then(pl.lit(1)).otherwise(pl.lit(-1))
+    ... )
+    shape: (3, 3)
+    ┌─────┬─────┬─────────┐
+    │ foo ┆ bar ┆ literal │
+    │ --- ┆ --- ┆ ---     │
+    │ i64 ┆ i64 ┆ i32     │
+    ╞═════╪═════╪═════════╡
+    │ 1   ┆ 3   ┆ null    │
+    │ 3   ┆ 4   ┆ 1       │
+    │ 4   ┆ 0   ┆ 1       │
+    └─────┴─────┴─────────┘
+
     See Also
     --------
     then : Values to return in case of the predicate being `True`.
