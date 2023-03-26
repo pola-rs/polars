@@ -703,20 +703,14 @@ impl<'a> CoreReader<'a> {
                     .collect::<PolarsResult<Vec<_>>>()
             })?;
             if let (Some(n_rows), Some(remaining_bytes)) = (self.n_rows, remaining_bytes) {
-                let rows_already_read = dfs.iter().map(|x| x.0.height()).sum::<usize>();
+                let rows_already_read: usize = dfs.iter().map(|x| x.1 as usize).sum();
                 if rows_already_read < n_rows {
                     dfs.push({
                         let mut df = {
                             let remaining_rows = n_rows - rows_already_read;
-                            // estimate the buffer size required for the remaining rows from the
-                            // rows already read (adding a 10% margin of error)
-                            let estimated_chunk_size =
-                                (bytes.len() as f64 / rows_already_read as f64
-                                    * remaining_rows as f64
-                                    * 1.1) as usize;
                             let mut buffers = init_buffers(
                                 &projection,
-                                estimated_chunk_size,
+                                remaining_rows,
                                 self.schema.as_ref(),
                                 &str_capacities,
                                 self.quote_char,
@@ -748,11 +742,6 @@ impl<'a> CoreReader<'a> {
                                     .collect::<PolarsResult<_>>()?,
                             )
                         };
-
-                        // update the running str bytes statistics
-                        if !self.low_memory {
-                            update_string_stats(&str_capacities, &str_columns, &df)?;
-                        }
 
                         cast_columns(&mut df, &self.to_cast, false)?;
                         if let Some(rc) = &self.row_count {
