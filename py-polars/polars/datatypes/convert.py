@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import functools
 import re
@@ -47,6 +48,9 @@ from polars.datatypes import (
 )
 from polars.dependencies import numpy as np
 from polars.dependencies import pyarrow as pa
+
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    from polars.polars import dtype_str_repr as _dtype_str_repr
 
 if sys.version_info >= (3, 8):
     from typing import get_args
@@ -255,6 +259,21 @@ class _DataTypeMappings:
             Null: pa.null(),
         }
 
+    @property
+    @cache
+    def REPR_TO_DTYPE(self) -> dict[str, PolarsDataType]:
+        def _dtype_str_repr_safe(o: Any) -> PolarsDataType | None:
+            try:
+                return _dtype_str_repr(o.base_type()).split("[")[0]
+            except ValueError:
+                return None
+
+        return {
+            _dtype_str_repr_safe(obj): obj  # type: ignore[misc]
+            for obj in globals().values()
+            if is_polars_dtype(obj) and _dtype_str_repr_safe(obj) is not None
+        }
+
 
 # Initialize once (poor man's singleton :)
 DataTypeMappings = _DataTypeMappings()
@@ -330,6 +349,11 @@ def py_type_to_dtype(
         possible_types = [tp for tp in get_args(data_type) if tp is not NoneType]
         if len(possible_types) == 1:
             data_type = possible_types[0]
+
+    elif isinstance(data_type, str):
+        data_type = DataTypeMappings.REPR_TO_DTYPE.get(data_type, data_type)
+        if is_polars_dtype(data_type):
+            return data_type
     try:
         return DataTypeMappings.PY_TYPE_TO_DTYPE[data_type]
     except (KeyError, TypeError):  # pragma: no cover
@@ -367,6 +391,26 @@ def dtype_to_arrow_type(dtype: PolarsDataType) -> pa.lib.DataType:
         raise ValueError(
             f"Cannot parse data type {dtype} into Arrow data type."
         ) from None
+
+
+def dtype_short_repr_to_dtype(dtype_string: str | None) -> PolarsDataType | None:
+    """Map a PolarsDataType short repr (eg: 'i64', 'list[str]') back into a dtype."""
+    if dtype_string is None:
+        return None
+    m = re.match(r"^(\w+)(?:\[(.+)\])?$", dtype_string)
+    if m is None:
+        return None
+
+    dtype_base, subtype = m.groups()
+    dtype = DataTypeMappings.REPR_TO_DTYPE.get(dtype_base)
+    if dtype and subtype:
+        # TODO: better-handle nested types (such as List,Struct)
+        subtype = (s.strip("""'" """) for s in subtype.replace("μs", "us").split(","))
+        try:
+            return dtype(*subtype)  # type: ignore[operator]
+        except ValueError:
+            pass
+    return dtype
 
 
 def supported_numpy_char_code(dtype_char: str) -> bool:
