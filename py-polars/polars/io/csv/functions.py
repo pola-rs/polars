@@ -288,7 +288,7 @@ def read_csv(
         # Map list of dtypes when used together with selected columns as a dtypes dict
         # so the dtypes are applied to the correct column instead of the first x
         # columns.
-        dtypes = {column: dtype for column, dtype in zip(columns, dtypes)}
+        dtypes = dict(zip(columns, dtypes))
 
     if new_columns and dtypes and isinstance(dtypes, dict):
         current_columns = None
@@ -344,10 +344,7 @@ def read_csv(
                     dtypes = dtype_list
 
         if current_columns and isinstance(dtypes, dict):
-            new_to_current = {
-                new_column: current_column
-                for new_column, current_column in zip(new_columns, current_columns)
-            }
+            new_to_current = dict(zip(new_columns, current_columns))
             # Change new column names to current column names in dtype.
             dtypes = {
                 new_to_current.get(column_name, column_name): column_dtype
@@ -592,7 +589,7 @@ def read_csv_batched(
         # Map list of dtypes when used together with selected columns as a dtypes dict
         # so the dtypes are applied to the correct column instead of the first x
         # columns.
-        dtypes = {column: dtype for column, dtype in zip(columns, dtypes)}
+        dtypes = dict(zip(columns, dtypes))
 
     if new_columns and dtypes and isinstance(dtypes, dict):
         current_columns = None
@@ -648,10 +645,7 @@ def read_csv_batched(
                     dtypes = dtype_list
 
         if current_columns and isinstance(dtypes, dict):
-            new_to_current = {
-                new_column: current_column
-                for new_column, current_column in zip(new_columns, current_columns)
-            }
+            new_to_current = dict(zip(new_columns, current_columns))
             # Change new column names to current column names in dtype.
             dtypes = {
                 new_to_current.get(column_name, column_name): column_dtype
