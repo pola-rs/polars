@@ -744,7 +744,7 @@ class DataFrame:
         if isinstance(source, str) and "*" in source:
             dtypes_dict = None
             if dtype_list is not None:
-                dtypes_dict = {name: dt for (name, dt) in dtype_list}
+                dtypes_dict = dict(dtype_list)
             if dtype_slice is not None:
                 raise ValueError(
                     "cannot use glob patterns and unnamed dtypes as `dtypes` argument;"
