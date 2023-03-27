@@ -388,6 +388,15 @@ def std(column: str | Series, ddof: int = 1) -> Expr | float | None:
     """
     Get the standard deviation.
 
+    Parameters
+    ----------
+    column
+        Column to get the standard deviation from.
+    ddof
+        “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
+        where N represents the number of elements.
+        By default ddof is 1.
+
     Examples
     --------
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
@@ -422,6 +431,15 @@ def var(column: Series, ddof: int = 1) -> float | None:
 def var(column: str | Series, ddof: int = 1) -> Expr | float | None:
     """
     Get the variance.
+
+    Parameters
+    ----------
+    column
+        Column to get the variance of.
+    ddof
+        “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
+        where N represents the number of elements.
+        By default ddof is 1.
 
     Examples
     --------
@@ -1359,7 +1377,9 @@ def spearman_rank_corr(
     b
         Column name or Expression.
     ddof
-        Delta degrees of freedom
+        “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
+        where N represents the number of elements.
+        By default ddof is 1.
     propagate_nans
         If `True` any `NaN` encountered will lead to `NaN` in the output.
         Defaults to `False` where `NaN` are regarded as larger than any finite number
@@ -1408,7 +1428,9 @@ def pearson_corr(a: str | Expr, b: str | Expr, ddof: int = 1) -> Expr:
     b
         Column name or Expression.
     ddof
-        Delta degrees of freedom
+        “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
+        where N represents the number of elements.
+        By default ddof is 1.
 
     See Also
     --------
@@ -1457,7 +1479,9 @@ def corr(
     b
         Column name or Expression.
     ddof
-        Delta degrees of freedom
+        “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
+        where N represents the number of elements.
+        By default ddof is 1.
     method : {'pearson', 'spearman'}
         Correlation method.
     propagate_nans

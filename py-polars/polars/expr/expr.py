@@ -2481,7 +2481,9 @@ class Expr:
         Parameters
         ----------
         ddof
-            Degrees of freedom.
+            “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
+            where N represents the number of elements.
+            By default ddof is 1.
 
         Examples
         --------
@@ -2506,7 +2508,9 @@ class Expr:
         Parameters
         ----------
         ddof
-            Degrees of freedom.
+            “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
+            where N represents the number of elements.
+            By default ddof is 1.
 
         Examples
         --------
