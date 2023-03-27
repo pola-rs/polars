@@ -1,4 +1,5 @@
 use super::*;
+// This should only be used for small integers as high bits will collide
 
 macro_rules! fx_hash_8_bit {
     ($val: expr, $k: expr ) => {{
