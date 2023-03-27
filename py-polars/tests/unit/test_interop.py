@@ -884,3 +884,33 @@ def test_from_repr() -> None:
         "ident": pl.Utf8,
         "timestamp": pl.Datetime("us", "Asia/Tokyo"),
     }
+
+
+def test_to_init_repr() -> None:
+    # round-trip various types
+    with pl.StringCache():
+        df = (
+            pl.LazyFrame(
+                {
+                    "a": [1, 2, None],
+                    "b": [4.5, 5.5, 6.5],
+                    "c": ["x", "y", "z"],
+                    "d": [True, False, True],
+                    "e": [None, "", None],
+                    "f": [date(2022, 7, 5), date(2023, 2, 5), date(2023, 8, 5)],
+                    "g": [time(0, 0, 0, 1), time(12, 30, 45), time(23, 59, 59, 999000)],
+                    "h": [
+                        datetime(2022, 7, 5, 10, 30, 45, 4560),
+                        datetime(2023, 10, 12, 20, 3, 8, 11),
+                        None,
+                    ],
+                },
+            )
+            .with_columns(
+                pl.col("c").cast(pl.Categorical),
+                pl.col("h").cast(pl.Datetime("ns")),
+            )
+            .collect()
+        )
+
+        assert_frame_equal(eval(df.to_init_repr().replace("datetime.", "")), df)
