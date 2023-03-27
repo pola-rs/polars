@@ -386,6 +386,81 @@ def test_shape_below_table_and_inlined_dtype() -> None:
     )
 
 
+def test_shape_format_for_big_numbers() -> None:
+    df = pl.DataFrame({"a": range(1, 1001), "b": range(1001, 1001 + 1000)})
+
+    pl.Config.set_tbl_column_data_type_inline(True).set_tbl_dataframe_shape_below(True)
+    pl.Config.set_tbl_formatting("UTF8_FULL", rounded_corners=True)
+    assert (
+        str(df) == ""
+        "╭─────────┬─────────╮\n"
+        "│ a (i64) ┆ b (i64) │\n"
+        "╞═════════╪═════════╡\n"
+        "│ 1       ┆ 1001    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 2       ┆ 1002    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 3       ┆ 1003    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 4       ┆ 1004    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ …       ┆ …       │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 997     ┆ 1997    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 998     ┆ 1998    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 999     ┆ 1999    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 1000    ┆ 2000    │\n"
+        "╰─────────┴─────────╯\n"
+        "shape: (1_000, 2)"
+    )
+
+    pl.Config.set_tbl_column_data_type_inline(True).set_tbl_dataframe_shape_below(False)
+    assert (
+        str(df) == "shape: (1_000, 2)\n"
+        "╭─────────┬─────────╮\n"
+        "│ a (i64) ┆ b (i64) │\n"
+        "╞═════════╪═════════╡\n"
+        "│ 1       ┆ 1001    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 2       ┆ 1002    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 3       ┆ 1003    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 4       ┆ 1004    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ …       ┆ …       │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 997     ┆ 1997    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 998     ┆ 1998    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 999     ┆ 1999    │\n"
+        "├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤\n"
+        "│ 1000    ┆ 2000    │\n"
+        "╰─────────┴─────────╯"
+    )
+
+    pl.Config.set_tbl_rows(0)
+    ser = pl.Series("ser", range(1000))
+    assert str(ser) == "shape: (1_000,)\n" "Series: 'ser' [i64]\n" "[\n" "\t…\n" "]"
+
+    pl.Config.set_tbl_rows(1)
+    pl.Config.set_tbl_cols(1)
+    df = pl.DataFrame({str(col_num): 1 for col_num in range(1000)})
+
+    assert (
+        str(df) == "shape: (1, 1_000)\n"
+        "╭─────────┬───╮\n"
+        "│ 0 (i64) ┆ … │\n"
+        "╞═════════╪═══╡\n"
+        "│ 1       ┆ … │\n"
+        "╰─────────┴───╯"
+    )
+
+
 def test_string_cache() -> None:
     df1 = pl.DataFrame({"a": ["foo", "bar", "ham"], "b": [1, 2, 3]})
     df2 = pl.DataFrame({"a": ["foo", "spam", "eggs"], "c": [3, 2, 2]})

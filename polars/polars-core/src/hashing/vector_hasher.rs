@@ -1,7 +1,3 @@
-use std::convert::TryInto;
-use std::hash::{BuildHasher, BuildHasherDefault, Hash, Hasher};
-
-use ahash::RandomState;
 use arrow::bitmap::utils::get_bit_unchecked;
 use hashbrown::hash_map::RawEntryMut;
 use hashbrown::HashMap;
@@ -10,10 +6,14 @@ use polars_utils::HashSingle;
 use rayon::prelude::*;
 use xxhash_rust::xxh3::xxh3_64_with_seed;
 
+use super::*;
 use crate::datatypes::UInt64Chunked;
 use crate::prelude::*;
 use crate::utils::arrow::array::Array;
 use crate::POOL;
+
+// See: https://github.com/tkaitchuck/aHash/blob/f9acd508bd89e7c5b2877a9510098100f9018d64/src/operations.rs#L4
+const MULTIPLE: u64 = 6364136223846793005;
 
 // Read more:
 //  https://www.cockroachlabs.com/blog/vectorized-hash-joiner/
@@ -32,6 +32,11 @@ pub trait VecHash {
     }
 }
 
+pub(crate) const fn folded_multiply(s: u64, by: u64) -> u64 {
+    let result = (s as u128).wrapping_mul(by as u128);
+    ((result & 0xffff_ffff_ffff_ffff) as u64) ^ ((result >> 64) as u64)
+}
+
 pub(crate) fn get_null_hash_value(random_state: RandomState) -> u64 {
     // we just start with a large prime number and hash that twice
     // to get a constant hash value for null/None
@@ -43,97 +48,6 @@ pub(crate) fn get_null_hash_value(random_state: RandomState) -> u64 {
     hasher.finish()
 }
 
-macro_rules! fx_hash_8_bit {
-    ($val: expr, $k: expr ) => {{
-        let val = std::mem::transmute::<_, u8>($val);
-        (val as u64).wrapping_mul($k)
-    }};
-}
-macro_rules! fx_hash_16_bit {
-    ($val: expr, $k: expr ) => {{
-        let val = std::mem::transmute::<_, u16>($val);
-        (val as u64).wrapping_mul($k)
-    }};
-}
-macro_rules! fx_hash_32_bit {
-    ($val: expr, $k: expr ) => {{
-        let val = std::mem::transmute::<_, u32>($val);
-        (val as u64).wrapping_mul($k)
-    }};
-}
-macro_rules! fx_hash_64_bit {
-    ($val: expr, $k: expr ) => {{
-        ($val as u64).wrapping_mul($k)
-    }};
-}
-const FXHASH_K: u64 = 0x517cc1b727220a95;
-
-/// Ensure that the same hash is used as with `VecHash`.
-pub trait FxHash {
-    fn get_k(random_state: RandomState) -> u64 {
-        random_state.hash_one(FXHASH_K)
-    }
-    fn _fx_hash(self, k: u64) -> u64;
-}
-impl FxHash for i8 {
-    #[inline]
-    fn _fx_hash(self, k: u64) -> u64 {
-        unsafe { fx_hash_8_bit!(self, k) }
-    }
-}
-impl FxHash for u8 {
-    #[inline]
-    fn _fx_hash(self, k: u64) -> u64 {
-        #[allow(clippy::useless_transmute)]
-        unsafe {
-            fx_hash_8_bit!(self, k)
-        }
-    }
-}
-impl FxHash for i16 {
-    #[inline]
-    fn _fx_hash(self, k: u64) -> u64 {
-        unsafe { fx_hash_16_bit!(self, k) }
-    }
-}
-impl FxHash for u16 {
-    #[inline]
-    fn _fx_hash(self, k: u64) -> u64 {
-        #[allow(clippy::useless_transmute)]
-        unsafe {
-            fx_hash_16_bit!(self, k)
-        }
-    }
-}
-
-impl FxHash for i32 {
-    #[inline]
-    fn _fx_hash(self, k: u64) -> u64 {
-        unsafe { fx_hash_32_bit!(self, k) }
-    }
-}
-impl FxHash for u32 {
-    #[inline]
-    fn _fx_hash(self, k: u64) -> u64 {
-        #[allow(clippy::useless_transmute)]
-        unsafe {
-            fx_hash_32_bit!(self, k)
-        }
-    }
-}
-
-impl FxHash for i64 {
-    #[inline]
-    fn _fx_hash(self, k: u64) -> u64 {
-        fx_hash_64_bit!(self, k)
-    }
-}
-impl FxHash for u64 {
-    #[inline]
-    fn _fx_hash(self, k: u64) -> u64 {
-        fx_hash_64_bit!(self, k)
-    }
-}
 fn insert_null_hash(chunks: &[ArrayRef], random_state: RandomState, buf: &mut Vec<u64>) {
     let null_h = get_null_hash_value(random_state);
     let hashes = buf.as_mut_slice();
@@ -157,7 +71,7 @@ fn insert_null_hash(chunks: &[ArrayRef], random_state: RandomState, buf: &mut Ve
 fn integer_vec_hash<T>(ca: &ChunkedArray<T>, random_state: RandomState, buf: &mut Vec<u64>)
 where
     T: PolarsIntegerType,
-    T::Native: Hash + FxHash,
+    T::Native: Hash + AsU64,
 {
     // Note that we don't use the no null branch! This can break in unexpected ways.
     // for instance with threading we split an array in n_threads, this may lead to
@@ -168,18 +82,13 @@ where
     buf.clear();
     buf.reserve(ca.len());
 
-    let k = random_state.hash_one(FXHASH_K);
-
     #[allow(unused_unsafe)]
     #[allow(clippy::useless_transmute)]
     ca.downcast_iter().for_each(|arr| {
-        buf.extend(
-            arr.values()
-                .as_slice()
-                .iter()
-                .copied()
-                .map(|v| unsafe { v._fx_hash(k) }),
-        );
+        buf.extend(arr.values().as_slice().iter().copied().map(|v| {
+            // we save an xor because we don't have initial state
+            folded_multiply(v.as_u64(), MULTIPLE)
+        }));
     });
     insert_null_hash(&ca.chunks, random_state, buf)
 }
@@ -187,10 +96,9 @@ where
 fn integer_vec_hash_combine<T>(ca: &ChunkedArray<T>, random_state: RandomState, hashes: &mut [u64])
 where
     T: PolarsIntegerType,
-    T::Native: Hash + FxHash,
+    T::Native: Hash + AsU64,
 {
-    let null_h = get_null_hash_value(random_state.clone());
-    let k = random_state.hash_one(FXHASH_K);
+    let null_h = get_null_hash_value(random_state);
 
     let mut offset = 0;
     ca.downcast_iter().for_each(|arr| {
@@ -201,8 +109,8 @@ where
                 .iter()
                 .zip(&mut hashes[offset..])
                 .for_each(|(v, h)| {
-                    let l = v._fx_hash(k);
-                    *h = _boost_hash_combine(l, *h)
+                    // inlined from ahash. This ensures we combine with the previous state
+                    *h = folded_multiply(v.as_u64() ^ *h, MULTIPLE);
                 }),
             _ => {
                 let validity = arr.validity().unwrap();
@@ -212,8 +120,9 @@ where
                     .zip(&mut hashes[offset..])
                     .zip(arr.values().as_slice())
                     .for_each(|((valid, h), l)| {
-                        let l = l._fx_hash(k);
-                        *h = _boost_hash_combine([null_h, l][valid as usize], *h)
+                        // inlined from ahash. This ensures we combine with the previous state
+                        let new = folded_multiply(l.as_u64() ^ *h, MULTIPLE);
+                        *h = [null_h, new][valid as usize];
                     });
             }
         }
@@ -222,7 +131,7 @@ where
 }
 
 macro_rules! vec_hash_int {
-    ($ca:ident, $fx_hash:ident) => {
+    ($ca:ident) => {
         impl VecHash for $ca {
             fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) {
                 integer_vec_hash(self, random_state, buf)
@@ -235,14 +144,14 @@ macro_rules! vec_hash_int {
     };
 }
 
-vec_hash_int!(Int64Chunked, fx_hash_64_bit);
-vec_hash_int!(Int32Chunked, fx_hash_32_bit);
-vec_hash_int!(Int16Chunked, fx_hash_16_bit);
-vec_hash_int!(Int8Chunked, fx_hash_8_bit);
-vec_hash_int!(UInt64Chunked, fx_hash_64_bit);
-vec_hash_int!(UInt32Chunked, fx_hash_32_bit);
-vec_hash_int!(UInt16Chunked, fx_hash_16_bit);
-vec_hash_int!(UInt8Chunked, fx_hash_8_bit);
+vec_hash_int!(Int64Chunked);
+vec_hash_int!(Int32Chunked);
+vec_hash_int!(Int16Chunked);
+vec_hash_int!(Int8Chunked);
+vec_hash_int!(UInt64Chunked);
+vec_hash_int!(UInt32Chunked);
+vec_hash_int!(UInt16Chunked);
+vec_hash_int!(UInt8Chunked);
 
 impl VecHash for Utf8Chunked {
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) {
@@ -423,192 +332,13 @@ where
     }
 }
 
-// Used to to get a u64 from the hashing keys
-// We need to modify the hashing algorithm to use the hash for this and only compute the hash once.
-pub(crate) trait AsU64 {
-    #[allow(clippy::wrong_self_convention)]
-    fn as_u64(self) -> u64;
-}
-
-#[cfg(feature = "performant")]
-impl AsU64 for u8 {
-    #[inline]
-    fn as_u64(self) -> u64 {
-        self as u64
-    }
-}
-
-#[cfg(feature = "performant")]
-impl AsU64 for u16 {
-    #[inline]
-    fn as_u64(self) -> u64 {
-        self as u64
-    }
-}
-
-impl AsU64 for u32 {
-    #[inline]
-    fn as_u64(self) -> u64 {
-        self as u64
-    }
-}
-
-impl AsU64 for u64 {
-    #[inline]
-    fn as_u64(self) -> u64 {
-        self
-    }
-}
-
-impl AsU64 for i32 {
-    #[inline]
-    fn as_u64(self) -> u64 {
-        let asu32: u32 = unsafe { std::mem::transmute(self) };
-        asu32 as u64
-    }
-}
-
-impl AsU64 for i64 {
-    #[inline]
-    fn as_u64(self) -> u64 {
-        unsafe { std::mem::transmute(self) }
-    }
-}
-
-impl AsU64 for Option<u32> {
-    #[inline]
-    fn as_u64(self) -> u64 {
-        match self {
-            Some(v) => v as u64,
-            // just a number safe from overflow
-            None => u64::MAX >> 2,
-        }
-    }
-}
-
-#[cfg(feature = "performant")]
-impl AsU64 for Option<u8> {
-    #[inline]
-    fn as_u64(self) -> u64 {
-        match self {
-            Some(v) => v as u64,
-            // just a number safe from overflow
-            None => u64::MAX >> 2,
-        }
-    }
-}
-
-#[cfg(feature = "performant")]
-impl AsU64 for Option<u16> {
-    #[inline]
-    fn as_u64(self) -> u64 {
-        match self {
-            Some(v) => v as u64,
-            // just a number safe from overflow
-            None => u64::MAX >> 2,
-        }
-    }
-}
-
-impl AsU64 for Option<u64> {
-    #[inline]
-    fn as_u64(self) -> u64 {
-        self.unwrap_or(u64::MAX >> 2)
-    }
-}
-
-impl AsU64 for [u8; 9] {
-    #[inline]
-    fn as_u64(self) -> u64 {
-        // the last byte includes the null information.
-        // that one is skipped. Worst thing that could happen is unbalanced partition.
-        u64::from_ne_bytes(self[..8].try_into().unwrap())
-    }
-}
-const BUILD_HASHER: RandomState = RandomState::with_seeds(0, 0, 0, 0);
-impl AsU64 for [u8; 17] {
-    #[inline]
-    fn as_u64(self) -> u64 {
-        BUILD_HASHER.hash_single(self)
-    }
-}
-
-impl AsU64 for [u8; 13] {
-    #[inline]
-    fn as_u64(self) -> u64 {
-        BUILD_HASHER.hash_single(self)
-    }
-}
-
-#[derive(Default)]
-pub struct IdHasher {
-    hash: u64,
-}
-
-impl Hasher for IdHasher {
-    fn finish(&self) -> u64 {
-        self.hash
-    }
-
-    fn write(&mut self, _bytes: &[u8]) {
-        unreachable!("IdHasher should only be used for integer keys <= 64 bit precision")
-    }
-
-    fn write_u32(&mut self, i: u32) {
-        self.write_u64(i as u64)
-    }
-
-    #[inline]
-    fn write_u64(&mut self, i: u64) {
-        self.hash = i;
-    }
-
-    fn write_i32(&mut self, i: i32) {
-        // Safety:
-        // same number of bits
-        unsafe { self.write_u32(std::mem::transmute::<i32, u32>(i)) }
-    }
-
-    fn write_i64(&mut self, i: i64) {
-        // Safety:
-        // same number of bits
-        unsafe { self.write_u64(std::mem::transmute::<i64, u64>(i)) }
-    }
-}
-
-pub type IdBuildHasher = BuildHasherDefault<IdHasher>;
-
-#[derive(Debug)]
-/// Contains an idx of a row in a DataFrame and the precomputed hash of that row.
-/// That hash still needs to be used to create another hash to be able to resize hashmaps without
-/// accidental quadratic behavior. So do not use an Identity function!
-pub(crate) struct IdxHash {
-    // idx in row of Series, DataFrame
-    pub(crate) idx: IdxSize,
-    // precomputed hash of T
-    pub(crate) hash: u64,
-}
-
-impl Hash for IdxHash {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_u64(self.hash)
-    }
-}
-
-impl IdxHash {
-    #[inline]
-    pub(crate) fn new(idx: IdxSize, hash: u64) -> Self {
-        IdxHash { idx, hash }
-    }
-}
-
 /// Contains a ptr to the string slice an the precomputed hash of that string.
 /// During rehashes, we will rehash the hash instead of the string, that makes rehashing
 /// cheap and allows cache coherent small hash tables.
 #[derive(Eq, Copy, Clone, Debug)]
 pub(crate) struct BytesHash<'a> {
     payload: Option<&'a [u8]>,
-    hash: u64,
+    pub(super) hash: u64,
 }
 
 impl<'a> Hash for BytesHash<'a> {
@@ -629,20 +359,6 @@ impl<'a> PartialEq for BytesHash<'a> {
     fn eq(&self, other: &Self) -> bool {
         (self.hash == other.hash) && (self.payload == other.payload)
     }
-}
-
-impl<'a> AsU64 for BytesHash<'a> {
-    fn as_u64(self) -> u64 {
-        self.hash
-    }
-}
-
-#[inline]
-/// For partitions that are a power of 2 we can use a bitshift instead of a modulo.
-pub(crate) fn this_partition(h: u64, thread_no: u64, n_partitions: u64) -> bool {
-    debug_assert!(n_partitions.is_power_of_two());
-    // n % 2^i = n & (2^i - 1)
-    (h.wrapping_add(thread_no)) & n_partitions.wrapping_sub(1) == 0
 }
 
 pub(crate) fn prepare_hashed_relation_threaded<T, I>(
@@ -734,12 +450,6 @@ where
             .collect()
     });
     (hashes, build_hasher)
-}
-
-// hash combine from c++' boost lib
-#[inline]
-pub fn _boost_hash_combine(l: u64, r: u64) -> u64 {
-    l ^ r.wrapping_add(0x9e3779b9u64.wrapping_add(l << 6).wrapping_add(r >> 2))
 }
 
 pub(crate) fn df_rows_to_hashes_threaded(

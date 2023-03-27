@@ -54,7 +54,7 @@ def read_excel(
 
 
 @deprecate_nonkeyword_arguments()
-@deprecated_alias(file="source")
+@deprecated_alias(file="source", stacklevel=4)
 def read_excel(
     source: str | BytesIO | Path | BinaryIO | bytes,
     sheet_id: int | None = 1,

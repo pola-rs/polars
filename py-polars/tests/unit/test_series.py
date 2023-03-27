@@ -1090,7 +1090,8 @@ def test_describe() -> None:
     date_s = pl.Series([date(2021, 1, 1), date(2021, 1, 2), date(2021, 1, 3)])
     empty_s = pl.Series(np.empty(0))
 
-    assert {k: v for k, v in num_s.describe().rows()} == {
+    pl.DataFrame
+    assert dict(num_s.describe().rows()) == {  # type: ignore[arg-type]
         "count": 3.0,
         "max": 3.0,
         "mean": 2.0,
@@ -1098,7 +1099,7 @@ def test_describe() -> None:
         "null_count": 0.0,
         "std": 1.0,
     }
-    assert {k: v for k, v in float_s.describe().rows()} == {
+    assert dict(float_s.describe().rows()) == {  # type: ignore[arg-type]
         "count": 3.0,
         "max": 8.9,
         "mean": 4.933333333333334,
@@ -1106,17 +1107,17 @@ def test_describe() -> None:
         "null_count": 0.0,
         "std": 3.8109491381194442,
     }
-    assert {k: v for k, v in str_s.describe().rows()} == {
+    assert dict(str_s.describe().rows()) == {  # type: ignore[arg-type]
         "count": 3,
         "null_count": 0,
         "unique": 3,
     }
-    assert {k: v for k, v in bool_s.describe().rows()} == {
+    assert dict(bool_s.describe().rows()) == {  # type: ignore[arg-type]
         "count": 5,
         "null_count": 1,
         "sum": 3,
     }
-    assert {k: v for k, v in date_s.describe().rows()} == {
+    assert dict(date_s.describe().rows()) == {  # type: ignore[arg-type]
         "count": "3",
         "max": "2021-01-03",
         "min": "2021-01-01",
@@ -2494,6 +2495,31 @@ def test_map_dict() -> None:
     assert_series_equal(
         s.map_dict(remap_int, default=pl.first()),
         pl.Series("s", [-1, 22, None, 44, -5]),
+    )
+
+    assert_series_equal(
+        s.cast(pl.Int16).map_dict(remap_int),
+        pl.Series("s", [None, 22, None, 44, None], dtype=pl.Int16),
+    )
+
+    assert_series_equal(
+        s.cast(pl.Int16).map_dict(remap_int, default=pl.first()),
+        pl.Series("s", [-1, 22, None, 44, -5], dtype=pl.Int16),
+    )
+
+    assert_series_equal(
+        s.cast(pl.Int16).map_dict(remap_int, default=pl.first(), dtype=pl.Float32),
+        pl.Series("s", [-1.0, 22.0, None, 44.0, -5.0], dtype=pl.Float32),
+    )
+
+    assert_series_equal(
+        s.cast(pl.Int16).map_dict(remap_int, default=9),
+        pl.Series("s", [9, 22, 9, 44, 9], dtype=pl.Int16),
+    )
+
+    assert_series_equal(
+        s.cast(pl.Int16).map_dict(remap_int, default=9, dtype=pl.Float32),
+        pl.Series("s", [9.0, 22.0, 9.0, 44.0, 9.0], dtype=pl.Float32),
     )
 
 

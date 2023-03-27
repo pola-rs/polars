@@ -10,6 +10,7 @@ from polars.convert import (
     from_numpy,
     from_pandas,
     from_records,
+    from_repr,
 )
 from polars.dataframe import DataFrame
 from polars.datatypes import (
@@ -316,6 +317,7 @@ __all__ = [
     "from_numpy",
     "from_pandas",
     "from_records",
+    "from_repr",
     # polars.sql
     "SQLContext",
     # polars.utils

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -20,7 +21,7 @@ def test_pivot() -> None:
             "bar": ["k", "l", "m", "n", "o"],
         }
     )
-    result = df.pivot(values="N", index="foo", columns="bar")
+    result = df.pivot(values="N", index="foo", columns="bar", aggregate_function=None)
 
     expected = pl.DataFrame(
         [
@@ -139,7 +140,23 @@ def test_pivot_multiple_values_column_names_5116() -> None:
             "c2": ["C", "C", "D", "D"] * 2,
         }
     )
-    result = df.pivot(values=["x1", "x2"], index="c1", columns="c2", separator="|")
+
+    with pytest.raises(ComputeError, match="found multiple elements in the same group"):
+        result = df.pivot(
+            values=["x1", "x2"],
+            index="c1",
+            columns="c2",
+            separator="|",
+            aggregate_function=None,
+        )
+
+    result = df.pivot(
+        values=["x1", "x2"],
+        index="c1",
+        columns="c2",
+        separator="|",
+        aggregate_function="first",
+    )
     expected = {
         "c1": ["A", "B"],
         "x1|C": [1, 2],
@@ -160,7 +177,14 @@ def test_pivot_floats() -> None:
         }
     )
 
-    result = df.pivot(values="price", index="weight", columns="quantity")
+    with pytest.raises(ComputeError, match="found multiple elements in the same group"):
+        result = df.pivot(
+            values="price", index="weight", columns="quantity", aggregate_function=None
+        )
+
+    result = df.pivot(
+        values="price", index="weight", columns="quantity", aggregate_function="first"
+    )
     expected = {
         "weight": [1.0, 4.4, 8.8],
         "1.0": [1.0, 3.0, 5.0],
@@ -169,7 +193,12 @@ def test_pivot_floats() -> None:
     }
     assert result.to_dict(False) == expected
 
-    result = df.pivot(values="price", index=["article", "weight"], columns="quantity")
+    result = df.pivot(
+        values="price",
+        index=["article", "weight"],
+        columns="quantity",
+        aggregate_function=None,
+    )
     expected = {
         "article": ["a", "a", "b", "b"],
         "weight": [1.0, 4.4, 1.0, 8.8],
@@ -215,7 +244,9 @@ def test_pivot_temporal_logical_types() -> None:
             "value": [0] * 8,
         }
     )
-    assert df.pivot(index="idx", columns="foo", values="value").to_dict(False) == {
+    assert df.pivot(
+        index="idx", columns="foo", values="value", aggregate_function=None
+    ).to_dict(False) == {
         "idx": [
             datetime(1977, 1, 1, 0, 0),
             datetime(1978, 1, 1, 0, 0),
@@ -238,7 +269,9 @@ def test_pivot_negative_duration() -> None:
     df = df1.join(df2, how="cross").with_columns(
         [pl.Series(name="value", values=range(len(df1) * len(df2)))]
     )
-    assert df.pivot(index="delta", columns="root", values="value").to_dict(False) == {
+    assert df.pivot(
+        index="delta", columns="root", values="value", aggregate_function=None
+    ).to_dict(False) == {
         "delta": [
             timedelta(days=-2),
             timedelta(days=-1),
@@ -248,3 +281,12 @@ def test_pivot_negative_duration() -> None:
         "2020-01-15": [0, 1, 2, 3],
         "2020-02-15": [4, 5, 6, 7],
     }
+
+
+def test_aggregate_function_deprecation_warning() -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": ["foo", "foo"], "c": ["x", "x"]})
+    with pytest.warns(
+        DeprecationWarning,
+        match="the default `aggregate_function` will change from `'first'` to `None`",
+    ):
+        df.pivot("a", "b", "c")

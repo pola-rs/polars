@@ -3805,6 +3805,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Aggregate the columns in the DataFrame to their standard deviation value.
 
+        Parameters
+        ----------
+        ddof
+            “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
+            where N represents the number of elements.
+            By default ddof is 1.
+
         Examples
         --------
         >>> lf = pl.LazyFrame(
@@ -3838,6 +3845,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def var(self, ddof: int = 1) -> Self:
         """
         Aggregate the columns in the DataFrame to their variance value.
+
+        Parameters
+        ----------
+        ddof
+            “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
+            where N represents the number of elements.
+            By default ddof is 1.
 
         Examples
         --------
@@ -4316,7 +4330,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
 
     @deprecated_alias(f="function")
-    @deprecate_nonkeyword_arguments()
+    @deprecate_nonkeyword_arguments(stacklevel=3)
     def map(
         self,
         function: Callable[[DataFrame], DataFrame],

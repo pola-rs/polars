@@ -30,7 +30,7 @@ def read_ndjson(source: str | Path | IOBase) -> DataFrame:
 
 
 @deprecate_nonkeyword_arguments()
-@deprecated_alias(file="source")
+@deprecated_alias(file="source", stacklevel=4)
 def scan_ndjson(
     source: str | Path,
     infer_schema_length: int | None = N_INFER_DEFAULT,

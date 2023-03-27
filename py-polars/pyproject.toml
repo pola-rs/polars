@@ -104,7 +104,6 @@ module = ["polars.*"]
 warn_return_any = false
 
 [tool.ruff]
-target-version = "py37"
 line-length = 88
 fix = true
 

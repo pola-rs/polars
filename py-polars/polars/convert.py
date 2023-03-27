@@ -1,14 +1,22 @@
 from __future__ import annotations
 
+import re
+from itertools import zip_longest
 from typing import TYPE_CHECKING, Any, Mapping, Sequence, overload
 
 from polars import internals as pli
-from polars.datatypes import N_INFER_DEFAULT
+from polars.datatypes import (
+    N_INFER_DEFAULT,
+    List,
+    Object,
+    Struct,
+)
 from polars.dependencies import _PYARROW_AVAILABLE
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoDataError
 from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
+from polars.utils.various import _cast_repr_strings_with_schema
 
 if TYPE_CHECKING:
     from polars.dataframe import DataFrame
@@ -73,7 +81,7 @@ def from_dict(
 
 
 @deprecate_nonkeyword_arguments(allowed_args=["data", "schema"])
-@deprecated_alias(dicts="data")
+@deprecated_alias(dicts="data", stacklevel=4)
 def from_dicts(
     data: Sequence[dict[str, Any]],
     infer_schema_length: int | None = N_INFER_DEFAULT,
@@ -245,6 +253,120 @@ def from_records(
     )
 
 
+def from_repr(tbl: str) -> DataFrame:
+    """
+    Debug function that reconstructs a DataFrame from a table repr.
+
+    Parameters
+    ----------
+    tbl
+        A string containing a polars table repr; does not need to be trimmed
+        of whitespace (or leading prompts) as the table will be found/extracted
+        automatically.
+
+    Notes
+    -----
+    This function handles the default UTF8_FULL and UTF8_FULL_CONDENSED format
+    tables (with or without rounded corners). Truncated columns/rows are omitted,
+    wrapped headers are accounted for, and dtypes identified.
+
+    Currently compound types such as List and Struct are not supported,
+    (and neither is Time) though support is planned.
+
+    See Also
+    --------
+    polars.DataFrame.to_init_repr
+    polars.Series.to_init_repr
+
+    Examples
+    --------
+    >>> df = pl.from_repr(
+    ...     '''
+    ...     Out[3]:
+    ...     shape: (1, 5)
+    ...     ┌───────────┬────────────┬───┬───────┬────────────────────────────────┐
+    ...     │ source_ac ┆ source_cha ┆ … ┆ ident ┆ timestamp                      │
+    ...     │ tor_id    ┆ nnel_id    ┆   ┆ ---   ┆ ---                            │
+    ...     │ ---       ┆ ---        ┆   ┆ str   ┆ datetime[μs, Asia/Tokyo]       │
+    ...     │ i32       ┆ i64        ┆   ┆       ┆                                │
+    ...     ╞═══════════╪════════════╪═══╪═══════╪════════════════════════════════╡
+    ...     │ 123456780 ┆ 9876543210 ┆ … ┆ a:b:c ┆ 2023-03-25 10:56:59.663053 JST │
+    ...     │ …         ┆ …          ┆ … ┆ …     ┆ …                              │
+    ...     │ 803065983 ┆ 2055938745 ┆ … ┆ x:y:z ┆ 2023-03-25 12:38:18.050545 JST │
+    ...     └───────────┴────────────┴───┴───────┴────────────────────────────────┘
+    ... '''
+    ... )
+    >>> df
+    shape: (2, 4)
+    ┌─────────────────┬───────────────────┬───────┬────────────────────────────────┐
+    │ source_actor_id ┆ source_channel_id ┆ ident ┆ timestamp                      │
+    │ ---             ┆ ---               ┆ ---   ┆ ---                            │
+    │ i32             ┆ i64               ┆ str   ┆ datetime[μs, Asia/Tokyo]       │
+    ╞═════════════════╪═══════════════════╪═══════╪════════════════════════════════╡
+    │ 123456780       ┆ 9876543210        ┆ a:b:c ┆ 2023-03-25 10:56:59.663053 JST │
+    │ 803065983       ┆ 2055938745        ┆ x:y:z ┆ 2023-03-25 12:38:18.050545 JST │
+    └─────────────────┴───────────────────┴───────┴────────────────────────────────┘
+    >>> df.schema
+    {'source_actor_id': Int32,
+     'source_channel_id': Int64,
+     'ident': Utf8,
+     'timestamp': Datetime(time_unit='us', time_zone='Asia/Tokyo')}
+
+    """
+    from polars.datatypes.convert import dtype_short_repr_to_dtype
+
+    # pick dataframe table out of the given string
+    m = re.search(r"([┌╭].*?[┘╯])", tbl, re.DOTALL)
+    if m is None:
+        raise ValueError("Table not found in the given string")
+
+    # extract elements from table structure
+    lines = m.group().split("\n")[1:-1]
+    rows = [
+        [re.sub(r"^[\W+]*│", "", elem).strip() for elem in row]
+        for row in [re.split("[┆|]", row.rstrip("│ ")) for row in lines]
+        if len(row) > 1 or not re.search("├[╌┼]+┤", row[0])
+    ]
+
+    # determine beginning/end of the header block
+    table_body_start = 2
+    for idx, (elem, *_) in enumerate(rows):
+        if re.match(r"^\W*╞", elem):
+            table_body_start = idx
+            break
+
+    # handle headers with wrapped column names and determine headers/dtypes
+    header_block = ["".join(h).split("---") for h in zip(*rows[:table_body_start])]
+    headers, dtypes = (list(h) for h in zip_longest(*header_block))
+    body = rows[table_body_start + 1 :]
+
+    # transpose rows into columns, detect/omit truncated columns
+    coldata = list(zip(*(row for row in body if not all((e == "…") for e in row))))
+    for el in ("…", "..."):
+        if el in headers:
+            idx = headers.index(el)
+            for table_elem in (headers, dtypes):
+                table_elem.pop(idx)
+            if coldata:
+                coldata.pop(idx)
+
+    # init cols as utf8 Series, handle "null" -> None, create schema from repr dtype
+    data = [pli.Series([(None if v == "null" else v) for v in cd]) for cd in coldata]
+    schema = dict(zip(headers, (dtype_short_repr_to_dtype(d) for d in dtypes)))
+    for tp in set(schema.values()):
+        # TODO: handle basic compound types
+        if tp in (List, Struct):
+            raise NotImplementedError(
+                f"'from_repr' does not (yet) support {tp} dtype columns"
+            )
+        elif tp == Object:
+            raise ValueError("'from_repr' does not (and cannot) support Object dtype")
+
+    # construct DataFrame from string series and cast from repr to native dtype
+    df = pli.DataFrame(data=data, orient="col", schema=list(schema))
+    return _cast_repr_strings_with_schema(df, schema)
+
+
 @deprecated_alias(columns="schema")
 def from_numpy(
     data: np.ndarray[Any, Any],
@@ -413,7 +535,7 @@ def from_pandas(
 
 
 @deprecate_nonkeyword_arguments()
-@deprecated_alias(nan_to_none="nan_to_null", df="data")
+@deprecated_alias(nan_to_none="nan_to_null", df="data", stacklevel=4)
 def from_pandas(
     data: pd.DataFrame | pd.Series | pd.DatetimeIndex,
     rechunk: bool = True,
