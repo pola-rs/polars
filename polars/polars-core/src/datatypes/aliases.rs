@@ -27,11 +27,11 @@ pub type PlHashMap<K, V> = hashbrown::HashMap<K, V, PlHasherBuilder>;
 /// This hashmap has the uses an IdHasher
 pub type PlIdHashMap<K, V> = hashbrown::HashMap<K, V, IdBuildHasher>;
 #[cfg(feature = "private")]
-pub type PlHashSet<V> = hashbrown::HashSet<V, RandomState>;
+pub type PlHashSet<V> = hashbrown::HashSet<V, PlHasherBuilder>;
 #[cfg(feature = "private")]
-pub type PlIndexMap<K, V> = indexmap::IndexMap<K, V, RandomState>;
+pub type PlIndexMap<K, V> = indexmap::IndexMap<K, V, PlHasherBuilder>;
 #[cfg(feature = "private")]
-pub type PlIndexSet<K> = indexmap::IndexSet<K, RandomState>;
+pub type PlIndexSet<K> = indexmap::IndexSet<K, PlHasherBuilder>;
 
 pub trait InitHashMaps {
     type HashMap;

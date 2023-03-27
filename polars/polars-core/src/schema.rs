@@ -37,7 +37,7 @@ where
 {
     fn from(iter: I) -> Self {
         let mut map: PlIndexMap<_, _> =
-            IndexMap::with_capacity_and_hasher(iter.size_hint().0, ahash::RandomState::default());
+            IndexMap::with_capacity_and_hasher(iter.size_hint().0, Default::default());
         for fld in iter {
             let fld = fld.into();
 
@@ -78,7 +78,7 @@ impl Schema {
     {
         let iter = flds.into_iter();
         let mut map: PlIndexMap<_, _> =
-            IndexMap::with_capacity_and_hasher(iter.size_hint().0, ahash::RandomState::default());
+            IndexMap::with_capacity_and_hasher(iter.size_hint().0, Default::default());
         for fld in iter {
             let fld = fld?;
             map.insert(fld.name().clone(), fld.data_type().clone());
@@ -92,7 +92,7 @@ impl Schema {
 
     pub fn with_capacity(capacity: usize) -> Self {
         let map: PlIndexMap<_, _> =
-            IndexMap::with_capacity_and_hasher(capacity, ahash::RandomState::default());
+            IndexMap::with_capacity_and_hasher(capacity, Default::default());
         Self { inner: map }
     }
 
