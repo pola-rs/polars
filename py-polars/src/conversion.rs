@@ -599,11 +599,23 @@ fn materialize_list(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
 
 impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
-        let type_name = ob.get_type().name()?;
-        let parent_type = ob.get_type().getattr("__bases__")?.get_item(0)?;
-        let parent_type_name = parent_type.str()?.to_str()?;
+        let mut type_name = ob.get_type().name()?;
         // Can't use pyo3::types::PyDateTime with abi3-py37 feature,
-        // so need to compare types as strings.
+        // so need this workaround instead of `isinstance(ob, datetime).
+        if (type_name != "datetime") && (type_name != "date") {
+            let bases = ob.get_type().getattr("__bases__")?.iter()?;
+            for base in bases {
+                match base?.to_string().as_str() {
+                    "<class 'datetime.datetime'>" => {
+                        type_name = "datetime";
+                    }
+                    "<class 'datetime.date'>" => {
+                        type_name = "date";
+                    }
+                    _ => (),
+                }
+            }
+        }
 
         if ob.is_instance_of::<PyBool>().unwrap() {
             Ok(AnyValue::Boolean(ob.extract::<bool>().unwrap()).into())
@@ -637,8 +649,8 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
         } else if let Ok(v) = ob.extract::<&'s [u8]>() {
             Ok(AnyValue::Binary(v).into())
         } else {
-            match (type_name, parent_type_name) {
-                ("datetime", _) | (_, "<class 'datetime.datetime'>") => {
+            match type_name {
+                "datetime" => {
                     Python::with_gil(|py| {
                         // windows
                         #[cfg(target_arch = "windows")]
@@ -691,7 +703,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                         Ok(AnyValue::Datetime(v, TimeUnit::Microseconds, &None).into())
                     })
                 }
-                ("date", _) | (_, "<class 'datetime.date'>") => Python::with_gil(|py| {
+                "date" => Python::with_gil(|py| {
                     let date = UTILS
                         .as_ref(py)
                         .getattr("_date_to_pl_date")
@@ -701,7 +713,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                     let v = date.extract::<i32>().unwrap();
                     Ok(Wrap(AnyValue::Date(v)))
                 }),
-                ("timedelta", _) | (_, "<class 'datetime.timedelta'>") => Python::with_gil(|py| {
+                "timedelta" => Python::with_gil(|py| {
                     let td = UTILS
                         .as_ref(py)
                         .getattr("_timedelta_to_pl_timedelta")
@@ -711,7 +723,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                     let v = td.extract::<i64>().unwrap();
                     Ok(Wrap(AnyValue::Duration(v, TimeUnit::Microseconds)))
                 }),
-                ("time", _) | (_, "<class 'datetime.time'>") => Python::with_gil(|py| {
+                "time" => Python::with_gil(|py| {
                     let time = UTILS
                         .as_ref(py)
                         .getattr("_time_to_pl_time")
@@ -721,7 +733,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                     let v = time.extract::<i64>().unwrap();
                     Ok(Wrap(AnyValue::Time(v)))
                 }),
-                ("Decimal", _) => {
+                "Decimal" => {
                     let (sign, digits, exp): (i8, Vec<u8>, i32) =
                         ob.call_method0("as_tuple").unwrap().extract().unwrap();
                     // note: using Vec<u8> is not the most efficient thing here (input is a tuple)
@@ -735,8 +747,8 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                     }
                     Ok(Wrap(AnyValue::Decimal(v, scale)))
                 }
-                ("range", _) => materialize_list(ob),
-                (_, _) => Err(PyErr::from(PyPolarsErr::Other(format!(
+                "range" => materialize_list(ob),
+                _ => Err(PyErr::from(PyPolarsErr::Other(format!(
                     "object type not supported {ob:?}",
                 )))),
             }
