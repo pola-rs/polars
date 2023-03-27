@@ -23,11 +23,11 @@ requirements: .venv  ## Install/refresh all project requirements
 
 .PHONY: build
 build: .venv  ## Compile and install Polars for development
-	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop
+	@unset CONDA_PREFIX && maturin develop
 
 .PHONY: build-release
 build-release: .venv  ## Compile and install a faster Polars binary
-	@unset CONDA_PREFIX && source $(VENV_BIN)/activate && maturin develop --release
+	@unset CONDA_PREFIX && maturin develop --release
 
 .PHONY: fmt
 fmt: .venv  ## Run autoformatting and linting
