@@ -36,8 +36,7 @@ class WhenThenThen:
 
         See Also
         --------
-        when : Start another when, then, otherwise layer.
-        otherwise : Values to return in case of the predicate being `False`.
+        pl.when : Documentation for `when, then, otherwise`
 
         """
         expr_ = expr_to_lit_or_expr(expr)
@@ -52,8 +51,7 @@ class WhenThenThen:
 
         See Also
         --------
-        when : Start another when, then, otherwise layer.
-        then : Values to return in case of the predicate being `True`.
+        pl.when : Documentation for `when, then, otherwise`
 
         """
         expr = expr_to_lit_or_expr(expr)
@@ -91,8 +89,7 @@ class WhenThen:
 
         See Also
         --------
-        when : Start another when, then, otherwise layer.
-        then : Values to return in case of the predicate being `True`.
+        pl.when : Documentation for `when, then, otherwise`
 
         """
         expr = expr_to_lit_or_expr(expr)
@@ -125,8 +122,7 @@ class When:
 
         See Also
         --------
-        when : Start another when, then, otherwise layer.
-        otherwise : Values to return in case of the predicate being `False`.
+        pl.when : Documentation for `when, then, otherwise`
 
         """
         expr = expr_to_lit_or_expr(expr)
@@ -138,6 +134,13 @@ def when(expr: Expr | bool | Series) -> When:
     """
     Start a "when, then, otherwise" expression.
 
+    Expression similar to an `if-else` statement in Python. Always initiated by a
+    `pl.when(<condition>).then(<value if condition>)`. Optionally followed by chaining
+    one or more `.when(<condition>).then(<value>)` statements. If none of the conditions
+    are `True`, an optional `.otherwise(<value if all statements are false>)` can be
+    appended at the end. If not appended, and none of the conditions are `True`, `None`
+    will be returned.
+
     Examples
     --------
     Below we add a column with the value 1, where column "foo" > 2 and the value -1
@@ -145,18 +148,21 @@ def when(expr: Expr | bool | Series) -> When:
 
     >>> df = pl.DataFrame({"foo": [1, 3, 4], "bar": [3, 4, 0]})
     >>> df.with_columns(
-    ...     pl.when(pl.col("foo") > 2).then(pl.lit(1)).otherwise(pl.lit(-1))
+    ...     pl.when(pl.col("foo") > 2)
+    ...     .then(pl.lit(1))
+    ...     .otherwise(pl.lit(-1))
+    ...     .alias("val")
     ... )
     shape: (3, 3)
-    ┌─────┬─────┬─────────┐
-    │ foo ┆ bar ┆ literal │
-    │ --- ┆ --- ┆ ---     │
-    │ i64 ┆ i64 ┆ i32     │
-    ╞═════╪═════╪═════════╡
-    │ 1   ┆ 3   ┆ -1      │
-    │ 3   ┆ 4   ┆ 1       │
-    │ 4   ┆ 0   ┆ 1       │
-    └─────┴─────┴─────────┘
+    ┌─────┬─────┬─────┐
+    │ foo ┆ bar ┆ val │
+    │ --- ┆ --- ┆ --- │
+    │ i64 ┆ i64 ┆ i32 │
+    ╞═════╪═════╪═════╡
+    │ 1   ┆ 3   ┆ -1  │
+    │ 3   ┆ 4   ┆ 1   │
+    │ 4   ┆ 0   ┆ 1   │
+    └─────┴─────┴─────┘
 
     Or with multiple `when, thens` chained:
 
@@ -166,45 +172,40 @@ def when(expr: Expr | bool | Series) -> When:
     ...     .when(pl.col("bar") > 2)
     ...     .then(4)
     ...     .otherwise(-1)
+    ...     .alias("val")
     ... )
     shape: (3, 3)
-    ┌─────┬─────┬─────────┐
-    │ foo ┆ bar ┆ literal │
-    │ --- ┆ --- ┆ ---     │
-    │ i64 ┆ i64 ┆ i32     │
-    ╞═════╪═════╪═════════╡
-    │ 1   ┆ 3   ┆ 4       │
-    │ 3   ┆ 4   ┆ 1       │
-    │ 4   ┆ 0   ┆ 1       │
-    └─────┴─────┴─────────┘
+    ┌─────┬─────┬─────┐
+    │ foo ┆ bar ┆ val │
+    │ --- ┆ --- ┆ --- │
+    │ i64 ┆ i64 ┆ i32 │
+    ╞═════╪═════╪═════╡
+    │ 1   ┆ 3   ┆ 4   │
+    │ 3   ┆ 4   ┆ 1   │
+    │ 4   ┆ 0   ┆ 1   │
+    └─────┴─────┴─────┘
 
-    Chained `when, thens` should be read as `if, elif, ... elif, else`, not
-    as `if, if, ... if, else`.
-    Note how in the example above for the second row in the dataframe, where
-    `foo=3` and `bar=4`, the first `when` evaluates to `True`, and therefore
+    Chained `when, thens` should be read as `if, elif, ... elif`, not
+    as `if, if, ... if`, i.e. the first condition that evaluates to True will
+    be picked. Note how in the example above for the second row in the dataframe,
+    where `foo=3` and `bar=4`, the first `when` evaluates to `True`, and therefore
     the second `when`, which is also `True`, is not evaluated.
 
     The `otherwise` at the end is optional. If left out, any rows where none
     of the `when` expressions evaluate to True, are set to `null`:
 
-    >>> df.with_columns(
-    ...     pl.when(pl.col("foo") > 2).then(pl.lit(1)).otherwise(pl.lit(-1))
-    ... )
+    >>> df.with_columns(pl.when(pl.col("foo") > 2).then(pl.lit(1)).alias("val"))
     shape: (3, 3)
-    ┌─────┬─────┬─────────┐
-    │ foo ┆ bar ┆ literal │
-    │ --- ┆ --- ┆ ---     │
-    │ i64 ┆ i64 ┆ i32     │
-    ╞═════╪═════╪═════════╡
-    │ 1   ┆ 3   ┆ null    │
-    │ 3   ┆ 4   ┆ 1       │
-    │ 4   ┆ 0   ┆ 1       │
-    └─────┴─────┴─────────┘
+    ┌─────┬─────┬──────┐
+    │ foo ┆ bar ┆ val  │
+    │ --- ┆ --- ┆ ---  │
+    │ i64 ┆ i64 ┆ i32  │
+    ╞═════╪═════╪══════╡
+    │ 1   ┆ 3   ┆ null │
+    │ 3   ┆ 4   ┆ 1    │
+    │ 4   ┆ 0   ┆ 1    │
+    └─────┴─────┴──────┘
 
-    See Also
-    --------
-    then : Values to return in case of the predicate being `True`.
-    otherwise : Values to return in case of the predicate being `False`.
 
     """
     expr = expr_to_lit_or_expr(expr)
