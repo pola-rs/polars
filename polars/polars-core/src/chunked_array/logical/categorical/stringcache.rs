@@ -3,7 +3,6 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use ahash::RandomState;
 use hashbrown::hash_map::RawEntryMut;
 use once_cell::sync::Lazy;
 use polars_utils::HashSingle;
@@ -11,6 +10,7 @@ use smartstring::{LazyCompact, SmartString};
 
 use crate::datatypes::PlIdHashMap;
 use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
+use crate::hashing::PlHasherBuilder;
 use crate::prelude::InitHashMaps;
 
 /// We use atomic reference counting
@@ -198,8 +198,8 @@ impl StringCache {
     /// The global `StringCache` will always use a predictable seed. This allows local builders to mimic
     /// the hashes in case of contention.
     #[inline]
-    pub(crate) fn get_hash_builder() -> RandomState {
-        RandomState::with_seed(0)
+    pub(crate) fn get_hash_builder() -> PlHasherBuilder {
+        PlHasherBuilder::with_seed(0)
     }
 
     /// Lock the string cache

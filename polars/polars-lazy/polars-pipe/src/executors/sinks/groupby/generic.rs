@@ -5,7 +5,6 @@ use std::sync::Mutex;
 use hashbrown::hash_map::RawEntryMut;
 use num_traits::NumCast;
 use polars_arrow::trusted_len::PushUnchecked;
-use polars_core::export::ahash::RandomState;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
 use polars_core::series::SeriesPhysIter;
@@ -71,7 +70,7 @@ pub struct GenericGroupbySink {
     key_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
     // the columns that will be aggregated
     aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
-    hb: RandomState,
+    hb: PlHasherBuilder,
     // Initializing Aggregation functions. If we aggregate by 2 columns
     // this vec will have two functions. We will use these functions
     // to populate the buffer where the hashmap points to
@@ -119,7 +118,7 @@ impl GenericGroupbySink {
         io_thread: Option<Arc<Mutex<Option<IOThread>>>>,
         ooc: bool,
     ) -> Self {
-        let hb = RandomState::default();
+        let hb = PlHasherBuilder::default();
         let partitions = _set_partition_size();
 
         let pre_agg = load_vec(partitions, || PlIdHashMap::with_capacity(HASHMAP_INIT_SIZE));
@@ -544,7 +543,7 @@ impl Sink for GenericGroupbySink {
             Some(self.ooc_state.io_thread.clone()),
             self.ooc_state.ooc,
         );
-        new.hb = self.hb.clone();
+        new.hb = self.hb;
         new.thread_no = thread_no;
         Box::new(new)
     }

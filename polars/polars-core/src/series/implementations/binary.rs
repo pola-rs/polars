@@ -1,7 +1,5 @@
 use std::borrow::Cow;
 
-use ahash::RandomState;
-
 use super::{private, IntoSeries, SeriesTrait, *};
 use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::compare_inner::{
@@ -12,6 +10,7 @@ use crate::chunked_array::AsSinglePtr;
 use crate::fmt::FmtList;
 use crate::frame::groupby::*;
 use crate::frame::hash_join::ZipOuterJoinColumn;
+use crate::hashing::PlHasherBuilder;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 
@@ -48,12 +47,16 @@ impl private::PrivateSeries for SeriesWrap<BinaryChunked> {
         (&self.0).into_partial_ord_inner()
     }
 
-    fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+    fn vec_hash(&self, random_state: PlHasherBuilder, buf: &mut Vec<u64>) -> PolarsResult<()> {
         self.0.vec_hash(random_state, buf);
         Ok(())
     }
 
-    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
+    fn vec_hash_combine(
+        &self,
+        build_hasher: PlHasherBuilder,
+        hashes: &mut [u64],
+    ) -> PolarsResult<()> {
         self.0.vec_hash_combine(build_hasher, hashes);
         Ok(())
     }

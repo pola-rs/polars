@@ -28,12 +28,12 @@ macro_rules! invalid_operation_panic {
 }
 
 pub(crate) mod private {
-    use ahash::RandomState;
 
     use super::*;
     use crate::chunked_array::ops::compare_inner::{PartialEqInner, PartialOrdInner};
     #[cfg(feature = "rows")]
     use crate::frame::groupby::GroupsProxy;
+    use crate::hashing::PlHasherBuilder;
 
     pub trait PrivateSeriesNumeric {
         fn bit_repr_is_large(&self) -> bool {
@@ -103,12 +103,16 @@ pub(crate) mod private {
         fn into_partial_ord_inner<'a>(&'a self) -> Box<dyn PartialOrdInner + 'a> {
             invalid_operation_panic!(into_partial_ord_inner, self)
         }
-        fn vec_hash(&self, _build_hasher: RandomState, _buf: &mut Vec<u64>) -> PolarsResult<()> {
+        fn vec_hash(
+            &self,
+            _build_hasher: PlHasherBuilder,
+            _buf: &mut Vec<u64>,
+        ) -> PolarsResult<()> {
             polars_bail!(opq = vec_hash, self._dtype());
         }
         fn vec_hash_combine(
             &self,
-            _build_hasher: RandomState,
+            _build_hasher: PlHasherBuilder,
             _hashes: &mut [u64],
         ) -> PolarsResult<()> {
             polars_bail!(opq = vec_hash_combine, self._dtype());

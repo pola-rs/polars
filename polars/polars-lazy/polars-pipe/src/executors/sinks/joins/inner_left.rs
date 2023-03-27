@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use polars_core::error::PolarsResult;
-use polars_core::export::ahash::RandomState;
 use polars_core::frame::hash_join::{ChunkId, _finish_join};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
@@ -29,7 +28,7 @@ pub struct GenericJoinProbe {
     //      * end = (offset + n_join_keys)
     materialized_join_cols: Arc<Vec<ArrayRef>>,
     suffix: Arc<str>,
-    hb: RandomState,
+    hb: PlHasherBuilder,
     // partitioned tables that will be used for probing
     // stores the key and the chunk_idx, df_idx of the left table
     hash_tables: Arc<Vec<PlIdHashMap<Key, Vec<ChunkId>>>>,
@@ -63,7 +62,7 @@ impl GenericJoinProbe {
         mut df_a: DataFrame,
         materialized_join_cols: Arc<Vec<ArrayRef>>,
         suffix: Arc<str>,
-        hb: RandomState,
+        hb: PlHasherBuilder,
         hash_tables: Arc<Vec<PlIdHashMap<Key, Vec<ChunkId>>>>,
         join_columns_left: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,

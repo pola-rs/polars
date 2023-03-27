@@ -84,7 +84,7 @@ where
 
     // prepare hash table
     let mut hash_tbls = prepare_hashed_relation_threaded(b);
-    let random_state = hash_tbls[0].hasher().clone();
+    let random_state = *hash_tbls[0].hasher();
 
     // we pre hash the probing values
     let (probe_hashes, _) = create_hash_and_keys_threaded_vectorized(a, Some(random_state));

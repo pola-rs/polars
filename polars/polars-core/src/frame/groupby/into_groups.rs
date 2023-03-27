@@ -6,6 +6,7 @@ use polars_utils::{flatten, HashSingle};
 
 use super::*;
 use crate::config::verbose;
+use crate::hashing::PlHasherBuilder;
 use crate::utils::_split_offsets;
 
 /// Used to create the tuples for a groupby operation.
@@ -251,8 +252,8 @@ impl IntoGroupsProxy for Utf8Chunked {
 impl IntoGroupsProxy for BinaryChunked {
     #[allow(clippy::needless_lifetimes)]
     fn group_tuples<'a>(&'a self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
-        let hb = RandomState::default();
-        let null_h = get_null_hash_value(hb.clone());
+        let hb = PlHasherBuilder::default();
+        let null_h = get_null_hash_value(hb);
 
         let out = if multithreaded {
             let n_partitions = _set_partition_size();
@@ -311,8 +312,8 @@ impl IntoGroupsProxy for ListChunked {
                 ComputeError: "grouping on list type is only allowed if the inner type is numeric"
             );
 
-            let hb = RandomState::default();
-            let null_h = get_null_hash_value(hb.clone());
+            let hb = PlHasherBuilder::default();
+            let null_h = get_null_hash_value(hb);
 
             let arr_to_hashes = |ca: &ListChunked| {
                 let mut out = Vec::with_capacity(ca.len());

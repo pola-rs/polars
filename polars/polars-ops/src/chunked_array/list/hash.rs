@@ -1,7 +1,6 @@
 use std::hash::Hash;
 
 use polars_core::export::_boost_hash_combine;
-use polars_core::export::ahash::{self};
 use polars_core::export::rayon::prelude::*;
 use polars_core::utils::NoNull;
 use polars_core::POOL;
@@ -9,7 +8,7 @@ use polars_utils::HashSingle;
 
 use super::*;
 
-fn hash_agg<T>(ca: &ChunkedArray<T>, random_state: &ahash::RandomState) -> u64
+fn hash_agg<T>(ca: &ChunkedArray<T>, random_state: &PlHasherBuilder) -> u64
 where
     T: PolarsIntegerType,
     T::Native: Hash,
@@ -43,7 +42,7 @@ where
     hash_agg
 }
 
-pub(crate) fn hash(ca: &mut ListChunked, build_hasher: ahash::RandomState) -> UInt64Chunked {
+pub(crate) fn hash(ca: &mut ListChunked, build_hasher: PlHasherBuilder) -> UInt64Chunked {
     if !ca.inner_dtype().to_physical().is_numeric() {
         panic!(
             "Hashing a list with a non-numeric inner type not supported. Got dtype: {:?}",

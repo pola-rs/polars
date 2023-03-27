@@ -1609,18 +1609,12 @@ def test_reproducible_hash_with_seeds() -> None:
     the same seeds.
 
     """
-    import platform
-
     df = pl.DataFrame({"s": [1234, None, 5678]})
     seeds = (11, 22, 33, 44)
 
-    # TODO: introduce a platform-stable string hash...
-    #  in the meantime, try to account for arm64 (mac) hash values to reduce noise
     expected = pl.Series(
         "s",
-        [6629530352159708028, 15496313222292466864, 6048298245521876612]
-        if platform.mac_ver()[-1] == "arm64"
-        else [6629530352159708028, 988796329533502010, 6048298245521876612],
+        [15942440131956025408, 17942101829897509888, 9614471911627864000],
         dtype=pl.UInt64,
     )
     result = df.hash_rows(*seeds)

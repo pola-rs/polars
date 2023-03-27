@@ -5,7 +5,6 @@ use std::sync::Arc;
 use hashbrown::hash_map::RawEntryMut;
 use polars_arrow::trusted_len::PushUnchecked;
 use polars_core::error::PolarsResult;
-use polars_core::export::ahash::RandomState;
 use polars_core::frame::hash_join::ChunkId;
 use polars_core::prelude::*;
 use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked};
@@ -59,7 +58,7 @@ pub struct GenericBuild {
     //      * end = (offset + n_join_keys)
     materialized_join_cols: Vec<ArrayRef>,
     suffix: Arc<str>,
-    hb: RandomState,
+    hb: PlHasherBuilder,
     // partitioned tables that will be used for probing
     // stores the key and the chunk_idx, df_idx of the left table
     hash_tables: Vec<PlIdHashMap<Key, Vec<ChunkId>>>,
@@ -84,7 +83,7 @@ impl GenericBuild {
         join_columns_left: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         join_columns_right: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
     ) -> Self {
-        let hb: RandomState = Default::default();
+        let hb: PlHasherBuilder = Default::default();
         let partitions = _set_partition_size();
         let hash_tables = load_vec(partitions, || PlIdHashMap::with_capacity(HASHMAP_INIT_SIZE));
         GenericBuild {
@@ -319,7 +318,7 @@ impl Sink for GenericBuild {
             self.join_columns_left.clone(),
             self.join_columns_right.clone(),
         );
-        new.hb = self.hb.clone();
+        new.hb = self.hb;
         Box::new(new)
     }
 
@@ -338,7 +337,7 @@ impl Sink for GenericBuild {
                 let materialized_join_cols =
                     Arc::new(std::mem::take(&mut self.materialized_join_cols));
                 let suffix = self.suffix.clone();
-                let hb = self.hb.clone();
+                let hb = self.hb;
                 let hash_tables = Arc::new(std::mem::take(&mut self.hash_tables));
                 let join_columns_left = self.join_columns_left.clone();
                 let join_columns_right = self.join_columns_right.clone();

@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 
-use ahash::RandomState;
 use polars_arrow::prelude::QuantileInterpolOptions;
 
 use super::{private, IntoSeries, SeriesTrait, *};
@@ -96,12 +95,16 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         }
     }
 
-    fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+    fn vec_hash(&self, random_state: PlHasherBuilder, buf: &mut Vec<u64>) -> PolarsResult<()> {
         self.0.logical().vec_hash(random_state, buf);
         Ok(())
     }
 
-    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
+    fn vec_hash_combine(
+        &self,
+        build_hasher: PlHasherBuilder,
+        hashes: &mut [u64],
+    ) -> PolarsResult<()> {
         self.0.logical().vec_hash_combine(build_hasher, hashes);
         Ok(())
     }

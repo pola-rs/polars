@@ -37,6 +37,8 @@ use smartstring::alias::String as SmartString;
 use crate::frame::groupby::GroupsIndicator;
 #[cfg(feature = "row_hash")]
 use crate::hashing::df_rows_to_hashes_threaded;
+#[cfg(feature = "row_hash")]
+use crate::hashing::PlHasherBuilder;
 use crate::prelude::sort::{argsort_multiple_row_fmt, prepare_arg_sort};
 use crate::series::IsSorted;
 use crate::POOL;
@@ -3126,7 +3128,7 @@ impl DataFrame {
     #[cfg(feature = "row_hash")]
     pub fn hash_rows(
         &mut self,
-        hasher_builder: Option<ahash::RandomState>,
+        hasher_builder: Option<PlHasherBuilder>,
     ) -> PolarsResult<UInt64Chunked> {
         let dfs = split_df(self, POOL.current_num_threads())?;
         let (cas, _) = df_rows_to_hashes_threaded(&dfs, hasher_builder)?;

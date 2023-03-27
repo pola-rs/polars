@@ -6,7 +6,7 @@ pub type IdxCa = UInt32Chunked;
 pub type IdxCa = UInt64Chunked;
 pub use polars_arrow::index::{IdxArr, IdxSize};
 
-use crate::hashing::IdBuildHasher;
+use crate::hashing::{IdBuildHasher, PlHasherBuilder};
 
 #[cfg(not(feature = "bigidx"))]
 pub const IDX_DTYPE: DataType = DataType::UInt32;
@@ -21,7 +21,7 @@ pub type IdxType = UInt64Type;
 pub const NULL_DTYPE: DataType = DataType::Int32;
 
 #[cfg(feature = "private")]
-pub type PlHashMap<K, V> = hashbrown::HashMap<K, V, RandomState>;
+pub type PlHashMap<K, V> = hashbrown::HashMap<K, V, PlHasherBuilder>;
 #[cfg(feature = "private")]
 
 /// This hashmap has the uses an IdHasher

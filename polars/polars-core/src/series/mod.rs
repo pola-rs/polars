@@ -19,7 +19,6 @@ use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 use std::sync::Arc;
 
-use ahash::RandomState;
 use arrow::compute::aggregate::estimated_bytes_size;
 pub use from::*;
 pub use iterator::{SeriesIter, SeriesPhysIter};
@@ -27,6 +26,7 @@ use num_traits::NumCast;
 use rayon::prelude::*;
 pub use series_trait::{IsSorted, *};
 
+use crate::hashing::PlHasherBuilder;
 #[cfg(feature = "rank")]
 use crate::prelude::unique::rank::rank;
 #[cfg(feature = "zip_with")]
@@ -144,7 +144,7 @@ impl Eq for Wrap<Series> {}
 
 impl Hash for Wrap<Series> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let rs = RandomState::with_seeds(0, 0, 0, 0);
+        let rs = PlHasherBuilder::default();
         let mut h = vec![];
         self.0.vec_hash(rs, &mut h).unwrap();
         let h = UInt64Chunked::from_vec("", h).sum();

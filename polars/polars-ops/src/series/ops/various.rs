@@ -1,5 +1,3 @@
-#[cfg(feature = "hash")]
-use polars_core::export::ahash;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 
@@ -24,7 +22,7 @@ pub trait SeriesMethods: SeriesSealed {
     }
 
     #[cfg(feature = "hash")]
-    fn hash(&self, build_hasher: ahash::RandomState) -> UInt64Chunked {
+    fn hash(&self, build_hasher: PlHasherBuilder) -> UInt64Chunked {
         let s = self.as_series().to_physical_repr();
         match s.dtype() {
             DataType::List(_) => {

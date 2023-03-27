@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 
-use ahash::RandomState;
 use polars_arrow::prelude::QuantileInterpolOptions;
 
 use super::{private, IntoSeries, SeriesTrait, SeriesWrap, *};
@@ -14,6 +13,7 @@ use crate::chunked_array::AsSinglePtr;
 use crate::fmt::FmtList;
 use crate::frame::groupby::*;
 use crate::frame::hash_join::ZipOuterJoinColumn;
+use crate::hashing::PlHasherBuilder;
 use crate::prelude::*;
 #[cfg(feature = "checked_arithmetic")]
 use crate::series::arithmetic::checked::NumOpsDispatchChecked;
@@ -74,14 +74,18 @@ macro_rules! impl_dyn_series {
                 (&self.0).into_partial_ord_inner()
             }
 
-            fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+            fn vec_hash(
+                &self,
+                random_state: PlHasherBuilder,
+                buf: &mut Vec<u64>,
+            ) -> PolarsResult<()> {
                 self.0.vec_hash(random_state, buf);
                 Ok(())
             }
 
             fn vec_hash_combine(
                 &self,
-                build_hasher: RandomState,
+                build_hasher: PlHasherBuilder,
                 hashes: &mut [u64],
             ) -> PolarsResult<()> {
                 self.0.vec_hash_combine(build_hasher, hashes);

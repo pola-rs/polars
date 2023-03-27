@@ -1,3 +1,5 @@
+use polars_utils::HashSingle;
+
 use super::*;
 
 macro_rules! fx_hash_8_bit {
@@ -27,8 +29,8 @@ pub(super) const FXHASH_K: u64 = 0x517cc1b727220a95;
 
 /// Ensure that the same hash is used as with `VecHash`.
 pub trait FxHash {
-    fn get_k(random_state: RandomState) -> u64 {
-        random_state.hash_one(FXHASH_K)
+    fn get_k(random_state: PlHasherBuilder) -> u64 {
+        random_state.hash_single(FXHASH_K)
     }
     fn _fx_hash(self, k: u64) -> u64;
 }

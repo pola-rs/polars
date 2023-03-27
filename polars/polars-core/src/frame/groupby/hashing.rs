@@ -115,7 +115,7 @@ where
                 for keys in &keys {
                     let keys = keys.as_ref();
                     let len = keys.len() as IdxSize;
-                    let hasher = hash_tbl.hasher().clone();
+                    let hasher = *hash_tbl.hasher();
 
                     let mut cnt = 0;
                     keys.iter().for_each(|k| {

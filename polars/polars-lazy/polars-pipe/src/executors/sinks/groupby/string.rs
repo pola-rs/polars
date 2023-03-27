@@ -3,7 +3,6 @@ use std::sync::Mutex;
 
 use hashbrown::hash_map::RawEntryMut;
 use num_traits::NumCast;
-use polars_core::export::ahash::RandomState;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
 use polars_core::utils::_set_partition_size;
@@ -48,7 +47,7 @@ pub struct Utf8GroupbySink {
     key_column: Arc<dyn PhysicalPipedExpr>,
     // the columns that will be aggregated
     aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
-    hb: RandomState,
+    hb: PlHasherBuilder,
     // Initializing Aggregation functions. If we aggregate by 2 columns
     // this vec will have two functions. We will use these functions
     // to populate the buffer where the hashmap points to
@@ -218,7 +217,7 @@ impl Utf8GroupbySink {
             let s = s.to_physical_repr();
             self.aggregation_series.push(s.rechunk());
         }
-        s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
+        s.vec_hash(self.hb, &mut self.hashes).unwrap();
         Ok(s)
     }
     #[inline]
@@ -468,7 +467,7 @@ impl Sink for Utf8GroupbySink {
             Some(self.ooc_state.io_thread.clone()),
             self.ooc_state.ooc,
         );
-        new.hb = self.hb.clone();
+        new.hb = self.hb;
         new.thread_no = thread_no;
         Box::new(new)
     }

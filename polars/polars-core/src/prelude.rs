@@ -39,7 +39,7 @@ pub use crate::frame::groupby::{GroupsIdx, GroupsProxy, GroupsSlice, IntoGroupsP
 pub use crate::frame::hash_join::JoinType;
 pub(crate) use crate::frame::hash_join::*;
 pub use crate::frame::{DataFrame, UniqueKeepStrategy};
-pub use crate::hashing::{FxHash, VecHash};
+pub use crate::hashing::{FxHash, PlHasherBuilder, VecHash};
 pub use crate::named_from::{NamedFrom, NamedFromOwned};
 pub use crate::schema::*;
 #[cfg(feature = "checked_arithmetic")]
