@@ -3005,19 +3005,22 @@ impl DataFrame {
             Some(s) => s.iter().map(|s| &**s).collect(),
             None => self.get_column_names(),
         };
+        let mut df = self.clone();
+        // take on multiple chunks is terrible
+        df.as_single_chunk_par();
 
         let columns = match (keep, maintain_order) {
             (UniqueKeepStrategy::First | UniqueKeepStrategy::Any, true) => {
-                let gb = self.groupby_stable(names)?;
+                let gb = df.groupby_stable(names)?;
                 let groups = gb.get_groups();
                 let (offset, len) = slice.unwrap_or((0, groups.len()));
                 let groups = groups.slice(offset, len);
-                self.apply_columns_par(&|s| unsafe { s.agg_first(&groups) })
+                df.apply_columns_par(&|s| unsafe { s.agg_first(&groups) })
             }
             (UniqueKeepStrategy::Last, true) => {
                 // maintain order by last values, so the sorted groups are not correct as they
                 // are sorted by the first value
-                let gb = self.groupby(names)?;
+                let gb = df.groupby(names)?;
                 let groups = gb.get_groups();
 
                 let func = |g: GroupsIndicator| match g {
@@ -3034,30 +3037,30 @@ impl DataFrame {
                 };
 
                 let last_idx = last_idx.sort(false);
-                return Ok(unsafe { self.take_unchecked(&last_idx) });
+                return Ok(unsafe { df.take_unchecked(&last_idx) });
             }
             (UniqueKeepStrategy::First | UniqueKeepStrategy::Any, false) => {
-                let gb = self.groupby(names)?;
+                let gb = df.groupby(names)?;
                 let groups = gb.get_groups();
                 let (offset, len) = slice.unwrap_or((0, groups.len()));
                 let groups = groups.slice(offset, len);
-                self.apply_columns_par(&|s| unsafe { s.agg_first(&groups) })
+                df.apply_columns_par(&|s| unsafe { s.agg_first(&groups) })
             }
             (UniqueKeepStrategy::Last, false) => {
-                let gb = self.groupby(names)?;
+                let gb = df.groupby(names)?;
                 let groups = gb.get_groups();
                 let (offset, len) = slice.unwrap_or((0, groups.len()));
                 let groups = groups.slice(offset, len);
-                self.apply_columns_par(&|s| unsafe { s.agg_last(&groups) })
+                df.apply_columns_par(&|s| unsafe { s.agg_last(&groups) })
             }
             (UniqueKeepStrategy::None, _) => {
-                let df_part = self.select(names)?;
+                let df_part = df.select(names)?;
                 let mask = df_part.is_unique()?;
                 let mask = match slice {
                     None => mask,
                     Some((offset, len)) => mask.slice(offset, len),
                 };
-                return self.filter(&mask);
+                return df.filter(&mask);
             }
         };
         Ok(DataFrame::new_no_checks(columns))
