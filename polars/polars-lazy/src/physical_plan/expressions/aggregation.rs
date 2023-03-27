@@ -309,7 +309,7 @@ impl PartitionedAggregation for AggregationExpr {
                             _ => agg_s.cast(&DataType::Float64).unwrap(),
                         };
                         let mut count_s = series.agg_valid_count(groups);
-                        count_s.rename("count");
+                        count_s.rename("__POLARS_COUNT");
                         Ok(StructChunked::new(&new_name, &[agg_s, count_s])
                             .unwrap()
                             .into_series())
