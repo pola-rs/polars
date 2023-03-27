@@ -725,7 +725,13 @@ def set_optimal_columns_to_display(df, column_spacing: float = 3.0):
 
 
     def _get_column_name_lengths(df):
-        return [_get_element_display_length(col) for col in df.columns]
+        column_name_lengths = [_get_element_display_length(col) for col in df.columns]
+        # allow really big column names to "break" to 2nd line. Usually 20 to 24 characters are kept
+        # on first line
+        column_name_lengths = [
+            length if length <= 24 else 24 for length in column_name_lengths
+        ]
+        return column_name_lengths
 
 
     def _get_row_value_lengths(df, row_idx):
