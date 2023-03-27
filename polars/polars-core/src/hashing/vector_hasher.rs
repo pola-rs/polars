@@ -12,6 +12,9 @@ use crate::prelude::*;
 use crate::utils::arrow::array::Array;
 use crate::POOL;
 
+// See: https://github.com/tkaitchuck/aHash/blob/f9acd508bd89e7c5b2877a9510098100f9018d64/src/operations.rs#L4
+const MULTIPLE: u64 = 6364136223846793005;
+
 // Read more:
 //  https://www.cockroachlabs.com/blog/vectorized-hash-joiner/
 //  http://myeyesareblind.com/2017/02/06/Combine-hash-values/
@@ -27,6 +30,11 @@ pub trait VecHash {
     fn vec_hash_combine(&self, _random_state: RandomState, _hashes: &mut [u64]) {
         unimplemented!()
     }
+}
+
+pub(crate) const fn folded_multiply(s: u64, by: u64) -> u64 {
+    let result = (s as u128).wrapping_mul(by as u128);
+    ((result & 0xffff_ffff_ffff_ffff) as u64) ^ ((result >> 64) as u64)
 }
 
 pub(crate) fn get_null_hash_value(random_state: RandomState) -> u64 {
@@ -63,7 +71,7 @@ fn insert_null_hash(chunks: &[ArrayRef], random_state: RandomState, buf: &mut Ve
 fn integer_vec_hash<T>(ca: &ChunkedArray<T>, random_state: RandomState, buf: &mut Vec<u64>)
 where
     T: PolarsIntegerType,
-    T::Native: Hash + FxHash,
+    T::Native: Hash + AsU64,
 {
     // Note that we don't use the no null branch! This can break in unexpected ways.
     // for instance with threading we split an array in n_threads, this may lead to
@@ -74,18 +82,13 @@ where
     buf.clear();
     buf.reserve(ca.len());
 
-    let k = random_state.hash_one(FXHASH_K);
-
     #[allow(unused_unsafe)]
     #[allow(clippy::useless_transmute)]
     ca.downcast_iter().for_each(|arr| {
-        buf.extend(
-            arr.values()
-                .as_slice()
-                .iter()
-                .copied()
-                .map(|v| unsafe { v._fx_hash(k) }),
-        );
+        buf.extend(arr.values().as_slice().iter().copied().map(|v| {
+            // we save an xor because we don't have initial state
+            folded_multiply(v.as_u64(), MULTIPLE)
+        }));
     });
     insert_null_hash(&ca.chunks, random_state, buf)
 }
@@ -93,10 +96,9 @@ where
 fn integer_vec_hash_combine<T>(ca: &ChunkedArray<T>, random_state: RandomState, hashes: &mut [u64])
 where
     T: PolarsIntegerType,
-    T::Native: Hash + FxHash,
+    T::Native: Hash + AsU64,
 {
-    let null_h = get_null_hash_value(random_state.clone());
-    let k = random_state.hash_one(FXHASH_K);
+    let null_h = get_null_hash_value(random_state);
 
     let mut offset = 0;
     ca.downcast_iter().for_each(|arr| {
@@ -107,8 +109,8 @@ where
                 .iter()
                 .zip(&mut hashes[offset..])
                 .for_each(|(v, h)| {
-                    let l = v._fx_hash(k);
-                    *h = _boost_hash_combine(l, *h)
+                    // inlined from ahash. This ensures we combine with the previous state
+                    *h = folded_multiply(v.as_u64() ^ *h, MULTIPLE);
                 }),
             _ => {
                 let validity = arr.validity().unwrap();
@@ -118,8 +120,9 @@ where
                     .zip(&mut hashes[offset..])
                     .zip(arr.values().as_slice())
                     .for_each(|((valid, h), l)| {
-                        let l = l._fx_hash(k);
-                        *h = _boost_hash_combine([null_h, l][valid as usize], *h)
+                        // inlined from ahash. This ensures we combine with the previous state
+                        let new = folded_multiply(l.as_u64() ^ *h, MULTIPLE);
+                        *h = [null_h, new][valid as usize];
                     });
             }
         }
@@ -128,7 +131,7 @@ where
 }
 
 macro_rules! vec_hash_int {
-    ($ca:ident, $fx_hash:ident) => {
+    ($ca:ident) => {
         impl VecHash for $ca {
             fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) {
                 integer_vec_hash(self, random_state, buf)
@@ -141,14 +144,14 @@ macro_rules! vec_hash_int {
     };
 }
 
-vec_hash_int!(Int64Chunked, fx_hash_64_bit);
-vec_hash_int!(Int32Chunked, fx_hash_32_bit);
-vec_hash_int!(Int16Chunked, fx_hash_16_bit);
-vec_hash_int!(Int8Chunked, fx_hash_8_bit);
-vec_hash_int!(UInt64Chunked, fx_hash_64_bit);
-vec_hash_int!(UInt32Chunked, fx_hash_32_bit);
-vec_hash_int!(UInt16Chunked, fx_hash_16_bit);
-vec_hash_int!(UInt8Chunked, fx_hash_8_bit);
+vec_hash_int!(Int64Chunked);
+vec_hash_int!(Int32Chunked);
+vec_hash_int!(Int16Chunked);
+vec_hash_int!(Int8Chunked);
+vec_hash_int!(UInt64Chunked);
+vec_hash_int!(UInt32Chunked);
+vec_hash_int!(UInt16Chunked);
+vec_hash_int!(UInt8Chunked);
 
 impl VecHash for Utf8Chunked {
     fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) {
