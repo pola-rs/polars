@@ -41,12 +41,12 @@ pub use crate::frame::hash_join::multiple_keys::{
 pub use crate::frame::hash_join::multiple_keys::{
     _left_anti_multiple_keys, _left_semi_multiple_keys,
 };
-use crate::prelude::*;
-use crate::utils::{_set_partition_size, slice_slice, split_ca};
-use crate::vector_hasher::{
+use crate::hashing::{
     create_hash_and_keys_threaded_vectorized, prepare_hashed_relation_threaded, this_partition,
     AsU64, BytesHash,
 };
+use crate::prelude::*;
+use crate::utils::{_set_partition_size, slice_slice, split_ca};
 use crate::POOL;
 
 pub type LeftJoinIds = (JoinIds, JoinOptIds);

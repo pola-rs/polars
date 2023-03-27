@@ -6,7 +6,7 @@ pub type IdxCa = UInt32Chunked;
 pub type IdxCa = UInt64Chunked;
 pub use polars_arrow::index::{IdxArr, IdxSize};
 
-use crate::vector_hasher::IdBuildHasher;
+use crate::hashing::IdBuildHasher;
 
 #[cfg(not(feature = "bigidx"))]
 pub const IDX_DTYPE: DataType = DataType::UInt32;

@@ -15,6 +15,7 @@ pub mod export;
 pub mod fmt;
 pub mod frame;
 pub mod functions;
+pub(crate) mod hashing;
 mod named_from;
 pub mod prelude;
 pub mod schema;
@@ -24,14 +25,13 @@ pub mod series;
 pub mod testing;
 #[cfg(test)]
 mod tests;
-pub(crate) mod vector_hasher;
 
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+pub use hashing::IdBuildHasher;
 use once_cell::sync::Lazy;
 use rayon::{ThreadPool, ThreadPoolBuilder};
-pub use vector_hasher::IdBuildHasher;
 
 #[cfg(feature = "dtype-categorical")]
 pub use crate::chunked_array::logical::categorical::stringcache::*;

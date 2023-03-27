@@ -7,9 +7,9 @@ use polars_arrow::prelude::QuantileInterpolOptions;
 use rayon::prelude::*;
 
 use self::hashing::*;
+use crate::hashing::{get_null_hash_value, AsU64, BytesHash};
 use crate::prelude::*;
 use crate::utils::{_set_partition_size, accumulate_dataframes_vertical};
-use crate::vector_hasher::{get_null_hash_value, AsU64, BytesHash};
 use crate::POOL;
 
 pub mod aggregations;

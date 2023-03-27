@@ -7,10 +7,10 @@ use crate::frame::groupby::hashing::{populate_multiple_key_hashmap, HASHMAP_INIT
 use crate::frame::hash_join::{
     get_hash_tbl_threaded_join_mut_partitioned, get_hash_tbl_threaded_join_partitioned,
 };
+use crate::hashing::{df_rows_to_hashes_threaded, this_partition, IdBuildHasher, IdxHash};
 use crate::prelude::*;
 use crate::utils::series::_to_physical_and_bit_repr;
 use crate::utils::{_set_partition_size, split_df};
-use crate::vector_hasher::{df_rows_to_hashes_threaded, this_partition, IdBuildHasher, IdxHash};
 use crate::POOL;
 
 /// Compare the rows of two DataFrames
