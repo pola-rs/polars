@@ -15,8 +15,8 @@ use crate::frame::hash_join::_check_categorical_src;
 use crate::frame::hash_join::{
     create_probe_table, get_hash_tbl_threaded_join_partitioned, multiple_keys as mk, prepare_bytes,
 };
+use crate::hashing::{df_rows_to_hashes_threaded, AsU64};
 use crate::utils::{split_ca, split_df};
-use crate::vector_hasher::{df_rows_to_hashes_threaded, AsU64};
 use crate::POOL;
 
 pub(super) unsafe fn join_asof_backward_with_indirection_and_tolerance<

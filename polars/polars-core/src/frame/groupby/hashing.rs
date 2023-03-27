@@ -8,12 +8,10 @@ use rayon::prelude::*;
 use super::GroupsProxy;
 use crate::datatypes::PlHashMap;
 use crate::frame::groupby::{GroupsIdx, IdxItem};
+use crate::hashing::{df_rows_to_hashes_threaded, this_partition, AsU64, IdBuildHasher, IdxHash};
 use crate::prelude::compare_inner::PartialEqInner;
 use crate::prelude::*;
 use crate::utils::{split_df, CustomIterTools};
-use crate::vector_hasher::{
-    df_rows_to_hashes_threaded, this_partition, AsU64, IdBuildHasher, IdxHash,
-};
 use crate::POOL;
 
 fn finish_group_order(mut out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsProxy {

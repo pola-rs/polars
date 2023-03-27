@@ -35,10 +35,10 @@ use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
 
 use crate::frame::groupby::GroupsIndicator;
+#[cfg(feature = "row_hash")]
+use crate::hashing::df_rows_to_hashes_threaded;
 use crate::prelude::sort::{argsort_multiple_row_fmt, prepare_arg_sort};
 use crate::series::IsSorted;
-#[cfg(feature = "row_hash")]
-use crate::vector_hasher::df_rows_to_hashes_threaded;
 use crate::POOL;
 
 #[derive(Copy, Clone, Debug)]

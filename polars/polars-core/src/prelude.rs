@@ -39,6 +39,7 @@ pub use crate::frame::groupby::{GroupsIdx, GroupsProxy, GroupsSlice, IntoGroupsP
 pub use crate::frame::hash_join::JoinType;
 pub(crate) use crate::frame::hash_join::*;
 pub use crate::frame::{DataFrame, UniqueKeepStrategy};
+pub use crate::hashing::{FxHash, VecHash};
 pub use crate::named_from::{NamedFrom, NamedFromOwned};
 pub use crate::schema::*;
 #[cfg(feature = "checked_arithmetic")]
@@ -48,5 +49,4 @@ pub use crate::series::{IntoSeries, Series, SeriesTrait};
 pub use crate::testing::*;
 pub(crate) use crate::utils::CustomIterTools;
 pub use crate::utils::IntoVec;
-pub use crate::vector_hasher::{FxHash, VecHash};
 pub use crate::{cloud, datatypes, df};
