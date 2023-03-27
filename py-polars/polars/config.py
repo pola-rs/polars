@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import contextlib
 import os
+import shutil
+import numbers
 from typing import TYPE_CHECKING
 
 from polars.dependencies import json
@@ -798,19 +800,19 @@ def set_optimal_columns_to_display(df, column_spacing: float = 3.0):
     )
 
     # Calculate the length of each column name
-    column_name_lenght = _get_column_name_lengths(df[:, col_indices])
+    column_name_lengths = _get_column_name_lengths(df[:, col_indices])
 
     # Calculate the average length of each row value
     row_value_lengths_lst = [
         _get_row_value_lengths(df[:, col_indices], row_idx) for row_idx in row_indices
     ]
-    row_value_length = _average_element_lengths(*row_value_lengths_lst)
+    row_value_lengths = _average_element_lengths(*row_value_lengths_lst)
 
     # Compare lengths of the row values and column names, and keep the largest for each column
-    real_column_length = _max_element_lengths(*[column_name_lenght, row_value_length])
+    real_column_lengths = _max_element_lengths(*[column_name_lengths, row_value_lengths])
 
     # Determine the optimal number of columns to print based on the calculated lengths
     num_cols_to_print = _determine_optimal_display_columns(
-        real_column_length, terminal_width, num_columns_df, column_spacing
+        real_column_lengths, terminal_width, num_columns_df, column_spacing
     )
     os.environ["POLARS_FMT_MAX_COLS"] = str(num_cols_to_print)
