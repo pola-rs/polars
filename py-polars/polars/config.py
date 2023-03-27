@@ -35,6 +35,7 @@ if TYPE_CHECKING:
 _POLARS_CFG_ENV_VARS = {
     "POLARS_ACTIVATE_DECIMAL",
     "POLARS_AUTO_STRUCTIFY",
+    "POLARS_AUTO_FMT_COLS",
     "POLARS_FMT_MAX_COLS",
     "POLARS_FMT_MAX_ROWS",
     "POLARS_FMT_STR_LEN",
@@ -364,6 +365,39 @@ class Config:
         return cls
 
     @classmethod
+    def set_auto_tbl_cols(cls, active: bool = True) -> type[Config]:
+        """
+        Automatically set the number of columns that are visible when displaying tables.
+    
+        When active, it adjusts the number of columns displayed in the table based on the terminal width.
+    
+        Parameters
+        ----------
+        active : bool, optional, default: True
+            If True, automatically adjusts the number of columns displayed in the table based on the terminal width.
+            If False, displays all columns.
+    
+        Examples
+        --------
+        >>> import polars as pl
+        >>> with pl.Config() as cfg:
+        ...     cfg.set_auto_tbl_cols()  # doctest: +IGNORE_RESULT
+        ...     df = pl.DataFrame({str(i): [i] for i in range(100)})
+        ...     print(df)
+        ...
+        shape: (1, 100)
+        ┌─────┬─────┬─────┬─────┬─────┬─────┐
+        │ 0   ┆ 1   ┆ 2   ┆ ... ┆ 98  ┆ 99  │
+        │ --- ┆ --- ┆ --- ┆     ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ i64 ┆     ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╪═════╪═════╪═════╡
+        │ 0   ┆ 1   ┆ 2   ┆ ... ┆ 98  ┆ 99  │
+        └─────┴─────┴─────┴─────┴─────┴─────┘
+        """
+        os.environ["POLARS_AUTO_FMT_COLS"] = str(int(active))
+        return cls
+
+    @classmethod
     def set_tbl_column_data_type_inline(cls, active: bool = True) -> type[Config]:
         """
         Moves the data type inline with the column name (to the right, in parentheses).
@@ -635,3 +669,148 @@ class Config:
         """Enable additional verbose/debug logging."""
         os.environ["POLARS_VERBOSE"] = str(int(active))
         return cls
+
+
+def set_optimal_columns_to_display(df, column_spacing: float = 3.0):
+    """
+    Set the optimal number of columns to display for a DataFrame based on the terminal width.
+
+    This function sets the optimal number of columns to display for a given DataFrame based on the
+    terminal width, column names width, and element widths. It aims to provide a better user experience
+    when displaying DataFrames in the terminal by minimizing vertical scrolling.
+
+    Parameters
+    ----------
+    df : DataFrame
+        The DataFrame for which to set the optimal number of columns to display.
+    column_spacing : float, optional, default: 4.5
+        The spacing between columns in the displayed table.
+
+    Returns
+    -------
+    None
+
+    Examples
+    --------
+    >>> import polars as pl
+    >>> df = pl.DataFrame({str(i): [i] for i in range(20)})
+    >>> set_optimal_columns_to_display(df)
+    >>> with pl.Config() as cfg:
+    ...     cfg.set_auto_tbl_cols()  # doctest: +IGNORE_RESULT
+    ...     print(df)
+    ...
+    shape: (1, 20)
+    ┌─────┬─────┬─────┬─────┬─────┬─────┐
+    │ 0   ┆ 1   ┆ 2   ┆ ... ┆ 17  ┆ 18  │
+    │ --- ┆ --- ┆ --- ┆     ┆ --- ┆ --- │
+    │ i64 ┆ i64 ┆ i64 ┆     ┆ i64 ┆ i64 │
+    ╞═════╪═════╪═════╪═════╪═════╪═════╡
+    │ 0   ┆ 1   ┆ 2   ┆ ... ┆ 17  ┆ 18  │
+    └─────┴─────┴─────┴─────┴─────┴─────┘
+    """
+
+    def _get_element_display_length(element):
+        if isinstance(element, numbers.Number):
+            return min(
+                len(str(round(element, 6))), 13
+            )  # 13 max characters returned by numbers
+        elif isinstance(element, str):
+            return min(len(element), 33)  # 33 max characters returned by strings
+        else:
+            return min(
+                len(str(element)), 33
+            )  # 33 max characters returned by lists, tuples, dicts, datetime
+
+
+    def _get_column_name_lengths(df):
+        return [_get_element_display_length(col) for col in df.columns]
+
+
+    def _get_row_value_lengths(df, row_idx):
+        return [_get_element_display_length(col[0]) for col in df[row_idx : row_idx + 1]]
+
+
+    def _average_element_lengths(*lists):
+        return [int(sum(elements) / len(elements)) for elements in zip(*lists)]
+
+
+    def _max_element_lengths(*lists):
+        return [int(max(elements)) for elements in zip(*lists)]
+
+
+    def _determine_optimal_display_columns(
+        width_list, terminal_width, num_columns_df, column_spacing=3
+    ):
+        if num_columns_df == 0:
+            return 0
+
+        width_used, num_cols_to_print, left_column_idx, right_column_idx = 0, 0, 0, -1
+        for _ in width_list:
+            width_used += width_list[left_column_idx] + column_spacing
+            num_cols_to_print += 1
+            left_column_idx += 1
+            if width_used > terminal_width:
+                # reverse last
+                num_cols_to_print -= 1
+                left_column_idx -= 1
+                width_used -= width_list[left_column_idx] + column_spacing
+                break
+
+            width_used += width_list[right_column_idx] + column_spacing
+            num_cols_to_print += 1
+            right_column_idx -= 1
+            if width_used > terminal_width:
+                # reverse last
+                num_cols_to_print -= 1
+                right_column_idx += 1
+                width_used -= width_list[right_column_idx] + column_spacing
+                break
+
+        last_column_missing_spacing = 1
+        if num_cols_to_print == num_columns_df:
+            width_used += last_column_missing_spacing
+        else:
+            dots_column_width = 1  # | … | -> len("…")
+            width_used += dots_column_width + column_spacing
+            width_used += last_column_missing_spacing
+
+        num_cols_to_print = (
+            num_cols_to_print - 1 if width_used > terminal_width else num_cols_to_print
+        )  # fix after final adjustments.
+        num_cols_to_print = (
+            1 if num_cols_to_print == 0 else num_cols_to_print
+        )  # minimal of 1 column
+    
+        return num_cols_to_print
+
+    terminal_width = shutil.get_terminal_size().columns
+
+    # Determine the indices of rows and columns to be analyzed
+    num_rows_df = df.shape[0]
+    num_columns_df = df.shape[1]
+    row_indices = (
+        [0, 1, 2, 3, -5, -4, -3, -2] if num_rows_df >= 8 else list(range(num_rows_df))
+    )
+    col_indices = (
+        [0, 1, 2, 3, 4, 5, -6, -5, -4, -3, -2, -1]
+        if num_columns_df >= 12
+        else list(range(num_columns_df))
+    )
+
+    # Calculate the length of each column name
+    column_name_lenght = _get_column_name_lengths(df[:, col_indices])
+
+    # Calculate the average length of each row value
+    row_value_lengths_lst = [
+        _get_row_value_lengths(df[:, col_indices], row_idx) for row_idx in row_indices
+    ]
+    row_value_length = _average_element_lengths(*row_value_lengths_lst)
+
+    # Compare lengths of the row values and column names, and keep the largest for each column
+    real_column_length = _max_element_lengths(*[column_name_lenght, row_value_length])
+
+    # Determine the optimal number of columns to print based on the calculated lengths
+    num_cols_to_print = _determine_optimal_display_columns(
+        real_column_length, terminal_width, num_columns_df, column_spacing
+    )
+    os.environ["POLARS_FMT_MAX_COLS"] = str(num_cols_to_print)

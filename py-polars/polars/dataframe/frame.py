@@ -27,6 +27,7 @@ from typing import (
 
 from polars import functions as F
 from polars import internals as pli
+from polars.config import set_optimal_columns_to_display
 from polars.dataframe._html import NotebookFormatter
 from polars.dataframe.groupby import DynamicGroupBy, GroupBy, RollingGroupBy
 from polars.datatypes import (
@@ -1380,6 +1381,8 @@ class DataFrame:
         return self._from_pydf(self._df.rem(other._s))
 
     def __str__(self) -> str:
+        if os.environ.get("POLARS_AUTO_FMT_COLS") == "1":
+            set_optimal_columns_to_display(self._df)
         return self._df.as_str()
 
     def __repr__(self) -> str:
