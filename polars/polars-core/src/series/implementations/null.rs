@@ -6,6 +6,7 @@ use polars_utils::IdxSize;
 
 use crate::datatypes::IdxCa;
 use crate::error::PolarsResult;
+use crate::prelude::explode::ExplodeByOffsets;
 use crate::prelude::*;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
 use crate::series::*;
@@ -19,7 +20,7 @@ impl Series {
 
 #[derive(Clone)]
 pub struct NullChunked {
-    name: Arc<str>,
+    pub(crate) name: Arc<str>,
     length: IdxSize,
     // we still need chunks as many series consumers expect
     // chunks to be there
@@ -27,7 +28,7 @@ pub struct NullChunked {
 }
 
 impl NullChunked {
-    fn new(name: Arc<str>, len: usize) -> Self {
+    pub(crate) fn new(name: Arc<str>, len: usize) -> Self {
         Self {
             name,
             length: len as IdxSize,
@@ -52,6 +53,9 @@ impl PrivateSeries for NullChunked {
     #[cfg(feature = "zip_with")]
     fn zip_with_same_type(&self, _mask: &BooleanChunked, _other: &Series) -> PolarsResult<Series> {
         Ok(self.clone().into_series())
+    }
+    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
+        ExplodeByOffsets::explode_by_offsets(self, offsets)
     }
 }
 

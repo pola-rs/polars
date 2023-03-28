@@ -91,11 +91,24 @@ pub fn _get_rows_encoded(
     for (by, descending) in by.iter().zip(descending) {
         let arr = _get_rows_encoded_compat_array(by)?;
 
-        cols.push(arr);
-        fields.push(SortField {
+        let sort_field = SortField {
             descending: *descending,
             nulls_last,
-        })
+        };
+        match arr.data_type() {
+            // flatten the struct fields
+            ArrowDataType::Struct(_) => {
+                let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
+                for arr in arr.values() {
+                    cols.push(arr.clone() as ArrayRef);
+                    fields.push(sort_field.clone())
+                }
+            }
+            _ => {
+                cols.push(arr);
+                fields.push(sort_field)
+            }
+        }
     }
     Ok(convert_columns(&cols, &fields))
 }

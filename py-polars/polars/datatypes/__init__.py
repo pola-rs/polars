@@ -11,12 +11,15 @@ from polars.datatypes.classes import (
     Field,
     Float32,
     Float64,
+    FractionalType,
     Int8,
     Int16,
     Int32,
     Int64,
+    IntegralType,
     List,
     Null,
+    NumericType,
     Object,
     Struct,
     TemporalType,
@@ -55,6 +58,14 @@ from polars.datatypes.convert import (
     py_type_to_arrow_type,
     py_type_to_dtype,
     supported_numpy_char_code,
+)
+from polars.type_aliases import (
+    OneOrMoreDataTypes,
+    PolarsDataType,
+    PolarsTemporalType,
+    PythonDataType,
+    SchemaDefinition,
+    SchemaDict,
 )
 
 __all__ = [

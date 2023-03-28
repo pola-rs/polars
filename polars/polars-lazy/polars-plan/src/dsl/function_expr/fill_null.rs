@@ -4,7 +4,7 @@ pub(super) fn fill_null(s: &[Series], super_type: &DataType) -> PolarsResult<Ser
     let array = &s[0];
     let fill_value = &s[1];
 
-    let (array, fill_value) = if matches!(super_type, DataType::Unknown) {
+    let (array, mut fill_value) = if matches!(super_type, DataType::Unknown) {
         let fill_value = fill_value.cast(array.dtype()).map_err(|_| {
             polars_err!(
                 SchemaMismatch:
@@ -16,6 +16,11 @@ pub(super) fn fill_null(s: &[Series], super_type: &DataType) -> PolarsResult<Ser
     } else {
         (array.cast(super_type)?, fill_value.cast(super_type)?)
     };
+
+    // broadcast
+    if fill_value.len() == 1 && array.len() != 1 {
+        fill_value = fill_value.new_from_index(0, array.len());
+    }
 
     if !array.null_count() == 0 {
         Ok(array)

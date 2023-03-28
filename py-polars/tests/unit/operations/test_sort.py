@@ -554,3 +554,11 @@ def test_limit_larger_than_sort() -> None:
     assert pl.LazyFrame({"a": [1]}).sort("a").limit(30).collect().to_dict(False) == {
         "a": [1]
     }
+
+
+def test_sort_by_struct() -> None:
+    df = pl.Series([{"a": 300}, {"a": 20}, {"a": 55}]).to_frame("st").with_row_count()
+    assert df.sort("st").to_dict(False) == {
+        "row_nr": [1, 2, 0],
+        "st": [{"a": 20}, {"a": 55}, {"a": 300}],
+    }

@@ -38,6 +38,7 @@ from polars.datatypes import (
     UInt16,
     UInt32,
     UInt64,
+    Unknown,
     Utf8,
     dtype_to_ctype,
     is_polars_dtype,
@@ -226,7 +227,11 @@ class Series:
         nan_to_null: bool = False,
         dtype_if_empty: PolarsDataType | None = None,
     ):
-        # Raise error if dtype is not valid
+        # If 'Unknown' treat as None to attempt inference
+        if dtype == Unknown:
+            dtype = None
+
+        # Raise early error on invalid dtype
         if (
             dtype is not None
             and not is_polars_dtype(dtype)
