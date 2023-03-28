@@ -369,8 +369,7 @@ class Config:
     @classmethod
     def set_auto_tbl_cols(cls, active: bool = True) -> type[Config]:
         """
-        Automatically set the number of columns that are visible when
-        displaying tables.
+        Automatically set the number of columns for display.
 
         When active, it adjusts the number of columns displayed in the
         table based on the terminal width.
@@ -405,8 +404,7 @@ class Config:
     @classmethod
     def set_tbl_column_data_type_inline(cls, active: bool = True) -> type[Config]:
         """
-        Moves the data type inline with the column name (to the right, in
-        parentheses).
+        Moves the data type inline with the column name (to the right, in parentheses)
 
         Examples
         --------
@@ -812,7 +810,7 @@ def set_optimal_columns_to_display(df, column_spacing: float = 3.0):
     ]
     row_value_lengths = _average_element_lengths(*row_value_lengths_lst)
 
-    # Compare lengths of the row values and column names, and keep the largest for each column
+    # Compare lengths of the row values and column names, keep the largest
     real_column_lengths = _max_element_lengths(
         *[column_name_lengths, row_value_lengths]
     )
