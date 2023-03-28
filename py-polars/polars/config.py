@@ -4,7 +4,6 @@ import contextlib
 import os
 import shutil
 import numbers
-import polars as pl
 from typing import TYPE_CHECKING, List, Union
 
 from polars.dependencies import json
@@ -22,6 +21,7 @@ with contextlib.suppress(ImportError):
 
 if TYPE_CHECKING:
     import sys
+    import polars as pl
     from types import TracebackType
 
     from polars.type_aliases import FloatFmt
