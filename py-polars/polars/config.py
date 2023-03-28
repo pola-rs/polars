@@ -719,7 +719,7 @@ def set_optimal_columns_to_display(
 
     def _get_element_display_length(element: Union[numbers.Number, str]) -> int:
         if isinstance(element, numbers.Number):
-            return min(len(str(round(float(element), 6))), 13)
+            return min(len(str(round(element, 6))), 13)
         elif isinstance(element, str):
             return min(len(element), 33)
         else:
