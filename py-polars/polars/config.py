@@ -726,7 +726,7 @@ def set_optimal_columns_to_display(df, column_spacing: float = 3.0):
         column_name_lengths = [_get_element_display_length(col) for col in df.columns]
         # allow really big column names to "break" to 2nd line.
         column_name_lengths = [
-            length if length <= 24 else 24 for length in column_name_lengths
+            length if length <= 22 else 22 for length in column_name_lengths
         ]
         return column_name_lengths
 
