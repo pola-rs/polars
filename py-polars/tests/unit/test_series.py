@@ -20,13 +20,14 @@ from polars.datatypes import (
     Time,
     UInt32,
     UInt64,
+    Unknown,
 )
 from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils._construction import iterable_to_pyseries
 
 if TYPE_CHECKING:
-    from polars.type_aliases import EpochTimeUnit, TimeUnit
+    from polars.type_aliases import EpochTimeUnit, PolarsDataType, TimeUnit
 
 
 def test_cum_agg() -> None:
@@ -402,6 +403,25 @@ def test_append_extend() -> None:
     expected = pl.Series("a", [1, 2, 8, 9, None])
     assert_series_equal(a, expected)
     assert a.n_chunks() == 1
+
+
+@pytest.mark.parametrize(
+    ("data", "expected_dtype"),
+    [
+        (100, pl.Int64),
+        (8.5, pl.Float64),
+        ("서울특별시", pl.Utf8),
+        (date.today(), pl.Date),
+        (datetime.now(), pl.Datetime("us")),
+        (time(23, 59, 59), pl.Time),
+        (timedelta(hours=7, seconds=123), pl.Duration("us")),
+    ],
+)
+def test_unknown_dtype(data: Any, expected_dtype: PolarsDataType) -> None:
+    # if given 'Unknown', should be able to infer the correct dtype
+    s = pl.Series([data], dtype=Unknown)
+    assert s.dtype == expected_dtype
+    assert s.to_list() == [data]
 
 
 def test_various() -> None:
