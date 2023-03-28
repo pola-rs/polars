@@ -4,7 +4,7 @@ import contextlib
 import os
 import shutil
 import numbers
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List, Union
 
 from polars.dependencies import json
 
@@ -675,7 +675,7 @@ class Config:
         return cls
 
 
-def set_optimal_columns_to_display(df, column_spacing: float = 3.0):
+def set_optimal_columns_to_display(df: DataFrame, column_spacing: float = 3.0) -> None:
     """
     Set the optimal number of columns to display for a DataFrame.
 
@@ -714,15 +714,15 @@ def set_optimal_columns_to_display(df, column_spacing: float = 3.0):
     └─────┴─────┴─────┴─────┴─────┴─────┘
     """
 
-    def _get_element_display_length(element):
+    def _get_element_display_length(element: Union[numbers.Number, str]) -> int:
         if isinstance(element, numbers.Number):
-            return min(len(str(round(element, 6))), 13)
+            return min(len(str(round(float(element), 6))), 13)
         elif isinstance(element, str):
             return min(len(element), 33)
         else:
             return min(len(str(element)), 33)
 
-    def _get_column_name_lengths(df):
+    def _get_column_name_lengths(df: DataFrame) -> List[int]:
         column_name_lengths = [_get_element_display_length(col) for col in df.columns]
         # allow really big column names to "break" to 2nd line.
         column_name_lengths = [
@@ -730,20 +730,23 @@ def set_optimal_columns_to_display(df, column_spacing: float = 3.0):
         ]
         return column_name_lengths
 
-    def _get_row_value_lengths(df, row_idx):
+    def _get_row_value_lengths(df: DataFrame, row_idx: int) -> List[int]:
         return [
             _get_element_display_length(col[0]) for col in df[row_idx : row_idx + 1]
         ]
 
-    def _average_element_lengths(*lists):
+    def _average_element_lengths(*lists: List[int]) -> List[int]:
         return [int(sum(elements) / len(elements)) for elements in zip(*lists)]
 
-    def _max_element_lengths(*lists):
+    def _max_element_lengths(*lists: List[int]) -> List[int]:
         return [int(max(elements)) for elements in zip(*lists)]
 
     def _determine_optimal_display_columns(
-        width_list, terminal_width, num_columns_df, column_spacing=3
-    ):
+        width_list: List[int],
+        terminal_width: int,
+        num_columns_df: int,
+        column_spacing: float = 3.0,
+    ) -> int:
         if num_columns_df == 0:
             return 0
 
