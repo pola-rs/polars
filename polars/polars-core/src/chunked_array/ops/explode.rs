@@ -9,6 +9,7 @@ use polars_arrow::prelude::*;
 
 use crate::chunked_array::builder::AnonymousOwnedListBuilder;
 use crate::prelude::*;
+use crate::series::implementations::null::NullChunked;
 
 pub(crate) trait ExplodeByOffsets {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series;
@@ -27,6 +28,10 @@ unsafe fn unset_nulls(
             nulls.push(i + empty_row_idx.len() - base_offset);
         }
     }
+}
+
+fn get_capacity(offsets: &[i64]) -> usize {
+    (offsets[offsets.len() - 1] - offsets[0] + 1) as usize
 }
 
 impl<T> ExplodeByOffsets for ChunkedArray<T>
@@ -165,12 +170,18 @@ impl ExplodeByOffsets for Float64Chunked {
     }
 }
 
+impl ExplodeByOffsets for NullChunked {
+    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
+        NullChunked::new(self.name.clone(), get_capacity(offsets)).into_series()
+    }
+}
+
 impl ExplodeByOffsets for BooleanChunked {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         debug_assert_eq!(self.chunks.len(), 1);
         let arr = self.downcast_iter().next().unwrap();
 
-        let cap = ((arr.len() as f32) * 1.5) as usize;
+        let cap = get_capacity(offsets);
         let mut builder = BooleanChunkedBuilder::new(self.name(), cap);
 
         let mut start = offsets[0] as usize;
@@ -210,7 +221,7 @@ impl ExplodeByOffsets for ListChunked {
         debug_assert_eq!(self.chunks.len(), 1);
         let arr = self.downcast_iter().next().unwrap();
 
-        let cap = ((arr.len() as f32) * 1.5) as usize;
+        let cap = get_capacity(offsets);
         let inner_type = self.inner_dtype();
         let mut builder = AnonymousOwnedListBuilder::new(self.name(), cap, Some(inner_type));
 
@@ -255,7 +266,7 @@ impl ExplodeByOffsets for BinaryChunked {
         debug_assert_eq!(self.chunks.len(), 1);
         let arr = self.downcast_iter().next().unwrap();
 
-        let cap = ((arr.len() as f32) * 1.5) as usize;
+        let cap = get_capacity(offsets);
         let bytes_size = self.get_values_size();
         let mut builder = BinaryChunkedBuilder::new(self.name(), cap, bytes_size);
 
