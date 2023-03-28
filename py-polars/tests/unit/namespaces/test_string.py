@@ -112,6 +112,13 @@ def test_str_to_uppercase() -> None:
     assert_series_equal(s.str.to_uppercase(), expected)
 
 
+def test_str_case_cyrillic() -> None:
+    vals = ["Biтpyк", "Iвaн"]
+    s = pl.Series(vals)
+    assert s.str.to_lowercase().to_list() == [a.lower() for a in vals]
+    assert s.str.to_uppercase().to_list() == [a.upper() for a in vals]
+
+
 def test_str_parse_int() -> None:
     bin = pl.Series(["110", "101", "010"])
     assert_series_equal(bin.str.parse_int(2), pl.Series([6, 5, 2]).cast(pl.Int32))
