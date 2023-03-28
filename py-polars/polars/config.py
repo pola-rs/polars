@@ -677,8 +677,7 @@ class Config:
 
 def set_optimal_columns_to_display(df, column_spacing: float = 3.0):
     """
-    Set the optimal number of columns to display for a DataFrame based on the
-    terminal width.
+    Set the optimal number of columns to display for a DataFrame.
 
     This function sets the optimal number of columns to display for a given
     DataFrame based on the    terminal width, column names width, and element
