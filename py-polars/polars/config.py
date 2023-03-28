@@ -404,7 +404,7 @@ class Config:
     @classmethod
     def set_tbl_column_data_type_inline(cls, active: bool = True) -> type[Config]:
         """
-        Moves the data type inline with the column name (to the right, in parentheses)
+        Moves the data type inline with the column name (to the right, in parentheses).
 
         Examples
         --------
