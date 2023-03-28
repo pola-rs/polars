@@ -119,9 +119,9 @@ def map_py_type_to_dtype(python_dtype: PythonDataType | type[object]) -> PolarsD
         return Datetime("us")
     if issubclass(python_dtype, date):
         return Date
-    if issubclass(python_dtype, timedelta):
+    if python_dtype is timedelta:
         return Duration("us")
-    if issubclass(python_dtype, time):
+    if python_dtype is time:
         return Time
     if python_dtype is list:
         return List

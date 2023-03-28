@@ -630,8 +630,11 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             Ok(AnyValue::Binary(v).into())
         } else {
             let mut type_name = ob.get_type().name()?;
+            if let Some(Ok(v)) = (type_name != "Decimal").then_some(ob.extract::<f64>()) {
+                return Ok(AnyValue::Float64(v).into());
+            };
             // Can't use pyo3::types::PyDateTime with abi3-py37 feature,
-            // so need this workaround instead of `isinstance(ob, datetime).
+            // so need this workaround instead of `isinstance(ob, datetime)`.
             if (type_name != "datetime") && (type_name != "date") {
                 let bases = ob.get_type().getattr("__bases__")?.iter()?;
                 for base in bases {
@@ -639,18 +642,16 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                     match unwrapped {
                         "<class 'datetime.datetime'>" => {
                             type_name = "datetime";
+                            break;
                         }
                         "<class 'datetime.date'>" => {
                             type_name = "date";
+                            break;
                         }
                         _ => (),
                     }
-                    break;
                 }
             }
-            if let Some(Ok(v)) = (type_name != "Decimal").then_some(ob.extract::<f64>()) {
-                return Ok(AnyValue::Float64(v).into());
-            };
             match type_name {
                 "datetime" => {
                     Python::with_gil(|py| {
