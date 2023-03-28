@@ -455,3 +455,7 @@ def test_list_min_max() -> None:
     )
     assert df.select(pl.col("a").arr.min()).to_dict(False) == {"a": [1, -1, 1, 1, None]}
     assert df.select(pl.col("a").arr.max()).to_dict(False) == {"a": [1, 5, 4, 5, None]}
+
+
+def test_fill_null_empty_list() -> None:
+    assert pl.Series([["a"], None]).fill_null([]).to_list() == [["a"], []]
