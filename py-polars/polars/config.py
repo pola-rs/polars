@@ -717,7 +717,10 @@ def set_optimal_columns_to_display(df: "DataFrame", column_spacing: float = 3.0)
 
     def _get_element_display_length(element: Union[numbers.Number, str]) -> int:
         if isinstance(element, numbers.Number):
-            return return min(len(str(round(float(float(element)), 6))), 13)
+            formatted_number = (
+                str(round(element, 6)) if isinstance(element, float) else str(element)
+            )
+            return min(len(formatted_number), 13)
         elif isinstance(element, str):
             return min(len(element), 33)
         else:
