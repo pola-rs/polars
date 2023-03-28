@@ -271,10 +271,13 @@ def concat(
             return wrap_ldf(_diag_concat_lf(elems, rechunk, parallel))
         else:
             raise ValueError(
-                "Lazy only allows {{'vertical', 'diagonal'}} concat strategy."
+                "'LazyFrame' only allows {{'vertical', 'diagonal'}} concat strategy."
             )
     elif isinstance(first, pli.Series):
-        out = wrap_s(_concat_series(elems))
+        if how == "vertical":
+            out = wrap_s(_concat_series(elems))
+        else:
+            raise ValueError("'Series' only allows {{'vertical'}} concat strategy.")
     elif isinstance(first, pli.Expr):
         out = first
         for e in elems[1:]:
