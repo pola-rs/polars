@@ -965,3 +965,13 @@ def test_nested_categorical() -> None:
     s = pl.Series([["a"]], dtype=pl.List(pl.Categorical))
     assert s.to_list() == [["a"]]
     assert s.dtype == pl.List(pl.Categorical)
+
+def test_datetime_date_subclasses() -> None:
+    class FakeDatetime(datetime):...
+    class FakeDate(date):...
+    result = pl.Series([FakeDatetime(2020, 1, 1, 3)])
+    expected = pl.Series([datetime(2020, 1, 1, 3)])
+    assert_series_equal(result, expected)
+    result = pl.Series([FakeDate(2020, 1, 1)])
+    expected = pl.Series([date(2020, 1, 1)])
+    assert_series_equal(result, expected)

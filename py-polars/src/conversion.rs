@@ -599,30 +599,10 @@ fn materialize_list(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
 
 impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
-        let mut type_name = ob.get_type().name()?;
-        // Can't use pyo3::types::PyDateTime with abi3-py37 feature,
-        // so need this workaround instead of `isinstance(ob, datetime).
-        if (type_name != "datetime") && (type_name != "date") {
-            let bases = ob.get_type().getattr("__bases__")?.iter()?;
-            for base in bases {
-                match base?.to_string().as_str() {
-                    "<class 'datetime.datetime'>" => {
-                        type_name = "datetime";
-                    }
-                    "<class 'datetime.date'>" => {
-                        type_name = "date";
-                    }
-                    _ => (),
-                }
-            }
-        }
-
         if ob.is_instance_of::<PyBool>().unwrap() {
             Ok(AnyValue::Boolean(ob.extract::<bool>().unwrap()).into())
         } else if let Ok(v) = ob.extract::<i64>() {
             Ok(AnyValue::Int64(v).into())
-        } else if let Some(Ok(v)) = (type_name != "Decimal").then_some(ob.extract::<f64>()) {
-            Ok(AnyValue::Float64(v).into())
         } else if let Ok(v) = ob.extract::<&'s str>() {
             Ok(AnyValue::Utf8(v).into())
         } else if ob.is_none() {
@@ -649,6 +629,28 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
         } else if let Ok(v) = ob.extract::<&'s [u8]>() {
             Ok(AnyValue::Binary(v).into())
         } else {
+            let mut type_name = ob.get_type().name()?;
+            // Can't use pyo3::types::PyDateTime with abi3-py37 feature,
+            // so need this workaround instead of `isinstance(ob, datetime).
+            if (type_name != "datetime") && (type_name != "date") {
+                let bases = ob.get_type().getattr("__bases__")?.iter()?;
+                for base in bases {
+                    let unwrapped = base.unwrap().str().unwrap().to_str().unwrap();
+                    match unwrapped {
+                        "<class 'datetime.datetime'>" => {
+                            type_name = "datetime";
+                        }
+                        "<class 'datetime.date'>" => {
+                            type_name = "date";
+                        }
+                        _ => (),
+                    }
+                    break;
+                }
+            }
+            if let Some(Ok(v)) = (type_name != "Decimal").then_some(ob.extract::<f64>()) {
+                return Ok(AnyValue::Float64(v).into());
+            };
             match type_name {
                 "datetime" => {
                     Python::with_gil(|py| {

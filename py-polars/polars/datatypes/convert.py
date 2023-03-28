@@ -105,7 +105,7 @@ PY_STR_TO_DTYPE: SchemaDict = {
 }
 
 
-@functools.lru_cache
+@functools.lru_cache(16)
 def map_py_type_to_dtype(python_dtype: PythonDataType | type[object]) -> PolarsDataType:
     if python_dtype is float:
         return Float64
