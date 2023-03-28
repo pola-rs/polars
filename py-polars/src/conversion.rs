@@ -638,8 +638,8 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             if (type_name != "datetime") && (type_name != "date") {
                 let bases = ob.get_type().getattr("__bases__")?.iter()?;
                 for base in bases {
-                    let unwrapped = base.unwrap().str().unwrap().to_str().unwrap();
-                    match unwrapped {
+                    let parent_type = base.unwrap().str().unwrap().to_str().unwrap();
+                    match parent_type {
                         "<class 'datetime.datetime'>" => {
                             type_name = "datetime";
                             break;
