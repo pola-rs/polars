@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     import sys
     from types import TracebackType
 
-    from polars.internals import _DataFrame
+    from polars.internals import DataFrame
 
     from polars.type_aliases import FloatFmt
 
@@ -677,7 +677,7 @@ class Config:
         return cls
 
 
-def set_optimal_columns_to_display(df: _DataFrame, column_spacing: float = 3.0) -> None:
+def set_optimal_columns_to_display(df: "DataFrame", column_spacing: float = 3.0) -> None:
     """
     Set the optimal number of columns to display for a DataFrame.
 
@@ -727,7 +727,7 @@ def set_optimal_columns_to_display(df: _DataFrame, column_spacing: float = 3.0) 
         else:
             return min(len(str(element)), 33)
 
-    def _get_column_name_lengths(df: _DataFrame) -> List[int]:
+    def _get_column_name_lengths(df: "DataFrame") -> List[int]:
         column_name_lengths = [_get_element_display_length(col) for col in df.columns]
         # allow really big column names to "break" to 2nd line.
         column_name_lengths = [
@@ -735,7 +735,7 @@ def set_optimal_columns_to_display(df: _DataFrame, column_spacing: float = 3.0) 
         ]
         return column_name_lengths
 
-    def _get_row_value_lengths(df: _DataFrame, row_idx: int) -> List[int]:
+    def _get_row_value_lengths(df: "DataFrame", row_idx: int) -> List[int]:
         return [
             _get_element_display_length(col[0]) for col in df[row_idx : row_idx + 1]
         ]
