@@ -370,15 +370,15 @@ class Config:
     def set_auto_tbl_cols(cls, active: bool = True) -> type[Config]:
         """
         Automatically set the number of columns that are visible when displaying tables.
-    
+
         When active, it adjusts the number of columns displayed in the table based on the terminal width.
-    
+
         Parameters
         ----------
         active : bool, optional, default: True
             If True, automatically adjusts the number of columns displayed in the table based on the terminal width.
             If False, displays all columns.
-    
+
         Examples
         --------
         >>> import polars as pl
@@ -723,7 +723,6 @@ def set_optimal_columns_to_display(df, column_spacing: float = 3.0):
                 len(str(element)), 33
             )  # 33 max characters returned by lists, tuples, dicts, datetime
 
-
     def _get_column_name_lengths(df):
         column_name_lengths = [_get_element_display_length(col) for col in df.columns]
         # allow really big column names to "break" to 2nd line. Usually 20 to 24 characters are kept
@@ -733,18 +732,16 @@ def set_optimal_columns_to_display(df, column_spacing: float = 3.0):
         ]
         return column_name_lengths
 
-
     def _get_row_value_lengths(df, row_idx):
-        return [_get_element_display_length(col[0]) for col in df[row_idx : row_idx + 1]]
-
+        return [
+            _get_element_display_length(col[0]) for col in df[row_idx : row_idx + 1]
+        ]
 
     def _average_element_lengths(*lists):
         return [int(sum(elements) / len(elements)) for elements in zip(*lists)]
 
-
     def _max_element_lengths(*lists):
         return [int(max(elements)) for elements in zip(*lists)]
-
 
     def _determine_optimal_display_columns(
         width_list, terminal_width, num_columns_df, column_spacing=3
@@ -788,7 +785,7 @@ def set_optimal_columns_to_display(df, column_spacing: float = 3.0):
         num_cols_to_print = (
             1 if num_cols_to_print == 0 else num_cols_to_print
         )  # minimal of 1 column
-    
+
         return num_cols_to_print
 
     terminal_width = shutil.get_terminal_size().columns
@@ -815,7 +812,9 @@ def set_optimal_columns_to_display(df, column_spacing: float = 3.0):
     row_value_lengths = _average_element_lengths(*row_value_lengths_lst)
 
     # Compare lengths of the row values and column names, and keep the largest for each column
-    real_column_lengths = _max_element_lengths(*[column_name_lengths, row_value_lengths])
+    real_column_lengths = _max_element_lengths(
+        *[column_name_lengths, row_value_lengths]
+    )
 
     # Determine the optimal number of columns to print based on the calculated lengths
     num_cols_to_print = _determine_optimal_display_columns(
