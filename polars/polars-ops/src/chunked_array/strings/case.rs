@@ -4,7 +4,6 @@ use core::unicode::conversions;
 use polars_core::prelude::Utf8Chunked;
 
 // inlined from std
-#[cfg(feature = "nightly")]
 fn convert_while_ascii(b: &[u8], convert: fn(&u8) -> u8, out: &mut Vec<u8>) {
     unsafe {
         out.set_len(0);
