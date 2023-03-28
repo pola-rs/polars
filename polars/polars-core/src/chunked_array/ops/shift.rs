@@ -4,18 +4,24 @@ use crate::prelude::*;
 
 macro_rules! impl_shift_fill {
     ($self:ident, $periods:expr, $fill_value:expr) => {{
-        let periods = clamp($periods, -($self.len() as i64), $self.len() as i64);
-        let slice_offset = (-periods).max(0) as i64;
-        let length = $self.len() - abs(periods) as usize;
+        let fill_length = abs($periods) as usize;
+
+        if fill_length >= $self.len() {
+            return match $fill_value {
+                Some(fill) => Self::full($self.name(), fill, $self.len()),
+                None => Self::full_null($self.name(), $self.len())
+            }
+        }
+        let slice_offset = (-$periods).max(0) as i64;
+        let length = $self.len() - fill_length;
         let mut slice = $self.slice(slice_offset, length);
 
-        let fill_length = abs(periods) as usize;
         let mut fill = match $fill_value {
             Some(val) => Self::full($self.name(), val, fill_length),
             None => Self::full_null($self.name(), fill_length),
         };
 
-        if periods < 0 {
+        if $periods < 0 {
             slice.append(&fill);
             slice
         } else {
