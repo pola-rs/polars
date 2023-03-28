@@ -714,6 +714,16 @@ pub(crate) fn convert_sort_column_multi_sort(
                 s.cast(&UInt8).unwrap()
             }
         }
+        #[cfg(feature = "dtype-struct")]
+        Struct(_) => {
+            let ca = s.struct_().unwrap();
+            let new_fields = ca
+                .fields()
+                .iter()
+                .map(|s| convert_sort_column_multi_sort(s, row_ordering))
+                .collect::<PolarsResult<Vec<_>>>()?;
+            return StructChunked::new(ca.name(), &new_fields).map(|ca| ca.into_series());
+        }
         _ => {
             let phys = s.to_physical_repr().into_owned();
             polars_ensure!(
