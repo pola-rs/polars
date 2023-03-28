@@ -1258,6 +1258,11 @@ def test_mode() -> None:
 
     df = pl.DataFrame([s])
     assert df.select([pl.col("a").mode()])["a"].to_list() == [1]
+    assert (
+        pl.Series(["foo", "bar", "buz", "bar"], dtype=pl.Categorical).mode().item()
+        == "bar"
+    )
+    assert pl.Series([1.0, 2.0, 3.0, 2.0]).mode().item() == 2.0
 
 
 def test_rank() -> None:
@@ -1441,7 +1446,6 @@ def test_invalid_categorical() -> None:
     assert s.var() is None
     assert s.median() is None
     assert s.quantile(0.5) is None
-    assert s.mode().to_list() == [None]
 
 
 def test_bitwise() -> None:
