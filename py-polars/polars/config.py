@@ -369,15 +369,18 @@ class Config:
     @classmethod
     def set_auto_tbl_cols(cls, active: bool = True) -> type[Config]:
         """
-        Automatically set the number of columns that are visible when displaying tables.
+        Automatically set the number of columns that are visible when
+        displaying tables.
 
-        When active, it adjusts the number of columns displayed in the table based on the terminal width.
+        When active, it adjusts the number of columns displayed in the
+        table based on the terminal width.
 
         Parameters
         ----------
         active : bool, optional, default: True
-            If True, automatically adjusts the number of columns displayed in the table based on the terminal width.
-            If False, displays all columns.
+            If True, automatically adjusts the number of columns displayed
+            in the table based on the terminal width. If False, displays
+            all columns.
 
         Examples
         --------
@@ -402,7 +405,8 @@ class Config:
     @classmethod
     def set_tbl_column_data_type_inline(cls, active: bool = True) -> type[Config]:
         """
-        Moves the data type inline with the column name (to the right, in parentheses).
+        Moves the data type inline with the column name (to the right, in
+        parentheses).
 
         Examples
         --------
@@ -675,11 +679,13 @@ class Config:
 
 def set_optimal_columns_to_display(df, column_spacing: float = 3.0):
     """
-    Set the optimal number of columns to display for a DataFrame based on the terminal width.
+    Set the optimal number of columns to display for a DataFrame based on the
+    terminal width.
 
-    This function sets the optimal number of columns to display for a given DataFrame based on the
-    terminal width, column names width, and element widths. It aims to provide a better user experience
-    when displaying DataFrames in the terminal by minimizing vertical scrolling.
+    This function sets the optimal number of columns to display for a given
+    DataFrame based on the    terminal width, column names width, and element
+    widths. It aims to provide a better user experience when displaying
+    DataFrames in the terminal by minimizing vertical scrolling.
 
     Parameters
     ----------
@@ -713,20 +719,15 @@ def set_optimal_columns_to_display(df, column_spacing: float = 3.0):
 
     def _get_element_display_length(element):
         if isinstance(element, numbers.Number):
-            return min(
-                len(str(round(element, 6))), 13
-            )  # 13 max characters returned by numbers
+            return min(len(str(round(element, 6))), 13)
         elif isinstance(element, str):
-            return min(len(element), 33)  # 33 max characters returned by strings
+            return min(len(element), 33)
         else:
-            return min(
-                len(str(element)), 33
-            )  # 33 max characters returned by lists, tuples, dicts, datetime
+            return min(len(str(element)), 33)
 
     def _get_column_name_lengths(df):
         column_name_lengths = [_get_element_display_length(col) for col in df.columns]
-        # allow really big column names to "break" to 2nd line. Usually 20 to 24 characters are kept
-        # on first line
+        # allow really big column names to "break" to 2nd line.
         column_name_lengths = [
             length if length <= 24 else 24 for length in column_name_lengths
         ]
