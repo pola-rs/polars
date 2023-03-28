@@ -753,24 +753,24 @@ def set_optimal_columns_to_display(df: pl.DataFrame, column_spacing: float = 3.0
 
         width_used, num_cols_to_print, left_column_idx, right_column_idx = 0, 0, 0, -1
         for _ in width_list:
-            width_used += width_list[left_column_idx] + column_spacing
+            width_used += int(width_list[left_column_idx] + column_spacing)
             num_cols_to_print += 1
             left_column_idx += 1
             if width_used > terminal_width:
                 # reverse last
                 num_cols_to_print -= 1
                 left_column_idx -= 1
-                width_used -= width_list[left_column_idx] + column_spacing
+                width_used -= int(width_list[left_column_idx] + column_spacing)
                 break
 
-            width_used += width_list[right_column_idx] + column_spacing
+            width_used += int(width_list[right_column_idx] + column_spacing)
             num_cols_to_print += 1
             right_column_idx -= 1
             if width_used > terminal_width:
                 # reverse last
                 num_cols_to_print -= 1
                 right_column_idx += 1
-                width_used -= width_list[right_column_idx] + column_spacing
+                width_used -= int(width_list[right_column_idx] + column_spacing)
                 break
 
         last_column_missing_spacing = 1
@@ -778,7 +778,7 @@ def set_optimal_columns_to_display(df: pl.DataFrame, column_spacing: float = 3.0
             width_used += last_column_missing_spacing
         else:
             dots_column_width = 1  # | … | -> len("…")
-            width_used += dots_column_width + column_spacing
+            width_used += int(dots_column_width + column_spacing)
             width_used += last_column_missing_spacing
 
         num_cols_to_print = (
