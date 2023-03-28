@@ -803,7 +803,7 @@ def set_optimal_columns_to_display(df, column_spacing: float = 3.0):
     # Calculate the length of each column name
     column_name_lengths = _get_column_name_lengths(df[:, col_indices])
 
-    # Calculate the average length of each row value
+    # Calculate the average length of row values
     row_value_lengths_lst = [
         _get_row_value_lengths(df[:, col_indices], row_idx) for row_idx in row_indices
     ]
