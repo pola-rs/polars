@@ -387,7 +387,7 @@ class Config:
         --------
         >>> import polars as pl
         >>> with pl.Config() as cfg:
-        ...     cfg.set_auto_tbl_cols()  # doctest: +IGNORE_RESULT
+        ...     cfg.set_auto_tbl_cols()  # doctest: +SKIP
         ...     df = pl.DataFrame({str(i): [i] for i in range(100)})
         ...     print(df)
         ...
@@ -703,7 +703,7 @@ def set_optimal_columns_to_display(df: "DataFrame", column_spacing: float = 3.0)
     >>> df = pl.DataFrame({str(i): [i] for i in range(20)})
     >>> set_optimal_columns_to_display(df)
     >>> with pl.Config() as cfg:
-    ...     cfg.set_auto_tbl_cols()  # doctest: +IGNORE_RESULT
+    ...     cfg.set_auto_tbl_cols()  # doctest: +SKIP
     ...     print(df)
     ...
     shape: (1, 20)
