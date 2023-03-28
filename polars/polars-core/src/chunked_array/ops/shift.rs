@@ -9,8 +9,8 @@ macro_rules! impl_shift_fill {
         if fill_length >= $self.len() {
             return match $fill_value {
                 Some(fill) => Self::full($self.name(), fill, $self.len()),
-                None => Self::full_null($self.name(), $self.len())
-            }
+                None => Self::full_null($self.name(), $self.len()),
+            };
         }
         let slice_offset = (-$periods).max(0) as i64;
         let length = $self.len() - fill_length;
