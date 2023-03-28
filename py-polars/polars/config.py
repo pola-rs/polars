@@ -676,7 +676,9 @@ class Config:
         return cls
 
 
-def set_optimal_columns_to_display(df: pl.DataFrame, column_spacing: float = 3.0) -> None:
+def set_optimal_columns_to_display(
+    df: pl.DataFrame, column_spacing: float = 3.0
+) -> None:
     """
     Set the optimal number of columns to display for a DataFrame.
 
