@@ -635,7 +635,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             };
             // Can't use pyo3::types::PyDateTime with abi3-py37 feature,
             // so need this workaround instead of `isinstance(ob, datetime)`.
-            if (type_name != "datetime") && (type_name != "date") {
+            if !["datetime", "date", "timedelta", "time"].contains(&type_name) {
                 let bases = ob.get_type().getattr("__bases__")?.iter()?;
                 for base in bases {
                     let parent_type = base.unwrap().str().unwrap().to_str().unwrap();
