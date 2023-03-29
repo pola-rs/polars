@@ -5028,54 +5028,6 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.abs())
 
-    def argsort(self, *, descending: bool = False, nulls_last: bool = False) -> Self:
-        """
-        Get the index values that would sort this column.
-
-        Alias for :func:`Expr.arg_sort`.
-
-        .. deprecated:: 0.16.5
-            `Expr.argsort` will be removed in favour of `Expr.arg_sort`.
-
-        Parameters
-        ----------
-        descending
-            Sort in descending order.
-        nulls_last
-            Place null values last instead of first.
-
-        Returns
-        -------
-        Expr
-            Series of dtype UInt32.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [20, 10, 30],
-        ...     }
-        ... )
-        >>> df.select(pl.col("a").argsort())
-        shape: (3, 1)
-        ┌─────┐
-        │ a   │
-        │ --- │
-        │ u32 │
-        ╞═════╡
-        │ 1   │
-        │ 0   │
-        │ 2   │
-        └─────┘
-
-        """
-        warnings.warn(
-            "`Expr.argsort()` is deprecated in favor of `Expr.arg_sort()`",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.arg_sort(descending=descending, nulls_last=nulls_last)
-
     def rank(
         self,
         method: RankMethod = "average",
