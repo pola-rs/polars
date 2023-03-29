@@ -1316,7 +1316,9 @@ def test_skew() -> None:
     assert s.skew(bias=False) == pytest.approx(-0.7717168360221258)
 
     df = pl.DataFrame([s])
-    assert np.isclose(df.select(pl.col("a").skew(False))["a"][0], -0.7717168360221258)
+    assert np.isclose(
+        df.select(pl.col("a").skew(bias=False))["a"][0], -0.7717168360221258
+    )
 
 
 def test_kurtosis() -> None:

@@ -1155,7 +1155,7 @@ class Expr:
             length = F.lit(length)
         return self._from_pyexpr(self._pyexpr.slice(offset._pyexpr, length._pyexpr))
 
-    def append(self, other: Expr, upcast: bool = True) -> Self:
+    def append(self, other: Expr, *, upcast: bool = True) -> Self:
         """
         Append expressions.
 
@@ -1653,7 +1653,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.mode())
 
-    def cast(self, dtype: PolarsDataType | type[Any], strict: bool = True) -> Self:
+    def cast(self, dtype: PolarsDataType | type[Any], *, strict: bool = True) -> Self:
         """
         Cast between data types.
 
@@ -5245,7 +5245,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.pct_change(n))
 
-    def skew(self, bias: bool = True) -> Self:
+    def skew(self, *, bias: bool = True) -> Self:
         r"""
         Compute the sample skewness of a data set.
 
@@ -5299,7 +5299,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.skew(bias))
 
-    def kurtosis(self, fisher: bool = True, bias: bool = True) -> Self:
+    def kurtosis(self, *, fisher: bool = True, bias: bool = True) -> Self:
         """
         Compute the kurtosis (Fisher or Pearson) of a dataset.
 
@@ -6239,7 +6239,7 @@ class Expr:
 
         return self._from_pyexpr(self._pyexpr.extend_constant(value, n))
 
-    def value_counts(self, multithreaded: bool = False, sort: bool = False) -> Self:
+    def value_counts(self, *, multithreaded: bool = False, sort: bool = False) -> Self:
         """
         Count all unique values and create a struct mapping value to count.
 
@@ -6341,7 +6341,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.log(base))
 
-    def entropy(self, base: float = math.e, normalize: bool = True) -> Self:
+    def entropy(self, base: float = math.e, *, normalize: bool = True) -> Self:
         """
         Computes the entropy.
 
@@ -6432,7 +6432,7 @@ class Expr:
             self._pyexpr.cumulative_eval(expr._pyexpr, min_periods, parallel)
         )
 
-    def set_sorted(self, descending: bool = False) -> Self:
+    def set_sorted(self, *, descending: bool = False) -> Self:
         """
         Flags the expression as 'sorted'.
 

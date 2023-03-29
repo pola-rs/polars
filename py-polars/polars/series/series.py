@@ -1686,7 +1686,11 @@ class Series:
         0.8568409950394724
 
         """
-        return F.select(F.lit(self).entropy(base, normalize)).to_series()[0]
+        return (
+            self.to_frame()
+            .select(F.col(self.name).entropy(base, normalize=normalize))
+            .to_series()[0]
+        )
 
     def cumulative_eval(
         self, expr: Expr, min_periods: int = 1, *, parallel: bool = False
