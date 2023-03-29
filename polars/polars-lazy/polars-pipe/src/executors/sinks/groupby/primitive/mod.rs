@@ -12,9 +12,9 @@ use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_set_partition_size;
 use polars_core::POOL;
-use polars_utils::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
+use polars_utils::{hash_to_partition, HashSingle};
 use rayon::prelude::*;
 
 use super::aggregates::AggregateFn;
@@ -82,7 +82,7 @@ pub struct PrimitiveGroupbySink<K: PolarsNumericType> {
 impl<K: PolarsNumericType> PrimitiveGroupbySink<K>
 where
     ChunkedArray<K>: IntoSeries,
-    K::Native: FxHash,
+    K::Native: Hash,
 {
     pub(crate) fn new(
         key: Arc<dyn PhysicalPipedExpr>,
@@ -221,13 +221,12 @@ where
         let values = arr.values().as_slice();
         partition_to_groups_amortized(values, 0, false, 0, &mut self.sort_partitions);
 
-        let k = K::Native::get_k(self.hb.clone());
         let pre_agg_len = self.pre_agg_partitions.len();
 
         for group in &self.sort_partitions {
             let [offset, length] = group;
             let first_g_value = unsafe { *values.get_unchecked_release(*offset as usize) };
-            let h = first_g_value._fx_hash(k);
+            let h = self.hb.hash_single(first_g_value);
 
             let agg_idx = insert_and_get(
                 h,
@@ -341,7 +340,7 @@ where
 
 impl<K: PolarsNumericType> Sink for PrimitiveGroupbySink<K>
 where
-    K::Native: Hash + Eq + Debug + FxHash,
+    K::Native: Hash + Eq + Debug + Hash,
     ChunkedArray<K>: IntoSeries,
 {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
@@ -491,7 +490,7 @@ fn insert_and_get<T>(
     agg_fns: &Vec<AggregateFunction>,
 ) -> IdxSize
 where
-    T: NumericNative + FxHash,
+    T: NumericNative + Hash,
 {
     let part = hash_to_partition(h, pre_agg_len);
     let current_partition = unsafe { pre_agg_partitions.get_unchecked_release_mut(part) };
@@ -525,7 +524,7 @@ fn try_insert_and_get<T>(
     pre_agg_partitions: &mut Vec<PlIdHashMap<Key<Option<T>>, IdxSize>>,
 ) -> Option<IdxSize>
 where
-    T: NumericNative + FxHash,
+    T: NumericNative + Hash,
 {
     let part = hash_to_partition(h, pre_agg_len);
     let current_partition = unsafe { pre_agg_partitions.get_unchecked_release_mut(part) };
