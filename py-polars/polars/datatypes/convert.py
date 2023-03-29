@@ -116,6 +116,8 @@ def map_py_type_to_dtype(python_dtype: PythonDataType | type[object]) -> PolarsD
     if python_dtype is bool:
         return Boolean
     if issubclass(python_dtype, datetime):
+        # `datetime` is a subclass of `date`,
+        # so need to check `datetime` first
         return Datetime("us")
     if issubclass(python_dtype, date):
         return Date

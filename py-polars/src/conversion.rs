@@ -597,6 +597,72 @@ fn materialize_list(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
     }
 }
 
+fn _convert_date(ob: & PyAny) -> PyResult<Wrap<polars_rs::prelude::AnyValue>> {
+    Python::with_gil(|py| {
+        let date = UTILS
+            .as_ref(py)
+            .getattr("_date_to_pl_date")
+            .unwrap()
+            .call1((ob,))
+            .unwrap();
+        let v = date.extract::<i32>().unwrap();
+        Ok(Wrap(AnyValue::Date(v)))
+    })
+}
+fn _convert_datetime(ob: & PyAny) -> PyResult<Wrap<polars_rs::prelude::AnyValue>> {
+    Python::with_gil(|py| {
+        // windows
+        #[cfg(target_arch = "windows")]
+        let (seconds, microseconds) = {
+            let tzinfo = ob.getattr("tzinfo")?;
+            let dt = if tzinfo.is_none() {
+                let kwargs = PyDict::new(py);
+                kwargs.set_item("tzinfo", py.None())?;
+                let dt = ob.call_method("replace", (), Some(kwargs))?;
+                let localize = UTILS.getattr("_localize").unwrap();
+                localize.call1((dt, "UTC"))
+            } else {
+                ob
+            };
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("microsecond", 0)?;
+            let seconds = dt
+                .call_method("replace", (), Some(kwargs))?
+                .call_method0("timestamp")?;
+            let microseconds = dt.getattr("microsecond")?.extract::<i64>()?;
+            (seconds, microseconds)
+        };
+        // unix
+        #[cfg(not(target_arch = "windows"))]
+        let (seconds, microseconds) = {
+            let datetime = PyModule::import(py, "datetime")?;
+            let timezone = datetime.getattr("timezone")?;
+            let tzinfo = ob.getattr("tzinfo")?;
+            let dt = if tzinfo.is_none() {
+                let kwargs = PyDict::new(py);
+                kwargs.set_item("tzinfo", timezone.getattr("utc")?)?;
+                ob.call_method("replace", (), Some(kwargs))?
+            } else {
+                ob
+            };
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("microsecond", 0)?;
+            let seconds = dt
+                .call_method("replace", (), Some(kwargs))?
+                .call_method0("timestamp")?;
+            let microseconds = dt.getattr("microsecond")?.extract::<i64>()?;
+            (seconds, microseconds)
+        };
+
+        // s to us
+        let mut v = (seconds.extract::<f64>()? as i64) * 1_000_000;
+        v += microseconds;
+
+        // choose "us" as that is python's default unit
+        Ok(AnyValue::Datetime(v, TimeUnit::Microseconds, &None).into())
+    })
+}
+
 impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
         if ob.is_instance_of::<PyBool>().unwrap() {
@@ -629,93 +695,13 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
         } else if let Ok(v) = ob.extract::<&'s [u8]>() {
             Ok(AnyValue::Binary(v).into())
         } else {
-            let mut type_name = ob.get_type().name()?;
+            let type_name = ob.get_type().name()?;
             if let Some(Ok(v)) = (type_name != "Decimal").then_some(ob.extract::<f64>()) {
                 return Ok(AnyValue::Float64(v).into());
             };
-            // Can't use pyo3::types::PyDateTime with abi3-py37 feature,
-            // so need this workaround instead of `isinstance(ob, datetime)`.
-            if !["datetime", "date", "timedelta", "time"].contains(&type_name) {
-                let bases = ob.get_type().getattr("__bases__")?.iter()?;
-                for base in bases {
-                    let parent_type = base.unwrap().str().unwrap().to_str().unwrap();
-                    match parent_type {
-                        "<class 'datetime.datetime'>" => {
-                            type_name = "datetime";
-                            break;
-                        }
-                        "<class 'datetime.date'>" => {
-                            type_name = "date";
-                            break;
-                        }
-                        _ => (),
-                    }
-                }
-            }
             match type_name {
-                "datetime" => {
-                    Python::with_gil(|py| {
-                        // windows
-                        #[cfg(target_arch = "windows")]
-                        let (seconds, microseconds) = {
-                            let tzinfo = ob.getattr("tzinfo")?;
-                            let dt = if tzinfo.is_none() {
-                                let kwargs = PyDict::new(py);
-                                kwargs.set_item("tzinfo", py.None())?;
-                                let dt = ob.call_method("replace", (), Some(kwargs))?;
-                                let localize = UTILS.getattr("_localize").unwrap();
-                                localize.call1((dt, "UTC"))
-                            } else {
-                                ob
-                            };
-                            let kwargs = PyDict::new(py);
-                            kwargs.set_item("microsecond", 0)?;
-                            let seconds = dt
-                                .call_method("replace", (), Some(kwargs))?
-                                .call_method0("timestamp")?;
-                            let microseconds = dt.getattr("microsecond")?.extract::<i64>()?;
-                            (seconds, microseconds)
-                        };
-                        // unix
-                        #[cfg(not(target_arch = "windows"))]
-                        let (seconds, microseconds) = {
-                            let datetime = PyModule::import(py, "datetime")?;
-                            let timezone = datetime.getattr("timezone")?;
-                            let tzinfo = ob.getattr("tzinfo")?;
-                            let dt = if tzinfo.is_none() {
-                                let kwargs = PyDict::new(py);
-                                kwargs.set_item("tzinfo", timezone.getattr("utc")?)?;
-                                ob.call_method("replace", (), Some(kwargs))?
-                            } else {
-                                ob
-                            };
-                            let kwargs = PyDict::new(py);
-                            kwargs.set_item("microsecond", 0)?;
-                            let seconds = dt
-                                .call_method("replace", (), Some(kwargs))?
-                                .call_method0("timestamp")?;
-                            let microseconds = dt.getattr("microsecond")?.extract::<i64>()?;
-                            (seconds, microseconds)
-                        };
-
-                        // s to us
-                        let mut v = (seconds.extract::<f64>()? as i64) * 1_000_000;
-                        v += microseconds;
-
-                        // choose "us" as that is python's default unit
-                        Ok(AnyValue::Datetime(v, TimeUnit::Microseconds, &None).into())
-                    })
-                }
-                "date" => Python::with_gil(|py| {
-                    let date = UTILS
-                        .as_ref(py)
-                        .getattr("_date_to_pl_date")
-                        .unwrap()
-                        .call1((ob,))
-                        .unwrap();
-                    let v = date.extract::<i32>().unwrap();
-                    Ok(Wrap(AnyValue::Date(v)))
-                }),
+                "datetime" => _convert_datetime(ob),
+                "date" => _convert_date(ob),
                 "timedelta" => Python::with_gil(|py| {
                     let td = UTILS
                         .as_ref(py)
@@ -751,9 +737,28 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                     Ok(Wrap(AnyValue::Decimal(v, scale)))
                 }
                 "range" => materialize_list(ob),
-                _ => Err(PyErr::from(PyPolarsErr::Other(format!(
-                    "object type not supported {ob:?}",
-                )))),
+                _ => {
+                    // Can't use pyo3::types::PyDateTime with abi3-py37 feature,
+                    // so need this workaround instead of `isinstance(ob, datetime)`.
+                    let bases = ob.get_type().getattr("__bases__")?.iter()?;
+                    for base in bases {
+                        let parent_type = base.unwrap().str().unwrap().to_str().unwrap();
+                        match parent_type {
+                            "<class 'datetime.datetime'>" => {
+                                // `datetime.datetime` is a subclass of `datetime.date`,
+                                // so need to check `datetime.datetime` first
+                                return _convert_datetime(ob);
+                            }
+                            "<class 'datetime.date'>" => {
+                                return _convert_date(ob);
+                            }
+                            _ => (),
+                        }
+                    }
+                    Err(PyErr::from(PyPolarsErr::Other(format!(
+                        "object type not supported {ob:?}",
+                    ))))
+                }
             }
         }
     }
