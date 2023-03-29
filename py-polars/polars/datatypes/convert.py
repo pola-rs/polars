@@ -87,6 +87,59 @@ def cache(function: Callable[..., T]) -> T:
     return functools.lru_cache()(function)  # type: ignore[return-value]
 
 
+PY_STR_TO_DTYPE: SchemaDict = {
+    "float": Float64,
+    "int": Int64,
+    "str": Utf8,
+    "bool": Boolean,
+    "date": Date,
+    "datetime": Datetime("us"),
+    "timedelta": Duration("us"),
+    "time": Time,
+    "list": List,
+    "tuple": List,
+    "Decimal": Decimal,
+    "bytes": Binary,
+    "object": Object,
+    "NoneType": Null,
+}
+
+
+@functools.lru_cache(16)
+def map_py_type_to_dtype(python_dtype: PythonDataType | type[object]) -> PolarsDataType:
+    if python_dtype is float:
+        return Float64
+    if python_dtype is int:
+        return Int64
+    if python_dtype is str:
+        return Utf8
+    if python_dtype is bool:
+        return Boolean
+    if issubclass(python_dtype, datetime):
+        # `datetime` is a subclass of `date`,
+        # so need to check `datetime` first
+        return Datetime("us")
+    if issubclass(python_dtype, date):
+        return Date
+    if python_dtype is timedelta:
+        return Duration("us")
+    if python_dtype is time:
+        return Time
+    if python_dtype is list:
+        return List
+    if python_dtype is tuple:
+        return List
+    if python_dtype is PyDecimal:
+        return Decimal
+    if python_dtype is bytes:
+        return Binary
+    if python_dtype is object:
+        return Object
+    if python_dtype is None.__class__:
+        return Null
+    raise TypeError("Invalid type")
+
+
 def is_polars_dtype(data_type: Any, include_unknown: bool = False) -> bool:
     """Indicate whether the given input is a Polars dtype, or dtype specialisation."""
     try:
@@ -146,31 +199,6 @@ class _DataTypeMappings:
             Duration: ctypes.c_int64,
             Time: ctypes.c_int64,
         }
-
-    @property
-    @cache
-    def PY_TYPE_TO_DTYPE(self) -> dict[PythonDataType | type[object], PolarsDataType]:
-        return {
-            float: Float64,
-            int: Int64,
-            str: Utf8,
-            bool: Boolean,
-            date: Date,
-            datetime: Datetime("us"),
-            timedelta: Duration("us"),
-            time: Time,
-            list: List,
-            tuple: List,
-            PyDecimal: Decimal,
-            bytes: Binary,
-            object: Object,
-            None.__class__: Null,
-        }
-
-    @property
-    @cache
-    def PY_STR_TO_DTYPE(self) -> SchemaDict:
-        return {str(tp.__name__): dtype for tp, dtype in self.PY_TYPE_TO_DTYPE.items()}
 
     @property
     @cache
@@ -333,7 +361,7 @@ def py_type_to_dtype(
     if isinstance(data_type, ForwardRef):
         annotation = data_type.__forward_arg__
         data_type = (
-            DataTypeMappings.PY_STR_TO_DTYPE.get(
+            PY_STR_TO_DTYPE.get(
                 re.sub(r"(^None \|)|(\| None$)", "", annotation).strip(), data_type
             )
             if isinstance(annotation, str)  # type: ignore[redundant-expr]
@@ -355,7 +383,7 @@ def py_type_to_dtype(
         if is_polars_dtype(data_type):
             return data_type
     try:
-        return DataTypeMappings.PY_TYPE_TO_DTYPE[data_type]
+        return map_py_type_to_dtype(data_type)
     except (KeyError, TypeError):  # pragma: no cover
         if not raise_unmatched:
             return None
