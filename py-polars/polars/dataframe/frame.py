@@ -2467,7 +2467,7 @@ class DataFrame:
         position: tuple[int, int] | str = "A1",
         table_style: str | dict[str, Any] | None = None,
         table_name: str | None = None,
-        column_formats: dict[str | tuple[str, ...], str] | None = None,
+        column_formats: dict[str | tuple[str, ...], str | dict[str, str]] | None = None,
         dtype_formats: dict[OneOrMoreDataTypes, str] | None = None,
         conditional_formats: ConditionalFormatDict | None = None,
         column_totals: ColumnTotalsDefinition | None = None,
@@ -2475,6 +2475,7 @@ class DataFrame:
         row_totals: RowTotalsDefinition | None = None,
         row_heights: dict[int | tuple[int, ...], int] | int | None = None,
         sparklines: dict[str, Sequence[str] | dict[str, Any]] | None = None,
+        formulas: dict[str, str | dict[str, str]] | None = None,
         float_precision: int = 3,
         has_header: bool = True,
         autofilter: bool = True,
@@ -2532,9 +2533,13 @@ class DataFrame:
             Add a column-total row to the exported table.
 
             * If True, all numeric columns will have an associated total using "sum".
+            * If passing a string, it must be one of the valid total function names
+              and all numeric columns will have an associated total using that function.
             * If passing a list of colnames, only those given will have a total.
-            * For more control, pass a ``{colname:funcname,}`` dict. Valid names are:
-              "average", "count_nums", "count", "max", "min", "std_dev", "sum", "var".
+            * For more control, pass a ``{colname:funcname,}`` dict.
+
+            Valid total function names are "average", "count_nums", "count", "max",
+            "min", "std_dev", "sum", and "var".
         column_widths : {dict, int}
             A ``{colname:int,}`` dict or single integer that sets (or overrides if
             autofitting) table column widths in integer pixel units. If given as an
@@ -2566,6 +2571,19 @@ class DataFrame:
               the source columns and position the sparkline(s) with respect to other
               table columns. If no position directive is given, sparklines are added to
               the end of the table (eg: to the far right) in the order they are given.
+        formulas : dict
+            A ``{colname:formula,}`` or ``{colname:dict,}`` dictionary defining one or
+            more formulas to be written into a new column in the table. Note that you
+            are strongly advised to use structured references in your formulae wherever
+            possible to make it simple to reference columns by name.
+
+            * If providing a string formula (such as "=[@colx]*[@coly]") the column will
+              be added to the end of the table (eg: to the far right), after any default
+              sparklines and before any row_totals.
+            * For the most control supply an options dictionary with the following keys:
+              "formula" (mandatory), one of "insert_before" or "insert_after", and
+              optionally "return_dtype". The latter is used to appropriately format the
+              output of the formula and allow it to participate in row/column totals.
         float_precision : {dict, int}
             Default number of decimals displayed for floating point columns (note that
             this is purely a formatting directive; the actual values are not rounded).
@@ -2584,18 +2602,26 @@ class DataFrame:
 
         Notes
         -----
-        Conditional formatting dictionaries should provide xlsxwriter-compatible
-        definitions; polars will take care of how they are applied on the worksheet
-        with respect to the relative sheet/column position. For supported options, see:
-        https://xlsxwriter.readthedocs.io/working_with_conditional_formats.html
+        * Conditional formatting dictionaries should provide xlsxwriter-compatible
+          definitions; polars will take care of how they are applied on the worksheet
+          with respect to the relative sheet/column position. For supported options,
+          see: https://xlsxwriter.readthedocs.io/working_with_conditional_formats.html
 
-        Similarly, sparkline option dictionaries should contain xlsxwriter-compatible
-        key/values, as well as a mandatory polars "columns" key that defines the
-        sparkline source data; these source columns should be adjacent to each other.
-        Two other polars-specific keys are available to help define where the sparkline
-        appears in the table: "insert_after", and "insert_before". The value associated
-        with these keys should be the name of a column in the exported table.
-        https://xlsxwriter.readthedocs.io/working_with_sparklines.html
+        * Similarly, sparkline option dictionaries should contain xlsxwriter-compatible
+          key/values, as well as a mandatory polars "columns" key that defines the
+          sparkline source data; these source columns should all be adjacent. Two other
+          polars-specific keys are available to help define where the sparkline appears
+          in the table: "insert_after", and "insert_before". The value associated with
+          these keys should be the name of a column in the exported table.
+          https://xlsxwriter.readthedocs.io/working_with_sparklines.html
+
+        * Formula dictionaries *must* contain a key called "formula", and then optional
+          "insert_after", "insert_before", and/or "return_dtype" keys. These additional
+          keys allow the column to be injected into the table at a specific location,
+          and/or to define the return type of the formula (eg: "Int64", "Float64", etc).
+          Formulas that refer to table columns should use Excel's structured references
+          syntax to ensure the formula is applied correctly and is table-relative.
+          https://support.microsoft.com/en-us/office/using-structured-references-with-excel-tables-f5ed2452-2337-4f71-bed3-c8ae6d2b276e
 
         Examples
         --------
@@ -2729,7 +2755,40 @@ class DataFrame:
         ...     hide_gridlines=True,
         ... )
 
-        """
+        Export a table containing an Excel formula-based column that calculates a
+        standardised Z-score, showing use of structured references in conjunction
+        with positioning directives, column totals, and custom formatting.
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "id": ["a123", "b345", "c567", "d789", "e101"],
+        ...         "points": [99, 45, 50, 85, 35],
+        ...     }
+        ... )
+        >>> df.write_excel(  # doctest: +SKIP
+        ...     table_style={
+        ...         "style": "Table Style Medium 15",
+        ...         "first_column": True,
+        ...     },
+        ...     column_formats={
+        ...         "id": {"font": "Consolas"},
+        ...         "points": {"align": "center"},
+        ...         "z-score": {"align": "center"},
+        ...     },
+        ...     column_totals="average",
+        ...     formulas={
+        ...         "z-score": {
+        ...             # use structured references to refer to the table columns and 'totals' row
+        ...             "formula": "=STANDARDIZE([@points], [[#Totals],[points]], STDEV([points]))",
+        ...             "insert_after": "points",
+        ...             "return_dtype": pl.Float64,
+        ...         }
+        ...     },
+        ...     hide_gridlines=True,
+        ...     sheet_zoom=125,
+        ... )
+
+        """  # noqa: W505
         try:
             import xlsxwriter
             from xlsxwriter.utility import xl_cell_to_rowcol
@@ -2744,11 +2803,11 @@ class DataFrame:
 
         # setup table format/columns
         fmt_cache = _XLFormatCache(wb)
+        column_formats = column_formats or {}
         table_style, table_options = _xl_setup_table_options(table_style)
         table_name = table_name or _xl_unique_table_name(wb)
-        table_columns, column_formats, df = _xl_setup_table_columns(
+        table_columns, column_formats, df = _xl_setup_table_columns(  # type: ignore[assignment]
             df=df,
-            wb=wb,
             format_cache=fmt_cache,
             column_formats=column_formats,
             column_totals=column_totals,
@@ -2756,6 +2815,7 @@ class DataFrame:
             float_precision=float_precision,
             row_totals=row_totals,
             sparklines=sparklines,
+            formulas=formulas,
         )
 
         # normalise cell refs (eg: "B3" => (2,1)) and establish table start/finish,

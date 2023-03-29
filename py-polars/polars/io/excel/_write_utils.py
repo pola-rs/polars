@@ -11,6 +11,7 @@ from polars.datatypes import (
     NUMERIC_DTYPES,
     Date,
     Datetime,
+    Float64,
     Time,
 )
 from polars.dependencies import json
@@ -201,11 +202,12 @@ def _xl_column_multi_range(
 
 
 def _xl_inject_dummy_table_columns(
-    df: DataFrame, options: dict[str, Any], value: Any
+    df: DataFrame, options: dict[str, Any], dtype: PolarsDataType | None = None
 ) -> DataFrame:
     """Insert dummy frame columns in order to create empty/named table columns."""
     df_original_columns = set(df.columns)
     df_select_cols = df.columns.copy()
+    cast_lookup = {}
 
     for col, definition in options.items():
         if col in df_original_columns:
@@ -213,8 +215,10 @@ def _xl_inject_dummy_table_columns(
         elif not isinstance(definition, dict):
             df_select_cols.append(col)
         else:
-            insert_after = definition.get("insert_after")
+            cast_lookup[col] = definition.get("return_dtype")
             insert_before = definition.get("insert_before")
+            insert_after = definition.get("insert_after")
+
             if insert_after is None and insert_before is None:
                 df_select_cols.append(col)
             else:
@@ -227,7 +231,17 @@ def _xl_inject_dummy_table_columns(
 
     df = df.select(
         [
-            (col if col in df_original_columns else F.lit(value).alias(col))
+            (
+                col
+                if col in df_original_columns
+                else (
+                    F.lit(None).cast(
+                        cast_lookup.get(col, dtype)  # type:ignore[arg-type]
+                    )
+                    if dtype or (col in cast_lookup and cast_lookup[col] is not None)
+                    else F.lit(None)
+                ).alias(col)
+            )
             for col in df_select_cols
         ]
     )
@@ -288,12 +302,12 @@ def _xl_rowcols_to_range(*row_col_pairs: int) -> list[str]:
 
 def _xl_setup_table_columns(
     df: DataFrame,
-    wb: Workbook,
     format_cache: _XLFormatCache,
     column_totals: ColumnTotalsDefinition | None = None,
-    column_formats: dict[str | tuple[str, ...], str] | None = None,
+    column_formats: dict[str | tuple[str, ...], str | dict[str, str]] | None = None,
     dtype_formats: dict[OneOrMoreDataTypes, str] | None = None,
     sparklines: dict[str, Sequence[str] | dict[str, Any]] | None = None,
+    formulas: dict[str, str | dict[str, str]] | None = None,
     row_totals: RowTotalsDefinition | None = None,
     float_precision: int = 3,
 ) -> tuple[list[dict[str, Any]], dict[str | tuple[str, ...], str], DataFrame]:
@@ -332,18 +346,31 @@ def _xl_setup_table_columns(
                 for name, cols in row_totals.items()
             }
 
+    # normalise formulas
+    column_formulas = {
+        col: {"formula": options} if isinstance(options, str) else options
+        for col, options in (formulas or {}).items()
+    }
+
     # normalise formats
     column_formats = (column_formats or {}).copy()
     dtype_formats = (dtype_formats or {}).copy()
     for tp in list(dtype_formats):
         if isinstance(tp, (tuple, frozenset)):
             dtype_formats.update(dict.fromkeys(tp, dtype_formats.pop(tp)))
+    for fmt in dtype_formats.values():
+        if not isinstance(fmt, str):
+            raise TypeError(
+                f"Invalid dtype_format value: {fmt!r} (expected format string, got {type(fmt)})"
+            )
 
     # inject sparkline/row-total placeholder(s)
     if sparklines:
-        df = _xl_inject_dummy_table_columns(df, sparklines, value=None)
+        df = _xl_inject_dummy_table_columns(df, sparklines)
+    if column_formulas:
+        df = _xl_inject_dummy_table_columns(df, column_formulas)
     if row_totals:
-        df = _xl_inject_dummy_table_columns(df, row_total_funcs, value=0.0)
+        df = _xl_inject_dummy_table_columns(df, row_total_funcs, dtype=Float64)
 
     # seed format cache with default fallback format
     fmt_default = format_cache.get({"valign": "vcenter"})
@@ -373,6 +400,8 @@ def _xl_setup_table_columns(
         if base_type in NUMERIC_DTYPES:
             if column_totals is True:
                 column_total_funcs.setdefault(col, "sum")
+            elif isinstance(column_totals, str):
+                column_total_funcs.setdefault(col, column_totals.lower())
         if col not in column_formats:
             column_formats[col] = fmt_default
 
@@ -399,13 +428,16 @@ def _xl_setup_table_columns(
                 "header": col,
                 "format": column_formats[col],
                 "total_function": column_total_funcs.get(col),
-                "formula": row_total_funcs.get(col),
+                "formula": (
+                    row_total_funcs.get(col)
+                    or column_formulas.get(col, {}).get("formula")
+                ),
             }.items()
             if v is not None
         }
         for col in df.columns
     ]
-    return table_columns, column_formats, df
+    return table_columns, column_formats, df  # type: ignore[return-value]
 
 
 def _xl_setup_table_options(
