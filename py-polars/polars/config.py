@@ -35,6 +35,7 @@ if TYPE_CHECKING:
 _POLARS_CFG_ENV_VARS = {
     "POLARS_ACTIVATE_DECIMAL",
     "POLARS_AUTO_STRUCTIFY",
+    "POLARS_AUTO_FMT_COLS"
     "POLARS_FMT_MAX_COLS",
     "POLARS_FMT_MAX_ROWS",
     "POLARS_FMT_STR_LEN",
@@ -361,6 +362,38 @@ class Config:
 
         """
         os.environ["POLARS_FMT_MAX_COLS"] = str(n)
+        return cls
+
+    @classmethod
+    def set_auto_tbl_cols(cls, active: bool = True) -> type[Config]:
+        """
+        Automatically set the number of columns for display.
+        When active, it adjusts the number of columns displayed in the
+        table based on the terminal width.
+        Parameters
+        ----------
+        active : bool, optional, default: True
+            If True, automatically adjusts the number of columns displayed
+            in the table based on the terminal width. If False, displays
+            all columns.
+        Examples
+        --------
+        >>> import polars as pl
+        >>> with pl.Config() as cfg:
+        ...     cfg.set_auto_tbl_cols()  # doctest: +SKIP
+        ...     df = pl.DataFrame({str(i): [i] for i in range(100)})
+        ...     print(df)
+        ...
+        shape: (1, 100)
+        ┌─────┬─────┬─────┬─────┬─────┬─────┐
+        │ 0   ┆ 1   ┆ 2   ┆ ... ┆ 98  ┆ 99  │
+        │ --- ┆ --- ┆ --- ┆     ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ i64 ┆     ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╪═════╪═════╪═════╡
+        │ 0   ┆ 1   ┆ 2   ┆ ... ┆ 98  ┆ 99  │
+        └─────┴─────┴─────┴─────┴─────┴─────┘
+        """
+        os.environ["POLARS_AUTO_FMT_COLS"] = str(int(active))
         return cls
 
     @classmethod
