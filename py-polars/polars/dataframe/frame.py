@@ -1315,42 +1315,7 @@ class DataFrame:
         return df.with_columns(casts) if casts else df
 
     def _set_optimal_columns_to_display(self, column_spacing: float = 3.0) -> None:
-        """
-        Set the optimal number of columns to display for a DataFrame.
-
-        This function sets the optimal number of columns to display for a given
-        DataFrame based on the    terminal width, column names width, and element
-        widths. It aims to provide a better user experience when displaying
-        DataFrames in the terminal by minimizing vertical scrolling.
-
-        Parameters
-        ----------
-        df : DataFrame
-            The DataFrame for which to set the optimal number of columns to display.
-        column_spacing : float, optional, default: 4.5
-            The spacing between columns in the displayed table.
-        Returns
-        -------
-        None
-        Examples
-        --------
-        >>> import polars as pl
-        >>> df = pl.DataFrame({str(i): [i] for i in range(20)})
-        >>> set_optimal_columns_to_display(df)
-        >>> with pl.Config() as cfg:
-        ...     cfg.set_auto_tbl_cols()  # doctest: +SKIP
-        ...     print(df)
-        ...
-        shape: (1, 20)
-        ┌─────┬─────┬─────┬─────┬─────┬─────┐
-        │ 0   ┆ 1   ┆ 2   ┆ ... ┆ 17  ┆ 18  │
-        │ --- ┆ --- ┆ --- ┆     ┆ --- ┆ --- │
-        │ i64 ┆ i64 ┆ i64 ┆     ┆ i64 ┆ i64 │
-        ╞═════╪═════╪═════╪═════╪═════╪═════╡
-        │ 0   ┆ 1   ┆ 2   ┆ ... ┆ 17  ┆ 18  │
-        └─────┴─────┴─────┴─────┴─────┴─────┘
-        """
-
+        """Set the optimal number of columns to display for a DataFrame."""
         def _get_element_display_length(element: Union[numbers.Number, str]) -> int:
             if isinstance(element, numbers.Number):
                 formatted_number = (
