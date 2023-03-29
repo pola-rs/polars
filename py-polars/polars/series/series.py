@@ -38,6 +38,7 @@ from polars.datatypes import (
     UInt16,
     UInt32,
     UInt64,
+    Unknown,
     Utf8,
     dtype_to_ctype,
     is_polars_dtype,
@@ -108,6 +109,7 @@ if TYPE_CHECKING:
         ComparisonOperator,
         FillNullStrategy,
         InterpolationMethod,
+        IntoExpr,
         NullBehavior,
         OneOrMoreDataTypes,
         PolarsDataType,
@@ -226,7 +228,11 @@ class Series:
         nan_to_null: bool = False,
         dtype_if_empty: PolarsDataType | None = None,
     ):
-        # Raise error if dtype is not valid
+        # If 'Unknown' treat as None to attempt inference
+        if dtype == Unknown:
+            dtype = None
+
+        # Raise early error on invalid dtype
         if (
             dtype is not None
             and not is_polars_dtype(dtype)
@@ -2897,10 +2903,7 @@ class Series:
         """
 
     def is_between(
-        self,
-        start: Expr | datetime | date | time | int | float | str,
-        end: Expr | datetime | date | time | int | float | str,
-        closed: ClosedInterval = "both",
+        self, start: IntoExpr, end: IntoExpr, closed: ClosedInterval = "both"
     ) -> Series:
         """
         Get a boolean mask of the values that fall between the given start/end values.
@@ -2908,9 +2911,11 @@ class Series:
         Parameters
         ----------
         start
-            Lower bound value (can be an expression or literal).
+            Lower bound value. Accepts expression input. Non-expression inputs
+            (including strings) are parsed as literals.
         end
-            Upper bound value (can be an expression or literal).
+            Upper bound value. Accepts expression input. Non-expression inputs
+            (including strings) are parsed as literals.
         closed : {'both', 'left', 'right', 'none'}
             Define which sides of the interval are closed (inclusive).
 

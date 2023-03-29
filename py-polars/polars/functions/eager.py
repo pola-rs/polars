@@ -158,13 +158,14 @@ def concat(
     rechunk
         Make sure that all data is in contiguous memory.
     how : {'vertical', 'diagonal', 'horizontal'}
-        Lazy only supports the 'vertical' strategy.
+        Series only supports the `vertical` strategy.
+        LazyFrames only supports `vertical` and `diagonal` strategy.
 
         - Vertical: applies multiple `vstack` operations.
         - Diagonal: finds a union between the column schemas and fills missing column
             values with null.
-        - Horizontal: stacks Series horizontally and fills with nulls if the lengths
-            don't match.
+        - Horizontal: stacks Series from DataFrames horizontally and fills with nulls
+            if the lengths don't match.
     parallel
         Only relevant for LazyFrames. This determines if the concatenated
         lazy computations may be executed in parallel.
@@ -271,10 +272,13 @@ def concat(
             return wrap_ldf(_diag_concat_lf(elems, rechunk, parallel))
         else:
             raise ValueError(
-                "Lazy only allows {{'vertical', 'diagonal'}} concat strategy."
+                "'LazyFrame' only allows {{'vertical', 'diagonal'}} concat strategy."
             )
     elif isinstance(first, pli.Series):
-        out = wrap_s(_concat_series(elems))
+        if how == "vertical":
+            out = wrap_s(_concat_series(elems))
+        else:
+            raise ValueError("'Series' only allows {{'vertical'}} concat strategy.")
     elif isinstance(first, pli.Expr):
         out = first
         for e in elems[1:]:

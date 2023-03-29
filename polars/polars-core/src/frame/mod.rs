@@ -1802,6 +1802,15 @@ impl DataFrame {
             return self.top_k_impl(k, descending, by_column, nulls_last);
         }
 
+        #[cfg(feature = "dtype-struct")]
+        let has_struct = by_column
+            .iter()
+            .any(|s| matches!(s.dtype(), DataType::Struct(_)));
+
+        #[cfg(not(feature = "dtype-struct"))]
+        #[allow(non_upper_case_globals)]
+        const has_struct: bool = false;
+
         // a lot of indirection in both sorting and take
         let mut df = self.clone();
         let df = df.as_single_chunk_par();
@@ -1812,8 +1821,8 @@ impl DataFrame {
         // as expressions are not present (they are renamed to _POLARS_SORT_COLUMN_i.
         let first_descending = descending[0];
         let first_by_column = by_column[0].name().to_string();
-        let mut take = match by_column.len() {
-            1 => {
+        let mut take = match (by_column.len(), has_struct) {
+            (1, false) => {
                 let s = &by_column[0];
                 let options = SortOptions {
                     descending: descending[0],
@@ -1834,7 +1843,7 @@ impl DataFrame {
                 s.arg_sort(options)
             }
             _ => {
-                if nulls_last || std::env::var("POLARS_ROW_FMT_SORT").is_ok() {
+                if nulls_last || has_struct || std::env::var("POLARS_ROW_FMT_SORT").is_ok() {
                     argsort_multiple_row_fmt(&by_column, descending, nulls_last, parallel)?
                 } else {
                     let (first, by_column, descending) = prepare_arg_sort(by_column, descending)?;

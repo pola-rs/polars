@@ -120,9 +120,10 @@ where
                     .zip(&mut hashes[offset..])
                     .zip(arr.values().as_slice())
                     .for_each(|((valid, h), l)| {
+                        let to_hash = [null_h, l.as_u64()][valid as usize];
+
                         // inlined from ahash. This ensures we combine with the previous state
-                        let new = folded_multiply(l.as_u64() ^ *h, MULTIPLE);
-                        *h = [null_h, new][valid as usize];
+                        *h = folded_multiply(to_hash ^ *h, MULTIPLE);
                     });
             }
         }

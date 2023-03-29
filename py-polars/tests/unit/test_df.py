@@ -1611,20 +1611,21 @@ def test_reproducible_hash_with_seeds() -> None:
     """
     df = pl.DataFrame({"s": [1234, None, 5678]})
     seeds = (11, 22, 33, 44)
+    import platform
 
-    # TODO: introduce a platform-stable string hash...
-    #  in the meantime, try to account for arm64 (mac) hash values to reduce noise
-    expected = pl.Series(
-        "s",
-        [13477868900383131459, 988796329533502010, 16840582678788620208],
-        dtype=pl.UInt64,
-    )
-    result = df.hash_rows(*seeds)
-    assert_series_equal(expected, result, check_names=False, check_exact=True)
-    result = df["s"].hash(*seeds)
-    assert_series_equal(expected, result, check_names=False, check_exact=True)
-    result = df.select([pl.col("s").hash(*seeds)])["s"]
-    assert_series_equal(expected, result, check_names=False, check_exact=True)
+    # m1 hash different random source seed
+    if platform.mac_ver()[-1] != "arm64":
+        expected = pl.Series(
+            "s",
+            [13477868900383131459, 988796329533502010, 16840582678788620208],
+            dtype=pl.UInt64,
+        )
+        result = df.hash_rows(*seeds)
+        assert_series_equal(expected, result, check_names=False, check_exact=True)
+        result = df["s"].hash(*seeds)
+        assert_series_equal(expected, result, check_names=False, check_exact=True)
+        result = df.select([pl.col("s").hash(*seeds)])["s"]
+        assert_series_equal(expected, result, check_names=False, check_exact=True)
 
 
 def test_create_df_from_object() -> None:

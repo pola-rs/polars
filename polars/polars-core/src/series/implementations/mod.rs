@@ -16,7 +16,7 @@ mod decimal;
 mod duration;
 mod floats;
 mod list;
-mod null;
+pub(crate) mod null;
 #[cfg(feature = "object")]
 mod object;
 #[cfg(feature = "dtype-struct")]
