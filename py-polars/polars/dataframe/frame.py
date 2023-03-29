@@ -20,7 +20,7 @@ from typing import (
     Generator,
     Iterable,
     Iterator,
-    List, 
+    List,
     Mapping,
     NoReturn,
     Sequence,
@@ -1313,10 +1313,8 @@ class DataFrame:
     ) -> DataFrame:
         casts = [s.cast(to).alias(s.name) for s in df if s.dtype() in from_]
         return df.with_columns(casts) if casts else df
-    
-    def _set_optimal_columns_to_display(
-        self, column_spacing: float = 3.0
-    ) -> None:
+
+    def _set_optimal_columns_to_display(self, column_spacing: float = 3.0) -> None:
         """
         Set the optimal number of columns to display for a DataFrame.
         This function sets the optimal number of columns to display for a given
@@ -1354,7 +1352,9 @@ class DataFrame:
         def _get_element_display_length(element: Union[numbers.Number, str]) -> int:
             if isinstance(element, numbers.Number):
                 formatted_number = (
-                    str(round(element, 6)) if isinstance(element, float) else str(element)
+                    str(round(element, 6))
+                    if isinstance(element, float)
+                    else str(element)
                 )
                 return min(len(formatted_number), 13)
             elif isinstance(element, str):
@@ -1363,7 +1363,9 @@ class DataFrame:
                 return min(len(str(element)), 33)
 
         def _get_column_name_lengths(df: "DataFrame") -> List[int]:
-            column_name_lengths = [_get_element_display_length(col) for col in df.columns]
+            column_name_lengths = [
+                _get_element_display_length(col) for col in df.columns
+            ]
             # allow really big column names to "break" to 2nd line.
             column_name_lengths = [
                 length if length <= 22 else 22 for length in column_name_lengths
@@ -1390,7 +1392,12 @@ class DataFrame:
             if num_columns_df == 0:
                 return 0
 
-            width_used, num_cols_to_print, left_column_idx, right_column_idx = 0, 0, 0, -1
+            width_used, num_cols_to_print, left_column_idx, right_column_idx = (
+                0,
+                0,
+                0,
+                -1,
+            )
             for _ in width_list:
                 width_used += int(width_list[left_column_idx] + column_spacing)
                 num_cols_to_print += 1
@@ -1421,7 +1428,9 @@ class DataFrame:
                 width_used += last_column_missing_spacing
 
             num_cols_to_print = (
-                num_cols_to_print - 1 if width_used > terminal_width else num_cols_to_print
+                num_cols_to_print - 1
+                if width_used > terminal_width
+                else num_cols_to_print
             )  # fix after final adjustments.
             num_cols_to_print = (
                 1 if num_cols_to_print == 0 else num_cols_to_print
@@ -1435,7 +1444,9 @@ class DataFrame:
         num_rows_df = self.shape[0]
         num_columns_df = self.shape[1]
         row_indices = (
-            [0, 1, 2, 3, -5, -4, -3, -2] if num_rows_df >= 8 else list(range(num_rows_df))
+            [0, 1, 2, 3, -5, -4, -3, -2]
+            if num_rows_df >= 8
+            else list(range(num_rows_df))
         )
         col_indices = (
             [0, 1, 2, 3, 4, 5, -6, -5, -4, -3, -2, -1]
@@ -1448,7 +1459,8 @@ class DataFrame:
 
         # Calculate the average length of row values
         row_value_lengths_lst = [
-            _get_row_value_lengths(self[:, col_indices], row_idx) for row_idx in row_indices
+            _get_row_value_lengths(self[:, col_indices], row_idx)
+            for row_idx in row_indices
         ]
         row_value_lengths = _average_element_lengths(*row_value_lengths_lst)
 
