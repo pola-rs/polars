@@ -1317,10 +1317,12 @@ class DataFrame:
     def _set_optimal_columns_to_display(self, column_spacing: float = 3.0) -> None:
         """
         Set the optimal number of columns to display for a DataFrame.
+
         This function sets the optimal number of columns to display for a given
         DataFrame based on the    terminal width, column names width, and element
         widths. It aims to provide a better user experience when displaying
         DataFrames in the terminal by minimizing vertical scrolling.
+
         Parameters
         ----------
         df : DataFrame
@@ -1469,7 +1471,7 @@ class DataFrame:
             *[column_name_lengths, row_value_lengths]
         )
 
-        # Determine the optimal number of columns to print based on the calculated lengths
+        # Determine the optimal number of columns based on the calculated lengths
         num_cols_to_print = _determine_optimal_display_columns(
             real_column_lengths, terminal_width, num_columns_df, column_spacing
         )

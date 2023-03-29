@@ -368,8 +368,10 @@ class Config:
     def set_auto_tbl_cols(cls, active: bool = True) -> type[Config]:
         """
         Automatically set the number of columns for display.
+
         When active, it adjusts the number of columns displayed in the
         table based on the terminal width.
+
         Parameters
         ----------
         active : bool, optional, default: True
