@@ -41,7 +41,6 @@ from polars.expr.string import ExprStringNameSpace
 from polars.expr.struct import ExprStructNameSpace
 from polars.utils._parse_expr_input import expr_to_lit_or_expr, selection_to_pyexpr_list
 from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 from polars.utils.meta import threadpool_size
 from polars.utils.various import sphinx_accessor
 
@@ -777,7 +776,6 @@ class Expr:
         """  # noqa: W505
         return self._from_pyexpr(self._pyexpr.suffix(suffix))
 
-    @deprecated_alias(f="function")
     def map_alias(self, function: Callable[[str], str]) -> Self:
         """
         Rename the output of an expression by mapping a function over the root name.
@@ -1285,7 +1283,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.drop_nans())
 
-    def cumsum(self, reverse: bool = False) -> Self:
+    def cumsum(self, *, reverse: bool = False) -> Self:
         """
         Get an array with the cumulative sum computed at every element.
 
@@ -1351,7 +1349,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.cumsum(reverse))
 
-    def cumprod(self, reverse: bool = False) -> Self:
+    def cumprod(self, *, reverse: bool = False) -> Self:
         """
         Get an array with the cumulative product computed at every element.
 
@@ -1389,7 +1387,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.cumprod(reverse))
 
-    def cummin(self, reverse: bool = False) -> Self:
+    def cummin(self, *, reverse: bool = False) -> Self:
         """
         Get an array with the cumulative min computed at every element.
 
@@ -1422,7 +1420,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.cummin(reverse))
 
-    def cummax(self, reverse: bool = False) -> Self:
+    def cummax(self, *, reverse: bool = False) -> Self:
         """
         Get an array with the cumulative max computed at every element.
 
@@ -1483,7 +1481,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.cummax(reverse))
 
-    def cumcount(self, reverse: bool = False) -> Self:
+    def cumcount(self, *, reverse: bool = False) -> Self:
         """
         Get an array with the cumulative count computed at every element.
 
@@ -1696,9 +1694,7 @@ class Expr:
         dtype = py_type_to_dtype(dtype)
         return self._from_pyexpr(self._pyexpr.cast(dtype, strict))
 
-    @deprecated_alias(reverse="descending")
-    @deprecate_nonkeyword_arguments(stacklevel=3)
-    def sort(self, descending: bool = False, nulls_last: bool = False) -> Self:
+    def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Self:
         """
         Sort this column.
 
@@ -1778,8 +1774,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.sort_with(descending, nulls_last))
 
-    @deprecated_alias(reverse="descending")
-    def top_k(self, k: int = 5, descending: bool = False) -> Self:
+    def top_k(self, k: int = 5, *, descending: bool = False) -> Self:
         r"""
         Return the `k` largest elements.
 
@@ -1825,9 +1820,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.top_k(k, descending))
 
-    @deprecated_alias(reverse="descending")
-    @deprecate_nonkeyword_arguments(stacklevel=3)
-    def arg_sort(self, descending: bool = False, nulls_last: bool = False) -> Self:
+    def arg_sort(self, *, descending: bool = False, nulls_last: bool = False) -> Self:
         """
         Get the index values that would sort this column.
 
@@ -1957,7 +1950,6 @@ class Expr:
         element = expr_to_lit_or_expr(element, str_to_lit=False)
         return self._from_pyexpr(self._pyexpr.search_sorted(element._pyexpr, side))
 
-    @deprecated_alias(reverse="descending")
     def sort_by(
         self,
         by: IntoExpr | Iterable[IntoExpr],
@@ -2287,7 +2279,7 @@ class Expr:
                 self._pyexpr.fill_null_with_strategy(strategy, limit)
             )
 
-    def fill_nan(self, fill_value: int | float | Expr | None) -> Self:
+    def fill_nan(self, value: int | float | Expr | None) -> Self:
         """
         Fill floating point NaN value with a fill value.
 
@@ -2312,7 +2304,7 @@ class Expr:
         └──────┴──────┘
 
         """
-        fill_value = expr_to_lit_or_expr(fill_value, str_to_lit=True)
+        fill_value = expr_to_lit_or_expr(value, str_to_lit=True)
         return self._from_pyexpr(self._pyexpr.fill_nan(fill_value._pyexpr))
 
     def forward_fill(self, limit: int | None = None) -> Self:
@@ -2722,7 +2714,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.arg_unique())
 
-    def unique(self, maintain_order: bool = False) -> Self:
+    def unique(self, *, maintain_order: bool = False) -> Self:
         """
         Get unique values of this expression.
 
@@ -3119,14 +3111,11 @@ class Expr:
         """
         return self.filter(predicate)
 
-    @deprecated_alias(f="function")
-    @deprecate_nonkeyword_arguments(
-        allowed_args=["self", "function", "return_dtype"], stacklevel=3
-    )
     def map(
         self,
         function: Callable[[Series], Series | Any],
         return_dtype: PolarsDataType | None = None,
+        *,
         agg_list: bool = False,
     ) -> Self:
         """
@@ -3172,17 +3161,13 @@ class Expr:
             return_dtype = py_type_to_dtype(return_dtype)
         return self._from_pyexpr(self._pyexpr.map(function, return_dtype, agg_list))
 
-    @deprecated_alias(f="function")
-    @deprecate_nonkeyword_arguments(
-        allowed_args=["self", "function", "return_dtype"], stacklevel=3
-    )
     def apply(
         self,
         function: Callable[[Series], Series] | Callable[[Any], Any],
         return_dtype: PolarsDataType | None = None,
+        *,
         skip_nulls: bool = True,
         pass_name: bool = False,
-        *,
         strategy: ApplyStrategy = "thread_local",
     ) -> Self:
         """
@@ -4034,7 +4019,7 @@ class Expr:
         k3 = seed_3 if seed_3 is not None else seed
         return self._from_pyexpr(self._pyexpr.hash(k0, k1, k2, k3))
 
-    def reinterpret(self, signed: bool = True) -> Self:
+    def reinterpret(self, *, signed: bool = True) -> Self:
         """
         Reinterpret the underlying bits as a signed/unsigned integer.
 
@@ -4170,6 +4155,7 @@ class Expr:
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
@@ -4264,6 +4250,7 @@ class Expr:
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
@@ -4358,6 +4345,7 @@ class Expr:
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
@@ -4452,6 +4440,7 @@ class Expr:
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
@@ -4546,6 +4535,7 @@ class Expr:
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
@@ -4640,6 +4630,7 @@ class Expr:
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
@@ -4734,6 +4725,7 @@ class Expr:
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
@@ -4826,6 +4818,7 @@ class Expr:
         window_size: int | timedelta | str = 2,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
@@ -4928,6 +4921,7 @@ class Expr:
         window_size: int,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
     ) -> Self:
         """
@@ -4991,7 +4985,7 @@ class Expr:
             )
         )
 
-    def rolling_skew(self, window_size: int, bias: bool = True) -> Self:
+    def rolling_skew(self, window_size: int, *, bias: bool = True) -> Self:
         """
         Compute a rolling skew.
 
@@ -5034,8 +5028,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.abs())
 
-    @deprecated_alias(reverse="descending")
-    def argsort(self, descending: bool = False, nulls_last: bool = False) -> Self:
+    def argsort(self, *, descending: bool = False, nulls_last: bool = False) -> Self:
         """
         Get the index values that would sort this column.
 
@@ -5081,12 +5074,12 @@ class Expr:
             DeprecationWarning,
             stacklevel=2,
         )
-        return self.arg_sort(descending, nulls_last)
+        return self.arg_sort(descending=descending, nulls_last=nulls_last)
 
-    @deprecated_alias(reverse="descending")
     def rank(
         self,
         method: RankMethod = "average",
+        *,
         descending: bool = False,
         seed: int | None = None,
     ) -> Self:
@@ -5881,6 +5874,7 @@ class Expr:
     def sample(
         self,
         n: int | None = None,
+        *,
         frac: float | None = None,
         with_replacement: bool = False,
         shuffle: bool = False,
@@ -5943,6 +5937,7 @@ class Expr:
         span: float | None = None,
         half_life: float | None = None,
         alpha: float | None = None,
+        *,
         adjust: bool = True,
         min_periods: int = 1,
         ignore_nulls: bool = True,
@@ -6031,6 +6026,7 @@ class Expr:
         span: float | None = None,
         half_life: float | None = None,
         alpha: float | None = None,
+        *,
         adjust: bool = True,
         bias: bool = False,
         min_periods: int = 1,
@@ -6122,6 +6118,7 @@ class Expr:
         span: float | None = None,
         half_life: float | None = None,
         alpha: float | None = None,
+        *,
         adjust: bool = True,
         bias: bool = False,
         min_periods: int = 1,
@@ -6383,7 +6380,7 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.entropy(base, normalize))
 
     def cumulative_eval(
-        self, expr: Expr, min_periods: int = 1, parallel: bool = False
+        self, expr: Expr, min_periods: int = 1, *, parallel: bool = False
     ) -> Self:
         """
         Run an expression over a sliding window that increases `1` slot every iteration.
@@ -6435,7 +6432,6 @@ class Expr:
             self._pyexpr.cumulative_eval(expr._pyexpr, min_periods, parallel)
         )
 
-    @deprecated_alias(reverse="descending")
     def set_sorted(self, descending: bool = False) -> Self:
         """
         Flags the expression as 'sorted'.
