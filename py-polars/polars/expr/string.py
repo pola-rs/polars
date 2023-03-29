@@ -521,7 +521,8 @@ class ExprStringNameSpace:
         Parameters
         ----------
         pattern
-            A valid regex pattern.
+            A regex pattern compatible with the `regex crate
+            <https://docs.rs/regex/latest/regex/>`_.
         literal
             Treat pattern as a literal string.
         strict
@@ -802,7 +803,8 @@ class ExprStringNameSpace:
         Parameters
         ----------
         pattern
-            A valid regex pattern
+            A regex pattern compatible with the `regex crate
+            <https://docs.rs/regex/latest/regex/>`_.
         group_index
             Index of the targeted capture group.
             Group 0 mean the whole pattern, first group begin at index 1
@@ -852,7 +854,8 @@ class ExprStringNameSpace:
         Parameters
         ----------
         pattern
-            A valid regex pattern
+            A regex pattern compatible with the `regex crate
+            <https://docs.rs/regex/latest/regex/>`_.
 
         Returns
         -------
@@ -888,7 +891,8 @@ class ExprStringNameSpace:
         Parameters
         ----------
         pattern
-            A valid regex pattern
+            A regex pattern compatible with the `regex crate
+            <https://docs.rs/regex/latest/regex/>`_.
 
         Returns
         -------
@@ -1095,7 +1099,8 @@ class ExprStringNameSpace:
         Parameters
         ----------
         pattern
-            Regex pattern.
+            A regex pattern compatible with the `regex crate
+            <https://docs.rs/regex/latest/regex/>`_.
         value
             Replacement string.
         literal
@@ -1139,7 +1144,8 @@ class ExprStringNameSpace:
         Parameters
         ----------
         pattern
-            Regex pattern.
+            A regex pattern compatible with the `regex crate
+            <https://docs.rs/regex/latest/regex/>`_.
         value
             Replacement string.
         literal

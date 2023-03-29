@@ -92,9 +92,13 @@ doctest:
 	cargo doc --features=docs-selection -p polars
 
 publish:
-	cargo publish --allow-dirty -p polars-error
-	sleep 20
-	cargo publish --allow-dirty -p polars-utils
+#	cargo publish --allow-dirty -p polars-error
+#	sleep 20
+#	cargo publish --allow-dirty -p polars-utils
+#	sleep 20
+#	cargo publish --allow-dirty -p polars-row
+#	sleep 20
+	cargo publish --allow-dirty -p polars-arrow
 	sleep 20
 	cargo publish --allow-dirty -p polars-core
 	sleep 20
