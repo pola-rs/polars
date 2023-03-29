@@ -597,7 +597,7 @@ fn materialize_list(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
     }
 }
 
-fn _convert_date(ob: & PyAny) -> PyResult<Wrap<polars_rs::prelude::AnyValue>> {
+fn convert_date(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
     Python::with_gil(|py| {
         let date = UTILS
             .as_ref(py)
@@ -609,7 +609,7 @@ fn _convert_date(ob: & PyAny) -> PyResult<Wrap<polars_rs::prelude::AnyValue>> {
         Ok(Wrap(AnyValue::Date(v)))
     })
 }
-fn _convert_datetime(ob: & PyAny) -> PyResult<Wrap<polars_rs::prelude::AnyValue>> {
+fn convert_datetime(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
     Python::with_gil(|py| {
         // windows
         #[cfg(target_arch = "windows")]
@@ -700,8 +700,8 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                 return Ok(AnyValue::Float64(v).into());
             };
             match type_name {
-                "datetime" => _convert_datetime(ob),
-                "date" => _convert_date(ob),
+                "datetime" => convert_datetime(ob),
+                "date" => convert_date(ob),
                 "timedelta" => Python::with_gil(|py| {
                     let td = UTILS
                         .as_ref(py)
@@ -747,10 +747,10 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                             "<class 'datetime.datetime'>" => {
                                 // `datetime.datetime` is a subclass of `datetime.date`,
                                 // so need to check `datetime.datetime` first
-                                return _convert_datetime(ob);
+                                return convert_datetime(ob);
                             }
                             "<class 'datetime.date'>" => {
-                                return _convert_date(ob);
+                                return convert_date(ob);
                             }
                             _ => (),
                         }
