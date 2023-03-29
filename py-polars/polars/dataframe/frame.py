@@ -1316,6 +1316,7 @@ class DataFrame:
 
     def _set_optimal_columns_to_display(self, column_spacing: float = 3.0) -> None:
         """Set the optimal number of columns to display for a DataFrame."""
+
         def _get_element_display_length(element: Union[numbers.Number, str]) -> int:
             if isinstance(element, numbers.Number):
                 formatted_number = (
