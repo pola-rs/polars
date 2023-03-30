@@ -3,7 +3,6 @@ from polars.datatypes.classes import (
     Boolean,
     Categorical,
     DataType,
-    DataTypeClass,
     Date,
     Datetime,
     Decimal,
@@ -11,6 +10,7 @@ from polars.datatypes.classes import (
     Field,
     Float32,
     Float64,
+    FloatType,
     FractionalType,
     Int8,
     Int16,
@@ -48,6 +48,7 @@ from polars.datatypes.constructor import (
     py_type_to_constructor,
 )
 from polars.datatypes.convert import (
+    _normalize_polars_dtype,
     dtype_to_arrow_type,
     dtype_to_ctype,
     dtype_to_ffiname,
@@ -74,7 +75,6 @@ __all__ = [
     "Boolean",
     "Categorical",
     "DataType",
-    "DataTypeClass",
     "Date",
     "Datetime",
     "Decimal",
@@ -82,6 +82,7 @@ __all__ = [
     "Field",
     "Float32",
     "Float64",
+    "FloatType",
     "FractionalType",
     "Int16",
     "Int32",
@@ -116,6 +117,7 @@ __all__ = [
     "polars_type_to_constructor",
     "py_type_to_constructor",
     # convert
+    "_normalize_polars_dtype",
     "dtype_to_arrow_type",
     "dtype_to_ctype",
     "dtype_to_ffiname",

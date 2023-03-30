@@ -362,7 +362,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
         let type_name = ob.get_type().name()?;
 
         let dtype = match type_name {
-            "DataTypeClass" => {
+            "type" => {
                 // just the class, not an object
                 let name = ob.getattr("__name__")?.str()?.to_str()?;
                 match name {
@@ -397,6 +397,22 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     }
                 }
             }
+            "UInt8" => DataType::UInt8,
+            "UInt16" => DataType::UInt16,
+            "UInt32" => DataType::UInt32,
+            "UInt64" => DataType::UInt64,
+            "Int8" => DataType::Int8,
+            "Int16" => DataType::Int16,
+            "Int32" => DataType::Int32,
+            "Int64" => DataType::Int64,
+            "Float32" => DataType::Float32,
+            "Float64" => DataType::Float64,
+            "Utf8" => DataType::Utf8,
+            "Binary" => DataType::Binary,
+            "Boolean" => DataType::Boolean,
+            "Categorical" => DataType::Categorical(None),
+            "Date" => DataType::Date,
+            "Time" => DataType::Time,
             "Duration" => {
                 let time_unit = ob.getattr("time_unit").unwrap();
                 let time_unit = time_unit.extract::<Wrap<TimeUnit>>()?.0;
@@ -428,10 +444,12 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     .collect::<Vec<Field>>();
                 DataType::Struct(fields)
             }
+            "Object" => DataType::Object(OBJECT_NAME),
+            "Null" => DataType::Null,
+            "Unknown" => DataType::Unknown,
             dt => {
                 return Err(PyTypeError::new_err(format!(
-                    "A {dt} object is not a correct polars DataType. \
-                    Hint: use the class without instantiating it.",
+                    "A {dt} object is not a correct polars DataType.",
                 )))
             }
         };

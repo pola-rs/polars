@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from collections.abc import Reversible
     from pathlib import Path
 
+    from polars.datatypes import DataType
     from polars.type_aliases import PolarsDataType, SizeUnit
 
     if sys.version_info >= (3, 10):
@@ -212,7 +213,7 @@ def scale_bytes(sz: int, unit: SizeUnit) -> int | float:
 
 
 def _cast_repr_strings_with_schema(
-    df: DataFrame, schema: dict[str, PolarsDataType]
+    df: DataFrame, schema: dict[str, DataType]
 ) -> DataFrame:
     """
     Utility function to cast table repr/string values into frame-native types.
@@ -231,10 +232,10 @@ def _cast_repr_strings_with_schema(
 
     """
     if not df.is_empty():
-        for tp in df.schema.values():
-            if tp != Utf8:
+        for dtype in df.schema.values():
+            if not isinstance(dtype, Utf8):
                 raise TypeError(
-                    f"DataFrame should contain only Utf8 string repr data; found {tp}"
+                    f"DataFrame should contain only Utf8 string repr data; found {dtype}"
                 )
 
     # duration string scaling
@@ -266,7 +267,7 @@ def _cast_repr_strings_with_schema(
     for c, tp in schema.items():
         if tp is not None:
             if tp.base_type() == Datetime:
-                tp_base = Datetime(tp.time_unit)  # type: ignore[union-attr]
+                tp_base = Datetime(tp.time_unit)  # type: ignore[attr-defined]
                 d = F.col(c).str.replace(r"[A-Z ]+$", "")
                 cast_cols[c] = (
                     F.when(d.str.lengths() == 19)
@@ -276,7 +277,7 @@ def _cast_repr_strings_with_schema(
                     .str.strptime(tp_base, "%Y-%m-%d %H:%M:%S.%9f")
                 )
                 if getattr(tp, "time_zone", None) is not None:
-                    cast_cols[c] = cast_cols[c].dt.replace_time_zone(tp.time_zone)  # type: ignore[union-attr]
+                    cast_cols[c] = cast_cols[c].dt.replace_time_zone(tp.time_zone)  # type: ignore[attr-defined]
             elif tp == Date:
                 cast_cols[c] = F.col(c).str.strptime(tp, "%Y-%m-%d")  # type: ignore[arg-type]
             elif tp == Time:

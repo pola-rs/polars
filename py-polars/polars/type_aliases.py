@@ -22,7 +22,7 @@ else:
     from typing_extensions import Literal
 
 if TYPE_CHECKING:
-    from polars.datatypes import DataType, DataTypeClass, TemporalType
+    from polars.datatypes import DataType, TemporalType
     from polars.dependencies import numpy as np
     from polars.dependencies import pandas as pd
     from polars.dependencies import pyarrow as pa
@@ -36,7 +36,7 @@ if TYPE_CHECKING:
         from typing_extensions import TypeAlias
 
 # Data types
-PolarsDataType: TypeAlias = Union["DataTypeClass", "DataType"]
+PolarsDataType: TypeAlias = Union[Type["DataType"], "DataType"]
 PolarsTemporalType: TypeAlias = Union[Type["TemporalType"], "TemporalType"]
 OneOrMoreDataTypes: TypeAlias = Union[PolarsDataType, Iterable[PolarsDataType]]
 PythonDataType: TypeAlias = Union[

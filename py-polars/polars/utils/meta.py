@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import contextlib
-import warnings
 from typing import TYPE_CHECKING
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -10,10 +9,10 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import threadpool_size as _threadpool_size
 
 if TYPE_CHECKING:
-    from polars.datatypes import DataTypeClass
+    from polars.datatypes import DataType
 
 
-def get_index_type() -> DataTypeClass:
+def get_index_type() -> DataType:
     """
     Get the datatype used for Polars indexing.
 
@@ -23,17 +22,6 @@ def get_index_type() -> DataTypeClass:
 
     """
     return _get_index_type()
-
-
-def get_idx_type() -> DataTypeClass:
-    """Get the datatype used for Polars indexing."""
-    warnings.warn(
-        "`get_idx_type` has been renamed; this"
-        " redirect is temporary, please use `get_index_type` instead",
-        category=DeprecationWarning,
-        stacklevel=2,
-    )
-    return get_index_type()
 
 
 def threadpool_size() -> int:

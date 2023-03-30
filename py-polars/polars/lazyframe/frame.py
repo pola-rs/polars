@@ -40,6 +40,7 @@ from polars.datatypes import (
     UInt32,
     UInt64,
     Utf8,
+    _normalize_polars_dtype,
     py_type_to_dtype,
 )
 from polars.dependencies import subprocess
@@ -74,6 +75,7 @@ if TYPE_CHECKING:
     import pyarrow as pa
 
     from polars.dataframe import DataFrame
+    from polars.datatypes import DataType
     from polars.expr.expr import Expr
     from polars.series import Series
     from polars.type_aliases import (
@@ -574,7 +576,7 @@ class LazyFrame:
         return self._ldf.columns()
 
     @property
-    def dtypes(self) -> list[PolarsDataType]:
+    def dtypes(self) -> list[DataType]:
         """
         Get dtypes of columns in LazyFrame.
 
@@ -595,10 +597,11 @@ class LazyFrame:
         schema : Returns a {colname:dtype} mapping.
 
         """
-        return self._ldf.dtypes()
+        dtypes = self._ldf.dtypes()
+        return [_normalize_polars_dtype(dtype) for dtype in dtypes]
 
     @property
-    def schema(self) -> SchemaDict:
+    def schema(self) -> dict[str, DataType]:
         """
         Get a dict[column name, DataType].
 
@@ -615,7 +618,7 @@ class LazyFrame:
         {'foo': Int64, 'bar': Float64, 'ham': Utf8}
 
         """
-        return self._ldf.schema()
+        return dict(zip(self.columns, self.dtypes))
 
     @property
     def width(self) -> int:

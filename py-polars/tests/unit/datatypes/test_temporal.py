@@ -1354,17 +1354,17 @@ def test_asof_join() -> None:
     )
     assert trades.schema == {
         "dates": pl.Datetime("ms"),
-        "ticker": pl.Utf8,
-        "bid": pl.Float64,
+        "ticker": pl.Utf8(),
+        "bid": pl.Float64(),
     }
     out = trades.join_asof(quotes, on="dates", strategy="backward")
 
     assert out.schema == {
-        "bid": pl.Float64,
-        "bid_right": pl.Float64,
+        "bid": pl.Float64(),
+        "bid_right": pl.Float64(),
         "dates": pl.Datetime("ms"),
-        "ticker": pl.Utf8,
-        "ticker_right": pl.Utf8,
+        "ticker": pl.Utf8(),
+        "ticker_right": pl.Utf8(),
     }
     assert out.columns == ["dates", "ticker", "bid", "ticker_right", "bid_right"]
     assert (out["dates"].cast(int)).to_list() == [

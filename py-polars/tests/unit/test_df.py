@@ -2478,7 +2478,7 @@ def test_df_broadcast() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]}, schema_overrides={"a": pl.UInt8})
     out = df.with_columns(pl.Series("s", [[1, 2]]))
     assert out.shape == (3, 2)
-    assert out.schema == {"a": pl.UInt8, "s": pl.List(pl.Int64)}
+    assert out.schema == {"a": pl.UInt8(), "s": pl.List(pl.Int64)}
     assert out.rows() == [(1, [1, 2]), (2, [1, 2]), (3, [1, 2])]
 
 
@@ -3202,7 +3202,7 @@ def test_init_datetimes_with_timezone() -> None:
     tz_europe = "Europe/Amsterdam"
 
     dtm = datetime(2022, 10, 12, 12, 30, tzinfo=ZoneInfo("UTC"))
-    for time_unit in DTYPE_TEMPORAL_UNITS | frozenset([None]):
+    for time_unit in DTYPE_TEMPORAL_UNITS:
         for type_overrides in (
             {
                 "schema": [
@@ -3232,7 +3232,7 @@ def test_init_physical_with_timezone() -> None:
     tz_asia = "Asia/Tokyo"
 
     dtm_us = 1665577800000000
-    for time_unit in DTYPE_TEMPORAL_UNITS | frozenset([None]):
+    for time_unit in DTYPE_TEMPORAL_UNITS:
         dtm = {"ms": dtm_us // 1_000, "ns": dtm_us * 1_000}.get(str(time_unit), dtm_us)
         df = pl.DataFrame(
             data={"d1": [dtm], "d2": [dtm]},
@@ -3531,21 +3531,21 @@ def test_rolling_apply() -> None:
     assert out[0] is None
     assert out[1] is None
     assert out[2] == 4.358898943540674
-    assert out.dtype is pl.Float64
+    assert isinstance(out.dtype, pl.Float64)
 
     s = pl.Series("A", [1.0, 2.0, 9.0, 2.0, 13.0], dtype=pl.Float32)
     out = s.rolling_apply(function=lambda s: s.std(), window_size=3)
     assert out[0] is None
     assert out[1] is None
     assert out[2] == 4.358899116516113
-    assert out.dtype is pl.Float32
+    assert isinstance(out.dtype, pl.Float32)
 
     s = pl.Series("A", [1, 2, 9, 2, 13], dtype=pl.Int32)
     out = s.rolling_apply(function=lambda s: s.sum(), window_size=3)
     assert out[0] is None
     assert out[1] is None
     assert out[2] == 12
-    assert out.dtype is pl.Int32
+    assert isinstance(out.dtype, pl.Int32)
 
     s = pl.Series("A", [1.0, 2.0, 9.0, 2.0, 13.0], dtype=pl.Float64)
     out = s.rolling_apply(
@@ -3554,7 +3554,7 @@ def test_rolling_apply() -> None:
     assert out[0] is None
     assert out[1] is None
     assert out[2] == 14.224392195567912
-    assert out.dtype is pl.Float64
+    assert isinstance(out.dtype, pl.Float64)
 
     s = pl.Series("A", [1.0, 2.0, 9.0, 2.0, 13.0], dtype=pl.Float32)
     out = s.rolling_apply(
@@ -3563,7 +3563,7 @@ def test_rolling_apply() -> None:
     assert out[0] is None
     assert out[1] is None
     assert out[2] == 14.22439193725586
-    assert out.dtype is pl.Float32
+    assert isinstance(out.dtype, pl.Float32)
 
     s = pl.Series("A", [1, 2, 9, None, 13], dtype=pl.Int32)
     out = s.rolling_apply(
@@ -3572,7 +3572,7 @@ def test_rolling_apply() -> None:
     assert out[0] is None
     assert out[1] is None
     assert out[2] == 32.0
-    assert out.dtype is pl.Float64
+    assert isinstance(out.dtype, pl.Float64)
     s = pl.Series("A", [1, 2, 9, 2, 10])
 
     # compare rolling_apply to specific rolling functions

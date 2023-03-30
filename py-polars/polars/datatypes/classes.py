@@ -4,47 +4,49 @@ import contextlib
 from inspect import isclass
 from typing import TYPE_CHECKING, Any, Iterator, Mapping, Sequence
 
-import polars.datatypes
+import polars.datatypes as dt
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import dtype_str_repr as _dtype_str_repr
 
 
 if TYPE_CHECKING:
+    import sys
+
     from polars.type_aliases import PolarsDataType, PythonDataType, SchemaDict, TimeUnit
 
-
-class DataTypeClass(type):
-    """Metaclass for nicely printing DataType classes."""
-
-    def __repr__(cls) -> str:
-        return cls.__name__
-
-    def _string_repr(cls) -> str:
-        return _dtype_str_repr(cls)
-
-    def base_type(cls) -> PolarsDataType:
-        return cls
+    if sys.version_info >= (3, 11):
+        from typing import Self
+    else:
+        from typing_extensions import Self
 
 
-class DataType(metaclass=DataTypeClass):
+class DataType:
     """Base class for all Polars data types."""
 
-    def __new__(cls, *args: Any, **kwargs: Any) -> PolarsDataType:  # type: ignore[misc]
-        # this formulation allows for equivalent use of "pl.Type" and "pl.Type()", while
-        # still respecting types that take initialisation params (eg: Duration/Datetime)
-        if args or kwargs:
-            return super().__new__(cls)
-        return cls
+    def __eq__(self, other: Any) -> bool:
+        # allow comparing object instances to class
+        if isclass(other) and issubclass(other, DataType):
+            return self.__class__.__name__ == other.__name__
+        elif isinstance(other, DataType):
+            return self.__class__.__name__ == other.__class__.__name__
+        else:
+            return False
+
+    def __hash__(self) -> int:
+        return hash(self.__class__)
 
     def __reduce__(self) -> Any:
         return (_custom_reconstruct, (type(self), object, None), self.__dict__)
+
+    def __repr__(self) -> str:
+        return self.__class__.__name__
 
     def _string_repr(self) -> str:
         return _dtype_str_repr(self)
 
     @classmethod
-    def base_type(cls) -> DataTypeClass:
+    def base_type(cls) -> type[Self]:
         """
         Return this DataType's fundamental/root type class.
 
@@ -144,10 +146,18 @@ class Decimal(FractionalType):
     NOTE: this is an experimental work-in-progress feature and may not work as expected.
     """
 
-    precision: int | None
-    scale: int
+    def __init__(self, precision: int | None = None, scale: int = 0):
+        """
+        Decimal type.
 
-    def __init__(self, precision: int | None, scale: int):
+        Parameters
+        ----------
+        precision
+            ...
+        scale
+            ...
+
+        """
         self.precision = precision
         self.scale = scale
 
@@ -158,7 +168,7 @@ class Decimal(FractionalType):
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # allow comparing object instances to class
-        if type(other) is DataTypeClass and issubclass(other, Decimal):
+        if isclass(other) and issubclass(other, Decimal):
             return True
         elif isinstance(other, Decimal):
             return self.precision == other.precision and self.scale == other.scale
@@ -192,10 +202,7 @@ class Time(TemporalType):
 class Datetime(TemporalType):
     """Calendar date and time type."""
 
-    time_unit: TimeUnit | None = None
-    time_zone: str | None = None
-
-    def __init__(self, time_unit: TimeUnit | None = "us", time_zone: str | None = None):
+    def __init__(self, time_unit: TimeUnit = "us", time_zone: str | None = None):
         """
         Calendar date and time type.
 
@@ -208,17 +215,17 @@ class Datetime(TemporalType):
             ``import zoneinfo; zoneinfo.available_timezones()`` for a full list).
 
         """
-        self.time_unit = time_unit or "us"
-        self.time_zone = time_zone
-
-        if self.time_unit not in ("ms", "us", "ns"):
+        if time_unit not in ("ms", "us", "ns"):
             raise ValueError(
-                f"Invalid time_unit; expected one of {{'ns','us','ms'}}, got {self.time_unit!r}"
+                f"Invalid time_unit; expected one of {{'ns','us','ms'}}, got {time_unit!r}"
             )
+
+        self.time_unit = time_unit
+        self.time_zone = time_zone
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # allow comparing object instances to class
-        if type(other) is DataTypeClass and issubclass(other, Datetime):
+        if isclass(other) and issubclass(other, Datetime):
             return True
         elif isinstance(other, Datetime):
             return (
@@ -240,8 +247,6 @@ class Datetime(TemporalType):
 class Duration(TemporalType):
     """Time duration/delta type."""
 
-    time_unit: TimeUnit | None = None
-
     def __init__(self, time_unit: TimeUnit = "us"):
         """
         Time duration/delta type.
@@ -252,15 +257,16 @@ class Duration(TemporalType):
             Unit of time.
 
         """
-        self.time_unit = time_unit
-        if self.time_unit not in ("ms", "us", "ns"):
+        if time_unit not in ("ms", "us", "ns"):
             raise ValueError(
-                f"Invalid time_unit; expected one of {{'ns','us','ms'}}, got {self.time_unit!r}"
+                f"Invalid time_unit; expected one of {{'ns','us','ms'}}, got {time_unit!r}"
             )
+
+        self.time_unit = time_unit
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # allow comparing object instances to class
-        if type(other) is DataTypeClass and issubclass(other, Duration):
+        if isclass(other) and issubclass(other, Duration):
             return True
         elif isinstance(other, Duration):
             return self.time_unit == other.time_unit
@@ -292,9 +298,7 @@ class Unknown(DataType):
 
 
 class List(NestedType):
-    inner: PolarsDataType | None = None
-
-    def __init__(self, inner: PolarsDataType | PythonDataType):
+    def __init__(self, inner: PolarsDataType | PythonDataType = Float64):
         """
         Nested list/array type.
 
@@ -304,7 +308,7 @@ class List(NestedType):
             The `DataType` of values within the list
 
         """
-        self.inner = polars.datatypes.py_type_to_dtype(inner)
+        self.inner = dt.py_type_to_dtype(inner)
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # The comparison allows comparing objects to classes
@@ -317,13 +321,10 @@ class List(NestedType):
         # List[i64] == List[f32] == False
 
         # allow comparing object instances to class
-        if type(other) is DataTypeClass and issubclass(other, List):
+        if isclass(other) and issubclass(other, List):
             return True
-        if isinstance(other, List):
-            if self.inner is None or other.inner is None:
-                return True
-            else:
-                return self.inner == other.inner
+        elif isinstance(other, List):
+            return self.inner == other.inner
         else:
             return False
 
@@ -335,32 +336,8 @@ class List(NestedType):
         return f"{class_name}({self.inner!r})"
 
 
-class Field:
-    def __init__(self, name: str, dtype: PolarsDataType):
-        """
-        Definition of a single field within a `Struct` DataType.
-
-        Parameters
-        ----------
-        name
-            The name of the field within its parent `Struct`
-        dtype
-            The `DataType` of the field's values
-
-        """
-        self.name = name
-        self.dtype = polars.datatypes.py_type_to_dtype(dtype)
-
-    def __eq__(self, other: Field) -> bool:  # type: ignore[override]
-        return (self.name == other.name) & (self.dtype == other.dtype)
-
-    def __repr__(self) -> str:
-        class_name = self.__class__.__name__
-        return f"{class_name}({self.name!r}, {self.dtype})"
-
-
 class Struct(NestedType):
-    def __init__(self, fields: Sequence[Field] | SchemaDict):
+    def __init__(self, fields: Sequence[Field] | SchemaDict | None = None):
         """
         Struct composite type.
 
@@ -370,7 +347,9 @@ class Struct(NestedType):
             The sequence of fields that make up the struct
 
         """
-        if isinstance(fields, Mapping):
+        if fields is None:
+            self.fields = [Field("", Null)]
+        elif isinstance(fields, Mapping):
             self.fields = [Field(name, dtype) for name, dtype in fields.items()]
         else:
             self.fields = list(fields)
@@ -403,3 +382,27 @@ class Struct(NestedType):
     def to_schema(self) -> SchemaDict | None:
         """Return Struct dtype as a schema dict."""
         return dict(self)
+
+
+class Field:
+    def __init__(self, name: str, dtype: PolarsDataType):
+        """
+        Definition of a single field within a `Struct` DataType.
+
+        Parameters
+        ----------
+        name
+            The name of the field within its parent `Struct`
+        dtype
+            The `DataType` of the field's values
+
+        """
+        self.name = name
+        self.dtype = dt.py_type_to_dtype(dtype)
+
+    def __eq__(self, other: Field) -> bool:  # type: ignore[override]
+        return (self.name == other.name) & (self.dtype == other.dtype)
+
+    def __repr__(self) -> str:
+        class_name = self.__class__.__name__
+        return f"{class_name}({self.name!r}, {self.dtype})"

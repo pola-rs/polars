@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import sys
 import typing
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from random import shuffle
-from typing import Any
+from typing import Any, NamedTuple
 
 import numpy as np
 import pandas as pd
@@ -15,6 +16,7 @@ import pytest
 import polars as pl
 from polars.dependencies import _ZONEINFO_AVAILABLE
 from polars.testing import assert_frame_equal, assert_series_equal
+from polars.utils._construction import dataclass_type_hints
 
 if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo
@@ -114,12 +116,7 @@ def test_init_dict() -> None:
 
 
 def test_init_dataclasses_and_namedtuple(monkeypatch: Any) -> None:
-    from dataclasses import dataclass
-    from typing import NamedTuple
-
     monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
-
-    from polars.utils._construction import dataclass_type_hints
 
     @dataclass
     class TradeDC:

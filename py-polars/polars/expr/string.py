@@ -135,8 +135,10 @@ class ExprStringNameSpace:
         if datatype == Date:
             return wrap_expr(self._pyexpr.str_parse_date(fmt, strict, exact, cache))
         elif datatype == Datetime:
-            time_unit = datatype.time_unit  # type: ignore[union-attr]
-            time_zone = datatype.time_zone  # type: ignore[union-attr]
+            if isinstance(datatype, Datetime):
+                time_unit, time_zone = datatype.time_unit, datatype.time_zone
+            else:
+                time_unit, time_zone = None, None
             dtcol = wrap_expr(
                 self._pyexpr.str_parse_datetime(
                     fmt,

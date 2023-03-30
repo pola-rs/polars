@@ -15,7 +15,7 @@ from polars.utils.convert import (
     _to_python_timedelta,
     _tzinfo_to_str,
 )
-from polars.utils.meta import get_idx_type, get_index_type, threadpool_size
+from polars.utils.meta import get_index_type, threadpool_size
 from polars.utils.show_versions import show_versions
 from polars.utils.various import NoDefault, no_default
 
@@ -24,7 +24,6 @@ __all__ = [
     "no_default",
     "build_info",
     "show_versions",
-    "get_idx_type",
     "get_index_type",
     "threadpool_size",
     # Required for Rust bindings

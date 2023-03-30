@@ -156,7 +156,6 @@ from polars.string_cache import (
 from polars.type_aliases import PolarsDataType
 from polars.utils import (
     build_info,
-    get_idx_type,
     get_index_type,
     show_versions,
     threadpool_size,
@@ -326,7 +325,6 @@ __all__ = [
     "SQLContext",
     # polars.utils
     "build_info",
-    "get_idx_type",
     "get_index_type",
     "show_versions",
     "threadpool_size",
