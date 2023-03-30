@@ -1341,10 +1341,30 @@ def test_literal_series() -> None:
     )
 
 
-def test_to_html(df: pl.DataFrame) -> None:
-    # check it does not panic/error, and appears to contain a table
+def test_to_html() -> None:
+    # check it does not panic/error, and appears to contain
+    # a reasonable table with suitably escaped html entities.
+    df = pl.DataFrame(
+        {
+            "foo": [1, 2, 3],
+            "<bar>": ["a", "b", "c"],
+            "<baz": ["a", "b", "c"],
+            "spam>": ["a", "b", "c"],
+        }
+    )
     html = df._repr_html_()
-    assert "<table" in html
+    for match in (
+        "<table",
+        'class="dataframe"',
+        "<th>foo</th>",
+        "<th>&lt;bar&gt;</th>",
+        "<th>&lt;baz</th>",
+        "<th>spam&gt;</th>",
+        "<td>1</td>",
+        "<td>2</td>",
+        "<td>3</td>",
+    ):
+        assert match in html, f"Expected to find {match!r} in html repr"
 
 
 def test_rename(df: pl.DataFrame) -> None:
