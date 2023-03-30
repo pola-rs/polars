@@ -459,3 +459,9 @@ def test_list_min_max() -> None:
 
 def test_fill_null_empty_list() -> None:
     assert pl.Series([["a"], None]).fill_null([]).to_list() == [["a"], []]
+
+
+def test_nested_logical() -> None:
+    assert pl.select(
+        pl.lit(pl.Series(["a", "b"], dtype=pl.Categorical)).list().list()
+    ).to_dict(False) == {"": [[["a", "b"]]]}
