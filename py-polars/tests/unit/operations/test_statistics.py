@@ -74,3 +74,15 @@ def test_hist() -> None:
         str(a.hist(bin_count=4).to_dict(False))
         == "{'break_point': [0.0, 2.25, 4.5, 6.75, inf], 'category': ['(-inf, 0.0]', '(0.0, 2.25]', '(2.25, 4.5]', '(4.5, 6.75]', '(6.75, inf]'], 'a_count': [0, 3, 2, 0, 2]}"
     )
+
+
+def test_cut_null_values() -> None:
+    s = pl.Series([-1.0, None, 1.0, 2.0, None, 8.0, 4.0])
+    assert (
+        str(s.qcut([0.2, 0.3], maintain_order=True).to_dict(False))
+        == "{'': [-1.0, None, 1.0, 2.0, None, 8.0, 4.0], 'break_point': [0.5999999999999996, None, 1.2000000000000002, inf, None, inf, inf], 'category': ['(-inf, 0.5999999999999996]', None, '(0.5999999999999996, 1.2000000000000002]', '(1.2000000000000002, inf]', None, '(1.2000000000000002, inf]', '(1.2000000000000002, inf]']}"
+    )
+    assert (
+        str(s.qcut([0.2, 0.3], maintain_order=False).to_dict(False))
+        == "{'': [-1.0, 1.0, 2.0, 4.0, 8.0, None, None], 'break_point': [0.5999999999999996, 1.2000000000000002, inf, inf, inf, None, None], 'category': ['(-inf, 0.5999999999999996]', '(0.5999999999999996, 1.2000000000000002]', '(1.2000000000000002, inf]', '(1.2000000000000002, inf]', '(1.2000000000000002, inf]', None, None]}"
+    )
