@@ -4,9 +4,9 @@ use std::sync::Arc;
 use polars_core::error::PolarsResult;
 use polars_core::export::ahash::RandomState;
 use polars_core::frame::hash_join::{ChunkId, _finish_join};
+use polars_core::hashing::hash_to_partition;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_utils::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
 use smartstring::alias::String as SmartString;
 

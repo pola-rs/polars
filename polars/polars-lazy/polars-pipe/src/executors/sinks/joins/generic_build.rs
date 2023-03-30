@@ -7,9 +7,9 @@ use polars_arrow::trusted_len::PushUnchecked;
 use polars_core::error::PolarsResult;
 use polars_core::export::ahash::RandomState;
 use polars_core::frame::hash_join::ChunkId;
+use polars_core::hashing::hash_to_partition;
 use polars_core::prelude::*;
 use polars_core::utils::{_set_partition_size, accumulate_dataframes_vertical_unchecked};
-use polars_utils::hash_to_partition;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 

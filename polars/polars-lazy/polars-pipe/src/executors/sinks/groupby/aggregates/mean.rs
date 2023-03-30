@@ -9,10 +9,12 @@ use polars_core::export::num::NumCast;
 use polars_core::prelude::*;
 use polars_core::utils::arrow::compute::aggregate::sum_primitive;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
+use serde::{Deserialize, Serialize};
 
 use super::*;
 use crate::operators::{ArrowDataType, IdxSize};
 
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct MeanAgg<K: NumericNative> {
     sum: Option<K>,
     count: IdxSize,

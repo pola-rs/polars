@@ -3,10 +3,12 @@ use std::any::Any;
 use polars_core::datatypes::{AnyValue, DataType};
 use polars_core::prelude::{Series, IDX_DTYPE};
 use polars_utils::unwrap::UnwrapUncheckedRelease;
+use serde::{Deserialize, Serialize};
 
 use super::*;
 use crate::operators::IdxSize;
 
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub(crate) struct CountAgg {
     count: IdxSize,
 }

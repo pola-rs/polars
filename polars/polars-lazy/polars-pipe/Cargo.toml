@@ -9,8 +9,8 @@ description = "Lazy query engine for the Polars DataFrame library"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-crossbeam-channel = "0.5"
-enum_dispatch = "0.3"
+crossbeam-channel = { version = "0.5", optional = true }
+enum_dispatch = { version = "0.3", optional = true }
 hashbrown.workspace = true
 num-traits.workspace = true
 polars-arrow = { version = "0.28.0", path = "../../polars-arrow", default-features = false }
@@ -21,10 +21,11 @@ polars-plan = { version = "0.28.0", path = "../polars-plan", default-features = 
 polars-row = { version = "0.28.0", path = "../../polars-row" }
 polars-utils = { version = "0.28.0", path = "../../polars-utils", features = ["sysinfo"] }
 rayon.workspace = true
+serde = { version = "1.0", optional = true }
 smartstring = { version = "1" }
 
 [features]
-compile = []
+compile = ["enum_dispatch", "crossbeam-channel", "serde"]
 csv-file = ["polars-plan/csv-file", "polars-io/csv-file"]
 parquet = ["polars-plan/parquet", "polars-io/parquet"]
 ipc = ["polars-plan/ipc", "polars-io/ipc"]

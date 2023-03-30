@@ -1,10 +1,11 @@
 use std::any::Any;
 
 use polars_core::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use crate::executors::sinks::groupby::aggregates::AggregateFn;
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct NullAgg(DataType);
 
 impl NullAgg {

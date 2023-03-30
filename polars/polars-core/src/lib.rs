@@ -15,7 +15,7 @@ pub mod export;
 pub mod fmt;
 pub mod frame;
 pub mod functions;
-pub(crate) mod hashing;
+pub mod hashing;
 mod named_from;
 pub mod prelude;
 pub mod schema;

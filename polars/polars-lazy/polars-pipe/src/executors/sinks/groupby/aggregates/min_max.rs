@@ -10,6 +10,7 @@ use polars_core::export::num::NumCast;
 use polars_core::prelude::*;
 use polars_core::utils::arrow::compute::aggregate::{max_primitive, min_primitive};
 use polars_utils::unwrap::UnwrapUncheckedRelease;
+use serde::{Deserialize, Serialize};
 
 use super::*;
 use crate::operators::{ArrowDataType, IdxSize};
@@ -28,6 +29,7 @@ pub(super) fn new_max<K: NumericNative>() -> MinMaxAgg<K, fn(&K, &K) -> Ordering
     MinMaxAgg::new(compare_fn_nan_min, false)
 }
 
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct MinMaxAgg<K: NumericNative, F: Fn(&K, &K) -> Ordering> {
     agg: Option<K>,
     cmp_fn: F,

@@ -1,3 +1,5 @@
+mod ooc;
+
 use std::any::Any;
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
@@ -8,13 +10,14 @@ use num_traits::NumCast;
 use polars_arrow::kernels::sort_partition::partition_to_groups_amortized;
 use polars_core::export::ahash::RandomState;
 use polars_core::frame::row::AnyValueBuffer;
+use polars_core::hashing::hash_to_partition;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_set_partition_size;
 use polars_core::POOL;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
-use polars_utils::{hash_to_partition, HashSingle};
+use polars_utils::HashSingle;
 use rayon::prelude::*;
 
 use super::aggregates::AggregateFn;
@@ -29,11 +32,12 @@ use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
 use crate::pipeline::FORCE_OOC_GROUPBY;
+use serde::{Serialize, Deserialize};
 
 // hash + value
-#[derive(Eq, Copy, Clone)]
+#[derive(Eq, Copy, Clone, Serialize, Deserialize)]
 struct Key<T: Copy> {
-    hash: u64,
+    pub(super) hash: u64,
     value: T,
 }
 
@@ -146,7 +150,7 @@ where
     }
 
     #[inline]
-    fn number_of_aggs(&self) -> usize {
+    pub(super) fn number_of_aggs(&self) -> usize {
         self.aggregation_columns.len()
     }
 
@@ -269,72 +273,6 @@ where
             self.aggregation_series.push(s.rechunk());
         }
         Ok(s)
-    }
-
-    fn sink_ooc(
-        &mut self,
-        context: &PExecutionContext,
-        chunk: DataChunk,
-    ) -> PolarsResult<SinkResult> {
-        let s = self.prepare_key_and_aggregation_series(context, &chunk)?;
-        // cow -> &series -> &dyn series_trait -> &chunkedarray
-        let ca: &ChunkedArray<K> = s.as_ref().as_ref();
-
-        // ensure the hashes are set
-        s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
-
-        let arr = ca.downcast_iter().next().unwrap();
-        let pre_agg_len = self.pre_agg_partitions.len();
-
-        // set all bits to false
-        self.ooc_state.reset_ooc_filter_rows(ca.len());
-
-        // this reuses the hashes buffer as [u64] as idx buffer as [idxsize]
-        // write the hashes to self.hashes buffer
-        // s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
-        // now we have written hashes, we take the pointer to this buffer
-        // we will write the aggregation_function indexes in the same buffer
-        // this is unsafe and we must check that we only write the hashes that
-        // already read/taken. So we write on the slots we just read
-        let agg_idx_ptr = self.hashes.as_ptr() as *mut u64 as *mut IdxSize;
-
-        // different from standard sink
-        // we only set aggregation idx when the entry in the hashmap already
-        // exists. This way we don't grow the hashmap
-        // rows that are not processed are sinked to disk and loaded in a second pass
-        let mut processed = 0;
-        for (iteration_idx, (opt_v, &h)) in arr.iter().zip(self.hashes.iter()).enumerate() {
-            let opt_v = opt_v.copied();
-            if let Some(agg_idx) =
-                try_insert_and_get(h, opt_v, pre_agg_len, &mut self.pre_agg_partitions)
-            {
-                // # Safety
-                // we write to the hashes buffer we iterate over at the moment.
-                // this is sound because the writes are trailing from iteration
-                unsafe { write_agg_idx(agg_idx_ptr, processed, agg_idx) };
-                processed += 1;
-            } else {
-                // set this row to true: e.g. processed ooc
-                // safety: we correctly set the length with `reset_ooc_filter_rows`
-                unsafe {
-                    self.ooc_state.set_row_as_ooc(iteration_idx);
-                }
-            }
-        }
-
-        let agg_idxs = unsafe { std::slice::from_raw_parts(agg_idx_ptr, processed) };
-        apply_aggregation(
-            agg_idxs,
-            &chunk,
-            self.number_of_aggs(),
-            &self.aggregation_series,
-            &self.agg_fns,
-            &mut self.aggregators,
-        );
-
-        self.ooc_state.dump(chunk.data, &mut self.hashes);
-
-        Ok(SinkResult::CanHaveMoreInput)
     }
 }
 
@@ -514,27 +452,6 @@ where
             offset
         }
         RawEntryMut::Occupied(entry) => *entry.get(),
-    }
-}
-
-fn try_insert_and_get<T>(
-    h: u64,
-    opt_v: Option<T>,
-    pre_agg_len: usize,
-    pre_agg_partitions: &mut Vec<PlIdHashMap<Key<Option<T>>, IdxSize>>,
-) -> Option<IdxSize>
-where
-    T: NumericNative + Hash,
-{
-    let part = hash_to_partition(h, pre_agg_len);
-    let current_partition = unsafe { pre_agg_partitions.get_unchecked_release_mut(part) };
-
-    let entry = current_partition
-        .raw_entry_mut()
-        .from_hash(h, |k| k.value == opt_v);
-    match entry {
-        RawEntryMut::Vacant(_) => None,
-        RawEntryMut::Occupied(entry) => Some(*entry.get()),
     }
 }
 

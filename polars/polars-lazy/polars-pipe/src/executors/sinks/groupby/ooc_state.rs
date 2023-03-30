@@ -2,6 +2,7 @@ use std::sync::Mutex;
 
 use polars_arrow::export::arrow::bitmap::utils::set_bit_unchecked;
 use polars_core::config::verbose;
+use polars_core::hashing::hash_to_partition;
 use polars_core::prelude::*;
 
 use crate::executors::sinks::groupby::MEMORY_FRACTION_THRESHOLD;
@@ -79,7 +80,7 @@ impl OocState {
         // determine partitions
         let parts = unsafe { UInt64Chunked::mmap_slice("", hashes) };
         let parts = parts.filter(&mask).unwrap();
-        let parts = parts.apply_in_place(|h| h & (PARTITION_SIZE as u64 - 1));
+        let parts = parts.apply_in_place(|h| hash_to_partition(h, PARTITION_SIZE) as u64);
         let gt = parts.group_tuples_perfect(
             PARTITION_SIZE - 1,
             false,

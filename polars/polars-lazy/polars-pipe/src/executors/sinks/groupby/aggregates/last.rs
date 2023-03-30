@@ -3,10 +3,12 @@ use std::any::Any;
 use polars_core::datatypes::DataType;
 use polars_core::prelude::{AnyValue, Series};
 use polars_utils::unwrap::UnwrapUncheckedRelease;
+use serde::{Deserialize, Serialize};
 
 use crate::executors::sinks::groupby::aggregates::AggregateFn;
 use crate::operators::IdxSize;
 
+#[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct LastAgg {
     chunk_idx: IdxSize,
     last: AnyValue<'static>,

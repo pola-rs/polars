@@ -4,6 +4,7 @@ use std::cmp::Ordering;
 use enum_dispatch::enum_dispatch;
 use polars_core::datatypes::DataType;
 use polars_core::prelude::{AnyValue, Series};
+use serde::{Deserialize, Serialize};
 
 use crate::executors::sinks::groupby::aggregates::count::CountAgg;
 use crate::executors::sinks::groupby::aggregates::first::FirstAgg;
@@ -70,6 +71,7 @@ pub(crate) trait AggregateFn: Send + Sync {
 // We dispatch via an enum
 // as that saves an indirection
 #[enum_dispatch]
+#[derive(Clone, Serialize, Deserialize)]
 pub(crate) enum AggregateFunction {
     First(FirstAgg),
     Last(LastAgg),
@@ -83,15 +85,26 @@ pub(crate) enum AggregateFunction {
     MeanF32(MeanAgg<f32>),
     MeanF64(MeanAgg<f64>),
     Null(NullAgg),
+    // TODO! make this serde
+    #[serde(skip)]
     MinMaxF32(MinMaxAgg<f32, fn(&f32, &f32) -> Ordering>),
+    #[serde(skip)]
     MinMaxF64(MinMaxAgg<f64, fn(&f64, &f64) -> Ordering>),
+    #[serde(skip)]
     MinMaxU8(MinMaxAgg<u8, fn(&u8, &u8) -> Ordering>),
+    #[serde(skip)]
     MinMaxU16(MinMaxAgg<u16, fn(&u16, &u16) -> Ordering>),
+    #[serde(skip)]
     MinMaxU32(MinMaxAgg<u32, fn(&u32, &u32) -> Ordering>),
+    #[serde(skip)]
     MinMaxU64(MinMaxAgg<u64, fn(&u64, &u64) -> Ordering>),
+    #[serde(skip)]
     MinMaxI8(MinMaxAgg<i8, fn(&i8, &i8) -> Ordering>),
+    #[serde(skip)]
     MinMaxI16(MinMaxAgg<i16, fn(&i16, &i16) -> Ordering>),
+    #[serde(skip)]
     MinMaxI32(MinMaxAgg<i32, fn(&i32, &i32) -> Ordering>),
+    #[serde(skip)]
     MinMaxI64(MinMaxAgg<i64, fn(&i64, &i64) -> Ordering>),
 }
 

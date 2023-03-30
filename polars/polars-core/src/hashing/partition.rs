@@ -112,10 +112,17 @@ impl<'a> AsU64 for BytesHash<'a> {
     }
 }
 
-#[inline]
+#[inline(always)]
 /// For partitions that are a power of 2 we can use a bitshift instead of a modulo.
-pub(crate) fn this_partition(h: u64, thread_no: u64, n_partitions: u64) -> bool {
+pub fn this_partition(h: u64, thread_no: u64, n_partitions: u64) -> bool {
     debug_assert!(n_partitions.is_power_of_two());
     // n % 2^i = n & (2^i - 1)
     (h.wrapping_add(thread_no)) & n_partitions.wrapping_sub(1) == 0
+}
+
+#[inline(always)]
+pub fn hash_to_partition(h: u64, n_partitions: usize) -> usize {
+    debug_assert!(n_partitions.is_power_of_two());
+    // n % 2^i = n & (2^i - 1)
+    h as usize & n_partitions.wrapping_sub(1)
 }

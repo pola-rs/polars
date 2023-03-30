@@ -1619,6 +1619,7 @@ dependencies = [
  "polars-row",
  "polars-utils",
  "rayon",
+ "serde",
  "smartstring",
 ]
 

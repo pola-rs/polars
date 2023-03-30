@@ -8,7 +8,7 @@ use std::hash::{BuildHasher, BuildHasherDefault, Hash, Hasher};
 use ahash::RandomState;
 pub use fx::*;
 pub use identity::*;
-pub(crate) use partition::*;
+pub use partition::*;
 pub use vector_hasher::*;
 
 use crate::prelude::*;
