@@ -20,12 +20,13 @@ polars-ops = { version = "0.28.0", path = "../../polars-ops", features = ["searc
 polars-plan = { version = "0.28.0", path = "../polars-plan", default-features = false, features = ["compile"] }
 polars-row = { version = "0.28.0", path = "../../polars-row" }
 polars-utils = { version = "0.28.0", path = "../../polars-utils", features = ["sysinfo"] }
+postcard = { version = "1.0", optional = true }
 rayon.workspace = true
 serde = { version = "1.0", optional = true }
 smartstring = { version = "1" }
 
 [features]
-compile = ["enum_dispatch", "crossbeam-channel", "serde"]
+compile = ["enum_dispatch", "crossbeam-channel", "serde", "postcard"]
 csv-file = ["polars-plan/csv-file", "polars-io/csv-file"]
 parquet = ["polars-plan/parquet", "polars-io/parquet"]
 ipc = ["polars-plan/ipc", "polars-io/ipc"]

@@ -19,6 +19,7 @@ use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 use polars_utils::HashSingle;
 use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use super::aggregates::AggregateFn;
 use crate::executors::sinks::groupby::aggregates::AggregateFunction;
@@ -32,7 +33,6 @@ use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
 use crate::pipeline::FORCE_OOC_GROUPBY;
-use serde::{Serialize, Deserialize};
 
 // hash + value
 #[derive(Eq, Copy, Clone, Serialize, Deserialize)]

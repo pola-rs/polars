@@ -90,31 +90,32 @@ where
         // - a vec with values
         // these vecs will then be serialized to disk on used later to intialize the state of the groupby
         // sink of that partition
-        let states= POOL.install(|| {
-            (0..PARTITION_SIZE).into_par_iter().map(|partition_idx| {
-                let mut keys = Vec::with_capacity(cap);
-                let mut aggregators = Vec::with_capacity(self.number_of_aggs() * cap);
+        let states = POOL.install(|| {
+            (0..PARTITION_SIZE)
+                .into_par_iter()
+                .map(|partition_idx| {
+                    let mut keys = Vec::with_capacity(cap);
+                    let mut aggregators = Vec::with_capacity(self.number_of_aggs() * cap);
 
-                self.pre_agg_partitions.iter().for_each(|agg_map| {
-                    agg_map.iter().for_each(|(k, idx)| {
-                        if this_partition(k.hash, partition_idx as u64, PARTITION_SIZE as u64) {
-                            keys.push(*k);
-                            let start = *idx as usize;
-                            let end = start + self.number_of_aggs();
+                    self.pre_agg_partitions.iter().for_each(|agg_map| {
+                        agg_map.iter().for_each(|(k, idx)| {
+                            if this_partition(k.hash, partition_idx as u64, PARTITION_SIZE as u64) {
+                                keys.push(*k);
+                                let start = *idx as usize;
+                                let end = start + self.number_of_aggs();
 
-                            // safety: idx is in bounds
-                            unsafe {
-                                aggregators
-                                    .extend_from_slice(self.aggregators.get_unchecked(start..end))
+                                // safety: idx is in bounds
+                                unsafe {
+                                    aggregators.extend_from_slice(
+                                        self.aggregators.get_unchecked(start..end),
+                                    )
+                                }
                             }
-                        }
+                        });
                     });
-                });
-                HashMapState {
-                    keys,
-                    aggregators
-                }
-            }).collect::<Vec<_>>()
+                    HashMapState { keys, aggregators }
+                })
+                .collect::<Vec<_>>()
         });
 
         todo!()
