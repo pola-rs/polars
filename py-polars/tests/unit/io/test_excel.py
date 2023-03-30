@@ -51,7 +51,7 @@ def test_read_excel_all_sheets(excel_file_path: Path) -> None:
             "column_totals": True,
             "float_precision": 0,
         },
-        # slightly customised formatting
+        # slightly customised formatting, with some formulas
         {
             "position": (0, 0),
             "table_style": {
@@ -59,9 +59,23 @@ def test_read_excel_all_sheets(excel_file_path: Path) -> None:
                 "first_column": True,
             },
             "conditional_formats": {"val": "data_bar"},
-            "column_formats": {"val": "#,##0.000;[White]-#,##0.000"},
+            "column_formats": {
+                "val": "#,##0.000;[White]-#,##0.000",
+                ("day", "month", "year"): {"align": "left", "num_format": "0"},
+            },
             "column_widths": {"val": 100},
             "row_heights": {0: 35},
+            "formulas": {
+                # string: formula added to the end of the table (but before row_totals)
+                "day": "=DAY([@dtm])",
+                "month": "=MONTH([@dtm])",
+                "year": {
+                    # dict: full control over formula positioning/dtype
+                    "formula": "=YEAR([@dtm])",
+                    "insert_after": "month",
+                    "return_type": pl.Int16,
+                },
+            },
             "column_totals": True,
             "row_totals": True,
         },
@@ -108,9 +122,7 @@ def test_read_excel_all_sheets(excel_file_path: Path) -> None:
                 pl.FLOAT_DTYPES: '_(£* #,##0.00_);_(£* (#,##0.00);_(£* "-"??_);_(@_)',
                 pl.Date: "dd-mm-yyyy",
             },
-            "column_formats": {
-                "dtm": {"font_color": "#31869c", "bg_color": "#b7dee8"},
-            },
+            "column_formats": {"dtm": {"font_color": "#31869c", "bg_color": "#b7dee8"}},
             "column_totals": {"val": "average", "dtm": "min"},
             "column_widths": {("str", "val"): 60, "dtm": 80},
             "row_totals": {"tot": True},
