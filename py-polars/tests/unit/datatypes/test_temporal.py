@@ -1936,10 +1936,10 @@ def test_strptime_with_invalid_tz() -> None:
         pl.Series(["2020-01-01 03:00:00"]).str.strptime(pl.Datetime("us", "foo"))
     with pytest.raises(
         ComputeError,
-        match="cannot use strptime with both 'tz_aware=True' and tz-aware datetime",
+        match="cannot use strptime with both a tz-aware format and a tz-aware dtype",
     ):
         pl.Series(["2020-01-01 03:00:00+01:00"]).str.strptime(
-            pl.Datetime("us", "foo"), "%Y-%m-%d %H:%M:%S%z", tz_aware=True
+            pl.Datetime("us", "foo"), "%Y-%m-%d %H:%M:%S%z"
         )
     with pytest.raises(
         ComputeError,

@@ -387,5 +387,9 @@ def test_tz_aware_without_fmt() -> None:
             r"^passing 'tz_aware=True' without 'fmt' is not yet supported, "
             r"please specify 'fmt'$"
         ),
+    ), pytest.warns(
+        DeprecationWarning,
+        match="`tz_aware` is now auto-inferred from `fmt` and will be removed "
+        "in a future version. You can safely drop this argument.",
     ):
         pl.Series(["2020-01-01"]).str.strptime(pl.Datetime, tz_aware=True)
