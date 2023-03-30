@@ -229,6 +229,8 @@ fn agg_list_list<F: Fn(&ListChunked, bool, &mut Vec<i64>, &mut i64, &mut Vec<Arr
     groups_len: usize,
     func: F,
 ) -> Series {
+    let inner_dtype = ca.inner_dtype();
+    let inner_dtype_physical = inner_dtype.to_physical();
     let can_fast_explode = true;
     let mut offsets = Vec::<i64>::with_capacity(groups_len + 1);
     let mut length_so_far = 0i64;
@@ -263,7 +265,13 @@ fn agg_list_list<F: Fn(&ListChunked, bool, &mut Vec<i64>, &mut i64, &mut Vec<Arr
     if can_fast_explode {
         listarr.set_fast_explode()
     }
-    listarr.into_series()
+    if inner_dtype_physical != inner_dtype {
+        listarr
+            .cast(&DataType::List(Box::new(ca.dtype().clone())))
+            .unwrap()
+    } else {
+        listarr.into_series()
+    }
 }
 
 impl AggList for ListChunked {

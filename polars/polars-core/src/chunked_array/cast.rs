@@ -301,7 +301,15 @@ impl ChunkCast for ListChunked {
                     }
                     _ => {
                         let arr = cast_list(self, child_type)?.0;
-                        Series::try_from((self.name(), arr))
+                        // Safety: we just casted so the dtype matches.
+                        // we must take this path to correct for physical types.
+                        unsafe {
+                            Ok(Series::from_chunks_and_dtype_unchecked(
+                                self.name(),
+                                vec![arr],
+                                data_type,
+                            ))
+                        }
                     }
                 }
             }
