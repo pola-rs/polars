@@ -165,6 +165,22 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
     assert_frame_equal(df, xldf)
 
 
+def test_excel_compound_types() -> None:
+    df = pl.DataFrame(
+        {"x": [[1, 2], [3, 4], [5, 6]], "y": ["a", "b", "c"], "z": [9, 8, 7]}
+    ).select("x", pl.struct(["y", "z"]))
+
+    xls = BytesIO()
+    df.write_excel(xls, worksheet="data")
+
+    xldf = pl.read_excel(xls, sheet_name="data")  # type: ignore[call-overload]
+    assert xldf.rows() == [
+        ("[1, 2]", "{'y': 'a', 'z': 9}"),
+        ("[3, 4]", "{'y': 'b', 'z': 8}"),
+        ("[5, 6]", "{'y': 'c', 'z': 7}"),
+    ]
+
+
 def test_excel_sparklines() -> None:
     from xlsxwriter import Workbook
 

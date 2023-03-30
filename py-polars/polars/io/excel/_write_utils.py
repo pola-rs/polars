@@ -12,6 +12,9 @@ from polars.datatypes import (
     Date,
     Datetime,
     Float64,
+    List,
+    Object,
+    Struct,
     Time,
 )
 from polars.dependencies import json
@@ -24,7 +27,7 @@ if TYPE_CHECKING:
     from xlsxwriter.format import Format
     from xlsxwriter.worksheet import Worksheet
 
-    from polars.dataframe import DataFrame
+    from polars.internals import DataFrame, Series
     from polars.type_aliases import (
         ColumnTotalsDefinition,
         ConditionalFormatDict,
@@ -312,6 +315,19 @@ def _xl_setup_table_columns(
     float_precision: int = 3,
 ) -> tuple[list[dict[str, Any]], dict[str | tuple[str, ...], str], DataFrame]:
     """Setup and unify all column-related formatting/defaults."""
+
+    # no excel support for compound types; cast to their simple string representation
+    def _map_str(s: Series) -> Series:
+        return s.__class__(s.name, [str(v) for v in s.to_list()])
+
+    cast_cols = [
+        F.col(col).map(_map_str).alias(col)
+        for col, tp in df.schema.items()
+        if tp in (List, Struct, Object)
+    ]
+    if cast_cols:
+        df = df.with_columns(cast_cols)
+
     column_totals = _unpack_multi_column_dict(column_totals)  # type: ignore[assignment]
     column_formats = _unpack_multi_column_dict(column_formats)  # type: ignore[assignment]
 
