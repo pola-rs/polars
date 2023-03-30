@@ -816,25 +816,6 @@ mod test {
     }
 
     #[test]
-    #[should_panic]
-    fn test_panic_integer_temporal_combine() {
-        let df = DataFrame::new_no_checks(vec![]);
-        let _ = df.groupby_dynamic(
-            vec![],
-            &DynamicGroupOptions {
-                index_column: "date".into(),
-                every: Duration::parse("1h"),
-                period: Duration::parse("1i"),
-                offset: Duration::parse("0h"),
-                truncate: true,
-                include_boundaries: true,
-                closed_window: ClosedWindow::Both,
-                start_by: Default::default(),
-            },
-        );
-    }
-
-    #[test]
     fn test_truncate_offset() -> PolarsResult<()> {
         let start = NaiveDate::from_ymd_opt(2021, 3, 1)
             .unwrap()
