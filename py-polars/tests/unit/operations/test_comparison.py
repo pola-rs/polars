@@ -18,3 +18,14 @@ def test_comparison_nulls_single() -> None:
     )
     assert (df1 == df2).row(0) == (True, True, True)
     assert (df1 != df2).row(0) == (False, False, False)
+
+
+def test_offset_handling_arg_where_7863() -> None:
+    df_check = pl.DataFrame({"a": [0, 1]})
+    df_check.select((pl.lit(0).append(pl.col("a")).append(0)) != 0)
+    assert (
+        df_check.select((pl.lit(0).append(pl.col("a")).append(0)) != 0)
+        .select(pl.col("literal").arg_true())
+        .item()
+        == 2
+    )

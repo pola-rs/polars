@@ -21,7 +21,7 @@ pub(super) fn arg_where(s: &mut [Series]) -> PolarsResult<Option<Series>> {
             for (offset, len) in SlicesIterator::new(&values) {
                 // law of small numbers optimization
                 if len == 1 {
-                    out.push(offset as IdxSize)
+                    out.push((total_offset + offset) as IdxSize)
                 } else {
                     let offset = (offset + total_offset) as IdxSize;
                     let len = len as IdxSize;
