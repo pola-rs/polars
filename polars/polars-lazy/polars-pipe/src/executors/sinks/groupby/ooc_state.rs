@@ -5,7 +5,7 @@ use polars_core::config::verbose;
 use polars_core::hashing::hash_to_partition;
 use polars_core::prelude::*;
 
-use crate::executors::sinks::groupby::MEMORY_FRACTION_THRESHOLD;
+use crate::executors::sinks::groupby::constants::MEMORY_FRACTION_THRESHOLD;
 use crate::executors::sinks::io::IOThread;
 use crate::executors::sinks::memory::MemTracker;
 use crate::pipeline::{morsels_per_sink, PARTITION_SIZE};

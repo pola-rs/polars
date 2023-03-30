@@ -1,13 +1,16 @@
+use std::io::Write;
+
 use polars_core::hashing::this_partition;
 use serde::{Deserialize, Serialize};
 
+use super::super::constants::PARTITION_HASHMAP_STATE_NAME;
 use super::*;
 use crate::pipeline::PARTITION_SIZE;
 
 impl<K: PolarsNumericType> PrimitiveGroupbySink<K>
 where
     ChunkedArray<K>: IntoSeries,
-    K::Native: Hash,
+    K::Native: Hash + Serialize,
 {
     pub(super) fn sink_ooc(
         &mut self,
@@ -83,6 +86,9 @@ where
             .sum::<usize>();
         // an estimation
         let cap = total_len * 2 / PARTITION_SIZE;
+        let iot = self.ooc_state.io_thread.lock().unwrap();
+        let io_dir = iot.as_ref().unwrap().dir.clone();
+        drop(iot);
 
         // we partition the hashmaps into our partitions on disk
         // we create:
@@ -90,10 +96,10 @@ where
         // - a vec with values
         // these vecs will then be serialized to disk on used later to intialize the state of the groupby
         // sink of that partition
-        let states = POOL.install(|| {
+        POOL.install(|| {
             (0..PARTITION_SIZE)
                 .into_par_iter()
-                .map(|partition_idx| {
+                .for_each(|partition_idx| {
                     let mut keys = Vec::with_capacity(cap);
                     let mut aggregators = Vec::with_capacity(self.number_of_aggs() * cap);
 
@@ -113,12 +119,18 @@ where
                             }
                         });
                     });
-                    HashMapState { keys, aggregators }
-                })
-                .collect::<Vec<_>>()
-        });
+                    let state = HashMapState { keys, aggregators };
+                    let ser_state = bincode::serialize(&state).unwrap();
+                    drop(state);
 
-        todo!()
+                    let mut path = io_dir.clone();
+                    path.push(format!("{partition_idx}/{PARTITION_HASHMAP_STATE_NAME}"));
+
+                    let mut file = std::fs::File::create(path).unwrap();
+                    file.write_all(&ser_state).unwrap();
+                })
+        });
+        Ok(())
     }
 }
 
