@@ -88,7 +88,7 @@ class HTMLFormatter:
                         if c == -1:
                             self.elements.append("&hellip;")
                         else:
-                            self.elements.append(columns[c])
+                            self.elements.append(html.escape(columns[c]))
             with Tag(self.elements, "tr"):
                 dtypes = self.df._df.dtype_strings()
                 for c in self.col_idx:
@@ -110,7 +110,6 @@ class HTMLFormatter:
                                 self.elements.append("&hellip;")
                             else:
                                 series = self.df[:, c]
-
                                 self.elements.append(
                                     html.escape(series._s.get_fmt(r, str_lengths))
                                 )
