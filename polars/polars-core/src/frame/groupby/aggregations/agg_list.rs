@@ -266,12 +266,9 @@ fn agg_list_list<F: Fn(&ListChunked, bool, &mut Vec<i64>, &mut i64, &mut Vec<Arr
         listarr.set_fast_explode()
     }
     if inner_dtype_physical != inner_dtype {
-        listarr
-            .cast(&DataType::List(Box::new(ca.dtype().clone())))
-            .unwrap()
-    } else {
-        listarr.into_series()
+        listarr.to_logical(DataType::List(Box::new(inner_dtype)));
     }
+    listarr.into_series()
 }
 
 impl AggList for ListChunked {
