@@ -26,6 +26,7 @@ class StringNameSpace:
         self,
         datatype: PolarsTemporalType,
         fmt: str | None = None,
+        *,
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
@@ -188,7 +189,7 @@ class StringNameSpace:
         """
 
     def contains(
-        self, pattern: str | Expr, literal: bool = False, strict: bool = True
+        self, pattern: str | Expr, *, literal: bool = False, strict: bool = True
     ) -> Series:
         """
         Check if strings in Series contain a substring that matches a regex.
@@ -496,7 +497,7 @@ class StringNameSpace:
 
         """
 
-    def split(self, by: str, inclusive: bool = False) -> Series:
+    def split(self, by: str, *, inclusive: bool = False) -> Series:
         """
         Split the string by a substring.
 
@@ -513,7 +514,7 @@ class StringNameSpace:
 
         """
 
-    def split_exact(self, by: str, n: int, inclusive: bool = False) -> Series:
+    def split_exact(self, by: str, n: int, *, inclusive: bool = False) -> Series:
         """
         Split the string by a substring using ``n`` splits.
 
@@ -632,7 +633,7 @@ class StringNameSpace:
         return s.to_frame().select(F.col(s.name).str.splitn(by, n)).to_series()
 
     def replace(
-        self, pattern: str, value: str, literal: bool = False, *, n: int = 1
+        self, pattern: str, value: str, *, literal: bool = False, n: int = 1
     ) -> Series:
         r"""
         Replace first matching regex/literal substring with a new string value.
@@ -665,7 +666,7 @@ class StringNameSpace:
 
         """
 
-    def replace_all(self, pattern: str, value: str, literal: bool = False) -> Series:
+    def replace_all(self, pattern: str, value: str, *, literal: bool = False) -> Series:
         """
         Replace all matching regex/literal substrings with a new string value.
 
@@ -951,7 +952,7 @@ class StringNameSpace:
 
         """
 
-    def parse_int(self, radix: int = 2, strict: bool = True) -> Series:
+    def parse_int(self, radix: int = 2, *, strict: bool = True) -> Series:
         r"""
         Parse integers with base radix from strings.
 
@@ -974,7 +975,7 @@ class StringNameSpace:
         Examples
         --------
         >>> s = pl.Series("bin", ["110", "101", "010", "invalid"])
-        >>> s.str.parse_int(2, False)
+        >>> s.str.parse_int(2, strict=False)
         shape: (4,)
         Series: 'bin' [i32]
         [

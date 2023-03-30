@@ -9,7 +9,6 @@ from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
 from polars.utils._wrap import wrap_expr
 from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.decorators import deprecated_alias, redirect
 
 if TYPE_CHECKING:
     from datetime import timedelta
@@ -18,13 +17,6 @@ if TYPE_CHECKING:
     from polars.type_aliases import EpochTimeUnit, TimeUnit
 
 
-@redirect(
-    {
-        "tz_localize": "replace_time_zone",
-        "with_time_zone": "convert_time_zone",
-        "cast_time_zone": "replace_time_zone",
-    }
-)
 class ExprDateTimeNameSpace:
     """Namespace for datetime related expressions."""
 
@@ -885,7 +877,7 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.minute())
 
-    def second(self, fractional: bool = False) -> Expr:
+    def second(self, *, fractional: bool = False) -> Expr:
         """
         Extract seconds from underlying DateTime representation.
 
@@ -1218,7 +1210,6 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.dt_cast_time_unit(tu))
 
-    @deprecated_alias(tz="time_zone")
     def convert_time_zone(self, time_zone: str) -> Expr:
         """
         Convert to given time zone for a Series of type Datetime.
@@ -1245,7 +1236,7 @@ class ExprDateTimeNameSpace:
         ...     [
         ...         pl.col("date"),
         ...         pl.col("date")
-        ...         .dt.convert_time_zone(tz="Europe/London")
+        ...         .dt.convert_time_zone(time_zone="Europe/London")
         ...         .alias("London"),
         ...     ]
         ... )
@@ -1262,7 +1253,6 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.dt_convert_time_zone(time_zone))
 
-    @deprecated_alias(tz="time_zone")
     def replace_time_zone(self, time_zone: str | None) -> Expr:
         """
         Replace time zone for a Series of type Datetime.
@@ -1285,14 +1275,14 @@ class ExprDateTimeNameSpace:
         ...             datetime(2020, 7, 1),
         ...             "1mo",
         ...             time_zone="UTC",
-        ...         ).dt.convert_time_zone(tz="Europe/London"),
+        ...         ).dt.convert_time_zone(time_zone="Europe/London"),
         ...     }
         ... )
         >>> df.select(
         ...     [
         ...         pl.col("london_timezone"),
         ...         pl.col("london_timezone")
-        ...         .dt.replace_time_zone(tz="Europe/Amsterdam")
+        ...         .dt.replace_time_zone(time_zone="Europe/Amsterdam")
         ...         .alias("London_to_Amsterdam"),
         ...     ]
         ... )
