@@ -499,3 +499,28 @@ def test_invalid_inner_type_cast_list() -> None:
         pl.ComputeError, match=r"cannot cast list inner type: 'Int64' to Categorical"
     ):
         s.cast(pl.List(pl.Categorical))
+
+
+@pytest.mark.parametrize(
+    ("every", "match"),
+    [
+        ("-1i", r"'every' argument must be positive"),
+        (
+            "2h",
+            r"you cannot combine time durations like '2h' with integer durations like '3i'",
+        ),
+    ],
+)
+def test_groupby_dynamic_validation(every: str, match: str) -> None:
+    df = pl.DataFrame(
+        {
+            "index": [0, 0, 1, 1],
+            "group": ["banana", "pear", "banana", "pear"],
+            "weight": [2, 3, 5, 7],
+        }
+    )
+
+    with pytest.raises(pl.ComputeError, match=match):
+        df.groupby_dynamic("index", by="group", every=every, period="2i").agg(
+            pl.col("weight")
+        )

@@ -107,9 +107,7 @@ impl Wrap<&DataFrame> {
         let time = self.0.column(&options.index_column)?.clone();
         let time_type = time.dtype();
 
-        if time.null_count() > 0 {
-            panic!("null values in dynamic groupby not yet supported, fill nulls.")
-        }
+        polars_ensure!(time.null_count() == 0, ComputeError: "null values in dynamic groupby not supported, fill nulls.");
 
         use DataType::*;
         let (dt, tu, tz): (Series, TimeUnit, Option<TimeZone>) = match time_type {
@@ -173,20 +171,18 @@ impl Wrap<&DataFrame> {
         options: &DynamicGroupOptions,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
         if options.offset.parsed_int || options.every.parsed_int || options.period.parsed_int {
-            assert!(
-                (options.offset.parsed_int || options.offset.is_zero())
+            polars_ensure!(
+                ((options.offset.parsed_int || options.offset.is_zero())
                     && (options.every.parsed_int || options.every.is_zero())
-                    && (options.period.parsed_int || options.period.is_zero()),
-                "you cannot combine time durations like '2h' with integer durations like '3i'"
+                    && (options.period.parsed_int || options.period.is_zero())),
+                ComputeError: "you cannot combine time durations like '2h' with integer durations like '3i'"
             )
         }
 
         let time = self.0.column(&options.index_column)?.rechunk();
         let time_type = time.dtype();
 
-        if time.null_count() > 0 {
-            panic!("null values in dynamic groupby not yet supported, fill nulls.")
-        }
+        polars_ensure!(time.null_count() == 0, ComputeError: "null values in dynamic groupby not supported, fill nulls.");
 
         use DataType::*;
         let (dt, tu) = match time_type {
@@ -238,9 +234,12 @@ impl Wrap<&DataFrame> {
         tu: TimeUnit,
         time_type: &DataType,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
+        polars_ensure!(!options.every.negative, ComputeError: "'every' argument must be positive");
         if dt.is_empty() {
             return dt.cast(time_type).map(|s| (s, by, GroupsProxy::default()));
         }
+
+        let sorted_set = matches!(dt.is_sorted_flag(), IsSorted::Ascending);
         // a requirement for the index
         // so we can set this such that downstream code has this info
         dt.set_sorted_flag(IsSorted::Ascending);
@@ -279,7 +278,9 @@ impl Wrap<&DataFrame> {
         let groups = if by.is_empty() {
             let vals = dt.downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
-            partially_check_sorted(ts);
+            if !sorted_set {
+                partially_check_sorted(ts);
+            }
             let (groups, lower, upper) = groupby_windows(
                 w,
                 ts,
