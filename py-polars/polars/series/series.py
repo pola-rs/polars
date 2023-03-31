@@ -662,14 +662,8 @@ class Series:
             raise ValueError("first cast to integer before multiplying datelike dtypes")
         return self._arithmetic(other, "mul", "mul_<>")
 
-    def __pow__(self, power: int | float | Series) -> Series:
-        if self.is_temporal():
-            raise ValueError(
-                "first cast to integer before raising datelike dtypes to a power"
-            )
-        if _check_for_numpy(power) and isinstance(power, np.ndarray):
-            power = Series(power)
-        return self.to_frame().select(F.col(self.name).pow(power)).to_series()
+    def __pow__(self, exponent: int | float | Series) -> Series:
+        return self.pow(exponent)
 
     def __rpow__(self, other: Any) -> Series:
         if self.is_temporal():
@@ -1270,6 +1264,37 @@ class Series:
     def product(self) -> int | float:
         """Reduce this Series to the product value."""
         return self.to_frame().select(F.col(self.name).product()).to_series()[0]
+
+    def pow(self, exponent: int | float | Series) -> Series:
+        """
+        Raise to the power of the given exponent.
+
+        Parameters
+        ----------
+        exponent
+            The exponent. Accepts Series input.
+
+        Examples
+        --------
+        >>> s = pl.Series("foo", [1, 2, 3, 4])
+        >>> s.pow(3)
+        shape: (4,)
+        Series: 'foo' [f64]
+        [
+                1.0
+                8.0
+                27.0
+                64.0
+        ]
+
+        """
+        if self.is_temporal():
+            raise ValueError(
+                "first cast to integer before raising datelike dtypes to a power"
+            )
+        if _check_for_numpy(exponent) and isinstance(exponent, np.ndarray):
+            exponent = Series(exponent)
+        return self.to_frame().select(F.col(self.name).pow(exponent)).to_series()
 
     def min(self) -> PythonLiteral | None:
         """
