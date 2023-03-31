@@ -1,8 +1,5 @@
-#[cfg(not(feature = "streaming"))]
 use polars_core::utils::{accumulate_dataframes_vertical, split_df};
-#[cfg(not(feature = "streaming"))]
 use polars_core::POOL;
-#[cfg(not(feature = "streaming"))]
 use rayon::prelude::*;
 
 use super::*;
@@ -66,7 +63,6 @@ fn compute_keys(
     keys.iter().map(|s| s.evaluate(df, state)).collect()
 }
 
-#[cfg(not(feature = "streaming"))]
 fn run_partitions(
     df: &mut DataFrame,
     exec: &PartitionGroupByExec,
@@ -231,25 +227,11 @@ fn can_run_partitioned(
 
 impl PartitionGroupByExec {
     #[cfg(feature = "streaming")]
-    fn execute_impl(
+    fn run_streaming(
         &mut self,
         state: &mut ExecutionState,
-        #[allow(unused_mut)] mut original_df: DataFrame,
-    ) -> PolarsResult<DataFrame> {
-        let keys = self.keys(&original_df, state)?;
-
-        if !can_run_partitioned(&keys, &original_df, state, self.from_partitioned_ds)? {
-            return groupby_helper(
-                original_df,
-                keys,
-                &self.phys_aggs,
-                None,
-                state,
-                self.maintain_order,
-                self.slice,
-            );
-        }
-
+        original_df: DataFrame,
+    ) -> Option<PolarsResult<DataFrame>> {
         let lp = LogicalPlan::Aggregate {
             input: Box::new(original_df.lazy().logical_plan),
             keys: Arc::new(std::mem::take(&mut self.keys)),
@@ -265,23 +247,28 @@ impl PartitionGroupByExec {
         let mut expr_arena = Default::default();
         let mut lp_arena = Default::default();
         let node = to_alp(lp, &mut expr_arena, &mut lp_arena).unwrap();
-        assert!(streaming::insert_streaming_nodes(
+
+        let inserted = streaming::insert_streaming_nodes(
             node,
             &mut lp_arena,
             &mut expr_arena,
             &mut vec![],
-            false
+            false,
         )
-        .unwrap());
-        let mut phys_plan = create_physical_plan(node, &mut lp_arena, &mut expr_arena).unwrap();
+        .unwrap();
 
-        if state.verbose() {
-            eprintln!("run PARTITIONED(streaming) HASH AGGREGATION")
+        if inserted {
+            let mut phys_plan = create_physical_plan(node, &mut lp_arena, &mut expr_arena).unwrap();
+
+            if state.verbose() {
+                eprintln!("run STREAMING HASH AGGREGATION")
+            }
+            Some(phys_plan.execute(state))
+        } else {
+            None
         }
-        phys_plan.execute(state)
     }
 
-    #[cfg(not(feature = "streaming"))]
     fn execute_impl(
         &mut self,
         state: &mut ExecutionState,
@@ -304,6 +291,11 @@ impl PartitionGroupByExec {
                     self.maintain_order,
                     self.slice,
                 );
+            }
+
+            #[cfg(feature = "streaming")]
+            if let Some(out) = self.run_streaming(state, original_df.clone()) {
+                return out;
             }
 
             if state.verbose() {

@@ -176,14 +176,12 @@ impl ExecutionState {
             node_timer: None,
         }
     }
-    #[cfg(not(feature = "streaming"))]
     pub(crate) fn set_schema(&self, schema: SchemaRef) {
         let mut lock = self.schema_cache.write().unwrap();
         *lock = Some(schema);
     }
 
     /// Clear the schema. Typically at the end of a projection.
-    #[cfg(not(feature = "streaming"))]
     pub(crate) fn clear_schema_cache(&self) {
         let mut lock = self.schema_cache.write().unwrap();
         *lock = None;
