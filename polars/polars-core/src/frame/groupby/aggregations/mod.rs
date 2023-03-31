@@ -770,7 +770,12 @@ where
                         None
                     } else if idx.len() == 1 {
                         let x = arr.get(first as usize);
-                        println!("{:?}\n{:?}\n{:?}\n{:?}\n", self, (first, idx), arr, x);
+                        println!(
+                            "array: {:?}\nGroupsProxy(first, idx): {:?}\nvalue: {:?}\n",
+                            arr,
+                            (first, idx),
+                            x
+                        );
                         x
                     } else if arr.null_count() == 0 {
                         Some(take_agg_no_null_primitive_iter_unchecked(
