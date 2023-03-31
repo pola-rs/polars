@@ -874,6 +874,11 @@ def test_to_dummies2() -> None:
     result = df.to_dummies(columns=["category"], separator="|")
     assert_frame_equal(result, expected)
 
+    # test sorted fast path
+    assert pl.DataFrame({"x": pl.arange(0, 3, eager=True)}).to_dummies("x").to_dict(
+        False
+    ) == {"x_0": [1, 0, 0], "x_1": [0, 1, 0], "x_2": [0, 0, 1]}
+
 
 def test_get_dummies_function_deprecated() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
