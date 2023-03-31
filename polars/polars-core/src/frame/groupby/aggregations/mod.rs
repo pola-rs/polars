@@ -769,7 +769,9 @@ where
                     if idx.is_empty() {
                         None
                     } else if idx.len() == 1 {
-                        arr.get(first as usize)
+                        let x = arr.get(first as usize);
+                        println!("{:?}\n{:?}\n{:?}\n{:?}\n", self, (first, idx), arr, x);
+                        x
                     } else if arr.null_count() == 0 {
                         Some(take_agg_no_null_primitive_iter_unchecked(
                             arr,
