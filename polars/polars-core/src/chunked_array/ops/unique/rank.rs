@@ -320,7 +320,7 @@ mod test {
     fn test_rank() -> PolarsResult<()> {
         let s = Series::new("a", &[1, 2, 3, 2, 2, 3, 0]);
 
-        let out = rank(&s, RankMethod::Ordinal, false)
+        let out = rank(&s, RankMethod::Ordinal, false, None)
             .idx()?
             .into_no_null_iter()
             .collect::<Vec<_>>();
@@ -328,7 +328,7 @@ mod test {
 
         #[cfg(feature = "random")]
         {
-            let out = rank(&s, RankMethod::Random, false)
+            let out = rank(&s, RankMethod::Random, false, None)
                 .idx()?
                 .into_no_null_iter()
                 .collect::<Vec<_>>();
@@ -341,25 +341,25 @@ mod test {
             assert_ne!(out[3], out[4]);
         }
 
-        let out = rank(&s, RankMethod::Dense, false)
+        let out = rank(&s, RankMethod::Dense, false, None)
             .idx()?
             .into_no_null_iter()
             .collect::<Vec<_>>();
         assert_eq!(out, &[2, 3, 4, 3, 3, 4, 1]);
 
-        let out = rank(&s, RankMethod::Max, false)
+        let out = rank(&s, RankMethod::Max, false, None)
             .idx()?
             .into_no_null_iter()
             .collect::<Vec<_>>();
         assert_eq!(out, &[2, 5, 7, 5, 5, 7, 1]);
 
-        let out = rank(&s, RankMethod::Min, false)
+        let out = rank(&s, RankMethod::Min, false, None)
             .idx()?
             .into_no_null_iter()
             .collect::<Vec<_>>();
         assert_eq!(out, &[2, 3, 6, 3, 3, 6, 1]);
 
-        let out = rank(&s, RankMethod::Average, false)
+        let out = rank(&s, RankMethod::Average, false, None)
             .f32()?
             .into_no_null_iter()
             .collect::<Vec<_>>();
@@ -370,7 +370,7 @@ mod test {
             &[Some(1), Some(2), Some(3), Some(2), None, None, Some(0)],
         );
 
-        let out = rank(&s, RankMethod::Average, false)
+        let out = rank(&s, RankMethod::Average, false, None)
             .f32()?
             .into_iter()
             .collect::<Vec<_>>();
@@ -400,7 +400,7 @@ mod test {
                 Some(8),
             ],
         );
-        let out = rank(&s, RankMethod::Max, false)
+        let out = rank(&s, RankMethod::Max, false, None)
             .idx()?
             .into_iter()
             .collect::<Vec<_>>();
@@ -424,12 +424,12 @@ mod test {
     #[test]
     fn test_rank_all_null() -> PolarsResult<()> {
         let s = UInt32Chunked::new("", &[None, None, None]).into_series();
-        let out = rank(&s, RankMethod::Average, false)
+        let out = rank(&s, RankMethod::Average, false, None)
             .f32()?
             .into_no_null_iter()
             .collect::<Vec<_>>();
         assert_eq!(out, &[2.0f32, 2.0, 2.0]);
-        let out = rank(&s, RankMethod::Dense, false)
+        let out = rank(&s, RankMethod::Dense, false, None)
             .idx()?
             .into_no_null_iter()
             .collect::<Vec<_>>();
@@ -440,16 +440,16 @@ mod test {
     #[test]
     fn test_rank_empty() {
         let s = UInt32Chunked::from_slice("", &[]).into_series();
-        let out = rank(&s, RankMethod::Average, false);
+        let out = rank(&s, RankMethod::Average, false, None);
         assert_eq!(out.dtype(), &DataType::Float32);
-        let out = rank(&s, RankMethod::Max, false);
+        let out = rank(&s, RankMethod::Max, false, None);
         assert_eq!(out.dtype(), &IDX_DTYPE);
     }
 
     #[test]
     fn test_rank_reverse() -> PolarsResult<()> {
         let s = Series::new("", &[None, Some(1), Some(1), Some(5), None]);
-        let out = rank(&s, RankMethod::Dense, true)
+        let out = rank(&s, RankMethod::Dense, true, None)
             .idx()?
             .into_iter()
             .collect::<Vec<_>>();
