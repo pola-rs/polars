@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, time, timedelta
+from typing import Any
 
 import pytest
 
@@ -296,7 +297,7 @@ def test_assert_series_equal_int_overflow() -> None:
         ([timedelta(10, 0, 0)], [timedelta(10, 0, 10)]),
     ],
 )
-def test_assert_series_equal_temporal(data1, data2) -> None:
+def test_assert_series_equal_temporal(data1: Any, data2: Any) -> None:
     s1 = pl.Series(data1)
     s2 = pl.Series(data2)
     assert_series_not_equal(s1, s2)
