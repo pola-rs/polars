@@ -1497,7 +1497,7 @@ def test_compare_aggregation_between_lazy_and_eager_6904(
     ],
 )
 def test_compare_encode_between_lazy_and_eager_6814(encoding: TransferEncoding) -> None:
-    df = pl.DataFrame({"x": [b"a", b"b", b"c"]})
+    df = pl.DataFrame({"x": [b"aa", b"bb", b"cc"]})
     expr = pl.col("x").bin.encode(encoding)
     result_eager = df.select(expr)
     dtype = result_eager["x"].dtype
@@ -1513,7 +1513,7 @@ def test_compare_encode_between_lazy_and_eager_6814(encoding: TransferEncoding) 
     ],
 )
 def test_compare_decode_between_lazy_and_eager_6814(encoding: TransferEncoding) -> None:
-    df = pl.DataFrame({"x": [b"aa", b"bb", b"cc"]})
+    df = pl.DataFrame({"x": [b"d3d3", b"abcd", b"1234"]})
     expr = pl.col("x").bin.decode(encoding)
     result_eager = df.select(expr)
     dtype = result_eager["x"].dtype
