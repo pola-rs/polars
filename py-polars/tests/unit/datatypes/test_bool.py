@@ -26,3 +26,16 @@ def test_bool_arg_min_max() -> None:
 
 def test_bool_sum_empty() -> None:
     assert pl.Series([], dtype=pl.Boolean).sum() == 0
+
+
+def test_bool_min_max() -> None:
+    assert pl.Series([None, True]).min()
+    assert not pl.Series([None, True, False]).min()
+    assert not pl.Series([False, True]).min()
+    assert pl.Series([True, True]).min()
+    assert not pl.Series([False, False]).min()
+    assert pl.Series([None, True]).max()
+    assert pl.Series([None, True, False]).max()
+    assert pl.Series([False, True]).max()
+    assert pl.Series([True, True]).max()
+    assert not pl.Series([False, False]).max()

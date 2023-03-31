@@ -326,10 +326,10 @@ fn fill_null_bool(ca: &BooleanChunked, strategy: FillNullStrategy) -> PolarsResu
             Ok(out.into_series())
         }
         FillNullStrategy::Min => ca
-            .fill_null_with_values(1 == ca.min().ok_or_else(err_fill_null)?)
+            .fill_null_with_values(ca.min().ok_or_else(err_fill_null)?)
             .map(|ca| ca.into_series()),
         FillNullStrategy::Max => ca
-            .fill_null_with_values(1 == ca.max().ok_or_else(err_fill_null)?)
+            .fill_null_with_values(ca.max().ok_or_else(err_fill_null)?)
             .map(|ca| ca.into_series()),
         FillNullStrategy::Mean => polars_bail!(opq = mean, "Boolean"),
         FillNullStrategy::One | FillNullStrategy::MaxBound => {

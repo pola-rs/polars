@@ -232,7 +232,7 @@ impl BooleanChunked {
                     // TODO! optimize this
                     // can just check if any is false and early stop
                     let take = { self.take_unchecked(idx.into()) };
-                    take.min().map(|v| v == 1)
+                    take.min()
                 }
             }),
             GroupsProxy::Slice {
@@ -245,7 +245,7 @@ impl BooleanChunked {
                     1 => self.get(first as usize),
                     _ => {
                         let arr_group = _slice_from_offsets(self, first, len);
-                        arr_group.min().map(|v| v == 1)
+                        arr_group.min()
                     }
                 }
             }),
@@ -274,7 +274,7 @@ impl BooleanChunked {
                     // TODO! optimize this
                     // can just check if any is true and early stop
                     let take = { self.take_unchecked(idx.into()) };
-                    take.max().map(|v| v == 1)
+                    take.max()
                 }
             }),
             GroupsProxy::Slice {
@@ -287,7 +287,7 @@ impl BooleanChunked {
                     1 => self.get(first as usize),
                     _ => {
                         let arr_group = _slice_from_offsets(self, first, len);
-                        arr_group.max().map(|v| v == 1)
+                        arr_group.max()
                     }
                 }
             }),
