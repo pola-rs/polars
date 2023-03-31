@@ -4,6 +4,7 @@ use polars_arrow::export::arrow::bitmap::utils::set_bit_unchecked;
 use polars_core::config::verbose;
 use polars_core::hashing::hash_to_partition;
 use polars_core::prelude::*;
+use polars_utils::slice::GetSaferUnchecked;
 
 use crate::executors::sinks::groupby::constants::MEMORY_FRACTION_THRESHOLD;
 use crate::executors::sinks::io::IOThread;
@@ -59,6 +60,12 @@ impl OocState {
     }
 
     pub(super) fn check_memory_usage(&mut self, schema: &SchemaRef) -> PolarsResult<()> {
+
+        dbg!("INIT OOC");
+        // todo! rmeove this
+        self.init_ooc(schema.clone())?;
+
+
         if self.mem_track.free_memory_fraction_since_start() < MEMORY_FRACTION_THRESHOLD {
             self.init_ooc(schema.clone())?
         }
@@ -72,39 +79,49 @@ impl OocState {
     }
 
     pub(super) fn dump(&self, data: DataFrame, hashes: &mut [u64]) {
-        // we filter the rows that are not processed
-        // these rows are spilled to disk
-        let mask = self.get_ooc_filter(data.height());
-        let df = data._filter_seq(&mask).unwrap();
+        if !hashes.is_empty() {
+            // we filter the rows that are not processed
+            // these rows are spilled to disk
+            let mask = self.get_ooc_filter(data.height());
+            if mask.sum() > Some(0) {
+                let df = data._filter_seq(&mask).unwrap();
 
-        // determine partitions
-        let parts = unsafe { UInt64Chunked::mmap_slice("", hashes) };
-        let parts = parts.filter(&mask).unwrap();
-        let parts = parts.apply_in_place(|h| hash_to_partition(h, PARTITION_SIZE) as u64);
-        let gt = parts.group_tuples_perfect(
-            PARTITION_SIZE - 1,
-            false,
-            (parts.len() / PARTITION_SIZE) * 2,
-        );
+                // determine partitions
+                let parts = unsafe { UInt64Chunked::mmap_slice("", hashes) };
+                let parts = parts.filter(&mask).unwrap();
+                let parts = parts.apply_in_place(|h| hash_to_partition(h, PARTITION_SIZE) as u64);
+                let gt = parts.group_tuples_perfect(
+                    PARTITION_SIZE - 1,
+                    false,
+                    (parts.len() / PARTITION_SIZE) * 2,
+                );
 
-        let mut part_idx = Vec::with_capacity(PARTITION_SIZE);
-        let partitioned = gt
-            .unwrap_idx()
-            .iter()
-            .map(|(first, group)| {
-                let partition =
-                    unsafe { *hashes.get_unchecked(first as usize) } & (PARTITION_SIZE as u64 - 1);
-                part_idx.push(partition as IdxSize);
+                let mut part_idx = Vec::with_capacity(PARTITION_SIZE);
+                let partitioned = gt
+                    .unwrap_idx()
+                    .iter()
+                    // there can be less partitions
+                    .filter_map(|(first, group)| {
+                        if !group.is_empty() {
+                            let partition =
+                                unsafe { *hashes.get_unchecked_release(first as usize) } & (PARTITION_SIZE as u64 - 1);
+                            part_idx.push(partition as IdxSize);
 
-                // groups are in bounds
-                unsafe { df._take_unchecked_slice(group, false) }
-            })
-            .collect::<Vec<_>>();
+                            // groups are in bounds
+                            Some(unsafe { df._take_unchecked_slice(group, false) })
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>();
 
-        let iot = self.io_thread.lock().unwrap();
-        let iot = iot.as_ref().unwrap();
-        let part_idx = Some(IdxCa::from_vec("", part_idx));
+                let iot = self.io_thread.lock().unwrap();
+                let iot = iot.as_ref().unwrap();
+                let part_idx = Some(IdxCa::from_vec("", part_idx));
 
-        iot.dump_iter(part_idx, Box::new(partitioned.into_iter()))
+                iot.dump_iter(part_idx, Box::new(partitioned.into_iter()))
+
+            }
+        }
     }
 }

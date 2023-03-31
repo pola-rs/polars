@@ -26,7 +26,8 @@ serde = { version = "1.0", optional = true }
 smartstring = { version = "1" }
 
 [features]
-compile = ["enum_dispatch", "crossbeam-channel", "serde", "bincode"]
+# ensure we don't needlessly bring in crates if `streaming` is not activated
+compile = ["enum_dispatch", "crossbeam-channel", "serde", "bincode", "polars-core/serde-lazy"]
 csv-file = ["polars-plan/csv-file", "polars-io/csv-file"]
 parquet = ["polars-plan/parquet", "polars-io/parquet"]
 ipc = ["polars-plan/ipc", "polars-io/ipc"]

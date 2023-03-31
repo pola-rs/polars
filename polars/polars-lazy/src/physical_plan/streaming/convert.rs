@@ -304,17 +304,26 @@ pub(crate) fn insert_streaming_nodes(
                 stack.push((input_left, state_left, current_idx));
             }
             // add globbing patterns
-            #[cfg(all(feature = "csv-file", feature = "parquet"))]
             Union { inputs, .. } => {
                 if state.streamable
                     && inputs.iter().all(|node| match lp_arena.get(*node) {
+                        #[cfg(feature = "parquet")]
                         ParquetScan { .. } => true,
+                        #[cfg(feature = "csv-file")]
                         CsvScan { .. } => true,
+                        DataFrameScan {.. } => true,
                         MapFunction {
                             input,
                             function: FunctionNode::Rechunk,
                         } => {
-                            matches!(lp_arena.get(*input), ParquetScan { .. } | CsvScan { .. })
+                            match lp_arena.get(*input) {
+                                DataFrameScan {..} => true,
+                                #[cfg(feature = "parquet")]
+                                ParquetScan { .. } => true,
+                                #[cfg(feature = "csv-file")]
+                                CsvScan { .. } => true,
+                                _ => false
+                            }
                         }
                         _ => false,
                     })

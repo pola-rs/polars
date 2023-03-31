@@ -170,7 +170,6 @@ rand = { version = "0.8", optional = true, features = ["small_rng", "std"] }
 rand_distr = { version = "0.4", optional = true }
 rayon.workspace = true
 regex = { version = "1.6", optional = true }
-rkyv = { version = "0.7", optional = true }
 # activate if you want serde support for Series and DataFrames
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }

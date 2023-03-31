@@ -330,3 +330,22 @@ fn test_streaming_double_left_join() -> PolarsResult<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_streaming_foo() -> PolarsResult<()> {
+    let q = get_csv_file();
+
+    let q = concat((0..20).map(|_| q.clone() ).collect::<Vec<_>>(), false, false).unwrap().collect().unwrap().lazy();
+
+    let q = q
+        .select([col("sugars_g"), col("calories")])
+        .groupby([col("sugars_g")])
+        .agg([
+            col("calories").sum(),
+            col("calories").first().alias("calories_first"),
+        ])
+        .sort("sugars_g", Default::default());
+
+    assert_streaming_with_default(q);
+    Ok(())
+}

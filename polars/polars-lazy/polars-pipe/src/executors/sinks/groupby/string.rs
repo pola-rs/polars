@@ -60,7 +60,13 @@ pub struct Utf8GroupbySink {
     hashes: Vec<u64>,
     slice: Option<(i64, usize)>,
 
+    // OOC
     ooc_state: OocState,
+    // indexes that are aggregated
+    // in in-memory we write those to the hashes buffer
+    // but during ooc we cannot as we need to keep the hashes
+    // for partitioning.
+    ooc_idx: Vec<IdxSize>
 }
 
 impl Utf8GroupbySink {
@@ -119,6 +125,7 @@ impl Utf8GroupbySink {
             hashes: vec![],
             slice,
             ooc_state: OocState::new(io_thread, ooc),
+            ooc_idx: vec![]
         };
         if ooc {
             out.ooc_state.init_ooc(out.input_schema.clone()).unwrap();

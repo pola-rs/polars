@@ -2,6 +2,7 @@ use std::io::Write;
 
 use polars_core::hashing::this_partition;
 use serde::{Deserialize, Serialize};
+use serde::de::DeserializeOwned;
 
 use super::super::constants::PARTITION_HASHMAP_STATE_NAME;
 use super::*;
@@ -10,7 +11,7 @@ use crate::pipeline::PARTITION_SIZE;
 impl<K: PolarsNumericType> PrimitiveGroupbySink<K>
 where
     ChunkedArray<K>: IntoSeries,
-    K::Native: Hash + Serialize,
+    K::Native: Hash + Serialize + DeserializeOwned,
 {
     pub(super) fn sink_ooc(
         &mut self,
@@ -29,31 +30,18 @@ where
 
         // set all bits to false
         self.ooc_state.reset_ooc_filter_rows(ca.len());
-
-        // this reuses the hashes buffer as [u64] as idx buffer as [idxsize]
-        // write the hashes to self.hashes buffer
-        // s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
-        // now we have written hashes, we take the pointer to this buffer
-        // we will write the aggregation_function indexes in the same buffer
-        // this is unsafe and we must check that we only write the hashes that
-        // already read/taken. So we write on the slots we just read
-        let agg_idx_ptr = self.hashes.as_ptr() as *mut u64 as *mut IdxSize;
+        self.ooc_agg_idx.clear();
 
         // different from standard sink
         // we only set aggregation idx when the entry in the hashmap already
         // exists. This way we don't grow the hashmap
         // rows that are not processed are sinked to disk and loaded in a second pass
-        let mut processed = 0;
         for (iteration_idx, (opt_v, &h)) in arr.iter().zip(self.hashes.iter()).enumerate() {
             let opt_v = opt_v.copied();
             if let Some(agg_idx) =
                 try_insert_and_get(h, opt_v, pre_agg_len, &mut self.pre_agg_partitions)
             {
-                // # Safety
-                // we write to the hashes buffer we iterate over at the moment.
-                // this is sound because the writes are trailing from iteration
-                unsafe { write_agg_idx(agg_idx_ptr, processed, agg_idx) };
-                processed += 1;
+                self.ooc_agg_idx.push(agg_idx);
             } else {
                 // set this row to true: e.g. processed ooc
                 // safety: we correctly set the length with `reset_ooc_filter_rows`
@@ -63,9 +51,8 @@ where
             }
         }
 
-        let agg_idxs = unsafe { std::slice::from_raw_parts(agg_idx_ptr, processed) };
         apply_aggregation(
-            agg_idxs,
+            &self.ooc_agg_idx,
             &chunk,
             self.number_of_aggs(),
             &self.aggregation_series,
@@ -73,12 +60,55 @@ where
             &mut self.aggregators,
         );
 
+        self.aggregation_series.clear();
         self.ooc_state.dump(chunk.data, &mut self.hashes);
 
         Ok(SinkResult::CanHaveMoreInput)
     }
 
-    fn pre_finalize_ooc(&mut self) -> PolarsResult<()> {
+    fn load_partition_state(&mut self, partition: u32) {
+        let iot = self.ooc_state.io_thread.lock().unwrap();
+        let mut io_dir = iot.as_ref().unwrap().dir.clone();
+        io_dir.push(format!("{partition}_{PARTITION_HASHMAP_STATE_NAME}"));
+        if io_dir.exists() {
+            let file = std::fs::File::open(io_dir).unwrap();
+            let state = bincode::deserialize_from::<_, HashMapState<K::Native>>(file).unwrap();
+
+            let aggs = state.aggregators;
+            let pre_agg_len = self.pre_agg_partitions.len();
+
+            for k in state.keys {
+                let part = hash_to_partition(k.hash, pre_agg_len);
+                let current_partition = unsafe { self.pre_agg_partitions.get_unchecked_release_mut(part) };
+
+                let entry = current_partition
+                    .raw_entry_mut()
+                    .from_hash(k.hash, |khm| khm.value == k.value);
+                match entry {
+                    RawEntryMut::Vacant(entry) => {
+                        let offset =
+                            unsafe { NumCast::from(current_aggregators.len()).unwrap_unchecked_release() };
+                        let key = Key {
+                            hash: h,
+                            value: opt_v,
+                        };
+                        entry.insert(key, offset);
+                        // initialize the aggregators
+                        for agg_fn in agg_fns {
+                            current_aggregators.push(agg_fn.split2())
+                        }
+                        offset
+                    }
+                    RawEntryMut::Occupied(entry) => *entry.get(),
+                }
+                todo!()
+            }
+
+        }
+    }
+
+    pub(super) fn pre_finalize_ooc(&mut self) -> PolarsResult<()> {
+        dbg!("pre-finalize-ooc");
         let total_len = self
             .pre_agg_partitions
             .iter()
@@ -100,34 +130,44 @@ where
             (0..PARTITION_SIZE)
                 .into_par_iter()
                 .for_each(|partition_idx| {
-                    let mut keys = Vec::with_capacity(cap);
-                    let mut aggregators = Vec::with_capacity(self.number_of_aggs() * cap);
+                    let mut partition_path = io_dir.clone();
+                    partition_path.push(format!("{partition_idx}"));
 
-                    self.pre_agg_partitions.iter().for_each(|agg_map| {
-                        agg_map.iter().for_each(|(k, idx)| {
-                            if this_partition(k.hash, partition_idx as u64, PARTITION_SIZE as u64) {
-                                keys.push(*k);
-                                let start = *idx as usize;
-                                let end = start + self.number_of_aggs();
+                    // if exists, we must store the state of the hashmaps for this partition
+                    if partition_path.exists() {
+                        let mut keys = Vec::with_capacity(cap);
+                        let mut aggregators = Vec::with_capacity(self.number_of_aggs() * cap);
 
-                                // safety: idx is in bounds
-                                unsafe {
-                                    aggregators.extend_from_slice(
-                                        self.aggregators.get_unchecked(start..end),
-                                    )
+                        self.pre_agg_partitions.iter().for_each(|agg_map| {
+                            agg_map.iter().for_each(|(k, idx)| {
+                                if this_partition(k.hash, partition_idx as u64, PARTITION_SIZE as u64) {
+                                    keys.push(*k);
+                                    let start = *idx as usize;
+                                    let end = start + self.number_of_aggs();
+
+                                    // safety: idx is in bounds
+                                    unsafe {
+                                        aggregators.extend_from_slice(
+                                            self.aggregators.get_unchecked(start..end),
+                                        )
+                                    }
                                 }
-                            }
+                            });
                         });
-                    });
-                    let state = HashMapState { keys, aggregators };
-                    let ser_state = bincode::serialize(&state).unwrap();
-                    drop(state);
+                        let state = HashMapState { keys, aggregators };
+                        let ser_state = bincode::serialize(&state).unwrap();
+                        drop(state);
 
-                    let mut path = io_dir.clone();
-                    path.push(format!("{partition_idx}/{PARTITION_HASHMAP_STATE_NAME}"));
+                        // we write the partitioned hashmap state
+                        // under `groupby/uuid/{partition_idx}_name`
+                        // not in the partition directories themselves as there should
+                        // only be ipc files there.
+                        let mut path = io_dir.clone();
+                        path.push(format!("{partition_idx}_{PARTITION_HASHMAP_STATE_NAME}"));
 
-                    let mut file = std::fs::File::create(path).unwrap();
-                    file.write_all(&ser_state).unwrap();
+                        let mut file = std::fs::File::create(path).unwrap();
+                        file.write_all(&ser_state).unwrap();
+                    }
                 })
         });
         Ok(())

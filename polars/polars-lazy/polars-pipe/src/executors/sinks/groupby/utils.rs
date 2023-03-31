@@ -2,7 +2,7 @@ use hashbrown::HashMap;
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical_unchecked, slice_offsets};
 
-use crate::executors::sinks::groupby::ooc::GroupBySource;
+use crate::executors::sinks::groupby::ooc::{GroupBySource, GroupBySource2, PartitionSink};
 use crate::executors::sinks::io::{block_thread_until_io_thread_done, IOThread};
 use crate::operators::{FinalizedSink, Sink};
 
@@ -47,6 +47,33 @@ pub(super) fn compute_slices<K, V, HB>(
             .collect::<Vec<_>>()
     } else {
         default_slices(pre_agg_partitions)
+    }
+}
+
+pub(super) fn finalize_groupby2(
+    dfs: Vec<DataFrame>,
+    output_schema: &Schema,
+    slice: Option<(i64, usize)>,
+    ooc_payload: Option<(IOThread, PartitionSink)>,
+) -> PolarsResult<FinalizedSink> {
+    let df = if dfs.is_empty() {
+        DataFrame::from(output_schema)
+    } else {
+        let mut df = accumulate_dataframes_vertical_unchecked(dfs);
+        // re init to check duplicates
+        unsafe { DataFrame::new(std::mem::take(df.get_columns_mut())) }?
+    };
+
+    match ooc_payload {
+        None => Ok(FinalizedSink::Finished(df)),
+        Some((iot, sink)) => {
+            // we wait until all chunks are spilled
+            block_thread_until_io_thread_done(&iot);
+
+            Ok(FinalizedSink::Source(Box::new(GroupBySource2::new(
+                iot, df, sink, slice,
+            )?)))
+        }
     }
 }
 

@@ -20,13 +20,15 @@ use polars_utils::unwrap::UnwrapUncheckedRelease;
 use polars_utils::HashSingle;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use serde::de::DeserializeOwned;
 
 use super::aggregates::AggregateFn;
 use crate::executors::sinks::groupby::aggregates::AggregateFunction;
+use crate::executors::sinks::groupby::ooc::PartitionSink;
 use crate::executors::sinks::groupby::ooc_state::OocState;
 use crate::executors::sinks::groupby::physical_agg_to_logical;
 use crate::executors::sinks::groupby::string::{apply_aggregate, write_agg_idx};
-use crate::executors::sinks::groupby::utils::{compute_slices, finalize_groupby};
+use crate::executors::sinks::groupby::utils::{compute_slices, finalize_groupby, finalize_groupby2};
 use crate::executors::sinks::io::IOThread;
 use crate::executors::sinks::utils::load_vec;
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
@@ -80,13 +82,19 @@ pub struct PrimitiveGroupbySink<K: PolarsNumericType> {
     // for sorted fast paths
     sort_partitions: Vec<[IdxSize; 2]>,
 
+    // OOC
     ooc_state: OocState,
+    // indexes that are aggregated
+    // in in-memory we write those to the hashes buffer
+    // but during ooc we cannot as we need to keep the hashes
+    // for partitioning.
+    ooc_agg_idx: Vec<IdxSize>
 }
 
 impl<K: PolarsNumericType> PrimitiveGroupbySink<K>
 where
     ChunkedArray<K>: IntoSeries,
-    K::Native: Hash + Serialize,
+    K::Native: Hash + Serialize + DeserializeOwned,
 {
     pub(crate) fn new(
         key: Arc<dyn PhysicalPipedExpr>,
@@ -106,6 +114,7 @@ where
             slice,
             None,
             ooc,
+            true
         )
     }
 
@@ -119,13 +128,15 @@ where
         slice: Option<(i64, usize)>,
         io_thread: Option<Arc<Mutex<Option<IOThread>>>>,
         ooc: bool,
+        pre_allocate: bool
     ) -> Self {
         let hb = RandomState::default();
         let partitions = _set_partition_size();
+        let pre_allocate = pre_allocate as usize;
 
-        let pre_agg = load_vec(partitions, || PlIdHashMap::with_capacity(HASHMAP_INIT_SIZE));
+        let pre_agg = load_vec(partitions, || PlIdHashMap::with_capacity(HASHMAP_INIT_SIZE * pre_allocate));
         let aggregators =
-            Vec::with_capacity(HASHMAP_INIT_SIZE * aggregation_columns.len() * partitions);
+            Vec::with_capacity(HASHMAP_INIT_SIZE * aggregation_columns.len() * partitions * pre_allocate);
 
         let mut out = Self {
             thread_no: 0,
@@ -142,11 +153,29 @@ where
             slice,
             sort_partitions: vec![],
             ooc_state: OocState::new(io_thread, ooc),
+            ooc_agg_idx: vec![]
         };
         if ooc {
             out.ooc_state.init_ooc(out.input_schema.clone()).unwrap();
         }
         out
+    }
+
+    fn reset(&self, thread_no: usize, pre_allocate: bool) -> Self {
+        let mut new = Self::new_inner(
+            self.key.clone(),
+            self.aggregation_columns.clone(),
+            self.agg_fns.iter().map(|func| func.split2()).collect(),
+            self.input_schema.clone(),
+            self.output_schema.clone(),
+            self.slice,
+            Some(self.ooc_state.io_thread.clone()),
+            self.ooc_state.ooc,
+            pre_allocate
+        );
+        new.hb = self.hb.clone();
+        new.thread_no = thread_no;
+        new
     }
 
     #[inline]
@@ -278,7 +307,7 @@ where
 
 impl<K: PolarsNumericType> Sink for PrimitiveGroupbySink<K>
 where
-    K::Native: Hash + Eq + Debug + Hash + Serialize,
+    K::Native: Hash + Eq + Debug + Hash + Serialize + DeserializeOwned,
     ChunkedArray<K>: IntoSeries,
 {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
@@ -379,8 +408,10 @@ where
     }
 
     fn finalize(&mut self, _context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
-        let dfs = self.pre_finalize()?;
-        let payload = if self.ooc_state.ooc {
+        let (dfs, payload )= if self.ooc_state.ooc {
+            // ensure the hashmap states are partitioned and serialized
+            self.pre_finalize_ooc()?;
+
             let mut iot = self.ooc_state.io_thread.lock().unwrap();
             // make sure that we reset the shared states
             // the OOC groupby will call split as well and it should
@@ -388,27 +419,18 @@ where
             let iot = iot.take().unwrap();
             self.ooc_state.ooc = false;
 
-            Some((iot, self.split(0)))
+            // ensure we drop state
+            let splitted = self.reset(0, false);
+            (vec![], Some((iot, Box::new(move |part: u32| splitted.split(0)) as PartitionSink)))
         } else {
-            None
+            let dfs = self.pre_finalize()?;
+            (dfs, None)
         };
-        finalize_groupby(dfs, &self.output_schema, self.slice, payload)
+        finalize_groupby2(dfs, &self.output_schema, self.slice, payload)
     }
 
     fn split(&self, thread_no: usize) -> Box<dyn Sink> {
-        let mut new = Self::new_inner(
-            self.key.clone(),
-            self.aggregation_columns.clone(),
-            self.agg_fns.iter().map(|func| func.split2()).collect(),
-            self.input_schema.clone(),
-            self.output_schema.clone(),
-            self.slice,
-            Some(self.ooc_state.io_thread.clone()),
-            self.ooc_state.ooc,
-        );
-        new.hb = self.hb.clone();
-        new.thread_no = thread_no;
-        Box::new(new)
+        Box::new(self.reset(thread_no, true))
     }
 
     fn as_any(&mut self) -> &mut dyn Any {
@@ -463,16 +485,18 @@ pub(super) fn apply_aggregation(
     agg_fns: &[AggregateFunction],
     aggregators: &mut [AggregateFunction],
 ) {
-    let chunk_idx = chunk.chunk_index;
-    for (agg_i, aggregation_s) in (0..num_aggs).zip(aggregation_series) {
-        let has_physical_agg = agg_fns[agg_i].has_physical_agg();
-        apply_aggregate(
-            agg_i,
-            chunk_idx,
-            agg_idxs,
-            aggregation_s,
-            has_physical_agg,
-            aggregators,
-        );
+    if !agg_idxs.is_empty() {
+        let chunk_idx = chunk.chunk_index;
+        for (agg_i, aggregation_s) in (0..num_aggs).zip(aggregation_series) {
+            let has_physical_agg = agg_fns[agg_i].has_physical_agg();
+            apply_aggregate(
+                agg_i,
+                chunk_idx,
+                agg_idxs,
+                aggregation_s,
+                has_physical_agg,
+                aggregators,
+            );
+        }
     }
 }
