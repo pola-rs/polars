@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, time, timedelta
+
 import pytest
 
 import polars as pl
@@ -284,3 +286,17 @@ def test_assert_series_equal_int_overflow() -> None:
         assert_series_equal(s0, s0, check_exact=check_exact)
         with pytest.raises(AssertionError):
             assert_series_equal(s1, s2, check_exact=check_exact)
+
+
+@pytest.mark.parametrize(
+    ("data1", "data2"),
+    [
+        ([datetime(2022, 10, 2, 12)], [datetime(2022, 10, 2, 13)]),
+        ([time(10, 0, 0)], [time(10, 0, 10)]),
+        ([timedelta(10, 0, 0)], [timedelta(10, 0, 10)]),
+    ],
+)
+def test_assert_series_equal_temporal(data1, data2) -> None:
+    s1 = pl.Series(data1)
+    s2 = pl.Series(data2)
+    assert_series_not_equal(s1, s2)
