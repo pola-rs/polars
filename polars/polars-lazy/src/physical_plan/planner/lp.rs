@@ -2,8 +2,6 @@ use polars_core::prelude::*;
 
 use super::super::executors::{self, Executor};
 use super::*;
-#[cfg(feature = "streaming")]
-use crate::physical_plan::streaming::insert_streaming_nodes;
 use crate::utils::*;
 
 fn partitionable_gb(
@@ -397,48 +395,6 @@ pub fn create_physical_plan(
             // We first check if we can partition the groupby on the latest moment.
             let partitionable = partitionable_gb(&keys, &aggs, &input_schema, expr_arena, &apply);
             if partitionable {
-                #[cfg(feature = "streaming")]
-                if !maintain_order
-                    // many aggregations are more expensive
-                    // at a certain point the cost of collecting
-                    // the indices is amortized
-                    && aggs.len() < 10
-                    && std::env::var("POLARS_NO_STREAMING_GROUPBY").is_err()
-                {
-                    let key_dtype = schema.get_index(0).unwrap().1.to_physical();
-                    // only on numeric and string keys for now
-                    let allowed_key = keys.len() == 1 && key_dtype.is_numeric()
-                        || matches!(key_dtype, DataType::Utf8);
-                    let allowed_aggs = schema.iter_dtypes().skip(1).all(|dtype| {
-                        let dt = dtype.to_physical();
-                        dt.is_numeric() || matches!(dt, DataType::Utf8 | DataType::Boolean)
-                    });
-
-                    let lp = Aggregate {
-                        input,
-                        keys,
-                        aggs,
-                        apply,
-                        schema: schema.clone(),
-                        maintain_order,
-                        options: options.clone(),
-                    };
-                    let root = lp_arena.add(lp);
-
-                    // do not jit insert if we have joins or distinct
-                    // first we have to test them more and ensure solid perf
-                    let has_joins_or_distinct = (&*lp_arena)
-                        .iter(root)
-                        .any(|(_, lp)| matches!(lp, Join { .. } | Distinct { .. }));
-                    if allowed_key
-                        && allowed_aggs
-                        && !has_joins_or_distinct
-                        && insert_streaming_nodes(root, lp_arena, expr_arena, &mut vec![], false)?
-                    {
-                        return create_physical_plan(root, lp_arena, expr_arena);
-                    }
-                }
-
                 let from_partitioned_ds = (&*lp_arena).iter(input).any(|(_, lp)| {
                     if let Union { options, .. } = lp {
                         options.from_partitioned_ds
