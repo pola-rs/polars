@@ -58,7 +58,9 @@ impl OocState {
     }
 
     pub(super) fn check_memory_usage(&mut self, schema: &SchemaRef) -> PolarsResult<()> {
-        if self.mem_track.free_memory_fraction_since_start() < MEMORY_FRACTION_THRESHOLD {
+        // TODO! activate this once OOC is fixed
+        #[allow(clippy::overly_complex_bool_expr)]
+        if self.mem_track.free_memory_fraction_since_start() < MEMORY_FRACTION_THRESHOLD && false {
             self.init_ooc(schema.clone())?
         }
         Ok(())
