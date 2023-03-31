@@ -825,7 +825,7 @@ impl Series {
             Float64 => a.f64().unwrap().abs().into_series(),
             dt => polars_bail!(opq = abs, dt),
         };
-        Ok(out)
+        out.cast(self.dtype())
     }
 
     #[cfg(feature = "private")]
