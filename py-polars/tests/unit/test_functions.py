@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import typing
+from datetime import timedelta
 
 import numpy as np
 import pytest
@@ -357,3 +358,8 @@ def test_max() -> None:
 
     result = df.select(pl.max("a", 3))
     assert_frame_equal(result, pl.DataFrame({"max": [3, 4]}))
+
+
+def test_abs_logical_type() -> None:
+    s = pl.Series([timedelta(hours=1), timedelta(hours=-1)])
+    assert s.abs().to_list() == [timedelta(hours=1), timedelta(hours=1)]

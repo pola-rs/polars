@@ -386,7 +386,8 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
 
     #[cfg(feature = "mode")]
     fn mode(&self) -> PolarsResult<Series> {
-        Ok(CategoricalChunked::full_null(self.0.logical().name(), 1).into_series())
+        let cats = self.0.logical().mode()?;
+        Ok(self.finish_with_state(false, cats).into_series())
     }
 }
 

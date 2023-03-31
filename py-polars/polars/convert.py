@@ -273,6 +273,11 @@ def from_repr(tbl: str) -> DataFrame:
     Currently compound types such as List and Struct are not supported,
     (and neither is Time) though support is planned.
 
+    See Also
+    --------
+    polars.DataFrame.to_init_repr
+    polars.Series.to_init_repr
+
     Examples
     --------
     >>> df = pl.from_repr(

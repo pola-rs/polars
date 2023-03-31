@@ -342,65 +342,6 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         out
     }
 
-    /// Get a mask of the null values.
-    pub fn is_null(&self) -> BooleanChunked {
-        if !self.has_validity() {
-            return BooleanChunked::full(self.name(), false, self.len());
-        }
-        let chunks = self
-            .chunks
-            .iter()
-            .map(|arr| {
-                let bitmap = arr
-                    .validity()
-                    .map(|bitmap| !bitmap)
-                    .unwrap_or_else(|| Bitmap::new_zeroed(arr.len()));
-                Box::new(BooleanArray::from_data_default(bitmap, None)) as ArrayRef
-            })
-            .collect::<Vec<_>>();
-        unsafe { BooleanChunked::from_chunks(self.name(), chunks) }
-    }
-
-    /// Get a mask of the valid values.
-    pub fn is_not_null(&self) -> BooleanChunked {
-        if !self.has_validity() {
-            return BooleanChunked::full(self.name(), true, self.len());
-        }
-        let chunks = self
-            .chunks
-            .iter()
-            .map(|arr| {
-                let bitmap = arr
-                    .validity()
-                    .cloned()
-                    .unwrap_or_else(|| !(&Bitmap::new_zeroed(arr.len())));
-                Box::new(BooleanArray::from_data_default(bitmap, None)) as ArrayRef
-            })
-            .collect::<Vec<_>>();
-        unsafe { BooleanChunked::from_chunks(self.name(), chunks) }
-    }
-
-    pub(crate) fn coalesce_nulls(&self, other: &[ArrayRef]) -> Self {
-        assert_eq!(self.chunks.len(), other.len());
-        let chunks = self
-            .chunks
-            .iter()
-            .zip(other)
-            .map(|(a, b)| {
-                assert_eq!(a.len(), b.len());
-                let validity = match (a.validity(), b.validity()) {
-                    (None, Some(b)) => Some(b.clone()),
-                    (Some(a), Some(b)) => Some(a & b),
-                    (Some(a), None) => Some(a.clone()),
-                    (None, None) => None,
-                };
-
-                a.with_validity(validity)
-            })
-            .collect();
-        self.copy_with_chunks(chunks, true, false)
-    }
-
     /// Get data type of ChunkedArray.
     pub fn dtype(&self) -> &DataType {
         self.field.data_type()

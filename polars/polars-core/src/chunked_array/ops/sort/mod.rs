@@ -665,6 +665,22 @@ impl ChunkSort<BooleanType> for BooleanChunked {
             !options.nulls_last,
             "null last not yet supported for bool dtype"
         );
+        if self.null_count() == 0 {
+            let len = self.len();
+            let n_set = self.sum().unwrap() as usize;
+            let mut bitmap = MutableBitmap::with_capacity(len);
+            let (first, second) = if options.descending {
+                (true, false)
+            } else {
+                (false, true)
+            };
+            bitmap.extend_constant(len - n_set, first);
+            bitmap.extend_constant(n_set, second);
+            let arr = BooleanArray::from_data_default(bitmap.into(), None);
+
+            return unsafe { self.with_chunks(vec![Box::new(arr) as ArrayRef]) };
+        }
+
         let mut vals = self.into_iter().collect::<Vec<_>>();
 
         if options.descending {
@@ -713,6 +729,16 @@ pub(crate) fn convert_sort_column_multi_sort(
             } else {
                 s.cast(&UInt8).unwrap()
             }
+        }
+        #[cfg(feature = "dtype-struct")]
+        Struct(_) => {
+            let ca = s.struct_().unwrap();
+            let new_fields = ca
+                .fields()
+                .iter()
+                .map(|s| convert_sort_column_multi_sort(s, row_ordering))
+                .collect::<PolarsResult<Vec<_>>>()?;
+            return StructChunked::new(ca.name(), &new_fields).map(|ca| ca.into_series());
         }
         _ => {
             let phys = s.to_physical_repr().into_owned();

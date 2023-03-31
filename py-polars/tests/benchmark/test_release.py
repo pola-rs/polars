@@ -146,3 +146,19 @@ def test_cross_join_slice_pushdown() -> None:
         },
         schema={"x": pl.UInt16, "x_": pl.UInt16},
     )
+
+
+def test_max_statistic_parquet_writer() -> None:
+    # this hits the maximal page size
+    # so the row group will be split into multiple pages
+    # the page statistics need to be correctly reduced
+    # for this query to make sense
+    n = 150_000
+
+    # int64 is important to hit the page size
+    df = pl.arange(0, n, eager=True, dtype=pl.Int64).to_frame()
+    f = "/tmp/tmp.parquet"
+    df.write_parquet(f, statistics=True, use_pyarrow=False, row_group_size=n)
+    assert pl.scan_parquet(f).filter(pl.col("arange") > n - 3).collect().to_dict(
+        False
+    ) == {"arange": [149998, 149999]}

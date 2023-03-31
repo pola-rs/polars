@@ -1239,10 +1239,12 @@ def lit(
             return e
         return e.alias(name)
 
-    if _check_for_numpy(value) and isinstance(value, np.ndarray):
+    elif (_check_for_numpy(value) and isinstance(value, np.ndarray)) or isinstance(
+        value, (list, tuple)
+    ):
         return lit(pli.Series("", value))
 
-    if dtype:
+    elif dtype:
         return wrap_expr(pylit(value, allow_object)).cast(dtype)
 
     try:

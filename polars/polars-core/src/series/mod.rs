@@ -173,7 +173,7 @@ impl Series {
 
     /// # Safety
     /// The caller must ensure the length and the data types of `ArrayRef` does not change.
-    pub(crate) unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
+    pub unsafe fn chunks_mut(&mut self) -> &mut Vec<ArrayRef> {
         #[allow(unused_mut)]
         let mut ca = self._get_inner_mut();
         let chunks = ca.chunks() as *const Vec<ArrayRef> as *mut Vec<ArrayRef>;
@@ -825,7 +825,7 @@ impl Series {
             Float64 => a.f64().unwrap().abs().into_series(),
             dt => polars_bail!(opq = abs, dt),
         };
-        Ok(out)
+        out.cast(self.dtype())
     }
 
     #[cfg(feature = "private")]

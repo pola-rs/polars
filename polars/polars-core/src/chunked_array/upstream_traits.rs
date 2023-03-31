@@ -204,7 +204,7 @@ impl FromIterator<Option<Series>> for ListChunked {
                 Some(None) => {
                     init_null_count += 1;
                 }
-                None => return ListChunked::full_null("", 0),
+                None => return ListChunked::full_null("", init_null_count),
             }
         }
 

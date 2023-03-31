@@ -264,9 +264,20 @@ def test_lazy_concat_err() -> None:
     for how in ["horizontal"]:
         with pytest.raises(
             ValueError,
-            match="Lazy only allows {{'vertical', 'diagonal'}} concat strategy.",
+            match="'LazyFrame' only allows {{'vertical', 'diagonal'}} concat strategy.",
         ):
             pl.concat([df1.lazy(), df2.lazy()], how=how).collect()
+
+
+@typing.no_type_check
+def test_series_concat_err() -> None:
+    s = pl.Series([1, 2, 3])
+    for how in ["horizontal", "diagonal"]:
+        with pytest.raises(
+            ValueError,
+            match="'Series' only allows {{'vertical'}} concat strategy.",
+        ):
+            pl.concat([s, s], how=how)
 
 
 def test_invalid_sort_by() -> None:
@@ -488,3 +499,33 @@ def test_invalid_inner_type_cast_list() -> None:
         pl.ComputeError, match=r"cannot cast list inner type: 'Int64' to Categorical"
     ):
         s.cast(pl.List(pl.Categorical))
+
+
+@pytest.mark.parametrize(
+    ("every", "match"),
+    [
+        ("-1i", r"'every' argument must be positive"),
+        (
+            "2h",
+            r"you cannot combine time durations like '2h' with integer durations like '3i'",
+        ),
+    ],
+)
+def test_groupby_dynamic_validation(every: str, match: str) -> None:
+    df = pl.DataFrame(
+        {
+            "index": [0, 0, 1, 1],
+            "group": ["banana", "pear", "banana", "pear"],
+            "weight": [2, 3, 5, 7],
+        }
+    )
+
+    with pytest.raises(pl.ComputeError, match=match):
+        df.groupby_dynamic("index", by="group", every=every, period="2i").agg(
+            pl.col("weight")
+        )
+
+
+def test_lit_agg_err() -> None:
+    with pytest.raises(pl.ComputeError, match=r"cannot aggregate a literal"):
+        pl.DataFrame({"y": [1]}).with_columns(pl.lit(1).sum().over("y"))

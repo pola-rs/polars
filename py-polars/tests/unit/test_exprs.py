@@ -155,12 +155,15 @@ def test_count_expr() -> None:
 
 
 def test_shuffle() -> None:
-    # Setting random.seed should lead to reproducible results
+    # setting 'random.seed' should lead to reproducible results
     s = pl.Series("a", range(20))
+    s_list = s.to_list()
+
     random.seed(1)
     result1 = pl.select(pl.lit(s).shuffle()).to_series()
+
     random.seed(1)
-    result2 = pl.select(pl.lit(s).shuffle()).to_series()
+    result2 = pl.select(a=pl.lit(s_list).shuffle()).to_series()
     assert_series_equal(result1, result2)
 
 
@@ -843,6 +846,8 @@ def test_lit_dtypes() -> None:
             "f32": lit_series(0, pl.Float32),
             "u16": lit_series(0, pl.UInt16),
             "i16": lit_series(0, pl.Int16),
+            "i64": lit_series([8], None),
+            "list_i64": lit_series([[1, 2, 3]], None),
         }
     )
     assert df.dtypes == [
@@ -859,8 +864,26 @@ def test_lit_dtypes() -> None:
         pl.Float32,
         pl.UInt16,
         pl.Int16,
+        pl.Int64,
+        pl.List(pl.Int64),
     ]
-    assert df.row(0) == (d_ms, d, d, d_tz, d_tz, d_tz, d_tz, td_ms, td, td, 0, 0, 0)
+    assert df.row(0) == (
+        d_ms,
+        d,
+        d,
+        d_tz,
+        d_tz,
+        d_tz,
+        d_tz,
+        td_ms,
+        td,
+        td,
+        0,
+        0,
+        0,
+        8,
+        [1, 2, 3],
+    )
 
 
 def test_incompatible_lit_dtype() -> None:

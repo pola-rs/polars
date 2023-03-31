@@ -320,3 +320,26 @@ def test_categorical_list_get_item() -> None:
     out = pl.Series([["a"]]).cast(pl.List(pl.Categorical)).item()
     assert isinstance(out, pl.Series)
     assert out.dtype == pl.Categorical
+
+
+def test_nested_categorical_aggregation_7848() -> None:
+    # a double categorical aggregation
+    assert pl.DataFrame(
+        {
+            "group": [1, 1, 2, 2, 2, 3, 3],
+            "letter": ["a", "b", "c", "d", "e", "f", "g"],
+        }
+    ).with_columns([pl.col("letter").cast(pl.Categorical)]).groupby(
+        maintain_order=True, by=["group"]
+    ).all().with_columns(
+        [pl.col("letter").arr.lengths().alias("c_group")]
+    ).groupby(
+        by=["c_group"], maintain_order=True
+    ).agg(
+        pl.col("letter")
+    ).to_dict(
+        False
+    ) == {
+        "c_group": [2, 3],
+        "letter": [[["a", "b"], ["f", "g"]], [["c", "d", "e"]]],
+    }

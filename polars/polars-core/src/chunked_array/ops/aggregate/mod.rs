@@ -220,9 +220,9 @@ where
 }
 
 /// Booleans are casted to 1 or 0.
-impl ChunkAgg<IdxSize> for BooleanChunked {
+impl BooleanChunked {
     /// Returns `None` if the array is empty or only contains null values.
-    fn sum(&self) -> Option<IdxSize> {
+    pub fn sum(&self) -> Option<IdxSize> {
         if self.is_empty() {
             None
         } else {
@@ -239,28 +239,39 @@ impl ChunkAgg<IdxSize> for BooleanChunked {
         }
     }
 
-    fn min(&self) -> Option<IdxSize> {
-        if self.is_empty() {
+    pub fn min(&self) -> Option<bool> {
+        let nc = self.null_count();
+        let len = self.len();
+        if self.is_empty() || nc == len {
             return None;
         }
-        if self.all() {
-            Some(1)
+        if nc == 0 {
+            if self.all() {
+                Some(true)
+            } else {
+                Some(false)
+            }
         } else {
-            Some(0)
+            // we can unwrap as we already checked empty and all null above
+            if (self.sum().unwrap() + nc as IdxSize) == len as IdxSize {
+                Some(true)
+            } else {
+                Some(false)
+            }
         }
     }
 
-    fn max(&self) -> Option<IdxSize> {
-        if self.is_empty() {
+    pub fn max(&self) -> Option<bool> {
+        if self.is_empty() || self.null_count() == self.len() {
             return None;
         }
         if self.any() {
-            Some(1)
+            Some(true)
         } else {
-            Some(0)
+            Some(false)
         }
     }
-    fn mean(&self) -> Option<f64> {
+    pub fn mean(&self) -> Option<f64> {
         self.sum()
             .map(|sum| sum as f64 / (self.len() - self.null_count()) as f64)
     }
@@ -418,22 +429,16 @@ impl QuantileAggSeries for Float64Chunked {
 
 impl ChunkAggSeries for BooleanChunked {
     fn sum_as_series(&self) -> Series {
-        let v = ChunkAgg::sum(self);
-        let mut ca: IdxCa = [v].iter().copied().collect();
-        ca.rename(self.name());
-        ca.into_series()
+        let v = self.sum();
+        Series::new(self.name(), [v])
     }
     fn max_as_series(&self) -> Series {
-        let v = ChunkAgg::max(self);
-        let mut ca: IdxCa = [v].iter().copied().collect();
-        ca.rename(self.name());
-        ca.into_series()
+        let v = self.max();
+        Series::new(self.name(), [v])
     }
     fn min_as_series(&self) -> Series {
-        let v = ChunkAgg::min(self);
-        let mut ca: IdxCa = [v].iter().copied().collect();
-        ca.rename(self.name());
-        ca.into_series()
+        let v = self.min();
+        Series::new(self.name(), [v])
     }
 }
 

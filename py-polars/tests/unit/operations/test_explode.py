@@ -259,3 +259,9 @@ def test_explode_binary() -> None:
         b"2",
         b"3",
     ]
+
+
+def test_explode_null_list() -> None:
+    assert pl.Series([["a"], None], dtype=pl.List(pl.Utf8))[
+        1:2
+    ].arr.min().to_list() == [None]

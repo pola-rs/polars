@@ -13,3 +13,4 @@ Export Series data to other formats:
    Series.to_list
    Series.to_numpy
    Series.to_pandas
+   Series.to_init_repr

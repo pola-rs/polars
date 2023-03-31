@@ -152,31 +152,19 @@ pub fn groupby_windows(
         Bounds::new_checked(start, stop)
     };
 
-    let size = if include_lower_bound || include_upper_bound {
+    let size = {
         match tu {
             TimeUnit::Nanoseconds => window.estimate_overlapping_bounds_ns(boundary),
             TimeUnit::Microseconds => window.estimate_overlapping_bounds_us(boundary),
             TimeUnit::Milliseconds => window.estimate_overlapping_bounds_ms(boundary),
         }
-    } else {
-        0
     };
     let size_lower = if include_lower_bound { size } else { 0 };
     let size_upper = if include_upper_bound { size } else { 0 };
     let mut lower_bound = Vec::with_capacity(size_lower);
     let mut upper_bound = Vec::with_capacity(size_upper);
 
-    let mut groups = match tu {
-        TimeUnit::Nanoseconds => {
-            Vec::with_capacity(window.estimate_overlapping_bounds_ns(boundary))
-        }
-        TimeUnit::Microseconds => {
-            Vec::with_capacity(window.estimate_overlapping_bounds_us(boundary))
-        }
-        TimeUnit::Milliseconds => {
-            Vec::with_capacity(window.estimate_overlapping_bounds_ms(boundary))
-        }
-    };
+    let mut groups = Vec::with_capacity(size);
     let start_offset = 0;
 
     match tz {

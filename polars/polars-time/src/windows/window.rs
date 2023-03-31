@@ -22,6 +22,7 @@ pub struct Window {
 
 impl Window {
     pub fn new(every: Duration, period: Duration, offset: Duration) -> Self {
+        debug_assert!(!every.negative);
         Self {
             every,
             period,

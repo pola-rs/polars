@@ -69,6 +69,40 @@ where
         out.compute_len();
         out
     }
+
+    /// # Safety
+    /// The Arrow datatype of all chunks must match the [`PolarsDataType`] `T`.
+    pub unsafe fn with_chunks(&self, chunks: Vec<ArrayRef>) -> Self {
+        let field = self.field.clone();
+        let mut out = ChunkedArray {
+            field,
+            chunks,
+            phantom: PhantomData,
+            bit_settings: Default::default(),
+            length: 0,
+        };
+        out.compute_len();
+        out
+    }
+}
+
+impl ListChunked {
+    pub(crate) unsafe fn from_chunks_and_dtype_unchecked(
+        name: &str,
+        chunks: Vec<ArrayRef>,
+        dtype: DataType,
+    ) -> Self {
+        let field = Arc::new(Field::new(name, dtype));
+        let mut out = ChunkedArray {
+            field,
+            chunks,
+            phantom: PhantomData,
+            bit_settings: Default::default(),
+            length: 0,
+        };
+        out.compute_len();
+        out
+    }
 }
 
 impl<T> ChunkedArray<T>

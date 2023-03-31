@@ -77,8 +77,8 @@ dependencies = [
 
 [[package]]
 name = "arrow2"
-version = "0.16.0"
-source = "git+https://github.com/ritchie46/arrow2?branch=polars_2023-03-22#dd53a883e9091edeed670789207edda14f5a0f5f"
+version = "0.17.0"
+source = "git+https://github.com/ritchie46/arrow2?branch=polars_2023-03-29#3d0765b15693428e8d61051d91257ce9c521df24"
 dependencies = [
  "ahash",
  "arrow-format",
@@ -108,7 +108,7 @@ dependencies = [
  "simdutf8",
  "streaming-iterator",
  "strength_reduce",
- "zstd 0.12.3+zstd.1.5.2",
+ "zstd",
 ]
 
 [[package]]
@@ -1356,9 +1356,8 @@ dependencies = [
 
 [[package]]
 name = "parquet2"
-version = "0.17.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aefc53bedbf9bbe0ff8912befafaafe30ced83851fb0aebe86696a9289ebb29e"
+version = "0.17.0"
+source = "git+https://github.com/jorgecarleitao/parquet2?rev=9eee7eb1130aed4cd0d841e59c325cc366fc3798#9eee7eb1130aed4cd0d841e59c325cc366fc3798"
 dependencies = [
  "async-stream",
  "brotli",
@@ -1369,7 +1368,7 @@ dependencies = [
  "seq-macro",
  "snap",
  "streaming-decompression",
- "zstd 0.11.2+zstd.1.5.2",
+ "zstd",
 ]
 
 [[package]]
@@ -1454,7 +1453,7 @@ dependencies = [
 
 [[package]]
 name = "polars"
-version = "0.27.2"
+version = "0.28.0"
 dependencies = [
  "getrandom",
  "polars-core",
@@ -1468,7 +1467,7 @@ dependencies = [
 
 [[package]]
 name = "polars-algo"
-version = "0.27.2"
+version = "0.28.0"
 dependencies = [
  "polars-core",
  "polars-lazy",
@@ -1477,7 +1476,7 @@ dependencies = [
 
 [[package]]
 name = "polars-arrow"
-version = "0.27.2"
+version = "0.28.0"
 dependencies = [
  "arrow2",
  "chrono",
@@ -1492,7 +1491,7 @@ dependencies = [
 
 [[package]]
 name = "polars-core"
-version = "0.27.2"
+version = "0.28.0"
 dependencies = [
  "ahash",
  "arrow2",
@@ -1525,7 +1524,7 @@ dependencies = [
 
 [[package]]
 name = "polars-error"
-version = "0.27.2"
+version = "0.28.0"
 dependencies = [
  "arrow2",
  "regex",
@@ -1534,7 +1533,7 @@ dependencies = [
 
 [[package]]
 name = "polars-io"
-version = "0.27.2"
+version = "0.28.0"
 dependencies = [
  "ahash",
  "arrow2",
@@ -1568,7 +1567,7 @@ dependencies = [
 
 [[package]]
 name = "polars-lazy"
-version = "0.27.2"
+version = "0.28.0"
 dependencies = [
  "ahash",
  "bitflags",
@@ -1588,7 +1587,7 @@ dependencies = [
 
 [[package]]
 name = "polars-ops"
-version = "0.27.2"
+version = "0.28.0"
 dependencies = [
  "arrow2",
  "base64",
@@ -1606,7 +1605,7 @@ dependencies = [
 
 [[package]]
 name = "polars-pipe"
-version = "0.27.2"
+version = "0.28.0"
 dependencies = [
  "crossbeam-channel",
  "enum_dispatch",
@@ -1625,7 +1624,7 @@ dependencies = [
 
 [[package]]
 name = "polars-plan"
-version = "0.27.2"
+version = "0.28.0"
 dependencies = [
  "ahash",
  "arrow2",
@@ -1647,7 +1646,7 @@ dependencies = [
 
 [[package]]
 name = "polars-row"
-version = "0.27.2"
+version = "0.28.0"
 dependencies = [
  "arrow2",
  "polars-error",
@@ -1656,7 +1655,7 @@ dependencies = [
 
 [[package]]
 name = "polars-sql"
-version = "0.2.3"
+version = "0.28.0"
 dependencies = [
  "polars-arrow",
  "polars-core",
@@ -1669,7 +1668,7 @@ dependencies = [
 
 [[package]]
 name = "polars-time"
-version = "0.27.2"
+version = "0.28.0"
 dependencies = [
  "arrow2",
  "atoi",
@@ -1688,7 +1687,7 @@ dependencies = [
 
 [[package]]
 name = "polars-utils"
-version = "0.27.2"
+version = "0.28.0"
 dependencies = [
  "once_cell",
  "rayon",
@@ -2565,30 +2564,11 @@ checksum = "735a71d46c4d68d71d4b24d03fdc2b98e38cea81730595801db779c04fe80d70"
 
 [[package]]
 name = "zstd"
-version = "0.11.2+zstd.1.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20cc960326ece64f010d2d2107537f26dc589a6573a316bd5b1dba685fa5fde4"
-dependencies = [
- "zstd-safe 5.0.2+zstd.1.5.2",
-]
-
-[[package]]
-name = "zstd"
 version = "0.12.3+zstd.1.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "76eea132fb024e0e13fd9c2f5d5d595d8a967aa72382ac2f9d39fcc95afd0806"
 dependencies = [
- "zstd-safe 6.0.4+zstd.1.5.4",
-]
-
-[[package]]
-name = "zstd-safe"
-version = "5.0.2+zstd.1.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d2a5585e04f9eea4b2a3d1eca508c4dee9592a89ef6f450c11719da0726f4db"
-dependencies = [
- "libc",
- "zstd-sys",
+ "zstd-safe",
 ]
 
 [[package]]

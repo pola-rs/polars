@@ -874,6 +874,11 @@ def test_to_dummies2() -> None:
     result = df.to_dummies(columns=["category"], separator="|")
     assert_frame_equal(result, expected)
 
+    # test sorted fast path
+    assert pl.DataFrame({"x": pl.arange(0, 3, eager=True)}).to_dummies("x").to_dict(
+        False
+    ) == {"x_0": [1, 0, 0], "x_1": [0, 1, 0], "x_2": [0, 0, 1]}
+
 
 def test_get_dummies_function_deprecated() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
@@ -1341,10 +1346,30 @@ def test_literal_series() -> None:
     )
 
 
-def test_to_html(df: pl.DataFrame) -> None:
-    # check it does not panic/error, and appears to contain a table
+def test_to_html() -> None:
+    # check it does not panic/error, and appears to contain
+    # a reasonable table with suitably escaped html entities.
+    df = pl.DataFrame(
+        {
+            "foo": [1, 2, 3],
+            "<bar>": ["a", "b", "c"],
+            "<baz": ["a", "b", "c"],
+            "spam>": ["a", "b", "c"],
+        }
+    )
     html = df._repr_html_()
-    assert "<table" in html
+    for match in (
+        "<table",
+        'class="dataframe"',
+        "<th>foo</th>",
+        "<th>&lt;bar&gt;</th>",
+        "<th>&lt;baz</th>",
+        "<th>spam&gt;</th>",
+        "<td>1</td>",
+        "<td>2</td>",
+        "<td>3</td>",
+    ):
+        assert match in html, f"Expected to find {match!r} in html repr"
 
 
 def test_rename(df: pl.DataFrame) -> None:
@@ -1611,20 +1636,21 @@ def test_reproducible_hash_with_seeds() -> None:
     """
     df = pl.DataFrame({"s": [1234, None, 5678]})
     seeds = (11, 22, 33, 44)
+    import platform
 
-    # TODO: introduce a platform-stable string hash...
-    #  in the meantime, try to account for arm64 (mac) hash values to reduce noise
-    expected = pl.Series(
-        "s",
-        [13477868900383131459, 988796329533502010, 16840582678788620208],
-        dtype=pl.UInt64,
-    )
-    result = df.hash_rows(*seeds)
-    assert_series_equal(expected, result, check_names=False, check_exact=True)
-    result = df["s"].hash(*seeds)
-    assert_series_equal(expected, result, check_names=False, check_exact=True)
-    result = df.select([pl.col("s").hash(*seeds)])["s"]
-    assert_series_equal(expected, result, check_names=False, check_exact=True)
+    # m1 hash different random source seed
+    if platform.mac_ver()[-1] != "arm64":
+        expected = pl.Series(
+            "s",
+            [13477868900383131459, 988796329533502010, 16840582678788620208],
+            dtype=pl.UInt64,
+        )
+        result = df.hash_rows(*seeds)
+        assert_series_equal(expected, result, check_names=False, check_exact=True)
+        result = df["s"].hash(*seeds)
+        assert_series_equal(expected, result, check_names=False, check_exact=True)
+        result = df.select([pl.col("s").hash(*seeds)])["s"]
+        assert_series_equal(expected, result, check_names=False, check_exact=True)
 
 
 def test_create_df_from_object() -> None:

@@ -116,7 +116,7 @@ def read_csv(
     ignore_errors
         Try to keep reading lines if some lines yield errors.
         Before using this option, try to increase the number of lines used for schema
-        inference with e.g ```infer_schema_length=10000`` or override automatic dtype
+        inference with e.g ``infer_schema_length=10000`` or override automatic dtype
         inference for specific columns with the ``dtypes`` option or use
         ``infer_schema_length=0`` to read all columns as ``pl.Utf8`` to check which
         values might cause an issue.

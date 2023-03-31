@@ -50,7 +50,6 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
-    from datetime import date, datetime, time
 
     from polars.dataframe import DataFrame
     from polars.lazyframe import LazyFrame
@@ -3552,7 +3551,12 @@ class Expr:
 
     def pow(self, exponent: int | float | Series | Expr) -> Self:
         """
-        Raise expression to the power of exponent.
+        Raise to the power of the given exponent.
+
+        Parameters
+        ----------
+        exponent
+            The exponent. Accepts expression input.
 
         Examples
         --------
@@ -3655,10 +3659,7 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.repeat_by(by._pyexpr))
 
     def is_between(
-        self,
-        start: Expr | datetime | date | time | int | float | str,
-        end: Expr | datetime | date | time | int | float | str,
-        closed: ClosedInterval = "both",
+        self, start: IntoExpr, end: IntoExpr, closed: ClosedInterval = "both"
     ) -> Self:
         """
         Check if this expression is between the given start and end values.
@@ -3666,9 +3667,11 @@ class Expr:
         Parameters
         ----------
         start
-            Lower bound value (can be an expression or literal).
+            Lower bound value. Accepts expression input. Strings are parsed as column
+            names, other non-expression inputs are parsed as literals.
         end
-            Upper bound value (can be an expression or literal).
+            Upper bound value. Accepts expression input. Strings are parsed as column
+            names, other non-expression inputs are parsed as literals.
         closed : {'both', 'left', 'right', 'none'}
             Define which sides of the interval are closed (inclusive).
 

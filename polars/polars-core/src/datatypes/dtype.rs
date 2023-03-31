@@ -121,6 +121,7 @@ impl DataType {
             Time => Int64,
             #[cfg(feature = "dtype-categorical")]
             Categorical(_) => UInt32,
+            List(dt) => List(Box::new(dt.to_physical())),
             _ => self.clone(),
         }
     }

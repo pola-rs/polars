@@ -16,14 +16,14 @@ serde_json = "1"
 ahash.workspace = true
 bitflags.workspace = true
 glob = "0.3"
-polars-arrow = { version = "0.27.2", path = "../polars-arrow" }
-polars-core = { version = "0.27.2", path = "../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
-polars-io = { version = "0.27.2", path = "../polars-io", features = ["lazy", "csv-file", "private"], default-features = false }
-polars-ops = { version = "0.27.2", path = "../polars-ops", default-features = false }
-polars-pipe = { version = "0.27.2", path = "./polars-pipe", optional = true }
-polars-plan = { version = "0.27.2", path = "./polars-plan" }
-polars-time = { version = "0.27.2", path = "../polars-time", optional = true }
-polars-utils = { version = "0.27.2", path = "../polars-utils" }
+polars-arrow = { version = "0.28.0", path = "../polars-arrow" }
+polars-core = { version = "0.28.0", path = "../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
+polars-io = { version = "0.28.0", path = "../polars-io", features = ["lazy", "csv-file", "private"], default-features = false }
+polars-ops = { version = "0.28.0", path = "../polars-ops", default-features = false }
+polars-pipe = { version = "0.28.0", path = "./polars-pipe", optional = true }
+polars-plan = { version = "0.28.0", path = "./polars-plan" }
+polars-time = { version = "0.28.0", path = "../polars-time", optional = true }
+polars-utils = { version = "0.28.0", path = "../polars-utils" }
 pyo3 = { version = "0.18", optional = true }
 rayon.workspace = true
 smartstring.workspace = true

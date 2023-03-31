@@ -38,6 +38,7 @@ from polars.datatypes import (
     UInt16,
     UInt32,
     UInt64,
+    Unknown,
     Utf8,
     dtype_to_ctype,
     is_polars_dtype,
@@ -108,6 +109,7 @@ if TYPE_CHECKING:
         ComparisonOperator,
         FillNullStrategy,
         InterpolationMethod,
+        IntoExpr,
         NullBehavior,
         OneOrMoreDataTypes,
         PolarsDataType,
@@ -226,7 +228,11 @@ class Series:
         nan_to_null: bool = False,
         dtype_if_empty: PolarsDataType | None = None,
     ):
-        # Raise error if dtype is not valid
+        # If 'Unknown' treat as None to attempt inference
+        if dtype == Unknown:
+            dtype = None
+
+        # Raise early error on invalid dtype
         if (
             dtype is not None
             and not is_polars_dtype(dtype)
@@ -656,14 +662,8 @@ class Series:
             raise ValueError("first cast to integer before multiplying datelike dtypes")
         return self._arithmetic(other, "mul", "mul_<>")
 
-    def __pow__(self, power: int | float | Series) -> Series:
-        if self.is_temporal():
-            raise ValueError(
-                "first cast to integer before raising datelike dtypes to a power"
-            )
-        if _check_for_numpy(power) and isinstance(power, np.ndarray):
-            power = Series(power)
-        return self.to_frame().select(F.col(self.name).pow(power)).to_series()
+    def __pow__(self, exponent: int | float | Series) -> Series:
+        return self.pow(exponent)
 
     def __rpow__(self, other: Any) -> Series:
         if self.is_temporal():
@@ -1264,6 +1264,37 @@ class Series:
     def product(self) -> int | float:
         """Reduce this Series to the product value."""
         return self.to_frame().select(F.col(self.name).product()).to_series()[0]
+
+    def pow(self, exponent: int | float | Series) -> Series:
+        """
+        Raise to the power of the given exponent.
+
+        Parameters
+        ----------
+        exponent
+            The exponent. Accepts Series input.
+
+        Examples
+        --------
+        >>> s = pl.Series("foo", [1, 2, 3, 4])
+        >>> s.pow(3)
+        shape: (4,)
+        Series: 'foo' [f64]
+        [
+                1.0
+                8.0
+                27.0
+                64.0
+        ]
+
+        """
+        if self.is_temporal():
+            raise ValueError(
+                "first cast to integer before raising datelike dtypes to a power"
+            )
+        if _check_for_numpy(exponent) and isinstance(exponent, np.ndarray):
+            exponent = Series(exponent)
+        return self.to_frame().select(F.col(self.name).pow(exponent)).to_series()
 
     def min(self) -> PythonLiteral | None:
         """
@@ -2897,10 +2928,7 @@ class Series:
         """
 
     def is_between(
-        self,
-        start: Expr | datetime | date | time | int | float | str,
-        end: Expr | datetime | date | time | int | float | str,
-        closed: ClosedInterval = "both",
+        self, start: IntoExpr, end: IntoExpr, closed: ClosedInterval = "both"
     ) -> Series:
         """
         Get a boolean mask of the values that fall between the given start/end values.
@@ -2908,9 +2936,11 @@ class Series:
         Parameters
         ----------
         start
-            Lower bound value (can be an expression or literal).
+            Lower bound value. Accepts expression input. Non-expression inputs
+            (including strings) are parsed as literals.
         end
-            Upper bound value (can be an expression or literal).
+            Upper bound value. Accepts expression input. Non-expression inputs
+            (including strings) are parsed as literals.
         closed : {'both', 'left', 'right', 'none'}
             Define which sides of the interval are closed (inclusive).
 
@@ -3256,6 +3286,41 @@ class Series:
         )
         pd_series.name = self.name
         return pd_series
+
+    def to_init_repr(self, n: int = 1000) -> str:
+        """
+        Convert Series to instantiatable string representation.
+
+        Parameters
+        ----------
+        n
+            Only use first n elements.
+
+        See Also
+        --------
+        polars.Series.to_init_repr
+        polars.from_repr
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, None, 4], dtype=pl.Int16)
+        >>> print(s.to_init_repr())
+        pl.Series("a", [1, 2, None, 4], dtype=pl.Int16)
+        >>> s_from_str_repr = eval(s.to_init_repr())
+        >>> s_from_str_repr
+        shape: (4,)
+        Series: 'a' [i16]
+        [
+            1
+            2
+            null
+            4
+        ]
+
+        """
+        return (
+            f'pl.Series("{self.name}", {self.head(n).to_list()}, dtype=pl.{self.dtype})'
+        )
 
     def set(self, filter: Series, value: int | float | str) -> Series:
         """

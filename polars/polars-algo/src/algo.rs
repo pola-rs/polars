@@ -188,13 +188,21 @@ pub fn cut(
         .with_columns([col(category_str).cast(DataType::Categorical(None))])
         .collect()?;
 
-    let mut frame = s.cast(&DataType::Float64)?.into_frame();
+    let mut s = s.cast(&DataType::Float64)?;
+    let valids = if s.null_count() > 0 {
+        let valids = Some(s.is_not_null());
+        s = s.fill_null(FillNullStrategy::MaxBound).unwrap();
+        valids
+    } else {
+        None
+    };
+    let mut frame = s.clone().into_frame();
 
     if maintain_order {
         frame = frame.with_row_count(ROW_COUNT, None)?;
     }
 
-    let out = frame.sort(vec![var_name], vec![false])?.join_asof(
+    let mut out = frame.sort(vec![var_name], vec![false])?.join_asof(
         &cuts,
         var_name,
         breakpoint_str,
@@ -204,8 +212,30 @@ pub fn cut(
     )?;
 
     if maintain_order {
-        out.sort([ROW_COUNT], false)?.drop(ROW_COUNT)
-    } else {
-        Ok(out)
+        out = out.sort([ROW_COUNT], false)?.drop(ROW_COUNT).unwrap()
+    };
+
+    if let Some(mut valids) = valids {
+        if !maintain_order {
+            let idx = s.arg_sort(SortOptions {
+                nulls_last: true,
+                ..Default::default()
+            });
+            valids = unsafe { valids.take_unchecked((&idx).into()) };
+        }
+
+        let arr = valids.downcast_iter().next().unwrap();
+        let validity = arr.values().clone();
+
+        // Safety: we don't change the length/dtype
+        unsafe {
+            for col in out.get_columns_mut() {
+                let mut s = col.rechunk();
+                let chunks = s.chunks_mut();
+                chunks[0] = chunks[0].with_validity(Some(validity.clone()));
+                *col = s;
+            }
+        }
     }
+    Ok(out)
 }

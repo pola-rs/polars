@@ -71,7 +71,8 @@ impl Series {
                     scale.unwrap_or_else(|| unreachable!("scale should be set")),
                 )
                 .into_series(),
-            List(_) => ListChunked::from_chunks(name, chunks).cast(dtype).unwrap(),
+            List(_) => ListChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype.clone())
+                .into_series(),
             Utf8 => Utf8Chunked::from_chunks(name, chunks).into_series(),
             Binary => BinaryChunked::from_chunks(name, chunks).into_series(),
             #[cfg(feature = "dtype-categorical")]

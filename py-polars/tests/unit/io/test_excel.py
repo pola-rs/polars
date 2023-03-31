@@ -51,7 +51,7 @@ def test_read_excel_all_sheets(excel_file_path: Path) -> None:
             "column_totals": True,
             "float_precision": 0,
         },
-        # slightly customised formatting
+        # slightly customised formatting, with some formulas
         {
             "position": (0, 0),
             "table_style": {
@@ -59,9 +59,23 @@ def test_read_excel_all_sheets(excel_file_path: Path) -> None:
                 "first_column": True,
             },
             "conditional_formats": {"val": "data_bar"},
-            "column_formats": {"val": "#,##0.000;[White]-#,##0.000"},
+            "column_formats": {
+                "val": "#,##0.000;[White]-#,##0.000",
+                ("day", "month", "year"): {"align": "left", "num_format": "0"},
+            },
             "column_widths": {"val": 100},
             "row_heights": {0: 35},
+            "formulas": {
+                # string: formula added to the end of the table (but before row_totals)
+                "day": "=DAY([@dtm])",
+                "month": "=MONTH([@dtm])",
+                "year": {
+                    # dict: full control over formula positioning/dtype
+                    "formula": "=YEAR([@dtm])",
+                    "insert_after": "month",
+                    "return_type": pl.Int16,
+                },
+            },
             "column_totals": True,
             "row_totals": True,
         },
@@ -108,9 +122,7 @@ def test_read_excel_all_sheets(excel_file_path: Path) -> None:
                 pl.FLOAT_DTYPES: '_(£* #,##0.00_);_(£* (#,##0.00);_(£* "-"??_);_(@_)',
                 pl.Date: "dd-mm-yyyy",
             },
-            "column_formats": {
-                "dtm": {"font_color": "#31869c", "bg_color": "#b7dee8"},
-            },
+            "column_formats": {"dtm": {"font_color": "#31869c", "bg_color": "#b7dee8"}},
             "column_totals": {"val": "average", "dtm": "min"},
             "column_widths": {("str", "val"): 60, "dtm": 80},
             "row_totals": {"tot": True},
@@ -151,6 +163,22 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
         pl.col("dtm").str.strptime(pl.Date, fmt_strptime)
     )
     assert_frame_equal(df, xldf)
+
+
+def test_excel_compound_types() -> None:
+    df = pl.DataFrame(
+        {"x": [[1, 2], [3, 4], [5, 6]], "y": ["a", "b", "c"], "z": [9, 8, 7]}
+    ).select("x", pl.struct(["y", "z"]))
+
+    xls = BytesIO()
+    df.write_excel(xls, worksheet="data")
+
+    xldf = pl.read_excel(xls, sheet_name="data")  # type: ignore[call-overload]
+    assert xldf.rows() == [
+        ("[1, 2]", "{'y': 'a', 'z': 9}"),
+        ("[3, 4]", "{'y': 'b', 'z': 8}"),
+        ("[5, 6]", "{'y': 'c', 'z': 7}"),
+    ]
 
 
 def test_excel_sparklines() -> None:
