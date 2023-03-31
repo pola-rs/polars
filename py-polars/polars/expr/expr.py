@@ -3551,7 +3551,12 @@ class Expr:
 
     def pow(self, exponent: int | float | Series | Expr) -> Self:
         """
-        Raise expression to the power of exponent.
+        Raise to the power of the given exponent.
+
+        Parameters
+        ----------
+        exponent
+            The exponent. Accepts expression input.
 
         Examples
         --------
