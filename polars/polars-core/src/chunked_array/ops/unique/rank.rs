@@ -1,8 +1,9 @@
 use polars_arrow::prelude::FromData;
 #[cfg(feature = "random")]
 use rand::prelude::SliceRandom;
+use rand::prelude::*;
 #[cfg(feature = "random")]
-use rand::{rngs::SmallRng, thread_rng, SeedableRng};
+use rand::{rngs::SmallRng, SeedableRng};
 
 use crate::prelude::*;
 
@@ -33,7 +34,14 @@ impl Default for RankOptions {
     }
 }
 
-pub(crate) fn rank(s: &Series, method: RankMethod, descending: bool) -> Series {
+#[cfg(feature = "random")]
+fn get_random_seed() -> u64 {
+    let mut rng = SmallRng::from_entropy();
+
+    rng.next_u64()
+}
+
+pub(crate) fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> Series {
     match s.len() {
         1 => {
             return match method {
@@ -65,7 +73,7 @@ pub(crate) fn rank(s: &Series, method: RankMethod, descending: bool) -> Series {
         };
         let s = s.fill_null(null_strategy).unwrap();
 
-        let mut out = rank(&s, method, descending);
+        let mut out = rank(&s, method, descending, seed);
         unsafe {
             let arr = &mut out.chunks_mut()[0];
             *arr = arr.with_validity(Some(validity.clone()))
@@ -151,8 +159,7 @@ pub(crate) fn rank(s: &Series, method: RankMethod, descending: bool) -> Series {
 
             let mut sort_idx = sort_idx.to_vec();
 
-            let mut thread_rng = thread_rng();
-            let rng = &mut SmallRng::from_rng(&mut thread_rng).unwrap();
+            let rng = &mut SmallRng::seed_from_u64(seed.unwrap_or_else(get_random_seed));
 
             // Shuffle sort_idx positions which point to ties in the original series.
             for i in 0..(ties_indices.len() - 1) {

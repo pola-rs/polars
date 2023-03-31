@@ -4855,7 +4855,12 @@ class Expr:
         return self.arg_sort(descending, nulls_last)
 
     @deprecated_alias(reverse="descending")
-    def rank(self, method: RankMethod = "average", descending: bool = False) -> Self:
+    def rank(
+        self,
+        method: RankMethod = "average",
+        descending: bool = False,
+        seed: int | None = None,
+    ) -> Self:
         """
         Assign ranks to data, dealing with ties appropriately.
 
@@ -4881,6 +4886,8 @@ class Expr:
               on the order that the values occur in the Series.
         descending
             Rank in descending order.
+        seed
+            If `method="random"`, use this as seed.
 
         Examples
         --------
@@ -4919,7 +4926,7 @@ class Expr:
         └─────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.rank(method, descending))
+        return self._from_pyexpr(self._pyexpr.rank(method, descending, seed))
 
     def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Self:
         """
