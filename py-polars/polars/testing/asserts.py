@@ -6,7 +6,6 @@ from typing import Any
 from polars import functions as F
 from polars.dataframe import DataFrame
 from polars.datatypes import (
-    Boolean,
     Categorical,
     DataTypeClass,
     Float32,
@@ -320,7 +319,9 @@ def _assert_series_inner(
     except NotImplementedError:
         can_be_subtracted = False
 
-    check_exact = check_exact or not can_be_subtracted or left.dtype == Boolean
+    check_exact = (
+        check_exact or not can_be_subtracted or left.is_boolean() or left.is_temporal()
+    )
     if check_dtype and left.dtype != right.dtype:
         raise_assert_detail("Series", "Dtype mismatch", left.dtype, right.dtype)
 
