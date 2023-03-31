@@ -9,7 +9,8 @@ use regex::{escape, Regex};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "timezones")]
-static TZ_AWARE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(%z)|(%:z)|(%#z)|(^%\+$)").unwrap());
+static TZ_AWARE_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(%z)|(%:z)|(%::z)|(%:::z)|(%#z)|(^%\+$)").unwrap());
 
 use super::*;
 
@@ -341,7 +342,7 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
                 (Some(tz), false, false) => Some(tz.clone()),
                 (Some(_), true, _) => polars_bail!(
                     ComputeError:
-                    "cannot use strptime with both 'tz_aware=True' and tz-aware datetime, \
+                    "cannot use strptime with both a tz-aware format and a tz-aware dtype, \
                     please drop time zone from the dtype"
                 ),
                 (Some(_), _, true) => polars_bail!(
