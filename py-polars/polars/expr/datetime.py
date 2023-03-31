@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import time
+import datetime as dt
 from typing import TYPE_CHECKING
 
 from polars import functions as F
@@ -259,7 +259,7 @@ class ExprDateTimeNameSpace:
             )
         )
 
-    def combine(self, tm: time | Expr, tu: TimeUnit = "us") -> Expr:
+    def combine(self, time: dt.time | Expr, time_unit: TimeUnit = "us") -> Expr:
         """
         Create a naive Datetime from an existing Date/Datetime expression and a Time.
 
@@ -268,10 +268,10 @@ class ExprDateTimeNameSpace:
 
         Parameters
         ----------
-        tm
+        time
             A python time literal or polars expression/column that resolves to a time.
-        tu : {'ns', 'us', 'ms'}
-            Time unit.
+        time_unit : {'ns', 'us', 'ms'}
+            Unit of time.
 
         Examples
         --------
@@ -313,12 +313,12 @@ class ExprDateTimeNameSpace:
         │ 2023-07-05 07:08:09.101 ┆ 2022-07-05 07:08:09.101 ┆ 2022-07-05 04:05:06 │
         └─────────────────────────┴─────────────────────────┴─────────────────────┘
         """
-        if not isinstance(tm, (time, pli.Expr)):
+        if not isinstance(time, (dt.time, pli.Expr)):
             raise TypeError(
-                f"Expected 'tm' to be a python time or polars expression, found {tm!r}"
+                f"expected 'time' to be a python time or polars expression, found {time!r}"
             )
-        tm = expr_to_lit_or_expr(tm)
-        return wrap_expr(self._pyexpr.dt_combine(tm._pyexpr, tu))
+        time = expr_to_lit_or_expr(time)
+        return wrap_expr(self._pyexpr.dt_combine(time._pyexpr, time_unit))
 
     def strftime(self, fmt: str) -> Expr:
         """
@@ -1047,13 +1047,13 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.nanosecond())
 
-    def epoch(self, tu: EpochTimeUnit = "us") -> Expr:
+    def epoch(self, time_unit: EpochTimeUnit = "us") -> Expr:
         """
         Get the time passed since the Unix EPOCH in the give time unit.
 
         Parameters
         ----------
-        tu : {'ns', 'us', 'ms', 's', 'd'}
+        time_unit : {'ns', 'us', 'ms', 's', 'd'}
             Time unit.
 
         Examples
@@ -1066,7 +1066,7 @@ class ExprDateTimeNameSpace:
         ...     [
         ...         pl.col("date"),
         ...         pl.col("date").dt.epoch().alias("epoch_ns"),
-        ...         pl.col("date").dt.epoch(tu="s").alias("epoch_s"),
+        ...         pl.col("date").dt.epoch(time_unit="s").alias("epoch_s"),
         ...     ]
         ... )
         shape: (3, 3)
@@ -1081,24 +1081,24 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴─────────────────┴───────────┘
 
         """
-        if tu in DTYPE_TEMPORAL_UNITS:
-            return self.timestamp(tu)  # type: ignore[arg-type]
-        elif tu == "s":
+        if time_unit in DTYPE_TEMPORAL_UNITS:
+            return self.timestamp(time_unit)  # type: ignore[arg-type]
+        elif time_unit == "s":
             return wrap_expr(self._pyexpr.dt_epoch_seconds())
-        elif tu == "d":
+        elif time_unit == "d":
             return wrap_expr(self._pyexpr).cast(Date).cast(Int32)
         else:
             raise ValueError(
-                f"tu must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {tu}"
+                f"time_unit must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {time_unit}"
             )
 
-    def timestamp(self, tu: TimeUnit = "us") -> Expr:
+    def timestamp(self, time_unit: TimeUnit = "us") -> Expr:
         """
         Return a timestamp in the given time unit.
 
         Parameters
         ----------
-        tu : {'ns', 'us', 'ms'}
+        time_unit : {'ns', 'us', 'ms'}
             Time unit.
 
         Examples
@@ -1111,7 +1111,7 @@ class ExprDateTimeNameSpace:
         ...     [
         ...         pl.col("date"),
         ...         pl.col("date").dt.timestamp().alias("timestamp_ns"),
-        ...         pl.col("date").dt.timestamp(tu="ms").alias("timestamp_ms"),
+        ...         pl.col("date").dt.timestamp("ms").alias("timestamp_ms"),
         ...     ]
         ... )
         shape: (3, 3)
@@ -1126,9 +1126,9 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴─────────────────┴──────────────┘
 
         """
-        return wrap_expr(self._pyexpr.timestamp(tu))
+        return wrap_expr(self._pyexpr.timestamp(time_unit))
 
-    def with_time_unit(self, tu: TimeUnit) -> Expr:
+    def with_time_unit(self, time_unit: TimeUnit) -> Expr:
         """
         Set time unit of a Series of dtype Datetime or Duration.
 
@@ -1137,8 +1137,8 @@ class ExprDateTimeNameSpace:
 
         Parameters
         ----------
-        tu : {'ns', 'us', 'ms'}
-            Time unit for the ``Datetime`` Series.
+        time_unit : {'ns', 'us', 'ms'}
+            Unit of time for the ``Datetime`` Series.
 
         Examples
         --------
@@ -1153,12 +1153,12 @@ class ExprDateTimeNameSpace:
         >>> df.select(
         ...     [
         ...         pl.col("date"),
-        ...         pl.col("date").dt.with_time_unit(tu="us").alias("tu_us"),
+        ...         pl.col("date").dt.with_time_unit("us").alias("time_unit_us"),
         ...     ]
         ... )
         shape: (3, 2)
         ┌─────────────────────┬───────────────────────┐
-        │ date                ┆ tu_us                 │
+        │ date                ┆ time_unit_us          │
         │ ---                 ┆ ---                   │
         │ datetime[ns]        ┆ datetime[μs]          │
         ╞═════════════════════╪═══════════════════════╡
@@ -1168,15 +1168,15 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴───────────────────────┘
 
         """
-        return wrap_expr(self._pyexpr.dt_with_time_unit(tu))
+        return wrap_expr(self._pyexpr.dt_with_time_unit(time_unit))
 
-    def cast_time_unit(self, tu: TimeUnit) -> Expr:
+    def cast_time_unit(self, time_unit: TimeUnit) -> Expr:
         """
         Cast the underlying data to another time unit. This may lose precision.
 
         Parameters
         ----------
-        tu : {'ns', 'us', 'ms'}
+        time_unit : {'ns', 'us', 'ms'}
             Time unit for the ``Datetime`` Series.
 
         Examples
@@ -1192,13 +1192,13 @@ class ExprDateTimeNameSpace:
         >>> df.select(
         ...     [
         ...         pl.col("date"),
-        ...         pl.col("date").dt.cast_time_unit(tu="ms").alias("tu_ms"),
-        ...         pl.col("date").dt.cast_time_unit(tu="ns").alias("tu_ns"),
+        ...         pl.col("date").dt.cast_time_unit("ms").alias("time_unit_ms"),
+        ...         pl.col("date").dt.cast_time_unit("ns").alias("time_unit_ns"),
         ...     ]
         ... )
         shape: (3, 3)
         ┌─────────────────────┬─────────────────────┬─────────────────────┐
-        │ date                ┆ tu_ms               ┆ tu_ns               │
+        │ date                ┆ time_unit_ms        ┆ time_unit_ns        │
         │ ---                 ┆ ---                 ┆ ---                 │
         │ datetime[μs]        ┆ datetime[ms]        ┆ datetime[ns]        │
         ╞═════════════════════╪═════════════════════╪═════════════════════╡
@@ -1208,7 +1208,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴─────────────────────┴─────────────────────┘
 
         """
-        return wrap_expr(self._pyexpr.dt_cast_time_unit(tu))
+        return wrap_expr(self._pyexpr.dt_cast_time_unit(time_unit))
 
     def convert_time_zone(self, time_zone: str) -> Expr:
         """

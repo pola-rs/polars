@@ -1175,8 +1175,10 @@ impl PySeries {
     }
 
     pub fn time_unit(&self) -> Option<&str> {
-        if let DataType::Datetime(tu, _) | DataType::Duration(tu) = self.series.dtype() {
-            Some(match tu {
+        if let DataType::Datetime(time_unit, _) | DataType::Duration(time_unit) =
+            self.series.dtype()
+        {
+            Some(match time_unit {
                 TimeUnit::Nanoseconds => "ns",
                 TimeUnit::Microseconds => "us",
                 TimeUnit::Milliseconds => "ms",

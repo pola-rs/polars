@@ -82,24 +82,26 @@ def _timedelta_to_pl_duration(td: timedelta | str | None) -> str | None:
         return f"{d}{s}{us}"
 
 
-def _datetime_to_pl_timestamp(dt: datetime, tu: TimeUnit | None) -> int:
+def _datetime_to_pl_timestamp(dt: datetime, time_unit: TimeUnit | None) -> int:
     """Convert a python datetime to a timestamp in nanoseconds."""
     dt = dt.replace(tzinfo=timezone.utc)
-    if tu == "ns":
+    if time_unit == "ns":
         nanos = dt.microsecond * 1000
         return int(dt.timestamp()) * 1_000_000_000 + nanos
-    elif tu == "us":
+    elif time_unit == "us":
         micros = dt.microsecond
         return int(dt.timestamp()) * 1_000_000 + micros
-    elif tu == "ms":
+    elif time_unit == "ms":
         millis = dt.microsecond // 1000
         return int(dt.timestamp()) * 1_000 + millis
-    elif tu is None:
+    elif time_unit is None:
         # python has us precision
         micros = dt.microsecond
         return int(dt.timestamp()) * 1_000_000 + micros
     else:
-        raise ValueError(f"tu must be one of {{'ns', 'us', 'ms'}}, got {tu}")
+        raise ValueError(
+            f"time_unit must be one of {{'ns', 'us', 'ms'}}, got {time_unit}"
+        )
 
 
 def _time_to_pl_time(t: time) -> int:
@@ -112,18 +114,20 @@ def _date_to_pl_date(d: date) -> int:
     return int(dt.timestamp()) // (3600 * 24)
 
 
-def _timedelta_to_pl_timedelta(td: timedelta, tu: TimeUnit | None = None) -> int:
-    if tu == "ns":
+def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit | None = None) -> int:
+    if time_unit == "ns":
         return int(td.total_seconds() * 1e9)
-    elif tu == "us":
+    elif time_unit == "us":
         return int(td.total_seconds() * 1e6)
-    elif tu == "ms":
+    elif time_unit == "ms":
         return int(td.total_seconds() * 1e3)
-    elif tu is None:
+    elif time_unit is None:
         # python has us precision
         return int(td.total_seconds() * 1e6)
     else:
-        raise ValueError(f"tu must be one of {{'ns', 'us', 'ms'}}, got {tu}")
+        raise ValueError(
+            f"time_unit must be one of {{'ns', 'us', 'ms'}}, got {time_unit}"
+        )
 
 
 def _to_python_time(value: int) -> time:
@@ -139,15 +143,17 @@ def _to_python_time(value: int) -> time:
     return time(hour=hours, minute=minutes, second=seconds, microsecond=microsecond)
 
 
-def _to_python_timedelta(value: int | float, tu: TimeUnit = "ns") -> timedelta:
-    if tu == "ns":
+def _to_python_timedelta(value: int | float, time_unit: TimeUnit = "ns") -> timedelta:
+    if time_unit == "ns":
         return timedelta(microseconds=value // 1e3)
-    elif tu == "us":
+    elif time_unit == "us":
         return timedelta(microseconds=value)
-    elif tu == "ms":
+    elif time_unit == "ms":
         return timedelta(milliseconds=value)
     else:
-        raise ValueError(f"tu must be one of {{'ns', 'us', 'ms'}}, got {tu}")
+        raise ValueError(
+            f"time_unit must be one of {{'ns', 'us', 'ms'}}, got {time_unit}"
+        )
 
 
 EPOCH = datetime(1970, 1, 1).replace(tzinfo=None)
@@ -156,8 +162,8 @@ EPOCH = datetime(1970, 1, 1).replace(tzinfo=None)
 def _to_python_datetime(
     value: int | float,
     dtype: PolarsDataType,
-    tu: TimeUnit | None = "ns",
-    tz: str | None = None,
+    time_unit: TimeUnit | None = "ns",
+    time_zone: str | None = None,
 ) -> date | datetime:
     if dtype == Date:
         # days to seconds
@@ -167,17 +173,19 @@ def _to_python_datetime(
         dt += timedelta(seconds=value * 3600 * 24)
         return dt.date()
     elif dtype == Datetime:
-        if tz is None or tz == "":
-            if tu == "ns":
+        if time_zone is None or time_zone == "":
+            if time_unit == "ns":
                 # nanoseconds to seconds
                 dt = EPOCH + timedelta(microseconds=value / 1000)
-            elif tu == "us":
+            elif time_unit == "us":
                 dt = EPOCH + timedelta(microseconds=value)
-            elif tu == "ms":
+            elif time_unit == "ms":
                 # milliseconds to seconds
                 dt = datetime.utcfromtimestamp(value / 1000)
             else:
-                raise ValueError(f"tu must be one of {{'ns', 'us', 'ms'}}, got {tu}")
+                raise ValueError(
+                    f"time_unit must be one of {{'ns', 'us', 'ms'}}, got {time_unit}"
+                )
         else:
             if not _ZONEINFO_AVAILABLE:
                 raise ImportError(
@@ -185,33 +193,35 @@ def _to_python_datetime(
                 )
 
             utc = get_zoneinfo("UTC")
-            if tu == "ns":
+            if time_unit == "ns":
                 # nanoseconds to seconds
                 dt = datetime.fromtimestamp(0, tz=utc) + timedelta(
                     microseconds=value / 1000
                 )
-            elif tu == "us":
+            elif time_unit == "us":
                 dt = datetime.fromtimestamp(0, tz=utc) + timedelta(microseconds=value)
-            elif tu == "ms":
+            elif time_unit == "ms":
                 # milliseconds to seconds
                 dt = datetime.fromtimestamp(value / 1000, tz=utc)
             else:
-                raise ValueError(f"tu must be one of {{'ns', 'us', 'ms'}}, got {tu}")
-            return _localize(dt, tz)
+                raise ValueError(
+                    f"time_unit must be one of {{'ns', 'us', 'ms'}}, got {time_unit}"
+                )
+            return _localize(dt, time_zone)
 
         return dt
     else:
         raise NotImplementedError  # pragma: no cover
 
 
-def _localize(dt: datetime, tz: str) -> datetime:
+def _localize(dt: datetime, time_zone: str) -> datetime:
     # zone info installation should already be checked
     _tzinfo: ZoneInfo | tzinfo
     try:
-        _tzinfo = get_zoneinfo(tz)
+        _tzinfo = get_zoneinfo(time_zone)
     except zoneinfo.ZoneInfoNotFoundError:
         # try fixed offset, which is not supported by ZoneInfo
-        _tzinfo = _parse_fixed_tz_offset(tz)
+        _tzinfo = _parse_fixed_tz_offset(time_zone)
 
     return dt.astimezone(_tzinfo)
 

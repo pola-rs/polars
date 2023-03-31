@@ -3745,9 +3745,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             elif isinstance(value, float):
                 dtypes = [Float64]
             elif isinstance(value, datetime):
-                dtypes = [Datetime] + [Datetime(tu) for tu in DTYPE_TEMPORAL_UNITS]
+                dtypes = [Datetime] + [Datetime(u) for u in DTYPE_TEMPORAL_UNITS]
             elif isinstance(value, timedelta):
-                dtypes = [Duration] + [Duration(tu) for tu in DTYPE_TEMPORAL_UNITS]
+                dtypes = [Duration] + [Duration(u) for u in DTYPE_TEMPORAL_UNITS]
             elif isinstance(value, date):
                 dtypes = [Date]
             elif isinstance(value, time):

@@ -502,8 +502,8 @@ fn py_date_range(
     every: &str,
     closed: Wrap<ClosedWindow>,
     name: &str,
-    tu: Wrap<TimeUnit>,
-    tz: Option<TimeZone>,
+    time_unit: Wrap<TimeUnit>,
+    time_zone: Option<TimeZone>,
 ) -> PyResult<PySeries> {
     let date_range = polars_rs::time::date_range_impl(
         name,
@@ -511,8 +511,8 @@ fn py_date_range(
         stop,
         Duration::parse(every),
         closed.0,
-        tu.0,
-        tz.as_ref(),
+        time_unit.0,
+        time_zone.as_ref(),
     )
     .map_err(PyPolarsErr::from)?;
     Ok(date_range.into_series().into())
@@ -525,12 +525,12 @@ fn py_date_range_lazy(
     every: &str,
     closed: Wrap<ClosedWindow>,
     name: String,
-    tz: Option<TimeZone>,
+    time_zone: Option<TimeZone>,
 ) -> PyExpr {
     let start = start.inner;
     let end = end.inner;
     let every = Duration::parse(every);
-    polars_rs::lazy::dsl::functions::date_range(name, start, end, every, closed.0, tz).into()
+    polars_rs::lazy::dsl::functions::date_range(name, start, end, every, closed.0, time_zone).into()
 }
 
 #[pyfunction]
