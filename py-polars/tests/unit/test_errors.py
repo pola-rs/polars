@@ -524,3 +524,8 @@ def test_groupby_dynamic_validation(every: str, match: str) -> None:
         df.groupby_dynamic("index", by="group", every=every, period="2i").agg(
             pl.col("weight")
         )
+
+
+def test_lit_agg_err() -> None:
+    with pytest.raises(pl.ComputeError, match=r"cannot aggregate a literal"):
+        pl.DataFrame({"y": [1]}).with_columns(pl.lit(1).sum().over("y"))
