@@ -403,6 +403,14 @@ pub fn create_physical_plan(
                     }
                 });
                 let input = create_physical_plan(input, lp_arena, expr_arena)?;
+                let keys = keys
+                    .iter()
+                    .map(|node| node_to_expr(*node, expr_arena))
+                    .collect::<Vec<_>>();
+                let aggs = aggs
+                    .iter()
+                    .map(|node| node_to_expr(*node, expr_arena))
+                    .collect::<Vec<_>>();
                 Ok(Box::new(executors::PartitionGroupByExec::new(
                     input,
                     phys_keys,
@@ -412,6 +420,8 @@ pub fn create_physical_plan(
                     input_schema,
                     schema,
                     from_partitioned_ds,
+                    keys,
+                    aggs,
                 )))
             } else {
                 let input = create_physical_plan(input, lp_arena, expr_arena)?;
