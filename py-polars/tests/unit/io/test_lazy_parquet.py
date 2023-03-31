@@ -331,6 +331,7 @@ def test_streaming_categorical() -> None:
                 .groupby("name")
                 .agg(pl.col("amount").sum())
                 .collect()
+                .sort("name")
             )
             expected = pl.DataFrame(
                 {"name": ["Bob", "Alice"], "amount": [400, 200]},
