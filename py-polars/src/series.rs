@@ -892,11 +892,14 @@ impl PySeries {
             ) || !skip_nulls
             {
                 let mut avs = Vec::with_capacity(self.series.len());
-                let iter = self.series.iter().map(|av| {
-                    let input = Wrap(av);
-                    call_lambda_and_extract::<_, Wrap<AnyValue>>(py, lambda, input)
-                        .unwrap()
-                        .0
+                let iter = self.series.iter().map(|av| match (skip_nulls, av) {
+                    (true, AnyValue::Null) => AnyValue::Null,
+                    (_, av) => {
+                        let input = Wrap(av);
+                        call_lambda_and_extract::<_, Wrap<AnyValue>>(py, lambda, input)
+                            .unwrap()
+                            .0
+                    }
                 });
                 avs.extend(iter);
                 return Ok(Series::new(self.name(), &avs).into());
