@@ -64,21 +64,34 @@ impl Duration {
         }
     }
 
-    /// 1ns // 1 nanosecond
-    /// 1us // 1 microsecond
-    /// 1ms // 1 millisecond
-    /// 1s  // 1 second
-    /// 1m  // 1 minute
-    /// 1h  // 1 hour
-    /// 1d  // 1 day
-    /// 1w  // 1 week
-    /// 1mo // 1 calendar month
-    /// 1y  // 1 calendar year
-    /// 1i  // 1 index value (only for {Int32, Int64} dtypes
+    /// Parse a string into a `Duration`
     ///
-    /// 3d12h4m25s // 3 days, 12 hours, 4 minutes, and 25 seconds
+    /// Strings are composed of a sequence of number-unit pairs, such as `5d` (5 days). A string may begin with a minus
+    /// sign, in which case it is interpreted as a negative duration. Some examples:
     ///
-    /// # Panics if given str is incorrect
+    /// * `"1y"`: 1 year
+    /// * `"-1w2d"`: negative 1 week, 2 days (i.e. -9 days)
+    /// * `"3d12h4m25s"`: 3 days, 12 hours, 4 minutes, and 25 seconds
+    ///
+    /// Aside from a leading minus sign, strings may not contain any characters other than numbers and letters
+    /// (including whitespace).
+    ///
+    /// The available units, in ascending order of magnitude, are as follows:
+    ///
+    /// * `ns`: nanosecond
+    /// * `us`: microsecond
+    /// * `ms`: millisecond
+    /// * `s`:  second
+    /// * `m`:  minute
+    /// * `h`:  hour
+    /// * `d`:  day
+    /// * `w`:  week
+    /// * `mo`: calendar month
+    /// * `y`:  calendar year
+    /// * `i`:  index value (only for {Int32, Int64} dtypes)
+    ///
+    /// # Panics
+    /// If the given str is invalid for any reason.
     pub fn parse(duration: &str) -> Self {
         let num_minus_signs = duration.matches('-').count();
         if num_minus_signs > 1 {
