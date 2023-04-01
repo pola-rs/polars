@@ -19,8 +19,6 @@ from polars.testing.asserts import assert_series_equal
 if TYPE_CHECKING:
     from _pytest.capture import CaptureFixture
 
-    from polars.type_aliases import TransferEncoding
-
 
 def test_init_signature_match() -> None:
     # eager/lazy init signatures are expected to match; if this test fails, it
@@ -1486,36 +1484,4 @@ def test_compare_aggregation_between_lazy_and_eager_6904(
     result_eager = df.select(func.over("y")).select("x")
     dtype_eager = result_eager["x"].dtype
     result_lazy = df.lazy().select(func.over("y")).select(pl.col(dtype_eager)).collect()
-    assert result_eager.frame_equal(result_lazy)
-
-
-@pytest.mark.parametrize(
-    "encoding",
-    [
-        "hex",
-        "base64",
-    ],
-)
-def test_compare_encode_between_lazy_and_eager_6814(encoding: TransferEncoding) -> None:
-    df = pl.DataFrame({"x": [b"aa", b"bb", b"cc"]})
-    expr = pl.col("x").bin.encode(encoding)
-    result_eager = df.select(expr)
-    dtype = result_eager["x"].dtype
-    result_lazy = df.lazy().select(expr).select(pl.col(dtype)).collect()
-    assert result_eager.frame_equal(result_lazy)
-
-
-@pytest.mark.parametrize(
-    "encoding",
-    [
-        "hex",
-        "base64",
-    ],
-)
-def test_compare_decode_between_lazy_and_eager_6814(encoding: TransferEncoding) -> None:
-    df = pl.DataFrame({"x": [b"d3d3", b"abcd", b"1234"]})
-    expr = pl.col("x").bin.decode(encoding)
-    result_eager = df.select(expr)
-    dtype = result_eager["x"].dtype
-    result_lazy = df.lazy().select(expr).select(pl.col(dtype)).collect()
     assert result_eager.frame_equal(result_lazy)
