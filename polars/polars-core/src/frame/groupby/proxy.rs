@@ -1,6 +1,7 @@
 use std::mem::ManuallyDrop;
 use std::ops::Deref;
 
+use polars_arrow::trusted_len::PushUnchecked;
 use polars_arrow::utils::CustomIterTools;
 use rayon::iter::plumbing::UnindexedConsumer;
 use rayon::prelude::*;
@@ -46,7 +47,23 @@ impl From<Vec<IdxItem>> for GroupsIdx {
 
 impl From<Vec<Vec<IdxItem>>> for GroupsIdx {
     fn from(v: Vec<Vec<IdxItem>>) -> Self {
-        v.into_iter().flatten().collect()
+        // 10% faster than `iter().flatten().collect()
+        let cap = v.iter().map(|v| v.len()).sum::<usize>();
+        let mut first = Vec::with_capacity(cap);
+        let mut all = Vec::with_capacity(cap);
+        for inner in v {
+            for (first_val, vals) in inner {
+                unsafe {
+                    first.push_unchecked(first_val);
+                    all.push_unchecked(vals)
+                }
+            }
+        }
+        GroupsIdx {
+            sorted: false,
+            first,
+            all,
+        }
     }
 }
 
