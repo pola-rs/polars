@@ -5,6 +5,7 @@ use polars_arrow::trusted_len::PushUnchecked;
 use polars_arrow::utils::CustomIterTools;
 use rayon::iter::plumbing::UnindexedConsumer;
 use rayon::prelude::*;
+use polars_utils::flatten;
 
 use crate::prelude::*;
 use crate::utils::{slice_slice, NoNull};
@@ -18,6 +19,78 @@ pub struct GroupsIdx {
     first: Vec<IdxSize>,
     all: Vec<Vec<IdxSize>>,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct GroupsIdxChunked {
+    pub(crate) sorted: bool,
+    // outer Vec is equal to `n_partitions`
+    // the flattening is costly, so we leave it chunked
+    first: Vec<Vec<IdxSize>>,
+    // inner vec ar the indexes of a single group
+    all: Vec<Vec<Vec<IdxSize>>>,
+}
+
+impl From<GroupsIdxChunked> for GroupsIdx {
+    fn from(groups: GroupsIdxChunked) -> Self {
+        let cap = groups.first.iter().map(|v| v.len()).sum::<usize>();
+        let mut first = Vec::with_capacity(cap);
+        let mut all = Vec::with_capacity(cap);
+
+        for g in groups.first {
+            first.copy_from_slice(&g)
+        }
+        for g in groups.all {
+            all.extend(g)
+        }
+
+        GroupsIdx {
+            sorted: groups.sorted,
+            first,
+            all,
+        }
+    }
+}
+
+impl GroupsIdxChunked {
+
+    pub fn sort(&mut self) -> GroupsIdx {
+        let mut idx = 0;
+
+        let cap = self.first.iter().map(|v| v.len()).sum::<usize>();
+
+        let mut idx_vals = Vec::with_capacity(cap);
+
+        for buf in std::mem::take(&mut self.first) {
+            for v in buf {
+                let out = [idx, v];
+                idx += 1;
+                idx_vals.push(out);
+            }
+        }
+
+        idx_vals.sort_unstable_by_key(|v| v[1]);
+
+        let take_first = || idx_vals.iter().map(|v| v[1]).collect_trusted::<Vec<_>>();
+        let take_all = || {
+            let mut all = flatten(&self.all, Some(cap));
+            idx_vals
+                .iter()
+                .map(|v| unsafe {
+                    let idx = v[0] as usize;
+                    std::mem::take(all.get_unchecked_mut(idx))
+                })
+                .collect_trusted::<Vec<_>>()
+        };
+        let (first, all) = POOL.install(|| rayon::join(take_first, take_all));
+        GroupsIdx {
+            sorted: true,
+            first,
+            all
+        }
+    }
+
+}
+
 
 pub type IdxItem = (IdxSize, Vec<IdxSize>);
 pub type BorrowIdxItem<'a> = (IdxSize, &'a Vec<IdxSize>);
@@ -183,6 +256,16 @@ impl FromParallelIterator<IdxItem> for GroupsIdx {
     }
 }
 
+impl<'a> IntoParallelIterator for &'a GroupsIdxChunked {
+    type Iter = rayon::iter::Zip<rayon::slice::Iter<'a, Vec<IdxSize>>, rayon::slice::Iter<'a, Vec<Vec<IdxSize>>>>;
+    type Item = (&'a Vec<IdxSize>, &'a Vec<Vec<IdxSize>>);
+
+    fn into_par_iter(self) -> Self::Iter {
+
+        self.first.par_iter().zip(self.all.par_iter())
+    }
+}
+
 impl<'a> IntoParallelIterator for &'a GroupsIdx {
     type Iter = rayon::iter::Zip<
         rayon::iter::Copied<rayon::slice::Iter<'a, IdxSize>>,
@@ -215,6 +298,7 @@ pub type GroupsSlice = Vec<[IdxSize; 2]>;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GroupsProxy {
     Idx(GroupsIdx),
+    IdxChunked(GroupsIdxChunked),
     Slice {
         // the groups slices
         groups: GroupsSlice,
@@ -233,6 +317,10 @@ impl GroupsProxy {
     #[cfg(feature = "private")]
     pub fn into_idx(self) -> GroupsIdx {
         match self {
+            GroupsProxy::IdxChunked(groups) => {
+                eprintln!("Had to flatten groups, missed an optimization opportunity. Please open an issue.");
+                groups.into()
+            }
             GroupsProxy::Idx(groups) => groups,
             GroupsProxy::Slice { groups, .. } => {
                 eprintln!("Had to reallocate groups, missed an optimization opportunity. Please open an issue.");
@@ -251,6 +339,11 @@ impl GroupsProxy {
     #[cfg(feature = "private")]
     pub fn sort(&mut self) {
         match self {
+            GroupsProxy::IdxChunked(groups) => {
+                if !groups.sorted {
+                    *self = GroupsProxy::Idx(groups.sort())
+                }
+            }
             GroupsProxy::Idx(groups) => {
                 if !groups.is_sorted_flag() {
                     groups.sort()
@@ -280,6 +373,9 @@ impl GroupsProxy {
     pub fn take_group_firsts(self) -> Vec<IdxSize> {
         match self {
             GroupsProxy::Idx(mut groups) => std::mem::take(&mut groups.first),
+            GroupsProxy::IdxChunked(groups) => {
+                flatten(&groups.first, None)
+            }
             GroupsProxy::Slice { groups, .. } => {
                 groups.into_iter().map(|[first, _len]| first).collect()
             }
@@ -312,6 +408,7 @@ impl GroupsProxy {
         match self {
             GroupsProxy::Slice { groups, .. } => groups,
             GroupsProxy::Idx(_) => panic!("groups are index not slices"),
+            GroupsProxy::IdxChunked(_) => panic!("groups are chunked index not slices"),
         }
     }
 
@@ -322,6 +419,7 @@ impl GroupsProxy {
                 let all = &groups.all[index];
                 GroupsIndicator::Idx((first, all))
             }
+            GroupsIdxChunked
             GroupsProxy::Slice { groups, .. } => GroupsIndicator::Slice(groups[index]),
         }
     }

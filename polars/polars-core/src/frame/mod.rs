@@ -3268,16 +3268,25 @@ impl DataFrame {
             self.groupby(cols)?.take_groups()
         };
 
+        fn take_group(df: &DataFrame, group: &Vec<IdxSize>) -> DataFrame {
+            // groups are in bounds
+            unsafe { df._take_unchecked_slice(&group, false) }
+        }
+
         // don't parallelize this
         // there is a lot of parallelization in take and this may easily SO
         POOL.install(|| {
             match groups {
+                GroupsProxy::IdxChunked(idx) => {
+                    Ok(idx.into_par_iter().map(|(_, groups)| {
+                        groups.into_iter().map(|group| take_group(self, group))
+                    }).flatten_iter().collect())
+                }
                 GroupsProxy::Idx(idx) => {
-                    Ok(idx
+                    Ok((&idx)
                         .into_par_iter()
                         .map(|(_, group)| {
-                            // groups are in bounds
-                            unsafe { self._take_unchecked_slice(&group, false) }
+                            take_group(self, group)
                         })
                         .collect())
                 }
