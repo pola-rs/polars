@@ -110,9 +110,9 @@ pub fn qcut(
     let ca = s_sorted.f64().unwrap();
 
     let mut bins = Vec::with_capacity(quantiles.len());
-    for quantile in quantiles {
-        if let Some(qunatile) = ca.quantile(*quantile, QuantileInterpolOptions::Linear)? {
-            bins.push(qunatile)
+    for quantile_level in quantiles {
+        if let Some(quantile) = ca.quantile(*quantile_level, QuantileInterpolOptions::Linear)? {
+            bins.push(quantile)
         }
     }
 
