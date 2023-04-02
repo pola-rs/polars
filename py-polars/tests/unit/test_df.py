@@ -3654,6 +3654,41 @@ def test_ufunc_expr_not_first() -> None:
     assert_frame_equal(out, expected)
 
 
+def test_ufunc_multiple_expressions() -> None:
+    # example from https://github.com/pola-rs/polars/issues/6770
+    df = pl.DataFrame(
+        {
+            "v": [
+                -4.293,
+                -2.4659,
+                -1.8378,
+                -0.2821,
+                -4.5649,
+                -3.8128,
+                -7.4274,
+                3.3443,
+                3.8604,
+                -4.2200,
+            ],
+            "u": [
+                -11.2268,
+                6.3478,
+                7.1681,
+                3.4986,
+                2.7320,
+                -1.0695,
+                -10.1408,
+                11.2327,
+                6.6623,
+                -8.1412,
+            ],
+        }
+    )
+    expected = np.arctan2(df.get_column("v"), df.get_column("u"))
+    result = df.select(np.arctan2(pl.col("v"), pl.col("u")))[:, 0]  # type: ignore[call-overload]
+    assert_series_equal(expected, result)  # type: ignore[arg-type]
+
+
 def test_window_deadlock() -> None:
     np.random.seed(12)
 

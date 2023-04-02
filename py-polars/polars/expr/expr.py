@@ -7,7 +7,7 @@ import os
 import random
 import warnings
 from datetime import timedelta
-from functools import reduce
+from functools import partial, reduce
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -47,7 +47,7 @@ from polars.utils.various import sphinx_accessor
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arg_where as py_arg_where
-
+    from polars.polars import reduce as pyreduce
 if TYPE_CHECKING:
     import sys
 
@@ -282,9 +282,13 @@ class Expr:
         """Numpy universal functions."""
         num_expr = sum(isinstance(inp, Expr) for inp in inputs)
         if num_expr > 1:
-            raise ValueError(
-                f"Numpy ufunc can only be used with one expression, {num_expr} given. Use `pl.reduce` to call numpy functions over multiple expressions."
-            )
+            if num_expr < len(inputs):
+                raise ValueError(
+                    "Numpy ufunc with more than one expression can only be used if all non-expression inputs are provided as keyword arguments only"
+                )
+
+            exprs = selection_to_pyexpr_list(inputs)
+            return self._from_pyexpr(pyreduce(partial(ufunc, **kwargs), exprs))
 
         def function(s: Series) -> Series:  # pragma: no cover
             args = [inp if not isinstance(inp, Expr) else s for inp in inputs]
