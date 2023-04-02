@@ -1284,6 +1284,13 @@ def test_rank() -> None:
     )
 
 
+def test_rank_random() -> None:
+    s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
+    assert_series_equal(
+        s.rank("random", seed=1), pl.Series("a", [2, 4, 7, 3, 5, 6, 1], dtype=UInt32)
+    )
+
+
 def test_diff() -> None:
     s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
     expected = pl.Series("a", [1, 1, -1, 0, 1, -3])

@@ -1628,12 +1628,12 @@ impl PyExpr {
             .into())
     }
 
-    fn rank(&self, method: Wrap<RankMethod>, descending: bool) -> Self {
+    fn rank(&self, method: Wrap<RankMethod>, descending: bool, seed: Option<u64>) -> Self {
         let options = RankOptions {
             method: method.0,
             descending,
         };
-        self.inner.clone().rank(options).into()
+        self.inner.clone().rank(options, seed).into()
     }
 
     fn diff(&self, n: usize, null_behavior: Wrap<NullBehavior>) -> Self {
