@@ -25,6 +25,8 @@ from typing import (
     overload,
 )
 
+from polars import functions as F
+from polars import internals as pli
 from polars.dataframe._html import NotebookFormatter
 from polars.dataframe.groupby import DynamicGroupBy, GroupBy, RollingGroupBy
 from polars.datatypes import (
@@ -103,9 +105,6 @@ from polars.utils.various import (
     scale_bytes,
 )
 
-from polars import functions as F
-from polars import internals as pli
-
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame
 
@@ -114,6 +113,9 @@ if TYPE_CHECKING:
     import sys
     from datetime import timedelta
     from io import IOBase
+
+    from pyarrow.interchange.dataframe import _PyArrowDataFrame
+    from xlsxwriter import Workbook
 
     from polars.expr import Expr
     from polars.lazyframe import LazyFrame
@@ -150,8 +152,6 @@ if TYPE_CHECKING:
         UnstackDirection,
     )
     from polars.utils import NoDefault
-    from pyarrow.interchange.dataframe import _PyArrowDataFrame
-    from xlsxwriter import Workbook
 
     if sys.version_info >= (3, 8):
         from typing import Literal

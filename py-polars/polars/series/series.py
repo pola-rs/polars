@@ -18,6 +18,8 @@ from typing import (
     overload,
 )
 
+from polars import functions as F
+from polars import internals as pli
 from polars.datatypes import (
     Boolean,
     Categorical,
@@ -91,9 +93,6 @@ from polars.utils.various import (
     scale_bytes,
     sphinx_accessor,
 )
-
-from polars import functions as F
-from polars import internals as pli
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame, PySeries
