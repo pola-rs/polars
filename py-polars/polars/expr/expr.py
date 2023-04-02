@@ -117,6 +117,7 @@ class Expr:
     def __abs__(self) -> Self:
         return self.abs()
 
+    # operators
     def __add__(self, other: Any) -> Self:
         return self._from_pyexpr(self._pyexpr + self._to_pyexpr(other))
 
@@ -203,69 +204,6 @@ class Expr:
 
     def __rxor__(self, other: Expr) -> Self:
         return self._from_pyexpr(self._pyexpr._xor(self._to_pyexpr(other)))
-
-    # conjunction
-    def and_(self, *others: Any) -> Self:
-        """Method equivalent of operator expression ``expr & other1 & other2 & ...``."""
-        return reduce(operator.and_, (self,) + others)
-
-    def or_(self, *others: Any) -> Self:
-        """Method equivalent of operator expression ``expr | other1 | other2 | ...``."""
-        return reduce(operator.or_, (self,) + others)
-
-    # comparison
-    def eq(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr == other``."""
-        return self.__eq__(other)
-
-    def ge(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr >= other``."""
-        return self.__ge__(other)
-
-    def gt(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr > other``."""
-        return self.__gt__(other)
-
-    def le(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr <= other``."""
-        return self.__le__(other)
-
-    def lt(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr < other``."""
-        return self.__lt__(other)
-
-    def ne(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr != other``."""
-        return self.__ne__(other)
-
-    # math / binary
-    def add(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr + other``."""
-        return self.__add__(other)
-
-    def floordiv(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr // other``."""
-        return self.__floordiv__(other)
-
-    def mod(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr % other``."""
-        return self.__mod__(other)
-
-    def mul(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr * other``."""
-        return self.__mul__(other)
-
-    def sub(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr - other``."""
-        return self.__sub__(other)
-
-    def truediv(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr / other``."""
-        return self.__truediv__(other)
-
-    def xor(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr ^ other``."""
-        return self.__xor__(other)
 
     # state
     def __getstate__(self) -> Any:
@@ -3553,14 +3491,250 @@ class Expr:
         """
         return self.head(n)
 
+    def and_(self, *others: Any) -> Self:
+        """Method equivalent of logical "and" operator ``expr & other & ...``."""
+        return reduce(operator.and_, (self,) + others)
+
+    def or_(self, *others: Any) -> Self:
+        """Method equivalent of logical "or" operator ``expr | other | ...``."""
+        return reduce(operator.or_, (self,) + others)
+
+    def eq(self, other: Any) -> Self:
+        """Method equivalent of equality operator ``expr == other``."""
+        return self.__eq__(other)
+
+    def ge(self, other: Any) -> Self:
+        """Method equivalent of "greater than or equal" operator ``expr >= other``."""
+        return self.__ge__(other)
+
+    def gt(self, other: Any) -> Self:
+        """Method equivalent of "greater than" operator ``expr > other``."""
+        return self.__gt__(other)
+
+    def le(self, other: Any) -> Self:
+        """Method equivalent of "less than or equal" operator ``expr <= other``."""
+        return self.__le__(other)
+
+    def lt(self, other: Any) -> Self:
+        """Method equivalent of "less than" operator ``expr < other``."""
+        return self.__lt__(other)
+
+    def ne(self, other: Any) -> Self:
+        """Method equivalent of inequality operator ``expr != other``."""
+        return self.__ne__(other)
+
+    def add(self, other: Any) -> Self:
+        """
+        Method equivalent of addition operator ``expr + other``.
+
+        Parameters
+        ----------
+        other
+            integer, float, or string value; accepts expression input.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [1, 2, 3, 4, 5]})
+        >>> df.with_columns(pl.col("x").add(2).alias("x+2"))
+        shape: (5, 2)
+        ┌─────┬─────┐
+        │ x   ┆ x+2 │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 3   │
+        │ 2   ┆ 4   │
+        │ 3   ┆ 5   │
+        │ 4   ┆ 6   │
+        │ 5   ┆ 7   │
+        └─────┴─────┘
+
+        >>> df = pl.DataFrame(
+        ...     {"x": ["a", "d", "g"], "y": ["b", "e", "h"], "z": ["c", "f", "i"]}
+        ... )
+        >>> df.with_columns(pl.col("x").add(pl.col("y")).add(pl.col("z")).alias("add"))
+        shape: (3, 4)
+        ┌─────┬─────┬─────┬─────┐
+        │ x   ┆ y   ┆ z   ┆ add │
+        │ --- ┆ --- ┆ --- ┆ --- │
+        │ str ┆ str ┆ str ┆ str │
+        ╞═════╪═════╪═════╪═════╡
+        │ a   ┆ b   ┆ c   ┆ abc │
+        │ d   ┆ e   ┆ f   ┆ def │
+        │ g   ┆ h   ┆ i   ┆ ghi │
+        └─────┴─────┴─────┴─────┘
+
+        """
+        return self.__add__(other)
+
+    def floordiv(self, other: Any) -> Self:
+        """
+        Method equivalent of integer division operator ``expr // other``.
+
+        Parameters
+        ----------
+        other
+            Other integer or float value; accepts expression input.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [1, 2, 3, 4, 5]})
+        >>> df.with_columns(pl.col("x").floordiv(2).alias("x//2"))
+        shape: (5, 2)
+        ┌─────┬──────┐
+        │ x   ┆ x//2 │
+        │ --- ┆ ---  │
+        │ i64 ┆ i64  │
+        ╞═════╪══════╡
+        │ 1   ┆ 0    │
+        │ 2   ┆ 1    │
+        │ 3   ┆ 1    │
+        │ 4   ┆ 2    │
+        │ 5   ┆ 2    │
+        └─────┴──────┘
+
+        See Also
+        --------
+        truediv
+
+        """
+        return self.__floordiv__(other)
+
+    def mod(self, other: Any) -> Self:
+        """
+        Method equivalent of modulus operator ``expr % other``.
+
+        Parameters
+        ----------
+        other
+            Other integer or float value; accepts expression input.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [0, 1, 2, 3, 4]})
+        >>> df.with_columns(pl.col("x").mod(2).alias("x%2"))
+        shape: (5, 2)
+        ┌─────┬─────┐
+        │ x   ┆ x%2 │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 0   ┆ 0   │
+        │ 1   ┆ 1   │
+        │ 2   ┆ 0   │
+        │ 3   ┆ 1   │
+        │ 4   ┆ 0   │
+        └─────┴─────┘
+
+        """
+        return self.__mod__(other)
+
+    def mul(self, other: Any) -> Self:
+        """
+        Method equivalent of multiplication operator ``expr * other``.
+
+        Parameters
+        ----------
+        other
+            Other integer or float value; accepts expression input.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [0, 1, 2, 3, 4]})
+        >>> df.with_columns(pl.col("x").mul(2).alias("x*2"))
+        shape: (5, 2)
+        ┌─────┬─────┐
+        │ x   ┆ x*2 │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 0   ┆ 0   │
+        │ 1   ┆ 2   │
+        │ 2   ┆ 4   │
+        │ 3   ┆ 6   │
+        │ 4   ┆ 8   │
+        └─────┴─────┘
+
+        """
+        return self.__mul__(other)
+
+    def sub(self, other: Any) -> Self:
+        """
+        Method equivalent of subtraction operator ``expr - other``.
+
+        Parameters
+        ----------
+        other
+            Other integer or float value; accepts expression input.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [0, 1, 2, 3, 4]})
+        >>> df.with_columns(pl.col("x").sub(2).alias("x-2"))
+        shape: (5, 2)
+        ┌─────┬─────┐
+        │ x   ┆ x-2 │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 0   ┆ -2  │
+        │ 1   ┆ -1  │
+        │ 2   ┆ 0   │
+        │ 3   ┆ 1   │
+        │ 4   ┆ 2   │
+        └─────┴─────┘
+
+        """
+        return self.__sub__(other)
+
+    def truediv(self, other: Any) -> Self:
+        """
+        Method equivalent of float division operator ``expr / other``.
+
+        Parameters
+        ----------
+        other
+            Other integer or float value; accepts expression input.
+
+        Notes
+        -----
+        Zero-division behaviour follows IEEE-754:
+
+        0/0: Invalid operation - mathematically undefined, returns NaN.
+        n/0: On finite operands gives an exact infinite result, eg: ±infinity.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [1, 2, 3, 4, 5]})
+        >>> df.with_columns(pl.col("x").truediv(2).alias("x/2"))
+        shape: (5, 2)
+        ┌─────┬─────┐
+        │ x   ┆ x/2 │
+        │ --- ┆ --- │
+        │ i64 ┆ f64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 0.5 │
+        │ 2   ┆ 1.0 │
+        │ 3   ┆ 1.5 │
+        │ 4   ┆ 2.0 │
+        │ 5   ┆ 2.5 │
+        └─────┴─────┘
+
+        See Also
+        --------
+        floordiv
+
+        """
+        return self.__truediv__(other)
+
     def pow(self, exponent: int | float | Series | Expr) -> Self:
         """
-        Raise to the power of the given exponent.
+        Method equivalent of exponentiation operator ``expr ** exponent``.
 
         Parameters
         ----------
         exponent
-            The exponent. Accepts expression input.
+            The exponent; accepts expression input.
 
         Examples
         --------
@@ -3581,6 +3755,57 @@ class Expr:
         """
         exponent = expr_to_lit_or_expr(exponent)
         return self._from_pyexpr(self._pyexpr.pow(exponent._pyexpr))
+
+    def xor(self, other: Any) -> Self:
+        """
+        Method equivalent of logical exclusive-or operator ``expr ^ other``.
+
+        Parameters
+        ----------
+        other
+            Other integer or boolean value; accepts expression input.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"x": [True, False, True, False], "y": [True, True, False, False]}
+        ... )
+        >>> df.with_columns(pl.col("x").xor(pl.col("y")).alias("xor"))
+        shape: (4, 3)
+        ┌───────┬───────┬───────┐
+        │ x     ┆ y     ┆ xor   │
+        │ ---   ┆ ---   ┆ ---   │
+        │ bool  ┆ bool  ┆ bool  │
+        ╞═══════╪═══════╪═══════╡
+        │ true  ┆ true  ┆ false │
+        │ false ┆ true  ┆ true  │
+        │ true  ┆ false ┆ true  │
+        │ false ┆ false ┆ false │
+        └───────┴───────┴───────┘
+
+        >>> def binary_string(n: int) -> str:
+        ...     return bin(n)[2:].zfill(8)
+        >>>
+        >>> df = pl.DataFrame({"x": [10, 8, 250, 66], "y": [1, 2, 3, 4]})
+        >>> df.with_columns(
+        ...     pl.col("x").apply(binary_string).alias("bin_x"),
+        ...     pl.col("y").apply(binary_string).alias("bin_y"),
+        ...     pl.col("x").xor(pl.col("y")).alias("x ^ y"),
+        ... )
+        shape: (4, 5)
+        ┌─────┬─────┬──────────┬──────────┬───────┐
+        │ x   ┆ y   ┆ bin_x    ┆ bin_y    ┆ x ^ y │
+        │ --- ┆ --- ┆ ---      ┆ ---      ┆ ---   │
+        │ i64 ┆ i64 ┆ str      ┆ str      ┆ i64   │
+        ╞═════╪═════╪══════════╪══════════╪═══════╡
+        │ 10  ┆ 1   ┆ 00001010 ┆ 00000001 ┆ 11    │
+        │ 8   ┆ 2   ┆ 00001000 ┆ 00000010 ┆ 10    │
+        │ 250 ┆ 3   ┆ 11111010 ┆ 00000011 ┆ 249   │
+        │ 66  ┆ 4   ┆ 01000010 ┆ 00000100 ┆ 70    │
+        └─────┴─────┴──────────┴──────────┴───────┘
+
+        """
+        return self.__xor__(other)
 
     def is_in(self, other: Expr | Collection[Any] | Series) -> Self:
         """
@@ -5601,10 +5826,6 @@ class Expr:
             If a multiple dimensions are given, results in a Series of Lists with shape
             (rows, cols).
 
-        See Also
-        --------
-        ExprListNameSpace.explode : Explode a list column.
-
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7, 8, 9]})
@@ -5619,6 +5840,10 @@ class Expr:
         │ [4, 5, 6] │
         │ [7, 8, 9] │
         └───────────┘
+
+        See Also
+        --------
+        ExprListNameSpace.explode : Explode a list column.
 
         """
         return self._from_pyexpr(self._pyexpr.reshape(dims))
