@@ -106,6 +106,32 @@ impl Series {
     }
 
     #[doc(hidden)]
+    pub unsafe fn agg_approx_n_unique(&self, groups: &GroupsProxy, precision: u8) -> Series {
+        match groups {
+            GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<IdxType, _>(groups, |idx| {
+                debug_assert!(idx.len() <= self.len());
+                if idx.is_empty() {
+                    None
+                } else {
+                    let take = self.take_iter_unchecked(&mut idx.iter().map(|i| *i as usize));
+                    take.approx_n_unique(precision).ok().map(|v| v as IdxSize)
+                }
+            }),
+            GroupsProxy::Slice { groups, .. } => {
+                _agg_helper_slice::<IdxType, _>(groups, |[first, len]| {
+                    debug_assert!(len <= self.len() as IdxSize);
+                    if len == 0 {
+                        None
+                    } else {
+                        let take = self.slice_from_offsets(first, len);
+                        take.approx_n_unique(precision).ok().map(|v| v as IdxSize)
+                    }
+                })
+            }
+        }
+    }
+
+    #[doc(hidden)]
     pub unsafe fn agg_median(&self, groups: &GroupsProxy) -> Series {
         use DataType::*;
 

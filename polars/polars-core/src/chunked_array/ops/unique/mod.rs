@@ -1,9 +1,11 @@
 #[cfg(feature = "rank")]
 pub(crate) mod rank;
 
+use std::collections::hash_map::RandomState;
 use std::hash::Hash;
 
 use arrow::bitmap::MutableBitmap;
+use hyperloglogplus::{HyperLogLog, HyperLogLogPlus};
 
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;
@@ -68,6 +70,21 @@ where
     A: Hash + Eq,
 {
     a.collect()
+}
+
+fn create_hllp_estimator<A>(
+    a: impl Iterator<Item = A>,
+    precision: u8,
+) -> HyperLogLogPlus<A, RandomState>
+where
+    A: Hash + Eq,
+{
+    let mut hllp = HyperLogLogPlus::new(precision, RandomState::new()).unwrap();
+
+    a.for_each(|v| hllp.insert(&v));
+
+    // hllp.count().trunc() as usize
+    hllp
 }
 
 fn arg_unique<T>(a: impl Iterator<Item = T>, capacity: usize) -> Vec<IdxSize>
@@ -213,6 +230,10 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
         self.as_binary().n_unique()
     }
 
+    fn approx_n_unique(&self, precision: u8) -> PolarsResult<usize> {
+        self.as_binary().approx_n_unique(precision)
+    }
+
     #[cfg(feature = "mode")]
     fn mode(&self) -> PolarsResult<Self> {
         let out = self.as_binary().mode()?;
@@ -258,6 +279,11 @@ impl ChunkUnique<BinaryType> for BinaryChunked {
         } else {
             Ok(fill_set(self.into_no_null_iter()).len())
         }
+    }
+
+    fn approx_n_unique(&self, precision: u8) -> PolarsResult<usize> {
+        let mut hllp = create_hllp_estimator(self.into_iter(), precision);
+        Ok(hllp.count().trunc() as usize)
     }
 
     #[cfg(feature = "mode")]

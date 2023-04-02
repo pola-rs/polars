@@ -70,6 +70,9 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
                 },
                 AggExpr::Median(expr) => AAggExpr::Median(to_aexpr(*expr, arena)),
                 AggExpr::NUnique(expr) => AAggExpr::NUnique(to_aexpr(*expr, arena)),
+                AggExpr::ApproxNUnique(expr, precision) => {
+                    AAggExpr::ApproxNUnique(to_aexpr(*expr, arena), precision)
+                }
                 AggExpr::First(expr) => AAggExpr::First(to_aexpr(*expr, arena)),
                 AggExpr::Last(expr) => AAggExpr::Last(to_aexpr(*expr, arena)),
                 AggExpr::Mean(expr) => AAggExpr::Mean(to_aexpr(*expr, arena)),
@@ -510,6 +513,10 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             AAggExpr::NUnique(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::NUnique(Box::new(exp)).into()
+            }
+            AAggExpr::ApproxNUnique(expr, precision) => {
+                let exp = node_to_expr(expr, expr_arena);
+                AggExpr::ApproxNUnique(Box::new(exp), precision).into()
             }
             AAggExpr::First(expr) => {
                 let exp = node_to_expr(expr, expr_arena);

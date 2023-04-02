@@ -177,6 +177,7 @@ smartstring.workspace = true
 thiserror.workspace = true
 url = { version = "2.3.1", optional = true }
 xxhash-rust.workspace = true
+hyperloglogplus = { version = "0.4.1", features = ["const-loop"] }
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 wasm-timer = "0.2.5"

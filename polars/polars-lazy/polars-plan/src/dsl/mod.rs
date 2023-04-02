@@ -353,6 +353,11 @@ impl Expr {
         AggExpr::NUnique(Box::new(self)).into()
     }
 
+    /// Get the approximate number of unique values in the groups.
+    pub fn approx_n_unique(self, precision: u8) -> Self {
+        AggExpr::ApproxNUnique(Box::new(self), precision).into()
+    }
+
     /// Get the first value in the group.
     pub fn first(self) -> Self {
         AggExpr::First(Box::new(self)).into()

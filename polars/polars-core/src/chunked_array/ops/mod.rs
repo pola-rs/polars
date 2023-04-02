@@ -459,6 +459,11 @@ pub trait ChunkUnique<T: PolarsDataType> {
         self.arg_unique().map(|v| v.len())
     }
 
+    /// Approx number of unique values in the `ChunkedArray`
+    fn approx_n_unique(&self, precision: u8) -> PolarsResult<usize> {
+        self.arg_unique().map(|v| v.len())
+    }
+
     /// The most occurring value(s). Can return multiple Values
     #[cfg(feature = "mode")]
     fn mode(&self) -> PolarsResult<ChunkedArray<T>> {

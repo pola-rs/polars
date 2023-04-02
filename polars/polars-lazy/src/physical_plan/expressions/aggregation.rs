@@ -171,6 +171,14 @@ impl PhysicalExpr for AggregationExpr {
                     let agg_s = ac.flat_naive().into_owned().agg_n_unique(ac.groups());
                     rename_series(agg_s, &keep_name)
                 }
+                GroupByMethod::ApproxNUnique(precision) => {
+                    check_null_prop!();
+                    let agg_s = ac
+                        .flat_naive()
+                        .into_owned()
+                        .agg_approx_n_unique(ac.groups(), precision);
+                    rename_series(agg_s, &keep_name)
+                }
                 GroupByMethod::List => {
                     if state.unset_finalize_window_as_list() {
                         let agg = ac.aggregated();

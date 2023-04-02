@@ -137,6 +137,12 @@ impl AExpr {
                         field.coerce(DataType::UInt32);
                         Ok(field)
                     }
+                    ApproxNUnique(expr, _) => {
+                        let mut field =
+                            arena.get(*expr).to_field(schema, Context::Default, arena)?;
+                        field.coerce(IDX_DTYPE);
+                        Ok(field)
+                    }
                     Count(expr) => {
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;

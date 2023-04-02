@@ -377,9 +377,14 @@ pub trait SeriesTrait:
         polars_bail!(opq = unique, self._dtype());
     }
 
-    /// Get unique values in the Series.
+    /// Get the number of unique values in the Series.
     fn n_unique(&self) -> PolarsResult<usize> {
         invalid_operation_panic!(n_unique, self)
+    }
+
+    /// Get the approximate number of unique values in the Series.
+    fn approx_n_unique(&self, _precision: u8) -> PolarsResult<usize> {
+        invalid_operation_panic!(approx_n_unique, self)
     }
 
     /// Get first indexes of unique values.
