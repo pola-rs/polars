@@ -18,8 +18,6 @@ from typing import (
     overload,
 )
 
-from polars import functions as F
-from polars import internals as pli
 from polars.datatypes import (
     Boolean,
     Categorical,
@@ -93,6 +91,9 @@ from polars.utils.various import (
     scale_bytes,
     sphinx_accessor,
 )
+
+from polars import functions as F
+from polars import internals as pli
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame, PySeries
@@ -1421,7 +1422,7 @@ class Series:
         """
         return self._s.quantile(quantile, interpolation)
 
-    def to_dummies(self, separator: str = "_") -> DataFrame:
+    def to_dummies(self, separator: str = "_", include_null: bool = False) -> DataFrame:
         """
         Get dummy/indicator variables.
 
@@ -1429,6 +1430,8 @@ class Series:
         ----------
         separator
             Separator/delimiter used when generating column names.
+        include_null
+            Whether to add an additional column indicating null values.
 
         Examples
         --------
@@ -1444,9 +1447,22 @@ class Series:
         │ 0   ┆ 1   ┆ 0   │
         │ 0   ┆ 0   ┆ 1   │
         └─────┴─────┴─────┘
+        >>> s = pl.Series("a", [1, 2, 3, None])
+        >>> s.to_dummies(include_null=True)
+        shape: (4, 4)
+        ┌─────┬─────┬─────┬────────┐
+        │ a_1 ┆ a_2 ┆ a_3 ┆ a_null │
+        │ --- ┆ --- ┆ --- ┆ ---    │
+        │ u8  ┆ u8  ┆ u8  ┆ u8     │
+        ╞═════╪═════╪═════╪════════╡
+        │ 1   ┆ 0   ┆ 0   ┆ 0      │
+        │ 0   ┆ 1   ┆ 0   ┆ 0      │
+        │ 0   ┆ 0   ┆ 1   ┆ 0      │
+        │ 0   ┆ 0   ┆ 0   ┆ 1      │
+        └─────┴─────┴─────┴────────┘
 
         """
-        return wrap_df(self._s.to_dummies(separator))
+        return wrap_df(self._s.to_dummies(separator, include_null))
 
     def cut(
         self,

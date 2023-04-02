@@ -1232,12 +1232,17 @@ impl PyDataFrame {
         &self,
         columns: Option<Vec<String>>,
         separator: Option<&str>,
+        include_null: Option<bool>,
     ) -> PyResult<Self> {
         let df = match columns {
-            Some(cols) => self
+            Some(cols) => self.df.columns_to_dummies(
+                cols.iter().map(|x| x as &str).collect(),
+                separator,
+                include_null.unwrap_or_default(),
+            ),
+            None => self
                 .df
-                .columns_to_dummies(cols.iter().map(|x| x as &str).collect(), separator),
-            None => self.df.to_dummies(separator),
+                .to_dummies(separator, include_null.unwrap_or_default()),
         }
         .map_err(PyPolarsErr::from)?;
         Ok(df.into())

@@ -25,8 +25,6 @@ from typing import (
     overload,
 )
 
-from polars import functions as F
-from polars import internals as pli
 from polars.dataframe._html import NotebookFormatter
 from polars.dataframe.groupby import DynamicGroupBy, GroupBy, RollingGroupBy
 from polars.datatypes import (
@@ -105,6 +103,9 @@ from polars.utils.various import (
     scale_bytes,
 )
 
+from polars import functions as F
+from polars import internals as pli
+
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame
 
@@ -113,9 +114,6 @@ if TYPE_CHECKING:
     import sys
     from datetime import timedelta
     from io import IOBase
-
-    from pyarrow.interchange.dataframe import _PyArrowDataFrame
-    from xlsxwriter import Workbook
 
     from polars.expr import Expr
     from polars.lazyframe import LazyFrame
@@ -152,6 +150,8 @@ if TYPE_CHECKING:
         UnstackDirection,
     )
     from polars.utils import NoDefault
+    from pyarrow.interchange.dataframe import _PyArrowDataFrame
+    from xlsxwriter import Workbook
 
     if sys.version_info >= (3, 8):
         from typing import Literal
@@ -7257,7 +7257,11 @@ class DataFrame:
         return self._from_pydf(self._df.quantile(quantile, interpolation))
 
     def to_dummies(
-        self, columns: str | Sequence[str] | None = None, *, separator: str = "_"
+        self,
+        columns: str | Sequence[str] | None = None,
+        *,
+        separator: str = "_",
+        include_null: bool = False,
     ) -> Self:
         """
         Convert categorical variables into dummy/indicator variables.
@@ -7269,6 +7273,9 @@ class DataFrame:
             If set to ``None`` (default), convert all columns.
         separator
             Separator/delimiter used when generating column names.
+        include_null
+            Whether to add a column indicating null values for each column
+            converted to dummy variables.
 
         Examples
         --------
@@ -7289,11 +7296,28 @@ class DataFrame:
         │ 1     ┆ 0     ┆ 1     ┆ 0     ┆ 1     ┆ 0     │
         │ 0     ┆ 1     ┆ 0     ┆ 1     ┆ 0     ┆ 1     │
         └───────┴───────┴───────┴───────┴───────┴───────┘
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 2],
+        ...         "ham": ["a", "b", None],
+        ...     }
+        ... )
+        >>> df.to_dummies(include_null=True)
+        shape: (3, 6)
+        ┌───────┬───────┬──────────┬───────┬───────┬──────────┐
+        │ foo_1 ┆ foo_2 ┆ foo_null ┆ ham_a ┆ ham_b ┆ ham_null │
+        │ ---   ┆ ---   ┆ ---      ┆ ---   ┆ ---   ┆ ---      │
+        │ u8    ┆ u8    ┆ u8       ┆ u8    ┆ u8    ┆ u8       │
+        ╞═══════╪═══════╪══════════╪═══════╪═══════╪══════════╡
+        │ 1     ┆ 0     ┆ 0        ┆ 1     ┆ 0     ┆ 0        │
+        │ 0     ┆ 1     ┆ 0        ┆ 0     ┆ 1     ┆ 0        │
+        │ 0     ┆ 1     ┆ 0        ┆ 0     ┆ 0     ┆ 1        │
+        └───────┴───────┴──────────┴───────┴───────┴──────────┘
 
         """
         if isinstance(columns, str):
             columns = [columns]
-        return self._from_pydf(self._df.to_dummies(columns, separator))
+        return self._from_pydf(self._df.to_dummies(columns, separator, include_null))
 
     @deprecate_nonkeyword_arguments(
         message=(

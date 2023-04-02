@@ -73,8 +73,8 @@ pub trait DataFrameOps: IntoDf {
     ///  +------+------+------+--------+--------+--------+---------+---------+---------+
     /// ```
     #[cfg(feature = "to_dummies")]
-    fn to_dummies(&self, separator: Option<&str>) -> PolarsResult<DataFrame> {
-        self._to_dummies(None, separator)
+    fn to_dummies(&self, separator: Option<&str>, include_null: bool) -> PolarsResult<DataFrame> {
+        self._to_dummies(None, separator, include_null)
     }
 
     #[cfg(feature = "to_dummies")]
@@ -82,8 +82,9 @@ pub trait DataFrameOps: IntoDf {
         &self,
         columns: Vec<&str>,
         separator: Option<&str>,
+        include_null: bool,
     ) -> PolarsResult<DataFrame> {
-        self._to_dummies(Some(columns), separator)
+        self._to_dummies(Some(columns), separator, include_null)
     }
 
     #[cfg(feature = "to_dummies")]
@@ -91,6 +92,7 @@ pub trait DataFrameOps: IntoDf {
         &self,
         columns: Option<Vec<&str>>,
         separator: Option<&str>,
+        include_null: bool,
     ) -> PolarsResult<DataFrame> {
         let df = self.to_df();
 
@@ -101,7 +103,7 @@ pub trait DataFrameOps: IntoDf {
             df.get_columns()
                 .par_iter()
                 .map(|s| match set.contains(s.name()) {
-                    true => s.to_dummies(separator),
+                    true => s.to_dummies(separator, include_null),
                     false => Ok(s.clone().into_frame()),
                 })
                 .collect::<PolarsResult<Vec<_>>>()

@@ -13,19 +13,24 @@ type DummyType = i32;
 type DummyCa = Int32Chunked;
 
 pub trait ToDummies {
-    fn to_dummies(&self, separator: Option<&str>) -> PolarsResult<DataFrame>;
+    fn to_dummies(&self, separator: Option<&str>, include_null: bool) -> PolarsResult<DataFrame>;
 }
 
 impl ToDummies for Series {
-    fn to_dummies(&self, separator: Option<&str>) -> PolarsResult<DataFrame> {
+    fn to_dummies(&self, separator: Option<&str>, include_null: bool) -> PolarsResult<DataFrame> {
         let sep = separator.unwrap_or("_");
         let col_name = self.name();
         let groups = self.group_tuples(true, false)?;
 
         // safety: groups are in bounds
-        let columns = unsafe { self.agg_first(&groups) }
+        let mut columns: Vec<_> = unsafe { self.agg_first(&groups) }
             .iter()
             .zip(groups.iter())
+            // We need to filter out `null` groups here if we don't want them to end up in the
+            // result. Take care to keep this filter after the `.zip` to align iterators.
+            // TODO: move this filter to the groupby call once we can ignore NULL values there.
+            // See https://github.com/pola-rs/polars/issues/7943 for progress.
+            .filter(|(av, _)| include_null || !matches!(av, AnyValue::Null))
             .map(|(av, group)| {
                 // strings are formatted with extra \" \" in polars, so we
                 // extract the string
@@ -47,6 +52,18 @@ impl ToDummies for Series {
                 ca.into_series()
             })
             .collect();
+
+        // If we want to have a null value indicator column and null is not included in the
+        // values, we need to add the column retrospectively.
+        if include_null && !null_value_exists {
+            columns.push(
+                DummyCa::from_vec(
+                    &format!("{col_name}{sep}null"),
+                    vec![0 as DummyType; self.len()],
+                )
+                .into_series(),
+            )
+        }
 
         Ok(DataFrame::new_no_checks(sort_columns(columns)))
     }
