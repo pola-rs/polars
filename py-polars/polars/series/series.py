@@ -4816,7 +4816,12 @@ class Series:
 
     @deprecated_alias(reverse="descending")
     @deprecate_nonkeyword_arguments(allowed_args=["self", "method"], stacklevel=3)
-    def rank(self, method: RankMethod = "average", descending: bool = False) -> Series:
+    def rank(
+        self,
+        method: RankMethod = "average",
+        descending: bool = False,
+        seed: int | None = None,
+    ) -> Series:
         """
         Assign ranks to data, dealing with ties appropriately.
 
@@ -4842,6 +4847,8 @@ class Series:
               on the order that the values occur in the Series.
         descending
             Rank in descending order.
+        seed
+            If `method="random"`, use this as seed.
 
         Examples
         --------
@@ -4876,7 +4883,11 @@ class Series:
         """
         return (
             self.to_frame()
-            .select(F.col(self._s.name()).rank(method=method, descending=descending))
+            .select(
+                F.col(self._s.name()).rank(
+                    method=method, descending=descending, seed=seed
+                )
+            )
             .to_series()
         )
 

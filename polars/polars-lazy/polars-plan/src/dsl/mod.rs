@@ -1625,9 +1625,9 @@ impl Expr {
     }
 
     #[cfg(feature = "rank")]
-    pub fn rank(self, options: RankOptions) -> Expr {
+    pub fn rank(self, options: RankOptions, seed: Option<u64>) -> Expr {
         self.apply(
-            move |s| Ok(Some(s.rank(options))),
+            move |s| Ok(Some(s.rank(options, seed))),
             GetOutput::map_field(move |fld| match options.method {
                 RankMethod::Average => Field::new(fld.name(), DataType::Float32),
                 _ => Field::new(fld.name(), IDX_DTYPE),
