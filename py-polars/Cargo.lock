@@ -505,22 +505,22 @@ dependencies = [
 
 [[package]]
 name = "dirs"
-version = "4.0.0"
+version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca3aa72a6f96ea37bbc5aa912f6788242832f75369bdfdadcb0e38423f100059"
+checksum = "dece029acd3353e3a58ac2e3eb3c8d6c35827a892edc6cc4138ef9c33df46ecd"
 dependencies = [
  "dirs-sys",
 ]
 
 [[package]]
 name = "dirs-sys"
-version = "0.3.7"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b1d1d91c932ef41c0f2663aa8b0ca0342d444d842c06914aa0a7e352d0bada6"
+checksum = "04414300db88f70d74c5ff54e50f9e1d1737d9a5b90f53fcf2e95ca2a9ab554b"
 dependencies = [
  "libc",
  "redox_users",
- "winapi",
+ "windows-sys",
 ]
 
 [[package]]
@@ -2041,8 +2041,7 @@ dependencies = [
 [[package]]
 name = "simd-json"
 version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e3375b6c3d8c048ba09c8b4b6c3f1d3f35e06b71db07d231c323943a949e1b8"
+source = "git+https://github.com/ritchie46/simd-json?branch=alignment2#d37b0941bc356810d7186a0d89e5cba20db9cf6f"
 dependencies = [
  "halfbrown",
  "lexical-core",
