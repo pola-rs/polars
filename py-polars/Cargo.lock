@@ -353,9 +353,9 @@ dependencies = [
 
 [[package]]
 name = "core-foundation-sys"
-version = "0.8.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5827cebf4670468b8772dd191856768aedcb1b0278a04f989f7766351917b9dc"
+checksum = "e496a50fda8aacccc86d7529e2c1e0892dbd0f898a6b5645b5561b89c3210efa"
 
 [[package]]
 name = "crc"
@@ -2041,7 +2041,7 @@ dependencies = [
 [[package]]
 name = "simd-json"
 version = "0.7.0"
-source = "git+https://github.com/ritchie46/simd-json?branch=alignment2#d37b0941bc356810d7186a0d89e5cba20db9cf6f"
+source = "git+https://github.com/ritchie46/simd-json?branch=alignment#8e8d7c67d781f48ccecddf8d8dea318a0a37c019"
 dependencies = [
  "halfbrown",
  "lexical-core",
