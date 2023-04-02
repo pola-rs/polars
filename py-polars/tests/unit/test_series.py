@@ -8,8 +8,6 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
-
-import polars as pl
 from polars.datatypes import (
     Date,
     Datetime,
@@ -25,6 +23,8 @@ from polars.datatypes import (
 from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils._construction import iterable_to_pyseries
+
+import polars as pl
 
 if TYPE_CHECKING:
     from polars.type_aliases import EpochTimeUnit, PolarsDataType, TimeUnit
@@ -1673,6 +1673,46 @@ def test_to_dummies() -> None:
     expected = pl.DataFrame(
         {"a_1": [1, 0, 0], "a_2": [0, 1, 0], "a_3": [0, 0, 1]},
         schema={"a_1": pl.UInt8, "a_2": pl.UInt8, "a_3": pl.UInt8},
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_to_dummies_include_null_with_null() -> None:
+    s = pl.Series("a", [1, 2, None])
+
+    # No null column
+    result = s.to_dummies()
+    expected = pl.DataFrame(
+        {"a_1": [1, 0, 0], "a_2": [0, 1, 0]},
+        schema={"a_1": pl.UInt8, "a_2": pl.UInt8},
+    )
+    assert_frame_equal(result, expected)
+
+    # Additional null column
+    result = s.to_dummies(include_null=True)
+    expected = pl.DataFrame(
+        {"a_1": [1, 0, 0], "a_2": [0, 1, 0], "a_null": [0, 0, 1]},
+        schema={"a_1": pl.UInt8, "a_2": pl.UInt8, "a_null": pl.UInt8},
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_to_dummies_include_null_without_null() -> None:
+    s = pl.Series("a", [1, 2, 2])
+
+    # No null column
+    result = s.to_dummies()
+    expected = pl.DataFrame(
+        {"a_1": [1, 0, 0], "a_2": [0, 1, 1]},
+        schema={"a_1": pl.UInt8, "a_2": pl.UInt8},
+    )
+    assert_frame_equal(result, expected)
+
+    # Additional null column
+    result = s.to_dummies(include_null=True)
+    expected = pl.DataFrame(
+        {"a_1": [1, 0, 0], "a_2": [0, 1, 1], "a_null": [0, 0, 0]},
+        schema={"a_1": pl.UInt8, "a_2": pl.UInt8, "a_null": pl.UInt8},
     )
     assert_frame_equal(result, expected)
 

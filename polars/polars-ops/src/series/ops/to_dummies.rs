@@ -23,7 +23,8 @@ impl ToDummies for Series {
         let groups = self.group_tuples(true, false)?;
 
         // safety: groups are in bounds
-        let mut columns: Vec<_> = unsafe { self.agg_first(&groups) }
+        let values = unsafe { self.agg_first(&groups) };
+        let mut columns: Vec<_> = values
             .iter()
             .zip(groups.iter())
             // We need to filter out `null` groups here if we don't want them to end up in the
@@ -55,6 +56,7 @@ impl ToDummies for Series {
 
         // If we want to have a null value indicator column and null is not included in the
         // values, we need to add the column retrospectively.
+        let null_value_exists = values.iter().any(|av| matches!(av, AnyValue::Null));
         if include_null && !null_value_exists {
             columns.push(
                 DummyCa::from_vec(
