@@ -6376,11 +6376,12 @@ class DataFrame:
         """
         return self._from_pydf(self._df.shift(periods))
 
-    def shift_and_fill(self,
-                       fill_value: int | str | float,
-                       *,
-                       periods: int = 1,
-                       ) -> Self:
+    def shift_and_fill(
+        self,
+        fill_value: int | str | float,
+        *,
+        periods: int = 1,
+    ) -> Self:
         """
         Shift the values by a given period and fill the resulting null values.
 

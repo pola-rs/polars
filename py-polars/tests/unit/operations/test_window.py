@@ -251,9 +251,11 @@ def test_window_functions_list_types() -> None:
         )
     )["list_shifted"].to_list() == [None, [1], [1], [2]]
 
-    assert (df.select(pl.col("col_list").shift_and_fill([], periods=1).alias("list_shifted")))[
-        "list_shifted"
-    ].to_list() == [[], [1], [1], [2]]
+    assert (
+        df.select(
+            pl.col("col_list").shift_and_fill([], periods=1).alias("list_shifted")
+        )
+    )["list_shifted"].to_list() == [[], [1], [1], [2]]
 
 
 def test_sorted_window_expression() -> None:

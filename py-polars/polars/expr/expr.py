@@ -2179,7 +2179,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4]})
-        >>> df.select(pl.col("foo").shift_and_fill(1, "a"))
+        >>> df.select(pl.col("foo").shift_and_fill("a", periods=1))
         shape: (4, 1)
         ┌─────┐
         │ foo │
