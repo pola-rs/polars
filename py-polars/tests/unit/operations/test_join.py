@@ -99,8 +99,12 @@ def test_sorted_merge_joins(reverse: bool) -> None:
 
             # sorted merge join
             out_sorted_merge_join = df_a_.with_columns(
-                pl.col("a").set_sorted(reverse)
-            ).join(df_b_.with_columns(pl.col("a").set_sorted(reverse)), on="a", how=how)
+                pl.col("a").set_sorted(descending=reverse)
+            ).join(
+                df_b_.with_columns(pl.col("a").set_sorted(descending=reverse)),
+                on="a",
+                how=how,
+            )
 
             assert_frame_equal(out_hash_join, out_sorted_merge_join)
 

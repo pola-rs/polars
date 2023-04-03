@@ -376,7 +376,7 @@ def sequence_to_pyseries(
                 dtype = py_type_to_dtype(python_dtype)  # construct from integer
             elif dtype in py_temporal_types:
                 dtype = py_type_to_dtype(dtype)
-            time_unit = getattr(dtype, "tu", None)
+            time_unit = getattr(dtype, "time_unit", None)
 
             # we use anyvalue builder to create the datetime array
             # we store the values internally as UTC and set the timezone
@@ -387,7 +387,7 @@ def sequence_to_pyseries(
                 s = wrap_s(py_series).dt.cast_time_unit(time_unit)
             if dtype == Datetime and value.tzinfo is not None:
                 tz = _tzinfo_to_str(value.tzinfo)
-                dtype_tz = dtype.tz  # type: ignore[union-attr]
+                dtype_tz = dtype.time_zone  # type: ignore[union-attr]
                 if dtype_tz is not None and tz != dtype_tz:
                     raise ValueError(
                         "Given time_zone is different from that of timezone aware datetimes."

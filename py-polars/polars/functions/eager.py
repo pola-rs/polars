@@ -494,18 +494,18 @@ def date_range(
         if time_zone is None and low.tzinfo is not None:
             time_zone = _tzinfo_to_str(low.tzinfo)
 
-    tu: TimeUnit
+    time_unit_: TimeUnit
     if time_unit is not None:
-        tu = time_unit
+        time_unit_ = time_unit
     elif "ns" in interval:
-        tu = "ns"
+        time_unit_ = "ns"
     else:
-        tu = "us"
+        time_unit_ = "us"
 
-    start = _datetime_to_pl_timestamp(low, tu)
-    stop = _datetime_to_pl_timestamp(high, tu)
+    start = _datetime_to_pl_timestamp(low, time_unit_)
+    stop = _datetime_to_pl_timestamp(high, time_unit_)
     dt_range = wrap_s(
-        _py_date_range(start, stop, interval, closed, name, tu, time_zone)
+        _py_date_range(start, stop, interval, closed, name, time_unit_, time_zone)
     )
     if (
         low_is_date

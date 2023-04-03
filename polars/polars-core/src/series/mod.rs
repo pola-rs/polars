@@ -695,8 +695,8 @@ impl Series {
     }
 
     #[cfg(feature = "rank")]
-    pub fn rank(&self, options: RankOptions) -> Series {
-        rank(self, options.method, options.descending)
+    pub fn rank(&self, options: RankOptions, seed: Option<u64>) -> Series {
+        rank(self, options.method, options.descending, seed)
     }
 
     /// Cast throws an error if conversion had overflows

@@ -120,10 +120,10 @@ def test_init_inputs(monkeypatch: Any) -> None:
         s = pl.Series("dates", d64, dtype)
         assert s.to_list() == expected
         assert Datetime == s.dtype
-        assert s.dtype.tu == "ns"  # type: ignore[union-attr]
+        assert s.dtype.time_unit == "ns"  # type: ignore[union-attr]
 
     s = pl.Series(values=d64.astype("<M8[ms]"))
-    assert s.dtype.tu == "ms"  # type: ignore[union-attr]
+    assert s.dtype.time_unit == "ms"  # type: ignore[union-attr]
     assert expected == s.to_list()
 
     # pandas
@@ -931,7 +931,7 @@ def test_shift() -> None:
     assert_series_equal(a.shift(1), pl.Series("a", [None, 1, 2]))
     assert_series_equal(a.shift(-1), pl.Series("a", [2, 3, None]))
     assert_series_equal(a.shift(-2), pl.Series("a", [3, None, None]))
-    assert_series_equal(a.shift_and_fill(-1, 10), pl.Series("a", [2, 3, 10]))
+    assert_series_equal(a.shift_and_fill(10, periods=-1), pl.Series("a", [2, 3, 10]))
 
 
 def test_rolling() -> None:
@@ -1284,6 +1284,13 @@ def test_rank() -> None:
     )
 
 
+def test_rank_random() -> None:
+    s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
+    assert_series_equal(
+        s.rank("random", seed=1), pl.Series("a", [2, 4, 7, 3, 5, 6, 1], dtype=UInt32)
+    )
+
+
 def test_diff() -> None:
     s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
     expected = pl.Series("a", [1, 1, -1, 0, 1, -3])
@@ -1305,11 +1312,13 @@ def test_pct_change() -> None:
 def test_skew() -> None:
     s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
 
-    assert s.skew(True) == pytest.approx(-0.5953924651018018)
-    assert s.skew(False) == pytest.approx(-0.7717168360221258)
+    assert s.skew(bias=True) == pytest.approx(-0.5953924651018018)
+    assert s.skew(bias=False) == pytest.approx(-0.7717168360221258)
 
     df = pl.DataFrame([s])
-    assert np.isclose(df.select(pl.col("a").skew(False))["a"][0], -0.7717168360221258)
+    assert np.isclose(
+        df.select(pl.col("a").skew(bias=False))["a"][0], -0.7717168360221258
+    )
 
 
 def test_kurtosis() -> None:
@@ -1760,17 +1769,6 @@ def test_arg_sort() -> None:
 
     expected_descending = pl.Series("a", [0, 2, 1, 4, 3], dtype=UInt32)
     assert_series_equal(s.arg_sort(descending=True), expected_descending)
-
-
-def test_argsort_deprecated() -> None:
-    s = pl.Series("a", [5, 3, 4, 1, 2])
-    expected = pl.Series("a", [3, 4, 1, 2, 0], dtype=UInt32)
-    with pytest.deprecated_call():
-        assert_series_equal(s.argsort(), expected)
-
-    expected_descending = pl.Series("a", [0, 2, 1, 4, 3], dtype=UInt32)
-    with pytest.deprecated_call():
-        assert_series_equal(s.argsort(descending=True), expected_descending)
 
 
 def test_arg_min_and_arg_max() -> None:
@@ -2429,7 +2427,7 @@ def test_builtin_abs() -> None:
 
 
 @pytest.mark.parametrize(
-    ("value", "unit", "exp", "exp_type"),
+    ("value", "time_unit", "exp", "exp_type"),
     [
         (13285, "d", date(2006, 5, 17), pl.Date),
         (1147880044, "s", datetime(2006, 5, 17, 15, 34, 4), pl.Datetime),
@@ -2449,10 +2447,13 @@ def test_builtin_abs() -> None:
     ],
 )
 def test_from_epoch_expr(
-    value: int, unit: EpochTimeUnit, exp: date | datetime, exp_type: pl.PolarsDataType
+    value: int,
+    time_unit: EpochTimeUnit,
+    exp: date | datetime,
+    exp_type: pl.PolarsDataType,
 ) -> None:
     s = pl.Series("timestamp", [value, None])
-    result = pl.from_epoch(s, unit=unit)
+    result = pl.from_epoch(s, time_unit=time_unit)
 
     expected = pl.Series("timestamp", [exp, None]).cast(exp_type)
     assert_series_equal(result, expected)

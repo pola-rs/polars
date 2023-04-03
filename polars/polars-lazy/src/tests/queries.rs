@@ -1565,10 +1565,13 @@ fn test_groupby_rank() -> PolarsResult<()> {
     let out = df
         .lazy()
         .groupby_stable([col("cars")])
-        .agg([col("B").rank(RankOptions {
-            method: RankMethod::Dense,
-            ..Default::default()
-        })])
+        .agg([col("B").rank(
+            RankOptions {
+                method: RankMethod::Dense,
+                ..Default::default()
+            },
+            None,
+        )])
         .collect()?;
 
     let out = out.column("B")?;
@@ -1659,10 +1662,13 @@ fn test_single_ranked_group() -> PolarsResult<()> {
     let out = df
         .lazy()
         .with_columns([col("value")
-            .rank(RankOptions {
-                method: RankMethod::Average,
-                ..Default::default()
-            })
+            .rank(
+                RankOptions {
+                    method: RankMethod::Average,
+                    ..Default::default()
+                },
+                None,
+            )
             .list()
             .over([col("group")])])
         .collect()?;

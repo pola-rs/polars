@@ -841,9 +841,8 @@ def test_struct_args_kwargs() -> None:
     assert_frame_equal(result, expected)
 
     # Positional input
-    # TODO: Enable when keyword args input is supported
-    # result = df.select(r=pl.struct(pl.col("a").alias("p"), pl.col("b").alias("q")))
-    # assert_frame_equal(result, expected)
+    result = df.select(r=pl.struct(pl.col("a").alias("p"), pl.col("b").alias("q")))
+    assert_frame_equal(result, expected)
 
     # Keyword input
     result = df.select(r=pl.struct(p="a", q="b"))

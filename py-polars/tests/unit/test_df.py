@@ -2164,7 +2164,7 @@ def test_shift_and_fill() -> None:
             "ham": ["a", "b", "c"],
         }
     )
-    result = df.shift_and_fill(periods=1, fill_value=0)
+    result = df.shift_and_fill(fill_value=0, periods=1)
     expected = pl.DataFrame(
         {
             "foo": [0, 1, 2],
@@ -3209,18 +3209,18 @@ def test_init_datetimes_with_timezone() -> None:
     tz_europe = "Europe/Amsterdam"
 
     dtm = datetime(2022, 10, 12, 12, 30, tzinfo=ZoneInfo("UTC"))
-    for tu in DTYPE_TEMPORAL_UNITS | frozenset([None]):
+    for time_unit in DTYPE_TEMPORAL_UNITS | frozenset([None]):
         for type_overrides in (
             {
                 "schema": [
-                    ("d1", pl.Datetime(tu, tz_us)),
-                    ("d2", pl.Datetime(tu, tz_europe)),
+                    ("d1", pl.Datetime(time_unit, tz_us)),
+                    ("d2", pl.Datetime(time_unit, tz_europe)),
                 ]
             },
             {
                 "schema_overrides": {
-                    "d1": pl.Datetime(tu, tz_us),
-                    "d2": pl.Datetime(tu, tz_europe),
+                    "d1": pl.Datetime(time_unit, tz_us),
+                    "d2": pl.Datetime(time_unit, tz_europe),
                 }
             },
         ):
@@ -3239,13 +3239,13 @@ def test_init_physical_with_timezone() -> None:
     tz_asia = "Asia/Tokyo"
 
     dtm_us = 1665577800000000
-    for tu in DTYPE_TEMPORAL_UNITS | frozenset([None]):
-        dtm = {"ms": dtm_us // 1_000, "ns": dtm_us * 1_000}.get(str(tu), dtm_us)
+    for time_unit in DTYPE_TEMPORAL_UNITS | frozenset([None]):
+        dtm = {"ms": dtm_us // 1_000, "ns": dtm_us * 1_000}.get(str(time_unit), dtm_us)
         df = pl.DataFrame(
             data={"d1": [dtm], "d2": [dtm]},
             schema=[
-                ("d1", pl.Datetime(tu, tz_uae)),
-                ("d2", pl.Datetime(tu, tz_asia)),
+                ("d1", pl.Datetime(time_unit, tz_uae)),
+                ("d2", pl.Datetime(time_unit, tz_asia)),
             ],
         )
         assert (df["d1"].to_physical() == df["d2"].to_physical()).all()
@@ -3659,6 +3659,41 @@ def test_ufunc_expr_not_first() -> None:
         ]
     )
     assert_frame_equal(out, expected)
+
+
+def test_ufunc_multiple_expressions() -> None:
+    # example from https://github.com/pola-rs/polars/issues/6770
+    df = pl.DataFrame(
+        {
+            "v": [
+                -4.293,
+                -2.4659,
+                -1.8378,
+                -0.2821,
+                -4.5649,
+                -3.8128,
+                -7.4274,
+                3.3443,
+                3.8604,
+                -4.2200,
+            ],
+            "u": [
+                -11.2268,
+                6.3478,
+                7.1681,
+                3.4986,
+                2.7320,
+                -1.0695,
+                -10.1408,
+                11.2327,
+                6.6623,
+                -8.1412,
+            ],
+        }
+    )
+    expected = np.arctan2(df.get_column("v"), df.get_column("u"))
+    result = df.select(np.arctan2(pl.col("v"), pl.col("u")))[:, 0]  # type: ignore[call-overload]
+    assert_series_equal(expected, result)  # type: ignore[arg-type]
 
 
 def test_window_deadlock() -> None:

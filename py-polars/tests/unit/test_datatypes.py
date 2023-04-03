@@ -22,12 +22,12 @@ def test_dtype_init_equivalence() -> None:
 
 def test_dtype_temporal_units() -> None:
     # check (in)equality behaviour of temporal types that take units
-    for tu in datatypes.DTYPE_TEMPORAL_UNITS:
-        assert pl.Datetime == pl.Datetime(tu)
-        assert pl.Duration == pl.Duration(tu)
+    for time_unit in datatypes.DTYPE_TEMPORAL_UNITS:
+        assert pl.Datetime == pl.Datetime(time_unit)
+        assert pl.Duration == pl.Duration(time_unit)
 
-        assert pl.Datetime(tu) == pl.Datetime()
-        assert pl.Duration(tu) == pl.Duration()
+        assert pl.Datetime(time_unit) == pl.Datetime()
+        assert pl.Duration(time_unit) == pl.Duration()
 
     assert pl.Datetime("ms") != pl.Datetime("ns")
     assert pl.Duration("ns") != pl.Duration("us")
@@ -38,7 +38,7 @@ def test_dtype_temporal_units() -> None:
         (datatypes.py_type_to_dtype(timedelta), pl.Duration),
     ):
         assert inferred_dtype == expected_dtype
-        assert inferred_dtype.tu == "us"  # type: ignore[union-attr]
+        assert inferred_dtype.time_unit == "us"  # type: ignore[union-attr]
 
     with pytest.raises(ValueError, match="Invalid time_unit"):
         pl.Datetime("?")  # type: ignore[arg-type]

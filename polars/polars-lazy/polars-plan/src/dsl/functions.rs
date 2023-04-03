@@ -204,14 +204,20 @@ pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8, propagate_nans: bool) -> E
         let a = a.drop_nulls();
         let b = b.drop_nulls();
 
-        let a_idx = a.rank(RankOptions {
-            method: RankMethod::Min,
-            ..Default::default()
-        });
-        let b_idx = b.rank(RankOptions {
-            method: RankMethod::Min,
-            ..Default::default()
-        });
+        let a_idx = a.rank(
+            RankOptions {
+                method: RankMethod::Min,
+                ..Default::default()
+            },
+            None,
+        );
+        let b_idx = b.rank(
+            RankOptions {
+                method: RankMethod::Min,
+                ..Default::default()
+            },
+            None,
+        );
         let a_idx = a_idx.idx().unwrap();
         let b_idx = b_idx.idx().unwrap();
 

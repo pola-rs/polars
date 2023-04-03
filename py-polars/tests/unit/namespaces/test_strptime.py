@@ -58,7 +58,7 @@ def test_strptime_precision() -> None:
     )
     ds = s.str.strptime(pl.Datetime)
     assert ds.cast(pl.Date) != None  # noqa: E711  (note: *deliberately* testing "!=")
-    assert getattr(ds.dtype, "tu", None) == "us"
+    assert getattr(ds.dtype, "time_unit", None) == "us"
 
     time_units: list[TimeUnit] = ["ms", "us", "ns"]
     suffixes = ["%.3f", "%.6f", "%.9f"]
@@ -73,7 +73,7 @@ def test_strptime_precision() -> None:
     )
     for precision, suffix, expected_values in test_data:
         ds = s.str.strptime(pl.Datetime(precision), f"%Y-%m-%d %H:%M:%S{suffix}")
-        assert getattr(ds.dtype, "tu", None) == precision
+        assert getattr(ds.dtype, "time_unit", None) == precision
         assert ds.dt.nanosecond().to_list() == expected_values
 
 

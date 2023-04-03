@@ -407,13 +407,13 @@ def dtype_to_arrow_type(dtype: PolarsDataType) -> pa.lib.DataType:
     try:
         # special handling for mapping to tz-aware timestamp type.
         # (don't want to include every possible tz string in the lookup)
-        tz = None
+        time_zone = None
         if dtype == Datetime:
-            dtype, tz = Datetime(dtype.tu), dtype.tz  # type: ignore[union-attr]
+            dtype, time_zone = Datetime(dtype.time_unit), dtype.time_zone  # type: ignore[union-attr]
 
         arrow_type = DataTypeMappings.DTYPE_TO_ARROW_TYPE[dtype]
-        if tz:
-            arrow_type = pa.timestamp(dtype.tu or "us", tz)  # type: ignore[union-attr]
+        if time_zone:
+            arrow_type = pa.timestamp(dtype.time_unit or "us", time_zone)  # type: ignore[union-attr]
         return arrow_type
     except KeyError:  # pragma: no cover
         raise ValueError(

@@ -742,7 +742,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def pipe(
         self,
-        func: Callable[Concatenate[LazyFrame, P], T],
+        function: Callable[Concatenate[LazyFrame, P], T],
         *args: P.args,
         **kwargs: P.kwargs,
     ) -> T:
@@ -751,7 +751,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Parameters
         ----------
-        func
+        function
             Callable; will receive the frame as the first parameter,
             followed by any given args/kwargs.
         *args
@@ -811,7 +811,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┘
 
         """
-        return func(self, *args, **kwargs)
+        return function(self, *args, **kwargs)
 
     def explain(
         self,
@@ -3283,18 +3283,19 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def shift_and_fill(
         self,
-        periods: int,
         fill_value: Expr | int | str | float,
+        *,
+        periods: int = 1,
     ) -> Self:
         """
         Shift the values by a given period and fill the resulting null values.
 
         Parameters
         ----------
-        periods
-            Number of places to shift (may be negative).
         fill_value
             fill None values with the result of this expression.
+        periods
+            Number of places to shift (may be negative).
 
         Examples
         --------
@@ -3304,7 +3305,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "b": [2, 4, 6],
         ...     }
         ... )
-        >>> lf.shift_and_fill(periods=1, fill_value=0).collect()
+        >>> lf.shift_and_fill(fill_value=0, periods=1).collect()
         shape: (3, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -3744,9 +3745,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             elif isinstance(value, float):
                 dtypes = [Float64]
             elif isinstance(value, datetime):
-                dtypes = [Datetime] + [Datetime(tu) for tu in DTYPE_TEMPORAL_UNITS]
+                dtypes = [Datetime] + [Datetime(u) for u in DTYPE_TEMPORAL_UNITS]
             elif isinstance(value, timedelta):
-                dtypes = [Duration] + [Duration(tu) for tu in DTYPE_TEMPORAL_UNITS]
+                dtypes = [Duration] + [Duration(u) for u in DTYPE_TEMPORAL_UNITS]
             elif isinstance(value, date):
                 dtypes = [Date]
             elif isinstance(value, time):
@@ -4100,7 +4101,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     )
     def unique(
         self,
-        maintain_order: bool = True,
+        maintain_order: bool = False,
         subset: str | Sequence[str] | None = None,
         keep: UniqueKeepStrategy = "any",
     ) -> Self:
@@ -4144,7 +4145,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "ham": ["b", "b", "b", "b"],
         ...     }
         ... )
-        >>> lf.unique().collect()
+        >>> lf.unique(maintain_order=True).collect()
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -4155,7 +4156,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2   ┆ a   ┆ b   │
         │ 3   ┆ a   ┆ b   │
         └─────┴─────┴─────┘
-        >>> lf.unique(subset=["bar", "ham"]).collect()
+        >>> lf.unique(subset=["bar", "ham"], maintain_order=True).collect()
         shape: (1, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -4164,7 +4165,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ╞═════╪═════╪═════╡
         │ 1   ┆ a   ┆ b   │
         └─────┴─────┴─────┘
-        >>> lf.unique(keep="last").collect()
+        >>> lf.unique(keep="last", maintain_order=True).collect()
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │

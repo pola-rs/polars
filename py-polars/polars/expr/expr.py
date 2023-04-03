@@ -7,7 +7,7 @@ import os
 import random
 import warnings
 from datetime import timedelta
-from functools import reduce
+from functools import partial, reduce
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -41,13 +41,12 @@ from polars.expr.string import ExprStringNameSpace
 from polars.expr.struct import ExprStructNameSpace
 from polars.utils._parse_expr_input import expr_to_lit_or_expr, selection_to_pyexpr_list
 from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 from polars.utils.meta import threadpool_size
 from polars.utils.various import sphinx_accessor
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arg_where as py_arg_where
-
+    from polars.polars import reduce as pyreduce
 if TYPE_CHECKING:
     import sys
 
@@ -117,6 +116,7 @@ class Expr:
     def __abs__(self) -> Self:
         return self.abs()
 
+    # operators
     def __add__(self, other: Any) -> Self:
         return self._from_pyexpr(self._pyexpr + self._to_pyexpr(other))
 
@@ -204,69 +204,6 @@ class Expr:
     def __rxor__(self, other: Expr) -> Self:
         return self._from_pyexpr(self._pyexpr._xor(self._to_pyexpr(other)))
 
-    # conjunction
-    def and_(self, *others: Any) -> Self:
-        """Method equivalent of operator expression ``expr & other1 & other2 & ...``."""
-        return reduce(operator.and_, (self,) + others)
-
-    def or_(self, *others: Any) -> Self:
-        """Method equivalent of operator expression ``expr | other1 | other2 | ...``."""
-        return reduce(operator.or_, (self,) + others)
-
-    # comparison
-    def eq(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr == other``."""
-        return self.__eq__(other)
-
-    def ge(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr >= other``."""
-        return self.__ge__(other)
-
-    def gt(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr > other``."""
-        return self.__gt__(other)
-
-    def le(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr <= other``."""
-        return self.__le__(other)
-
-    def lt(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr < other``."""
-        return self.__lt__(other)
-
-    def ne(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr != other``."""
-        return self.__ne__(other)
-
-    # math / binary
-    def add(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr + other``."""
-        return self.__add__(other)
-
-    def floordiv(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr // other``."""
-        return self.__floordiv__(other)
-
-    def mod(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr % other``."""
-        return self.__mod__(other)
-
-    def mul(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr * other``."""
-        return self.__mul__(other)
-
-    def sub(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr - other``."""
-        return self.__sub__(other)
-
-    def truediv(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr / other``."""
-        return self.__truediv__(other)
-
-    def xor(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr ^ other``."""
-        return self.__xor__(other)
-
     # state
     def __getstate__(self) -> Any:
         return self._pyexpr.__getstate__()
@@ -282,9 +219,13 @@ class Expr:
         """Numpy universal functions."""
         num_expr = sum(isinstance(inp, Expr) for inp in inputs)
         if num_expr > 1:
-            raise ValueError(
-                f"Numpy ufunc can only be used with one expression, {num_expr} given. Use `pl.reduce` to call numpy functions over multiple expressions."
-            )
+            if num_expr < len(inputs):
+                raise ValueError(
+                    "Numpy ufunc with more than one expression can only be used if all non-expression inputs are provided as keyword arguments only"
+                )
+
+            exprs = selection_to_pyexpr_list(inputs)
+            return self._from_pyexpr(pyreduce(partial(ufunc, **kwargs), exprs))
 
         def function(s: Series) -> Series:  # pragma: no cover
             args = [inp if not isinstance(inp, Expr) else s for inp in inputs]
@@ -835,7 +776,6 @@ class Expr:
         """  # noqa: W505
         return self._from_pyexpr(self._pyexpr.suffix(suffix))
 
-    @deprecated_alias(f="function")
     def map_alias(self, function: Callable[[str], str]) -> Self:
         """
         Rename the output of an expression by mapping a function over the root name.
@@ -1215,7 +1155,7 @@ class Expr:
             length = F.lit(length)
         return self._from_pyexpr(self._pyexpr.slice(offset._pyexpr, length._pyexpr))
 
-    def append(self, other: Expr, upcast: bool = True) -> Self:
+    def append(self, other: Expr, *, upcast: bool = True) -> Self:
         """
         Append expressions.
 
@@ -1343,7 +1283,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.drop_nans())
 
-    def cumsum(self, reverse: bool = False) -> Self:
+    def cumsum(self, *, reverse: bool = False) -> Self:
         """
         Get an array with the cumulative sum computed at every element.
 
@@ -1409,7 +1349,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.cumsum(reverse))
 
-    def cumprod(self, reverse: bool = False) -> Self:
+    def cumprod(self, *, reverse: bool = False) -> Self:
         """
         Get an array with the cumulative product computed at every element.
 
@@ -1447,7 +1387,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.cumprod(reverse))
 
-    def cummin(self, reverse: bool = False) -> Self:
+    def cummin(self, *, reverse: bool = False) -> Self:
         """
         Get an array with the cumulative min computed at every element.
 
@@ -1480,7 +1420,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.cummin(reverse))
 
-    def cummax(self, reverse: bool = False) -> Self:
+    def cummax(self, *, reverse: bool = False) -> Self:
         """
         Get an array with the cumulative max computed at every element.
 
@@ -1541,7 +1481,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.cummax(reverse))
 
-    def cumcount(self, reverse: bool = False) -> Self:
+    def cumcount(self, *, reverse: bool = False) -> Self:
         """
         Get an array with the cumulative count computed at every element.
 
@@ -1713,7 +1653,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.mode())
 
-    def cast(self, dtype: PolarsDataType | type[Any], strict: bool = True) -> Self:
+    def cast(self, dtype: PolarsDataType | type[Any], *, strict: bool = True) -> Self:
         """
         Cast between data types.
 
@@ -1754,9 +1694,7 @@ class Expr:
         dtype = py_type_to_dtype(dtype)
         return self._from_pyexpr(self._pyexpr.cast(dtype, strict))
 
-    @deprecated_alias(reverse="descending")
-    @deprecate_nonkeyword_arguments(stacklevel=3)
-    def sort(self, descending: bool = False, nulls_last: bool = False) -> Self:
+    def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Self:
         """
         Sort this column.
 
@@ -1836,8 +1774,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.sort_with(descending, nulls_last))
 
-    @deprecated_alias(reverse="descending")
-    def top_k(self, k: int = 5, descending: bool = False) -> Self:
+    def top_k(self, k: int = 5, *, descending: bool = False) -> Self:
         r"""
         Return the `k` largest elements.
 
@@ -1883,9 +1820,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.top_k(k, descending))
 
-    @deprecated_alias(reverse="descending")
-    @deprecate_nonkeyword_arguments(stacklevel=3)
-    def arg_sort(self, descending: bool = False, nulls_last: bool = False) -> Self:
+    def arg_sort(self, *, descending: bool = False, nulls_last: bool = False) -> Self:
         """
         Get the index values that would sort this column.
 
@@ -2015,7 +1950,6 @@ class Expr:
         element = expr_to_lit_or_expr(element, str_to_lit=False)
         return self._from_pyexpr(self._pyexpr.search_sorted(element._pyexpr, side))
 
-    @deprecated_alias(reverse="descending")
     def sort_by(
         self,
         by: IntoExpr | Iterable[IntoExpr],
@@ -2228,23 +2162,24 @@ class Expr:
 
     def shift_and_fill(
         self,
-        periods: int,
         fill_value: int | float | bool | str | Expr | list[Any],
+        *,
+        periods: int = 1,
     ) -> Self:
         """
         Shift the values by a given period and fill the resulting null values.
 
         Parameters
         ----------
-        periods
-            Number of places to shift (may be negative).
         fill_value
             Fill None values with the result of this expression.
+        periods
+            Number of places to shift (may be negative).
 
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4]})
-        >>> df.select(pl.col("foo").shift_and_fill(1, "a"))
+        >>> df.select(pl.col("foo").shift_and_fill("a", periods=1))
         shape: (4, 1)
         ┌─────┐
         │ foo │
@@ -2345,7 +2280,7 @@ class Expr:
                 self._pyexpr.fill_null_with_strategy(strategy, limit)
             )
 
-    def fill_nan(self, fill_value: int | float | Expr | None) -> Self:
+    def fill_nan(self, value: int | float | Expr | None) -> Self:
         """
         Fill floating point NaN value with a fill value.
 
@@ -2370,7 +2305,7 @@ class Expr:
         └──────┴──────┘
 
         """
-        fill_value = expr_to_lit_or_expr(fill_value, str_to_lit=True)
+        fill_value = expr_to_lit_or_expr(value, str_to_lit=True)
         return self._from_pyexpr(self._pyexpr.fill_nan(fill_value._pyexpr))
 
     def forward_fill(self, limit: int | None = None) -> Self:
@@ -2780,7 +2715,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.arg_unique())
 
-    def unique(self, maintain_order: bool = False) -> Self:
+    def unique(self, *, maintain_order: bool = False) -> Self:
         """
         Get unique values of this expression.
 
@@ -3177,14 +3112,11 @@ class Expr:
         """
         return self.filter(predicate)
 
-    @deprecated_alias(f="function")
-    @deprecate_nonkeyword_arguments(
-        allowed_args=["self", "function", "return_dtype"], stacklevel=3
-    )
     def map(
         self,
         function: Callable[[Series], Series | Any],
         return_dtype: PolarsDataType | None = None,
+        *,
         agg_list: bool = False,
     ) -> Self:
         """
@@ -3230,17 +3162,13 @@ class Expr:
             return_dtype = py_type_to_dtype(return_dtype)
         return self._from_pyexpr(self._pyexpr.map(function, return_dtype, agg_list))
 
-    @deprecated_alias(f="function")
-    @deprecate_nonkeyword_arguments(
-        allowed_args=["self", "function", "return_dtype"], stacklevel=3
-    )
     def apply(
         self,
         function: Callable[[Series], Series] | Callable[[Any], Any],
         return_dtype: PolarsDataType | None = None,
+        *,
         skip_nulls: bool = True,
         pass_name: bool = False,
-        *,
         strategy: ApplyStrategy = "thread_local",
     ) -> Self:
         """
@@ -3549,14 +3477,250 @@ class Expr:
         """
         return self.head(n)
 
+    def and_(self, *others: Any) -> Self:
+        """Method equivalent of logical "and" operator ``expr & other & ...``."""
+        return reduce(operator.and_, (self,) + others)
+
+    def or_(self, *others: Any) -> Self:
+        """Method equivalent of logical "or" operator ``expr | other | ...``."""
+        return reduce(operator.or_, (self,) + others)
+
+    def eq(self, other: Any) -> Self:
+        """Method equivalent of equality operator ``expr == other``."""
+        return self.__eq__(other)
+
+    def ge(self, other: Any) -> Self:
+        """Method equivalent of "greater than or equal" operator ``expr >= other``."""
+        return self.__ge__(other)
+
+    def gt(self, other: Any) -> Self:
+        """Method equivalent of "greater than" operator ``expr > other``."""
+        return self.__gt__(other)
+
+    def le(self, other: Any) -> Self:
+        """Method equivalent of "less than or equal" operator ``expr <= other``."""
+        return self.__le__(other)
+
+    def lt(self, other: Any) -> Self:
+        """Method equivalent of "less than" operator ``expr < other``."""
+        return self.__lt__(other)
+
+    def ne(self, other: Any) -> Self:
+        """Method equivalent of inequality operator ``expr != other``."""
+        return self.__ne__(other)
+
+    def add(self, other: Any) -> Self:
+        """
+        Method equivalent of addition operator ``expr + other``.
+
+        Parameters
+        ----------
+        other
+            integer, float, or string value; accepts expression input.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [1, 2, 3, 4, 5]})
+        >>> df.with_columns(pl.col("x").add(2).alias("x+2"))
+        shape: (5, 2)
+        ┌─────┬─────┐
+        │ x   ┆ x+2 │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 3   │
+        │ 2   ┆ 4   │
+        │ 3   ┆ 5   │
+        │ 4   ┆ 6   │
+        │ 5   ┆ 7   │
+        └─────┴─────┘
+
+        >>> df = pl.DataFrame(
+        ...     {"x": ["a", "d", "g"], "y": ["b", "e", "h"], "z": ["c", "f", "i"]}
+        ... )
+        >>> df.with_columns(pl.col("x").add(pl.col("y")).add(pl.col("z")).alias("add"))
+        shape: (3, 4)
+        ┌─────┬─────┬─────┬─────┐
+        │ x   ┆ y   ┆ z   ┆ add │
+        │ --- ┆ --- ┆ --- ┆ --- │
+        │ str ┆ str ┆ str ┆ str │
+        ╞═════╪═════╪═════╪═════╡
+        │ a   ┆ b   ┆ c   ┆ abc │
+        │ d   ┆ e   ┆ f   ┆ def │
+        │ g   ┆ h   ┆ i   ┆ ghi │
+        └─────┴─────┴─────┴─────┘
+
+        """
+        return self.__add__(other)
+
+    def floordiv(self, other: Any) -> Self:
+        """
+        Method equivalent of integer division operator ``expr // other``.
+
+        Parameters
+        ----------
+        other
+            Other integer or float value; accepts expression input.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [1, 2, 3, 4, 5]})
+        >>> df.with_columns(pl.col("x").floordiv(2).alias("x//2"))
+        shape: (5, 2)
+        ┌─────┬──────┐
+        │ x   ┆ x//2 │
+        │ --- ┆ ---  │
+        │ i64 ┆ i64  │
+        ╞═════╪══════╡
+        │ 1   ┆ 0    │
+        │ 2   ┆ 1    │
+        │ 3   ┆ 1    │
+        │ 4   ┆ 2    │
+        │ 5   ┆ 2    │
+        └─────┴──────┘
+
+        See Also
+        --------
+        truediv
+
+        """
+        return self.__floordiv__(other)
+
+    def mod(self, other: Any) -> Self:
+        """
+        Method equivalent of modulus operator ``expr % other``.
+
+        Parameters
+        ----------
+        other
+            Other integer or float value; accepts expression input.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [0, 1, 2, 3, 4]})
+        >>> df.with_columns(pl.col("x").mod(2).alias("x%2"))
+        shape: (5, 2)
+        ┌─────┬─────┐
+        │ x   ┆ x%2 │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 0   ┆ 0   │
+        │ 1   ┆ 1   │
+        │ 2   ┆ 0   │
+        │ 3   ┆ 1   │
+        │ 4   ┆ 0   │
+        └─────┴─────┘
+
+        """
+        return self.__mod__(other)
+
+    def mul(self, other: Any) -> Self:
+        """
+        Method equivalent of multiplication operator ``expr * other``.
+
+        Parameters
+        ----------
+        other
+            Other integer or float value; accepts expression input.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [0, 1, 2, 3, 4]})
+        >>> df.with_columns(pl.col("x").mul(2).alias("x*2"))
+        shape: (5, 2)
+        ┌─────┬─────┐
+        │ x   ┆ x*2 │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 0   ┆ 0   │
+        │ 1   ┆ 2   │
+        │ 2   ┆ 4   │
+        │ 3   ┆ 6   │
+        │ 4   ┆ 8   │
+        └─────┴─────┘
+
+        """
+        return self.__mul__(other)
+
+    def sub(self, other: Any) -> Self:
+        """
+        Method equivalent of subtraction operator ``expr - other``.
+
+        Parameters
+        ----------
+        other
+            Other integer or float value; accepts expression input.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [0, 1, 2, 3, 4]})
+        >>> df.with_columns(pl.col("x").sub(2).alias("x-2"))
+        shape: (5, 2)
+        ┌─────┬─────┐
+        │ x   ┆ x-2 │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 0   ┆ -2  │
+        │ 1   ┆ -1  │
+        │ 2   ┆ 0   │
+        │ 3   ┆ 1   │
+        │ 4   ┆ 2   │
+        └─────┴─────┘
+
+        """
+        return self.__sub__(other)
+
+    def truediv(self, other: Any) -> Self:
+        """
+        Method equivalent of float division operator ``expr / other``.
+
+        Parameters
+        ----------
+        other
+            Other integer or float value; accepts expression input.
+
+        Notes
+        -----
+        Zero-division behaviour follows IEEE-754:
+
+        0/0: Invalid operation - mathematically undefined, returns NaN.
+        n/0: On finite operands gives an exact infinite result, eg: ±infinity.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [1, 2, 3, 4, 5]})
+        >>> df.with_columns(pl.col("x").truediv(2).alias("x/2"))
+        shape: (5, 2)
+        ┌─────┬─────┐
+        │ x   ┆ x/2 │
+        │ --- ┆ --- │
+        │ i64 ┆ f64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 0.5 │
+        │ 2   ┆ 1.0 │
+        │ 3   ┆ 1.5 │
+        │ 4   ┆ 2.0 │
+        │ 5   ┆ 2.5 │
+        └─────┴─────┘
+
+        See Also
+        --------
+        floordiv
+
+        """
+        return self.__truediv__(other)
+
     def pow(self, exponent: int | float | Series | Expr) -> Self:
         """
-        Raise to the power of the given exponent.
+        Method equivalent of exponentiation operator ``expr ** exponent``.
 
         Parameters
         ----------
         exponent
-            The exponent. Accepts expression input.
+            The exponent; accepts expression input.
 
         Examples
         --------
@@ -3577,6 +3741,57 @@ class Expr:
         """
         exponent = expr_to_lit_or_expr(exponent)
         return self._from_pyexpr(self._pyexpr.pow(exponent._pyexpr))
+
+    def xor(self, other: Any) -> Self:
+        """
+        Method equivalent of logical exclusive-or operator ``expr ^ other``.
+
+        Parameters
+        ----------
+        other
+            Other integer or boolean value; accepts expression input.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"x": [True, False, True, False], "y": [True, True, False, False]}
+        ... )
+        >>> df.with_columns(pl.col("x").xor(pl.col("y")).alias("xor"))
+        shape: (4, 3)
+        ┌───────┬───────┬───────┐
+        │ x     ┆ y     ┆ xor   │
+        │ ---   ┆ ---   ┆ ---   │
+        │ bool  ┆ bool  ┆ bool  │
+        ╞═══════╪═══════╪═══════╡
+        │ true  ┆ true  ┆ false │
+        │ false ┆ true  ┆ true  │
+        │ true  ┆ false ┆ true  │
+        │ false ┆ false ┆ false │
+        └───────┴───────┴───────┘
+
+        >>> def binary_string(n: int) -> str:
+        ...     return bin(n)[2:].zfill(8)
+        >>>
+        >>> df = pl.DataFrame({"x": [10, 8, 250, 66], "y": [1, 2, 3, 4]})
+        >>> df.with_columns(
+        ...     pl.col("x").apply(binary_string).alias("bin_x"),
+        ...     pl.col("y").apply(binary_string).alias("bin_y"),
+        ...     pl.col("x").xor(pl.col("y")).alias("x ^ y"),
+        ... )
+        shape: (4, 5)
+        ┌─────┬─────┬──────────┬──────────┬───────┐
+        │ x   ┆ y   ┆ bin_x    ┆ bin_y    ┆ x ^ y │
+        │ --- ┆ --- ┆ ---      ┆ ---      ┆ ---   │
+        │ i64 ┆ i64 ┆ str      ┆ str      ┆ i64   │
+        ╞═════╪═════╪══════════╪══════════╪═══════╡
+        │ 10  ┆ 1   ┆ 00001010 ┆ 00000001 ┆ 11    │
+        │ 8   ┆ 2   ┆ 00001000 ┆ 00000010 ┆ 10    │
+        │ 250 ┆ 3   ┆ 11111010 ┆ 00000011 ┆ 249   │
+        │ 66  ┆ 4   ┆ 01000010 ┆ 00000100 ┆ 70    │
+        └─────┴─────┴──────────┴──────────┴───────┘
+
+        """
+        return self.__xor__(other)
 
     def is_in(self, other: Expr | Collection[Any] | Series) -> Self:
         """
@@ -3805,7 +4020,7 @@ class Expr:
         k3 = seed_3 if seed_3 is not None else seed
         return self._from_pyexpr(self._pyexpr.hash(k0, k1, k2, k3))
 
-    def reinterpret(self, signed: bool = True) -> Self:
+    def reinterpret(self, *, signed: bool = True) -> Self:
         """
         Reinterpret the underlying bits as a signed/unsigned integer.
 
@@ -3941,6 +4156,7 @@ class Expr:
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
@@ -4035,6 +4251,7 @@ class Expr:
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
@@ -4129,6 +4346,7 @@ class Expr:
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
@@ -4223,6 +4441,7 @@ class Expr:
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
@@ -4317,6 +4536,7 @@ class Expr:
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
@@ -4411,6 +4631,7 @@ class Expr:
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
@@ -4505,6 +4726,7 @@ class Expr:
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
@@ -4597,6 +4819,7 @@ class Expr:
         window_size: int | timedelta | str = 2,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
@@ -4699,6 +4922,7 @@ class Expr:
         window_size: int,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
     ) -> Self:
         """
@@ -4762,7 +4986,7 @@ class Expr:
             )
         )
 
-    def rolling_skew(self, window_size: int, bias: bool = True) -> Self:
+    def rolling_skew(self, window_size: int, *, bias: bool = True) -> Self:
         """
         Compute a rolling skew.
 
@@ -4805,57 +5029,13 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.abs())
 
-    @deprecated_alias(reverse="descending")
-    def argsort(self, descending: bool = False, nulls_last: bool = False) -> Self:
-        """
-        Get the index values that would sort this column.
-
-        Alias for :func:`Expr.arg_sort`.
-
-        .. deprecated:: 0.16.5
-            `Expr.argsort` will be removed in favour of `Expr.arg_sort`.
-
-        Parameters
-        ----------
-        descending
-            Sort in descending order.
-        nulls_last
-            Place null values last instead of first.
-
-        Returns
-        -------
-        Expr
-            Series of dtype UInt32.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [20, 10, 30],
-        ...     }
-        ... )
-        >>> df.select(pl.col("a").argsort())
-        shape: (3, 1)
-        ┌─────┐
-        │ a   │
-        │ --- │
-        │ u32 │
-        ╞═════╡
-        │ 1   │
-        │ 0   │
-        │ 2   │
-        └─────┘
-
-        """
-        warnings.warn(
-            "`Expr.argsort()` is deprecated in favor of `Expr.arg_sort()`",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.arg_sort(descending, nulls_last)
-
-    @deprecated_alias(reverse="descending")
-    def rank(self, method: RankMethod = "average", descending: bool = False) -> Self:
+    def rank(
+        self,
+        method: RankMethod = "average",
+        *,
+        descending: bool = False,
+        seed: int | None = None,
+    ) -> Self:
         """
         Assign ranks to data, dealing with ties appropriately.
 
@@ -4881,6 +5061,8 @@ class Expr:
               on the order that the values occur in the Series.
         descending
             Rank in descending order.
+        seed
+            If `method="random"`, use this as seed.
 
         Examples
         --------
@@ -4919,7 +5101,7 @@ class Expr:
         └─────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.rank(method, descending))
+        return self._from_pyexpr(self._pyexpr.rank(method, descending, seed))
 
     def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Self:
         """
@@ -5016,7 +5198,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.pct_change(n))
 
-    def skew(self, bias: bool = True) -> Self:
+    def skew(self, *, bias: bool = True) -> Self:
         r"""
         Compute the sample skewness of a data set.
 
@@ -5070,7 +5252,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.skew(bias))
 
-    def kurtosis(self, fisher: bool = True, bias: bool = True) -> Self:
+    def kurtosis(self, *, fisher: bool = True, bias: bool = True) -> Self:
         """
         Compute the kurtosis (Fisher or Pearson) of a dataset.
 
@@ -5590,10 +5772,6 @@ class Expr:
             If a multiple dimensions are given, results in a Series of Lists with shape
             (rows, cols).
 
-        See Also
-        --------
-        ExprListNameSpace.explode : Explode a list column.
-
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7, 8, 9]})
@@ -5608,6 +5786,10 @@ class Expr:
         │ [4, 5, 6] │
         │ [7, 8, 9] │
         └───────────┘
+
+        See Also
+        --------
+        ExprListNameSpace.explode : Explode a list column.
 
         """
         return self._from_pyexpr(self._pyexpr.reshape(dims))
@@ -5645,6 +5827,7 @@ class Expr:
     def sample(
         self,
         n: int | None = None,
+        *,
         frac: float | None = None,
         with_replacement: bool = False,
         shuffle: bool = False,
@@ -5707,6 +5890,7 @@ class Expr:
         span: float | None = None,
         half_life: float | None = None,
         alpha: float | None = None,
+        *,
         adjust: bool = True,
         min_periods: int = 1,
         ignore_nulls: bool = True,
@@ -5795,6 +5979,7 @@ class Expr:
         span: float | None = None,
         half_life: float | None = None,
         alpha: float | None = None,
+        *,
         adjust: bool = True,
         bias: bool = False,
         min_periods: int = 1,
@@ -5886,6 +6071,7 @@ class Expr:
         span: float | None = None,
         half_life: float | None = None,
         alpha: float | None = None,
+        *,
         adjust: bool = True,
         bias: bool = False,
         min_periods: int = 1,
@@ -6006,7 +6192,7 @@ class Expr:
 
         return self._from_pyexpr(self._pyexpr.extend_constant(value, n))
 
-    def value_counts(self, multithreaded: bool = False, sort: bool = False) -> Self:
+    def value_counts(self, *, multithreaded: bool = False, sort: bool = False) -> Self:
         """
         Count all unique values and create a struct mapping value to count.
 
@@ -6108,7 +6294,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.log(base))
 
-    def entropy(self, base: float = math.e, normalize: bool = True) -> Self:
+    def entropy(self, base: float = math.e, *, normalize: bool = True) -> Self:
         """
         Computes the entropy.
 
@@ -6147,7 +6333,7 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.entropy(base, normalize))
 
     def cumulative_eval(
-        self, expr: Expr, min_periods: int = 1, parallel: bool = False
+        self, expr: Expr, min_periods: int = 1, *, parallel: bool = False
     ) -> Self:
         """
         Run an expression over a sliding window that increases `1` slot every iteration.
@@ -6199,8 +6385,7 @@ class Expr:
             self._pyexpr.cumulative_eval(expr._pyexpr, min_periods, parallel)
         )
 
-    @deprecated_alias(reverse="descending")
-    def set_sorted(self, descending: bool = False) -> Self:
+    def set_sorted(self, *, descending: bool = False) -> Self:
         """
         Flags the expression as 'sorted'.
 
