@@ -32,11 +32,11 @@ impl ToDummies for Series {
         let sep = separator.unwrap_or("_");
         let col_name = self.name();
         let groups = self.group_tuples(true, false)?;
-        let valid_values = values.map(|v| v.into_iter().collect::<PlHashSet<_>>());
+        let valid_values = values.map(|v| v.iter().collect::<PlHashSet<_>>());
 
         // safety: groups are in bounds
-        let values = unsafe { self.agg_first(&groups) };
-        let mut columns: Vec<_> = values
+        let found_values = unsafe { self.agg_first(&groups) };
+        let mut columns: Vec<_> = found_values
             .iter()
             .zip(groups.iter())
             // This filter must be kept after the `.zip` to align iterators.
@@ -57,7 +57,7 @@ impl ToDummies for Series {
 
         // If we want to have a null value indicator column and null is not included in the
         // values, we need to add the column retrospectively.
-        let null_value_exists = values.iter().any(|av| matches!(av, AnyValue::Null));
+        let null_value_exists = found_values.iter().any(|av| matches!(av, AnyValue::Null));
         if include_null && !null_value_exists {
             let name = format_value(&AnyValue::Null, col_name, sep);
             columns.push(dummies_empty(self.len(), &name));
@@ -66,7 +66,7 @@ impl ToDummies for Series {
         // If the set of values has been predefined, we need to add empty columns for those that we
         // did not encounter in the data.
         if let Some(values_set) = valid_values {
-            let own = values.iter().collect::<Vec<_>>();
+            let own = found_values.iter().collect::<Vec<_>>();
             let seen_set = own.iter().collect();
             let new_columns: Vec<_> = values_set
                 .par_difference(&seen_set)

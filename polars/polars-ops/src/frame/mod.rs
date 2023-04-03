@@ -114,8 +114,9 @@ pub trait DataFrameOps: IntoDf {
                         separator,
                         include_null,
                         values.as_ref().map(|map| {
-                            map.get(s.name())
-                                .expect(&format!("missing values for column '{}'", s.name()))
+                            map.get(s.name()).unwrap_or_else(|| {
+                                panic!("missing values for column '{}'", s.name())
+                            })
                         }),
                     ),
                     false => Ok(s.clone().into_frame()),
