@@ -135,8 +135,8 @@ class ExprStringNameSpace:
         if datatype == Date:
             return wrap_expr(self._pyexpr.str_parse_date(fmt, strict, exact, cache))
         elif datatype == Datetime:
-            tu = datatype.tu  # type: ignore[union-attr]
-            tz = datatype.tz  # type: ignore[union-attr]
+            time_unit = datatype.time_unit  # type: ignore[union-attr]
+            time_zone = datatype.time_zone  # type: ignore[union-attr]
             dtcol = wrap_expr(
                 self._pyexpr.str_parse_datetime(
                     fmt,
@@ -145,11 +145,11 @@ class ExprStringNameSpace:
                     cache,
                     tz_aware,
                     utc,
-                    tu,
-                    tz,
+                    time_unit,
+                    time_zone,
                 )
             )
-            return dtcol if (tu is None) else dtcol.dt.cast_time_unit(tu)
+            return dtcol if (time_unit is None) else dtcol.dt.cast_time_unit(time_unit)
         elif datatype == Time:
             return wrap_expr(self._pyexpr.str_parse_time(fmt, strict, exact, cache))
         else:  # pragma: no cover

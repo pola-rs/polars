@@ -1366,11 +1366,11 @@ def test_from_epoch(input_dtype: pl.PolarsDataType) -> None:
 
     ldf_result = ldf.select(
         [
-            pl.from_epoch(pl.col("timestamp_d"), unit="d"),
-            pl.from_epoch(pl.col("timestamp_s"), unit="s"),
-            pl.from_epoch(pl.col("timestamp_ms"), unit="ms"),
-            pl.from_epoch(pl.col("timestamp_us"), unit="us"),
-            pl.from_epoch(pl.col("timestamp_ns"), unit="ns"),
+            pl.from_epoch(pl.col("timestamp_d"), time_unit="d"),
+            pl.from_epoch(pl.col("timestamp_s"), time_unit="s"),
+            pl.from_epoch(pl.col("timestamp_ms"), time_unit="ms"),
+            pl.from_epoch(pl.col("timestamp_us"), time_unit="us"),
+            pl.from_epoch(pl.col("timestamp_ns"), time_unit="ns"),
         ]
     ).collect()
 
@@ -1378,7 +1378,7 @@ def test_from_epoch(input_dtype: pl.PolarsDataType) -> None:
 
     ts_col = pl.col("timestamp_s")
     with pytest.raises(ValueError):
-        _ = ldf.select(pl.from_epoch(ts_col, unit="s2"))  # type: ignore[call-overload]
+        _ = ldf.select(pl.from_epoch(ts_col, time_unit="s2"))  # type: ignore[call-overload]
 
 
 def test_cumagg_types() -> None:

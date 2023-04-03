@@ -1201,29 +1201,31 @@ def lit(
     >>> pl.lit(pl.Series("a", [1, 2, 3]))  # doctest: +IGNORE_RESULT
 
     """
-    tu: TimeUnit
+    time_unit: TimeUnit
 
     if isinstance(value, datetime):
-        tu = "us" if dtype is None else getattr(dtype, "tu", "us")
-        tz = (
+        time_unit = "us" if dtype is None else getattr(dtype, "time_unit", "us")
+        time_zone = (
             value.tzinfo
-            if getattr(dtype, "tz", None) is None
-            else getattr(dtype, "tz", None)
+            if getattr(dtype, "time_zone", None) is None
+            else getattr(dtype, "time_zone", None)
         )
-        if value.tzinfo is not None and getattr(dtype, "tz", None) is not None:
+        if value.tzinfo is not None and getattr(dtype, "time_zone", None) is not None:
             raise TypeError(
                 "Cannot cast tz-aware value to tz-aware dtype. "
                 "Please drop the time zone from the dtype."
             )
-        e = lit(_datetime_to_pl_timestamp(value, tu)).cast(Datetime(tu))
-        if tz is not None:
-            return e.dt.replace_time_zone(str(tz))
+        e = lit(_datetime_to_pl_timestamp(value, time_unit)).cast(Datetime(time_unit))
+        if time_zone is not None:
+            return e.dt.replace_time_zone(str(time_zone))
         else:
             return e
 
     elif isinstance(value, timedelta):
-        tu = "us" if dtype is None else getattr(dtype, "tu", "us")
-        return lit(_timedelta_to_pl_timedelta(value, tu)).cast(Duration(tu))
+        time_unit = "us" if dtype is None else getattr(dtype, "time_unit", "us")
+        return lit(_timedelta_to_pl_timedelta(value, time_unit)).cast(
+            Duration(time_unit)
+        )
 
     elif isinstance(value, time):
         return lit(_time_to_pl_time(value)).cast(Time)
@@ -1259,9 +1261,11 @@ def lit(
         if isinstance(item, int) and hasattr(value, "dtype"):
             dtype_name = value.dtype.name
             if dtype_name.startswith(("datetime64[", "timedelta64[")):
-                tu = dtype_name[11:-1]
+                time_unit = dtype_name[11:-1]
                 return lit(item).cast(
-                    Datetime(tu) if dtype_name.startswith("date") else Duration(tu)
+                    Datetime(time_unit)
+                    if dtype_name.startswith("date")
+                    else Duration(time_unit)
                 )
 
     except AttributeError:
@@ -3119,39 +3123,41 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
 
 
 @overload
-def from_epoch(column: str | Expr, unit: EpochTimeUnit = ...) -> Expr:
+def from_epoch(column: str | Expr, time_unit: EpochTimeUnit = ...) -> Expr:
     ...
 
 
 @overload
-def from_epoch(column: Series | Sequence[int], unit: EpochTimeUnit = ...) -> Series:
+def from_epoch(
+    column: Series | Sequence[int], time_unit: EpochTimeUnit = ...
+) -> Series:
     ...
 
 
 def from_epoch(
-    column: str | Expr | Series | Sequence[int], unit: EpochTimeUnit = "s"
+    column: str | Expr | Series | Sequence[int], time_unit: EpochTimeUnit = "s"
 ) -> Expr | Series:
     """
     Utility function that parses an epoch timestamp (or Unix time) to Polars Date(time).
 
-    Depending on the `unit` provided, this function will return a different dtype:
-    - unit="d" returns pl.Date
-    - unit="s" returns pl.Datetime["us"] (pl.Datetime's default)
-    - unit="ms" returns pl.Datetime["ms"]
-    - unit="us" returns pl.Datetime["us"]
-    - unit="ns" returns pl.Datetime["ns"]
+    Depending on the `time_unit` provided, this function will return a different dtype:
+    - time_unit="d" returns pl.Date
+    - time_unit="s" returns pl.Datetime["us"] (pl.Datetime's default)
+    - time_unit="ms" returns pl.Datetime["ms"]
+    - time_unit="us" returns pl.Datetime["us"]
+    - time_unit="ns" returns pl.Datetime["ns"]
 
     Parameters
     ----------
     column
         Series or expression to parse integers to pl.Datetime.
-    unit
-        The unit of the timesteps since epoch time.
+    time_unit
+        The unit of time of the timesteps since epoch time.
 
     Examples
     --------
     >>> df = pl.DataFrame({"timestamp": [1666683077, 1666683099]}).lazy()
-    >>> df.select(pl.from_epoch(pl.col("timestamp"), unit="s")).collect()
+    >>> df.select(pl.from_epoch(pl.col("timestamp"), time_unit="s")).collect()
     shape: (2, 1)
     ┌─────────────────────┐
     │ timestamp           │
@@ -3165,7 +3171,7 @@ def from_epoch(
     The function can also be used in an eager context by passing a Series.
 
     >>> s = pl.Series([12345, 12346])
-    >>> pl.from_epoch(s, unit="d")
+    >>> pl.from_epoch(s, time_unit="d")
     shape: (2,)
     Series: '' [date]
     [
@@ -3179,13 +3185,13 @@ def from_epoch(
     elif not isinstance(column, (pli.Series, pli.Expr)):
         column = pli.Series(column)  # Sequence input handled by Series constructor
 
-    if unit == "d":
+    if time_unit == "d":
         return column.cast(Date)
-    elif unit == "s":
+    elif time_unit == "s":
         return (column.cast(Int64) * 1_000_000).cast(Datetime("us"))
-    elif unit in DTYPE_TEMPORAL_UNITS:
-        return column.cast(Datetime(unit))
+    elif time_unit in DTYPE_TEMPORAL_UNITS:
+        return column.cast(Datetime(time_unit))
     else:
         raise ValueError(
-            f"'unit' must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got '{unit}'."
+            f"'time_unit' must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {time_unit!r}."
         )

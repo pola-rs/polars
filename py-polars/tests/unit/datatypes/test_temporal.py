@@ -468,9 +468,11 @@ def test_date_range() -> None:
     assert result.dt[2] == datetime(1985, 1, 4, 0, 0)
     assert result.dt[-1] == datetime(2015, 6, 30, 12, 0)
 
-    for tu in DTYPE_TEMPORAL_UNITS:
-        rng = pl.date_range(datetime(2020, 1, 1), date(2020, 1, 2), "2h", time_unit=tu)
-        assert rng.time_unit == tu
+    for time_unit in DTYPE_TEMPORAL_UNITS:
+        rng = pl.date_range(
+            datetime(2020, 1, 1), date(2020, 1, 2), "2h", time_unit=time_unit
+        )
+        assert rng.time_unit == time_unit
         assert rng.shape == (13,)
         assert rng.dt[0] == datetime(2020, 1, 1)
         assert rng.dt[-1] == datetime(2020, 1, 2)
@@ -505,7 +507,7 @@ def test_date_range() -> None:
         datetime(2022, 1, 1), datetime(2022, 1, 1, 0, 1), "987456321ns"
     )
     assert len(result) == 61
-    assert result.dtype.tu == "ns"  # type: ignore[union-attr]
+    assert result.dtype.time_unit == "ns"  # type: ignore[union-attr]
     assert result.dt.second()[-1] == 59
     assert result.cast(pl.Utf8)[-1] == "2022-01-01 00:00:59.247379260"
 
@@ -1622,10 +1624,10 @@ def test_datetime_instance_selection() -> None:
             ("ms", pl.Datetime("ms")),
         ],
     )
-    for tu in DTYPE_TEMPORAL_UNITS:
-        res = df.select(pl.col([pl.Datetime(tu)])).dtypes
-        assert res == [pl.Datetime(tu)]
-        assert len(df.filter(pl.col(tu) == test_data[tu][0])) == 1
+    for time_unit in DTYPE_TEMPORAL_UNITS:
+        res = df.select(pl.col([pl.Datetime(time_unit)])).dtypes
+        assert res == [pl.Datetime(time_unit)]
+        assert len(df.filter(pl.col(time_unit) == test_data[time_unit][0])) == 1
 
     assert [] == list(df.select(pl.exclude(DATETIME_DTYPES)))
 
@@ -1911,14 +1913,14 @@ def test_replace_timezone() -> None:
     ],
 )
 @pytest.mark.parametrize("from_tz", ["Asia/Seoul", "-01:00", None])
-@pytest.mark.parametrize("tu", ["ms", "us", "ns"])
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_replace_timezone_from_to(
     from_tz: str,
     to_tz: str,
     tzinfo: timezone | ZoneInfo,
-    tu: TimeUnit,
+    time_unit: TimeUnit,
 ) -> None:
-    ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime(tu))
+    ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime(time_unit))
     result = ts.dt.replace_time_zone(from_tz).dt.replace_time_zone(to_tz).item()
     expected = datetime(2020, 1, 1, 0, 0, tzinfo=tzinfo)
     assert result == expected
@@ -1934,16 +1936,16 @@ def test_strptime_with_tz() -> None:
 
 
 @pytest.mark.parametrize(
-    ("tu", "tz"),
+    ("time_unit", "time_zone"),
     [
         ("us", "Europe/London"),
         ("ms", None),
         ("ns", "+01:00"),
     ],
 )
-def test_strptime_empty(tu: TimeUnit, tz: str | None) -> None:
-    ts = pl.Series([None]).cast(pl.Utf8).str.strptime(pl.Datetime(tu, tz))
-    assert ts.dtype == pl.Datetime(tu, tz)
+def test_strptime_empty(time_unit: TimeUnit, time_zone: str | None) -> None:
+    ts = pl.Series([None]).cast(pl.Utf8).str.strptime(pl.Datetime(time_unit, time_zone))
+    assert ts.dtype == pl.Datetime(time_unit, time_zone)
 
 
 def test_strptime_with_invalid_tz() -> None:
