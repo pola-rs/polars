@@ -139,8 +139,15 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
             CategoricalChunked::from_cats_and_rev_map_unchecked(cats, new_rev_map).into_series()
         }
     }
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
-        self.0.logical().group_tuples(multithreaded, sorted)
+    fn group_tuples(&self, multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsProxy> {
+        #[cfg(feature = "performant")]
+        {
+            Ok(self.0.group_tuples_perfect(multithreaded))
+        }
+        #[cfg(not(feature = "performant"))]
+        {
+            self.0.logical().group_tuples(multithreaded, _sorted)
+        }
     }
 
     fn arg_sort_multiple(&self, by: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {

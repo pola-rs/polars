@@ -139,35 +139,7 @@ where
 #[cfg(all(feature = "dtype-categorical", feature = "performant"))]
 impl IntoGroupsProxy for CategoricalChunked {
     fn group_tuples(&self, multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsProxy> {
-        let DataType::Categorical(Some(rev_map)) = self.dtype() else { unreachable!()};
-        let cats = self.logical();
-        match &**rev_map {
-            RevMapping::Local(cached) => {
-                Ok(cats.group_tuples_perfect(cached.len() - 1, false, cats.len() / cached.len()))
-            }
-            RevMapping::Global(mapping, _cached, _) => {
-                let splits = _split_offsets(self.len(), POOL.current_num_threads());
-                let chunks = splits
-                    .into_par_iter()
-                    .flat_map(|(start, len)| {
-                        let ca = cats.slice(start as i64, len);
-                        // safety: correct cats for this rev map
-                        let ca = unsafe {
-                            CategoricalChunked::from_cats_and_rev_map_unchecked(ca, rev_map.clone())
-                        };
-                        let mut cats = ca.remap();
-                        std::mem::take(&mut cats.chunks)
-                    })
-                    .collect::<Vec<_>>();
-                // safety: array dtype is uint32
-                let cats = unsafe { UInt32Chunked::from_chunks("", chunks) };
-                Ok(cats.group_tuples_perfect(
-                    mapping.len() - 1,
-                    multithreaded,
-                    cats.len() / mapping.len(),
-                ))
-            }
-        }
+        Ok(self.group_tuples_perfect(multithreaded))
     }
 }
 
