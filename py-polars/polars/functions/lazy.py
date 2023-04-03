@@ -2301,10 +2301,9 @@ def arange(
         )
 
 
-@deprecated_alias(reverse="descending")
-@deprecate_nonkeyword_arguments(stacklevel=3)
 def arg_sort_by(
     exprs: IntoExpr | Iterable[IntoExpr],
+    *more_exprs: IntoExpr,
     descending: bool | Sequence[bool] = False,
 ) -> Expr:
     """
@@ -2315,6 +2314,8 @@ def arg_sort_by(
     exprs
         Column(s) to arg sort by. Accepts expression input. Strings are parsed as column
         names.
+    *more_exprs
+        Additional columns to arg sort by, specified as positional arguments.
     descending
         Sort in descending order. When sorting by multiple columns, can be specified
         per column by passing a sequence of booleans.
@@ -2342,7 +2343,8 @@ def arg_sort_by(
     │ 2   │
     └─────┘
 
-    Compute the arg sort by multiple columns by passing a list of columns.
+    Compute the arg sort by multiple columns by either passing a list of columns, or by
+    specifying each column as a positional argument.
 
     >>> df.select(pl.arg_sort_by(["a", "b"], descending=True))
     shape: (4, 1)
@@ -2359,6 +2361,9 @@ def arg_sort_by(
 
     """
     exprs = selection_to_pyexpr_list(exprs)
+    if more_exprs:
+        exprs.extend(selection_to_pyexpr_list(more_exprs))
+
     if isinstance(descending, bool):
         descending = [descending] * len(exprs)
     return wrap_expr(py_arg_sort_by(exprs, descending))
@@ -2532,9 +2537,11 @@ def date_(
     return datetime_(year, month, day).cast(Date).alias("date")
 
 
-@deprecated_alias(sep="separator")
-@deprecate_nonkeyword_arguments(stacklevel=3)
-def concat_str(exprs: IntoExpr | Iterable[IntoExpr], separator: str = "") -> Expr:
+def concat_str(
+    exprs: IntoExpr | Iterable[IntoExpr],
+    *more_exprs: IntoExpr,
+    separator: str = "",
+) -> Expr:
     """
     Horizontally concatenate columns into a single string column.
 
@@ -2546,6 +2553,9 @@ def concat_str(exprs: IntoExpr | Iterable[IntoExpr], separator: str = "") -> Exp
         Columns to concatenate into a single string column. Accepts expression input.
         Strings are parsed as column names, other non-expression inputs are parsed as
         literals. Non-``Utf8`` columns are cast to ``Utf8``.
+    *more_exprs
+        Additional columns to concatenate into a single string column, specified as
+        positional arguments.
     separator
         String that will be used to separate the values of each column.
 
@@ -2581,6 +2591,8 @@ def concat_str(exprs: IntoExpr | Iterable[IntoExpr], separator: str = "") -> Exp
 
     """
     exprs = selection_to_pyexpr_list(exprs)
+    if more_exprs:
+        exprs.extend(selection_to_pyexpr_list(more_exprs))
     return wrap_expr(_concat_str(exprs, separator))
 
 
@@ -2799,8 +2811,9 @@ def select(
 
 
 @overload
-def struct(  # type: ignore[misc]
+def struct(
     exprs: IntoExpr | Iterable[IntoExpr] = ...,
+    *more_exprs: IntoExpr,
     eager: Literal[False] = ...,
     schema: SchemaDict | None = ...,
     **named_exprs: IntoExpr,
@@ -2811,7 +2824,8 @@ def struct(  # type: ignore[misc]
 @overload
 def struct(
     exprs: IntoExpr | Iterable[IntoExpr] = ...,
-    eager: Literal[True] = ...,
+    *more_exprs: IntoExpr,
+    eager: Literal[True],
     schema: SchemaDict | None = ...,
     **named_exprs: IntoExpr,
 ) -> Series:
@@ -2821,16 +2835,17 @@ def struct(
 @overload
 def struct(
     exprs: IntoExpr | Iterable[IntoExpr] = ...,
-    eager: bool = ...,
+    *more_exprs: IntoExpr,
+    eager: bool,
     schema: SchemaDict | None = ...,
     **named_exprs: IntoExpr,
 ) -> Expr | Series:
     ...
 
 
-@deprecate_nonkeyword_arguments(allowed_args=["exprs"])
 def struct(
     exprs: IntoExpr | Iterable[IntoExpr] = None,
+    *more_exprs: IntoExpr,
     eager: bool = False,
     schema: SchemaDict | None = None,
     **named_exprs: IntoExpr,
@@ -2843,13 +2858,16 @@ def struct(
     exprs
         Column(s) to collect into a struct column. Accepts expression input. Strings are
         parsed as column names, other non-expression inputs are parsed as literals.
+    *more_exprs
+        Additional columns to collect into the struct column, specified as positional
+        arguments.
     eager
         Evaluate immediately and return a ``Series``. If set to ``False`` (default),
         return an expression instead.
     schema
         Optional schema that explicitly defines the struct field dtypes.
     **named_exprs
-        Additional column(s) to collect into the struct column, specified as keyword
+        Additional columns to collect into the struct column, specified as keyword
         arguments. The columns will be renamed to the keyword used.
 
     Examples
@@ -2875,9 +2893,10 @@ def struct(
     │ {2,"b",null,[3]}    │
     └─────────────────────┘
 
-    Collect selected columns into a struct by passing a list of columns.
+    Collect selected columns into a struct by either passing a list of columns, or by
+    specifying each column as a positional argument.
 
-    >>> df.select(pl.struct(["int", False]).alias("my_struct"))
+    >>> df.select(pl.struct("int", False).alias("my_struct"))
     shape: (2, 1)
     ┌───────────┐
     │ my_struct │
@@ -2895,6 +2914,8 @@ def struct(
 
     """
     exprs = selection_to_pyexpr_list(exprs)
+    if more_exprs:
+        exprs.extend(selection_to_pyexpr_list(more_exprs))
     if named_exprs:
         exprs.extend(
             expr_to_lit_or_expr(expr, name=name, str_to_lit=False)._pyexpr
