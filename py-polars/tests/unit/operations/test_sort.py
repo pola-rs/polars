@@ -604,3 +604,17 @@ def test_sort_by_descending() -> None:
         match=r"the length of `descending` \(1\) does not match the length of `by` \(2\)",
     ):
         df.select(pl.col("a").sort_by(["a", "b"], descending=[True]))
+
+
+def test_arg_sort_by_descending() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    result = df.select(pl.arg_sort_by(["a", "b"], descending=True))
+    expected = pl.DataFrame({"a": [2, 1, 0]}).select(pl.col("a").cast(pl.UInt32))
+    assert_frame_equal(result, expected)
+    result = df.select(pl.arg_sort_by(["a", "b"], descending=[True, True]))
+    assert_frame_equal(result, expected)
+    with pytest.raises(
+        ValueError,
+        match=r"the length of `descending` \(1\) does not match the length of `exprs` \(2\)",
+    ):
+        df.select(pl.arg_sort_by(["a", "b"], descending=[True]))
