@@ -742,7 +742,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def pipe(
         self,
-        func: Callable[Concatenate[LazyFrame, P], T],
+        function: Callable[Concatenate[LazyFrame, P], T],
         *args: P.args,
         **kwargs: P.kwargs,
     ) -> T:
@@ -751,7 +751,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Parameters
         ----------
-        func
+        function
             Callable; will receive the frame as the first parameter,
             followed by any given args/kwargs.
         *args
@@ -811,7 +811,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┘
 
         """
-        return func(self, *args, **kwargs)
+        return function(self, *args, **kwargs)
 
     def explain(
         self,
