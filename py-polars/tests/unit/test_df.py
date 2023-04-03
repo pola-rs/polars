@@ -2157,7 +2157,7 @@ def test_shift_and_fill() -> None:
             "ham": ["a", "b", "c"],
         }
     )
-    result = df.shift_and_fill(periods=1, fill_value=0)
+    result = df.shift_and_fill(fill_value=0, periods=1)
     expected = pl.DataFrame(
         {
             "foo": [0, 1, 2],

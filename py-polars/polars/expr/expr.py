@@ -2162,23 +2162,24 @@ class Expr:
 
     def shift_and_fill(
         self,
-        periods: int,
         fill_value: int | float | bool | str | Expr | list[Any],
+        *,
+        periods: int = 1,
     ) -> Self:
         """
         Shift the values by a given period and fill the resulting null values.
 
         Parameters
         ----------
-        periods
-            Number of places to shift (may be negative).
         fill_value
             Fill None values with the result of this expression.
+        periods
+            Number of places to shift (may be negative).
 
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4]})
-        >>> df.select(pl.col("foo").shift_and_fill(1, "a"))
+        >>> df.select(pl.col("foo").shift_and_fill("a", periods=1))
         shape: (4, 1)
         ┌─────┐
         │ foo │

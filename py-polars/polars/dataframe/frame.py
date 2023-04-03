@@ -6376,16 +6376,21 @@ class DataFrame:
         """
         return self._from_pydf(self._df.shift(periods))
 
-    def shift_and_fill(self, periods: int, fill_value: int | str | float) -> Self:
+    def shift_and_fill(
+        self,
+        fill_value: int | str | float,
+        *,
+        periods: int = 1,
+    ) -> Self:
         """
         Shift the values by a given period and fill the resulting null values.
 
         Parameters
         ----------
-        periods
-            Number of places to shift (may be negative).
         fill_value
             fill None values with this value.
+        periods
+            Number of places to shift (may be negative).
 
         Examples
         --------
@@ -6411,7 +6416,7 @@ class DataFrame:
         """
         return self._from_pydf(
             self.lazy()
-            .shift_and_fill(periods, fill_value)
+            .shift_and_fill(fill_value=fill_value, periods=periods)
             .collect(no_optimization=True)
             ._df
         )
