@@ -16,7 +16,7 @@ fn test_expand_datetimes_3042() -> PolarsResult<()> {
         "dt1",
         low,
         high,
-        Duration::parse("1w"),
+        "1w".parse().unwrap(),
         ClosedWindow::Left,
         TimeUnit::Milliseconds,
         None,

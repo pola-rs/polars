@@ -44,7 +44,7 @@ pub struct RollingOptions {
 impl Default for RollingOptions {
     fn default() -> Self {
         RollingOptions {
-            window_size: Duration::parse("3i"),
+            window_size: "3i".parse().unwrap(),
             min_periods: 1,
             weights: None,
             center: false,
@@ -116,7 +116,7 @@ impl From<RollingOptions> for RollingOptionsFixedWindow {
 impl Default for RollingOptionsImpl<'static> {
     fn default() -> Self {
         RollingOptionsImpl {
-            window_size: Duration::parse("3i"),
+            window_size: "3i".parse().unwrap(),
             min_periods: 1,
             weights: None,
             center: false,

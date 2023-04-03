@@ -1061,7 +1061,7 @@ impl PyExpr {
     }
 
     pub fn dt_offset_by(&self, by: &str) -> PyExpr {
-        let by = Duration::parse(by);
+        let by = by.parse().unwrap();
         self.inner.clone().dt().offset_by(by).into()
     }
 
@@ -1329,7 +1329,7 @@ impl PyExpr {
         closed: Option<Wrap<ClosedWindow>>,
     ) -> PyExpr {
         let options = RollingOptions {
-            window_size: Duration::parse(window_size),
+            window_size: window_size.parse().unwrap(),
             weights,
             min_periods,
             center,
@@ -1350,7 +1350,7 @@ impl PyExpr {
         closed: Option<Wrap<ClosedWindow>>,
     ) -> Self {
         let options = RollingOptions {
-            window_size: Duration::parse(window_size),
+            window_size: window_size.parse().unwrap(),
             weights,
             min_periods,
             center,
@@ -1371,7 +1371,7 @@ impl PyExpr {
         closed: Option<Wrap<ClosedWindow>>,
     ) -> Self {
         let options = RollingOptions {
-            window_size: Duration::parse(window_size),
+            window_size: window_size.parse().unwrap(),
             weights,
             min_periods,
             center,
@@ -1392,7 +1392,7 @@ impl PyExpr {
         closed: Option<Wrap<ClosedWindow>>,
     ) -> Self {
         let options = RollingOptions {
-            window_size: Duration::parse(window_size),
+            window_size: window_size.parse().unwrap(),
             weights,
             min_periods,
             center,
@@ -1414,7 +1414,7 @@ impl PyExpr {
         closed: Option<Wrap<ClosedWindow>>,
     ) -> Self {
         let options = RollingOptions {
-            window_size: Duration::parse(window_size),
+            window_size: window_size.parse().unwrap(),
             weights,
             min_periods,
             center,
@@ -1436,7 +1436,7 @@ impl PyExpr {
         closed: Option<Wrap<ClosedWindow>>,
     ) -> Self {
         let options = RollingOptions {
-            window_size: Duration::parse(window_size),
+            window_size: window_size.parse().unwrap(),
             weights,
             min_periods,
             center,
@@ -1458,7 +1458,7 @@ impl PyExpr {
         closed: Option<Wrap<ClosedWindow>>,
     ) -> Self {
         let options = RollingOptions {
-            window_size: Duration::parse(window_size),
+            window_size: window_size.parse().unwrap(),
             weights,
             min_periods,
             center,
@@ -1482,7 +1482,7 @@ impl PyExpr {
         closed: Option<Wrap<ClosedWindow>>,
     ) -> Self {
         let options = RollingOptions {
-            window_size: Duration::parse(window_size),
+            window_size: window_size.parse().unwrap(),
             weights,
             min_periods,
             center,

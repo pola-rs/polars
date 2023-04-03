@@ -569,8 +569,8 @@ impl PyLazyFrame {
             by,
             RollingGroupOptions {
                 index_column: index_column.into(),
-                period: Duration::parse(period),
-                offset: Duration::parse(offset),
+                period: period.parse().unwrap(),
+                offset: offset.parse().unwrap(),
                 closed_window,
             },
         );
@@ -601,9 +601,9 @@ impl PyLazyFrame {
             by,
             DynamicGroupOptions {
                 index_column: index_column.into(),
-                every: Duration::parse(every),
-                period: Duration::parse(period),
-                offset: Duration::parse(offset),
+                every: every.parse().unwrap(),
+                period: period.parse().unwrap(),
+                offset: offset.parse().unwrap(),
                 truncate,
                 include_boundaries,
                 closed_window,

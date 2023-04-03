@@ -170,8 +170,8 @@ pub(super) fn timestamp(s: &Series, tu: TimeUnit) -> PolarsResult<Series> {
 }
 
 pub(super) fn truncate(s: &Series, every: &str, offset: &str) -> PolarsResult<Series> {
-    let every = Duration::parse(every);
-    let offset = Duration::parse(offset);
+    let every = every.parse()?;
+    let offset = offset.parse()?;
     Ok(match s.dtype() {
         DataType::Datetime(_, tz) => match tz {
             #[cfg(feature = "timezones")]
@@ -206,8 +206,8 @@ pub(super) fn truncate(s: &Series, every: &str, offset: &str) -> PolarsResult<Se
 }
 
 pub(super) fn round(s: &Series, every: &str, offset: &str) -> PolarsResult<Series> {
-    let every = Duration::parse(every);
-    let offset = Duration::parse(offset);
+    let every = every.parse()?;
+    let offset = offset.parse()?;
     Ok(match s.dtype() {
         DataType::Datetime(_, tz) => match tz {
             #[cfg(feature = "timezones")]
