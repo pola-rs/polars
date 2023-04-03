@@ -11,7 +11,7 @@ import pytest
 
 import polars as pl
 from polars.datatypes import DATETIME_DTYPES, DTYPE_TEMPORAL_UNITS, TEMPORAL_DTYPES
-from polars.exceptions import ComputeError, PanicException
+from polars.exceptions import ComputeError, PolarsPanicError
 from polars.testing import (
     assert_frame_equal,
     assert_series_equal,
@@ -533,7 +533,7 @@ def test_date_range_precision(time_unit: TimeUnit | None, expected_micros: int) 
 
 
 def test_range_invalid_unit() -> None:
-    with pytest.raises(PanicException, match="'D' not supported"):
+    with pytest.raises(PolarsPanicError, match="'D' not supported"):
         pl.date_range(
             low=datetime(2021, 12, 16), high=datetime(2021, 12, 16, 3), interval="1D"
         )
