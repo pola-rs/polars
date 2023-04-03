@@ -272,7 +272,7 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                         N * std::mem::size_of::<u128>(),
                     )
                 };
-                let digits = PyTuple::new(py, buf.into_iter().take(n_digits));
+                let digits = PyTuple::new(py, buf.iter().take(n_digits));
                 convert
                     .call1((v.is_negative() as u8, digits, n_digits, -(scale as i32)))
                     .unwrap()
@@ -558,7 +558,7 @@ impl ToPyObject for Wrap<&DecimalChunked> {
                         N * std::mem::size_of::<u128>(),
                     )
                 };
-                let digits = PyTuple::new(py, buf.into_iter().take(n_digits));
+                let digits = PyTuple::new(py, buf.iter().take(n_digits));
                 convert
                     .call1((v.is_negative() as u8, digits, &py_precision, &py_scale))
                     .unwrap()
