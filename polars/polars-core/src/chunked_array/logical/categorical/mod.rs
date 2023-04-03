@@ -8,6 +8,7 @@ use bitflags::bitflags;
 pub use builder::*;
 pub(crate) use merge::*;
 pub(crate) use ops::{CategoricalTakeRandomGlobal, CategoricalTakeRandomLocal};
+use polars_arrow::trusted_len::PushUnchecked;
 use polars_utils::sync::SyncPtr;
 
 use super::*;
@@ -139,6 +140,50 @@ impl CategoricalChunked {
         CatIter {
             rev: self.get_rev_map(),
             iter,
+        }
+    }
+
+    // Map global indexes to local indexes
+    #[cfg(feature = "performant")]
+    pub(crate) fn remap(&self) -> UInt32Chunked {
+        let cats = self.logical();
+        let DataType::Categorical(Some(rev_map)) = self.dtype() else { unreachable!()};
+        match &**rev_map {
+            RevMapping::Local(_) => cats.clone(),
+            RevMapping::Global(mapping, _, _) => {
+                let mut remapped = Vec::with_capacity(cats.len());
+                if cats.null_count() == 0 {
+                    for arr in cats.downcast_iter() {
+                        for rev_cat in arr.values().iter() {
+                            unsafe {
+                                let cat = mapping.get(rev_cat).unwrap_unchecked();
+                                remapped.push_unchecked(*cat);
+                            };
+                        }
+                    }
+                    UInt32Chunked::from_vec(self.name(), remapped)
+                } else {
+                    // use one index higher for the null category
+                    let null_cat = mapping.len() as u32;
+
+                    for arr in cats.downcast_iter() {
+                        for opt_rev_cat in arr.iter() {
+                            match opt_rev_cat {
+                                Some(rev_cat) => {
+                                    unsafe {
+                                        let cat = mapping.get(rev_cat).unwrap_unchecked();
+                                        remapped.push_unchecked(*cat);
+                                    };
+                                }
+                                None => unsafe {
+                                    remapped.push_unchecked(null_cat);
+                                },
+                            }
+                        }
+                    }
+                    UInt32Chunked::from_vec(self.name(), remapped)
+                }
+            }
         }
     }
 }

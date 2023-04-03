@@ -2,8 +2,6 @@
 use polars_arrow::kernels::list_bytes_iter::numeric_list_bytes_iter;
 use polars_arrow::kernels::sort_partition::{create_clean_partitions, partition_to_groups};
 use polars_arrow::prelude::*;
-#[cfg(all(feature = "dtype-categorical", feature = "performant"))]
-use polars_arrow::trusted_len::PushUnchecked;
 use polars_utils::{flatten, HashSingle};
 
 use super::*;
@@ -147,47 +145,27 @@ impl IntoGroupsProxy for CategoricalChunked {
             RevMapping::Local(cached) => {
                 Ok(cats.group_tuples_perfect(cached.len() - 1, false, cats.len() / cached.len()))
             }
-            RevMapping::Global(mapping, cached, _) => {
-                let mut remapped = Vec::with_capacity(cats.len());
-                if cats.null_count() == 0 {
-                    for arr in cats.downcast_iter() {
-                        for rev_cat in arr.values().iter() {
-                            unsafe {
-                                let cat = mapping.get(rev_cat).unwrap_unchecked();
-                                remapped.push_unchecked(*cat);
-                            };
-                        }
-                    }
-                    Ok(UInt32Chunked::from_vec("", remapped).group_tuples_perfect(
-                        cached.len() - 1,
-                        multithreaded,
-                        self.len() / cached.len(),
-                    ))
-                } else {
-                    // use one index higher for the null category
-                    let null_cat = mapping.len() as u32;
-
-                    for arr in cats.downcast_iter() {
-                        for opt_rev_cat in arr.iter() {
-                            match opt_rev_cat {
-                                Some(rev_cat) => {
-                                    unsafe {
-                                        let cat = mapping.get(rev_cat).unwrap_unchecked();
-                                        remapped.push_unchecked(*cat);
-                                    };
-                                }
-                                None => unsafe {
-                                    remapped.push_unchecked(null_cat);
-                                },
-                            }
-                        }
-                    }
-                    Ok(UInt32Chunked::from_vec("", remapped).group_tuples_perfect(
-                        cached.len(),
-                        multithreaded,
-                        self.len() / cached.len(),
-                    ))
-                }
+            RevMapping::Global(mapping, _cached, _) => {
+                let splits = _split_offsets(self.len(), POOL.current_num_threads());
+                let chunks = splits
+                    .into_par_iter()
+                    .flat_map(|(start, len)| {
+                        let ca = cats.slice(start as i64, len);
+                        // safety: correct cats for this rev map
+                        let ca = unsafe {
+                            CategoricalChunked::from_cats_and_rev_map_unchecked(ca, rev_map.clone())
+                        };
+                        let mut cats = ca.remap();
+                        std::mem::take(&mut cats.chunks)
+                    })
+                    .collect::<Vec<_>>();
+                // safety: array dtype is uint32
+                let cats = unsafe { UInt32Chunked::from_chunks("", chunks) };
+                Ok(cats.group_tuples_perfect(
+                    mapping.len() - 1,
+                    multithreaded,
+                    cats.len() / mapping.len(),
+                ))
             }
         }
     }
