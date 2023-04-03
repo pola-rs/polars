@@ -505,7 +505,7 @@ def from_arrow(
             data, rechunk=rechunk, schema=schema, schema_overrides=schema_overrides
         )
     elif isinstance(data, (pa.Array, pa.ChunkedArray)):
-        return pli.Series._from_arrow("", data, rechunk)
+        return pli.Series._from_arrow("", data, rechunk=rechunk)
     else:
         raise ValueError(f"expected Arrow Table or Array, got {type(data)}.")
 

@@ -1312,11 +1312,13 @@ def test_pct_change() -> None:
 def test_skew() -> None:
     s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
 
-    assert s.skew(True) == pytest.approx(-0.5953924651018018)
-    assert s.skew(False) == pytest.approx(-0.7717168360221258)
+    assert s.skew(bias=True) == pytest.approx(-0.5953924651018018)
+    assert s.skew(bias=False) == pytest.approx(-0.7717168360221258)
 
     df = pl.DataFrame([s])
-    assert np.isclose(df.select(pl.col("a").skew(False))["a"][0], -0.7717168360221258)
+    assert np.isclose(
+        df.select(pl.col("a").skew(bias=False))["a"][0], -0.7717168360221258
+    )
 
 
 def test_kurtosis() -> None:
@@ -1727,17 +1729,6 @@ def test_arg_sort() -> None:
 
     expected_descending = pl.Series("a", [0, 2, 1, 4, 3], dtype=UInt32)
     assert_series_equal(s.arg_sort(descending=True), expected_descending)
-
-
-def test_argsort_deprecated() -> None:
-    s = pl.Series("a", [5, 3, 4, 1, 2])
-    expected = pl.Series("a", [3, 4, 1, 2, 0], dtype=UInt32)
-    with pytest.deprecated_call():
-        assert_series_equal(s.argsort(), expected)
-
-    expected_descending = pl.Series("a", [0, 2, 1, 4, 3], dtype=UInt32)
-    with pytest.deprecated_call():
-        assert_series_equal(s.argsort(descending=True), expected_descending)
 
 
 def test_arg_min_and_arg_max() -> None:

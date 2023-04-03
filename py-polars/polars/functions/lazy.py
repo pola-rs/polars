@@ -2364,37 +2364,6 @@ def arg_sort_by(
     return wrap_expr(py_arg_sort_by(exprs, descending))
 
 
-@deprecated_alias(reverse="descending")
-def argsort_by(
-    exprs: Expr | str | Sequence[Expr | str],
-    descending: Sequence[bool] | bool = False,
-) -> Expr:
-    """
-    Find the indexes that would sort the columns.
-
-    Argsort by multiple columns. The first column will be used for the ordering.
-    If there are duplicates in the first column, the second column will be used to
-    determine the ordering and so on.
-
-    .. deprecated:: 0.16.5
-        `argsort_by` will be removed in favour of `arg_sort_by`.
-
-    Parameters
-    ----------
-    exprs
-        Columns use to determine the ordering.
-    descending
-        Sort in descending order; default is ascending.
-
-    """
-    warnings.warn(
-        "`argsort_by()` is deprecated in favor of `arg_sort_by()`",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return arg_sort_by(exprs, descending=descending)
-
-
 def duration(
     *,
     days: Expr | str | int | None = None,
