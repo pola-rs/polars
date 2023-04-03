@@ -8,6 +8,8 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
+
+import polars as pl
 from polars.datatypes import (
     Date,
     Datetime,
@@ -23,8 +25,6 @@ from polars.datatypes import (
 from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils._construction import iterable_to_pyseries
-
-import polars as pl
 
 if TYPE_CHECKING:
     from polars.type_aliases import EpochTimeUnit, PolarsDataType, TimeUnit
