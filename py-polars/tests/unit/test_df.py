@@ -12,8 +12,6 @@ from typing import TYPE_CHECKING, Any, Callable, Iterator, Sequence, cast
 import numpy as np
 import pyarrow as pa
 import pytest
-
-import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, INTEGER_DTYPES
 from polars.testing import (
     assert_frame_equal,
@@ -22,6 +20,8 @@ from polars.testing import (
 )
 from polars.testing.parametric import columns
 from polars.utils._construction import iterable_to_pydf
+
+import polars as pl
 
 if TYPE_CHECKING:
     from polars.type_aliases import JoinStrategy, UniqueKeepStrategy
@@ -794,6 +794,21 @@ def test_to_dummies_include_null() -> None:
     df = pl.DataFrame({"A": ["a", "b", "c", "c"], "B": [1, 3, 5, None]})
     dummies = df.to_dummies(include_null=True)
     assert dummies["A_null"].to_list() == [0, 0, 0, 0]
+    assert dummies["B_null"].to_list() == [0, 0, 0, 1]
+
+
+def test_to_dummies_values() -> None:
+    df = pl.DataFrame({"A": ["a", "b", "c", "c"], "B": [1, 3, 5, None]})
+    dummies = df.to_dummies(
+        include_null=True,
+        values={
+            "A": ["a", "b"],
+            "B": [1],
+        },
+    )
+    assert dummies.columns == ["A_a", "A_b", "A_null", "B_1", "B_null"]
+    assert dummies["A_b"].to_list() == [0, 1, 0, 0]
+    assert dummies["B_1"].to_list() == [1, 0, 0, 0]
     assert dummies["B_null"].to_list() == [0, 0, 0, 1]
 
 

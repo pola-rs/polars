@@ -18,8 +18,6 @@ from typing import (
     overload,
 )
 
-from polars import functions as F
-from polars import internals as pli
 from polars.datatypes import (
     Boolean,
     Categorical,
@@ -93,6 +91,9 @@ from polars.utils.various import (
     scale_bytes,
     sphinx_accessor,
 )
+
+from polars import functions as F
+from polars import internals as pli
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame, PySeries
@@ -1421,7 +1422,12 @@ class Series:
         """
         return self._s.quantile(quantile, interpolation)
 
-    def to_dummies(self, separator: str = "_", include_null: bool = False) -> DataFrame:
+    def to_dummies(
+        self,
+        separator: str = "_",
+        include_null: bool = False,
+        values: list[Any] | None = None,
+    ) -> DataFrame:
         """
         Get dummy/indicator variables.
 
@@ -1431,6 +1437,10 @@ class Series:
             Separator/delimiter used when generating column names.
         include_null
             Whether to add an additional column indicating null values.
+        values
+            An optional list of values providing the non-null values to create
+            dummy indicators for. Columns will be created for exactly these
+            values, no matter if they actually appear in the series.
 
         Examples
         --------
@@ -1459,9 +1469,21 @@ class Series:
         │ 0   ┆ 0   ┆ 1   ┆ 0      │
         │ 0   ┆ 0   ┆ 0   ┆ 1      │
         └─────┴─────┴─────┴────────┘
+        >>> s.to_dummies(include_null=True, values=[1, 2])
+        shape: (4, 3)
+        ┌─────┬─────┬────────┐
+        │ a_1 ┆ a_2 ┆ a_null │
+        │ --- ┆ --- ┆ ---    │
+        │ u8  ┆ u8  ┆ u8     │
+        ╞═════╪═════╪════════╡
+        │ 1   ┆ 0   ┆ 0      │
+        │ 0   ┆ 1   ┆ 0      │
+        │ 0   ┆ 0   ┆ 0      │
+        │ 0   ┆ 0   ┆ 1      │
+        └─────┴─────┴────────┘
 
         """
-        return wrap_df(self._s.to_dummies(separator, include_null))
+        return wrap_df(self._s.to_dummies(separator, include_null, values))
 
     def cut(
         self,

@@ -73,8 +73,13 @@ pub trait DataFrameOps: IntoDf {
     ///  +------+------+------+--------+--------+--------+---------+---------+---------+
     /// ```
     #[cfg(feature = "to_dummies")]
-    fn to_dummies(&self, separator: Option<&str>, include_null: bool) -> PolarsResult<DataFrame> {
-        self._to_dummies(None, separator, include_null)
+    fn to_dummies(
+        &self,
+        separator: Option<&str>,
+        include_null: bool,
+        values: Option<PlHashMap<&str, Vec<AnyValue>>>,
+    ) -> PolarsResult<DataFrame> {
+        self._to_dummies(None, separator, include_null, values)
     }
 
     #[cfg(feature = "to_dummies")]
@@ -83,8 +88,9 @@ pub trait DataFrameOps: IntoDf {
         columns: Vec<&str>,
         separator: Option<&str>,
         include_null: bool,
+        values: Option<PlHashMap<&str, Vec<AnyValue>>>,
     ) -> PolarsResult<DataFrame> {
-        self._to_dummies(Some(columns), separator, include_null)
+        self._to_dummies(Some(columns), separator, include_null, values)
     }
 
     #[cfg(feature = "to_dummies")]
@@ -93,6 +99,7 @@ pub trait DataFrameOps: IntoDf {
         columns: Option<Vec<&str>>,
         separator: Option<&str>,
         include_null: bool,
+        values: Option<PlHashMap<&str, Vec<AnyValue>>>,
     ) -> PolarsResult<DataFrame> {
         let df = self.to_df();
 
@@ -103,7 +110,14 @@ pub trait DataFrameOps: IntoDf {
             df.get_columns()
                 .par_iter()
                 .map(|s| match set.contains(s.name()) {
-                    true => s.to_dummies(separator, include_null),
+                    true => s.to_dummies(
+                        separator,
+                        include_null,
+                        values.as_ref().map(|map| {
+                            map.get(s.name())
+                                .expect(&format!("missing values for column '{}'", s.name()))
+                        }),
+                    ),
                     false => Ok(s.clone().into_frame()),
                 })
                 .collect::<PolarsResult<Vec<_>>>()

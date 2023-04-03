@@ -10,100 +10,53 @@ import warnings
 from collections.abc import Sized
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    BinaryIO,
-    Callable,
-    Generator,
-    Iterable,
-    Iterator,
-    Mapping,
-    NoReturn,
-    Sequence,
-    TypeVar,
-    overload,
-)
+from typing import (TYPE_CHECKING, Any, BinaryIO, Callable, Generator,
+                    Iterable, Iterator, Mapping, NoReturn, Sequence, TypeVar,
+                    overload)
 
-from polars import functions as F
-from polars import internals as pli
 from polars.dataframe._html import NotebookFormatter
 from polars.dataframe.groupby import DynamicGroupBy, GroupBy, RollingGroupBy
-from polars.datatypes import (
-    FLOAT_DTYPES,
-    INTEGER_DTYPES,
-    N_INFER_DEFAULT,
-    Boolean,
-    Categorical,
-    DataTypeClass,
-    Float64,
-    Int8,
-    Int16,
-    Int32,
-    Int64,
-    Object,
-    UInt8,
-    UInt16,
-    UInt32,
-    UInt64,
-    Utf8,
-    py_type_to_dtype,
-)
-from polars.dependencies import (
-    _PYARROW_AVAILABLE,
-    _check_for_numpy,
-    _check_for_pandas,
-    _check_for_pyarrow,
-)
+from polars.datatypes import (FLOAT_DTYPES, INTEGER_DTYPES, N_INFER_DEFAULT,
+                              Boolean, Categorical, DataTypeClass, Float64,
+                              Int8, Int16, Int32, Int64, Object, UInt8, UInt16,
+                              UInt32, UInt64, Utf8, py_type_to_dtype)
+from polars.dependencies import (_PYARROW_AVAILABLE, _check_for_numpy,
+                                 _check_for_pandas, _check_for_pyarrow)
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoRowsReturned, TooManyRowsReturned
 from polars.functions.lazy import col, lit
 from polars.io._utils import _is_local_file
-from polars.io.excel._write_utils import (
-    _unpack_multi_column_dict,
-    _xl_apply_conditional_formats,
-    _xl_inject_sparklines,
-    _xl_setup_table_columns,
-    _xl_setup_table_options,
-    _xl_setup_workbook,
-    _xl_unique_table_name,
-    _XLFormatCache,
-)
+from polars.io.excel._write_utils import (_unpack_multi_column_dict,
+                                          _xl_apply_conditional_formats,
+                                          _xl_inject_sparklines,
+                                          _xl_setup_table_columns,
+                                          _xl_setup_table_options,
+                                          _xl_setup_workbook,
+                                          _xl_unique_table_name,
+                                          _XLFormatCache)
 from polars.slice import PolarsSlice
 from polars.utils import no_default
-from polars.utils._construction import (
-    _post_apply_columns,
-    arrow_to_pydf,
-    dict_to_pydf,
-    iterable_to_pydf,
-    numpy_to_pydf,
-    pandas_to_pydf,
-    sequence_to_pydf,
-    series_to_pydf,
-)
+from polars.utils._construction import (_post_apply_columns, arrow_to_pydf,
+                                        dict_to_pydf, iterable_to_pydf,
+                                        numpy_to_pydf, pandas_to_pydf,
+                                        sequence_to_pydf, series_to_pydf)
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
 from polars.utils._wrap import wrap_ldf, wrap_s
 from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.decorators import (
-    deprecate_nonkeyword_arguments,
-    deprecated_alias,
-    redirect,
-)
+from polars.utils.decorators import (deprecate_nonkeyword_arguments,
+                                     deprecated_alias, redirect)
 from polars.utils.meta import get_index_type
-from polars.utils.various import (
-    _prepare_row_count_args,
-    _process_null_values,
-    handle_projection_columns,
-    is_bool_sequence,
-    is_int_sequence,
-    is_str_sequence,
-    normalise_filepath,
-    parse_version,
-    range_to_slice,
-    scale_bytes,
-)
+from polars.utils.various import (_prepare_row_count_args,
+                                  _process_null_values,
+                                  handle_projection_columns, is_bool_sequence,
+                                  is_int_sequence, is_str_sequence,
+                                  normalise_filepath, parse_version,
+                                  range_to_slice, scale_bytes)
+
+from polars import functions as F
+from polars import internals as pli
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame
@@ -114,44 +67,26 @@ if TYPE_CHECKING:
     from datetime import timedelta
     from io import IOBase
 
-    from pyarrow.interchange.dataframe import _PyArrowDataFrame
-    from xlsxwriter import Workbook
-
     from polars.expr import Expr
     from polars.lazyframe import LazyFrame
     from polars.series import Series
-    from polars.type_aliases import (
-        AsofJoinStrategy,
-        AvroCompression,
-        ClosedInterval,
-        ColumnTotalsDefinition,
-        ComparisonOperator,
-        ConditionalFormatDict,
-        CsvEncoding,
-        DbWriteEngine,
-        DbWriteMode,
-        FillNullStrategy,
-        FrameInitTypes,
-        IntoExpr,
-        IpcCompression,
-        JoinStrategy,
-        NullStrategy,
-        OneOrMoreDataTypes,
-        Orientation,
-        ParallelStrategy,
-        ParquetCompression,
-        PivotAgg,
-        PolarsDataType,
-        RollingInterpolationMethod,
-        RowTotalsDefinition,
-        SchemaDefinition,
-        SchemaDict,
-        SizeUnit,
-        StartBy,
-        UniqueKeepStrategy,
-        UnstackDirection,
-    )
+    from polars.type_aliases import (AsofJoinStrategy, AvroCompression,
+                                     ClosedInterval, ColumnTotalsDefinition,
+                                     ComparisonOperator, ConditionalFormatDict,
+                                     CsvEncoding, DbWriteEngine, DbWriteMode,
+                                     FillNullStrategy, FrameInitTypes,
+                                     IntoExpr, IpcCompression, JoinStrategy,
+                                     NullStrategy, OneOrMoreDataTypes,
+                                     Orientation, ParallelStrategy,
+                                     ParquetCompression, PivotAgg,
+                                     PolarsDataType,
+                                     RollingInterpolationMethod,
+                                     RowTotalsDefinition, SchemaDefinition,
+                                     SchemaDict, SizeUnit, StartBy,
+                                     UniqueKeepStrategy, UnstackDirection)
     from polars.utils import NoDefault
+    from pyarrow.interchange.dataframe import _PyArrowDataFrame
+    from xlsxwriter import Workbook
 
     if sys.version_info >= (3, 8):
         from typing import Literal
@@ -7262,6 +7197,7 @@ class DataFrame:
         *,
         separator: str = "_",
         include_null: bool = False,
+        values: dict[str, list[Any]] | None = None,
     ) -> Self:
         """
         Convert categorical variables into dummy/indicator variables.
@@ -7276,6 +7212,13 @@ class DataFrame:
         include_null
             Whether to add a column indicating null values for each column
             converted to dummy variables.
+        values
+            An optional mapping from column names to values providing the
+            non-null values to create dummy indicators for. For each input
+            column, output columns will be created exactly for the values
+            provided, no matter if they actually appear in the data frame.
+            Note that if values are provided, they must be provided for every
+            column for which dummy indicators are created.
 
         Examples
         --------
@@ -7313,11 +7256,36 @@ class DataFrame:
         │ 0     ┆ 1     ┆ 0        ┆ 0     ┆ 1     ┆ 0        │
         │ 0     ┆ 1     ┆ 0        ┆ 0     ┆ 0     ┆ 1        │
         └───────┴───────┴──────────┴───────┴───────┴──────────┘
-
+        >>> df.to_dummies(include_null=True, values={
+        ...     "foo": [2],
+        ...     "ham": ["a", "b"]
+        ... })
+        shape: (3, 5)
+        ┌───────┬──────────┬───────┬───────┬──────────┐
+        │ foo_2 ┆ foo_null ┆ ham_a ┆ ham_b ┆ ham_null │
+        │ ---   ┆ ---      ┆ ---   ┆ ---   ┆ ---      │
+        │ u8    ┆ u8       ┆ u8    ┆ u8    ┆ u8       │
+        ╞═══════╪══════════╪═══════╪═══════╪══════════╡
+        │ 0     ┆ 0        ┆ 1     ┆ 0     ┆ 0        │
+        │ 1     ┆ 0        ┆ 0     ┆ 1     ┆ 0        │
+        │ 1     ┆ 0        ┆ 0     ┆ 0     ┆ 1        │
+        └───────┴──────────┴───────┴───────┴──────────┘
         """
         if isinstance(columns, str):
             columns = [columns]
-        return self._from_pydf(self._df.to_dummies(columns, separator, include_null))
+
+        # Extract values into two lists
+        if values is None:
+            values_columns, values_values = (None, None)
+        else:
+            values_columns = list(values.keys())
+            values_values = list(values.values())
+
+        return self._from_pydf(
+            self._df.to_dummies(
+                columns, separator, include_null, values_columns, values_values
+            )
+        )
 
     @deprecate_nonkeyword_arguments(
         message=(

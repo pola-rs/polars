@@ -1095,10 +1095,16 @@ impl PySeries {
         &self,
         separator: Option<&str>,
         include_null: Option<bool>,
+        values: Option<Vec<Wrap<AnyValue<'_>>>>,
     ) -> PyResult<PyDataFrame> {
+        let av_values = values.map(|vec| vec.into_iter().map(|v| v.0).collect::<Vec<_>>());
         let df = self
             .series
-            .to_dummies(separator, include_null.unwrap_or_default())
+            .to_dummies(
+                separator,
+                include_null.unwrap_or_default(),
+                av_values.as_ref(),
+            )
             .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
