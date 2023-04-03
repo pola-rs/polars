@@ -266,7 +266,7 @@ def _cast_repr_strings_with_schema(
     for c, tp in schema.items():
         if tp is not None:
             if tp.base_type() == Datetime:
-                tp_base = Datetime(tp.tu)  # type: ignore[union-attr]
+                tp_base = Datetime(tp.time_unit)  # type: ignore[union-attr]
                 d = F.col(c).str.replace(r"[A-Z ]+$", "")
                 cast_cols[c] = (
                     F.when(d.str.lengths() == 19)
@@ -275,8 +275,8 @@ def _cast_repr_strings_with_schema(
                     .str.slice(0, 29)
                     .str.strptime(tp_base, "%Y-%m-%d %H:%M:%S.%9f")
                 )
-                if getattr(tp, "tz", None) is not None:
-                    cast_cols[c] = cast_cols[c].dt.replace_time_zone(tp.tz)  # type: ignore[union-attr]
+                if getattr(tp, "time_zone", None) is not None:
+                    cast_cols[c] = cast_cols[c].dt.replace_time_zone(tp.time_zone)  # type: ignore[union-attr]
             elif tp == Date:
                 cast_cols[c] = F.col(c).str.strptime(tp, "%Y-%m-%d")  # type: ignore[arg-type]
             elif tp == Time:

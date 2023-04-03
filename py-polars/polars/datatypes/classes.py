@@ -192,8 +192,8 @@ class Time(TemporalType):
 class Datetime(TemporalType):
     """Calendar date and time type."""
 
-    tu: TimeUnit | None = None
-    tz: str | None = None
+    time_unit: TimeUnit | None = None
+    time_zone: str | None = None
 
     def __init__(self, time_unit: TimeUnit | None = "us", time_zone: str | None = None):
         """
@@ -202,18 +202,18 @@ class Datetime(TemporalType):
         Parameters
         ----------
         time_unit : {'us', 'ns', 'ms'}
-            Time unit.
+            Unit of time.
         time_zone
-            Timezone string as defined in zoneinfo (run
+            Time zone string as defined in zoneinfo (run
             ``import zoneinfo; zoneinfo.available_timezones()`` for a full list).
 
         """
-        self.tu = time_unit or "us"
-        self.tz = time_zone
+        self.time_unit = time_unit or "us"
+        self.time_zone = time_zone
 
-        if self.tu not in ("ms", "us", "ns"):
+        if self.time_unit not in ("ms", "us", "ns"):
             raise ValueError(
-                f"Invalid time_unit; expected one of {{'ns','us','ms'}}, got {self.tu!r}"
+                f"Invalid time_unit; expected one of {{'ns','us','ms'}}, got {self.time_unit!r}"
             )
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
@@ -221,22 +221,26 @@ class Datetime(TemporalType):
         if type(other) is DataTypeClass and issubclass(other, Datetime):
             return True
         elif isinstance(other, Datetime):
-            return self.tu == other.tu and self.tz == other.tz
+            return (
+                self.time_unit == other.time_unit and self.time_zone == other.time_zone
+            )
         else:
             return False
 
     def __hash__(self) -> int:
-        return hash((Datetime, self.tu))
+        return hash((Datetime, self.time_unit))
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
-        return f"{class_name}(time_unit={self.tu!r}, time_zone={self.tz!r})"
+        return (
+            f"{class_name}(time_unit={self.time_unit!r}, time_zone={self.time_zone!r})"
+        )
 
 
 class Duration(TemporalType):
     """Time duration/delta type."""
 
-    tu: TimeUnit | None = None
+    time_unit: TimeUnit | None = None
 
     def __init__(self, time_unit: TimeUnit = "us"):
         """
@@ -245,13 +249,13 @@ class Duration(TemporalType):
         Parameters
         ----------
         time_unit : {'us', 'ns', 'ms'}
-            Time unit.
+            Unit of time.
 
         """
-        self.tu = time_unit
-        if self.tu not in ("ms", "us", "ns"):
+        self.time_unit = time_unit
+        if self.time_unit not in ("ms", "us", "ns"):
             raise ValueError(
-                f"Invalid time_unit; expected one of {{'ns','us','ms'}}, got {self.tu!r}"
+                f"Invalid time_unit; expected one of {{'ns','us','ms'}}, got {self.time_unit!r}"
             )
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
@@ -259,16 +263,16 @@ class Duration(TemporalType):
         if type(other) is DataTypeClass and issubclass(other, Duration):
             return True
         elif isinstance(other, Duration):
-            return self.tu == other.tu
+            return self.time_unit == other.time_unit
         else:
             return False
 
     def __hash__(self) -> int:
-        return hash((Duration, self.tu))
+        return hash((Duration, self.time_unit))
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
-        return f"{class_name}(time_unit={self.tu!r})"
+        return f"{class_name}(time_unit={self.time_unit!r})"
 
 
 class Categorical(DataType):

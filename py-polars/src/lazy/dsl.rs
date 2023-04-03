@@ -564,7 +564,7 @@ impl PyExpr {
             .into()
     }
 
-    #[pyo3(signature = (fmt, strict, exact, cache, tz_aware, utc, tu, tz))]
+    #[pyo3(signature = (fmt, strict, exact, cache, tz_aware, utc, time_unit, time_zone))]
     #[allow(clippy::too_many_arguments)]
     pub fn str_parse_datetime(
         &self,
@@ -574,11 +574,11 @@ impl PyExpr {
         cache: bool,
         tz_aware: bool,
         utc: bool,
-        tu: Option<Wrap<TimeUnit>>,
-        tz: Option<TimeZone>,
+        time_unit: Option<Wrap<TimeUnit>>,
+        time_zone: Option<TimeZone>,
     ) -> PyExpr {
-        let result_tu = match (&fmt, tu) {
-            (_, Some(tu)) => tu.0,
+        let result_time_unit = match (&fmt, time_unit) {
+            (_, Some(time_unit)) => time_unit.0,
             (Some(fmt), None) => {
                 if fmt.contains("%.9f")
                     || fmt.contains("%9f")
@@ -598,7 +598,7 @@ impl PyExpr {
             .clone()
             .str()
             .strptime(StrpTimeOptions {
-                date_dtype: DataType::Datetime(result_tu, tz),
+                date_dtype: DataType::Datetime(result_time_unit, time_zone),
                 fmt,
                 strict,
                 exact,
@@ -1056,8 +1056,8 @@ impl PyExpr {
             )
             .into()
     }
-    pub fn timestamp(&self, tu: Wrap<TimeUnit>) -> PyExpr {
-        self.inner.clone().dt().timestamp(tu.0).into()
+    pub fn timestamp(&self, time_unit: Wrap<TimeUnit>) -> PyExpr {
+        self.inner.clone().dt().timestamp(time_unit.0).into()
     }
 
     pub fn dt_offset_by(&self, by: &str) -> PyExpr {
@@ -1078,28 +1078,28 @@ impl PyExpr {
             .into()
     }
 
-    pub fn dt_with_time_unit(&self, tu: Wrap<TimeUnit>) -> PyExpr {
-        self.inner.clone().dt().with_time_unit(tu.0).into()
+    pub fn dt_with_time_unit(&self, time_unit: Wrap<TimeUnit>) -> PyExpr {
+        self.inner.clone().dt().with_time_unit(time_unit.0).into()
     }
 
     #[cfg(feature = "timezones")]
-    pub fn dt_convert_time_zone(&self, tz: TimeZone) -> PyExpr {
-        self.inner.clone().dt().convert_time_zone(tz).into()
+    pub fn dt_convert_time_zone(&self, time_zone: TimeZone) -> PyExpr {
+        self.inner.clone().dt().convert_time_zone(time_zone).into()
     }
 
-    pub fn dt_cast_time_unit(&self, tu: Wrap<TimeUnit>) -> PyExpr {
-        self.inner.clone().dt().cast_time_unit(tu.0).into()
+    pub fn dt_cast_time_unit(&self, time_unit: Wrap<TimeUnit>) -> PyExpr {
+        self.inner.clone().dt().cast_time_unit(time_unit.0).into()
     }
 
     #[cfg(feature = "timezones")]
-    pub fn dt_replace_time_zone(&self, tz: Option<String>) -> PyExpr {
-        self.inner.clone().dt().replace_time_zone(tz).into()
+    pub fn dt_replace_time_zone(&self, time_zone: Option<String>) -> PyExpr {
+        self.inner.clone().dt().replace_time_zone(time_zone).into()
     }
 
     #[cfg(feature = "timezones")]
     #[allow(deprecated)]
-    pub fn dt_tz_localize(&self, tz: String) -> PyExpr {
-        self.inner.clone().dt().tz_localize(tz).into()
+    pub fn dt_tz_localize(&self, time_zone: String) -> PyExpr {
+        self.inner.clone().dt().tz_localize(time_zone).into()
     }
 
     pub fn dt_truncate(&self, every: &str, offset: &str) -> PyExpr {
@@ -1110,8 +1110,12 @@ impl PyExpr {
         self.inner.clone().dt().round(every, offset).into()
     }
 
-    pub fn dt_combine(&self, time: PyExpr, tu: Wrap<TimeUnit>) -> PyExpr {
-        self.inner.clone().dt().combine(time.inner, tu.0).into()
+    pub fn dt_combine(&self, time: PyExpr, time_unit: Wrap<TimeUnit>) -> PyExpr {
+        self.inner
+            .clone()
+            .dt()
+            .combine(time.inner, time_unit.0)
+            .into()
     }
 
     #[pyo3(signature = (lambda, window_size, weights, min_periods, center))]
