@@ -91,7 +91,6 @@ where
 /// The hash will be used to rehash, and the str will be used for equality.
 pub(crate) fn groupby_threaded_num<T, IntoSlice>(
     keys: Vec<IntoSlice>,
-    group_size_hint: usize,
     n_partitions: u64,
     sorted: bool,
 ) -> GroupsProxy
@@ -128,8 +127,7 @@ where
 
                             match entry {
                                 RawEntryMut::Vacant(entry) => {
-                                    let mut tuples = Vec::with_capacity(group_size_hint);
-                                    tuples.push(idx);
+                                    let tuples = vec![idx];
                                     entry.insert_with_hasher(hash, *k, (idx, tuples), |k| {
                                         hasher.hash_single(k)
                                     });
