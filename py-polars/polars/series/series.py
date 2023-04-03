@@ -324,7 +324,10 @@ class Series:
     @classmethod
     @deprecated_alias(nan_to_none="nan_to_null")
     def _from_pandas(
-        cls, name: str, values: pd.Series | pd.DatetimeIndex, nan_to_null: bool = True
+        cls,
+        name: str,
+        values: pd.Series[Any] | pd.DatetimeIndex,
+        nan_to_null: bool = True,
     ) -> Self:
         """Construct a Series from a pandas Series or DatetimeIndex."""
         return cls._from_pyseries(
@@ -3215,7 +3218,7 @@ class Series:
 
     def to_pandas(  # noqa: D417
         self, *args: Any, use_pyarrow_extension_array: bool = False, **kwargs: Any
-    ) -> pd.Series:
+    ) -> pd.Series[Any]:
         """
         Convert this Series to a pandas Series.
 

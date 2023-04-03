@@ -524,7 +524,7 @@ def from_pandas(
 
 @overload
 def from_pandas(
-    data: pd.Series | pd.DatetimeIndex,
+    data: pd.Series[Any] | pd.DatetimeIndex,
     rechunk: bool = ...,
     nan_to_null: bool = ...,
     schema_overrides: SchemaDict | None = ...,
@@ -537,7 +537,7 @@ def from_pandas(
 @deprecate_nonkeyword_arguments()
 @deprecated_alias(nan_to_none="nan_to_null", df="data", stacklevel=4)
 def from_pandas(
-    data: pd.DataFrame | pd.Series | pd.DatetimeIndex,
+    data: pd.DataFrame | pd.Series[Any] | pd.DatetimeIndex,
     rechunk: bool = True,
     nan_to_null: bool = True,
     schema_overrides: SchemaDict | None = None,

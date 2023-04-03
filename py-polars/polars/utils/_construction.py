@@ -435,7 +435,7 @@ def sequence_to_pyseries(
 
 @deprecated_alias(nan_to_none="nan_to_null")
 def _pandas_series_to_arrow(
-    values: pd.Series | pd.DatetimeIndex,
+    values: pd.Series[Any] | pd.Index,
     nan_to_null: bool = True,
     length: int | None = None,
 ) -> pa.Array:
@@ -444,7 +444,7 @@ def _pandas_series_to_arrow(
 
     Parameters
     ----------
-    values : :class:`pandas.Series` or :class:`pandas.DatetimeIndex`.
+    values : :class:`pandas.Series` or :class:`pandas.Index`.
         Series to convert to arrow
     nan_to_null : bool, default = True
         Interpret `NaN` as missing values.
@@ -478,7 +478,7 @@ def _pandas_series_to_arrow(
 
 @deprecated_alias(nan_to_none="nan_to_null")
 def pandas_to_pyseries(
-    name: str, values: pd.Series | pd.DatetimeIndex, nan_to_null: bool = True
+    name: str, values: pd.Series[Any] | pd.DatetimeIndex, nan_to_null: bool = True
 ) -> PySeries:
     """Construct a PySeries from a pandas Series or DatetimeIndex."""
     # TODO: Change `if not name` to `if name is not None` once name is Optional[str]
@@ -979,7 +979,7 @@ def _sequence_of_numpy_to_pydf(
 
 
 def _sequence_of_pandas_to_pydf(
-    first_element: pd.Series | pd.DatetimeIndex,
+    first_element: pd.Series[Any] | pd.DatetimeIndex,
     data: Sequence[Any],
     schema: SchemaDefinition | None,
     schema_overrides: SchemaDict | None,
