@@ -1867,7 +1867,7 @@ def reduce(
     Horizontally sum over all columns.
 
     >>> df.select(
-    ...     pl.reduce(f=lambda acc, x: acc + x, exprs=pl.col("*")).alias("sum"),
+    ...     pl.reduce(function=lambda acc, x: acc + x, exprs=pl.col("*")).alias("sum"),
     ... )
     shape: (3, 1)
     ┌─────┐
