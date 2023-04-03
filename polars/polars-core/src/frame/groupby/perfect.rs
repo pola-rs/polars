@@ -7,9 +7,7 @@ use polars_utils::unwrap::UnwrapUncheckedRelease;
 use polars_utils::IdxSize;
 use rayon::prelude::*;
 
-#[cfg(all(feature = "dtype-categorical", feature = "performant"))]
-use crate::datatypes::{CategoricalChunked, DataType, RevMapping};
-use crate::datatypes::{PolarsIntegerType, UInt32Chunked};
+use crate::datatypes::*;
 use crate::hashing::{this_partition, AsU64};
 use crate::prelude::{ChunkedArray, GroupsIdx, GroupsProxy};
 use crate::utils::_set_partition_size;
@@ -102,34 +100,57 @@ where
 impl CategoricalChunked {
     // Use the indexes as perfect groups
     pub fn group_tuples_perfect(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
-        use crate::chunked_array::logical::LogicalType;
         let DataType::Categorical(Some(rev_map)) = self.dtype() else { unreachable!()};
+        if self.is_empty() {
+            return GroupsProxy::Idx(GroupsIdx::new(vec![], vec![], true));
+        }
         let cats = self.logical();
 
         let mut out = match &**rev_map {
             RevMapping::Local(cached) => {
-                if cats.null_count() == 0 {
-                    return cats.group_tuples_perfect(
-                        cached.len() - 1,
-                        multithreaded,
-                        cats.len() / cached.len(),
-                    );
-                }
-                let group_capacity = cats.len() / cached.len();
-                let len = cached.len();
-                get_groups_categorical(cats, len, group_capacity, multithreaded, |cat| *cat)
+                // ensure we don't allocate too much if not all slots will be used
+                let group_capacity = if self.can_fast_unique() {
+                    cats.len() / (cached.len() + 1)
+                } else {
+                    0
+                };
+                let len = if cats.null_count() > 0 {
+                    // we add one to store the null sentinel group
+                    cached.len() + 1
+                } else {
+                    cached.len()
+                };
+                get_groups_categorical(
+                    cats,
+                    len,
+                    group_capacity,
+                    multithreaded,
+                    |cat| *cat,
+                    self.can_fast_unique(),
+                )
             }
             RevMapping::Global(mapping, _cached, _) => {
-                let group_capacity = cats.len() / mapping.len();
+                // ensure we don't allocate too much if not all slots will be used
+                let group_capacity = if self.can_fast_unique() {
+                    cats.len() / (mapping.len() + 1)
+                } else {
+                    0
+                };
                 let len = if cats.null_count() > 0 {
+                    // we add one to store the null sentinel group
                     mapping.len() + 1
                 } else {
                     mapping.len()
                 };
                 unsafe {
-                    get_groups_categorical(cats, len, group_capacity, multithreaded, |cat| {
-                        *mapping.get(cat).unwrap_unchecked_release()
-                    })
+                    get_groups_categorical(
+                        cats,
+                        len,
+                        group_capacity,
+                        multithreaded,
+                        |cat| *mapping.get(cat).unwrap_unchecked_release(),
+                        self.can_fast_unique(),
+                    )
                 }
             }
         };
@@ -147,13 +168,15 @@ fn get_groups_categorical<M>(
     group_capacity: usize,
     multithreaded: bool,
     get_cat: M,
+    can_fast_unique: bool,
 ) -> GroupsProxy
 where
     M: Fn(&u32) -> u32 + Send + Sync,
 {
-    let null_idx = len - 1;
+    // the latest index will be used for the null sentinel
+    let null_idx = len.saturating_sub(1);
     let mut groups = Vec::with_capacity(len);
-    let mut first = vec![0 as IdxSize; len];
+    let mut first = vec![IdxSize::MAX; len];
     groups.resize_with(len, || Vec::with_capacity(group_capacity));
 
     let groups_ptr = unsafe { SyncPtr::new(groups.as_mut_ptr()) };
@@ -230,5 +253,12 @@ where
             }
         }
     }
-    GroupsProxy::Idx(GroupsIdx::new(first, groups, false))
+    if can_fast_unique || first.iter().all(|v| *v != IdxSize::MAX) {
+        GroupsProxy::Idx(GroupsIdx::new(first, groups, false))
+    } else {
+        // remove empty slots
+        let first = first.into_iter().filter(|v| *v != IdxSize::MAX).collect();
+        let groups = groups.into_iter().filter(|v| !v.is_empty()).collect();
+        GroupsProxy::Idx(GroupsIdx::new(first, groups, false))
+    }
 }
