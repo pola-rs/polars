@@ -4100,7 +4100,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     )
     def unique(
         self,
-        maintain_order: bool = True,
+        maintain_order: bool = False,
         subset: str | Sequence[str] | None = None,
         keep: UniqueKeepStrategy = "any",
     ) -> Self:
@@ -4144,7 +4144,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "ham": ["b", "b", "b", "b"],
         ...     }
         ... )
-        >>> lf.unique().collect()
+        >>> lf.unique(maintain_order=True).collect()
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -4155,7 +4155,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2   ┆ a   ┆ b   │
         │ 3   ┆ a   ┆ b   │
         └─────┴─────┴─────┘
-        >>> lf.unique(subset=["bar", "ham"]).collect()
+        >>> lf.unique(subset=["bar", "ham"], maintain_order=True).collect()
         shape: (1, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -4164,7 +4164,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ╞═════╪═════╪═════╡
         │ 1   ┆ a   ┆ b   │
         └─────┴─────┴─────┘
-        >>> lf.unique(keep="last").collect()
+        >>> lf.unique(keep="last", maintain_order=True).collect()
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │

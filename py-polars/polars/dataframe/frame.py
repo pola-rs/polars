@@ -7303,7 +7303,7 @@ class DataFrame:
     )
     def unique(
         self,
-        maintain_order: bool = True,
+        maintain_order: bool = False,
         subset: str | Sequence[str] | None = None,
         keep: UniqueKeepStrategy = "any",
     ) -> Self:
@@ -7347,7 +7347,7 @@ class DataFrame:
         ...         "ham": ["b", "b", "b", "b"],
         ...     }
         ... )
-        >>> df.unique()
+        >>> df.unique(maintain_order=True)
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -7358,7 +7358,7 @@ class DataFrame:
         │ 2   ┆ a   ┆ b   │
         │ 3   ┆ a   ┆ b   │
         └─────┴─────┴─────┘
-        >>> df.unique(subset=["bar", "ham"])
+        >>> df.unique(subset=["bar", "ham"], maintain_order=True)
         shape: (1, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -7367,7 +7367,7 @@ class DataFrame:
         ╞═════╪═════╪═════╡
         │ 1   ┆ a   ┆ b   │
         └─────┴─────┴─────┘
-        >>> df.unique(keep="last")
+        >>> df.unique(keep="last", maintain_order=True)
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
