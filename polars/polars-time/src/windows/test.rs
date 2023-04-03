@@ -18,7 +18,7 @@ fn test_date_range() {
     let dates = date_range_vec(
         start.timestamp_nanos(),
         end.timestamp_nanos(),
-        Duration::parse("1mo"),
+        "1mo".parse().unwrap(),
         ClosedWindow::Both,
         TimeUnit::Nanoseconds,
         NO_TIMEZONE,
@@ -49,7 +49,7 @@ fn test_feb_date_range() {
     let dates = date_range_vec(
         start.timestamp_nanos(),
         end.timestamp_nanos(),
-        Duration::parse("1mo"),
+        "1mo".parse().unwrap(),
         ClosedWindow::Both,
         TimeUnit::Nanoseconds,
         NO_TIMEZONE,
@@ -91,8 +91,8 @@ fn test_groups_large_interval() {
         .map(|d| d.and_hms_opt(0, 0, 0).unwrap().timestamp_nanos())
         .collect::<Vec<_>>();
 
-    let dur = Duration::parse("2d");
-    let w = Window::new(Duration::parse("2d"), dur.clone(), Duration::from_nsecs(0));
+    let dur = "2d".parse::<Duration>().unwrap();
+    let w = Window::new("2d".parse().unwrap(), dur, Duration::from_nsecs(0));
     let (groups, _, _) = groupby_windows(
         w,
         &ts,
@@ -142,9 +142,9 @@ fn test_offset() {
         .unwrap()
         .timestamp_nanos();
     let w = Window::new(
-        Duration::parse("5m"),
-        Duration::parse("5m"),
-        Duration::parse("-2m"),
+        "5m".parse().unwrap(),
+        "5m".parse().unwrap(),
+        "-2m".parse().unwrap(),
     );
 
     let b = w.get_earliest_bounds_ns(t, NO_TIMEZONE).unwrap();
@@ -170,7 +170,7 @@ fn test_boundaries() {
     let ts = date_range_vec(
         start.timestamp_nanos(),
         stop.timestamp_nanos(),
-        Duration::parse("30m"),
+        "30m".parse().unwrap(),
         ClosedWindow::Both,
         TimeUnit::Nanoseconds,
         NO_TIMEZONE,
@@ -181,9 +181,9 @@ fn test_boundaries() {
     // every 2h
     // period 1h
     let w = Window::new(
-        Duration::parse("1h"),
-        Duration::parse("1h"),
-        Duration::parse("0ns"),
+        "1h".parse().unwrap(),
+        "1h".parse().unwrap(),
+        "0ns".parse().unwrap(),
     );
 
     // earliest bound is first datapoint: 2021-12-16 00:00:00
@@ -346,7 +346,7 @@ fn test_boundaries_2() {
     let ts = date_range_vec(
         start.timestamp_nanos(),
         stop.timestamp_nanos(),
-        Duration::parse("30m"),
+        "30m".parse().unwrap(),
         ClosedWindow::Both,
         TimeUnit::Nanoseconds,
         NO_TIMEZONE,
@@ -359,8 +359,8 @@ fn test_boundaries_2() {
     // every 2h
     // period 1h
     // offset 30m
-    let offset = Duration::parse("30m");
-    let w = Window::new(Duration::parse("2h"), Duration::parse("1h"), offset);
+    let offset = "30m".parse().unwrap();
+    let w = Window::new("2h".parse().unwrap(), "1h".parse().unwrap(), offset);
 
     // earliest bound is first datapoint: 2021-12-16 00:00:00 + 30m offset: 2021-12-16 00:30:00
     let b = w.get_earliest_bounds_ns(ts[0], NO_TIMEZONE).unwrap();
@@ -454,7 +454,7 @@ fn test_boundaries_ms() {
     let ts = date_range_vec(
         start.timestamp_millis(),
         stop.timestamp_millis(),
-        Duration::parse("30m"),
+        "30m".parse().unwrap(),
         ClosedWindow::Both,
         TimeUnit::Milliseconds,
         NO_TIMEZONE,
@@ -465,9 +465,9 @@ fn test_boundaries_ms() {
     // every 2h
     // period 1h
     let w = Window::new(
-        Duration::parse("1h"),
-        Duration::parse("1h"),
-        Duration::parse("0ns"),
+        "1h".parse().unwrap(),
+        "1h".parse().unwrap(),
+        "0ns".parse().unwrap(),
     );
 
     // earliest bound is first datapoint: 2021-12-16 00:00:00
@@ -630,7 +630,7 @@ fn test_rolling_lookback() {
     let dates = date_range_vec(
         start.timestamp_millis(),
         end.timestamp_millis(),
-        Duration::parse("30m"),
+        "30m".parse().unwrap(),
         ClosedWindow::Both,
         TimeUnit::Milliseconds,
         NO_TIMEZONE,
@@ -639,8 +639,8 @@ fn test_rolling_lookback() {
 
     // full lookbehind
     let groups = groupby_values(
-        Duration::parse("2h"),
-        Duration::parse("-2h"),
+        "2h".parse().unwrap(),
+        "-2h".parse().unwrap(),
         &dates,
         ClosedWindow::Right,
         TimeUnit::Milliseconds,
@@ -659,8 +659,8 @@ fn test_rolling_lookback() {
 
     // partial lookbehind
     let groups = groupby_values(
-        Duration::parse("2h"),
-        Duration::parse("-1h"),
+        "2h".parse().unwrap(),
+        "-1h".parse().unwrap(),
         &dates,
         ClosedWindow::Right,
         TimeUnit::Milliseconds,
@@ -679,8 +679,8 @@ fn test_rolling_lookback() {
 
     // no lookbehind
     let groups = groupby_values(
-        Duration::parse("2h"),
-        Duration::parse("0h"),
+        "2h".parse().unwrap(),
+        "0h".parse().unwrap(),
         &dates,
         ClosedWindow::Right,
         TimeUnit::Milliseconds,
@@ -697,7 +697,7 @@ fn test_rolling_lookback() {
     assert_eq!(groups[7], [7, 2]);
     assert_eq!(groups[8], [8, 0]);
 
-    let period = Duration::parse("2h");
+    let period = "2h".parse().unwrap();
     let tu = TimeUnit::Milliseconds;
     for closed_window in [
         ClosedWindow::Left,
@@ -705,7 +705,7 @@ fn test_rolling_lookback() {
         ClosedWindow::Both,
         ClosedWindow::None,
     ] {
-        let offset = Duration::parse("0h");
+        let offset = "0h".parse().unwrap();
         let g0 = groupby_values_iter_full_lookahead(
             period,
             offset,
@@ -728,7 +728,7 @@ fn test_rolling_lookback() {
         .collect::<Vec<_>>();
         assert_eq!(g0, g1);
 
-        let offset = Duration::parse("-2h");
+        let offset = "-2h".parse().unwrap();
         let g0 = groupby_values_iter_full_lookbehind(
             period,
             offset,
@@ -767,9 +767,9 @@ fn test_end_membership() {
             .timestamp_millis(),
     ];
     let window = Window::new(
-        Duration::parse("1mo"),
-        Duration::parse("2mo"),
-        Duration::parse("-2mo"),
+        "1mo".parse().unwrap(),
+        "2mo".parse().unwrap(),
+        "-2mo".parse().unwrap(),
     );
     // windows
     // 2020-12-01 -> 2021-02-01     members: None
@@ -798,9 +798,9 @@ fn test_end_membership() {
 fn test_groupby_windows_membership_2791() {
     let dates = [0, 0, 2, 2];
     let window = Window::new(
-        Duration::parse("1ms"),
-        Duration::parse("1ms"),
-        Duration::parse("0ns"),
+        "1ms".parse().unwrap(),
+        "1ms".parse().unwrap(),
+        "0ns".parse().unwrap(),
     );
     let (groups, _, _) = groupby_windows(
         window,
@@ -820,9 +820,9 @@ fn test_groupby_windows_membership_2791() {
 fn test_groupby_windows_duplicates_2931() {
     let dates = [0, 3, 3, 5, 5];
     let window = Window::new(
-        Duration::parse("1ms"),
-        Duration::parse("1ms"),
-        Duration::parse("0ns"),
+        "1ms".parse().unwrap(),
+        "1ms".parse().unwrap(),
+        "0ns".parse().unwrap(),
     );
 
     let (groups, _, _) = groupby_windows(
@@ -851,9 +851,9 @@ fn test_groupby_windows_offsets_3776() {
         .collect::<Vec<_>>();
 
     let window = Window::new(
-        Duration::parse("2d"),
-        Duration::parse("2d"),
-        Duration::parse("-2d"),
+        "2d".parse().unwrap(),
+        "2d".parse().unwrap(),
+        "-2d".parse().unwrap(),
     );
     let (groups, _, _) = groupby_windows(
         window,

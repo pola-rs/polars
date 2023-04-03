@@ -47,8 +47,8 @@ fn test_special_groupby_schemas() -> PolarsResult<()> {
             [],
             RollingGroupOptions {
                 index_column: "a".into(),
-                period: Duration::parse("2i"),
-                offset: Duration::parse("0i"),
+                period: "2i".parse().unwrap(),
+                offset: "0i".parse().unwrap(),
                 closed_window: ClosedWindow::Left,
             },
         )
@@ -70,9 +70,9 @@ fn test_special_groupby_schemas() -> PolarsResult<()> {
             [],
             DynamicGroupOptions {
                 index_column: "a".into(),
-                every: Duration::parse("2i"),
-                period: Duration::parse("2i"),
-                offset: Duration::parse("0i"),
+                every: "2i".parse().unwrap(),
+                period: "2i".parse().unwrap(),
+                offset: "0i".parse().unwrap(),
                 truncate: false,
                 include_boundaries: false,
                 closed_window: ClosedWindow::Left,

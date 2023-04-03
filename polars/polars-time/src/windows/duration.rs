@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 use std::ops::Mul;
 
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Weekday};
+use polars_arrow::error::{polars_ensure, polars_err, PolarsError};
 use polars_arrow::export::arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
 };
@@ -51,22 +52,12 @@ impl Ord for Duration {
     }
 }
 
-impl Duration {
-    /// Create a new integer size `Duration`
-    pub fn new(fixed_slots: i64) -> Self {
-        Duration {
-            months: 0,
-            weeks: 0,
-            days: 0,
-            nsecs: fixed_slots.abs(),
-            negative: fixed_slots < 0,
-            parsed_int: true,
-        }
-    }
+impl std::str::FromStr for Duration {
+    type Err = PolarsError;
 
     /// Parse a string into a `Duration`
     ///
-    /// Strings are composed of a sequence of number-unit pairs, such as `5d` (5 days). A string may begin with a minus
+    /// Strings are composed of a sequence of integer-unit pairs, such as `5d` (5 days). A string may begin with a minus
     /// sign, in which case it is interpreted as a negative duration. Some examples:
     ///
     /// * `"1y"`: 1 year
@@ -74,7 +65,7 @@ impl Duration {
     /// * `"3d12h4m25s"`: 3 days, 12 hours, 4 minutes, and 25 seconds
     ///
     /// Aside from a leading minus sign, strings may not contain any characters other than numbers and letters
-    /// (including whitespace).
+    /// (including whitespace). Only integers, not decimals, are permitted as numbers.
     ///
     /// The available units, in ascending order of magnitude, are as follows:
     ///
@@ -88,25 +79,26 @@ impl Duration {
     /// * `w`:  week
     /// * `mo`: calendar month
     /// * `y`:  calendar year
-    /// * `i`:  index value (only for {Int32, Int64} dtypes)
+    /// * `i`:  Index value (only for {Int32, Int64} dtypes); e.g., `3i` means "every three rows". Mutually exclusive
+    ///   with the other time units.
     ///
-    /// # Panics
-    /// If the given str is invalid for any reason.
-    pub fn parse(duration: &str) -> Self {
+    /// # Returns
+    /// `Err(PolarsError)` if parsing failed for any reason, otherwise `Ok(Duration)`
+    fn from_str(duration: &str) -> PolarsResult<Self> {
         let num_minus_signs = duration.matches('-').count();
-        if num_minus_signs > 1 {
-            panic!("a Duration string can only have a single minus sign")
-        }
-        if (num_minus_signs > 0) & !duration.starts_with('-') {
-            panic!("only a single minus sign is allowed, at the front of the string")
-        }
+        let negative = duration.starts_with('-');
+
+        polars_ensure!(
+            num_minus_signs == 0 || num_minus_signs == 1 && negative,
+            ComputeError:
+                "only a single minus sign is allowed, at the front of the string; {duration:?} was passed"
+        );
 
         let mut nsecs = 0;
         let mut weeks = 0;
         let mut days = 0;
         let mut months = 0;
         let mut iter = duration.char_indices();
-        let negative = duration.starts_with('-');
         let mut start = 0;
 
         // skip the '-' char
@@ -115,14 +107,19 @@ impl Duration {
             iter.next().unwrap();
         }
 
+        let mut parsed_time = false;
         let mut parsed_int = false;
 
         let mut unit = String::with_capacity(2);
         while let Some((i, mut ch)) = iter.next() {
             if !ch.is_ascii_digit() {
-                let n = duration[start..i]
-                    .parse::<i64>()
-                    .expect("expected an integer in the duration string");
+                let n = duration[start..i].parse::<i64>().map_err(|_| {
+                    polars_err!(
+                        ComputeError:
+                            "expected an integer in the duration string; got {:?}",
+                            &duration[start..i]
+                    )
+                })?;
 
                 loop {
                     if ch.is_ascii_alphabetic() {
@@ -140,9 +137,7 @@ impl Duration {
                         }
                     }
                 }
-                if unit.is_empty() {
-                    panic!("expected a unit in the duration string")
-                }
+                polars_ensure!(!unit.is_empty(), ComputeError: "expected a unit in the duration string");
 
                 match &*unit {
                     "ns" => nsecs += n,
@@ -157,24 +152,60 @@ impl Duration {
                     "y" => months += n * 12,
                     // we will read indexes as nanoseconds
                     "i" => {
+                        // TODO: implement this check for other units?
+                        polars_ensure!(
+                            !parsed_int,
+                            ComputeError: "cannot specify unit 'i' more than once"
+                        );
                         nsecs += n;
                         parsed_int = true;
                     }
-                    unit => panic!("unit: '{unit}' not supported. Available units are: 'ns', 'us', 'ms', 's', 'm', 'h', 'd', 'w', 'mo', 'y', 'i'"),
+                    unit => {
+                        polars_bail!(
+                            ComputeError:
+                                "unit: '{}' not supported. Available units are: \
+                                 'ns', 'us', 'ms', 's', 'm', 'h', 'd', 'w', 'mo', 'y', 'i'",
+                                unit
+                        )
+                    }
                 }
+
+                if unit != "i" {
+                    parsed_time = true;
+                }
+
                 unit.clear();
             }
         }
-        Duration {
+
+        polars_ensure!(
+            !(parsed_time && parsed_int),
+            ComputeError: "unit 'i' is mutually exclusive with time units such as second, hour, day, etc."
+        );
+
+        Ok(Duration {
             nsecs: nsecs.abs(),
             days: days.abs(),
             weeks: weeks.abs(),
             months: months.abs(),
             negative,
             parsed_int,
+        })
+    }
+}
+
+impl Duration {
+    /// Create a new integer size `Duration`
+    pub fn new(fixed_slots: i64) -> Self {
+        Duration {
+            months: 0,
+            weeks: 0,
+            days: 0,
+            nsecs: fixed_slots.abs(),
+            negative: fixed_slots < 0,
+            parsed_int: true,
         }
     }
-
     fn to_positive(v: i64) -> (bool, i64) {
         if v < 0 {
             (true, -v)
@@ -668,18 +699,18 @@ mod test {
 
     #[test]
     fn test_parse() {
-        let out = Duration::parse("1ns");
+        let out = "1ns".parse::<Duration>().unwrap();
         assert_eq!(out.nsecs, 1);
-        let out = Duration::parse("1ns1ms");
+        let out = "1ns1ms".parse::<Duration>().unwrap();
         assert_eq!(out.nsecs, NS_MILLISECOND + 1);
-        let out = Duration::parse("123ns40ms");
+        let out = "123ns40ms".parse::<Duration>().unwrap();
         assert_eq!(out.nsecs, 40 * NS_MILLISECOND + 123);
-        let out = Duration::parse("123ns40ms1w");
+        let out = "123ns40ms1w".parse::<Duration>().unwrap();
         assert_eq!(out.nsecs, 40 * NS_MILLISECOND + 123);
         assert_eq!(out.duration_ns(), 40 * NS_MILLISECOND + 123 + NS_WEEK);
-        let out = Duration::parse("-123ns40ms1w");
+        let out = "-123ns40ms1w".parse::<Duration>().unwrap();
         assert!(out.negative);
-        let out = Duration::parse("5w");
+        let out = "5w".parse::<Duration>().unwrap();
         assert_eq!(out.weeks(), 5);
     }
 
@@ -687,8 +718,8 @@ mod test {
     fn test_add_ns() {
         use polars_arrow::time_zone::NO_TIMEZONE;
         let t = 1;
-        let seven_days = Duration::parse("7d");
-        let one_week = Duration::parse("1w");
+        let seven_days = "7d".parse::<Duration>().unwrap();
+        let one_week = "1w".parse::<Duration>().unwrap();
 
         // add_ns can only error if a time zone is passed, so it's
         // safe to unwrap here
@@ -697,8 +728,8 @@ mod test {
             one_week.add_ns(t, NO_TIMEZONE).unwrap()
         );
 
-        let seven_days_negative = Duration::parse("-7d");
-        let one_week_negative = Duration::parse("-1w");
+        let seven_days_negative = "-7d".parse::<Duration>().unwrap();
+        let one_week_negative = "-1w".parse::<Duration>().unwrap();
 
         // add_ns can only error if a time zone is passed, so it's
         // safe to unwrap here

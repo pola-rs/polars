@@ -1338,19 +1338,11 @@ impl PyDataFrame {
         stable: bool,
     ) -> PyResult<Self> {
         let out = if stable {
-            self.df.upsample_stable(
-                by,
-                index_column,
-                Duration::parse(every),
-                Duration::parse(offset),
-            )
+            self.df
+                .upsample_stable(by, index_column, every.parse()?, offset.parse()?)
         } else {
-            self.df.upsample(
-                by,
-                index_column,
-                Duration::parse(every),
-                Duration::parse(offset),
-            )
+            self.df
+                .upsample(by, index_column, every.parse()?, offset.parse()?)
         };
         let out = out.map_err(PyPolarsErr::from)?;
         Ok(out.into())

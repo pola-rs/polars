@@ -509,7 +509,7 @@ fn py_date_range(
         name,
         start,
         stop,
-        Duration::parse(every),
+        every.parse()?,
         closed.0,
         tu.0,
         tz.as_ref(),
@@ -529,7 +529,7 @@ fn py_date_range_lazy(
 ) -> PyExpr {
     let start = start.inner;
     let end = end.inner;
-    let every = Duration::parse(every);
+    let every = every.parse().unwrap();
     polars_rs::lazy::dsl::functions::date_range(name, start, end, every, closed.0, tz).into()
 }
 
