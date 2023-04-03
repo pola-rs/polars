@@ -491,7 +491,7 @@ def test_cat_to_pandas() -> None:
 
     try:
         pd_pa_out = df.to_pandas(use_pyarrow_extension_array=True)
-        assert pd_pa_out["a"].dtype.type == pa.DictionaryType
+        assert pd_pa_out["a"].dtype.type == pd.core.dtypes.dtypes.CategoricalDtypeType
     except ModuleNotFoundError:
         # Skip test if Pandas 1.5.x is not installed.
         pass
@@ -605,10 +605,10 @@ def test_from_empty_arrow() -> None:
 
     # 2705
     df1 = pd.DataFrame(columns=["b"], dtype=float)
-    tbl = pa.Table.from_pandas(df1)
+    tbl = pa.Table.from_pandas(df1, preserve_index=True)
     out = cast(pl.DataFrame, pl.from_arrow(tbl))
     assert out.columns == ["b", "__index_level_0__"]
-    assert out.dtypes == [pl.Float64, pl.Null]
+    assert out.dtypes == [pl.Float64, pl.Int64]
     tbl = pa.Table.from_pandas(df1, preserve_index=False)
     out = cast(pl.DataFrame, pl.from_arrow(tbl))
     assert out.columns == ["b"]
