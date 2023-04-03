@@ -227,19 +227,24 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                 let py_date_dtype = pl.getattr("Date").unwrap();
                 convert.call1((v, py_date_dtype)).unwrap().into_py(py)
             }
-            AnyValue::Datetime(v, tu, tz) => {
+            AnyValue::Datetime(v, time_unit, time_zone) => {
                 let convert = utils.getattr("_to_python_datetime").unwrap();
                 let py_datetime_dtype = pl.getattr("Datetime").unwrap();
-                let tu = tu.to_ascii();
+                let time_unit = time_unit.to_ascii();
                 convert
-                    .call1((v, py_datetime_dtype, tu, tz.as_ref().map(|s| s.as_str())))
+                    .call1((
+                        v,
+                        py_datetime_dtype,
+                        time_unit,
+                        time_zone.as_ref().map(|s| s.as_str()),
+                    ))
                     .unwrap()
                     .into_py(py)
             }
-            AnyValue::Duration(v, tu) => {
+            AnyValue::Duration(v, time_unit) => {
                 let convert = utils.getattr("_to_python_timedelta").unwrap();
-                let tu = tu.to_ascii();
-                convert.call1((v, tu)).unwrap().into_py(py)
+                let time_unit = time_unit.to_ascii();
+                convert.call1((v, time_unit)).unwrap().into_py(py)
             }
             AnyValue::Time(v) => {
                 let convert = utils.getattr("_to_python_time").unwrap();
@@ -385,16 +390,16 @@ impl FromPyObject<'_> for Wrap<DataType> {
                 }
             }
             "Duration" => {
-                let tu = ob.getattr("tu").unwrap();
-                let tu = tu.extract::<Wrap<TimeUnit>>()?.0;
-                DataType::Duration(tu)
+                let time_unit = ob.getattr("time_unit").unwrap();
+                let time_unit = time_unit.extract::<Wrap<TimeUnit>>()?.0;
+                DataType::Duration(time_unit)
             }
             "Datetime" => {
-                let tu = ob.getattr("tu").unwrap();
-                let tu = tu.extract::<Wrap<TimeUnit>>()?.0;
-                let tz = ob.getattr("tz").unwrap();
-                let tz = tz.extract()?;
-                DataType::Datetime(tu, tz)
+                let time_unit = ob.getattr("time_unit").unwrap();
+                let time_unit = time_unit.extract::<Wrap<TimeUnit>>()?.0;
+                let time_zone = ob.getattr("time_zone").unwrap();
+                let time_zone = time_zone.extract()?;
+                DataType::Datetime(time_unit, time_zone)
             }
             "Decimal" => {
                 let precision = ob.getattr("precision")?.extract()?;
@@ -434,12 +439,12 @@ impl ToPyObject for Wrap<AnyValue<'_>> {
 
 impl ToPyObject for Wrap<TimeUnit> {
     fn to_object(&self, py: Python) -> PyObject {
-        let tu = match self.0 {
+        let time_unit = match self.0 {
             TimeUnit::Nanoseconds => "ns",
             TimeUnit::Microseconds => "us",
             TimeUnit::Milliseconds => "ms",
         };
-        tu.into_py(py)
+        time_unit.into_py(py)
     }
 }
 
@@ -482,11 +487,11 @@ impl ToPyObject for Wrap<&DurationChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let utils = UTILS.as_ref(py);
         let convert = utils.getattr("_to_python_timedelta").unwrap();
-        let tu = Wrap(self.0.time_unit()).to_object(py);
+        let time_unit = Wrap(self.0.time_unit()).to_object(py);
         let iter = self
             .0
             .into_iter()
-            .map(|opt_v| opt_v.map(|v| convert.call1((v, &tu)).unwrap()));
+            .map(|opt_v| opt_v.map(|v| convert.call1((v, &time_unit)).unwrap()));
         PyList::new(py, iter).into_py(py)
     }
 }
@@ -496,12 +501,15 @@ impl ToPyObject for Wrap<&DatetimeChunked> {
         let (pl, utils) = (POLARS.as_ref(py), UTILS.as_ref(py));
         let convert = utils.getattr("_to_python_datetime").unwrap();
         let py_date_dtype = pl.getattr("Datetime").unwrap();
-        let tu = Wrap(self.0.time_unit()).to_object(py);
-        let tz = self.0.time_zone().to_object(py);
-        let iter = self
-            .0
-            .into_iter()
-            .map(|opt_v| opt_v.map(|v| convert.call1((v, py_date_dtype, &tu, &tz)).unwrap()));
+        let time_unit = Wrap(self.0.time_unit()).to_object(py);
+        let time_zone = self.0.time_zone().to_object(py);
+        let iter = self.0.into_iter().map(|opt_v| {
+            opt_v.map(|v| {
+                convert
+                    .call1((v, py_date_dtype, &time_unit, &time_zone))
+                    .unwrap()
+            })
+        });
         PyList::new(py, iter).into_py(py)
     }
 }

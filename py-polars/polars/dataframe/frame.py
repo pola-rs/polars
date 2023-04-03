@@ -4134,7 +4134,7 @@ class DataFrame:
 
     def pipe(
         self,
-        func: Callable[Concatenate[DataFrame, P], T],
+        function: Callable[Concatenate[DataFrame, P], T],
         *args: P.args,
         **kwargs: P.kwargs,
     ) -> T:
@@ -4143,7 +4143,7 @@ class DataFrame:
 
         Parameters
         ----------
-        func
+        function
             Callable; will receive the frame as the first parameter,
             followed by any given args/kwargs.
         *args
@@ -4199,7 +4199,7 @@ class DataFrame:
         └─────┴─────┘
 
         """
-        return func(self, *args, **kwargs)
+        return function(self, *args, **kwargs)
 
     def with_row_count(self, name: str = "row_nr", offset: int = 0) -> Self:
         """
@@ -6376,16 +6376,21 @@ class DataFrame:
         """
         return self._from_pydf(self._df.shift(periods))
 
-    def shift_and_fill(self, periods: int, fill_value: int | str | float) -> Self:
+    def shift_and_fill(
+        self,
+        fill_value: int | str | float,
+        *,
+        periods: int = 1,
+    ) -> Self:
         """
         Shift the values by a given period and fill the resulting null values.
 
         Parameters
         ----------
-        periods
-            Number of places to shift (may be negative).
         fill_value
             fill None values with this value.
+        periods
+            Number of places to shift (may be negative).
 
         Examples
         --------
@@ -6411,7 +6416,7 @@ class DataFrame:
         """
         return self._from_pydf(
             self.lazy()
-            .shift_and_fill(periods, fill_value)
+            .shift_and_fill(fill_value=fill_value, periods=periods)
             .collect(no_optimization=True)
             ._df
         )
@@ -7357,7 +7362,7 @@ class DataFrame:
     )
     def unique(
         self,
-        maintain_order: bool = True,
+        maintain_order: bool = False,
         subset: str | Sequence[str] | None = None,
         keep: UniqueKeepStrategy = "any",
     ) -> Self:
@@ -7401,7 +7406,7 @@ class DataFrame:
         ...         "ham": ["b", "b", "b", "b"],
         ...     }
         ... )
-        >>> df.unique()
+        >>> df.unique(maintain_order=True)
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -7412,7 +7417,7 @@ class DataFrame:
         │ 2   ┆ a   ┆ b   │
         │ 3   ┆ a   ┆ b   │
         └─────┴─────┴─────┘
-        >>> df.unique(subset=["bar", "ham"])
+        >>> df.unique(subset=["bar", "ham"], maintain_order=True)
         shape: (1, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -7421,7 +7426,7 @@ class DataFrame:
         ╞═════╪═════╪═════╡
         │ 1   ┆ a   ┆ b   │
         └─────┴─────┴─────┘
-        >>> df.unique(keep="last")
+        >>> df.unique(keep="last", maintain_order=True)
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -7968,7 +7973,9 @@ class DataFrame:
                 named
                 and _PYARROW_AVAILABLE
                 # note: 'ns' precision instantiates values as pandas types - avoid
-                and not any((getattr(tp, "tu", None) == "ns") for tp in self.dtypes)
+                and not any(
+                    (getattr(tp, "time_unit", None) == "ns") for tp in self.dtypes
+                )
             )
             for offset in range(0, self.height, buffer_size):
                 zerocopy_slice = self.slice(offset, buffer_size)

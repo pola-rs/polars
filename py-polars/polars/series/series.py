@@ -4,7 +4,6 @@ import contextlib
 import math
 import os
 import typing
-import warnings
 from datetime import date, datetime, time, timedelta
 from typing import (
     TYPE_CHECKING,
@@ -18,8 +17,6 @@ from typing import (
     overload,
 )
 
-from polars import functions as F
-from polars import internals as pli
 from polars.datatypes import (
     Boolean,
     Categorical,
@@ -79,11 +76,6 @@ from polars.utils.convert import (
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
 )
-from polars.utils.decorators import (
-    deprecate_nonkeyword_arguments,
-    deprecated_alias,
-    redirect,
-)
 from polars.utils.meta import get_index_type
 from polars.utils.various import (
     _is_generator,
@@ -93,6 +85,9 @@ from polars.utils.various import (
     scale_bytes,
     sphinx_accessor,
 )
+
+from polars import functions as F
+from polars import internals as pli
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame, PySeries
@@ -139,12 +134,6 @@ ArrayLike = Union[
 ]
 
 
-@redirect(
-    {
-        "cleared": "clear",
-        "is_datelike": "is_temporal",
-    }
-)
 @expr_dispatch
 class Series:
     """
@@ -224,6 +213,7 @@ class Series:
         name: str | ArrayLike | None = None,
         values: ArrayLike | None = None,
         dtype: PolarsDataType | None = None,
+        *,
         strict: bool = True,
         nan_to_null: bool = False,
         dtype_if_empty: PolarsDataType | None = None,
@@ -317,14 +307,17 @@ class Series:
         return series
 
     @classmethod
-    def _from_arrow(cls, name: str, values: pa.Array, rechunk: bool = True) -> Self:
+    def _from_arrow(cls, name: str, values: pa.Array, *, rechunk: bool = True) -> Self:
         """Construct a Series from an Arrow Array."""
         return cls._from_pyseries(arrow_to_pyseries(name, values, rechunk))
 
     @classmethod
-    @deprecated_alias(nan_to_none="nan_to_null")
     def _from_pandas(
-        cls, name: str, values: pd.Series | pd.DatetimeIndex, nan_to_null: bool = True
+        cls,
+        name: str,
+        values: pd.Series | pd.DatetimeIndex,
+        *,
+        nan_to_null: bool = True,
     ) -> Self:
         """Construct a Series from a pandas Series or DatetimeIndex."""
         return cls._from_pyseries(
@@ -1424,6 +1417,7 @@ class Series:
     def to_dummies(
         self,
         separator: str = "_",
+        *,
         include_null: bool = False,
         values: list[Any] | None = None,
     ) -> DataFrame:
@@ -1490,6 +1484,7 @@ class Series:
         labels: list[str] | None = None,
         break_point_label: str = "break_point",
         category_label: str = "category",
+        *,
         maintain_order: bool = False,
     ) -> DataFrame:
         """
@@ -1516,7 +1511,7 @@ class Series:
         Examples
         --------
         >>> a = pl.Series("a", [v / 10 for v in range(-30, 30, 5)])
-        >>> a.cut(bins=[-1, 1])
+        >>> a.cut([-1, 1])
         shape: (12, 3)
         ┌──────┬─────────────┬──────────────┐
         │ a    ┆ break_point ┆ category     │
@@ -1548,6 +1543,7 @@ class Series:
     def qcut(
         self,
         quantiles: list[float],
+        *,
         labels: list[str] | None = None,
         break_point_label: str = "break_point",
         category_label: str = "category",
@@ -1614,6 +1610,7 @@ class Series:
     def hist(
         self,
         bins: list[float] | None = None,
+        *,
         bin_count: int | None = None,
     ) -> DataFrame:
         """
@@ -1659,7 +1656,7 @@ class Series:
             bins = Series(bins, dtype=Float64)._s
         return wrap_df(self._s.hist(bins, bin_count))
 
-    def value_counts(self, sort: bool = False) -> DataFrame:
+    def value_counts(self, *, sort: bool = False) -> DataFrame:
         """
         Count the unique values in a Series.
 
@@ -1704,7 +1701,7 @@ class Series:
 
         """
 
-    def entropy(self, base: float = math.e, normalize: bool = False) -> float | None:
+    def entropy(self, base: float = math.e, *, normalize: bool = False) -> float | None:
         """
         Computes the entropy.
 
@@ -1727,10 +1724,14 @@ class Series:
         0.8568409950394724
 
         """
-        return F.select(F.lit(self).entropy(base, normalize)).to_series()[0]
+        return (
+            self.to_frame()
+            .select(F.col(self.name).entropy(base, normalize=normalize))
+            .to_series()[0]
+        )
 
     def cumulative_eval(
-        self, expr: Expr, min_periods: int = 1, parallel: bool = False
+        self, expr: Expr, min_periods: int = 1, *, parallel: bool = False
     ) -> Series:
         """
         Run an expression over a sliding window that increases `1` slot every iteration.
@@ -1789,7 +1790,7 @@ class Series:
         s._s.rename(name)
         return s
 
-    def rename(self, name: str, in_place: bool = False) -> Series:
+    def rename(self, name: str, *, in_place: bool = False) -> Series:
         """
         Rename this Series.
 
@@ -1865,7 +1866,7 @@ class Series:
         """
         return self._s.n_chunks()
 
-    def cummax(self, reverse: bool = False) -> Series:
+    def cummax(self, *, reverse: bool = False) -> Series:
         """
         Get an array with the cumulative max computed at every element.
 
@@ -1888,7 +1889,7 @@ class Series:
 
         """
 
-    def cummin(self, reverse: bool = False) -> Series:
+    def cummin(self, *, reverse: bool = False) -> Series:
         """
         Get an array with the cumulative min computed at every element.
 
@@ -1911,7 +1912,7 @@ class Series:
 
         """
 
-    def cumprod(self, reverse: bool = False) -> Series:
+    def cumprod(self, *, reverse: bool = False) -> Series:
         """
         Get an array with the cumulative product computed at every element.
 
@@ -1939,7 +1940,7 @@ class Series:
 
         """
 
-    def cumsum(self, reverse: bool = False) -> Series:
+    def cumsum(self, *, reverse: bool = False) -> Series:
         """
         Get an array with the cumulative sum computed at every element.
 
@@ -1992,7 +1993,7 @@ class Series:
 
         """
 
-    def append(self, other: Series, append_chunks: bool = True) -> Series:
+    def append(self, other: Series, *, append_chunks: bool = True) -> Series:
         """
         Append a Series to this one.
 
@@ -2049,7 +2050,7 @@ class Series:
                 self._s.extend(other._s)
         except RuntimeError as exc:
             if str(exc) == "Already mutably borrowed":
-                self.append(other.clone(), append_chunks)
+                self.append(other.clone(), append_chunks=append_chunks)
             else:
                 raise exc
         return self
@@ -2198,8 +2199,7 @@ class Series:
 
         """
 
-    @deprecate_nonkeyword_arguments()
-    def sort(self, descending: bool = False, *, in_place: bool = False) -> Self:
+    def sort(self, *, descending: bool = False, in_place: bool = False) -> Self:
         """
         Sort this Series.
 
@@ -2239,9 +2239,7 @@ class Series:
         else:
             return self._from_pyseries(self._s.sort(descending))
 
-    @deprecated_alias(reverse="descending")
-    @deprecate_nonkeyword_arguments(allowed_args=["self", "n"], stacklevel=3)
-    def top_k(self, k: int = 5, descending: bool = False) -> Series:
+    def top_k(self, k: int = 5, *, descending: bool = False) -> Series:
         r"""
         Return the `k` largest elements.
 
@@ -2265,9 +2263,7 @@ class Series:
             .to_series()
         )
 
-    @deprecated_alias(reverse="descending")
-    @deprecate_nonkeyword_arguments(stacklevel=3)
-    def arg_sort(self, descending: bool = False, nulls_last: bool = False) -> Series:
+    def arg_sort(self, *, descending: bool = False, nulls_last: bool = False) -> Series:
         """
         Get the index values that would sort this Series.
 
@@ -2293,38 +2289,6 @@ class Series:
         ]
 
         """
-        return (
-            self.to_frame()
-            .select(
-                F.col(self.name).arg_sort(descending=descending, nulls_last=nulls_last)
-            )
-            .to_series()
-        )
-
-    @deprecated_alias(reverse="descending")
-    def argsort(self, descending: bool = False, nulls_last: bool = False) -> Series:
-        """
-        Get the index values that would sort this Series.
-
-        Alias for :func:`Series.arg_sort`.
-
-        .. deprecated:: 0.16.5
-             `Series.argsort` will be removed in favour of `Series.arg_sort`.
-
-        Parameters
-        ----------
-        descending
-            Sort in descending order.
-        nulls_last
-            Place null values last instead of first.
-
-        """
-        warnings.warn(
-            "`Series.argsort()` is deprecated in favor of `Series.arg_sort()`",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.arg_sort(descending, nulls_last)
 
     def arg_unique(self) -> Series:
         """
@@ -2419,7 +2383,7 @@ class Series:
         element = Series(element)
         return F.select(F.lit(self).search_sorted(element, side)).to_series()
 
-    def unique(self, maintain_order: bool = False) -> Series:
+    def unique(self, *, maintain_order: bool = False) -> Series:
         """
         Get unique elements in series.
 
@@ -2494,8 +2458,7 @@ class Series:
         """
         return self.len() == 0
 
-    @deprecated_alias(reverse="descending")
-    def is_sorted(self, descending: bool = False) -> bool:
+    def is_sorted(self, *, descending: bool = False) -> bool:
         """
         Check if the Series is sorted.
 
@@ -2796,7 +2759,7 @@ class Series:
         """
 
     def series_equal(
-        self, other: Series, null_equal: bool = True, strict: bool = False
+        self, other: Series, *, null_equal: bool = True, strict: bool = False
     ) -> bool:
         """
         Check if series is equal with another Series.
@@ -2836,10 +2799,10 @@ class Series:
         """
         return self._s.len()
 
-    @deprecate_nonkeyword_arguments()
     def cast(
         self,
         dtype: (PolarsDataType | type[int] | type[float] | type[str] | type[bool]),
+        *,
         strict: bool = True,
     ) -> Self:
         """
@@ -2909,7 +2872,7 @@ class Series:
 
         """
 
-    def to_list(self, use_pyarrow: bool = False) -> list[Any]:
+    def to_list(self, *, use_pyarrow: bool = False) -> list[Any]:
         """
         Convert this Series to a Python List. This operation clones data.
 
@@ -2931,8 +2894,7 @@ class Series:
             return self.to_arrow().to_pylist()
         return self._s.to_list()
 
-    @deprecate_nonkeyword_arguments()
-    def rechunk(self, in_place: bool = False) -> Self:
+    def rechunk(self, *, in_place: bool = False) -> Self:
         """
         Create a single chunk of memory for this Series.
 
@@ -3123,7 +3085,7 @@ class Series:
         """
         return self.dtype is Utf8
 
-    def view(self, ignore_nulls: bool = False) -> SeriesView:
+    def view(self, *, ignore_nulls: bool = False) -> SeriesView:
         """
         Get a view into this Series data with a numpy array.
 
@@ -3561,14 +3523,14 @@ class Series:
         """
         return self._from_pyseries(self._s.clone())
 
-    def fill_nan(self, fill_value: int | float | Expr | None) -> Series:
+    def fill_nan(self, value: int | float | Expr | None) -> Series:
         """
         Fill floating point NaN value with a fill value.
 
         Parameters
         ----------
-        fill_value
-            Value used to fill nan values.
+        value
+            Value used to fill NaN values.
 
         Examples
         --------
@@ -3994,14 +3956,11 @@ class Series:
 
         """
 
-    @deprecated_alias(func="function")
-    @deprecate_nonkeyword_arguments(
-        allowed_args=["self", "function", "return_dtype"], stacklevel=3
-    )
     def apply(
         self,
         function: Callable[[Any], Any],
         return_dtype: PolarsDataType | None = None,
+        *,
         skip_nulls: bool = True,
     ) -> Self:
         """
@@ -4096,16 +4055,21 @@ class Series:
 
         """
 
-    def shift_and_fill(self, periods: int, fill_value: int | Expr) -> Series:
+    def shift_and_fill(
+        self,
+        fill_value: int | pli.Expr,
+        *,
+        periods: int = 1,
+    ) -> Series:
         """
         Shift the values by a given period and fill the resulting null values.
 
         Parameters
         ----------
-        periods
-            Number of places to shift (may be negative).
         fill_value
             Fill None values with the result of this expression.
+        periods
+            Number of places to shift (may be negative).
 
         """
 
@@ -4161,6 +4125,7 @@ class Series:
         window_size: int,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
     ) -> Series:
         """
@@ -4201,7 +4166,9 @@ class Series:
         return (
             self.to_frame()
             .select(
-                F.col(self.name).rolling_min(window_size, weights, min_periods, center)
+                F.col(self.name).rolling_min(
+                    window_size, weights, min_periods, center=center
+                )
             )
             .to_series()
         )
@@ -4211,6 +4178,7 @@ class Series:
         window_size: int,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
     ) -> Series:
         """
@@ -4251,7 +4219,9 @@ class Series:
         return (
             self.to_frame()
             .select(
-                F.col(self.name).rolling_max(window_size, weights, min_periods, center)
+                F.col(self.name).rolling_max(
+                    window_size, weights, min_periods, center=center
+                )
             )
             .to_series()
         )
@@ -4261,6 +4231,7 @@ class Series:
         window_size: int,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
     ) -> Series:
         """
@@ -4301,7 +4272,9 @@ class Series:
         return (
             self.to_frame()
             .select(
-                F.col(self.name).rolling_mean(window_size, weights, min_periods, center)
+                F.col(self.name).rolling_mean(
+                    window_size, weights, min_periods, center=center
+                )
             )
             .to_series()
         )
@@ -4311,6 +4284,7 @@ class Series:
         window_size: int,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
     ) -> Series:
         """
@@ -4351,7 +4325,9 @@ class Series:
         return (
             self.to_frame()
             .select(
-                F.col(self.name).rolling_sum(window_size, weights, min_periods, center)
+                F.col(self.name).rolling_sum(
+                    window_size, weights, min_periods, center=center
+                )
             )
             .to_series()
         )
@@ -4361,6 +4337,7 @@ class Series:
         window_size: int,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
     ) -> Series:
         """
@@ -4402,7 +4379,9 @@ class Series:
         return (
             self.to_frame()
             .select(
-                F.col(self.name).rolling_std(window_size, weights, min_periods, center)
+                F.col(self.name).rolling_std(
+                    window_size, weights, min_periods, center=center
+                )
             )
             .to_series()
         )
@@ -4412,6 +4391,7 @@ class Series:
         window_size: int,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
     ) -> Series:
         """
@@ -4453,7 +4433,9 @@ class Series:
         return (
             self.to_frame()
             .select(
-                F.col(self.name).rolling_var(window_size, weights, min_periods, center)
+                F.col(self.name).rolling_var(
+                    window_size, weights, min_periods, center=center
+                )
             )
             .to_series()
         )
@@ -4464,6 +4446,7 @@ class Series:
         window_size: int,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
     ) -> Series:
         """
@@ -4513,6 +4496,7 @@ class Series:
         window_size: int,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
     ) -> Series:
         """
@@ -4554,7 +4538,7 @@ class Series:
             self.to_frame()
             .select(
                 F.col(self.name).rolling_median(
-                    window_size, weights, min_periods, center
+                    window_size, weights, min_periods, center=center
                 )
             )
             .to_series()
@@ -4567,6 +4551,7 @@ class Series:
         window_size: int = 2,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
     ) -> Series:
         """
@@ -4623,13 +4608,18 @@ class Series:
             self.to_frame()
             .select(
                 F.col(self.name).rolling_quantile(
-                    quantile, interpolation, window_size, weights, min_periods, center
+                    quantile,
+                    interpolation,
+                    window_size,
+                    weights,
+                    min_periods,
+                    center=center,
                 )
             )
             .to_series()
         )
 
-    def rolling_skew(self, window_size: int, bias: bool = True) -> Series:
+    def rolling_skew(self, window_size: int, *, bias: bool = True) -> Series:
         """
         Compute a rolling skew.
 
@@ -4660,6 +4650,7 @@ class Series:
     def sample(
         self,
         n: int | None = None,
+        *,
         frac: float | None = None,
         with_replacement: bool = False,
         shuffle: bool = False,
@@ -4751,7 +4742,7 @@ class Series:
         """
         return self._s.n_unique()
 
-    def shrink_to_fit(self, in_place: bool = False) -> Series:
+    def shrink_to_fit(self, *, in_place: bool = False) -> Series:
         """
         Shrink Series memory usage.
 
@@ -4804,7 +4795,7 @@ class Series:
 
         """
 
-    def reinterpret(self, signed: bool = True) -> Series:
+    def reinterpret(self, *, signed: bool = True) -> Series:
         """
         Reinterpret the underlying bits as a signed/unsigned integer.
 
@@ -4850,9 +4841,13 @@ class Series:
         Same as `abs(series)`.
         """
 
-    @deprecated_alias(reverse="descending")
-    @deprecate_nonkeyword_arguments(allowed_args=["self", "method"], stacklevel=3)
-    def rank(self, method: RankMethod = "average", descending: bool = False) -> Series:
+    def rank(
+        self,
+        method: RankMethod = "average",
+        *,
+        descending: bool = False,
+        seed: int | None = None,
+    ) -> Series:
         """
         Assign ranks to data, dealing with ties appropriately.
 
@@ -4878,6 +4873,8 @@ class Series:
               on the order that the values occur in the Series.
         descending
             Rank in descending order.
+        seed
+            If `method="random"`, use this as seed.
 
         Examples
         --------
@@ -4912,7 +4909,11 @@ class Series:
         """
         return (
             self.to_frame()
-            .select(F.col(self._s.name()).rank(method=method, descending=descending))
+            .select(
+                F.col(self._s.name()).rank(
+                    method=method, descending=descending, seed=seed
+                )
+            )
             .to_series()
         )
 
@@ -5013,7 +5014,7 @@ class Series:
 
         """
 
-    def skew(self, bias: bool = True) -> float | None:
+    def skew(self, *, bias: bool = True) -> float | None:
         r"""
         Compute the sample skewness of a data set.
 
@@ -5054,7 +5055,7 @@ class Series:
         """
         return self._s.skew(bias)
 
-    def kurtosis(self, fisher: bool = True, bias: bool = True) -> float | None:
+    def kurtosis(self, *, fisher: bool = True, bias: bool = True) -> float | None:
         """
         Compute the kurtosis (Fisher or Pearson) of a dataset.
 
@@ -5340,6 +5341,7 @@ class Series:
         span: float | None = None,
         half_life: float | None = None,
         alpha: float | None = None,
+        *,
         adjust: bool = True,
         min_periods: int = 1,
         ignore_nulls: bool = True,
@@ -5408,6 +5410,7 @@ class Series:
         span: float | None = None,
         half_life: float | None = None,
         alpha: float | None = None,
+        *,
         adjust: bool = True,
         bias: bool = False,
         min_periods: int = 1,
@@ -5492,6 +5495,7 @@ class Series:
         span: float | None = None,
         half_life: float | None = None,
         alpha: float | None = None,
+        *,
         adjust: bool = True,
         bias: bool = False,
         min_periods: int = 1,
@@ -5598,9 +5602,7 @@ class Series:
 
         """
 
-    @deprecated_alias(reverse="descending")
-    @deprecate_nonkeyword_arguments(stacklevel=3)
-    def set_sorted(self, descending: bool = False) -> Self:
+    def set_sorted(self, *, descending: bool = False) -> Self:
         """
         Flags the Series as 'sorted'.
 
@@ -5699,14 +5701,14 @@ def _resolve_datetime_dtype(
     dtype: PolarsDataType | None, ndtype: np.datetime64
 ) -> PolarsDataType | None:
     """Given polars/numpy datetime dtypes, resolve to an explicit unit."""
-    if dtype is None or (dtype == Datetime and not getattr(dtype, "tu", None)):
-        tu = getattr(dtype, "tu", None) or np.datetime_data(ndtype)[0]
+    if dtype is None or (dtype == Datetime and not getattr(dtype, "time_unit", None)):
+        time_unit = getattr(dtype, "time_unit", None) or np.datetime_data(ndtype)[0]
         # explicit formulation is verbose, but keeps mypy happy
         # (and avoids unsupported timeunits such as "s")
-        if tu == "ns":
+        if time_unit == "ns":
             dtype = Datetime("ns")
-        elif tu == "us":
+        elif time_unit == "us":
             dtype = Datetime("us")
-        elif tu == "ms":
+        elif time_unit == "ms":
             dtype = Datetime("ms")
     return dtype

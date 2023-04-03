@@ -22,15 +22,17 @@ if TYPE_CHECKING:
 
 
 @pytest.mark.parametrize(
-    ("dt", "tu", "expected"),
+    ("dt", "time_unit", "expected"),
     [
         (datetime(2121, 1, 1), "ns", 4765132800000000000),
         (datetime(2121, 1, 1), "us", 4765132800000000),
         (datetime(2121, 1, 1), "ms", 4765132800000),
     ],
 )
-def test_datetime_to_pl_timestamp(dt: datetime, tu: TimeUnit, expected: int) -> None:
-    out = _datetime_to_pl_timestamp(dt, tu)
+def test_datetime_to_pl_timestamp(
+    dt: datetime, time_unit: TimeUnit, expected: int
+) -> None:
+    out = _datetime_to_pl_timestamp(dt, time_unit)
     assert out == expected
 
 
@@ -60,7 +62,7 @@ def test_timedelta_to_pl_timedelta() -> None:
     assert out == 86_400_000_000
     out = _timedelta_to_pl_timedelta(timedelta(days=1), "ms")
     assert out == 86_400_000
-    out = _timedelta_to_pl_timedelta(timedelta(days=1), tu=None)
+    out = _timedelta_to_pl_timedelta(timedelta(days=1), time_unit=None)
     assert out == 86_400_000_000
 
 

@@ -125,7 +125,7 @@ def test_str_parse_int() -> None:
 
     hex = pl.Series(["fa1e", "ff00", "cafe", "invalid", None])
     assert_series_equal(
-        hex.str.parse_int(16, False),
+        hex.str.parse_int(16, strict=False),
         pl.Series([64030, 65280, 51966, None, None]).cast(pl.Int32),
         check_exact=True,
     )
@@ -142,7 +142,10 @@ def test_str_parse_int_df() -> None:
         }
     )
     out = df.with_columns(
-        [pl.col("bin").str.parse_int(2, False), pl.col("hex").str.parse_int(16, False)]
+        [
+            pl.col("bin").str.parse_int(2, strict=False),
+            pl.col("hex").str.parse_int(16, strict=False),
+        ]
     )
 
     expected = pl.DataFrame(

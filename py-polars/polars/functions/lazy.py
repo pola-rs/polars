@@ -1201,29 +1201,31 @@ def lit(
     >>> pl.lit(pl.Series("a", [1, 2, 3]))  # doctest: +IGNORE_RESULT
 
     """
-    tu: TimeUnit
+    time_unit: TimeUnit
 
     if isinstance(value, datetime):
-        tu = "us" if dtype is None else getattr(dtype, "tu", "us")
-        tz = (
+        time_unit = "us" if dtype is None else getattr(dtype, "time_unit", "us")
+        time_zone = (
             value.tzinfo
-            if getattr(dtype, "tz", None) is None
-            else getattr(dtype, "tz", None)
+            if getattr(dtype, "time_zone", None) is None
+            else getattr(dtype, "time_zone", None)
         )
-        if value.tzinfo is not None and getattr(dtype, "tz", None) is not None:
+        if value.tzinfo is not None and getattr(dtype, "time_zone", None) is not None:
             raise TypeError(
                 "Cannot cast tz-aware value to tz-aware dtype. "
                 "Please drop the time zone from the dtype."
             )
-        e = lit(_datetime_to_pl_timestamp(value, tu)).cast(Datetime(tu))
-        if tz is not None:
-            return e.dt.replace_time_zone(str(tz))
+        e = lit(_datetime_to_pl_timestamp(value, time_unit)).cast(Datetime(time_unit))
+        if time_zone is not None:
+            return e.dt.replace_time_zone(str(time_zone))
         else:
             return e
 
     elif isinstance(value, timedelta):
-        tu = "us" if dtype is None else getattr(dtype, "tu", "us")
-        return lit(_timedelta_to_pl_timedelta(value, tu)).cast(Duration(tu))
+        time_unit = "us" if dtype is None else getattr(dtype, "time_unit", "us")
+        return lit(_timedelta_to_pl_timedelta(value, time_unit)).cast(
+            Duration(time_unit)
+        )
 
     elif isinstance(value, time):
         return lit(_time_to_pl_time(value)).cast(Time)
@@ -1259,9 +1261,11 @@ def lit(
         if isinstance(item, int) and hasattr(value, "dtype"):
             dtype_name = value.dtype.name
             if dtype_name.startswith(("datetime64[", "timedelta64[")):
-                tu = dtype_name[11:-1]
+                time_unit = dtype_name[11:-1]
                 return lit(item).cast(
-                    Datetime(tu) if dtype_name.startswith("date") else Duration(tu)
+                    Datetime(time_unit)
+                    if dtype_name.startswith("date")
+                    else Duration(time_unit)
                 )
 
     except AttributeError:
@@ -1867,7 +1871,7 @@ def reduce(
     Horizontally sum over all columns.
 
     >>> df.select(
-    ...     pl.reduce(f=lambda acc, x: acc + x, exprs=pl.col("*")).alias("sum"),
+    ...     pl.reduce(function=lambda acc, x: acc + x, exprs=pl.col("*")).alias("sum"),
     ... )
     shape: (3, 1)
     ┌─────┐
@@ -2301,10 +2305,9 @@ def arange(
         )
 
 
-@deprecated_alias(reverse="descending")
-@deprecate_nonkeyword_arguments(stacklevel=3)
 def arg_sort_by(
     exprs: IntoExpr | Iterable[IntoExpr],
+    *more_exprs: IntoExpr,
     descending: bool | Sequence[bool] = False,
 ) -> Expr:
     """
@@ -2315,6 +2318,8 @@ def arg_sort_by(
     exprs
         Column(s) to arg sort by. Accepts expression input. Strings are parsed as column
         names.
+    *more_exprs
+        Additional columns to arg sort by, specified as positional arguments.
     descending
         Sort in descending order. When sorting by multiple columns, can be specified
         per column by passing a sequence of booleans.
@@ -2342,7 +2347,8 @@ def arg_sort_by(
     │ 2   │
     └─────┘
 
-    Compute the arg sort by multiple columns by passing a list of columns.
+    Compute the arg sort by multiple columns by either passing a list of columns, or by
+    specifying each column as a positional argument.
 
     >>> df.select(pl.arg_sort_by(["a", "b"], descending=True))
     shape: (4, 1)
@@ -2359,40 +2365,12 @@ def arg_sort_by(
 
     """
     exprs = selection_to_pyexpr_list(exprs)
+    if more_exprs:
+        exprs.extend(selection_to_pyexpr_list(more_exprs))
+
     if isinstance(descending, bool):
         descending = [descending] * len(exprs)
     return wrap_expr(py_arg_sort_by(exprs, descending))
-
-
-@deprecated_alias(reverse="descending")
-def argsort_by(
-    exprs: Expr | str | Sequence[Expr | str],
-    descending: Sequence[bool] | bool = False,
-) -> Expr:
-    """
-    Find the indexes that would sort the columns.
-
-    Argsort by multiple columns. The first column will be used for the ordering.
-    If there are duplicates in the first column, the second column will be used to
-    determine the ordering and so on.
-
-    .. deprecated:: 0.16.5
-        `argsort_by` will be removed in favour of `arg_sort_by`.
-
-    Parameters
-    ----------
-    exprs
-        Columns use to determine the ordering.
-    descending
-        Sort in descending order; default is ascending.
-
-    """
-    warnings.warn(
-        "`argsort_by()` is deprecated in favor of `arg_sort_by()`",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return arg_sort_by(exprs, descending=descending)
 
 
 def duration(
@@ -2563,9 +2541,11 @@ def date_(
     return datetime_(year, month, day).cast(Date).alias("date")
 
 
-@deprecated_alias(sep="separator")
-@deprecate_nonkeyword_arguments(stacklevel=3)
-def concat_str(exprs: IntoExpr | Iterable[IntoExpr], separator: str = "") -> Expr:
+def concat_str(
+    exprs: IntoExpr | Iterable[IntoExpr],
+    *more_exprs: IntoExpr,
+    separator: str = "",
+) -> Expr:
     """
     Horizontally concatenate columns into a single string column.
 
@@ -2577,6 +2557,9 @@ def concat_str(exprs: IntoExpr | Iterable[IntoExpr], separator: str = "") -> Exp
         Columns to concatenate into a single string column. Accepts expression input.
         Strings are parsed as column names, other non-expression inputs are parsed as
         literals. Non-``Utf8`` columns are cast to ``Utf8``.
+    *more_exprs
+        Additional columns to concatenate into a single string column, specified as
+        positional arguments.
     separator
         String that will be used to separate the values of each column.
 
@@ -2612,6 +2595,8 @@ def concat_str(exprs: IntoExpr | Iterable[IntoExpr], separator: str = "") -> Exp
 
     """
     exprs = selection_to_pyexpr_list(exprs)
+    if more_exprs:
+        exprs.extend(selection_to_pyexpr_list(more_exprs))
     return wrap_expr(_concat_str(exprs, separator))
 
 
@@ -2830,8 +2815,9 @@ def select(
 
 
 @overload
-def struct(  # type: ignore[misc]
+def struct(
     exprs: IntoExpr | Iterable[IntoExpr] = ...,
+    *more_exprs: IntoExpr,
     eager: Literal[False] = ...,
     schema: SchemaDict | None = ...,
     **named_exprs: IntoExpr,
@@ -2842,7 +2828,8 @@ def struct(  # type: ignore[misc]
 @overload
 def struct(
     exprs: IntoExpr | Iterable[IntoExpr] = ...,
-    eager: Literal[True] = ...,
+    *more_exprs: IntoExpr,
+    eager: Literal[True],
     schema: SchemaDict | None = ...,
     **named_exprs: IntoExpr,
 ) -> Series:
@@ -2852,16 +2839,17 @@ def struct(
 @overload
 def struct(
     exprs: IntoExpr | Iterable[IntoExpr] = ...,
-    eager: bool = ...,
+    *more_exprs: IntoExpr,
+    eager: bool,
     schema: SchemaDict | None = ...,
     **named_exprs: IntoExpr,
 ) -> Expr | Series:
     ...
 
 
-@deprecate_nonkeyword_arguments(allowed_args=["exprs"])
 def struct(
     exprs: IntoExpr | Iterable[IntoExpr] = None,
+    *more_exprs: IntoExpr,
     eager: bool = False,
     schema: SchemaDict | None = None,
     **named_exprs: IntoExpr,
@@ -2874,13 +2862,16 @@ def struct(
     exprs
         Column(s) to collect into a struct column. Accepts expression input. Strings are
         parsed as column names, other non-expression inputs are parsed as literals.
+    *more_exprs
+        Additional columns to collect into the struct column, specified as positional
+        arguments.
     eager
         Evaluate immediately and return a ``Series``. If set to ``False`` (default),
         return an expression instead.
     schema
         Optional schema that explicitly defines the struct field dtypes.
     **named_exprs
-        Additional column(s) to collect into the struct column, specified as keyword
+        Additional columns to collect into the struct column, specified as keyword
         arguments. The columns will be renamed to the keyword used.
 
     Examples
@@ -2906,9 +2897,10 @@ def struct(
     │ {2,"b",null,[3]}    │
     └─────────────────────┘
 
-    Collect selected columns into a struct by passing a list of columns.
+    Collect selected columns into a struct by either passing a list of columns, or by
+    specifying each column as a positional argument.
 
-    >>> df.select(pl.struct(["int", False]).alias("my_struct"))
+    >>> df.select(pl.struct("int", False).alias("my_struct"))
     shape: (2, 1)
     ┌───────────┐
     │ my_struct │
@@ -2926,6 +2918,8 @@ def struct(
 
     """
     exprs = selection_to_pyexpr_list(exprs)
+    if more_exprs:
+        exprs.extend(selection_to_pyexpr_list(more_exprs))
     if named_exprs:
         exprs.extend(
             expr_to_lit_or_expr(expr, name=name, str_to_lit=False)._pyexpr
@@ -3129,39 +3123,41 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
 
 
 @overload
-def from_epoch(column: str | Expr, unit: EpochTimeUnit = ...) -> Expr:
+def from_epoch(column: str | Expr, time_unit: EpochTimeUnit = ...) -> Expr:
     ...
 
 
 @overload
-def from_epoch(column: Series | Sequence[int], unit: EpochTimeUnit = ...) -> Series:
+def from_epoch(
+    column: Series | Sequence[int], time_unit: EpochTimeUnit = ...
+) -> Series:
     ...
 
 
 def from_epoch(
-    column: str | Expr | Series | Sequence[int], unit: EpochTimeUnit = "s"
+    column: str | Expr | Series | Sequence[int], time_unit: EpochTimeUnit = "s"
 ) -> Expr | Series:
     """
     Utility function that parses an epoch timestamp (or Unix time) to Polars Date(time).
 
-    Depending on the `unit` provided, this function will return a different dtype:
-    - unit="d" returns pl.Date
-    - unit="s" returns pl.Datetime["us"] (pl.Datetime's default)
-    - unit="ms" returns pl.Datetime["ms"]
-    - unit="us" returns pl.Datetime["us"]
-    - unit="ns" returns pl.Datetime["ns"]
+    Depending on the `time_unit` provided, this function will return a different dtype:
+    - time_unit="d" returns pl.Date
+    - time_unit="s" returns pl.Datetime["us"] (pl.Datetime's default)
+    - time_unit="ms" returns pl.Datetime["ms"]
+    - time_unit="us" returns pl.Datetime["us"]
+    - time_unit="ns" returns pl.Datetime["ns"]
 
     Parameters
     ----------
     column
         Series or expression to parse integers to pl.Datetime.
-    unit
-        The unit of the timesteps since epoch time.
+    time_unit
+        The unit of time of the timesteps since epoch time.
 
     Examples
     --------
     >>> df = pl.DataFrame({"timestamp": [1666683077, 1666683099]}).lazy()
-    >>> df.select(pl.from_epoch(pl.col("timestamp"), unit="s")).collect()
+    >>> df.select(pl.from_epoch(pl.col("timestamp"), time_unit="s")).collect()
     shape: (2, 1)
     ┌─────────────────────┐
     │ timestamp           │
@@ -3175,7 +3171,7 @@ def from_epoch(
     The function can also be used in an eager context by passing a Series.
 
     >>> s = pl.Series([12345, 12346])
-    >>> pl.from_epoch(s, unit="d")
+    >>> pl.from_epoch(s, time_unit="d")
     shape: (2,)
     Series: '' [date]
     [
@@ -3189,13 +3185,13 @@ def from_epoch(
     elif not isinstance(column, (pli.Series, pli.Expr)):
         column = pli.Series(column)  # Sequence input handled by Series constructor
 
-    if unit == "d":
+    if time_unit == "d":
         return column.cast(Date)
-    elif unit == "s":
+    elif time_unit == "s":
         return (column.cast(Int64) * 1_000_000).cast(Datetime("us"))
-    elif unit in DTYPE_TEMPORAL_UNITS:
-        return column.cast(Datetime(unit))
+    elif time_unit in DTYPE_TEMPORAL_UNITS:
+        return column.cast(Datetime(time_unit))
     else:
         raise ValueError(
-            f"'unit' must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got '{unit}'."
+            f"'time_unit' must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {time_unit!r}."
         )

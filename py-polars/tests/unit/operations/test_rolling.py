@@ -303,7 +303,7 @@ def test_rolling_slice_pushdown() -> None:
         )
         .agg(
             [
-                (pl.col("c") - pl.col("c").shift_and_fill(1, fill_value=0))
+                (pl.col("c") - pl.col("c").shift_and_fill(fill_value=0, periods=1))
                 .sum()
                 .alias("c")
             ]
@@ -327,7 +327,7 @@ def test_groupby_dynamic_slice_pushdown() -> None:
         )
         .agg(
             [
-                (pl.col("c") - pl.col("c").shift_and_fill(1, fill_value=0))
+                (pl.col("c") - pl.col("c").shift_and_fill(fill_value=0, periods=1))
                 .sum()
                 .alias("c")
             ]
