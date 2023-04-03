@@ -1075,9 +1075,9 @@ def test_csv_categorical_categorical_merge() -> None:
     f = io.BytesIO()
     pl.DataFrame({"x": ["A"] * N + ["B"] * N}).write_csv(f)
     f.seek(0)
-    assert pl.read_csv(f, dtypes={"x": pl.Categorical}, sample_size=10).unique()[
-        "x"
-    ].to_list() == ["A", "B"]
+    assert pl.read_csv(f, dtypes={"x": pl.Categorical}, sample_size=10).unique(
+        maintain_order=True
+    )["x"].to_list() == ["A", "B"]
 
 
 @typing.no_type_check
