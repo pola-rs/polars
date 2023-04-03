@@ -138,8 +138,8 @@ where
 
 #[cfg(all(feature = "dtype-categorical", feature = "performant"))]
 impl IntoGroupsProxy for CategoricalChunked {
-    fn group_tuples(&self, multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsProxy> {
-        Ok(self.group_tuples_perfect(multithreaded))
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
+        Ok(self.group_tuples_perfect(multithreaded, sorted))
     }
 }
 
