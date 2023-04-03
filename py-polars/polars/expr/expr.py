@@ -2074,11 +2074,11 @@ class Expr:
         └───────┴────────┴────────┘
 
         """
-        if isinstance(descending, bool):
-            descending = [descending]
         by = selection_to_pyexpr_list(by)
         if more_by:
             by.extend(selection_to_pyexpr_list(more_by))
+        if isinstance(descending, bool):  # TODO raise accordingly
+            descending = [descending] * len(by)
         return self._from_pyexpr(self._pyexpr.sort_by(by, descending))
 
     def take(

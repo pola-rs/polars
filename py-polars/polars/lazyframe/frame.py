@@ -1214,7 +1214,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             by.extend(selection_to_pyexpr_list(more_by))
 
         if isinstance(descending, bool):
-            descending = [descending]
+            descending = [descending] * len(by)
+        elif len(by) != len(descending):
+            raise ValueError(
+                f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
+            )
         return self._from_pyldf(self._ldf.sort_by_exprs(by, descending, nulls_last))
 
     def top_k(
@@ -1246,6 +1250,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         by = selection_to_pyexpr_list(by)
         if isinstance(descending, bool):
             descending = [descending]
+        elif len(by) != len(descending):
+            raise ValueError(
+                f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
+            )
         return self._from_pyldf(self._ldf.top_k(k, by, descending, nulls_last))
 
     @deprecate_nonkeyword_arguments()

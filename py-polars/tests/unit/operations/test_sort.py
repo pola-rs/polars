@@ -562,3 +562,31 @@ def test_sort_by_struct() -> None:
         "row_nr": [1, 2, 0],
         "st": [{"a": 20}, {"a": 55}, {"a": 300}],
     }
+
+
+def test_sort_descending() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    result = df.sort(["a", "b"], descending=True)
+    expected = pl.DataFrame({"a": [3, 2, 1], "b": [6, 5, 4]})
+    assert_frame_equal(result, expected)
+    result = df.sort(["a", "b"], descending=[True, True])
+    assert_frame_equal(result, expected)
+    with pytest.raises(
+        ValueError,
+        match=r"the length of `descending` \(1\) does not match the length of `by` \(2\)",
+    ):
+        df.sort(["a", "b"], descending=[True])
+
+
+def test_top_k_descending() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    result = df.top_k(1, by=["a", "b"], descending=True)
+    expected = pl.DataFrame({"a": [1], "b": [4]})
+    assert_frame_equal(result, expected)
+    result = df.top_k(1, by=["a", "b"], descending=[True, True])
+    assert_frame_equal(result, expected)
+    with pytest.raises(
+        ValueError,
+        match=r"the length of `descending` \(1\) does not match the length of `by` \(2\)",
+    ):
+        df.top_k(1, by=["a", "b"], descending=[True])
