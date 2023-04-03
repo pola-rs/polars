@@ -54,10 +54,10 @@ def test_sort_by() -> None:
     out = df.select(pl.col("a").sort_by("b", "c"))
     assert out["a"].to_list() == [3, 1, 2, 5, 4]
 
-    out = df.select(pl.col("a").sort_by(by, descending=[False]))
+    out = df.select(pl.col("a").sort_by(by, descending=False))
     assert out["a"].to_list() == [3, 1, 2, 5, 4]
 
-    out = df.select(pl.col("a").sort_by(by, descending=[True]))
+    out = df.select(pl.col("a").sort_by(by, descending=True))
     assert out["a"].to_list() == [4, 5, 2, 1, 3]
 
     out = df.select(pl.col("a").sort_by(by, descending=[True, False]))
@@ -590,3 +590,17 @@ def test_top_k_descending() -> None:
         match=r"the length of `descending` \(1\) does not match the length of `by` \(2\)",
     ):
         df.top_k(1, by=["a", "b"], descending=[True])
+
+
+def test_sort_by_descending() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    result = df.select(pl.col("a").sort_by(["a", "b"], descending=True))
+    expected = pl.DataFrame({"a": [3, 2, 1]})
+    assert_frame_equal(result, expected)
+    result = df.select(pl.col("a").sort_by(["a", "b"], descending=[True, True]))
+    assert_frame_equal(result, expected)
+    with pytest.raises(
+        ValueError,
+        match=r"the length of `descending` \(1\) does not match the length of `by` \(2\)",
+    ):
+        df.select(pl.col("a").sort_by(["a", "b"], descending=[True]))

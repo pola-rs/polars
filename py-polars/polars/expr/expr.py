@@ -2077,8 +2077,12 @@ class Expr:
         by = selection_to_pyexpr_list(by)
         if more_by:
             by.extend(selection_to_pyexpr_list(more_by))
-        if isinstance(descending, bool):  # TODO raise accordingly
+        if isinstance(descending, bool):
             descending = [descending] * len(by)
+        elif len(by) != len(descending):
+            raise ValueError(
+                f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
+            )
         return self._from_pyexpr(self._pyexpr.sort_by(by, descending))
 
     def take(
