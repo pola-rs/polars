@@ -128,6 +128,7 @@ pub struct UnionOptions {
     // known row_output, estimated row output
     pub rows: (Option<usize>, usize),
     pub from_partitioned_ds: bool,
+    pub flattened_by_opt: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]

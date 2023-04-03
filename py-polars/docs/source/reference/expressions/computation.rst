@@ -37,7 +37,6 @@ Computation
     Expr.n_unique
     Expr.null_count
     Expr.pct_change
-    Expr.pow
     Expr.rank
     Expr.rolling_apply
     Expr.rolling_max

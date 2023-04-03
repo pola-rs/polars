@@ -3465,48 +3465,326 @@ class Expr:
 
     def limit(self, n: int = 10) -> Self:
         """
-        Get the first `n` rows.
-
-        Alias for :func:`Expr.head`.
+        Get the first `n` rows (alias for :func:`Expr.head`).
 
         Parameters
         ----------
         n
             Number of rows to return.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7]})
+        >>> df.limit(3)
+        shape: (3, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        │ 2   │
+        │ 3   │
+        └─────┘
+
         """
         return self.head(n)
 
     def and_(self, *others: Any) -> Self:
-        """Method equivalent of logical "and" operator ``expr & other & ...``."""
+        """
+        Method equivalent of logical "and" operator ``expr & other & ...``.
+
+        Parameters
+        ----------
+        *others
+            One or more logical boolean expressions to evaluate/combine.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "x": [5, 6, 7, 4, 8],
+        ...         "y": [1.5, 2.5, 1.0, 4.0, -5.75],
+        ...         "z": [-9, 2, -1, 4, 8],
+        ...     }
+        ... )
+        >>> df.select(
+        ...     (pl.col("x") >= pl.col("z"))
+        ...     .and_(
+        ...         pl.col("y") >= pl.col("z"),
+        ...         pl.col("y") == pl.col("y"),
+        ...         pl.col("z") <= pl.col("x"),
+        ...         pl.col("y") != pl.col("x"),
+        ...     )
+        ...     .alias("all")
+        ... )
+        shape: (5, 1)
+        ┌───────┐
+        │ all   │
+        │ ---   │
+        │ bool  │
+        ╞═══════╡
+        │ true  │
+        │ true  │
+        │ true  │
+        │ false │
+        │ false │
+        └───────┘
+
+        """
         return reduce(operator.and_, (self,) + others)
 
     def or_(self, *others: Any) -> Self:
-        """Method equivalent of logical "or" operator ``expr | other | ...``."""
+        """
+        Method equivalent of logical "or" operator ``expr | other | ...``.
+
+        Parameters
+        ----------
+        *others
+            One or more logical boolean expressions to evaluate/combine.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "x": [5, 6, 7, 4, 8],
+        ...         "y": [1.5, 2.5, 1.0, 4.0, -5.75],
+        ...         "z": [-9, 2, -1, 4, 8],
+        ...     }
+        ... )
+        >>> df.select(
+        ...     (pl.col("x") == pl.col("y"))
+        ...     .or_(
+        ...         pl.col("x") == pl.col("y"),
+        ...         pl.col("y") == pl.col("z"),
+        ...         pl.col("y").cast(int) == pl.col("z"),
+        ...     )
+        ...     .alias("any")
+        ... )
+        shape: (5, 1)
+        ┌───────┐
+        │ any   │
+        │ ---   │
+        │ bool  │
+        ╞═══════╡
+        │ false │
+        │ true  │
+        │ false │
+        │ true  │
+        │ false │
+        └───────┘
+
+        """
         return reduce(operator.or_, (self,) + others)
 
     def eq(self, other: Any) -> Self:
-        """Method equivalent of equality operator ``expr == other``."""
+        """
+        Method equivalent of equality operator ``expr == other``.
+
+        Parameters
+        ----------
+        other
+            A literal or expression value to compare with.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "x": [1.0, 2.0, float("nan"), 4.0],
+        ...         "y": [2.0, 2.0, float("nan"), 4.0],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("x").eq(pl.col("y")).alias("x == y"),
+        ... )
+        shape: (4, 3)
+        ┌─────┬─────┬────────┐
+        │ x   ┆ y   ┆ x == y │
+        │ --- ┆ --- ┆ ---    │
+        │ f64 ┆ f64 ┆ bool   │
+        ╞═════╪═════╪════════╡
+        │ 1.0 ┆ 2.0 ┆ false  │
+        │ 2.0 ┆ 2.0 ┆ true   │
+        │ NaN ┆ NaN ┆ false  │
+        │ 4.0 ┆ 4.0 ┆ true   │
+        └─────┴─────┴────────┘
+
+        """
         return self.__eq__(other)
 
     def ge(self, other: Any) -> Self:
-        """Method equivalent of "greater than or equal" operator ``expr >= other``."""
+        """
+        Method equivalent of "greater than or equal" operator ``expr >= other``.
+
+        Parameters
+        ----------
+        other
+            A literal or expression value to compare with.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "x": [5.0, 4.0, float("nan"), 2.0],
+        ...         "y": [5.0, 3.0, float("nan"), 1.0],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("x").ge(pl.col("y")).alias("x >= y"),
+        ... )
+        shape: (4, 3)
+        ┌─────┬─────┬────────┐
+        │ x   ┆ y   ┆ x >= y │
+        │ --- ┆ --- ┆ ---    │
+        │ f64 ┆ f64 ┆ bool   │
+        ╞═════╪═════╪════════╡
+        │ 5.0 ┆ 5.0 ┆ true   │
+        │ 4.0 ┆ 3.0 ┆ true   │
+        │ NaN ┆ NaN ┆ false  │
+        │ 2.0 ┆ 1.0 ┆ true   │
+        └─────┴─────┴────────┘
+
+        """
         return self.__ge__(other)
 
     def gt(self, other: Any) -> Self:
-        """Method equivalent of "greater than" operator ``expr > other``."""
+        """
+        Method equivalent of "greater than" operator ``expr > other``.
+
+        Parameters
+        ----------
+        other
+            A literal or expression value to compare with.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "x": [5.0, 4.0, float("nan"), 2.0],
+        ...         "y": [5.0, 3.0, float("nan"), 1.0],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("x").gt(pl.col("y")).alias("x > y"),
+        ... )
+        shape: (4, 3)
+        ┌─────┬─────┬───────┐
+        │ x   ┆ y   ┆ x > y │
+        │ --- ┆ --- ┆ ---   │
+        │ f64 ┆ f64 ┆ bool  │
+        ╞═════╪═════╪═══════╡
+        │ 5.0 ┆ 5.0 ┆ false │
+        │ 4.0 ┆ 3.0 ┆ true  │
+        │ NaN ┆ NaN ┆ false │
+        │ 2.0 ┆ 1.0 ┆ true  │
+        └─────┴─────┴───────┘
+
+        """
         return self.__gt__(other)
 
     def le(self, other: Any) -> Self:
-        """Method equivalent of "less than or equal" operator ``expr <= other``."""
+        """
+        Method equivalent of "less than or equal" operator ``expr <= other``.
+
+        Parameters
+        ----------
+        other
+            A literal or expression value to compare with.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "x": [5.0, 4.0, float("nan"), 0.5],
+        ...         "y": [5.0, 3.5, float("nan"), 2.0],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("x").le(pl.col("y")).alias("x <= y"),
+        ... )
+        shape: (4, 3)
+        ┌─────┬─────┬────────┐
+        │ x   ┆ y   ┆ x <= y │
+        │ --- ┆ --- ┆ ---    │
+        │ f64 ┆ f64 ┆ bool   │
+        ╞═════╪═════╪════════╡
+        │ 5.0 ┆ 5.0 ┆ true   │
+        │ 4.0 ┆ 3.5 ┆ false  │
+        │ NaN ┆ NaN ┆ false  │
+        │ 0.5 ┆ 2.0 ┆ true   │
+        └─────┴─────┴────────┘
+
+        """
         return self.__le__(other)
 
     def lt(self, other: Any) -> Self:
-        """Method equivalent of "less than" operator ``expr < other``."""
+        """
+        Method equivalent of "less than" operator ``expr < other``.
+
+        Parameters
+        ----------
+        other
+            A literal or expression value to compare with.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "x": [1.0, 2.0, float("nan"), 3.0],
+        ...         "y": [2.0, 2.0, float("nan"), 4.0],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("x").lt(pl.col("y")).alias("x < y"),
+        ... )
+        shape: (4, 3)
+        ┌─────┬─────┬───────┐
+        │ x   ┆ y   ┆ x < y │
+        │ --- ┆ --- ┆ ---   │
+        │ f64 ┆ f64 ┆ bool  │
+        ╞═════╪═════╪═══════╡
+        │ 1.0 ┆ 2.0 ┆ true  │
+        │ 2.0 ┆ 2.0 ┆ false │
+        │ NaN ┆ NaN ┆ false │
+        │ 3.0 ┆ 4.0 ┆ true  │
+        └─────┴─────┴───────┘
+
+        """
         return self.__lt__(other)
 
     def ne(self, other: Any) -> Self:
-        """Method equivalent of inequality operator ``expr != other``."""
+        """
+        Method equivalent of inequality operator ``expr != other``.
+
+        Parameters
+        ----------
+        other
+            A literal or expression value to compare with.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "x": [1.0, 2.0, float("nan"), 4.0],
+        ...         "y": [2.0, 2.0, float("nan"), 4.0],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("x").ne(pl.col("y")).alias("x != y"),
+        ... )
+        shape: (4, 3)
+        ┌─────┬─────┬────────┐
+        │ x   ┆ y   ┆ x != y │
+        │ --- ┆ --- ┆ ---    │
+        │ f64 ┆ f64 ┆ bool   │
+        ╞═════╪═════╪════════╡
+        │ 1.0 ┆ 2.0 ┆ true   │
+        │ 2.0 ┆ 2.0 ┆ false  │
+        │ NaN ┆ NaN ┆ true   │
+        │ 4.0 ┆ 4.0 ┆ false  │
+        └─────┴─────┴────────┘
+
+        """
         return self.__ne__(other)
 
     def add(self, other: Any) -> Self:
@@ -3516,32 +3794,35 @@ class Expr:
         Parameters
         ----------
         other
-            integer, float, or string value; accepts expression input.
+            numeric or string value; accepts expression input.
 
         Examples
         --------
         >>> df = pl.DataFrame({"x": [1, 2, 3, 4, 5]})
-        >>> df.with_columns(pl.col("x").add(2).alias("x+2"))
-        shape: (5, 2)
-        ┌─────┬─────┐
-        │ x   ┆ x+2 │
-        │ --- ┆ --- │
-        │ i64 ┆ i64 │
-        ╞═════╪═════╡
-        │ 1   ┆ 3   │
-        │ 2   ┆ 4   │
-        │ 3   ┆ 5   │
-        │ 4   ┆ 6   │
-        │ 5   ┆ 7   │
-        └─────┴─────┘
+        >>> df.with_columns(
+        ...     pl.col("x").add(2).alias("x+int"),
+        ...     pl.col("x").add(pl.col("x").cumprod()).alias("x+expr"),
+        ... )
+        shape: (5, 3)
+        ┌─────┬───────┬────────┐
+        │ x   ┆ x+int ┆ x+expr │
+        │ --- ┆ ---   ┆ ---    │
+        │ i64 ┆ i64   ┆ i64    │
+        ╞═════╪═══════╪════════╡
+        │ 1   ┆ 3     ┆ 2      │
+        │ 2   ┆ 4     ┆ 4      │
+        │ 3   ┆ 5     ┆ 9      │
+        │ 4   ┆ 6     ┆ 28     │
+        │ 5   ┆ 7     ┆ 125    │
+        └─────┴───────┴────────┘
 
         >>> df = pl.DataFrame(
         ...     {"x": ["a", "d", "g"], "y": ["b", "e", "h"], "z": ["c", "f", "i"]}
         ... )
-        >>> df.with_columns(pl.col("x").add(pl.col("y")).add(pl.col("z")).alias("add"))
+        >>> df.with_columns(pl.col("x").add(pl.col("y")).add(pl.col("z")).alias("xyz"))
         shape: (3, 4)
         ┌─────┬─────┬─────┬─────┐
-        │ x   ┆ y   ┆ z   ┆ add │
+        │ x   ┆ y   ┆ z   ┆ xyz │
         │ --- ┆ --- ┆ --- ┆ --- │
         │ str ┆ str ┆ str ┆ str │
         ╞═════╪═════╪═════╪═════╡
@@ -3560,24 +3841,27 @@ class Expr:
         Parameters
         ----------
         other
-            Other integer or float value; accepts expression input.
+            Numeric literal or expression value.
 
         Examples
         --------
         >>> df = pl.DataFrame({"x": [1, 2, 3, 4, 5]})
-        >>> df.with_columns(pl.col("x").floordiv(2).alias("x//2"))
-        shape: (5, 2)
-        ┌─────┬──────┐
-        │ x   ┆ x//2 │
-        │ --- ┆ ---  │
-        │ i64 ┆ i64  │
-        ╞═════╪══════╡
-        │ 1   ┆ 0    │
-        │ 2   ┆ 1    │
-        │ 3   ┆ 1    │
-        │ 4   ┆ 2    │
-        │ 5   ┆ 2    │
-        └─────┴──────┘
+        >>> df.with_columns(
+        ...     pl.col("x").truediv(2).alias("x/2"),
+        ...     pl.col("x").floordiv(2).alias("x//2"),
+        ... )
+        shape: (5, 3)
+        ┌─────┬─────┬──────┐
+        │ x   ┆ x/2 ┆ x//2 │
+        │ --- ┆ --- ┆ ---  │
+        │ i64 ┆ f64 ┆ i64  │
+        ╞═════╪═════╪══════╡
+        │ 1   ┆ 0.5 ┆ 0    │
+        │ 2   ┆ 1.0 ┆ 1    │
+        │ 3   ┆ 1.5 ┆ 1    │
+        │ 4   ┆ 2.0 ┆ 2    │
+        │ 5   ┆ 2.5 ┆ 2    │
+        └─────┴─────┴──────┘
 
         See Also
         --------
@@ -3593,7 +3877,7 @@ class Expr:
         Parameters
         ----------
         other
-            Other integer or float value; accepts expression input.
+            Numeric literal or expression value.
 
         Examples
         --------
@@ -3622,24 +3906,27 @@ class Expr:
         Parameters
         ----------
         other
-            Other integer or float value; accepts expression input.
+            Numeric literal or expression value.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"x": [0, 1, 2, 3, 4]})
-        >>> df.with_columns(pl.col("x").mul(2).alias("x*2"))
-        shape: (5, 2)
-        ┌─────┬─────┐
-        │ x   ┆ x*2 │
-        │ --- ┆ --- │
-        │ i64 ┆ i64 │
-        ╞═════╪═════╡
-        │ 0   ┆ 0   │
-        │ 1   ┆ 2   │
-        │ 2   ┆ 4   │
-        │ 3   ┆ 6   │
-        │ 4   ┆ 8   │
-        └─────┴─────┘
+        >>> df = pl.DataFrame({"x": [1, 2, 4, 8, 16]})
+        >>> df.with_columns(
+        ...     pl.col("x").mul(2).alias("x*2"),
+        ...     pl.col("x").mul(pl.col("x").log(2)).alias("x * xlog2"),
+        ... )
+        shape: (5, 3)
+        ┌─────┬─────┬───────────┐
+        │ x   ┆ x*2 ┆ x * xlog2 │
+        │ --- ┆ --- ┆ ---       │
+        │ i64 ┆ i64 ┆ f64       │
+        ╞═════╪═════╪═══════════╡
+        │ 1   ┆ 2   ┆ 0.0       │
+        │ 2   ┆ 4   ┆ 2.0       │
+        │ 4   ┆ 8   ┆ 8.0       │
+        │ 8   ┆ 16  ┆ 24.0      │
+        │ 16  ┆ 32  ┆ 64.0      │
+        └─────┴─────┴───────────┘
 
         """
         return self.__mul__(other)
@@ -3651,24 +3938,27 @@ class Expr:
         Parameters
         ----------
         other
-            Other integer or float value; accepts expression input.
+            Numeric literal or expression value.
 
         Examples
         --------
         >>> df = pl.DataFrame({"x": [0, 1, 2, 3, 4]})
-        >>> df.with_columns(pl.col("x").sub(2).alias("x-2"))
-        shape: (5, 2)
-        ┌─────┬─────┐
-        │ x   ┆ x-2 │
-        │ --- ┆ --- │
-        │ i64 ┆ i64 │
-        ╞═════╪═════╡
-        │ 0   ┆ -2  │
-        │ 1   ┆ -1  │
-        │ 2   ┆ 0   │
-        │ 3   ┆ 1   │
-        │ 4   ┆ 2   │
-        └─────┴─────┘
+        >>> df.with_columns(
+        ...     pl.col("x").sub(2).alias("x-2"),
+        ...     pl.col("x").sub(pl.col("x").cumsum()).alias("x-expr"),
+        ... )
+        shape: (5, 3)
+        ┌─────┬─────┬────────┐
+        │ x   ┆ x-2 ┆ x-expr │
+        │ --- ┆ --- ┆ ---    │
+        │ i64 ┆ i64 ┆ i64    │
+        ╞═════╪═════╪════════╡
+        │ 0   ┆ -2  ┆ 0      │
+        │ 1   ┆ -1  ┆ 0      │
+        │ 2   ┆ 0   ┆ -1     │
+        │ 3   ┆ 1   ┆ -3     │
+        │ 4   ┆ 2   ┆ -6     │
+        └─────┴─────┴────────┘
 
         """
         return self.__sub__(other)
@@ -3680,7 +3970,7 @@ class Expr:
         Parameters
         ----------
         other
-            Other integer or float value; accepts expression input.
+            Numeric literal or expression value.
 
         Notes
         -----
@@ -3691,20 +3981,25 @@ class Expr:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"x": [1, 2, 3, 4, 5]})
-        >>> df.with_columns(pl.col("x").truediv(2).alias("x/2"))
-        shape: (5, 2)
-        ┌─────┬─────┐
-        │ x   ┆ x/2 │
-        │ --- ┆ --- │
-        │ i64 ┆ f64 │
-        ╞═════╪═════╡
-        │ 1   ┆ 0.5 │
-        │ 2   ┆ 1.0 │
-        │ 3   ┆ 1.5 │
-        │ 4   ┆ 2.0 │
-        │ 5   ┆ 2.5 │
-        └─────┴─────┘
+        >>> df = pl.DataFrame(
+        ...     data={"x": [-2, -1, 0, 1, 2], "y": [0.5, 0.0, 0.0, -4.0, -0.5]}
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("x").truediv(2).alias("x/2"),
+        ...     pl.col("x").truediv(pl.col("y")).alias("x/y"),
+        ... )
+        shape: (5, 4)
+        ┌─────┬──────┬──────┬───────┐
+        │ x   ┆ y    ┆ x/2  ┆ x/y   │
+        │ --- ┆ ---  ┆ ---  ┆ ---   │
+        │ i64 ┆ f64  ┆ f64  ┆ f64   │
+        ╞═════╪══════╪══════╪═══════╡
+        │ -2  ┆ 0.5  ┆ -1.0 ┆ -4.0  │
+        │ -1  ┆ 0.0  ┆ -0.5 ┆ -inf  │
+        │ 0   ┆ 0.0  ┆ 0.0  ┆ NaN   │
+        │ 1   ┆ -4.0 ┆ 0.5  ┆ -0.25 │
+        │ 2   ┆ -0.5 ┆ 1.0  ┆ -4.0  │
+        └─────┴──────┴──────┴───────┘
 
         See Also
         --------
@@ -3720,23 +4015,26 @@ class Expr:
         Parameters
         ----------
         exponent
-            The exponent; accepts expression input.
+            Numeric literal or expression exponent value.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4]})
-        >>> df.select(pl.col("foo").pow(3))
-        shape: (4, 1)
-        ┌──────┐
-        │ foo  │
-        │ ---  │
-        │ f64  │
-        ╞══════╡
-        │ 1.0  │
-        │ 8.0  │
-        │ 27.0 │
-        │ 64.0 │
-        └──────┘
+        >>> df = pl.DataFrame({"x": [1, 2, 4, 8]})
+        >>> df.with_columns(
+        ...     pl.col("x").pow(3).alias("cube"),
+        ...     pl.col("x").pow(pl.col("x").log(2)).alias("x ** xlog2"),
+        ... )
+        shape: (4, 3)
+        ┌─────┬───────┬────────────┐
+        │ x   ┆ cube  ┆ x ** xlog2 │
+        │ --- ┆ ---   ┆ ---        │
+        │ i64 ┆ f64   ┆ f64        │
+        ╞═════╪═══════╪════════════╡
+        │ 1   ┆ 1.0   ┆ 1.0        │
+        │ 2   ┆ 8.0   ┆ 2.0        │
+        │ 4   ┆ 64.0  ┆ 16.0       │
+        │ 8   ┆ 512.0 ┆ 512.0      │
+        └─────┴───────┴────────────┘
 
         """
         exponent = expr_to_lit_or_expr(exponent)
@@ -3749,17 +4047,17 @@ class Expr:
         Parameters
         ----------
         other
-            Other integer or boolean value; accepts expression input.
+            Integer or boolean value; accepts expression input.
 
         Examples
         --------
         >>> df = pl.DataFrame(
         ...     {"x": [True, False, True, False], "y": [True, True, False, False]}
         ... )
-        >>> df.with_columns(pl.col("x").xor(pl.col("y")).alias("xor"))
+        >>> df.with_columns(pl.col("x").xor(pl.col("y")).alias("x ^ y"))
         shape: (4, 3)
         ┌───────┬───────┬───────┐
-        │ x     ┆ y     ┆ xor   │
+        │ x     ┆ y     ┆ x ^ y │
         │ ---   ┆ ---   ┆ ---   │
         │ bool  ┆ bool  ┆ bool  │
         ╞═══════╪═══════╪═══════╡
@@ -3772,23 +4070,27 @@ class Expr:
         >>> def binary_string(n: int) -> str:
         ...     return bin(n)[2:].zfill(8)
         >>>
-        >>> df = pl.DataFrame({"x": [10, 8, 250, 66], "y": [1, 2, 3, 4]})
+        >>> df = pl.DataFrame(
+        ...     data={"x": [10, 8, 250, 66], "y": [1, 2, 3, 4]},
+        ...     schema={"x": pl.UInt8, "y": pl.UInt8},
+        ... )
         >>> df.with_columns(
         ...     pl.col("x").apply(binary_string).alias("bin_x"),
         ...     pl.col("y").apply(binary_string).alias("bin_y"),
-        ...     pl.col("x").xor(pl.col("y")).alias("x ^ y"),
+        ...     pl.col("x").xor(pl.col("y")).alias("xor_xy"),
+        ...     pl.col("x").xor(pl.col("y")).apply(binary_string).alias("bin_xor_xy"),
         ... )
-        shape: (4, 5)
-        ┌─────┬─────┬──────────┬──────────┬───────┐
-        │ x   ┆ y   ┆ bin_x    ┆ bin_y    ┆ x ^ y │
-        │ --- ┆ --- ┆ ---      ┆ ---      ┆ ---   │
-        │ i64 ┆ i64 ┆ str      ┆ str      ┆ i64   │
-        ╞═════╪═════╪══════════╪══════════╪═══════╡
-        │ 10  ┆ 1   ┆ 00001010 ┆ 00000001 ┆ 11    │
-        │ 8   ┆ 2   ┆ 00001000 ┆ 00000010 ┆ 10    │
-        │ 250 ┆ 3   ┆ 11111010 ┆ 00000011 ┆ 249   │
-        │ 66  ┆ 4   ┆ 01000010 ┆ 00000100 ┆ 70    │
-        └─────┴─────┴──────────┴──────────┴───────┘
+        shape: (4, 6)
+        ┌─────┬─────┬──────────┬──────────┬────────┬────────────┐
+        │ x   ┆ y   ┆ bin_x    ┆ bin_y    ┆ xor_xy ┆ bin_xor_xy │
+        │ --- ┆ --- ┆ ---      ┆ ---      ┆ ---    ┆ ---        │
+        │ u8  ┆ u8  ┆ str      ┆ str      ┆ u8     ┆ str        │
+        ╞═════╪═════╪══════════╪══════════╪════════╪════════════╡
+        │ 10  ┆ 1   ┆ 00001010 ┆ 00000001 ┆ 11     ┆ 00001011   │
+        │ 8   ┆ 2   ┆ 00001000 ┆ 00000010 ┆ 10     ┆ 00001010   │
+        │ 250 ┆ 3   ┆ 11111010 ┆ 00000011 ┆ 249    ┆ 11111001   │
+        │ 66  ┆ 4   ┆ 01000010 ┆ 00000100 ┆ 70     ┆ 01000110   │
+        └─────┴─────┴──────────┴──────────┴────────┴────────────┘
 
         """
         return self.__xor__(other)
