@@ -23,10 +23,13 @@ impl OptimizationRule for FlattenUnionRule {
         let lp = lp_arena.get(node);
 
         match lp {
-            Union { inputs, options }
-                if inputs
-                    .iter()
-                    .any(|node| matches!(lp_arena.get(*node), Union { .. })) =>
+            Union {
+                inputs,
+                mut options,
+            } if inputs.iter().any(|node| match lp_arena.get(*node) {
+                Union { options, .. } => !options.flattened_by_opt,
+                _ => false,
+            }) =>
             {
                 let mut new_inputs = Vec::with_capacity(inputs.len() * 2);
 
@@ -36,9 +39,11 @@ impl OptimizationRule for FlattenUnionRule {
                         None => new_inputs.push(*node),
                     }
                 }
+                options.flattened_by_opt = true;
+
                 Some(Union {
                     inputs: new_inputs,
-                    options: *options,
+                    options: options,
                 })
             }
             _ => None,
