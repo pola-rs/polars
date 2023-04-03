@@ -3608,19 +3608,12 @@ def test_rolling_apply() -> None:
 
 
 def test_ufunc() -> None:
-    # NOTE: unfortunately we must use cast instead of a type: ignore comment
-    #   1. CI job with Python 3.10, numpy==1.23.1 -> mypy complains about arg-type
-    #   2. so we try to resolve it with type: ignore[arg-type]
-    #   3. CI job with Python 3.7, numpy==1.21.6 -> mypy complains about
-    #       unused type: ignore comment
-    # for more information, see: https://github.com/python/mypy/issues/8823
-
     df = pl.DataFrame([pl.Series("a", [1, 2, 3, 4], dtype=pl.UInt8)])
     out = df.select(
         [
-            np.power(cast(Any, pl.col("a")), 2).alias("power_uint8"),
-            np.power(cast(Any, pl.col("a")), 2.0).alias("power_float64"),
-            np.power(cast(Any, pl.col("a")), 2, dtype=np.uint16).alias("power_uint16"),
+            np.power(pl.col("a"), 2).alias("power_uint8"),  # type: ignore[call-overload]
+            np.power(pl.col("a"), 2.0).alias("power_float64"),  # type: ignore[call-overload]
+            np.power(pl.col("a"), 2, dtype=np.uint16).alias("power_uint16"),  # type: ignore[call-overload]
         ]
     )
     expected = pl.DataFrame(
