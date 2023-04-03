@@ -1116,7 +1116,7 @@ mod test {
             let a = groupby(ca.into_iter(), true).into_idx();
 
             let keys = split.iter().map(|ca| ca.cont_slice().unwrap()).collect();
-            let b = groupby_threaded_num(keys, 0, split.len() as u64, true).into_idx();
+            let b = groupby_threaded_num(keys, split.len() as u64, true).into_idx();
 
             assert_eq!(a, b);
         }

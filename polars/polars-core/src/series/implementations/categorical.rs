@@ -140,7 +140,14 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         }
     }
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
-        self.0.logical().group_tuples(multithreaded, sorted)
+        #[cfg(feature = "performant")]
+        {
+            Ok(self.0.group_tuples_perfect(multithreaded, sorted))
+        }
+        #[cfg(not(feature = "performant"))]
+        {
+            self.0.logical().group_tuples(multithreaded, sorted)
+        }
     }
 
     fn arg_sort_multiple(&self, by: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {
