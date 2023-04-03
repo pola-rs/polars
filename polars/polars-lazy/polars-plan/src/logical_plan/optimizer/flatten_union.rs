@@ -43,7 +43,7 @@ impl OptimizationRule for FlattenUnionRule {
 
                 Some(Union {
                     inputs: new_inputs,
-                    options: options,
+                    options,
                 })
             }
             _ => None,
