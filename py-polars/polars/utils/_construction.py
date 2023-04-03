@@ -1327,7 +1327,6 @@ def iterable_to_pydf(
 
 def pandas_has_default_index(df: pd.DataFrame) -> bool:
     """Identify if the pandas frame only has a default (or equivalent) index."""
-    from pandas import Index
     from pandas.core.indexes.range import RangeIndex
 
     index_cols = df.index.names
@@ -1341,11 +1340,7 @@ def pandas_has_default_index(df: pd.DataFrame) -> bool:
     else:
         # finally, is the index _equivalent_ to a default unnamed
         # integer index with frame data that was previously sorted
-        return (
-            isinstance(df.index, Index)
-            and df.index.dtype == 'int'
-            and (df.index.sort_values() == np.arange(len(df))).all()
-        )
+        return df.index.sort_values() == np.arange(len(df)).all()
 
 
 @deprecated_alias(nan_to_none="nan_to_null")
