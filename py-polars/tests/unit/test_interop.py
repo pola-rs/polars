@@ -604,11 +604,11 @@ def test_from_empty_arrow() -> None:
     assert df.dtypes == [pl.Float64, pl.Float64]
 
     # 2705
-    df1 = pd.DataFrame(columns=["b"], dtype=float)
-    tbl = pa.Table.from_pandas(df1, preserve_index=True)
+    df1 = pd.DataFrame(columns=["b"], dtype=float, index=pd.Index([]))
+    tbl = pa.Table.from_pandas(df1)
     out = cast(pl.DataFrame, pl.from_arrow(tbl))
     assert out.columns == ["b", "__index_level_0__"]
-    assert out.dtypes == [pl.Float64, pl.Int64]
+    assert out.dtypes == [pl.Float64, pl.Null]
     tbl = pa.Table.from_pandas(df1, preserve_index=False)
     out = cast(pl.DataFrame, pl.from_arrow(tbl))
     assert out.columns == ["b"]
