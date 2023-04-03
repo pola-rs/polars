@@ -33,6 +33,7 @@ class ExprStringNameSpace:
         self,
         datatype: PolarsTemporalType,
         fmt: str | None = None,
+        *,
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
@@ -530,7 +531,7 @@ class ExprStringNameSpace:
         return wrap_expr(self._pyexpr.str_rjust(width, fillchar))
 
     def contains(
-        self, pattern: str | Expr, literal: bool = False, strict: bool = True
+        self, pattern: str | Expr, *, literal: bool = False, strict: bool = True
     ) -> Expr:
         """
         Check if string contains a substring that matches a regex.
@@ -936,7 +937,7 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.count_match(pattern))
 
-    def split(self, by: str, inclusive: bool = False) -> Expr:
+    def split(self, by: str, *, inclusive: bool = False) -> Expr:
         """
         Split the string by a substring.
 
@@ -971,7 +972,7 @@ class ExprStringNameSpace:
             return wrap_expr(self._pyexpr.str_split_inclusive(by))
         return wrap_expr(self._pyexpr.str_split(by))
 
-    def split_exact(self, by: str, n: int, inclusive: bool = False) -> Expr:
+    def split_exact(self, by: str, n: int, *, inclusive: bool = False) -> Expr:
         """
         Split the string by a substring using ``n`` splits.
 
@@ -1106,8 +1107,8 @@ class ExprStringNameSpace:
         self,
         pattern: str | Expr,
         value: str | Expr,
-        literal: bool = False,
         *,
+        literal: bool = False,
         n: int = 1,
     ) -> Expr:
         r"""
@@ -1153,7 +1154,7 @@ class ExprStringNameSpace:
         )
 
     def replace_all(
-        self, pattern: str | Expr, value: str | Expr, literal: bool = False
+        self, pattern: str | Expr, value: str | Expr, *, literal: bool = False
     ) -> Expr:
         """
         Replace all matching regex/literal substrings with a new string value.
@@ -1277,7 +1278,7 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.explode())
 
-    def parse_int(self, radix: int = 2, strict: bool = True) -> Expr:
+    def parse_int(self, radix: int = 2, *, strict: bool = True) -> Expr:
         """
         Parse integers with base radix from strings.
 
@@ -1300,7 +1301,7 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"bin": ["110", "101", "010", "invalid"]})
-        >>> df.select(pl.col("bin").str.parse_int(2, False))
+        >>> df.select(pl.col("bin").str.parse_int(2, strict=False))
         shape: (4, 1)
         ┌──────┐
         │ bin  │
@@ -1314,7 +1315,7 @@ class ExprStringNameSpace:
         └──────┘
 
         >>> df = pl.DataFrame({"hex": ["fa1e", "ff00", "cafe", None]})
-        >>> df.select(pl.col("hex").str.parse_int(16, True))
+        >>> df.select(pl.col("hex").str.parse_int(16, strict=True))
         shape: (4, 1)
         ┌───────┐
         │ hex   │

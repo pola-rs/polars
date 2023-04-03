@@ -7,7 +7,6 @@ from polars import functions as F
 from polars import internals as pli
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
 from polars.utils._wrap import wrap_expr
-from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time
@@ -130,9 +129,7 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.lst_mean())
 
-    @deprecate_nonkeyword_arguments()
-    @deprecated_alias(reverse="descending", stacklevel=4)
-    def sort(self, descending: bool = False) -> Expr:
+    def sort(self, *, descending: bool = False) -> Expr:
         """
         Sort the arrays in this column.
 
@@ -158,7 +155,7 @@ class ExprListNameSpace:
         │ [1, 2, 3] │
         │ [1, 2, 9] │
         └───────────┘
-        >>> df.select(pl.col("a").arr.sort(reverse=True))
+        >>> df.select(pl.col("a").arr.sort(descending=True))
         shape: (2, 1)
         ┌───────────┐
         │ a         │
@@ -197,7 +194,7 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.lst_reverse())
 
-    def unique(self, maintain_order: bool = False) -> Expr:
+    def unique(self, *, maintain_order: bool = False) -> Expr:
         """
         Get the unique/distinct values in the list.
 
@@ -301,6 +298,7 @@ class ExprListNameSpace:
     def take(
         self,
         index: Expr | Series | list[int] | list[list[int]],
+        *,
         null_on_oob: bool = False,
     ) -> Expr:
         """
@@ -764,7 +762,7 @@ class ExprListNameSpace:
             self._pyexpr.lst_to_struct(n_field_strategy, name_generator, upper_bound)
         )
 
-    def eval(self, expr: Expr, parallel: bool = False) -> Expr:
+    def eval(self, expr: Expr, *, parallel: bool = False) -> Expr:
         """
         Run any polars expression against the lists' elements.
 

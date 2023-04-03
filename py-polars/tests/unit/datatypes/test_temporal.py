@@ -2208,19 +2208,6 @@ def test_replace_time_zone_from_naive() -> None:
     }
 
 
-@pytest.mark.parametrize("time_zone", ["UTC", "Africa/Abidjan"])
-def test_tz_localize_from_tz_aware(time_zone: str) -> None:
-    tz_aware = (
-        pl.Series(["2018-10-28"])
-        .str.strptime(pl.Datetime)
-        .dt.replace_time_zone(time_zone)
-    )
-    deprecation_msg = "please use `.replace_time_zone` instead"
-    with pytest.warns(DeprecationWarning, match=deprecation_msg):
-        # ignoring as this is being redirected and will be removed anyway
-        tz_aware.dt.tz_localize("America/Maceio")  # type: ignore[attr-defined]
-
-
 def test_unlocalize() -> None:
     tz_naive = pl.Series(["2020-01-01 03:00:00"]).str.strptime(pl.Datetime)
     tz_aware = tz_naive.dt.replace_time_zone("UTC").dt.convert_time_zone(

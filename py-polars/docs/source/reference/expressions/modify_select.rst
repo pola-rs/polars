@@ -8,7 +8,6 @@ Manipulation/selection
 
     Expr.append
     Expr.arg_sort
-    Expr.argsort
     Expr.arg_true
     Expr.backward_fill
     Expr.cast

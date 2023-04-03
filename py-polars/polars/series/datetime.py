@@ -2,11 +2,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars import functions as F
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
 from polars.utils.convert import _to_python_datetime
-from polars.utils.decorators import deprecated_alias, redirect
 
 if TYPE_CHECKING:
     import datetime as dt
@@ -17,13 +15,6 @@ if TYPE_CHECKING:
     from polars.type_aliases import EpochTimeUnit, TimeUnit
 
 
-@redirect(
-    {
-        "tz_localize": "replace_time_zone",
-        "with_time_zone": "convert_time_zone",
-        "cast_time_zone": "replace_time_zone",
-    }
-)
 @expr_dispatch
 class DateTimeNameSpace:
     """Series.dt namespace."""
@@ -677,7 +668,7 @@ class DateTimeNameSpace:
 
         """
 
-    def second(self, fractional: bool = False) -> Series:
+    def second(self, *, fractional: bool = False) -> Series:
         """
         Extract seconds from underlying DateTime representation.
 
@@ -1046,7 +1037,6 @@ class DateTimeNameSpace:
 
         """
 
-    @deprecated_alias(tz="time_zone")
     def convert_time_zone(self, time_zone: str) -> Series:
         """
         Convert to given time zone for a Series of type Datetime.
@@ -1070,7 +1060,7 @@ class DateTimeNameSpace:
                 2020-04-01 00:00:00 UTC
                 2020-05-01 00:00:00 UTC
         ]
-        >>> date = date.dt.convert_time_zone(tz="Europe/London").alias("London")
+        >>> date = date.dt.convert_time_zone(time_zone="Europe/London").alias("London")
         >>> date
         shape: (3,)
         Series: 'London' [datetime[μs, Europe/London]]
@@ -1080,14 +1070,7 @@ class DateTimeNameSpace:
             2020-05-01 01:00:00 BST
         ]
         """
-        return (
-            wrap_s(self._s)
-            .to_frame()
-            .select(F.col(self._s.name()).dt.convert_time_zone(time_zone))
-            .to_series()
-        )
 
-    @deprecated_alias(tz="time_zone")
     def replace_time_zone(self, time_zone: str | None) -> Series:
         """
         Replace time zone for a Series of type Datetime.
@@ -1122,7 +1105,7 @@ class DateTimeNameSpace:
                 1585699200
                 1588291200
         ]
-        >>> date = date.dt.convert_time_zone(tz="Europe/London").alias("London")
+        >>> date = date.dt.convert_time_zone(time_zone="Europe/London").alias("London")
         >>> date
         shape: (3,)
         Series: 'London' [datetime[μs, Europe/London]]
@@ -1140,7 +1123,7 @@ class DateTimeNameSpace:
                 1585699200
                 1588291200
         ]
-        >>> date = date.dt.replace_time_zone(tz="America/New_York").alias("NYC")
+        >>> date = date.dt.replace_time_zone(time_zone="America/New_York").alias("NYC")
         >>> date
         shape: (3,)
         Series: 'NYC' [datetime[μs, America/New_York]]
@@ -1160,12 +1143,6 @@ class DateTimeNameSpace:
         ]
 
         """
-        return (
-            wrap_s(self._s)
-            .to_frame()
-            .select(F.col(self._s.name()).dt.replace_time_zone(time_zone))
-            .to_series()
-        )
 
     def days(self) -> Series:
         """
