@@ -179,11 +179,12 @@ fn struct_dict<'a>(
     dict.into_py(py)
 }
 
-fn decimal_to_digits(v: i128, buf: &mut [u8; 48]) -> usize {
+// accept u128 array to ensure alignment is correct
+fn decimal_to_digits(v: i128, buf: &mut [u128; 3]) -> usize {
     const ZEROS: i128 = 0x3030_3030_3030_3030_3030_3030_3030_3030;
-    if buf.len() < 48 {
-        panic!("decimal_to_digits: buffer size < 48");
-    }
+    // safety: transmute is safe as there are 48 bytes in 3 128bit ints
+    // and the minimal alignment of u8 fits u16
+    let buf = unsafe { std::mem::transmute::<&mut [u128; 3], &mut [u8; 48]>(buf) };
     let len = lexical_core::write(v, buf).len();
     let ptr = buf.as_mut_ptr() as *mut i128;
     unsafe {
@@ -267,9 +268,16 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
             AnyValue::BinaryOwned(v) => v.into_py(py),
             AnyValue::Decimal(v, scale) => {
                 let convert = utils.getattr("_to_python_decimal").unwrap();
-                let mut buf = [0_u8; 48];
+                const N: usize = 3;
+                let mut buf = [0_u128; N];
                 let n_digits = decimal_to_digits(v.abs(), &mut buf);
-                let digits = PyTuple::new(py, buf.into_iter().take(n_digits));
+                let buf = unsafe {
+                    std::slice::from_raw_parts(
+                        buf.as_slice().as_ptr() as *const u8,
+                        N * std::mem::size_of::<u128>(),
+                    )
+                };
+                let digits = PyTuple::new(py, buf.iter().take(n_digits));
                 convert
                     .call1((v.is_negative() as u8, digits, n_digits, -(scale as i32)))
                     .unwrap()
@@ -549,9 +557,16 @@ impl ToPyObject for Wrap<&DecimalChunked> {
         let iter = self.0.into_iter().map(|opt_v| {
             opt_v.map(|v| {
                 // TODO! use anyvalue so that we have a single impl.
-                let mut buf = [0_u8; 48];
+                const N: usize = 3;
+                let mut buf = [0_u128; N];
                 let n_digits = decimal_to_digits(v.abs(), &mut buf);
-                let digits = PyTuple::new(py, buf.into_iter().take(n_digits));
+                let buf = unsafe {
+                    std::slice::from_raw_parts(
+                        buf.as_slice().as_ptr() as *const u8,
+                        N * std::mem::size_of::<u128>(),
+                    )
+                };
+                let digits = PyTuple::new(py, buf.iter().take(n_digits));
                 convert
                     .call1((v.is_negative() as u8, digits, &py_precision, &py_scale))
                     .unwrap()
