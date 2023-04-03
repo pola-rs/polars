@@ -1421,7 +1421,9 @@ class Series:
         """
         return self._s.quantile(quantile, interpolation)
 
-    def to_dummies(self, separator: str = "_", include_null: bool = False) -> DataFrame:
+    def to_dummies(
+        self, separator: str = "_", *, include_null: bool = False
+    ) -> DataFrame:
         """
         Get dummy/indicator variables.
 
