@@ -29,7 +29,7 @@ jobs:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
           RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
         with:
-          rust-toolchain: nightly-2023-03-23
+          rust-toolchain: nightly-2023-04-02
           maturin-version: '0.14.10'
           command: publish
           args: -m py-polars/Cargo.toml --skip-existing -o wheels -u ritchie46
@@ -54,7 +54,7 @@ jobs:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
           JEMALLOC_SYS_WITH_LG_PAGE: 16
         with:
-          rust-toolchain: nightly-2023-03-23
+          rust-toolchain: nightly-2023-04-02
           target: aarch64-unknown-linux-gnu
           maturin-version: '0.14.10'
           command: publish
@@ -85,7 +85,7 @@ jobs:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
           RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
         with:
-          rust-toolchain: nightly-2023-03-23
+          rust-toolchain: nightly-2023-04-02
           maturin-version: '0.14.10'
           command: publish
           args: -m py-polars/Cargo.toml --skip-existing -o wheels -u ritchie46
@@ -112,7 +112,7 @@ jobs:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
           RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt --cfg use_mimalloc
         with:
-          rust-toolchain: nightly-2023-03-23
+          rust-toolchain: nightly-2023-04-02
           maturin-version: '0.14.10'
           command: publish
           args: -m py-polars/Cargo.toml --skip-existing -o wheels -u ritchie46
@@ -141,7 +141,7 @@ jobs:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
           RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+sse4.1,+sse4.2
         with:
-          rust-toolchain: nightly-2023-03-23
+          rust-toolchain: nightly-2023-04-02
           maturin-version: '0.14.10'
           command: publish
           args: -m py-polars/Cargo.toml --no-sdist --skip-existing -o wheels -i python -u ritchie46

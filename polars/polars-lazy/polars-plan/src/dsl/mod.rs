@@ -1,3 +1,4 @@
+#![allow(ambiguous_glob_reexports)]
 //! Domain specific language for the Lazy API.
 #[cfg(feature = "dtype-categorical")]
 pub mod cat;
