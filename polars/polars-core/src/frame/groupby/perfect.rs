@@ -108,34 +108,15 @@ impl CategoricalChunked {
 
         let mut out = match &**rev_map {
             RevMapping::Local(cached) => {
-                // ensure we don't allocate too much if not all slots will be used
-                let group_capacity = if self.can_fast_unique() {
-                    cats.len() / (cached.len() + 1)
-                } else {
-                    0
-                };
                 let len = if cats.null_count() > 0 {
                     // we add one to store the null sentinel group
                     cached.len() + 1
                 } else {
                     cached.len()
                 };
-                get_groups_categorical(
-                    cats,
-                    len,
-                    group_capacity,
-                    multithreaded,
-                    |cat| *cat,
-                    self.can_fast_unique(),
-                )
+                get_groups_categorical(cats, len, multithreaded, |cat| *cat, self.can_fast_unique())
             }
             RevMapping::Global(mapping, _cached, _) => {
-                // ensure we don't allocate too much if not all slots will be used
-                let group_capacity = if self.can_fast_unique() {
-                    cats.len() / (mapping.len() + 1)
-                } else {
-                    0
-                };
                 let len = if cats.null_count() > 0 {
                     // we add one to store the null sentinel group
                     mapping.len() + 1
@@ -146,7 +127,6 @@ impl CategoricalChunked {
                     get_groups_categorical(
                         cats,
                         len,
-                        group_capacity,
                         multithreaded,
                         |cat| *mapping.get(cat).unwrap_unchecked_release(),
                         self.can_fast_unique(),
@@ -165,7 +145,6 @@ impl CategoricalChunked {
 fn get_groups_categorical<M>(
     cats: &UInt32Chunked,
     len: usize,
-    group_capacity: usize,
     multithreaded: bool,
     get_cat: M,
     can_fast_unique: bool,
@@ -177,7 +156,7 @@ where
     let null_idx = len.saturating_sub(1);
     let mut groups = Vec::with_capacity(len);
     let mut first = vec![IdxSize::MAX; len];
-    groups.resize_with(len, || Vec::with_capacity(group_capacity));
+    groups.resize_with(len, Vec::new);
 
     let groups_ptr = unsafe { SyncPtr::new(groups.as_mut_ptr()) };
     let first_ptr = unsafe { SyncPtr::new(first.as_mut_ptr()) };
@@ -194,8 +173,9 @@ where
                 let first = unsafe { std::slice::from_raw_parts_mut(first_ptr.get(), len) };
 
                 for arr in cats.downcast_iter() {
-                    for opt_cat in arr.iter() {
-                        if let Some(cat) = opt_cat {
+                    if arr.null_count() == 0 {
+                        for cat in arr.values().as_slice() {
+                            // cannot factor out due to bchk
                             if this_partition(*cat as u64, thread_no as u64, n_parts as u64) {
                                 let group_id = get_cat(cat) as usize;
 
@@ -209,18 +189,38 @@ where
                                     *first.get_unchecked_release_mut(group_id) = *first_value
                                 }
                             }
+                            row_nr += 1;
                         }
-                        // first thread handles null values
-                        else if thread_no == 0 {
-                            let buf = unsafe { groups.get_unchecked_release_mut(null_idx) };
-                            buf.push(row_nr);
-                            unsafe {
-                                let first_value = buf.get_unchecked(0);
-                                *first.get_unchecked_release_mut(null_idx) = *first_value
-                            }
-                        }
+                    } else {
+                        for opt_cat in arr.iter() {
+                            if let Some(cat) = opt_cat {
+                                // cannot factor out due to bchk
+                                if this_partition(*cat as u64, thread_no as u64, n_parts as u64) {
+                                    let group_id = get_cat(cat) as usize;
 
-                        row_nr += 1;
+                                    let buf = unsafe { groups.get_unchecked_release_mut(group_id) };
+                                    buf.push(row_nr);
+
+                                    // always write first/ branchless
+                                    unsafe {
+                                        // safety: we just  pushed
+                                        let first_value = buf.get_unchecked(0);
+                                        *first.get_unchecked_release_mut(group_id) = *first_value
+                                    }
+                                }
+                            }
+                            // first thread handles null values
+                            else if thread_no == 0 {
+                                let buf = unsafe { groups.get_unchecked_release_mut(null_idx) };
+                                buf.push(row_nr);
+                                unsafe {
+                                    let first_value = buf.get_unchecked(0);
+                                    *first.get_unchecked_release_mut(null_idx) = *first_value
+                                }
+                            }
+
+                            row_nr += 1;
+                        }
                     }
                 }
             });
