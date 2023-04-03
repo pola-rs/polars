@@ -5,12 +5,7 @@ import re
 import sys
 from collections.abc import MappingView, Sized
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Generator, Iterable, Sequence, TypeVar
-
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
+from typing import TYPE_CHECKING, Any, Generator, Iterable, Literal, Sequence, TypeVar
 
 from polars import functions as F
 from polars.datatypes import (

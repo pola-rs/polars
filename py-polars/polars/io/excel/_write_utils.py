@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterable, Sequence, overload
+from typing import TYPE_CHECKING, Any, Iterable, Literal, Sequence, overload
 
 from polars import functions as F
 from polars.datatypes import (
@@ -21,8 +21,6 @@ from polars.dependencies import json
 from polars.exceptions import DuplicateError
 
 if TYPE_CHECKING:
-    import sys
-
     from xlsxwriter import Workbook
     from xlsxwriter.format import Format
     from xlsxwriter.worksheet import Worksheet
@@ -35,11 +33,6 @@ if TYPE_CHECKING:
         PolarsDataType,
         RowTotalsDefinition,
     )
-
-    if sys.version_info >= (3, 8):
-        from typing import Literal
-    else:
-        from typing_extensions import Literal
 
 
 def _cluster(iterable: Iterable[Any], n: int = 2) -> Iterable[Any]:

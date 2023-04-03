@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import warnings
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Iterable, Sequence, overload
+from typing import TYPE_CHECKING, Iterable, Literal, Sequence, overload
 
 from polars import internals as pli
 from polars.datatypes import Date
@@ -28,7 +28,6 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 
 if TYPE_CHECKING:
-    import sys
     from datetime import date
 
     from polars.dataframe import DataFrame
@@ -41,11 +40,6 @@ if TYPE_CHECKING:
         PolarsDataType,
         TimeUnit,
     )
-
-    if sys.version_info >= (3, 8):
-        from typing import Literal
-    else:
-        from typing_extensions import Literal
 
 
 def get_dummies(

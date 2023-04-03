@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from polars.dependencies import json
 
@@ -18,15 +18,9 @@ with contextlib.suppress(ImportError):
     from polars.polars import set_float_fmt as _set_float_fmt
 
 if TYPE_CHECKING:
-    import sys
     from types import TracebackType
 
     from polars.type_aliases import FloatFmt
-
-    if sys.version_info >= (3, 8):
-        from typing import Literal
-    else:
-        from typing_extensions import Literal
 
 
 # note: register all Config-specific environment variable names here; need to constrain

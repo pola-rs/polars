@@ -12,9 +12,11 @@ from typing import (
     Any,
     Callable,
     ForwardRef,
+    Literal,
     Optional,
     TypeVar,
     Union,
+    get_args,
     overload,
 )
 
@@ -52,14 +54,6 @@ from polars.dependencies import pyarrow as pa
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import dtype_str_repr as _dtype_str_repr
 
-if sys.version_info >= (3, 8):
-    from typing import get_args
-else:
-    # pass-through (only impact is that under 3.7 we'll end-up doing
-    # standard inference for dataclass fields with an option/union)
-    def get_args(tp: Any) -> Any:
-        return tp
-
 
 OptionType = type(Optional[type])
 if sys.version_info >= (3, 10):
@@ -71,11 +65,6 @@ else:
 
 if TYPE_CHECKING:
     from polars.type_aliases import PolarsDataType, PythonDataType, SchemaDict, TimeUnit
-
-    if sys.version_info >= (3, 8):
-        from typing import Literal
-    else:
-        from typing_extensions import Literal
 
 
 T = TypeVar("T")

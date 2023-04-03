@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import warnings
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Literal, Sequence, overload
 
 from polars import internals as pli
 from polars.datatypes import (
@@ -62,8 +62,6 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 
 if TYPE_CHECKING:
-    import sys
-
     from polars.dataframe import DataFrame
     from polars.expr.expr import Expr
     from polars.lazyframe import LazyFrame
@@ -78,11 +76,6 @@ if TYPE_CHECKING:
         SchemaDict,
         TimeUnit,
     )
-
-    if sys.version_info >= (3, 8):
-        from typing import Literal
-    else:
-        from typing_extensions import Literal
 
 
 def col(

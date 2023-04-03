@@ -70,10 +70,7 @@ def _get_dependency_version(dep_name: str) -> str:
 
     if hasattr(module, "__version__"):
         module_version = module.__version__
-    elif sys.version_info >= (3, 8):
-        # importlib.metadata was introduced in Python 3.8
-        module_version = importlib.metadata.version(dep_name)
     else:
-        module_version = "<version not detected>"
+        module_version = importlib.metadata.version(dep_name)
 
     return module_version
