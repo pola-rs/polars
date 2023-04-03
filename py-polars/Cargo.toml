@@ -25,7 +25,7 @@ once_cell = "1"
 polars-algo = { path = "../polars/polars-algo", default-features = false }
 polars-core = { path = "../polars/polars-core", features = ["python"], default-features = false }
 polars-lazy = { path = "../polars/polars-lazy", features = ["python"], default-features = false }
-pyo3 = { version = "0.18.0", features = ["abi3-py37", "extension-module", "multiple-pymethods"] }
+pyo3 = { version = "0.18.0", features = ["abi3-py38", "extension-module", "multiple-pymethods"] }
 pyo3-built = { version = "0.4", optional = true }
 serde_json = { version = "1", optional = true }
 smartstring = "1"
