@@ -63,6 +63,7 @@ fn test_groups_update_binary_shift_log() -> PolarsResult<()> {
     Ok(())
 }
 
+#[cfg(feature = "cum_agg")]
 #[test]
 fn test_expand_list() -> PolarsResult<()> {
     let out = df![
