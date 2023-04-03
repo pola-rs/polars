@@ -80,10 +80,8 @@ where
     A: Hash + Eq,
 {
     let mut hllp = HyperLogLogPlus::new(precision, RandomState::new()).unwrap();
-
     a.for_each(|v| hllp.insert(&v));
 
-    // hllp.count().trunc() as usize
     hllp
 }
 

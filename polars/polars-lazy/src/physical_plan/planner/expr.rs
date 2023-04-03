@@ -458,7 +458,7 @@ pub(crate) fn create_physical_expr(
                         Context::Default => {
                             let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
-                                s.n_unique().map(|count| {
+                                s.approx_n_unique(precision).map(|count| {
                                     Some(
                                         UInt32Chunked::from_slice(s.name(), &[count as u32])
                                             .into_series(),

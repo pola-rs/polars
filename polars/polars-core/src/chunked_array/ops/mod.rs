@@ -460,7 +460,8 @@ pub trait ChunkUnique<T: PolarsDataType> {
     }
 
     /// Approx number of unique values in the `ChunkedArray`
-    fn approx_n_unique(&self, precision: u8) -> PolarsResult<usize> {
+    /// TODO
+    fn approx_n_unique(&self, _precision: u8) -> PolarsResult<usize> {
         self.arg_unique().map(|v| v.len())
     }
 
