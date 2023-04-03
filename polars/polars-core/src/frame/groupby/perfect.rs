@@ -19,11 +19,11 @@ where
         group_capacity: usize,
     ) -> GroupsProxy {
         if multithreaded {
-            todo!()
+            // no-op for now
         }
 
-        let mut groups = Vec::with_capacity(max);
-        let mut first = vec![0 as IdxSize; max];
+        let mut groups = Vec::with_capacity(max + 1);
+        let mut first = vec![0 as IdxSize; max + 1];
         groups.resize_with(max, || Vec::with_capacity(group_capacity));
 
         let mut row_nr = 0 as IdxSize;

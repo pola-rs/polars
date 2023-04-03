@@ -2,6 +2,8 @@
 use polars_arrow::kernels::list_bytes_iter::numeric_list_bytes_iter;
 use polars_arrow::kernels::sort_partition::{create_clean_partitions, partition_to_groups};
 use polars_arrow::prelude::*;
+#[cfg(all(feature = "dtype-categorical", feature = "performant"))]
+use polars_arrow::trusted_len::PushUnchecked;
 use polars_utils::{flatten, HashSingle};
 
 use super::*;
@@ -29,16 +31,6 @@ where
     T::Native: Hash + Eq + Send + AsU64,
     Option<T::Native>: AsU64,
 {
-    // set group size hint
-    #[cfg(feature = "dtype-categorical")]
-    let group_size_hint = if let DataType::Categorical(Some(m)) = ca.dtype() {
-        ca.len() / m.len()
-    } else {
-        0
-    };
-    #[cfg(not(feature = "dtype-categorical"))]
-    let group_size_hint = 0;
-
     if multithreaded && group_multithreaded(ca) {
         let n_partitions = _set_partition_size() as u64;
 
@@ -46,21 +38,21 @@ where
         if ca.chunks.len() == 1 {
             if !ca.has_validity() {
                 let keys = vec![ca.cont_slice().unwrap()];
-                groupby_threaded_num(keys, group_size_hint, n_partitions, sorted)
+                groupby_threaded_num(keys, n_partitions, sorted)
             } else {
                 let keys = ca
                     .downcast_iter()
                     .map(|arr| arr.into_iter().map(|x| x.copied()).collect::<Vec<_>>())
                     .collect::<Vec<_>>();
-                groupby_threaded_num(keys, group_size_hint, n_partitions, sorted)
+                groupby_threaded_num(keys, n_partitions, sorted)
             }
             // use the polars-iterators
         } else if !ca.has_validity() {
             let keys = vec![ca.into_no_null_iter().collect::<Vec<_>>()];
-            groupby_threaded_num(keys, group_size_hint, n_partitions, sorted)
+            groupby_threaded_num(keys, n_partitions, sorted)
         } else {
             let keys = vec![ca.into_iter().collect::<Vec<_>>()];
-            groupby_threaded_num(keys, group_size_hint, n_partitions, sorted)
+            groupby_threaded_num(keys, n_partitions, sorted)
         }
     } else if !ca.has_validity() {
         groupby(ca.into_no_null_iter(), sorted)
@@ -143,6 +135,61 @@ where
             partition_to_groups(values, null_count as IdxSize, nulls_first, 0)
         };
         groups
+    }
+}
+
+#[cfg(all(feature = "dtype-categorical", feature = "performant"))]
+impl IntoGroupsProxy for CategoricalChunked {
+    fn group_tuples(&self, multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsProxy> {
+        let DataType::Categorical(Some(rev_map)) = self.dtype() else { unreachable!()};
+        let cats = self.logical();
+        match &**rev_map {
+            RevMapping::Local(cached) => {
+                Ok(cats.group_tuples_perfect(cached.len() - 1, false, cats.len() / cached.len()))
+            }
+            RevMapping::Global(mapping, cached, _) => {
+                let mut remapped = Vec::with_capacity(cats.len());
+                if cats.null_count() == 0 {
+                    for arr in cats.downcast_iter() {
+                        for rev_cat in arr.values().iter() {
+                            unsafe {
+                                let cat = mapping.get(rev_cat).unwrap_unchecked();
+                                remapped.push_unchecked(*cat);
+                            };
+                        }
+                    }
+                    Ok(UInt32Chunked::from_vec("", remapped).group_tuples_perfect(
+                        cached.len() - 1,
+                        multithreaded,
+                        self.len() / cached.len(),
+                    ))
+                } else {
+                    // use one index higher for the null category
+                    let null_cat = mapping.len() as u32;
+
+                    for arr in cats.downcast_iter() {
+                        for opt_rev_cat in arr.iter() {
+                            match opt_rev_cat {
+                                Some(rev_cat) => {
+                                    unsafe {
+                                        let cat = mapping.get(rev_cat).unwrap_unchecked();
+                                        remapped.push_unchecked(*cat);
+                                    };
+                                }
+                                None => unsafe {
+                                    remapped.push_unchecked(null_cat);
+                                },
+                            }
+                        }
+                    }
+                    Ok(UInt32Chunked::from_vec("", remapped).group_tuples_perfect(
+                        cached.len(),
+                        multithreaded,
+                        self.len() / cached.len(),
+                    ))
+                }
+            }
+        }
     }
 }
 
@@ -282,7 +329,7 @@ impl IntoGroupsProxy for BinaryChunked {
                     })
                     .collect::<Vec<_>>()
             });
-            groupby_threaded_num(byte_hashes, 0, n_partitions as u64, sorted)
+            groupby_threaded_num(byte_hashes, n_partitions as u64, sorted)
         } else {
             let byte_hashes = self
                 .into_iter()
@@ -350,7 +397,6 @@ impl IntoGroupsProxy for ListChunked {
                         .collect::<PolarsResult<Vec<_>>>()?;
                     Ok(groupby_threaded_num(
                         bytes_hashes,
-                        0,
                         n_partitions as u64,
                         sorted,
                     ))
