@@ -261,6 +261,8 @@ impl PySeries {
     pub fn new_object(name: &str, val: Vec<ObjectValue>, _strict: bool) -> Self {
         #[cfg(feature = "object")]
         {
+            // object builder must be registered.
+            crate::object::register_object_builder();
             let s = ObjectChunked::<ObjectValue>::new_from_vec(name, val).into_series();
             s.into()
         }

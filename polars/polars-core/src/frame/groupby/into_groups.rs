@@ -29,16 +29,6 @@ where
     T::Native: Hash + Eq + Send + AsU64,
     Option<T::Native>: AsU64,
 {
-    // set group size hint
-    #[cfg(feature = "dtype-categorical")]
-    let group_size_hint = if let DataType::Categorical(Some(m)) = ca.dtype() {
-        ca.len() / m.len()
-    } else {
-        0
-    };
-    #[cfg(not(feature = "dtype-categorical"))]
-    let group_size_hint = 0;
-
     if multithreaded && group_multithreaded(ca) {
         let n_partitions = _set_partition_size() as u64;
 
@@ -46,21 +36,21 @@ where
         if ca.chunks.len() == 1 {
             if !ca.has_validity() {
                 let keys = vec![ca.cont_slice().unwrap()];
-                groupby_threaded_num(keys, group_size_hint, n_partitions, sorted)
+                groupby_threaded_num(keys, n_partitions, sorted)
             } else {
                 let keys = ca
                     .downcast_iter()
                     .map(|arr| arr.into_iter().map(|x| x.copied()).collect::<Vec<_>>())
                     .collect::<Vec<_>>();
-                groupby_threaded_num(keys, group_size_hint, n_partitions, sorted)
+                groupby_threaded_num(keys, n_partitions, sorted)
             }
             // use the polars-iterators
         } else if !ca.has_validity() {
             let keys = vec![ca.into_no_null_iter().collect::<Vec<_>>()];
-            groupby_threaded_num(keys, group_size_hint, n_partitions, sorted)
+            groupby_threaded_num(keys, n_partitions, sorted)
         } else {
             let keys = vec![ca.into_iter().collect::<Vec<_>>()];
-            groupby_threaded_num(keys, group_size_hint, n_partitions, sorted)
+            groupby_threaded_num(keys, n_partitions, sorted)
         }
     } else if !ca.has_validity() {
         groupby(ca.into_no_null_iter(), sorted)
@@ -143,6 +133,13 @@ where
             partition_to_groups(values, null_count as IdxSize, nulls_first, 0)
         };
         groups
+    }
+}
+
+#[cfg(all(feature = "dtype-categorical", feature = "performant"))]
+impl IntoGroupsProxy for CategoricalChunked {
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
+        Ok(self.group_tuples_perfect(multithreaded, sorted))
     }
 }
 
@@ -282,7 +279,7 @@ impl IntoGroupsProxy for BinaryChunked {
                     })
                     .collect::<Vec<_>>()
             });
-            groupby_threaded_num(byte_hashes, 0, n_partitions as u64, sorted)
+            groupby_threaded_num(byte_hashes, n_partitions as u64, sorted)
         } else {
             let byte_hashes = self
                 .into_iter()
@@ -350,7 +347,6 @@ impl IntoGroupsProxy for ListChunked {
                         .collect::<PolarsResult<Vec<_>>>()?;
                     Ok(groupby_threaded_num(
                         bytes_hashes,
-                        0,
                         n_partitions as u64,
                         sorted,
                     ))
