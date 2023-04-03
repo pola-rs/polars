@@ -18,7 +18,7 @@ use pyo3::basic::CompareOp;
 use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PySequence, PyString, PyTuple};
+use pyo3::types::{PyBool, PyBytes, PyDict, PyFloat, PyList, PySequence, PyString, PyTuple};
 use pyo3::{PyAny, PyResult};
 use smartstring::alias::String as SmartString;
 
@@ -675,8 +675,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
         if ob.is_instance_of::<PyBool>()? {
             Ok(AnyValue::Boolean(ob.extract::<bool>().unwrap()).into())
-        } else if ob.is_instance_of::<PyInt>()? {
-            let value = ob.extract::<i64>().unwrap();
+        } else if let Ok(value) = ob.extract::<i64>() {
             Ok(AnyValue::Int64(value).into())
         } else if ob.is_instance_of::<PyFloat>()? {
             let value = ob.extract::<f64>().unwrap();
