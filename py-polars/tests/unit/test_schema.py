@@ -20,12 +20,12 @@ def test_schema_on_agg() -> None:
             ]
         )
     ).schema == {
-        "a": pl.Utf8,
-        "min": pl.Int64,
-        "max": pl.Int64,
-        "sum": pl.Int64,
-        "first": pl.Int64,
-        "last": pl.Int64,
+        "a": pl.Utf8(),
+        "min": pl.Int64(),
+        "max": pl.Int64(),
+        "sum": pl.Int64(),
+        "first": pl.Int64(),
+        "last": pl.Int64(),
     }
 
 
@@ -196,7 +196,7 @@ def test_fill_null_static_schema_4843() -> None:
 
     df2 = df1.select([pl.col(pl.Int64).fill_null(0)])
     df3 = df2.select(pl.col(pl.Int64))
-    assert df3.schema == {"a": pl.Int64, "b": pl.Int64}
+    assert df3.schema == {"a": pl.Int64(), "b": pl.Int64()}
 
 
 def test_shrink_dtype() -> None:
@@ -261,7 +261,7 @@ def test_boolean_agg_schema() -> None:
         assert (
             agg_df.collect(streaming=streaming).schema
             == agg_df.schema
-            == {"x": pl.Int64, "max_y": pl.Boolean}
+            == {"x": pl.Int64(), "max_y": pl.Boolean()}
         )
 
 
@@ -353,7 +353,7 @@ def test_duration_division_schema() -> None:
         .select(pl.col("a") / pl.col("a"))
     )
 
-    assert q.schema == {"a": pl.Float64}
+    assert q.schema == {"a": pl.Float64()}
     assert q.collect().to_dict(False) == {"a": [1.0]}
 
 

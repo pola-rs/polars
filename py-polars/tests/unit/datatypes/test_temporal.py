@@ -507,7 +507,7 @@ def test_date_range() -> None:
         datetime(2022, 1, 1), datetime(2022, 1, 1, 0, 1), "987456321ns"
     )
     assert len(result) == 61
-    assert result.dtype.time_unit == "ns"  # type: ignore[union-attr]
+    assert result.dtype.time_unit == "ns"  # type: ignore[attr-defined]
     assert result.dt.second()[-1] == 59
     assert result.cast(pl.Utf8)[-1] == "2022-01-01 00:00:59.247379260"
 

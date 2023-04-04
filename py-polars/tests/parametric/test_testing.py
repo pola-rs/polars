@@ -74,7 +74,12 @@ def test_strategy_shape(
     )
 )
 def test_strategy_frame_columns(lf: pl.LazyFrame) -> None:
-    assert lf.schema == {"a": pl.UInt8, "b": pl.UInt8, "c": pl.Boolean, "d": pl.Utf8}
+    assert lf.schema == {
+        "a": pl.UInt8(),
+        "b": pl.UInt8(),
+        "c": pl.Boolean(),
+        "d": pl.Utf8(),
+    }
     assert lf.columns == ["a", "b", "c", "d"]
     df = lf.collect()
 

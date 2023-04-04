@@ -1232,7 +1232,7 @@ def test_lazy_schema() -> None:
             "ham": ["a", "b", "c"],
         }
     )
-    assert ldf.schema == {"foo": pl.Int64, "bar": pl.Float64, "ham": pl.Utf8}
+    assert ldf.schema == {"foo": pl.Int64(), "bar": pl.Float64(), "ham": pl.Utf8()}
 
     ldf = pl.LazyFrame(
         {
@@ -1241,7 +1241,7 @@ def test_lazy_schema() -> None:
             "ham": ["a", "b", "c"],
         }
     )
-    assert ldf.dtypes == [pl.Int64, pl.Float64, pl.Utf8]
+    assert ldf.dtypes == [pl.Int64(), pl.Float64(), pl.Utf8()]
 
     ldfe = ldf.clear()
     assert ldfe.schema == ldf.schema

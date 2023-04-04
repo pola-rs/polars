@@ -13,7 +13,7 @@ def test_dtype() -> None:
     a = pl.Series("a", [[1, 2, 3], [2, 5], [6, 7, 8, 9]])
     assert a.dtype == pl.List
     assert a.inner_dtype == pl.Int64
-    assert a.dtype.inner == pl.Int64  # type: ignore[union-attr]
+    assert a.dtype.inner == pl.Int64  # type: ignore[attr-defined]
 
     # explicit
     df = pl.DataFrame(
@@ -36,7 +36,7 @@ def test_dtype() -> None:
         "dt": pl.List(pl.Date),
         "dtm": pl.List(pl.Datetime),
     }
-    assert df.schema["i"].inner == pl.Int8  # type: ignore[union-attr]
+    assert df.schema["i"].inner == pl.Int8  # type: ignore[attr-defined]
     assert df.rows() == [
         (
             [1, 2, 3],
@@ -141,7 +141,7 @@ def test_cast_inner() -> None:
     # this creates an inner null type
     df = pl.from_pandas(pd.DataFrame(data=[[[]], [[]]], columns=["A"]))
     assert (
-        df["A"].cast(pl.List(int)).dtype.inner == pl.Int64()  # type: ignore[union-attr]
+        df["A"].cast(pl.List(int)).dtype.inner == pl.Int64()  # type: ignore[attr-defined]
     )
 
 
@@ -201,7 +201,7 @@ def test_empty_list_construction() -> None:
     ) == {"array": [[]], "not_array": [1234]}
 
     df = pl.DataFrame(schema=[("col", pl.List)])
-    assert df.schema == {"col": pl.List}
+    assert df.schema == {"col": pl.List(pl.Float64)}
     assert df.rows() == []
 
 

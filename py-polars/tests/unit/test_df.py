@@ -272,7 +272,7 @@ def test_from_dict_with_column_order() -> None:
         # │ 2   ┆ 4   │
         # └─────┴─────┘
         assert df.columns == ["a", "b"]
-        assert df.schema == {"a": pl.UInt8, "b": pl.UInt32}
+        assert df.schema == {"a": pl.UInt8(), "b": pl.UInt32()}
         assert df.rows() == [(1, 3), (2, 4)]
 
         # expect an error
@@ -332,10 +332,10 @@ def test_from_dict_with_scalars() -> None:
         "key": [1, 2, 3],
     }
     assert df4.schema == {
-        "value": pl.Utf8,
-        "other": pl.Float32,
-        "misc": pl.Int32,
-        "key": pl.Int8,
+        "value": pl.Utf8(),
+        "other": pl.Float32(),
+        "misc": pl.Int32(),
+        "key": pl.Int8(),
     }
 
     # mixed with struct cols
@@ -374,10 +374,10 @@ def test_from_dict_with_scalars() -> None:
     )
     assert df7[999:].rows() == [(0, 1, 0, 1), (0, 1, 0, 1)]
     assert df7.schema == {
-        "w": pl.UInt8,
-        "x": pl.UInt8,
-        "y": pl.UInt8,
-        "z": pl.UInt8,
+        "w": pl.UInt8(),
+        "x": pl.UInt8(),
+        "y": pl.UInt8(),
+        "z": pl.UInt8(),
     }
 
     # a bit of everything
@@ -1433,10 +1433,10 @@ def test_from_generator_or_iterable() -> None:
     ):
         assert_frame_equal(expected, generated_frame)
         assert generated_frame.schema == {
-            "a": pl.Utf8,
-            "b": pl.Int64,
-            "c": pl.Int64,
-            "d": pl.Int64,
+            "a": pl.Utf8(),
+            "b": pl.Int64(),
+            "c": pl.Int64(),
+            "d": pl.Int64(),
         }
 
     # test 'iterable_to_pydf' directly to validate 'chunk_size' behaviour
@@ -1673,7 +1673,7 @@ def test_create_df_from_object() -> None:
 
     # from mixed-type input
     df = pl.DataFrame({"x": [["abc", 12, 34.5]], "y": [1]})
-    assert df.schema == {"x": pl.Object, "y": pl.Int64}
+    assert df.schema == {"x": pl.Object(), "y": pl.Int64()}
     assert df.rows() == [(["abc", 12, 34.5], 1)]
 
 
@@ -1952,7 +1952,7 @@ def test_schema() -> None:
     df = pl.DataFrame(
         {"foo": [1, 2, 3], "bar": [6.0, 7.0, 8.0], "ham": ["a", "b", "c"]}
     )
-    expected = {"foo": pl.Int64, "bar": pl.Float64, "ham": pl.Utf8}
+    expected = {"foo": pl.Int64(), "bar": pl.Float64(), "ham": pl.Utf8()}
     assert df.schema == expected
 
 
@@ -2597,7 +2597,7 @@ def test_empty_is_in() -> None:
     )
     assert df_empty_isin.shape == (0, 1)
     assert df_empty_isin.rows() == []
-    assert df_empty_isin.schema == {"foo": pl.Utf8}
+    assert df_empty_isin.schema == {"foo": pl.Utf8()}
 
 
 def test_groupby_slice_expression_args() -> None:

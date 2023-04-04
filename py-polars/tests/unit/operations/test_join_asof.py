@@ -68,7 +68,7 @@ def test_asof_join_schema_5211() -> None:
             df2.lazy(), left_on="today", right_on="next_friday", strategy="forward"
         )
         .schema
-    ) == {"today": pl.Int64, "next_friday": pl.Int64}
+    ) == {"today": pl.Int64(), "next_friday": pl.Int64()}
 
 
 def test_asof_join_schema_5684() -> None:
@@ -101,7 +101,7 @@ def test_asof_join_schema_5684() -> None:
     assert (
         q.schema
         == projected_result.schema
-        == {"id": pl.Int64, "a": pl.Int64, "b_right": pl.Int64}
+        == {"id": pl.Int64(), "a": pl.Int64(), "b_right": pl.Int64()}
     )
 
 

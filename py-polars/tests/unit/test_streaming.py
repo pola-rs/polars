@@ -48,20 +48,20 @@ def test_streaming_groupby_types() -> None:
             .collect(streaming=True)
         )
         assert out.schema == {
-            "str_first": pl.Utf8,
-            "str_last": pl.Utf8,
-            "str_mean": pl.Utf8,
-            "str_sum": pl.Utf8,
-            "bool_first": pl.Boolean,
-            "bool_last": pl.Boolean,
-            "bool_mean": pl.Boolean,
-            "bool_sum": pl.UInt32,
-            "date_sum": pl.Date,
-            "date_mean": pl.Date,
-            "date_first": pl.Date,
-            "date_last": pl.Date,
-            "date_min": pl.Date,
-            "date_max": pl.Date,
+            "str_first": pl.Utf8(),
+            "str_last": pl.Utf8(),
+            "str_mean": pl.Utf8(),
+            "str_sum": pl.Utf8(),
+            "bool_first": pl.Boolean(),
+            "bool_last": pl.Boolean(),
+            "bool_mean": pl.Boolean(),
+            "bool_sum": pl.UInt32(),
+            "date_sum": pl.Date(),
+            "date_mean": pl.Date(),
+            "date_first": pl.Date(),
+            "date_last": pl.Date(),
+            "date_min": pl.Date(),
+            "date_max": pl.Date(),
         }
 
         assert out.to_dict(False) == {

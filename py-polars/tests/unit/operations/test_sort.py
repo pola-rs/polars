@@ -315,7 +315,7 @@ def test_unset_sorted_flag_after_extend() -> None:
 def test_set_sorted_schema() -> None:
     assert (
         pl.DataFrame({"A": [0, 1]}).lazy().with_columns(pl.col("A").set_sorted()).schema
-    ) == {"A": pl.Int64}
+    ) == {"A": pl.Int64()}
 
 
 def test_sort_slice_fast_path_5245() -> None:

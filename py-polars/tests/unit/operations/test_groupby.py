@@ -262,7 +262,7 @@ def test_groupby_sorted_empty_dataframe_3680() -> None:
     )
     assert df.rows() == []
     assert df.shape == (0, 2)
-    assert df.schema == {"key": pl.Categorical, "val": pl.Float64}
+    assert df.schema == {"key": pl.Categorical(), "val": pl.Float64()}
 
 
 def test_groupby_custom_agg_empty_list() -> None:

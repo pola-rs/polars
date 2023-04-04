@@ -113,15 +113,15 @@ def test_from_pandas() -> None:
     out = pl.from_pandas(df)
     assert out.shape == (3, 9)
     assert out.schema == {
-        "bools": pl.Boolean,
-        "bools_nulls": pl.Boolean,
-        "int": pl.Int64,
-        "int_nulls": pl.Float64,
-        "floats": pl.Float64,
-        "floats_nulls": pl.Float64,
-        "strings": pl.Utf8,
-        "strings_nulls": pl.Utf8,
-        "strings-cat": pl.Categorical,
+        "bools": pl.Boolean(),
+        "bools_nulls": pl.Boolean(),
+        "int": pl.Int64(),
+        "int_nulls": pl.Float64(),
+        "floats": pl.Float64(),
+        "floats_nulls": pl.Float64(),
+        "strings": pl.Utf8(),
+        "strings_nulls": pl.Utf8(),
+        "strings-cat": pl.Categorical(),
     }
     assert out.rows() == [
         (False, None, 1, 1.0, 1.0, 1.0, "foo", "foo", "foo"),
@@ -306,7 +306,10 @@ def test_from_dict_struct() -> None:
     assert df.shape == (2, 2)
     assert df["a"][0] == {"b": 1, "c": 2}
     assert df["a"][1] == {"b": 3, "c": 4}
-    assert df.schema == {"a": pl.Struct, "d": pl.Int64}
+    assert df.schema == {
+        "a": pl.Struct({"b": pl.Int64(), "c": pl.Int64()}),
+        "d": pl.Int64(),
+    }
 
 
 def test_from_dicts() -> None:
@@ -314,7 +317,7 @@ def test_from_dicts() -> None:
     df = pl.from_dicts(data)  # type: ignore[arg-type]
     assert df.shape == (3, 2)
     assert df.rows() == [(1, 4), (2, 5), (3, None)]
-    assert df.schema == {"a": pl.Int64, "b": pl.Int64}
+    assert df.schema == {"a": pl.Int64(), "b": pl.Int64()}
 
 
 def test_from_dict_no_inference() -> None:
@@ -327,7 +330,7 @@ def test_from_dicts_schema_override() -> None:
     schema = {
         "a": pl.Utf8,
         "b": pl.Int64,
-        "c": pl.List(pl.Struct({"x": pl.Int64, "y": pl.Utf8, "z": pl.Float64})),
+        "c": pl.List(pl.Struct({"x": pl.Int64(), "y": pl.Utf8(), "z": pl.Float64()})),
     }
 
     # initial data matches the expected schema
@@ -397,7 +400,7 @@ def test_from_numpy() -> None:
     )
     assert df.shape == (3, 2)
     assert df.rows() == [(1, 4), (2, 5), (3, 6)]
-    assert df.schema == {"a": pl.UInt32, "b": pl.UInt32}
+    assert df.schema == {"a": pl.UInt32(), "b": pl.UInt32()}
 
 
 def test_from_arrow() -> None:
