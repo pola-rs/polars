@@ -910,7 +910,7 @@ pub fn fmt_groupby_column(name: &str, method: GroupByMethod) -> String {
 mod test {
     use num_traits::FloatConst;
 
-    use crate::frame::groupby::{groupby, groupby_threaded_num};
+    use crate::frame::groupby::groupby;
     use crate::prelude::*;
     use crate::utils::split_ca;
 
@@ -1111,26 +1111,6 @@ mod test {
             Vec::from(res.column("bar_sum").unwrap().i32().unwrap()),
             &[Some(2), Some(2), Some(1)]
         );
-    }
-
-    #[test]
-    #[cfg_attr(miri, ignore)]
-    fn test_groupby_threaded() {
-        for slice in &[
-            vec![1, 2, 3, 4, 4, 4, 2, 1],
-            vec![1, 2, 3, 4, 4, 4, 2, 1, 1],
-            vec![1, 2, 3, 4, 4, 4],
-        ] {
-            let ca = UInt32Chunked::new("", slice);
-            let split = split_ca(&ca, 4).unwrap();
-
-            let a = groupby(ca.into_iter(), true).into_idx();
-
-            let keys = split.iter().map(|ca| ca.cont_slice().unwrap()).collect();
-            let b = groupby_threaded_num(keys, split.len() as u64, true).into_idx();
-
-            assert_eq!(a, b);
-        }
     }
 
     #[test]
