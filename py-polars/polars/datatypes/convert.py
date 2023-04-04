@@ -19,7 +19,7 @@ from typing import (
     overload,
 )
 
-import polars.datatypes as dt
+import polars.datatypes as pldt
 from polars.dependencies import numpy as np
 from polars.dependencies import pyarrow as pa
 
@@ -63,74 +63,74 @@ def cache(function: Callable[..., T]) -> T:
 
 
 def _normalize_polars_dtype(data_type: PolarsDataType) -> DataType:
-    if isclass(data_type) and issubclass(data_type, dt.DataType):
+    if isclass(data_type) and issubclass(data_type, pldt.DataType):
         return data_type()
     else:
         return data_type  # type: ignore[return-value]
 
 
 PY_STR_TO_DTYPE: dict[str, PolarsDataType] = {
-    "float": dt.Float64,
-    "int": dt.Int64,
-    "str": dt.Utf8,
-    "bool": dt.Boolean,
-    "date": dt.Date,
-    "datetime": dt.Datetime("us"),
-    "timedelta": dt.Duration("us"),
-    "time": dt.Time,
-    "list": dt.List,
-    "tuple": dt.List,
-    "Decimal": dt.Decimal,
-    "bytes": dt.Binary,
-    "object": dt.Object,
-    "NoneType": dt.Null,
+    "float": pldt.Float64,
+    "int": pldt.Int64,
+    "str": pldt.Utf8,
+    "bool": pldt.Boolean,
+    "date": pldt.Date,
+    "datetime": pldt.Datetime("us"),
+    "timedelta": pldt.Duration("us"),
+    "time": pldt.Time,
+    "list": pldt.List,
+    "tuple": pldt.List,
+    "Decimal": pldt.Decimal,
+    "bytes": pldt.Binary,
+    "object": pldt.Object,
+    "NoneType": pldt.Null,
 }
 
 
 @functools.lru_cache(16)
 def map_py_type_to_dtype(python_dtype: PythonDataType | type[object]) -> PolarsDataType:
     if python_dtype is float:
-        return dt.Float64
+        return pldt.Float64
     if python_dtype is int:
-        return dt.Int64
+        return pldt.Int64
     if python_dtype is str:
-        return dt.Utf8
+        return pldt.Utf8
     if python_dtype is bool:
-        return dt.Boolean
+        return pldt.Boolean
     if issubclass(python_dtype, datetime):
         # `datetime` is a subclass of `date`,
         # so need to check `datetime` first
-        return dt.Datetime("us")
+        return pldt.Datetime("us")
     if issubclass(python_dtype, date):
-        return dt.Date
+        return pldt.Date
     if python_dtype is timedelta:
-        return dt.Duration("us")
+        return pldt.Duration("us")
     if python_dtype is time:
-        return dt.Time
+        return pldt.Time
     if python_dtype is list:
-        return dt.List
+        return pldt.List
     if python_dtype is tuple:
-        return dt.List
+        return pldt.List
     if python_dtype is PyDecimal:
-        return dt.Decimal
+        return pldt.Decimal
     if python_dtype is bytes:
-        return dt.Binary
+        return pldt.Binary
     if python_dtype is object:
-        return dt.Object
+        return pldt.Object
     if python_dtype is None.__class__:
-        return dt.Null
+        return pldt.Null
     raise TypeError("Invalid type")
 
 
 def is_polars_dtype(data_type: Any, include_unknown: bool = False) -> bool:
     """Indicate whether the given input is a Polars dtype, or dtype specialisation."""
     try:
-        if data_type == dt.Unknown:
+        if data_type == pldt.Unknown:
             # does not represent a realisable dtype, so ignore by default
             return include_unknown
         else:
-            return isinstance(data_type, dt.DataType) or (
-                isclass(data_type) and issubclass(data_type, dt.DataType)
+            return isinstance(data_type, pldt.DataType) or (
+                isclass(data_type) and issubclass(data_type, pldt.DataType)
             )
     except ValueError:
         return False
@@ -141,73 +141,73 @@ class _DataTypeMappings:
     @cache
     def DTYPE_TO_FFINAME(self) -> dict[PolarsDataType, str]:
         return {
-            dt.Int8: "i8",
-            dt.Int16: "i16",
-            dt.Int32: "i32",
-            dt.Int64: "i64",
-            dt.UInt8: "u8",
-            dt.UInt16: "u16",
-            dt.UInt32: "u32",
-            dt.UInt64: "u64",
-            dt.Float32: "f32",
-            dt.Float64: "f64",
-            dt.Boolean: "bool",
-            dt.Utf8: "str",
-            dt.List: "list",
-            dt.Date: "date",
-            dt.Datetime: "datetime",
-            dt.Duration: "duration",
-            dt.Time: "time",
-            dt.Object: "object",
-            dt.Categorical: "categorical",
-            dt.Struct: "struct",
-            dt.Binary: "binary",
+            pldt.Int8: "i8",
+            pldt.Int16: "i16",
+            pldt.Int32: "i32",
+            pldt.Int64: "i64",
+            pldt.UInt8: "u8",
+            pldt.UInt16: "u16",
+            pldt.UInt32: "u32",
+            pldt.UInt64: "u64",
+            pldt.Float32: "f32",
+            pldt.Float64: "f64",
+            pldt.Boolean: "bool",
+            pldt.Utf8: "str",
+            pldt.List: "list",
+            pldt.Date: "date",
+            pldt.Datetime: "datetime",
+            pldt.Duration: "duration",
+            pldt.Time: "time",
+            pldt.Object: "object",
+            pldt.Categorical: "categorical",
+            pldt.Struct: "struct",
+            pldt.Binary: "binary",
         }
 
     @property
     @cache
     def DTYPE_TO_CTYPE(self) -> dict[PolarsDataType, Any]:
         return {
-            dt.UInt8: ctypes.c_uint8,
-            dt.UInt16: ctypes.c_uint16,
-            dt.UInt32: ctypes.c_uint32,
-            dt.UInt64: ctypes.c_uint64,
-            dt.Int8: ctypes.c_int8,
-            dt.Int16: ctypes.c_int16,
-            dt.Int32: ctypes.c_int32,
-            dt.Date: ctypes.c_int32,
-            dt.Int64: ctypes.c_int64,
-            dt.Float32: ctypes.c_float,
-            dt.Float64: ctypes.c_double,
-            dt.Datetime: ctypes.c_int64,
-            dt.Duration: ctypes.c_int64,
-            dt.Time: ctypes.c_int64,
+            pldt.UInt8: ctypes.c_uint8,
+            pldt.UInt16: ctypes.c_uint16,
+            pldt.UInt32: ctypes.c_uint32,
+            pldt.UInt64: ctypes.c_uint64,
+            pldt.Int8: ctypes.c_int8,
+            pldt.Int16: ctypes.c_int16,
+            pldt.Int32: ctypes.c_int32,
+            pldt.Date: ctypes.c_int32,
+            pldt.Int64: ctypes.c_int64,
+            pldt.Float32: ctypes.c_float,
+            pldt.Float64: ctypes.c_double,
+            pldt.Datetime: ctypes.c_int64,
+            pldt.Duration: ctypes.c_int64,
+            pldt.Time: ctypes.c_int64,
         }
 
     @property
     @cache
     def DTYPE_TO_PY_TYPE(self) -> dict[PolarsDataType, PythonDataType]:
         return {
-            dt.Float64: float,
-            dt.Float32: float,
-            dt.Int64: int,
-            dt.Int32: int,
-            dt.Int16: int,
-            dt.Int8: int,
-            dt.Utf8: str,
-            dt.UInt8: int,
-            dt.UInt16: int,
-            dt.UInt32: int,
-            dt.UInt64: int,
-            dt.Decimal: PyDecimal,
-            dt.Boolean: bool,
-            dt.Duration: timedelta,
-            dt.Datetime: datetime,
-            dt.Date: date,
-            dt.Time: time,
-            dt.Binary: bytes,
-            dt.List: list,
-            dt.Null: None.__class__,
+            pldt.Float64: float,
+            pldt.Float32: float,
+            pldt.Int64: int,
+            pldt.Int32: int,
+            pldt.Int16: int,
+            pldt.Int8: int,
+            pldt.Utf8: str,
+            pldt.UInt8: int,
+            pldt.UInt16: int,
+            pldt.UInt32: int,
+            pldt.UInt64: int,
+            pldt.Decimal: PyDecimal,
+            pldt.Boolean: bool,
+            pldt.Duration: timedelta,
+            pldt.Datetime: datetime,
+            pldt.Date: date,
+            pldt.Time: time,
+            pldt.Binary: bytes,
+            pldt.List: list,
+            pldt.Null: None.__class__,
         }
 
     @property
@@ -215,16 +215,16 @@ class _DataTypeMappings:
     def NUMPY_KIND_AND_ITEMSIZE_TO_DTYPE(self) -> dict[tuple[str, int], PolarsDataType]:
         return {
             # (np.dtype().kind, np.dtype().itemsize)
-            ("i", 1): dt.Int8,
-            ("i", 2): dt.Int16,
-            ("i", 4): dt.Int32,
-            ("i", 8): dt.Int64,
-            ("u", 1): dt.UInt8,
-            ("u", 2): dt.UInt16,
-            ("u", 4): dt.UInt32,
-            ("u", 8): dt.UInt64,
-            ("f", 4): dt.Float32,
-            ("f", 8): dt.Float64,
+            ("i", 1): pldt.Int8,
+            ("i", 2): pldt.Int16,
+            ("i", 4): pldt.Int32,
+            ("i", 8): pldt.Int64,
+            ("u", 1): pldt.UInt8,
+            ("u", 2): pldt.UInt16,
+            ("u", 4): pldt.UInt32,
+            ("u", 8): pldt.UInt64,
+            ("f", 4): pldt.Float32,
+            ("f", 8): pldt.Float64,
         }
 
     @property
@@ -246,27 +246,27 @@ class _DataTypeMappings:
     @cache
     def DTYPE_TO_ARROW_TYPE(self) -> dict[PolarsDataType, pa.lib.DataType]:
         return {
-            dt.Int8(): pa.int8(),
-            dt.Int16(): pa.int16(),
-            dt.Int32(): pa.int32(),
-            dt.Int64(): pa.int64(),
-            dt.UInt8(): pa.uint8(),
-            dt.UInt16(): pa.uint16(),
-            dt.UInt32(): pa.uint32(),
-            dt.UInt64(): pa.uint64(),
-            dt.Float32(): pa.float32(),
-            dt.Float64(): pa.float64(),
-            dt.Boolean(): pa.bool_(),
-            dt.Utf8(): pa.large_utf8(),
-            dt.Date(): pa.date32(),
-            dt.Datetime("ms"): pa.timestamp("ms"),
-            dt.Datetime("us"): pa.timestamp("us"),
-            dt.Datetime("ns"): pa.timestamp("ns"),
-            dt.Duration("ms"): pa.duration("ms"),
-            dt.Duration("us"): pa.duration("us"),
-            dt.Duration("ns"): pa.duration("ns"),
-            dt.Time(): pa.time64("us"),
-            dt.Null(): pa.null(),
+            pldt.Int8(): pa.int8(),
+            pldt.Int16(): pa.int16(),
+            pldt.Int32(): pa.int32(),
+            pldt.Int64(): pa.int64(),
+            pldt.UInt8(): pa.uint8(),
+            pldt.UInt16(): pa.uint16(),
+            pldt.UInt32(): pa.uint32(),
+            pldt.UInt64(): pa.uint64(),
+            pldt.Float32(): pa.float32(),
+            pldt.Float64(): pa.float64(),
+            pldt.Boolean(): pa.bool_(),
+            pldt.Utf8(): pa.large_utf8(),
+            pldt.Date(): pa.date32(),
+            pldt.Datetime("ms"): pa.timestamp("ms"),
+            pldt.Datetime("us"): pa.timestamp("us"),
+            pldt.Datetime("ns"): pa.timestamp("ns"),
+            pldt.Duration("ms"): pa.duration("ms"),
+            pldt.Duration("us"): pa.duration("us"),
+            pldt.Duration("ns"): pa.duration("ns"),
+            pldt.Time(): pa.time64("us"),
+            pldt.Null(): pa.null(),
         }
 
     @property
@@ -280,7 +280,7 @@ class _DataTypeMappings:
 
         return {
             _dtype_str_repr_safe(obj): obj  # type: ignore[misc]
-            for obj in dt.POLARS_DTYPES
+            for obj in pldt.POLARS_DTYPES
             if _dtype_str_repr_safe(obj) is not None
         }
 
@@ -387,8 +387,8 @@ def dtype_to_arrow_type(dtype: PolarsDataType) -> pa.lib.DataType:
     try:
         # special handling for mapping to tz-aware timestamp type.
         # (don't want to include every possible tz string in the lookup)
-        if isinstance(dtype, dt.Datetime):
-            dtype, time_zone = dt.Datetime(dtype.time_unit), dtype.time_zone
+        if isinstance(dtype, pldt.Datetime):
+            dtype, time_zone = pldt.Datetime(dtype.time_unit), dtype.time_zone
             arrow_type = DataTypeMappings.DTYPE_TO_ARROW_TYPE[dtype]
             if time_zone is not None:
                 arrow_type = pa.timestamp(dtype.time_unit, time_zone)

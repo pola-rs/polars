@@ -4,7 +4,7 @@ import contextlib
 from inspect import isclass
 from typing import TYPE_CHECKING, Any, Iterator, Mapping, Sequence
 
-import polars.datatypes as dt
+import polars.datatypes as pldt
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import dtype_str_repr as _dtype_str_repr
@@ -308,7 +308,7 @@ class List(NestedType):
             The `DataType` of values within the list
 
         """
-        self.inner = dt.py_type_to_dtype(inner)
+        self.inner = pldt.py_type_to_dtype(inner)
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
         # The comparison allows comparing objects to classes
@@ -398,7 +398,7 @@ class Field:
 
         """
         self.name = name
-        self.dtype = dt.py_type_to_dtype(dtype)
+        self.dtype = pldt.py_type_to_dtype(dtype)
 
     def __eq__(self, other: Field) -> bool:  # type: ignore[override]
         return (self.name == other.name) & (self.dtype == other.dtype)
