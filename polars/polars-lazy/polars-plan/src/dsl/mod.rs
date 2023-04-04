@@ -615,8 +615,22 @@ impl Expr {
     ///
     /// This has time complexity `O(n + k log(n))`.
     #[cfg(feature = "top_k")]
-    pub fn top_k(self, k: usize, descending: bool) -> Self {
-        self.apply_private(FunctionExpr::TopK { k, descending })
+    pub fn top_k(self, k: usize) -> Self {
+        self.apply_private(FunctionExpr::TopK {
+            k,
+            descending: false,
+        })
+    }
+
+    /// Returns the `k` smallest elements.
+    ///
+    /// This has time complexity `O(n + k log(n))`.
+    #[cfg(feature = "top_k")]
+    pub fn bottom_k(self, k: usize) -> Self {
+        self.apply_private(FunctionExpr::TopK {
+            k,
+            descending: true,
+        })
     }
 
     /// Reverse column

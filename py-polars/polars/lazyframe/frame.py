@@ -1248,6 +1248,37 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             descending = [descending]
         return self._from_pyldf(self._ldf.top_k(k, by, descending, nulls_last))
 
+    def bottom_k(
+        self,
+        k: int,
+        *,
+        by: IntoExpr | Iterable[IntoExpr],
+        descending: bool | Sequence[bool] = False,
+        nulls_last: bool = False,
+    ) -> Self:
+        """
+        Return the `k` smallest elements.
+
+        If 'descending=True` the largest elements will be given.
+
+        Parameters
+        ----------
+        k
+            Number of rows to return.
+        by
+            Column(s) included in sort order. Accepts expression input.
+            Strings are parsed as column names.
+        descending
+            Return the 'k' smallest. Top-k by multiple columns can be specified
+            per column by passing a sequence of booleans.
+        nulls_last
+            Place null values last.
+        """
+        by = selection_to_pyexpr_list(by)
+        if isinstance(descending, bool):
+            descending = [descending]
+        return self._from_pyldf(self._ldf.bottom_k(k, by, descending, nulls_last))
+
     @deprecate_nonkeyword_arguments()
     def profile(
         self,
