@@ -11,7 +11,7 @@ impl<'a> AggregationContext<'a> {
         match self.agg_state() {
             AggState::Literal(_) => {
                 self.groups();
-                let s = self.series();
+                let s = self.series().rechunk();
                 Box::new(LitIter::new(s.array_ref(0).clone(), self.groups.len()))
             }
             AggState::AggregatedFlat(_) => {
