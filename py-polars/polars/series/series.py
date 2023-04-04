@@ -2214,6 +2214,22 @@ class Series:
         k
             Number of elements to return.
 
+        See Also
+        --------
+        bottom_k
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [2, 5, 1, 4, 3])
+        >>> s.top_k(3)
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            5
+            4
+            3
+        ]
+
         """
 
     def bottom_k(self, k: int = 5) -> Series:
@@ -2228,6 +2244,22 @@ class Series:
         ----------
         k
             Number of elements to return.
+
+        See Also
+        --------
+        top_k
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [2, 5, 1, 4, 3])
+        >>> s.bottom_k(3)
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            1
+            2
+            3
+        ]
 
         """
 

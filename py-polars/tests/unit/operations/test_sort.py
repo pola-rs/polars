@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_sort_dates_multiples() -> None:
@@ -252,14 +252,17 @@ def test_arg_sort_rank_nans() -> None:
 
 def test_top_k() -> None:
     # expression
-    s = pl.Series([3, 1, 2, 5, 8])
+    s = pl.Series("a", [3, 8, 1, 5, 2])
 
-    assert s.top_k(3).to_list() == [8, 5, 3]
-    assert s.bottom_k(4).to_list() == [1, 2, 3, 5]
+    assert_series_equal(s.top_k(3), pl.Series("a", [8, 5, 3]))
+    assert_series_equal(s.bottom_k(4), pl.Series("a", [1, 2, 3, 5]))
 
     # 5886
-    df = pl.DataFrame({"test": [4, 3, 2, 1]})
-    assert_frame_equal(df.select(pl.col("test").top_k(10)), df)
+    df = pl.DataFrame({"test": [2, 4, 1, 3]})
+    assert_frame_equal(
+        df.select(pl.col("test").top_k(10)),
+        pl.DataFrame({"test": [4, 3, 2, 1]}),
+    )
 
     # dataframe
     df = pl.DataFrame(
@@ -269,15 +272,19 @@ def test_top_k() -> None:
         }
     )
 
-    assert df.top_k(3, by=["a", "b"]).to_dict(False) == {"a": [4, 3, 2], "b": [4, 1, 3]}
+    assert_frame_equal(
+        df.top_k(3, by=["a", "b"]),
+        pl.DataFrame({"a": [4, 3, 2], "b": [4, 1, 3]}),
+    )
 
-    assert df.top_k(
-        3,
-        by=["a", "b"],
-        descending=True,
-    ).to_dict(
-        False
-    ) == {"a": [1, 2, 2], "b": [3, 2, 2]}
+    assert_frame_equal(
+        df.top_k(3, by=["a", "b"], descending=True),
+        pl.DataFrame({"a": [1, 2, 2], "b": [3, 2, 2]}),
+    )
+    assert_frame_equal(
+        df.bottom_k(4, by=["a", "b"], descending=True),
+        pl.DataFrame({"a": [4, 3, 2, 2], "b": [4, 1, 3, 2]}),
+    )
 
 
 def test_sorted_flag_unset_by_arithmetic_4937() -> None:

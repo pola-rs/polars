@@ -1788,6 +1788,10 @@ class Expr:
         k
             Number of elements to return.
 
+        See Also
+        --------
+        bottom_k
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -1829,6 +1833,10 @@ class Expr:
         ----------
         k
             Number of elements to return.
+
+        See Also
+        --------
+        top_k
 
         Examples
         --------
