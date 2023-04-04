@@ -14,7 +14,6 @@ from polars.utils.convert import (
     _timedelta_to_pl_duration,
     _tzinfo_to_str,
 )
-from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import concat_df as _concat_df
@@ -139,13 +138,13 @@ def concat(
     ...
 
 
-@deprecate_nonkeyword_arguments()
 def concat(
     items: (
         Iterable[DataFrame] | Iterable[Series] | Iterable[LazyFrame] | Iterable[Expr]
     ),
-    rechunk: bool = True,
+    *,
     how: ConcatMethod = "vertical",
+    rechunk: bool = True,
     parallel: bool = True,
 ) -> DataFrame | Series | LazyFrame | Expr:
     """
@@ -155,8 +154,6 @@ def concat(
     ----------
     items
         DataFrames/Series/LazyFrames to concatenate.
-    rechunk
-        Make sure that all data is in contiguous memory.
     how : {'vertical', 'diagonal', 'horizontal'}
         Series only supports the `vertical` strategy.
         LazyFrames only supports `vertical` and `diagonal` strategy.
@@ -166,6 +163,8 @@ def concat(
             values with null.
         - Horizontal: stacks Series from DataFrames horizontally and fills with nulls
             if the lengths don't match.
+    rechunk
+        Make sure that all data is in contiguous memory.
     parallel
         Only relevant for LazyFrames. This determines if the concatenated
         lazy computations may be executed in parallel.
@@ -603,7 +602,6 @@ def align_frames(
     ...
 
 
-@deprecated_alias(reverse="descending")
 def align_frames(
     *frames: DataFrame | LazyFrame,
     on: str | Expr | Sequence[str] | Sequence[Expr] | Sequence[str | Expr],

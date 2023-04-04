@@ -28,7 +28,6 @@ from polars.utils.convert import (
     _time_to_pl_time,
     _timedelta_to_pl_timedelta,
 )
-from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arange as pyarange
@@ -472,7 +471,6 @@ def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
     ...
 
 
-@deprecated_alias(column="exprs")
 def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | Any:
     """
     Get the maximum value.
@@ -565,7 +563,6 @@ def min(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
     ...
 
 
-@deprecated_alias(column="exprs")
 def min(
     exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr
 ) -> Expr | PythonLiteral | None:
@@ -1159,9 +1156,8 @@ def tail(column: str | Series, n: int = 10) -> Expr | Series:
     return col(column).tail(n)
 
 
-@deprecate_nonkeyword_arguments(allowed_args=["value", "dtype"])
 def lit(
-    value: Any, dtype: PolarsDataType | None = None, allow_object: bool = False
+    value: Any, dtype: PolarsDataType | None = None, *, allow_object: bool = False
 ) -> Expr:
     """
     Return an expression representing a literal value.
@@ -1363,9 +1359,8 @@ def cumsum(
     return cumfold(lit(0).cast(UInt32), lambda a, b: a + b, column).alias("cumsum")
 
 
-@deprecate_nonkeyword_arguments(allowed_args=["a", "b", "ddof"])
 def spearman_rank_corr(
-    a: str | Expr, b: str | Expr, ddof: int = 1, propagate_nans: bool = False
+    a: str | Expr, b: str | Expr, ddof: int = 1, *, propagate_nans: bool = False
 ) -> Expr:
     """
     Compute the spearman rank correlation between two columns.
@@ -1572,7 +1567,6 @@ def cov(a: str | Expr, b: str | Expr) -> Expr:
     return wrap_expr(pycov(a._pyexpr, b._pyexpr))
 
 
-@deprecated_alias(f="function")
 def map(
     exprs: Sequence[str] | Sequence[Expr],
     function: Callable[[Sequence[Series]], Series],
@@ -1635,14 +1629,11 @@ def map(
     )
 
 
-@deprecated_alias(f="function")
-@deprecate_nonkeyword_arguments(
-    allowed_args=["exprs", "function", "return_dtype"], stacklevel=3
-)
 def apply(
     exprs: Sequence[str | Expr],
     function: Callable[[Sequence[Series]], Series | Any],
     return_dtype: PolarsDataType | None = None,
+    *,
     returns_scalar: bool = True,
 ) -> Expr:
     """
@@ -1719,7 +1710,6 @@ def apply(
     )
 
 
-@deprecated_alias(f="function")
 def fold(
     acc: IntoExpr,
     function: Callable[[Series, Series], Series],
@@ -1828,7 +1818,6 @@ def fold(
     return wrap_expr(pyfold(acc._pyexpr, function, exprs))
 
 
-@deprecated_alias(f="function")
 def reduce(
     function: Callable[[Series, Series], Series],
     exprs: Sequence[Expr | str] | Expr,
@@ -1893,12 +1882,11 @@ def reduce(
     return wrap_expr(pyreduce(function, exprs))
 
 
-@deprecated_alias(f="function")
-@deprecate_nonkeyword_arguments(stacklevel=3)
 def cumfold(
     acc: IntoExpr,
     function: Callable[[Series, Series], Series],
     exprs: Sequence[Expr | str] | Expr,
+    *,
     include_init: bool = False,
 ) -> Expr:
     """
@@ -1971,7 +1959,6 @@ def cumfold(
     return wrap_expr(pycumfold(acc._pyexpr, function, exprs, include_init))
 
 
-@deprecated_alias(f="function")
 def cumreduce(
     function: Callable[[Series, Series], Series],
     exprs: Sequence[Expr | str] | Expr,
@@ -2703,9 +2690,9 @@ def concat_list(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> 
     return wrap_expr(_concat_lst(exprs))
 
 
-@deprecate_nonkeyword_arguments()
 def collect_all(
     lazy_frames: Sequence[LazyFrame],
+    *,
     type_coercion: bool = True,
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
