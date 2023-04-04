@@ -2370,6 +2370,10 @@ def arg_sort_by(
 
     if isinstance(descending, bool):
         descending = [descending] * len(exprs)
+    elif len(exprs) != len(descending):
+        raise ValueError(
+            f"the length of `descending` ({len(descending)}) does not match the length of `exprs` ({len(exprs)})"
+        )
     return wrap_expr(py_arg_sort_by(exprs, descending))
 
 
