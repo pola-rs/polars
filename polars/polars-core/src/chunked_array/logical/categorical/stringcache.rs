@@ -34,21 +34,21 @@ impl Default for IUseStringCache {
 impl IUseStringCache {
     /// Hold the StringCache
     pub fn new() -> IUseStringCache {
-        toggle_string_cache(true);
+        enable_string_cache(true);
         IUseStringCache { private_zst: () }
     }
 }
 
 impl Drop for IUseStringCache {
     fn drop(&mut self) {
-        toggle_string_cache(false)
+        enable_string_cache(false)
     }
 }
 
 pub fn with_string_cache<F: FnOnce() -> T, T>(func: F) -> T {
-    toggle_string_cache(true);
+    enable_string_cache(true);
     let out = func();
-    toggle_string_cache(false);
+    enable_string_cache(false);
     out
 }
 
@@ -56,7 +56,7 @@ pub fn with_string_cache<F: FnOnce() -> T, T>(func: F) -> T {
 ///
 /// This is used to cache the string categories locally.
 /// This allows join operations on categorical types.
-pub fn toggle_string_cache(toggle: bool) {
+pub fn enable_string_cache(toggle: bool) {
     if toggle {
         USE_STRING_CACHE.fetch_add(1, Ordering::Release);
     } else {

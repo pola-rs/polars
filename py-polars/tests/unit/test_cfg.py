@@ -466,7 +466,7 @@ def test_string_cache() -> None:
     df2 = pl.DataFrame({"a": ["foo", "spam", "eggs"], "c": [3, 2, 2]})
 
     # ensure cache is off when casting to categorical; the join will fail
-    pl.toggle_string_cache(False)
+    pl.enable_string_cache(False)
     assert pl.using_string_cache() is False
 
     df1a = df1.with_columns(pl.col("a").cast(pl.Categorical))
@@ -475,7 +475,7 @@ def test_string_cache() -> None:
         _ = df1a.join(df2a, on="a", how="inner")
 
     # now turn on the cache
-    pl.toggle_string_cache(True)
+    pl.enable_string_cache(True)
     assert pl.using_string_cache() is True
 
     df1b = df1.with_columns(pl.col("a").cast(pl.Categorical))
