@@ -280,8 +280,8 @@ class _DataTypeMappings:
 
         return {
             _dtype_str_repr_safe(obj): obj  # type: ignore[misc]
-            for obj in globals().values()
-            if is_polars_dtype(obj) and _dtype_str_repr_safe(obj) is not None
+            for obj in dt.POLARS_DTYPES
+            if _dtype_str_repr_safe(obj) is not None
         }
 
 
@@ -422,7 +422,7 @@ def dtype_short_repr_to_dtype(dtype_string: str | None) -> PolarsDataType | None
             return dtype(*subtype)  # type: ignore[operator]
         except ValueError:
             pass
-    return dtype
+    return _normalize_polars_dtype(dtype)
 
 
 def supported_numpy_char_code(dtype_char: str) -> bool:

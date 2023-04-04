@@ -355,11 +355,11 @@ def from_repr(tbl: str) -> DataFrame:
     schema = dict(zip(headers, (dtype_short_repr_to_dtype(d) for d in dtypes)))
     for tp in set(schema.values()):
         # TODO: handle basic compound types
-        if tp in (List, Struct):
+        if isinstance(tp, (List, Struct)):
             raise NotImplementedError(
                 f"'from_repr' does not (yet) support {tp} dtype columns"
             )
-        elif tp == Object:
+        elif isinstance(tp, Object):
             raise ValueError("'from_repr' does not (and cannot) support Object dtype")
 
     # construct DataFrame from string series and cast from repr to native dtype

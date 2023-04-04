@@ -38,7 +38,9 @@ from polars.datatypes.constants import (
     FLOAT_DTYPES,
     INTEGER_DTYPES,
     N_INFER_DEFAULT,
+    NESTED_DTYPES,
     NUMERIC_DTYPES,
+    POLARS_DTYPES,
     TEMPORAL_DTYPES,
 )
 from polars.datatypes.constructor import (
@@ -109,7 +111,9 @@ __all__ = [
     "FLOAT_DTYPES",
     "INTEGER_DTYPES",
     "N_INFER_DEFAULT",
+    "NESTED_DTYPES",
     "NUMERIC_DTYPES",
+    "POLARS_DTYPES",
     "TEMPORAL_DTYPES",
     # constructor
     "numpy_type_to_constructor",
