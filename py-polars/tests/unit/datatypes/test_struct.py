@@ -877,3 +877,14 @@ def test_struct_with_lit() -> None:
         .select(expr)
         .to_dict(False)
     ) == {"a": [{"a": 1, "b": 1}, {"a": 2, "b": 1}]}
+
+
+def test_struct_unique_df() -> None:
+    df = pl.DataFrame(
+        {
+            "numerical": [1, 2, 1],
+            "struct": [{"x": 1, "y": 2}, {"x": 3, "y": 4}, {"x": 1, "y": 2}],
+        }
+    )
+
+    df.select("numerical", "struct").unique().sort("numerical")
