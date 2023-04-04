@@ -26,6 +26,7 @@ from polars.datatypes import (
     Categorical,
     Date,
     Datetime,
+    Decimal,
     Duration,
     Float32,
     List,
@@ -588,7 +589,11 @@ def _unpack_schema(
             ]
     for col, dtype in column_dtypes.items():
         if not is_polars_dtype(dtype, include_unknown=True) and dtype is not None:
-            column_dtypes[col] = py_type_to_dtype(dtype)
+            pl_dtype = py_type_to_dtype(dtype)
+            # Do not instantiate Decimal types here (temporary workaround)
+            if isinstance(pl_dtype, Decimal):
+                pl_dtype = Decimal  # type: ignore[assignment]
+            column_dtypes[col] = pl_dtype
 
     return (
         column_names,  # type: ignore[return-value]
@@ -897,10 +902,13 @@ def _sequence_of_tuple_to_pydf(
         if schema is None:
             schema = first_element._fields  # type: ignore[attr-defined]
             if len(first_element.__annotations__) == len(schema):
-                schema = [
-                    (name, py_type_to_dtype(tp, raise_unmatched=False))
-                    for name, tp in first_element.__annotations__.items()
-                ]
+                schema = []
+                for name, tp in first_element.__annotations__.items():
+                    dtype = py_type_to_dtype(tp, raise_unmatched=False)
+                    # Do not instantiate Decimal types here (temporary workaround)
+                    if isinstance(dtype, Decimal):
+                        dtype = Decimal  # type: ignore[assignment]
+                    schema.append((name, dtype))
         elif orient is None:
             orient = "row"
 
@@ -1019,15 +1027,18 @@ def _sequence_of_dataclasses_to_pydf(
         }
     else:
         column_names = []
-        schema_override = {
-            col: (py_type_to_dtype(tp, raise_unmatched=False) or Unknown)
-            for col, tp in dataclass_type_hints(first_element.__class__).items()
-        }
+        schema_override = {}
+        for col, tp in dataclass_type_hints(first_element.__class__).items():
+            pl_dtype = py_type_to_dtype(tp, raise_unmatched=False) or Unknown
+            # Do not instantiate Decimal types here (temporary workaround)
+            if isinstance(pl_dtype, Decimal):
+                pl_dtype = Decimal  # type: ignore[assignment]
+            schema_override[col] = pl_dtype
         schema_override.update(schema_overrides or {})
 
     for col, tp in schema_override.items():
         if tp == Categorical:
-            schema_override[col] = Utf8
+            schema_override[col] = Utf8()
 
     pydf = PyDataFrame.read_rows(
         [astuple(dc) for dc in data],

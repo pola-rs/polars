@@ -144,9 +144,9 @@ def test_init_dataclasses_and_namedtuple(monkeypatch: Any) -> None:
             df = DF(data=trades)  # type: ignore[operator]
             assert df.schema == {
                 "timestamp": pl.Datetime("us"),
-                "ticker": pl.Utf8,
+                "ticker": pl.Utf8(),
                 "price": pl.Decimal(None, 1),
-                "size": pl.Int64,
+                "size": pl.Int64(),
             }
             assert df.rows() == raw_data
 
