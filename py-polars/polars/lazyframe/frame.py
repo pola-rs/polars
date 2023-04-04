@@ -1246,6 +1246,50 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             per column by passing a sequence of booleans.
         nulls_last
             Place null values last.
+
+        See Also
+        --------
+        bottom_k
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": ["a", "b", "a", "b", "b", "c"],
+        ...         "b": [2, 1, 1, 3, 2, 1],
+        ...     }
+        ... )
+
+        Get the rows which contain the 4 largest values in column b.
+
+        >>> lf.top_k(4, by="b").collect()
+        shape: (4, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ str ┆ i64 │
+        ╞═════╪═════╡
+        │ b   ┆ 3   │
+        │ a   ┆ 2   │
+        │ b   ┆ 2   │
+        │ b   ┆ 1   │
+        └─────┴─────┘
+
+        Get the rows which contain the 4 largest values when sorting on column b and a.
+
+        >>> lf.top_k(4, by=["b", "a"]).collect()
+        shape: (4, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ str ┆ i64 │
+        ╞═════╪═════╡
+        │ b   ┆ 3   │
+        │ b   ┆ 2   │
+        │ a   ┆ 2   │
+        │ c   ┆ 1   │
+        └─────┴─────┘
+
         """
         by = selection_to_pyexpr_list(by)
         if isinstance(descending, bool):
@@ -1281,6 +1325,50 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             per column by passing a sequence of booleans.
         nulls_last
             Place null values last.
+
+        See Also
+        --------
+        top_k
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": ["a", "b", "a", "b", "b", "c"],
+        ...         "b": [2, 1, 1, 3, 2, 1],
+        ...     }
+        ... )
+
+        Get the rows which contain the 4 smallest values in column b.
+
+        >>> lf.bottom_k(4, by="b").collect()
+        shape: (4, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ str ┆ i64 │
+        ╞═════╪═════╡
+        │ b   ┆ 1   │
+        │ a   ┆ 1   │
+        │ c   ┆ 1   │
+        │ a   ┆ 2   │
+        └─────┴─────┘
+
+        Get the rows which contain the 4 smallest values when sorting on column a and b.
+
+        >>> lf.bottom_k(4, by=["a", "b"]).collect()
+        shape: (4, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ str ┆ i64 │
+        ╞═════╪═════╡
+        │ a   ┆ 1   │
+        │ a   ┆ 2   │
+        │ b   ┆ 1   │
+        │ b   ┆ 2   │
+        └─────┴─────┘
+
         """
         by = selection_to_pyexpr_list(by)
         if isinstance(descending, bool):
