@@ -573,7 +573,7 @@ mod test {
         let ll: ListChunked = [&s1, &s2].iter().copied().collect();
         assert_eq!(ll.len(), 2);
         assert_eq!(ll.null_count(), 0);
-        let ll: ListChunked = [None, Some(s2)].iter().map(|opt| opt.clone()).collect();
+        let ll: ListChunked = [None, Some(s2)].into_iter().collect();
         assert_eq!(ll.len(), 2);
         assert_eq!(ll.null_count(), 1);
     }

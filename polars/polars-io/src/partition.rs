@@ -146,7 +146,7 @@ mod test {
 
         let option = IpcWriterOption::new();
 
-        PartitionedWriter::new(option, &rootdir, by).finish(&df)?;
+        PartitionedWriter::new(option, rootdir, by).finish(&df)?;
 
         let expected_dfs = [
             df!("a" => [1, 1], "b" => [2, 2], "c" => [2, 3])?,
@@ -157,13 +157,13 @@ mod test {
         let expected: Vec<(PathBuf, DataFrame)> = ["a=1/b=2", "a=2/b=3", "a=3/b=4"]
             .into_iter()
             .zip(expected_dfs.into_iter())
-            .map(|(p, df)| (PathBuf::from(rootdir.join(p)), df))
+            .map(|(p, df)| (rootdir.join(p), df))
             .collect();
 
         for (expected_dir, expected_df) in expected.iter() {
             assert!(expected_dir.exists());
 
-            let ipc_paths = std::fs::read_dir(&expected_dir)?
+            let ipc_paths = std::fs::read_dir(expected_dir)?
                 .map(|e| {
                     let entry = e?;
                     Ok(entry.path())

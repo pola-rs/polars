@@ -760,7 +760,7 @@ mod test {
     fn test_utf8_kernel() {
         let s = LargeStringArray::from(vec![Some("foo"), None, Some("bar")]);
         unsafe {
-            let out = take_utf8_unchecked(&s, &IdxArr::from_slice(&[1, 2]));
+            let out = take_utf8_unchecked(&s, &IdxArr::from_slice([1, 2]));
             assert!(out.is_null(0));
             assert!(out.is_valid(1));
             let out = take_utf8_unchecked(&s, &IdxArr::from(vec![None, Some(2)]));
