@@ -269,6 +269,19 @@ impl LazyFrame {
             .slice(0, k)
     }
 
+    pub fn bottom_k<E: AsRef<[Expr]>, B: AsRef<[bool]>>(
+        self,
+        k: IdxSize,
+        by_exprs: E,
+        descending: B,
+        nulls_last: bool,
+    ) -> Self {
+        let descending = descending.as_ref().to_vec();
+        // this will optimize to bottom-k
+        self.sort_by_exprs(by_exprs, descending, nulls_last)
+            .slice(0, k)
+    }
+
     /// Reverse the DataFrame
     ///
     /// # Example

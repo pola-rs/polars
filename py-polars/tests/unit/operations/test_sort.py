@@ -255,7 +255,7 @@ def test_top_k() -> None:
     s = pl.Series([3, 1, 2, 5, 8])
 
     assert s.top_k(3).to_list() == [8, 5, 3]
-    assert s.top_k(4, descending=True).to_list() == [1, 2, 3, 5]
+    assert s.bottom_k(4).to_list() == [1, 2, 3, 5]
 
     # 5886
     df = pl.DataFrame({"test": [4, 3, 2, 1]})
