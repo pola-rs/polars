@@ -22,6 +22,9 @@ mod proxy;
 pub use into_groups::*;
 pub use proxy::*;
 
+#[cfg(feature = "dtype-struct")]
+use crate::prelude::sort::arg_sort_multiple::encode_rows_vertical;
+
 // This will remove the sorted flag on signed integers
 fn prepare_dataframe_unsorted(by: &[Series]) -> DataFrame {
     DataFrame::new_no_checks(
@@ -75,6 +78,14 @@ impl DataFrame {
             let series = &by[0];
             series.group_tuples(multithreaded, sorted)
         } else {
+            #[cfg(feature = "dtype-struct")]
+            {
+                if by.iter().any(|s| matches!(s.dtype(), DataType::Struct(_))) {
+                    let rows = encode_rows_vertical(&by)?;
+                    let groups = rows.group_tuples(multithreaded, sorted)?;
+                    return Ok(GroupBy::new(self, by, groups, None));
+                }
+            }
             let keys_df = prepare_dataframe_unsorted(&by);
             groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
         };
