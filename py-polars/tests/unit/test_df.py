@@ -69,11 +69,6 @@ def test_special_char_colname_init() -> None:
         assert len(df.rows()) == 0
         assert df.is_empty()
 
-        # TODO: remove once 'columns' -> 'schema' transition complete
-        with pytest.deprecated_call():
-            df2 = pl.DataFrame(columns=cols)  # type: ignore[call-arg]
-            assert_frame_equal(df, df2)
-
 
 def test_comparisons() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
