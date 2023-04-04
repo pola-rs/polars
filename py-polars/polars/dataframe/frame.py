@@ -3508,7 +3508,6 @@ class DataFrame:
         max_num_values = min(10, self.height)
 
         def _parse_column(col_name: str, dtype: DataType) -> tuple[str, str, str]:
-            # TODO: Normalize first?
             dtype_str = f"<{dtype._string_repr()}>"
             val = self[:max_num_values][col_name].to_list()
             val_str = ", ".join(map(str, val))
