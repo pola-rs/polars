@@ -160,7 +160,7 @@ class column:
     >>> from hypothesis.strategies import sampled_from
     >>> from polars.testing.parametric import column
     >>> column(name="unique_small_ints", dtype=pl.UInt8, unique=True)
-    column(name='unique_small_ints', dtype=UInt8, strategy=None, null_probability=None, unique=True)
+    column(name='unique_small_ints', dtype=<class 'polars.datatypes.classes.UInt8'>, strategy=None, null_probability=None, unique=True)
     >>> column(name="ccy", strategy=sampled_from(["GBP", "EUR", "JPY"]))
     column(name='ccy', dtype=Utf8, strategy=sampled_from(['GBP', 'EUR', 'JPY']), null_probability=None, unique=False)
 

@@ -53,11 +53,11 @@ class DataType:
         Examples
         --------
         >>> pl.Datetime("ns").base_type()
-        Datetime
+        <class 'polars.datatypes.classes.Datetime'>
         >>> pl.List(pl.Int32).base_type()
-        List
+        <class 'polars.datatypes.classes.List'>
         >>> pl.Struct([pl.Field("a", pl.Int64), pl.Field("b", pl.Boolean)]).base_type()
-        Struct
+        <class 'polars.datatypes.classes.Struct'>
         """
         return cls
 
