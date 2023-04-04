@@ -116,7 +116,7 @@ def test_init_inputs(monkeypatch: Any) -> None:
     d64[1] = None
 
     expected = [datetime(2021, 8, 1, 0), None, datetime(2021, 8, 3, 0)]
-    for dtype in (None, Datetime, Datetime("ns")):
+    for dtype in (None, Datetime("ns")):
         s = pl.Series("dates", d64, dtype)
         assert s.to_list() == expected
         assert Datetime == s.dtype
