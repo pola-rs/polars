@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
+from numpy.testing import assert_array_equal
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
@@ -71,8 +72,7 @@ def test_to_numpy() -> None:
     ) -> None:
         pl_series_to_numpy_array = np.array(pl.Series(name, values, pl_dtype))
         numpy_array = np.array(values, dtype=np_dtype)
-        assert pl_series_to_numpy_array.dtype == numpy_array.dtype
-        assert np.all(pl_series_to_numpy_array == numpy_array) == np.bool_(True)
+        assert_array_equal(pl_series_to_numpy_array, numpy_array)
 
     test_series_to_numpy("int8", [1, 3, 2], pl.Int8, np.int8)
     test_series_to_numpy("int16", [1, 3, 2], pl.Int16, np.int16)

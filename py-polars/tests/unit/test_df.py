@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Callable, Iterator, Sequence, cast
 import numpy as np
 import pyarrow as pa
 import pytest
+from numpy.testing import assert_array_equal
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, INTEGER_DTYPES
@@ -1282,7 +1283,23 @@ def test_assign() -> None:
 
 def test_to_numpy() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
-    assert df.to_numpy().shape == (3, 2)
+    out_array = df.to_numpy()
+    expected_array = np.array([[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]], dtype=np.float64)
+    assert_array_equal(out_array, expected_array)
+    assert out_array.flags["F_CONTIGUOUS"] is True
+
+
+def test__array__() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+    out_array = np.asarray(df.to_numpy())
+    expected_array = np.array([[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]], dtype=np.float64)
+    assert_array_equal(out_array, expected_array)
+    assert out_array.flags["F_CONTIGUOUS"] is True
+
+    out_array = np.asarray(df.to_numpy(), np.uint8)
+    expected_array = np.array([[1, 1], [2, 2], [3, 3]], dtype=np.uint8)
+    assert_array_equal(out_array, expected_array)
+    assert out_array.flags["F_CONTIGUOUS"] is True
 
 
 def test_arg_sort_by(df: pl.DataFrame) -> None:

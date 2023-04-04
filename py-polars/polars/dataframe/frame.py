@@ -1179,6 +1179,12 @@ class DataFrame:
         """
         return dict(zip(self.columns, self.dtypes))
 
+    def __array__(self, dtype: Any = None) -> np.ndarray[Any, Any]:
+        if dtype:
+            return self.to_numpy().__array__(dtype)
+        else:
+            return self.to_numpy().__array__()
+
     def __dataframe__(
         self, nan_as_null: bool = False, allow_copy: bool = True
     ) -> _PyArrowDataFrame:
@@ -8371,10 +8377,8 @@ class DataFrame:
         └──────┴──────┴──────┘
 
         """
-        corr = np.corrcoef(self, **kwargs)
-        names = self.columns
         return self._from_pydf(
-            DataFrame([pli.Series(names[i], corr[i, :]) for i in range(len(names))])._df
+            DataFrame(np.corrcoef(self.to_numpy().T, **kwargs), schema=self.columns)._df
         )
 
     def merge_sorted(self, other: DataFrame, key: str) -> Self:
