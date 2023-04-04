@@ -247,7 +247,7 @@ class Series:
                 raise ValueError("Series name must be a string.")
 
         # Handle when dtype is passed uninstantiated
-        dtype = _normalize_polars_dtype(dtype)
+        dtype = _normalize_polars_dtype(dtype)  # type: ignore[arg-type]
 
         if values is None:
             self._s = sequence_to_pyseries(

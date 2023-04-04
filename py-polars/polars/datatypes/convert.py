@@ -323,22 +323,18 @@ def dtype_to_py_type(dtype: PolarsDataType) -> PythonDataType:
 
 
 @overload
-def py_type_to_dtype(
-    data_type: Any, raise_unmatched: Literal[True] = True
-) -> PolarsDataType:
+def py_type_to_dtype(data_type: Any, raise_unmatched: Literal[True] = True) -> DataType:
     ...
 
 
 @overload
 def py_type_to_dtype(
     data_type: Any, raise_unmatched: Literal[False]
-) -> PolarsDataType | None:
+) -> DataType | None:
     ...
 
 
-def py_type_to_dtype(
-    data_type: Any, raise_unmatched: bool = True
-) -> PolarsDataType | None:
+def py_type_to_dtype(data_type: Any, raise_unmatched: bool = True) -> DataType | None:
     """Convert a Python dtype (or type annotation) to a Polars dtype."""
     if isinstance(data_type, ForwardRef):
         annotation = data_type.__forward_arg__
@@ -363,7 +359,7 @@ def py_type_to_dtype(
     elif isinstance(data_type, str):
         data_type = DataTypeMappings.REPR_TO_DTYPE.get(data_type, data_type)
         if is_polars_dtype(data_type):
-            return data_type
+            return _normalize_polars_dtype(data_type)
     try:
         dtype = map_py_type_to_dtype(data_type)
         return _normalize_polars_dtype(dtype)
@@ -422,7 +418,8 @@ def dtype_short_repr_to_dtype(dtype_string: str | None) -> PolarsDataType | None
             return dtype(*subtype)  # type: ignore[operator]
         except ValueError:
             pass
-    return _normalize_polars_dtype(dtype)
+
+    return _normalize_polars_dtype(dtype)  # type: ignore[arg-type]
 
 
 def supported_numpy_char_code(dtype_char: str) -> bool:
