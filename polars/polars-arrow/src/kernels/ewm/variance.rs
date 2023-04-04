@@ -1,4 +1,3 @@
-use std::f64::consts::SQRT_2;
 use std::ops::{AddAssign, DivAssign, MulAssign};
 
 use arrow::array::PrimitiveArray;
@@ -209,6 +208,7 @@ mod test {
     use super::*;
     const ALPHA: f64 = 0.5;
     const EPS: f64 = 1e-15;
+    use std::f64::consts::SQRT_2;
 
     const XS: [Option<f64>; 7] = [
         Some(1.0),
