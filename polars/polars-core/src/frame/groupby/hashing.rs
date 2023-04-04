@@ -8,7 +8,9 @@ use rayon::prelude::*;
 use super::GroupsProxy;
 use crate::datatypes::PlHashMap;
 use crate::frame::groupby::{GroupsIdx, IdxItem};
-use crate::hashing::{df_rows_to_hashes_threaded, this_partition, AsU64, IdBuildHasher, IdxHash};
+use crate::hashing::{
+    df_rows_to_hashes_threaded_vertical, this_partition, AsU64, IdBuildHasher, IdxHash,
+};
 use crate::prelude::compare_inner::PartialEqInner;
 use crate::prelude::*;
 use crate::utils::{split_df, CustomIterTools};
@@ -288,7 +290,7 @@ pub(crate) fn groupby_threaded_multiple_keys_flat(
     sorted: bool,
 ) -> PolarsResult<GroupsProxy> {
     let dfs = split_df(&mut keys, n_partitions).unwrap();
-    let (hashes, _random_state) = df_rows_to_hashes_threaded(&dfs, None)?;
+    let (hashes, _random_state) = df_rows_to_hashes_threaded_vertical(&dfs, None)?;
     let n_partitions = n_partitions as u64;
 
     // trait object to compare inner types.

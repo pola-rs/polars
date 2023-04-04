@@ -1,6 +1,7 @@
 use std::any::Any;
 
 use super::*;
+use crate::hashing::series_to_hashes;
 use crate::prelude::*;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
 
@@ -62,6 +63,18 @@ impl private::PrivateSeries for SeriesWrap<StructChunked> {
             .groupby_with_series(self.0.fields().to_vec(), multithreaded, sorted)
             .unwrap();
         Ok(gb.take_groups())
+    }
+
+    fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+        series_to_hashes(self.0.fields(), Some(random_state), buf)?;
+        Ok(())
+    }
+
+    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
+        for field in self.0.fields() {
+            field.vec_hash_combine(build_hasher.clone(), hashes)?;
+        }
+        Ok(())
     }
 }
 
