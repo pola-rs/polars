@@ -86,19 +86,15 @@ where
     }
 }
 
-/// Determine group tuples over different threads. The hash of the key is used to determine the partitions.
-/// Note that rehashing of the keys should be cheap and the keys small to allow efficient rehashing and improved cache locality.
-///
-/// Besides numeric values, we can also use this for pre hashed strings. The keys are simply a ptr to the str + precomputed hash.
-/// The hash will be used to rehash, and the str will be used for equality.
-pub(crate) fn groupby_threaded_num<T, IntoSlice>(
-    keys: Vec<IntoSlice>,
+pub(crate) fn groupby_threaded_num2<T, I>(
+    keys: &[I],
     n_partitions: u64,
     sorted: bool,
 ) -> GroupsProxy
 where
+    I: IntoIterator<Item = T> + Send + Sync + Copy,
+    I::IntoIter: ExactSizeIterator,
     T: Send + Hash + Eq + Sync + Copy + AsU64,
-    IntoSlice: AsRef<[T]> + Send + Sync,
 {
     assert!(n_partitions.is_power_of_two());
 
@@ -113,24 +109,24 @@ where
                     PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
 
                 let mut offset = 0;
-                for keys in &keys {
-                    let keys = keys.as_ref();
+                for keys in keys {
+                    let keys = keys.into_iter();
                     let len = keys.len() as IdxSize;
                     let hasher = hash_tbl.hasher().clone();
 
                     let mut cnt = 0;
-                    keys.iter().for_each(|k| {
+                    keys.for_each(|k| {
                         let idx = cnt + offset;
                         cnt += 1;
 
                         if this_partition(k.as_u64(), thread_no, n_partitions) {
                             let hash = hasher.hash_single(k);
-                            let entry = hash_tbl.raw_entry_mut().from_key_hashed_nocheck(hash, k);
+                            let entry = hash_tbl.raw_entry_mut().from_key_hashed_nocheck(hash, &k);
 
                             match entry {
                                 RawEntryMut::Vacant(entry) => {
                                     let tuples = vec![idx];
-                                    entry.insert_with_hasher(hash, *k, (idx, tuples), |k| {
+                                    entry.insert_with_hasher(hash, k, (idx, tuples), |k| {
                                         hasher.hash_single(k)
                                     });
                                 }
