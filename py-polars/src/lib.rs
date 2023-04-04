@@ -225,8 +225,8 @@ fn get_polars_version() -> &'static str {
 }
 
 #[pyfunction]
-fn toggle_string_cache(toggle: bool) {
-    polars_rs::toggle_string_cache(toggle)
+fn enable_string_cache(toggle: bool) {
+    polars_rs::enable_string_cache(toggle)
 }
 
 #[pyfunction]
@@ -670,7 +670,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(arg_sort_by)).unwrap();
     m.add_wrapped(wrap_pyfunction!(when)).unwrap();
     m.add_wrapped(wrap_pyfunction!(get_polars_version)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(toggle_string_cache))
+    m.add_wrapped(wrap_pyfunction!(enable_string_cache))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(using_string_cache)).unwrap();
     m.add_wrapped(wrap_pyfunction!(concat_str)).unwrap();
