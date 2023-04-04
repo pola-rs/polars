@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 @overload
 def read_excel(
     source: str | BytesIO | Path | BinaryIO | bytes,
+    *,
     sheet_id: Literal[None],
     sheet_name: Literal[None],
     xlsx2csv_options: dict[str, Any] | None,
@@ -33,6 +34,7 @@ def read_excel(
 @overload
 def read_excel(
     source: str | BytesIO | Path | BinaryIO | bytes,
+    *,
     sheet_id: Literal[None],
     sheet_name: str,
     xlsx2csv_options: dict[str, Any] | None = None,
@@ -44,6 +46,7 @@ def read_excel(
 @overload
 def read_excel(
     source: str | BytesIO | Path | BinaryIO | bytes,
+    *,
     sheet_id: int,
     sheet_name: Literal[None],
     xlsx2csv_options: dict[str, Any] | None = None,

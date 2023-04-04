@@ -2154,6 +2154,7 @@ class DataFrame:
     def write_json(
         self,
         file: None = ...,
+        *,
         pretty: bool = ...,
         row_oriented: bool = ...,
     ) -> str:
@@ -2163,6 +2164,7 @@ class DataFrame:
     def write_json(
         self,
         file: IOBase | str | Path,
+        *,
         pretty: bool = ...,
         row_oriented: bool = ...,
     ) -> None:
@@ -2274,6 +2276,7 @@ class DataFrame:
     def write_csv(
         self,
         file: None = None,
+        *,
         has_header: bool = ...,
         separator: str = ...,
         quote: str = ...,
@@ -2290,6 +2293,7 @@ class DataFrame:
     def write_csv(
         self,
         file: BytesIO | str | Path,
+        *,
         has_header: bool = ...,
         separator: str = ...,
         quote: str = ...,
@@ -3435,11 +3439,11 @@ class DataFrame:
         )
 
     @overload
-    def glimpse(self, return_as_string: Literal[False]) -> None:
+    def glimpse(self, *, return_as_string: Literal[False]) -> None:
         ...
 
     @overload
-    def glimpse(self, return_as_string: Literal[True]) -> str:
+    def glimpse(self, *, return_as_string: Literal[True]) -> str:
         ...
 
     def glimpse(self, *, return_as_string: bool = False) -> str | None:
@@ -7784,11 +7788,11 @@ class DataFrame:
             raise ValueError("One of 'index' or 'by_predicate' must be set")
 
     @overload
-    def rows(self, named: Literal[False] = ...) -> list[tuple[Any, ...]]:
+    def rows(self, *, named: Literal[False] = ...) -> list[tuple[Any, ...]]:
         ...
 
     @overload
-    def rows(self, named: Literal[True]) -> list[dict[str, Any]]:
+    def rows(self, *, named: Literal[True]) -> list[dict[str, Any]]:
         ...
 
     def rows(
@@ -7846,13 +7850,13 @@ class DataFrame:
 
     @overload
     def iter_rows(
-        self, named: Literal[False] = ..., buffer_size: int = ...
+        self, *, named: Literal[False] = ..., buffer_size: int = ...
     ) -> Iterator[tuple[Any, ...]]:
         ...
 
     @overload
     def iter_rows(
-        self, named: Literal[True], buffer_size: int = ...
+        self, *, named: Literal[True], buffer_size: int = ...
     ) -> Iterator[dict[str, Any]]:
         ...
 

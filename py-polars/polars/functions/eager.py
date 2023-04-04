@@ -101,9 +101,10 @@ def get_dummies(
 @overload
 def concat(
     items: Iterable[DataFrame],
-    rechunk: bool = True,
-    how: ConcatMethod = "vertical",
-    parallel: bool = True,
+    *,
+    how: ConcatMethod = ...,
+    rechunk: bool = ...,
+    parallel: bool = ...,
 ) -> DataFrame:
     ...
 
@@ -111,9 +112,10 @@ def concat(
 @overload
 def concat(
     items: Iterable[Series],
-    rechunk: bool = True,
-    how: ConcatMethod = "vertical",
-    parallel: bool = True,
+    *,
+    how: ConcatMethod = ...,
+    rechunk: bool = ...,
+    parallel: bool = ...,
 ) -> Series:
     ...
 
@@ -121,9 +123,10 @@ def concat(
 @overload
 def concat(
     items: Iterable[LazyFrame],
-    rechunk: bool = True,
-    how: ConcatMethod = "vertical",
-    parallel: bool = True,
+    *,
+    how: ConcatMethod = ...,
+    rechunk: bool = ...,
+    parallel: bool = ...,
 ) -> LazyFrame:
     ...
 
@@ -131,9 +134,10 @@ def concat(
 @overload
 def concat(
     items: Iterable[Expr],
-    rechunk: bool = True,
-    how: ConcatMethod = "vertical",
-    parallel: bool = True,
+    *,
+    how: ConcatMethod = ...,
+    rechunk: bool = ...,
+    parallel: bool = ...,
 ) -> Expr:
     ...
 
