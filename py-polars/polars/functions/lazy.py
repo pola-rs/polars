@@ -1758,9 +1758,9 @@ def fold(
     Horizontally sum over all columns and add 1.
 
     >>> df.select(
-    ...     pl.fold(acc=pl.lit(1), f=lambda acc, x: acc + x, exprs=pl.col("*")).alias(
-    ...         "sum"
-    ...     ),
+    ...     pl.fold(
+    ...         acc=pl.lit(1), function=lambda acc, x: acc + x, exprs=pl.col("*")
+    ...     ).alias("sum"),
     ... )
     shape: (3, 1)
     ┌─────┐
@@ -1796,7 +1796,7 @@ def fold(
     >>> df.filter(
     ...     pl.fold(
     ...         acc=pl.lit(True),
-    ...         f=lambda acc, x: acc & x,
+    ...         function=lambda acc, x: acc & x,
     ...         exprs=pl.col("*") > 1,
     ...     )
     ... )
@@ -1935,7 +1935,7 @@ def cumfold(
 
     >>> df.select(
     ...     pl.cumfold(
-    ...         acc=pl.lit(1), f=lambda acc, x: acc + x, exprs=pl.col("*")
+    ...         acc=pl.lit(1), function=lambda acc, x: acc + x, exprs=pl.col("*")
     ...     ).alias("cumfold"),
     ... )
     shape: (3, 1)
@@ -1998,7 +1998,7 @@ def cumreduce(
     └─────┴─────┴─────┘
 
     >>> df.select(
-    ...     pl.cumreduce(f=lambda acc, x: acc + x, exprs=pl.col("*")).alias(
+    ...     pl.cumreduce(function=lambda acc, x: acc + x, exprs=pl.col("*")).alias(
     ...         "cumreduce"
     ...     ),
     ... )
