@@ -2083,6 +2083,10 @@ class DataFrame:
         index
             Location of selection.
 
+        See Also
+        --------
+        get_column
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -2102,6 +2106,11 @@ class DataFrame:
         ]
 
         """
+        if not isinstance(index, int):
+            raise ValueError(
+                f'Index value "{index}" should be be an int, but is {type(index)}.'
+            )
+
         if index < 0:
             index = len(self.columns) + index
         return wrap_s(self._df.select_at_idx(index))
@@ -5669,6 +5678,10 @@ class DataFrame:
         name : str
             Name of the column to retrieve.
 
+        See Also
+        --------
+        to_series
+
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
@@ -5682,6 +5695,10 @@ class DataFrame:
         ]
 
         """
+        if not isinstance(name, str):
+            raise ValueError(
+                f'Column name "{name}" should be be a string, but is {type(name)}.'
+            )
         return self[name]
 
     @deprecate_nonkeyword_arguments(allowed_args=["self", "value", "strategy", "limit"])

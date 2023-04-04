@@ -116,8 +116,12 @@ def test_comparisons() -> None:
 def test_selection() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0], "c": ["a", "b", "c"]})
 
-    # get_column by name
-    assert df.get_column("a").to_list() == [1, 2, 3]
+    # get column by name
+    assert_series_equal(df.get_column("b"), pl.Series("b", [1.0, 2.0, 3.0]))
+
+    # get column by index
+    assert_series_equal(df.to_series(1), pl.Series("b", [1.0, 2.0, 3.0]))
+    assert_series_equal(df.to_series(-1), pl.Series("c", ["a", "b", "c"]))
 
     # select columns by mask
     assert df[:2, :1].rows() == [(1,), (2,)]
