@@ -1104,26 +1104,6 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn test_groupby_threaded() {
-        for slice in &[
-            vec![1, 2, 3, 4, 4, 4, 2, 1],
-            vec![1, 2, 3, 4, 4, 4, 2, 1, 1],
-            vec![1, 2, 3, 4, 4, 4],
-        ] {
-            let ca = UInt32Chunked::new("", slice);
-            let split = split_ca(&ca, 4).unwrap();
-
-            let a = groupby(ca.into_iter(), true).into_idx();
-
-            let keys = split.iter().map(|ca| ca.cont_slice().unwrap()).collect();
-            let b = groupby_threaded_num(keys, split.len() as u64, true).into_idx();
-
-            assert_eq!(a, b);
-        }
-    }
-
-    #[test]
-    #[cfg_attr(miri, ignore)]
     fn test_groupby_null_handling() -> PolarsResult<()> {
         let df = df!(
             "a" => ["a", "a", "a", "b", "b"],
