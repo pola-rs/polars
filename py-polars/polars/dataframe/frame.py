@@ -2924,18 +2924,35 @@ class DataFrame:
             wb.close()
         return wb
 
+    @overload
+    def write_ipc(
+        self,
+        file: None,
+        compression: IpcCompression = "uncompressed",
+    ) -> BytesIO:
+        ...
+
+    @overload
     def write_ipc(
         self,
         file: BinaryIO | BytesIO | str | Path,
         compression: IpcCompression = "uncompressed",
     ) -> None:
+        ...
+
+    def write_ipc(
+        self,
+        file: BinaryIO | BytesIO | str | Path | None,
+        compression: IpcCompression = "uncompressed",
+    ) -> BytesIO | None:
         """
         Write to Arrow IPC binary stream or Feather file.
 
         Parameters
         ----------
         file
-            File path to which the file should be written.
+            Path to which the IPC data should be written. If set to
+            ``None``, the output is returned as a BytesIO object.
         compression : {'uncompressed', 'lz4', 'zstd'}
             Compression method. Defaults to "uncompressed".
 
@@ -2954,12 +2971,17 @@ class DataFrame:
         >>> df.write_ipc(path)
 
         """
-        if compression is None:
-            compression = "uncompressed"
-        if isinstance(file, (str, Path)):
+        return_bytes = file is None
+        if return_bytes:
+            file = BytesIO()
+        elif isinstance(file, (str, Path)):
             file = normalise_filepath(file)
 
+        if compression is None:
+            compression = "uncompressed"
+
         self._df.write_ipc(file, compression)
+        return file if return_bytes else None  # type: ignore[return-value]
 
     def write_parquet(
         self,
