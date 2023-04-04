@@ -387,7 +387,7 @@ pub use polars_core::{
     series, testing,
 };
 #[cfg(feature = "dtype-categorical")]
-pub use polars_core::{toggle_string_cache, using_string_cache};
+pub use polars_core::{enable_string_cache, using_string_cache};
 #[cfg(feature = "polars-io")]
 pub use polars_io as io;
 #[cfg(feature = "lazy")]
