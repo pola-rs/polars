@@ -2201,11 +2201,9 @@ class Series:
         else:
             return self._from_pyseries(self._s.sort(descending))
 
-    def top_k(self, k: int = 5, *, descending: bool = False) -> Series:
+    def top_k(self, k: int = 5) -> Series:
         r"""
         Return the `k` largest elements.
-
-        If 'descending=True` the smallest elements will be given.
 
         This has time complexity:
 
@@ -2215,15 +2213,23 @@ class Series:
         ----------
         k
             Number of elements to return.
-        descending
-            Return the smallest elements.
 
         """
-        return (
-            self.to_frame()
-            .select(F.col(self._s.name()).top_k(k=k, descending=descending))
-            .to_series()
-        )
+
+    def bottom_k(self, k: int = 5) -> Series:
+        r"""
+        Return the `k` smallest elements.
+
+        This has time complexity:
+
+        .. math:: O(n + k \\log{}n - \frac{k}{2})
+
+        Parameters
+        ----------
+        k
+            Number of elements to return.
+
+        """
 
     def arg_sort(self, *, descending: bool = False, nulls_last: bool = False) -> Series:
         """
