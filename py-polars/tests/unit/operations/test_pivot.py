@@ -171,9 +171,9 @@ def test_pivot_duplicate_names_7731() -> None:
     df = pl.DataFrame(
         {"a": [1, 4], "b": [1, 2], "c": ["x", "x"], "d": [7, 8], "e": ["x", "y"]}
     )
-    assert df.pivot(values=["a", "d"], index="b", columns=["c", "e"]).to_dict(
-        False
-    ) == {
+    assert df.pivot(
+        values=["a", "d"], index="b", columns=["c", "e"], aggregate_function="first"
+    ).to_dict(False) == {
         "b": [1, 2],
         "a_c_x": [1, 4],
         "d_c_x": [7, 8],
