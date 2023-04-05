@@ -275,41 +275,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
 
     /// Count the null values.
     fn null_count(&self) -> usize {
-        if self
-            .0
-            .fields()
-            .iter()
-            .map(|s| s.null_count())
-            .sum::<usize>()
-            > 0
-        {
-            let mut null_count = 0;
-
-            let chunks_lens = self.0.fields()[0].chunks().len();
-
-            for i in 0..chunks_lens {
-                // If all fields are null we count it as null
-                // so we bitand every chunk
-                let mut validity_agg = None;
-
-                for s in self.0.fields() {
-                    let arr = &s.chunks()[i];
-
-                    match (&validity_agg, arr.validity()) {
-                        (Some(agg), Some(validity)) => validity_agg = Some(validity.bitand(agg)),
-                        (None, Some(validity)) => validity_agg = Some(validity.clone()),
-                        _ => {}
-                    }
-                    if let Some(validity) = &validity_agg {
-                        null_count += validity.unset_bits()
-                    }
-                }
-            }
-
-            null_count
-        } else {
-            0
-        }
+        self.0.null_count()
     }
 
     /// Get unique values in the Series.

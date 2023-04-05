@@ -93,10 +93,10 @@ fn is_nested_null(av: &AnyValue) -> bool {
     }
 }
 
-// nested dtypes that are all null, will be set as null leave dtype
+// nested dtypes that are all null, will be set as null leaf dtype
 fn infer_dtype_dynamic(av: &AnyValue) -> DataType {
     match av {
-        AnyValue::List(s) if s.null_count() == s.len() => DataType::List(Box::new(DataType::Null)),
+        // AnyValue::List(s) if s.null_count() == s.len() => DataType::List(Box::new(DataType::Null)),
         #[cfg(feature = "dtype-struct")]
         AnyValue::Struct(_, _, _) => DataType::Struct(
             av._iter_struct_av()

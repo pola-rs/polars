@@ -1197,6 +1197,22 @@ def test_describe() -> None:
     )
     assert_frame_equal(df.describe(), expected)
 
+    # struct
+    df = pl.DataFrame(
+        {
+            "numerical": [1, 2, 1, None],
+            "struct": [{"x": 1, "y": 2}, {"x": 3, "y": 4}, {"x": 1, "y": 2}, None],
+            "list": [[1, 2], [3, 4], [1, 2], None],
+        }
+    )
+
+    assert df.describe().to_dict(False) == {
+        "describe": ["count", "null_count", "mean", "std", "min", "max", "median"],
+        "numerical": [4.0, 1.0, 1.3333333333333333, 0.5773502691896257, 1.0, 2.0, 1.0],
+        "struct": ["4", "1", None, None, None, None, None],
+        "list": ["4", "1", None, None, None, None, None],
+    }
+
 
 def test_duration_arithmetic() -> None:
     df = pl.DataFrame(
