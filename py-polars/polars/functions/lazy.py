@@ -28,6 +28,7 @@ from polars.utils.convert import (
     _time_to_pl_time,
     _timedelta_to_pl_timedelta,
 )
+from polars.utils.decorators import deprecated_alias
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arange as pyarange
@@ -2212,8 +2213,8 @@ def quantile(
 
 @overload
 def arange(
-    low: int | Expr | Series,
-    high: int | Expr | Series,
+    start: int | Expr | Series,
+    end: int | Expr | Series,
     step: int = ...,
     *,
     eager: Literal[False],
@@ -2223,8 +2224,8 @@ def arange(
 
 @overload
 def arange(
-    low: int | Expr | Series,
-    high: int | Expr | Series,
+    start: int | Expr | Series,
+    end: int | Expr | Series,
     step: int = ...,
     *,
     eager: Literal[True],
@@ -2235,8 +2236,8 @@ def arange(
 
 @overload
 def arange(
-    low: int | Expr | Series,
-    high: int | Expr | Series,
+    start: int | Expr | Series,
+    end: int | Expr | Series,
     step: int = ...,
     *,
     eager: bool = ...,
@@ -2245,9 +2246,10 @@ def arange(
     ...
 
 
+@deprecated_alias(low="start", high="end")
 def arange(
-    low: int | Expr | Series,
-    high: int | Expr | Series,
+    start: int | Expr | Series,
+    end: int | Expr | Series,
     step: int = 1,
     *,
     eager: bool = False,
@@ -2265,9 +2267,9 @@ def arange(
 
     Parameters
     ----------
-    low
+    start
         Lower bound of range.
-    high
+    end
         Upper bound of range.
     step
         Step size of the range.
@@ -2278,9 +2280,9 @@ def arange(
         Apply an explicit integer dtype to the resulting expression (default is Int64).
 
     """
-    low = expr_to_lit_or_expr(low, str_to_lit=False)
-    high = expr_to_lit_or_expr(high, str_to_lit=False)
-    range_expr = wrap_expr(pyarange(low._pyexpr, high._pyexpr, step))
+    start = expr_to_lit_or_expr(start, str_to_lit=False)
+    end = expr_to_lit_or_expr(end, str_to_lit=False)
+    range_expr = wrap_expr(pyarange(start._pyexpr, end._pyexpr, step))
 
     if dtype is not None and dtype != Int64:
         range_expr = range_expr.cast(dtype)

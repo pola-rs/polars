@@ -105,8 +105,8 @@ def range_to_series(
 ) -> Series:
     """Fast conversion of the given range to a Series."""
     return F.arange(
-        low=rng.start,
-        high=rng.stop,
+        start=rng.start,
+        end=rng.stop,
         step=rng.step,
         eager=True,
         dtype=dtype,
