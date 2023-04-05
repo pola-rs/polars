@@ -292,13 +292,13 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_to_lowercase())
 
-    def strip(self, matches: str | None = None) -> Expr:
+    def strip(self, characters: str | None = None) -> Expr:
         r"""
         Remove leading and trailing characters.
 
         Parameters
         ----------
-        matches
+        characters
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
@@ -332,15 +332,15 @@ class ExprStringNameSpace:
         └─────────┘
 
         """
-        return wrap_expr(self._pyexpr.str_strip(matches))
+        return wrap_expr(self._pyexpr.str_strip(characters))
 
-    def lstrip(self, matches: str | None = None) -> Expr:
+    def lstrip(self, characters: str | None = None) -> Expr:
         r"""
         Remove leading characters.
 
         Parameters
         ----------
-        matches
+        characters
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
@@ -374,15 +374,15 @@ class ExprStringNameSpace:
         └─────────┘
 
         """
-        return wrap_expr(self._pyexpr.str_lstrip(matches))
+        return wrap_expr(self._pyexpr.str_lstrip(characters))
 
-    def rstrip(self, matches: str | None = None) -> Expr:
+    def rstrip(self, characters: str | None = None) -> Expr:
         r"""
         Remove trailing characters.
 
         Parameters
         ----------
-        matches
+        characters
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
@@ -416,7 +416,7 @@ class ExprStringNameSpace:
         └─────────┘
 
         """
-        return wrap_expr(self._pyexpr.str_rstrip(matches))
+        return wrap_expr(self._pyexpr.str_rstrip(characters))
 
     def zfill(self, alignment: int) -> Expr:
         """

@@ -696,13 +696,13 @@ class StringNameSpace:
 
         """
 
-    def strip(self, matches: str | None = None) -> Series:
+    def strip(self, characters: str | None = None) -> Series:
         r"""
         Remove leading and trailing characters.
 
         Parameters
         ----------
-        matches
+        characters
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
@@ -731,13 +731,13 @@ class StringNameSpace:
 
         """
 
-    def lstrip(self, matches: str | None = None) -> Series:
+    def lstrip(self, characters: str | None = None) -> Series:
         r"""
         Remove leading characters.
 
         Parameters
         ----------
-        matches
+        characters
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
@@ -766,13 +766,13 @@ class StringNameSpace:
 
         """
 
-    def rstrip(self, matches: str | None = None) -> Series:
+    def rstrip(self, characters: str | None = None) -> Series:
         r"""
         Remove trailing characters.
 
         Parameters
         ----------
-        matches
+        characters
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
