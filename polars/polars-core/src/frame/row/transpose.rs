@@ -32,7 +32,8 @@ impl DataFrame {
                 let columns = self
                     .columns
                     .iter()
-                    .map(|s| s.cast(&phys_dtype).unwrap())
+                    // first cast to supertype before casting to physical to ensure units are correct
+                    .map(|s| s.cast(dtype).unwrap().cast(&phys_dtype).unwrap())
                     .collect::<Vec<_>>();
 
                 // this is very expensive. A lot of cache misses here.

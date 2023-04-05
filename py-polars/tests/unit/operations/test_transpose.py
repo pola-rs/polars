@@ -107,7 +107,7 @@ def test_transpose_logical_data() -> None:
             "b": [datetime(2022, 1, 1), datetime(2022, 1, 2), datetime(2022, 1, 3)],
         }
     ).transpose().to_dict(False) == {
-        "column_0": [datetime(1970, 1, 1, 0, 0, 0, 19024), datetime(2022, 1, 1, 0, 0)],
-        "column_1": [datetime(1970, 1, 1, 0, 0, 0, 19025), datetime(2022, 1, 2, 0, 0)],
-        "column_2": [datetime(1970, 1, 1, 0, 0, 0, 18995), datetime(2022, 1, 3, 0, 0)],
+        "column_0": [datetime(2022, 2, 1, 0, 0), datetime(2022, 1, 1, 0, 0)],
+        "column_1": [datetime(2022, 2, 2, 0, 0), datetime(2022, 1, 2, 0, 0)],
+        "column_2": [datetime(2022, 1, 3, 0, 0), datetime(2022, 1, 3, 0, 0)],
     }
