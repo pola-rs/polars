@@ -412,9 +412,10 @@ class DataFrame:
     def _from_dicts(
         cls,
         data: Sequence[dict[str, Any]],
-        infer_schema_length: int | None = N_INFER_DEFAULT,
         schema: SchemaDefinition | None = None,
+        *,
         schema_overrides: SchemaDict | None = None,
+        infer_schema_length: int | None = N_INFER_DEFAULT,
     ) -> Self:
         pydf = PyDataFrame.read_dicts(data, infer_schema_length, schema)
         if schema or schema_overrides:
@@ -428,6 +429,7 @@ class DataFrame:
         cls,
         data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
         schema: SchemaDefinition | None = None,
+        *,
         schema_overrides: SchemaDict | None = None,
     ) -> Self:
         """
@@ -665,6 +667,7 @@ class DataFrame:
     def _read_csv(
         cls,
         source: str | Path | BinaryIO | bytes,
+        *,
         has_header: bool = True,
         columns: Sequence[int] | Sequence[str] | None = None,
         separator: str = ",",
@@ -804,6 +807,7 @@ class DataFrame:
     def _read_parquet(
         cls,
         source: str | Path | BinaryIO,
+        *,
         columns: Sequence[int] | Sequence[str] | None = None,
         n_rows: int | None = None,
         parallel: ParallelStrategy = "auto",
@@ -870,6 +874,7 @@ class DataFrame:
     def _read_avro(
         cls,
         source: str | Path | BinaryIO,
+        *,
         columns: Sequence[int] | Sequence[str] | None = None,
         n_rows: int | None = None,
     ) -> Self:
@@ -901,6 +906,7 @@ class DataFrame:
     def _read_ipc(
         cls,
         source: str | Path | BinaryIO,
+        *,
         columns: Sequence[int] | Sequence[str] | None = None,
         n_rows: int | None = None,
         row_count_name: str | None = None,
