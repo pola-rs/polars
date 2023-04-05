@@ -3875,13 +3875,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return self.select(F.all().fill_null(value, strategy, limit))
 
-    def fill_nan(self, fill_value: int | float | Expr | None) -> Self:
+    def fill_nan(self, value: int | float | Expr | None) -> Self:
         """
         Fill floating point NaN values.
 
         Parameters
         ----------
-        fill_value
+        value
             Value to fill the NaN values with.
 
         Warnings
@@ -3911,9 +3911,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └──────┴──────┘
 
         """
-        if not isinstance(fill_value, pli.Expr):
-            fill_value = F.lit(fill_value)
-        return self._from_pyldf(self._ldf.fill_nan(fill_value._pyexpr))
+        if not isinstance(value, pli.Expr):
+            value = F.lit(value)
+        return self._from_pyldf(self._ldf.fill_nan(value._pyexpr))
 
     def std(self, ddof: int = 1) -> Self:
         """

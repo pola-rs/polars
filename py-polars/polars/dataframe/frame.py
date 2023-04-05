@@ -5889,13 +5889,13 @@ class DataFrame:
             ._df
         )
 
-    def fill_nan(self, fill_value: Expr | int | float | None) -> Self:
+    def fill_nan(self, value: Expr | int | float | None) -> Self:
         """
         Fill floating point NaN values by an Expression evaluation.
 
         Parameters
         ----------
-        fill_value
+        value
             Value to fill NaN with.
 
         Returns
@@ -5934,7 +5934,7 @@ class DataFrame:
 
         """
         return self._from_pydf(
-            self.lazy().fill_nan(fill_value).collect(no_optimization=True)._df
+            self.lazy().fill_nan(value).collect(no_optimization=True)._df
         )
 
     def explode(
