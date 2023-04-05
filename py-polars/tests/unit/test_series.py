@@ -596,6 +596,7 @@ def test_arrow() -> None:
     c = pl.Series("c", ["A", "BB", "CCC", None])
     out = c.to_arrow()
     assert out == pa.array(["A", "BB", "CCC", None], type=pa.large_string())
+    assert_series_equal(pl.from_arrow(out), c.rename(""))  # type: ignore[arg-type]
 
     out = c.to_frame().to_arrow()["c"]
     assert isinstance(out, (pa.Array, pa.ChunkedArray))

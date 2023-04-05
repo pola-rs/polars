@@ -507,15 +507,16 @@ def from_arrow(
             data=data, rechunk=rechunk, schema=schema, schema_overrides=schema_overrides
         )
     elif isinstance(data, (pa.Array, pa.ChunkedArray)):
-        if not (schema or schema_overrides):
-            schema = [""]
-        return pli.DataFrame(
-            data=pli.Series._from_arrow(
-                getattr(data, "_name", "") or "", data, rechunk=rechunk
-            ),
+        name = getattr(data, "_name", "") or ""
+        s = pli.DataFrame(
+            data=pli.Series._from_arrow(name, data, rechunk=rechunk),
             schema=schema,
             schema_overrides=schema_overrides,
         ).to_series()
+        return (
+            s if (name or schema or schema_overrides) else s.rename("", in_place=True)
+        )
+
     elif isinstance(data, Sequence) and data and isinstance(data[0], pa.RecordBatch):
         return pli.DataFrame._from_arrow(
             data=pa.Table.from_batches(data),
