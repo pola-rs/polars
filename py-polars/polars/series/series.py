@@ -5215,7 +5215,7 @@ class Series:
             Value to use when the remapping dict does not contain the lookup value.
             Use ``pl.first()``, to keep the original value.
         dtype
-            Override output dtype.
+            Set output dtype to override automatic output dtype determination.
 
         Examples
         --------
