@@ -423,8 +423,13 @@ def from_numpy(
     )
 
 
+# Note: we cannot @overload the typing (Series vs DataFrame) here, as pyarrow
+# does not implement any support for type hints; attempts to hint here will
+# simply result in mypy inferring "Any", which isn't useful...
+
+
 def from_arrow(
-    data: pa.Table | pa.Array | pa.ChunkedArray,
+    data: pa.Table | pa.Array | pa.ChunkedArray | Sequence[pa.RecordBatch],
     schema: SchemaDefinition | None = None,
     *,
     schema_overrides: SchemaDict | None = None,
@@ -438,8 +443,8 @@ def from_arrow(
 
     Parameters
     ----------
-    data : :class:`pyarrow.Table` or :class:`pyarrow.Array`
-        Data representing an Arrow Table or Array.
+    data : :class:`pyarrow.Table`, :class:`pyarrow.Array`, sequence of :class:`pyarrow.RecordBatch`
+        Data representing an Arrow Table, Array, or sequence of RecordBatches.
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
@@ -493,15 +498,37 @@ def from_arrow(
         3
     ]
 
-    """
+    """  # noqa: W505
+    if isinstance(data, pa.RecordBatch):
+        data = [data]
+
     if isinstance(data, pa.Table):
         return pli.DataFrame._from_arrow(
-            data, rechunk=rechunk, schema=schema, schema_overrides=schema_overrides
+            data=data, rechunk=rechunk, schema=schema, schema_overrides=schema_overrides
         )
     elif isinstance(data, (pa.Array, pa.ChunkedArray)):
-        return pli.Series._from_arrow("", data, rechunk=rechunk)
+        if not (schema or schema_overrides):
+            schema = [""]
+        return pli.DataFrame(
+            data=pli.Series._from_arrow(
+                getattr(data, "_name", "") or "", data, rechunk=rechunk
+            ),
+            schema=schema,
+            schema_overrides=schema_overrides,
+        ).to_series()
+    elif isinstance(data, Sequence) and data and isinstance(data[0], pa.RecordBatch):
+        return pli.DataFrame._from_arrow(
+            data=pa.Table.from_batches(data),
+            rechunk=rechunk,
+            schema=schema,
+            schema_overrides=schema_overrides,
+        )
+    elif isinstance(data, Sequence) and schema or schema_overrides and not data:
+        return pli.DataFrame(data=[], schema=schema, schema_overrides=schema_overrides)
     else:
-        raise ValueError(f"expected Arrow Table or Array, got {type(data)}.")
+        raise ValueError(
+            f"expected pyarrow Table, Array, or sequence of RecordBatches; got {type(data)}."
+        )
 
 
 @overload
