@@ -2926,17 +2926,20 @@ class Series:
         """
 
     def is_between(
-        self, start: IntoExpr, end: IntoExpr, closed: ClosedInterval = "both"
+        self,
+        lower_bound: IntoExpr,
+        upper_bound: IntoExpr,
+        closed: ClosedInterval = "both",
     ) -> Series:
         """
         Get a boolean mask of the values that fall between the given start/end values.
 
         Parameters
         ----------
-        start
+        lower_bound
             Lower bound value. Accepts expression input. Non-expression inputs
             (including strings) are parsed as literals.
-        end
+        upper_bound
             Upper bound value. Accepts expression input. Non-expression inputs
             (including strings) are parsed as literals.
         closed : {'both', 'left', 'right', 'none'}
@@ -2984,14 +2987,14 @@ class Series:
         ]
 
         """
-        if isinstance(start, str):
-            start = F.lit(start)
-        if isinstance(end, str):
-            end = F.lit(end)
+        if isinstance(lower_bound, str):
+            lower_bound = F.lit(lower_bound)
+        if isinstance(upper_bound, str):
+            upper_bound = F.lit(upper_bound)
 
         return (
             self.to_frame()
-            .select(F.col(self.name).is_between(start, end, closed))
+            .select(F.col(self.name).is_between(lower_bound, upper_bound, closed))
             .to_series()
         )
 

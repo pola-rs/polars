@@ -4231,17 +4231,20 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.repeat_by(by._pyexpr))
 
     def is_between(
-        self, start: IntoExpr, end: IntoExpr, closed: ClosedInterval = "both"
+        self,
+        lower_bound: IntoExpr,
+        upper_bound: IntoExpr,
+        closed: ClosedInterval = "both",
     ) -> Self:
         """
         Check if this expression is between the given start and end values.
 
         Parameters
         ----------
-        start
+        lower_bound
             Lower bound value. Accepts expression input. Strings are parsed as column
             names, other non-expression inputs are parsed as literals.
-        end
+        upper_bound
             Upper bound value. Accepts expression input. Strings are parsed as column
             names, other non-expression inputs are parsed as literals.
         closed : {'both', 'left', 'right', 'none'}
@@ -4310,17 +4313,17 @@ class Expr:
         └─────┴────────────┘
 
         """
-        start = expr_to_lit_or_expr(start, str_to_lit=False)
-        end = expr_to_lit_or_expr(end, str_to_lit=False)
+        lower_bound = expr_to_lit_or_expr(lower_bound, str_to_lit=False)
+        upper_bound = expr_to_lit_or_expr(upper_bound, str_to_lit=False)
 
         if closed == "none":
-            return (self > start) & (self < end)
+            return (self > lower_bound) & (self < upper_bound)
         elif closed == "both":
-            return (self >= start) & (self <= end)
+            return (self >= lower_bound) & (self <= upper_bound)
         elif closed == "right":
-            return (self > start) & (self <= end)
+            return (self > lower_bound) & (self <= upper_bound)
         elif closed == "left":
-            return (self >= start) & (self < end)
+            return (self >= lower_bound) & (self < upper_bound)
         else:
             raise ValueError(
                 "closed must be one of {'left', 'right', 'both', 'none'},"
