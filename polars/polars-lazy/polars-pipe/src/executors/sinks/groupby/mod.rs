@@ -1,5 +1,6 @@
 pub(crate) mod aggregates;
 mod generic;
+mod generic2;
 mod ooc;
 mod ooc_state;
 mod primitive;

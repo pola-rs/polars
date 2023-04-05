@@ -332,7 +332,6 @@ impl GenericGroupbySink {
 
                     apply_aggregation(
                         agg_idx,
-                        num_aggs,
                         chunk.chunk_index,
                         &mut agg_iters,
                         current_aggregators,
@@ -423,7 +422,6 @@ impl Sink for GenericGroupbySink {
             };
             apply_aggregation(
                 agg_idx,
-                num_aggs,
                 chunk.chunk_index,
                 &mut agg_iters,
                 current_aggregators,
@@ -614,14 +612,13 @@ fn get_iters<'a>(
 #[inline]
 fn apply_aggregation(
     agg_idx: IdxSize,
-    num_aggs: usize,
     chunk_index: IdxSize,
     agg_iters: &mut [SeriesPhysIter],
-    current_aggregators: &mut [AggregateFunction],
+    running_aggregations: &mut [AggregateFunction],
 ) {
-    for (i, agg_iter) in (0..num_aggs).zip(agg_iters.iter_mut()) {
+    for (i, agg_iter) in agg_iters.iter_mut().enumerate() {
         let i = agg_idx as usize + i;
-        let agg_fn = unsafe { current_aggregators.get_unchecked_release_mut(i) };
+        let agg_fn = unsafe { running_aggregations.get_unchecked_release_mut(i) };
 
         agg_fn.pre_agg(chunk_index, agg_iter.as_mut())
     }
