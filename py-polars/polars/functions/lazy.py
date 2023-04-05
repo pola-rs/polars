@@ -2019,9 +2019,14 @@ def cumreduce(
     return wrap_expr(pycumreduce(function, exprs))
 
 
-def any(name: str | Sequence[str] | Sequence[Expr] | Expr) -> Expr:
+def any(columns: str | Sequence[str] | Sequence[Expr] | Expr) -> Expr:
     """
     Evaluate columnwise or elementwise with a bitwise OR operation.
+
+    Parameters
+    ----------
+    columns
+        If given this function will apply a bitwise or on the columns.
 
     Examples
     --------
@@ -2058,11 +2063,51 @@ def any(name: str | Sequence[str] | Sequence[Expr] | Expr) -> Expr:
     └──────┴───────┴──────┘
 
     """
-    if isinstance(name, str):
-        return col(name).any()
+    if isinstance(columns, str):
+        return col(columns).any()
     else:
-        return fold(lit(False), lambda a, b: a.cast(bool) | b.cast(bool), name).alias(
-            "any"
+        return fold(
+            lit(False), lambda a, b: a.cast(bool) | b.cast(bool), columns
+        ).alias("any")
+
+
+def all(columns: str | Sequence[Expr] | Expr | None = None) -> Expr:
+    """
+    Do one of two things.
+
+    * function can do a columnwise or elementwise AND operation
+    * a wildcard column selection
+
+    Parameters
+    ----------
+    columns
+        If given this function will apply a bitwise & on the columns.
+
+    Examples
+    --------
+    Sum all columns
+
+    >>> df = pl.DataFrame(
+    ...     {"a": [1, 2, 3], "b": ["hello", "foo", "bar"], "c": [1, 1, 1]}
+    ... )
+    >>> df.select(pl.all().sum())
+    shape: (1, 3)
+    ┌─────┬──────┬─────┐
+    │ a   ┆ b    ┆ c   │
+    │ --- ┆ ---  ┆ --- │
+    │ i64 ┆ str  ┆ i64 │
+    ╞═════╪══════╪═════╡
+    │ 6   ┆ null ┆ 3   │
+    └─────┴──────┴─────┘
+
+    """
+    if columns is None:
+        return col("*")
+    elif isinstance(columns, str):
+        return col(columns).all()
+    else:
+        return fold(lit(True), lambda a, b: a.cast(bool) & b.cast(bool), columns).alias(
+            "all"
         )
 
 
@@ -2137,46 +2182,6 @@ def exclude(
 
     """
     return col("*").exclude(columns, *more_columns)
-
-
-def all(name: str | Sequence[Expr] | Expr | None = None) -> Expr:
-    """
-    Do one of two things.
-
-    * function can do a columnwise or elementwise AND operation
-    * a wildcard column selection
-
-    Parameters
-    ----------
-    name
-        If given this function will apply a bitwise & on the columns.
-
-    Examples
-    --------
-    Sum all columns
-
-    >>> df = pl.DataFrame(
-    ...     {"a": [1, 2, 3], "b": ["hello", "foo", "bar"], "c": [1, 1, 1]}
-    ... )
-    >>> df.select(pl.all().sum())
-    shape: (1, 3)
-    ┌─────┬──────┬─────┐
-    │ a   ┆ b    ┆ c   │
-    │ --- ┆ ---  ┆ --- │
-    │ i64 ┆ str  ┆ i64 │
-    ╞═════╪══════╪═════╡
-    │ 6   ┆ null ┆ 3   │
-    └─────┴──────┴─────┘
-
-    """
-    if name is None:
-        return col("*")
-    elif isinstance(name, str):
-        return col(name).all()
-    else:
-        return fold(lit(True), lambda a, b: a.cast(bool) & b.cast(bool), name).alias(
-            "all"
-        )
 
 
 def groups(column: str) -> Expr:
