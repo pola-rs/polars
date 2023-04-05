@@ -39,3 +39,9 @@ def test_bool_min_max() -> None:
     assert pl.Series([False, True]).max()
     assert pl.Series([True, True]).max()
     assert not pl.Series([False, False]).max()
+
+
+def test_all_empty() -> None:
+    s = pl.Series([], dtype=pl.Boolean)
+    assert s.all()
+    assert not s.any()
