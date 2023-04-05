@@ -1,8 +1,6 @@
 from datetime import date, datetime
 from typing import Iterator
 
-import pytest
-
 import polars as pl
 from polars.testing import assert_frame_equal
 
@@ -18,17 +16,20 @@ def test_transpose_supertype() -> None:
 
 
 def test_transpose_struct() -> None:
-    with pytest.raises(pl.ComputeError, match=r"cannot transpose with supertype: str"):
-        pl.DataFrame(
-            {
-                "a": ["foo", "bar", "ham"],
-                "b": [
-                    {"a": date(2022, 1, 1), "b": True},
-                    {"a": date(2022, 1, 2), "b": False},
-                    {"a": date(2022, 1, 3), "b": False},
-                ],
-            }
-        ).transpose()
+    assert pl.DataFrame(
+        {
+            "a": ["foo", "bar", "ham"],
+            "b": [
+                {"a": date(2022, 1, 1), "b": True},
+                {"a": date(2022, 1, 2), "b": False},
+                {"a": date(2022, 1, 3), "b": False},
+            ],
+        }
+    ).transpose().to_dict(False) == {
+        "column_0": ["foo", "{2022-01-01,true}"],
+        "column_1": ["bar", "{2022-01-02,false}"],
+        "column_2": ["ham", "{2022-01-03,false}"],
+    }
 
     assert (
         pl.DataFrame(
