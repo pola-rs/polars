@@ -429,7 +429,13 @@ def from_numpy(
 
 
 def from_arrow(
-    data: pa.Table | pa.Array | pa.ChunkedArray | Sequence[pa.RecordBatch],
+    data: (
+        pa.Table
+        | pa.Array
+        | pa.ChunkedArray
+        | pa.RecordBatch
+        | Sequence[pa.RecordBatch]
+    ),
     schema: SchemaDefinition | None = None,
     *,
     schema_overrides: SchemaDict | None = None,
@@ -443,7 +449,7 @@ def from_arrow(
 
     Parameters
     ----------
-    data : :class:`pyarrow.Table`, :class:`pyarrow.Array`, sequence of :class:`pyarrow.RecordBatch`
+    data : :class:`pyarrow.Table`, :class:`pyarrow.Array`, one or more :class:`pyarrow.RecordBatch`
         Data representing an Arrow Table, Array, or sequence of RecordBatches.
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
@@ -488,10 +494,10 @@ def from_arrow(
 
     >>> import pyarrow as pa
     >>> data = pa.array([1, 2, 3])
-    >>> series = pl.from_arrow(data)
+    >>> series = pl.from_arrow(data, schema={"s": pl.Int32})
     >>> series
     shape: (3,)
-    Series: '' [i64]
+    Series: 's' [i32]
     [
         1
         2
@@ -499,9 +505,6 @@ def from_arrow(
     ]
 
     """  # noqa: W505
-    if isinstance(data, pa.RecordBatch):
-        data = [data]
-
     if isinstance(data, pa.Table):
         return pli.DataFrame._from_arrow(
             data=data, rechunk=rechunk, schema=schema, schema_overrides=schema_overrides
@@ -517,14 +520,16 @@ def from_arrow(
             s if (name or schema or schema_overrides) else s.rename("", in_place=True)
         )
 
-    elif isinstance(data, Sequence) and data and isinstance(data[0], pa.RecordBatch):
+    if isinstance(data, pa.RecordBatch):
+        data = [data]
+    if isinstance(data, Sequence) and data and isinstance(data[0], pa.RecordBatch):
         return pli.DataFrame._from_arrow(
             data=pa.Table.from_batches(data),
             rechunk=rechunk,
             schema=schema,
             schema_overrides=schema_overrides,
         )
-    elif isinstance(data, Sequence) and schema or schema_overrides and not data:
+    elif isinstance(data, Sequence) and (schema or schema_overrides) and not data:
         return pli.DataFrame(data=[], schema=schema, schema_overrides=schema_overrides)
     else:
         raise ValueError(
