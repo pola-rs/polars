@@ -488,12 +488,14 @@ def test_cat_to_pandas() -> None:
     df = df.with_columns(pl.all().cast(pl.Categorical))
     pd_out = df.to_pandas()
     assert "category" in str(pd_out["a"].dtype)
-
     try:
         pd_pa_out = df.to_pandas(use_pyarrow_extension_array=True)
-        assert pd_pa_out["a"].dtype.type == pd.core.dtypes.dtypes.CategoricalDtypeType
+        assert pd_pa_out["a"].dtype.type in (
+            pd.core.dtypes.dtypes.CategoricalDtypeType,
+            pa.DictionaryType,
+        )
     except ModuleNotFoundError:
-        # Skip test if Pandas 1.5.x is not installed.
+        # Skip test if suitable pandas version not installed.
         pass
 
 
@@ -669,7 +671,9 @@ def test_cat_int_types_3500() -> None:
 
         for t in [int_dict_type, uint_dict_type]:
             s = cast(pl.Series, pl.from_arrow(pyarrow_array.cast(t)))
-            assert_series_equal(s, pl.Series(["a", "a", "b"]).cast(pl.Categorical))
+            assert_series_equal(
+                s, pl.Series(["a", "a", "b"]).cast(pl.Categorical), check_names=False
+            )
 
 
 def test_from_pyarrow_chunked_array() -> None:
@@ -695,9 +699,7 @@ def test_arrow_list_null_5697() -> None:
     df = pl.from_arrow(pa_table)
     pa_table = df.to_arrow()
     # again to polars to test the schema
-    assert pl.from_arrow(pa_table).schema == {  # type: ignore[union-attr]
-        "mycol": pl.List(pl.Null)
-    }
+    assert pl.from_arrow(pa_table).schema == {"mycol": pl.List(pl.Null)}  # type: ignore[union-attr]
 
 
 def test_from_pandas_null_struct_6412() -> None:

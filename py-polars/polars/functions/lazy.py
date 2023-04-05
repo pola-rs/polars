@@ -1175,26 +1175,24 @@ def lit(
 
     Examples
     --------
-    Literal integer:
+    Literal scalar values:
 
     >>> pl.lit(1)  # doctest: +IGNORE_RESULT
-
-    Literal str:
-
-    >>> pl.lit("foo")  # doctest: +IGNORE_RESULT
-
-    Literal datetime:
-
-    >>> from datetime import datetime
-    >>> pl.lit(datetime(2021, 1, 20))  # doctest: +IGNORE_RESULT
-
-    Literal Null:
-
+    >>> pl.lit(5.5)  # doctest: +IGNORE_RESULT
     >>> pl.lit(None)  # doctest: +IGNORE_RESULT
+    >>> pl.lit("foo_bar")  # doctest: +IGNORE_RESULT
+    >>> pl.lit(date(2021, 1, 20))  # doctest: +IGNORE_RESULT
+    >>> pl.lit(datetime(2023, 3, 31, 10, 30, 45))  # doctest: +IGNORE_RESULT
 
-    Literal eager Series:
+    Literal list/Series data (1D):
 
-    >>> pl.lit(pl.Series("a", [1, 2, 3]))  # doctest: +IGNORE_RESULT
+    >>> pl.lit([1, 2, 3])  # doctest: +IGNORE_RESULT
+    >>> pl.lit(pl.Series("x", [1, 2, 3]))  # doctest: +IGNORE_RESULT
+
+    Literal list/Series data (2D):
+
+    >>> pl.lit([[1, 2], [3, 4]])  # doctest: +IGNORE_RESULT
+    >>> pl.lit(pl.Series("y", [[1, 2], [3, 4]]))  # doctest: +IGNORE_RESULT
 
     """
     time_unit: TimeUnit

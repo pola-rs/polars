@@ -206,6 +206,7 @@ def test_from_arrow(monkeypatch: Any) -> None:
             "decimal1": pa.array([1, 2], pa.decimal128(2, 1)),
         }
     )
+    record_batches = tbl.to_batches(max_chunksize=1)
     expected_schema = {
         "a": pl.Datetime("ms"),
         "b": pl.Datetime("ms"),
@@ -232,10 +233,10 @@ def test_from_arrow(monkeypatch: Any) -> None:
             Decimal("2.0"),
         ),
     ]
-
-    df = cast(pl.DataFrame, pl.from_arrow(tbl))
-    assert df.schema == expected_schema
-    assert df.rows() == expected_data
+    for arrow_data in (tbl, record_batches):
+        df = cast(pl.DataFrame, pl.from_arrow(arrow_data))
+        assert df.schema == expected_schema
+        assert df.rows() == expected_data
 
     empty_tbl = tbl[:0]  # no rows
     df = cast(pl.DataFrame, pl.from_arrow(empty_tbl))
@@ -249,6 +250,36 @@ def test_from_arrow(monkeypatch: Any) -> None:
         override_schema["e"] = pl.Int8
         assert df.schema == override_schema
         assert df.rows() == expected_data[: (len(df))]
+
+    # init from record batches with overrides
+    df = pl.DataFrame(
+        {
+            "id": ["a123", "b345", "c567", "d789", "e101"],
+            "points": [99, 45, 50, 85, 35],
+        }
+    )
+    tbl = df.to_arrow()
+    batches = tbl.to_batches(max_chunksize=3)
+
+    df0: pl.DataFrame = pl.from_arrow(batches)  # type: ignore[assignment]
+    df1: pl.DataFrame = pl.from_arrow(  # type: ignore[assignment]
+        data=batches,
+        schema=["x", "y"],
+        schema_overrides={"y": pl.Int32},
+    )
+    df2: pl.DataFrame = pl.from_arrow(  # type: ignore[assignment]
+        data=batches[0],
+        schema=["x", "y"],
+        schema_overrides={"y": pl.Int32},
+    )
+
+    assert df0.rows() == df.rows()
+    assert df1.rows() == df.rows()
+    assert df2.rows() == df.rows()[:3]
+
+    assert df0.schema == {"id": pl.Utf8, "points": pl.Int64}
+    assert df1.schema == {"x": pl.Utf8, "y": pl.Int32}
+    assert df2.schema == {"x": pl.Utf8, "y": pl.Int32}
 
 
 def test_from_dict_with_column_order() -> None:
