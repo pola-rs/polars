@@ -142,7 +142,7 @@ def test_pivot_multiple_values_column_names_5116() -> None:
     )
 
     with pytest.raises(ComputeError, match="found multiple elements in the same group"):
-        result = df.pivot(
+        df.pivot(
             values=["x1", "x2"],
             index="c1",
             columns="c2",
@@ -159,12 +159,29 @@ def test_pivot_multiple_values_column_names_5116() -> None:
     )
     expected = {
         "c1": ["A", "B"],
-        "x1|C": [1, 2],
-        "x1|D": [3, 4],
-        "x2|C": [8, 7],
-        "x2|D": [6, 5],
+        "x1|c2|C": [1, 2],
+        "x1|c2|D": [3, 4],
+        "x2|c2|C": [8, 7],
+        "x2|c2|D": [6, 5],
     }
     assert result.to_dict(False) == expected
+
+
+def test_pivot_duplicate_names_7731() -> None:
+    df = pl.DataFrame(
+        {"a": [1, 4], "b": [1, 2], "c": ["x", "x"], "d": [7, 8], "e": ["x", "y"]}
+    )
+    assert df.pivot(values=["a", "d"], index="b", columns=["c", "e"]).to_dict(
+        False
+    ) == {
+        "b": [1, 2],
+        "a_c_x": [1, 4],
+        "d_c_x": [7, 8],
+        "a_e_x": [1, None],
+        "a_e_y": [None, 4],
+        "d_e_x": [7, None],
+        "d_e_y": [None, 8],
+    }
 
 
 def test_pivot_floats() -> None:
