@@ -2596,13 +2596,13 @@ def concat_str(
     return wrap_expr(_concat_str(exprs, separator))
 
 
-def format(fstring: str, *args: Expr | str) -> Expr:
+def format(f_string: str, *args: Expr | str) -> Expr:
     """
     Format expressions as a string.
 
     Parameters
     ----------
-    fstring
+    f_string
         A string that with placeholders.
         For example: "hello_{}" or "{}_world
     args
@@ -2633,13 +2633,13 @@ def format(fstring: str, *args: Expr | str) -> Expr:
     └─────────────┘
 
     """
-    if fstring.count("{}") != len(args):
+    if f_string.count("{}") != len(args):
         raise ValueError("number of placeholders should equal the number of arguments")
 
     exprs = []
 
     arguments = iter(args)
-    for i, s in enumerate(fstring.split("{}")):
+    for i, s in enumerate(f_string.split("{}")):
         if i > 0:
             e = expr_to_lit_or_expr(next(arguments), str_to_lit=False)
             exprs.append(e)
