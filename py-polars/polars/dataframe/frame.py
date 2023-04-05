@@ -4003,7 +4003,7 @@ class DataFrame:
         """
         return self._df.frame_equal(other._df, null_equal)
 
-    def replace(self, column: str, new_col: Series) -> Self:
+    def replace(self, column: str, new_column: Series) -> Self:
         """
         Replace a column by a new Series.
 
@@ -4011,7 +4011,7 @@ class DataFrame:
         ----------
         column
             Column to replace.
-        new_col
+        new_column
             New column to insert.
 
         Examples
@@ -4031,7 +4031,7 @@ class DataFrame:
         └─────┴─────┘
 
         """
-        self._df.replace(column, new_col._s)
+        self._df.replace(column, new_column._s)
         return self
 
     def slice(self, offset: int, length: int | None = None) -> Self:
