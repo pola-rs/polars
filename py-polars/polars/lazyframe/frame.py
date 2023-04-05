@@ -91,6 +91,11 @@ if TYPE_CHECKING:
         UniqueKeepStrategy,
     )
 
+    if sys.version_info >= (3, 8):
+        from typing import Literal
+    else:
+        from typing_extensions import Literal
+
     if sys.version_info >= (3, 10):
         from typing import Concatenate, ParamSpec
     else:
@@ -4632,7 +4637,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         return self._from_pyldf(self._ldf.merge_sorted(other._ldf, key))
 
     def update(
-        self, other: LazyFrame, on: None | str | Sequence[str] = None, how: str = "left"
+        self,
+        other: LazyFrame,
+        on: str | Sequence[str] | None = None,
+        how: Literal["left", "inner"] = "left",
     ) -> Self:
         """
         Update the values in this `LazyFrame` with the non-null values in `other`.
@@ -4654,8 +4662,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Column names that will be joined on.
             If none given the row count is used.
         how : {'left', 'inner'}
-            'Left' will keep the left table rows as is.
-            'Inner' will remove rows that are not found in other
+            'left' will keep the left table rows as is.
+            'inner' will remove rows that are not found in other
 
         Examples
         --------
@@ -4733,7 +4741,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         tmp_name = "__POLARS_RIGHT"
 
         result = (
-            self.join(other.select(list(union_names)), on=on, how=how, suffix=tmp_name)  # type: ignore[arg-type]
+            self.join(other.select(list(union_names)), on=on, how=how, suffix=tmp_name)
             .with_columns(
                 [
                     F.coalesce([column_name + tmp_name, F.col(column_name)]).alias(

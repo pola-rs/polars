@@ -8414,7 +8414,10 @@ class DataFrame:
         )
 
     def update(
-        self, other: DataFrame, on: str | Sequence[str] | None = None, how: str = "left"
+        self,
+        other: DataFrame,
+        on: str | Sequence[str] | None = None,
+        how: Literal["left", "inner"] = "left",
     ) -> Self:
         """
         Update the values in this `DataFrame` with the non-null values in `other`.
@@ -8436,8 +8439,8 @@ class DataFrame:
             Column names that will be joined on.
             If none given the row count is used.
         how : {'left', 'inner'}
-            'Left' will keep the left table rows as is.
-            'Inner' will remove rows that are not found in other
+            'left' will keep the left table rows as is.
+            'inner' will remove rows that are not found in other
 
         Examples
         --------
