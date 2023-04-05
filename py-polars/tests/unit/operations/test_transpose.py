@@ -30,19 +30,22 @@ def test_transpose_struct() -> None:
             }
         ).transpose()
 
-    # nothing useful, but tests if we don't have UB
-    assert pl.DataFrame(
-        {
-            "b": [
-                {"a": date(2022, 1, 1), "b": True},
-                {"a": date(2022, 1, 2), "b": False},
-                {"a": date(2022, 1, 3), "b": False},
-            ]
-        }
-    ).transpose().to_dict(False) == {
-        "column_0": [{"a": None, "b": None}],
-        "column_1": [{"a": None, "b": None}],
-        "column_2": [{"a": None, "b": None}],
+    assert (
+        pl.DataFrame(
+            {
+                "b": [
+                    {"a": date(2022, 1, 1), "b": True},
+                    {"a": date(2022, 1, 2), "b": False},
+                    {"a": date(2022, 1, 3), "b": False},
+                ]
+            }
+        )
+        .transpose()
+        .to_dict(False)
+    ) == {
+        "column_0": [{"a": date(2022, 1, 1), "b": True}],
+        "column_1": [{"a": date(2022, 1, 2), "b": False}],
+        "column_2": [{"a": date(2022, 1, 3), "b": False}],
     }
 
 
