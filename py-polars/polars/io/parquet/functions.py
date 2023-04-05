@@ -8,7 +8,6 @@ from polars import internals as pli
 from polars.convert import from_arrow
 from polars.dependencies import _PYARROW_AVAILABLE
 from polars.io._utils import _prepare_file_arg
-from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 from polars.utils.various import normalise_filepath
 
 with contextlib.suppress(ImportError):
@@ -22,9 +21,9 @@ if TYPE_CHECKING:
     from polars.type_aliases import ParallelStrategy, PolarsDataType
 
 
-@deprecate_nonkeyword_arguments()
 def read_parquet(
     source: str | Path | BinaryIO | BytesIO | bytes,
+    *,
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
     use_pyarrow: bool = False,
@@ -35,7 +34,6 @@ def read_parquet(
     row_count_offset: int = 0,
     low_memory: bool = False,
     pyarrow_options: dict[str, Any] | None = None,
-    *,
     use_statistics: bool = True,
     rechunk: bool = True,
 ) -> DataFrame:
@@ -136,7 +134,6 @@ def read_parquet(
         )
 
 
-@deprecated_alias(file="source")
 def read_parquet_schema(
     source: str | BinaryIO | Path | bytes,
 ) -> dict[str, PolarsDataType]:
@@ -159,10 +156,9 @@ def read_parquet_schema(
     return _parquet_schema(source)
 
 
-@deprecate_nonkeyword_arguments()
-@deprecated_alias(file="source", stacklevel=4)
 def scan_parquet(
     source: str | Path,
+    *,
     n_rows: int | None = None,
     cache: bool = True,
     parallel: ParallelStrategy = "auto",
@@ -171,7 +167,6 @@ def scan_parquet(
     row_count_offset: int = 0,
     storage_options: dict[str, Any] | None = None,
     low_memory: bool = False,
-    *,
     use_statistics: bool = True,
 ) -> LazyFrame:
     """

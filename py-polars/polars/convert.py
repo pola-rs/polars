@@ -15,7 +15,6 @@ from polars.dependencies import _PYARROW_AVAILABLE
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoDataError
-from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 from polars.utils.various import _cast_repr_strings_with_schema
 
 if TYPE_CHECKING:
@@ -25,7 +24,6 @@ if TYPE_CHECKING:
     from polars.type_aliases import Orientation, SchemaDefinition, SchemaDict
 
 
-@deprecated_alias(columns="schema")
 def from_dict(
     data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
     schema: SchemaDefinition | None = None,
@@ -80,14 +78,12 @@ def from_dict(
     )
 
 
-@deprecate_nonkeyword_arguments(allowed_args=["data", "schema"])
-@deprecated_alias(dicts="data", stacklevel=4)
 def from_dicts(
     data: Sequence[dict[str, Any]],
-    infer_schema_length: int | None = N_INFER_DEFAULT,
-    *,
     schema: SchemaDefinition | None = None,
+    *,
     schema_overrides: SchemaDict | None = None,
+    infer_schema_length: int | None = N_INFER_DEFAULT,
 ) -> DataFrame:
     """
     Construct a DataFrame from a sequence of dictionaries. This operation clones data.
@@ -96,9 +92,6 @@ def from_dicts(
     ----------
     data
         Sequence with dictionaries mapping column name to value
-    infer_schema_length
-        How many dictionaries/rows to scan to determine the data types
-        if set to `None` then ALL dicts are scanned; this will be slow.
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
@@ -117,6 +110,9 @@ def from_dicts(
         them to the schema.
     schema_overrides : dict, default None
         Support override of inferred types for one or more columns.
+    infer_schema_length
+        How many dictionaries/rows to scan to determine the data types
+        if set to `None` then ALL dicts are scanned; this will be slow.
 
     Returns
     -------
@@ -184,7 +180,6 @@ def from_dicts(
     )
 
 
-@deprecated_alias(columns="schema")
 def from_records(
     data: Sequence[Sequence[Any]],
     schema: SchemaDefinition | None = None,
@@ -367,7 +362,6 @@ def from_repr(tbl: str) -> DataFrame:
     return _cast_repr_strings_with_schema(df, schema)
 
 
-@deprecated_alias(columns="schema")
 def from_numpy(
     data: np.ndarray[Any, Any],
     schema: SchemaDefinition | None = None,
@@ -429,12 +423,12 @@ def from_numpy(
     )
 
 
-@deprecate_nonkeyword_arguments(allowed_args=["data", "schema"])
 def from_arrow(
     data: pa.Table | pa.Array | pa.ChunkedArray,
-    rechunk: bool = True,
     schema: SchemaDefinition | None = None,
+    *,
     schema_overrides: SchemaDict | None = None,
+    rechunk: bool = True,
 ) -> DataFrame | Series:
     """
     Create a DataFrame or Series from an Arrow Table or Array.
@@ -446,8 +440,6 @@ def from_arrow(
     ----------
     data : :class:`pyarrow.Table` or :class:`pyarrow.Array`
         Data representing an Arrow Table or Array.
-    rechunk : bool, default True
-        Make sure that all data is in contiguous memory.
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
@@ -461,6 +453,8 @@ def from_arrow(
     schema_overrides : dict, default None
         Support type specification or override of one or more columns; note that
         any dtypes inferred from the schema param will be overridden.
+    rechunk : bool, default True
+        Make sure that all data is in contiguous memory.
 
     Returns
     -------
@@ -513,10 +507,10 @@ def from_arrow(
 @overload
 def from_pandas(
     data: pd.DataFrame,
+    *,
+    schema_overrides: SchemaDict | None = ...,
     rechunk: bool = ...,
     nan_to_null: bool = ...,
-    schema_overrides: SchemaDict | None = ...,
-    *,
     include_index: bool = ...,
 ) -> DataFrame:
     ...
@@ -525,23 +519,21 @@ def from_pandas(
 @overload
 def from_pandas(
     data: pd.Series | pd.DatetimeIndex,
+    *,
+    schema_overrides: SchemaDict | None = ...,
     rechunk: bool = ...,
     nan_to_null: bool = ...,
-    schema_overrides: SchemaDict | None = ...,
-    *,
     include_index: bool = ...,
 ) -> Series:
     ...
 
 
-@deprecate_nonkeyword_arguments()
-@deprecated_alias(nan_to_none="nan_to_null", df="data", stacklevel=4)
 def from_pandas(
     data: pd.DataFrame | pd.Series | pd.DatetimeIndex,
+    *,
+    schema_overrides: SchemaDict | None = None,
     rechunk: bool = True,
     nan_to_null: bool = True,
-    schema_overrides: SchemaDict | None = None,
-    *,
     include_index: bool = False,
 ) -> DataFrame | Series:
     """
@@ -555,12 +547,12 @@ def from_pandas(
     ----------
     data: :class:`pandas.DataFrame`, :class:`pandas.Series`, :class:`pandas.DatetimeIndex`
         Data represented as a pandas DataFrame, Series, or DatetimeIndex.
+    schema_overrides : dict, default None
+        Support override of inferred types for one or more columns.
     rechunk : bool, default True
         Make sure that all data is in contiguous memory.
     nan_to_null : bool, default True
         If data contains `NaN` values PyArrow will convert the ``NaN`` to ``None``
-    schema_overrides : dict, default None
-        Support override of inferred types for one or more columns.
     include_index : bool, default False
         Load any non-default pandas indexes as columns.
 
@@ -615,8 +607,7 @@ def from_pandas(
         raise ValueError(f"Expected pandas DataFrame or Series, got {type(data)}.")
 
 
-@deprecate_nonkeyword_arguments()
-def from_dataframe(df: Any, allow_copy: bool = True) -> DataFrame:
+def from_dataframe(df: Any, *, allow_copy: bool = True) -> DataFrame:
     """
     Build a Polars DataFrame from any dataframe supporting the interchange protocol.
 

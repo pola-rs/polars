@@ -6,7 +6,6 @@ from polars import functions as F
 from polars import internals as pli
 from polars.functions.whenthen import WhenThen, WhenThenThen
 from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.decorators import deprecated_alias, redirect
 
 if TYPE_CHECKING:
     from datetime import timedelta
@@ -23,7 +22,6 @@ if TYPE_CHECKING:
 DF = TypeVar("DF", bound="DataFrame")
 
 
-@redirect({"agg_list": "all"})
 class GroupBy(Generic[DF]):
     """Starts a new GroupBy operation."""
 
@@ -231,7 +229,6 @@ class GroupBy(Generic[DF]):
         )
         return self.df.__class__._from_pydf(df._df)
 
-    @deprecated_alias(f="function")
     def apply(self, function: Callable[[DataFrame], DataFrame]) -> DF:
         """
         Apply a custom/user-defined function (UDF) over the groups as a sub-DataFrame.

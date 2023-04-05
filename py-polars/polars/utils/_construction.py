@@ -56,7 +56,6 @@ from polars.dependencies import pyarrow as pa
 from polars.exceptions import ComputeError, ShapeError
 from polars.utils._wrap import wrap_df, wrap_s
 from polars.utils.convert import _tzinfo_to_str
-from polars.utils.decorators import deprecated_alias
 from polars.utils.meta import threadpool_size
 from polars.utils.various import _is_generator, arrlen, range_to_series
 
@@ -433,7 +432,6 @@ def sequence_to_pyseries(
             return _construct_series_with_fallbacks(constructor, name, values, strict)
 
 
-@deprecated_alias(nan_to_none="nan_to_null")
 def _pandas_series_to_arrow(
     values: pd.Series | pd.DatetimeIndex,
     nan_to_null: bool = True,
@@ -476,7 +474,6 @@ def _pandas_series_to_arrow(
         )
 
 
-@deprecated_alias(nan_to_none="nan_to_null")
 def pandas_to_pyseries(
     name: str, values: pd.Series | pd.DatetimeIndex, nan_to_null: bool = True
 ) -> PySeries:
@@ -1346,7 +1343,6 @@ def pandas_has_default_index(df: pd.DataFrame) -> bool:
         )
 
 
-@deprecated_alias(nan_to_none="nan_to_null")
 def pandas_to_pydf(
     data: pd.DataFrame,
     schema: SchemaDefinition | None = None,

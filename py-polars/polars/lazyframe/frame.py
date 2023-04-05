@@ -51,11 +51,6 @@ from polars.slice import LazyPolarsSlice
 from polars.utils._parse_expr_input import expr_to_lit_or_expr, selection_to_pyexpr_list
 from polars.utils._wrap import wrap_df
 from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.decorators import (
-    deprecate_nonkeyword_arguments,
-    deprecated_alias,
-    redirect,
-)
 from polars.utils.various import (
     _in_notebook,
     _prepare_row_count_args,
@@ -110,12 +105,6 @@ if TYPE_CHECKING:
     P = ParamSpec("P")
 
 
-@redirect(
-    {
-        "cleared": "clear",
-        "with_column": "with_columns",
-    }
-)
 class LazyFrame:
     """
     Representation of a Lazy computation graph/query against a DataFrame.
@@ -950,9 +939,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             return ldf.describe_optimized_plan()
         return self._ldf.describe_plan()
 
-    @deprecate_nonkeyword_arguments()
     def describe_optimized_plan(
         self,
+        *,
         type_coercion: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
@@ -979,11 +968,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return ldf.describe_optimized_plan()
 
-    @deprecate_nonkeyword_arguments()
     def show_graph(
         self,
-        optimized: bool = True,
         *,
+        optimized: bool = True,
         show: bool = True,
         output_path: str | None = None,
         raw_output: bool = False,
@@ -1115,7 +1103,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return self.map(inspect, predicate_pushdown=True, projection_pushdown=True)
 
-    @deprecated_alias(reverse="descending")
     def sort(
         self,
         by: IntoExpr | Iterable[IntoExpr],
@@ -1375,9 +1362,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             descending = [descending]
         return self._from_pyldf(self._ldf.bottom_k(k, by, descending, nulls_last))
 
-    @deprecate_nonkeyword_arguments()
     def profile(
         self,
+        *,
         type_coercion: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
@@ -2668,10 +2655,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         return LazyGroupBy(lgb, lazyframe_class=self.__class__)
 
-    @deprecate_nonkeyword_arguments()
     def join_asof(
         self,
         other: LazyFrame,
+        *,
         left_on: str | None | Expr = None,
         right_on: str | None | Expr = None,
         on: str | None | Expr = None,
@@ -2845,19 +2832,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
         )
 
-    @deprecate_nonkeyword_arguments(
-        message=(
-            "All arguments of LazyFrame.join except for 'other', 'on', and 'how' will be keyword-only in the next breaking release."
-            " Use keyword arguments to silence this warning."
-        )
-    )
     def join(
         self,
         other: LazyFrame,
-        left_on: str | Expr | Sequence[str | Expr] | None = None,
-        right_on: str | Expr | Sequence[str | Expr] | None = None,
         on: str | Expr | Sequence[str | Expr] | None = None,
         how: JoinStrategy = "inner",
+        *,
+        left_on: str | Expr | Sequence[str | Expr] | None = None,
+        right_on: str | Expr | Sequence[str | Expr] | None = None,
         suffix: str = "_right",
         allow_parallel: bool = True,
         force_parallel: bool = False,
@@ -2869,15 +2851,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         other
             Lazy DataFrame to join with.
-        left_on
-            Join column of the left DataFrame.
-        right_on
-            Join column of the right DataFrame.
         on
             Join column of both DataFrames. If set, `left_on` and `right_on` should be
             None.
         how : {'inner', 'left', 'outer', 'semi', 'anti', 'cross'}
             Join strategy.
+        left_on
+            Join column of the left DataFrame.
+        right_on
+            Join column of the right DataFrame.
         suffix
             Suffix to append to columns with a duplicate name.
         allow_parallel
@@ -3760,12 +3742,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self.select(F.col("*").take_every(n))
 
-    @deprecate_nonkeyword_arguments(allowed_args=["self", "value", "strategy", "limit"])
     def fill_null(
         self,
         value: Any | None = None,
         strategy: FillNullStrategy | None = None,
         limit: int | None = None,
+        *,
         matches_supertype: bool = True,
     ) -> Self:
         """
@@ -4220,28 +4202,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             columns.extend(selection_to_pyexpr_list(more_columns))
         return self._from_pyldf(self._ldf.explode(columns))
 
-    @deprecate_nonkeyword_arguments(
-        message=(
-            "All arguments of LazyFrame.unique except for 'subset' will be keyword-only in the next breaking release."
-            " Use keyword arguments to silence this warning."
-        )
-    )
     def unique(
         self,
-        maintain_order: bool = False,
         subset: str | Sequence[str] | None = None,
+        *,
         keep: UniqueKeepStrategy = "any",
+        maintain_order: bool = False,
     ) -> Self:
         """
         Drop duplicate rows from this dataframe.
 
         Parameters
         ----------
-        maintain_order
-            Keep the same order as the original DataFrame. This is more expensive to
-            compute.
-            Settings this to ``True`` blocks the possibility
-            to run on the streaming engine.
         subset
             Column name(s) to consider when identifying duplicates.
             If set to ``None`` (default), use all columns.
@@ -4253,6 +4225,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * 'none': Don't keep duplicate rows.
             * 'first': Keep first unique row.
             * 'last': Keep last unique row.
+        maintain_order
+            Keep the same order as the original DataFrame. This is more expensive to
+            compute.
+            Settings this to ``True`` blocks the possibility
+            to run on the streaming engine.
 
         Returns
         -------
@@ -4457,11 +4434,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             self._ldf.melt(id_vars, value_vars, value_name, variable_name, streamable)
         )
 
-    @deprecated_alias(f="function")
-    @deprecate_nonkeyword_arguments(stacklevel=3)
     def map(
         self,
         function: Callable[[DataFrame], DataFrame],
+        *,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         slice_pushdown: bool = True,
@@ -4576,7 +4552,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self.select(F.col("*").interpolate())
 
-    @deprecated_alias(names="columns")
     def unnest(self, columns: str | Sequence[str], *more_columns: str) -> Self:
         """
         Decompose struct columns into separate columns for each of their fields.

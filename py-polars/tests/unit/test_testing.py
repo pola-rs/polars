@@ -234,12 +234,7 @@ def test_assert_frame_equal_column_mismatch_order() -> None:
     with pytest.raises(AssertionError, match="Columns are not in the same order"):
         assert_frame_equal(df1, df2)
 
-    # preferred/new param name
     assert_frame_equal(df1, df2, check_column_order=False)
-
-    # deprecated param name
-    with pytest.deprecated_call():
-        assert_frame_equal(df1, df2, check_column_names=False)  # type: ignore[call-arg]
 
 
 def test_assert_frame_equal_ignore_row_order() -> None:
