@@ -93,30 +93,12 @@ fn is_nested_null(av: &AnyValue) -> bool {
     }
 }
 
-// nested dtypes that are all null, will be set as null leaf dtype
-fn infer_dtype_dynamic(av: &AnyValue) -> DataType {
-    match av {
-        // AnyValue::List(s) if s.null_count() == s.len() => DataType::List(Box::new(DataType::Null)),
-        #[cfg(feature = "dtype-struct")]
-        AnyValue::Struct(_, _, _) => DataType::Struct(
-            av._iter_struct_av()
-                .map(|av| {
-                    let dtype = infer_dtype_dynamic(&av);
-                    Field::new("", dtype)
-                })
-                .collect(),
-        ),
-        av => av.into(),
-    }
-}
-
 pub fn any_values_to_dtype(column: &[AnyValue]) -> PolarsResult<DataType> {
     // we need an index-map as the order of dtypes influences how the
     // struct fields are constructed.
     let mut types_set = PlIndexSet::new();
     for val in column.iter() {
-        let dtype = infer_dtype_dynamic(val);
-        types_set.insert(dtype);
+        types_set.insert(val.into());
     }
     types_set_to_dtype(types_set)
 }
@@ -141,8 +123,7 @@ pub fn rows_to_schema_supertypes(
 
     for row in rows.iter().take(max_infer) {
         for (val, types_set) in row.0.iter().zip(dtypes.iter_mut()) {
-            let dtype = infer_dtype_dynamic(val);
-            types_set.insert(dtype);
+            types_set.insert(val.into());
         }
     }
 
