@@ -462,11 +462,11 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_zfill(alignment))
 
-    def ljust(self, width: int, fillchar: str = " ") -> Expr:
+    def ljust(self, width: int, fill_char: str = " ") -> Expr:
         """
         Return the string left justified in a string of length ``width``.
 
-        Padding is done using the specified ``fillchar``.
+        Padding is done using the specified ``fill_char``.
         The original string is returned if ``width`` is less than or equal to
         ``len(s)``.
 
@@ -474,7 +474,7 @@ class ExprStringNameSpace:
         ----------
         width
             Justify left to this length.
-        fillchar
+        fill_char
             Fill with this ASCII character.
 
         Examples
@@ -494,13 +494,13 @@ class ExprStringNameSpace:
         └──────────────┘
 
         """
-        return wrap_expr(self._pyexpr.str_ljust(width, fillchar))
+        return wrap_expr(self._pyexpr.str_ljust(width, fill_char))
 
-    def rjust(self, width: int, fillchar: str = " ") -> Expr:
+    def rjust(self, width: int, fill_char: str = " ") -> Expr:
         """
         Return the string right justified in a string of length ``width``.
 
-        Padding is done using the specified ``fillchar``.
+        Padding is done using the specified ``fill_char``.
         The original string is returned if ``width`` is less than or equal to
         ``len(s)``.
 
@@ -508,7 +508,7 @@ class ExprStringNameSpace:
         ----------
         width
             Justify right to this length.
-        fillchar
+        fill_char
             Fill with this ASCII character.
 
         Examples
@@ -528,7 +528,7 @@ class ExprStringNameSpace:
         └──────────────┘
 
         """
-        return wrap_expr(self._pyexpr.str_rjust(width, fillchar))
+        return wrap_expr(self._pyexpr.str_rjust(width, fill_char))
 
     def contains(
         self, pattern: str | Expr, *, literal: bool = False, strict: bool = True

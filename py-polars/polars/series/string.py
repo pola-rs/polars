@@ -819,18 +819,18 @@ class StringNameSpace:
 
         """
 
-    def ljust(self, width: int, fillchar: str = " ") -> Series:
+    def ljust(self, width: int, fill_char: str = " ") -> Series:
         """
         Return the string left justified in a string of length ``width``.
 
-        Padding is done using the specified ``fillchar``. The original string is
+        Padding is done using the specified ``fill_char``. The original string is
         returned if ``width`` is less than or equal to``len(s)``.
 
         Parameters
         ----------
         width
             Justify left to this length.
-        fillchar
+        fill_char
             Fill with this ASCII character.
 
         Examples
@@ -848,18 +848,18 @@ class StringNameSpace:
 
         """
 
-    def rjust(self, width: int, fillchar: str = " ") -> Series:
+    def rjust(self, width: int, fill_char: str = " ") -> Series:
         """
         Return the string right justified in a string of length ``width``.
 
-        Padding is done using the specified ``fillchar``. The original string is
+        Padding is done using the specified ``fill_char``. The original string is
         returned if ``width`` is less than or equal to ``len(s)``.
 
         Parameters
         ----------
         width
             Justify right to this length.
-        fillchar
+        fill_char
             Fill with this ASCII character.
 
         Examples
