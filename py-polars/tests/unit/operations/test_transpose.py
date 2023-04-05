@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Iterator
 
 import pytest
@@ -98,3 +98,16 @@ def test_transpose_arguments() -> None:
         }
     )
     assert_frame_equal(expected, out)
+
+
+def test_transpose_logical_data() -> None:
+    assert pl.DataFrame(
+        {
+            "a": [date(2022, 2, 1), date(2022, 2, 2), date(2022, 1, 3)],
+            "b": [datetime(2022, 1, 1), datetime(2022, 1, 2), datetime(2022, 1, 3)],
+        }
+    ).transpose().to_dict(False) == {
+        "column_0": [datetime(1970, 1, 1, 0, 0, 0, 19024), datetime(2022, 1, 1, 0, 0)],
+        "column_1": [datetime(1970, 1, 1, 0, 0, 0, 19025), datetime(2022, 1, 2, 0, 0)],
+        "column_2": [datetime(1970, 1, 1, 0, 0, 0, 18995), datetime(2022, 1, 3, 0, 0)],
+    }
