@@ -292,6 +292,7 @@ class LazyFrame:
     def _scan_csv(
         cls,
         source: str,
+        *,
         has_header: bool = True,
         separator: str = ",",
         comment_char: str | None = None,
@@ -361,6 +362,7 @@ class LazyFrame:
     def _scan_parquet(
         cls,
         source: str,
+        *,
         n_rows: int | None = None,
         cache: bool = True,
         parallel: ParallelStrategy = "auto",
@@ -408,6 +410,7 @@ class LazyFrame:
     def _scan_ipc(
         cls,
         source: str | Path,
+        *,
         n_rows: int | None = None,
         cache: bool = True,
         rechunk: bool = True,
@@ -453,6 +456,7 @@ class LazyFrame:
     def _scan_ndjson(
         cls,
         source: str,
+        *,
         infer_schema_length: int | None = None,
         batch_size: int | None = None,
         n_rows: int | None = None,
@@ -481,6 +485,24 @@ class LazyFrame:
             rechunk,
             _prepare_row_count_args(row_count_name, row_count_offset),
         )
+        return self
+
+    @classmethod
+    def _scan_python_function(
+        cls,
+        schema: pa.schema | dict[str, PolarsDataType],
+        scan_fn: bytes,
+        pyarrow: bool = False,
+    ) -> Self:
+        self = cls.__new__(cls)
+        if isinstance(schema, dict):
+            self._ldf = PyLazyFrame.scan_from_python_function_pl_schema(
+                [(name, dt) for name, dt in schema.items()], scan_fn, pyarrow
+            )
+        else:
+            self._ldf = PyLazyFrame.scan_from_python_function_arrow_schema(
+                list(schema), scan_fn, pyarrow
+            )
         return self
 
     @classmethod
@@ -523,24 +545,6 @@ class LazyFrame:
             file = normalise_filepath(file)
 
         return cls._from_pyldf(PyLazyFrame.read_json(file))
-
-    @classmethod
-    def _scan_python_function(
-        cls,
-        schema: pa.schema | dict[str, PolarsDataType],
-        scan_fn: bytes,
-        pyarrow: bool = False,
-    ) -> Self:
-        self = cls.__new__(cls)
-        if isinstance(schema, dict):
-            self._ldf = PyLazyFrame.scan_from_python_function_pl_schema(
-                [(name, dt) for name, dt in schema.items()], scan_fn, pyarrow
-            )
-        else:
-            self._ldf = PyLazyFrame.scan_from_python_function_arrow_schema(
-                list(schema), scan_fn, pyarrow
-            )
-        return self
 
     @property
     def columns(self) -> list[str]:
