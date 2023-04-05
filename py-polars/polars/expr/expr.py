@@ -6115,13 +6115,13 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.arctanh())
 
-    def reshape(self, dims: tuple[int, ...]) -> Self:
+    def reshape(self, dimensions: tuple[int, ...]) -> Self:
         """
         Reshape this Expr to a flat Series or a Series of Lists.
 
         Parameters
         ----------
-        dims
+        dimensions
             Tuple of the dimension sizes. If a -1 is used in any of the dimensions, that
             dimension is inferred.
 
@@ -6152,7 +6152,7 @@ class Expr:
         ExprListNameSpace.explode : Explode a list column.
 
         """
-        return self._from_pyexpr(self._pyexpr.reshape(dims))
+        return self._from_pyexpr(self._pyexpr.reshape(dimensions))
 
     def shuffle(self, seed: int | None = None) -> Self:
         """
