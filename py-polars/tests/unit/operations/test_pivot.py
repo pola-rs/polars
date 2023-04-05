@@ -307,3 +307,39 @@ def test_aggregate_function_deprecation_warning() -> None:
         match="the default `aggregate_function` will change from `'first'` to `None`",
     ):
         df.pivot("a", "b", "c")
+
+
+def test_pivot_struct() -> None:
+    data = {
+        "id": ["a", "a", "b", "c", "c", "c"],
+        "week": ["1", "2", "3", "4", "3", "1"],
+        "num1": [1, 3, 5, 4, 3, 6],
+        "num2": [4, 5, 3, 4, 6, 6],
+    }
+    df = pl.DataFrame(data).with_columns(nums=pl.struct(["num1", "num2"]))
+
+    assert df.pivot(
+        values="nums", index="id", columns="week", aggregate_function="first"
+    ).to_dict(False) == {
+        "id": ["a", "b", "c"],
+        "1": [
+            {"num1": 1, "num2": 4},
+            {"num1": None, "num2": None},
+            {"num1": 6, "num2": 6},
+        ],
+        "2": [
+            {"num1": 3, "num2": 5},
+            {"num1": None, "num2": None},
+            {"num1": None, "num2": None},
+        ],
+        "3": [
+            {"num1": None, "num2": None},
+            {"num1": 5, "num2": 3},
+            {"num1": 3, "num2": 6},
+        ],
+        "4": [
+            {"num1": None, "num2": None},
+            {"num1": None, "num2": None},
+            {"num1": 4, "num2": 4},
+        ],
+    }

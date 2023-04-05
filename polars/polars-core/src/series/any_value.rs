@@ -346,7 +346,7 @@ impl Series {
 
     pub fn from_any_values(name: &str, avs: &[AnyValue], strict: bool) -> PolarsResult<Series> {
         match avs.iter().find(|av| !matches!(av, AnyValue::Null)) {
-            None => Ok(Series::full_null(name, avs.len(), &DataType::Int32)),
+            None => Ok(Series::full_null(name, avs.len(), &DataType::Null)),
             Some(av) => {
                 #[cfg(feature = "dtype-decimal")]
                 {

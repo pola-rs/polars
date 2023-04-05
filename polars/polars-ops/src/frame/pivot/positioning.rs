@@ -1,6 +1,7 @@
 use std::hash::Hash;
 
 use polars_core::prelude::*;
+use polars_utils::sync::SyncPtr;
 
 use super::*;
 
@@ -19,30 +20,49 @@ pub(super) fn position_aggregates(
     let n_threads = POOL.current_num_threads();
     let split = _split_offsets(row_locations.len(), n_threads);
 
-    POOL.install(|| {
-        split.into_par_iter().for_each(|(offset, len)| {
-            let start_ptr = start_ptr as *mut AnyValue;
-            let row_locations = &row_locations[offset..offset + len];
-            let col_locations = &col_locations[offset..offset + len];
-            let value_agg_phys = value_agg_phys.slice(offset as i64, len);
+    // ensure the slice series are not dropped
+    // so the anyvalues are referencing correct data, if they reference arrays (struct)
+    let n_splits = split.len();
+    let mut arrays: Vec<Series> = Vec::with_capacity(n_splits);
 
-            for ((row_idx, col_idx), val) in row_locations
-                .iter()
-                .zip(col_locations)
-                .zip(value_agg_phys.phys_iter())
-            {
-                // Safety:
-                // in bounds
-                unsafe {
-                    let idx = *row_idx as usize + *col_idx as usize * n_rows;
-                    debug_assert!(idx < buf.len());
-                    let pos = start_ptr.add(idx);
-                    std::ptr::write(pos, val)
+    // every thread will only write to their partition
+    let array_ptr = unsafe { SyncPtr::new(arrays.as_mut_ptr()) };
+
+    POOL.install(|| {
+        split
+            .into_par_iter()
+            .enumerate()
+            .for_each(|(i, (offset, len))| {
+                let start_ptr = start_ptr as *mut AnyValue;
+                let row_locations = &row_locations[offset..offset + len];
+                let col_locations = &col_locations[offset..offset + len];
+                let value_agg_phys = value_agg_phys.slice(offset as i64, len);
+
+                for ((row_idx, col_idx), val) in row_locations
+                    .iter()
+                    .zip(col_locations)
+                    .zip(value_agg_phys.phys_iter())
+                {
+                    // Safety:
+                    // in bounds
+                    unsafe {
+                        let idx = *row_idx as usize + *col_idx as usize * n_rows;
+                        debug_assert!(idx < buf.len());
+                        let pos = start_ptr.add(idx);
+                        std::ptr::write(pos, val)
+                    }
                 }
-            }
-        });
+                // ensure the `values_agg_phys` stays alive
+                let array_ptr = array_ptr.clone().get();
+                unsafe { std::ptr::write(array_ptr.add(i), value_agg_phys) }
+            });
+        // ensure the content of the arrays are dropped
+        unsafe {
+            arrays.set_len(n_splits);
+        }
 
         let headers_iter = headers.par_iter_indexed();
+        let phys_type = logical_type.to_physical();
 
         (0..n_cols)
             .into_par_iter()
@@ -51,7 +71,23 @@ pub(super) fn position_aggregates(
                 let offset = i * n_rows;
                 let avs = &buf[offset..offset + n_rows];
                 let name = opt_name.unwrap_or("null");
-                let out = Series::new(name, avs);
+                let out = match &phys_type {
+                    #[cfg(feature = "dtype-struct")]
+                    DataType::Struct(_) => {
+                        // we know we can trust this data, so we use the explicit builder
+                        use polars_core::frame::row::AnyValueBufferTrusted;
+                        let mut buf = AnyValueBufferTrusted::new(&phys_type, avs.len());
+                        for av in avs {
+                            unsafe {
+                                buf.add_unchecked_owned_physical(av);
+                            }
+                        }
+                        let mut out = buf.into_series();
+                        out.rename(name);
+                        out
+                    }
+                    _ => Series::from_any_values_and_dtype(name, avs, &phys_type, false).unwrap(),
+                };
                 unsafe { out.cast_unchecked(logical_type).unwrap() }
             })
             .collect::<Vec<_>>()
@@ -77,29 +113,46 @@ where
     let n_threads = POOL.current_num_threads();
 
     let split = _split_offsets(row_locations.len(), n_threads);
+    let n_splits = split.len();
+    // ensure the arrays are not dropped
+    // so the anyvalues are referencing correct data, if they reference arrays (struct)
+    let mut arrays: Vec<ChunkedArray<T>> = Vec::with_capacity(n_splits);
+
+    // every thread will only write to their partition
+    let array_ptr = unsafe { SyncPtr::new(arrays.as_mut_ptr()) };
 
     POOL.install(|| {
-        split.into_par_iter().for_each(|(offset, len)| {
-            let start_ptr = start_ptr as *mut Option<T::Native>;
-            let row_locations = &row_locations[offset..offset + len];
-            let col_locations = &col_locations[offset..offset + len];
-            let value_agg_phys = value_agg_phys.slice(offset as i64, len);
+        split
+            .into_par_iter()
+            .enumerate()
+            .for_each(|(i, (offset, len))| {
+                let start_ptr = start_ptr as *mut Option<T::Native>;
+                let row_locations = &row_locations[offset..offset + len];
+                let col_locations = &col_locations[offset..offset + len];
+                let value_agg_phys = value_agg_phys.slice(offset as i64, len);
 
-            for ((row_idx, col_idx), val) in row_locations
-                .iter()
-                .zip(col_locations)
-                .zip(value_agg_phys.into_iter())
-            {
-                // Safety:
-                // in bounds
-                unsafe {
-                    let idx = *row_idx as usize + *col_idx as usize * n_rows;
-                    debug_assert!(idx < buf.len());
-                    let pos = start_ptr.add(idx);
-                    std::ptr::write(pos, val)
+                for ((row_idx, col_idx), val) in row_locations
+                    .iter()
+                    .zip(col_locations)
+                    .zip(value_agg_phys.into_iter())
+                {
+                    // Safety:
+                    // in bounds
+                    unsafe {
+                        let idx = *row_idx as usize + *col_idx as usize * n_rows;
+                        debug_assert!(idx < buf.len());
+                        let pos = start_ptr.add(idx);
+                        std::ptr::write(pos, val)
+                    }
                 }
-            }
-        });
+                // ensure the `values_agg_phys` stays alive
+                let array_ptr = array_ptr.clone().get();
+                unsafe { std::ptr::write(array_ptr.add(i), value_agg_phys) }
+            });
+        // ensure the content of the arrays are dropped
+        unsafe {
+            arrays.set_len(n_splits);
+        }
         let headers_iter = headers.par_iter_indexed();
 
         (0..n_cols)

@@ -1,7 +1,7 @@
 #[cfg(feature = "dtype-struct")]
-use polars_utils::format_smartstring;
-#[cfg(feature = "dtype-struct")]
 use polars_utils::slice::GetSaferUnchecked;
+#[cfg(feature = "dtype-struct")]
+use smartstring::alias::String as SmartString;
 
 use super::*;
 #[cfg(feature = "dtype-struct")]
@@ -222,11 +222,15 @@ pub enum AnyValueBufferTrusted<'a> {
     Utf8(Utf8ChunkedBuilder),
     #[cfg(feature = "dtype-struct")]
     // not the trusted variant!
-    Struct(Vec<AnyValueBuffer<'a>>),
+    Struct(Vec<(AnyValueBuffer<'a>, SmartString)>),
     All(DataType, Vec<AnyValue<'a>>),
 }
 
 impl<'a> AnyValueBufferTrusted<'a> {
+    pub fn new(dtype: &DataType, len: usize) -> Self {
+        (dtype, len).into()
+    }
+
     /// Will add the AnyValue into `Self` and unpack as the physical type
     /// belonging to `Self`. This should only be used with physical buffers
     ///
@@ -256,7 +260,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
                 Utf8(builder) => builder.append_null(),
                 #[cfg(feature = "dtype-struct")]
                 Struct(builders) => {
-                    for b in builders.iter_mut() {
+                    for (b, _) in builders.iter_mut() {
                         b.add(AnyValue::Null);
                     }
                 }
@@ -325,7 +329,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
                             unsafe {
                                 let array = arrays.get_unchecked_release(i);
                                 let field = fields.get_unchecked_release(i);
-                                let builder = builders.get_unchecked_release_mut(i);
+                                let (builder, _) = builders.get_unchecked_release_mut(i);
                                 let av = arr_to_any_value(&**array, *idx, &field.dtype);
                                 // lifetime is bound to 'a
                                 let av = std::mem::transmute::<AnyValue<'_>, AnyValue<'a>>(av);
@@ -362,10 +366,9 @@ impl<'a> AnyValueBufferTrusted<'a> {
             Struct(b) => {
                 let v = b
                     .into_iter()
-                    .enumerate()
-                    .map(|(i, b)| {
+                    .map(|(b, name)| {
                         let mut s = b.into_series();
-                        s.rename(format_smartstring!("field_{}", i).as_str());
+                        s.rename(name.as_str());
                         s
                     })
                     .collect::<Vec<_>>();
@@ -405,7 +408,7 @@ impl From<(&DataType, usize)> for AnyValueBufferTrusted<'_> {
                     .map(|field| {
                         let dtype = field.data_type().to_physical();
                         let buffer: AnyValueBuffer = (&dtype, len).into();
-                        buffer
+                        (buffer, field.name.clone())
                     })
                     .collect::<Vec<_>>();
                 AnyValueBufferTrusted::Struct(buffers)
