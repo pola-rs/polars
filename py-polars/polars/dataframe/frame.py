@@ -8365,7 +8365,7 @@ class DataFrame:
 
         Parameters
         ----------
-        kwargs
+        **kwargs
             keyword arguments are passed to numpy corrcoef
 
         Examples
@@ -8414,7 +8414,7 @@ class DataFrame:
         )
 
     def update(
-        self, other: DataFrame, on: None | str | Sequence[str] = None, how: str = "left"
+        self, other: DataFrame, on: str | Sequence[str] | None = None, how: str = "left"
     ) -> Self:
         """
         Update the values in this `DataFrame` with the non-null values in `other`.
