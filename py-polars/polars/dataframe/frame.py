@@ -86,6 +86,7 @@ from polars.utils._construction import (
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
 from polars.utils._wrap import wrap_ldf, wrap_s
 from polars.utils.convert import _timedelta_to_pl_duration
+from polars.utils.decorators import deprecated_alias
 from polars.utils.meta import get_index_type
 from polars.utils.various import (
     _prepare_row_count_args,
@@ -7638,11 +7639,12 @@ class DataFrame:
         """
         return self._from_pydf(self._df.null_count())
 
+    @deprecated_alias(frac="fraction")
     def sample(
         self,
         n: int | None = None,
         *,
-        frac: float | None = None,
+        fraction: float | None = None,
         with_replacement: bool = False,
         shuffle: bool = False,
         seed: int | None = None,
@@ -7653,9 +7655,9 @@ class DataFrame:
         Parameters
         ----------
         n
-            Number of items to return. Cannot be used with `frac`. Defaults to 1 if
-            `frac` is None.
-        frac
+            Number of items to return. Cannot be used with `fraction`. Defaults to 1 if
+            `fraction` is None.
+        fraction
             Fraction of items to return. Cannot be used with `n`.
         with_replacement
             Allow values to be sampled more than once.
@@ -7688,15 +7690,15 @@ class DataFrame:
         └─────┴─────┴─────┘
 
         """
-        if n is not None and frac is not None:
-            raise ValueError("cannot specify both `n` and `frac`")
+        if n is not None and fraction is not None:
+            raise ValueError("cannot specify both `n` and `fraction`")
 
         if seed is None:
             seed = random.randint(0, 10000)
 
-        if n is None and frac is not None:
+        if n is None and fraction is not None:
             return self._from_pydf(
-                self._df.sample_frac(frac, with_replacement, shuffle, seed)
+                self._df.sample_frac(fraction, with_replacement, shuffle, seed)
             )
 
         if n is None:

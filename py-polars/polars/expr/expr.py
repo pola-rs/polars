@@ -45,6 +45,7 @@ from polars.expr.string import ExprStringNameSpace
 from polars.expr.struct import ExprStructNameSpace
 from polars.utils._parse_expr_input import expr_to_lit_or_expr, selection_to_pyexpr_list
 from polars.utils.convert import _timedelta_to_pl_duration
+from polars.utils.decorators import deprecated_alias
 from polars.utils.meta import threadpool_size
 from polars.utils.various import sphinx_accessor
 
@@ -6184,11 +6185,12 @@ class Expr:
             seed = random.randint(0, 10000)
         return self._from_pyexpr(self._pyexpr.shuffle(seed))
 
+    @deprecated_alias(frac="fraction")
     def sample(
         self,
         n: int | None = None,
         *,
-        frac: float | None = None,
+        fraction: float | None = None,
         with_replacement: bool = False,
         shuffle: bool = False,
         seed: int | None = None,
@@ -6199,9 +6201,9 @@ class Expr:
         Parameters
         ----------
         n
-            Number of items to return. Cannot be used with `frac`. Defaults to 1 if
-            `frac` is None.
-        frac
+            Number of items to return. Cannot be used with `fraction`. Defaults to 1 if
+            `fraction` is None.
+        fraction
             Fraction of items to return. Cannot be used with `n`.
         with_replacement
             Allow values to be sampled more than once.
@@ -6227,15 +6229,15 @@ class Expr:
         └─────┘
 
         """
-        if n is not None and frac is not None:
-            raise ValueError("cannot specify both `n` and `frac`")
+        if n is not None and fraction is not None:
+            raise ValueError("cannot specify both `n` and `fraction`")
 
         if seed is None:
             seed = random.randint(0, 10000)
 
-        if frac is not None:
+        if fraction is not None:
             return self._from_pyexpr(
-                self._pyexpr.sample_frac(frac, with_replacement, shuffle, seed)
+                self._pyexpr.sample_frac(fraction, with_replacement, shuffle, seed)
             )
 
         if n is None:

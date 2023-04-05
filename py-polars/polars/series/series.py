@@ -78,6 +78,7 @@ from polars.utils.convert import (
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
 )
+from polars.utils.decorators import deprecated_alias
 from polars.utils.meta import get_index_type
 from polars.utils.various import (
     _is_generator,
@@ -4650,11 +4651,12 @@ class Series:
 
         """
 
+    @deprecated_alias(frac="fraction")
     def sample(
         self,
         n: int | None = None,
         *,
-        frac: float | None = None,
+        fraction: float | None = None,
         with_replacement: bool = False,
         shuffle: bool = False,
         seed: int | None = None,
@@ -4665,9 +4667,9 @@ class Series:
         Parameters
         ----------
         n
-            Number of items to return. Cannot be used with `frac`. Defaults to 1 if
-            `frac` is None.
-        frac
+            Number of items to return. Cannot be used with `fraction`. Defaults to 1 if
+            `fraction` is None.
+        fraction
             Fraction of items to return. Cannot be used with `n`.
         with_replacement
             Allow values to be sampled more than once.
@@ -4689,6 +4691,19 @@ class Series:
         ]
 
         """
+        return (
+            self.to_frame()
+            .select(
+                F.col(self.name).sample(
+                    n,
+                    fraction=fraction,
+                    with_replacement=with_replacement,
+                    shuffle=shuffle,
+                    seed=seed,
+                )
+            )
+            .to_series()
+        )
 
     def peak_max(self) -> Self:
         """
