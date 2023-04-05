@@ -33,29 +33,29 @@ class ExprBinaryNameSpace:
         """
         return wrap_expr(self._pyexpr.binary_contains(lit))
 
-    def ends_with(self, sub: bytes) -> Expr:
+    def ends_with(self, suffix: bytes) -> Expr:
         """
         Check if string values end with a binary substring.
 
         Parameters
         ----------
-        sub
+        suffix
             Suffix substring.
 
         """
-        return wrap_expr(self._pyexpr.binary_ends_with(sub))
+        return wrap_expr(self._pyexpr.binary_ends_with(suffix))
 
-    def starts_with(self, sub: bytes) -> Expr:
+    def starts_with(self, prefix: bytes) -> Expr:
         """
         Check if values start with a binary substring.
 
         Parameters
         ----------
-        sub
+        prefix
             Prefix substring.
 
         """
-        return wrap_expr(self._pyexpr.binary_starts_with(sub))
+        return wrap_expr(self._pyexpr.binary_starts_with(prefix))
 
     def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> Expr:
         """

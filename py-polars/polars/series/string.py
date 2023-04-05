@@ -232,13 +232,13 @@ class StringNameSpace:
 
         """
 
-    def ends_with(self, sub: str | Expr) -> Series:
+    def ends_with(self, suffix: str | Expr) -> Series:
         """
         Check if string values end with a substring.
 
         Parameters
         ----------
-        sub
+        suffix
             Suffix substring.
 
         Examples
@@ -260,13 +260,13 @@ class StringNameSpace:
 
         """
 
-    def starts_with(self, sub: str | Expr) -> Series:
+    def starts_with(self, prefix: str | Expr) -> Series:
         """
         Check if string values start with a substring.
 
         Parameters
         ----------
-        sub
+        prefix
             Prefix substring.
 
         Examples

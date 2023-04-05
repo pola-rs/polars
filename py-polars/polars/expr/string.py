@@ -578,13 +578,13 @@ class ExprStringNameSpace:
         pattern = expr_to_lit_or_expr(pattern, str_to_lit=True)._pyexpr
         return wrap_expr(self._pyexpr.str_contains(pattern, literal, strict))
 
-    def ends_with(self, sub: str | Expr) -> Expr:
+    def ends_with(self, suffix: str | Expr) -> Expr:
         """
         Check if string values end with a substring.
 
         Parameters
         ----------
-        sub
+        suffix
             Suffix substring.
 
         Examples
@@ -622,16 +622,16 @@ class ExprStringNameSpace:
         starts_with : Check if string values start with a substring.
 
         """
-        sub = expr_to_lit_or_expr(sub, str_to_lit=True)._pyexpr
-        return wrap_expr(self._pyexpr.str_ends_with(sub))
+        suffix = expr_to_lit_or_expr(suffix, str_to_lit=True)._pyexpr
+        return wrap_expr(self._pyexpr.str_ends_with(suffix))
 
-    def starts_with(self, sub: str | Expr) -> Expr:
+    def starts_with(self, prefix: str | Expr) -> Expr:
         """
         Check if string values start with a substring.
 
         Parameters
         ----------
-        sub
+        prefix
             Prefix substring.
 
         Examples
@@ -669,8 +669,8 @@ class ExprStringNameSpace:
         ends_with : Check if string values end with a substring.
 
         """
-        sub = expr_to_lit_or_expr(sub, str_to_lit=True)._pyexpr
-        return wrap_expr(self._pyexpr.str_starts_with(sub))
+        prefix = expr_to_lit_or_expr(prefix, str_to_lit=True)._pyexpr
+        return wrap_expr(self._pyexpr.str_starts_with(prefix))
 
     def json_extract(self, dtype: PolarsDataType | None = None) -> Expr:
         """
