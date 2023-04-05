@@ -42,6 +42,11 @@ impl CategoricalChunked {
         }
     }
 
+    pub fn approx_n_unique(&self, precision: u8) -> PolarsResult<usize> {
+         self.logical().approx_n_unique(precision)
+
+    }
+
     pub fn value_counts(&self) -> PolarsResult<DataFrame> {
         let groups = self.logical().group_tuples(true, false).unwrap();
         let logical_values = unsafe {

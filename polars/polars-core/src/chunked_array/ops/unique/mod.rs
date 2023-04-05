@@ -1,9 +1,9 @@
 #[cfg(feature = "rank")]
 pub(crate) mod rank;
 
-use std::collections::hash_map::RandomState;
 use std::hash::Hash;
 
+use ahash::RandomState;
 use arrow::bitmap::MutableBitmap;
 use hyperloglogplus::{HyperLogLog, HyperLogLogPlus};
 
@@ -63,6 +63,11 @@ impl<T: PolarsObject> ChunkUnique<ObjectType<T>> for ObjectChunked<T> {
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         polars_bail!(opq = arg_unique, self.dtype());
     }
+
+    fn estimate_approx(&self, mut e: HyperLogLogPlus<AnyValue, RandomState>) -> f64 {
+        self.into_iter().for_each(|item| e.insert_any(&item));
+        e.count()
+    }
 }
 
 fn fill_set<A>(a: impl Iterator<Item = A>) -> PlHashSet<A>
@@ -70,19 +75,6 @@ where
     A: Hash + Eq,
 {
     a.collect()
-}
-
-fn create_hllp_estimator<A>(
-    a: impl Iterator<Item = A>,
-    precision: u8,
-) -> HyperLogLogPlus<A, RandomState>
-where
-    A: Hash + Eq,
-{
-    let mut hllp = HyperLogLogPlus::new(precision, RandomState::new()).unwrap();
-    a.for_each(|v| hllp.insert(&v));
-
-    hllp
 }
 
 fn arg_unique<T>(a: impl Iterator<Item = T>, capacity: usize) -> Vec<IdxSize>
@@ -208,6 +200,11 @@ where
         }
     }
 
+    fn estimate_approx(&self, mut e: HyperLogLogPlus<AnyValue, RandomState>) -> f64 {
+        self.into_iter().for_each(|item| e.insert_any(&item));
+        e.count()
+    }
+
     #[cfg(feature = "mode")]
     fn mode(&self) -> PolarsResult<Self> {
         Ok(mode(self))
@@ -279,9 +276,9 @@ impl ChunkUnique<BinaryType> for BinaryChunked {
         }
     }
 
-    fn approx_n_unique(&self, precision: u8) -> PolarsResult<usize> {
-        let mut hllp = create_hllp_estimator(self.into_iter(), precision);
-        Ok(hllp.count().trunc() as usize)
+    fn estimate_approx(&self, mut e: HyperLogLogPlus<AnyValue, RandomState>) -> f64 {
+        self.into_iter().for_each(|item| e.insert_any(&item));
+        e.count()
     }
 
     #[cfg(feature = "mode")]
@@ -308,6 +305,11 @@ impl ChunkUnique<BooleanType> for BooleanChunked {
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         Ok(IdxCa::from_vec(self.name(), arg_unique_ca!(self)))
     }
+
+    fn estimate_approx(&self, mut e: HyperLogLogPlus<AnyValue, RandomState>) -> f64 {
+        self.into_iter().for_each(|item| e.insert_any(&item));
+        e.count()
+    }
 }
 
 impl ChunkUnique<Float32Type> for Float32Chunked {
@@ -326,6 +328,10 @@ impl ChunkUnique<Float32Type> for Float32Chunked {
         let ca = s.f32().unwrap().clone();
         Ok(ca)
     }
+
+    fn approx_n_unique(&self, precision: u8) -> PolarsResult<usize> {
+        self.bit_repr_small().approx_n_unique(precision)
+    }
 }
 
 impl ChunkUnique<Float64Type> for Float64Chunked {
@@ -343,6 +349,10 @@ impl ChunkUnique<Float64Type> for Float64Chunked {
         let s = self.apply_as_ints(|v| v.mode().unwrap());
         let ca = s.f64().unwrap().clone();
         Ok(ca)
+    }
+
+    fn approx_n_unique(&self, precision: u8) -> PolarsResult<usize> {
+        self.bit_repr_large().approx_n_unique(precision)
     }
 }
 
