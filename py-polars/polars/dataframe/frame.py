@@ -4716,8 +4716,8 @@ class DataFrame:
         >>> df = pl.DataFrame(
         ...     {
         ...         "time": pl.date_range(
-        ...             low=datetime(2021, 12, 16),
-        ...             high=datetime(2021, 12, 16, 3),
+        ...             start=datetime(2021, 12, 16),
+        ...             end=datetime(2021, 12, 16, 3),
         ...             interval="30m",
         ...         ),
         ...         "n": range(7),
@@ -4820,8 +4820,8 @@ class DataFrame:
         >>> df = pl.DataFrame(
         ...     {
         ...         "time": pl.date_range(
-        ...             low=datetime(2021, 12, 16),
-        ...             high=datetime(2021, 12, 16, 3),
+        ...             start=datetime(2021, 12, 16),
+        ...             end=datetime(2021, 12, 16, 3),
         ...             interval="30m",
         ...         ),
         ...         "groups": ["a", "a", "a", "b", "b", "a", "a"],

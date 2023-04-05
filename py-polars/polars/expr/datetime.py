@@ -902,8 +902,8 @@ class ExprDateTimeNameSpace:
         >>> df = pl.DataFrame(
         ...     data={
         ...         "date": pl.date_range(
-        ...             low=datetime(2001, 1, 1, 0, 0, 0, 456789),
-        ...             high=datetime(2001, 1, 1, 0, 0, 6),
+        ...             start=datetime(2001, 1, 1, 0, 0, 0, 456789),
+        ...             end=datetime(2001, 1, 1, 0, 0, 6),
         ...             interval=timedelta(seconds=2, microseconds=654321),
         ...         )
         ...     }
