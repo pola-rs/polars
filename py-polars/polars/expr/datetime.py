@@ -887,6 +887,11 @@ class ExprDateTimeNameSpace:
         point number from 0 < 60 if ``fractional=True`` that includes
         any milli/micro/nanosecond component.
 
+        Parameters
+        ----------
+        fractional
+            Whether to include the fractional component of the second.
+
         Returns
         -------
         Second as UInt32 (or Float64)
