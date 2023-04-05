@@ -5648,7 +5648,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.kurtosis(fisher, bias))
 
-    def clip(self, min_val: int | float, max_val: int | float) -> Self:
+    def clip(self, lower_bound: int | float, upper_bound: int | float) -> Self:
         """
         Clip (limit) the values in an array to a `min` and `max` boundary.
 
@@ -5659,10 +5659,10 @@ class Expr:
 
         Parameters
         ----------
-        min_val
-            Minimum value.
-        max_val
-            Maximum value.
+        lower_bound
+            Lower bound.
+        upper_bound
+            Upper bound.
 
         Examples
         --------
@@ -5681,9 +5681,9 @@ class Expr:
         └──────┴─────────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.clip(min_val, max_val))
+        return self._from_pyexpr(self._pyexpr.clip(lower_bound, upper_bound))
 
-    def clip_min(self, min_val: int | float) -> Self:
+    def clip_min(self, lower_bound: int | float) -> Self:
         """
         Clip (limit) the values in an array to a `min` boundary.
 
@@ -5694,8 +5694,8 @@ class Expr:
 
         Parameters
         ----------
-        min_val
-            Minimum value.
+        lower_bound
+            Lower bound.
 
         Examples
         --------
@@ -5714,9 +5714,9 @@ class Expr:
         └──────┴─────────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.clip_min(min_val))
+        return self._from_pyexpr(self._pyexpr.clip_min(lower_bound))
 
-    def clip_max(self, max_val: int | float) -> Self:
+    def clip_max(self, upper_bound: int | float) -> Self:
         """
         Clip (limit) the values in an array to a `max` boundary.
 
@@ -5727,8 +5727,8 @@ class Expr:
 
         Parameters
         ----------
-        max_val
-            Maximum value.
+        upper_bound
+            Upper bound.
 
         Examples
         --------
@@ -5747,7 +5747,7 @@ class Expr:
         └──────┴─────────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.clip_max(max_val))
+        return self._from_pyexpr(self._pyexpr.clip_max(upper_bound))
 
     def lower_bound(self) -> Self:
         """

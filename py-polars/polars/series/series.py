@@ -5081,7 +5081,7 @@ class Series:
         """
         return self._s.kurtosis(fisher, bias)
 
-    def clip(self, min_val: int | float, max_val: int | float) -> Series:
+    def clip(self, lower_bound: int | float, upper_bound: int | float) -> Series:
         """
         Clip (limit) the values in an array to a `min` and `max` boundary.
 
@@ -5092,9 +5092,9 @@ class Series:
 
         Parameters
         ----------
-        min_val
+        lower_bound
             Minimum value.
-        max_val
+        upper_bound
             Maximum value.
 
         Examples
@@ -5112,7 +5112,7 @@ class Series:
 
         """
 
-    def clip_min(self, min_val: int | float) -> Series:
+    def clip_min(self, lower_bound: int | float) -> Series:
         """
         Clip (limit) the values in an array to a `min` boundary.
 
@@ -5123,12 +5123,12 @@ class Series:
 
         Parameters
         ----------
-        min_val
-            Minimum value.
+        lower_bound
+            Lower bound.
 
         """
 
-    def clip_max(self, max_val: int | float) -> Series:
+    def clip_max(self, upper_bound: int | float) -> Series:
         """
         Clip (limit) the values in an array to a `max` boundary.
 
@@ -5139,8 +5139,8 @@ class Series:
 
         Parameters
         ----------
-        max_val
-            Maximum value.
+        upper_bound
+            Upper bound.
 
         """
 
