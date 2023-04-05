@@ -1101,18 +1101,18 @@ class DataFrame:
         return self._df.columns()
 
     @columns.setter
-    def columns(self, columns: Sequence[str]) -> None:
+    def columns(self, names: Sequence[str]) -> None:
         """
         Change the column names of the `DataFrame`.
 
         Parameters
         ----------
-        columns
+        names
             A list with new names for the `DataFrame`.
             The length of the list should be equal to the width of the `DataFrame`.
 
         """
-        self._df.set_column_names(columns)
+        self._df.set_column_names(names)
 
     @property
     def dtypes(self) -> list[PolarsDataType]:
