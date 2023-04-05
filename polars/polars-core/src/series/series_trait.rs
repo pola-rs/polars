@@ -379,7 +379,7 @@ pub trait SeriesTrait:
 
     /// Get the number of unique values in the Series.
     fn n_unique(&self) -> PolarsResult<usize> {
-        invalid_operation_panic!(n_unique, self)
+        polars_bail!(opq = n_unique, self._dtype());
     }
 
     /// Get the approximate number of unique values in the Series.
@@ -389,7 +389,7 @@ pub trait SeriesTrait:
 
     /// Get first indexes of unique values.
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
-        invalid_operation_panic!(arg_unique, self)
+        polars_bail!(opq = arg_unique, self._dtype());
     }
 
     /// Get a mask of the null values.
@@ -440,15 +440,15 @@ pub trait SeriesTrait:
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
     fn _sum_as_series(&self) -> Series {
-        invalid_operation_panic!(_sum_as_series, self)
+        Series::full_null(self.name(), 1, self.dtype())
     }
     /// Get the max of the Series as a new Series of length 1.
     fn max_as_series(&self) -> Series {
-        invalid_operation_panic!(max_as_series, self)
+        Series::full_null(self.name(), 1, self.dtype())
     }
     /// Get the min of the Series as a new Series of length 1.
     fn min_as_series(&self) -> Series {
-        invalid_operation_panic!(min_as_series, self)
+        Series::full_null(self.name(), 1, self.dtype())
     }
     /// Get the median of the Series as a new Series of length 1.
     fn median_as_series(&self) -> Series {
@@ -511,7 +511,7 @@ pub trait SeriesTrait:
     /// Check if elements of this Series are in the right Series, or List values of the right Series.
     #[cfg(feature = "is_in")]
     fn is_in(&self, _other: &Series) -> PolarsResult<BooleanChunked> {
-        invalid_operation_panic!(is_in, self)
+        polars_bail!(opq = is_in, self._dtype());
     }
     #[cfg(feature = "repeat_by")]
     fn repeat_by(&self, _by: &IdxCa) -> ListChunked {
@@ -519,13 +519,13 @@ pub trait SeriesTrait:
     }
     #[cfg(feature = "checked_arithmetic")]
     fn checked_div(&self, _rhs: &Series) -> PolarsResult<Series> {
-        invalid_operation_panic!(checked_div, self)
+        polars_bail!(opq = checked_div, self._dtype());
     }
 
     #[cfg(feature = "mode")]
     /// Compute the most occurring element in the array.
     fn mode(&self) -> PolarsResult<Series> {
-        invalid_operation_panic!(mode, self);
+        polars_bail!(opq = mode, self._dtype());
     }
 
     #[cfg(feature = "rolling_window")]
@@ -536,7 +536,7 @@ pub trait SeriesTrait:
         _f: &dyn Fn(&Series) -> Series,
         _options: RollingOptionsFixedWindow,
     ) -> PolarsResult<Series> {
-        invalid_operation_panic!(rolling_apply, self);
+        polars_bail!(opq = rolling_apply, self._dtype());
     }
     #[cfg(feature = "concat_str")]
     /// Concat the values into a string array.

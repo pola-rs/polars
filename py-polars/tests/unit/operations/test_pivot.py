@@ -142,7 +142,7 @@ def test_pivot_multiple_values_column_names_5116() -> None:
     )
 
     with pytest.raises(ComputeError, match="found multiple elements in the same group"):
-        result = df.pivot(
+        df.pivot(
             values=["x1", "x2"],
             index="c1",
             columns="c2",
@@ -159,12 +159,29 @@ def test_pivot_multiple_values_column_names_5116() -> None:
     )
     expected = {
         "c1": ["A", "B"],
-        "x1|C": [1, 2],
-        "x1|D": [3, 4],
-        "x2|C": [8, 7],
-        "x2|D": [6, 5],
+        "x1|c2|C": [1, 2],
+        "x1|c2|D": [3, 4],
+        "x2|c2|C": [8, 7],
+        "x2|c2|D": [6, 5],
     }
     assert result.to_dict(False) == expected
+
+
+def test_pivot_duplicate_names_7731() -> None:
+    df = pl.DataFrame(
+        {"a": [1, 4], "b": [1, 2], "c": ["x", "x"], "d": [7, 8], "e": ["x", "y"]}
+    )
+    assert df.pivot(
+        values=["a", "d"], index="b", columns=["c", "e"], aggregate_function="first"
+    ).to_dict(False) == {
+        "b": [1, 2],
+        "a_c_x": [1, 4],
+        "d_c_x": [7, 8],
+        "a_e_x": [1, None],
+        "a_e_y": [None, 4],
+        "d_e_x": [7, None],
+        "d_e_y": [None, 8],
+    }
 
 
 def test_pivot_floats() -> None:
@@ -290,3 +307,39 @@ def test_aggregate_function_deprecation_warning() -> None:
         match="the default `aggregate_function` will change from `'first'` to `None`",
     ):
         df.pivot("a", "b", "c")
+
+
+def test_pivot_struct() -> None:
+    data = {
+        "id": ["a", "a", "b", "c", "c", "c"],
+        "week": ["1", "2", "3", "4", "3", "1"],
+        "num1": [1, 3, 5, 4, 3, 6],
+        "num2": [4, 5, 3, 4, 6, 6],
+    }
+    df = pl.DataFrame(data).with_columns(nums=pl.struct(["num1", "num2"]))
+
+    assert df.pivot(
+        values="nums", index="id", columns="week", aggregate_function="first"
+    ).to_dict(False) == {
+        "id": ["a", "b", "c"],
+        "1": [
+            {"num1": 1, "num2": 4},
+            {"num1": None, "num2": None},
+            {"num1": 6, "num2": 6},
+        ],
+        "2": [
+            {"num1": 3, "num2": 5},
+            {"num1": None, "num2": None},
+            {"num1": None, "num2": None},
+        ],
+        "3": [
+            {"num1": None, "num2": None},
+            {"num1": 5, "num2": 3},
+            {"num1": 3, "num2": 6},
+        ],
+        "4": [
+            {"num1": None, "num2": None},
+            {"num1": None, "num2": None},
+            {"num1": 4, "num2": 4},
+        ],
+    }

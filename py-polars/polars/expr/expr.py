@@ -25,8 +25,12 @@ from typing import (
 from polars import functions as F
 from polars import internals as pli
 from polars.datatypes import (
+    FLOAT_DTYPES,
+    INTEGER_DTYPES,
+    Categorical,
     Struct,
     UInt32,
+    Utf8,
     is_polars_dtype,
     py_type_to_dtype,
 )
@@ -1788,6 +1792,10 @@ class Expr:
         k
             Number of elements to return.
 
+        See Also
+        --------
+        bottom_k
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -1829,6 +1837,10 @@ class Expr:
         ----------
         k
             Number of elements to return.
+
+        See Also
+        --------
+        top_k
 
         Examples
         --------
@@ -6846,7 +6858,7 @@ class Expr:
             Value to use when the remapping dict does not contain the lookup value.
             Use ``pl.first()``, to keep the original value.
         dtype
-            Override output dtype.
+            Set output dtype to override automatic output dtype determination.
 
         Examples
         --------
@@ -6992,7 +7004,9 @@ class Expr:
         def _remap_key_or_value_series(
             name: str,
             values: Iterable[Any],
-            dtype: PolarsDataType,
+            dtype: PolarsDataType | None,
+            dtype_if_empty: PolarsDataType | None,
+            dtype_keys: PolarsDataType | None,
             is_keys: bool,
         ) -> Series:
             """
@@ -7002,23 +7016,88 @@ class Expr:
             the specified dtype and check that none of the values are accidentally
             lost (replaced by nulls) during the conversion.
 
+            Parameters
+            ----------
+            name
+                Name of the keys or values series.
+            values
+                Values for the series: `remapping.keys()` or `remapping.values()`.
+            dtype
+                User specified dtype. If None,
+            dtype_if_empty
+                If no dtype is specified and values contains None, an empty list,
+                or a list with only None values, set the Polars dtype of the Series
+                data.
+            dtype_keys
+                If user set dtype is None, try to see if Series for remapping.values()
+                can be converted to same dtype as the remapping.keys() Series dtype.
+            is_keys
+                If values contains keys or values from remapping dict.
+
             """
             try:
-                s = pli.Series(
-                    name,
-                    values,
-                    dtype=dtype,
-                    strict=True,
-                )
-                if dtype != s.dtype:
-                    raise ValueError(
-                        f"Remapping {'keys' if is_keys else 'values'} could not be converted to {dtype}: found {s.dtype}"
+                if dtype is None:
+                    # If no dtype was set, which should only happen when:
+                    #     values = remapping.values()
+                    # create a Series from those values and infer the dtype.
+                    s = pli.Series(
+                        name,
+                        values,
+                        dtype=None,
+                        dtype_if_empty=dtype_if_empty,
+                        strict=True,
                     )
 
-            except TypeError as exc:
-                raise ValueError(
-                    f"Remapping {'keys' if is_keys else 'values'} could not be converted to {dtype}: {str(exc)}"
-                ) from exc
+                    if dtype_keys is not None:
+                        if s.dtype == dtype_keys:
+                            # Values Series has same dtype as keys Series.
+                            dtype = s.dtype
+                        elif (
+                            (s.dtype in INTEGER_DTYPES and dtype_keys in INTEGER_DTYPES)
+                            or (s.dtype in FLOAT_DTYPES and dtype_keys in FLOAT_DTYPES)
+                            or (s.dtype == Utf8 and dtype_keys == Categorical)
+                        ):
+                            # Values Series and keys Series are of similar dtypes,
+                            # that we can assume that the user wants the values Series
+                            # of the same dtype as the key Series.
+                            dtype = dtype_keys
+                            s = pli.Series(
+                                name,
+                                values,
+                                dtype=dtype_keys,
+                                dtype_if_empty=dtype_if_empty,
+                                strict=True,
+                            )
+                            if dtype != s.dtype:
+                                raise ValueError(
+                                    f"Remapping values for map_dict could not be converted to {dtype}: found {s.dtype}"
+                                )
+                else:
+                    # dtype was set, which should always be the case when:
+                    #     values = remapping.keys()
+                    # and in cases where the user set the output dtype when:
+                    #     values = remapping.values()
+                    s = pli.Series(
+                        name,
+                        values,
+                        dtype=dtype,
+                        dtype_if_empty=dtype_if_empty,
+                        strict=True,
+                    )
+                    if dtype != s.dtype:
+                        raise ValueError(
+                            f"Remapping {'keys' if is_keys else 'values'} for map_dict could not be converted to {dtype}: found {s.dtype}"
+                        )
+
+            except OverflowError as exc:
+                if is_keys:
+                    raise ValueError(
+                        f"Remapping keys for map_dict could not be converted to {dtype}: {str(exc)}"
+                    ) from exc
+                else:
+                    raise ValueError(
+                        f"Choose a more suitable output dtype for map_dict as remapping value could not be converted to {dtype}: {str(exc)}"
+                    ) from exc
 
             if is_keys:
                 # values = remapping.keys()
@@ -7028,7 +7107,7 @@ class Expr:
                     pass
                 else:
                     raise ValueError(
-                        f"Remapping keys could not be converted to {dtype} without losing values in the conversion."
+                        f"Remapping keys for map_dict could not be converted to {dtype} without losing values in the conversion."
                     )
             else:
                 # values = remapping.values()
@@ -7038,7 +7117,7 @@ class Expr:
                     pass
                 else:
                     raise ValueError(
-                        f"Remapping values could not be converted to {dtype} without losing values in the conversion."
+                        f"Remapping values for map_dict could not be converted to {dtype} without losing values in the conversion."
                     )
 
             return s
@@ -7072,6 +7151,8 @@ class Expr:
                 name=remap_key_column,
                 values=remapping.keys(),
                 dtype=input_dtype,
+                dtype_if_empty=input_dtype,
+                dtype_keys=input_dtype,
                 is_keys=True,
             )
 
@@ -7084,22 +7165,17 @@ class Expr:
                     dtype_if_empty=input_dtype,
                 )
             else:
-                try:
-                    # First, try to create a value Series with same dtype as input
-                    # column.
-                    remap_value_s = _remap_key_or_value_series(
-                        name=remap_value_column,
-                        values=remapping.values(),
-                        dtype=remap_key_s.dtype,
-                        is_keys=False,
-                    )
-                except ValueError:
-                    # If that fails create a value Series without a specific dtype.
-                    remap_value_s = pli.Series(
-                        remap_value_column,
-                        remapping.values(),
-                        dtype_if_empty=input_dtype,
-                    )
+                # Create remap value Series with same output dtype as remap key Series,
+                # if possible (if both are integers, both are floats or remap value
+                # Series is pl.Utf8 and remap key Series is pl.Categorical).
+                remap_value_s = _remap_key_or_value_series(
+                    name=remap_value_column,
+                    values=remapping.values(),
+                    dtype=None,
+                    dtype_if_empty=input_dtype,
+                    dtype_keys=input_dtype,
+                    is_keys=False,
+                )
 
             return (
                 (
@@ -7139,6 +7215,8 @@ class Expr:
                 name=remap_key_column,
                 values=list(remapping.keys()),
                 dtype=input_dtype,
+                dtype_if_empty=input_dtype,
+                dtype_keys=input_dtype,
                 is_keys=True,
             )
 
@@ -7151,22 +7229,17 @@ class Expr:
                     dtype_if_empty=input_dtype,
                 )
             else:
-                try:
-                    # First, try to create a value Series with same dtype as input
-                    # column.
-                    remap_value_s = _remap_key_or_value_series(
-                        name=remap_value_column,
-                        values=remapping.values(),
-                        dtype=remap_key_s.dtype,
-                        is_keys=False,
-                    )
-                except ValueError:
-                    # If that fails create a value Series without a specific dtype.
-                    remap_value_s = pli.Series(
-                        remap_value_column,
-                        remapping.values(),
-                        dtype_if_empty=input_dtype,
-                    )
+                # Create remap value Series with same output dtype as remap key Series,
+                # if possible (if both are integers, both are floats or remap value
+                # Series is pl.Utf8 and remap key Series is pl.Categorical).
+                remap_value_s = _remap_key_or_value_series(
+                    name=remap_value_column,
+                    values=remapping.values(),
+                    dtype=None,
+                    dtype_if_empty=input_dtype,
+                    dtype_keys=input_dtype,
+                    is_keys=False,
+                )
 
             return (
                 (

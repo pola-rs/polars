@@ -4,7 +4,6 @@ import warnings
 from typing import TYPE_CHECKING, Any
 
 from polars.convert import from_arrow
-from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 
 if TYPE_CHECKING:
     from polars.dataframe import DataFrame
@@ -108,16 +107,14 @@ def read_database(
         raise ValueError("Engine is not implemented, try either connectorx or adbc.")
 
 
-@deprecated_alias(sql="query")
-@deprecate_nonkeyword_arguments(stacklevel=3)
 def read_sql(
     query: list[str] | str,
     connection_uri: str,
+    *,
     partition_on: str | None = None,
     partition_range: tuple[int, int] | None = None,
     partition_num: int | None = None,
     protocol: str | None = None,
-    *,
     engine: DbReadEngine = "connectorx",
 ) -> DataFrame:
     """

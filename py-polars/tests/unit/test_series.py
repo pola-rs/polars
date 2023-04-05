@@ -596,6 +596,12 @@ def test_arrow() -> None:
     c = pl.Series("c", ["A", "BB", "CCC", None])
     out = c.to_arrow()
     assert out == pa.array(["A", "BB", "CCC", None], type=pa.large_string())
+    assert_series_equal(pl.from_arrow(out), c.rename(""))  # type: ignore[arg-type]
+
+    out = c.to_frame().to_arrow()["c"]
+    assert isinstance(out, (pa.Array, pa.ChunkedArray))
+    assert_series_equal(pl.from_arrow(out), c)  # type: ignore[arg-type]
+    assert_series_equal(pl.from_arrow(out, schema=["x"]), c.rename("x"))  # type: ignore[arg-type]
 
     d = pl.Series("d", [None, None, None], pl.Null)
     out = d.to_arrow()
@@ -2548,6 +2554,16 @@ def test_map_dict() -> None:
     assert_series_equal(
         s.cast(pl.Int16).map_dict(remap_int, default=9, dtype=pl.Float32),
         pl.Series("s", [9.0, 22.0, 9.0, 44.0, 9.0], dtype=pl.Float32),
+    )
+
+    assert_series_equal(
+        pl.Series("boolean_to_int", [True, False]).map_dict({True: 1, False: 0}),
+        pl.Series("boolean_to_int", [1, 0]),
+    )
+
+    assert_series_equal(
+        pl.Series("boolean_to_str", [True, False]).map_dict({True: "1", False: "0"}),
+        pl.Series("boolean_to_str", ["1", "0"]),
     )
 
 

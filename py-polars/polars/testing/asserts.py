@@ -15,14 +15,12 @@ from polars.datatypes import (
 from polars.exceptions import ComputeError, InvalidAssert
 from polars.lazyframe import LazyFrame
 from polars.series import Series
-from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 
 
-@deprecate_nonkeyword_arguments()
-@deprecated_alias(check_column_names="check_column_order", stacklevel=4)
 def assert_frame_equal(
     left: DataFrame | LazyFrame,
     right: DataFrame | LazyFrame,
+    *,
     check_dtype: bool = True,
     check_exact: bool = False,
     rtol: float = 1.0e-5,
@@ -120,10 +118,10 @@ def assert_frame_equal(
             raise AssertionError(msg) from exc
 
 
-@deprecate_nonkeyword_arguments()
 def assert_frame_not_equal(
     left: DataFrame | LazyFrame,
     right: DataFrame | LazyFrame,
+    *,
     check_dtype: bool = True,
     check_exact: bool = False,
     rtol: float = 1.0e-5,
@@ -186,10 +184,10 @@ def assert_frame_not_equal(
         raise AssertionError("Expected the input frames to be unequal.")
 
 
-@deprecate_nonkeyword_arguments()
 def assert_series_equal(
     left: Series,
     right: Series,
+    *,
     check_dtype: bool = True,
     check_names: bool = True,
     check_exact: bool = False,
@@ -245,10 +243,10 @@ def assert_series_equal(
     )
 
 
-@deprecate_nonkeyword_arguments()
 def assert_series_not_equal(
     left: Series,
     right: Series,
+    *,
     check_dtype: bool = True,
     check_names: bool = True,
     check_exact: bool = False,

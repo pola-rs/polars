@@ -803,7 +803,8 @@ def test_map_dict() -> None:
     float_dict = {1.0: "b", 3.0: "d"}
 
     with pytest.raises(
-        pl.ComputeError, match="Remapping keys could not be converted to Int16: "
+        pl.ComputeError,
+        match="Remapping keys for map_dict could not be converted to Int16: ",
     ):
         df.with_columns(pl.col("int").map_dict(float_dict))
 
@@ -811,13 +812,13 @@ def test_map_dict() -> None:
 
     with pytest.raises(
         pl.ComputeError,
-        match="Remapping keys could not be converted to Utf8 without losing values in the conversion.",
+        match="Remapping keys for map_dict could not be converted to Utf8 without losing values in the conversion.",
     ):
         df_int_as_str.with_columns(pl.col("int").map_dict(int_dict))
 
     with pytest.raises(
         pl.ComputeError,
-        match="Remapping keys could not be converted to Utf8 without losing values in the conversion.",
+        match="Remapping keys for map_dict could not be converted to Utf8 without losing values in the conversion.",
     ):
         df_int_as_str.with_columns(pl.col("int").map_dict(int_with_none_dict))
 
@@ -829,6 +830,27 @@ def test_map_dict() -> None:
         pl.DataFrame(
             [
                 pl.Series("text", ["-23"], dtype=pl.Utf8),
+            ]
+        ),
+    )
+
+    assert_frame_equal(
+        pl.DataFrame(
+            [
+                pl.Series("float_to_boolean", [1.0, None]),
+                pl.Series("boolean_to_int", [True, False]),
+                pl.Series("boolean_to_str", [True, False]),
+            ]
+        ).with_columns(
+            pl.col("float_to_boolean").map_dict({1.0: True}),
+            pl.col("boolean_to_int").map_dict({True: 1, False: 0}),
+            pl.col("boolean_to_str").map_dict({True: "1", False: "0"}),
+        ),
+        pl.DataFrame(
+            [
+                pl.Series("float_to_boolean", [True, None], dtype=pl.Boolean),
+                pl.Series("boolean_to_int", [1, 0], dtype=pl.Int64),
+                pl.Series("boolean_to_str", ["1", "0"], dtype=pl.Utf8),
             ]
         ),
     )

@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any, BinaryIO
 from polars import internals as pli
 from polars.dependencies import _PYARROW_AVAILABLE
 from polars.io._utils import _prepare_file_arg
-from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 from polars.utils.various import normalise_filepath
 
 with contextlib.suppress(ImportError):
@@ -21,10 +20,9 @@ if TYPE_CHECKING:
     from polars.type_aliases import PolarsDataType
 
 
-@deprecate_nonkeyword_arguments()
-@deprecated_alias(file="source", stacklevel=4)
 def read_ipc(
     source: str | BinaryIO | BytesIO | Path | bytes,
+    *,
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
     use_pyarrow: bool = False,
@@ -113,7 +111,6 @@ def read_ipc(
         )
 
 
-@deprecated_alias(file="source")
 def read_ipc_schema(source: str | BinaryIO | Path | bytes) -> dict[str, PolarsDataType]:
     """
     Get the schema of an IPC file without reading data.
@@ -134,10 +131,9 @@ def read_ipc_schema(source: str | BinaryIO | Path | bytes) -> dict[str, PolarsDa
     return _ipc_schema(source)
 
 
-@deprecate_nonkeyword_arguments()
-@deprecated_alias(file="source", stacklevel=4)
 def scan_ipc(
     source: str | Path,
+    *,
     n_rows: int | None = None,
     cache: bool = True,
     rechunk: bool = True,
