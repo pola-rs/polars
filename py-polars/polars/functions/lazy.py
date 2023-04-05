@@ -3007,21 +3007,21 @@ def repeat(
 
 
 @overload
-def arg_where(condition: Expr | Series, eager: Literal[False] = ...) -> Expr:
+def arg_where(condition: Expr | Series, *, eager: Literal[False] = ...) -> Expr:
     ...
 
 
 @overload
-def arg_where(condition: Expr | Series, eager: Literal[True]) -> Series:
+def arg_where(condition: Expr | Series, *, eager: Literal[True]) -> Series:
     ...
 
 
 @overload
-def arg_where(condition: Expr | Series, eager: bool) -> Expr | Series:
+def arg_where(condition: Expr | Series, *, eager: bool) -> Expr | Series:
     ...
 
 
-def arg_where(condition: Expr | Series, eager: bool = False) -> Expr | Series:
+def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series:
     """
     Return indices where `condition` evaluates `True`.
 
