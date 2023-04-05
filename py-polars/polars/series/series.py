@@ -154,8 +154,9 @@ class Series:
         In case a numpy array is used to create this Series, indicate how to deal
         with np.nan values. (This parameter is a no-op on non-numpy data).
     dtype_if_empty=dtype_if_empty : DataType, default None
-        If no dtype is specified and values contains None or an empty list,
-        set the Polars dtype of the Series data. If not specified, Float32 is used.
+        If no dtype is specified and values contains None, an empty list, or a
+        list with only None values, set the Polars dtype of the Series data.
+        If not specified, Float32 is used in those cases.
 
     Examples
     --------
