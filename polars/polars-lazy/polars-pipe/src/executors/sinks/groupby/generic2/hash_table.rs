@@ -3,13 +3,35 @@ use std::cell::UnsafeCell;
 use polars_arrow::trusted_len::PushUnchecked;
 
 use super::*;
+use crate::pipeline::PARTITION_SIZE;
 
+const SPILL_SIZE: usize = 128;
+
+#[derive(Clone)]
 struct SpillPartitions {
-    // number of different aggregations
-    n_aggs: u32,
     // outer vec: partitions (factor of 2)
     // inner vec: number of keys + number of aggregated columns
     partitions: Vec<Vec<AnyValueBufferTrusted<'static>>>,
+}
+
+impl SpillPartitions {
+    fn new(keys: &[DataType], aggs: &[DataType]) -> Self {
+        let n_spills = keys.len() + aggs.len();
+
+        let mut buf = Vec::with_capacity(n_spills);
+        for dtype in keys {
+            let builder = AnyValueBufferTrusted::new(dtype, 0);
+            buf.push(builder);
+        }
+        for dtype in aggs {
+            let builder = AnyValueBufferTrusted::new(dtype, 0);
+            buf.push(builder);
+        }
+
+        let partitions = (0..PARTITION_SIZE).map(|partition| buf.clone()).collect();
+
+        Self { partitions }
+    }
 }
 
 impl SpillPartitions {
@@ -37,8 +59,6 @@ impl SpillPartitions {
     }
 }
 
-const LOCAL_SIZE: usize = 128;
-
 pub(super) struct HashTbl {
     inner_map: PlIdHashMap<Key, IdxSize>,
     keys: Vec<AnyValue<'static>>,
@@ -55,18 +75,37 @@ pub(super) struct HashTbl {
 }
 
 impl HashTbl {
-    fn new(
-        agg_constructors: Vec<AggregateFunction>,
-        spill_partitions: SpillPartitions,
-        n_keys: usize,
-    ) -> Self {
+    pub(super) fn split(&self) -> Self {
+        // should be called before any spills have run .
+        debug_assert!(self
+            .spill_partitions
+            .partitions
+            .iter()
+            .all(|v| v.is_empty()));
+        Self {
+            inner_map: Default::default(),
+            keys: Default::default(),
+            running_aggregations: Default::default(),
+            agg_constructors: self.agg_constructors.iter().map(|ac| ac.split()).collect(),
+            spill_partitions: self.spill_partitions.clone(),
+            keys_scratch: unsafe { UnsafeCell::new((*self.keys_scratch.get()).clone()) },
+        }
+    }
+
+    pub(super) fn new(agg_constructors: Vec<AggregateFunction>, key_dtypes: &[DataType]) -> Self {
+        let agg_dtypes = agg_constructors
+            .iter()
+            .map(|agg| agg.dtype())
+            .collect::<Vec<_>>();
+        let spill_partitions = SpillPartitions::new(key_dtypes, &agg_dtypes);
+
         Self {
             inner_map: Default::default(),
             keys: Default::default(),
             running_aggregations: Default::default(),
             agg_constructors,
             spill_partitions,
-            keys_scratch: UnsafeCell::new(Vec::with_capacity(n_keys)),
+            keys_scratch: UnsafeCell::new(Vec::with_capacity(key_dtypes.len())),
         }
     }
 
@@ -128,7 +167,7 @@ impl HashTbl {
                 // ensure the bck forgets this guy
                 std::mem::forget(entry);
 
-                if self.inner_map.len() > LOCAL_SIZE {
+                if self.inner_map.len() > SPILL_SIZE {
                     unsafe {
                         // take a hold of the entry again and ensure it gets dropped
                         let borrow =
@@ -154,7 +193,7 @@ impl HashTbl {
                 }
 
                 for agg in &self.agg_constructors {
-                    self.running_aggregations.push(agg.split2())
+                    self.running_aggregations.push(agg.split())
                 }
 
                 unsafe {

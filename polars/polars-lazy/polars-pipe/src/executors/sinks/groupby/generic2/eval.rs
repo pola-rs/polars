@@ -19,6 +19,31 @@ pub(super) struct Eval {
 }
 
 impl Eval {
+    pub(super) fn new(
+        key_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
+        aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
+    ) -> Self {
+        let hb = RandomState::default();
+        Self {
+            key_columns,
+            aggregation_columns,
+            hb,
+            aggregation_series: Default::default(),
+            keys_series: Default::default(),
+            hashes: Default::default(),
+        }
+    }
+    pub(super) fn split(&self) -> Self {
+        Self {
+            key_columns: self.key_columns.clone(),
+            aggregation_columns: self.aggregation_columns.clone(),
+            hb: self.hb.clone(),
+            aggregation_series: Default::default(),
+            keys_series: Default::default(),
+            hashes: Default::default(),
+        }
+    }
+
     pub(super) unsafe fn clear(&mut self) {
         let keys_series = &mut *self.keys_series.get();
         let aggregation_series = &mut *self.aggregation_series.get();

@@ -1,5 +1,6 @@
 use super::*;
 
+#[derive(Clone)]
 pub struct Utf8ChunkedBuilder {
     pub(crate) builder: MutableUtf8Array<i64>,
     pub capacity: usize,

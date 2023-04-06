@@ -1,10 +1,37 @@
 use std::cell::UnsafeCell;
 
 use super::*;
+use crate::expressions::PhysicalPipedExpr;
 
 pub(crate) struct GenericGroupby {
     thread_local_map: UnsafeCell<HashTbl>,
     eval: Eval,
+    input_schema: SchemaRef,
+    output_schema: SchemaRef,
+    slice: Option<(i64, usize)>,
+}
+
+impl GenericGroupby {
+    pub(crate) fn new(
+        key_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
+        aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
+        agg_constructors: Vec<AggregateFunction>,
+        input_schema: SchemaRef,
+        output_schema: SchemaRef,
+        slice: Option<(i64, usize)>,
+    ) -> Self {
+        let key_dtypes = key_columns
+            .iter()
+            .map(|e| e.field(&input_schema).unwrap().dtype)
+            .collect::<Vec<_>>();
+        Self {
+            thread_local_map: UnsafeCell::new(HashTbl::new(agg_constructors, &key_dtypes)),
+            eval: Eval::new(key_columns, aggregation_columns),
+            input_schema,
+            output_schema,
+            slice,
+        }
+    }
 }
 
 impl Sink for GenericGroupby {
@@ -34,7 +61,15 @@ impl Sink for GenericGroupby {
     }
 
     fn split(&self, thread_no: usize) -> Box<dyn Sink> {
-        todo!()
+        // safety: no mutable refs at this point
+        let map = unsafe { (*self.thread_local_map.get()).split() };
+        Box::new(Self {
+            eval: self.eval.split(),
+            thread_local_map: UnsafeCell::new(map),
+            input_schema: self.input_schema.clone(),
+            output_schema: self.output_schema.clone(),
+            slice: self.slice,
+        })
     }
 
     fn finalize(&mut self, context: &PExecutionContext) -> PolarsResult<FinalizedSink> {

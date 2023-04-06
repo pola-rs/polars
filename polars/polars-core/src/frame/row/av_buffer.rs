@@ -7,6 +7,7 @@ use super::*;
 #[cfg(feature = "dtype-struct")]
 use crate::prelude::any_value::arr_to_any_value;
 
+#[derive(Clone)]
 pub enum AnyValueBuffer<'a> {
     Boolean(BooleanChunkedBuilder),
     #[cfg(feature = "dtype-i8")]
@@ -207,6 +208,7 @@ impl From<(&DataType, usize)> for AnyValueBuffer<'_> {
 }
 
 //// An `AnyValyeBuffer` that should be used when we trust the builder
+#[derive(Clone)]
 pub enum AnyValueBufferTrusted<'a> {
     Boolean(BooleanChunkedBuilder),
     #[cfg(feature = "dtype-i8")]

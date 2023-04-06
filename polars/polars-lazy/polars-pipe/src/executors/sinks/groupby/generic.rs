@@ -413,7 +413,7 @@ impl Sink for GenericGroupbySink {
                     };
                     // initialize the aggregators
                     for agg_fn in &agg_fns {
-                        current_aggregators.push(agg_fn.split2())
+                        current_aggregators.push(agg_fn.split())
                     }
                     value_offset
                 }
@@ -508,7 +508,7 @@ impl Sink for GenericGroupbySink {
                                 entry.insert(key, values_offset);
                                 // initialize the new aggregators
                                 for agg_fn in &self.agg_fns {
-                                    aggregators_self.push(agg_fn.split2())
+                                    aggregators_self.push(agg_fn.split())
                                 }
                                 values_offset
                             }
@@ -534,7 +534,7 @@ impl Sink for GenericGroupbySink {
         let mut new = Self::new_inner(
             self.key_columns.clone(),
             self.aggregation_columns.clone(),
-            self.agg_fns.iter().map(|func| func.split2()).collect(),
+            self.agg_fns.iter().map(|func| func.split()).collect(),
             self.input_schema.clone(),
             self.output_schema.clone(),
             self.slice,

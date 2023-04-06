@@ -1,5 +1,6 @@
 use super::*;
 
+#[derive(Clone)]
 pub struct BooleanChunkedBuilder {
     pub(crate) array_builder: MutableBooleanArray,
     field: Field,
