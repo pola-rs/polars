@@ -1,3 +1,4 @@
+use std::arch::x86_64::_mm_undefined_si128;
 use std::cell::UnsafeCell;
 
 use super::*;
@@ -6,8 +7,6 @@ use crate::expressions::PhysicalPipedExpr;
 pub(crate) struct GenericGroupby {
     thread_local_map: UnsafeCell<HashTbl>,
     eval: Eval,
-    input_schema: SchemaRef,
-    output_schema: SchemaRef,
     slice: Option<(i64, usize)>,
 }
 
@@ -16,19 +15,21 @@ impl GenericGroupby {
         key_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         agg_constructors: Vec<AggregateFunction>,
-        input_schema: SchemaRef,
         output_schema: SchemaRef,
         slice: Option<(i64, usize)>,
     ) -> Self {
-        let key_dtypes = key_columns
-            .iter()
-            .map(|e| e.field(&input_schema).unwrap().dtype)
+        let key_dtypes = output_schema
+            .iter_dtypes()
+            .take(key_columns.len())
+            .map(|dt| dt.clone())
             .collect::<Vec<_>>();
         Self {
-            thread_local_map: UnsafeCell::new(HashTbl::new(agg_constructors, &key_dtypes)),
+            thread_local_map: UnsafeCell::new(HashTbl::new(
+                agg_constructors,
+                &key_dtypes,
+                output_schema,
+            )),
             eval: Eval::new(key_columns, aggregation_columns),
-            input_schema,
-            output_schema,
             slice,
         }
     }
@@ -67,31 +68,36 @@ impl Sink for GenericGroupby {
     }
 
     fn combine(&mut self, other: &mut dyn Sink) {
-        todo!()
+        let other = other.as_any().downcast_mut::<Self>().unwrap();
+        unsafe {
+            let map = &mut *self.thread_local_map.get();
+            let other_map = &mut *other.thread_local_map.get();
+            map.combine(other_map);
+        }
     }
 
-    fn split(&self, thread_no: usize) -> Box<dyn Sink> {
+    fn split(&self, _thread_no: usize) -> Box<dyn Sink> {
         // safety: no mutable refs at this point
         let map = unsafe { (*self.thread_local_map.get()).split() };
         Box::new(Self {
             eval: self.eval.split(),
             thread_local_map: UnsafeCell::new(map),
-            input_schema: self.input_schema.clone(),
-            output_schema: self.output_schema.clone(),
             slice: self.slice,
         })
     }
 
     fn finalize(&mut self, context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
+        let map = unsafe { (&mut *self.thread_local_map.get()) };
+        // map.fin
         todo!()
     }
 
     fn as_any(&mut self) -> &mut dyn Any {
-        todo!()
+        self
     }
 
     fn fmt(&self) -> &str {
-        todo!()
+        "generic-groupby"
     }
 }
 

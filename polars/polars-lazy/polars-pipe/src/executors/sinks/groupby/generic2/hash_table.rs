@@ -12,6 +12,9 @@ struct SpillPartitions {
     // outer vec: partitions (factor of 2)
     // inner vec: number of keys + number of aggregated columns
     partitions: Vec<Vec<AnyValueBufferTrusted<'static>>>,
+    // outer vec: partitions
+    // inner vec: aggregation columns
+    finished: Vec<Vec<Series>>,
 }
 
 impl SpillPartitions {
@@ -30,7 +33,10 @@ impl SpillPartitions {
 
         let partitions = (0..PARTITION_SIZE).map(|partition| buf.clone()).collect();
 
-        Self { partitions }
+        Self {
+            partitions,
+            finished: vec![],
+        }
     }
 }
 
@@ -57,6 +63,27 @@ impl SpillPartitions {
             }
         };
     }
+
+    fn finish(&mut self) {
+        if self.finished.is_empty() {
+            let parts = std::mem::take(&mut self.partitions);
+            self.finished = parts
+                .into_iter()
+                .map(|part| part.into_iter().map(|v| v.into_series()).collect())
+                .collect();
+        }
+    }
+
+    fn combine(&mut self, other: &mut Self) {
+        self.finish();
+        other.finish();
+
+        for (part_self, part_other) in self.finished.iter_mut().zip(other.finished.iter()) {
+            for (s, other) in part_self.iter_mut().zip(part_other.iter()) {
+                s.append(other).unwrap();
+            }
+        }
+    }
 }
 
 pub(super) struct HashTbl {
@@ -72,6 +99,8 @@ pub(super) struct HashTbl {
     // lifetime is tied to self, so we use static
     // to ensure bck to leave us be
     keys_scratch: UnsafeCell<Vec<AnyValue<'static>>>,
+    output_schema: SchemaRef,
+    pub num_keys: usize,
 }
 
 impl HashTbl {
@@ -89,10 +118,16 @@ impl HashTbl {
             agg_constructors: self.agg_constructors.iter().map(|ac| ac.split()).collect(),
             spill_partitions: self.spill_partitions.clone(),
             keys_scratch: unsafe { UnsafeCell::new((*self.keys_scratch.get()).clone()) },
+            num_keys: self.num_keys,
+            output_schema: self.output_schema.clone(),
         }
     }
 
-    pub(super) fn new(agg_constructors: Vec<AggregateFunction>, key_dtypes: &[DataType]) -> Self {
+    pub(super) fn new(
+        agg_constructors: Vec<AggregateFunction>,
+        key_dtypes: &[DataType],
+        output_schema: SchemaRef,
+    ) -> Self {
         let agg_dtypes = agg_constructors
             .iter()
             .map(|agg| agg.dtype())
@@ -106,7 +141,19 @@ impl HashTbl {
             agg_constructors,
             spill_partitions,
             keys_scratch: UnsafeCell::new(Vec::with_capacity(key_dtypes.len())),
+            num_keys: key_dtypes.len(),
+            output_schema,
         }
+    }
+
+    unsafe fn get_keys(&self, idx: IdxSize) -> &[AnyValue] {
+        let start = idx as usize;
+        let end = start + self.num_keys;
+        self.keys.get_unchecked(start..end)
+    }
+
+    pub(super) fn len(&self) -> usize {
+        self.inner_map.len()
     }
 
     fn get_entry(
@@ -216,5 +263,118 @@ impl HashTbl {
 
             agg_fn.pre_agg(chunk_index, agg_iter.as_mut())
         }
+    }
+
+    pub(super) fn combine(&mut self, other: &mut Self) {
+        for (key, agg_idx_other) in other.inner_map.iter() {
+            // safety: idx is from the hashmap, so is in bounds
+            let keys = unsafe { other.get_keys(key.idx) };
+
+            let entry = self.get_entry(key.hash, keys);
+            let agg_idx_self = match entry {
+                RawEntryMut::Occupied(entry) => *entry.get(),
+                RawEntryMut::Vacant(entry) => {
+                    let borrow = &entry;
+                    let borrow = borrow as *const RawVacantEntryMut<_, _, _> as usize;
+                    // ensure the bck forgets this guy
+                    std::mem::forget(entry);
+
+                    let key_idx = self.keys.len() as IdxSize;
+                    let aggregation_idx = self.running_aggregations.len() as IdxSize;
+
+                    let key = Key::new(key.hash, key_idx);
+                    for agg in &self.agg_constructors {
+                        self.running_aggregations.push(agg.split())
+                    }
+
+                    // take a hold of the entry again and ensure it gets dropped
+                    unsafe {
+                        let borrow =
+                            borrow as *const RawVacantEntryMut<'_, Key, IdxSize, IdBuildHasher>;
+                        let entry = std::ptr::read(borrow);
+                        entry.insert(key, aggregation_idx);
+                    }
+                    aggregation_idx
+                }
+            };
+            let start = *agg_idx_other as usize;
+            let end = start + self.agg_constructors.len();
+            let aggs_other =
+                unsafe { other.running_aggregations.get_unchecked_release(start..end) };
+            let start = agg_idx_self as usize;
+            let end = start + self.agg_constructors.len();
+            let aggs_self = unsafe {
+                self.running_aggregations
+                    .get_unchecked_release_mut(start..end)
+            };
+            for i in 0..aggs_self.len() {
+                unsafe {
+                    let agg_self = aggs_self.get_unchecked_release_mut(i);
+                    let other = aggs_other.get_unchecked_release(i);
+                    agg_self.combine(other)
+                }
+            }
+        }
+        self.spill_partitions.combine(&mut other.spill_partitions);
+    }
+
+    pub(super) fn finalize(&mut self) -> (DataFrame, Vec<Vec<Series>>) {
+        // TODO: fix slice
+        let slice_len = self.inner_map.len();
+        let inner_map = std::mem::take(&mut self.inner_map);
+
+        let mut key_builders = self
+            .output_schema
+            .iter_dtypes()
+            .take(self.num_keys)
+            .map(|dtype| AnyValueBufferTrusted::new(&dtype.to_physical(), slice_len))
+            .collect::<Vec<_>>();
+
+        let mut agg_builders = self
+            .output_schema
+            .iter_dtypes()
+            .skip(self.num_keys)
+            .map(|dtype| AnyValueBufferTrusted::new(dtype, slice_len))
+            .collect::<Vec<_>>();
+        let num_aggs = self.agg_constructors.len();
+
+        inner_map
+            .into_iter()
+            .take(slice_len)
+            .for_each(|(k, agg_offset)| {
+                let keys_offset = k.idx as usize;
+                let keys = unsafe {
+                    self.keys
+                        .get_unchecked_release(keys_offset..keys_offset + self.num_keys)
+                };
+
+                // amortize loop counter
+                for i in 0..self.num_keys {
+                    unsafe {
+                        let key = keys.get_unchecked_release(i);
+                        let key_builder = key_builders.get_unchecked_release_mut(i);
+                        key_builder.add_unchecked_owned_physical(&key.as_borrowed());
+                    }
+                }
+
+                let start = agg_offset as usize;
+                let end = start + num_aggs;
+                for (i, buffer) in (start..end).zip(agg_builders.iter_mut()) {
+                    unsafe {
+                        let running_agg = self.running_aggregations.get_unchecked_release_mut(i);
+                        let av = running_agg.finalize();
+                        buffer.add_unchecked_owned_physical(&av);
+                    }
+                }
+            });
+
+        let mut cols = Vec::with_capacity(self.num_keys + self.agg_constructors.len());
+        cols.extend(key_builders.into_iter().map(|buf| buf.into_series()));
+        cols.extend(agg_builders.into_iter().map(|buf| buf.into_series()));
+        physical_agg_to_logical(&mut cols, &self.output_schema);
+        (
+            DataFrame::new_no_checks(cols),
+            std::mem::take(&mut self.spill_partitions.finished),
+        )
     }
 }

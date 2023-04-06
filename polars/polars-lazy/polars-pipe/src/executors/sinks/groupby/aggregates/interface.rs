@@ -60,6 +60,7 @@ pub(crate) trait AggregateFn: Send + Sync {
 
     fn dtype(&self) -> DataType;
 
+    #[inline]
     fn combine(&mut self, other: &dyn Any);
 
     fn finalize(&mut self) -> AnyValue<'static>;

@@ -183,7 +183,7 @@ impl GenericGroupbySink {
                             .output_schema
                             .iter_dtypes()
                             .take(n_keys)
-                            .map(|dtype| AnyValueBuffer::new(&dtype.to_physical(), agg_map.len()))
+                            .map(|dtype| AnyValueBuffer::new(&dtype.to_physical(), slice_len))
                             .collect::<Vec<_>>();
                         let dtypes = agg_fns
                             .iter()
