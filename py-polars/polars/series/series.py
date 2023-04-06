@@ -5220,7 +5220,7 @@ class Series:
         remapping: dict[Any, Any],
         *,
         default: Any = None,
-        dtype: PolarsDataType | None = None,
+        return_dtype: PolarsDataType | None = None,
     ) -> Self:
         """
         Replace values in the Series using a remapping dictionary.
@@ -5232,8 +5232,8 @@ class Series:
         default
             Value to use when the remapping dict does not contain the lookup value.
             Use ``pl.first()``, to keep the original value.
-        dtype
-            Set output dtype to override automatic output dtype determination.
+        return_dtype
+            Set return dtype to override automatic return dtype determination.
 
         Examples
         --------
@@ -5280,10 +5280,10 @@ class Series:
             "Netherlands"
         ]
 
-        Override output dtype:
+        Override return dtype:
 
         >>> s = pl.Series("int8", [5, 2, 3], dtype=pl.Int8)
-        >>> s.map_dict({2: 7}, default=pl.first(), dtype=pl.Int16)
+        >>> s.map_dict({2: 7}, default=pl.first(), return_dtype=pl.Int16)
         shape: (3,)
         Series: 'int8' [i16]
         [

@@ -296,7 +296,7 @@ def _cast_repr_strings_with_schema(
                 )
             elif tp == Boolean:
                 cast_cols[c] = F.col(c).map_dict(
-                    {"true": True, "false": False}, dtype=Boolean
+                    {"true": True, "false": False}, return_dtype=Boolean
                 )
             elif tp != df.schema[c]:
                 cast_cols[c] = F.col(c).cast(tp)

@@ -760,7 +760,7 @@ def test_map_dict() -> None:
     assert_frame_equal(
         df.with_columns(
             pl.col("int")
-            .map_dict(int_with_only_none_values_dict, default=6, dtype=pl.Int32)
+            .map_dict(int_with_only_none_values_dict, default=6, return_dtype=pl.Int32)
             .alias("remapped")
         ),
         pl.DataFrame(

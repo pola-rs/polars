@@ -6847,7 +6847,7 @@ class Expr:
         remapping: dict[Any, Any],
         *,
         default: Any = None,
-        dtype: PolarsDataType | None = None,
+        return_dtype: PolarsDataType | None = None,
     ) -> Self:
         """
         Replace values in column according to remapping dictionary.
@@ -6862,8 +6862,8 @@ class Expr:
         default
             Value to use when the remapping dict does not contain the lookup value.
             Use ``pl.first()``, to keep the original value.
-        dtype
-            Set output dtype to override automatic output dtype determination.
+        return_dtype
+            Set return dtype to override automatic return dtype determination.
 
         Examples
         --------
@@ -6985,11 +6985,11 @@ class Expr:
         │ 3      ┆ Germany       │
         └────────┴───────────────┘
 
-        Override output dtype:
+        Override return dtype:
 
         >>> df.with_columns(
         ...     pl.col("row_nr")
-        ...     .map_dict({1: 7, 3: 4}, default=3, dtype=pl.UInt8)
+        ...     .map_dict({1: 7, 3: 4}, default=3, return_dtype=pl.UInt8)
         ...     .alias("remapped")
         ... )
         shape: (4, 3)
@@ -7146,10 +7146,10 @@ class Expr:
             #  - to dtype, if specified.
             #  - to same dtype as expression specified as default value.
             #  - to None, if dtype was not specified and default was not an expression.
-            output_dtype = (
+            return_dtype_ = (
                 df.lazy().select(default).dtypes[0]
-                if dtype is None and isinstance(default, Expr)
-                else dtype
+                if return_dtype is None and isinstance(default, Expr)
+                else return_dtype
             )
 
             remap_key_s = _remap_key_or_value_series(
@@ -7161,12 +7161,12 @@ class Expr:
                 is_keys=True,
             )
 
-            if output_dtype:
+            if return_dtype_:
                 # Create remap value Series with specified output dtype.
                 remap_value_s = pli.Series(
                     remap_value_column,
                     remapping.values(),
-                    dtype=output_dtype,
+                    dtype=return_dtype_,
                     dtype_if_empty=input_dtype,
                 )
             else:
@@ -7225,12 +7225,12 @@ class Expr:
                 is_keys=True,
             )
 
-            if dtype:
+            if return_dtype:
                 # Create remap value Series with specified output dtype.
                 remap_value_s = pli.Series(
                     remap_value_column,
                     remapping.values(),
-                    dtype=dtype,
+                    dtype=return_dtype,
                     dtype_if_empty=input_dtype,
                 )
             else:
