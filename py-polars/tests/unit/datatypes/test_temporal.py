@@ -533,7 +533,7 @@ def test_date_range_precision(time_unit: TimeUnit | None, expected_micros: int) 
 
 
 def test_range_invalid_unit() -> None:
-    with pytest.raises(PolarsPanicError, match="'D' not supported"):
+    with pytest.raises(ComputeError, match="'D' not supported"):
         pl.date_range(
             low=datetime(2021, 12, 16), high=datetime(2021, 12, 16, 3), interval="1D"
         )
