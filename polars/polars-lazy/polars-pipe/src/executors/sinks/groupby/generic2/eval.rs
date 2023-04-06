@@ -84,4 +84,8 @@ impl Eval {
         let aggregation_series = &*self.aggregation_series.get();
         aggregation_series.iter().map(|s| s.phys_iter()).collect()
     }
+
+    pub(super) fn hashes(&self) -> &[u64] {
+        &self.hashes
+    }
 }

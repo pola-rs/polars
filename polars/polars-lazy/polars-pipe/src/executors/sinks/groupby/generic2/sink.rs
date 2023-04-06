@@ -46,6 +46,16 @@ impl Sink for GenericGroupby {
         // safety: we don't hold mutable refs
         let mut aggs = unsafe { self.eval.get_aggs_iters() };
 
+        let chunk_idx = chunk.chunk_index;
+        unsafe {
+            // safety: the mutable borrows are not aliasing
+            let table = &mut *self.thread_local_map.get();
+
+            for hash in self.eval.hashes() {
+                table.insert(*hash, &mut keys, &mut aggs, chunk_idx)
+            }
+        }
+
         // clear memory
         unsafe {
             drop(keys);

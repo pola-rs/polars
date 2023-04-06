@@ -132,7 +132,9 @@ impl HashTbl {
             })
     }
 
-    fn insert<'a>(
+    /// # Safety
+    /// Caller must ensure that `keys` and `agg_iters` are not depleted.
+    pub(super) unsafe fn insert<'a>(
         &'a mut self,
         hash: u64,
         keys: &mut [SeriesPhysIter],
