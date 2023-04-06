@@ -358,7 +358,6 @@ impl Sink for GenericGroupbySink {
         if self.ooc_state.ooc {
             return self.sink_ooc(context, chunk);
         }
-        let num_aggs = self.number_of_aggs();
         let num_keys = self.number_of_keys();
         self.evaluate_keys_aggs_and_hashes(context, &chunk)?;
 
