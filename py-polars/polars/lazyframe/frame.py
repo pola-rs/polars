@@ -91,6 +91,11 @@ if TYPE_CHECKING:
         UniqueKeepStrategy,
     )
 
+    if sys.version_info >= (3, 8):
+        from typing import Literal
+    else:
+        from typing_extensions import Literal
+
     if sys.version_info >= (3, 10):
         from typing import Concatenate, ParamSpec
     else:
@@ -292,6 +297,7 @@ class LazyFrame:
     def _scan_csv(
         cls,
         source: str,
+        *,
         has_header: bool = True,
         separator: str = ",",
         comment_char: str | None = None,
@@ -361,6 +367,7 @@ class LazyFrame:
     def _scan_parquet(
         cls,
         source: str,
+        *,
         n_rows: int | None = None,
         cache: bool = True,
         parallel: ParallelStrategy = "auto",
@@ -408,6 +415,7 @@ class LazyFrame:
     def _scan_ipc(
         cls,
         source: str | Path,
+        *,
         n_rows: int | None = None,
         cache: bool = True,
         rechunk: bool = True,
@@ -453,6 +461,7 @@ class LazyFrame:
     def _scan_ndjson(
         cls,
         source: str,
+        *,
         infer_schema_length: int | None = None,
         batch_size: int | None = None,
         n_rows: int | None = None,
@@ -481,6 +490,24 @@ class LazyFrame:
             rechunk,
             _prepare_row_count_args(row_count_name, row_count_offset),
         )
+        return self
+
+    @classmethod
+    def _scan_python_function(
+        cls,
+        schema: pa.schema | dict[str, PolarsDataType],
+        scan_fn: bytes,
+        pyarrow: bool = False,
+    ) -> Self:
+        self = cls.__new__(cls)
+        if isinstance(schema, dict):
+            self._ldf = PyLazyFrame.scan_from_python_function_pl_schema(
+                [(name, dt) for name, dt in schema.items()], scan_fn, pyarrow
+            )
+        else:
+            self._ldf = PyLazyFrame.scan_from_python_function_arrow_schema(
+                list(schema), scan_fn, pyarrow
+            )
         return self
 
     @classmethod
@@ -523,24 +550,6 @@ class LazyFrame:
             file = normalise_filepath(file)
 
         return cls._from_pyldf(PyLazyFrame.read_json(file))
-
-    @classmethod
-    def _scan_python_function(
-        cls,
-        schema: pa.schema | dict[str, PolarsDataType],
-        scan_fn: bytes,
-        pyarrow: bool = False,
-    ) -> Self:
-        self = cls.__new__(cls)
-        if isinstance(schema, dict):
-            self._ldf = PyLazyFrame.scan_from_python_function_pl_schema(
-                [(name, dt) for name, dt in schema.items()], scan_fn, pyarrow
-            )
-        else:
-            self._ldf = PyLazyFrame.scan_from_python_function_arrow_schema(
-                list(schema), scan_fn, pyarrow
-            )
-        return self
 
     @property
     def columns(self) -> list[str]:
@@ -2454,8 +2463,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf = pl.LazyFrame(
         ...     {
         ...         "time": pl.date_range(
-        ...             low=datetime(2021, 12, 16),
-        ...             high=datetime(2021, 12, 16, 3),
+        ...             start=datetime(2021, 12, 16),
+        ...             end=datetime(2021, 12, 16, 3),
         ...             interval="30m",
         ...         ),
         ...         "n": range(7),
@@ -2558,8 +2567,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf = pl.LazyFrame(
         ...     {
         ...         "time": pl.date_range(
-        ...             low=datetime(2021, 12, 16),
-        ...             high=datetime(2021, 12, 16, 3),
+        ...             start=datetime(2021, 12, 16),
+        ...             end=datetime(2021, 12, 16, 3),
         ...             interval="30m",
         ...         ),
         ...         "groups": ["a", "a", "a", "b", "b", "a", "a"],
@@ -3871,13 +3880,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return self.select(F.all().fill_null(value, strategy, limit))
 
-    def fill_nan(self, fill_value: int | float | Expr | None) -> Self:
+    def fill_nan(self, value: int | float | Expr | None) -> Self:
         """
         Fill floating point NaN values.
 
         Parameters
         ----------
-        fill_value
+        value
             Value to fill the NaN values with.
 
         Warnings
@@ -3907,9 +3916,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └──────┴──────┘
 
         """
-        if not isinstance(fill_value, pli.Expr):
-            fill_value = F.lit(fill_value)
-        return self._from_pyldf(self._ldf.fill_nan(fill_value._pyexpr))
+        if not isinstance(value, pli.Expr):
+            value = F.lit(value)
+        return self._from_pyldf(self._ldf.fill_nan(value._pyexpr))
 
     def std(self, ddof: int = 1) -> Self:
         """
@@ -4628,7 +4637,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         return self._from_pyldf(self._ldf.merge_sorted(other._ldf, key))
 
     def update(
-        self, other: LazyFrame, on: None | str | Sequence[str] = None, how: str = "left"
+        self,
+        other: LazyFrame,
+        on: str | Sequence[str] | None = None,
+        how: Literal["left", "inner"] = "left",
     ) -> Self:
         """
         Update the values in this `LazyFrame` with the non-null values in `other`.
@@ -4650,8 +4662,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Column names that will be joined on.
             If none given the row count is used.
         how : {'left', 'inner'}
-            'Left' will keep the left table rows as is.
-            'Inner' will remove rows that are not found in other
+            'left' will keep the left table rows as is.
+            'inner' will remove rows that are not found in other
 
         Examples
         --------
@@ -4729,7 +4741,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         tmp_name = "__POLARS_RIGHT"
 
         result = (
-            self.join(other.select(list(union_names)), on=on, how=how, suffix=tmp_name)  # type: ignore[arg-type]
+            self.join(other.select(list(union_names)), on=on, how=how, suffix=tmp_name)
             .with_columns(
                 [
                     F.coalesce([column_name + tmp_name, F.col(column_name)]).alias(

@@ -86,6 +86,7 @@ from polars.utils._construction import (
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
 from polars.utils._wrap import wrap_ldf, wrap_s
 from polars.utils.convert import _timedelta_to_pl_duration
+from polars.utils.decorators import deprecated_alias
 from polars.utils.meta import get_index_type
 from polars.utils.various import (
     _prepare_row_count_args,
@@ -412,9 +413,10 @@ class DataFrame:
     def _from_dicts(
         cls,
         data: Sequence[dict[str, Any]],
-        infer_schema_length: int | None = N_INFER_DEFAULT,
         schema: SchemaDefinition | None = None,
+        *,
         schema_overrides: SchemaDict | None = None,
+        infer_schema_length: int | None = N_INFER_DEFAULT,
     ) -> Self:
         pydf = PyDataFrame.read_dicts(data, infer_schema_length, schema)
         if schema or schema_overrides:
@@ -428,6 +430,7 @@ class DataFrame:
         cls,
         data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
         schema: SchemaDefinition | None = None,
+        *,
         schema_overrides: SchemaDict | None = None,
     ) -> Self:
         """
@@ -665,6 +668,7 @@ class DataFrame:
     def _read_csv(
         cls,
         source: str | Path | BinaryIO | bytes,
+        *,
         has_header: bool = True,
         columns: Sequence[int] | Sequence[str] | None = None,
         separator: str = ",",
@@ -804,6 +808,7 @@ class DataFrame:
     def _read_parquet(
         cls,
         source: str | Path | BinaryIO,
+        *,
         columns: Sequence[int] | Sequence[str] | None = None,
         n_rows: int | None = None,
         parallel: ParallelStrategy = "auto",
@@ -870,6 +875,7 @@ class DataFrame:
     def _read_avro(
         cls,
         source: str | Path | BinaryIO,
+        *,
         columns: Sequence[int] | Sequence[str] | None = None,
         n_rows: int | None = None,
     ) -> Self:
@@ -901,6 +907,7 @@ class DataFrame:
     def _read_ipc(
         cls,
         source: str | Path | BinaryIO,
+        *,
         columns: Sequence[int] | Sequence[str] | None = None,
         n_rows: int | None = None,
         row_count_name: str | None = None,
@@ -1095,18 +1102,18 @@ class DataFrame:
         return self._df.columns()
 
     @columns.setter
-    def columns(self, columns: Sequence[str]) -> None:
+    def columns(self, names: Sequence[str]) -> None:
         """
         Change the column names of the `DataFrame`.
 
         Parameters
         ----------
-        columns
+        names
             A list with new names for the `DataFrame`.
             The length of the list should be equal to the width of the `DataFrame`.
 
         """
-        self._df.set_column_names(columns)
+        self._df.set_column_names(names)
 
     @property
     def dtypes(self) -> list[PolarsDataType]:
@@ -4008,7 +4015,7 @@ class DataFrame:
         """
         return self._df.frame_equal(other._df, null_equal)
 
-    def replace(self, column: str, new_col: Series) -> Self:
+    def replace(self, column: str, new_column: Series) -> Self:
         """
         Replace a column by a new Series.
 
@@ -4016,7 +4023,7 @@ class DataFrame:
         ----------
         column
             Column to replace.
-        new_col
+        new_column
             New column to insert.
 
         Examples
@@ -4036,7 +4043,7 @@ class DataFrame:
         └─────┴─────┘
 
         """
-        self._df.replace(column, new_col._s)
+        self._df.replace(column, new_column._s)
         return self
 
     def slice(self, offset: int, length: int | None = None) -> Self:
@@ -4727,8 +4734,8 @@ class DataFrame:
         >>> df = pl.DataFrame(
         ...     {
         ...         "time": pl.date_range(
-        ...             low=datetime(2021, 12, 16),
-        ...             high=datetime(2021, 12, 16, 3),
+        ...             start=datetime(2021, 12, 16),
+        ...             end=datetime(2021, 12, 16, 3),
         ...             interval="30m",
         ...         ),
         ...         "n": range(7),
@@ -4831,8 +4838,8 @@ class DataFrame:
         >>> df = pl.DataFrame(
         ...     {
         ...         "time": pl.date_range(
-        ...             low=datetime(2021, 12, 16),
-        ...             high=datetime(2021, 12, 16, 3),
+        ...             start=datetime(2021, 12, 16),
+        ...             end=datetime(2021, 12, 16, 3),
         ...             interval="30m",
         ...         ),
         ...         "groups": ["a", "a", "a", "b", "b", "a", "a"],
@@ -5900,13 +5907,13 @@ class DataFrame:
             ._df
         )
 
-    def fill_nan(self, fill_value: Expr | int | float | None) -> Self:
+    def fill_nan(self, value: Expr | int | float | None) -> Self:
         """
         Fill floating point NaN values by an Expression evaluation.
 
         Parameters
         ----------
-        fill_value
+        value
             Value to fill NaN with.
 
         Returns
@@ -5945,7 +5952,7 @@ class DataFrame:
 
         """
         return self._from_pydf(
-            self.lazy().fill_nan(fill_value).collect(no_optimization=True)._df
+            self.lazy().fill_nan(value).collect(no_optimization=True)._df
         )
 
     def explode(
@@ -7643,11 +7650,12 @@ class DataFrame:
         """
         return self._from_pydf(self._df.null_count())
 
+    @deprecated_alias(frac="fraction")
     def sample(
         self,
         n: int | None = None,
         *,
-        frac: float | None = None,
+        fraction: float | None = None,
         with_replacement: bool = False,
         shuffle: bool = False,
         seed: int | None = None,
@@ -7658,9 +7666,9 @@ class DataFrame:
         Parameters
         ----------
         n
-            Number of items to return. Cannot be used with `frac`. Defaults to 1 if
-            `frac` is None.
-        frac
+            Number of items to return. Cannot be used with `fraction`. Defaults to 1 if
+            `fraction` is None.
+        fraction
             Fraction of items to return. Cannot be used with `n`.
         with_replacement
             Allow values to be sampled more than once.
@@ -7693,15 +7701,15 @@ class DataFrame:
         └─────┴─────┴─────┘
 
         """
-        if n is not None and frac is not None:
-            raise ValueError("cannot specify both `n` and `frac`")
+        if n is not None and fraction is not None:
+            raise ValueError("cannot specify both `n` and `fraction`")
 
         if seed is None:
             seed = random.randint(0, 10000)
 
-        if n is None and frac is not None:
+        if n is None and fraction is not None:
             return self._from_pydf(
-                self._df.sample_frac(frac, with_replacement, shuffle, seed)
+                self._df.sample_frac(fraction, with_replacement, shuffle, seed)
             )
 
         if n is None:
@@ -8371,7 +8379,7 @@ class DataFrame:
 
         Parameters
         ----------
-        kwargs
+        **kwargs
             keyword arguments are passed to numpy corrcoef
 
         Examples
@@ -8420,7 +8428,10 @@ class DataFrame:
         )
 
     def update(
-        self, other: DataFrame, on: None | str | Sequence[str] = None, how: str = "left"
+        self,
+        other: DataFrame,
+        on: str | Sequence[str] | None = None,
+        how: Literal["left", "inner"] = "left",
     ) -> Self:
         """
         Update the values in this `DataFrame` with the non-null values in `other`.
@@ -8442,8 +8453,8 @@ class DataFrame:
             Column names that will be joined on.
             If none given the row count is used.
         how : {'left', 'inner'}
-            'Left' will keep the left table rows as is.
-            'Inner' will remove rows that are not found in other
+            'left' will keep the left table rows as is.
+            'inner' will remove rows that are not found in other
 
         Examples
         --------

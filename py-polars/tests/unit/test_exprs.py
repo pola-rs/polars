@@ -170,7 +170,7 @@ def test_shuffle() -> None:
 def test_sample() -> None:
     a = pl.Series("a", range(0, 20))
     out = pl.select(
-        pl.lit(a).sample(frac=0.5, with_replacement=False, seed=1)
+        pl.lit(a).sample(fraction=0.5, with_replacement=False, seed=1)
     ).to_series()
 
     assert out.shape == (10,)
@@ -760,7 +760,7 @@ def test_map_dict() -> None:
     assert_frame_equal(
         df.with_columns(
             pl.col("int")
-            .map_dict(int_with_only_none_values_dict, default=6, dtype=pl.Int32)
+            .map_dict(int_with_only_none_values_dict, default=6, return_dtype=pl.Int32)
             .alias("remapped")
         ),
         pl.DataFrame(

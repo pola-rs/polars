@@ -592,8 +592,8 @@ def test_groupby_dynamic_lazy(every: str | timedelta, tzinfo: ZoneInfo | None) -
     ldf = pl.LazyFrame(
         {
             "time": pl.date_range(
-                low=datetime(2021, 12, 16, tzinfo=tzinfo),
-                high=datetime(2021, 12, 16, 2, tzinfo=tzinfo),
+                start=datetime(2021, 12, 16, tzinfo=tzinfo),
+                end=datetime(2021, 12, 16, 2, tzinfo=tzinfo),
                 interval="30m",
             ),
             "n": range(5),

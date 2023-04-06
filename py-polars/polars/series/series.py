@@ -78,6 +78,7 @@ from polars.utils.convert import (
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
 )
+from polars.utils.decorators import deprecated_alias
 from polars.utils.meta import get_index_type
 from polars.utils.various import (
     _is_generator,
@@ -2927,17 +2928,20 @@ class Series:
         """
 
     def is_between(
-        self, start: IntoExpr, end: IntoExpr, closed: ClosedInterval = "both"
+        self,
+        lower_bound: IntoExpr,
+        upper_bound: IntoExpr,
+        closed: ClosedInterval = "both",
     ) -> Series:
         """
         Get a boolean mask of the values that fall between the given start/end values.
 
         Parameters
         ----------
-        start
+        lower_bound
             Lower bound value. Accepts expression input. Non-expression inputs
             (including strings) are parsed as literals.
-        end
+        upper_bound
             Upper bound value. Accepts expression input. Non-expression inputs
             (including strings) are parsed as literals.
         closed : {'both', 'left', 'right', 'none'}
@@ -2985,14 +2989,14 @@ class Series:
         ]
 
         """
-        if isinstance(start, str):
-            start = F.lit(start)
-        if isinstance(end, str):
-            end = F.lit(end)
+        if isinstance(lower_bound, str):
+            lower_bound = F.lit(lower_bound)
+        if isinstance(upper_bound, str):
+            upper_bound = F.lit(upper_bound)
 
         return (
             self.to_frame()
-            .select(F.col(self.name).is_between(start, end, closed))
+            .select(F.col(self.name).is_between(lower_bound, upper_bound, closed))
             .to_series()
         )
 
@@ -4652,11 +4656,12 @@ class Series:
 
         """
 
+    @deprecated_alias(frac="fraction")
     def sample(
         self,
         n: int | None = None,
         *,
-        frac: float | None = None,
+        fraction: float | None = None,
         with_replacement: bool = False,
         shuffle: bool = False,
         seed: int | None = None,
@@ -4667,9 +4672,9 @@ class Series:
         Parameters
         ----------
         n
-            Number of items to return. Cannot be used with `frac`. Defaults to 1 if
-            `frac` is None.
-        frac
+            Number of items to return. Cannot be used with `fraction`. Defaults to 1 if
+            `fraction` is None.
+        fraction
             Fraction of items to return. Cannot be used with `n`.
         with_replacement
             Allow values to be sampled more than once.
@@ -4691,6 +4696,19 @@ class Series:
         ]
 
         """
+        return (
+            self.to_frame()
+            .select(
+                F.col(self.name).sample(
+                    n,
+                    fraction=fraction,
+                    with_replacement=with_replacement,
+                    shuffle=shuffle,
+                    seed=seed,
+                )
+            )
+            .to_series()
+        )
 
     def peak_max(self) -> Self:
         """
@@ -5083,7 +5101,7 @@ class Series:
         """
         return self._s.kurtosis(fisher, bias)
 
-    def clip(self, min_val: int | float, max_val: int | float) -> Series:
+    def clip(self, lower_bound: int | float, upper_bound: int | float) -> Series:
         """
         Clip (limit) the values in an array to a `min` and `max` boundary.
 
@@ -5094,9 +5112,9 @@ class Series:
 
         Parameters
         ----------
-        min_val
+        lower_bound
             Minimum value.
-        max_val
+        upper_bound
             Maximum value.
 
         Examples
@@ -5114,7 +5132,7 @@ class Series:
 
         """
 
-    def clip_min(self, min_val: int | float) -> Series:
+    def clip_min(self, lower_bound: int | float) -> Series:
         """
         Clip (limit) the values in an array to a `min` boundary.
 
@@ -5125,12 +5143,12 @@ class Series:
 
         Parameters
         ----------
-        min_val
-            Minimum value.
+        lower_bound
+            Lower bound.
 
         """
 
-    def clip_max(self, max_val: int | float) -> Series:
+    def clip_max(self, upper_bound: int | float) -> Series:
         """
         Clip (limit) the values in an array to a `max` boundary.
 
@@ -5141,8 +5159,8 @@ class Series:
 
         Parameters
         ----------
-        max_val
-            Maximum value.
+        upper_bound
+            Upper bound.
 
         """
 
@@ -5207,7 +5225,7 @@ class Series:
         remapping: dict[Any, Any],
         *,
         default: Any = None,
-        dtype: PolarsDataType | None = None,
+        return_dtype: PolarsDataType | None = None,
     ) -> Self:
         """
         Replace values in the Series using a remapping dictionary.
@@ -5219,8 +5237,8 @@ class Series:
         default
             Value to use when the remapping dict does not contain the lookup value.
             Use ``pl.first()``, to keep the original value.
-        dtype
-            Set output dtype to override automatic output dtype determination.
+        return_dtype
+            Set return dtype to override automatic return dtype determination.
 
         Examples
         --------
@@ -5267,10 +5285,10 @@ class Series:
             "Netherlands"
         ]
 
-        Override output dtype:
+        Override return dtype:
 
         >>> s = pl.Series("int8", [5, 2, 3], dtype=pl.Int8)
-        >>> s.map_dict({2: 7}, default=pl.first(), dtype=pl.Int16)
+        >>> s.map_dict({2: 7}, default=pl.first(), return_dtype=pl.Int16)
         shape: (3,)
         Series: 'int8' [i16]
         [
@@ -5281,13 +5299,13 @@ class Series:
 
         """
 
-    def reshape(self, dims: tuple[int, ...]) -> Series:
+    def reshape(self, dimensions: tuple[int, ...]) -> Series:
         """
         Reshape this Series to a flat Series or a Series of Lists.
 
         Parameters
         ----------
-        dims
+        dimensions
             Tuple of the dimension sizes. If a -1 is used in any of the dimensions, that
             dimension is inferred.
 

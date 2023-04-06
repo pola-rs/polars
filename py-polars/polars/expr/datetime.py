@@ -887,6 +887,11 @@ class ExprDateTimeNameSpace:
         point number from 0 < 60 if ``fractional=True`` that includes
         any milli/micro/nanosecond component.
 
+        Parameters
+        ----------
+        fractional
+            Whether to include the fractional component of the second.
+
         Returns
         -------
         Second as UInt32 (or Float64)
@@ -897,8 +902,8 @@ class ExprDateTimeNameSpace:
         >>> df = pl.DataFrame(
         ...     data={
         ...         "date": pl.date_range(
-        ...             low=datetime(2001, 1, 1, 0, 0, 0, 456789),
-        ...             high=datetime(2001, 1, 1, 0, 0, 6),
+        ...             start=datetime(2001, 1, 1, 0, 0, 0, 456789),
+        ...             end=datetime(2001, 1, 1, 0, 0, 6),
         ...             interval=timedelta(seconds=2, microseconds=654321),
         ...         )
         ...     }

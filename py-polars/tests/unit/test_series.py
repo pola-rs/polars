@@ -1835,7 +1835,7 @@ def test_sample() -> None:
     s = pl.Series("a", [1, 2, 3, 4, 5])
 
     assert len(s.sample(n=2, seed=0)) == 2
-    assert len(s.sample(frac=0.4, seed=0)) == 2
+    assert len(s.sample(fraction=0.4, seed=0)) == 2
 
     assert len(s.sample(n=2, with_replacement=True, seed=0)) == 2
 
@@ -2542,7 +2542,9 @@ def test_map_dict() -> None:
     )
 
     assert_series_equal(
-        s.cast(pl.Int16).map_dict(remap_int, default=pl.first(), dtype=pl.Float32),
+        s.cast(pl.Int16).map_dict(
+            remap_int, default=pl.first(), return_dtype=pl.Float32
+        ),
         pl.Series("s", [-1.0, 22.0, None, 44.0, -5.0], dtype=pl.Float32),
     )
 
@@ -2552,7 +2554,7 @@ def test_map_dict() -> None:
     )
 
     assert_series_equal(
-        s.cast(pl.Int16).map_dict(remap_int, default=9, dtype=pl.Float32),
+        s.cast(pl.Int16).map_dict(remap_int, default=9, return_dtype=pl.Float32),
         pl.Series("s", [9.0, 22.0, 9.0, 44.0, 9.0], dtype=pl.Float32),
     )
 

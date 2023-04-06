@@ -535,7 +535,7 @@ def test_date_range_precision(time_unit: TimeUnit | None, expected_micros: int) 
 def test_range_invalid_unit() -> None:
     with pytest.raises(PolarsPanicError, match="'D' not supported"):
         pl.date_range(
-            low=datetime(2021, 12, 16), high=datetime(2021, 12, 16, 3), interval="1D"
+            start=datetime(2021, 12, 16), end=datetime(2021, 12, 16, 3), interval="1D"
         )
 
 
@@ -964,8 +964,8 @@ def test_upsample_time_zones(
     df = pl.DataFrame(
         {
             "time": pl.date_range(
-                low=datetime(2021, 12, 16),
-                high=datetime(2021, 12, 16, 3),
+                start=datetime(2021, 12, 16),
+                end=datetime(2021, 12, 16, 3),
                 interval="30m",
             ),
             "groups": ["a", "a", "a", "b", "b", "a", "a"],
@@ -2223,7 +2223,7 @@ def test_tz_aware_truncate() -> None:
     test = pl.DataFrame(
         {
             "dt": pl.date_range(
-                low=datetime(2022, 11, 1), high=datetime(2022, 11, 4), interval="12h"
+                start=datetime(2022, 11, 1), end=datetime(2022, 11, 4), interval="12h"
             ).dt.replace_time_zone("America/New_York")
         }
     )
@@ -2254,8 +2254,8 @@ def test_tz_aware_truncate() -> None:
     lf = pl.DataFrame(
         {
             "naive": pl.date_range(
-                low=datetime(2021, 12, 31, 23),
-                high=datetime(2022, 1, 1, 6),
+                start=datetime(2021, 12, 31, 23),
+                end=datetime(2022, 1, 1, 6),
                 interval="1h",
             )
         }
@@ -2321,7 +2321,7 @@ def test_tz_aware_strftime() -> None:
     df = pl.DataFrame(
         {
             "dt": pl.date_range(
-                low=datetime(2022, 11, 1), high=datetime(2022, 11, 4), interval="24h"
+                start=datetime(2022, 11, 1), end=datetime(2022, 11, 4), interval="24h"
             ).dt.replace_time_zone("America/New_York")
         }
     )

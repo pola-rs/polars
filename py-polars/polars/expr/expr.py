@@ -45,6 +45,7 @@ from polars.expr.string import ExprStringNameSpace
 from polars.expr.struct import ExprStructNameSpace
 from polars.utils._parse_expr_input import expr_to_lit_or_expr, selection_to_pyexpr_list
 from polars.utils.convert import _timedelta_to_pl_duration
+from polars.utils.decorators import deprecated_alias
 from polars.utils.meta import threadpool_size
 from polars.utils.various import sphinx_accessor
 
@@ -4231,17 +4232,20 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.repeat_by(by._pyexpr))
 
     def is_between(
-        self, start: IntoExpr, end: IntoExpr, closed: ClosedInterval = "both"
+        self,
+        lower_bound: IntoExpr,
+        upper_bound: IntoExpr,
+        closed: ClosedInterval = "both",
     ) -> Self:
         """
         Check if this expression is between the given start and end values.
 
         Parameters
         ----------
-        start
+        lower_bound
             Lower bound value. Accepts expression input. Strings are parsed as column
             names, other non-expression inputs are parsed as literals.
-        end
+        upper_bound
             Upper bound value. Accepts expression input. Strings are parsed as column
             names, other non-expression inputs are parsed as literals.
         closed : {'both', 'left', 'right', 'none'}
@@ -4310,17 +4314,17 @@ class Expr:
         └─────┴────────────┘
 
         """
-        start = expr_to_lit_or_expr(start, str_to_lit=False)
-        end = expr_to_lit_or_expr(end, str_to_lit=False)
+        lower_bound = expr_to_lit_or_expr(lower_bound, str_to_lit=False)
+        upper_bound = expr_to_lit_or_expr(upper_bound, str_to_lit=False)
 
         if closed == "none":
-            return (self > start) & (self < end)
+            return (self > lower_bound) & (self < upper_bound)
         elif closed == "both":
-            return (self >= start) & (self <= end)
+            return (self >= lower_bound) & (self <= upper_bound)
         elif closed == "right":
-            return (self > start) & (self <= end)
+            return (self > lower_bound) & (self <= upper_bound)
         elif closed == "left":
-            return (self >= start) & (self < end)
+            return (self >= lower_bound) & (self < upper_bound)
         else:
             raise ValueError(
                 "closed must be one of {'left', 'right', 'both', 'none'},"
@@ -5645,7 +5649,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.kurtosis(fisher, bias))
 
-    def clip(self, min_val: int | float, max_val: int | float) -> Self:
+    def clip(self, lower_bound: int | float, upper_bound: int | float) -> Self:
         """
         Clip (limit) the values in an array to a `min` and `max` boundary.
 
@@ -5656,10 +5660,10 @@ class Expr:
 
         Parameters
         ----------
-        min_val
-            Minimum value.
-        max_val
-            Maximum value.
+        lower_bound
+            Lower bound.
+        upper_bound
+            Upper bound.
 
         Examples
         --------
@@ -5678,9 +5682,9 @@ class Expr:
         └──────┴─────────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.clip(min_val, max_val))
+        return self._from_pyexpr(self._pyexpr.clip(lower_bound, upper_bound))
 
-    def clip_min(self, min_val: int | float) -> Self:
+    def clip_min(self, lower_bound: int | float) -> Self:
         """
         Clip (limit) the values in an array to a `min` boundary.
 
@@ -5691,8 +5695,8 @@ class Expr:
 
         Parameters
         ----------
-        min_val
-            Minimum value.
+        lower_bound
+            Lower bound.
 
         Examples
         --------
@@ -5711,9 +5715,9 @@ class Expr:
         └──────┴─────────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.clip_min(min_val))
+        return self._from_pyexpr(self._pyexpr.clip_min(lower_bound))
 
-    def clip_max(self, max_val: int | float) -> Self:
+    def clip_max(self, upper_bound: int | float) -> Self:
         """
         Clip (limit) the values in an array to a `max` boundary.
 
@@ -5724,8 +5728,8 @@ class Expr:
 
         Parameters
         ----------
-        max_val
-            Maximum value.
+        upper_bound
+            Upper bound.
 
         Examples
         --------
@@ -5744,7 +5748,7 @@ class Expr:
         └──────┴─────────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.clip_max(max_val))
+        return self._from_pyexpr(self._pyexpr.clip_max(upper_bound))
 
     def lower_bound(self) -> Self:
         """
@@ -6112,13 +6116,13 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.arctanh())
 
-    def reshape(self, dims: tuple[int, ...]) -> Self:
+    def reshape(self, dimensions: tuple[int, ...]) -> Self:
         """
         Reshape this Expr to a flat Series or a Series of Lists.
 
         Parameters
         ----------
-        dims
+        dimensions
             Tuple of the dimension sizes. If a -1 is used in any of the dimensions, that
             dimension is inferred.
 
@@ -6149,7 +6153,7 @@ class Expr:
         ExprListNameSpace.explode : Explode a list column.
 
         """
-        return self._from_pyexpr(self._pyexpr.reshape(dims))
+        return self._from_pyexpr(self._pyexpr.reshape(dimensions))
 
     def shuffle(self, seed: int | None = None) -> Self:
         """
@@ -6181,11 +6185,12 @@ class Expr:
             seed = random.randint(0, 10000)
         return self._from_pyexpr(self._pyexpr.shuffle(seed))
 
+    @deprecated_alias(frac="fraction")
     def sample(
         self,
         n: int | None = None,
         *,
-        frac: float | None = None,
+        fraction: float | None = None,
         with_replacement: bool = False,
         shuffle: bool = False,
         seed: int | None = None,
@@ -6196,9 +6201,9 @@ class Expr:
         Parameters
         ----------
         n
-            Number of items to return. Cannot be used with `frac`. Defaults to 1 if
-            `frac` is None.
-        frac
+            Number of items to return. Cannot be used with `fraction`. Defaults to 1 if
+            `fraction` is None.
+        fraction
             Fraction of items to return. Cannot be used with `n`.
         with_replacement
             Allow values to be sampled more than once.
@@ -6224,15 +6229,15 @@ class Expr:
         └─────┘
 
         """
-        if n is not None and frac is not None:
-            raise ValueError("cannot specify both `n` and `frac`")
+        if n is not None and fraction is not None:
+            raise ValueError("cannot specify both `n` and `fraction`")
 
         if seed is None:
             seed = random.randint(0, 10000)
 
-        if frac is not None:
+        if fraction is not None:
             return self._from_pyexpr(
-                self._pyexpr.sample_frac(frac, with_replacement, shuffle, seed)
+                self._pyexpr.sample_frac(fraction, with_replacement, shuffle, seed)
             )
 
         if n is None:
@@ -6842,7 +6847,7 @@ class Expr:
         remapping: dict[Any, Any],
         *,
         default: Any = None,
-        dtype: PolarsDataType | None = None,
+        return_dtype: PolarsDataType | None = None,
     ) -> Self:
         """
         Replace values in column according to remapping dictionary.
@@ -6857,8 +6862,8 @@ class Expr:
         default
             Value to use when the remapping dict does not contain the lookup value.
             Use ``pl.first()``, to keep the original value.
-        dtype
-            Set output dtype to override automatic output dtype determination.
+        return_dtype
+            Set return dtype to override automatic return dtype determination.
 
         Examples
         --------
@@ -6980,11 +6985,11 @@ class Expr:
         │ 3      ┆ Germany       │
         └────────┴───────────────┘
 
-        Override output dtype:
+        Override return dtype:
 
         >>> df.with_columns(
         ...     pl.col("row_nr")
-        ...     .map_dict({1: 7, 3: 4}, default=3, dtype=pl.UInt8)
+        ...     .map_dict({1: 7, 3: 4}, default=3, return_dtype=pl.UInt8)
         ...     .alias("remapped")
         ... )
         shape: (4, 3)
@@ -7141,10 +7146,10 @@ class Expr:
             #  - to dtype, if specified.
             #  - to same dtype as expression specified as default value.
             #  - to None, if dtype was not specified and default was not an expression.
-            output_dtype = (
+            return_dtype_ = (
                 df.lazy().select(default).dtypes[0]
-                if dtype is None and isinstance(default, Expr)
-                else dtype
+                if return_dtype is None and isinstance(default, Expr)
+                else return_dtype
             )
 
             remap_key_s = _remap_key_or_value_series(
@@ -7156,12 +7161,12 @@ class Expr:
                 is_keys=True,
             )
 
-            if output_dtype:
+            if return_dtype_:
                 # Create remap value Series with specified output dtype.
                 remap_value_s = pli.Series(
                     remap_value_column,
                     remapping.values(),
-                    dtype=output_dtype,
+                    dtype=return_dtype_,
                     dtype_if_empty=input_dtype,
                 )
             else:
@@ -7220,12 +7225,12 @@ class Expr:
                 is_keys=True,
             )
 
-            if dtype:
+            if return_dtype:
                 # Create remap value Series with specified output dtype.
                 remap_value_s = pli.Series(
                     remap_value_column,
                     remapping.values(),
-                    dtype=dtype,
+                    dtype=return_dtype,
                     dtype_if_empty=input_dtype,
                 )
             else:
