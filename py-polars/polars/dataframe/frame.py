@@ -8021,22 +8021,23 @@ class DataFrame:
             over the data; you should only modify this in very specific cases where the
             default value is determined not to be a good fit to your access pattern, as
             the speedup from using the buffer is significant (~2-4x). Setting this
-            value to zero disables row buffering.
+            value to zero disables row buffering (not recommended).
 
         Notes
         -----
         If you have ``ns``-precision temporal values you should be aware that python
-        natively only supports up to ``us``-precision; if this matters you should export
-        to a different format.
+        natively only supports up to ``us``-precision; if this matters in your use-case
+        you should export to a different format.
 
         Warnings
         --------
         Row iteration is not optimal as the underlying data is stored in columnar form;
-        where possible, prefer export via one of the dedicated export/output methods.
+        where possible, prefer export via one of the dedicated export/output methods
+        that deals with columnar data.
 
         Returns
         -------
-        An iterator of tuples (default) or dictionaries of python row values.
+        An iterator of tuples (default) or dictionaries (if named) of python row values.
 
         Examples
         --------
