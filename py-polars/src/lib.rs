@@ -61,9 +61,7 @@ use crate::file::{get_either_file, EitherRustPythonFile};
 use crate::lazy::dataframe::{PyLazyFrame, PyLazyGroupBy};
 use crate::lazy::dsl;
 use crate::lazy::dsl::PyExpr;
-use crate::prelude::{
-    vec_extract_wrapped, ClosedWindow, DataType, DatetimeArgs, Duration, DurationArgs,
-};
+use crate::prelude::{vec_extract_wrapped, ClosedWindow, DataType, DatetimeArgs, DurationArgs};
 use crate::series::PySeries;
 
 #[global_allocator]
@@ -509,7 +507,7 @@ fn py_date_range(
         name,
         start,
         stop,
-        every.parse()?,
+        every.parse().map_err(PyPolarsErr::from)?,
         closed.0,
         time_unit.0,
         time_zone.as_ref(),

@@ -1337,12 +1337,13 @@ impl PyDataFrame {
         offset: &str,
         stable: bool,
     ) -> PyResult<Self> {
+        let every = every.parse().map_err(PyPolarsErr::from)?;
+        let offset = offset.parse().map_err(PyPolarsErr::from)?;
+
         let out = if stable {
-            self.df
-                .upsample_stable(by, index_column, every.parse()?, offset.parse()?)
+            self.df.upsample_stable(by, index_column, every, offset)
         } else {
-            self.df
-                .upsample(by, index_column, every.parse()?, offset.parse()?)
+            self.df.upsample(by, index_column, every, offset)
         };
         let out = out.map_err(PyPolarsErr::from)?;
         Ok(out.into())
