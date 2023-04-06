@@ -15,7 +15,7 @@ from polars.dependencies import _PYARROW_AVAILABLE
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoDataError
-from polars.utils.various import _cast_repr_strings_with_schema
+from polars.utils.various import _cast_repr_strings_with_schema, parse_version
 
 if TYPE_CHECKING:
     from polars.dataframe import DataFrame
@@ -672,7 +672,7 @@ def from_dataframe(df: Any, *, allow_copy: bool = True) -> DataFrame:
             f"`df` of type {type(df)} does not support the dataframe interchange"
             " protocol."
         )
-    if not _PYARROW_AVAILABLE or int(pa.__version__.split(".")[0]) < 11:
+    if not _PYARROW_AVAILABLE or parse_version(pa.__version__) < parse_version("11"):
         raise ImportError(
             "pyarrow>=11.0.0 is required for converting a dataframe interchange object"
             " to a Polars dataframe."
