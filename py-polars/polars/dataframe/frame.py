@@ -1194,7 +1194,9 @@ class DataFrame:
         dtypes is added, this value should be propagated to columns.
 
         """
-        if not _PYARROW_AVAILABLE or int(pa.__version__.split(".")[0]) < 11:
+        if not _PYARROW_AVAILABLE or parse_version(pa.__version__) < parse_version(
+            "11"
+        ):
             raise ImportError(
                 "pyarrow>=11.0.0 is required for converting a Polars dataframe to a"
                 " dataframe interchange object."
@@ -2050,7 +2052,16 @@ class DataFrame:
         if use_pyarrow_extension_array:
             if parse_version(pd.__version__) < parse_version("1.5"):
                 raise ModuleNotFoundError(
-                    f'"use_pyarrow_extension_array=True" requires Pandas 1.5.x or higher, found Pandas {pd.__version__}.'
+                    f'pandas>=1.5.0 is required for `to_pandas("use_pyarrow_extension_array=True")`, found Pandas {pd.__version__}.'
+                )
+            if not _PYARROW_AVAILABLE or parse_version(pa.__version__) < parse_version(
+                "8"
+            ):
+                raise ModuleNotFoundError(
+                    f'pyarrow>=8.0.0 is required for `to_pandas("use_pyarrow_extension_array=True")`'
+                    f", found pyarrow {pa.__version__}."
+                    if _PYARROW_AVAILABLE
+                    else "."
                 )
 
         record_batches = self._df.to_pandas()

@@ -82,6 +82,7 @@ from polars.utils.meta import get_index_type
 from polars.utils.various import (
     _is_generator,
     is_int_sequence,
+    parse_version,
     range_to_series,
     range_to_slice,
     scale_bytes,
@@ -3262,14 +3263,18 @@ class Series:
 
         """
         if use_pyarrow_extension_array:
-            pandas_version_major, pandas_version_minor = (
-                int(x) for x in pd.__version__.split(".")[0:2]
-            )
-            if pandas_version_major == 0 or (
-                pandas_version_major == 1 and pandas_version_minor < 5
+            if parse_version(pd.__version__) < parse_version("1.5"):
+                raise ModuleNotFoundError(
+                    f'pandas>=1.5.0 is required for `to_pandas("use_pyarrow_extension_array=True")`, found Pandas {pd.__version__}.'
+                )
+            if not _PYARROW_AVAILABLE or parse_version(pa.__version__) < parse_version(
+                "8"
             ):
                 raise ModuleNotFoundError(
-                    f'"use_pyarrow_extension_array=True" requires Pandas 1.5.x or higher, found Pandas {pd.__version__}.'
+                    f'pyarrow>=8.0.0 is required for `to_pandas("use_pyarrow_extension_array=True")`'
+                    f", found pyarrow {pa.__version__}."
+                    if _PYARROW_AVAILABLE
+                    else "."
                 )
 
         pd_series = (
