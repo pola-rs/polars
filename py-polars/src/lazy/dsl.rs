@@ -250,8 +250,13 @@ impl PyExpr {
     }
 
     #[cfg(feature = "top_k")]
-    pub fn top_k(&self, k: usize, descending: bool) -> PyExpr {
-        self.inner.clone().top_k(k, descending).into()
+    pub fn top_k(&self, k: usize) -> PyExpr {
+        self.inner.clone().top_k(k).into()
+    }
+
+    #[cfg(feature = "top_k")]
+    pub fn bottom_k(&self, k: usize) -> PyExpr {
+        self.inner.clone().bottom_k(k).into()
     }
 
     pub fn arg_max(&self) -> PyExpr {

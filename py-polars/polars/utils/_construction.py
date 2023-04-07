@@ -56,7 +56,6 @@ from polars.dependencies import pyarrow as pa
 from polars.exceptions import ComputeError, ShapeError
 from polars.utils._wrap import wrap_df, wrap_s
 from polars.utils.convert import _tzinfo_to_str
-from polars.utils.decorators import deprecated_alias
 from polars.utils.meta import threadpool_size
 from polars.utils.various import _is_generator, arrlen, range_to_series
 
@@ -359,16 +358,18 @@ def sequence_to_pyseries(
         ).to_struct(name)
     else:
         if python_dtype is None:
-            if value is None and dtype_if_empty:
-                # Create a series with a dtype_if_empty dtype for a sequence which
-                # contains only None values.
-                constructor = polars_type_to_constructor(dtype_if_empty)
+            if value is None:
+                # Create a series with a dtype_if_empty dtype (if set) or Float32
+                # (if not set) for a sequence which contains only None values.
+                constructor = polars_type_to_constructor(
+                    dtype_if_empty if dtype_if_empty else Float32
+                )
                 return _construct_series_with_fallbacks(
                     constructor, name, values, strict
                 )
 
             # generic default dtype
-            python_dtype = float if value is None else type(value)
+            python_dtype = type(value)
 
         # temporal branch
         if python_dtype in py_temporal_types:
@@ -433,7 +434,6 @@ def sequence_to_pyseries(
             return _construct_series_with_fallbacks(constructor, name, values, strict)
 
 
-@deprecated_alias(nan_to_none="nan_to_null")
 def _pandas_series_to_arrow(
     values: pd.Series | pd.DatetimeIndex,
     nan_to_null: bool = True,
@@ -476,7 +476,6 @@ def _pandas_series_to_arrow(
         )
 
 
-@deprecated_alias(nan_to_none="nan_to_null")
 def pandas_to_pyseries(
     name: str, values: pd.Series | pd.DatetimeIndex, nan_to_null: bool = True
 ) -> PySeries:
@@ -620,7 +619,6 @@ def _expand_dict_scalars(
                     updated_data[name] = pli.Series(
                         name=name, values=val, dtype=dtype, nan_to_null=nan_to_null
                     )
-
                 elif val is None or isinstance(  # type: ignore[redundant-expr]
                     val, (int, float, str, bool, date, datetime, time, timedelta)
                 ):
@@ -1327,7 +1325,6 @@ def iterable_to_pydf(
 
 def pandas_has_default_index(df: pd.DataFrame) -> bool:
     """Identify if the pandas frame only has a default (or equivalent) index."""
-    from pandas.core.indexes.numeric import IntegerIndex
     from pandas.core.indexes.range import RangeIndex
 
     index_cols = df.index.names
@@ -1342,12 +1339,11 @@ def pandas_has_default_index(df: pd.DataFrame) -> bool:
         # finally, is the index _equivalent_ to a default unnamed
         # integer index with frame data that was previously sorted
         return (
-            isinstance(df.index, IntegerIndex)
+            df.index.dtype == "int"  # type: ignore[comparison-overlap]
             and (df.index.sort_values() == np.arange(len(df))).all()
         )
 
 
-@deprecated_alias(nan_to_none="nan_to_null")
 def pandas_to_pydf(
     data: pd.DataFrame,
     schema: SchemaDefinition | None = None,

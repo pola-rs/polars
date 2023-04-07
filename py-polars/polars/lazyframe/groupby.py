@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING, Callable, Generic, Iterable, TypeVar
 
 from polars import functions as F
 from polars.utils._parse_expr_input import expr_to_lit_or_expr, selection_to_pyexpr_list
-from polars.utils.decorators import deprecated_alias
 
 if TYPE_CHECKING:
     from polars.dataframe import DataFrame
@@ -134,7 +133,6 @@ class LazyGroupBy(Generic[LDF]):
 
         return self._lazyframe_class._from_pyldf(self.lgb.agg(exprs))
 
-    @deprecated_alias(f="function")
     def apply(
         self,
         function: Callable[[DataFrame], DataFrame],

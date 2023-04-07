@@ -49,5 +49,5 @@ StringCache
 .. autosummary::
    :toctree: api/
 
-    toggle_string_cache
+    enable_string_cache
     StringCache

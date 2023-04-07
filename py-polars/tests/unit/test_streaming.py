@@ -413,3 +413,17 @@ def test_streaming_groupby_ooc(monkeypatch: Any) -> None:
             "a_first": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
             "a_last": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
         }
+
+
+def test_streaming_groupby_struct_key() -> None:
+    df = pl.DataFrame(
+        {"A": [1, 2, 3, 2], "B": ["google", "ms", "apple", "ms"], "C": [2, 3, 4, 3]}
+    )
+    df1 = df.lazy().with_columns(pl.struct(["A", "C"]).alias("tuples"))
+    assert df1.groupby("tuples").agg(pl.count(), pl.col("B").first()).sort("B").collect(
+        streaming=True
+    ).to_dict(False) == {
+        "tuples": [{"A": 3, "C": 4}, {"A": 1, "C": 2}, {"A": 2, "C": 3}],
+        "count": [1, 1, 2],
+        "B": ["apple", "google", "ms"],
+    }

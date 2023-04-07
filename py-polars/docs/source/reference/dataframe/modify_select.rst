@@ -6,6 +6,7 @@ Manipulation/selection
 .. autosummary::
    :toctree: api/
 
+    DataFrame.bottom_k
     DataFrame.clear
     DataFrame.clone
     DataFrame.drop

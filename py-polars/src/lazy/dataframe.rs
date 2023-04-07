@@ -440,6 +440,18 @@ impl PyLazyFrame {
         ldf.top_k(k, exprs, descending, nulls_last).into()
     }
 
+    pub fn bottom_k(
+        &self,
+        k: IdxSize,
+        by: Vec<PyExpr>,
+        descending: Vec<bool>,
+        nulls_last: bool,
+    ) -> PyLazyFrame {
+        let ldf = self.ldf.clone();
+        let exprs = py_exprs_to_exprs(by);
+        ldf.bottom_k(k, exprs, descending, nulls_last).into()
+    }
+
     pub fn cache(&self) -> PyLazyFrame {
         let ldf = self.ldf.clone();
         ldf.cache().into()

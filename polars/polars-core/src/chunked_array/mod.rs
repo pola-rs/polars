@@ -588,7 +588,7 @@ pub(crate) mod test {
         let a = a.sort(false);
         let b = a.into_iter().collect::<Vec<_>>();
         assert_eq!(b, [Some("a"), Some("b"), Some("c")]);
-        assert_eq!(a.is_sorted_ascending_flag(), true);
+        assert!(a.is_sorted_ascending_flag());
     }
 
     #[test]

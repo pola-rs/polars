@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Callable, Iterator, Sequence, cast
 import numpy as np
 import pyarrow as pa
 import pytest
+from numpy.testing import assert_array_equal
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, INTEGER_DTYPES
@@ -69,11 +70,6 @@ def test_special_char_colname_init() -> None:
         assert len(df.rows()) == 0
         assert df.is_empty()
 
-        # TODO: remove once 'columns' -> 'schema' transition complete
-        with pytest.deprecated_call():
-            df2 = pl.DataFrame(columns=cols)  # type: ignore[call-arg]
-            assert_frame_equal(df, df2)
-
 
 def test_comparisons() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
@@ -116,8 +112,12 @@ def test_comparisons() -> None:
 def test_selection() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0], "c": ["a", "b", "c"]})
 
-    # get_column by name
-    assert df.get_column("a").to_list() == [1, 2, 3]
+    # get column by name
+    assert_series_equal(df.get_column("b"), pl.Series("b", [1.0, 2.0, 3.0]))
+
+    # get column by index
+    assert_series_equal(df.to_series(1), pl.Series("b", [1.0, 2.0, 3.0]))
+    assert_series_equal(df.to_series(-1), pl.Series("c", ["a", "b", "c"]))
 
     # select columns by mask
     assert df[:2, :1].rows() == [(1,), (2,)]
@@ -210,6 +210,7 @@ def test_from_arrow(monkeypatch: Any) -> None:
             "decimal1": pa.array([1, 2], pa.decimal128(2, 1)),
         }
     )
+    record_batches = tbl.to_batches(max_chunksize=1)
     expected_schema = {
         "a": pl.Datetime("ms"),
         "b": pl.Datetime("ms"),
@@ -236,10 +237,10 @@ def test_from_arrow(monkeypatch: Any) -> None:
             Decimal("2.0"),
         ),
     ]
-
-    df = cast(pl.DataFrame, pl.from_arrow(tbl))
-    assert df.schema == expected_schema
-    assert df.rows() == expected_data
+    for arrow_data in (tbl, record_batches):
+        df = cast(pl.DataFrame, pl.from_arrow(arrow_data))
+        assert df.schema == expected_schema
+        assert df.rows() == expected_data
 
     empty_tbl = tbl[:0]  # no rows
     df = cast(pl.DataFrame, pl.from_arrow(empty_tbl))
@@ -253,6 +254,36 @@ def test_from_arrow(monkeypatch: Any) -> None:
         override_schema["e"] = pl.Int8
         assert df.schema == override_schema
         assert df.rows() == expected_data[: (len(df))]
+
+    # init from record batches with overrides
+    df = pl.DataFrame(
+        {
+            "id": ["a123", "b345", "c567", "d789", "e101"],
+            "points": [99, 45, 50, 85, 35],
+        }
+    )
+    tbl = df.to_arrow()
+    batches = tbl.to_batches(max_chunksize=3)
+
+    df0: pl.DataFrame = pl.from_arrow(batches)  # type: ignore[assignment]
+    df1: pl.DataFrame = pl.from_arrow(  # type: ignore[assignment]
+        data=batches,
+        schema=["x", "y"],
+        schema_overrides={"y": pl.Int32},
+    )
+    df2: pl.DataFrame = pl.from_arrow(  # type: ignore[assignment]
+        data=batches[0],
+        schema=["x", "y"],
+        schema_overrides={"y": pl.Int32},
+    )
+
+    assert df0.rows() == df.rows()
+    assert df1.rows() == df.rows()
+    assert df2.rows() == df.rows()[:3]
+
+    assert df0.schema == {"id": pl.Utf8, "points": pl.Int64}
+    assert df1.schema == {"x": pl.Utf8, "y": pl.Int32}
+    assert df2.schema == {"x": pl.Utf8, "y": pl.Int32}
 
 
 def test_from_dict_with_column_order() -> None:
@@ -1201,6 +1232,22 @@ def test_describe() -> None:
     )
     assert_frame_equal(df.describe(), expected)
 
+    # struct
+    df = pl.DataFrame(
+        {
+            "numerical": [1, 2, 1, None],
+            "struct": [{"x": 1, "y": 2}, {"x": 3, "y": 4}, {"x": 1, "y": 2}, None],
+            "list": [[1, 2], [3, 4], [1, 2], None],
+        }
+    )
+
+    assert df.describe().to_dict(False) == {
+        "describe": ["count", "null_count", "mean", "std", "min", "max", "median"],
+        "numerical": [4.0, 1.0, 1.3333333333333333, 0.5773502691896257, 1.0, 2.0, 1.0],
+        "struct": ["4", "1", None, None, None, None, None],
+        "list": ["4", "1", None, None, None, None, None],
+    }
+
 
 def test_duration_arithmetic() -> None:
     df = pl.DataFrame(
@@ -1282,7 +1329,23 @@ def test_assign() -> None:
 
 def test_to_numpy() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
-    assert df.to_numpy().shape == (3, 2)
+    out_array = df.to_numpy()
+    expected_array = np.array([[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]], dtype=np.float64)
+    assert_array_equal(out_array, expected_array)
+    assert out_array.flags["F_CONTIGUOUS"] is True
+
+
+def test__array__() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+    out_array = np.asarray(df.to_numpy())
+    expected_array = np.array([[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]], dtype=np.float64)
+    assert_array_equal(out_array, expected_array)
+    assert out_array.flags["F_CONTIGUOUS"] is True
+
+    out_array = np.asarray(df.to_numpy(), np.uint8)
+    expected_array = np.array([[1, 1], [2, 2], [3, 3]], dtype=np.uint8)
+    assert_array_equal(out_array, expected_array)
+    assert out_array.flags["F_CONTIGUOUS"] is True
 
 
 def test_arg_sort_by(df: pl.DataFrame) -> None:
@@ -1836,60 +1899,6 @@ def test_filter_with_all_expansion() -> None:
     assert out.shape == (2, 3)
 
 
-def test_transpose() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
-    expected = pl.DataFrame(
-        {
-            "column": ["a", "b"],
-            "column_0": [1, 1],
-            "column_1": [2, 2],
-            "column_2": [3, 3],
-        }
-    )
-    out = df.transpose(include_header=True)
-    assert_frame_equal(expected, out)
-
-    out = df.transpose(include_header=False, column_names=["a", "b", "c"])
-    expected = pl.DataFrame(
-        {
-            "a": [1, 1],
-            "b": [2, 2],
-            "c": [3, 3],
-        }
-    )
-    assert_frame_equal(expected, out)
-
-    out = df.transpose(
-        include_header=True, header_name="foo", column_names=["a", "b", "c"]
-    )
-    expected = pl.DataFrame(
-        {
-            "foo": ["a", "b"],
-            "a": [1, 1],
-            "b": [2, 2],
-            "c": [3, 3],
-        }
-    )
-    assert_frame_equal(expected, out)
-
-    def name_generator() -> Iterator[str]:
-        base_name = "my_column_"
-        count = 0
-        while True:
-            yield f"{base_name}{count}"
-            count += 1
-
-    out = df.transpose(include_header=False, column_names=name_generator())
-    expected = pl.DataFrame(
-        {
-            "my_column_0": [1, 1],
-            "my_column_1": [2, 2],
-            "my_column_2": [3, 3],
-        }
-    )
-    assert_frame_equal(expected, out)
-
-
 def test_extension() -> None:
     class Foo:
         def __init__(self, value: Any) -> None:
@@ -2205,7 +2214,7 @@ def test_sample() -> None:
     df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]})
 
     assert df.sample(n=2, seed=0).shape == (2, 3)
-    assert df.sample(frac=0.4, seed=0).shape == (1, 3)
+    assert df.sample(fraction=0.4, seed=0).shape == (1, 3)
 
 
 def test_shrink_to_fit() -> None:
