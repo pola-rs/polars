@@ -6,7 +6,10 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use arrow::array::{BooleanArray, PrimitiveArray, Utf8Array};
-use polars_arrow::utils::TrustMyLength;
+#[cfg(feature = "object")]
+use arrow::bitmap::Bitmap;
+use arrow::bitmap::MutableBitmap;
+use polars_utils::sync::SyncPtr;
 use rayon::iter::{FromParallelIterator, IntoParallelIterator};
 use rayon::prelude::*;
 
@@ -301,8 +304,6 @@ impl FromIterator<Option<Box<dyn Array>>> for ListChunked {
 #[cfg(feature = "object")]
 impl<T: PolarsObject> FromIterator<Option<T>> for ObjectChunked<T> {
     fn from_iter<I: IntoIterator<Item = Option<T>>>(iter: I) -> Self {
-        use arrow::bitmap::{Bitmap, MutableBitmap};
-
         let iter = iter.into_iter();
         let size = iter.size_hint().0;
         let mut null_mask_builder = MutableBitmap::with_capacity(size);
@@ -378,6 +379,19 @@ fn get_capacity_from_par_results<T>(ll: &LinkedList<Vec<T>>) -> usize {
     ll.iter().map(|list| list.len()).sum()
 }
 
+fn get_capacity_from_par_results_slice<T>(bufs: &[Vec<T>]) -> usize {
+    bufs.iter().map(|list| list.len()).sum()
+}
+fn get_offsets<T>(bufs: &[Vec<T>]) -> Vec<usize> {
+    bufs.iter()
+        .scan(0usize, |acc, buf| {
+            let out = *acc;
+            *acc += buf.len();
+            Some(out)
+        })
+        .collect()
+}
+
 impl<T> FromParallelIterator<T::Native> for NoNull<ChunkedArray<T>>
 where
     T: PolarsNumericType,
@@ -404,11 +418,69 @@ where
         // Get linkedlist filled with different vec result from different threads
         let vectors = collect_into_linked_list(iter);
 
-        let capacity: usize = get_capacity_from_par_results(&vectors);
+        let vectors = vectors.into_iter().collect::<Vec<_>>();
+        let capacity: usize = get_capacity_from_par_results_slice(&vectors);
+        let offsets = get_offsets(&vectors);
 
-        let iter = TrustMyLength::new(vectors.into_iter().flatten(), capacity);
-        let arr =
-            PrimitiveArray::<T::Native>::from_trusted_len_iter(iter).to(T::get_dtype().to_arrow());
+        let mut values_buf: Vec<T::Native> = Vec::with_capacity(capacity);
+        let values_buf_ptr = unsafe { SyncPtr::new(values_buf.as_mut_ptr()) };
+
+        let validities = offsets
+            .into_par_iter()
+            .zip(vectors)
+            .map(|(offset, vector)| {
+                let mut local_validity = None;
+                let local_len = vector.len();
+                let mut latest_validy_written = 0;
+                unsafe {
+                    let values_buf_ptr = values_buf_ptr.get().add(offset);
+
+                    for (i, opt_v) in vector.into_iter().enumerate() {
+                        match opt_v {
+                            Some(v) => {
+                                std::ptr::write(values_buf_ptr.add(i), v);
+                            }
+                            None => {
+                                let validity = match &mut local_validity {
+                                    None => {
+                                        let validity = MutableBitmap::with_capacity(local_len);
+                                        local_validity = Some(validity);
+                                        local_validity.as_mut().unwrap_unchecked()
+                                    }
+                                    Some(validity) => validity,
+                                };
+                                validity.extend_constant(i - latest_validy_written, true);
+                                latest_validy_written = i + 1;
+                                validity.push_unchecked(false);
+                                // initialize value
+                                std::ptr::write(values_buf_ptr.add(i), T::Native::default());
+                            }
+                        }
+                    }
+                }
+                if let Some(validity) = &mut local_validity {
+                    validity.extend_constant(local_len - latest_validy_written, true);
+                }
+                (local_validity, local_len)
+            })
+            .collect::<Vec<_>>();
+        unsafe { values_buf.set_len(capacity) };
+
+        let validity = if validities.iter().any(|(v, _)| v.is_some()) {
+            let mut bitmap = MutableBitmap::with_capacity(capacity);
+            for (valids, len) in validities {
+                if let Some(valids) = valids {
+                    bitmap.extend_from_bitmap(&(valids.into()))
+                } else {
+                    bitmap.extend_constant(len, true)
+                }
+            }
+            Some(bitmap.into())
+        } else {
+            None
+        };
+
+        let arr = PrimitiveArray::from_data_default(values_buf.into(), validity);
         unsafe { Self::from_chunks("", vec![Box::new(arr)]) }
     }
 }
