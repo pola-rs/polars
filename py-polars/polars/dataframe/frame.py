@@ -1173,6 +1173,11 @@ class DataFrame:
         return dict(zip(self.columns, self.dtypes))
 
     def __array__(self, dtype: Any = None) -> np.ndarray[Any, Any]:
+        """Numpy __array__ interface protcol.
+
+        Ensures that `np.asarray(pl.DataFrame(..))` works as expected, see
+        https://numpy.org/devdocs/user/basics.interoperability.html#the-array-method.
+        """
         if dtype:
             return self.to_numpy().__array__(dtype)
         else:
