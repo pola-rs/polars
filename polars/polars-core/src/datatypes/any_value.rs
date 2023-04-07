@@ -2,11 +2,17 @@ use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
 use arrow::types::PrimitiveType;
+#[cfg(feature = "dtype-struct")]
+use polars_arrow::trusted_len::PushUnchecked;
+#[cfg(feature = "dtype-struct")]
+use polars_utils::slice::GetSaferUnchecked;
 #[cfg(feature = "dtype-categorical")]
 use polars_utils::sync::SyncPtr;
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use super::*;
+#[cfg(feature = "dtype-struct")]
+use crate::prelude::any_value::arr_to_any_value;
 
 #[cfg(feature = "object")]
 #[derive(Debug)]
@@ -650,6 +656,25 @@ impl<'a> AnyValue<'a> {
             BinaryOwned(v) => BinaryOwned(v),
             #[cfg(feature = "object")]
             Object(v) => ObjectOwned(OwnedObject(v.to_boxed())),
+            #[cfg(feature = "dtype-struct")]
+            Struct(idx, arr, fields) => {
+                let avs = struct_to_avs_static(idx, arr, fields);
+                StructOwned(Box::new((avs, fields.to_vec())))
+            }
+            #[cfg(feature = "dtype-struct")]
+            StructOwned(payload) => {
+                let av = StructOwned(payload);
+                // safety: owned is already static
+                unsafe { std::mem::transmute::<AnyValue<'a>, AnyValue<'static>>(av) }
+            }
+            #[cfg(feature = "object")]
+            ObjectOwned(payload) => {
+                let av = ObjectOwned(payload);
+                // safety: owned is already static
+                unsafe { std::mem::transmute::<AnyValue<'a>, AnyValue<'static>>(av) }
+            }
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(val, scale) => Decimal(val, scale),
             dt => polars_bail!(ComputeError: "cannot get static any-value from {}", dt),
         };
         Ok(av)
@@ -728,6 +753,26 @@ impl PartialEq for AnyValue<'_> {
             },
             #[cfg(feature = "dtype-duration")]
             (Duration(l, tu_l), Duration(r, tu_r)) => l == r && tu_l == tu_r,
+            #[cfg(feature = "dtype-struct")]
+            (StructOwned(l), StructOwned(r)) => {
+                let l = &*l.0;
+                let r = &*r.0;
+                l == r
+            }
+            // TODO! add structowned with idx and arced structarray
+            #[cfg(feature = "dtype-struct")]
+            (StructOwned(l), Struct(idx, arr, fields)) => {
+                let fields_left = &*l.0;
+                let avs = struct_to_avs_static(idx, arr, fields);
+                fields_left == avs
+            }
+            #[cfg(feature = "dtype-struct")]
+            (Struct(idx, arr, fields), StructOwned(r)) => {
+                let fields_right = &*r.0;
+                let avs = struct_to_avs_static(idx, arr, fields);
+                fields_right == avs
+            }
+
             _ => false,
         }
     }
@@ -753,6 +798,22 @@ impl PartialOrd for AnyValue<'_> {
             _ => None,
         }
     }
+}
+
+#[cfg(feature = "dtype-struct")]
+fn struct_to_avs_static(idx: usize, arr: &StructArray, fields: &[Field]) -> Vec<AnyValue<'static>> {
+    let arrs = arr.values();
+    let mut avs = Vec::with_capacity(arrs.len());
+    // amortize loop counter
+    for i in 0..arrs.len() {
+        unsafe {
+            let arr = &**arrs.get_unchecked_release(i);
+            let field = fields.get_unchecked_release(i);
+            let av = arr_to_any_value(arr, idx, &field.dtype);
+            avs.push_unchecked(av.into_static().unwrap());
+        }
+    }
+    avs
 }
 
 #[cfg(test)]
