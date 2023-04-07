@@ -417,49 +417,13 @@ def test_streaming_groupby_ooc(monkeypatch: Any) -> None:
 
 def test_streaming_groupby_struct_key() -> None:
     df = pl.DataFrame(
-        {
-            "A": [1.6, 2.4, 3.5, 4.3, 5.8, 3.23, 3.53, 2.232, 4.3, 5.8],
-            "B": [
-                "google",
-                "ms",
-                "apple",
-                "uber",
-                "meta",
-                "amazon",
-                "snapchat",
-                "tesco",
-                "uber",
-                "meta",
-            ],
-            "C": [
-                34.543,
-                46.241,
-                45.1,
-                756.109,
-                23.11,
-                6.11,
-                432.21,
-                2.212,
-                756.109,
-                23.11,
-            ],
-        }
+        {"A": [1, 2, 3, 2], "B": ["google", "ms", "apple", "ms"], "C": [2, 3, 4, 3]}
     )
     df1 = df.lazy().with_columns(pl.struct(["A", "C"]).alias("tuples"))
-    assert df1.groupby("tuples").agg(pl.count()).collect(streaming=True).to_dict(
-        False
-    ) == {
-        "tuples": [
-            {"A": 5.8, "C": 23.11},
-            {"A": 5.8, "C": 23.11},
-            {"A": 1.6, "C": 34.543},
-            {"A": 3.5, "C": 45.1},
-            {"A": 2.232, "C": 2.212},
-            {"A": 2.4, "C": 46.241},
-            {"A": 3.23, "C": 6.11},
-            {"A": 3.53, "C": 432.21},
-            {"A": 4.3, "C": 756.109},
-            {"A": 4.3, "C": 756.109},
-        ],
-        "count": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    assert df1.groupby("tuples").agg(pl.count(), pl.col("B").first()).sort("B").collect(
+        streaming=True
+    ).to_dict(False) == {
+        "tuples": [{"A": 3, "C": 4}, {"A": 1, "C": 2}, {"A": 2, "C": 3}],
+        "count": [1, 1, 2],
+        "B": ["apple", "google", "ms"],
     }
