@@ -515,7 +515,7 @@ impl FromParallelIterator<Option<bool>> for BooleanChunked {
         let capacity: usize = get_capacity_from_par_results_slice(&vectors);
         let offsets = get_offsets(&vectors);
 
-        // We initialize the vec, as setting bits only doesn't seem to initalize the memory
+        // We initialize the vec, as setting bits only doesn't seem to initialize the memory
         let mut values_buf: Vec<u8> = vec![0; capacity.saturating_add(7) / 8];
         let values_buf_ptr = unsafe { SyncPtr::new(values_buf.as_mut_ptr()) };
 
