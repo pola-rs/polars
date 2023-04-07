@@ -137,6 +137,16 @@ pub fn _get_rows_encoded(
     Ok(convert_columns(&cols, &fields))
 }
 
+pub fn _get_rows_encoded_ca(
+    name: &str,
+    by: &[Series],
+    descending: &[bool],
+    nulls_last: bool,
+) -> PolarsResult<BinaryChunked> {
+    _get_rows_encoded(by, descending, nulls_last)
+        .map(|rows| unsafe { BinaryChunked::from_chunks(name, vec![Box::new(rows.into_array())]) })
+}
+
 pub(crate) fn argsort_multiple_row_fmt(
     by: &[Series],
     mut descending: Vec<bool>,
