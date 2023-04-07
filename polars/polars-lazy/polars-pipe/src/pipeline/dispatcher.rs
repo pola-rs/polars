@@ -282,7 +282,7 @@ impl PipeLine {
     }
 
     pub fn execute(&mut self, state: Box<dyn SExecutionContext>) -> PolarsResult<DataFrame> {
-        let ec = PExecutionContext::new(state);
+        let ec = PExecutionContext::new(state, self.verbose);
 
         if self.verbose {
             self.show();
