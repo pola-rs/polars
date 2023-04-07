@@ -195,7 +195,7 @@ def linkcode_resolve(domain, info):
     fn = os.path.relpath(fn, start=polars_root)
 
     return (
-        f"https://github.com/pola-rs/polars/blob/master/py-polars/polars/{fn}{linespec}"
+        f"https://github.com/pola-rs/polars/blob/main/py-polars/polars/{fn}{linespec}"
     )
 
 
