@@ -370,7 +370,7 @@ mod test {
 
         assert!(out.frame_equal_missing(&expected));
 
-        let list = Series::new("foo", &[s0.clone(), s1.clear(), s1.clone()]);
+        let list = Series::new("foo", [s0.clone(), s1.clear(), s1.clone()]);
         let df = DataFrame::new(vec![list, s0.clone(), s1.clone()])?;
         let out = df.explode(["foo"])?;
         let expected = df![
@@ -391,7 +391,7 @@ mod test {
         let list = Series::new("foo", &[s0, s1]);
         let df = DataFrame::new(vec![list])?;
 
-        let out = df.explode(&["foo"])?;
+        let out = df.explode(["foo"])?;
         let out = out
             .column("foo")?
             .i32()?
@@ -412,7 +412,7 @@ mod test {
         )
         .unwrap();
 
-        let melted = df.melt(&["A", "B"], &["C", "D"])?;
+        let melted = df.melt(["A", "B"], ["C", "D"])?;
         assert_eq!(
             Vec::from(melted.column("value")?.i32()?),
             &[Some(10), Some(11), Some(12), Some(2), Some(4), Some(6)]

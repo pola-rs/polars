@@ -943,7 +943,7 @@ mod test {
         // Select multiple
         let out = df
             .groupby_stable(["date"])?
-            .select(&["temp", "rain"])
+            .select(["temp", "rain"])
             .mean()?;
         assert_eq!(
             out.column("temp_mean")?,
@@ -954,7 +954,7 @@ mod test {
         #[allow(deprecated)]
         // Group by multiple
         let out = df
-            .groupby_stable(&["date", "temp"])?
+            .groupby_stable(["date", "temp"])?
             .select(["rain"])
             .mean()?;
         assert!(out.column("rain_mean").is_ok());
@@ -1000,7 +1000,7 @@ mod test {
         // Use of deprecated `sum()` for testing purposes
         #[allow(deprecated)]
         let adf = df
-            .groupby(&[
+            .groupby([
                 "G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8", "G9", "G10", "G11", "G12",
             ])
             .unwrap()
@@ -1045,7 +1045,7 @@ mod test {
         #[allow(deprecated)]
         // Compute the aggregated DataFrame by the 13 columns defined in `series_names`.
         let adf = df
-            .groupby(&series_names)
+            .groupby(series_names)
             .unwrap()
             .select(["N"])
             .sum()

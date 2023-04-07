@@ -282,7 +282,7 @@ mod test {
 
             let df_read = IpcReader::new(buf)
                 .finish()
-                .expect(&format!("IPC reader: {:?}", compression));
+                .unwrap_or_else(|_| panic!("IPC reader: {:?}", compression));
             assert!(df.frame_equal(&df_read));
         }
     }
