@@ -625,3 +625,24 @@ def test_arg_sort_by_descending() -> None:
         match=r"the length of `descending` \(1\) does not match the length of `exprs` \(2\)",
     ):
         df.select(pl.arg_sort_by(["a", "b"], descending=[True]))
+
+
+def test_arg_sort_struct() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [100, 300, 100, 200, 200, 100, 300, 200, 400, 400],
+            "b": [5, 5, 6, 7, 8, 1, 1, 2, 2, 3],
+        }
+    )
+    assert df.select(pl.struct("a", "b").arg_sort()).to_series().to_list() == [
+        5,
+        0,
+        2,
+        7,
+        3,
+        4,
+        6,
+        1,
+        8,
+        9,
+    ]
