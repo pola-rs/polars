@@ -1,0 +1,240 @@
+%YAML 1.2
+---
+name: SQL
+file_extensions:
+  - sql
+  - ddl
+  - dml
+scope: source.sql
+
+variables:
+  end_identifier: (?=[ \t]*(?:[^\w'"`. \t]|$))
+
+contexts:
+  main:
+    - include: comments
+    - match: |-
+        (?xi)
+        \b(create(?:\s+or\s+replace)?)\s+
+        (aggregate|conversion|database|domain|function|group|(?:unique\s+)?index|language|operator class|operator|procedure|rule|schema|sequence|table(?:space)?|trigger|type|user|view)
+        \b\s*
+      scope: meta.create.sql
+      captures:
+        1: keyword.other.create.sql
+        2: keyword.other.sql
+      push: identifier_create
+    - match: (?i:\s*\b(drop)\s+(aggregate|conversion|database|domain|function|group|index|language|operator class|operator|procedure|rule|schema|sequence|table|tablespace|trigger|type|user|view))
+      scope: meta.drop.sql
+      captures:
+        1: keyword.other.create.sql
+        2: keyword.other.sql
+    - match: (?i:\s*(drop)\s+(table)\s+(\w+)(\s+cascade)?\b)
+      scope: meta.drop.sql
+      captures:
+        1: keyword.other.create.sql
+        2: keyword.other.table.sql
+        3: entity.name.function.sql
+        4: keyword.other.cascade.sql
+    - match: (?i:\s*\b(alter)\s+(aggregate|conversion|database|domain|function|group|index|language|operator class|operator|procedure|rule|schema|sequence|table|tablespace|trigger|type|user|view)\s+)
+      scope: meta.alter.sql
+      captures:
+        1: keyword.other.create.sql
+        2: keyword.other.table.sql
+    - match: |-
+        (?xi)
+
+                # normal stuff, capture 1
+                 \b(bigint|bigserial|bit|boolean|box|bytea|cidr|circle|date|datetime|double\sprecision|inet|int|integer|line|lseg|macaddr|money|ntext|oid|path|point|polygon|real|serial|smallint|sysdate|sysname|text)\b
+
+                # numeric suffix, capture 2 + 3i
+                |\b(bit\svarying|character\s(?:varying)?|tinyint|var\schar|float|interval)\((\d+)\)
+
+                # optional numeric suffix, capture 4 + 5i
+                |\b(char|number|nvarchar|varbinary|varchar\d?)\b(?:\((\d+)\))?
+
+                # special case, capture 6 + 7i + 8i
+                |\b(numeric|decimal)\b(?:\((\d+),(\d+)\))?
+
+                # special case, captures 9, 10i, 11
+                |\b(times?)\b(?:\((\d+)\))?(\swith(?:out)?\stime\szone\b)?
+
+                # special case, captures 12, 13, 14i, 15
+                |\b(timestamp)(?:(s|tz))?\b(?:\((\d+)\))?(\s(with|without)\stime\szone\b)?
+
+
+      captures:
+        1: storage.type.sql
+        2: storage.type.sql
+        3: constant.numeric.sql
+        4: storage.type.sql
+        5: constant.numeric.sql
+        6: storage.type.sql
+        7: constant.numeric.sql
+        8: constant.numeric.sql
+        9: storage.type.sql
+        10: constant.numeric.sql
+        11: storage.type.sql
+        12: storage.type.sql
+        13: storage.type.sql
+        14: constant.numeric.sql
+        15: storage.type.sql
+    - match: (?i:\b((?:primary|foreign)\s+key|references|on\sdelete(\s+cascade)?|on\supdate(\s+cascade)?|check|constraint|default)\b)
+      scope: storage.modifier.sql
+    - match: \b\d+\b
+      scope: constant.numeric.sql
+    - match: (?i:\b(true|false)\b)
+      scope: constant.boolean.sql
+    - match: (?i:\b(select(\s+(distinct|top))?|insert(\s+(ignore\s+)?into)?|update|delete|truncate|from|set|where|group\s+by|with|case|when|then|else|end|union(\s+all)?|using|order\s+by|limit|(inner|cross)\s+join|join|straight_join|(left|right)(\s+outer)?\s+join|natural(\s+(left|right)(\s+outer)?)?\s+join)\b)
+      scope: keyword.other.DML.sql
+    - match: (?i:\b(?:(is)\s+)?(?:(not)\s+)?(null)\b)
+      captures:
+        1: keyword.operator.logical.sql
+        2: keyword.operator.logical.sql
+        3: constant.language.sql
+    - match: (?i:\b(and|or|like|having|exists|between|in)\b)
+      scope: keyword.operator.logical.sql
+    - match: (?i:\bvalues\b)
+      scope: keyword.other.DML.II.sql
+    - match: (?i:\b(begin(\s+work)?|start\s+transaction|commit(\s+work)?|rollback(\s+work)?)\b)
+      scope: keyword.other.LUW.sql
+    - match: (?i:\b(grant(\swith\sgrant\soption)?|revoke)\b)
+      scope: keyword.other.authorization.sql
+    - match: (?i:\s*\b(comment\s+on\s+(table|column|aggregate|constraint|database|domain|function|index|operator|rule|schema|sequence|trigger|type|view))\s+.*?\s+(is)\s+)
+      scope: keyword.other.object-comments.sql
+    - match: (?i)\bas\b
+      scope: keyword.operator.assignment.alias.sql
+    - match: (?i)\b(asc|desc)\b
+      scope: keyword.other.order.sql
+    - match: \*
+      scope: variable.language.star.sql
+    - match: "<=>|[!<>]?=|<>|<|>"
+      scope: keyword.operator.comparison.sql
+    - match: '-|\+|/'
+      scope: keyword.operator.math.sql
+    - match: \|\|
+      scope: keyword.operator.concatenator.sql
+    - match: (?i)\b(CURRENT_(DATE|TIME(STAMP)?|USER)|(SESSION|SYSTEM)_USER)\b
+      comment: List of SQL99 built-in functions from http://www.oreilly.com/catalog/sqlnut/chapter/ch04.html
+      scope: support.function.scalar.sql
+    - match: (?i)\b(AVG|COUNT|MIN|MAX|SUM)(?=\s*\()
+      comment: List of SQL99 built-in functions from http://www.oreilly.com/catalog/sqlnut/chapter/ch04.html
+      scope: support.function.aggregate.sql
+    - match: (?i)\b(CONCATENATE|CONVERT|LOWER|SUBSTRING|TRANSLATE|TRIM|UPPER)\b
+      scope: support.function.string.sql
+    - match: \b(\w+?)\.(\w+)\b
+      captures:
+        1: constant.other.database-name.sql
+        2: constant.other.table-name.sql
+    - include: strings
+    - include: regexps
+    - match: (\()(\))
+      comment: Allow for special ↩ behavior
+      scope: meta.block.sql
+      captures:
+        1: punctuation.section.scope.begin.sql
+        2: punctuation.section.scope.end.sql
+  comments:
+    - match: "--"
+      scope: punctuation.definition.comment.sql
+      push:
+        - meta_scope: comment.line.double-dash.sql
+        - match: \n
+          pop: true
+    - match: "#"
+      scope: punctuation.definition.comment.sql
+      push:
+        - meta_scope: comment.line.number-sign.sql
+        - match: \n
+          pop: true
+    - match: /\*
+      scope: punctuation.definition.comment.sql
+      push:
+        - meta_scope: comment.block.c
+        - match: \*/
+          pop: true
+        - match: ^\s*(\*)(?!/)
+          captures:
+            1: punctuation.definition.comment.sql
+  regexps:
+    - match: /(?=\S.*/)
+      scope: punctuation.definition.string.begin.sql
+      push:
+        - meta_scope: string.regexp.sql
+        - match: /
+          scope: punctuation.definition.string.end.sql
+          pop: true
+        - include: string_interpolation
+        - match: \\/
+          scope: constant.character.escape.slash.sql
+    - match: '%r\{'
+      comment: We should probably handle nested bracket pairs!?! -- Allan
+      scope: punctuation.definition.string.begin.sql
+      push:
+        - meta_scope: string.regexp.modr.sql
+        - match: '\}'
+          scope: punctuation.definition.string.end.sql
+          pop: true
+        - include: string_interpolation
+  string_escape:
+    - match: \\.
+      scope: constant.character.escape.sql
+  string_interpolation:
+    - match: '(#\{)([^\}]*)(\})'
+      scope: string.interpolated.sql
+      captures:
+        1: punctuation.definition.string.begin.sql
+        3: punctuation.definition.string.end.sql
+  strings:
+    - match: "'"
+      scope: punctuation.definition.string.begin.sql
+      push:
+        - meta_scope: string.quoted.single.sql
+        - match: "''"
+          scope: constant.character.escape.sql
+        - match: "'"
+          scope: punctuation.definition.string.end.sql
+          pop: true
+        - include: string_escape
+    - match: "`"
+      scope: punctuation.definition.string.begin.sql
+      push:
+        - meta_scope: string.quoted.other.backtick.sql
+        - match: "`"
+          scope: punctuation.definition.string.end.sql
+          pop: true
+        - include: string_escape
+    - match: '"'
+      scope: punctuation.definition.string.begin.sql
+      push:
+        - meta_scope: string.quoted.double.sql
+        - match: '""'
+          scope: constant.character.escape.sql
+        - match: '"'
+          scope: punctuation.definition.string.end.sql
+          pop: true
+        - include: string_interpolation
+    - match: '%\{'
+      scope: punctuation.definition.string.begin.sql
+      push:
+        - meta_scope: string.other.quoted.brackets.sql
+        - match: '\}'
+          scope: punctuation.definition.string.end.sql
+          pop: true
+        - include: string_interpolation
+  identifier_create:
+    - meta_content_scope: meta.toc-list.full-identifier.sql
+    - match: '(?:(\w+)|''([^'']+)''|"([^"]+)"|`([^`]+)`){{end_identifier}}'
+      scope: meta.toc-list.full-identifier.sql
+      captures:
+        1: entity.name.function.sql
+        2: entity.name.function.sql
+        3: entity.name.function.sql
+        4: entity.name.function.sql
+      pop: true
+      # Schema identifiers
+    - match: (?:\w+|'[^']+'|"[^"]+"|`[^`]+`)\s*(\.)
+      captures:
+        1: punctuation.accessor.dot.sql
+      # Handle situations where the schema and . 
+    - match: '{{end_identifier}}'
+      pop: true
