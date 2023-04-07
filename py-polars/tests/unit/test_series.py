@@ -54,6 +54,9 @@ def test_init_inputs(monkeypatch: Any) -> None:
     assert pl.Series([]).dtype == pl.Float32
     assert pl.Series(dtype_if_empty=pl.Utf8).dtype == pl.Utf8
     assert pl.Series([], dtype_if_empty=pl.UInt16).dtype == pl.UInt16
+    assert (
+        pl.Series([None, None, None]).dtype == pl.Float32
+    )  # f32 type used for list with only None
     assert pl.Series([None, None, None], dtype_if_empty=pl.Int8).dtype == pl.Int8
     # note: "== []" will be cast to empty Series with Utf8 dtype.
     assert_series_equal(
