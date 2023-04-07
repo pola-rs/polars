@@ -409,15 +409,12 @@ where
     }
 }
 
-fn finish_validities(
-    validities: Vec<(Option<MutableBitmap>, usize)>,
-    capacity: usize,
-) -> Option<Bitmap> {
+fn finish_validities(validities: Vec<(Option<Bitmap>, usize)>, capacity: usize) -> Option<Bitmap> {
     if validities.iter().any(|(v, _)| v.is_some()) {
         let mut bitmap = MutableBitmap::with_capacity(capacity);
         for (valids, len) in validities {
             if let Some(valids) = valids {
-                bitmap.extend_from_bitmap(&(valids.into()))
+                bitmap.extend_from_bitmap(&(valids))
             } else {
                 bitmap.extend_constant(len, true)
             }
@@ -479,7 +476,7 @@ where
                 if let Some(validity) = &mut local_validity {
                     validity.extend_constant(local_len - latest_validy_written, true);
                 }
-                (local_validity, local_len)
+                (local_validity.map(|b| b.into()), local_len)
             })
             .collect::<Vec<_>>();
         unsafe { values_buf.set_len(capacity) };
@@ -559,7 +556,7 @@ impl FromParallelIterator<Option<bool>> for BooleanChunked {
                 if let Some(validity) = &mut local_validity {
                     validity.extend_constant(local_len - latest_validy_written, true);
                 }
-                (local_validity, local_len)
+                (local_validity.map(|b| b.into()), local_len)
             })
             .collect::<Vec<_>>();
         unsafe { values_buf.set_len(capacity.saturating_add(7) / 8) };
@@ -607,9 +604,45 @@ where
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Ptr>>(iter: I) -> Self {
         let vectors = collect_into_linked_list(iter);
-        let arr = LargeStringArray::from_iter_values(vectors.into_iter().flatten());
+        let cap = get_capacity_from_par_results(&vectors);
+        let mut builder = MutableUtf8ValuesArray::with_capacities(cap, cap * 10);
+        for vec in vectors {
+            for val in vec {
+                builder.push(val.as_ref())
+            }
+        }
+        let arr: LargeStringArray = builder.into();
         unsafe { Self::from_chunks("", vec![Box::new(arr)]) }
     }
+}
+
+pub fn flatten_par<T: Send + Sync + Copy>(bufs: &[&[T]]) -> Vec<T> {
+    let len = bufs.iter().map(|b| b.as_ref().len()).sum();
+    let offsets = bufs
+        .iter()
+        .scan(0usize, |acc, buf| {
+            let out = *acc;
+            *acc += buf.len();
+            Some(out)
+        })
+        .collect::<Vec<_>>();
+
+    let mut out = Vec::with_capacity(len);
+    let out_ptr = unsafe { SyncPtr::new(out.as_mut_ptr()) };
+
+    offsets.into_par_iter().enumerate().for_each(|(i, offset)| {
+        let buf = bufs[i];
+        let ptr: *mut T = out_ptr.get();
+        unsafe {
+            let dst = ptr.add(offset);
+            let src = buf.as_ptr();
+            std::ptr::copy_nonoverlapping(src, dst, buf.len())
+        }
+    });
+    unsafe {
+        out.set_len(len);
+    }
+    out
 }
 
 impl<Ptr> FromParallelIterator<Option<Ptr>> for Utf8Chunked
@@ -618,8 +651,71 @@ where
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<Ptr>>>(iter: I) -> Self {
         let vectors = collect_into_linked_list(iter);
-        let arr = LargeStringArray::from_iter(vectors.into_iter().flatten());
-        unsafe { Self::from_chunks("", vec![Box::new(arr)]) }
+        let vectors = vectors.into_iter().collect::<Vec<_>>();
+
+        let arrays = vectors
+            .into_par_iter()
+            .map(|vector| {
+                let cap = vector.len();
+                let mut builder = MutableUtf8Array::with_capacities(cap, cap * 10);
+                for opt_val in vector {
+                    builder.push(opt_val)
+                }
+                let arr: LargeStringArray = builder.into();
+                arr
+            })
+            .collect::<Vec<_>>();
+
+        let mut len = 0;
+        let mut thread_offsets = Vec::with_capacity(arrays.len());
+        let values = arrays
+            .iter()
+            .map(|arr| {
+                thread_offsets.push(len);
+                len += arr.len();
+                arr.values().as_slice()
+            })
+            .collect::<Vec<_>>();
+        let values = flatten_par(&values);
+
+        let validity = finish_validities(
+            arrays
+                .iter()
+                .map(|arr| {
+                    let local_len = arr.len();
+                    (arr.validity().cloned(), local_len)
+                })
+                .collect(),
+            len,
+        );
+
+        // concat the offsets
+        // this is single threaded as the values depend on previous ones
+        // if this proves to slow we could try parallel reduce
+        let mut offsets = Vec::with_capacity(len + 1);
+        let mut offsets_so_far = 0;
+        let mut first = true;
+        for array in &arrays {
+            let local_offsets = array.offsets().as_slice();
+            if first {
+                offsets.extend_from_slice(local_offsets);
+                first = false;
+            } else {
+                // offset lengths must be updated
+                offsets.extend(local_offsets[1..].iter().map(|v| *v + offsets_so_far))
+            }
+            offsets_so_far = *local_offsets.last().unwrap();
+        }
+
+        unsafe {
+            offsets.set_len(len + 1);
+            let arr = Utf8Array::<i64>::from_data_unchecked_default(
+                offsets.into(),
+                values.into(),
+                validity,
+            );
+            Self::from_chunks("", vec![Box::new(arr)])
+        }
     }
 }
 
