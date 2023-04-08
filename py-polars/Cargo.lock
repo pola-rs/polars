@@ -60,6 +60,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "argminmax"
+version = "0.5.0"
+source = "git+https://github.com/jvdd/argminmax#55c8c5a6fd80fc3afba49f0418962344acf5415b"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "array-init-cursor"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1589,6 +1597,7 @@ dependencies = [
 name = "polars-ops"
 version = "0.28.0"
 dependencies = [
+ "argminmax",
  "arrow2",
  "base64",
  "either",
@@ -1712,7 +1721,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.16.18"
+version = "0.17.0"
 dependencies = [
  "ahash",
  "bincode",

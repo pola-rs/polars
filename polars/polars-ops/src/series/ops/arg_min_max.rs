@@ -1,7 +1,9 @@
+use argminmax::ArgMinMax;
+use arrow::array::PrimitiveArray;
 use arrow::bitmap::utils::{BitChunkIterExact, BitChunksExact};
 use arrow::bitmap::Bitmap;
 use polars_core::series::IsSorted;
-use polars_core::with_match_physical_numeric_polars_type;
+use polars_core::{with_match_physical_numeric_polars_type, with_match_physical_numeric_type};
 
 use super::*;
 
@@ -20,7 +22,7 @@ impl ArgAgg for Series {
         match s.dtype() {
             Utf8 => {
                 let ca = s.utf8().unwrap();
-                arg_min(ca)
+                arg_min_str(ca)
             }
             Boolean => {
                 let ca = s.bool().unwrap();
@@ -29,10 +31,12 @@ impl ArgAgg for Series {
             dt if dt.is_numeric() => {
                 with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                     let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-                    if let Ok(vals) = ca.cont_slice() {
-                        arg_min_slice(vals, ca.is_sorted_flag2())
+                    if ca.is_empty() { // because argminmax assumes not empty
+                        None
+                    } else if let Ok(vals) = ca.cont_slice() {
+                        arg_min_numeric_slice(vals, ca.is_sorted_flag2())
                     } else {
-                        arg_min(ca)
+                        arg_min_numeric(ca)
                     }
                 })
             }
@@ -46,7 +50,7 @@ impl ArgAgg for Series {
         match s.dtype() {
             Utf8 => {
                 let ca = s.utf8().unwrap();
-                arg_max(ca)
+                arg_max_str(ca)
             }
             Boolean => {
                 let ca = s.bool().unwrap();
@@ -55,10 +59,12 @@ impl ArgAgg for Series {
             dt if dt.is_numeric() => {
                 with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                     let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-                    if let Ok(vals) = ca.cont_slice() {
-                        arg_max_slice(vals, ca.is_sorted_flag2())
+                    if ca.is_empty() { // because argminmax assumes not empty
+                        None
+                    } else if let Ok(vals) = ca.cont_slice() {
+                        arg_max_numeric_slice(vals, ca.is_sorted_flag2())
                     } else {
-                        arg_max(ca)
+                        arg_max_numeric(ca)
                     }
                 })
             }
@@ -188,12 +194,7 @@ fn first_unset_bit(mask: &Bitmap) -> usize {
     }
 }
 
-fn arg_min<'a, T>(ca: &'a ChunkedArray<T>) -> Option<usize>
-where
-    T: PolarsDataType,
-    &'a ChunkedArray<T>: IntoIterator,
-    <&'a ChunkedArray<T> as IntoIterator>::Item: PartialOrd,
-{
+fn arg_min_str(ca: &Utf8Chunked) -> Option<usize> {
     match ca.is_sorted_flag2() {
         IsSorted::Ascending => Some(0),
         IsSorted::Descending => Some(ca.len() - 1),
@@ -205,12 +206,7 @@ where
     }
 }
 
-pub(crate) fn arg_max<'a, T>(ca: &'a ChunkedArray<T>) -> Option<usize>
-where
-    T: PolarsDataType,
-    &'a ChunkedArray<T>: IntoIterator,
-    <&'a ChunkedArray<T> as IntoIterator>::Item: PartialOrd,
-{
+fn arg_max_str(ca: &Utf8Chunked) -> Option<usize> {
     match ca.is_sorted_flag2() {
         IsSorted::Ascending => Some(ca.len() - 1),
         IsSorted::Descending => Some(0),
@@ -222,32 +218,94 @@ where
     }
 }
 
-fn arg_min_slice<T>(vals: &[T], is_sorted: IsSorted) -> Option<usize>
+fn arg_min_numeric<'a, T>(ca: &'a ChunkedArray<T>) -> Option<usize>
 where
-    T: PartialOrd,
+    T: PolarsDataType,
+    &'a ChunkedArray<T>: IntoIterator,
+    <&'a ChunkedArray<T> as IntoIterator>::Item: PartialOrd,
+{
+    match ca.is_sorted_flag2() {
+        IsSorted::Ascending => Some(0),
+        IsSorted::Descending => Some(ca.len() - 1),
+        IsSorted::Not => {
+            with_match_physical_numeric_type!(ca.dtype(), |$TN| {
+                ca.chunks().iter().fold((None, None, 0), |acc, chunk| {
+                    if chunk.is_empty() {
+                        return acc;
+                    }
+                    let arr: &PrimitiveArray<$TN> = chunk.as_any().downcast_ref().unwrap();
+                    let chunk_min_idx: usize = arr.values().as_slice().argmin();
+                    let chunk_min_val: $TN = arr.value(chunk_min_idx);
+                    match acc {
+                        (None, None, offset) => (Some(chunk_min_idx + offset), Some(chunk_min_val), offset + chunk.len()),
+                        (Some(acc_min_idx), Some(acc_min_val), offset) => {
+                            if chunk_min_val < acc_min_val {
+                                (Some(chunk_min_idx + offset), Some(chunk_min_val), offset + chunk.len())
+                            } else {
+                                (Some(acc_min_idx), Some(acc_min_val), offset + chunk.len())
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+                }).0
+            })
+        }
+    }
+}
+
+pub(crate) fn arg_max_numeric<'a, T>(ca: &'a ChunkedArray<T>) -> Option<usize>
+where
+    T: PolarsDataType,
+    &'a ChunkedArray<T>: IntoIterator,
+    <&'a ChunkedArray<T> as IntoIterator>::Item: PartialOrd,
+{
+    match ca.is_sorted_flag2() {
+        IsSorted::Ascending => Some(ca.len() - 1),
+        IsSorted::Descending => Some(0),
+        IsSorted::Not => {
+            with_match_physical_numeric_type!(ca.dtype(), |$TN| {
+                ca.chunks().iter().fold((None, None, 0), |acc, chunk| {
+                    if chunk.is_empty() {
+                        return acc;
+                    }
+                    let arr: &PrimitiveArray<$TN> = chunk.as_any().downcast_ref().unwrap();
+                    let chunk_max_idx: usize = arr.values().as_slice().argmax();
+                    let chunk_max_val: $TN = arr.value(chunk_max_idx);
+                    match acc {
+                        (None, None, offset) => (Some(chunk_max_idx + offset), Some(chunk_max_val), offset + chunk.len()),
+                        (Some(acc_max_idx), Some(acc_max_val), offset) => {
+                            if chunk_max_val > acc_max_val {
+                                (Some(chunk_max_idx + offset), Some(chunk_max_val), offset + chunk.len())
+                            } else {
+                                (Some(acc_max_idx), Some(acc_max_val), offset + chunk.len())
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+                }).0
+            })
+        }
+    }
+}
+
+fn arg_min_numeric_slice<T>(vals: &[T], is_sorted: IsSorted) -> Option<usize>
+where
+    for<'a> &'a [T]: ArgMinMax,
 {
     match is_sorted {
         IsSorted::Ascending => Some(0),
         IsSorted::Descending => Some(vals.len() - 1),
-        IsSorted::Not => vals
-            .iter()
-            .enumerate()
-            .reduce(|acc, (idx, val)| if acc.1 > val { (idx, val) } else { acc })
-            .map(|tpl| tpl.0),
+        IsSorted::Not => Some(vals.argmin()), // assumes not empty
     }
 }
 
-fn arg_max_slice<T>(vals: &[T], is_sorted: IsSorted) -> Option<usize>
+fn arg_max_numeric_slice<T>(vals: &[T], is_sorted: IsSorted) -> Option<usize>
 where
-    T: PartialOrd,
+    for<'a> &'a [T]: ArgMinMax,
 {
     match is_sorted {
         IsSorted::Ascending => Some(vals.len() - 1),
         IsSorted::Descending => Some(0),
-        IsSorted::Not => vals
-            .iter()
-            .enumerate()
-            .reduce(|acc, (idx, val)| if acc.1 < val { (idx, val) } else { acc })
-            .map(|tpl| tpl.0),
+        IsSorted::Not => Some(vals.argmax()), // assumes not empty
     }
 }
