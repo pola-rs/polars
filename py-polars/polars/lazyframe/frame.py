@@ -502,7 +502,7 @@ class LazyFrame:
         self = cls.__new__(cls)
         if isinstance(schema, dict):
             self._ldf = PyLazyFrame.scan_from_python_function_pl_schema(
-                [(name, dt) for name, dt in schema.items()], scan_fn, pyarrow
+                list(schema.items()), scan_fn, pyarrow
             )
         else:
             self._ldf = PyLazyFrame.scan_from_python_function_arrow_schema(
