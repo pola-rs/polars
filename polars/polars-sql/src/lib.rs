@@ -6,7 +6,6 @@ mod sql_expr;
 mod table_functions;
 pub use context::SQLContext;
 
-
 #[cfg(test)]
 mod test {
     use polars_core::prelude::*;
