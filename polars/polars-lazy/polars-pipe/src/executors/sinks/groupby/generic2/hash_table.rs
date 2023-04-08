@@ -330,29 +330,45 @@ impl HashTbl {
         self.spill_partitions.combine(&mut other.spill_partitions);
     }
 
-    pub(super) fn finalize(&mut self) -> (DataFrame, Vec<Vec<Series>>) {
-        // TODO: fix slice
-        let slice_len = self.inner_map.len();
+    pub(super) fn finalize(
+        &mut self,
+        slice: &mut Option<(i64, usize)>,
+    ) -> (Option<DataFrame>, Vec<Vec<Series>>) {
+        let local_len = self.inner_map.len();
+        let (skip_len, take_len) = if let Some((offset, slice_len)) = slice {
+            if *offset as usize >= local_len {
+                *offset -= local_len as i64;
+                return (None, std::mem::take(&mut self.spill_partitions.finished));
+            } else {
+                let out = (*offset as usize, *slice_len);
+                *offset = 0;
+                *slice_len = slice_len.saturating_sub(local_len);
+                out
+            }
+        } else {
+            (0, local_len)
+        };
         let inner_map = std::mem::take(&mut self.inner_map);
 
         let mut key_builders = self
             .output_schema
             .iter_dtypes()
             .take(self.num_keys)
-            .map(|dtype| AnyValueBufferTrusted::new(&dtype.to_physical(), slice_len))
+            .map(|dtype| AnyValueBufferTrusted::new(&dtype.to_physical(), take_len))
             .collect::<Vec<_>>();
 
         let mut agg_builders = self
             .output_schema
             .iter_dtypes()
             .skip(self.num_keys)
-            .map(|dtype| AnyValueBufferTrusted::new(dtype, slice_len))
+            .map(|dtype| AnyValueBufferTrusted::new(dtype, take_len))
             .collect::<Vec<_>>();
         let num_aggs = self.agg_constructors.len();
 
         inner_map
             .into_iter()
-            .take(slice_len)
+            .skip(skip_len)
+            .take(take_len)
             .for_each(|(k, agg_offset)| {
                 let keys_offset = k.idx as usize;
                 let keys = unsafe {
@@ -385,7 +401,7 @@ impl HashTbl {
         cols.extend(agg_builders.into_iter().map(|buf| buf.into_series()));
         physical_agg_to_logical(&mut cols, &self.output_schema);
         (
-            DataFrame::new_no_checks(cols),
+            Some(DataFrame::new_no_checks(cols)),
             std::mem::take(&mut self.spill_partitions.finished),
         )
     }

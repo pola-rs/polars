@@ -88,10 +88,10 @@ impl Sink for GenericGroupby2 {
 
     fn finalize(&mut self, context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         let map = unsafe { (&mut *self.thread_local_map.get()) };
-        let (out, spilled) = map.finalize();
+        let (out, spilled) = map.finalize(&mut self.slice);
 
         // TODO: make source
-        Ok(FinalizedSink::Finished(out))
+        Ok(FinalizedSink::Finished(out.unwrap()))
     }
 
     fn as_any(&mut self) -> &mut dyn Any {
