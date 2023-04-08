@@ -910,6 +910,44 @@ def n_unique(column: str | Series) -> Expr | int:
     return col(column).n_unique()
 
 
+def approx_n_unique(column: str | Series, precision: int = 16) -> Expr | int:
+    """
+    Approx count unique values.
+
+    This is done using the HyperLogLog++ algorithm for cardinality estimation.
+
+    Parameters
+    ----------
+    column
+        Column name or Series.
+    precision
+        Allows users to trade memory for accuracy.
+        A low precision value results in fuzzier counts, whereas,
+        with a higher value, the counts may be close to accurate.
+
+        Accepted values are in the range of [4, 18], and the default value is 16.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"a": [1, 8, 1], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
+    >>> df.select(pl.approx_n_unique("a"))
+    shape: (1, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ u32 │
+    ╞═════╡
+    │ 2   │
+    └─────┘
+    >>> pl.approx_n_unique(df["a"], precision=12)
+    2
+
+    """
+    if isinstance(column, pli.Series):
+        return column.approx_n_unique(precision)
+    return col(column).approx_n_unique(precision)
+
+
 @overload
 def first(column: str) -> Expr:
     ...

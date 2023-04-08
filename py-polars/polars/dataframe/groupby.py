@@ -676,6 +676,44 @@ class GroupBy(Generic[DF]):
         """
         return self.agg(F.all().n_unique())
 
+    def approx_n_unique(self, precision: int = 16) -> DF:
+        """
+        Approx count unique values per group.
+
+        This is done using the HyperLogLog++ algorithm for cardinality estimation.
+
+        Parameters
+        ----------
+        precision
+            Allows users to trade memory for accuracy.
+            A low precision value results in fuzzier counts, whereas,
+            with a higher value, the counts may be close to accurate.
+
+            Accepted values are in the range of [4, 18], and the default value is 16.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 1, 3, 4, 5],
+        ...         "b": [0.5, 0.5, 0.5, 10, 13, 14],
+        ...         "d": ["Apple", "Banana", "Apple", "Apple", "Banana", "Banana"],
+        ...     }
+        ... )
+        >>> df.groupby("d", maintain_order=True).approx_n_unique()
+        shape: (2, 3)
+        ┌────────┬─────┬─────┐
+        │ d      ┆ a   ┆ b   │
+        │ ---    ┆ --- ┆ --- │
+        │ str    ┆ u32 ┆ u32 │
+        ╞════════╪═════╪═════╡
+        │ Apple  ┆ 2   ┆ 2   │
+        │ Banana ┆ 3   ┆ 3   │
+        └────────┴─────┴─────┘
+
+        """
+        return self.agg(F.all().approx_n_unique(precision))
+
     def quantile(
         self, quantile: float, interpolation: RollingInterpolationMethod = "nearest"
     ) -> DF:

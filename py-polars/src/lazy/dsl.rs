@@ -172,6 +172,9 @@ impl PyExpr {
     pub fn n_unique(&self) -> PyExpr {
         self.clone().inner.n_unique().into()
     }
+    pub fn approx_n_unique(&self, precision: u8) -> PyExpr {
+        self.clone().inner.approx_n_unique(precision).into()
+    }
     pub fn arg_unique(&self) -> PyExpr {
         self.clone().inner.arg_unique().into()
     }
