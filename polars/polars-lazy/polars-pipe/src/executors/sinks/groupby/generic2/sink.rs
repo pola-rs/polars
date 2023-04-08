@@ -4,13 +4,13 @@ use std::cell::UnsafeCell;
 use super::*;
 use crate::expressions::PhysicalPipedExpr;
 
-pub(crate) struct GenericGroupby {
+pub(crate) struct GenericGroupby2 {
     thread_local_map: UnsafeCell<HashTbl>,
     eval: Eval,
     slice: Option<(i64, usize)>,
 }
 
-impl GenericGroupby {
+impl GenericGroupby2 {
     pub(crate) fn new(
         key_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
@@ -35,7 +35,7 @@ impl GenericGroupby {
     }
 }
 
-impl Sink for GenericGroupby {
+impl Sink for GenericGroupby2 {
     fn sink(&mut self, context: &PExecutionContext, chunk: DataChunk) -> PolarsResult<SinkResult> {
         // load data and hashes
         unsafe {
@@ -88,8 +88,10 @@ impl Sink for GenericGroupby {
 
     fn finalize(&mut self, context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         let map = unsafe { (&mut *self.thread_local_map.get()) };
-        // map.fin
-        todo!()
+        let (out, spilled) = map.finalize();
+
+        // TODO: make source
+        Ok(FinalizedSink::Finished(out))
     }
 
     fn as_any(&mut self) -> &mut dyn Any {
@@ -101,4 +103,4 @@ impl Sink for GenericGroupby {
     }
 }
 
-unsafe impl Sync for GenericGroupby {}
+unsafe impl Sync for GenericGroupby2 {}

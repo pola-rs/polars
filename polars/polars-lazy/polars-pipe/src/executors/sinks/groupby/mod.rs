@@ -8,6 +8,7 @@ mod string;
 mod utils;
 
 pub(crate) use generic::*;
+pub(crate) use generic2::GenericGroupby2;
 use polars_core::prelude::*;
 #[cfg(feature = "dtype-categorical")]
 use polars_core::using_string_cache;

@@ -5,6 +5,7 @@ use polars_core::with_match_physical_integer_polars_type;
 use polars_plan::prelude::*;
 
 use crate::executors::sinks::groupby::aggregates::convert_to_hash_agg;
+use crate::executors::sinks::groupby::GenericGroupby2;
 use crate::executors::sinks::*;
 use crate::executors::{operators, sources};
 use crate::expressions::PhysicalPipedExpr;
@@ -315,38 +316,48 @@ where
             }
             let aggregation_columns = Arc::new(aggregation_columns);
 
-            match (
-                output_schema.get_index(0).unwrap().1.to_physical(),
-                keys.len(),
-            ) {
-                (dt, 1) if dt.is_integer() => {
-                    with_match_physical_integer_polars_type!(dt, |$T| {
-                        Box::new(groupby::PrimitiveGroupbySink::<$T>::new(
-                            key_columns[0].clone(),
-                            aggregation_columns,
-                            agg_fns,
-                            input_schema,
-                            output_schema.clone(),
-                            options.slice,
-                        )) as Box<dyn Sink>
-                    })
-                }
-                (DataType::Utf8, 1) => Box::new(groupby::Utf8GroupbySink::new(
-                    key_columns[0].clone(),
-                    aggregation_columns,
-                    agg_fns,
-                    input_schema,
-                    output_schema.clone(),
-                    options.slice,
-                )) as Box<dyn Sink>,
-                _ => Box::new(groupby::GenericGroupbySink::new(
+            if std::env::var("POLARS_STREAMING_GB2").as_deref() == Ok("1") {
+                Box::new(GenericGroupby2::new(
                     key_columns,
                     aggregation_columns,
                     agg_fns,
-                    input_schema,
                     output_schema.clone(),
                     options.slice,
-                )) as Box<dyn Sink>,
+                ))
+            } else {
+                match (
+                    output_schema.get_index(0).unwrap().1.to_physical(),
+                    keys.len(),
+                ) {
+                    (dt, 1) if dt.is_integer() => {
+                        with_match_physical_integer_polars_type!(dt, |$T| {
+                            Box::new(groupby::PrimitiveGroupbySink::<$T>::new(
+                                key_columns[0].clone(),
+                                aggregation_columns,
+                                agg_fns,
+                                input_schema,
+                                output_schema.clone(),
+                                options.slice,
+                            )) as Box<dyn Sink>
+                        })
+                    }
+                    (DataType::Utf8, 1) => Box::new(groupby::Utf8GroupbySink::new(
+                        key_columns[0].clone(),
+                        aggregation_columns,
+                        agg_fns,
+                        input_schema,
+                        output_schema.clone(),
+                        options.slice,
+                    )) as Box<dyn Sink>,
+                    _ => Box::new(groupby::GenericGroupbySink::new(
+                        key_columns,
+                        aggregation_columns,
+                        agg_fns,
+                        input_schema,
+                        output_schema.clone(),
+                        options.slice,
+                    )) as Box<dyn Sink>,
+                }
             }
         }
         lp => {
