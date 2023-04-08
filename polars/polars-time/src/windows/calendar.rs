@@ -3,26 +3,6 @@ use polars_core::prelude::*;
 
 use crate::prelude::*;
 
-const LAST_DAYS_MONTH: [u32; 12] = [
-    31, // January:   31,
-    28, // February:  28,
-    31, // March:     31,
-    30, // April:     30,
-    31, // May:       31,
-    30, // June:      30,
-    31, // July:      31,
-    31, // August:    31,
-    30, // September: 30,
-    31, // October:   31,
-    30, // November:  30,
-    31, // December:  31,
-];
-
-pub(crate) const fn last_day_of_month(month: i32) -> u32 {
-    // month is 1 indexed
-    LAST_DAYS_MONTH[(month - 1) as usize]
-}
-
 pub(crate) const fn is_leap_year(year: i32) -> bool {
     year % 400 == 0 || (year % 4 == 0 && year % 100 != 0)
 }
