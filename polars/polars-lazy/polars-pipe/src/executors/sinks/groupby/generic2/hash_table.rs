@@ -105,19 +105,17 @@ pub(super) struct HashTbl {
 
 impl HashTbl {
     pub(super) fn split(&self) -> Self {
-        // should be called before any spills have run .
-        debug_assert!(self
-            .spill_partitions
-            .partitions
-            .iter()
-            .all(|v| v.is_empty()));
         Self {
             inner_map: Default::default(),
             keys: Default::default(),
             running_aggregations: Default::default(),
             agg_constructors: self.agg_constructors.iter().map(|ac| ac.split()).collect(),
             spill_partitions: self.spill_partitions.clone(),
-            keys_scratch: unsafe { UnsafeCell::new((*self.keys_scratch.get()).clone()) },
+            // ensure the capacity is set
+            // later we push without checking bounds
+            keys_scratch: unsafe {
+                UnsafeCell::new(Vec::with_capacity((*self.keys_scratch.get()).capacity()))
+            },
             num_keys: self.num_keys,
             output_schema: self.output_schema.clone(),
         }
@@ -266,11 +264,11 @@ impl HashTbl {
     }
 
     pub(super) fn combine(&mut self, other: &mut Self) {
-        for (key, agg_idx_other) in other.inner_map.iter() {
+        for (key_other, agg_idx_other) in other.inner_map.iter() {
             // safety: idx is from the hashmap, so is in bounds
-            let keys = unsafe { other.get_keys(key.idx) };
+            let keys = unsafe { other.get_keys(key_other.idx) };
 
-            let entry = self.get_entry(key.hash, keys);
+            let entry = self.get_entry(key_other.hash, keys);
             let agg_idx_self = match entry {
                 RawEntryMut::Occupied(entry) => *entry.get(),
                 RawEntryMut::Vacant(entry) => {
@@ -282,7 +280,7 @@ impl HashTbl {
                     let key_idx = self.keys.len() as IdxSize;
                     let aggregation_idx = self.running_aggregations.len() as IdxSize;
 
-                    let key = Key::new(key.hash, key_idx);
+                    let key = Key::new(key_other.hash, key_idx);
                     for agg in &self.agg_constructors {
                         self.running_aggregations.push(agg.split())
                     }
@@ -293,6 +291,19 @@ impl HashTbl {
                             borrow as *const RawVacantEntryMut<'_, Key, IdxSize, IdBuildHasher>;
                         let entry = std::ptr::read(borrow);
                         entry.insert(key, aggregation_idx);
+                    }
+                    // update the keys
+                    unsafe {
+                        let start = key_other.idx as usize;
+                        let end = start + self.num_keys;
+                        let keys = other.keys.get_unchecked_release_mut(start..end);
+
+                        for key in keys {
+                            let mut owned_key = AnyValue::Null;
+                            // this prevents cloning a string
+                            std::mem::swap(&mut owned_key, key);
+                            self.keys.push(owned_key)
+                        }
                     }
                     aggregation_idx
                 }
@@ -311,7 +322,8 @@ impl HashTbl {
                 unsafe {
                     let agg_self = aggs_self.get_unchecked_release_mut(i);
                     let other = aggs_other.get_unchecked_release(i);
-                    agg_self.combine(other)
+                    // TODO!: try transmutes
+                    agg_self.combine(other.as_any())
                 }
             }
         }
