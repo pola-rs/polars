@@ -3255,8 +3255,8 @@ class Expr:
             Lambda/ function to apply.
         return_dtype
             Dtype of the output Series.
-            If not set, polars will assume that
-            the dtype remains unchanged.
+            If not set, the dtype will be
+            ``polars.Unknown``.
         skip_nulls
             Don't apply the function over values
             that contain nulls. This is faster.
