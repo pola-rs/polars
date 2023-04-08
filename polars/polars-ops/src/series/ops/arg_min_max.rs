@@ -73,7 +73,7 @@ impl ArgAgg for Series {
     }
 }
 
-fn arg_max_bool(ca: &BooleanChunked) -> Option<usize> {
+pub(crate) fn arg_max_bool(ca: &BooleanChunked) -> Option<usize> {
     if ca.is_empty() {
         None
     } else if ca.null_count() == ca.len() {
@@ -253,7 +253,7 @@ where
     }
 }
 
-pub(crate) fn arg_max_numeric<'a, T>(ca: &'a ChunkedArray<T>) -> Option<usize>
+fn arg_max_numeric<'a, T>(ca: &'a ChunkedArray<T>) -> Option<usize>
 where
     T: PolarsDataType,
     &'a ChunkedArray<T>: IntoIterator,
