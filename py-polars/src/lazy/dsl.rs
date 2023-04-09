@@ -767,7 +767,7 @@ impl PyExpr {
             .inner
             .map(
                 move |s| s.utf8()?.hex_decode(strict).map(|s| Some(s.into_series())),
-                GetOutput::same_type(),
+                GetOutput::from_type(DataType::Binary),
             )
             .with_fmt("str.hex_decode")
             .into()
@@ -793,7 +793,7 @@ impl PyExpr {
                         .base64_decode(strict)
                         .map(|s| Some(s.into_series()))
                 },
-                GetOutput::same_type(),
+                GetOutput::from_type(DataType::Binary),
             )
             .with_fmt("str.base64_decode")
             .into()
