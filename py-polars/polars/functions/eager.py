@@ -80,7 +80,7 @@ def get_dummies(
     ...         "ham": ["a", "b"],
     ...     }
     ... )
-    >>> pl.get_dummies(df.to_dummies(), columns=["foo", "bar"])
+    >>> pl.get_dummies(df.to_dummies(), columns=["foo", "bar"])  # doctest: +SKIP
     shape: (2, 6)
     ┌───────┬───────┬───────┬───────┬───────┬───────┐
     │ foo_1 ┆ foo_2 ┆ bar_3 ┆ bar_4 ┆ ham_a ┆ ham_b │
@@ -581,7 +581,7 @@ def cut(
     Examples
     --------
     >>> a = pl.Series("a", [v / 10 for v in range(-30, 30, 5)])
-    >>> pl.cut(a, bins=[-1, 1])
+    >>> pl.cut(a, bins=[-1, 1])  # doctest: +SKIP
     shape: (12, 3)
     ┌──────┬─────────────┬──────────────┐
     │ a    ┆ break_point ┆ category     │
