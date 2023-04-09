@@ -16,7 +16,6 @@ from polars.datatypes import N_INFER_DEFAULT, Utf8
 from polars.io._utils import _prepare_file_arg
 from polars.io.csv._utils import _check_arg_is_1byte, _update_columns
 from polars.io.csv.batched_reader import BatchedCsvReader
-from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 from polars.utils.various import handle_projection_columns, normalise_filepath
 
 if TYPE_CHECKING:
@@ -27,12 +26,9 @@ if TYPE_CHECKING:
     from polars.type_aliases import CsvEncoding, PolarsDataType, SchemaDict
 
 
-@deprecate_nonkeyword_arguments()
-@deprecated_alias(
-    file="source", sep="separator", parse_dates="try_parse_dates", stacklevel=4
-)
 def read_csv(
     source: str | TextIO | BytesIO | Path | BinaryIO | bytes,
+    *,
     has_header: bool = True,
     columns: Sequence[int] | Sequence[str] | None = None,
     new_columns: Sequence[str] | None = None,
@@ -388,10 +384,9 @@ def read_csv(
     return df
 
 
-@deprecate_nonkeyword_arguments()
-@deprecated_alias(file="source", sep="separator", stacklevel=4)
 def read_csv_batched(
     source: str | Path,
+    *,
     has_header: bool = True,
     columns: Sequence[int] | Sequence[str] | None = None,
     new_columns: Sequence[str] | None = None,
@@ -683,12 +678,9 @@ def read_csv_batched(
     )
 
 
-@deprecate_nonkeyword_arguments()
-@deprecated_alias(
-    file="source", sep="separator", parse_dates="try_parse_dates", stacklevel=4
-)
 def scan_csv(
     source: str | Path,
+    *,
     has_header: bool = True,
     separator: str = ",",
     comment_char: str | None = None,

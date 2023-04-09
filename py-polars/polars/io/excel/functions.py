@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO, overload
 
 from polars.io.csv.functions import read_csv
-from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 from polars.utils.various import normalise_filepath
 
 if TYPE_CHECKING:
@@ -23,6 +22,7 @@ if TYPE_CHECKING:
 @overload
 def read_excel(
     source: str | BytesIO | Path | BinaryIO | bytes,
+    *,
     sheet_id: Literal[None],
     sheet_name: Literal[None],
     xlsx2csv_options: dict[str, Any] | None,
@@ -34,6 +34,7 @@ def read_excel(
 @overload
 def read_excel(
     source: str | BytesIO | Path | BinaryIO | bytes,
+    *,
     sheet_id: Literal[None],
     sheet_name: str,
     xlsx2csv_options: dict[str, Any] | None = None,
@@ -45,6 +46,7 @@ def read_excel(
 @overload
 def read_excel(
     source: str | BytesIO | Path | BinaryIO | bytes,
+    *,
     sheet_id: int,
     sheet_name: Literal[None],
     xlsx2csv_options: dict[str, Any] | None = None,
@@ -53,10 +55,9 @@ def read_excel(
     ...
 
 
-@deprecate_nonkeyword_arguments()
-@deprecated_alias(file="source", stacklevel=4)
 def read_excel(
     source: str | BytesIO | Path | BinaryIO | bytes,
+    *,
     sheet_id: int | None = 1,
     sheet_name: str | None = None,
     xlsx2csv_options: dict[str, Any] | None = None,

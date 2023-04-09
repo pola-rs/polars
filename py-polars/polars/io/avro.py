@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, BinaryIO
 
 from polars import internals as pli
-from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 
 if TYPE_CHECKING:
     from io import BytesIO
@@ -12,10 +11,9 @@ if TYPE_CHECKING:
     from polars.dataframe import DataFrame
 
 
-@deprecate_nonkeyword_arguments()
-@deprecated_alias(file="source", stacklevel=4)
 def read_avro(
     source: str | Path | BytesIO | BinaryIO,
+    *,
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
 ) -> DataFrame:

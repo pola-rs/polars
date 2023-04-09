@@ -78,10 +78,12 @@ from polars.utils.convert import (
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
 )
+from polars.utils.decorators import deprecated_alias
 from polars.utils.meta import get_index_type
 from polars.utils.various import (
     _is_generator,
     is_int_sequence,
+    parse_version,
     range_to_series,
     range_to_slice,
     scale_bytes,
@@ -154,8 +156,9 @@ class Series:
         In case a numpy array is used to create this Series, indicate how to deal
         with np.nan values. (This parameter is a no-op on non-numpy data).
     dtype_if_empty=dtype_if_empty : DataType, default None
-        If no dtype is specified and values contains None or an empty list,
-        set the Polars dtype of the Series data. If not specified, Float32 is used.
+        If no dtype is specified and values contains None, an empty list, or a
+        list with only None values, set the Polars dtype of the Series data.
+        If not specified, Float32 is used in those cases.
 
     Examples
     --------
@@ -2243,11 +2246,9 @@ class Series:
         else:
             return self._from_pyseries(self._s.sort(descending))
 
-    def top_k(self, k: int = 5, *, descending: bool = False) -> Series:
+    def top_k(self, k: int = 5) -> Series:
         r"""
         Return the `k` largest elements.
-
-        If 'descending=True` the smallest elements will be given.
 
         This has time complexity:
 
@@ -2257,15 +2258,55 @@ class Series:
         ----------
         k
             Number of elements to return.
-        descending
-            Return the smallest elements.
+
+        See Also
+        --------
+        bottom_k
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [2, 5, 1, 4, 3])
+        >>> s.top_k(3)
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            5
+            4
+            3
+        ]
 
         """
-        return (
-            self.to_frame()
-            .select(F.col(self._s.name()).top_k(k=k, descending=descending))
-            .to_series()
-        )
+
+    def bottom_k(self, k: int = 5) -> Series:
+        r"""
+        Return the `k` smallest elements.
+
+        This has time complexity:
+
+        .. math:: O(n + k \\log{}n - \frac{k}{2})
+
+        Parameters
+        ----------
+        k
+            Number of elements to return.
+
+        See Also
+        --------
+        top_k
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [2, 5, 1, 4, 3])
+        >>> s.bottom_k(3)
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            1
+            2
+            3
+        ]
+
+        """
 
     def arg_sort(self, *, descending: bool = False, nulls_last: bool = False) -> Series:
         """
@@ -2930,17 +2971,20 @@ class Series:
         """
 
     def is_between(
-        self, start: IntoExpr, end: IntoExpr, closed: ClosedInterval = "both"
+        self,
+        lower_bound: IntoExpr,
+        upper_bound: IntoExpr,
+        closed: ClosedInterval = "both",
     ) -> Series:
         """
         Get a boolean mask of the values that fall between the given start/end values.
 
         Parameters
         ----------
-        start
+        lower_bound
             Lower bound value. Accepts expression input. Non-expression inputs
             (including strings) are parsed as literals.
-        end
+        upper_bound
             Upper bound value. Accepts expression input. Non-expression inputs
             (including strings) are parsed as literals.
         closed : {'both', 'left', 'right', 'none'}
@@ -2988,14 +3032,14 @@ class Series:
         ]
 
         """
-        if isinstance(start, str):
-            start = F.lit(start)
-        if isinstance(end, str):
-            end = F.lit(end)
+        if isinstance(lower_bound, str):
+            lower_bound = F.lit(lower_bound)
+        if isinstance(upper_bound, str):
+            upper_bound = F.lit(upper_bound)
 
         return (
             self.to_frame()
-            .select(F.col(self.name).is_between(start, end, closed))
+            .select(F.col(self.name).is_between(lower_bound, upper_bound, closed))
             .to_series()
         )
 
@@ -3266,14 +3310,18 @@ class Series:
 
         """
         if use_pyarrow_extension_array:
-            pandas_version_major, pandas_version_minor = (
-                int(x) for x in pd.__version__.split(".")[0:2]
-            )
-            if pandas_version_major == 0 or (
-                pandas_version_major == 1 and pandas_version_minor < 5
+            if parse_version(pd.__version__) < parse_version("1.5"):
+                raise ModuleNotFoundError(
+                    f'pandas>=1.5.0 is required for `to_pandas("use_pyarrow_extension_array=True")`, found Pandas {pd.__version__}.'
+                )
+            if not _PYARROW_AVAILABLE or parse_version(pa.__version__) < parse_version(
+                "8"
             ):
                 raise ModuleNotFoundError(
-                    f'"use_pyarrow_extension_array=True" requires Pandas 1.5.x or higher, found Pandas {pd.__version__}.'
+                    f'pyarrow>=8.0.0 is required for `to_pandas("use_pyarrow_extension_array=True")`'
+                    f", found pyarrow {pa.__version__}."
+                    if _PYARROW_AVAILABLE
+                    else "."
                 )
 
         pd_series = (
@@ -4651,11 +4699,12 @@ class Series:
 
         """
 
+    @deprecated_alias(frac="fraction")
     def sample(
         self,
         n: int | None = None,
         *,
-        frac: float | None = None,
+        fraction: float | None = None,
         with_replacement: bool = False,
         shuffle: bool = False,
         seed: int | None = None,
@@ -4666,9 +4715,9 @@ class Series:
         Parameters
         ----------
         n
-            Number of items to return. Cannot be used with `frac`. Defaults to 1 if
-            `frac` is None.
-        frac
+            Number of items to return. Cannot be used with `fraction`. Defaults to 1 if
+            `fraction` is None.
+        fraction
             Fraction of items to return. Cannot be used with `n`.
         with_replacement
             Allow values to be sampled more than once.
@@ -4690,6 +4739,19 @@ class Series:
         ]
 
         """
+        return (
+            self.to_frame()
+            .select(
+                F.col(self.name).sample(
+                    n,
+                    fraction=fraction,
+                    with_replacement=with_replacement,
+                    shuffle=shuffle,
+                    seed=seed,
+                )
+            )
+            .to_series()
+        )
 
     def peak_max(self) -> Self:
         """
@@ -5082,7 +5144,7 @@ class Series:
         """
         return self._s.kurtosis(fisher, bias)
 
-    def clip(self, min_val: int | float, max_val: int | float) -> Series:
+    def clip(self, lower_bound: int | float, upper_bound: int | float) -> Series:
         """
         Clip (limit) the values in an array to a `min` and `max` boundary.
 
@@ -5093,9 +5155,9 @@ class Series:
 
         Parameters
         ----------
-        min_val
+        lower_bound
             Minimum value.
-        max_val
+        upper_bound
             Maximum value.
 
         Examples
@@ -5113,7 +5175,7 @@ class Series:
 
         """
 
-    def clip_min(self, min_val: int | float) -> Series:
+    def clip_min(self, lower_bound: int | float) -> Series:
         """
         Clip (limit) the values in an array to a `min` boundary.
 
@@ -5124,12 +5186,12 @@ class Series:
 
         Parameters
         ----------
-        min_val
-            Minimum value.
+        lower_bound
+            Lower bound.
 
         """
 
-    def clip_max(self, max_val: int | float) -> Series:
+    def clip_max(self, upper_bound: int | float) -> Series:
         """
         Clip (limit) the values in an array to a `max` boundary.
 
@@ -5140,8 +5202,8 @@ class Series:
 
         Parameters
         ----------
-        max_val
-            Maximum value.
+        upper_bound
+            Upper bound.
 
         """
 
@@ -5206,7 +5268,7 @@ class Series:
         remapping: dict[Any, Any],
         *,
         default: Any = None,
-        dtype: PolarsDataType | None = None,
+        return_dtype: PolarsDataType | None = None,
     ) -> Self:
         """
         Replace values in the Series using a remapping dictionary.
@@ -5218,8 +5280,8 @@ class Series:
         default
             Value to use when the remapping dict does not contain the lookup value.
             Use ``pl.first()``, to keep the original value.
-        dtype
-            Override output dtype.
+        return_dtype
+            Set return dtype to override automatic return dtype determination.
 
         Examples
         --------
@@ -5266,10 +5328,10 @@ class Series:
             "Netherlands"
         ]
 
-        Override output dtype:
+        Override return dtype:
 
         >>> s = pl.Series("int8", [5, 2, 3], dtype=pl.Int8)
-        >>> s.map_dict({2: 7}, default=pl.first(), dtype=pl.Int16)
+        >>> s.map_dict({2: 7}, default=pl.first(), return_dtype=pl.Int16)
         shape: (3,)
         Series: 'int8' [i16]
         [
@@ -5280,13 +5342,13 @@ class Series:
 
         """
 
-    def reshape(self, dims: tuple[int, ...]) -> Series:
+    def reshape(self, dimensions: tuple[int, ...]) -> Series:
         """
         Reshape this Series to a flat Series or a Series of Lists.
 
         Parameters
         ----------
-        dims
+        dimensions
             Tuple of the dimension sizes. If a -1 is used in any of the dimensions, that
             dimension is inferred.
 

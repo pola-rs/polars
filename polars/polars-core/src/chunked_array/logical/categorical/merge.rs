@@ -90,13 +90,13 @@ impl CategoricalChunked {
 mod test {
     use super::*;
     use crate::chunked_array::categorical::CategoricalChunkedBuilder;
-    use crate::{reset_string_cache, toggle_string_cache};
+    use crate::{enable_string_cache, reset_string_cache};
 
     #[test]
     fn test_merge_rev_map() {
         let _lock = SINGLE_LOCK.lock();
         reset_string_cache();
-        toggle_string_cache(true);
+        enable_string_cache(true);
 
         let mut builder1 = CategoricalChunkedBuilder::new("foo", 10);
         let mut builder2 = CategoricalChunkedBuilder::new("foo", 10);

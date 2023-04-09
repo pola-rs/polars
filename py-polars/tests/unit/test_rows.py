@@ -90,15 +90,6 @@ def test_iter_rows() -> None:
     with pytest.raises(StopIteration):
         next(it)
 
-    # TODO: Remove this section once iterrows is removed
-    with pytest.deprecated_call():
-        it = df.iterrows()  # type: ignore[attr-defined]
-        assert next(it) == (1, True, c1)
-        assert next(it) == (2, False, c2)
-        assert next(it) == (3, None, c3)
-        with pytest.raises(StopIteration):
-            next(it)
-
     # Apply explicit row-buffer size
     for sz in (0, 1, 2, 3, 4):
         it = df.iter_rows(buffer_size=sz)

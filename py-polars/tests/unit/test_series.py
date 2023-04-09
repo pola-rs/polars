@@ -54,6 +54,9 @@ def test_init_inputs(monkeypatch: Any) -> None:
     assert pl.Series([]).dtype == pl.Float32
     assert pl.Series(dtype_if_empty=pl.Utf8).dtype == pl.Utf8
     assert pl.Series([], dtype_if_empty=pl.UInt16).dtype == pl.UInt16
+    assert (
+        pl.Series([None, None, None]).dtype == pl.Float32
+    )  # f32 type used for list with only None
     assert pl.Series([None, None, None], dtype_if_empty=pl.Int8).dtype == pl.Int8
     # note: "== []" will be cast to empty Series with Utf8 dtype.
     assert_series_equal(
@@ -534,7 +537,7 @@ def test_to_pandas() -> None:
             vals_c = [None if x is pd.NA else x for x in c.tolist()]
             assert vals_c == test_data
         except ModuleNotFoundError:
-            # Skip test if Pandas 1.5.x is not installed.
+            # Skip test if pandas>=1.5.0 or Pyarrow>=8.0.0 is not installed.
             pass
 
 
@@ -596,6 +599,12 @@ def test_arrow() -> None:
     c = pl.Series("c", ["A", "BB", "CCC", None])
     out = c.to_arrow()
     assert out == pa.array(["A", "BB", "CCC", None], type=pa.large_string())
+    assert_series_equal(pl.from_arrow(out), c.rename(""))  # type: ignore[arg-type]
+
+    out = c.to_frame().to_arrow()["c"]
+    assert isinstance(out, (pa.Array, pa.ChunkedArray))
+    assert_series_equal(pl.from_arrow(out), c)  # type: ignore[arg-type]
+    assert_series_equal(pl.from_arrow(out, schema=["x"]), c.rename("x"))  # type: ignore[arg-type]
 
     d = pl.Series("d", [None, None, None], pl.Null)
     out = d.to_arrow()
@@ -1849,7 +1858,7 @@ def test_sample() -> None:
     s = pl.Series("a", [1, 2, 3, 4, 5])
 
     assert len(s.sample(n=2, seed=0)) == 2
-    assert len(s.sample(frac=0.4, seed=0)) == 2
+    assert len(s.sample(fraction=0.4, seed=0)) == 2
 
     assert len(s.sample(n=2, with_replacement=True, seed=0)) == 2
 
@@ -2556,7 +2565,9 @@ def test_map_dict() -> None:
     )
 
     assert_series_equal(
-        s.cast(pl.Int16).map_dict(remap_int, default=pl.first(), dtype=pl.Float32),
+        s.cast(pl.Int16).map_dict(
+            remap_int, default=pl.first(), return_dtype=pl.Float32
+        ),
         pl.Series("s", [-1.0, 22.0, None, 44.0, -5.0], dtype=pl.Float32),
     )
 
@@ -2566,8 +2577,18 @@ def test_map_dict() -> None:
     )
 
     assert_series_equal(
-        s.cast(pl.Int16).map_dict(remap_int, default=9, dtype=pl.Float32),
+        s.cast(pl.Int16).map_dict(remap_int, default=9, return_dtype=pl.Float32),
         pl.Series("s", [9.0, 22.0, 9.0, 44.0, 9.0], dtype=pl.Float32),
+    )
+
+    assert_series_equal(
+        pl.Series("boolean_to_int", [True, False]).map_dict({True: 1, False: 0}),
+        pl.Series("boolean_to_int", [1, 0]),
+    )
+
+    assert_series_equal(
+        pl.Series("boolean_to_str", [True, False]).map_dict({True: "1", False: "0"}),
+        pl.Series("boolean_to_str", ["1", "0"]),
     )
 
 

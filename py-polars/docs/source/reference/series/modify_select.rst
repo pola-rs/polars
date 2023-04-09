@@ -9,6 +9,7 @@ Manipulation/selection
     Series.alias
     Series.append
     Series.arg_sort
+    Series.bottom_k
     Series.cast
     Series.ceil
     Series.clear

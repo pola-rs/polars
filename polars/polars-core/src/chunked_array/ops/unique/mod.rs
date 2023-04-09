@@ -364,12 +364,12 @@ mod test {
     fn mode() {
         let ca = Int32Chunked::from_slice("a", &[0, 1, 2, 3, 4, 4, 5, 6, 5, 0]);
         let mut result = Vec::from(&ca.mode().unwrap());
-        result.sort_by(|a, b| a.unwrap().cmp(&b.unwrap()));
+        result.sort_by_key(|a| a.unwrap());
         assert_eq!(&result, &[Some(0), Some(4), Some(5)]);
 
         let ca2 = Int32Chunked::from_slice("b", &[1, 1]);
         let mut result2 = Vec::from(&ca2.mode().unwrap());
-        result2.sort_by(|a, b| a.unwrap().cmp(&b.unwrap()));
+        result2.sort_by_key(|a| a.unwrap());
         assert_eq!(&result2, &[Some(1)]);
 
         let ca3 = Int32Chunked::from_slice("c", &[]);

@@ -18,42 +18,41 @@ use crate::table_functions::PolarsTableFunctions;
 
 thread_local! {pub(crate) static TABLES: RefCell<Vec<String>> = RefCell::new(vec![])}
 
+/// The SQLContext is the main entry point for executing SQL queries.
 #[derive(Default, Clone)]
 pub struct SQLContext {
-    pub table_map: PlHashMap<String, LazyFrame>,
+    pub(crate) table_map: PlHashMap<String, LazyFrame>,
+    pub(crate) tables: Vec<String>,
 }
 
 impl SQLContext {
-    pub fn try_new() -> PolarsResult<Self> {
-        TABLES.with(|cell| {
-            polars_ensure!(
-                cell.borrow().is_empty(),
-                ComputeError: "only one sql-context per thread allowed",
-            );
-            Ok(())
-        })?;
-        Ok(Self {
+    /// Create a new SQLContext
+    pub fn new() -> Self {
+        Self {
             table_map: PlHashMap::new(),
-        })
+            tables: vec![],
+        }
     }
-
+    /// Register a DataFrame as a table in the SQLContext.
     pub fn register(&mut self, name: &str, lf: LazyFrame) {
-        TABLES.with(|cell| cell.borrow_mut().push(name.to_owned()));
+        self.tables.push(name.to_owned());
         self.table_map.insert(name.to_owned(), lf);
     }
 }
 
 impl SQLContext {
+    /// Execute a sql query and return the result as a LazyFrame.
     pub fn execute(&mut self, query: &str) -> PolarsResult<LazyFrame> {
         let ast = Parser::parse_sql(&GenericDialect::default(), query).map_err(to_compute_err)?;
         polars_ensure!(ast.len() == 1, ComputeError: "One and only one statement at a time please");
         self.execute_statement(ast.get(0).unwrap())
     }
 
-    pub fn execute_statement(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
+    pub(crate) fn execute_statement(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
         let ast = stmt;
         Ok(match ast {
             Statement::Query(query) => self.execute_query(query)?,
+            stmt @ Statement::ShowTables { .. } => self.execute_show_tables(stmt)?,
             stmt @ Statement::CreateTable { .. } => self.execute_create_table(stmt)?,
             _ => polars_bail!(
                 ComputeError: "SQL statement type {:?} is not supported", ast,
@@ -61,7 +60,7 @@ impl SQLContext {
         })
     }
 
-    pub fn execute_query(&mut self, query: &Query) -> PolarsResult<LazyFrame> {
+    pub(crate) fn execute_query(&mut self, query: &Query) -> PolarsResult<LazyFrame> {
         let mut lf = match &query.body.as_ref() {
             SetExpr::Select(select_stmt) => self.execute_select(select_stmt)?,
             _ => polars_bail!(ComputeError: "INSERT, UPDATE is not supported"),
@@ -81,6 +80,12 @@ impl SQLContext {
                 ComputeError: "non-number arguments to LIMIT clause are not supported",
             ),
         }
+    }
+
+    fn execute_show_tables(&mut self, _: &Statement) -> PolarsResult<LazyFrame> {
+        let tables = Series::new("name", self.tables.clone());
+        let df = DataFrame::new(vec![tables])?;
+        Ok(df.lazy())
     }
 
     /// execute the 'FROM' part of the query
@@ -134,7 +139,7 @@ impl SQLContext {
         // Filter Expression
         let lf = match select_stmt.selection.as_ref() {
             Some(expr) => {
-                let filter_expression = parse_sql_expr(expr)?;
+                let filter_expression = parse_sql_expr(expr, self)?;
                 lf.filter(filter_expression)
             }
             None => lf,
@@ -145,9 +150,9 @@ impl SQLContext {
             .iter()
             .map(|select_item| {
                 Ok(match select_item {
-                    SelectItem::UnnamedExpr(expr) => parse_sql_expr(expr)?,
+                    SelectItem::UnnamedExpr(expr) => parse_sql_expr(expr, self)?,
                     SelectItem::ExprWithAlias { expr, alias } => {
-                        let expr = parse_sql_expr(expr)?;
+                        let expr = parse_sql_expr(expr, self)?;
                         expr.alias(&alias.value)
                     }
                     SelectItem::QualifiedWildcard { .. } | SelectItem::Wildcard { .. } => {
@@ -179,7 +184,7 @@ impl SQLContext {
                     ComputeError:
                     "groupby error: a positive number or an expression expected",
                 )),
-                _ => parse_sql_expr(e),
+                _ => parse_sql_expr(e, self),
             })
             .collect::<PolarsResult<_>>()?;
 
@@ -261,7 +266,9 @@ impl SQLContext {
             .as_ref()
             .map(|a| a.name.value.clone())
             .unwrap_or_else(|| tbl_name);
-        self.register(&tbl_name, lf.clone());
+
+        self.table_map.insert(tbl_name.clone(), lf.clone());
+
         Ok((tbl_name, lf))
     }
 
@@ -270,7 +277,7 @@ impl SQLContext {
         let mut descending = Vec::with_capacity(ob.len());
 
         for ob in ob {
-            by.push(parse_sql_expr(&ob.expr)?);
+            by.push(parse_sql_expr(&ob.expr, self)?);
             if let Some(false) = ob.asc {
                 descending.push(true)
             } else {
