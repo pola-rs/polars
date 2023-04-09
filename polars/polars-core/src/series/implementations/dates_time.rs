@@ -355,10 +355,6 @@ macro_rules! impl_dyn_series {
                 self.0.n_unique()
             }
 
-            fn approx_n_unique(&self, precision: u8) -> PolarsResult<usize> {
-                self.0.approx_n_unique(precision)
-            }
-
             fn arg_unique(&self) -> PolarsResult<IdxCa> {
                 self.0.arg_unique()
             }

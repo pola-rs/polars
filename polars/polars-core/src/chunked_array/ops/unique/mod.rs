@@ -3,9 +3,7 @@ pub(crate) mod rank;
 
 use std::hash::Hash;
 
-use ahash::RandomState;
 use arrow::bitmap::MutableBitmap;
-use hyperloglogplus::{HyperLogLog, HyperLogLogPlus};
 
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;
@@ -195,11 +193,6 @@ where
         }
     }
 
-    fn estimate_approx(&self, mut e: HyperLogLogPlus<AnyValue, RandomState>) -> f64 {
-        self.into_iter().for_each(|item| e.insert_any(&item));
-        e.count()
-    }
-
     #[cfg(feature = "mode")]
     fn mode(&self) -> PolarsResult<Self> {
         Ok(mode(self))
@@ -218,10 +211,6 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
 
     fn n_unique(&self) -> PolarsResult<usize> {
         self.as_binary().n_unique()
-    }
-
-    fn approx_n_unique(&self, precision: u8) -> PolarsResult<usize> {
-        self.as_binary().approx_n_unique(precision)
     }
 
     #[cfg(feature = "mode")]
@@ -271,11 +260,6 @@ impl ChunkUnique<BinaryType> for BinaryChunked {
         }
     }
 
-    fn estimate_approx(&self, mut e: HyperLogLogPlus<AnyValue, RandomState>) -> f64 {
-        self.into_iter().for_each(|item| e.insert_any(&item));
-        e.count()
-    }
-
     #[cfg(feature = "mode")]
     fn mode(&self) -> PolarsResult<Self> {
         Ok(mode(self))
@@ -300,11 +284,6 @@ impl ChunkUnique<BooleanType> for BooleanChunked {
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         Ok(IdxCa::from_vec(self.name(), arg_unique_ca!(self)))
     }
-
-    fn estimate_approx(&self, mut e: HyperLogLogPlus<AnyValue, RandomState>) -> f64 {
-        self.into_iter().for_each(|item| e.insert_any(&item));
-        e.count()
-    }
 }
 
 impl ChunkUnique<Float32Type> for Float32Chunked {
@@ -323,10 +302,6 @@ impl ChunkUnique<Float32Type> for Float32Chunked {
         let ca = s.f32().unwrap().clone();
         Ok(ca)
     }
-
-    fn approx_n_unique(&self, precision: u8) -> PolarsResult<usize> {
-        self.bit_repr_small().approx_n_unique(precision)
-    }
 }
 
 impl ChunkUnique<Float64Type> for Float64Chunked {
@@ -344,10 +319,6 @@ impl ChunkUnique<Float64Type> for Float64Chunked {
         let s = self.apply_as_ints(|v| v.mode().unwrap());
         let ca = s.f64().unwrap().clone();
         Ok(ca)
-    }
-
-    fn approx_n_unique(&self, precision: u8) -> PolarsResult<usize> {
-        self.bit_repr_large().approx_n_unique(precision)
     }
 }
 

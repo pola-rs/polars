@@ -448,33 +448,6 @@ pub(crate) fn create_physical_expr(
                         }
                     }
                 }
-                AAggExpr::ApproxNUnique(expr, precision) => {
-                    let input = create_physical_expr(expr, ctxt, expr_arena, schema)?;
-                    match ctxt {
-                        Context::Aggregation => Ok(Arc::new(AggregationExpr::new(
-                            input,
-                            GroupByMethod::ApproxNUnique(precision),
-                        ))),
-                        Context::Default => {
-                            let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                                let s = std::mem::take(&mut s[0]);
-                                s.approx_n_unique(precision).map(|count| {
-                                    Some(
-                                        UInt32Chunked::from_slice(s.name(), &[count as u32])
-                                            .into_series(),
-                                    )
-                                })
-                            })
-                                as Arc<dyn SeriesUdf>);
-                            Ok(Arc::new(ApplyExpr::new_minimal(
-                                vec![input],
-                                function,
-                                node_to_expr(expression, expr_arena),
-                                ApplyOptions::ApplyFlat,
-                            )))
-                        }
-                    }
-                }
                 AAggExpr::Quantile {
                     expr,
                     quantile,

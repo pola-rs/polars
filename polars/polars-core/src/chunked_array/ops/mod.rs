@@ -1,7 +1,5 @@
 //! Traits for miscellaneous operations on ChunkedArray
-use ahash::RandomState;
 use arrow::offset::OffsetsBuffer;
-use hyperloglogplus::HyperLogLogPlus;
 use polars_arrow::prelude::QuantileInterpolOptions;
 
 pub use self::take::*;
@@ -459,17 +457,6 @@ pub trait ChunkUnique<T: PolarsDataType> {
     /// Number of unique values in the `ChunkedArray`
     fn n_unique(&self) -> PolarsResult<usize> {
         self.arg_unique().map(|v| v.len())
-    }
-
-    fn estimate_approx(&self, mut _e: HyperLogLogPlus<AnyValue, RandomState>) -> f64 {
-        0.0
-    }
-
-    /// Approx number of unique values in the `ChunkedArray`
-    fn approx_n_unique(&self, precision: u8) -> PolarsResult<usize> {
-        HyperLogLogPlus::new(precision, RandomState::new())
-            .map(|e| self.estimate_approx(e) as usize)
-            .map_err(|e| PolarsError::ComputeError(e.to_string().into()))
     }
 
     /// The most occurring value(s). Can return multiple Values

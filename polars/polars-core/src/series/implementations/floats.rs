@@ -317,10 +317,6 @@ macro_rules! impl_dyn_series {
                 ChunkUnique::n_unique(&self.0)
             }
 
-            fn approx_n_unique(&self, precision: u8) -> PolarsResult<usize> {
-                ChunkUnique::approx_n_unique(&self.0, precision)
-            }
-
             fn arg_unique(&self) -> PolarsResult<IdxCa> {
                 ChunkUnique::arg_unique(&self.0)
             }

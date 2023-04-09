@@ -1510,7 +1510,6 @@ dependencies = [
  "comfy-table",
  "either",
  "hashbrown 0.13.2",
- "hyperloglogplus",
  "indexmap",
  "itoap",
  "ndarray",

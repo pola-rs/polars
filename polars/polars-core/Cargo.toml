@@ -156,7 +156,6 @@ chrono-tz = { version = "0.8", optional = true }
 comfy-table = { version = "6.1.4", optional = true, default_features = false }
 either.workspace = true
 hashbrown.workspace = true
-hyperloglogplus = { version = "0.4.1", features = ["const-loop"] }
 indexmap = { version = "1", features = ["std"] }
 itoap = { version = "1", optional = true }
 ndarray = { version = "0.15", optional = true, default_features = false }

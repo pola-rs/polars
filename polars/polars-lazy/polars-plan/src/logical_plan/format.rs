@@ -345,7 +345,6 @@ impl Debug for Expr {
                     Last(expr) => write!(f, "{expr:?}.last()"),
                     List(expr) => write!(f, "{expr:?}.list()"),
                     NUnique(expr) => write!(f, "{expr:?}.n_unique()"),
-                    ApproxNUnique(expr, _) => write!(f, "{expr:?}.approx_n_unique()"),
                     Sum(expr) => write!(f, "{expr:?}.sum()"),
                     AggGroups(expr) => write!(f, "{expr:?}.groups()"),
                     Count(expr) => write!(f, "{expr:?}.count()"),
