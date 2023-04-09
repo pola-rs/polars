@@ -652,12 +652,9 @@ fn new_datetime(
     sec: u32,
     nano: u32,
 ) -> Option<NaiveDateTime> {
-    let date = NaiveDate::from_ymd_opt(year, month, days);
-    let time = NaiveTime::from_hms_nano_opt(hour, min, sec, nano);
-    match (date, time) {
-        (Some(date), Some(time)) => Some(NaiveDateTime::new(date, time)),
-        _ => None,
-    }
+    let date = NaiveDate::from_ymd_opt(year, month, days)?;
+    let time = NaiveTime::from_hms_nano_opt(hour, min, sec, nano)?;
+    Some(NaiveDateTime::new(date, time))
 }
 
 #[cfg(test)]
