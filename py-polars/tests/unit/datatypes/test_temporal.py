@@ -2161,6 +2161,15 @@ def test_date_range_descending() -> None:
         pl.date_range(datetime(2000, 3, 20), datetime(2000, 3, 21), interval="-1h")
 
 
+def test_date_range_end_of_month_5441() -> None:
+    start = date(2020, 1, 31)
+    stop = date(2021, 1, 31)
+    with pytest.raises(
+        ComputeError, match=r"cannot advance '2020-01-31 00:00:00' by 1 month\(s\)"
+    ):
+        pl.date_range(start, stop, interval="1mo")
+
+
 def test_logical_nested_take() -> None:
     frame = pl.DataFrame(
         {
