@@ -12,9 +12,12 @@ struct SpillPartitions {
     // outer vec: partitions (factor of 2)
     // inner vec: number of keys + number of aggregated columns
     partitions: PartitionVec<Vec<AnyValueBufferTrusted<'static>>>,
+    hash_partitioned: PartitionVec<Vec<u64>>,
+    chunk_index_partitioned: PartitionVec<Vec<IdxSize>>,
     // outer vec: partitions
     // inner vec: aggregation columns
     finished: PartitionVec<Vec<Series>>,
+    spill_count: u16,
 }
 
 impl SpillPartitions {
@@ -32,20 +35,38 @@ impl SpillPartitions {
         }
 
         let partitions = (0..PARTITION_SIZE).map(|partition| buf.clone()).collect();
+        let hash_partitioned = vec![vec![]; PARTITION_SIZE];
+        let chunk_index_partitioned = vec![vec![]; PARTITION_SIZE];
 
         Self {
             partitions,
+            hash_partitioned,
+            chunk_index_partitioned,
             finished: vec![],
+            spill_count: 0,
         }
     }
 }
 
 impl SpillPartitions {
-    fn insert(&mut self, hash: u64, keys: &[AnyValue<'_>], aggs: &mut [SeriesPhysIter]) {
+    fn insert(
+        &mut self,
+        hash: u64,
+        chunk_idx: IdxSize,
+        keys: &[AnyValue<'_>],
+        aggs: &mut [SeriesPhysIter],
+    ) {
         let partition = hash_to_partition(hash, self.partitions.len());
         unsafe {
             let partitions = self.partitions.get_unchecked_release_mut(partition);
+            let hashes = self.hash_partitioned.get_unchecked_release_mut(partition);
+            let chunk_indexes = self
+                .chunk_index_partitioned
+                .get_unchecked_release_mut(partition);
             debug_assert_eq!(keys.len(), partitions.len());
+
+            hashes.push(hash);
+            chunk_indexes.push(chunk_idx);
 
             // amortize the loop counter
             for i in 0..keys.len() {
@@ -84,6 +105,15 @@ impl SpillPartitions {
             }
         }
     }
+
+    // round robin a partition that will be spilled
+    fn prepare_for_global_spill(&mut self) -> SpillPayload {
+        let i = (self.spill_count % (PARTITION_SIZE as u16)) as usize;
+        self.spill_count += 1;
+
+        let builder = unsafe { self.partitions.get_unchecked_release_mut(i) };
+        todo!()
+    }
 }
 
 pub(super) struct ThreadLocalTable {
@@ -93,7 +123,7 @@ pub(super) struct ThreadLocalTable {
 
 impl ThreadLocalTable {
     pub(super) fn new(
-        agg_constructors: Vec<AggregateFunction>,
+        agg_constructors: Arc<[AggregateFunction]>,
         key_dtypes: &[DataType],
         output_schema: SchemaRef,
     ) -> Self {
@@ -133,7 +163,8 @@ impl ThreadLocalTable {
         chunk_index: IdxSize,
     ) {
         if let Some(keys) = self.inner_map.insert(hash, keys, agg_iters, chunk_index) {
-            self.spill_partitions.insert(hash, keys, agg_iters);
+            self.spill_partitions
+                .insert(hash, chunk_index, keys, agg_iters);
         }
     }
 

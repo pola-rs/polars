@@ -2,10 +2,12 @@ use std::arch::x86_64::_mm_undefined_si128;
 use std::cell::UnsafeCell;
 
 use super::*;
+use crate::executors::sinks::groupby::generic2::global::GlobalTable;
 use crate::expressions::PhysicalPipedExpr;
 
 pub(crate) struct GenericGroupby2 {
     thread_local_map: UnsafeCell<ThreadLocalTable>,
+    global_map: Arc<GlobalTable>,
     eval: Eval,
     slice: Option<(i64, usize)>,
 }
@@ -14,7 +16,7 @@ impl GenericGroupby2 {
     pub(crate) fn new(
         key_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
-        agg_constructors: Vec<AggregateFunction>,
+        agg_constructors: Arc<[AggregateFunction]>,
         output_schema: SchemaRef,
         slice: Option<(i64, usize)>,
     ) -> Self {
@@ -23,12 +25,17 @@ impl GenericGroupby2 {
             .take(key_columns.len())
             .map(|dt| dt.clone())
             .collect::<Vec<_>>();
+
+        let global_map =
+            GlobalTable::new(agg_constructors.clone(), &key_dtypes, output_schema.clone());
+
         Self {
             thread_local_map: UnsafeCell::new(ThreadLocalTable::new(
                 agg_constructors,
                 &key_dtypes,
                 output_schema,
             )),
+            global_map: Arc::new(global_map),
             eval: Eval::new(key_columns, aggregation_columns),
             slice,
         }
@@ -82,6 +89,7 @@ impl Sink for GenericGroupby2 {
         Box::new(Self {
             eval: self.eval.split(),
             thread_local_map: UnsafeCell::new(map),
+            global_map: self.global_map.clone(),
             slice: self.slice,
         })
     }

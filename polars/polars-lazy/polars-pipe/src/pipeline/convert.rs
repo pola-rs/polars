@@ -320,7 +320,7 @@ where
                 Box::new(GenericGroupby2::new(
                     key_columns,
                     aggregation_columns,
-                    agg_fns,
+                    Arc::from(agg_fns),
                     output_schema.clone(),
                     options.slice,
                 ))

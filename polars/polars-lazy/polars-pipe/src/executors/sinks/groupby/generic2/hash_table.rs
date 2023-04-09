@@ -11,7 +11,8 @@ pub(super) struct AggHashTable<const FIXED: bool> {
     // the index the hashtable points to the start of the aggregations of that key/group
     running_aggregations: Vec<AggregateFunction>,
     // n aggregation function constructors
-    agg_constructors: Vec<AggregateFunction>,
+    // The are used to create new running aggregators
+    agg_constructors: Arc<[AggregateFunction]>,
     // amortize alloc
     // lifetime is tied to self, so we use static
     // to ensure bck to leave us be
@@ -23,7 +24,7 @@ pub(super) struct AggHashTable<const FIXED: bool> {
 
 impl<const FIXED: bool> AggHashTable<FIXED> {
     pub(super) fn new(
-        agg_constructors: Vec<AggregateFunction>,
+        agg_constructors: Arc<[AggregateFunction]>,
         key_dtypes: &[DataType],
         output_schema: SchemaRef,
         spill_size: Option<usize>,
@@ -154,7 +155,7 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
                     entry.insert(key, aggregation_idx);
                 }
 
-                for agg in &self.agg_constructors {
+                for agg in self.agg_constructors.as_ref() {
                     self.running_aggregations.push(agg.split())
                 }
 
@@ -197,7 +198,7 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
                     let aggregation_idx = self.running_aggregations.len() as IdxSize;
 
                     let key = Key::new(key_other.hash, key_idx);
-                    for agg in &self.agg_constructors {
+                    for agg in self.agg_constructors.as_ref() {
                         self.running_aggregations.push(agg.split())
                     }
 
@@ -315,3 +316,6 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
         Some(DataFrame::new_no_checks(cols))
     }
 }
+
+unsafe impl<const FIXED: bool> Send for AggHashTable<FIXED> {}
+unsafe impl<const FIXED: bool> Sync for AggHashTable<FIXED> {}

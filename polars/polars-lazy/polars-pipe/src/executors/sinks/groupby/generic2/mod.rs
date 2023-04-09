@@ -25,3 +25,28 @@ use crate::executors::sinks::groupby::aggregates::{AggregateFn, AggregateFunctio
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
 
 type PartitionVec<T> = Vec<T>;
+
+struct SpillPayload {
+    hashes: Vec<u64>,
+    chunk_idx: Vec<IdxSize>,
+    keys_and_aggs: Vec<Series>,
+    num_keys: usize,
+}
+
+impl SpillPayload {
+    fn hashes(&self) -> &[u64] {
+        &self.hashes
+    }
+
+    fn keys(&self) -> &[Series] {
+        &self.keys_and_aggs[..self.num_keys]
+    }
+
+    fn cols(&self) -> &[Series] {
+        &self.keys_and_aggs[self.num_keys..]
+    }
+
+    fn chunk_index(&self) -> &[IdxSize] {
+        &self.chunk_idx
+    }
+}
