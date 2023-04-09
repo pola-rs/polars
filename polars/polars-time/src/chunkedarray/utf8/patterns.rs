@@ -207,8 +207,8 @@ pub(super) static DATETIME_Y_M_D_Z: &[&str] = &[
     "%Y-%m-%d %H%M%S.%3f%#z",
     "%Y%m%d %H%M%S.%3f%#z",
     // other
-    "%+"
-    ];
+    "%+",
+];
 
 #[derive(Eq, Hash, PartialEq, Clone, Copy, Debug)]
 pub enum Pattern {
