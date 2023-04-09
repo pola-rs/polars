@@ -42,7 +42,7 @@ pub(crate) fn cast_columns(
             .as_date(None, false)
             .map(|ca| ca.into_series()),
         #[cfg(feature = "temporal")]
-        (DataType::Utf8, DataType::Datetime(tu, _)) => s
+        (DataType::Utf8, DataType::Datetime(tu, tz)) => s
             .utf8()
             .unwrap()
             .as_datetime(None, *tu, false, false, false, None)
