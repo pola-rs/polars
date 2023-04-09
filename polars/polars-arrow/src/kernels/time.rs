@@ -82,21 +82,21 @@ fn convert_to_timestamp<T1: TimeZone + std::fmt::Debug + std::fmt::Display, T2: 
 pub fn replace_timezone(
     arr: &PrimitiveArray<i64>,
     tu: TimeUnit,
-    from: String,
-    to: String,
+    from: &str,
+    to: &str,
 ) -> PolarsResult<ArrayRef> {
     Ok(match from.parse::<chrono_tz::Tz>() {
         Ok(from_tz) => match to.parse::<chrono_tz::Tz>() {
             Ok(to_tz) => convert_to_timestamp(from_tz, to_tz, arr, tu)?,
-            Err(_) => match parse_offset(&to) {
+            Err(_) => match parse_offset(to) {
                 Ok(to_tz) => convert_to_timestamp(from_tz, to_tz, arr, tu)?,
                 Err(_) => polars_bail!(ComputeError: "unable to parse time zone: {}", to),
             },
         },
-        Err(_) => match parse_offset(&from) {
+        Err(_) => match parse_offset(from) {
             Ok(from_tz) => match to.parse::<chrono_tz::Tz>() {
                 Ok(to_tz) => convert_to_timestamp(from_tz, to_tz, arr, tu)?,
-                Err(_) => match parse_offset(&to) {
+                Err(_) => match parse_offset(to) {
                     Ok(to_tz) => convert_to_timestamp(from_tz, to_tz, arr, tu)?,
                     Err(_) => polars_bail!(ComputeError: "unable to parse time zone: {}", to),
                 },
