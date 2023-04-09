@@ -28,14 +28,18 @@ def _scan_ipc_fsspec(
 
 
 def _scan_ipc_impl(  # noqa: D417
-    source: str, columns: list[str] | None, **kwargs: Any
+    source: str,
+    columns: list[str] | None,
+    predicate: str | None,
+    n_rows: int | None,
+    **kwargs: Any,
 ) -> DataFrame:
     """
     Take the projected columns and materialize an arrow table.
 
     Parameters
     ----------
-    uri
+    source
         Source URI
     columns
         Columns that are projected
@@ -43,4 +47,4 @@ def _scan_ipc_impl(  # noqa: D417
     """
     import polars as pl
 
-    return pl.read_ipc(source, columns=columns, **kwargs)
+    return pl.read_ipc(source, columns=columns, n_rows=n_rows, **kwargs)
