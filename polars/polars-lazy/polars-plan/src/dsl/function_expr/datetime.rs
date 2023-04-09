@@ -33,7 +33,7 @@ pub enum TemporalFunction {
     Truncate(String, String),
     Round(String, String),
     #[cfg(feature = "timezones")]
-    CastTimezone(Option<TimeZone>),
+    CastTimezone(Option<TimeZone>, Option<bool>),
     #[cfg(feature = "timezones")]
     TzLocalize(TimeZone),
     DateRange {
@@ -71,7 +71,7 @@ impl Display for TemporalFunction {
             Truncate(..) => "truncate",
             Round(..) => "round",
             #[cfg(feature = "timezones")]
-            CastTimezone(_) => "replace_timezone",
+            CastTimezone(_, _) => "replace_timezone",
             #[cfg(feature = "timezones")]
             TzLocalize(_) => "tz_localize",
             DateRange { .. } => return write!(f, "date_range"),
@@ -114,7 +114,7 @@ pub(super) fn time(s: &Series) -> PolarsResult<Series> {
         DataType::Datetime(_, Some(_)) => s
             .datetime()
             .unwrap()
-            .replace_time_zone(None)?
+            .replace_time_zone(None, None)?
             .cast(&DataType::Time),
         DataType::Datetime(_, _) => s.datetime().unwrap().cast(&DataType::Time),
         DataType::Date => s.datetime().unwrap().cast(&DataType::Time),
@@ -128,7 +128,7 @@ pub(super) fn date(s: &Series) -> PolarsResult<Series> {
         DataType::Datetime(_, Some(_)) => s
             .datetime()
             .unwrap()
-            .replace_time_zone(None)?
+            .replace_time_zone(None, None)?
             .cast(&DataType::Date),
         DataType::Datetime(_, _) => s.datetime().unwrap().cast(&DataType::Date),
         DataType::Date => Ok(s.clone()),
@@ -141,7 +141,7 @@ pub(super) fn datetime(s: &Series) -> PolarsResult<Series> {
         DataType::Datetime(tu, Some(_)) => s
             .datetime()
             .unwrap()
-            .replace_time_zone(None)?
+            .replace_time_zone(None, None)?
             .cast(&DataType::Datetime(*tu, None)),
         DataType::Datetime(tu, _) => s.datetime().unwrap().cast(&DataType::Datetime(*tu, None)),
         dtype => polars_bail!(ComputeError: "expected Datetime, got {}", dtype),
@@ -242,9 +242,14 @@ pub(super) fn round(s: &Series, every: &str, offset: &str) -> PolarsResult<Serie
 }
 
 #[cfg(feature = "timezones")]
-pub(super) fn replace_timezone(s: &Series, time_zone: Option<&str>) -> PolarsResult<Series> {
+pub(super) fn replace_timezone(
+    s: &Series,
+    time_zone: Option<&str>,
+    is_earliest: Option<bool>,
+) -> PolarsResult<Series> {
     let ca = s.datetime()?;
-    ca.replace_time_zone(time_zone).map(|ca| ca.into_series())
+    ca.replace_time_zone(time_zone, is_earliest)
+        .map(|ca| ca.into_series())
 }
 
 #[cfg(feature = "timezones")]
@@ -257,7 +262,7 @@ pub(super) fn tz_localize(s: &Series, tz: &str) -> PolarsResult<Series> {
         "cannot localize a tz-aware datetime \
         (consider using 'dt.convert_time_zone' or 'dt.replace_time_zone')"
     );
-    Ok(ca.replace_time_zone(Some(tz))?.into_series())
+    Ok(ca.replace_time_zone(Some(tz), None)?.into_series())
 }
 
 pub(super) fn date_range_dispatch(

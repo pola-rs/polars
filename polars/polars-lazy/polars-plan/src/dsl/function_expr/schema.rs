@@ -92,7 +92,7 @@ impl FunctionExpr {
         };
 
         #[cfg(feature = "timezones")]
-        let cast_tz = |tz: Option<&TimeZone>| {
+        let cast_tz = |tz: Option<&TimeZone>, _is_earliest: Option<bool>| {
             try_map_dtype(&|dt| {
                 if let DataType::Datetime(tu, _) = dt {
                     Ok(DataType::Datetime(*tu, tz.cloned()))
@@ -164,9 +164,9 @@ impl FunctionExpr {
                     Truncate(..) => same_type().unwrap().dtype,
                     Round(..) => same_type().unwrap().dtype,
                     #[cfg(feature = "timezones")]
-                    CastTimezone(tz) => return cast_tz(tz.as_ref()),
+                    CastTimezone(tz, earliest) => return cast_tz(tz.as_ref(), *earliest),
                     #[cfg(feature = "timezones")]
-                    TzLocalize(tz) => return cast_tz(Some(tz)),
+                    TzLocalize(tz) => return cast_tz(Some(tz), None),
                     DateRange { .. } => return super_type(),
                     Combine(tu) => DataType::Datetime(*tu, None),
                 };

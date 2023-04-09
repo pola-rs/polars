@@ -297,7 +297,7 @@ pub trait Utf8Methods: AsUtf8 {
         ca.rename(utf8_ca.name());
         match tz {
             #[cfg(feature = "timezones")]
-            Some(tz) => ca.into_datetime(tu, None).replace_time_zone(Some(tz)),
+            Some(tz) => ca.into_datetime(tu, None).replace_time_zone(Some(tz), None),
             _ => Ok(ca.into_datetime(tu, None)),
         }
     }
@@ -533,9 +533,11 @@ pub trait Utf8Methods: AsUtf8 {
             ca.rename(utf8_ca.name());
             match (tz, utc) {
                 #[cfg(feature = "timezones")]
-                (Some(tz), false) => ca.into_datetime(tu, None).replace_time_zone(Some(tz)),
+                (Some(tz), false) => ca.into_datetime(tu, None).replace_time_zone(Some(tz), None),
                 #[cfg(feature = "timezones")]
-                (None, true) => ca.into_datetime(tu, None).replace_time_zone(Some("UTC")),
+                (None, true) => ca
+                    .into_datetime(tu, None)
+                    .replace_time_zone(Some("UTC"), None),
                 #[cfg(feature = "timezones")]
                 (Some(_), true) => unreachable!(), // has already been validated in strptime
                 _ => Ok(ca.into_datetime(tu, None)),

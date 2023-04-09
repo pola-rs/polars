@@ -1097,8 +1097,16 @@ impl PyExpr {
     }
 
     #[cfg(feature = "timezones")]
-    pub fn dt_replace_time_zone(&self, time_zone: Option<String>) -> PyExpr {
-        self.inner.clone().dt().replace_time_zone(time_zone).into()
+    pub fn dt_replace_time_zone(
+        &self,
+        time_zone: Option<String>,
+        is_earliest: Option<bool>,
+    ) -> PyExpr {
+        self.inner
+            .clone()
+            .dt()
+            .replace_time_zone(time_zone, is_earliest)
+            .into()
     }
 
     #[cfg(feature = "timezones")]

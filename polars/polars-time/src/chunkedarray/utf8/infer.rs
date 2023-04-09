@@ -395,9 +395,9 @@ pub(crate) fn to_datetime(
                     let mut ca = ca.clone();
                     ca.set_time_unit(tu);
                     match utc {
-                        true => Ok(ca.replace_time_zone(Some("UTC"))?),
+                        true => Ok(ca.replace_time_zone(Some("UTC"), None)?),
                         false => Ok(ca
-                            .replace_time_zone(Some("UTC"))?
+                            .replace_time_zone(Some("UTC"), None)?
                             .convert_time_zone(offset.to_string())?),
                     }
                 })?,
@@ -406,9 +406,9 @@ pub(crate) fn to_datetime(
                     ca.set_time_unit(tu);
                     match (tz, utc) {
                         #[cfg(feature = "timezones")]
-                        (Some(tz), false) => Ok(ca.replace_time_zone(Some(tz))?),
+                        (Some(tz), false) => Ok(ca.replace_time_zone(Some(tz), None)?),
                         #[cfg(feature = "timezones")]
-                        (None, true) => Ok(ca.replace_time_zone(Some("UTC"))?),
+                        (None, true) => Ok(ca.replace_time_zone(Some("UTC"), None)?),
                         #[cfg(feature = "timezones")]
                         (Some(_), true) => unreachable!(), // has already been validated in strptime
                         _ => Ok(ca),
