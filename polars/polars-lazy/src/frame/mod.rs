@@ -955,6 +955,8 @@ impl LazyFrame {
     }
 
     /// Get the approximate count of unique values for all the columns.
+    ///
+    #[cfg(feature = "approx_unique")]
     pub fn approx_unique(self, precision: u8) -> LazyFrame {
         self.select_local(vec![col("*").approx_unique(precision)])
     }
