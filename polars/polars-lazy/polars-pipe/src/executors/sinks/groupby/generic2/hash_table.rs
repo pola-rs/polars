@@ -1,8 +1,10 @@
 use std::cell::UnsafeCell;
+
 use polars_arrow::trusted_len::PushUnchecked;
+
 use super::*;
 
-pub(super) struct HashTable<const FIXED: bool> {
+pub(super) struct AggHashTable<const FIXED: bool> {
     inner_map: PlIdHashMap<Key, IdxSize>,
     keys: Vec<AnyValue<'static>>,
     // the aggregation that are in process
@@ -19,8 +21,7 @@ pub(super) struct HashTable<const FIXED: bool> {
     spill_size: usize,
 }
 
-impl<const FIXED: bool> HashTable<FIXED> {
-
+impl<const FIXED: bool> AggHashTable<FIXED> {
     pub(super) fn new(
         agg_constructors: Vec<AggregateFunction>,
         key_dtypes: &[DataType],
@@ -40,6 +41,19 @@ impl<const FIXED: bool> HashTable<FIXED> {
         }
     }
 
+    pub(super) fn split(&self) -> Self {
+        Self {
+            inner_map: Default::default(),
+            keys: Default::default(),
+            running_aggregations: Default::default(),
+            agg_constructors: self.agg_constructors.iter().map(|c| c.split()).collect(),
+            keys_scratch: UnsafeCell::new(Vec::with_capacity(self.num_keys)),
+            num_keys: self.num_keys,
+            spill_size: self.spill_size,
+            output_schema: self.output_schema.clone(),
+        }
+    }
+
     unsafe fn get_keys(&self, idx: IdxSize) -> &[AnyValue] {
         let start = idx as usize;
         let end = start + self.num_keys;
@@ -48,6 +62,10 @@ impl<const FIXED: bool> HashTable<FIXED> {
 
     pub(super) fn len(&self) -> usize {
         self.inner_map.len()
+    }
+
+    pub(super) fn is_empty(&self) -> bool {
+        self.inner_map.is_empty()
     }
 
     fn get_entry(
@@ -75,15 +93,14 @@ impl<const FIXED: bool> HashTable<FIXED> {
 
     /// # Safety
     /// Caller must ensure that `keys` and `agg_iters` are not depleted.
-    /// # Returns (hash, keys)
+    /// # Returns &keys
     pub(super) unsafe fn insert<'a>(
         &'a mut self,
         hash: u64,
         keys: &mut [SeriesPhysIter],
         agg_iters: &mut [SeriesPhysIter],
         chunk_index: IdxSize,
-    )
-        -> Option<(u64, &[AnyValue])> {
+    ) -> Option<(&[AnyValue])> {
         // safety: no references
         let keys_scratch = unsafe { &mut *self.keys_scratch.get() };
         keys_scratch.clear();
@@ -112,6 +129,7 @@ impl<const FIXED: bool> HashTable<FIXED> {
                 // ensure the bck forgets this guy
                 std::mem::forget(entry);
 
+                // OVERFLOW logic
                 if FIXED {
                     if self.inner_map.len() > self.spill_size {
                         unsafe {
@@ -120,9 +138,8 @@ impl<const FIXED: bool> HashTable<FIXED> {
                                 borrow as *const RawVacantEntryMut<'a, Key, IdxSize, IdBuildHasher>;
                             let _entry = std::ptr::read(borrow);
                         }
-                        return Some((hash, keys_scratch))
+                        return Some(keys_scratch);
                     }
-
                 }
 
                 let aggregation_idx = self.running_aggregations.len() as IdxSize;
@@ -158,7 +175,7 @@ impl<const FIXED: bool> HashTable<FIXED> {
             let agg_fn = unsafe { self.running_aggregations.get_unchecked_release_mut(i) };
 
             agg_fn.pre_agg(chunk_index, agg_iter.as_mut())
-        };
+        }
         None
     }
 
@@ -228,15 +245,12 @@ impl<const FIXED: bool> HashTable<FIXED> {
         }
     }
 
-    pub(super) fn finalize(
-        &mut self,
-        slice: &mut Option<(i64, usize)>,
-    ) -> Option<DataFrame> {
+    pub(super) fn finalize(&mut self, slice: &mut Option<(i64, usize)>) -> Option<DataFrame> {
         let local_len = self.inner_map.len();
         let (skip_len, take_len) = if let Some((offset, slice_len)) = slice {
             if *offset as usize >= local_len {
                 *offset -= local_len as i64;
-                return None
+                return None;
             } else {
                 let out = (*offset as usize, *slice_len);
                 *offset = 0;

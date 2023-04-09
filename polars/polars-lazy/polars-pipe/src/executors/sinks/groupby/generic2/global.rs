@@ -1,11 +1,12 @@
 use std::collections::LinkedList;
 use std::sync::Mutex;
+
 use super::*;
 
 struct SpillPayload {
     hashes: Vec<u64>,
     keys_cols: Vec<Series>,
-    num_keys: usize
+    num_keys: usize,
 }
 
 impl SpillPayload {
@@ -24,7 +25,7 @@ impl SpillPayload {
 
 struct SpillPartitions {
     // outer vec: partitions (factor of 2)
-    partitions: PartitionVec<Mutex<LinkedList<SpillPayload>>>
+    partitions: PartitionVec<Mutex<LinkedList<SpillPayload>>>,
 }
 
 impl SpillPartitions {
@@ -45,7 +46,7 @@ impl SpillPartitions {
 pub(super) struct GlobalTable {
     inner_map: PartitionVec<PlIdHashMap<Key, IdxSize>>,
     spill_partitions: SpillPartitions,
-    num_keys: usize
+    num_keys: usize,
 }
 
 impl GlobalTable {
@@ -65,9 +66,7 @@ impl GlobalTable {
                     let hash = hashes.get_unchecked(i);
                     let key = keys.get_unchecked(i);
                     let col = agg_cols.get_unchecked(i);
-
                 }
-
             }
         }
     }
