@@ -42,8 +42,16 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
         self.0.agg_list(groups)
     }
 
+    unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
+        self.0.agg_sum(groups)
+    }
+
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
+    }
+
+    fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
+        NumOpsDispatch::add_to(&self.0, rhs)
     }
 }
 

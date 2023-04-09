@@ -1,10 +1,12 @@
 mod agg_list;
 mod dispatch;
 
+
 pub use agg_list::*;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
+use arrow::datatypes::PrimitiveType::Int64;
 use num_traits::pow::Pow;
 use num_traits::{Bounded, Num, NumCast, ToPrimitive, Zero};
 use polars_arrow::data_types::IsFloat;
@@ -137,6 +139,100 @@ where
     Box::new(out)
 }
 
+// Use an aggregation window that maintains the state
+pub unsafe fn _rolling_apply_agg_window_no_nulls_list<'a, O>(values: &ArrayRef, arr: &ListArray<i64>, offsets: O) -> Series
+where
+    // items (offset, len) -> so offsets are offset, offset + len
+    O: Iterator<Item = (IdxSize, IdxSize)> + TrustedLen
+{
+    if values.is_empty() {
+        let vals = values.clone();
+        return ChunkedArray::<ListType>::from_chunks("", vec![vals]).into_series();
+    }
+
+    let out: Vec<ArrayRef> = offsets
+        .map(|(start, len)| {
+            let end = start + len;
+
+            if start == end {
+                None
+            } else {
+                // safety:
+                // we are in bounds
+                let resp = (start..end).into_iter()
+                        .map(|idx| arr.get_unchecked(idx as usize))
+                        .reduce(|acc, val| {
+                            _agg_helper_list(
+                                acc,
+                                val
+                            )
+                        }
+                    ).unwrap();
+                return resp;
+            }
+        }).filter_map(|x| x).collect();
+    
+    return ChunkedArray::<ListType>::from_chunks("", out.clone()).into_series();
+
+    // Box::new(out)
+}
+
+// Use an aggregation window that maintains the state
+pub unsafe fn _rolling_apply_agg_window_nulls_list<'a, O>(
+    values: &ArrayRef,
+    arr: &ListArray<i64>,
+    validity: &'a Bitmap,
+    offsets: O,
+) -> Series
+where
+    O: Iterator<Item = (IdxSize, IdxSize)> + TrustedLen
+{
+    if values.is_empty() {
+        return ChunkedArray::<ListType>::from_chunks("", vec![values.clone()]).into_series();
+    }
+
+    // This iterators length can be trusted
+    // these represent the number of groups in the groupby operation
+    let output_len = offsets.size_hint().0;
+
+    let mut validity = MutableBitmap::with_capacity(output_len);
+    validity.extend_constant(output_len, true);
+
+    let out: Vec<ArrayRef> = offsets
+        .enumerate()
+        .map(|(idx, (start, len))| {
+            let end = start + len;
+
+            let agg = if start == end {
+                None
+            } else {
+                // safety:
+                // we are in bounds
+                let resp = (start..end).into_iter()
+                        .map(|idx| arr.get_unchecked(idx as usize))
+                        .reduce(|acc, val| {
+                            _agg_helper_list(
+                                acc,
+                                val
+                            )
+                        }
+                    ).unwrap();
+                return resp;
+            };
+
+            match agg {
+                Some(val) => val,
+                None => {
+                    // safety: we are in bounds
+                    unsafe { validity.set_unchecked(idx, false) };
+                    let out: Vec<i64> = vec![];
+                    return Some(Box::new(PrimitiveArray::new(Int64.into(), out.into(), None)));
+                }
+            }
+        }).filter_map(|x| x).collect();
+    return ChunkedArray::<ListType>::from_chunks("", out.clone()).into_series();
+}
+
 pub fn _slice_from_offsets<T>(ca: &ChunkedArray<T>, first: IdxSize, len: IdxSize) -> ChunkedArray<T>
 where
     T: PolarsDataType,
@@ -152,6 +248,16 @@ where
     ChunkedArray<T>: IntoSeries,
 {
     let ca: ChunkedArray<T> = POOL.install(|| groups.into_par_iter().map(f).collect());
+    ca.into_series()
+}
+
+// helper that combines the groups into a parallel iterator over `(first, all): (u32, &Vec<u32>)`
+pub fn _agg_helper_idx_list<List, F>(groups: &GroupsIdx, f: F) -> Series
+where
+    F: Fn((IdxSize, &Vec<IdxSize>)) -> Option<Series> + Send + Sync,
+    ChunkedArray<ListType>: IntoSeries,
+{
+    let ca: ChunkedArray<ListType> = POOL.install(|| groups.into_par_iter().map(f).collect());
     ca.into_series()
 }
 
@@ -193,6 +299,16 @@ where
     ca.into_series()
 }
 
+// helper that combines the groups into a parallel iterator over `(first, all): (u32, &Vec<u32>)`
+pub fn _agg_helper_slice_list<F>(groups: &[[IdxSize; 2]], f: F) -> Series
+where
+    F: Fn([IdxSize; 2]) -> Option<Series> + Send + Sync,
+    ChunkedArray<ListType>: IntoSeries,
+{
+    let ca: ChunkedArray<ListType> = POOL.install(|| groups.par_iter().copied().map(f).collect());
+    ca.into_series()
+}
+
 pub fn _agg_helper_slice_bool<F>(groups: &[[IdxSize; 2]], f: F) -> Series
 where
     F: Fn([IdxSize; 2]) -> Option<bool> + Send + Sync,
@@ -207,6 +323,18 @@ where
 {
     let ca: Utf8Chunked = POOL.install(|| groups.par_iter().copied().map(f).collect());
     ca.into_series()
+}
+
+pub fn _agg_helper_list(a: Option<ArrayRef>, b: Option<ArrayRef>) ->  Option<ArrayRef>{
+    // Convert `arr` into a primitive array
+    let bound_a = a.unwrap();
+    let bound_b = b.unwrap();
+    let prim_a = bound_a.as_any().downcast_ref::<PrimitiveArray<i64>>().unwrap();
+    let prim_b = bound_b.as_any().downcast_ref::<PrimitiveArray<i64>>().unwrap();
+    let iter: Vec<i64> = prim_a.iter().zip(prim_b)
+        .map(|(x, y)| x.unwrap() + y.unwrap()).collect();
+    let resp: ArrayRef = Box::new(PrimitiveArray::<i64>::from_slice(iter));
+    return Some(resp);
 }
 
 impl BooleanChunked {
@@ -590,6 +718,77 @@ where
         }
         GroupsProxy::Slice { .. } => {
             agg_quantile_generic::<T, K>(ca, groups, 0.5, QuantileInterpolOptions::Linear)
+        }
+    }
+}
+
+impl ListChunked {
+    pub(crate) unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
+        match groups {
+            GroupsProxy::Idx(groups) => {
+                let ca = self.rechunk();
+                let arr = ca.downcast_iter().next().unwrap();
+                _agg_helper_idx_list::<ListType, _>(groups, |(first, idx)| {
+                    debug_assert!(idx.len() <= self.len());
+                    if idx.is_empty() {
+                        None
+                    } else if idx.len() == 1 {
+                        Some(ChunkedArray::<ListType>::from_chunks("", vec![arr.get(first as usize).unwrap()]).into_series())
+                    } else if arr.null_count() == 0 {
+                        let indices = idx.iter().map(|i| *i as usize);
+                        let ret_arr = indices.into_iter()
+                            .map(|idx| arr.get_unchecked(idx))
+                            .reduce(|acc, val| {
+                                _agg_helper_list(
+                                    acc,
+                                    val
+                                )
+                            }
+                        ).unwrap();
+                        return Some(ChunkedArray::<ListType>::from_chunks("", vec![ret_arr.unwrap()]).into_series());
+                    } else {
+                        let indices = idx.iter().map(|i| *i as usize);
+                        let ret_arr = indices.into_iter()
+                            .map(|idx| arr.get_unchecked(idx))
+                            .reduce(|acc, val| {
+                                _agg_helper_list(
+                                    acc,
+                                    val
+                                )
+                            }
+                        ).unwrap();
+                        return Some(ChunkedArray::<ListType>::from_chunks("", vec![ret_arr.unwrap()]).into_series());
+                    }
+                })
+            }
+            GroupsProxy::Slice { groups, .. } => {
+                if _use_rolling_kernels(groups, self.chunks()) {
+                    let arr = self.downcast_iter().next().unwrap();
+                    let values = arr.values();
+                    let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
+                    let arr = match arr.validity() {
+                        None => _rolling_apply_agg_window_no_nulls_list::<_>(
+                            values,
+                            arr,
+                            offset_iter,
+                        ),
+                        Some(validity) => _rolling_apply_agg_window_nulls_list::<_,>(values, arr, validity, offset_iter),
+                    };
+                    return arr;
+                } else {
+                    _agg_helper_slice_list(groups, |[first, len]| {
+                        debug_assert!(len <= self.len() as IdxSize);
+                        match len {
+                            0 => None,
+                            1 => self.get(first as usize),
+                            _ => {
+                                let arr_group = _slice_from_offsets(self, first, len);
+                                arr_group.sum()
+                            }
+                        }
+                    })
+                }
+            }
         }
     }
 }

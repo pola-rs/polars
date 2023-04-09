@@ -2,6 +2,7 @@
 mod quantile;
 mod var;
 
+use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::ops::Add;
 
@@ -215,6 +216,56 @@ where
                     }
                 }
             }
+        }
+    }
+}
+
+
+fn _agg_dynamic_array_helper<T>(a: Box<dyn Array>, b: Box<dyn Array>) -> Box<dyn Array>
+where
+    T: NumericNative {
+    let prim_a = a.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
+    let prim_b = b.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
+    let iter: Vec<T> = prim_a.iter().zip(prim_b)
+        .map(|(x, y)| {
+            x.unwrap().clone() + y.unwrap().clone()
+        }).collect();
+    Box::new(PrimitiveArray::<T>::from_slice(iter))
+}
+
+impl ListChunked {
+    pub unsafe fn sum(&self) -> Option<Series> {
+        if self.is_empty() {
+            return None;
+        }
+        if self.len() == 1 {
+            return self.get(0);
+        }
+        let iter = self.downcast_iter().last().unwrap().into_iter();
+        let ret_arr = iter.reduce(|acc, val| {
+            if acc.is_none() | val.is_none() {
+                return None;
+            }
+            let bound_a = acc.unwrap();
+            let bound_b = val.unwrap();
+            let dtype_a = bound_a.data_type();
+
+            if bound_a.len() != bound_b.len() {
+                return None;
+            }
+
+            match dtype_a {
+                ArrowDataType::Int64 => Some(_agg_dynamic_array_helper::<i64>(bound_a, bound_b)),
+                ArrowDataType::Float64 => Some(_agg_dynamic_array_helper::<f64>(bound_a, bound_b)),
+                _ => panic!("Bad datatype"),
+            }
+
+        }).unwrap();
+        match ret_arr {
+            Some(ret_arr) => {
+                Some(ChunkedArray::from_chunks_and_dtype_unchecked(self.name(), vec![ret_arr], self.inner_dtype()).into_series())
+            },
+            None => None
         }
     }
 }
@@ -503,7 +554,17 @@ impl ChunkAggSeries for BinaryChunked {
 
 impl ChunkAggSeries for ListChunked {
     fn sum_as_series(&self) -> Series {
-        ListChunked::full_null_with_dtype(self.name(), 1, &self.inner_dtype()).into_series()
+        if !self.inner_dtype().is_numeric() {
+            return ListChunked::full_null_with_dtype(self.name(), 1, &self.inner_dtype()).into_series();
+        }
+        let ret = unsafe { self.sum() };
+        match ret {
+            Some(ret) => { 
+                let x = ret.to_list().expect("WHAT").into_series();
+                return x;
+            },
+            None => ListChunked::full_null_with_dtype(self.name(), 1, &self.inner_dtype()).into_series()
+        }
     }
     fn max_as_series(&self) -> Series {
         ListChunked::full_null_with_dtype(self.name(), 1, &self.inner_dtype()).into_series()
