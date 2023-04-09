@@ -35,10 +35,6 @@ fn dispatcher(s: &Series, precision: u8) -> PolarsResult<Series> {
         }
         Float32 => approx_unique_ca(&s.bit_repr_small(), precision),
         Float64 => approx_unique_ca(&s.bit_repr_large(), precision),
-        /// TODO
-        // #[cfg(feature = "dtype-struct")]
-        // Struct(_) => {
-        // }
         dt if dt.is_numeric() => {
             with_match_physical_integer_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
