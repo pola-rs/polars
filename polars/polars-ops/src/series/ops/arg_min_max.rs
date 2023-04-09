@@ -1,9 +1,8 @@
 use argminmax::ArgMinMax;
-use arrow::array::PrimitiveArray;
 use arrow::bitmap::utils::{BitChunkIterExact, BitChunksExact};
 use arrow::bitmap::Bitmap;
 use polars_core::series::IsSorted;
-use polars_core::{with_match_physical_numeric_polars_type, with_match_physical_numeric_type};
+use polars_core::with_match_physical_numeric_polars_type;
 
 use super::*;
 
@@ -220,70 +219,82 @@ fn arg_max_str(ca: &Utf8Chunked) -> Option<usize> {
 
 fn arg_min_numeric<'a, T>(ca: &'a ChunkedArray<T>) -> Option<usize>
 where
-    T: PolarsDataType,
-    &'a ChunkedArray<T>: IntoIterator,
-    <&'a ChunkedArray<T> as IntoIterator>::Item: PartialOrd,
+    T: PolarsNumericType,
+    for<'b> &'b [T::Native]: ArgMinMax,
 {
     match ca.is_sorted_flag2() {
         IsSorted::Ascending => Some(0),
         IsSorted::Descending => Some(ca.len() - 1),
         IsSorted::Not => {
-            with_match_physical_numeric_type!(ca.dtype(), |$TN| {
-                ca.chunks().iter().fold((None, None, 0), |acc, chunk| {
-                    if chunk.is_empty() {
+            ca.downcast_iter()
+                .fold((None, None, 0), |acc, arr| {
+                    if arr.len() == 0 {
                         return acc;
                     }
-                    let arr: &PrimitiveArray<$TN> = chunk.as_any().downcast_ref().unwrap();
                     let chunk_min_idx: usize = arr.values().as_slice().argmin();
-                    let chunk_min_val: $TN = arr.value(chunk_min_idx);
+                    let chunk_min_val: T::Native = arr.value(chunk_min_idx);
                     match acc {
-                        (None, None, offset) => (Some(chunk_min_idx + offset), Some(chunk_min_val), offset + chunk.len()),
+                        (None, None, offset) => (
+                            Some(chunk_min_idx + offset),
+                            Some(chunk_min_val),
+                            offset + arr.len(),
+                        ),
                         (Some(acc_min_idx), Some(acc_min_val), offset) => {
                             if chunk_min_val < acc_min_val {
-                                (Some(chunk_min_idx + offset), Some(chunk_min_val), offset + chunk.len())
+                                (
+                                    Some(chunk_min_idx + offset),
+                                    Some(chunk_min_val),
+                                    offset + arr.len(),
+                                )
                             } else {
-                                (Some(acc_min_idx), Some(acc_min_val), offset + chunk.len())
+                                (Some(acc_min_idx), Some(acc_min_val), offset + arr.len())
                             }
                         }
                         _ => unreachable!(),
                     }
-                }).0
-            })
+                })
+                .0
         }
     }
 }
 
 fn arg_max_numeric<'a, T>(ca: &'a ChunkedArray<T>) -> Option<usize>
 where
-    T: PolarsDataType,
-    &'a ChunkedArray<T>: IntoIterator,
-    <&'a ChunkedArray<T> as IntoIterator>::Item: PartialOrd,
+    T: PolarsNumericType,
+    for<'b> &'b [T::Native]: ArgMinMax,
 {
     match ca.is_sorted_flag2() {
         IsSorted::Ascending => Some(ca.len() - 1),
         IsSorted::Descending => Some(0),
         IsSorted::Not => {
-            with_match_physical_numeric_type!(ca.dtype(), |$TN| {
-                ca.chunks().iter().fold((None, None, 0), |acc, chunk| {
-                    if chunk.is_empty() {
+            ca.downcast_iter()
+                .fold((None, None, 0), |acc, arr| {
+                    if arr.len() == 0 {
                         return acc;
                     }
-                    let arr: &PrimitiveArray<$TN> = chunk.as_any().downcast_ref().unwrap();
                     let chunk_max_idx: usize = arr.values().as_slice().argmax();
-                    let chunk_max_val: $TN = arr.value(chunk_max_idx);
+                    let chunk_max_val: T::Native = arr.value(chunk_max_idx);
                     match acc {
-                        (None, None, offset) => (Some(chunk_max_idx + offset), Some(chunk_max_val), offset + chunk.len()),
+                        (None, None, offset) => (
+                            Some(chunk_max_idx + offset),
+                            Some(chunk_max_val),
+                            offset + arr.len(),
+                        ),
                         (Some(acc_max_idx), Some(acc_max_val), offset) => {
                             if chunk_max_val > acc_max_val {
-                                (Some(chunk_max_idx + offset), Some(chunk_max_val), offset + chunk.len())
+                                (
+                                    Some(chunk_max_idx + offset),
+                                    Some(chunk_max_val),
+                                    offset + arr.len(),
+                                )
                             } else {
-                                (Some(acc_max_idx), Some(acc_max_val), offset + chunk.len())
+                                (Some(acc_max_idx), Some(acc_max_val), offset + arr.len())
                             }
                         }
                         _ => unreachable!(),
                     }
-                }).0
-            })
+                })
+                .0
         }
     }
 }
