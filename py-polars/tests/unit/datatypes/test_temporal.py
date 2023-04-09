@@ -2682,6 +2682,39 @@ def test_infer_iso8601_datetime(iso8601_format_datetime: str) -> None:
         assert parsed.dt.nanosecond().item() == 123000000
 
 
+def test_infer_iso8601_tz_aware_datetime(iso8601_tz_aware_format_datetime: str) -> None:
+    # construct an example time string
+    time_string = (
+        iso8601_tz_aware_format_datetime.replace("%Y", "2134")
+        .replace("%m", "12")
+        .replace("%d", "13")
+        .replace("%H", "01")
+        .replace("%M", "12")
+        .replace("%S", "34")
+        .replace("%3f", "123")
+        .replace("%6f", "123456")
+        .replace("%9f", "123456789")
+        .replace("%#z", "+01:00")
+    )
+    parsed = pl.Series([time_string]).str.strptime(pl.Datetime("ns"))
+    assert parsed.dt.year().item() == 2134
+    assert parsed.dt.month().item() == 12
+    assert parsed.dt.day().item() == 13
+    if "%H" in iso8601_tz_aware_format_datetime:
+        assert parsed.dt.hour().item() == 1
+    if "%M" in iso8601_tz_aware_format_datetime:
+        assert parsed.dt.minute().item() == 12
+    if "%S" in iso8601_tz_aware_format_datetime:
+        assert parsed.dt.second().item() == 34
+    if "%9f" in iso8601_tz_aware_format_datetime:
+        assert parsed.dt.nanosecond().item() == 123456789
+    if "%6f" in iso8601_tz_aware_format_datetime:
+        assert parsed.dt.nanosecond().item() == 123456000
+    if "%3f" in iso8601_tz_aware_format_datetime:
+        assert parsed.dt.nanosecond().item() == 123000000
+    assert parsed.dtype == pl.Datetime("ns", "+01:00")
+
+
 def test_infer_iso8601_date(iso8601_format_date: str) -> None:
     # construct an example date string
     time_string = (
