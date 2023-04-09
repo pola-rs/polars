@@ -91,6 +91,7 @@ from polars.utils.meta import get_index_type
 from polars.utils.various import (
     _prepare_row_count_args,
     _process_null_values,
+    find_stacklevel,
     handle_projection_columns,
     is_bool_sequence,
     is_int_sequence,
@@ -6091,7 +6092,8 @@ class DataFrame:
                 "will change from `'first'` to `None`. Please pass `'first'` to keep the "
                 "current behaviour, or `None` to accept the new one.",
                 DeprecationWarning,
-                stacklevel=2,
+                # stacklevel=2,
+                stacklevel=find_stacklevel(),
             )
             aggregate_function = "first"
 

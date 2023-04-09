@@ -5,6 +5,8 @@ import inspect
 import warnings
 from typing import TYPE_CHECKING, Any, Callable, TypeVar
 
+from polars.utils.various import find_stacklevel
+
 if TYPE_CHECKING:
     import sys
 
@@ -173,7 +175,7 @@ def redirect(from_to: dict[str, str]) -> Callable[[type[T]], type[T]]:
                 f"`{type(obj).__name__}.{item}` has been renamed; this"
                 f" redirect is temporary, please use `.{new_item}` instead",
                 category=DeprecationWarning,
-                stacklevel=2,
+                stacklevel=find_stacklevel(),
             )
             item = new_item
         return obj.__getattribute__(item)

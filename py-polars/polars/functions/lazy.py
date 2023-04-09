@@ -29,6 +29,7 @@ from polars.utils.convert import (
     _timedelta_to_pl_timedelta,
 )
 from polars.utils.decorators import deprecated_alias
+from polars.utils.various import find_stacklevel
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arange as pyarange
@@ -1405,7 +1406,7 @@ def spearman_rank_corr(
     warnings.warn(
         "`spearman_rank_corr()` is deprecated in favor of `corr()`",
         DeprecationWarning,
-        stacklevel=2,
+        stacklevel=find_stacklevel(),
     )
     if isinstance(a, str):
         a = col(a)
@@ -1452,7 +1453,7 @@ def pearson_corr(a: str | Expr, b: str | Expr, ddof: int = 1) -> Expr:
     warnings.warn(
         "`pearson_corr()` is deprecated in favor of `corr()`",
         DeprecationWarning,
-        stacklevel=2,
+        stacklevel=find_stacklevel(),
     )
     if isinstance(a, str):
         a = col(a)

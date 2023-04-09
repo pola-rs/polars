@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import inspect
 import os
 import re
 import sys
 from collections.abc import MappingView, Sized
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Generator, Iterable, Sequence, TypeVar
+
+import polars as pl
 
 if sys.version_info >= (3, 8):
     from typing import Literal
@@ -335,3 +338,26 @@ class _NoDefault(Enum):
 
 no_default = _NoDefault.no_default  # Sentinel indicating the default value.
 NoDefault = Literal[_NoDefault.no_default]
+
+
+def find_stacklevel() -> int:
+    """
+    Find the first place in the stack that is not inside polars (tests notwithstanding).
+
+    Taken from:
+    https://github.com/pandas-dev/pandas/blob/ab89c53f48df67709a533b6a95ce3d911871a0a8/pandas/util/_exceptions.py#L30-L51
+    """
+    pkg_dir = os.path.dirname(pl.__file__)
+    test_dir = os.path.join(pkg_dir, "tests")
+
+    # https://stackoverflow.com/questions/17407119/python-inspect-stack-is-slow
+    frame = inspect.currentframe()
+    n = 0
+    while frame:
+        fname = inspect.getfile(frame)
+        if fname.startswith(pkg_dir) and not fname.startswith(test_dir):
+            frame = frame.f_back
+            n += 1
+        else:
+            break
+    return n
