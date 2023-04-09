@@ -1417,8 +1417,8 @@ class Series:
         self,
         separator: str = "_",
         *,
-        include_null: bool = False,
         values: list[Any] | None = None,
+        unknown_value_identifier: str | None = None,
     ) -> DataFrame:
         """
         Get dummy/indicator variables.
@@ -1430,9 +1430,17 @@ class Series:
         include_null
             Whether to add an additional column indicating null values.
         values
-            An optional list of values providing the non-null values to create
-            dummy indicators for. Columns will be created for exactly these
+            An optional list of values (including ``null``) providing the values to
+            create dummy indicators for. Columns will be created for exactly these
             values, no matter if they actually appear in the series.
+        unknown_value_identifier
+            If ``values`` is not ``None``, this identifier governs the name of the
+            column with indicator values for unknown values (i.e. values which do not
+            appear in ``values``). This column will be named
+            ``<col><separator><identifier>``. If the identifier is set to ``None``
+            (default), no indicator column for unknown values is created. Note that
+            ``null`` is never considered an unknown value and must be explicitly listed
+            in ``values``.
 
         Examples
         --------
@@ -1448,34 +1456,31 @@ class Series:
         │ 0   ┆ 1   ┆ 0   │
         │ 0   ┆ 0   ┆ 1   │
         └─────┴─────┴─────┘
-        >>> s = pl.Series("a", [1, 2, 3, None])
-        >>> s.to_dummies(include_null=True)
-        shape: (4, 4)
-        ┌─────┬─────┬─────┬────────┐
-        │ a_1 ┆ a_2 ┆ a_3 ┆ a_null │
-        │ --- ┆ --- ┆ --- ┆ ---    │
-        │ u8  ┆ u8  ┆ u8  ┆ u8     │
-        ╞═════╪═════╪═════╪════════╡
-        │ 1   ┆ 0   ┆ 0   ┆ 0      │
-        │ 0   ┆ 1   ┆ 0   ┆ 0      │
-        │ 0   ┆ 0   ┆ 1   ┆ 0      │
-        │ 0   ┆ 0   ┆ 0   ┆ 1      │
-        └─────┴─────┴─────┴────────┘
-        >>> s.to_dummies(include_null=True, values=[1, 2])
-        shape: (4, 3)
-        ┌─────┬─────┬────────┐
-        │ a_1 ┆ a_2 ┆ a_null │
-        │ --- ┆ --- ┆ ---    │
-        │ u8  ┆ u8  ┆ u8     │
-        ╞═════╪═════╪════════╡
-        │ 1   ┆ 0   ┆ 0      │
-        │ 0   ┆ 1   ┆ 0      │
-        │ 0   ┆ 0   ┆ 0      │
-        │ 0   ┆ 0   ┆ 1      │
-        └─────┴─────┴────────┘
+        >>> s.to_dummies(values=[1, 2])
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a_1 ┆ a_2 │
+        │ --- ┆ --- │
+        │ u8  ┆ u8  │
+        ╞═════╪═════╡
+        │ 1   ┆ 0   │
+        │ 0   ┆ 1   │
+        │ 0   ┆ 0   │
+        └─────┴─────┘
+        >>> s.to_dummies(values=[1, 2], unknown_value_identifier="other")
+        shape: (3, 3)
+        ┌─────┬─────┬─────────┐
+        │ a_1 ┆ a_2 ┆ a_other │
+        │ --- ┆ --- ┆ ---     │
+        │ u8  ┆ u8  ┆ u8      │
+        ╞═════╪═════╪═════════╡
+        │ 1   ┆ 0   ┆ 0       │
+        │ 0   ┆ 1   ┆ 0       │
+        │ 0   ┆ 0   ┆ 1       │
+        └─────┴─────┴─────────┘
 
         """
-        return wrap_df(self._s.to_dummies(separator, include_null, values))
+        return wrap_df(self._s.to_dummies(separator, values, unknown_value_identifier))
 
     def cut(
         self,

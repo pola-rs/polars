@@ -790,26 +790,36 @@ def test_to_dummies() -> None:
     assert dummies["A_c"].to_list() == [0, 0, 1]
 
 
-def test_to_dummies_include_null() -> None:
-    df = pl.DataFrame({"A": ["a", "b", "c", "c"], "B": [1, 3, 5, None]})
-    dummies = df.to_dummies(include_null=True)
-    assert dummies["A_null"].to_list() == [0, 0, 0, 0]
-    assert dummies["B_null"].to_list() == [0, 0, 0, 1]
-
-
 def test_to_dummies_values() -> None:
-    df = pl.DataFrame({"A": ["a", "b", "c", "c"], "B": [1, 3, 5, None]})
+    df = pl.DataFrame({"A": ["a", "b", "c", None], "B": [1, 3, 5, None]})
+    dummies = df.to_dummies(values={"A": ["a", "b", None], "B": [1]})
+    expected = pl.DataFrame(
+        {
+            "A_a": [1, 0, 0, 0],
+            "A_b": [0, 1, 0, 0],
+            "A_null": [0, 0, 0, 1],
+            "B_1": [1, 0, 0, 0],
+        }
+    ).select(pl.all().cast(pl.UInt8))
+    assert_frame_equal(dummies, expected)
+
+
+def test_to_dummies_values_unknown() -> None:
+    df = pl.DataFrame({"A": ["a", "b", "c", None], "B": [1, 3, 5, None]})
     dummies = df.to_dummies(
-        include_null=True,
-        values={
-            "A": ["a", "b"],
-            "B": [1],
-        },
+        values={"A": ["a", "b", None], "B": [1]}, unknown_value_identifier="other"
     )
-    assert dummies.columns == ["A_a", "A_b", "A_null", "B_1", "B_null"]
-    assert dummies["A_b"].to_list() == [0, 1, 0, 0]
-    assert dummies["B_1"].to_list() == [1, 0, 0, 0]
-    assert dummies["B_null"].to_list() == [0, 0, 0, 1]
+    expected = pl.DataFrame(
+        {
+            "A_a": [1, 0, 0, 0],
+            "A_b": [0, 1, 0, 0],
+            "A_null": [0, 0, 0, 1],
+            "A_other": [0, 0, 1, 0],
+            "B_1": [1, 0, 0, 0],
+            "B_other": [0, 1, 1, 0],
+        }
+    ).select(pl.all().cast(pl.UInt8))
+    assert_frame_equal(dummies, expected)
 
 
 def test_custom_groupby() -> None:

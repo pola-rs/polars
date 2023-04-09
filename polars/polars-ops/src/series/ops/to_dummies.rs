@@ -1,5 +1,4 @@
 use polars_core::frame::groupby::GroupsIndicator;
-use polars_core::utils::rayon::prelude::ParallelIterator;
 
 use super::*;
 
@@ -17,8 +16,8 @@ pub trait ToDummies {
     fn to_dummies(
         &self,
         separator: Option<&str>,
-        include_null: bool,
         values: Option<&Vec<AnyValue>>,
+        unknown_value_identifier: Option<&str>,
     ) -> PolarsResult<DataFrame>;
 }
 
@@ -26,78 +25,78 @@ impl ToDummies for Series {
     fn to_dummies(
         &self,
         separator: Option<&str>,
-        include_null: bool,
         values: Option<&Vec<AnyValue>>,
+        unknown_value_identifier: Option<&str>,
     ) -> PolarsResult<DataFrame> {
         let sep = separator.unwrap_or("_");
         let col_name = self.name();
+        let len = self.len();
         let groups = self.group_tuples(true, false)?;
-        let valid_values = values.map(|v| v.iter().collect::<PlHashSet<_>>());
 
-        // safety: groups are in bounds
-        let found_values = unsafe { self.agg_first(&groups) };
-        let mut columns: Vec<_> = found_values
-            .iter()
-            .zip(groups.iter())
-            // This filter must be kept after the `.zip` to align iterators.
-            .filter(|(av, _)| filter_value(av, include_null, &valid_values))
-            .map(|(av, group)| {
-                let name = format_value(&av, col_name, sep);
-                let ca = match group {
-                    GroupsIndicator::Idx((_, group)) => {
-                        dummies_helper_idx(group, self.len(), &name)
+        // Safety: groups are known to be in bounds
+        let seen_values = unsafe { self.agg_first(&groups) };
+        let groups_iter = || seen_values.iter().zip(groups.iter());
+
+        let columns = match values {
+            Some(values) => {
+                // If there are predefined values, building the output columns is a little more
+                // involved.
+                let known_values = values
+                    .iter()
+                    .map(|av| av.to_owned())
+                    .collect::<PlHashSet<_>>();
+                let seen_values_set: PlHashSet<_> = seen_values.iter().collect();
+                let unseen_values = known_values.difference(&seen_values_set);
+
+                // First, if we are interested in unknown values (i.e. an
+                // `unknown_value_identifier` is set), we create an additional column with the
+                // union of the dummy identifiers for all unknown values.
+                let unknown_column = match unknown_value_identifier {
+                    Some(identifier) => {
+                        let unknown_iter = groups_iter()
+                            .filter(|(av, _)| {
+                                // Do not consider null value as "unknown"
+                                !known_values.contains(av) && !matches!(av, AnyValue::Null)
+                            })
+                            .map(|(_, group)| group);
+                        Some(dummy_series_with_name(
+                            &format!("{col_name}{sep}{identifier}"),
+                            self.len(),
+                            unknown_iter,
+                        ))
                     }
-                    GroupsIndicator::Slice([offset, len]) => {
-                        dummies_helper_slice(offset, len, self.len(), &name)
-                    }
+                    None => None,
                 };
-                ca.into_series()
-            })
-            .collect();
 
-        // If we want to have a null value indicator column and null is not included in the
-        // values, we need to add the column retrospectively.
-        let null_value_exists = found_values.iter().any(|av| matches!(av, AnyValue::Null));
-        if include_null && !null_value_exists {
-            let name = format_value(&AnyValue::Null, col_name, sep);
-            columns.push(dummies_empty(self.len(), &name));
-        }
+                // In order to add columns for seen and unseen values, we proceed in two steps:
+                // 1: remove unknown values
+                let seen_iter = groups_iter().filter(|(av, _)| known_values.contains(av));
 
-        // If the set of values has been predefined, we need to add empty columns for those that we
-        // did not encounter in the data.
-        if let Some(values_set) = valid_values {
-            let own = found_values.iter().collect::<Vec<_>>();
-            let seen_set = own.iter().collect();
-            let new_columns: Vec<_> = values_set
-                .par_difference(&seen_set)
-                .map(|av| {
-                    let name = format_value(av, col_name, sep);
-                    dummies_empty(self.len(), &name)
-                })
-                .collect();
-            columns.extend(new_columns);
-        }
+                // 2: add groups which have not been encountered. Here, we use empty index groups
+                // to represent "no indicators"
+                let empty = vec![];
+                let unseen_iter = unseen_values
+                    .into_iter()
+                    .map(|av| ((*av).clone(), GroupsIndicator::Idx((0, &empty))));
+
+                let columns =
+                    dummy_series_for_values(col_name, len, seen_iter.chain(unseen_iter), sep);
+
+                // Eventually, we add the column with the "unknown" indicators if available
+                if let Some(column) = unknown_column {
+                    columns.chain(std::iter::once(column)).collect()
+                } else {
+                    columns.collect()
+                }
+            }
+            None => {
+                // If there are no predefined values, we can simply build the series from the
+                // groups we found.
+                dummy_series_for_values(col_name, len, groups_iter(), sep).collect()
+            }
+        };
 
         Ok(DataFrame::new_no_checks(sort_columns(columns)))
-    }
-}
-
-#[inline]
-fn filter_value(
-    av: &AnyValue,
-    include_null: bool,
-    valid_values: &Option<PlHashSet<&AnyValue>>,
-) -> bool {
-    match av {
-        // We need to filter out `null` groups here if we don't want them to end up in the result.
-        // TODO: move this filter to the groupby call once we can ignore NULL values there.
-        // See https://github.com/pola-rs/polars/issues/7943 for progress.
-        AnyValue::Null => include_null,
-        // We also need to check whether the value is in the set of allowed values
-        _ => match valid_values {
-            None => true,
-            Some(values_set) => values_set.contains(av),
-        },
     }
 }
 
@@ -113,35 +112,52 @@ fn format_value(av: &AnyValue, col_name: &str, sep: &str) -> String {
     }
 }
 
-fn dummies_helper_idx(groups: &[IdxSize], len: usize, name: &str) -> DummyCa {
-    let mut av = vec![0 as DummyType; len];
+fn dummy_series_for_values<'a>(
+    col_name: &'a str,
+    len: usize,
+    values_and_groups: impl Iterator<Item = (AnyValue<'a>, GroupsIndicator<'a>)> + 'a,
+    sep: &'a str,
+) -> impl Iterator<Item = Series> + 'a {
+    return values_and_groups.map(move |(av, group)| {
+        let name = format_value(&av, col_name, sep);
+        dummy_series_with_name(&name, len, std::iter::once(group))
+    });
+}
 
-    for &idx in groups {
+#[inline]
+fn dummy_series_with_name<'a>(
+    name: &str,
+    len: usize,
+    groups: impl Iterator<Item = GroupsIndicator<'a>>,
+) -> Series {
+    let mut av = vec![0 as DummyType; len];
+    for group in groups {
+        match group {
+            GroupsIndicator::Idx((_, indices)) => {
+                dummies_idx_insert(&mut av, indices);
+            }
+            GroupsIndicator::Slice([offset, len]) => {
+                dummies_slice_insert(&mut av, offset, len);
+            }
+        };
+    }
+    DummyCa::from_vec(name, av).into_series()
+}
+
+#[inline]
+fn dummies_idx_insert(av: &mut Vec<DummyType>, indices: &[IdxSize]) {
+    for &idx in indices {
         let elem = unsafe { av.get_unchecked_mut(idx as usize) };
         *elem = 1;
     }
-
-    ChunkedArray::from_vec(name, av)
 }
 
-fn dummies_helper_slice(
-    group_offset: IdxSize,
-    group_len: IdxSize,
-    len: usize,
-    name: &str,
-) -> DummyCa {
-    let mut av = vec![0 as DummyType; len];
-
+#[inline]
+fn dummies_slice_insert(av: &mut Vec<DummyType>, group_offset: IdxSize, group_len: IdxSize) {
     for idx in group_offset..(group_offset + group_len) {
         let elem = unsafe { av.get_unchecked_mut(idx as usize) };
         *elem = 1;
     }
-
-    ChunkedArray::from_vec(name, av)
-}
-
-fn dummies_empty(len: usize, name: &str) -> Series {
-    DummyCa::from_vec(name, vec![0 as DummyType; len]).into_series()
 }
 
 fn sort_columns(mut columns: Vec<Series>) -> Vec<Series> {
