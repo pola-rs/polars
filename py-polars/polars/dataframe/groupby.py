@@ -676,7 +676,7 @@ class GroupBy(Generic[DF]):
         """
         return self.agg(F.all().n_unique())
 
-    def approx_n_unique(self, precision: int = 16) -> DF:
+    def approx_unique(self, precision: int = 16) -> DF:
         """
         Approx count unique values per group.
 
@@ -700,7 +700,7 @@ class GroupBy(Generic[DF]):
         ...         "d": ["Apple", "Banana", "Apple", "Apple", "Banana", "Banana"],
         ...     }
         ... )
-        >>> df.groupby("d", maintain_order=True).approx_n_unique()
+        >>> df.groupby("d", maintain_order=True).approx_unique()
         shape: (2, 3)
         ┌────────┬─────┬─────┐
         │ d      ┆ a   ┆ b   │
@@ -712,7 +712,7 @@ class GroupBy(Generic[DF]):
         └────────┴─────┴─────┘
 
         """
-        return self.agg(F.all().approx_n_unique(precision))
+        return self.agg(F.all().approx_unique(precision))
 
     def quantile(
         self, quantile: float, interpolation: RollingInterpolationMethod = "nearest"

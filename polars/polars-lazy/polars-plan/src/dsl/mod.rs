@@ -354,11 +354,6 @@ impl Expr {
         AggExpr::NUnique(Box::new(self)).into()
     }
 
-    /// Get the approximate number of unique values in the groups.
-    pub fn approx_n_unique(self, precision: u8) -> Self {
-        AggExpr::ApproxNUnique(Box::new(self), precision).into()
-    }
-
     /// Get the first value in the group.
     pub fn first(self) -> Self {
         AggExpr::First(Box::new(self)).into()
@@ -1192,6 +1187,16 @@ impl Expr {
     #[cfg(feature = "is_unique")]
     pub fn is_unique(self) -> Self {
         self.apply_private(FunctionExpr::IsUnique)
+    }
+
+    /// Get the approximate count of unique values.
+    #[cfg(feature = "approx_unique")]
+    pub fn approx_unique(self, precision: u8) -> Self {
+        self.apply_private(FunctionExpr::ApproxUnique(precision))
+            .with_function_options(|mut options| {
+                options.auto_explode = true;
+                options
+            })
     }
 
     /// and operation

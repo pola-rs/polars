@@ -1603,6 +1603,7 @@ dependencies = [
  "base64",
  "either",
  "hex",
+ "hyperloglogplus",
  "jsonpath_lib",
  "memchr",
  "polars-arrow",

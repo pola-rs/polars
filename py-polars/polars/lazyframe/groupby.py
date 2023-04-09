@@ -567,7 +567,7 @@ class LazyGroupBy(Generic[LDF]):
         """
         return self.agg(F.all().n_unique())
 
-    def approx_n_unique(self, precision: int = 16) -> LDF:
+    def approx_unique(self, precision: int = 16) -> LDF:
         """
         Approx count unique values per group.
 
@@ -591,7 +591,7 @@ class LazyGroupBy(Generic[LDF]):
         ...         "d": ["Apple", "Banana", "Apple", "Apple", "Banana", "Banana"],
         ...     }
         ... ).lazy()
-        >>> ldf.groupby("d", maintain_order=True).approx_n_unique().collect()
+        >>> ldf.groupby("d", maintain_order=True).approx_unique().collect()
         shape: (2, 3)
         ┌────────┬─────┬─────┐
         │ d      ┆ a   ┆ b   │
@@ -603,7 +603,7 @@ class LazyGroupBy(Generic[LDF]):
         └────────┴─────┴─────┘
 
         """
-        return self.agg(F.all().approx_n_unique(precision))
+        return self.agg(F.all().approx_unique(precision))
 
     def quantile(
         self, quantile: float, interpolation: RollingInterpolationMethod = "nearest"

@@ -839,6 +839,11 @@ impl PyLazyFrame {
         ldf.melt(args).into()
     }
 
+    pub fn approx_unique(&self, precision: u8) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.approx_unique(precision).into()
+    }
+
     pub fn with_row_count(&self, name: &str, offset: Option<IdxSize>) -> Self {
         let ldf = self.ldf.clone();
         ldf.with_row_count(name, offset).into()

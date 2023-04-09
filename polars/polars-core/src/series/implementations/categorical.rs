@@ -320,10 +320,6 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.0.n_unique()
     }
 
-    fn approx_n_unique(&self, precision: u8) -> PolarsResult<usize> {
-        self.0.approx_n_unique(precision)
-    }
-
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         self.0.logical().arg_unique()
     }

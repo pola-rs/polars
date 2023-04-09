@@ -2708,7 +2708,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.n_unique())
 
-    def approx_n_unique(self, precision: int = 16) -> Self:
+    def approx_unique(self, precision: int = 16) -> Self:
         """
         Approx count unique values.
 
@@ -2726,7 +2726,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
-        >>> df.select(pl.col("a").approx_n_unique())
+        >>> df.select(pl.col("a").approx_unique())
         shape: (1, 1)
         ┌─────┐
         │ a   │
@@ -2737,7 +2737,7 @@ class Expr:
         └─────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.approx_n_unique(precision))
+        return self._from_pyexpr(self._pyexpr.approx_unique(precision))
 
     def null_count(self) -> Self:
         """

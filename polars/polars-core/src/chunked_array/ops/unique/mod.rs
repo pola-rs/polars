@@ -63,11 +63,6 @@ impl<T: PolarsObject> ChunkUnique<ObjectType<T>> for ObjectChunked<T> {
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         polars_bail!(opq = arg_unique, self.dtype());
     }
-
-    fn estimate_approx(&self, mut e: HyperLogLogPlus<AnyValue, RandomState>) -> f64 {
-        self.into_iter().for_each(|item| e.insert_any(&item));
-        e.count()
-    }
 }
 
 fn fill_set<A>(a: impl Iterator<Item = A>) -> PlHashSet<A>

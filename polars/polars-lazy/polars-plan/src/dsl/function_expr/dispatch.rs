@@ -32,6 +32,11 @@ pub(super) fn is_duplicated(s: &Series) -> PolarsResult<Series> {
     polars_ops::prelude::is_duplicated(s).map(|ca| ca.into_series())
 }
 
+#[cfg(feature = "approx_unique")]
+pub(super) fn approx_unique(s: &Series, precision: u8) -> PolarsResult<Series> {
+    polars_ops::prelude::approx_unique(s, precision)
+}
+
 #[cfg(feature = "diff")]
 pub(super) fn diff(s: &Series, n: usize, null_behavior: NullBehavior) -> PolarsResult<Series> {
     Ok(s.diff(n, null_behavior))

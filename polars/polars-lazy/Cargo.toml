@@ -70,6 +70,7 @@ list_count = ["polars-ops/list_count", "polars-plan/list_count"]
 true_div = ["polars-plan/true_div"]
 
 # operations
+approx_unique = ["polars-plan/approx_unique"]
 is_in = ["polars-plan/is_in"]
 repeat_by = ["polars-plan/repeat_by"]
 round_series = ["polars-plan/round_series", "polars-ops/round_series"]

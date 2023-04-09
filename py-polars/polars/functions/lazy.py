@@ -910,7 +910,7 @@ def n_unique(column: str | Series) -> Expr | int:
     return col(column).n_unique()
 
 
-def approx_n_unique(column: str | Series, precision: int = 16) -> Expr | int:
+def approx_unique(column: str, precision: int = 16) -> Expr:
     """
     Approx count unique values.
 
@@ -930,7 +930,7 @@ def approx_n_unique(column: str | Series, precision: int = 16) -> Expr | int:
     Examples
     --------
     >>> df = pl.DataFrame({"a": [1, 8, 1], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
-    >>> df.select(pl.approx_n_unique("a"))
+    >>> df.select(pl.approx_unique("a"))
     shape: (1, 1)
     ┌─────┐
     │ a   │
@@ -939,13 +939,9 @@ def approx_n_unique(column: str | Series, precision: int = 16) -> Expr | int:
     ╞═════╡
     │ 2   │
     └─────┘
-    >>> pl.approx_n_unique(df["a"], precision=12)
-    2
 
     """
-    if isinstance(column, pli.Series):
-        return column.approx_n_unique(precision)
-    return col(column).approx_n_unique(precision)
+    return col(column).approx_unique(precision)
 
 
 @overload
