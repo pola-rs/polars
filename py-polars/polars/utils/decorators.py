@@ -19,9 +19,7 @@ if TYPE_CHECKING:
     T = TypeVar("T")
 
 
-def deprecated_alias(
-    *, stacklevel: int = 3, **aliases: str
-) -> Callable[[Callable[P, T]], Callable[P, T]]:
+def deprecated_alias(**aliases: str) -> Callable[[Callable[P, T]], Callable[P, T]]:
     """
     Deprecate a function or method argument.
 
@@ -35,7 +33,7 @@ def deprecated_alias(
     def deco(function: Callable[P, T]) -> Callable[P, T]:
         @functools.wraps(function)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-            _rename_kwargs(function.__name__, kwargs, aliases, stacklevel=stacklevel)
+            _rename_kwargs(function.__name__, kwargs, aliases)
             return function(*args, **kwargs)
 
         return wrapper
@@ -47,8 +45,6 @@ def _rename_kwargs(
     func_name: str,
     kwargs: dict[str, object],
     aliases: dict[str, str],
-    *,
-    stacklevel: int = 3,
 ) -> None:
     """
     Rename the keyword arguments of a function.
@@ -68,7 +64,7 @@ def _rename_kwargs(
                     f" `{new}` instead."
                 ),
                 category=DeprecationWarning,
-                stacklevel=stacklevel,
+                stacklevel=find_stacklevel(),
             )
             kwargs[new] = kwargs.pop(alias)
 
@@ -76,8 +72,6 @@ def _rename_kwargs(
 def deprecate_nonkeyword_arguments(
     allowed_args: list[str] | None = None,
     message: str | None = None,
-    *,
-    stacklevel: int = 2,
 ) -> Callable[[Callable[P, T]], Callable[P, T]]:
     """
     Decorator to deprecate the use of non-keyword arguments of a function.
@@ -91,8 +85,6 @@ def deprecate_nonkeyword_arguments(
         default value.
     message
         Optionally overwrite the default warning message.
-    stacklevel
-        Stacklevel with which to raise warning.
     """
 
     def decorate(function: Callable[P, T]) -> Callable[P, T]:
@@ -134,7 +126,7 @@ def deprecate_nonkeyword_arguments(
         @functools.wraps(function)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             if len(args) > num_allowed_args:
-                warnings.warn(msg, DeprecationWarning, stacklevel=stacklevel)
+                warnings.warn(msg, DeprecationWarning, stacklevel=find_stacklevel())
             return function(*args, **kwargs)
 
         wrapper.__signature__ = new_sig  # type: ignore[attr-defined]
