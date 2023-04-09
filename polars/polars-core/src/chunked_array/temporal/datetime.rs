@@ -128,8 +128,8 @@ impl DatetimeChunked {
                         replace_timezone(
                             arr,
                             self.time_unit().to_arrow(),
-                            to.to_string(),
-                            from.to_string(),
+                            to,
+                            from,
                         )
                     })
                     .collect::<PolarsResult<_>>()?;
@@ -143,8 +143,8 @@ impl DatetimeChunked {
                         replace_timezone(
                             arr,
                             self.time_unit().to_arrow(),
-                            "UTC".to_string(),
-                            from.to_string(),
+                            "UTC",
+                            from,
                         )
                     })
                     .collect::<PolarsResult<_>>()?;
@@ -158,8 +158,8 @@ impl DatetimeChunked {
                         replace_timezone(
                             arr,
                             self.time_unit().to_arrow(),
-                            to.to_string(),
-                            "UTC".to_string(),
+                            to,
+                            "UTC",
                         )
                     })
                     .collect::<PolarsResult<_>>()?;
