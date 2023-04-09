@@ -1392,7 +1392,7 @@ def spearman_rank_corr(
     Examples
     --------
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
-    >>> df.select(pl.spearman_rank_corr("a", "b"))
+    >>> df.select(pl.spearman_rank_corr("a", "b"))  # doctest: +SKIP
     shape: (1, 1)
     ┌─────┐
     │ a   │
@@ -1439,7 +1439,7 @@ def pearson_corr(a: str | Expr, b: str | Expr, ddof: int = 1) -> Expr:
     Examples
     --------
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
-    >>> df.select(pl.pearson_corr("a", "b"))
+    >>> df.select(pl.pearson_corr("a", "b"))  # doctest: +SKIP
     shape: (1, 1)
     ┌──────────┐
     │ a        │

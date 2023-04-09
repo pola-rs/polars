@@ -6216,7 +6216,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
-        >>> df.select(pl.col("a").sample(frac=1.0, with_replacement=True, seed=1))
+        >>> df.select(pl.col("a").sample(fraction=1.0, with_replacement=True, seed=1))
         shape: (3, 1)
         ┌─────┐
         │ a   │
