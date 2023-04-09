@@ -122,14 +122,14 @@ impl DatetimeChunked {
     pub fn replace_time_zone(
         &self,
         time_zone: Option<&str>,
-        is_earliest: Option<bool>,
+        use_earliest: Option<bool>,
     ) -> PolarsResult<DatetimeChunked> {
         match (self.time_zone(), time_zone) {
             (Some(from), Some(to)) => {
                 let chunks = self
                     .downcast_iter()
                     .map(|arr| {
-                        replace_timezone(arr, self.time_unit().to_arrow(), to, from, is_earliest)
+                        replace_timezone(arr, self.time_unit().to_arrow(), to, from, use_earliest)
                     })
                     .collect::<PolarsResult<_>>()?;
                 let out = unsafe { ChunkedArray::from_chunks(self.name(), chunks) };
@@ -139,7 +139,13 @@ impl DatetimeChunked {
                 let chunks = self
                     .downcast_iter()
                     .map(|arr| {
-                        replace_timezone(arr, self.time_unit().to_arrow(), "UTC", from, is_earliest)
+                        replace_timezone(
+                            arr,
+                            self.time_unit().to_arrow(),
+                            "UTC",
+                            from,
+                            use_earliest,
+                        )
                     })
                     .collect::<PolarsResult<_>>()?;
                 let out = unsafe { ChunkedArray::from_chunks(self.name(), chunks) };
@@ -149,7 +155,7 @@ impl DatetimeChunked {
                 let chunks = self
                     .downcast_iter()
                     .map(|arr| {
-                        replace_timezone(arr, self.time_unit().to_arrow(), to, "UTC", is_earliest)
+                        replace_timezone(arr, self.time_unit().to_arrow(), to, "UTC", use_earliest)
                     })
                     .collect::<PolarsResult<_>>()?;
                 let out = unsafe { ChunkedArray::from_chunks(self.name(), chunks) };

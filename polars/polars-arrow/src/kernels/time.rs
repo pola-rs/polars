@@ -17,15 +17,15 @@ fn convert_to_naive_local<T1: TimeZone + std::fmt::Debug + std::fmt::Display, T2
     from_tz: &T1,
     to_tz: &T2,
     ndt: NaiveDateTime,
-    is_earliest: Option<bool>,
+    use_earliest: Option<bool>,
 ) -> Result<NaiveDateTime> {
     match from_tz.from_local_datetime(&ndt) {
         LocalResult::Single(dt) => Ok(dt.with_timezone(to_tz).naive_local()),
-        LocalResult::Ambiguous(dt_earliest, dt_latest) => match is_earliest {
+        LocalResult::Ambiguous(dt_earliest, dt_latest) => match use_earliest {
             Some(true) => Ok(dt_earliest.with_timezone(to_tz).naive_local()),
             Some(false) => Ok(dt_latest.with_timezone(to_tz).naive_local()),
             None => Err(ArrowError::InvalidArgumentError(
-                format!("datetime '{}' is ambiguous in time zone '{}'. Please use `is_earliest` to tell how it should be localized.", ndt, from_tz)
+                format!("datetime '{}' is ambiguous in time zone '{}'. Please use `use_earliest` to tell how it should be localized.", ndt, from_tz)
             ))
         },
         LocalResult::None => Err(ArrowError::InvalidArgumentError(
@@ -44,7 +44,7 @@ fn convert_to_timestamp<T1: TimeZone + std::fmt::Debug + std::fmt::Display, T2: 
     to_tz: T2,
     arr: &PrimitiveArray<i64>,
     tu: TimeUnit,
-    is_earliest: Option<bool>,
+    use_earliest: Option<bool>,
 ) -> PolarsResult<ArrayRef> {
     match tu {
         TimeUnit::Millisecond => {
@@ -52,7 +52,7 @@ fn convert_to_timestamp<T1: TimeZone + std::fmt::Debug + std::fmt::Display, T2: 
                 arr,
                 |value| {
                     let ndt = timestamp_ms_to_datetime(value);
-                    Ok(convert_to_naive_local(&from_tz, &to_tz, ndt, is_earliest)?
+                    Ok(convert_to_naive_local(&from_tz, &to_tz, ndt, use_earliest)?
                         .timestamp_millis())
                 },
                 ArrowDataType::Int64,
@@ -64,7 +64,7 @@ fn convert_to_timestamp<T1: TimeZone + std::fmt::Debug + std::fmt::Display, T2: 
                 arr,
                 |value| {
                     let ndt = timestamp_us_to_datetime(value);
-                    Ok(convert_to_naive_local(&from_tz, &to_tz, ndt, is_earliest)?
+                    Ok(convert_to_naive_local(&from_tz, &to_tz, ndt, use_earliest)?
                         .timestamp_micros())
                 },
                 ArrowDataType::Int64,
@@ -76,7 +76,7 @@ fn convert_to_timestamp<T1: TimeZone + std::fmt::Debug + std::fmt::Display, T2: 
                 arr,
                 |value| {
                     let ndt = timestamp_ns_to_datetime(value);
-                    Ok(convert_to_naive_local(&from_tz, &to_tz, ndt, is_earliest)?
+                    Ok(convert_to_naive_local(&from_tz, &to_tz, ndt, use_earliest)?
                         .timestamp_nanos())
                 },
                 ArrowDataType::Int64,
@@ -93,21 +93,21 @@ pub fn replace_timezone(
     tu: TimeUnit,
     from: &str,
     to: &str,
-    is_earliest: Option<bool>,
+    use_earliest: Option<bool>,
 ) -> PolarsResult<ArrayRef> {
     Ok(match from.parse::<chrono_tz::Tz>() {
         Ok(from_tz) => match to.parse::<chrono_tz::Tz>() {
-            Ok(to_tz) => convert_to_timestamp(from_tz, to_tz, arr, tu, is_earliest)?,
+            Ok(to_tz) => convert_to_timestamp(from_tz, to_tz, arr, tu, use_earliest)?,
             Err(_) => match parse_offset(to) {
-                Ok(to_tz) => convert_to_timestamp(from_tz, to_tz, arr, tu, is_earliest)?,
+                Ok(to_tz) => convert_to_timestamp(from_tz, to_tz, arr, tu, use_earliest)?,
                 Err(_) => polars_bail!(ComputeError: "unable to parse time zone: '{}'", to),
             },
         },
         Err(_) => match parse_offset(from) {
             Ok(from_tz) => match to.parse::<chrono_tz::Tz>() {
-                Ok(to_tz) => convert_to_timestamp(from_tz, to_tz, arr, tu, is_earliest)?,
+                Ok(to_tz) => convert_to_timestamp(from_tz, to_tz, arr, tu, use_earliest)?,
                 Err(_) => match parse_offset(to) {
-                    Ok(to_tz) => convert_to_timestamp(from_tz, to_tz, arr, tu, is_earliest)?,
+                    Ok(to_tz) => convert_to_timestamp(from_tz, to_tz, arr, tu, use_earliest)?,
                     Err(_) => polars_bail!(ComputeError: "unable to parse time zone: '{}'", to),
                 },
             },

@@ -1100,12 +1100,12 @@ impl PyExpr {
     pub fn dt_replace_time_zone(
         &self,
         time_zone: Option<String>,
-        is_earliest: Option<bool>,
+        use_earliest: Option<bool>,
     ) -> PyExpr {
         self.inner
             .clone()
             .dt()
-            .replace_time_zone(time_zone, is_earliest)
+            .replace_time_zone(time_zone, use_earliest)
             .into()
     }
 

@@ -245,10 +245,10 @@ pub(super) fn round(s: &Series, every: &str, offset: &str) -> PolarsResult<Serie
 pub(super) fn replace_timezone(
     s: &Series,
     time_zone: Option<&str>,
-    is_earliest: Option<bool>,
+    use_earliest: Option<bool>,
 ) -> PolarsResult<Series> {
     let ca = s.datetime()?;
-    ca.replace_time_zone(time_zone, is_earliest)
+    ca.replace_time_zone(time_zone, use_earliest)
         .map(|ca| ca.into_series())
 }
 

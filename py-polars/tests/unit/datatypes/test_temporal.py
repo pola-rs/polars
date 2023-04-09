@@ -2211,7 +2211,7 @@ def test_replace_time_zone_from_naive() -> None:
 
 
 @pytest.mark.parametrize(
-    ("is_earliest", "expected"),
+    ("use_earliest", "expected"),
     [
         (
             False,
@@ -2223,18 +2223,20 @@ def test_replace_time_zone_from_naive() -> None:
         ),
     ],
 )
-def test_replace_time_zone_ambiguous_with_is_earliest(
-    is_earliest: bool, expected: datetime
+def test_replace_time_zone_ambiguous_with_use_earliest(
+    use_earliest: bool, expected: datetime
 ) -> None:
     ts = pl.Series(["2018-10-28 02:30:00"]).str.strptime(pl.Datetime)
-    result = ts.dt.replace_time_zone("Europe/Brussels", is_earliest=is_earliest).item()
+    result = ts.dt.replace_time_zone(
+        "Europe/Brussels", use_earliest=use_earliest
+    ).item()
     assert result == expected
 
 
 def test_replace_time_zone_ambiguous_raises() -> None:
     ts = pl.Series(["2018-10-28 02:30:00"]).str.strptime(pl.Datetime)
     with pytest.raises(
-        ArrowError, match="Please use `is_earliest` to tell how it should be localized"
+        ArrowError, match="Please use `use_earliest` to tell how it should be localized"
     ):
         ts.dt.replace_time_zone("Europe/Brussels")
 

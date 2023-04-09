@@ -1077,7 +1077,7 @@ class DateTimeNameSpace:
         """
 
     def replace_time_zone(
-        self, time_zone: str | None, *, is_earliest: bool | None = None
+        self, time_zone: str | None, *, use_earliest: bool | None = None
     ) -> Series:
         """
         Replace time zone for a Series of type Datetime.
@@ -1089,7 +1089,7 @@ class DateTimeNameSpace:
         ----------
         time_zone
             Time zone for the `Datetime` Series. Pass `None` to unset time zone.
-        is_earliest
+        use_earliest
             If localizing an ambiguous datetime (say, due to daylight saving time),
             determine whether to localize to the earliest datetime or not.
             If None (the default), then ambiguous datetimes will raise.
@@ -1128,7 +1128,7 @@ class DateTimeNameSpace:
         │ 2020-07-01 01:00:00 BST     ┆ 2020-07-01 01:00:00 CEST       │
         └─────────────────────────────┴────────────────────────────────┘
 
-        You can use `is_earliest` to deal with ambiguous datetimes:
+        You can use `use_earliest` to deal with ambiguous datetimes:
 
         >>> dates = [
         ...     "2018-10-28 01:30",
@@ -1142,12 +1142,12 @@ class DateTimeNameSpace:
         ...     ts_localized=pl.when(pl.col("ts").is_first())
         ...     .then(
         ...         pl.col("ts").dt.replace_time_zone(
-        ...             "Europe/Brussels", is_earliest=True
+        ...             "Europe/Brussels", use_earliest=True
         ...         )
         ...     )
         ...     .otherwise(
         ...         pl.col("ts").dt.replace_time_zone(
-        ...             "Europe/Brussels", is_earliest=False
+        ...             "Europe/Brussels", use_earliest=False
         ...         )
         ...     )
         ... )
