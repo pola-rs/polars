@@ -118,10 +118,10 @@ fn dummy_series_for_values<'a>(
     values_and_groups: impl Iterator<Item = (AnyValue<'a>, GroupsIndicator<'a>)> + 'a,
     sep: &'a str,
 ) -> impl Iterator<Item = Series> + 'a {
-    return values_and_groups.map(move |(av, group)| {
+    values_and_groups.map(move |(av, group)| {
         let name = format_value(&av, col_name, sep);
         dummy_series_with_name(&name, len, std::iter::once(group))
-    });
+    })
 }
 
 #[inline]
@@ -145,7 +145,7 @@ fn dummy_series_with_name<'a>(
 }
 
 #[inline]
-fn dummies_idx_insert(av: &mut Vec<DummyType>, indices: &[IdxSize]) {
+fn dummies_idx_insert(av: &mut [DummyType], indices: &[IdxSize]) {
     for &idx in indices {
         let elem = unsafe { av.get_unchecked_mut(idx as usize) };
         *elem = 1;
@@ -153,7 +153,7 @@ fn dummies_idx_insert(av: &mut Vec<DummyType>, indices: &[IdxSize]) {
 }
 
 #[inline]
-fn dummies_slice_insert(av: &mut Vec<DummyType>, group_offset: IdxSize, group_len: IdxSize) {
+fn dummies_slice_insert(av: &mut [DummyType], group_offset: IdxSize, group_len: IdxSize) {
     for idx in group_offset..(group_offset + group_len) {
         let elem = unsafe { av.get_unchecked_mut(idx as usize) };
         *elem = 1;
