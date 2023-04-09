@@ -26,7 +26,7 @@ fn validate_time_zone(tz: TimeZone) -> PolarsResult<()> {
         Ok(_) => Ok(()),
         Err(_) => match tz.parse::<Tz>() {
             Ok(_) => Ok(()),
-            Err(_) => polars_bail!(ComputeError: "unable to parse timezone: '{}'", tz),
+            Err(_) => polars_bail!(ComputeError: "unable to parse time zone: '{}'", tz),
         },
     }
 }

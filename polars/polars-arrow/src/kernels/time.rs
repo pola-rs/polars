@@ -90,7 +90,7 @@ pub fn replace_timezone(
             Ok(to_tz) => convert_to_timestamp(from_tz, to_tz, arr, tu)?,
             Err(_) => match parse_offset(to) {
                 Ok(to_tz) => convert_to_timestamp(from_tz, to_tz, arr, tu)?,
-                Err(_) => polars_bail!(ComputeError: "unable to parse time zone: {}", to),
+                Err(_) => polars_bail!(ComputeError: "unable to parse time zone: '{}'", to),
             },
         },
         Err(_) => match parse_offset(from) {
@@ -98,10 +98,10 @@ pub fn replace_timezone(
                 Ok(to_tz) => convert_to_timestamp(from_tz, to_tz, arr, tu)?,
                 Err(_) => match parse_offset(to) {
                     Ok(to_tz) => convert_to_timestamp(from_tz, to_tz, arr, tu)?,
-                    Err(_) => polars_bail!(ComputeError: "unable to parse time zone: {}", to),
+                    Err(_) => polars_bail!(ComputeError: "unable to parse time zone: '{}'", to),
                 },
             },
-            Err(_) => polars_bail!(ComputeError: "unable to parse time zone: {}", from),
+            Err(_) => polars_bail!(ComputeError: "unable to parse time zone: '{}'", from),
         },
     })
 }
