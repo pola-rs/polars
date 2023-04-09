@@ -1,8 +1,92 @@
 use std::cell::UnsafeCell;
-use polars_arrow::trusted_len::PushUnchecked;
-use super::*;
 
-pub(super) struct HashTable<const FIXED: bool> {
+use polars_arrow::trusted_len::PushUnchecked;
+
+use super::*;
+use crate::pipeline::PARTITION_SIZE;
+
+const SPILL_SIZE: usize = 128;
+
+#[derive(Clone)]
+struct SpillPartitions {
+    // outer vec: partitions (factor of 2)
+    // inner vec: number of keys + number of aggregated columns
+    partitions: PartitionVec<Vec<AnyValueBufferTrusted<'static>>>,
+    // outer vec: partitions
+    // inner vec: aggregation columns
+    finished: PartitionVec<Vec<Series>>,
+}
+
+impl SpillPartitions {
+    fn new(keys: &[DataType], aggs: &[DataType]) -> Self {
+        let n_spills = keys.len() + aggs.len();
+
+        let mut buf = Vec::with_capacity(n_spills);
+        for dtype in keys {
+            let builder = AnyValueBufferTrusted::new(dtype, 0);
+            buf.push(builder);
+        }
+        for dtype in aggs {
+            let builder = AnyValueBufferTrusted::new(dtype, 0);
+            buf.push(builder);
+        }
+
+        let partitions = (0..PARTITION_SIZE).map(|partition| buf.clone()).collect();
+
+        Self {
+            partitions,
+            finished: vec![],
+        }
+    }
+}
+
+impl SpillPartitions {
+    fn insert(&mut self, hash: u64, keys: &[AnyValue<'_>], aggs: &mut [SeriesPhysIter]) {
+        let partition = hash_to_partition(hash, self.partitions.len());
+        unsafe {
+            let partitions = self.partitions.get_unchecked_release_mut(partition);
+            debug_assert_eq!(keys.len(), partitions.len());
+
+            // amortize the loop counter
+            for i in 0..keys.len() {
+                let av = keys.get_unchecked(i);
+                let buf = partitions.get_unchecked_mut(i);
+                // safety: we can trust the input types to be of consistent dtype
+                buf.add_unchecked_owned_physical(av);
+            }
+            let mut i = keys.len();
+            for agg in aggs {
+                let av = agg.next().unwrap_unchecked_release();
+                let buf = partitions.get_unchecked_mut(i);
+                buf.add_unchecked_owned_physical(&av);
+                i += 1;
+            }
+        };
+    }
+
+    fn finish(&mut self) {
+        if self.finished.is_empty() {
+            let parts = std::mem::take(&mut self.partitions);
+            self.finished = parts
+                .into_iter()
+                .map(|part| part.into_iter().map(|v| v.into_series()).collect())
+                .collect();
+        }
+    }
+
+    fn combine(&mut self, other: &mut Self) {
+        self.finish();
+        other.finish();
+
+        for (part_self, part_other) in self.finished.iter_mut().zip(other.finished.iter()) {
+            for (s, other) in part_self.iter_mut().zip(part_other.iter()) {
+                s.append(other).unwrap();
+            }
+        }
+    }
+}
+
+pub(super) struct ThreadLocalTable {
     inner_map: PlIdHashMap<Key, IdxSize>,
     keys: Vec<AnyValue<'static>>,
     // the aggregation that are in process
@@ -10,32 +94,52 @@ pub(super) struct HashTable<const FIXED: bool> {
     running_aggregations: Vec<AggregateFunction>,
     // n aggregation function constructors
     agg_constructors: Vec<AggregateFunction>,
+    spill_partitions: SpillPartitions,
     // amortize alloc
     // lifetime is tied to self, so we use static
     // to ensure bck to leave us be
     keys_scratch: UnsafeCell<Vec<AnyValue<'static>>>,
     output_schema: SchemaRef,
     pub num_keys: usize,
-    spill_size: usize,
 }
 
-impl<const FIXED: bool> HashTable<FIXED> {
+impl ThreadLocalTable {
+    pub(super) fn split(&self) -> Self {
+        Self {
+            inner_map: Default::default(),
+            keys: Default::default(),
+            running_aggregations: Default::default(),
+            agg_constructors: self.agg_constructors.iter().map(|ac| ac.split()).collect(),
+            spill_partitions: self.spill_partitions.clone(),
+            // ensure the capacity is set
+            // later we push without checking bounds
+            keys_scratch: unsafe {
+                UnsafeCell::new(Vec::with_capacity((*self.keys_scratch.get()).capacity()))
+            },
+            num_keys: self.num_keys,
+            output_schema: self.output_schema.clone(),
+        }
+    }
 
     pub(super) fn new(
         agg_constructors: Vec<AggregateFunction>,
         key_dtypes: &[DataType],
         output_schema: SchemaRef,
-        spill_size: Option<usize>,
     ) -> Self {
-        assert_eq!(FIXED, spill_size.is_some());
+        let agg_dtypes = agg_constructors
+            .iter()
+            .map(|agg| agg.dtype())
+            .collect::<Vec<_>>();
+        let spill_partitions = SpillPartitions::new(key_dtypes, &agg_dtypes);
+
         Self {
             inner_map: Default::default(),
             keys: Default::default(),
             running_aggregations: Default::default(),
             agg_constructors,
+            spill_partitions,
             keys_scratch: UnsafeCell::new(Vec::with_capacity(key_dtypes.len())),
             num_keys: key_dtypes.len(),
-            spill_size: spill_size.unwrap_or(usize::MAX),
             output_schema,
         }
     }
@@ -75,15 +179,13 @@ impl<const FIXED: bool> HashTable<FIXED> {
 
     /// # Safety
     /// Caller must ensure that `keys` and `agg_iters` are not depleted.
-    /// # Returns (hash, keys)
     pub(super) unsafe fn insert<'a>(
         &'a mut self,
         hash: u64,
         keys: &mut [SeriesPhysIter],
         agg_iters: &mut [SeriesPhysIter],
         chunk_index: IdxSize,
-    )
-        -> Option<(u64, &[AnyValue])> {
+    ) {
         // safety: no references
         let keys_scratch = unsafe { &mut *self.keys_scratch.get() };
         keys_scratch.clear();
@@ -112,17 +214,17 @@ impl<const FIXED: bool> HashTable<FIXED> {
                 // ensure the bck forgets this guy
                 std::mem::forget(entry);
 
-                if FIXED {
-                    if self.inner_map.len() > self.spill_size {
-                        unsafe {
-                            // take a hold of the entry again and ensure it gets dropped
-                            let borrow =
-                                borrow as *const RawVacantEntryMut<'a, Key, IdxSize, IdBuildHasher>;
-                            let _entry = std::ptr::read(borrow);
-                        }
-                        return Some((hash, keys_scratch))
+                if self.inner_map.len() > SPILL_SIZE {
+                    unsafe {
+                        // take a hold of the entry again and ensure it gets dropped
+                        let borrow =
+                            borrow as *const RawVacantEntryMut<'a, Key, IdxSize, IdBuildHasher>;
+                        let _entry = std::ptr::read(borrow);
                     }
-
+                    // safety: we can pass the `static` anyvalues
+                    // because the spill method will copy the bytes to their own buffers
+                    self.spill_partitions.insert(hash, keys_scratch, agg_iters);
+                    return;
                 }
 
                 let aggregation_idx = self.running_aggregations.len() as IdxSize;
@@ -158,8 +260,7 @@ impl<const FIXED: bool> HashTable<FIXED> {
             let agg_fn = unsafe { self.running_aggregations.get_unchecked_release_mut(i) };
 
             agg_fn.pre_agg(chunk_index, agg_iter.as_mut())
-        };
-        None
+        }
     }
 
     pub(super) fn combine(&mut self, other: &mut Self) {
@@ -226,17 +327,18 @@ impl<const FIXED: bool> HashTable<FIXED> {
                 }
             }
         }
+        self.spill_partitions.combine(&mut other.spill_partitions);
     }
 
     pub(super) fn finalize(
         &mut self,
         slice: &mut Option<(i64, usize)>,
-    ) -> Option<DataFrame> {
+    ) -> (Option<DataFrame>, Vec<Vec<Series>>) {
         let local_len = self.inner_map.len();
         let (skip_len, take_len) = if let Some((offset, slice_len)) = slice {
             if *offset as usize >= local_len {
                 *offset -= local_len as i64;
-                return None
+                return (None, std::mem::take(&mut self.spill_partitions.finished));
             } else {
                 let out = (*offset as usize, *slice_len);
                 *offset = 0;
@@ -298,6 +400,9 @@ impl<const FIXED: bool> HashTable<FIXED> {
         cols.extend(key_builders.into_iter().map(|buf| buf.into_series()));
         cols.extend(agg_builders.into_iter().map(|buf| buf.into_series()));
         physical_agg_to_logical(&mut cols, &self.output_schema);
-        Some(DataFrame::new_no_checks(cols))
+        (
+            Some(DataFrame::new_no_checks(cols)),
+            std::mem::take(&mut self.spill_partitions.finished),
+        )
     }
 }

@@ -1,13 +1,15 @@
 mod eval;
-mod hash_table;
+mod thread_local;
 mod key;
 mod sink;
+mod global;
+mod hash_table;
 
 use std::any::Any;
 use std::slice::SliceIndex;
 
 use eval::Eval;
-use hash_table::HashTbl;
+use thread_local::ThreadLocalTable;
 use hashbrown::hash_map::{RawEntryMut, RawVacantEntryMut};
 use polars_core::frame::row::{AnyValueBuffer, AnyValueBufferTrusted};
 use polars_core::series::SeriesPhysIter;
@@ -20,3 +22,5 @@ pub(crate) use sink::GenericGroupby2;
 use super::*;
 use crate::executors::sinks::groupby::aggregates::{AggregateFn, AggregateFunction};
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
+
+type PartitionVec<T> = Vec<T>;

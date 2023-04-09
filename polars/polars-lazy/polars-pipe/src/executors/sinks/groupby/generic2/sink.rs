@@ -5,7 +5,7 @@ use super::*;
 use crate::expressions::PhysicalPipedExpr;
 
 pub(crate) struct GenericGroupby2 {
-    thread_local_map: UnsafeCell<HashTbl>,
+    thread_local_map: UnsafeCell<ThreadLocalTable>,
     eval: Eval,
     slice: Option<(i64, usize)>,
 }
@@ -24,7 +24,7 @@ impl GenericGroupby2 {
             .map(|dt| dt.clone())
             .collect::<Vec<_>>();
         Self {
-            thread_local_map: UnsafeCell::new(HashTbl::new(
+            thread_local_map: UnsafeCell::new(ThreadLocalTable::new(
                 agg_constructors,
                 &key_dtypes,
                 output_schema,
