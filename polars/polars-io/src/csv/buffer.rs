@@ -522,9 +522,10 @@ pub(crate) fn init_buffers<'a>(
                     ignore_errors,
                 )),
                 #[cfg(feature = "dtype-datetime")]
-                &DataType::Datetime(tu, _) => Buffer::Datetime {
+                DataType::Datetime(tu, offset) => Buffer::Datetime {
                     buf: DatetimeField::new(name, capacity),
-                    tu,
+                    tu: *tu,
+                    offset: offset.clone(),
                 },
                 #[cfg(feature = "dtype-date")]
                 &DataType::Date => Buffer::Date(DatetimeField::new(name, capacity)),
@@ -556,6 +557,7 @@ pub(crate) enum Buffer<'a> {
     Datetime {
         buf: DatetimeField<Int64Type>,
         tu: TimeUnit,
+        offset: Option<String>,
     },
     #[cfg(feature = "dtype-date")]
     Date(DatetimeField<Int32Type>),
@@ -574,11 +576,11 @@ impl<'a> Buffer<'a> {
             Buffer::Float32(v) => v.finish().into_series(),
             Buffer::Float64(v) => v.finish().into_series(),
             #[cfg(feature = "dtype-datetime")]
-            Buffer::Datetime { buf, tu } => buf
+            Buffer::Datetime { buf, tu, offset } => buf
                 .builder
                 .finish()
                 .into_series()
-                .cast(&DataType::Datetime(tu, None))
+                .cast(&DataType::Datetime(tu, offset))
                 .unwrap(),
             #[cfg(feature = "dtype-date")]
             Buffer::Date(v) => v
