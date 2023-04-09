@@ -6092,7 +6092,6 @@ class DataFrame:
                 "will change from `'first'` to `None`. Please pass `'first'` to keep the "
                 "current behaviour, or `None` to accept the new one.",
                 DeprecationWarning,
-                # stacklevel=2,
                 stacklevel=find_stacklevel(),
             )
             aggregate_function = "first"
