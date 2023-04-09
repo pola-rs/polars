@@ -110,10 +110,13 @@ fn infer_field_schema(string: &str, try_parse_dates: bool) -> DataType {
             #[cfg(feature = "polars-time")]
             {
                 match date_infer::infer_pattern_single(&string[1..string.len() - 1]) {
-                    Some(Pattern::DatetimeYMD | Pattern::DatetimeDMY) => {
-                        DataType::Datetime(TimeUnit::Microseconds, None)
-                    }
-                    Some(Pattern::DateYMD | Pattern::DateDMY) => DataType::Date,
+                    Some(pattern_with_offset) => match pattern_with_offset.pattern {
+                        Pattern::DatetimeYMD | Pattern::DatetimeDMY => {
+                            DataType::Datetime(TimeUnit::Microseconds, None)
+                        }
+                        Pattern::DateYMD | Pattern::DateDMY => DataType::Date,
+                        _ => DataType::Utf8, // TODO: support tz-aware patterns
+                    },
                     None => DataType::Utf8,
                 }
             }
@@ -136,10 +139,13 @@ fn infer_field_schema(string: &str, try_parse_dates: bool) -> DataType {
         #[cfg(feature = "polars-time")]
         {
             match date_infer::infer_pattern_single(string) {
-                Some(Pattern::DatetimeYMD | Pattern::DatetimeDMY) => {
-                    DataType::Datetime(TimeUnit::Microseconds, None)
-                }
-                Some(Pattern::DateYMD | Pattern::DateDMY) => DataType::Date,
+                Some(pattern_with_offset) => match pattern_with_offset.pattern {
+                    Pattern::DatetimeYMD | Pattern::DatetimeDMY => {
+                        DataType::Datetime(TimeUnit::Microseconds, None)
+                    }
+                    Pattern::DateYMD | Pattern::DateDMY => DataType::Date,
+                    _ => DataType::Utf8, // TODO: support tz-aware patterns
+                },
                 None => DataType::Utf8,
             }
         }

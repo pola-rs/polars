@@ -428,18 +428,20 @@ where
             buf.builder.append_null();
             Ok(())
         }
-        Some(pattern) => match DatetimeInfer::<T::Native>::try_from(pattern) {
-            Ok(mut infer) => {
-                let parsed = infer.parse(val);
-                buf.compiled = Some(infer);
-                buf.builder.append_option(parsed);
-                Ok(())
+        Some(pattern_with_offset) => {
+            match DatetimeInfer::<T::Native>::try_from(pattern_with_offset.pattern) {
+                Ok(mut infer) => {
+                    let parsed = infer.parse(val, pattern_with_offset.offset);
+                    buf.compiled = Some(infer);
+                    buf.builder.append_option(parsed);
+                    Ok(())
+                }
+                Err(_) => {
+                    buf.builder.append_null();
+                    Ok(())
+                }
             }
-            Err(_) => {
-                buf.builder.append_null();
-                Ok(())
-            }
-        },
+        }
     }
 }
 

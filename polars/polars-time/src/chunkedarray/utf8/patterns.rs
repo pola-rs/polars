@@ -1,6 +1,8 @@
 //! Patterns are grouped together by order of month, day, year. This is to prevent
 //! parsing different orders of dates in a single column.
 
+use chrono::FixedOffset;
+
 pub(super) static DATE_D_M_Y: &[&str] = &[
     // 8-Jul-2001
     "%v",       // 8-Jul-2001
@@ -140,10 +142,18 @@ pub(super) static DATETIME_Y_M_D: &[&str] = &[
     "%FT%H:%M:%S%.f",
 ];
 
+pub(super) static DATETIME_Y_M_D_Z: &[&str] = &["%+"];
+
 #[derive(Eq, Hash, PartialEq, Clone, Copy, Debug)]
 pub enum Pattern {
     DateDMY,
     DateYMD,
     DatetimeYMD,
     DatetimeDMY,
+    DatetimeYMDZ,
+}
+
+pub struct PatternWithOffset {
+    pub pattern: Pattern,
+    pub offset: Option<FixedOffset>,
 }
