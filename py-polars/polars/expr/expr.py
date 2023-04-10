@@ -3465,7 +3465,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.take_every(n))
 
-    def head(self, n: int = 10) -> Self:
+    def head(self, n: int | Expr = 10) -> Self:
         """
         Get the first `n` rows.
 
@@ -3490,9 +3490,9 @@ class Expr:
         └─────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.head(n))
+        return self.slice(0, n)
 
-    def tail(self, n: int = 10) -> Self:
+    def tail(self, n: int | Expr = 10) -> Self:
         """
         Get the last `n` rows.
 
@@ -3517,9 +3517,10 @@ class Expr:
         └─────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.tail(n))
+        offset = -expr_to_lit_or_expr(n, str_to_lit=False)
+        return self.slice(offset, n)
 
-    def limit(self, n: int = 10) -> Self:
+    def limit(self, n: int | Expr = 10) -> Self:
         """
         Get the first `n` rows (alias for :func:`Expr.head`).
 
