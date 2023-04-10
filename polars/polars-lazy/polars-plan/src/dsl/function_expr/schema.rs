@@ -241,6 +241,11 @@ impl FunctionExpr {
             #[cfg(feature = "top_k")]
             TopK { .. } => same_type(),
             Shift(..) | Reverse => same_type(),
+            Cumcount { .. } => with_dtype(IDX_DTYPE),
+            Cumsum { .. } => map_dtype(&cum::dtypes::cumsum),
+            Cumprod { .. } => map_dtype(&cum::dtypes::cumprod),
+            Cummin { .. } => same_type(),
+            Cummax { .. } => same_type(),
             IsNotNull | IsNull | Not => with_dtype(DataType::Boolean),
             #[cfg(feature = "is_unique")]
             IsUnique | IsDuplicated => with_dtype(DataType::Boolean),

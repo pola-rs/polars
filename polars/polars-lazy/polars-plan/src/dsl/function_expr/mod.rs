@@ -3,6 +3,7 @@ mod arg_where;
 mod binary;
 #[cfg(feature = "round_series")]
 mod clip;
+mod cum;
 #[cfg(feature = "temporal")]
 mod datetime;
 mod dispatch;
@@ -102,6 +103,21 @@ pub enum FunctionExpr {
         descending: bool,
     },
     Shift(i64),
+    Cumcount {
+        reverse: bool,
+    },
+    Cumsum {
+        reverse: bool,
+    },
+    Cumprod {
+        reverse: bool,
+    },
+    Cummin {
+        reverse: bool,
+    },
+    Cummax {
+        reverse: bool,
+    },
     Reverse,
     IsNull,
     IsNotNull,
@@ -173,6 +189,11 @@ impl Display for FunctionExpr {
             #[cfg(feature = "top_k")]
             TopK { .. } => "top_k",
             Shift(_) => "shift",
+            Cumcount { .. } => "cumcount",
+            Cumsum { .. } => "cumsum",
+            Cumprod { .. } => "cumprod",
+            Cummin { .. } => "cummin",
+            Cummax { .. } => "cummax",
             Reverse => "reverse",
             Not => "is_not",
             IsNull => "is_null",
@@ -360,6 +381,11 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map!(top_k, k, descending)
             }
             Shift(periods) => map!(dispatch::shift, periods),
+            Cumcount { reverse } => map!(cum::cumcount, reverse),
+            Cumsum { reverse } => map!(cum::cumsum, reverse),
+            Cumprod { reverse } => map!(cum::cumprod, reverse),
+            Cummin { reverse } => map!(cum::cummin, reverse),
+            Cummax { reverse } => map!(cum::cummax, reverse),
             Reverse => map!(dispatch::reverse),
             IsNull => map!(dispatch::is_null),
             IsNotNull => map!(dispatch::is_not_null),
