@@ -373,3 +373,9 @@ def test_deep_subexpression_f32_schema_7129() -> None:
     assert df.with_columns(
         (pl.col("a") - pl.col("a").mean()) / (pl.col("a").std() + 0.001)
     ).dtypes == [pl.Float32]
+
+
+def test_bool_sum_schema() -> None:
+    assert pl.LazyFrame({"a": [True, False]}).select(pl.col("a").sum()).schema == {
+        "a": pl.UInt32
+    }
