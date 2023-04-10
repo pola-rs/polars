@@ -202,7 +202,7 @@ impl ThreadLocalTable {
     pub(super) fn finalize(
         &mut self,
         slice: &mut Option<(i64, usize)>,
-    ) -> (Option<DataFrame>, Vec<Vec<Series>>) {
+    ) -> (DataFrame, Vec<Vec<Series>>) {
         (
             self.inner_map.finalize(slice),
             std::mem::take(&mut self.spill_partitions.finished),

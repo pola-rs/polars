@@ -246,12 +246,12 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
         }
     }
 
-    pub(super) fn finalize(&mut self, slice: &mut Option<(i64, usize)>) -> Option<DataFrame> {
+    pub(super) fn finalize(&mut self, slice: &mut Option<(i64, usize)>) -> DataFrame {
         let local_len = self.inner_map.len();
         let (skip_len, take_len) = if let Some((offset, slice_len)) = slice {
             if *offset as usize >= local_len {
                 *offset -= local_len as i64;
-                return None;
+                return DataFrame::from(self.output_schema.as_ref());
             } else {
                 let out = (*offset as usize, *slice_len);
                 *offset = 0;
@@ -313,7 +313,7 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
         cols.extend(key_builders.into_iter().map(|buf| buf.into_series()));
         cols.extend(agg_builders.into_iter().map(|buf| buf.into_series()));
         physical_agg_to_logical(&mut cols, &self.output_schema);
-        Some(DataFrame::new_no_checks(cols))
+        DataFrame::new_no_checks(cols)
     }
 }
 

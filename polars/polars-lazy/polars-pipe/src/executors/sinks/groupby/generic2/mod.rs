@@ -4,6 +4,7 @@ mod hash_table;
 mod key;
 mod ooc_state;
 mod sink;
+mod source;
 mod thread_local;
 
 use std::any::Any;
