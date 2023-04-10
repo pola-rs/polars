@@ -32,8 +32,19 @@ def test_from_to_buffer(df: pl.DataFrame, compression: IpcCompression) -> None:
     assert_frame_equal_local_categoricals(df, read_df)
 
 
-@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
-@pytest.mark.parametrize("compression", COMPRESSIONS)
+@pytest.mark.parametrize(
+    "compression",
+    [
+        pytest.param(
+            "uncompressed",
+            marks=pytest.mark.xfail(
+                sys.platform == "win32", reason="Does not work on Windows"
+            ),
+        ),
+        "lz4",
+        "zstd",
+    ],
+)
 @pytest.mark.parametrize("path_type", [str, Path])
 @pytest.mark.write_disk()
 def test_from_to_file(
@@ -108,7 +119,6 @@ def test_ipc_schema(compression: IpcCompression) -> None:
 
 
 @pytest.mark.write_disk()
-@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 @pytest.mark.parametrize("compression", COMPRESSIONS)
 @pytest.mark.parametrize("path_type", [str, Path])
 def test_ipc_schema_from_file(

@@ -179,6 +179,7 @@ markers = [
   "benchmark: Tests that should be run on a Polars release build.",
 ]
 filterwarnings = "error" # Fail on warnings
+xfail_strict = true
 
 [tool.coverage.run]
 source = ["polars"]
