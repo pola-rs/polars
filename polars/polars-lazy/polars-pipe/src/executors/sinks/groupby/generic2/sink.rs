@@ -6,8 +6,8 @@ use crate::executors::sinks::groupby::generic2::global::GlobalTable;
 use crate::expressions::PhysicalPipedExpr;
 
 pub(crate) struct GenericGroupby2 {
-    thread_local_map: UnsafeCell<ThreadLocalTable>,
-    global_map: Arc<GlobalTable>,
+    thread_local_table: UnsafeCell<ThreadLocalTable>,
+    global_table: Arc<GlobalTable>,
     eval: Eval,
     slice: Option<(i64, usize)>,
 }
@@ -30,12 +30,12 @@ impl GenericGroupby2 {
             GlobalTable::new(agg_constructors.clone(), &key_dtypes, output_schema.clone());
 
         Self {
-            thread_local_map: UnsafeCell::new(ThreadLocalTable::new(
+            thread_local_table: UnsafeCell::new(ThreadLocalTable::new(
                 agg_constructors,
                 &key_dtypes,
                 output_schema,
             )),
-            global_map: Arc::new(global_map),
+            global_table: Arc::new(global_map),
             eval: Eval::new(key_columns, aggregation_columns),
             slice,
         }
@@ -57,10 +57,14 @@ impl Sink for GenericGroupby2 {
         let chunk_idx = chunk.chunk_index;
         unsafe {
             // safety: the mutable borrows are not aliasing
-            let table = &mut *self.thread_local_map.get();
+            let table = &mut *self.thread_local_table.get();
 
             for hash in self.eval.hashes() {
-                table.insert(*hash, &mut keys, &mut aggs, chunk_idx)
+                if let Some((partition, spill_payload)) =
+                    table.insert(*hash, &mut keys, &mut aggs, chunk_idx)
+                {
+                    self.global_table.spill(partition, spill_payload)
+                }
             }
         }
 
@@ -77,25 +81,25 @@ impl Sink for GenericGroupby2 {
     fn combine(&mut self, other: &mut dyn Sink) {
         let other = other.as_any().downcast_mut::<Self>().unwrap();
         unsafe {
-            let map = &mut *self.thread_local_map.get();
-            let other_map = &mut *other.thread_local_map.get();
+            let map = &mut *self.thread_local_table.get();
+            let other_map = &mut *other.thread_local_table.get();
             map.combine(other_map);
         }
     }
 
     fn split(&self, _thread_no: usize) -> Box<dyn Sink> {
         // safety: no mutable refs at this point
-        let map = unsafe { (*self.thread_local_map.get()).split() };
+        let map = unsafe { (*self.thread_local_table.get()).split() };
         Box::new(Self {
             eval: self.eval.split(),
-            thread_local_map: UnsafeCell::new(map),
-            global_map: self.global_map.clone(),
+            thread_local_table: UnsafeCell::new(map),
+            global_table: self.global_table.clone(),
             slice: self.slice,
         })
     }
 
     fn finalize(&mut self, context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
-        let map = unsafe { (&mut *self.thread_local_map.get()) };
+        let map = unsafe { (&mut *self.thread_local_table.get()) };
         let (out, spilled) = map.finalize(&mut self.slice);
 
         // TODO: make source

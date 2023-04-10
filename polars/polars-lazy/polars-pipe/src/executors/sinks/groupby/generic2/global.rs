@@ -17,8 +17,8 @@ impl SpillPartitions {
         Self { partitions }
     }
 
-    fn insert(&self, hash: u64, to_spill: SpillPayload) {
-        let partition = hash_to_partition(hash, self.partitions.len());
+    #[inline]
+    fn insert(&self, partition: usize, to_spill: SpillPayload) {
         let partition = &self.partitions[partition];
         let mut partition = partition.lock().unwrap();
         partition.push_back(to_spill)
@@ -57,6 +57,11 @@ impl GlobalTable {
             inner_maps,
             spill_partitions,
         }
+    }
+
+    #[inline]
+    pub(super) fn spill(&self, partition: usize, payload: SpillPayload) {
+        self.spill_partitions.insert(partition, payload)
     }
 
     fn process_partition(&mut self, partition: usize) {

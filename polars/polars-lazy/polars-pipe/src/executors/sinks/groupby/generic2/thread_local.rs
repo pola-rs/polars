@@ -5,19 +5,20 @@ use polars_arrow::trusted_len::PushUnchecked;
 use super::*;
 use crate::pipeline::PARTITION_SIZE;
 
-const SPILL_SIZE: usize = 128;
+const OB_SIZE: usize = 1024;
 
 #[derive(Clone)]
 struct SpillPartitions {
     // outer vec: partitions (factor of 2)
     // inner vec: number of keys + number of aggregated columns
-    partitions: PartitionVec<Vec<AnyValueBufferTrusted<'static>>>,
+    keys_aggs_partitioned: PartitionVec<Vec<AnyValueBufferTrusted<'static>>>,
     hash_partitioned: PartitionVec<Vec<u64>>,
     chunk_index_partitioned: PartitionVec<Vec<IdxSize>>,
     // outer vec: partitions
     // inner vec: aggregation columns
     finished: PartitionVec<Vec<Series>>,
     spill_count: u16,
+    num_keys: usize,
 }
 
 impl SpillPartitions {
@@ -26,44 +27,48 @@ impl SpillPartitions {
 
         let mut buf = Vec::with_capacity(n_spills);
         for dtype in keys {
-            let builder = AnyValueBufferTrusted::new(dtype, 0);
+            let builder = AnyValueBufferTrusted::new(dtype, OB_SIZE);
             buf.push(builder);
         }
         for dtype in aggs {
-            let builder = AnyValueBufferTrusted::new(dtype, 0);
+            let builder = AnyValueBufferTrusted::new(dtype, OB_SIZE);
             buf.push(builder);
         }
 
         let partitions = (0..PARTITION_SIZE).map(|partition| buf.clone()).collect();
-        let hash_partitioned = vec![vec![]; PARTITION_SIZE];
-        let chunk_index_partitioned = vec![vec![]; PARTITION_SIZE];
+        let hash_partitioned = vec![Vec::with_capacity(OB_SIZE); PARTITION_SIZE];
+        let chunk_index_partitioned = vec![Vec::with_capacity(OB_SIZE); PARTITION_SIZE];
 
         Self {
-            partitions,
+            keys_aggs_partitioned: partitions,
             hash_partitioned,
             chunk_index_partitioned,
             finished: vec![],
             spill_count: 0,
+            num_keys: keys.len(),
         }
     }
 }
 
 impl SpillPartitions {
+    /// Returns (partition, overflowing hashes, chunk_indexes, keys and aggs)
     fn insert(
         &mut self,
         hash: u64,
         chunk_idx: IdxSize,
         keys: &[AnyValue<'_>],
         aggs: &mut [SeriesPhysIter],
-    ) {
-        let partition = hash_to_partition(hash, self.partitions.len());
+    ) -> Option<(usize, SpillPayload)> {
+        let partition = hash_to_partition(hash, self.keys_aggs_partitioned.len());
         unsafe {
-            let partitions = self.partitions.get_unchecked_release_mut(partition);
+            let keys_aggs = self
+                .keys_aggs_partitioned
+                .get_unchecked_release_mut(partition);
             let hashes = self.hash_partitioned.get_unchecked_release_mut(partition);
             let chunk_indexes = self
                 .chunk_index_partitioned
                 .get_unchecked_release_mut(partition);
-            debug_assert_eq!(keys.len(), partitions.len());
+            debug_assert_eq!(keys.len(), keys_aggs.len());
 
             hashes.push(hash);
             chunk_indexes.push(chunk_idx);
@@ -71,23 +76,42 @@ impl SpillPartitions {
             // amortize the loop counter
             for i in 0..keys.len() {
                 let av = keys.get_unchecked(i);
-                let buf = partitions.get_unchecked_mut(i);
+                let buf = keys_aggs.get_unchecked_mut(i);
                 // safety: we can trust the input types to be of consistent dtype
                 buf.add_unchecked_owned_physical(av);
             }
             let mut i = keys.len();
             for agg in aggs {
                 let av = agg.next().unwrap_unchecked_release();
-                let buf = partitions.get_unchecked_mut(i);
+                let buf = keys_aggs.get_unchecked_mut(i);
                 buf.add_unchecked_owned_physical(&av);
                 i += 1;
             }
-        };
+
+            if hashes.len() == OB_SIZE {
+                let mut new_hashes = Vec::with_capacity(OB_SIZE);
+                let mut new_chunk_indexes = Vec::with_capacity(OB_SIZE);
+                std::mem::swap(&mut new_hashes, hashes);
+                std::mem::swap(&mut new_chunk_indexes, chunk_indexes);
+
+                Some((
+                    partition,
+                    SpillPayload {
+                        hashes: new_hashes,
+                        chunk_idx: new_chunk_indexes,
+                        keys_and_aggs: keys_aggs.iter_mut().map(|b| b.reset(OB_SIZE)).collect(),
+                        num_keys: self.num_keys,
+                    },
+                ))
+            } else {
+                None
+            }
+        }
     }
 
     fn finish(&mut self) {
         if self.finished.is_empty() {
-            let parts = std::mem::take(&mut self.partitions);
+            let parts = std::mem::take(&mut self.keys_aggs_partitioned);
             self.finished = parts
                 .into_iter()
                 .map(|part| part.into_iter().map(|v| v.into_series()).collect())
@@ -111,7 +135,7 @@ impl SpillPartitions {
         let i = (self.spill_count % (PARTITION_SIZE as u16)) as usize;
         self.spill_count += 1;
 
-        let builder = unsafe { self.partitions.get_unchecked_release_mut(i) };
+        let builder = unsafe { self.keys_aggs_partitioned.get_unchecked_release_mut(i) };
         todo!()
     }
 }
@@ -161,10 +185,12 @@ impl ThreadLocalTable {
         keys: &mut [SeriesPhysIter],
         agg_iters: &mut [SeriesPhysIter],
         chunk_index: IdxSize,
-    ) {
+    ) -> Option<(usize, SpillPayload)> {
         if let Some(keys) = self.inner_map.insert(hash, keys, agg_iters, chunk_index) {
             self.spill_partitions
-                .insert(hash, chunk_index, keys, agg_iters);
+                .insert(hash, chunk_index, keys, agg_iters)
+        } else {
+            None
         }
     }
 

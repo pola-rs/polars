@@ -131,37 +131,120 @@ impl<'a> AnyValueBuffer<'a> {
         })
     }
 
-    pub fn into_series(self) -> Series {
+    pub fn reset(&mut self, capacity: usize) -> Series {
         use AnyValueBuffer::*;
         match self {
-            Boolean(b) => b.finish().into_series(),
-            Int32(b) => b.finish().into_series(),
-            Int64(b) => b.finish().into_series(),
-            UInt32(b) => b.finish().into_series(),
-            UInt64(b) => b.finish().into_series(),
+            Boolean(b) => {
+                let mut new = BooleanChunkedBuilder::new(b.field.name(), capacity);
+                std::mem::swap(&mut new, b);
+                new.finish().into_series()
+            }
+            Int32(b) => {
+                let mut new = PrimitiveChunkedBuilder::new(b.field.name(), capacity);
+                std::mem::swap(&mut new, b);
+                new.finish().into_series()
+            }
+            Int64(b) => {
+                let mut new = PrimitiveChunkedBuilder::new(b.field.name(), capacity);
+                std::mem::swap(&mut new, b);
+                new.finish().into_series()
+            }
+            UInt32(b) => {
+                let mut new = PrimitiveChunkedBuilder::new(b.field.name(), capacity);
+                std::mem::swap(&mut new, b);
+                new.finish().into_series()
+            }
+            UInt64(b) => {
+                let mut new = PrimitiveChunkedBuilder::new(b.field.name(), capacity);
+                std::mem::swap(&mut new, b);
+                new.finish().into_series()
+            }
             #[cfg(feature = "dtype-date")]
-            Date(b) => b.finish().into_date().into_series(),
+            Date(b) => {
+                let mut new = PrimitiveChunkedBuilder::new(b.field.name(), capacity);
+                std::mem::swap(&mut new, b);
+                new.finish().into_date().into_series()
+            }
             #[cfg(feature = "dtype-datetime")]
-            Datetime(b, tu, tz) => b.finish().into_datetime(tu, tz).into_series(),
+            Datetime(b, tu, tz) => {
+                let mut new = PrimitiveChunkedBuilder::new(b.field.name(), capacity);
+                std::mem::swap(&mut new, b);
+                let tz = if capacity > 0 {
+                    tz.clone()
+                } else {
+                    std::mem::take(tz)
+                };
+                new.finish().into_datetime(*tu, tz).into_series()
+            }
             #[cfg(feature = "dtype-duration")]
-            Duration(b, tu) => b.finish().into_duration(tu).into_series(),
+            Duration(b, tu) => {
+                let mut new = PrimitiveChunkedBuilder::new(b.field.name(), capacity);
+                std::mem::swap(&mut new, b);
+                new.finish().into_duration(*tu).into_series()
+            }
             #[cfg(feature = "dtype-time")]
-            Time(b) => b.finish().into_time().into_series(),
-            Float32(b) => b.finish().into_series(),
-            Float64(b) => b.finish().into_series(),
-            Utf8(b) => b.finish().into_series(),
+            Time(b) => {
+                let mut new = PrimitiveChunkedBuilder::new(b.field.name(), capacity);
+                std::mem::swap(&mut new, b);
+                new.finish().into_time().into_series()
+            }
+            Float32(b) => {
+                let mut new = PrimitiveChunkedBuilder::new(b.field.name(), capacity);
+                std::mem::swap(&mut new, b);
+                new.finish().into_series()
+            }
+            Float64(b) => {
+                let mut new = PrimitiveChunkedBuilder::new(b.field.name(), capacity);
+                std::mem::swap(&mut new, b);
+                new.finish().into_series()
+            }
+            Utf8(b) => {
+                let avg_values_len = b
+                    .builder
+                    .values()
+                    .len()
+                    .saturating_div(b.builder.capacity() + 1)
+                    + 1;
+                let mut new =
+                    Utf8ChunkedBuilder::new(b.field.name(), capacity, avg_values_len * capacity);
+                std::mem::swap(&mut new, b);
+                new.finish().into_series()
+            }
             #[cfg(feature = "dtype-i8")]
-            Int8(b) => b.finish().into_series(),
+            Int8(b) => {
+                let mut new = PrimitiveChunkedBuilder::new(b.field.name(), capacity);
+                std::mem::swap(&mut new, b);
+                new.finish().into_series()
+            }
             #[cfg(feature = "dtype-i16")]
-            Int16(b) => b.finish().into_series(),
+            Int16(b) => {
+                let mut new = PrimitiveChunkedBuilder::new(b.field.name(), capacity);
+                std::mem::swap(&mut new, b);
+                new.finish().into_series()
+            }
             #[cfg(feature = "dtype-u8")]
-            UInt8(b) => b.finish().into_series(),
+            UInt8(b) => {
+                let mut new = PrimitiveChunkedBuilder::new(b.field.name(), capacity);
+                std::mem::swap(&mut new, b);
+                new.finish().into_series()
+            }
             #[cfg(feature = "dtype-u16")]
-            UInt16(b) => b.finish().into_series(),
+            UInt16(b) => {
+                let mut new = PrimitiveChunkedBuilder::new(b.field.name(), capacity);
+                std::mem::swap(&mut new, b);
+                new.finish().into_series()
+            }
             All(dtype, vals) => {
-                Series::from_any_values_and_dtype("", &vals, &dtype, false).unwrap()
+                let out = Series::from_any_values_and_dtype("", vals, dtype, false).unwrap();
+                let mut new = Vec::with_capacity(capacity);
+                std::mem::swap(&mut new, vals);
+                out
             }
         }
+    }
+
+    pub fn into_series(mut self) -> Series {
+        self.reset(0)
     }
 
     pub fn new(dtype: &DataType, capacity: usize) -> AnyValueBuffer<'a> {
@@ -349,31 +432,86 @@ impl<'a> AnyValueBufferTrusted<'a> {
         }
     }
 
-    pub fn into_series(self) -> Series {
+    pub fn reset(&mut self, capacity: usize) -> Series {
         use AnyValueBufferTrusted::*;
         match self {
-            Boolean(b) => b.finish().into_series(),
-            Int32(b) => b.finish().into_series(),
-            Int64(b) => b.finish().into_series(),
-            UInt32(b) => b.finish().into_series(),
-            UInt64(b) => b.finish().into_series(),
-            Float32(b) => b.finish().into_series(),
-            Float64(b) => b.finish().into_series(),
-            Utf8(b) => b.finish().into_series(),
+            Boolean(b) => {
+                let mut new = BooleanChunkedBuilder::new(b.field.name(), capacity);
+                std::mem::swap(&mut new, b);
+                new.finish().into_series()
+            }
+            Int32(b) => {
+                let mut new = PrimitiveChunkedBuilder::new(b.field.name(), capacity);
+                std::mem::swap(&mut new, b);
+                new.finish().into_series()
+            }
+            Int64(b) => {
+                let mut new = PrimitiveChunkedBuilder::new(b.field.name(), capacity);
+                std::mem::swap(&mut new, b);
+                new.finish().into_series()
+            }
+            UInt32(b) => {
+                let mut new = PrimitiveChunkedBuilder::new(b.field.name(), capacity);
+                std::mem::swap(&mut new, b);
+                new.finish().into_series()
+            }
+            UInt64(b) => {
+                let mut new = PrimitiveChunkedBuilder::new(b.field.name(), capacity);
+                std::mem::swap(&mut new, b);
+                new.finish().into_series()
+            }
+            Float32(b) => {
+                let mut new = PrimitiveChunkedBuilder::new(b.field.name(), capacity);
+                std::mem::swap(&mut new, b);
+                new.finish().into_series()
+            }
+            Float64(b) => {
+                let mut new = PrimitiveChunkedBuilder::new(b.field.name(), capacity);
+                std::mem::swap(&mut new, b);
+                new.finish().into_series()
+            }
+            Utf8(b) => {
+                let avg_values_len = b
+                    .builder
+                    .values()
+                    .len()
+                    .saturating_div(b.builder.capacity() + 1)
+                    + 1;
+                let mut new =
+                    Utf8ChunkedBuilder::new(b.field.name(), capacity, avg_values_len * capacity);
+                std::mem::swap(&mut new, b);
+                new.finish().into_series()
+            }
             #[cfg(feature = "dtype-i8")]
-            Int8(b) => b.finish().into_series(),
+            Int8(b) => {
+                let mut new = PrimitiveChunkedBuilder::new(b.field.name(), capacity);
+                std::mem::swap(&mut new, b);
+                new.finish().into_series()
+            }
             #[cfg(feature = "dtype-i16")]
-            Int16(b) => b.finish().into_series(),
+            Int16(b) => {
+                let mut new = PrimitiveChunkedBuilder::new(b.field.name(), capacity);
+                std::mem::swap(&mut new, b);
+                new.finish().into_series()
+            }
             #[cfg(feature = "dtype-u8")]
-            UInt8(b) => b.finish().into_series(),
+            UInt8(b) => {
+                let mut new = PrimitiveChunkedBuilder::new(b.field.name(), capacity);
+                std::mem::swap(&mut new, b);
+                new.finish().into_series()
+            }
             #[cfg(feature = "dtype-u16")]
-            UInt16(b) => b.finish().into_series(),
+            UInt16(b) => {
+                let mut new = PrimitiveChunkedBuilder::new(b.field.name(), capacity);
+                std::mem::swap(&mut new, b);
+                new.finish().into_series()
+            }
             #[cfg(feature = "dtype-struct")]
             Struct(b) => {
                 let v = b
-                    .into_iter()
+                    .iter_mut()
                     .map(|(b, name)| {
-                        let mut s = b.into_series();
+                        let mut s = b.reset(capacity);
                         s.rename(name.as_str());
                         s
                     })
@@ -384,6 +522,10 @@ impl<'a> AnyValueBufferTrusted<'a> {
                 Series::from_any_values_and_dtype("", &vals, &dtype, false).unwrap()
             }
         }
+    }
+
+    pub fn into_series(mut self) -> Series {
+        self.reset(0)
     }
 }
 impl From<(&DataType, usize)> for AnyValueBufferTrusted<'_> {
