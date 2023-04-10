@@ -1093,10 +1093,16 @@ impl PySeries {
         Ok(PySeries::new(s))
     }
 
-    pub fn to_dummies(&self, separator: Option<&str>) -> PyResult<PyDataFrame> {
+    pub fn to_dummies(
+        &self,
+        separator: Option<&str>,
+        values: Option<Vec<Wrap<AnyValue<'_>>>>,
+        unknown_value_identifier: Option<&str>,
+    ) -> PyResult<PyDataFrame> {
+        let av_values = values.map(|vec| vec.into_iter().map(|v| v.0).collect::<Vec<_>>());
         let df = self
             .series
-            .to_dummies(separator)
+            .to_dummies(separator, av_values.as_ref(), unknown_value_identifier)
             .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }

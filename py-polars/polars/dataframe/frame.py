@@ -7423,7 +7423,12 @@ class DataFrame:
         return self._from_pydf(self._df.quantile(quantile, interpolation))
 
     def to_dummies(
-        self, columns: str | Sequence[str] | None = None, *, separator: str = "_"
+        self,
+        columns: str | Sequence[str] | None = None,
+        *,
+        separator: str = "_",
+        values: dict[str, list[Any]] | None = None,
+        unknown_value_identifier: str | None = None,
     ) -> Self:
         """
         Convert categorical variables into dummy/indicator variables.
@@ -7435,6 +7440,21 @@ class DataFrame:
             If set to ``None`` (default), convert all columns.
         separator
             Separator/delimiter used when generating column names.
+        values
+            An optional mapping from column names to values providing the values to
+            create dummy indicators for, including nulls. For each input column, output
+            columns will be created exactly for the values provided, no matter if they
+            actually appear in the data frame. Note that, if values are provided, they
+            must be provided for all columns in ``columns`` or all of the data frame's
+            columns if ``columns`` is ``None``.
+        unknown_value_identifier
+            If ``values`` is not ``None``, this identifier governs the name of the
+            column with indicator values for unknown values (i.e. values which do not
+            appear in the ``values`` for a particular column) for each input column.
+            These columns will be named ``<col><separator><identifier>``. If the
+            identifier is set to ``None`` (default), no indicator columns for unknown
+            values are created. Note that ``null`` is never considered an unknown value
+            and must be explicitly listed in ``values``.
 
         Examples
         --------
@@ -7455,11 +7475,55 @@ class DataFrame:
         │ 1     ┆ 0     ┆ 1     ┆ 0     ┆ 1     ┆ 0     │
         │ 0     ┆ 1     ┆ 0     ┆ 1     ┆ 0     ┆ 1     │
         └───────┴───────┴───────┴───────┴───────┴───────┘
-
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2],
+        ...         "ham": ["a", "b"],
+        ...     }
+        ... )
+        >>> df.to_dummies(values={"foo": [1], "ham": ["a", "b"]})
+        shape: (2, 3)
+        ┌───────┬───────┬───────┐
+        │ foo_1 ┆ ham_a ┆ ham_b │
+        │ ---   ┆ ---   ┆ ---   │
+        │ u8    ┆ u8    ┆ u8    │
+        ╞═══════╪═══════╪═══════╡
+        │ 1     ┆ 1     ┆ 0     │
+        │ 0     ┆ 0     ┆ 1     │
+        └───────┴───────┴───────┘
+        >>> df.to_dummies(
+        ...     values={"foo": [1], "ham": ["a", "b"]},
+        ...     unknown_value_identifier="other",
+        ... )
+        shape: (2, 5)
+        ┌───────┬───────────┬───────┬───────┬───────────┐
+        │ foo_1 ┆ foo_other ┆ ham_a ┆ ham_b ┆ ham_other │
+        │ ---   ┆ ---       ┆ ---   ┆ ---   ┆ ---       │
+        │ u8    ┆ u8        ┆ u8    ┆ u8    ┆ u8        │
+        ╞═══════╪═══════════╪═══════╪═══════╪═══════════╡
+        │ 1     ┆ 0         ┆ 1     ┆ 0     ┆ 0         │
+        │ 0     ┆ 1         ┆ 0     ┆ 1     ┆ 0         │
+        └───────┴───────────┴───────┴───────┴───────────┘
         """
         if isinstance(columns, str):
             columns = [columns]
-        return self._from_pydf(self._df.to_dummies(columns, separator))
+
+        # Extract values into two lists
+        if values is None:
+            values_columns, values_values = (None, None)
+        else:
+            values_columns = list(values.keys())
+            values_values = list(values.values())
+
+        return self._from_pydf(
+            self._df.to_dummies(
+                columns,
+                separator,
+                values_columns,
+                values_values,
+                unknown_value_identifier,
+            )
+        )
 
     def unique(
         self,

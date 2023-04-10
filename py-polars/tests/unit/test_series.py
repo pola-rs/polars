@@ -1695,6 +1695,26 @@ def test_to_dummies() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_to_dummies_values() -> None:
+    s = pl.Series("a", [1, 2, 3])
+    result = s.to_dummies(values=[1, 3])
+    expected = pl.DataFrame(
+        {"a_1": [1, 0, 0], "a_3": [0, 0, 1]},
+        schema={"a_1": pl.UInt8, "a_3": pl.UInt8},
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_to_dummies_values_unknown() -> None:
+    s = pl.Series("a", [1, 2, 3])
+    result = s.to_dummies(values=[1, 3], unknown_value_identifier="other")
+    expected = pl.DataFrame(
+        {"a_1": [1, 0, 0], "a_3": [0, 0, 1], "a_other": [0, 1, 0]},
+        schema={"a_1": pl.UInt8, "a_3": pl.UInt8, "a_other": pl.UInt8},
+    )
+    assert_frame_equal(result, expected)
+
+
 def test_value_counts() -> None:
     s = pl.Series("a", [1, 2, 2, 3])
     result = s.value_counts()

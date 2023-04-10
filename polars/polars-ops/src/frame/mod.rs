@@ -73,8 +73,13 @@ pub trait DataFrameOps: IntoDf {
     ///  +------+------+------+--------+--------+--------+---------+---------+---------+
     /// ```
     #[cfg(feature = "to_dummies")]
-    fn to_dummies(&self, separator: Option<&str>) -> PolarsResult<DataFrame> {
-        self._to_dummies(None, separator)
+    fn to_dummies(
+        &self,
+        separator: Option<&str>,
+        values: Option<PlHashMap<&str, Vec<AnyValue>>>,
+        unknown_value_identifier: Option<&str>,
+    ) -> PolarsResult<DataFrame> {
+        self._to_dummies(None, separator, values, unknown_value_identifier)
     }
 
     #[cfg(feature = "to_dummies")]
@@ -82,8 +87,10 @@ pub trait DataFrameOps: IntoDf {
         &self,
         columns: Vec<&str>,
         separator: Option<&str>,
+        values: Option<PlHashMap<&str, Vec<AnyValue>>>,
+        unknown_value_identifier: Option<&str>,
     ) -> PolarsResult<DataFrame> {
-        self._to_dummies(Some(columns), separator)
+        self._to_dummies(Some(columns), separator, values, unknown_value_identifier)
     }
 
     #[cfg(feature = "to_dummies")]
@@ -91,6 +98,8 @@ pub trait DataFrameOps: IntoDf {
         &self,
         columns: Option<Vec<&str>>,
         separator: Option<&str>,
+        values: Option<PlHashMap<&str, Vec<AnyValue>>>,
+        unknown_value_identifier: Option<&str>,
     ) -> PolarsResult<DataFrame> {
         let df = self.to_df();
 
@@ -101,7 +110,15 @@ pub trait DataFrameOps: IntoDf {
             df.get_columns()
                 .par_iter()
                 .map(|s| match set.contains(s.name()) {
-                    true => s.to_dummies(separator),
+                    true => s.to_dummies(
+                        separator,
+                        values.as_ref().map(|map| {
+                            map.get(s.name()).unwrap_or_else(|| {
+                                panic!("missing values for column '{}'", s.name())
+                            })
+                        }),
+                        unknown_value_identifier,
+                    ),
                     false => Ok(s.clone().into_frame()),
                 })
                 .collect::<PolarsResult<Vec<_>>>()

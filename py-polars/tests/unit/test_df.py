@@ -821,6 +821,38 @@ def test_to_dummies() -> None:
     assert dummies["A_c"].to_list() == [0, 0, 1]
 
 
+def test_to_dummies_values() -> None:
+    df = pl.DataFrame({"A": ["a", "b", "c", None], "B": [1, 3, 5, None]})
+    dummies = df.to_dummies(values={"A": ["a", "b", None], "B": [1]})
+    expected = pl.DataFrame(
+        {
+            "A_a": [1, 0, 0, 0],
+            "A_b": [0, 1, 0, 0],
+            "A_null": [0, 0, 0, 1],
+            "B_1": [1, 0, 0, 0],
+        }
+    ).select(pl.all().cast(pl.UInt8))
+    assert_frame_equal(dummies, expected)
+
+
+def test_to_dummies_values_unknown() -> None:
+    df = pl.DataFrame({"A": ["a", "b", "c", None], "B": [1, 3, 5, None]})
+    dummies = df.to_dummies(
+        values={"A": ["a", "b", None], "B": [1]}, unknown_value_identifier="other"
+    )
+    expected = pl.DataFrame(
+        {
+            "A_a": [1, 0, 0, 0],
+            "A_b": [0, 1, 0, 0],
+            "A_null": [0, 0, 0, 1],
+            "A_other": [0, 0, 1, 0],
+            "B_1": [1, 0, 0, 0],
+            "B_other": [0, 1, 1, 0],
+        }
+    ).select(pl.all().cast(pl.UInt8))
+    assert_frame_equal(dummies, expected)
+
+
 def test_custom_groupby() -> None:
     df = pl.DataFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
     out = df.groupby("b", maintain_order=True).agg(

@@ -1232,12 +1232,30 @@ impl PyDataFrame {
         &self,
         columns: Option<Vec<String>>,
         separator: Option<&str>,
+        values_columns: Option<Vec<&str>>,
+        values_values: Option<Vec<Vec<Wrap<AnyValue>>>>,
+        unknown_value_identifier: Option<&str>,
     ) -> PyResult<Self> {
+        let values = match (values_columns, values_values) {
+            (Some(columns), Some(values)) => Some(PlHashMap::<_, _>::from_iter(
+                columns.into_iter().zip(
+                    values
+                        .into_iter()
+                        .map(|vec| vec.into_iter().map(|v| v.0).collect::<Vec<_>>()),
+                ),
+            )),
+            _ => None,
+        };
         let df = match columns {
-            Some(cols) => self
+            Some(cols) => self.df.columns_to_dummies(
+                cols.iter().map(|x| x as &str).collect(),
+                separator,
+                values,
+                unknown_value_identifier,
+            ),
+            None => self
                 .df
-                .columns_to_dummies(cols.iter().map(|x| x as &str).collect(), separator),
-            None => self.df.to_dummies(separator),
+                .to_dummies(separator, values, unknown_value_identifier),
         }
         .map_err(PyPolarsErr::from)?;
         Ok(df.into())
