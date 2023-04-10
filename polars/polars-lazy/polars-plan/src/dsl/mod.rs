@@ -1997,7 +1997,7 @@ impl Expr {
     #[cfg(feature = "log")]
     /// Compute the natural logarithm of all elements plus one in the input array
     pub fn log1p(self) -> Self {
-        self.apply_private(FunctionExpr::Log1p)
+        self.map_private(FunctionExpr::Log1p)
     }
 
     #[cfg(feature = "log")]
