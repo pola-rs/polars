@@ -371,8 +371,7 @@ impl IsIn for StructChunked {
 
                 let mut set = HashSet::with_capacity(other.len());
                 set.extend(other.into_iter().map(|opt_val| opt_val.to_vec()));
-                let mut ca: BooleanChunked =
-                    self.into_iter().map(|v| set.contains(v)).collect();
+                let mut ca: BooleanChunked = self.into_iter().map(|v| set.contains(v)).collect();
                 ca.rename(self.name());
                 Ok(ca)
             }
