@@ -3,6 +3,7 @@ use std::cell::UnsafeCell;
 
 use super::*;
 use crate::executors::sinks::groupby::generic2::global::GlobalTable;
+use crate::executors::sinks::groupby::generic2::ooc_state::OocState;
 use crate::expressions::PhysicalPipedExpr;
 
 pub(crate) struct GenericGroupby2 {
@@ -10,6 +11,7 @@ pub(crate) struct GenericGroupby2 {
     global_table: Arc<GlobalTable>,
     eval: Eval,
     slice: Option<(i64, usize)>,
+    ooc_state: OocState,
 }
 
 impl GenericGroupby2 {
@@ -38,6 +40,7 @@ impl GenericGroupby2 {
             global_table: Arc::new(global_map),
             eval: Eval::new(key_columns, aggregation_columns),
             slice,
+            ooc_state: Default::default(),
         }
     }
 }
@@ -63,6 +66,7 @@ impl Sink for GenericGroupby2 {
                 if let Some((partition, spill_payload)) =
                     table.insert(*hash, &mut keys, &mut aggs, chunk_idx)
                 {
+                    // append payload to global spills
                     self.global_table.spill(partition, spill_payload)
                 }
             }
@@ -75,6 +79,12 @@ impl Sink for GenericGroupby2 {
             // safety: we don't hold mutable refs, we just dropped them
             self.eval.clear()
         };
+
+        // indicates if we should early merge a partition
+        // other scenario could be that we must spill to disk
+        if self.ooc_state.check_memory_usage()? {
+            self.global_table.early_merge()
+        }
         Ok(SinkResult::CanHaveMoreInput)
     }
 
@@ -95,6 +105,7 @@ impl Sink for GenericGroupby2 {
             thread_local_table: UnsafeCell::new(map),
             global_table: self.global_table.clone(),
             slice: self.slice,
+            ooc_state: self.ooc_state.clone(),
         })
     }
 

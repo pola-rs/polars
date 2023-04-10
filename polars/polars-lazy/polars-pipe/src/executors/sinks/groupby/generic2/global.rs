@@ -1,4 +1,5 @@
 use std::collections::LinkedList;
+use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::Mutex;
 
 use super::*;
@@ -32,8 +33,9 @@ impl SpillPartitions {
 }
 
 pub(super) struct GlobalTable {
-    inner_maps: PartitionVec<AggHashTable<false>>,
+    inner_maps: PartitionVec<Mutex<AggHashTable<false>>>,
     spill_partitions: SpillPartitions,
+    early_merge_counter: Arc<AtomicU16>,
 }
 
 impl GlobalTable {
@@ -45,17 +47,18 @@ impl GlobalTable {
         let spill_partitions = SpillPartitions::new();
         let mut inner_maps = Vec::with_capacity(PARTITION_SIZE);
         inner_maps.fill_with(|| {
-            AggHashTable::new(
+            Mutex::new(AggHashTable::new(
                 agg_constructors.clone(),
                 key_dtypes,
                 output_schema.clone(),
                 None,
-            )
+            ))
         });
 
         Self {
             inner_maps,
             spill_partitions,
+            early_merge_counter: Default::default(),
         }
     }
 
@@ -64,9 +67,16 @@ impl GlobalTable {
         self.spill_partitions.insert(partition, payload)
     }
 
-    fn process_partition(&mut self, partition: usize) {
+    pub(super) fn early_merge(&self) {
+        // round robin a partition to merge early
+        let partition =
+            self.early_merge_counter.fetch_add(1, Ordering::Relaxed) as usize % PARTITION_SIZE;
+        self.process_partition(partition)
+    }
+
+    fn process_partition(&self, partition: usize) {
         let bucket = self.spill_partitions.drain_partition(partition);
-        let hash_map = &mut self.inner_maps[partition];
+        let mut hash_map = self.inner_maps[partition].lock().unwrap();
 
         for payload in bucket {
             let hashes = payload.hashes();
