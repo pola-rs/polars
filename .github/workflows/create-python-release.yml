@@ -179,30 +179,3 @@ jobs:
           maturin-version: ${{ env.MATURIN_VERSION }}
           command: publish
           args: -m py-polars/Cargo.toml --target aarch64-apple-darwin --no-sdist -o wheels -i python -u ritchie46
-
-  # uncomment to build a universal2 wheel
-  # we don't run it because it is twice as big and not needed because we build for both architectures separately
-  # macos-aarch64-universal:
-  #   runs-on: macos-latest
-  #   steps:
-  #     - uses: actions/checkout@v3
-  #     - uses: actions/setup-python@v4
-  #       with:
-  #         python-version: '3.7'
-
-  #     - name: Fix README symlink
-  #       run: |
-  #         rm py-polars/README.md
-  #         cp README.md py-polars/README.md
-
-  #     - name: Set up Rust targets
-  #       run: rustup target add aarch64-apple-darwin
-
-  #     - name: Publish wheel
-  #       uses: messense/maturin-action@v1
-  #       env:
-  #         MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
-  #       with:
-  #         maturin-version: ${{ env.MATURIN_VERSION }}
-  #         command: publish
-  #         args: -m py-polars/Cargo.toml --no-sdist --universal2 -o wheels -i python -u ritchie46
