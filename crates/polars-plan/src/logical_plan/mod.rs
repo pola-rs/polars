@@ -75,72 +75,69 @@ pub enum Context {
 }
 
 #[derive(Debug)]
-pub enum ErrorState {
-    NotYetEncountered { err: PolarsError },
-    AlreadyEncountered { prev_err_msg: String },
-}
-
-impl std::fmt::Display for ErrorState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ErrorState::NotYetEncountered { err } => write!(f, "NotYetEncountered({err})")?,
-            ErrorState::AlreadyEncountered { prev_err_msg } => {
-                write!(f, "AlreadyEncountered({prev_err_msg})")?
-            },
-        };
-
-        Ok(())
-    }
+pub(crate) enum ErrorStateEncounters {
+    NotYetEncountered {
+        err: PolarsError,
+    },
+    AlreadyEncountered {
+        n_times: usize,
+        prev_err_msg: String,
+    },
 }
 
 #[derive(Clone)]
-pub struct ErrorStateSync(Arc<Mutex<ErrorState>>);
+pub struct ErrorState(pub(crate) Arc<Mutex<ErrorStateEncounters>>);
 
-impl std::ops::Deref for ErrorStateSync {
-    type Target = Arc<Mutex<ErrorState>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl std::fmt::Debug for ErrorStateSync {
+impl std::fmt::Debug for ErrorState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "ErrorStateSync({})", &*self.0.lock().unwrap())
+        // Skip over the Arc<Mutex<_>> and just print the ErrorStateEncounters
+        f.debug_tuple("ErrorState")
+            .field(&self.0.lock().unwrap())
+            .finish()
     }
 }
 
-impl ErrorStateSync {
+impl From<PolarsError> for ErrorState {
+    fn from(err: PolarsError) -> Self {
+        Self(Arc::new(Mutex::new(
+            ErrorStateEncounters::NotYetEncountered { err },
+        )))
+    }
+}
+
+impl ErrorState {
     fn take(&self) -> PolarsError {
         let mut curr_err = self.0.lock().unwrap();
 
-        match &*curr_err {
-            ErrorState::NotYetEncountered { err: polars_err } => {
+        match &mut *curr_err {
+            ErrorStateEncounters::NotYetEncountered { err: polars_err } => {
                 // Need to finish using `polars_err` here so that NLL considers `err` dropped
                 let prev_err_msg = polars_err.to_string();
-                // Place AlreadyEncountered in `self` for future users of `self`
+                // Place AlreadyEncountered in `self` for future callers of `self.take()`
                 let prev_err = std::mem::replace(
                     &mut *curr_err,
-                    ErrorState::AlreadyEncountered { prev_err_msg },
+                    ErrorStateEncounters::AlreadyEncountered {
+                        n_times: 1,
+                        prev_err_msg,
+                    },
                 );
                 // Since we're in this branch, we know err was a NotYetEncountered
                 match prev_err {
-                    ErrorState::NotYetEncountered { err } => err,
-                    ErrorState::AlreadyEncountered { .. } => unreachable!(),
+                    ErrorStateEncounters::NotYetEncountered { err } => err,
+                    ErrorStateEncounters::AlreadyEncountered { .. } => unreachable!(),
                 }
             },
-            ErrorState::AlreadyEncountered { prev_err_msg } => {
-                polars_err!(
-                    ComputeError: "LogicalPlan already failed with error: '{}'", prev_err_msg,
-                )
+            ErrorStateEncounters::AlreadyEncountered {
+                n_times,
+                prev_err_msg,
+            } => {
+                let err = polars_err!(
+                    ComputeError: "LogicalPlan already failed (depth: {}) with error: '{}'", n_times, prev_err_msg,
+                );
+                *n_times += 1;
+                err
             },
         }
-    }
-}
-
-impl From<PolarsError> for ErrorStateSync {
-    fn from(err: PolarsError) -> Self {
-        Self(Arc::new(Mutex::new(ErrorState::NotYetEncountered { err })))
     }
 }
 
@@ -248,7 +245,7 @@ pub enum LogicalPlan {
     #[cfg_attr(feature = "serde", serde(skip))]
     Error {
         input: Box<LogicalPlan>,
-        err: ErrorStateSync,
+        err: ErrorState,
     },
     /// This allows expressions to access other tables
     ExtContext {

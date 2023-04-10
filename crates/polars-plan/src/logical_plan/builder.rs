@@ -34,6 +34,7 @@ use crate::dsl::functions::horizontal::all_horizontal;
 use crate::logical_plan::functions::FunctionNode;
 use crate::logical_plan::projection::{is_regex_projection, rewrite_projections};
 use crate::logical_plan::schema::{det_join_schema, FileInfo};
+use crate::logical_plan::ErrorState;
 #[cfg(feature = "python")]
 use crate::prelude::python_udf::PythonFunction;
 use crate::prelude::*;
@@ -64,15 +65,17 @@ fn format_err(msg: &str, input: &LogicalPlan) -> String {
 /// originated.
 macro_rules! raise_err {
     ($err:expr, $input:expr, $convert:ident) => {{
-        let format_err_outer = |msg: &str| format_err(msg, &$input);
+        let (input, err): (Box<LogicalPlan>, ErrorState) = match $input {
+            LogicalPlan::Error { input, err } => (input.clone(), ErrorState(Arc::clone(&err.0))),
+            _ => {
+                let format_err_outer = |msg: &str| format_err(msg, &$input);
+                let err = $err.wrap_msg(&format_err_outer);
 
-        let err = $err.wrap_msg(&format_err_outer);
+                (Box::new($input.clone()), err.into())
+            },
+        };
 
-        LogicalPlan::Error {
-            input: Box::new($input.clone()),
-            err: err.into(),
-        }
-        .$convert()
+        LogicalPlan::Error { input, err }.$convert()
     }};
 }
 
