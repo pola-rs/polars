@@ -296,10 +296,7 @@ where
                             .enumerate()
                             .reduce(|acc, (idx, val)| if acc.1 < val { (idx, val) } else { acc })
                             .map(|tpl| tpl.0);
-                        chunk_max_val = match chunk_max_idx {
-                            Some(idx) => Some(arr.value(idx)),
-                            None => None,
-                        };
+                        chunk_max_val = chunk_max_idx.map(|idx| arr.value(idx));
                     } else {
                         // When no nulls & array not empty => we can use fast argminmax
                         let max_idx: usize = arr.values().as_slice().argmax();
