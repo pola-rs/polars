@@ -33,10 +33,10 @@ jobs:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
           RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
         with:
-          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
-          maturin-version: ${{ env.MATURIN_VERSION }}
           command: publish
           args: -m py-polars/Cargo.toml --skip-existing -o wheels -u ritchie46
+          maturin-version: ${{ env.MATURIN_VERSION }}
+          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
 
   # Needed for Docker on Apple M1
   manylinux-aarch64:
@@ -63,11 +63,11 @@ jobs:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
           JEMALLOC_SYS_WITH_LG_PAGE: 16
         with:
-          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
-          target: aarch64-unknown-linux-gnu
-          maturin-version: ${{ env.MATURIN_VERSION }}
           command: publish
           args: -m py-polars/Cargo.toml --skip-existing --no-sdist -o wheels -i python -u ritchie46
+          target: aarch64-unknown-linux-gnu
+          maturin-version: ${{ env.MATURIN_VERSION }}
+          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
 
   manylinux-bigidx:
     runs-on: ubuntu-latest
@@ -94,10 +94,10 @@ jobs:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
           RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
         with:
-          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
-          maturin-version: ${{ env.MATURIN_VERSION }}
           command: publish
           args: -m py-polars/Cargo.toml --skip-existing -o wheels -u ritchie46
+          maturin-version: ${{ env.MATURIN_VERSION }}
+          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
 
   manylinux-x64_64-lts-cpu:
     runs-on: ubuntu-latest
@@ -121,10 +121,10 @@ jobs:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
           RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt --cfg use_mimalloc
         with:
-          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
-          maturin-version: ${{ env.MATURIN_VERSION }}
           command: publish
           args: -m py-polars/Cargo.toml --skip-existing -o wheels -u ritchie46
+          maturin-version: ${{ env.MATURIN_VERSION }}
+          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
 
   win-macos:
     runs-on: ${{ matrix.os }}
@@ -150,10 +150,10 @@ jobs:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
           RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+sse4.1,+sse4.2
         with:
-          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
-          maturin-version: ${{ env.MATURIN_VERSION }}
           command: publish
           args: -m py-polars/Cargo.toml --no-sdist --skip-existing -o wheels -i python -u ritchie46
+          maturin-version: ${{ env.MATURIN_VERSION }}
+          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
 
   macos-aarch64:
     runs-on: macos-latest
@@ -176,6 +176,6 @@ jobs:
         env:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
         with:
-          maturin-version: ${{ env.MATURIN_VERSION }}
           command: publish
           args: -m py-polars/Cargo.toml --target aarch64-apple-darwin --no-sdist -o wheels -i python -u ritchie46
+          maturin-version: ${{ env.MATURIN_VERSION }}
