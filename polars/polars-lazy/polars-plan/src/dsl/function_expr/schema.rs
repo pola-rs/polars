@@ -104,6 +104,8 @@ impl FunctionExpr {
 
         use FunctionExpr::*;
         match self {
+            #[cfg(feature = "abs")]
+            Abs => same_type(),
             NullCount => with_dtype(IDX_DTYPE),
             Pow => float_dtype(),
             Coalesce => super_type(),

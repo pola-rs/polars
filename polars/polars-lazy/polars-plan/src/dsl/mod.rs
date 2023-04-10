@@ -1058,8 +1058,7 @@ impl Expr {
     /// Convert all values to their absolute/positive value.
     #[cfg(feature = "abs")]
     pub fn abs(self) -> Self {
-        self.map(move |s: Series| s.abs().map(Some), GetOutput::same_type())
-            .with_fmt("abs")
+        self.map_private(FunctionExpr::Abs)
     }
 
     /// Apply window function over a subgroup.
