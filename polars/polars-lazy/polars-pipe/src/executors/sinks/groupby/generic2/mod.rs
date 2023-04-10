@@ -34,6 +34,9 @@ struct SpillPayload {
     num_keys: usize,
 }
 
+static HASH_COL: &str = "__POLARS_h";
+static INDEX_COL: &str = "__POLARS_idx";
+
 impl SpillPayload {
     fn hashes(&self) -> &[u64] {
         &self.hashes
@@ -49,5 +52,28 @@ impl SpillPayload {
 
     fn chunk_index(&self) -> &[IdxSize] {
         &self.chunk_idx
+    }
+
+    fn get_schema(&self) -> Schema {
+        let mut schema = Schema::with_capacity(self.keys_and_aggs.len() + 2);
+        schema.with_column(HASH_COL.into(), DataType::UInt64);
+        schema.with_column(INDEX_COL.into(), IDX_DTYPE);
+        for s in &self.keys_and_aggs {
+            schema.with_column(s.name().into(), s.dtype().clone());
+        }
+        schema
+    }
+
+    fn into_df(self) -> DataFrame {
+        debug_assert_eq!(self.hashes.len(), self.chunk_idx.len());
+        debug_assert_eq!(self.hashes.len(), self.keys_and_aggs.len());
+
+        let hashes = UInt64Chunked::from_vec(HASH_COL, self.hashes).into_series();
+        let chunk_idx = IdxCa::from_vec(INDEX_COL, self.chunk_idx).into_series();
+        let mut cols = Vec::with_capacity(self.keys_and_aggs.len() + 2);
+        cols.push(hashes);
+        cols.push(chunk_idx);
+        cols.extend(self.keys_and_aggs);
+        DataFrame::new_no_checks(cols)
     }
 }

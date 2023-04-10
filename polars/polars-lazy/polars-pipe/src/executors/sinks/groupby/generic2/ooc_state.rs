@@ -36,8 +36,14 @@ const EARLY_MERGE_THRESHOLD: f64 = 0.5;
 // aggregate in a second run
 const TO_DISK_THRESHOLD: f64 = 0.3;
 
+pub(super) enum SpillAction {
+    EarlyMerge,
+    Dump,
+    None,
+}
+
 impl OocState {
-    fn init_ooc(&mut self) -> PolarsResult<()> {
+    fn init_ooc(&mut self, spill_schema: &dyn Fn() -> Option<Schema>) -> PolarsResult<()> {
         if verbose() {
             eprintln!("OOC groupby started");
         }
@@ -45,21 +51,36 @@ impl OocState {
 
         // start IO thread
         let mut iot = self.io_thread.lock().unwrap();
-        // if iot.is_none() {
-        //     // todo!
-        //     // *iot = Some(IOThread::try_new(input_schema, "groupby")?)
-        // }
+        if iot.is_none() {
+            if let Some(schema) = spill_schema() {
+                *iot = Some(IOThread::try_new(Arc::new(schema), "groupby")?)
+            }
+        }
         Ok(())
     }
 
-    pub(super) fn check_memory_usage(&mut self) -> PolarsResult<bool> {
+    pub(super) fn check_memory_usage(
+        &mut self,
+        spill_schema: &dyn Fn() -> Option<Schema>,
+    ) -> PolarsResult<SpillAction> {
+        if self.ooc {
+            return Ok(SpillAction::Dump);
+        }
         let free_frac = self.mem_track.free_memory_fraction_since_start();
 
         if free_frac < MEMORY_FRACTION_THRESHOLD {
-            self.init_ooc()?;
+            self.init_ooc(spill_schema)?;
+            Ok(SpillAction::Dump)
         } else if free_frac < EARLY_MERGE_THRESHOLD {
-            return Ok(true);
+            return Ok(SpillAction::EarlyMerge);
+        } else {
+            Ok(SpillAction::None)
         }
-        Ok(false)
+    }
+
+    pub(super) fn dump(&self, partition_no: usize, df: DataFrame) {
+        let iot = self.io_thread.lock().unwrap();
+        let iot = iot.as_ref().unwrap();
+        iot.dump_partition(partition_no as IdxSize, df)
     }
 }

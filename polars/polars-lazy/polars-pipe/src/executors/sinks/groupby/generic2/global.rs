@@ -2,6 +2,8 @@ use std::collections::LinkedList;
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::Mutex;
 
+use polars_core::utils::accumulate_dataframes_vertical_unchecked;
+
 use super::*;
 use crate::pipeline::PARTITION_SIZE;
 
@@ -25,10 +27,28 @@ impl SpillPartitions {
         partition.push_back(to_spill)
     }
 
-    fn drain_partition(&self, partition: usize) -> LinkedList<SpillPayload> {
+    fn drain_partition(
+        &self,
+        partition: usize,
+        min_size: usize,
+    ) -> Option<LinkedList<SpillPayload>> {
         let partition = &self.partitions[partition];
         let mut partition = partition.lock().unwrap();
-        std::mem::take(&mut partition)
+        if partition.len() > min_size {
+            Some(std::mem::take(&mut partition))
+        } else {
+            None
+        }
+    }
+
+    fn spill_schema(&self) -> Option<Schema> {
+        for part in &self.partitions {
+            let bucket = part.lock().unwrap();
+            if let Some(payload) = bucket.front() {
+                return Some(payload.get_schema());
+            }
+        }
+        None
     }
 }
 
@@ -74,8 +94,24 @@ impl GlobalTable {
         self.process_partition(partition)
     }
 
+    pub(super) fn get_ooc_dump_schema(&self) -> Option<Schema> {
+        self.spill_partitions.spill_schema()
+    }
+
+    pub(super) fn get_ooc_dump(&self) -> Option<(usize, DataFrame)> {
+        // round robin a partition to dump
+        let partition =
+            self.early_merge_counter.fetch_add(1, Ordering::Relaxed) as usize % PARTITION_SIZE;
+        // IO is expensive so we only spill if we have `N` payloads to dump.
+        let bucket = self.spill_partitions.drain_partition(partition, 64)?;
+        Some((
+            partition,
+            accumulate_dataframes_vertical_unchecked(bucket.into_iter().map(|pl| pl.into_df())),
+        ))
+    }
+
     fn process_partition(&self, partition: usize) {
-        let bucket = self.spill_partitions.drain_partition(partition);
+        let bucket = self.spill_partitions.drain_partition(partition, 0).unwrap();
         let mut hash_map = self.inner_maps[partition].lock().unwrap();
 
         for payload in bucket {

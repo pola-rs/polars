@@ -3,7 +3,7 @@ use std::cell::UnsafeCell;
 
 use super::*;
 use crate::executors::sinks::groupby::generic2::global::GlobalTable;
-use crate::executors::sinks::groupby::generic2::ooc_state::OocState;
+use crate::executors::sinks::groupby::generic2::ooc_state::{OocState, SpillAction};
 use crate::expressions::PhysicalPipedExpr;
 
 pub(crate) struct GenericGroupby2 {
@@ -82,8 +82,19 @@ impl Sink for GenericGroupby2 {
 
         // indicates if we should early merge a partition
         // other scenario could be that we must spill to disk
-        if self.ooc_state.check_memory_usage()? {
-            self.global_table.early_merge()
+        match self
+            .ooc_state
+            .check_memory_usage(&|| self.global_table.get_ooc_dump_schema())?
+        {
+            SpillAction::None => {}
+            SpillAction::EarlyMerge => self.global_table.early_merge(),
+            SpillAction::Dump => {
+                if let Some((partition_no, spill)) = self.global_table.get_ooc_dump() {
+                    self.ooc_state.dump(partition_no, spill)
+                } else {
+                    // do nothing
+                }
+            }
         }
         Ok(SinkResult::CanHaveMoreInput)
     }
