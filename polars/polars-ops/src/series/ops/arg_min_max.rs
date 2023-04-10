@@ -229,25 +229,26 @@ where
             ca.downcast_iter()
                 .fold((None, None, 0), |acc, arr| {
                     if arr.len() == 0 {
+                        // argminmax assumes not empty
                         return acc;
                     }
                     let chunk_min_idx: usize = arr.values().as_slice().argmin();
                     let chunk_min_val: T::Native = arr.value(chunk_min_idx);
                     match acc {
-                        (None, None, offset) => (
-                            Some(chunk_min_idx + offset),
+                        (None, None, acc_offset) => (
+                            Some(chunk_min_idx + acc_offset),
                             Some(chunk_min_val),
-                            offset + arr.len(),
+                            acc_offset + arr.len(),
                         ),
-                        (Some(acc_min_idx), Some(acc_min_val), offset) => {
+                        (Some(acc_min_idx), Some(acc_min_val), acc_offset) => {
                             if chunk_min_val < acc_min_val {
                                 (
-                                    Some(chunk_min_idx + offset),
+                                    Some(chunk_min_idx + acc_offset),
                                     Some(chunk_min_val),
-                                    offset + arr.len(),
+                                    acc_offset + arr.len(),
                                 )
                             } else {
-                                (Some(acc_min_idx), Some(acc_min_val), offset + arr.len())
+                                (Some(acc_min_idx), Some(acc_min_val), acc_offset + arr.len())
                             }
                         }
                         _ => unreachable!(),
@@ -270,25 +271,26 @@ where
             ca.downcast_iter()
                 .fold((None, None, 0), |acc, arr| {
                     if arr.len() == 0 {
+                        // argminmax assumes not empty
                         return acc;
                     }
                     let chunk_max_idx: usize = arr.values().as_slice().argmax();
                     let chunk_max_val: T::Native = arr.value(chunk_max_idx);
                     match acc {
-                        (None, None, offset) => (
-                            Some(chunk_max_idx + offset),
+                        (None, None, acc_offset) => (
+                            Some(chunk_max_idx + acc_offset),
                             Some(chunk_max_val),
-                            offset + arr.len(),
+                            acc_offset + arr.len(),
                         ),
-                        (Some(acc_max_idx), Some(acc_max_val), offset) => {
+                        (Some(acc_max_idx), Some(acc_max_val), acc_offset) => {
                             if chunk_max_val > acc_max_val {
                                 (
-                                    Some(chunk_max_idx + offset),
+                                    Some(chunk_max_idx + acc_offset),
                                     Some(chunk_max_val),
-                                    offset + arr.len(),
+                                    acc_offset + arr.len(),
                                 )
                             } else {
-                                (Some(acc_max_idx), Some(acc_max_val), offset + arr.len())
+                                (Some(acc_max_idx), Some(acc_max_val), acc_offset + arr.len())
                             }
                         }
                         _ => unreachable!(),

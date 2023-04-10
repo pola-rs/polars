@@ -10,7 +10,7 @@ description = "More operations on polars data structures"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-argminmax = { git = "https://github.com/jvdd/argminmax" }
+argminmax = { version = "0.6" }
 arrow.workspace = true
 base64 = { version = "0.21", optional = true }
 either.workspace = true
