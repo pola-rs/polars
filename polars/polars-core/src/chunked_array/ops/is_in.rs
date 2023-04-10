@@ -369,22 +369,12 @@ impl IsIn for StructChunked {
                     self.fields().len(), other.fields().len()
                 );
 
-                let out = self
-                    .fields()
-                    .iter()
-                    .zip(other.fields())
-                    .map(|(lhs, rhs)| lhs.is_in(rhs))
-                    .collect::<PolarsResult<Vec<_>>>()?;
-
-                let out = out.into_iter().reduce(|acc, val| {
-                    // all false
-                    if !acc.any() {
-                        acc
-                    } else {
-                        acc & val
-                    }
-                });
-                out.ok_or_else(|| polars_err!(ComputeError: "no fields in struct"))
+                let mut set = HashSet::with_capacity(other.len());
+                set.extend(other.into_iter().map(|opt_val| opt_val.to_vec()));
+                let mut ca: BooleanChunked =
+                    self.into_iter().map(|v| set.contains(v)).collect();
+                ca.rename(self.name());
+                Ok(ca)
             }
         }
     }

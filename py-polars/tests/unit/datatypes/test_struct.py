@@ -551,18 +551,33 @@ def test_arr_unique() -> None:
 def test_is_in_struct() -> None:
     df = pl.DataFrame(
         {
-            "struct_elem": [{"a": 1, "b": 11}, {"a": 1, "b": 90}],
+            "struct_elem": [
+                {"a": 1, "b": None},
+                {"a": 1, "b": 90},
+                {"a": None, "b": 90},
+            ],
             "struct_list": [
-                [{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 3, "b": 13}],
+                [{"a": 1, "b": None}, {"a": 2, "b": 12}, {"a": 3, "b": 13}],
                 [{"a": 3, "b": 3}],
+                [],
             ],
         }
     )
 
     assert df.filter(pl.col("struct_elem").is_in("struct_list")).to_dict(False) == {
-        "struct_elem": [{"a": 1, "b": 11}],
-        "struct_list": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 3, "b": 13}]],
+        "struct_elem": [{"a": 1, "b": None}],
+        "struct_list": [[{"a": 1, "b": None}, {"a": 2, "b": 12}, {"a": 3, "b": 13}]],
     }
+
+    df2 = pl.DataFrame(
+        {
+            "struct_elem2": [{"a": 1, "b": 0}, {"a": 0, "b": 90}, {"a": None, "b": 90}],
+        }
+    )
+
+    assert df.filter(pl.col("struct_elem").is_in(df2["struct_elem2"])).to_dict(
+        False
+    ) == {"struct_elem": [{"a": None, "b": 90}], "struct_list": [[]]}
 
 
 def test_nested_explode_4026() -> None:
