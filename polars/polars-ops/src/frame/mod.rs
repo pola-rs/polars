@@ -3,12 +3,12 @@ mod join;
 pub mod pivot;
 
 pub use join::*;
-#[cfg(feature = "to_dummies")]
+#[cfg(any(feature = "to_dummies", feature = "approx_unique"))]
 use polars_core::export::rayon::prelude::*;
 use polars_core::prelude::*;
 #[cfg(feature = "to_dummies")]
 use polars_core::utils::accumulate_dataframes_horizontal;
-#[cfg(feature = "to_dummies")]
+#[cfg(any(feature = "to_dummies", feature = "approx_unique"))]
 use polars_core::POOL;
 
 #[allow(unused_imports)]
@@ -108,5 +108,52 @@ pub trait DataFrameOps: IntoDf {
         })?;
 
         accumulate_dataframes_horizontal(cols)
+    }
+
+    /// Approx count unique values.
+    ///
+    /// This is done using the HyperLogLog++ algorithm for cardinality estimation.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    ///
+    /// # #[macro_use] extern crate polars_core;
+    /// # fn main() {
+    ///
+    ///  use polars_core::prelude::*;
+    ///
+    ///  let df = df! {
+    ///       "id" => &[1, 2, 3, 1, 2, 3, 1, 1],
+    ///       "type" => &["A", "B", "B", "B", "C", "C", "C", "B"],
+    ///       "code" => &["X1", "X2", "X3", "X3", "X2", "X2", "X1", "X1"]
+    ///   }.unwrap();
+    ///
+    ///   let approx_count = df.approx_unique(16).unwrap();
+    ///   dbg!(approx_count);
+    /// # }
+    /// ```
+    /// Outputs:
+    /// ```text
+    /// +-----+------+------+
+    /// | id  | type | code |
+    /// | --- | ---  | ---  |
+    /// | u32 | u32  | u32  |
+    /// +===================+
+    /// | 3   | 3    | 3    |
+    /// +-----+------+------+
+    /// ```
+    #[cfg(feature = "approx_unique")]
+    fn approx_unique(&self, precision: u8) -> PolarsResult<DataFrame> {
+        let df = self.to_df();
+
+        let cols = POOL.install(|| {
+            df.get_columns()
+                .par_iter()
+                .map(|s| approx_unique(s, precision))
+                .collect::<PolarsResult<Vec<_>>>()
+        })?;
+
+        Ok(DataFrame::new_no_checks(cols))
     }
 }
