@@ -15,7 +15,7 @@ pub(super) fn cumcount(s: &Series, reverse: bool) -> PolarsResult<Series> {
 }
 
 pub(super) fn cumsum(s: &Series, reverse: bool) -> PolarsResult<Series> {
-    Ok(s.cumprod(reverse))
+    Ok(s.cumsum(reverse))
 }
 
 pub(super) fn cumprod(s: &Series, reverse: bool) -> PolarsResult<Series> {
