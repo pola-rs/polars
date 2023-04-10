@@ -45,14 +45,3 @@ pub(super) fn interpolate(s: &Series, method: InterpolationMethod) -> PolarsResu
 pub(super) fn dot_impl(s: &[Series]) -> PolarsResult<Series> {
     Ok((&s[0] * &s[1]).sum_as_series())
 }
-
-#[cfg(feature = "log")]
-pub(super) fn entropy(s: &Series, base: f64, normalize: bool) -> PolarsResult<Series> {
-    let out = s.entropy(base, normalize);
-    if matches!(s.dtype(), DataType::Float32) {
-        let out = out.map(|v| v as f32);
-        Ok(Series::new(s.name(), [out]))
-    } else {
-        Ok(Series::new(s.name(), [out]))
-    }
-}

@@ -1997,17 +1997,7 @@ impl Expr {
     #[cfg(feature = "log")]
     /// Compute the natural logarithm of all elements plus one in the input array
     pub fn log1p(self) -> Self {
-        self.map(
-            move |s| Ok(Some(s.log1p())),
-            GetOutput::map_dtype(|dt| {
-                if matches!(dt, DataType::Float32) {
-                    DataType::Float32
-                } else {
-                    DataType::Float64
-                }
-            }),
-        )
-        .with_fmt("log1p")
+        self.apply_private(FunctionExpr::Log1p)
     }
 
     #[cfg(feature = "log")]
