@@ -504,7 +504,12 @@ impl DatetimeArgs {
 
     /// Set `hour`, `minute`, and `second`
     ///
-    /// Equivalent to `self.with_hour(hour).with_minute(minute).with_second(second)`.
+    /// Equivalent to
+    /// ```ignore
+    /// self.with_hour(hour)
+    ///     .with_minute(minute)
+    ///     .with_second(second)
+    /// ```
     pub fn with_hms(self, hour: Expr, minute: Expr, second: Expr) -> Self {
         Self {
             hour,
@@ -669,6 +674,45 @@ impl DurationArgs {
         Self::default()
     }
 
+    /// Set `hours`, `minutes`, and `seconds`
+    ///
+    /// Equivalent to
+    /// ```ignore
+    /// self.with_hours(hours)
+    ///     .with_minutes(minutes)
+    ///     .with_seconds(seconds)
+    /// ```.
+    pub fn with_hms(self, hours: Expr, minutes: Expr, seconds: Expr) -> Self {
+        Self {
+            hours,
+            minutes,
+            seconds,
+            ..self
+        }
+    }
+
+    /// Set `milliseconds`, `microseconds`, and `nanoseconds`
+    ///
+    /// Equivalent to
+    /// ```ignore
+    /// self.with_milliseconds(milliseconds)
+    ///     .with_microseconds(microseconds)
+    ///     .with_nanoseconds(nanoseconds)
+    /// ```
+    pub fn with_fractional_seconds(
+        self,
+        milliseconds: Expr,
+        microseconds: Expr,
+        nanoseconds: Expr,
+    ) -> Self {
+        Self {
+            milliseconds,
+            microseconds,
+            nanoseconds,
+            ..self
+        }
+    }
+
     impl_unit_setter!(with_weeks(weeks));
     impl_unit_setter!(with_days(days));
     impl_unit_setter!(with_hours(hours));
@@ -679,7 +723,7 @@ impl DurationArgs {
     impl_unit_setter!(with_nanoseconds(nanoseconds));
 }
 
-/// Construct a column of `Duration` from the provided [`DurationArgs`].
+/// Construct a column of `Duration` from the provided [`DurationArgs`]
 #[cfg(feature = "temporal")]
 pub fn duration(args: DurationArgs) -> Expr {
     let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
