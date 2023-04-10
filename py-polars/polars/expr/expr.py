@@ -47,7 +47,7 @@ from polars.utils._parse_expr_input import expr_to_lit_or_expr, selection_to_pye
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import deprecated_alias
 from polars.utils.meta import threadpool_size
-from polars.utils.various import sphinx_accessor
+from polars.utils.various import find_stacklevel, sphinx_accessor
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arg_where as py_arg_where
@@ -3439,7 +3439,7 @@ class Expr:
             " under the list and string namespaces. Use `.arr.explode()` or"
             " `.str.explode()` instead.",
             DeprecationWarning,
-            stacklevel=2,
+            stacklevel=find_stacklevel(),
         )
         return self._from_pyexpr(self._pyexpr.explode())
 

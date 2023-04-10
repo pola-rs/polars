@@ -55,6 +55,7 @@ from polars.utils.various import (
     _in_notebook,
     _prepare_row_count_args,
     _process_null_values,
+    find_stacklevel,
     normalise_filepath,
 )
 
@@ -933,7 +934,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         warnings.warn(
             "`LazyFrame.describe_plan` has been deprecated; Please use `LazyFrame.explain` instead",
             category=DeprecationWarning,
-            stacklevel=2,
+            stacklevel=find_stacklevel(),
         )
         if optimized:
             ldf = self._ldf.optimization_toggle(
@@ -963,7 +964,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         warnings.warn(
             "`LazyFrame.describe_optimized_plan` has been deprecated; Please use `LazyFrame.explain` instead",
             category=DeprecationWarning,
-            stacklevel=2,
+            stacklevel=find_stacklevel(),
         )
         ldf = self._ldf.optimization_toggle(
             type_coercion,
