@@ -1807,6 +1807,10 @@ impl PyExpr {
         self.inner.clone().log(base).into()
     }
 
+    pub fn log1p(&self) -> Self {
+        self.inner.clone().log1p().into()
+    }
+
     pub fn exp(&self) -> Self {
         self.inner.clone().exp().into()
     }
