@@ -1,9 +1,12 @@
 use std::arch::x86_64::_mm_undefined_si128;
 use std::cell::UnsafeCell;
 
+use polars_core::utils::accumulate_dataframes_vertical_unchecked;
+
 use super::*;
 use crate::executors::sinks::groupby::generic2::global::GlobalTable;
 use crate::executors::sinks::groupby::generic2::ooc_state::{OocState, SpillAction};
+use crate::executors::sources::DataFrameSource;
 use crate::expressions::PhysicalPipedExpr;
 
 pub(crate) struct GenericGroupby2 {
@@ -120,7 +123,7 @@ impl Sink for GenericGroupby2 {
         })
     }
 
-    fn finalize(&mut self, context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
+    fn finalize(&mut self, _context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         let map = unsafe { (&mut *self.thread_local_table.get()) };
 
         // only succeeds if it hasn't spilled to global
@@ -133,7 +136,18 @@ impl Sink for GenericGroupby2 {
             }
             // ensure the global map update the partitioned hash tables with keys from local map
             self.global_table.merge_local_map(map.get_inner_map_mut());
-            todo!()
+
+            // all data is in memory
+            // finalize
+            if !self.ooc_state.ooc {
+                let out = self.global_table.finalize(&mut self.slice);
+                let src = DataFrameSource::from_df(accumulate_dataframes_vertical_unchecked(out));
+                Ok(FinalizedSink::Source(Box::new(src)))
+            }
+            // create an ooc source
+            else {
+                todo!()
+            }
         }
     }
 

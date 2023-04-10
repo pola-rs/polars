@@ -3,6 +3,8 @@ use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::sync::Mutex;
 
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
+use polars_core::POOL;
+use rayon::prelude::*;
 
 use super::*;
 use crate::pipeline::PARTITION_SIZE;
@@ -146,6 +148,30 @@ impl GlobalTable {
         for (partition_i, pt_map) in self.inner_maps.iter().enumerate() {
             let mut pt_map = pt_map.lock().unwrap();
             pt_map.combine_on_partition(partition_i, finalized_local_map)
+        }
+    }
+
+    // only should be called if all state is in-memory
+    pub(super) fn finalize(&self, slice: &mut Option<(i64, usize)>) -> Vec<DataFrame> {
+        if slice.is_none() {
+            POOL.install(|| {
+                (0..PARTITION_SIZE)
+                    .into_par_iter()
+                    .map(|part_i| {
+                        self.process_partition(part_i);
+                        let mut hash_map = self.inner_maps[part_i].lock().unwrap();
+                        hash_map.finalize(&mut None)
+                    })
+                    .collect()
+            })
+        } else {
+            (0..PARTITION_SIZE)
+                .map(|part_i| {
+                    self.process_partition(part_i);
+                    let mut hash_map = self.inner_maps[part_i].lock().unwrap();
+                    hash_map.finalize(slice)
+                })
+                .collect()
         }
     }
 }
