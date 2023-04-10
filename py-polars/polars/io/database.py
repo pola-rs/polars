@@ -4,6 +4,7 @@ import warnings
 from typing import TYPE_CHECKING, Any
 
 from polars.convert import from_arrow
+from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
     from polars.dataframe import DataFrame
@@ -190,7 +191,7 @@ def read_sql(
         "`read_sql` has been renamed; this"
         " redirect is temporary, please use `read_database` instead",
         category=DeprecationWarning,
-        stacklevel=2,
+        stacklevel=find_stacklevel(),
     )
     return read_database(
         query=query,

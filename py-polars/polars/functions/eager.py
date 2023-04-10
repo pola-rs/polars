@@ -15,6 +15,7 @@ from polars.utils.convert import (
     _tzinfo_to_str,
 )
 from polars.utils.decorators import deprecated_alias
+from polars.utils.various import find_stacklevel
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import concat_df as _concat_df
@@ -94,7 +95,7 @@ def get_dummies(
     warnings.warn(
         "`pl.get_dummies(df)` has been deprecated; use `df.to_dummies()`",
         category=DeprecationWarning,
-        stacklevel=2,
+        stacklevel=find_stacklevel(),
     )
     return df.to_dummies(columns=columns, separator=separator)
 
@@ -602,7 +603,7 @@ def cut(
     warnings.warn(
         "`pl.cut(series)` has been deprecated; use `series.cut()`",
         category=DeprecationWarning,
-        stacklevel=2,
+        stacklevel=find_stacklevel(),
     )
     return s.cut(bins, labels, break_point_label, category_label)
 
