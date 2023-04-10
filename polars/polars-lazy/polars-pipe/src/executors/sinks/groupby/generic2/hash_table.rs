@@ -1,8 +1,10 @@
 use std::cell::UnsafeCell;
 
 use polars_arrow::trusted_len::PushUnchecked;
+use polars_core::hashing::partition::this_partition;
 
 use super::*;
+use crate::pipeline::PARTITION_SIZE;
 
 pub(super) struct AggHashTable<const FIXED: bool> {
     inner_map: PlIdHashMap<Key, IdxSize>,
@@ -181,66 +183,91 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
     }
 
     pub(super) fn combine(&mut self, other: &mut Self) {
+        self.combine_impl(other, |_hash| true)
+    }
+
+    pub(super) fn combine_on_partition<const FIXED_OTHER: bool>(
+        &mut self,
+        partition: usize,
+        other: &mut AggHashTable<FIXED_OTHER>,
+    ) {
+        let partition = partition as u64;
+        self.combine_impl(other, |hash| {
+            this_partition(hash, partition, PARTITION_SIZE as u64)
+        })
+    }
+
+    pub(super) fn combine_impl<const FIXED_OTHER: bool, C>(
+        &mut self,
+        other: &mut AggHashTable<FIXED_OTHER>,
+        on_condition: C,
+    )
+    // takes a hash and if true, this keys will be combined
+    where
+        C: Fn(u64) -> bool,
+    {
         for (key_other, agg_idx_other) in other.inner_map.iter() {
             // safety: idx is from the hashmap, so is in bounds
             let keys = unsafe { other.get_keys(key_other.idx) };
 
-            let entry = self.get_entry(key_other.hash, keys);
-            let agg_idx_self = match entry {
-                RawEntryMut::Occupied(entry) => *entry.get(),
-                RawEntryMut::Vacant(entry) => {
-                    let borrow = &entry;
-                    let borrow = borrow as *const RawVacantEntryMut<_, _, _> as usize;
-                    // ensure the bck forgets this guy
-                    std::mem::forget(entry);
+            if on_condition(key_other.hash) {
+                let entry = self.get_entry(key_other.hash, keys);
+                let agg_idx_self = match entry {
+                    RawEntryMut::Occupied(entry) => *entry.get(),
+                    RawEntryMut::Vacant(entry) => {
+                        let borrow = &entry;
+                        let borrow = borrow as *const RawVacantEntryMut<_, _, _> as usize;
+                        // ensure the bck forgets this guy
+                        std::mem::forget(entry);
 
-                    let key_idx = self.keys.len() as IdxSize;
-                    let aggregation_idx = self.running_aggregations.len() as IdxSize;
+                        let key_idx = self.keys.len() as IdxSize;
+                        let aggregation_idx = self.running_aggregations.len() as IdxSize;
 
-                    let key = Key::new(key_other.hash, key_idx);
-                    for agg in self.agg_constructors.as_ref() {
-                        self.running_aggregations.push(agg.split())
-                    }
-
-                    // take a hold of the entry again and ensure it gets dropped
-                    unsafe {
-                        let borrow =
-                            borrow as *const RawVacantEntryMut<'_, Key, IdxSize, IdBuildHasher>;
-                        let entry = std::ptr::read(borrow);
-                        entry.insert(key, aggregation_idx);
-                    }
-                    // update the keys
-                    unsafe {
-                        let start = key_other.idx as usize;
-                        let end = start + self.num_keys;
-                        let keys = other.keys.get_unchecked_release_mut(start..end);
-
-                        for key in keys {
-                            let mut owned_key = AnyValue::Null;
-                            // this prevents cloning a string
-                            std::mem::swap(&mut owned_key, key);
-                            self.keys.push(owned_key)
+                        let key = Key::new(key_other.hash, key_idx);
+                        for agg in self.agg_constructors.as_ref() {
+                            self.running_aggregations.push(agg.split())
                         }
+
+                        // take a hold of the entry again and ensure it gets dropped
+                        unsafe {
+                            let borrow =
+                                borrow as *const RawVacantEntryMut<'_, Key, IdxSize, IdBuildHasher>;
+                            let entry = std::ptr::read(borrow);
+                            entry.insert(key, aggregation_idx);
+                        }
+                        // update the keys
+                        unsafe {
+                            let start = key_other.idx as usize;
+                            let end = start + self.num_keys;
+                            let keys = other.keys.get_unchecked_release_mut(start..end);
+
+                            for key in keys {
+                                let mut owned_key = AnyValue::Null;
+                                // this prevents cloning a string
+                                std::mem::swap(&mut owned_key, key);
+                                self.keys.push(owned_key)
+                            }
+                        }
+                        aggregation_idx
                     }
-                    aggregation_idx
-                }
-            };
-            let start = *agg_idx_other as usize;
-            let end = start + self.agg_constructors.len();
-            let aggs_other =
-                unsafe { other.running_aggregations.get_unchecked_release(start..end) };
-            let start = agg_idx_self as usize;
-            let end = start + self.agg_constructors.len();
-            let aggs_self = unsafe {
-                self.running_aggregations
-                    .get_unchecked_release_mut(start..end)
-            };
-            for i in 0..aggs_self.len() {
-                unsafe {
-                    let agg_self = aggs_self.get_unchecked_release_mut(i);
-                    let other = aggs_other.get_unchecked_release(i);
-                    // TODO!: try transmutes
-                    agg_self.combine(other.as_any())
+                };
+                let start = *agg_idx_other as usize;
+                let end = start + self.agg_constructors.len();
+                let aggs_other =
+                    unsafe { other.running_aggregations.get_unchecked_release(start..end) };
+                let start = agg_idx_self as usize;
+                let end = start + self.agg_constructors.len();
+                let aggs_self = unsafe {
+                    self.running_aggregations
+                        .get_unchecked_release_mut(start..end)
+                };
+                for i in 0..aggs_self.len() {
+                    unsafe {
+                        let agg_self = aggs_self.get_unchecked_release_mut(i);
+                        let other = aggs_other.get_unchecked_release(i);
+                        // TODO!: try transmutes
+                        agg_self.combine(other.as_any())
+                    }
                 }
             }
         }

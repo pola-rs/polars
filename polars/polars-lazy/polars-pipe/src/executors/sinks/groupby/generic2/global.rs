@@ -56,7 +56,6 @@ pub(super) struct GlobalTable {
     inner_maps: PartitionVec<Mutex<AggHashTable<false>>>,
     spill_partitions: SpillPartitions,
     early_merge_counter: Arc<AtomicU16>,
-    spilled: Arc<AtomicBool>,
 }
 
 impl GlobalTable {
@@ -80,18 +79,12 @@ impl GlobalTable {
             inner_maps,
             spill_partitions,
             early_merge_counter: Default::default(),
-            spilled: Default::default(),
         }
     }
 
     #[inline]
     pub(super) fn spill(&self, partition: usize, payload: SpillPayload) {
-        self.spilled.store(true, Ordering::Relaxed);
         self.spill_partitions.insert(partition, payload)
-    }
-
-    pub(super) fn is_empty(&self) -> bool {
-        !self.spilled.load(Ordering::Relaxed)
     }
 
     pub(super) fn early_merge(&self) {
@@ -147,7 +140,12 @@ impl GlobalTable {
         }
     }
 
-    pub(super) fn merge_local_map(&self, finalized_local_map: AggHashTable<false>>) {
-        todo!()
+    pub(super) fn merge_local_map(&self, finalized_local_map: &mut AggHashTable<true>) {
+        // TODO! maybe parallelize?
+        // needs unsafe, first benchmark.
+        for (partition_i, pt_map) in self.inner_maps.iter().enumerate() {
+            let mut pt_map = pt_map.lock().unwrap();
+            pt_map.combine_on_partition(partition_i, finalized_local_map)
+        }
     }
 }

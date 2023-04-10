@@ -17,8 +17,8 @@ struct SpillPartitions {
     // outer vec: partitions
     // inner vec: aggregation columns
     finished: PartitionVec<Vec<Series>>,
-    spill_count: u16,
     num_keys: usize,
+    spilled: bool,
 }
 
 impl SpillPartitions {
@@ -44,8 +44,8 @@ impl SpillPartitions {
             hash_partitioned,
             chunk_index_partitioned,
             finished: vec![],
-            spill_count: 0,
             num_keys: keys.len(),
+            spilled: false,
         }
     }
 }
@@ -60,6 +60,7 @@ impl SpillPartitions {
         aggs: &mut [SeriesPhysIter],
     ) -> Option<(usize, SpillPayload)> {
         let partition = hash_to_partition(hash, self.keys_aggs_partitioned.len());
+        self.spilled = true;
         unsafe {
             let keys_aggs = self
                 .keys_aggs_partitioned
@@ -88,7 +89,7 @@ impl SpillPartitions {
                 i += 1;
             }
 
-            if hashes.len() == OB_SIZE {
+            if hashes.len() >= OB_SIZE {
                 let mut new_hashes = Vec::with_capacity(OB_SIZE);
                 let mut new_chunk_indexes = Vec::with_capacity(OB_SIZE);
                 std::mem::swap(&mut new_hashes, hashes);
@@ -130,13 +131,25 @@ impl SpillPartitions {
         }
     }
 
-    // round robin a partition that will be spilled
-    fn prepare_for_global_spill(&mut self) -> SpillPayload {
-        let i = (self.spill_count % (PARTITION_SIZE as u16)) as usize;
-        self.spill_count += 1;
+    fn get_all_spilled(&mut self) -> impl Iterator<Item = SpillPayload> + '_ {
+        (0..PARTITION_SIZE).map(|partition| unsafe {
+            let keys_aggs = self
+                .keys_aggs_partitioned
+                .get_unchecked_release_mut(partition);
+            let hashes = self.hash_partitioned.get_unchecked_release_mut(partition);
+            let chunk_indexes = self
+                .chunk_index_partitioned
+                .get_unchecked_release_mut(partition);
+            let hashes = std::mem::take(hashes);
+            let chunk_idx = std::mem::take(chunk_indexes);
 
-        let builder = unsafe { self.keys_aggs_partitioned.get_unchecked_release_mut(i) };
-        todo!()
+            SpillPayload {
+                hashes,
+                chunk_idx,
+                keys_and_aggs: keys_aggs.iter_mut().map(|b| b.reset(0)).collect(),
+                num_keys: self.num_keys,
+            }
+        })
     }
 }
 
@@ -177,6 +190,10 @@ impl ThreadLocalTable {
         self.inner_map.len()
     }
 
+    pub(super) fn get_inner_map_mut(&mut self) -> &mut AggHashTable<true> {
+        &mut self.inner_map
+    }
+
     /// # Safety
     /// Caller must ensure that `keys` and `agg_iters` are not depleted.
     pub(super) unsafe fn insert<'a>(
@@ -199,13 +216,15 @@ impl ThreadLocalTable {
         self.spill_partitions.combine(&mut other.spill_partitions);
     }
 
-    pub(super) fn finalize(
-        &mut self,
-        slice: &mut Option<(i64, usize)>,
-    ) -> (DataFrame, Vec<Vec<Series>>) {
-        (
-            self.inner_map.finalize(slice),
-            std::mem::take(&mut self.spill_partitions.finished),
-        )
+    pub(super) fn finalize(&mut self, slice: &mut Option<(i64, usize)>) -> Option<DataFrame> {
+        if !self.spill_partitions.spilled {
+            Some(self.inner_map.finalize(slice))
+        } else {
+            None
+        }
+    }
+
+    pub(super) fn get_all_spilled(&mut self) -> impl Iterator<Item = SpillPayload> + '_ {
+        self.spill_partitions.get_all_spilled()
     }
 }

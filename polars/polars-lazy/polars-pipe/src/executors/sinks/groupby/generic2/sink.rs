@@ -123,11 +123,16 @@ impl Sink for GenericGroupby2 {
     fn finalize(&mut self, context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         let map = unsafe { (&mut *self.thread_local_table.get()) };
 
-        if self.global_table.is_empty() {
-            let (out, spilled) = map.finalize(&mut self.slice);
+        // only succeeds if it hasn't spilled to global
+        if let Some(out) = map.finalize(&mut self.slice) {
             Ok(FinalizedSink::Finished(out))
         } else {
-
+            // ensure the global map gets all overflow buckets
+            for (partition, payload) in map.get_all_spilled().enumerate() {
+                self.global_table.spill(partition, payload);
+            }
+            // ensure the global map update the partitioned hash tables with keys from local map
+            self.global_table.merge_local_map(map.get_inner_map_mut());
             todo!()
         }
     }
