@@ -449,6 +449,16 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
     }
 }
 
+macro_rules! impl_unit_setter {
+    ($fn_name:ident($field:ident -> $into_ty:ty $(,)?)) => {
+        #[doc = concat!("Set the ", stringify!($field))]
+        pub fn $fn_name(mut self, n: impl Into<$into_ty>) -> Self {
+            self.$field = n.into();
+            self
+        }
+    };
+}
+
 #[derive(Default)]
 pub struct DatetimeArgs {
     pub year: Expr,
@@ -458,6 +468,28 @@ pub struct DatetimeArgs {
     pub minute: Option<Expr>,
     pub second: Option<Expr>,
     pub microsecond: Option<Expr>,
+}
+
+impl DatetimeArgs {
+    /// Construct a new `DatetimeArgs` set to `year`, `month`, `day`.
+    ///
+    /// Other fields default to 0. Use the `with_*` methods to set them.
+    pub fn new(year: Expr, month: Expr, day: Expr) -> Self {
+        Self {
+            year,
+            month,
+            day,
+            ..Default::default()
+        }
+    }
+
+    impl_unit_setter!(with_year(year -> Expr));
+    impl_unit_setter!(with_month(month -> Expr));
+    impl_unit_setter!(with_day(day -> Expr));
+    impl_unit_setter!(with_hour(hour -> Option<Expr>));
+    impl_unit_setter!(with_minute(minute -> Option<Expr>));
+    impl_unit_setter!(with_second(second -> Option<Expr>));
+    impl_unit_setter!(with_microsecond(microsecond -> Option<Expr>));
 }
 
 /// Construct a column of `Datetime` from the provided args.
@@ -566,14 +598,31 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
 
 #[derive(Default)]
 pub struct DurationArgs {
-    pub days: Option<Expr>,
-    pub seconds: Option<Expr>,
-    pub nanoseconds: Option<Expr>,
-    pub microseconds: Option<Expr>,
-    pub milliseconds: Option<Expr>,
-    pub minutes: Option<Expr>,
-    pub hours: Option<Expr>,
     pub weeks: Option<Expr>,
+    pub days: Option<Expr>,
+    pub hours: Option<Expr>,
+    pub minutes: Option<Expr>,
+    pub seconds: Option<Expr>,
+    pub milliseconds: Option<Expr>,
+    pub microseconds: Option<Expr>,
+    pub nanoseconds: Option<Expr>,
+}
+
+impl DurationArgs {
+    /// Create a new `DurationArgs` with all fields set to `None`, which is converted to 0 at runtime. Use the `with_*`
+    /// methods to set the fields.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    impl_unit_setter!(with_weeks(weeks -> Option<Expr>));
+    impl_unit_setter!(with_days(days -> Option<Expr>));
+    impl_unit_setter!(with_hours(hours -> Option<Expr>));
+    impl_unit_setter!(with_minutes(minutes -> Option<Expr>));
+    impl_unit_setter!(with_seconds(seconds -> Option<Expr>));
+    impl_unit_setter!(with_milliseconds(milliseconds -> Option<Expr>));
+    impl_unit_setter!(with_microseconds(microseconds -> Option<Expr>));
+    impl_unit_setter!(with_nanoseconds(nanoseconds -> Option<Expr>));
 }
 
 /// Construct a column of `Duration` from the provided args.
