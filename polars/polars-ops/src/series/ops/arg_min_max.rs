@@ -1,4 +1,5 @@
 use argminmax::ArgMinMax;
+use arrow::array::Array;
 use arrow::bitmap::utils::{BitChunkIterExact, BitChunksExact};
 use arrow::bitmap::Bitmap;
 use polars_core::series::IsSorted;
@@ -229,28 +230,41 @@ where
             ca.downcast_iter()
                 .fold((None, None, 0), |acc, arr| {
                     if arr.len() == 0 {
-                        // argminmax assumes not empty
                         return acc;
                     }
-                    let chunk_min_idx: usize = arr.values().as_slice().argmin();
-                    let chunk_min_val: T::Native = arr.value(chunk_min_idx);
+                    let chunk_min_idx: Option<usize>;
+                    let chunk_min_val: Option<T::Native>;
+                    if arr.null_count() > 0 {
+                        // When there are nulls, we should compare Option<T::Native>
+                        chunk_min_val = None; // because None < Some(_)
+                        chunk_min_idx = arr
+                            .into_iter()
+                            .enumerate()
+                            .reduce(|acc, (idx, val)| if acc.1 > val { (idx, val) } else { acc })
+                            .map(|tpl| tpl.0);
+                    } else {
+                        // When no nulls & array not empty => we can use fast argminmax
+                        let min_idx: usize = arr.values().as_slice().argmin();
+                        chunk_min_idx = Some(min_idx);
+                        chunk_min_val = Some(arr.value(min_idx));
+                    }
+
+                    let new_offset: usize = acc.2 + arr.len();
                     match acc {
-                        (None, None, acc_offset) => (
-                            Some(chunk_min_idx + acc_offset),
-                            Some(chunk_min_val),
-                            acc_offset + arr.len(),
-                        ),
-                        (Some(acc_min_idx), Some(acc_min_val), acc_offset) => {
-                            if chunk_min_val < acc_min_val {
-                                (
-                                    Some(chunk_min_idx + acc_offset),
-                                    Some(chunk_min_val),
-                                    acc_offset + arr.len(),
-                                )
+                        (Some(_), Some(_), offset) => {
+                            if chunk_min_val < acc.1 {
+                                match chunk_min_idx {
+                                    Some(idx) => (Some(idx + offset), chunk_min_val, new_offset),
+                                    None => (acc.0, acc.1, new_offset),
+                                }
                             } else {
-                                (Some(acc_min_idx), Some(acc_min_val), acc_offset + arr.len())
+                                (acc.0, acc.1, new_offset)
                             }
                         }
+                        (None, None, offset) => match chunk_min_idx {
+                            Some(idx) => (Some(idx + offset), chunk_min_val, new_offset),
+                            None => (None, None, new_offset),
+                        },
                         _ => unreachable!(),
                     }
                 })
@@ -271,28 +285,44 @@ where
             ca.downcast_iter()
                 .fold((None, None, 0), |acc, arr| {
                     if arr.len() == 0 {
-                        // argminmax assumes not empty
                         return acc;
                     }
-                    let chunk_max_idx: usize = arr.values().as_slice().argmax();
-                    let chunk_max_val: T::Native = arr.value(chunk_max_idx);
+                    let chunk_max_idx: Option<usize>;
+                    let chunk_max_val: Option<T::Native>;
+                    if arr.null_count() > 0 {
+                        // When there are nulls, we should compare Option<T::Native>
+                        chunk_max_idx = arr
+                            .into_iter()
+                            .enumerate()
+                            .reduce(|acc, (idx, val)| if acc.1 < val { (idx, val) } else { acc })
+                            .map(|tpl| tpl.0);
+                        chunk_max_val = match chunk_max_idx {
+                            Some(idx) => Some(arr.value(idx)),
+                            None => None,
+                        };
+                    } else {
+                        // When no nulls & array not empty => we can use fast argminmax
+                        let max_idx: usize = arr.values().as_slice().argmax();
+                        chunk_max_idx = Some(max_idx);
+                        chunk_max_val = Some(arr.value(max_idx));
+                    }
+
+                    let new_offset: usize = acc.2 + arr.len();
                     match acc {
-                        (None, None, acc_offset) => (
-                            Some(chunk_max_idx + acc_offset),
-                            Some(chunk_max_val),
-                            acc_offset + arr.len(),
-                        ),
-                        (Some(acc_max_idx), Some(acc_max_val), acc_offset) => {
-                            if chunk_max_val > acc_max_val {
-                                (
-                                    Some(chunk_max_idx + acc_offset),
-                                    Some(chunk_max_val),
-                                    acc_offset + arr.len(),
-                                )
+                        (Some(_), Some(_), offset) => {
+                            if chunk_max_val > acc.1 {
+                                match chunk_max_idx {
+                                    Some(idx) => (Some(idx + offset), chunk_max_val, new_offset),
+                                    _ => unreachable!(), // because None < Some(_)
+                                }
                             } else {
-                                (Some(acc_max_idx), Some(acc_max_val), acc_offset + arr.len())
+                                (acc.0, acc.1, new_offset)
                             }
                         }
+                        (None, None, offset) => match chunk_max_idx {
+                            Some(idx) => (Some(idx + offset), chunk_max_val, new_offset),
+                            None => (None, None, new_offset),
+                        },
                         _ => unreachable!(),
                     }
                 })
