@@ -2,7 +2,6 @@
 mod quantile;
 mod var;
 
-use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::ops::Add;
 
@@ -560,8 +559,7 @@ impl ChunkAggSeries for ListChunked {
         let ret = unsafe { self.sum() };
         match ret {
             Some(ret) => { 
-                let x = ret.to_list().expect("WHAT").into_series();
-                return x;
+                ret.to_list().expect("Failed to cast list series sum response to list").into_series()
             },
             None => ListChunked::full_null_with_dtype(self.name(), 1, &self.inner_dtype()).into_series()
         }

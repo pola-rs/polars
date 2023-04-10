@@ -683,24 +683,6 @@ impl Add for &ListChunked {
     type Output = ListChunked;
 
     fn add(self, rhs: Self) -> Self::Output {
-        // broadcasting path rhs
-        // if rhs.len() == 1 {
-        //     let rhs = rhs.get(0);
-        //     return match rhs {
-        //         Some(rhs) => self.add(rhs),
-        //         None => ListChunked::full_null(self.name(), self.len()),
-        //     };
-        // }
-        // broadcasting path lhs
-        // if self.len() == 1 {
-        //     let lhs = self.get(0);
-        //     return match lhs {
-        //         Some(lhs) => rhs.apply(|s| Cow::Owned(sum_list_arrs(lhs, s))),
-        //         None => ListChunked::full_null(self.name(), rhs.len()),
-        //     };
-        // }
-
-        // todo! add no_null variants. Need 4 paths.
         let mut ca: Self::Output = self
             .into_iter()
             .zip(rhs.into_iter())
@@ -713,25 +695,6 @@ impl Add for &ListChunked {
         ca
     }
 }
-
-// impl Add<Series> for &ListChunked {
-//     type Output = ListChunked;
-
-//     fn add(self, rhs: &[u8]) -> Self::Output {
-//         let mut ca: Self::Output = match self.has_validity() {
-//             false => self
-//                 .into_no_null_iter()
-//                 .map(|l| concat_binary_arrs(l, rhs))
-//                 .collect_trusted(),
-//             _ => self
-//                 .into_iter()
-//                 .map(|opt_l| opt_l.map(|l| concat_binary_arrs(l, rhs)))
-//                 .collect_trusted(),
-//         };
-//         ca.rename(self.name());
-//         ca
-//     }
-// }
 
 #[cfg(test)]
 pub(crate) mod test {
