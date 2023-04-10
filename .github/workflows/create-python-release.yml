@@ -8,6 +8,7 @@ on:
 env:
   RUST_TOOLCHAIN: nightly-2023-04-11
   MATURIN_VERSION: '0.14.10'
+  MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
 
 defaults:
   run:
@@ -30,7 +31,6 @@ jobs:
       - name: Publish wheel
         uses: messense/maturin-action@v1
         env:
-          MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
           RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
         with:
           command: publish
@@ -60,7 +60,6 @@ jobs:
       - name: Publish wheel
         uses: messense/maturin-action@v1
         env:
-          MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
           JEMALLOC_SYS_WITH_LG_PAGE: 16
         with:
           command: publish
@@ -91,7 +90,6 @@ jobs:
       - name: Publish wheel
         uses: messense/maturin-action@v1
         env:
-          MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
           RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
         with:
           command: publish
@@ -118,7 +116,6 @@ jobs:
       - name: Publish wheel
         uses: messense/maturin-action@v1
         env:
-          MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
           RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt --cfg use_mimalloc
         with:
           command: publish
@@ -147,7 +144,6 @@ jobs:
       - name: Publish wheel
         uses: messense/maturin-action@v1
         env:
-          MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
           RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+sse4.1,+sse4.2
         with:
           command: publish
@@ -173,8 +169,6 @@ jobs:
 
       - name: Publish wheel
         uses: messense/maturin-action@v1
-        env:
-          MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
         with:
           command: publish
           args: -m py-polars/Cargo.toml --target aarch64-apple-darwin --no-sdist -o wheels -i python -u ritchie46
