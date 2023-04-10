@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import sys
 import tempfile
 import typing
 from pathlib import Path
@@ -357,7 +356,6 @@ def test_parquet_nested_dictionaries_6217() -> None:
 
 
 @pytest.mark.write_disk()
-@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 def test_sink_parquet(io_files_path: Path) -> None:
     file = io_files_path / "small.parquet"
 
@@ -374,7 +372,6 @@ def test_sink_parquet(io_files_path: Path) -> None:
 
 
 @pytest.mark.write_disk()
-@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 def test_sink_ipc(io_files_path: Path) -> None:
     file = io_files_path / "small.parquet"
 
@@ -391,7 +388,6 @@ def test_sink_ipc(io_files_path: Path) -> None:
 
 
 @pytest.mark.write_disk()
-@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 def test_fetch_union() -> None:
     df1 = pl.DataFrame({"a": [0, 1, 2], "b": [1, 2, 3]})
     df2 = pl.DataFrame({"a": [3, 4, 5], "b": [4, 5, 6]})
@@ -416,7 +412,6 @@ def test_fetch_union() -> None:
 
 @pytest.mark.slow()
 @typing.no_type_check
-@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 def test_struct_pyarrow_dataset_5796() -> None:
     num_rows = 2**17 + 1
 

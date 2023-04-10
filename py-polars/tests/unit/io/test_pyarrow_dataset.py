@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 import tempfile
 import typing
 from datetime import date, datetime, time
@@ -23,7 +22,6 @@ def helper_dataset_test(file_path: Path, query) -> None:
 
 
 @pytest.mark.write_disk()
-@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 def test_dataset(df: pl.DataFrame) -> None:
     with tempfile.TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "small.ipc"
