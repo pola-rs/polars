@@ -164,7 +164,7 @@ impl FunctionExpr {
                     Truncate(..) => same_type().unwrap().dtype,
                     Round(..) => same_type().unwrap().dtype,
                     #[cfg(feature = "timezones")]
-                    CastTimezone(tz, earliest) => return cast_tz(tz.as_ref(), *earliest),
+                    CastTimezone(tz, use_earliest) => return cast_tz(tz.as_ref(), *use_earliest),
                     #[cfg(feature = "timezones")]
                     TzLocalize(tz) => return cast_tz(Some(tz), None),
                     DateRange { .. } => return super_type(),
