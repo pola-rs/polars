@@ -1919,17 +1919,7 @@ impl Expr {
     #[cfg(feature = "log")]
     /// Compute the logarithm to a given base
     pub fn log(self, base: f64) -> Self {
-        self.map(
-            move |s| Ok(Some(s.log(base))),
-            GetOutput::map_dtype(|dt| {
-                if matches!(dt, DataType::Float32) {
-                    DataType::Float32
-                } else {
-                    DataType::Float64
-                }
-            }),
-        )
-        .with_fmt("log")
+        self.map_private(FunctionExpr::Log { base })
     }
 
     #[cfg(feature = "log")]
@@ -1941,17 +1931,7 @@ impl Expr {
     #[cfg(feature = "log")]
     /// Calculate the exponential of all elements in the input array
     pub fn exp(self) -> Self {
-        self.map(
-            move |s| Ok(Some(s.exp())),
-            GetOutput::map_dtype(|dt| {
-                if matches!(dt, DataType::Float32) {
-                    DataType::Float32
-                } else {
-                    DataType::Float64
-                }
-            }),
-        )
-        .with_fmt("exp")
+        self.map_private(FunctionExpr::Exp)
     }
 
     #[cfg(feature = "log")]

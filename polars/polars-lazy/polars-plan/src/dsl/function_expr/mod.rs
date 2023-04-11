@@ -147,7 +147,13 @@ pub enum FunctionExpr {
         normalize: bool,
     },
     #[cfg(feature = "log")]
+    Log {
+        base: f64,
+    },
+    #[cfg(feature = "log")]
     Log1p,
+    #[cfg(feature = "log")]
+    Exp,
     Unique(bool),
 }
 
@@ -225,7 +231,11 @@ impl Display for FunctionExpr {
             #[cfg(feature = "log")]
             Entropy { .. } => "entropy",
             #[cfg(feature = "log")]
+            Log { .. } => "log",
+            #[cfg(feature = "log")]
             Log1p => "log1p",
+            #[cfg(feature = "log")]
+            Exp => "exp",
             Unique(stable) => {
                 if *stable {
                     "unique_stable"
@@ -432,7 +442,11 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "log")]
             Entropy { base, normalize } => map!(log::entropy, base, normalize),
             #[cfg(feature = "log")]
+            Log { base } => map!(log::log, base),
+            #[cfg(feature = "log")]
             Log1p => map!(log::log1p),
+            #[cfg(feature = "log")]
+            Exp => map!(log::exp),
             Unique(stable) => map!(unique::unique, stable),
         }
     }
