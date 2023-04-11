@@ -769,14 +769,7 @@ where
                     if idx.is_empty() {
                         None
                     } else if idx.len() == 1 {
-                        let x = arr.get(first as usize);
-                        println!(
-                            "array: {:?}\nGroupsProxy(first, idx): {:?}\nvalue: {:?}\n",
-                            arr,
-                            (first, idx),
-                            x
-                        );
-                        x
+                        arr.get(first as usize)
                     } else if arr.null_count() == 0 {
                         Some(take_agg_no_null_primitive_iter_unchecked(
                             arr,
