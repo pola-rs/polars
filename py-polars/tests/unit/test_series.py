@@ -1944,6 +1944,9 @@ def test_log_exp() -> None:
     expected = pl.Series("a", np.exp(b.to_numpy()))
     assert_series_equal(b.exp(), expected)
 
+    expected = pl.Series("a", np.log1p(a.to_numpy()))
+    assert_series_equal(a.log1p(), expected)
+
 
 def test_shuffle() -> None:
     a = pl.Series("a", [1, 2, 3])

@@ -10,6 +10,8 @@ mod fill_null;
 #[cfg(feature = "is_in")]
 mod is_in;
 mod list;
+#[cfg(feature = "log")]
+mod log;
 mod nan;
 mod pow;
 #[cfg(all(feature = "rolling_window", feature = "moment"))]
@@ -123,6 +125,8 @@ pub enum FunctionExpr {
         base: f64,
         normalize: bool,
     },
+    #[cfg(feature = "log")]
+    Log1p,
 }
 
 impl Display for FunctionExpr {
@@ -191,6 +195,8 @@ impl Display for FunctionExpr {
             Dot => "dot",
             #[cfg(feature = "log")]
             Entropy { .. } => "entropy",
+            #[cfg(feature = "log")]
+            Log1p => "log1p",
         };
         write!(f, "{s}")
     }
@@ -381,7 +387,9 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map_as_slice!(dispatch::dot_impl)
             }
             #[cfg(feature = "log")]
-            Entropy { base, normalize } => map!(dispatch::entropy, base, normalize),
+            Entropy { base, normalize } => map!(log::entropy, base, normalize),
+            #[cfg(feature = "log")]
+            Log1p => map!(log::log1p),
         }
     }
 }
