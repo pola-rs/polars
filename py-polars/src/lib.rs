@@ -252,10 +252,10 @@ fn py_datetime(
     year: dsl::PyExpr,
     month: dsl::PyExpr,
     day: dsl::PyExpr,
-    hour: Option<dsl::PyExpr>,
-    minute: Option<dsl::PyExpr>,
-    second: Option<dsl::PyExpr>,
-    microsecond: Option<dsl::PyExpr>,
+    hour: dsl::PyExpr,
+    minute: dsl::PyExpr,
+    second: dsl::PyExpr,
+    microsecond: dsl::PyExpr,
 ) -> dsl::PyExpr {
     let hour = hour.map(|e| e.inner);
     let minute = minute.map(|e| e.inner);
@@ -278,24 +278,24 @@ fn py_datetime(
 #[allow(clippy::too_many_arguments)]
 #[pyfunction]
 fn py_duration(
-    days: Option<PyExpr>,
-    seconds: Option<PyExpr>,
-    nanoseconds: Option<PyExpr>,
-    microseconds: Option<PyExpr>,
-    milliseconds: Option<PyExpr>,
-    minutes: Option<PyExpr>,
-    hours: Option<PyExpr>,
-    weeks: Option<PyExpr>,
+    days: PyExpr,
+    seconds: PyExpr,
+    nanoseconds: PyExpr,
+    microseconds: PyExpr,
+    milliseconds: PyExpr,
+    minutes: PyExpr,
+    hours: PyExpr,
+    weeks: PyExpr,
 ) -> dsl::PyExpr {
     let args = DurationArgs {
-        days: days.map(|e| e.inner),
-        seconds: seconds.map(|e| e.inner),
-        nanoseconds: nanoseconds.map(|e| e.inner),
-        microseconds: microseconds.map(|e| e.inner),
-        milliseconds: milliseconds.map(|e| e.inner),
-        minutes: minutes.map(|e| e.inner),
-        hours: hours.map(|e| e.inner),
-        weeks: weeks.map(|e| e.inner),
+        days,
+        seconds,
+        nanoseconds,
+        microseconds,
+        milliseconds,
+        minutes,
+        hours,
+        weeks,
     };
 
     polars_rs::lazy::dsl::duration(args).into()
