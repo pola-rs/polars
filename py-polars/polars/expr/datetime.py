@@ -1656,3 +1656,89 @@ class ExprDateTimeNameSpace:
 
         """
         return wrap_expr(self._pyexpr.dt_offset_by(by))
+
+    
+    def monthstart(self) -> Expr:
+        """
+        Adjust dates to start of the month.
+        
+        Returns
+        -------
+        Date/Datetime expression
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> df = pl.DataFrame({
+        ...     "dates": pl.date_range(date(2000, 1, 15), date(2000, 12, 15), "1mo")
+        ... })
+        >>> df.select(
+        ...     pl.col("dates").monthstart()
+        ... )
+        shape: (12,)
+        Series: '' [date]
+        [
+                2000-01-01
+                2000-02-01
+                2000-03-01
+                2000-04-01
+                2000-05-01
+                2000-06-01
+                2000-07-01
+                2000-08-01
+                2000-09-01
+                2000-10-01
+                2000-11-01
+                2000-12-01
+        ]
+        """
+        return wrap_expr(
+            self._pyexpr.dt_truncate(
+                _timedelta_to_pl_duration("1mo"),
+                _timedelta_to_pl_duration("0ns")
+            )
+        )
+    
+    
+    def monthend(self) -> Expr:
+        """
+        Adjust dates to end of the month.
+        
+        Returns
+        -------
+        Date/Datetime expression
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> df = pl.DataFrame({
+        ...     "dates": pl.date_range(date(2000, 1, 1), date(2000, 12, 1), "1mo")
+        ... })
+        >>> df.select(
+        ...     pl.col("dates").monthend()
+        ... )
+        shape: (12,)
+        Series: '' [date]
+        [
+                2000-01-31
+                2000-02-29
+                2000-03-31
+                2000-04-30
+                2000-05-31
+                2000-06-30
+                2000-07-31
+                2000-08-31
+                2000-09-30
+                2000-10-31
+                2000-11-30
+                2000-12-31
+        ]
+        """
+        return wrap_expr(
+            self._pyexpr.dt_truncate(
+                _timedelta_to_pl_duration("1mo"),
+                _timedelta_to_pl_duration("0ns")
+            )
+            .dt_offset_by("1mo")
+            .dt_offset_by("-1d")
+        )
