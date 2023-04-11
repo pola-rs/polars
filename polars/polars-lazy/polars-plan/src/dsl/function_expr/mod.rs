@@ -36,6 +36,7 @@ mod struct_;
 mod temporal;
 #[cfg(feature = "trigonometry")]
 mod trigonometry;
+mod unique;
 
 use std::fmt::{Display, Formatter};
 
@@ -149,6 +150,7 @@ pub enum FunctionExpr {
     },
     #[cfg(feature = "log")]
     Log1p,
+    Unique(bool),
 }
 
 impl Display for FunctionExpr {
@@ -228,6 +230,13 @@ impl Display for FunctionExpr {
             Entropy { .. } => "entropy",
             #[cfg(feature = "log")]
             Log1p => "log1p",
+            Unique(stable) => {
+                if *stable {
+                    "unique_stable"
+                } else {
+                    "unique"
+                }
+            }
         };
         write!(f, "{s}")
     }
@@ -409,9 +418,9 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             IsNotNull => map!(dispatch::is_not_null),
             Not => map!(dispatch::is_not),
             #[cfg(feature = "is_unique")]
-            IsUnique => map!(dispatch::is_unique),
+            IsUnique => map!(unique::is_unique),
             #[cfg(feature = "is_unique")]
-            IsDuplicated => map!(dispatch::is_duplicated),
+            IsDuplicated => map!(unique::is_duplicated),
             #[cfg(feature = "approx_unique")]
             ApproxUnique => map!(dispatch::approx_unique),
             Coalesce => map_as_slice!(fill_null::coalesce),
@@ -430,6 +439,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Entropy { base, normalize } => map!(log::entropy, base, normalize),
             #[cfg(feature = "log")]
             Log1p => map!(log::log1p),
+            Unique(stable) => map!(unique::unique, stable),
         }
     }
 }
