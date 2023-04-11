@@ -1,7 +1,3 @@
-use std::cell::UnsafeCell;
-
-use polars_arrow::trusted_len::PushUnchecked;
-
 use super::*;
 use crate::pipeline::PARTITION_SIZE;
 
@@ -18,7 +14,7 @@ struct SpillPartitions {
     spilled: bool,
     // this only fills during the reduce phase IFF
     // there are spilled tuples
-    finished_payloads: PartitionVec<Vec<SpillPayload>>
+    finished_payloads: PartitionVec<Vec<SpillPayload>>,
 }
 
 impl SpillPartitions {
@@ -35,7 +31,7 @@ impl SpillPartitions {
             buf.push(builder);
         }
 
-        let partitions: Vec<_> = (0..PARTITION_SIZE).map(|partition| buf.clone()).collect();
+        let partitions: Vec<_> = (0..PARTITION_SIZE).map(|_partition| buf.clone()).collect();
         let hash_partitioned = vec![Vec::with_capacity(OB_SIZE); PARTITION_SIZE];
         let chunk_index_partitioned = vec![Vec::with_capacity(OB_SIZE); PARTITION_SIZE];
 
@@ -126,17 +122,19 @@ impl SpillPartitions {
 
     fn combine(&mut self, other: &mut Self) {
         match (self.spilled, other.spilled) {
-            (false, true) => {
-                std::mem::swap(self, other)
-            },
-            (true, false) => {},
-            (false, false) => {},
+            (false, true) => std::mem::swap(self, other),
+            (true, false) => {}
+            (false, false) => {}
             (true, true) => {
                 self.finish();
                 other.finish();
                 let other_payloads = std::mem::take(&mut other.finished_payloads);
 
-                for (part_self, part_other) in self.finished_payloads.iter_mut().zip(other_payloads.into_iter()) {
+                for (part_self, part_other) in self
+                    .finished_payloads
+                    .iter_mut()
+                    .zip(other_payloads.into_iter())
+                {
                     part_self.extend(part_other)
                 }
             }
@@ -153,24 +151,29 @@ impl SpillPartitions {
             }
         }
 
-        (0..PARTITION_SIZE).map(|partition| unsafe {
-            let keys_aggs = self
-                .keys_aggs_partitioned
-                .get_unchecked_release_mut(partition);
-            let hashes = self.hash_partitioned.get_unchecked_release_mut(partition);
-            let chunk_indexes = self
-                .chunk_index_partitioned
-                .get_unchecked_release_mut(partition);
-            let hashes = std::mem::take(hashes);
-            let chunk_idx = std::mem::take(chunk_indexes);
+        (0..PARTITION_SIZE)
+            .map(|partition| unsafe {
+                let keys_aggs = self
+                    .keys_aggs_partitioned
+                    .get_unchecked_release_mut(partition);
+                let hashes = self.hash_partitioned.get_unchecked_release_mut(partition);
+                let chunk_indexes = self
+                    .chunk_index_partitioned
+                    .get_unchecked_release_mut(partition);
+                let hashes = std::mem::take(hashes);
+                let chunk_idx = std::mem::take(chunk_indexes);
 
-            (partition, SpillPayload {
-                hashes,
-                chunk_idx,
-                keys_and_aggs: keys_aggs.iter_mut().map(|b| b.reset(0)).collect(),
-                num_keys: self.num_keys,
+                (
+                    partition,
+                    SpillPayload {
+                        hashes,
+                        chunk_idx,
+                        keys_and_aggs: keys_aggs.iter_mut().map(|b| b.reset(0)).collect(),
+                        num_keys: self.num_keys,
+                    },
+                )
             })
-        }).chain(flattened.into_iter())
+            .chain(flattened.into_iter())
     }
 }
 
@@ -207,18 +210,14 @@ impl ThreadLocalTable {
         }
     }
 
-    pub(super) fn len(&self) -> usize {
-        self.inner_map.len()
-    }
-
     pub(super) fn get_inner_map_mut(&mut self) -> &mut AggHashTable<true> {
         &mut self.inner_map
     }
 
     /// # Safety
     /// Caller must ensure that `keys` and `agg_iters` are not depleted.
-    pub(super) unsafe fn insert<'a>(
-        &'a mut self,
+    pub(super) unsafe fn insert(
+        &mut self,
         hash: u64,
         keys: &mut [SeriesPhysIter],
         agg_iters: &mut [SeriesPhysIter],

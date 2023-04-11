@@ -72,7 +72,7 @@ impl Eval {
         }
 
         // write the hashes to self.hashes buffer
-        hash_series(&keys_series, &mut self.hashes, &self.hb);
+        hash_series(keys_series, &mut self.hashes, &self.hb);
         Ok(())
     }
 

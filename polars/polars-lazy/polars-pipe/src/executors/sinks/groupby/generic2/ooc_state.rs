@@ -68,7 +68,7 @@ impl OocState {
         }
         let free_frac = self.mem_track.free_memory_fraction_since_start();
 
-        if free_frac < MEMORY_FRACTION_THRESHOLD {
+        if free_frac < TO_DISK_THRESHOLD {
             self.init_ooc(spill_schema)?;
             Ok(SpillAction::Dump)
         } else if free_frac < EARLY_MERGE_THRESHOLD {

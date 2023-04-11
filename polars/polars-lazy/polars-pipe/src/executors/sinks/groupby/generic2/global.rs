@@ -1,5 +1,5 @@
 use std::collections::LinkedList;
-use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
+use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::Mutex;
 
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
@@ -134,8 +134,8 @@ impl GlobalTable {
                     let chunk_index = *chunk_indexes.get_unchecked(i);
 
                     // safety: keys_iters and cols_iters are not depleted
-                    let out = hash_map
-                        .insert(hash, &mut keys_iters, &mut agg_cols_iters, chunk_index);
+                    let out =
+                        hash_map.insert(hash, &mut keys_iters, &mut agg_cols_iters, chunk_index);
                     // should never overlow
                     debug_assert!(out.is_none());
                 }

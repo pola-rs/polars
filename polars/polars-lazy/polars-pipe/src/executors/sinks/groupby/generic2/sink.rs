@@ -1,4 +1,3 @@
-use std::arch::x86_64::_mm_undefined_si128;
 use std::cell::UnsafeCell;
 
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
@@ -28,7 +27,7 @@ impl GenericGroupby2 {
         let key_dtypes = output_schema
             .iter_dtypes()
             .take(key_columns.len())
-            .map(|dt| dt.clone())
+            .cloned()
             .collect::<Vec<_>>();
 
         let global_map =
@@ -124,7 +123,7 @@ impl Sink for GenericGroupby2 {
     }
 
     fn finalize(&mut self, context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
-        let map = unsafe { (&mut *self.thread_local_table.get()) };
+        let map = unsafe { &mut *self.thread_local_table.get() };
 
         // only succeeds if it hasn't spilled to global
         if let Some(out) = map.finalize(&mut self.slice) {
@@ -146,7 +145,6 @@ impl Sink for GenericGroupby2 {
                 if context.verbose {
                     eprintln!("finish streaming aggregation with global in-memory table")
                 }
-
 
                 let out = self.global_table.finalize(&mut self.slice);
                 let src = DataFrameSource::from_df(accumulate_dataframes_vertical_unchecked(out));

@@ -9,13 +9,10 @@ macro_rules! matches_any_order {
 #[macro_export]
 macro_rules! unreachable_unchecked_release {
     ($($arg:tt)*) => {
-        if cfg!(debug_assertions)
-        {
+        if cfg!(debug_assertions) {
             unreachable!()
-        }
-        else
-        {
+        } else {
             unreachable_unchecked()
         }
-    }
+    };
 }

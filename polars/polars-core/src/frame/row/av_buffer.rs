@@ -1,12 +1,12 @@
 #[cfg(feature = "dtype-struct")]
 use polars_utils::slice::GetSaferUnchecked;
-#[cfg(feature = "dtype-struct")]
-use smartstring::alias::String as SmartString;
 use polars_utils::unreachable_unchecked_release;
 #[cfg(feature = "dtype-struct")]
-use crate::prelude::any_value::arr_to_any_value;
+use smartstring::alias::String as SmartString;
 
 use super::*;
+#[cfg(feature = "dtype-struct")]
+use crate::prelude::any_value::arr_to_any_value;
 
 #[derive(Clone)]
 pub enum AnyValueBuffer<'a> {
@@ -402,7 +402,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
             Float64(builder) => {
                 let AnyValue::Float64(v) = val else { unreachable_unchecked_release!() };
                 builder.append_value(*v)
-            },
+            }
             _ => {
                 unreachable_unchecked_release!()
             }
@@ -415,7 +415,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
     /// If a type is not primitive or utf8, the anyvalue will be converted to static
     ///
     /// # Safety
-    /// The caller must ensure that the `AnyValue` type exactly matches the `Buffer` type.
+    /// The caller must ensure that the `AnyValue` type exactly matches the `Buffer` type and is owned.
     #[inline]
     pub unsafe fn add_unchecked_owned_physical(&mut self, val: &AnyValue<'_>) {
         use AnyValueBufferTrusted::*;
@@ -443,12 +443,14 @@ impl<'a> AnyValueBufferTrusted<'a> {
                         }
                     }
                     All(_, vals) => vals.push(val.clone().into_static().unwrap()),
-                    _ => self.add_physical(val)
+                    _ => self.add_physical(val),
                 }
             }
         }
     }
 
+    /// # Safety
+    /// The caller must ensure that the `AnyValue` type exactly matches the `Buffer` type and is borrowed.
     #[inline]
     pub unsafe fn add_unchecked_borrowed_physical(&mut self, val: &AnyValue<'_>) {
         use AnyValueBufferTrusted::*;
@@ -478,7 +480,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
                         }
                     }
                     All(_, vals) => vals.push(val.clone().into_static().unwrap()),
-                    _ => self.add_physical(val)
+                    _ => self.add_physical(val),
                 }
             }
         }
@@ -570,9 +572,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
                     .collect::<Vec<_>>();
                 StructChunked::new("", &v).unwrap().into_series()
             }
-            All(dtype, vals) => {
-                Series::from_any_values_and_dtype("", &vals, &dtype, false).unwrap()
-            }
+            All(dtype, vals) => Series::from_any_values_and_dtype("", vals, dtype, false).unwrap(),
         }
     }
 

@@ -134,5 +134,5 @@ impl<'a> AsU64 for BytesHash<'a> {
 pub fn this_partition(h: u64, thread_no: u64, n_partitions: u64) -> bool {
     debug_assert!(n_partitions.is_power_of_two());
     // n % 2^i = n & (2^i - 1)
-    (h.wrapping_add(thread_no)) & n_partitions.wrapping_sub(1) == 0
+    (h & n_partitions.wrapping_sub(1)) == thread_no
 }

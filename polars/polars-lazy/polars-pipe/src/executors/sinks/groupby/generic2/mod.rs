@@ -1,19 +1,16 @@
 mod eval;
 mod global;
 mod hash_table;
-mod key;
 mod ooc_state;
 mod sink;
-mod source;
 mod thread_local;
 
 use std::any::Any;
-use std::slice::SliceIndex;
 
 use eval::Eval;
 use hash_table::AggHashTable;
 use hashbrown::hash_map::{RawEntryMut, RawVacantEntryMut};
-use polars_core::frame::row::{AnyValueBuffer, AnyValueBufferTrusted};
+use polars_core::frame::row::AnyValueBufferTrusted;
 use polars_core::series::SeriesPhysIter;
 use polars_core::IdBuildHasher;
 use polars_utils::hash_to_partition;

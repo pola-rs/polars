@@ -63,10 +63,6 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
         self.keys.get_unchecked(start..end)
     }
 
-    pub(super) fn len(&self) -> usize {
-        self.inner_map.len()
-    }
-
     pub(super) fn is_empty(&self) -> bool {
         self.inner_map.is_empty()
     }
@@ -103,7 +99,7 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
         keys: &mut [SeriesPhysIter],
         agg_iters: &mut [SeriesPhysIter],
         chunk_index: IdxSize,
-    ) -> Option<(&[AnyValue])> {
+    ) -> Option<&[AnyValue]> {
         // safety: no references
         let keys_scratch = unsafe { &mut *self.keys_scratch.get() };
         keys_scratch.clear();
@@ -118,7 +114,7 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
             }
         }
 
-        let mut entry = self.get_entry(hash, keys_scratch);
+        let entry = self.get_entry(hash, keys_scratch);
 
         let agg_idx = match entry {
             RawEntryMut::Occupied(entry) => *entry.get(),
@@ -130,19 +126,18 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
                 let borrow = &entry;
                 let borrow = borrow as *const RawVacantEntryMut<_, _, _> as usize;
                 // ensure the bck forgets this guy
+                #[allow(clippy::forget_non_drop)]
                 std::mem::forget(entry);
 
                 // OVERFLOW logic
-                if FIXED {
-                    if self.inner_map.len() > self.spill_size {
-                        unsafe {
-                            // take a hold of the entry again and ensure it gets dropped
-                            let borrow =
-                                borrow as *const RawVacantEntryMut<'a, Key, IdxSize, IdBuildHasher>;
-                            let _entry = std::ptr::read(borrow);
-                        }
-                        return Some(keys_scratch);
+                if FIXED && self.inner_map.len() > self.spill_size {
+                    unsafe {
+                        // take a hold of the entry again and ensure it gets dropped
+                        let borrow =
+                            borrow as *const RawVacantEntryMut<'a, Key, IdxSize, IdBuildHasher>;
+                        let _entry = std::ptr::read(borrow);
                     }
+                    return Some(keys_scratch);
                 }
 
                 let aggregation_idx = self.running_aggregations.len() as IdxSize;
@@ -218,6 +213,7 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
                         let borrow = &entry;
                         let borrow = borrow as *const RawVacantEntryMut<_, _, _> as usize;
                         // ensure the bck forgets this guy
+                        #[allow(clippy::forget_non_drop)]
                         std::mem::forget(entry);
 
                         let key_idx = self.keys.len() as IdxSize;
