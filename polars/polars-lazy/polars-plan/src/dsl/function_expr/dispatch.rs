@@ -22,16 +22,6 @@ pub(super) fn is_not(s: &Series) -> PolarsResult<Series> {
     Ok(s.bool()?.not().into_series())
 }
 
-#[cfg(feature = "is_unique")]
-pub(super) fn is_unique(s: &Series) -> PolarsResult<Series> {
-    polars_ops::prelude::is_unique(s).map(|ca| ca.into_series())
-}
-
-#[cfg(feature = "is_unique")]
-pub(super) fn is_duplicated(s: &Series) -> PolarsResult<Series> {
-    polars_ops::prelude::is_duplicated(s).map(|ca| ca.into_series())
-}
-
 #[cfg(feature = "diff")]
 pub(super) fn diff(s: &Series, n: i64, null_behavior: NullBehavior) -> PolarsResult<Series> {
     s.diff(n, null_behavior)
