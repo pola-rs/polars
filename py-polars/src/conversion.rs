@@ -692,8 +692,6 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             Ok(AnyValue::Boolean(ob.extract::<bool>().unwrap()).into())
         } else if let Ok(value) = ob.extract::<i64>() {
             Ok(AnyValue::Int64(value).into())
-        } else if let Ok(value) = ob.extract::<u64>() {
-            Ok(AnyValue::UInt64(value).into())
         } else if ob.is_instance_of::<PyFloat>()? {
             let value = ob.extract::<f64>().unwrap();
             Ok(AnyValue::Float64(value).into())
@@ -717,6 +715,8 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             Ok(Wrap(AnyValue::StructOwned(Box::new((vals, keys)))))
         } else if ob.is_instance_of::<PyList>()? {
             materialize_list(ob)
+        } else if let Ok(value) = ob.extract::<u64>() {
+            Ok(AnyValue::UInt64(value).into())
         } else if ob.hasattr("_s")? {
             let py_pyseries = ob.getattr("_s").unwrap();
             let series = py_pyseries.extract::<PySeries>().unwrap().series;
