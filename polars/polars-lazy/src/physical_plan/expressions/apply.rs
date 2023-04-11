@@ -155,7 +155,9 @@ impl ApplyExpr {
             }
             AggState::AggregatedFlat(s) => (self.eval_and_flatten(&mut [s.clone()])?, true),
             AggState::NotAggregated(s) | AggState::Literal(s) => {
-                (self.eval_and_flatten(&mut [s.clone()])?, false)
+                let (out, aggregated) = (self.eval_and_flatten(&mut [s.clone()])?, false);
+                check_map_output_len(s.len(), out.len(), &self.expr)?;
+                (out, aggregated)
             }
         };
 
@@ -222,7 +224,7 @@ fn all_unit_length(ca: &ListChunked) -> bool {
 
 fn check_map_output_len(input_len: usize, output_len: usize, expr: &Expr) -> PolarsResult<()> {
     polars_ensure!(
-        input_len == output_len, expr = expr, ComputeError:
+        input_len == output_len, expr = expr, InvalidOperation:
         "output length of `map` must be equal to that of the input length; \
         consider using `apply` instead"
     );

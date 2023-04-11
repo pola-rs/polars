@@ -10,6 +10,14 @@ pub(super) fn entropy(s: &Series, base: f64, normalize: bool) -> PolarsResult<Se
     }
 }
 
+pub(super) fn log(s: &Series, base: f64) -> PolarsResult<Series> {
+    Ok(s.log(base))
+}
+
 pub(super) fn log1p(s: &Series) -> PolarsResult<Series> {
     Ok(s.log1p())
+}
+
+pub(super) fn exp(s: &Series) -> PolarsResult<Series> {
+    Ok(s.exp())
 }

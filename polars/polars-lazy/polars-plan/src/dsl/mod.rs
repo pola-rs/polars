@@ -468,18 +468,13 @@ impl Expr {
 
     /// Get unique values of this expression.
     pub fn unique(self) -> Self {
-        self.apply(|s: Series| s.unique().map(Some), GetOutput::same_type())
-            .with_fmt("unique")
+        self.apply_private(FunctionExpr::Unique(false))
     }
 
     /// Get unique values of this expression, while maintaining order.
     /// This requires more work than [`Expr::unique`].
     pub fn unique_stable(self) -> Self {
-        self.apply(
-            |s: Series| s.unique_stable().map(Some),
-            GetOutput::same_type(),
-        )
-        .with_fmt("unique_stable")
+        self.apply_private(FunctionExpr::Unique(true))
     }
 
     /// Get the first index of unique values of this expression.
@@ -1890,17 +1885,7 @@ impl Expr {
     #[cfg(feature = "log")]
     /// Compute the logarithm to a given base
     pub fn log(self, base: f64) -> Self {
-        self.map(
-            move |s| Ok(Some(s.log(base))),
-            GetOutput::map_dtype(|dt| {
-                if matches!(dt, DataType::Float32) {
-                    DataType::Float32
-                } else {
-                    DataType::Float64
-                }
-            }),
-        )
-        .with_fmt("log")
+        self.map_private(FunctionExpr::Log { base })
     }
 
     #[cfg(feature = "log")]
@@ -1912,17 +1897,7 @@ impl Expr {
     #[cfg(feature = "log")]
     /// Calculate the exponential of all elements in the input array
     pub fn exp(self) -> Self {
-        self.map(
-            move |s| Ok(Some(s.exp())),
-            GetOutput::map_dtype(|dt| {
-                if matches!(dt, DataType::Float32) {
-                    DataType::Float32
-                } else {
-                    DataType::Float64
-                }
-            }),
-        )
-        .with_fmt("exp")
+        self.map_private(FunctionExpr::Exp)
     }
 
     #[cfg(feature = "log")]

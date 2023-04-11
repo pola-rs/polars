@@ -781,9 +781,10 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                             _ => (),
                         }
                     }
-                    Err(PyErr::from(PyPolarsErr::Other(format!(
-                        "given type/value not supported: {ob:?}",
-                    ))))
+
+                    // this is slow, but hey don't use objects
+                    let v = &ObjectValue { inner: ob.into() };
+                    Ok(Wrap(AnyValue::ObjectOwned(OwnedObject(v.to_boxed()))))
                 }
             }
         }
