@@ -33,7 +33,7 @@
 //! let df_read = IpcStreamReader::new(buf).finish().unwrap();
 //! assert!(df.frame_equal(&df_read));
 //! ```
-use std::io::{Read, Seek, Write};
+use std::io::{Read, Write};
 use std::path::PathBuf;
 
 use arrow::io::ipc::read::{StreamMetadata, StreamState};

@@ -41,7 +41,7 @@ pub(crate) mod utils;
 #[cfg(feature = "partition")]
 pub mod partition;
 
-use std::io::{Read, Seek, Write};
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 #[allow(unused)] // remove when updating to rust nightly >= 1.61
