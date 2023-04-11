@@ -1319,6 +1319,14 @@ def test_pct_change() -> None:
     s = pl.Series("a", [1, 2, 4, 8, 16, 32, 64])
     expected = pl.Series("a", [None, None, float("inf"), 3.0, 3.0, 3.0, 3.0])
     assert_series_equal(s.pct_change(2), expected)
+    # negative
+    assert pl.Series(range(5)).pct_change(-1).to_list() == [
+        -1.0,
+        -0.5,
+        -0.3333333333333333,
+        -0.25,
+        None,
+    ]
 
 
 def test_skew() -> None:

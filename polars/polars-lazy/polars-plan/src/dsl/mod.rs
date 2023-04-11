@@ -1647,12 +1647,12 @@ impl Expr {
     }
 
     #[cfg(feature = "diff")]
-    pub fn diff(self, n: usize, null_behavior: NullBehavior) -> Expr {
+    pub fn diff(self, n: i64, null_behavior: NullBehavior) -> Expr {
         self.apply_private(FunctionExpr::Diff(n, null_behavior))
     }
 
     #[cfg(feature = "pct_change")]
-    pub fn pct_change(self, n: usize) -> Expr {
+    pub fn pct_change(self, n: i64) -> Expr {
         use DataType::*;
         self.apply(
             move |s| s.pct_change(n).map(Some),
