@@ -498,7 +498,9 @@ impl Display for DataFrame {
                 table.apply_modifier(UTF8_ROUND_CORNERS);
             }
             if max_n_rows > 0 {
-                if height > max_n_rows {
+                if height > (max_n_rows + (max_n_rows % 2 == 0) as usize) {
+                    // Truncate the table if we have more rows than the configured maximum number
+                    // of rows plus the single row which would contain "…".
                     let mut rows = Vec::with_capacity(std::cmp::max(max_n_rows, 2));
                     for i in 0..std::cmp::max(max_n_rows / 2, 1) {
                         let row = self
