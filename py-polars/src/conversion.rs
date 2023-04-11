@@ -692,6 +692,8 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             Ok(AnyValue::Boolean(ob.extract::<bool>().unwrap()).into())
         } else if let Ok(value) = ob.extract::<i64>() {
             Ok(AnyValue::Int64(value).into())
+        } else if let Ok(value) = ob.extract::<u64>() {
+            Ok(AnyValue::UInt64(value).into())
         } else if ob.is_instance_of::<PyFloat>()? {
             let value = ob.extract::<f64>().unwrap();
             Ok(AnyValue::Float64(value).into())
@@ -780,7 +782,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                         }
                     }
                     Err(PyErr::from(PyPolarsErr::Other(format!(
-                        "object type not supported {ob:?}",
+                        "given type/value not supported: {ob:?}",
                     ))))
                 }
             }

@@ -150,3 +150,12 @@ def test_row_constructor_schema() -> None:
         )
         assert out.dtypes == [primitive]
         assert out.to_dict(False) == expected
+
+
+def test_row_constructor_uint64() -> None:
+    # validate init with a valid UInt64 that exceeds Int64 upper bound
+    df = pl.DataFrame(
+        data=[[0], [int(2**63) + 1]],
+        schema={"x": pl.UInt64},
+    )
+    assert df.rows() == [(0,), (9223372036854775809,)]
