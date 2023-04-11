@@ -4772,20 +4772,11 @@ class Series:
         """
         return self._s.n_unique()
 
-    def approx_unique(self, precision: int = 16) -> int:
+    def approx_unique(self) -> int:
         """
         Approx count unique values in this Series.
 
         This is done using the HyperLogLog++ algorithm for cardinality estimation.
-
-        Parameters
-        ----------
-        precision
-            Allows users to trade memory for accuracy.
-            A low precision value results in fuzzier counts, whereas,
-            with a higher value, the counts may be close to accurate.
-
-            Accepted values are in the range of [4, 18], and the default value is 16.
 
         Examples
         --------
@@ -4794,7 +4785,7 @@ class Series:
         3
 
         """
-        return self._from_pyseries(self._s.approx_unique(precision)).item()
+        return self._from_pyseries(self._s.approx_unique()).item()
 
     def shrink_to_fit(self, *, in_place: bool = False) -> Series:
         """

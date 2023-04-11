@@ -60,9 +60,9 @@ pub trait SeriesMethods: SeriesSealed {
     }
 
     #[cfg(feature = "approx_unique")]
-    fn approx_unique(&self, precision: u8) -> PolarsResult<Series> {
+    fn approx_unique(&self) -> PolarsResult<Series> {
         let s = self.as_series();
-        approx_unique(s, precision)
+        approx_unique(s)
     }
 }
 

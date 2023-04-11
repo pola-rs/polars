@@ -1248,11 +1248,8 @@ impl PyDataFrame {
         df.into()
     }
 
-    pub fn approx_unique(&self, precision: u8) -> PyResult<Self> {
-        let df = self
-            .df
-            .approx_unique(precision)
-            .map_err(PyPolarsErr::from)?;
+    pub fn approx_unique(&self) -> PyResult<Self> {
+        let df = self.df.approx_unique().map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
 

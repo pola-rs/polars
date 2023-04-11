@@ -133,7 +133,7 @@ pub enum FunctionExpr {
     #[cfg(feature = "is_unique")]
     IsDuplicated,
     #[cfg(feature = "approx_unique")]
-    ApproxUnique(u8),
+    ApproxUnique,
     Coalesce,
     ShrinkType,
     #[cfg(feature = "diff")]
@@ -215,7 +215,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "is_unique")]
             IsDuplicated => "is_duplicated",
             #[cfg(feature = "approx_unique")]
-            ApproxUnique(_) => "approx_unique",
+            ApproxUnique => "approx_unique",
             Coalesce => "coalesce",
             ShrinkType => "shrink_dtype",
             #[cfg(feature = "diff")]
@@ -413,7 +413,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "is_unique")]
             IsDuplicated => map!(dispatch::is_duplicated),
             #[cfg(feature = "approx_unique")]
-            ApproxUnique(precision) => map!(dispatch::approx_unique, precision),
+            ApproxUnique => map!(dispatch::approx_unique),
             Coalesce => map_as_slice!(fill_null::coalesce),
             ShrinkType => map_owned!(shrink_type::shrink),
             #[cfg(feature = "diff")]

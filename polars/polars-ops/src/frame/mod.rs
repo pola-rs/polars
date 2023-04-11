@@ -144,13 +144,13 @@ pub trait DataFrameOps: IntoDf {
     /// +-----+------+------+
     /// ```
     #[cfg(feature = "approx_unique")]
-    fn approx_unique(&self, precision: u8) -> PolarsResult<DataFrame> {
+    fn approx_unique(&self) -> PolarsResult<DataFrame> {
         let df = self.to_df();
 
         let cols = POOL.install(|| {
             df.get_columns()
                 .par_iter()
-                .map(|s| approx_unique(s, precision))
+                .map(|s| approx_unique(s))
                 .collect::<PolarsResult<Vec<_>>>()
         })?;
 

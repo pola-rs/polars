@@ -6,7 +6,7 @@ use polars_core::with_match_physical_integer_polars_type;
 #[cfg(feature = "approx_unique")]
 use crate::series::HyperLogLog;
 
-fn approx_unique_ca<'a, T>(ca: &'a ChunkedArray<T>, precision: u8) -> PolarsResult<Series>
+fn approx_unique_ca<'a, T>(ca: &'a ChunkedArray<T>) -> PolarsResult<Series>
 where
     T: PolarsDataType,
     &'a ChunkedArray<T>: IntoIterator,
@@ -19,29 +19,29 @@ where
     Ok(Series::new(ca.name(), &[c]))
 }
 
-fn dispatcher(s: &Series, precision: u8) -> PolarsResult<Series> {
+fn dispatcher(s: &Series) -> PolarsResult<Series> {
     let s = s.to_physical_repr();
     use DataType::*;
     match s.dtype() {
-        Boolean => s.bool().and_then(|ca| approx_unique_ca(ca, precision)),
-        Binary => s.binary().and_then(|ca| approx_unique_ca(ca, precision)),
+        Boolean => s.bool().and_then(|ca| approx_unique_ca(ca)),
+        Binary => s.binary().and_then(|ca| approx_unique_ca(ca)),
         Utf8 => {
             let s = s.cast(&Binary).unwrap();
             let ca = s.binary().unwrap();
-            approx_unique_ca(ca, precision)
+            approx_unique_ca(ca)
         }
-        Float32 => approx_unique_ca(&s.bit_repr_small(), precision),
-        Float64 => approx_unique_ca(&s.bit_repr_large(), precision),
+        Float32 => approx_unique_ca(&s.bit_repr_small()),
+        Float64 => approx_unique_ca(&s.bit_repr_large()),
         dt if dt.is_numeric() => {
             with_match_physical_integer_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-                approx_unique_ca(ca, precision)
+                approx_unique_ca(ca)
             })
         }
         dt => polars_bail!(opq = approx_unique, dt),
     }
 }
 
-pub fn approx_unique(s: &Series, precision: u8) -> PolarsResult<Series> {
-    dispatcher(s, precision)
+pub fn approx_unique(s: &Series) -> PolarsResult<Series> {
+    dispatcher(s)
 }

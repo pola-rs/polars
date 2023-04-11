@@ -912,7 +912,7 @@ def n_unique(column: str | Series) -> Expr | int:
     return col(column).n_unique()
 
 
-def approx_unique(column: str | Series, precision: int = 16) -> Expr | int:
+def approx_unique(column: str | Series) -> Expr | int:
     """
     Approx count unique values.
 
@@ -922,12 +922,6 @@ def approx_unique(column: str | Series, precision: int = 16) -> Expr | int:
     ----------
     column
         Column name or Series.
-    precision
-        Allows users to trade memory for accuracy.
-        A low precision value results in fuzzier counts, whereas,
-        with a higher value, the counts may be close to accurate.
-
-        Accepted values are in the range of [4, 18], and the default value is 16.
 
     Examples
     --------
@@ -946,8 +940,8 @@ def approx_unique(column: str | Series, precision: int = 16) -> Expr | int:
 
     """
     if isinstance(column, pli.Series):
-        return column.approx_unique(precision)
-    return col(column).approx_unique(precision)
+        return column.approx_unique()
+    return col(column).approx_unique()
 
 
 @overload

@@ -7618,20 +7618,11 @@ class DataFrame:
         df = self.lazy().select(expr.n_unique()).collect()
         return 0 if df.is_empty() else df.row(0)[0]
 
-    def approx_unique(self, precision: int = 16) -> Self:
+    def approx_unique(self) -> Self:
         """
         Approx count unique values.
 
         This is done using the HyperLogLog++ algorithm for cardinality estimation.
-
-        Parameters
-        ----------
-        precision
-            Allows users to trade memory for accuracy.
-            A low precision value results in fuzzier counts, whereas,
-            with a higher value, the counts may be close to accurate.
-
-            Accepted values are in the range of [4, 18], and the default value is 16.
 
         Examples
         --------
@@ -7652,7 +7643,7 @@ class DataFrame:
         └─────┴─────┘
 
         """
-        return self._from_pydf(self._df.approx_unique(precision))
+        return self._from_pydf(self._df.approx_unique())
 
     def rechunk(self) -> Self:
         """

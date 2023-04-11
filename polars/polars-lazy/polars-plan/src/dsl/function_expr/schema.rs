@@ -252,7 +252,7 @@ impl FunctionExpr {
             #[cfg(feature = "is_unique")]
             IsUnique | IsDuplicated => with_dtype(DataType::Boolean),
             #[cfg(feature = "approx_unique")]
-            ApproxUnique(_) => with_dtype(IDX_DTYPE),
+            ApproxUnique => with_dtype(IDX_DTYPE),
             #[cfg(feature = "diff")]
             Diff(_, _) => map_dtype(&|dt| match dt {
                 #[cfg(feature = "dtype-datetime")]

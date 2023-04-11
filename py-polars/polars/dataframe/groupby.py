@@ -676,20 +676,11 @@ class GroupBy(Generic[DF]):
         """
         return self.agg(F.all().n_unique())
 
-    def approx_unique(self, precision: int = 16) -> DF:
+    def approx_unique(self) -> DF:
         """
         Approx count unique values per group.
 
         This is done using the HyperLogLog++ algorithm for cardinality estimation.
-
-        Parameters
-        ----------
-        precision
-            Allows users to trade memory for accuracy.
-            A low precision value results in fuzzier counts, whereas,
-            with a higher value, the counts may be close to accurate.
-
-            Accepted values are in the range of [4, 18], and the default value is 16.
 
         Examples
         --------
@@ -712,7 +703,7 @@ class GroupBy(Generic[DF]):
         └────────┴─────┴─────┘
 
         """
-        return self.agg(F.all().approx_unique(precision))
+        return self.agg(F.all().approx_unique())
 
     def quantile(
         self, quantile: float, interpolation: RollingInterpolationMethod = "nearest"

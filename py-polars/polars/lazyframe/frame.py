@@ -3687,20 +3687,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self.slice(0, 1)
 
-    def approx_unique(self, precision: int = 16) -> Self:
+    def approx_unique(self) -> Self:
         """
         Approx count unique values.
 
         This is done using the HyperLogLog++ algorithm for cardinality estimation.
-
-        Parameters
-        ----------
-        precision
-            Allows users to trade memory for accuracy.
-            A low precision value results in fuzzier counts, whereas,
-            with a higher value, the counts may be close to accurate.
-
-            Accepted values are in the range of [4, 18], and the default value is 16.
 
         Examples
         --------
@@ -3721,7 +3712,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┘
 
         """
-        return self._from_pyldf(self._ldf.approx_unique(precision))
+        return self._from_pyldf(self._ldf.approx_unique())
 
     def with_row_count(self, name: str = "row_nr", offset: int = 0) -> Self:
         """

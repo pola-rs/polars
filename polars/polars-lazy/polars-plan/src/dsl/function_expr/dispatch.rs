@@ -33,8 +33,8 @@ pub(super) fn is_duplicated(s: &Series) -> PolarsResult<Series> {
 }
 
 #[cfg(feature = "approx_unique")]
-pub(super) fn approx_unique(s: &Series, precision: u8) -> PolarsResult<Series> {
-    polars_ops::prelude::approx_unique(s, precision)
+pub(super) fn approx_unique(s: &Series) -> PolarsResult<Series> {
+    polars_ops::prelude::approx_unique(s)
 }
 
 #[cfg(feature = "diff")]
