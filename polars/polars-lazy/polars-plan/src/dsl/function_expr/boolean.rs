@@ -125,7 +125,7 @@ fn is_finite(s: &Series) -> PolarsResult<Series> {
 }
 
 fn is_infinite(s: &Series) -> PolarsResult<Series> {
-    s.is_finite().map(|ca| ca.into_series())
+    s.is_infinite().map(|ca| ca.into_series())
 }
 
 pub(super) fn is_nan(s: &Series) -> PolarsResult<Series> {
