@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 import numpy as np
 
 import polars as pl
@@ -92,3 +94,17 @@ def test_object_concat() -> None:
     assert catted.shape == (6, 1)
     assert catted.dtypes == [pl.Object]
     assert catted.to_dict(False) == {"a": [1, 2, 3, 1, 4, 3]}
+
+
+def test_object_row_construction() -> None:
+    data = [
+        [uuid4()],
+        [uuid4()],
+        [uuid4()],
+    ]
+    df = pl.DataFrame(
+        data,
+        orient="row",
+    )
+    assert df.dtypes == [pl.Object]
+    assert df["column_0"].to_list() == [value[0] for value in data]
