@@ -183,7 +183,7 @@ impl FunctionExpr {
             #[cfg(all(feature = "rolling_window", feature = "moment"))]
             RollingSkew { .. } => float_dtype(),
             ShiftAndFill { .. } => same_type(),
-            Nan(n) => n.get_field(fields),
+            DropNans => same_type(),
             #[cfg(feature = "round_series")]
             Clip { .. } => same_type(),
             ListExpr(l) => {
@@ -241,9 +241,7 @@ impl FunctionExpr {
             #[cfg(feature = "top_k")]
             TopK { .. } => same_type(),
             Shift(..) | Reverse => same_type(),
-            IsNotNull | IsNull | Not => with_dtype(DataType::Boolean),
-            #[cfg(feature = "is_unique")]
-            IsUnique | IsDuplicated => with_dtype(DataType::Boolean),
+            Boolean(f) => with_dtype(f.dtype_out()),
             #[cfg(feature = "diff")]
             Diff(_, _) => map_dtype(&|dt| match dt {
                 #[cfg(feature = "dtype-datetime")]
