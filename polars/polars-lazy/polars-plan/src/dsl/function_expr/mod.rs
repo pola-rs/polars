@@ -36,6 +36,7 @@ mod struct_;
 mod temporal;
 #[cfg(feature = "trigonometry")]
 mod trigonometry;
+mod unique;
 
 use std::fmt::{Display, Formatter};
 
@@ -153,6 +154,7 @@ pub enum FunctionExpr {
     Log1p,
     #[cfg(feature = "log")]
     Exp,
+    Unique(bool),
 }
 
 impl Display for FunctionExpr {
@@ -234,6 +236,13 @@ impl Display for FunctionExpr {
             Log1p => "log1p",
             #[cfg(feature = "log")]
             Exp => "exp",
+            Unique(stable) => {
+                if *stable {
+                    "unique_stable"
+                } else {
+                    "unique"
+                }
+            }
         };
         write!(f, "{s}")
     }
@@ -415,9 +424,9 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             IsNotNull => map!(dispatch::is_not_null),
             Not => map!(dispatch::is_not),
             #[cfg(feature = "is_unique")]
-            IsUnique => map!(dispatch::is_unique),
+            IsUnique => map!(unique::is_unique),
             #[cfg(feature = "is_unique")]
-            IsDuplicated => map!(dispatch::is_duplicated),
+            IsDuplicated => map!(unique::is_duplicated),
             Coalesce => map_as_slice!(fill_null::coalesce),
             ShrinkType => map_owned!(shrink_type::shrink),
             #[cfg(feature = "diff")]
@@ -438,6 +447,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Log1p => map!(log::log1p),
             #[cfg(feature = "log")]
             Exp => map!(log::exp),
+            Unique(stable) => map!(unique::unique, stable),
         }
     }
 }

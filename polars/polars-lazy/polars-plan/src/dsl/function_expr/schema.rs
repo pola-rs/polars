@@ -299,6 +299,7 @@ impl FunctionExpr {
             }),
             #[cfg(feature = "log")]
             Entropy { .. } | Log { .. } | Log1p | Exp => float_dtype(),
+            Unique(_) => same_type(),
         }
     }
 }

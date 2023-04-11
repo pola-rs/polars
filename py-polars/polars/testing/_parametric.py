@@ -6,7 +6,8 @@ import warnings
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from math import isfinite
-from typing import TYPE_CHECKING, Any, Sequence
+from textwrap import dedent
+from typing import TYPE_CHECKING, Any, Sequence, cast
 
 from hypothesis import settings
 from hypothesis.errors import InvalidArgument, NonInteractiveExampleWarning
@@ -51,6 +52,7 @@ from polars.datatypes import (
 from polars.series import Series
 from polars.string_cache import StringCache
 from polars.testing.asserts import is_categorical_dtype
+from polars.type_aliases import Orientation
 
 if TYPE_CHECKING:
     from hypothesis.strategies import DrawFn, SearchStrategy
@@ -453,6 +455,9 @@ def series(
     return draw_series()
 
 
+_failed_frame_init_msgs_: set[str] = set()
+
+
 @defines_strategy()
 def dataframes(
     cols: int | column | Sequence[column] | None = None,
@@ -563,6 +568,8 @@ def dataframes(
     │ 575050513 ┆ NaN        │
     └───────────┴────────────┘
     """  # noqa: 501
+    _failed_frame_init_msgs_.clear()
+
     if isinstance(min_size, int) and min_cols in (0, None):
         min_cols = 1
 
@@ -574,6 +581,7 @@ def dataframes(
 
     @composite
     def draw_frames(draw: DrawFn) -> DataFrame | LazyFrame:
+        """Reproducibly generate random DataFrames according to the given spec."""
         with StringCache():
             # if not given, create 'n' cols with random dtypes
             if cols is None or isinstance(cols, int):
@@ -598,8 +606,8 @@ def dataframes(
                 if size is None
                 else size
             )
-            # init dataframe from generated series data; series data is
-            # given as a python-native sequence (TODO: or as an arrow array).
+
+            # assign names, null probability
             for idx, c in enumerate(coldefs):
                 if c.name is None:
                     c.name = f"col{idx}"
@@ -609,33 +617,57 @@ def dataframes(
                     else:
                         c.null_probability = null_probability
 
-            frame_columns = [
-                c.name if (c.dtype is None) else (c.name, c.dtype) for c in coldefs
-            ]
-            df = DataFrame(
-                data={
-                    c.name: draw(
-                        series(
-                            name=c.name,
-                            dtype=c.dtype,
-                            size=series_size,
-                            null_probability=(c.null_probability or 0.0),
-                            allow_infinities=allow_infinities,
-                            strategy=c.strategy,
-                            unique=c.unique,
-                            chunked=(chunked is None and draw(booleans())),
-                        )
+            # init dataframe from generated series data; series data is
+            # given as a python-native sequence.
+            data = {
+                c.name: draw(
+                    series(
+                        name=c.name,
+                        dtype=c.dtype,
+                        size=series_size,
+                        null_probability=(c.null_probability or 0.0),
+                        allow_infinities=allow_infinities,
+                        strategy=c.strategy,
+                        unique=c.unique,
+                        chunked=(chunked is None and draw(booleans())),
                     )
-                    for c in coldefs
-                },
-                schema=frame_columns,  # type: ignore[arg-type]
-            )
-            # optionally generate frames with n_chunks > 1
-            if series_size > 1 and chunked is True:
-                split_at = series_size // 2
-                df = df[:split_at].vstack(df[split_at:])
+                )
+                for c in coldefs
+            }
 
-            # optionally make lazy
-            return df.lazy() if lazy else df
+            # note: randomly change between row-wise and column-wise frame init
+            orient = cast(Orientation, "row" if draw(booleans()) else "col")
+            data = list(zip(*data.values())) if orient == "row" else data  # type: ignore[assignment]
+            schema = [(c.name, c.dtype) for c in coldefs]
+            try:
+                df = DataFrame(data=data, schema=schema, orient=orient)
+
+                # optionally generate chunked frames
+                if series_size > 1 and chunked is True:
+                    split_at = series_size // 2
+                    df = df[:split_at].vstack(df[split_at:])
+
+                _failed_frame_init_msgs_.clear()
+                return df.lazy() if lazy else df
+
+            except Exception:
+                # print code that will allow any init failure to be reproduced
+                failed_frame_init = dedent(
+                    f"""
+                    # failed frame init: reproduce with...
+                    pl.DataFrame(
+                        data={data!r},
+                        schema={repr(schema).replace("', ","', pl.")},
+                        orient={orient!r},
+                    )
+                    """.replace(
+                        "datetime.", ""
+                    )
+                )
+                # note: this avoids printing the repro twice
+                if failed_frame_init not in _failed_frame_init_msgs_:
+                    _failed_frame_init_msgs_.add(failed_frame_init)
+                    print(failed_frame_init)
+                raise
 
     return draw_frames()
