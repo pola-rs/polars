@@ -23,12 +23,26 @@ def test_error_on_reducing_map() -> None:
     )
 
     with pytest.raises(
-        pl.ComputeError,
+        pl.InvalidOperationError,
         match=(
             "output length of `map` must be equal to that of the input length; consider using `apply` instead"
         ),
     ):
         df.groupby("id").agg(pl.map(["t", "y"], np.trapz))
+
+    df = pl.DataFrame({"x": [1, 2, 3, 4], "group": [1, 2, 1, 2]})
+
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match=(
+            "output length of `map` must be equal to that of the input length; consider using `apply` instead"
+        ),
+    ):
+        df.select(
+            pl.col("x")
+            .map(lambda x: x.cut(bins=[1, 2, 3], maintain_order=True))
+            .over("group")
+        )
 
 
 def test_error_on_invalid_by_in_asof_join() -> None:
