@@ -23,8 +23,8 @@ fn dispatcher(s: &Series) -> PolarsResult<Series> {
     let s = s.to_physical_repr();
     use DataType::*;
     match s.dtype() {
-        Boolean => s.bool().and_then(|ca| approx_unique_ca(ca)),
-        Binary => s.binary().and_then(|ca| approx_unique_ca(ca)),
+        Boolean => s.bool().and_then(approx_unique_ca),
+        Binary => s.binary().and_then(approx_unique_ca),
         Utf8 => {
             let s = s.cast(&Binary).unwrap();
             let ca = s.binary().unwrap();

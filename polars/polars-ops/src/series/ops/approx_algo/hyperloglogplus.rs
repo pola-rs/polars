@@ -38,6 +38,15 @@ where
     phantom: PhantomData<T>,
 }
 
+impl<T> Default for HyperLogLog<T>
+where
+    T: Hash + ?Sized,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Fixed seed for the hashing so that values are consistent across runs
 ///
 /// Note that when we later move on to have serialized HLL register binaries

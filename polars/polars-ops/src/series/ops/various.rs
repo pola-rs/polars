@@ -3,6 +3,7 @@ use polars_core::export::ahash;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 
+#[cfg(feature = "approx_unique")]
 use crate::series::approx_unique;
 use crate::series::ops::SeriesSealed;
 

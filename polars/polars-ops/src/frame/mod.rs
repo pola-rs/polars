@@ -150,7 +150,7 @@ pub trait DataFrameOps: IntoDf {
         let cols = POOL.install(|| {
             df.get_columns()
                 .par_iter()
-                .map(|s| approx_unique(s))
+                .map(approx_unique)
                 .collect::<PolarsResult<Vec<_>>>()
         })?;
 
