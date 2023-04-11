@@ -361,4 +361,8 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
             .unwrap();
         StructChunked::new_unchecked(self.name(), &out.columns).into_series()
     }
+
+    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        self.0.arg_sort(options)
+    }
 }

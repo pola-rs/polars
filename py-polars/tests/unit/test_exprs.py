@@ -170,7 +170,7 @@ def test_shuffle() -> None:
 def test_sample() -> None:
     a = pl.Series("a", range(0, 20))
     out = pl.select(
-        pl.lit(a).sample(frac=0.5, with_replacement=False, seed=1)
+        pl.lit(a).sample(fraction=0.5, with_replacement=False, seed=1)
     ).to_series()
 
     assert out.shape == (10,)
@@ -760,7 +760,7 @@ def test_map_dict() -> None:
     assert_frame_equal(
         df.with_columns(
             pl.col("int")
-            .map_dict(int_with_only_none_values_dict, default=6, dtype=pl.Int32)
+            .map_dict(int_with_only_none_values_dict, default=6, return_dtype=pl.Int32)
             .alias("remapped")
         ),
         pl.DataFrame(
@@ -1034,3 +1034,19 @@ def test_operators_vs_expressions() -> None:
             | (pl.col("y").cast(int) == pl.col("z"))
         ),
     )
+
+
+def test_head() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
+    assert df.select(pl.col("a").head(0)).to_dict(False) == {"a": []}
+    assert df.select(pl.col("a").head(3)).to_dict(False) == {"a": [1, 2, 3]}
+    assert df.select(pl.col("a").head(10)).to_dict(False) == {"a": [1, 2, 3, 4, 5]}
+    assert df.select(pl.col("a").head(pl.count() / 2)).to_dict(False) == {"a": [1, 2]}
+
+
+def test_tail() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
+    assert df.select(pl.col("a").tail(0)).to_dict(False) == {"a": []}
+    assert df.select(pl.col("a").tail(3)).to_dict(False) == {"a": [3, 4, 5]}
+    assert df.select(pl.col("a").tail(10)).to_dict(False) == {"a": [1, 2, 3, 4, 5]}
+    assert df.select(pl.col("a").tail(pl.count() / 2)).to_dict(False) == {"a": [4, 5]}

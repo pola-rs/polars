@@ -19,13 +19,13 @@ class BinaryNameSpace:
     def __init__(self, series: Series):
         self._s: PySeries = series._s
 
-    def contains(self, lit: bytes) -> Series:
+    def contains(self, literal: bytes) -> Series:
         """
         Check if binaries in Series contain a binary substring.
 
         Parameters
         ----------
-        lit
+        literal
             The binary substring to look for
 
         Returns
@@ -34,24 +34,24 @@ class BinaryNameSpace:
 
         """
 
-    def ends_with(self, sub: bytes) -> Series:
+    def ends_with(self, suffix: bytes) -> Series:
         """
         Check if string values end with a binary substring.
 
         Parameters
         ----------
-        sub
+        suffix
             Suffix substring.
 
         """
 
-    def starts_with(self, sub: bytes) -> Series:
+    def starts_with(self, prefix: bytes) -> Series:
         """
         Check if values start with a binary substring.
 
         Parameters
         ----------
-        sub
+        prefix
             Prefix substring.
 
         """

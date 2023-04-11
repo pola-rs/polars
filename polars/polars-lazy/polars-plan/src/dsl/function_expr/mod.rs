@@ -1,8 +1,11 @@
+#[cfg(feature = "abs")]
+mod abs;
 #[cfg(feature = "arg_where")]
 mod arg_where;
 mod binary;
 #[cfg(feature = "round_series")]
 mod clip;
+mod cum;
 #[cfg(feature = "temporal")]
 mod datetime;
 mod dispatch;
@@ -10,6 +13,8 @@ mod fill_null;
 #[cfg(feature = "is_in")]
 mod is_in;
 mod list;
+#[cfg(feature = "log")]
+mod log;
 mod nan;
 mod pow;
 #[cfg(all(feature = "rolling_window", feature = "moment"))]
@@ -54,6 +59,8 @@ use super::*;
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug)]
 pub enum FunctionExpr {
+    #[cfg(feature = "abs")]
+    Abs,
     NullCount,
     Pow,
     #[cfg(feature = "row_hash")]
@@ -102,6 +109,21 @@ pub enum FunctionExpr {
         descending: bool,
     },
     Shift(i64),
+    Cumcount {
+        reverse: bool,
+    },
+    Cumsum {
+        reverse: bool,
+    },
+    Cumprod {
+        reverse: bool,
+    },
+    Cummin {
+        reverse: bool,
+    },
+    Cummax {
+        reverse: bool,
+    },
     Reverse,
     IsNull,
     IsNotNull,
@@ -115,7 +137,7 @@ pub enum FunctionExpr {
     Coalesce,
     ShrinkType,
     #[cfg(feature = "diff")]
-    Diff(usize, NullBehavior),
+    Diff(i64, NullBehavior),
     #[cfg(feature = "interpolate")]
     Interpolate(InterpolationMethod),
     #[cfg(feature = "dot_product")]
@@ -125,6 +147,8 @@ pub enum FunctionExpr {
         base: f64,
         normalize: bool,
     },
+    #[cfg(feature = "log")]
+    Log1p,
 }
 
 impl Display for FunctionExpr {
@@ -132,6 +156,8 @@ impl Display for FunctionExpr {
         use FunctionExpr::*;
 
         let s = match self {
+            #[cfg(feature = "abs")]
+            Abs => "abs",
             NullCount => "null_count",
             Pow => "pow",
             #[cfg(feature = "row_hash")]
@@ -175,6 +201,11 @@ impl Display for FunctionExpr {
             #[cfg(feature = "top_k")]
             TopK { .. } => "top_k",
             Shift(_) => "shift",
+            Cumcount { .. } => "cumcount",
+            Cumsum { .. } => "cumsum",
+            Cumprod { .. } => "cumprod",
+            Cummin { .. } => "cummin",
+            Cummax { .. } => "cummax",
             Reverse => "reverse",
             Not => "is_not",
             IsNull => "is_null",
@@ -195,6 +226,8 @@ impl Display for FunctionExpr {
             Dot => "dot",
             #[cfg(feature = "log")]
             Entropy { .. } => "entropy",
+            #[cfg(feature = "log")]
+            Log1p => "log1p",
         };
         write!(f, "{s}")
     }
@@ -276,6 +309,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: FunctionExpr) -> Self {
         use FunctionExpr::*;
         match func {
+            #[cfg(feature = "abs")]
+            Abs => map!(abs::abs),
             NullCount => {
                 let f = |s: &mut [Series]| {
                     let s = &s[0];
@@ -364,6 +399,11 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map!(top_k, k, descending)
             }
             Shift(periods) => map!(dispatch::shift, periods),
+            Cumcount { reverse } => map!(cum::cumcount, reverse),
+            Cumsum { reverse } => map!(cum::cumsum, reverse),
+            Cumprod { reverse } => map!(cum::cumprod, reverse),
+            Cummin { reverse } => map!(cum::cummin, reverse),
+            Cummax { reverse } => map!(cum::cummax, reverse),
             Reverse => map!(dispatch::reverse),
             IsNull => map!(dispatch::is_null),
             IsNotNull => map!(dispatch::is_not_null),
@@ -387,7 +427,9 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map_as_slice!(dispatch::dot_impl)
             }
             #[cfg(feature = "log")]
-            Entropy { base, normalize } => map!(dispatch::entropy, base, normalize),
+            Entropy { base, normalize } => map!(log::entropy, base, normalize),
+            #[cfg(feature = "log")]
+            Log1p => map!(log::log1p),
         }
     }
 }

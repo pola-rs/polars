@@ -126,3 +126,27 @@ def test_iter_rows() -> None:
         {"id": 2, "values": "c"},
         {"id": 3, "values": "d"},
     ]
+
+
+def test_row_constructor_schema() -> None:
+    expected = {"d": [1, 2, 3]}
+    for primitive in [
+        pl.UInt8,
+        pl.Int8,
+        pl.UInt16,
+        pl.Int16,
+        pl.UInt32,
+        pl.Int32,
+        pl.UInt64,
+        pl.Int64,
+    ]:
+        out = pl.DataFrame(
+            data=[
+                [1],
+                [2],
+                [3],
+            ],
+            schema={"d": primitive},
+        )
+        assert out.dtypes == [primitive]
+        assert out.to_dict(False) == expected

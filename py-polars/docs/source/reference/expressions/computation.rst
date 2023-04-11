@@ -33,6 +33,7 @@ Computation
     Expr.kurtosis
     Expr.log
     Expr.log10
+    Expr.log1p
     Expr.mode
     Expr.n_unique
     Expr.null_count

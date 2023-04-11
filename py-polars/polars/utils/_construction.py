@@ -358,16 +358,18 @@ def sequence_to_pyseries(
         ).to_struct(name)
     else:
         if python_dtype is None:
-            if value is None and dtype_if_empty:
-                # Create a series with a dtype_if_empty dtype for a sequence which
-                # contains only None values.
-                constructor = polars_type_to_constructor(dtype_if_empty)
+            if value is None:
+                # Create a series with a dtype_if_empty dtype (if set) or Float32
+                # (if not set) for a sequence which contains only None values.
+                constructor = polars_type_to_constructor(
+                    dtype_if_empty if dtype_if_empty else Float32
+                )
                 return _construct_series_with_fallbacks(
                     constructor, name, values, strict
                 )
 
             # generic default dtype
-            python_dtype = float if value is None else type(value)
+            python_dtype = type(value)
 
         # temporal branch
         if python_dtype in py_temporal_types:
@@ -617,7 +619,6 @@ def _expand_dict_scalars(
                     updated_data[name] = pli.Series(
                         name=name, values=val, dtype=dtype, nan_to_null=nan_to_null
                     )
-
                 elif val is None or isinstance(  # type: ignore[redundant-expr]
                     val, (int, float, str, bool, date, datetime, time, timedelta)
                 ):
@@ -1338,7 +1339,7 @@ def pandas_has_default_index(df: pd.DataFrame) -> bool:
         # finally, is the index _equivalent_ to a default unnamed
         # integer index with frame data that was previously sorted
         return (
-            df.index.dtype == "int"  # type: ignore[comparison-overlap]
+            str(df.index.dtype).startswith("int")
             and (df.index.sort_values() == np.arange(len(df))).all()
         )
 

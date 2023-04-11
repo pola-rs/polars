@@ -6,6 +6,10 @@ import sys
 from polars.utils.meta import get_index_type
 from polars.utils.polars_version import get_polars_version
 
+# metadata module must be imported explicitly
+if sys.version_info >= (3, 8):
+    import importlib.metadata
+
 
 def show_versions() -> None:
     """

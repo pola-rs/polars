@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-BASE ?= master
+BASE ?= main
 
 .PHONY: fmt check check-features clippy clippy-default test test-doc integration-tests
 

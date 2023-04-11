@@ -40,11 +40,9 @@ Repository = "https://github.com/pola-rs/polars"
 Changelog = "https://github.com/pola-rs/polars/releases"
 
 [project.optional-dependencies]
-# the Arrow memory format is stable between 4.0 and 5.0-SNAPSHOTS
-# (which the Rust libraries use to take advantage of Rust API changes).
 # NOTE: keep this list in sync with show_versions()
-pyarrow = ["pyarrow>=4.0.0"]
-pandas = ["pyarrow>=4.0.0", "pandas"]
+pyarrow = ["pyarrow>=7.0.0"]
+pandas = ["pyarrow>=7.0.0", "pandas"]
 numpy = ["numpy >= 1.16.0"]
 fsspec = ["fsspec"]
 connectorx = ["connectorx"]
@@ -181,6 +179,7 @@ markers = [
   "benchmark: Tests that should be run on a Polars release build.",
 ]
 filterwarnings = "error" # Fail on warnings
+xfail_strict = true
 
 [tool.coverage.run]
 source = ["polars"]
