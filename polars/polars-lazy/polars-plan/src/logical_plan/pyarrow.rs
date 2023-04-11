@@ -84,7 +84,7 @@ pub(super) fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Opt
             }
         }
         AExpr::Function {
-            function: FunctionExpr::Not,
+            function: FunctionExpr::Boolean(BooleanFunction::IsNot),
             input,
             ..
         } => {
@@ -93,7 +93,7 @@ pub(super) fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Opt
             Some(format!("~({input})"))
         }
         AExpr::Function {
-            function: FunctionExpr::IsNull,
+            function: FunctionExpr::Boolean(BooleanFunction::IsNull),
             input,
             ..
         } => {
@@ -102,7 +102,7 @@ pub(super) fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Opt
             Some(format!("({input}).is_null()"))
         }
         AExpr::Function {
-            function: FunctionExpr::IsNotNull,
+            function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
             input,
             ..
         } => {
