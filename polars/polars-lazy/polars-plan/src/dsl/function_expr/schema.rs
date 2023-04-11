@@ -104,6 +104,8 @@ impl FunctionExpr {
 
         use FunctionExpr::*;
         match self {
+            #[cfg(feature = "abs")]
+            Abs => same_type(),
             NullCount => with_dtype(IDX_DTYPE),
             Pow => float_dtype(),
             Coalesce => super_type(),
@@ -241,6 +243,11 @@ impl FunctionExpr {
             #[cfg(feature = "top_k")]
             TopK { .. } => same_type(),
             Shift(..) | Reverse => same_type(),
+            Cumcount { .. } => with_dtype(IDX_DTYPE),
+            Cumsum { .. } => map_dtype(&cum::dtypes::cumsum),
+            Cumprod { .. } => map_dtype(&cum::dtypes::cumprod),
+            Cummin { .. } => same_type(),
+            Cummax { .. } => same_type(),
             IsNotNull | IsNull | Not => with_dtype(DataType::Boolean),
             #[cfg(feature = "is_unique")]
             IsUnique | IsDuplicated => with_dtype(DataType::Boolean),
@@ -291,13 +298,7 @@ impl FunctionExpr {
                 }
             }),
             #[cfg(feature = "log")]
-            Entropy { .. } => float_dtype(),
-            #[cfg(feature = "log")]
-            Log { .. } => float_dtype(),
-            #[cfg(feature = "log")]
-            Log1p => float_dtype(),
-            #[cfg(feature = "log")]
-            Exp => float_dtype(),
+            Entropy { .. } | Log { .. } | Log1p | Exp => float_dtype(),
         }
     }
 }

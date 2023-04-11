@@ -902,64 +902,29 @@ impl Expr {
         )
     }
 
+    /// Cumulatively count values from 0 to len.
+    pub fn cumcount(self, reverse: bool) -> Self {
+        self.apply_private(FunctionExpr::Cumcount { reverse })
+    }
+
     /// Get an array with the cumulative sum computed at every element
     pub fn cumsum(self, reverse: bool) -> Self {
-        self.apply(
-            move |s: Series| Ok(Some(s.cumsum(reverse))),
-            GetOutput::map_dtype(|dt| {
-                use DataType::*;
-                if dt.is_logical() {
-                    dt.clone()
-                } else {
-                    match dt {
-                        Boolean => UInt32,
-                        Int32 => Int32,
-                        UInt32 => UInt32,
-                        UInt64 => UInt64,
-                        Float32 => Float32,
-                        Float64 => Float64,
-                        _ => Int64,
-                    }
-                }
-            }),
-        )
-        .with_fmt("cumsum")
+        self.apply_private(FunctionExpr::Cumsum { reverse })
     }
 
     /// Get an array with the cumulative product computed at every element
     pub fn cumprod(self, reverse: bool) -> Self {
-        self.apply(
-            move |s: Series| Ok(Some(s.cumprod(reverse))),
-            GetOutput::map_dtype(|dt| {
-                use DataType::*;
-                match dt {
-                    Boolean => Int64,
-                    UInt64 => UInt64,
-                    Float32 => Float32,
-                    Float64 => Float64,
-                    _ => Int64,
-                }
-            }),
-        )
-        .with_fmt("cumprod")
+        self.apply_private(FunctionExpr::Cumprod { reverse })
     }
 
     /// Get an array with the cumulative min computed at every element
     pub fn cummin(self, reverse: bool) -> Self {
-        self.apply(
-            move |s: Series| Ok(Some(s.cummin(reverse))),
-            GetOutput::same_type(),
-        )
-        .with_fmt("cummin")
+        self.apply_private(FunctionExpr::Cummin { reverse })
     }
 
     /// Get an array with the cumulative max computed at every element
     pub fn cummax(self, reverse: bool) -> Self {
-        self.apply(
-            move |s: Series| Ok(Some(s.cummax(reverse))),
-            GetOutput::same_type(),
-        )
-        .with_fmt("cummax")
+        self.apply_private(FunctionExpr::Cummax { reverse })
     }
 
     /// Get the product aggregation of an expression
@@ -1058,8 +1023,7 @@ impl Expr {
     /// Convert all values to their absolute/positive value.
     #[cfg(feature = "abs")]
     pub fn abs(self) -> Self {
-        self.map(move |s: Series| s.abs().map(Some), GetOutput::same_type())
-            .with_fmt("abs")
+        self.map_private(FunctionExpr::Abs)
     }
 
     /// Apply window function over a subgroup.
@@ -1647,12 +1611,12 @@ impl Expr {
     }
 
     #[cfg(feature = "diff")]
-    pub fn diff(self, n: usize, null_behavior: NullBehavior) -> Expr {
+    pub fn diff(self, n: i64, null_behavior: NullBehavior) -> Expr {
         self.apply_private(FunctionExpr::Diff(n, null_behavior))
     }
 
     #[cfg(feature = "pct_change")]
-    pub fn pct_change(self, n: usize) -> Expr {
+    pub fn pct_change(self, n: i64) -> Expr {
         use DataType::*;
         self.apply(
             move |s| s.pct_change(n).map(Some),
@@ -1795,27 +1759,6 @@ impl Expr {
         };
         self.apply(move |s| s.reshape(&dims).map(Some), output_type)
             .with_fmt("reshape")
-    }
-
-    /// Cumulatively count values from 0 to len.
-    pub fn cumcount(self, reverse: bool) -> Self {
-        self.apply(
-            move |s| {
-                if reverse {
-                    let ca: NoNull<UInt32Chunked> = (0u32..s.len() as u32).rev().collect();
-                    let mut ca = ca.into_inner();
-                    ca.rename(s.name());
-                    Ok(Some(ca.into_series()))
-                } else {
-                    let ca: NoNull<UInt32Chunked> = (0u32..s.len() as u32).collect();
-                    let mut ca = ca.into_inner();
-                    ca.rename(s.name());
-                    Ok(Some(ca.into_series()))
-                }
-            },
-            GetOutput::from_type(IDX_DTYPE),
-        )
-        .with_fmt("cumcount")
     }
 
     #[cfg(feature = "random")]
@@ -1982,6 +1925,12 @@ impl Expr {
     /// Compute the logarithm to a given base
     pub fn log(self, base: f64) -> Self {
         self.map_private(FunctionExpr::Log { base })
+    }
+
+    #[cfg(feature = "log")]
+    /// Compute the natural logarithm of all elements plus one in the input array
+    pub fn log1p(self) -> Self {
+        self.map_private(FunctionExpr::Log1p)
     }
 
     #[cfg(feature = "log")]
