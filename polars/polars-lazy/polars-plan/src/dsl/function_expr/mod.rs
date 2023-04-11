@@ -3,6 +3,7 @@ mod abs;
 #[cfg(feature = "arg_where")]
 mod arg_where;
 mod binary;
+mod boolean;
 #[cfg(feature = "round_series")]
 mod clip;
 mod cum;
@@ -10,8 +11,6 @@ mod cum;
 mod datetime;
 mod dispatch;
 mod fill_null;
-#[cfg(feature = "is_in")]
-mod is_in;
 mod list;
 #[cfg(feature = "log")]
 mod log;
@@ -46,9 +45,9 @@ use polars_core::prelude::*;
 use serde::{Deserialize, Serialize};
 
 pub(crate) use self::binary::BinaryFunction;
+pub use self::boolean::BooleanFunction;
 #[cfg(feature = "temporal")]
 pub(super) use self::datetime::TemporalFunction;
-pub(super) use self::nan::NanFunction;
 #[cfg(feature = "strings")]
 pub(crate) use self::strings::StringFunction;
 #[cfg(feature = "dtype-struct")]
@@ -66,8 +65,6 @@ pub enum FunctionExpr {
     Pow,
     #[cfg(feature = "row_hash")]
     Hash(u64, u64, u64, u64),
-    #[cfg(feature = "is_in")]
-    IsIn,
     #[cfg(feature = "arg_where")]
     ArgWhere,
     #[cfg(feature = "search_sorted")]
@@ -95,7 +92,7 @@ pub enum FunctionExpr {
     ShiftAndFill {
         periods: i64,
     },
-    Nan(NanFunction),
+    DropNans,
     #[cfg(feature = "round_series")]
     Clip {
         min: Option<AnyValue<'static>>,
@@ -126,13 +123,7 @@ pub enum FunctionExpr {
         reverse: bool,
     },
     Reverse,
-    IsNull,
-    IsNotNull,
-    Not,
-    #[cfg(feature = "is_unique")]
-    IsUnique,
-    #[cfg(feature = "is_unique")]
-    IsDuplicated,
+    Boolean(BooleanFunction),
     Coalesce,
     ShrinkType,
     #[cfg(feature = "diff")]
@@ -168,8 +159,6 @@ impl Display for FunctionExpr {
             Pow => "pow",
             #[cfg(feature = "row_hash")]
             Hash(_, _, _, _) => "hash",
-            #[cfg(feature = "is_in")]
-            IsIn => "is_in",
             #[cfg(feature = "arg_where")]
             ArgWhere => "arg_where",
             #[cfg(feature = "search_sorted")]
@@ -189,11 +178,7 @@ impl Display for FunctionExpr {
             #[cfg(all(feature = "rolling_window", feature = "moment"))]
             RollingSkew { .. } => "rolling_skew",
             ShiftAndFill { .. } => "shift_and_fill",
-            Nan(func) => match func {
-                NanFunction::IsNan => "is_nan",
-                NanFunction::IsNotNan => "is_not_nan",
-                NanFunction::DropNans => "drop_nans",
-            },
+            DropNans => "drop_nans",
             #[cfg(feature = "round_series")]
             Clip { min, max } => match (min, max) {
                 (Some(_), Some(_)) => "clip",
@@ -213,13 +198,7 @@ impl Display for FunctionExpr {
             Cummin { .. } => "cummin",
             Cummax { .. } => "cummax",
             Reverse => "reverse",
-            Not => "is_not",
-            IsNull => "is_null",
-            IsNotNull => "is_not_null",
-            #[cfg(feature = "is_unique")]
-            IsUnique => "is_unique",
-            #[cfg(feature = "is_unique")]
-            IsDuplicated => "is_duplicated",
+            Boolean(func) => return write!(f, "{func}"),
             Coalesce => "coalesce",
             ShrinkType => "shrink_dtype",
             #[cfg(feature = "diff")]
@@ -248,6 +227,7 @@ impl Display for FunctionExpr {
     }
 }
 
+#[macro_export]
 macro_rules! wrap {
     ($e:expr) => {
         SpecialEq::new(Arc::new($e))
@@ -340,10 +320,6 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Hash(k0, k1, k2, k3) => {
                 map!(row_hash::row_hash, k0, k1, k2, k3)
             }
-            #[cfg(feature = "is_in")]
-            IsIn => {
-                wrap!(is_in::is_in)
-            }
             #[cfg(feature = "arg_where")]
             ArgWhere => {
                 wrap!(arg_where::arg_where)
@@ -381,7 +357,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             ShiftAndFill { periods } => {
                 map_as_slice!(shift_and_fill::shift_and_fill, periods)
             }
-            Nan(n) => n.into(),
+            DropNans => map_owned!(nan::drop_nans),
             #[cfg(feature = "round_series")]
             Clip { min, max } => {
                 map_owned!(clip::clip, min.clone(), max.clone())
@@ -420,13 +396,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Cummin { reverse } => map!(cum::cummin, reverse),
             Cummax { reverse } => map!(cum::cummax, reverse),
             Reverse => map!(dispatch::reverse),
-            IsNull => map!(dispatch::is_null),
-            IsNotNull => map!(dispatch::is_not_null),
-            Not => map!(dispatch::is_not),
-            #[cfg(feature = "is_unique")]
-            IsUnique => map!(unique::is_unique),
-            #[cfg(feature = "is_unique")]
-            IsDuplicated => map!(unique::is_duplicated),
+            Boolean(func) => func.into(),
             Coalesce => map_as_slice!(fill_null::coalesce),
             ShrinkType => map_owned!(shrink_type::shrink),
             #[cfg(feature = "diff")]

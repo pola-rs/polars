@@ -268,7 +268,7 @@ impl Expr {
     /// Negate `Expr`
     #[allow(clippy::should_implement_trait)]
     pub fn not(self) -> Expr {
-        self.map_private(FunctionExpr::Not)
+        self.map_private(BooleanFunction::IsNot.into())
     }
 
     /// Rename Column.
@@ -279,13 +279,13 @@ impl Expr {
     /// Run is_null operation on `Expr`.
     #[allow(clippy::wrong_self_convention)]
     pub fn is_null(self) -> Self {
-        self.map_private(FunctionExpr::IsNull)
+        self.map_private(BooleanFunction::IsNull.into())
     }
 
     /// Run is_not_null operation on `Expr`.
     #[allow(clippy::wrong_self_convention)]
     pub fn is_not_null(self) -> Self {
-        self.map_private(FunctionExpr::IsNotNull)
+        self.map_private(BooleanFunction::IsNotNull.into())
     }
 
     /// Drop null values
@@ -295,7 +295,7 @@ impl Expr {
 
     /// Drop NaN values
     pub fn drop_nans(self) -> Self {
-        self.apply_private(NanFunction::DropNans.into())
+        self.apply_private(FunctionExpr::DropNans)
     }
 
     /// Reduce groups to minimal value.
@@ -855,31 +855,23 @@ impl Expr {
     /// Get mask of finite values if dtype is Float
     #[allow(clippy::wrong_self_convention)]
     pub fn is_finite(self) -> Self {
-        self.map(
-            |s: Series| s.is_finite().map(|ca| Some(ca.into_series())),
-            GetOutput::from_type(DataType::Boolean),
-        )
-        .with_fmt("is_finite")
+        self.map_private(BooleanFunction::IsFinite.into())
     }
 
     /// Get mask of infinite values if dtype is Float
     #[allow(clippy::wrong_self_convention)]
     pub fn is_infinite(self) -> Self {
-        self.map(
-            |s: Series| s.is_infinite().map(|ca| Some(ca.into_series())),
-            GetOutput::from_type(DataType::Boolean),
-        )
-        .with_fmt("is_infinite")
+        self.map_private(BooleanFunction::IsInfinite.into())
     }
 
     /// Get mask of NaN values if dtype is Float
     pub fn is_nan(self) -> Self {
-        self.map_private(NanFunction::IsNan.into())
+        self.map_private(BooleanFunction::IsNan.into())
     }
 
     /// Get inverse mask of NaN values if dtype is Float
     pub fn is_not_nan(self) -> Self {
-        self.map_private(NanFunction::IsNotNan.into())
+        self.map_private(BooleanFunction::IsNotNan.into())
     }
 
     /// Shift the values in the array by some period. See [the eager implementation](polars_core::series::SeriesTrait::shift).
@@ -1138,14 +1130,14 @@ impl Expr {
     #[allow(clippy::wrong_self_convention)]
     #[cfg(feature = "is_unique")]
     pub fn is_duplicated(self) -> Self {
-        self.apply_private(FunctionExpr::IsDuplicated)
+        self.apply_private(BooleanFunction::IsDuplicated.into())
     }
 
     /// Get a mask of unique values
     #[allow(clippy::wrong_self_convention)]
     #[cfg(feature = "is_unique")]
     pub fn is_unique(self) -> Self {
-        self.apply_private(FunctionExpr::IsUnique)
+        self.apply_private(BooleanFunction::IsUnique.into())
     }
 
     /// and operation
@@ -1195,9 +1187,9 @@ impl Expr {
         let arguments = &[other];
         // we don't have to apply on groups, so this is faster
         if has_literal {
-            self.map_many_private(FunctionExpr::IsIn, arguments, true)
+            self.map_many_private(BooleanFunction::IsIn.into(), arguments, true)
         } else {
-            self.apply_many_private(FunctionExpr::IsIn, arguments, true, true)
+            self.apply_many_private(BooleanFunction::IsIn.into(), arguments, true, true)
         }
     }
 
@@ -1245,11 +1237,7 @@ impl Expr {
     #[allow(clippy::wrong_self_convention)]
     /// Get a mask of the first unique value.
     pub fn is_first(self) -> Expr {
-        self.apply(
-            |s| polars_ops::prelude::is_first(&s).map(|s| Some(s.into_series())),
-            GetOutput::from_type(DataType::Boolean),
-        )
-        .with_fmt("is_first")
+        self.apply_private(BooleanFunction::IsFirst.into())
     }
 
     #[cfg(feature = "dot_product")]
@@ -1836,22 +1824,11 @@ impl Expr {
 
     /// Check if any boolean value is `true`
     pub fn any(self) -> Self {
-        self.apply(
-            move |s| {
-                let boolean = s.bool()?;
-                if boolean.any() {
-                    Ok(Some(Series::new(s.name(), [true])))
-                } else {
-                    Ok(Some(Series::new(s.name(), [false])))
-                }
-            },
-            GetOutput::from_type(DataType::Boolean),
-        )
-        .with_function_options(|mut opt| {
-            opt.fmt_str = "any";
-            opt.auto_explode = true;
-            opt
-        })
+        self.apply_private(BooleanFunction::Any.into())
+            .with_function_options(|mut opt| {
+                opt.auto_explode = true;
+                opt
+            })
     }
 
     /// Shrink numeric columns to the minimal required datatype
@@ -1863,22 +1840,11 @@ impl Expr {
 
     /// Check if all boolean values are `true`
     pub fn all(self) -> Self {
-        self.apply(
-            move |s| {
-                let boolean = s.bool()?;
-                if boolean.all() {
-                    Ok(Some(Series::new(s.name(), [true])))
-                } else {
-                    Ok(Some(Series::new(s.name(), [false])))
-                }
-            },
-            GetOutput::from_type(DataType::Boolean),
-        )
-        .with_function_options(|mut opt| {
-            opt.fmt_str = "all";
-            opt.auto_explode = true;
-            opt
-        })
+        self.apply_private(BooleanFunction::All.into())
+            .with_function_options(|mut opt| {
+                opt.auto_explode = true;
+                opt
+            })
     }
 
     #[cfg(feature = "dtype-struct")]

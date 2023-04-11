@@ -111,8 +111,6 @@ impl FunctionExpr {
             Coalesce => super_type(),
             #[cfg(feature = "row_hash")]
             Hash(..) => with_dtype(DataType::UInt64),
-            #[cfg(feature = "is_in")]
-            IsIn => with_dtype(DataType::Boolean),
             #[cfg(feature = "arg_where")]
             ArgWhere => with_dtype(IDX_DTYPE),
             #[cfg(feature = "search_sorted")]
@@ -185,7 +183,7 @@ impl FunctionExpr {
             #[cfg(all(feature = "rolling_window", feature = "moment"))]
             RollingSkew { .. } => float_dtype(),
             ShiftAndFill { .. } => same_type(),
-            Nan(n) => n.get_field(fields),
+            DropNans => same_type(),
             #[cfg(feature = "round_series")]
             Clip { .. } => same_type(),
             ListExpr(l) => {
@@ -243,14 +241,12 @@ impl FunctionExpr {
             #[cfg(feature = "top_k")]
             TopK { .. } => same_type(),
             Shift(..) | Reverse => same_type(),
+            Boolean(f) => with_dtype(f.dtype_out()),
             Cumcount { .. } => with_dtype(IDX_DTYPE),
             Cumsum { .. } => map_dtype(&cum::dtypes::cumsum),
             Cumprod { .. } => map_dtype(&cum::dtypes::cumprod),
             Cummin { .. } => same_type(),
             Cummax { .. } => same_type(),
-            IsNotNull | IsNull | Not => with_dtype(DataType::Boolean),
-            #[cfg(feature = "is_unique")]
-            IsUnique | IsDuplicated => with_dtype(DataType::Boolean),
             #[cfg(feature = "diff")]
             Diff(_, _) => map_dtype(&|dt| match dt {
                 #[cfg(feature = "dtype-datetime")]
