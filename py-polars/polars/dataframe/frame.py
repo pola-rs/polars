@@ -3647,7 +3647,7 @@ class DataFrame:
             return self.__class__(columns)
 
         # Validate parameters
-        percentiles = percentiles or [0.25, 0.75]
+        percentiles = [0.25, 0.75] if percentiles is None else []
         if not all(p >= 0 and p <= 1 for p in percentiles):
             raise ValueError("Not all percentiles are in the range [0, 1].")
 
