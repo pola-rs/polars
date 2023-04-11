@@ -888,3 +888,17 @@ def test_struct_unique_df() -> None:
     )
 
     df.select("numerical", "struct").unique().sort("numerical")
+
+
+def test_struct_is_in() -> None:
+    s1 = (
+        pl.DataFrame({"x": [4, 3, 4, 9], "y": [0, 4, 6, 2]})
+        .select(pl.struct(["x", "y"]))
+        .to_series()
+    )
+    s2 = (
+        pl.DataFrame({"x": [4, 3, 5, 9], "y": [0, 7, 6, 2]})
+        .select(pl.struct(["x", "y"]))
+        .to_series()
+    )
+    assert s1.is_in(s2).to_list() == [True, False, False, True]

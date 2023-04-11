@@ -1085,6 +1085,9 @@ class Series:
     def log(self, base: float = math.e) -> Series:
         """Compute the logarithm to a given base."""
 
+    def log1p(self) -> Series:
+        """Compute the natural logarithm of the input array plus one, element-wise."""
+
     def log10(self) -> Series:
         """Compute the base 10 logarithm of the input array, element-wise."""
 

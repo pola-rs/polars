@@ -408,7 +408,11 @@ impl PredicatePushDown {
                     // unique and duplicated can be caused by joins
                     #[cfg(feature = "is_unique")]
                     let matches = {
-                        |e: &AExpr| matches!(e, AExpr::Function{function: FunctionExpr::IsDuplicated | FunctionExpr::IsUnique, ..})
+                        |e: &AExpr| matches!(e, AExpr::Function{
+                            function: FunctionExpr::Boolean(BooleanFunction::IsDuplicated)
+                                | FunctionExpr::Boolean(BooleanFunction::IsUnique),
+                            ..
+                        })
                     };
                     #[cfg(not(feature = "is_unique"))]
                         let matches = {
@@ -417,7 +421,11 @@ impl PredicatePushDown {
 
 
                     let checks_nulls =
-                        |e: &AExpr| matches!(e, AExpr::Function{function: FunctionExpr::IsNotNull | FunctionExpr::IsNull, ..} ) ||
+                        |e: &AExpr| matches!(e, AExpr::Function{
+                            function: FunctionExpr::Boolean(BooleanFunction::IsNotNull)
+                                | FunctionExpr::Boolean(BooleanFunction::IsNull),
+                            ..
+                        }) ||
                             // any operation that checks for equality or ordering can be wrong because
                             // the join can produce null values
                             matches!(e, AExpr::BinaryExpr {op, ..} if !matches!(op, Operator::NotEq));

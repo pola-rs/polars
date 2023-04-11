@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import contextlib
-import math
 import os
 import random
 import typing
@@ -6281,6 +6280,8 @@ class DataFrame:
         └────────┴────────┴────────┴────────┴────────┴────────┘
 
         """
+        import math
+
         df = self.select(columns) if columns is not None else self
 
         height = df.height

@@ -184,10 +184,10 @@ impl ListNameSpace {
 
     /// Diff every sublist.
     #[cfg(feature = "diff")]
-    pub fn diff(self, n: usize, null_behavior: NullBehavior) -> Expr {
+    pub fn diff(self, n: i64, null_behavior: NullBehavior) -> Expr {
         self.0
             .map(
-                move |s| Ok(Some(s.list()?.lst_diff(n, null_behavior).into_series())),
+                move |s| Ok(Some(s.list()?.lst_diff(n, null_behavior)?.into_series())),
                 GetOutput::same_type(),
             )
             .with_fmt("arr.diff")
