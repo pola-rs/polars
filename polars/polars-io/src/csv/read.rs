@@ -381,6 +381,11 @@ impl<'a, R: MmapBytesReader + 'a> CsvReader<'a, R> {
         let fields = overwriting_schema.iter_fields().filter_map(|mut fld| {
             use DataType::*;
             match fld.data_type() {
+                Date | Datetime(_, _) => {
+                    to_cast.push(fld);
+                    // let inference decide the column type
+                    None
+                }
                 Time => {
                     to_cast.push(fld);
                     // let inference decide the column type
