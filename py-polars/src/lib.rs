@@ -247,24 +247,36 @@ fn concat_lst(s: Vec<dsl::PyExpr>) -> PyResult<dsl::PyExpr> {
     Ok(expr.into())
 }
 
+macro_rules! set_unwrapped_or_0 {
+    ($($var:ident),+ $(,)?) => {
+        $(let $var = $var.map(|e| e.inner).unwrap_or(polars_rs::lazy::dsl::lit(0));)+
+    };
+}
+
 #[pyfunction]
 fn py_datetime(
     year: dsl::PyExpr,
     month: dsl::PyExpr,
     day: dsl::PyExpr,
-    hour: dsl::PyExpr,
-    minute: dsl::PyExpr,
-    second: dsl::PyExpr,
-    microsecond: dsl::PyExpr,
+    hour: Option<dsl::PyExpr>,
+    minute: Option<dsl::PyExpr>,
+    second: Option<dsl::PyExpr>,
+    microsecond: Option<dsl::PyExpr>,
 ) -> dsl::PyExpr {
+    let year = year.inner;
+    let month = month.inner;
+    let day = day.inner;
+
+    set_unwrapped_or_0!(hour, minute, second, microsecond);
+
     let args = DatetimeArgs {
-        year: year.inner,
-        month: month.inner,
-        day: day.inner,
-        hour: hour.inner,
-        minute: minute.inner,
-        second: second.inner,
-        microsecond: microsecond.inner,
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        microsecond,
     };
 
     polars_rs::lazy::dsl::datetime(args).into()
@@ -273,24 +285,35 @@ fn py_datetime(
 #[allow(clippy::too_many_arguments)]
 #[pyfunction]
 fn py_duration(
-    days: PyExpr,
-    seconds: PyExpr,
-    nanoseconds: PyExpr,
-    microseconds: PyExpr,
-    milliseconds: PyExpr,
-    minutes: PyExpr,
-    hours: PyExpr,
-    weeks: PyExpr,
+    days: Option<PyExpr>,
+    seconds: Option<PyExpr>,
+    nanoseconds: Option<PyExpr>,
+    microseconds: Option<PyExpr>,
+    milliseconds: Option<PyExpr>,
+    minutes: Option<PyExpr>,
+    hours: Option<PyExpr>,
+    weeks: Option<PyExpr>,
 ) -> dsl::PyExpr {
+    set_unwrapped_or_0!(
+        days,
+        seconds,
+        nanoseconds,
+        microseconds,
+        milliseconds,
+        minutes,
+        hours,
+        weeks,
+    );
+
     let args = DurationArgs {
-        days: days.inner,
-        seconds: seconds.inner,
-        nanoseconds: nanoseconds.inner,
-        microseconds: microseconds.inner,
-        milliseconds: milliseconds.inner,
-        minutes: minutes.inner,
-        hours: hours.inner,
-        weeks: weeks.inner,
+        days,
+        seconds,
+        nanoseconds,
+        microseconds,
+        milliseconds,
+        minutes,
+        hours,
+        weeks,
     };
 
     polars_rs::lazy::dsl::duration(args).into()
