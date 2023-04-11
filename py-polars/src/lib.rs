@@ -257,19 +257,14 @@ fn py_datetime(
     second: dsl::PyExpr,
     microsecond: dsl::PyExpr,
 ) -> dsl::PyExpr {
-    let hour = hour.map(|e| e.inner);
-    let minute = minute.map(|e| e.inner);
-    let second = second.map(|e| e.inner);
-    let microsecond = microsecond.map(|e| e.inner);
-
     let args = DatetimeArgs {
         year: year.inner,
         month: month.inner,
         day: day.inner,
-        hour,
-        minute,
-        second,
-        microsecond,
+        hour: hour.inner,
+        minute: minute.inner,
+        second: second.inner,
+        microsecond: microsecond.inner,
     };
 
     polars_rs::lazy::dsl::datetime(args).into()
@@ -288,14 +283,14 @@ fn py_duration(
     weeks: PyExpr,
 ) -> dsl::PyExpr {
     let args = DurationArgs {
-        days,
-        seconds,
-        nanoseconds,
-        microseconds,
-        milliseconds,
-        minutes,
-        hours,
-        weeks,
+        days: days.inner,
+        seconds: seconds.inner,
+        nanoseconds: nanoseconds.inner,
+        microseconds: microseconds.inner,
+        milliseconds: milliseconds.inner,
+        minutes: minutes.inner,
+        hours: hours.inner,
+        weeks: weeks.inner,
     };
 
     polars_rs::lazy::dsl::duration(args).into()
