@@ -12,6 +12,7 @@ This namespace comes available by calling `LazyFrame.groupby(..)`.
     LazyGroupBy.agg
     LazyGroupBy.all
     LazyGroupBy.apply
+    LazyGroupBy.approx_unique
     LazyGroupBy.count
     LazyGroupBy.first
     LazyGroupBy.head

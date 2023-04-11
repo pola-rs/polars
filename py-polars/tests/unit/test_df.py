@@ -1107,7 +1107,6 @@ def test_lazy_functions() -> None:
             pl.n_unique("b").alias("8"),
             pl.first("b").alias("9"),
             pl.last("b").alias("10"),
-            pl.approx_unique("b").alias("11"),
         ]
     )
     expected = 1.0
@@ -1140,9 +1139,6 @@ def test_lazy_functions() -> None:
     expected = 3
     assert np.isclose(out.to_series(9), expected)
     assert np.isclose(pl.last(df["b"]), expected)
-    expected = 3
-    assert np.isclose(out.to_series(10), expected)
-    assert np.isclose(pl.approx_unique(df["b"]), expected)
 
     # regex selection
     out = df.select(

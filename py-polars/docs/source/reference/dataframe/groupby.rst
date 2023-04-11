@@ -12,6 +12,7 @@ This namespace is available after calling :code:`DataFrame.groupby(...)`.
     GroupBy.agg
     GroupBy.all
     GroupBy.apply
+    GroupBy.approx_unique
     GroupBy.count
     GroupBy.first
     GroupBy.head

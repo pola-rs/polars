@@ -6,6 +6,7 @@ Descriptive
 .. autosummary::
    :toctree: api/
 
+    Series.approx_unique
     Series.chunk_lengths
     Series.describe
     Series.estimated_size
