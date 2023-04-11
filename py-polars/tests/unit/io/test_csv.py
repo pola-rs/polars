@@ -1290,3 +1290,52 @@ def test_read_csv_n_rows_outside_heuristic() -> None:
 
     f.seek(0)
     assert pl.read_csv(f, n_rows=2048, has_header=False).shape == (2048, 4)
+
+
+def test_unix_timestamp_parsing() -> None:
+    csv = textwrap.dedent(
+        """\
+        Ms,Us,Ns
+        1680094799999,1680094799999000,1680094799999000000
+        1680095799999,1680095799999000,1680095799999000000
+        """
+    )
+
+    dtypes_dict = {
+        "Ms": pl.Datetime("ms", None),
+        "Us": pl.Datetime("us", None),
+        "Ns": pl.Datetime("ns", None),
+    }
+    dtypes_list = [
+        pl.Datetime("ms", None),
+        pl.Datetime("us", None),
+        pl.Datetime("ns", None),
+    ]
+
+    result_dtypes_dict = pl.read_csv(io.StringIO(csv), dtypes=dtypes_dict)
+    result_dtypes_list = pl.read_csv(io.StringIO(csv), dtypes=dtypes_list)
+
+    expected = pl.DataFrame(
+        {
+            "Ms": [
+                datetime(2023, 3, 29, 12, 59, 59, 999000),
+                datetime(2023, 3, 29, 13, 16, 39, 999000),
+            ],
+            "Us": [
+                datetime(2023, 3, 29, 12, 59, 59, 999000),
+                datetime(2023, 3, 29, 13, 16, 39, 999000),
+            ],
+            "Ns": [
+                datetime(2023, 3, 29, 12, 59, 59, 999000),
+                datetime(2023, 3, 29, 13, 16, 39, 999000),
+            ],
+        },
+        schema={
+            "Ms": pl.Datetime("ms", None),
+            "Us": pl.Datetime("us", None),
+            "Ns": pl.Datetime("ns", None),
+        },
+    )
+
+    assert_frame_equal(result_dtypes_dict, expected)
+    assert_frame_equal(result_dtypes_list, expected)

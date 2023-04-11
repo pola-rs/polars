@@ -238,10 +238,32 @@ impl<'a> CoreReader<'a> {
                 }
             }
         };
+
+        let mut to_cast = to_cast;
         if let Some(dtypes) = dtype_overwrite {
             let s = Arc::make_mut(&mut schema);
             for (index, dt) in dtypes.iter().enumerate() {
-                s.coerce_by_index(index, dt.clone()).unwrap();
+                use DataType::*;
+                match dt {
+                    Date | Datetime(_, _) => {
+                        to_cast.push(Field::new(s.get_index(index).unwrap().0, dt.clone()));
+                        // let inference decide the column type
+                    }
+                    Time => {
+                        to_cast.push(Field::new(s.get_index(index).unwrap().0, dt.clone()));
+                        // let inference decide the column type
+                    }
+                    Int8 | Int16 | UInt8 | UInt16 => {
+                        to_cast.push(Field::new(s.get_index(index).unwrap().0, dt.clone()));
+                        // We have not compiled these buffers, so we cast them later.
+                        s.coerce_by_index(index, DataType::Int32).unwrap();
+                    }
+                    #[cfg(feature = "dtype-categorical")]
+                    Categorical(_) => {
+                        s.coerce_by_index(index, dt.clone()).unwrap();
+                    }
+                    _ => s.coerce_by_index(index, dt.clone()).unwrap(),
+                }
             }
         }
 
