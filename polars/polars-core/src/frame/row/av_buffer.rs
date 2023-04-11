@@ -525,14 +525,11 @@ impl<'a> AnyValueBufferTrusted<'a> {
                 new.finish().into_series()
             }
             Utf8(b) => {
-                let avg_values_len = b
-                    .builder
-                    .values()
-                    .len()
-                    .saturating_div(b.builder.capacity() + 1)
-                    + 1;
-                let mut new =
-                    Utf8ChunkedBuilder::new(b.field.name(), capacity, avg_values_len * capacity);
+                let avg_values_len =
+                    (b.builder.values().len() as f64) / ((b.builder.capacity() + 1) as f64) + 1.0;
+                // alloc some extra to reduce realloc prob.
+                let new_values_len = (avg_values_len * capacity as f64 * 1.3) as usize;
+                let mut new = Utf8ChunkedBuilder::new(b.field.name(), capacity, new_values_len);
                 std::mem::swap(&mut new, b);
                 new.finish().into_series()
             }
