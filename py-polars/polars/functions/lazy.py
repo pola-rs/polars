@@ -372,7 +372,12 @@ def list_(name: str) -> Expr:
         Name of the column that should be aggregated into a list.
 
     """
-    return col(name).list()
+    warnings.warn(
+        "`pl.list('name')` is deprecated, please use `pl.col('name').implode()` instead.",
+        DeprecationWarning,
+        stacklevel=find_stacklevel(),
+    )
+    return col(name).implode()
 
 
 @overload

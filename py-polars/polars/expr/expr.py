@@ -45,7 +45,7 @@ from polars.expr.string import ExprStringNameSpace
 from polars.expr.struct import ExprStructNameSpace
 from polars.utils._parse_expr_input import expr_to_lit_or_expr, selection_to_pyexpr_list
 from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.decorators import deprecated_alias
+from polars.utils.decorators import deprecated_alias, redirect
 from polars.utils.meta import threadpool_size
 from polars.utils.various import find_stacklevel, sphinx_accessor
 
@@ -85,6 +85,7 @@ elif os.getenv("BUILDING_SPHINX_DOCS"):
     property = sphinx_accessor
 
 
+@redirect({"list": "implode"})
 class Expr:
     """Expressions that can be used in various contexts."""
 
@@ -3465,6 +3466,31 @@ class Expr:
         )
         return self._from_pyexpr(self._pyexpr.explode())
 
+    def implode(self) -> Self:
+        """
+        Aggregate all values into a list.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3],
+        ...         "b": [4, 5, 6],
+        ...     }
+        ... )
+        >>> df.select(pl.all().implode())
+        shape: (1, 2)
+        ┌───────────┬───────────┐
+        │ a         ┆ b         │
+        │ ---       ┆ ---       │
+        │ list[i64] ┆ list[i64] │
+        ╞═══════════╪═══════════╡
+        │ [1, 2, 3] ┆ [4, 5, 6] │
+        └───────────┴───────────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.implode())
+
     def take_every(self, n: int) -> Self:
         """
         Take every nth value in the Series and return as a new Series.
@@ -6826,34 +6852,6 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.set_sorted_flag(descending))
 
-    # Keep the `list` and `str` methods below at the end of the definition of Expr,
-    # as to not confuse mypy with the type annotation `str` and `list`
-
-    def list(self) -> Self:
-        """
-        Aggregate to list.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2, 3],
-        ...         "b": [4, 5, 6],
-        ...     }
-        ... )
-        >>> df.select(pl.all().list())
-        shape: (1, 2)
-        ┌───────────┬───────────┐
-        │ a         ┆ b         │
-        │ ---       ┆ ---       │
-        │ list[i64] ┆ list[i64] │
-        ╞═══════════╪═══════════╡
-        │ [1, 2, 3] ┆ [4, 5, 6] │
-        └───────────┴───────────┘
-
-        """
-        return self._from_pyexpr(self._pyexpr.list())
-
     def shrink_dtype(self) -> Self:
         """
         Shrink numeric columns to the minimal required datatype.
@@ -7377,6 +7375,9 @@ class Expr:
 
         """
         return ExprMetaNameSpace(self)
+
+    # Keep the `str` property below at the end of the definition of Expr,
+    # as to not confuse mypy with the type annotation `str`
 
     @property
     def str(self) -> ExprStringNameSpace:
