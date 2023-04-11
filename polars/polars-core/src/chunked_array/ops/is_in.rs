@@ -162,24 +162,16 @@ impl IsIn for Utf8Chunked {
                     unreachable!()
                 }
             }
-            DataType::List(dt) if DataType::Utf8 == **dt => {
-                return self.as_binary().is_in(
-                    &other
-                        .cast(&DataType::List(Box::new(DataType::Binary)))
-                        .unwrap(),
-                )
-            }
-            DataType::Utf8 => {
-                return self
-                    .as_binary()
-                    .is_in(&other.cast(&DataType::Binary).unwrap())
-            }
+            DataType::List(dt) if DataType::Utf8 == **dt => self.as_binary().is_in(
+                &other
+                    .cast(&DataType::List(Box::new(DataType::Binary)))
+                    .unwrap(),
+            ),
+            DataType::Utf8 => self
+                .as_binary()
+                .is_in(&other.cast(&DataType::Binary).unwrap()),
             _ => polars_bail!(opq = is_in, self.dtype(), other.dtype()),
         }
-        .map(|mut ca| {
-            ca.rename(self.name());
-            ca
-        })
     }
 }
 
