@@ -119,6 +119,7 @@ features = [
   "zip_with",
   "lazy",
   "strings",
+  "regex",
   "temporal",
   "random",
   "fmt",
