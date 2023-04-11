@@ -1,4 +1,6 @@
-//! Domain specific language for the Lazy API. This DSL revolves around the [`Expr`] type, which represents an abstract
+//! Domain specific language for the Lazy API.
+//!
+//! This DSL revolves around the [`Expr`] type, which represents an abstract
 //! operation on a DataFrame, such as mapping over a column, filtering, groupby, or aggregation.
 //! In general, functions on [`LazyFrame`](crate::frame::LazyFrame)s consume the LazyFrame and produce a new LazyFrame representing
 //! the result of applying the function and passed expressions to the consumed LazyFrame.
