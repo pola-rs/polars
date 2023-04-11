@@ -61,7 +61,7 @@ use crate::predicates::PhysicalIoExpr;
 
 pub trait SerReader<R>
 where
-    R: Read + Seek,
+    R: Read,
 {
     /// Create a new instance of the `[SerReader]`
     fn new(reader: R) -> Self;

@@ -73,7 +73,7 @@ pub struct IpcStreamReader<R> {
     metadata: Option<StreamMetadata>,
 }
 
-impl<R: Read + Seek> IpcStreamReader<R> {
+impl<R: Read> IpcStreamReader<R> {
     /// Get schema of the Ipc Stream File
     pub fn schema(&mut self) -> PolarsResult<Schema> {
         Ok((self.metadata()?.schema.fields.iter()).into())
@@ -122,7 +122,7 @@ impl<R: Read + Seek> IpcStreamReader<R> {
 
 impl<R> ArrowReader for read::StreamReader<R>
 where
-    R: Read + Seek,
+    R: Read,
 {
     fn next_record_batch(&mut self) -> ArrowResult<Option<ArrowChunk>> {
         self.next().map_or(Ok(None), |v| match v {
@@ -137,7 +137,7 @@ where
 
 impl<R> SerReader<R> for IpcStreamReader<R>
 where
-    R: Read + Seek,
+    R: Read
 {
     fn new(reader: R) -> Self {
         IpcStreamReader {
