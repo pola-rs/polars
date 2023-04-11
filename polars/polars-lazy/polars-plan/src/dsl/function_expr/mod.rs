@@ -1,3 +1,5 @@
+#[cfg(feature = "abs")]
+mod abs;
 #[cfg(feature = "arg_where")]
 mod arg_where;
 mod binary;
@@ -57,6 +59,8 @@ use super::*;
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug)]
 pub enum FunctionExpr {
+    #[cfg(feature = "abs")]
+    Abs,
     NullCount,
     Pow,
     #[cfg(feature = "row_hash")]
@@ -150,6 +154,8 @@ impl Display for FunctionExpr {
         use FunctionExpr::*;
 
         let s = match self {
+            #[cfg(feature = "abs")]
+            Abs => "abs",
             NullCount => "null_count",
             Pow => "pow",
             #[cfg(feature = "row_hash")]
@@ -299,6 +305,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: FunctionExpr) -> Self {
         use FunctionExpr::*;
         match func {
+            #[cfg(feature = "abs")]
+            Abs => map!(abs::abs),
             NullCount => {
                 let f = |s: &mut [Series]| {
                     let s = &s[0];
