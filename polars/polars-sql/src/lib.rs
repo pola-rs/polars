@@ -321,6 +321,7 @@ mod test {
                 LOG2(a) AS log2,
                 LOG10(a) AS log10,
                 LOG(a, 5) AS log5,
+                LOG1P(a) AS log1p,
                 POW(a, 2) AS pow
             FROM df"#;
         let df_sql = context.execute(sql).unwrap().collect().unwrap();
@@ -339,6 +340,7 @@ mod test {
                 col("a").log(2.0).alias("log2"),
                 col("a").log(10.0).alias("log10"),
                 col("a").log(5.0).alias("log5"),
+                col("a").log1p().alias("log1p"),
                 col("a").pow(2.0).alias("pow"),
             ])
             .collect()

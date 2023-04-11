@@ -980,3 +980,9 @@ def test_datetime_date_subclasses() -> None:
     result = pl.Series([FakeDate(2020, 1, 1)])
     expected = pl.Series([date(2020, 1, 1)])
     assert_series_equal(result, expected)
+
+
+def test_list_null_constructor() -> None:
+    s = pl.Series("a", [[None], [None]], dtype=pl.List(pl.Null))
+    assert s.dtype == pl.List(pl.Null)
+    assert s.to_list() == [None, None]

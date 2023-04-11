@@ -54,10 +54,6 @@ impl<'a> AnyValueBuffer<'a> {
             (Int32(builder), val) => builder.append_value(val.extract()?),
             (Int64(builder), AnyValue::Null) => builder.append_null(),
             (Int64(builder), val) => builder.append_value(val.extract()?),
-            #[cfg(feature = "dtype-u8")]
-            (UInt8(builder), AnyValue::Null) => builder.append_null(),
-            #[cfg(feature = "dtype-u16")]
-            (UInt16(builder), val) => builder.append_value(val.extract()?),
             (UInt32(builder), AnyValue::Null) => builder.append_null(),
             (UInt32(builder), val) => builder.append_value(val.extract()?),
             (UInt64(builder), AnyValue::Null) => builder.append_null(),
@@ -77,6 +73,14 @@ impl<'a> AnyValueBuffer<'a> {
             (Int16(builder), AnyValue::Null) => builder.append_null(),
             #[cfg(feature = "dtype-i16")]
             (Int16(builder), val) => builder.append_value(val.extract()?),
+            #[cfg(feature = "dtype-u8")]
+            (UInt8(builder), AnyValue::Null) => builder.append_null(),
+            #[cfg(feature = "dtype-u8")]
+            (UInt8(builder), val) => builder.append_value(val.extract()?),
+            #[cfg(feature = "dtype-u16")]
+            (UInt16(builder), AnyValue::Null) => builder.append_null(),
+            #[cfg(feature = "dtype-u16")]
+            (UInt16(builder), val) => builder.append_value(val.extract()?),
             #[cfg(feature = "dtype-date")]
             (Date(builder), AnyValue::Null) => builder.append_null(),
             #[cfg(feature = "dtype-date")]

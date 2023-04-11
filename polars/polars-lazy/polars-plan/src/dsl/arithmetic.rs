@@ -64,170 +64,78 @@ impl Expr {
     /// Compute the sine of the given expression
     #[cfg(feature = "trigonometry")]
     pub fn sin(self) -> Self {
-        Expr::Function {
-            input: vec![self],
-            function: FunctionExpr::Trigonometry(TrigonometricFunction::Sin),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                ..Default::default()
-            },
-        }
+        self.map_private(FunctionExpr::Trigonometry(TrigonometricFunction::Sin))
     }
 
     /// Compute the cosine of the given expression
     #[cfg(feature = "trigonometry")]
     pub fn cos(self) -> Self {
-        Expr::Function {
-            input: vec![self],
-            function: FunctionExpr::Trigonometry(TrigonometricFunction::Cos),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                ..Default::default()
-            },
-        }
+        self.map_private(FunctionExpr::Trigonometry(TrigonometricFunction::Cos))
     }
 
     /// Compute the tangent of the given expression
     #[cfg(feature = "trigonometry")]
     pub fn tan(self) -> Self {
-        Expr::Function {
-            input: vec![self],
-            function: FunctionExpr::Trigonometry(TrigonometricFunction::Tan),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                ..Default::default()
-            },
-        }
+        self.map_private(FunctionExpr::Trigonometry(TrigonometricFunction::Tan))
     }
 
     /// Compute the inverse sine of the given expression
     #[cfg(feature = "trigonometry")]
     pub fn arcsin(self) -> Self {
-        Expr::Function {
-            input: vec![self],
-            function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcSin),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                ..Default::default()
-            },
-        }
+        self.map_private(FunctionExpr::Trigonometry(TrigonometricFunction::ArcSin))
     }
 
     /// Compute the inverse cosine of the given expression
     #[cfg(feature = "trigonometry")]
     pub fn arccos(self) -> Self {
-        Expr::Function {
-            input: vec![self],
-            function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcCos),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                ..Default::default()
-            },
-        }
+        self.map_private(FunctionExpr::Trigonometry(TrigonometricFunction::ArcCos))
     }
 
     /// Compute the inverse tangent of the given expression
     #[cfg(feature = "trigonometry")]
     pub fn arctan(self) -> Self {
-        Expr::Function {
-            input: vec![self],
-            function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcTan),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                ..Default::default()
-            },
-        }
+        self.map_private(FunctionExpr::Trigonometry(TrigonometricFunction::ArcTan))
     }
 
     /// Compute the hyperbolic sine of the given expression
     #[cfg(feature = "trigonometry")]
     pub fn sinh(self) -> Self {
-        Expr::Function {
-            input: vec![self],
-            function: FunctionExpr::Trigonometry(TrigonometricFunction::Sinh),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                ..Default::default()
-            },
-        }
+        self.map_private(FunctionExpr::Trigonometry(TrigonometricFunction::Sinh))
     }
 
     /// Compute the hyperbolic cosine of the given expression
     #[cfg(feature = "trigonometry")]
     pub fn cosh(self) -> Self {
-        Expr::Function {
-            input: vec![self],
-            function: FunctionExpr::Trigonometry(TrigonometricFunction::Cosh),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                ..Default::default()
-            },
-        }
+        self.map_private(FunctionExpr::Trigonometry(TrigonometricFunction::Cosh))
     }
 
     /// Compute the hyperbolic tangent of the given expression
     #[cfg(feature = "trigonometry")]
     pub fn tanh(self) -> Self {
-        Expr::Function {
-            input: vec![self],
-            function: FunctionExpr::Trigonometry(TrigonometricFunction::Tanh),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                ..Default::default()
-            },
-        }
+        self.map_private(FunctionExpr::Trigonometry(TrigonometricFunction::Tanh))
     }
 
     /// Compute the inverse hyperbolic sine of the given expression
     #[cfg(feature = "trigonometry")]
     pub fn arcsinh(self) -> Self {
-        Expr::Function {
-            input: vec![self],
-            function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcSinh),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                ..Default::default()
-            },
-        }
+        self.map_private(FunctionExpr::Trigonometry(TrigonometricFunction::ArcSinh))
     }
 
     /// Compute the inverse hyperbolic cosine of the given expression
     #[cfg(feature = "trigonometry")]
     pub fn arccosh(self) -> Self {
-        Expr::Function {
-            input: vec![self],
-            function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcCosh),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                ..Default::default()
-            },
-        }
+        self.map_private(FunctionExpr::Trigonometry(TrigonometricFunction::ArcCosh))
     }
 
     /// Compute the inverse hyperbolic tangent of the given expression
     #[cfg(feature = "trigonometry")]
     pub fn arctanh(self) -> Self {
-        Expr::Function {
-            input: vec![self],
-            function: FunctionExpr::Trigonometry(TrigonometricFunction::ArcTanh),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                fmt_str: "arctanh",
-                ..Default::default()
-            },
-        }
+        self.map_private(FunctionExpr::Trigonometry(TrigonometricFunction::ArcTanh))
     }
 
     /// Compute the sign of the given expression
     #[cfg(feature = "sign")]
     pub fn sign(self) -> Self {
-        Expr::Function {
-            input: vec![self],
-            function: FunctionExpr::Sign,
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                ..Default::default()
-            },
-        }
+        self.map_private(FunctionExpr::Sign)
     }
 }

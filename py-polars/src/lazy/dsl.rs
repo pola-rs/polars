@@ -1580,7 +1580,7 @@ impl PyExpr {
         self.inner.clone().arr().arg_max().into()
     }
 
-    fn lst_diff(&self, n: usize, null_behavior: Wrap<NullBehavior>) -> PyResult<Self> {
+    fn lst_diff(&self, n: i64, null_behavior: Wrap<NullBehavior>) -> PyResult<Self> {
         Ok(self.inner.clone().arr().diff(n, null_behavior.0).into())
     }
 
@@ -1645,12 +1645,12 @@ impl PyExpr {
         self.inner.clone().rank(options, seed).into()
     }
 
-    fn diff(&self, n: usize, null_behavior: Wrap<NullBehavior>) -> Self {
+    fn diff(&self, n: i64, null_behavior: Wrap<NullBehavior>) -> Self {
         self.inner.clone().diff(n, null_behavior.0).into()
     }
 
     #[cfg(feature = "pct_change")]
-    fn pct_change(&self, n: usize) -> Self {
+    fn pct_change(&self, n: i64) -> Self {
         self.inner.clone().pct_change(n).into()
     }
 
@@ -1805,6 +1805,10 @@ impl PyExpr {
 
     pub fn log(&self, base: f64) -> Self {
         self.inner.clone().log(base).into()
+    }
+
+    pub fn log1p(&self) -> Self {
+        self.inner.clone().log1p().into()
     }
 
     pub fn exp(&self) -> Self {
