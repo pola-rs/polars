@@ -1,10 +1,10 @@
 use std::hash::Hash;
 
-#[cfg(feature = "approx_unique")]
-use hyperloglogplus::{HyperLogLog, HyperLogLogPlus};
-use polars_core::export::ahash::RandomState;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_integer_polars_type;
+
+#[cfg(feature = "approx_unique")]
+use crate::series::HyperLogLog;
 
 fn approx_unique_ca<'a, T>(ca: &'a ChunkedArray<T>, precision: u8) -> PolarsResult<Series>
 where
@@ -12,14 +12,11 @@ where
     &'a ChunkedArray<T>: IntoIterator,
     <<&'a ChunkedArray<T> as IntoIterator>::IntoIter as IntoIterator>::Item: Hash + Eq,
 {
-    let res = HyperLogLogPlus::new(precision, RandomState::new())
-        .map(|mut e: HyperLogLogPlus<AnyValue, RandomState>| {
-            ca.into_iter().for_each(|item| e.insert_any(&item));
-            e.count() as IdxSize
-        })
-        .map_err(|e| PolarsError::ComputeError(e.to_string().into()));
+    let mut hllp = HyperLogLog::new();
+    ca.into_iter().for_each(|item| hllp.add(&item));
+    let c = hllp.count() as IdxSize;
 
-    res.map(|c| Series::new(ca.name(), &[c]))
+    Ok(Series::new(ca.name(), &[c]))
 }
 
 fn dispatcher(s: &Series, precision: u8) -> PolarsResult<Series> {

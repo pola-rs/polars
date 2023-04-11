@@ -1,3 +1,4 @@
+mod approx_algo;
 #[cfg(feature = "approx_unique")]
 mod approx_unique;
 mod arg_min_max;
@@ -17,6 +18,7 @@ mod search_sorted;
 mod to_dummies;
 mod various;
 
+pub use approx_algo::*;
 #[cfg(feature = "approx_unique")]
 pub use approx_unique::*;
 pub use arg_min_max::ArgAgg;
