@@ -179,6 +179,7 @@ def test_error_on_double_agg() -> None:
         "std",
         "var",
         "n_unique",
+        "approx_unique",
         "last",
         "first",
         "median",

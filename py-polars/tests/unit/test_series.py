@@ -2328,6 +2328,11 @@ def test_n_unique() -> None:
     assert s.n_unique() == 4
 
 
+def test_approx_unique() -> None:
+    s = pl.Series("s", [11, 11, 11, 22, 22, 33, None, None, None])
+    assert s.approx_unique() == 4
+
+
 def test_clip() -> None:
     s = pl.Series("foo", [-50, 5, None, 50])
     assert s.clip(1, 10).to_list() == [1, 5, None, 10]

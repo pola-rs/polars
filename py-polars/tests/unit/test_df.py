@@ -1107,6 +1107,7 @@ def test_lazy_functions() -> None:
             pl.n_unique("b").alias("8"),
             pl.first("b").alias("9"),
             pl.last("b").alias("10"),
+            pl.approx_unique("b").alias("11"),
         ]
     )
     expected = 1.0
@@ -1139,6 +1140,9 @@ def test_lazy_functions() -> None:
     expected = 3
     assert np.isclose(out.to_series(9), expected)
     assert np.isclose(pl.last(df["b"]), expected)
+    expected = 3
+    assert np.isclose(out.to_series(10), expected)
+    assert np.isclose(pl.approx_unique(df["b"]), expected)
 
     # regex selection
     out = df.select(
@@ -1855,6 +1859,17 @@ def test_groupby_agg_n_unique_floats() -> None:
     for dtype in [pl.Float32, pl.Float64]:
         out = df.groupby("a", maintain_order=True).agg(
             [pl.col("b").cast(dtype).n_unique()]
+        )
+        assert out["b"].to_list() == [2, 1]
+
+
+def test_groupby_agg_approx_unique_floats() -> None:
+    # tests proper dispatch
+    df = pl.DataFrame({"a": [1, 1, 3], "b": [1.0, 2.0, 2.0]})
+
+    for dtype in [pl.Float32, pl.Float64]:
+        out = df.groupby("a", maintain_order=True).agg(
+            [pl.col("b").cast(dtype).approx_unique()]
         )
         assert out["b"].to_list() == [2, 1]
 
