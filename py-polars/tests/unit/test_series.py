@@ -2671,3 +2671,19 @@ def test_symmetry_for_max_in_names() -> None:
     # TODO: time arithmetic support?
     # a = pl.Series("a", [1], dtype=pl.Time)
     # assert (a - a.max()).name == (a.max() - a).name == a.name
+
+
+def test_monthstart()-> None:
+    s = pl.Series([date(2018, 1, 1), date(2000, 12, 31), date(1900, 4, 15), date(2020, 2, 29)])
+    result = s.dt.monthstart()
+    expected = pl.Series([date(2018, 1, 1), date(2000, 12, 1), date(1900, 4, 1), date(2020, 2, 1)])
+
+    assert_series_equal(result, expected)
+
+
+def test_monthend()-> None:
+    s = pl.Series([date(2018, 2, 1), date(2000, 12, 31), date(1900, 4, 15), date(2020, 2, 29)])
+    result = s.dt.monthend()
+    expected = pl.Series([date(2018, 2, 28), date(2000, 12, 31), date(1900, 4, 30), date(2020, 2, 29)])
+
+    assert_series_equal(result, expected)
