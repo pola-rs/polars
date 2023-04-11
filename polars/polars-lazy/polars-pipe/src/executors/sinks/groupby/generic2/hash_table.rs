@@ -121,7 +121,7 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
             RawEntryMut::Vacant(entry) => {
                 // bchk shenanigans:
                 // it does not allow us to hold a `raw entry` and in the meantime
-                // have &self acces to get the length of keys
+                // have &self access to get the length of keys
                 // so we work with pointers instead
                 let borrow = &entry;
                 let borrow = borrow as *const RawVacantEntryMut<_, _, _> as usize;
@@ -317,7 +317,7 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
                     unsafe {
                         let key = keys.get_unchecked_release(i);
                         let key_builder = key_builders.get_unchecked_release_mut(i);
-                        key_builder.add_unchecked_owned_physical(&key.as_borrowed());
+                        key_builder.add_unchecked_borrowed_physical(&key.as_borrowed());
                     }
                 }
 

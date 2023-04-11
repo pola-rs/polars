@@ -136,7 +136,7 @@ impl GlobalTable {
                     // safety: keys_iters and cols_iters are not depleted
                     let out =
                         hash_map.insert(hash, &mut keys_iters, &mut agg_cols_iters, chunk_index);
-                    // should never overlow
+                    // should never overflow
                     debug_assert!(out.is_none());
                 }
             }
