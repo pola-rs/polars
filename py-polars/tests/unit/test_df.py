@@ -1859,17 +1859,6 @@ def test_groupby_agg_n_unique_floats() -> None:
         assert out["b"].to_list() == [2, 1]
 
 
-def test_groupby_agg_approx_unique_floats() -> None:
-    # tests proper dispatch
-    df = pl.DataFrame({"a": [1, 1, 3], "b": [1.0, 2.0, 2.0]})
-
-    for dtype in [pl.Float32, pl.Float64]:
-        out = df.groupby("a", maintain_order=True).agg(
-            [pl.col("b").cast(dtype).approx_unique()]
-        )
-        assert out["b"].to_list() == [2, 1]
-
-
 def test_select_by_dtype(df: pl.DataFrame) -> None:
     out = df.select(pl.col(pl.Utf8))
     assert out.columns == ["strings", "strings_nulls"]
@@ -3728,3 +3717,49 @@ def test_window_deadlock() -> None:
             pl.col("random").list().over("names").alias("random/name"),
         ]
     )
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.UInt8,
+        pl.UInt16,
+        pl.UInt32,
+        pl.UInt64,
+        pl.Int8,
+        pl.Int16,
+        pl.Int32,
+        pl.Int64,
+        pl.Float32,
+        pl.Float64,
+    ],
+)
+def test_approx_unique_lazy(dtype: pl.PolarsDataType) -> None:
+    # All columns
+    df = pl.DataFrame(
+        {
+            "x": pl.Series(values=[1, 2, 3] * 2, dtype=dtype),
+            "y": pl.Series(values=["a"] * 3 + ["b"] * 3),
+        }
+    )
+
+    expected_all = pl.DataFrame(
+        {
+            "x": pl.Series(values=[3], dtype=pl.UInt32),
+            "y": pl.Series(values=[2], dtype=pl.UInt32),
+        }
+    )
+
+    assert_frame_equal(df.approx_unique(), expected_all)
+
+    # Group by
+    df = df.groupby("x").approx_unique().sort("x")
+
+    expected_all = pl.DataFrame(
+        {
+            "x": pl.Series(values=[1, 2, 3], dtype=pl.UInt32),
+            "y": pl.Series(values=[2, 2, 2], dtype=pl.UInt32),
+        }
+    )
+
+    assert_frame_equal(df, expected_all, check_dtype=False)
