@@ -89,6 +89,10 @@ module = [
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = ["polars.testing._tempdir"]
+ignore_errors = true
+
+[[tool.mypy.overrides]]
 module = ["IPython.*"]
 follow_imports = "skip"
 
