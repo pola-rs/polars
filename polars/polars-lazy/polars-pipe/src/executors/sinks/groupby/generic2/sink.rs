@@ -123,15 +123,18 @@ impl Sink for GenericGroupby2 {
         })
     }
 
-    fn finalize(&mut self, _context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
+    fn finalize(&mut self, context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         let map = unsafe { (&mut *self.thread_local_table.get()) };
 
         // only succeeds if it hasn't spilled to global
         if let Some(out) = map.finalize(&mut self.slice) {
+            if context.verbose {
+                eprintln!("finish streaming aggregation with local in-memory table")
+            }
             Ok(FinalizedSink::Finished(out))
         } else {
             // ensure the global map gets all overflow buckets
-            for (partition, payload) in map.get_all_spilled().enumerate() {
+            for (partition, payload) in map.get_all_spilled() {
                 self.global_table.spill(partition, payload);
             }
             // ensure the global map update the partitioned hash tables with keys from local map
@@ -140,6 +143,11 @@ impl Sink for GenericGroupby2 {
             // all data is in memory
             // finalize
             if !self.ooc_state.ooc {
+                if context.verbose {
+                    eprintln!("finish streaming aggregation with global in-memory table")
+                }
+
+
                 let out = self.global_table.finalize(&mut self.slice);
                 let src = DataFrameSource::from_df(accumulate_dataframes_vertical_unchecked(out));
                 Ok(FinalizedSink::Source(Box::new(src)))

@@ -2,10 +2,11 @@
 use polars_utils::slice::GetSaferUnchecked;
 #[cfg(feature = "dtype-struct")]
 use smartstring::alias::String as SmartString;
-
-use super::*;
+use polars_utils::unreachable_unchecked_release;
 #[cfg(feature = "dtype-struct")]
 use crate::prelude::any_value::arr_to_any_value;
+
+use super::*;
 
 #[derive(Clone)]
 pub enum AnyValueBuffer<'a> {
@@ -320,6 +321,94 @@ impl<'a> AnyValueBufferTrusted<'a> {
         (dtype, len).into()
     }
 
+    #[inline]
+    unsafe fn add_null(&mut self) {
+        use AnyValueBufferTrusted::*;
+        match self {
+            Boolean(builder) => builder.append_null(),
+            #[cfg(feature = "dtype-i8")]
+            Int8(builder) => builder.append_null(),
+            #[cfg(feature = "dtype-i16")]
+            Int16(builder) => builder.append_null(),
+            Int32(builder) => builder.append_null(),
+            Int64(builder) => builder.append_null(),
+            #[cfg(feature = "dtype-u8")]
+            UInt8(builder) => builder.append_null(),
+            #[cfg(feature = "dtype-u16")]
+            UInt16(builder) => builder.append_null(),
+            UInt32(builder) => builder.append_null(),
+            UInt64(builder) => builder.append_null(),
+            Float32(builder) => builder.append_null(),
+            Float64(builder) => builder.append_null(),
+            Utf8(builder) => builder.append_null(),
+            #[cfg(feature = "dtype-struct")]
+            Struct(builders) => {
+                for (b, _) in builders.iter_mut() {
+                    b.add(AnyValue::Null);
+                }
+            }
+            All(_, vals) => vals.push(AnyValue::Null),
+        }
+    }
+
+    #[inline]
+    unsafe fn add_physical(&mut self, val: &AnyValue<'_>) {
+        use AnyValueBufferTrusted::*;
+        match self {
+            Boolean(builder) => {
+                let AnyValue::Boolean(v) = val else { unreachable_unchecked_release!() };
+                builder.append_value(*v)
+            }
+            #[cfg(feature = "dtype-i8")]
+            Int8(builder) => {
+                let AnyValue::Int8(v) = val else { unreachable_unchecked_release!() };
+                builder.append_value(*v)
+            }
+            #[cfg(feature = "dtype-i16")]
+            Int16(builder) => {
+                let AnyValue::Int16(v) = val else { unreachable_unchecked_release!() };
+                builder.append_value(*v)
+            }
+            Int32(builder) => {
+                let AnyValue::Int32(v) = val else { unreachable_unchecked_release!() };
+                builder.append_value(*v)
+            }
+            Int64(builder) => {
+                let AnyValue::Int64(v) = val else { unreachable_unchecked_release!() };
+                builder.append_value(*v)
+            }
+            #[cfg(feature = "dtype-u8")]
+            UInt8(builder) => {
+                let AnyValue::UInt8(v) = val else { unreachable_unchecked_release!() };
+                builder.append_value(*v)
+            }
+            #[cfg(feature = "dtype-u16")]
+            UInt16(builder) => {
+                let AnyValue::UInt16(v) = val else { unreachable_unchecked_release!() };
+                builder.append_value(*v)
+            }
+            UInt32(builder) => {
+                let AnyValue::UInt32(v) = val else { unreachable_unchecked_release!() };
+                builder.append_value(*v)
+            }
+            UInt64(builder) => {
+                let AnyValue::UInt64(v) = val else { unreachable_unchecked_release!() };
+                builder.append_value(*v)
+            }
+            Float32(builder) => {
+                let AnyValue::Float32(v) = val else { unreachable_unchecked_release!() };
+                builder.append_value(*v)
+            }
+            Float64(builder) => {
+                let AnyValue::Float64(v) = val else { unreachable_unchecked_release!() };
+                builder.append_value(*v)
+            },
+            _ => {
+                unreachable_unchecked_release!()
+            }
+        }
+    }
+
     /// Will add the AnyValue into `Self` and unpack as the physical type
     /// belonging to `Self`. This should only be used with physical buffers
     ///
@@ -327,91 +416,53 @@ impl<'a> AnyValueBufferTrusted<'a> {
     ///
     /// # Safety
     /// The caller must ensure that the `AnyValue` type exactly matches the `Buffer` type.
+    #[inline]
     pub unsafe fn add_unchecked_owned_physical(&mut self, val: &AnyValue<'_>) {
         use AnyValueBufferTrusted::*;
         match val {
-            AnyValue::Null => match self {
-                Boolean(builder) => builder.append_null(),
-                #[cfg(feature = "dtype-i8")]
-                Int8(builder) => builder.append_null(),
-                #[cfg(feature = "dtype-i16")]
-                Int16(builder) => builder.append_null(),
-                Int32(builder) => builder.append_null(),
-                Int64(builder) => builder.append_null(),
-                #[cfg(feature = "dtype-u8")]
-                UInt8(builder) => builder.append_null(),
-                #[cfg(feature = "dtype-u16")]
-                UInt16(builder) => builder.append_null(),
-                UInt32(builder) => builder.append_null(),
-                UInt64(builder) => builder.append_null(),
-                Float32(builder) => builder.append_null(),
-                Float64(builder) => builder.append_null(),
-                Utf8(builder) => builder.append_null(),
-                #[cfg(feature = "dtype-struct")]
-                Struct(builders) => {
-                    for (b, _) in builders.iter_mut() {
-                        b.add(AnyValue::Null);
-                    }
-                }
-                All(_, vals) => vals.push(val.clone().into_static().unwrap()),
-            },
+            AnyValue::Null => self.add_null(),
             _ => {
                 match self {
-                    Boolean(builder) => {
-                        let AnyValue::Boolean(v) = val else { unreachable_unchecked() };
-                        builder.append_value(*v)
-                    }
-                    #[cfg(feature = "dtype-i8")]
-                    Int8(builder) => {
-                        let AnyValue::Int8(v) = val else { unreachable_unchecked() };
-                        builder.append_value(*v)
-                    }
-                    #[cfg(feature = "dtype-i16")]
-                    Int16(builder) => {
-                        let AnyValue::Int16(v) = val else { unreachable_unchecked() };
-                        builder.append_value(*v)
-                    }
-                    Int32(builder) => {
-                        let AnyValue::Int32(v) = val else { unreachable_unchecked() };
-                        builder.append_value(*v)
-                    }
-                    Int64(builder) => {
-                        let AnyValue::Int64(v) = val else { unreachable_unchecked() };
-                        builder.append_value(*v)
-                    }
-                    #[cfg(feature = "dtype-u8")]
-                    UInt8(builder) => {
-                        let AnyValue::UInt8(v) = val else { unreachable_unchecked() };
-                        builder.append_value(*v)
-                    }
-                    #[cfg(feature = "dtype-u16")]
-                    UInt16(builder) => {
-                        let AnyValue::UInt16(v) = val else { unreachable_unchecked() };
-                        builder.append_value(*v)
-                    }
-                    UInt32(builder) => {
-                        let AnyValue::UInt32(v) = val else { unreachable_unchecked() };
-                        builder.append_value(*v)
-                    }
-                    UInt64(builder) => {
-                        let AnyValue::UInt64(v) = val else { unreachable_unchecked() };
-                        builder.append_value(*v)
-                    }
-                    Float32(builder) => {
-                        let AnyValue::Float32(v) = val else { unreachable_unchecked() };
-                        builder.append_value(*v)
-                    }
-                    Float64(builder) => {
-                        let AnyValue::Float64(v) = val else { unreachable_unchecked() };
-                        builder.append_value(*v)
-                    }
                     Utf8(builder) => {
-                        let AnyValue::Utf8(v) = val else { unreachable_unchecked() };
+                        let AnyValue::Utf8Owned(v) = val else { unreachable_unchecked_release!() };
                         builder.append_value(v)
                     }
                     #[cfg(feature = "dtype-struct")]
                     Struct(builders) => {
-                        let AnyValue::Struct(idx, arr, fields) = val else { unreachable_unchecked() };
+                        let AnyValue::StructOwned(payload) = val else { unreachable_unchecked_release!() };
+                        let avs = &*payload.0;
+                        // amortize loop counter
+                        for i in 0..avs.len() {
+                            unsafe {
+                                let (builder, _) = builders.get_unchecked_release_mut(i);
+                                let av = avs.get_unchecked_release(i).clone();
+                                // lifetime is bound to 'a
+                                let av = std::mem::transmute::<AnyValue<'_>, AnyValue<'a>>(av);
+                                builder.add(av.clone());
+                            }
+                        }
+                    }
+                    All(_, vals) => vals.push(val.clone().into_static().unwrap()),
+                    _ => self.add_physical(val)
+                }
+            }
+        }
+    }
+
+    #[inline]
+    pub unsafe fn add_unchecked_borrowed_physical(&mut self, val: &AnyValue<'_>) {
+        use AnyValueBufferTrusted::*;
+        match val {
+            AnyValue::Null => self.add_null(),
+            _ => {
+                match self {
+                    Utf8(builder) => {
+                        let AnyValue::Utf8(v) = val else { unreachable_unchecked_release!() };
+                        builder.append_value(v)
+                    }
+                    #[cfg(feature = "dtype-struct")]
+                    Struct(builders) => {
+                        let AnyValue::Struct(idx, arr, fields) = val else { unreachable_unchecked_release!() };
                         let arrays = arr.values();
                         // amortize loop counter
                         for i in 0..fields.len() {
@@ -427,6 +478,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
                         }
                     }
                     All(_, vals) => vals.push(val.clone().into_static().unwrap()),
+                    _ => self.add_physical(val)
                 }
             }
         }

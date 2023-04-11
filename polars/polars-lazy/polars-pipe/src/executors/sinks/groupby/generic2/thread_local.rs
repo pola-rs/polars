@@ -14,18 +14,18 @@ struct SpillPartitions {
     keys_aggs_partitioned: PartitionVec<Vec<AnyValueBufferTrusted<'static>>>,
     hash_partitioned: PartitionVec<Vec<u64>>,
     chunk_index_partitioned: PartitionVec<Vec<IdxSize>>,
-    // outer vec: partitions
-    // inner vec: aggregation columns
-    finished: PartitionVec<Vec<Series>>,
     num_keys: usize,
     spilled: bool,
+    // this only fills during the reduce phase IFF
+    // there are spilled tuples
+    finished_payloads: PartitionVec<Vec<SpillPayload>>
 }
 
 impl SpillPartitions {
     fn new(keys: &[DataType], aggs: &[DataType]) -> Self {
-        let n_spills = keys.len() + aggs.len();
+        let n_columns = keys.len() + aggs.len();
 
-        let mut buf = Vec::with_capacity(n_spills);
+        let mut buf = Vec::with_capacity(n_columns);
         for dtype in keys {
             let builder = AnyValueBufferTrusted::new(dtype, OB_SIZE);
             buf.push(builder);
@@ -35,7 +35,7 @@ impl SpillPartitions {
             buf.push(builder);
         }
 
-        let partitions = (0..PARTITION_SIZE).map(|partition| buf.clone()).collect();
+        let partitions: Vec<_> = (0..PARTITION_SIZE).map(|partition| buf.clone()).collect();
         let hash_partitioned = vec![Vec::with_capacity(OB_SIZE); PARTITION_SIZE];
         let chunk_index_partitioned = vec![Vec::with_capacity(OB_SIZE); PARTITION_SIZE];
 
@@ -43,9 +43,9 @@ impl SpillPartitions {
             keys_aggs_partitioned: partitions,
             hash_partitioned,
             chunk_index_partitioned,
-            finished: vec![],
             num_keys: keys.len(),
             spilled: false,
+            finished_payloads: vec![],
         }
     }
 }
@@ -69,7 +69,6 @@ impl SpillPartitions {
             let chunk_indexes = self
                 .chunk_index_partitioned
                 .get_unchecked_release_mut(partition);
-            debug_assert_eq!(keys.len(), keys_aggs.len());
 
             hashes.push(hash);
             chunk_indexes.push(chunk_idx);
@@ -79,13 +78,13 @@ impl SpillPartitions {
                 let av = keys.get_unchecked(i);
                 let buf = keys_aggs.get_unchecked_mut(i);
                 // safety: we can trust the input types to be of consistent dtype
-                buf.add_unchecked_owned_physical(av);
+                buf.add_unchecked_borrowed_physical(av);
             }
             let mut i = keys.len();
             for agg in aggs {
                 let av = agg.next().unwrap_unchecked_release();
                 let buf = keys_aggs.get_unchecked_mut(i);
-                buf.add_unchecked_owned_physical(&av);
+                buf.add_unchecked_borrowed_physical(&av);
                 i += 1;
             }
 
@@ -111,27 +110,49 @@ impl SpillPartitions {
     }
 
     fn finish(&mut self) {
-        if self.finished.is_empty() {
-            let parts = std::mem::take(&mut self.keys_aggs_partitioned);
-            self.finished = parts
-                .into_iter()
-                .map(|part| part.into_iter().map(|v| v.into_series()).collect())
-                .collect();
-        }
-    }
-
-    fn combine(&mut self, other: &mut Self) {
-        self.finish();
-        other.finish();
-
-        for (part_self, part_other) in self.finished.iter_mut().zip(other.finished.iter()) {
-            for (s, other) in part_self.iter_mut().zip(part_other.iter()) {
-                s.append(other).unwrap();
+        if self.spilled {
+            let all_spilled = self.get_all_spilled().collect::<Vec<_>>();
+            for (partition_i, payload) in all_spilled {
+                let buf = if let Some(buf) = self.finished_payloads.get_mut(partition_i) {
+                    buf
+                } else {
+                    self.finished_payloads.push(vec![]);
+                    self.finished_payloads.last_mut().unwrap()
+                };
+                buf.push(payload)
             }
         }
     }
 
-    fn get_all_spilled(&mut self) -> impl Iterator<Item = SpillPayload> + '_ {
+    fn combine(&mut self, other: &mut Self) {
+        match (self.spilled, other.spilled) {
+            (false, true) => {
+                std::mem::swap(self, other)
+            },
+            (true, false) => {},
+            (false, false) => {},
+            (true, true) => {
+                self.finish();
+                other.finish();
+                let other_payloads = std::mem::take(&mut other.finished_payloads);
+
+                for (part_self, part_other) in self.finished_payloads.iter_mut().zip(other_payloads.into_iter()) {
+                    part_self.extend(part_other)
+                }
+            }
+        }
+    }
+
+    fn get_all_spilled(&mut self) -> impl Iterator<Item = (usize, SpillPayload)> + '_ {
+        // todo! allocate
+        let mut flattened = vec![];
+        let finished_payloads = std::mem::take(&mut self.finished_payloads);
+        for (part, payloads) in finished_payloads.into_iter().enumerate() {
+            for payload in payloads {
+                flattened.push((part, payload))
+            }
+        }
+
         (0..PARTITION_SIZE).map(|partition| unsafe {
             let keys_aggs = self
                 .keys_aggs_partitioned
@@ -143,13 +164,13 @@ impl SpillPartitions {
             let hashes = std::mem::take(hashes);
             let chunk_idx = std::mem::take(chunk_indexes);
 
-            SpillPayload {
+            (partition, SpillPayload {
                 hashes,
                 chunk_idx,
                 keys_and_aggs: keys_aggs.iter_mut().map(|b| b.reset(0)).collect(),
                 num_keys: self.num_keys,
-            }
-        })
+            })
+        }).chain(flattened.into_iter())
     }
 }
 
@@ -224,7 +245,7 @@ impl ThreadLocalTable {
         }
     }
 
-    pub(super) fn get_all_spilled(&mut self) -> impl Iterator<Item = SpillPayload> + '_ {
+    pub(super) fn get_all_spilled(&mut self) -> impl Iterator<Item = (usize, SpillPayload)> + '_ {
         self.spill_partitions.get_all_spilled()
     }
 }

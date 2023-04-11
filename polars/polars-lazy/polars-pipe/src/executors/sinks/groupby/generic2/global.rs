@@ -17,7 +17,7 @@ struct SpillPartitions {
 impl SpillPartitions {
     fn new() -> Self {
         let mut partitions = Vec::with_capacity(PARTITION_SIZE);
-        partitions.fill_with(Default::default);
+        partitions.resize_with(PARTITION_SIZE, Default::default);
 
         Self { partitions }
     }
@@ -68,7 +68,7 @@ impl GlobalTable {
     ) -> Self {
         let spill_partitions = SpillPartitions::new();
         let mut inner_maps = Vec::with_capacity(PARTITION_SIZE);
-        inner_maps.fill_with(|| {
+        inner_maps.resize_with(PARTITION_SIZE, || {
             Mutex::new(AggHashTable::new(
                 agg_constructors.clone(),
                 key_dtypes,
@@ -121,8 +121,8 @@ impl GlobalTable {
             let keys = payload.keys();
             let chunk_indexes = payload.chunk_index();
             let agg_cols = payload.cols();
-            debug_assert_eq!(hashes.len(), agg_cols.len());
-            debug_assert_eq!(hashes.len(), keys.len());
+            debug_assert_eq!(hashes.len(), chunk_indexes.len());
+            debug_assert_eq!(hashes.len(), keys[0].len());
 
             let mut keys_iters = keys.iter().map(|s| s.phys_iter()).collect::<Vec<_>>();
             let mut agg_cols_iters = agg_cols.iter().map(|s| s.phys_iter()).collect::<Vec<_>>();
@@ -134,9 +134,10 @@ impl GlobalTable {
                     let chunk_index = *chunk_indexes.get_unchecked(i);
 
                     // safety: keys_iters and cols_iters are not depleted
-                    hash_map
-                        .insert(hash, &mut keys_iters, &mut agg_cols_iters, chunk_index)
-                        .unwrap_unchecked();
+                    let out = hash_map
+                        .insert(hash, &mut keys_iters, &mut agg_cols_iters, chunk_index);
+                    // should never overlow
+                    debug_assert!(out.is_none());
                 }
             }
         }

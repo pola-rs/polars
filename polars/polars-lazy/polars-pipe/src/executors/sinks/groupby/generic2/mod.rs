@@ -28,6 +28,7 @@ use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkRe
 
 type PartitionVec<T> = Vec<T>;
 
+#[derive(Clone)]
 struct SpillPayload {
     hashes: Vec<u64>,
     chunk_idx: Vec<IdxSize>,
