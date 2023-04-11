@@ -26,6 +26,7 @@ class StringNameSpace:
         self,
         datatype: PolarsTemporalType,
         fmt: str | None = None,
+        *,
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
@@ -188,7 +189,7 @@ class StringNameSpace:
         """
 
     def contains(
-        self, pattern: str | Expr, literal: bool = False, strict: bool = True
+        self, pattern: str | Expr, *, literal: bool = False, strict: bool = True
     ) -> Series:
         """
         Check if strings in Series contain a substring that matches a regex.
@@ -231,13 +232,13 @@ class StringNameSpace:
 
         """
 
-    def ends_with(self, sub: str | Expr) -> Series:
+    def ends_with(self, suffix: str | Expr) -> Series:
         """
         Check if string values end with a substring.
 
         Parameters
         ----------
-        sub
+        suffix
             Suffix substring.
 
         Examples
@@ -259,13 +260,13 @@ class StringNameSpace:
 
         """
 
-    def starts_with(self, sub: str | Expr) -> Series:
+    def starts_with(self, prefix: str | Expr) -> Series:
         """
         Check if string values start with a substring.
 
         Parameters
         ----------
-        sub
+        prefix
             Prefix substring.
 
         Examples
@@ -496,7 +497,7 @@ class StringNameSpace:
 
         """
 
-    def split(self, by: str, inclusive: bool = False) -> Series:
+    def split(self, by: str, *, inclusive: bool = False) -> Series:
         """
         Split the string by a substring.
 
@@ -513,7 +514,7 @@ class StringNameSpace:
 
         """
 
-    def split_exact(self, by: str, n: int, inclusive: bool = False) -> Series:
+    def split_exact(self, by: str, n: int, *, inclusive: bool = False) -> Series:
         """
         Split the string by a substring using ``n`` splits.
 
@@ -632,7 +633,7 @@ class StringNameSpace:
         return s.to_frame().select(F.col(s.name).str.splitn(by, n)).to_series()
 
     def replace(
-        self, pattern: str, value: str, literal: bool = False, *, n: int = 1
+        self, pattern: str, value: str, *, literal: bool = False, n: int = 1
     ) -> Series:
         r"""
         Replace first matching regex/literal substring with a new string value.
@@ -665,7 +666,7 @@ class StringNameSpace:
 
         """
 
-    def replace_all(self, pattern: str, value: str, literal: bool = False) -> Series:
+    def replace_all(self, pattern: str, value: str, *, literal: bool = False) -> Series:
         """
         Replace all matching regex/literal substrings with a new string value.
 
@@ -695,13 +696,13 @@ class StringNameSpace:
 
         """
 
-    def strip(self, matches: str | None = None) -> Series:
+    def strip(self, characters: str | None = None) -> Series:
         r"""
         Remove leading and trailing characters.
 
         Parameters
         ----------
-        matches
+        characters
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
@@ -730,13 +731,13 @@ class StringNameSpace:
 
         """
 
-    def lstrip(self, matches: str | None = None) -> Series:
+    def lstrip(self, characters: str | None = None) -> Series:
         r"""
         Remove leading characters.
 
         Parameters
         ----------
-        matches
+        characters
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
@@ -765,13 +766,13 @@ class StringNameSpace:
 
         """
 
-    def rstrip(self, matches: str | None = None) -> Series:
+    def rstrip(self, characters: str | None = None) -> Series:
         r"""
         Remove trailing characters.
 
         Parameters
         ----------
-        matches
+        characters
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
@@ -818,18 +819,18 @@ class StringNameSpace:
 
         """
 
-    def ljust(self, width: int, fillchar: str = " ") -> Series:
+    def ljust(self, width: int, fill_char: str = " ") -> Series:
         """
         Return the string left justified in a string of length ``width``.
 
-        Padding is done using the specified ``fillchar``. The original string is
+        Padding is done using the specified ``fill_char``. The original string is
         returned if ``width`` is less than or equal to``len(s)``.
 
         Parameters
         ----------
         width
             Justify left to this length.
-        fillchar
+        fill_char
             Fill with this ASCII character.
 
         Examples
@@ -847,18 +848,18 @@ class StringNameSpace:
 
         """
 
-    def rjust(self, width: int, fillchar: str = " ") -> Series:
+    def rjust(self, width: int, fill_char: str = " ") -> Series:
         """
         Return the string right justified in a string of length ``width``.
 
-        Padding is done using the specified ``fillchar``. The original string is
+        Padding is done using the specified ``fill_char``. The original string is
         returned if ``width`` is less than or equal to ``len(s)``.
 
         Parameters
         ----------
         width
             Justify right to this length.
-        fillchar
+        fill_char
             Fill with this ASCII character.
 
         Examples
@@ -951,7 +952,7 @@ class StringNameSpace:
 
         """
 
-    def parse_int(self, radix: int = 2, strict: bool = True) -> Series:
+    def parse_int(self, radix: int = 2, *, strict: bool = True) -> Series:
         r"""
         Parse integers with base radix from strings.
 
@@ -974,7 +975,7 @@ class StringNameSpace:
         Examples
         --------
         >>> s = pl.Series("bin", ["110", "101", "010", "invalid"])
-        >>> s.str.parse_int(2, False)
+        >>> s.str.parse_int(2, strict=False)
         shape: (4,)
         Series: 'bin' [i32]
         [

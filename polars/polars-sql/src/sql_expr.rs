@@ -7,8 +7,8 @@ use sqlparser::ast::{
     UnaryOperator, Value as SqlValue,
 };
 
-use crate::context::TABLES;
 use crate::functions::SqlFunctionVisitor;
+use crate::SQLContext;
 
 pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<DataType> {
     Ok(match data_type {
@@ -42,9 +42,11 @@ pub(crate) fn map_sql_polars_datatype(data_type: &SQLDataType) -> PolarsResult<D
 }
 
 /// Recursively walks a SQL Expr to create a polars Expr
-pub(crate) struct SqlExprVisitor {}
+pub(crate) struct SqlExprVisitor<'a> {
+    ctx: &'a SQLContext,
+}
 
-impl SqlExprVisitor {
+impl SqlExprVisitor<'_> {
     fn visit_expr(&self, expr: &SqlExpr) -> PolarsResult<Expr> {
         match expr {
             SqlExpr::CompoundIdentifier(idents) => self.visit_compound_identifier(idents),
@@ -90,10 +92,8 @@ impl SqlExprVisitor {
             ComputeError: "compound identifier {:?} is not yet supported", idents,
         );
         let tbl_name = &idents[0].value;
-        let refers_main_table = TABLES.with(|cell| {
-            let tables = cell.borrow();
-            tables.len() == 1 && tables.contains(tbl_name)
-        });
+        let refers_main_table =
+            { self.ctx.tables.len() == 1 && self.ctx.tables.contains(&tbl_name) };
         polars_ensure!(
             refers_main_table, ComputeError:
             "compound identifier {:?} is not yet supported if multiple tables are registered",
@@ -157,7 +157,10 @@ impl SqlExprVisitor {
     ///
     /// See [SqlFunctionVisitor] for more details
     fn visit_function(&self, function: &SQLFunction) -> PolarsResult<Expr> {
-        let visitor = SqlFunctionVisitor(function);
+        let visitor = SqlFunctionVisitor {
+            func: function,
+            ctx: self.ctx,
+        };
         visitor.visit_function()
     }
 
@@ -283,8 +286,8 @@ impl SqlExprVisitor {
     }
 }
 
-pub(crate) fn parse_sql_expr(expr: &SqlExpr) -> PolarsResult<Expr> {
-    let visitor = SqlExprVisitor {};
+pub(crate) fn parse_sql_expr<'a>(expr: &SqlExpr, ctx: &'a SQLContext) -> PolarsResult<Expr> {
+    let visitor = SqlExprVisitor { ctx };
     visitor.visit_expr(expr)
 }
 

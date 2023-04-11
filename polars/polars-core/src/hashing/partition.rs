@@ -2,7 +2,7 @@ use super::*;
 
 // Used to to get a u64 from the hashing keys
 // We need to modify the hashing algorithm to use the hash for this and only compute the hash once.
-pub(crate) trait AsU64 {
+pub trait AsU64 {
     #[allow(clippy::wrong_self_convention)]
     fn as_u64(self) -> u64;
 }
@@ -61,6 +61,23 @@ impl AsU64 for i64 {
     #[inline]
     fn as_u64(self) -> u64 {
         unsafe { std::mem::transmute(self) }
+    }
+}
+
+impl<T: AsU64 + Copy> AsU64 for Option<&T> {
+    #[inline]
+    fn as_u64(self) -> u64 {
+        match self {
+            Some(v) => v.as_u64(),
+            // just a number safe from overflow
+            None => u64::MAX >> 2,
+        }
+    }
+}
+
+impl<T: AsU64 + Copy> AsU64 for &T {
+    fn as_u64(self) -> u64 {
+        (*self).as_u64()
     }
 }
 

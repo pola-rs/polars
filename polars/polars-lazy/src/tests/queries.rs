@@ -545,7 +545,7 @@ fn test_simplify_expr() {
     lp_top = optimizer
         .optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top)
         .unwrap();
-    let plan = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
+    let plan = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
     assert!(
         matches!(plan, LogicalPlan::Projection{ expr, ..} if matches!(&expr[0], Expr::BinaryExpr{left, ..} if **left == Expr::Literal(LiteralValue::Float32(2.0))))
     );
@@ -1206,7 +1206,7 @@ fn test_exclude() -> PolarsResult<()> {
     "c" => [1, 2, 3]
     ]?;
 
-    let out = df.lazy().select([col("*").exclude(&["b"])]).collect()?;
+    let out = df.lazy().select([col("*").exclude(["b"])]).collect()?;
 
     assert_eq!(out.get_column_names(), &["a", "c"]);
     Ok(())
@@ -1565,10 +1565,13 @@ fn test_groupby_rank() -> PolarsResult<()> {
     let out = df
         .lazy()
         .groupby_stable([col("cars")])
-        .agg([col("B").rank(RankOptions {
-            method: RankMethod::Dense,
-            ..Default::default()
-        })])
+        .agg([col("B").rank(
+            RankOptions {
+                method: RankMethod::Dense,
+                ..Default::default()
+            },
+            None,
+        )])
         .collect()?;
 
     let out = out.column("B")?;
@@ -1659,10 +1662,13 @@ fn test_single_ranked_group() -> PolarsResult<()> {
     let out = df
         .lazy()
         .with_columns([col("value")
-            .rank(RankOptions {
-                method: RankMethod::Average,
-                ..Default::default()
-            })
+            .rank(
+                RankOptions {
+                    method: RankMethod::Average,
+                    ..Default::default()
+                },
+                None,
+            )
             .list()
             .over([col("group")])])
         .collect()?;

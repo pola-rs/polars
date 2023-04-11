@@ -16,6 +16,7 @@ mod fast_projection;
     feature = "cse"
 ))]
 pub(crate) mod file_caching;
+mod flatten_union;
 mod predicate_pushdown;
 mod projection_pushdown;
 mod simplify_expr;
@@ -36,6 +37,7 @@ use slice_pushdown_lp::SlicePushDown;
 pub use stack_opt::{OptimizationRule, StackOptimizer};
 pub use type_coercion::TypeCoercionRule;
 
+use self::flatten_union::FlattenUnionRule;
 pub use crate::frame::{AllowedOptimizations, OptState};
 
 pub trait Optimize {
@@ -72,7 +74,6 @@ pub fn optimize(
     // gradually fill the rules passed to the optimizer
     let opt = StackOptimizer {};
     let mut rules: Vec<Box<dyn OptimizationRule>> = Vec::with_capacity(8);
-
     // during debug we check if the optimizations have not modified the final schema
     #[cfg(debug_assertions)]
     let prev_schema = logical_plan.schema()?.into_owned();
@@ -176,6 +177,7 @@ pub fn optimize(
     }
 
     rules.push(Box::new(ReplaceDropNulls {}));
+    rules.push(Box::new(FlattenUnionRule {}));
 
     lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top)?;
 

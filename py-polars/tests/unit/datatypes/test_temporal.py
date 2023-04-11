@@ -11,7 +11,7 @@ import pytest
 
 import polars as pl
 from polars.datatypes import DATETIME_DTYPES, DTYPE_TEMPORAL_UNITS, TEMPORAL_DTYPES
-from polars.exceptions import ComputeError, PanicException
+from polars.exceptions import ComputeError, PolarsPanicError
 from polars.testing import (
     assert_frame_equal,
     assert_series_equal,
@@ -468,9 +468,11 @@ def test_date_range() -> None:
     assert result.dt[2] == datetime(1985, 1, 4, 0, 0)
     assert result.dt[-1] == datetime(2015, 6, 30, 12, 0)
 
-    for tu in DTYPE_TEMPORAL_UNITS:
-        rng = pl.date_range(datetime(2020, 1, 1), date(2020, 1, 2), "2h", time_unit=tu)
-        assert rng.time_unit == tu
+    for time_unit in DTYPE_TEMPORAL_UNITS:
+        rng = pl.date_range(
+            datetime(2020, 1, 1), date(2020, 1, 2), "2h", time_unit=time_unit
+        )
+        assert rng.time_unit == time_unit
         assert rng.shape == (13,)
         assert rng.dt[0] == datetime(2020, 1, 1)
         assert rng.dt[-1] == datetime(2020, 1, 2)
@@ -505,7 +507,7 @@ def test_date_range() -> None:
         datetime(2022, 1, 1), datetime(2022, 1, 1, 0, 1), "987456321ns"
     )
     assert len(result) == 61
-    assert result.dtype.tu == "ns"  # type: ignore[union-attr]
+    assert result.dtype.time_unit == "ns"  # type: ignore[union-attr]
     assert result.dt.second()[-1] == 59
     assert result.cast(pl.Utf8)[-1] == "2022-01-01 00:00:59.247379260"
 
@@ -531,9 +533,9 @@ def test_date_range_precision(time_unit: TimeUnit | None, expected_micros: int) 
 
 
 def test_range_invalid_unit() -> None:
-    with pytest.raises(PanicException, match="'D' not supported"):
+    with pytest.raises(PolarsPanicError, match="'D' not supported"):
         pl.date_range(
-            low=datetime(2021, 12, 16), high=datetime(2021, 12, 16, 3), interval="1D"
+            start=datetime(2021, 12, 16), end=datetime(2021, 12, 16, 3), interval="1D"
         )
 
 
@@ -645,7 +647,7 @@ def test_date_range_lazy_with_expressions(
 
 
 def test_date_range_invalid_time_zone() -> None:
-    with pytest.raises(ComputeError, match="unable to parse time zone: foo"):
+    with pytest.raises(ComputeError, match="unable to parse time zone: 'foo'"):
         pl.date_range(
             datetime(2001, 1, 1), datetime(2001, 1, 3), interval="1d", time_zone="foo"
         )
@@ -962,8 +964,8 @@ def test_upsample_time_zones(
     df = pl.DataFrame(
         {
             "time": pl.date_range(
-                low=datetime(2021, 12, 16),
-                high=datetime(2021, 12, 16, 3),
+                start=datetime(2021, 12, 16),
+                end=datetime(2021, 12, 16, 3),
                 interval="30m",
             ),
             "groups": ["a", "a", "a", "b", "b", "a", "a"],
@@ -1398,7 +1400,16 @@ def test_asof_join() -> None:
     ].to_list() == [51.95, 51.95, None, None, 720.77, None, None, None]
 
 
-def test_temporal_dtypes_apply() -> None:
+@pytest.mark.parametrize(
+    ("skip_nulls", "expected_value"),
+    [
+        (True, None),
+        (False, datetime(2010, 9, 12)),
+    ],
+)
+def test_temporal_dtypes_apply(
+    skip_nulls: bool, expected_value: datetime | None
+) -> None:
     df = pl.DataFrame(
         {"timestamp": [1284286794000, None, 1234567890000]},
         schema=[("timestamp", pl.Datetime("ms"))],
@@ -1409,9 +1420,15 @@ def test_temporal_dtypes_apply() -> None:
         df.with_columns(
             [
                 # don't actually do any of this; native expressions are MUCH faster ;)
-                pl.col("timestamp").apply(lambda x: const_dtm).alias("const_dtm"),
-                pl.col("timestamp").apply(lambda x: x and x.date()).alias("date"),
-                pl.col("timestamp").apply(lambda x: x and x.time()).alias("time"),
+                pl.col("timestamp")
+                .apply(lambda x: const_dtm, skip_nulls=skip_nulls)
+                .alias("const_dtm"),
+                pl.col("timestamp")
+                .apply(lambda x: x and x.date(), skip_nulls=skip_nulls)
+                .alias("date"),
+                pl.col("timestamp")
+                .apply(lambda x: x and x.time(), skip_nulls=skip_nulls)
+                .alias("time"),
             ]
         ),
         pl.DataFrame(
@@ -1422,7 +1439,7 @@ def test_temporal_dtypes_apply() -> None:
                     date(2010, 9, 12),
                     time(10, 19, 54),
                 ),
-                (None, const_dtm, None, None),
+                (None, expected_value, None, None),
                 (
                     datetime(2009, 2, 13, 23, 31, 30),
                     datetime(2010, 9, 12, 0, 0),
@@ -1607,10 +1624,10 @@ def test_datetime_instance_selection() -> None:
             ("ms", pl.Datetime("ms")),
         ],
     )
-    for tu in DTYPE_TEMPORAL_UNITS:
-        res = df.select(pl.col([pl.Datetime(tu)])).dtypes
-        assert res == [pl.Datetime(tu)]
-        assert len(df.filter(pl.col(tu) == test_data[tu][0])) == 1
+    for time_unit in DTYPE_TEMPORAL_UNITS:
+        res = df.select(pl.col([pl.Datetime(time_unit)])).dtypes
+        assert res == [pl.Datetime(time_unit)]
+        assert len(df.filter(pl.col(time_unit) == test_data[time_unit][0])) == 1
 
     assert [] == list(df.select(pl.exclude(DATETIME_DTYPES)))
 
@@ -1792,7 +1809,7 @@ def test_supertype_timezones_4174() -> None:
 
     # test if this runs without error
     date_to_fill = df["dt_London"][0]
-    df.with_columns(df["dt_London"].shift_and_fill(1, date_to_fill))
+    df.with_columns(df["dt_London"].shift_and_fill(date_to_fill, periods=1))
 
 
 @pytest.mark.skip(reason="from_dicts cannot yet infer timezones")
@@ -1817,7 +1834,7 @@ def test_shift_and_fill_group_logicals() -> None:
         schema=["d", "s"],
     )
     assert df.select(
-        pl.col("d").shift_and_fill(-1, pl.col("d").max()).over("s")
+        pl.col("d").shift_and_fill(pl.col("d").max(), periods=-1).over("s")
     ).dtypes == [pl.Date]
 
 
@@ -1896,14 +1913,14 @@ def test_replace_timezone() -> None:
     ],
 )
 @pytest.mark.parametrize("from_tz", ["Asia/Seoul", "-01:00", None])
-@pytest.mark.parametrize("tu", ["ms", "us", "ns"])
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_replace_timezone_from_to(
     from_tz: str,
     to_tz: str,
     tzinfo: timezone | ZoneInfo,
-    tu: TimeUnit,
+    time_unit: TimeUnit,
 ) -> None:
-    ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime(tu))
+    ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime(time_unit))
     result = ts.dt.replace_time_zone(from_tz).dt.replace_time_zone(to_tz).item()
     expected = datetime(2020, 1, 1, 0, 0, tzinfo=tzinfo)
     assert result == expected
@@ -1919,20 +1936,20 @@ def test_strptime_with_tz() -> None:
 
 
 @pytest.mark.parametrize(
-    ("tu", "tz"),
+    ("time_unit", "time_zone"),
     [
         ("us", "Europe/London"),
         ("ms", None),
         ("ns", "+01:00"),
     ],
 )
-def test_strptime_empty(tu: TimeUnit, tz: str | None) -> None:
-    ts = pl.Series([None]).cast(pl.Utf8).str.strptime(pl.Datetime(tu, tz))
-    assert ts.dtype == pl.Datetime(tu, tz)
+def test_strptime_empty(time_unit: TimeUnit, time_zone: str | None) -> None:
+    ts = pl.Series([None]).cast(pl.Utf8).str.strptime(pl.Datetime(time_unit, time_zone))
+    assert ts.dtype == pl.Datetime(time_unit, time_zone)
 
 
 def test_strptime_with_invalid_tz() -> None:
-    with pytest.raises(ComputeError, match="unable to parse time zone: foo"):
+    with pytest.raises(ComputeError, match="unable to parse time zone: 'foo'"):
         pl.Series(["2020-01-01 03:00:00"]).str.strptime(pl.Datetime("us", "foo"))
     with pytest.raises(
         ComputeError,
@@ -1943,7 +1960,7 @@ def test_strptime_with_invalid_tz() -> None:
         )
     with pytest.raises(
         ComputeError,
-        match="cannot use strptime with both 'utc=True' and tz-aware datetime",
+        match="cannot use strptime with both 'utc=True' and tz-aware dtype",
     ):
         pl.Series(["2020-01-01 03:00:00"]).str.strptime(
             pl.Datetime("us", "foo"), "%Y-%m-%d %H:%M:%S", utc=True
@@ -1960,7 +1977,7 @@ def test_strptime_unguessable_format() -> None:
 
 def test_convert_time_zone_invalid() -> None:
     ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
-    with pytest.raises(ComputeError, match="unable to parse timezone: 'foo'"):
+    with pytest.raises(ComputeError, match="unable to parse time zone: 'foo'"):
         ts.dt.replace_time_zone("UTC").dt.convert_time_zone("foo")
 
 
@@ -2144,6 +2161,15 @@ def test_date_range_descending() -> None:
         pl.date_range(datetime(2000, 3, 20), datetime(2000, 3, 21), interval="-1h")
 
 
+def test_date_range_end_of_month_5441() -> None:
+    start = date(2020, 1, 31)
+    stop = date(2021, 1, 31)
+    with pytest.raises(
+        ComputeError, match=r"cannot advance '2020-01-31 00:00:00' by 1 month\(s\)"
+    ):
+        pl.date_range(start, stop, interval="1mo")
+
+
 def test_logical_nested_take() -> None:
     frame = pl.DataFrame(
         {
@@ -2193,19 +2219,6 @@ def test_replace_time_zone_from_naive() -> None:
     }
 
 
-@pytest.mark.parametrize("time_zone", ["UTC", "Africa/Abidjan"])
-def test_tz_localize_from_tz_aware(time_zone: str) -> None:
-    tz_aware = (
-        pl.Series(["2018-10-28"])
-        .str.strptime(pl.Datetime)
-        .dt.replace_time_zone(time_zone)
-    )
-    deprecation_msg = "please use `.replace_time_zone` instead"
-    with pytest.warns(DeprecationWarning, match=deprecation_msg):
-        # ignoring as this is being redirected and will be removed anyway
-        tz_aware.dt.tz_localize("America/Maceio")  # type: ignore[attr-defined]
-
-
 def test_unlocalize() -> None:
     tz_naive = pl.Series(["2020-01-01 03:00:00"]).str.strptime(pl.Datetime)
     tz_aware = tz_naive.dt.replace_time_zone("UTC").dt.convert_time_zone(
@@ -2219,7 +2232,7 @@ def test_tz_aware_truncate() -> None:
     test = pl.DataFrame(
         {
             "dt": pl.date_range(
-                low=datetime(2022, 11, 1), high=datetime(2022, 11, 4), interval="12h"
+                start=datetime(2022, 11, 1), end=datetime(2022, 11, 4), interval="12h"
             ).dt.replace_time_zone("America/New_York")
         }
     )
@@ -2250,8 +2263,8 @@ def test_tz_aware_truncate() -> None:
     lf = pl.DataFrame(
         {
             "naive": pl.date_range(
-                low=datetime(2021, 12, 31, 23),
-                high=datetime(2022, 1, 1, 6),
+                start=datetime(2021, 12, 31, 23),
+                end=datetime(2022, 1, 1, 6),
                 interval="1h",
             )
         }
@@ -2317,7 +2330,7 @@ def test_tz_aware_strftime() -> None:
     df = pl.DataFrame(
         {
             "dt": pl.date_range(
-                low=datetime(2022, 11, 1), high=datetime(2022, 11, 4), interval="24h"
+                start=datetime(2022, 11, 1), end=datetime(2022, 11, 4), interval="24h"
             ).dt.replace_time_zone("America/New_York")
         }
     )
@@ -2667,6 +2680,39 @@ def test_infer_iso8601_datetime(iso8601_format_datetime: str) -> None:
         assert parsed.dt.nanosecond().item() == 123456000
     if "%3f" in iso8601_format_datetime:
         assert parsed.dt.nanosecond().item() == 123000000
+
+
+def test_infer_iso8601_tz_aware_datetime(iso8601_tz_aware_format_datetime: str) -> None:
+    # construct an example time string
+    time_string = (
+        iso8601_tz_aware_format_datetime.replace("%Y", "2134")
+        .replace("%m", "12")
+        .replace("%d", "13")
+        .replace("%H", "01")
+        .replace("%M", "12")
+        .replace("%S", "34")
+        .replace("%3f", "123")
+        .replace("%6f", "123456")
+        .replace("%9f", "123456789")
+        .replace("%#z", "+01:00")
+    )
+    parsed = pl.Series([time_string]).str.strptime(pl.Datetime("ns"))
+    assert parsed.dt.year().item() == 2134
+    assert parsed.dt.month().item() == 12
+    assert parsed.dt.day().item() == 13
+    if "%H" in iso8601_tz_aware_format_datetime:
+        assert parsed.dt.hour().item() == 1
+    if "%M" in iso8601_tz_aware_format_datetime:
+        assert parsed.dt.minute().item() == 12
+    if "%S" in iso8601_tz_aware_format_datetime:
+        assert parsed.dt.second().item() == 34
+    if "%9f" in iso8601_tz_aware_format_datetime:
+        assert parsed.dt.nanosecond().item() == 123456789
+    if "%6f" in iso8601_tz_aware_format_datetime:
+        assert parsed.dt.nanosecond().item() == 123456000
+    if "%3f" in iso8601_tz_aware_format_datetime:
+        assert parsed.dt.nanosecond().item() == 123000000
+    assert parsed.dtype == pl.Datetime("ns", "+01:00")
 
 
 def test_infer_iso8601_date(iso8601_format_date: str) -> None:

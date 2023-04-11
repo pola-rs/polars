@@ -1,3 +1,4 @@
+#![allow(ambiguous_glob_reexports)]
 //! Domain specific language for the Lazy API.
 #[cfg(feature = "dtype-categorical")]
 pub mod cat;
@@ -614,8 +615,22 @@ impl Expr {
     ///
     /// This has time complexity `O(n + k log(n))`.
     #[cfg(feature = "top_k")]
-    pub fn top_k(self, k: usize, descending: bool) -> Self {
-        self.apply_private(FunctionExpr::TopK { k, descending })
+    pub fn top_k(self, k: usize) -> Self {
+        self.apply_private(FunctionExpr::TopK {
+            k,
+            descending: false,
+        })
+    }
+
+    /// Returns the `k` smallest elements.
+    ///
+    /// This has time complexity `O(n + k log(n))`.
+    #[cfg(feature = "top_k")]
+    pub fn bottom_k(self, k: usize) -> Self {
+        self.apply_private(FunctionExpr::TopK {
+            k,
+            descending: true,
+        })
     }
 
     /// Reverse column
@@ -1620,9 +1635,9 @@ impl Expr {
     }
 
     #[cfg(feature = "rank")]
-    pub fn rank(self, options: RankOptions) -> Expr {
+    pub fn rank(self, options: RankOptions, seed: Option<u64>) -> Expr {
         self.apply(
-            move |s| Ok(Some(s.rank(options))),
+            move |s| Ok(Some(s.rank(options, seed))),
             GetOutput::map_field(move |fld| match options.method {
                 RankMethod::Average => Field::new(fld.name(), DataType::Float32),
                 _ => Field::new(fld.name(), IDX_DTYPE),

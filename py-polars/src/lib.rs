@@ -225,8 +225,8 @@ fn get_polars_version() -> &'static str {
 }
 
 #[pyfunction]
-fn toggle_string_cache(toggle: bool) {
-    polars_rs::toggle_string_cache(toggle)
+fn enable_string_cache(toggle: bool) {
+    polars_rs::enable_string_cache(toggle)
 }
 
 #[pyfunction]
@@ -502,8 +502,8 @@ fn py_date_range(
     every: &str,
     closed: Wrap<ClosedWindow>,
     name: &str,
-    tu: Wrap<TimeUnit>,
-    tz: Option<TimeZone>,
+    time_unit: Wrap<TimeUnit>,
+    time_zone: Option<TimeZone>,
 ) -> PyResult<PySeries> {
     let date_range = polars_rs::time::date_range_impl(
         name,
@@ -511,8 +511,8 @@ fn py_date_range(
         stop,
         Duration::parse(every),
         closed.0,
-        tu.0,
-        tz.as_ref(),
+        time_unit.0,
+        time_zone.as_ref(),
     )
     .map_err(PyPolarsErr::from)?;
     Ok(date_range.into_series().into())
@@ -525,12 +525,12 @@ fn py_date_range_lazy(
     every: &str,
     closed: Wrap<ClosedWindow>,
     name: String,
-    tz: Option<TimeZone>,
+    time_zone: Option<TimeZone>,
 ) -> PyExpr {
     let start = start.inner;
     let end = end.inner;
     let every = Duration::parse(every);
-    polars_rs::lazy::dsl::functions::date_range(name, start, end, every, closed.0, tz).into()
+    polars_rs::lazy::dsl::functions::date_range(name, start, end, every, closed.0, time_zone).into()
 }
 
 #[pyfunction]
@@ -620,7 +620,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     )
     .unwrap();
     m.add("NoDataError", py.get_type::<NoDataError>()).unwrap();
-    m.add("PanicException", py.get_type::<PanicException>())
+    m.add("PolarsPanicError", py.get_type::<PanicException>())
         .unwrap();
     m.add("SchemaError", py.get_type::<SchemaError>()).unwrap();
     m.add(
@@ -670,7 +670,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(arg_sort_by)).unwrap();
     m.add_wrapped(wrap_pyfunction!(when)).unwrap();
     m.add_wrapped(wrap_pyfunction!(get_polars_version)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(toggle_string_cache))
+    m.add_wrapped(wrap_pyfunction!(enable_string_cache))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(using_string_cache)).unwrap();
     m.add_wrapped(wrap_pyfunction!(concat_str)).unwrap();

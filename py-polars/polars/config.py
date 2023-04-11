@@ -121,8 +121,11 @@ class Config:
         >>> cfg = pl.Config.restore_defaults()  # doctest: +SKIP
 
         """
+        # unset all Config environment variables
         for var in _POLARS_CFG_ENV_VARS:
             os.environ.pop(var, None)
+
+        # apply any 'direct' setting values
         cls.set_fmt_float()
         return cls
 
@@ -186,18 +189,21 @@ class Config:
         return config_state
 
     @classmethod
-    def activate_decimals(cls) -> type[Config]:
+    def activate_decimals(cls, active: bool = True) -> type[Config]:
         """
         Activate ``Decimal`` data types.
 
-        This is temporary setting that will be removed later once
-        ``Decimal`` type stabilize. This happens without it being
+        This is a temporary setting that will be removed later once the
+        ``Decimal`` type stabilize. This will happens without it being
         considered a breaking change.
 
-        Currently, ``Decimal`` types are in alpha stage.
+        Currently, ``Decimal`` types are in an alpha state.
 
         """
-        os.environ["POLARS_ACTIVATE_DECIMAL"] = "1"
+        if not active:
+            os.environ.pop("POLARS_ACTIVATE_DECIMAL", None)
+        else:
+            os.environ["POLARS_ACTIVATE_DECIMAL"] = "1"
         return cls
 
     @classmethod
@@ -257,6 +263,9 @@ class Config:
             number of characters to display
 
         """
+        if n <= 0:
+            raise ValueError("number of characters must be > 0")
+
         os.environ["POLARS_FMT_STR_LEN"] = str(n)
         return cls
 
@@ -277,6 +286,9 @@ class Config:
             of this size.
 
         """
+        if size < 1:
+            raise ValueError("number of rows per chunk must be >= 1")
+
         os.environ["POLARS_STREAMING_CHUNK_SIZE"] = str(size)
         return cls
 

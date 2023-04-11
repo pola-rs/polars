@@ -64,6 +64,14 @@ def test_string_numeric_comp_err() -> None:
         pl.DataFrame({"a": [1.1, 21, 31, 21, 51, 61, 71, 81]}).select(pl.col("a") < "9")
 
 
+def test_panic_error() -> None:
+    with pytest.raises(
+        pl.PolarsPanicError,
+        match="""dimensions cannot be empty""",
+    ):
+        pl.Series("a", [1, 2, 3]).reshape(())
+
+
 @typing.no_type_check
 def test_join_lazy_on_df() -> None:
     df_left = pl.DataFrame(

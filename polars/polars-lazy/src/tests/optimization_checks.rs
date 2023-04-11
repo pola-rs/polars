@@ -526,3 +526,28 @@ fn test_slice_at_scan_groupby() -> PolarsResult<()> {
     assert!(slice_at_scan(q));
     Ok(())
 }
+
+#[test]
+fn test_flatten_unions() -> PolarsResult<()> {
+    let (mut expr_arena, mut lp_arena) = get_arenas();
+
+    let lf = df! {
+        "a" => [1,2,3,4,5],
+    }
+    .unwrap()
+    .lazy();
+
+    let lf2 = concat(&[lf.clone(), lf.clone()], false, true).unwrap();
+    let lf3 = concat(&[lf.clone(), lf.clone(), lf.clone()], false, true).unwrap();
+    let lf4 = concat(&[lf2.clone(), lf3], false, true).unwrap();
+    let root = lf4.optimize(&mut lp_arena, &mut expr_arena).unwrap();
+    let lp = lp_arena.get(root);
+    match lp {
+        ALogicalPlan::Union { inputs, .. } => {
+            // we make sure that the nested unions are flattened into a single union
+            assert_eq!(inputs.len(), 5);
+        }
+        _ => panic!(),
+    }
+    Ok(())
+}

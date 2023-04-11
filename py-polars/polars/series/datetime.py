@@ -2,11 +2,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars import functions as F
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
 from polars.utils.convert import _to_python_datetime
-from polars.utils.decorators import deprecated_alias, redirect
 
 if TYPE_CHECKING:
     import datetime as dt
@@ -17,13 +15,6 @@ if TYPE_CHECKING:
     from polars.type_aliases import EpochTimeUnit, TimeUnit
 
 
-@redirect(
-    {
-        "tz_localize": "replace_time_zone",
-        "with_time_zone": "convert_time_zone",
-        "cast_time_zone": "replace_time_zone",
-    }
-)
 @expr_dispatch
 class DateTimeNameSpace:
     """Series.dt namespace."""
@@ -677,7 +668,7 @@ class DateTimeNameSpace:
 
         """
 
-    def second(self, fractional: bool = False) -> Series:
+    def second(self, *, fractional: bool = False) -> Series:
         """
         Extract seconds from underlying DateTime representation.
 
@@ -686,6 +677,11 @@ class DateTimeNameSpace:
         Returns the integer second number from 0 to 59, or a floating
         point number from 0 < 60 if ``fractional=True`` that includes
         any milli/micro/nanosecond component.
+
+        Parameters
+        ----------
+        fractional
+            Whether to include the fractional component of the second.
 
         Returns
         -------
@@ -883,13 +879,13 @@ class DateTimeNameSpace:
 
         """
 
-    def timestamp(self, tu: TimeUnit = "us") -> Series:
+    def timestamp(self, time_unit: TimeUnit = "us") -> Series:
         """
         Return a timestamp in the given time unit.
 
         Parameters
         ----------
-        tu : {'us', 'ns', 'ms'}
+        time_unit : {'us', 'ns', 'ms'}
             Time unit.
 
         Examples
@@ -914,7 +910,7 @@ class DateTimeNameSpace:
                 978393600000000
                 978480000000000
         ]
-        >>> date.dt.timestamp(tu="ns").alias("timestamp_ns")
+        >>> date.dt.timestamp("ns").alias("timestamp_ns")
         shape: (3,)
         Series: 'timestamp_ns' [i64]
         [
@@ -925,14 +921,14 @@ class DateTimeNameSpace:
 
         """
 
-    def epoch(self, tu: EpochTimeUnit = "us") -> Series:
+    def epoch(self, time_unit: EpochTimeUnit = "us") -> Series:
         """
         Get the time passed since the Unix EPOCH in the give time unit.
 
         Parameters
         ----------
-        tu : {'us', 'ns', 'ms', 's', 'd'}
-            Time unit.
+        time_unit : {'us', 'ns', 'ms', 's', 'd'}
+            Unit of time.
 
         Examples
         --------
@@ -956,7 +952,7 @@ class DateTimeNameSpace:
                 978393600000000
                 978480000000000
         ]
-        >>> date.dt.epoch(tu="s").alias("epoch_s")
+        >>> date.dt.epoch(time_unit="s").alias("epoch_s")
         shape: (3,)
         Series: 'epoch_s' [i64]
         [
@@ -967,7 +963,7 @@ class DateTimeNameSpace:
 
         """
 
-    def with_time_unit(self, tu: TimeUnit) -> Series:
+    def with_time_unit(self, time_unit: TimeUnit) -> Series:
         """
         Set time unit a Series of dtype Datetime or Duration.
 
@@ -976,8 +972,8 @@ class DateTimeNameSpace:
 
         Parameters
         ----------
-        tu : {'ns', 'us', 'ms'}
-            Time unit for the ``Datetime`` Series.
+        time_unit : {'ns', 'us', 'ms'}
+            Unit of time for the ``Datetime`` Series.
 
         Examples
         --------
@@ -993,9 +989,9 @@ class DateTimeNameSpace:
                 2001-01-02 00:00:00
                 2001-01-03 00:00:00
         ]
-        >>> date.dt.with_time_unit(tu="us").alias("tu_us")
+        >>> date.dt.with_time_unit("us").alias("time_unit_us")
         shape: (3,)
-        Series: 'tu_us' [datetime[μs]]
+        Series: 'time_unit_us' [datetime[μs]]
         [
                 +32971-04-28 00:00:00
                 +32974-01-22 00:00:00
@@ -1004,14 +1000,14 @@ class DateTimeNameSpace:
 
         """
 
-    def cast_time_unit(self, tu: TimeUnit) -> Series:
+    def cast_time_unit(self, time_unit: TimeUnit) -> Series:
         """
         Cast the underlying data to another time unit. This may lose precision.
 
         Parameters
         ----------
-        tu : {'ns', 'us', 'ms'}
-            Time unit for the ``Datetime`` Series.
+        time_unit : {'ns', 'us', 'ms'}
+            Unit of time for the ``Datetime`` Series.
 
         Examples
         --------
@@ -1027,17 +1023,17 @@ class DateTimeNameSpace:
                 2001-01-02 00:00:00
                 2001-01-03 00:00:00
         ]
-        >>> date.dt.cast_time_unit(tu="ms").alias("tu_ms")
+        >>> date.dt.cast_time_unit("ms").alias("time_unit_ms")
         shape: (3,)
-        Series: 'tu_ms' [datetime[ms]]
+        Series: 'time_unit_ms' [datetime[ms]]
         [
                 2001-01-01 00:00:00
                 2001-01-02 00:00:00
                 2001-01-03 00:00:00
         ]
-        >>> date.dt.cast_time_unit(tu="ns").alias("tu_ns")
+        >>> date.dt.cast_time_unit("ns").alias("time_unit_ns")
         shape: (3,)
-        Series: 'tu_ns' [datetime[ns]]
+        Series: 'time_unit_ns' [datetime[ns]]
         [
                 2001-01-01 00:00:00
                 2001-01-02 00:00:00
@@ -1046,7 +1042,6 @@ class DateTimeNameSpace:
 
         """
 
-    @deprecated_alias(tz="time_zone")
     def convert_time_zone(self, time_zone: str) -> Series:
         """
         Convert to given time zone for a Series of type Datetime.
@@ -1070,7 +1065,7 @@ class DateTimeNameSpace:
                 2020-04-01 00:00:00 UTC
                 2020-05-01 00:00:00 UTC
         ]
-        >>> date = date.dt.convert_time_zone(tz="Europe/London").alias("London")
+        >>> date = date.dt.convert_time_zone("Europe/London").alias("London")
         >>> date
         shape: (3,)
         Series: 'London' [datetime[μs, Europe/London]]
@@ -1080,14 +1075,7 @@ class DateTimeNameSpace:
             2020-05-01 01:00:00 BST
         ]
         """
-        return (
-            wrap_s(self._s)
-            .to_frame()
-            .select(F.col(self._s.name()).dt.convert_time_zone(time_zone))
-            .to_series()
-        )
 
-    @deprecated_alias(tz="time_zone")
     def replace_time_zone(self, time_zone: str | None) -> Series:
         """
         Replace time zone for a Series of type Datetime.
@@ -1114,7 +1102,7 @@ class DateTimeNameSpace:
                 2020-04-01 00:00:00 UTC
                 2020-05-01 00:00:00 UTC
         ]
-        >>> date.dt.epoch(tu="s")
+        >>> date.dt.epoch("s")
         shape: (3,)
         Series: '' [i64]
         [
@@ -1122,7 +1110,7 @@ class DateTimeNameSpace:
                 1585699200
                 1588291200
         ]
-        >>> date = date.dt.convert_time_zone(tz="Europe/London").alias("London")
+        >>> date = date.dt.convert_time_zone(time_zone="Europe/London").alias("London")
         >>> date
         shape: (3,)
         Series: 'London' [datetime[μs, Europe/London]]
@@ -1132,7 +1120,7 @@ class DateTimeNameSpace:
             2020-05-01 01:00:00 BST
         ]
         >>> # Timestamps have not changed after convert_time_zone
-        >>> date.dt.epoch(tu="s")
+        >>> date.dt.epoch(time_unit="s")
         shape: (3,)
         Series: 'London' [i64]
         [
@@ -1140,7 +1128,7 @@ class DateTimeNameSpace:
                 1585699200
                 1588291200
         ]
-        >>> date = date.dt.replace_time_zone(tz="America/New_York").alias("NYC")
+        >>> date = date.dt.replace_time_zone(time_zone="America/New_York").alias("NYC")
         >>> date
         shape: (3,)
         Series: 'NYC' [datetime[μs, America/New_York]]
@@ -1150,7 +1138,7 @@ class DateTimeNameSpace:
             2020-05-01 01:00:00 EDT
         ]
         >>> # Timestamps have changed after replace_time_zone
-        >>> date.dt.epoch(tu="s")
+        >>> date.dt.epoch(time_unit="s")
         shape: (3,)
         Series: 'NYC' [i64]
         [
@@ -1160,12 +1148,6 @@ class DateTimeNameSpace:
         ]
 
         """
-        return (
-            wrap_s(self._s)
-            .to_frame()
-            .select(F.col(self._s.name()).dt.replace_time_zone(time_zone))
-            .to_series()
-        )
 
     def days(self) -> Series:
         """
@@ -1677,7 +1659,7 @@ class DateTimeNameSpace:
 
         """
 
-    def combine(self, tm: dt.time | Series, tu: TimeUnit = "us") -> Expr:
+    def combine(self, time: dt.time | Series, time_unit: TimeUnit = "us") -> Expr:
         """
         Create a naive Datetime from an existing Date/Datetime expression and a Time.
 
@@ -1686,10 +1668,10 @@ class DateTimeNameSpace:
 
         Parameters
         ----------
-        tm
+        time
             A python time literal or Series of the same length as this Series.
-        tu : {'ns', 'us', 'ms'}
-            Time unit.
+        time_unit : {'ns', 'us', 'ms'}
+            Unit of time.
 
         Examples
         --------

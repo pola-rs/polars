@@ -7,17 +7,15 @@ from urllib.parse import urlparse
 from polars.convert import from_arrow
 from polars.dependencies import _DELTALAKE_AVAILABLE, deltalake
 from polars.io.pyarrow_dataset import scan_pyarrow_dataset
-from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 
 if TYPE_CHECKING:
     from polars.dataframe import DataFrame
     from polars.lazyframe import LazyFrame
 
 
-@deprecate_nonkeyword_arguments()
-@deprecated_alias(table_uri="source", stacklevel=4)
 def read_delta(
     source: str,
+    *,
     version: int | None = None,
     columns: list[str] | None = None,
     storage_options: dict[str, Any] | None = None,
@@ -141,10 +139,9 @@ def read_delta(
     return from_arrow(dl_tbl.to_pyarrow_table(columns=columns, **pyarrow_options))  # type: ignore[return-value]
 
 
-@deprecate_nonkeyword_arguments()
-@deprecated_alias(table_uri="source", stacklevel=4)
 def scan_delta(
     source: str,
+    *,
     version: int | None = None,
     storage_options: dict[str, Any] | None = None,
     delta_table_options: dict[str, Any] | None = None,

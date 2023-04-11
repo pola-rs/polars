@@ -17,9 +17,9 @@ adbc_driver_sqlite; python_version >= '3.9' and platform_system != 'Windows'
 connectorx==0.3.2a2; python_version >= '3.8'  # Latest full release is broken - unpin when 0.3.2 released
 
 # Tooling
-hypothesis==6.68.2
+hypothesis==6.71.0
 maturin==0.14.10
-pytest==7.2.0
+pytest==7.3.0
 pytest-cov==4.0.0
 pytest-xdist==3.2.0
 

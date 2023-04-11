@@ -261,6 +261,8 @@ impl PySeries {
     pub fn new_object(name: &str, val: Vec<ObjectValue>, _strict: bool) -> Self {
         #[cfg(feature = "object")]
         {
+            // object builder must be registered.
+            crate::object::register_object_builder();
             let s = ObjectChunked::<ObjectValue>::new_from_vec(name, val).into_series();
             s.into()
         }
@@ -892,11 +894,14 @@ impl PySeries {
             ) || !skip_nulls
             {
                 let mut avs = Vec::with_capacity(self.series.len());
-                let iter = self.series.iter().map(|av| {
-                    let input = Wrap(av);
-                    call_lambda_and_extract::<_, Wrap<AnyValue>>(py, lambda, input)
-                        .unwrap()
-                        .0
+                let iter = self.series.iter().map(|av| match (skip_nulls, av) {
+                    (true, AnyValue::Null) => AnyValue::Null,
+                    (_, av) => {
+                        let input = Wrap(av);
+                        call_lambda_and_extract::<_, Wrap<AnyValue>>(py, lambda, input)
+                            .unwrap()
+                            .0
+                    }
                 });
                 avs.extend(iter);
                 return Ok(Series::new(self.name(), &avs).into());
@@ -1172,8 +1177,10 @@ impl PySeries {
     }
 
     pub fn time_unit(&self) -> Option<&str> {
-        if let DataType::Datetime(tu, _) | DataType::Duration(tu) = self.series.dtype() {
-            Some(match tu {
+        if let DataType::Datetime(time_unit, _) | DataType::Duration(time_unit) =
+            self.series.dtype()
+        {
+            Some(match time_unit {
                 TimeUnit::Nanoseconds => "ns",
                 TimeUnit::Microseconds => "us",
                 TimeUnit::Milliseconds => "ms",

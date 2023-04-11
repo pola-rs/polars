@@ -159,7 +159,7 @@ def test_shift_and_fill() -> None:
         [pl.col("a").cast(pl.Categorical)]
     )
 
-    s = df.with_columns(pl.col("a").shift_and_fill(1, "c"))["a"]
+    s = df.with_columns(pl.col("a").shift_and_fill("c", periods=1))["a"]
     assert s.dtype == pl.Categorical
     assert s.to_list() == ["c", "a"]
 

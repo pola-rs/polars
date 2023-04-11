@@ -14,7 +14,8 @@ from polars.utils.convert import (
     _timedelta_to_pl_duration,
     _tzinfo_to_str,
 )
-from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
+from polars.utils.decorators import deprecated_alias
+from polars.utils.various import find_stacklevel
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import concat_df as _concat_df
@@ -79,7 +80,7 @@ def get_dummies(
     ...         "ham": ["a", "b"],
     ...     }
     ... )
-    >>> pl.get_dummies(df.to_dummies(), columns=["foo", "bar"])
+    >>> pl.get_dummies(df.to_dummies(), columns=["foo", "bar"])  # doctest: +SKIP
     shape: (2, 6)
     ┌───────┬───────┬───────┬───────┬───────┬───────┐
     │ foo_1 ┆ foo_2 ┆ bar_3 ┆ bar_4 ┆ ham_a ┆ ham_b │
@@ -94,7 +95,7 @@ def get_dummies(
     warnings.warn(
         "`pl.get_dummies(df)` has been deprecated; use `df.to_dummies()`",
         category=DeprecationWarning,
-        stacklevel=2,
+        stacklevel=find_stacklevel(),
     )
     return df.to_dummies(columns=columns, separator=separator)
 
@@ -102,9 +103,10 @@ def get_dummies(
 @overload
 def concat(
     items: Iterable[DataFrame],
-    rechunk: bool = True,
-    how: ConcatMethod = "vertical",
-    parallel: bool = True,
+    *,
+    how: ConcatMethod = ...,
+    rechunk: bool = ...,
+    parallel: bool = ...,
 ) -> DataFrame:
     ...
 
@@ -112,9 +114,10 @@ def concat(
 @overload
 def concat(
     items: Iterable[Series],
-    rechunk: bool = True,
-    how: ConcatMethod = "vertical",
-    parallel: bool = True,
+    *,
+    how: ConcatMethod = ...,
+    rechunk: bool = ...,
+    parallel: bool = ...,
 ) -> Series:
     ...
 
@@ -122,9 +125,10 @@ def concat(
 @overload
 def concat(
     items: Iterable[LazyFrame],
-    rechunk: bool = True,
-    how: ConcatMethod = "vertical",
-    parallel: bool = True,
+    *,
+    how: ConcatMethod = ...,
+    rechunk: bool = ...,
+    parallel: bool = ...,
 ) -> LazyFrame:
     ...
 
@@ -132,20 +136,21 @@ def concat(
 @overload
 def concat(
     items: Iterable[Expr],
-    rechunk: bool = True,
-    how: ConcatMethod = "vertical",
-    parallel: bool = True,
+    *,
+    how: ConcatMethod = ...,
+    rechunk: bool = ...,
+    parallel: bool = ...,
 ) -> Expr:
     ...
 
 
-@deprecate_nonkeyword_arguments()
 def concat(
     items: (
         Iterable[DataFrame] | Iterable[Series] | Iterable[LazyFrame] | Iterable[Expr]
     ),
-    rechunk: bool = True,
+    *,
     how: ConcatMethod = "vertical",
+    rechunk: bool = True,
     parallel: bool = True,
 ) -> DataFrame | Series | LazyFrame | Expr:
     """
@@ -155,8 +160,6 @@ def concat(
     ----------
     items
         DataFrames/Series/LazyFrames to concatenate.
-    rechunk
-        Make sure that all data is in contiguous memory.
     how : {'vertical', 'diagonal', 'horizontal'}
         Series only supports the `vertical` strategy.
         LazyFrames only supports `vertical` and `diagonal` strategy.
@@ -166,6 +169,8 @@ def concat(
             values with null.
         - Horizontal: stacks Series from DataFrames horizontally and fills with nulls
             if the lengths don't match.
+    rechunk
+        Make sure that all data is in contiguous memory.
     parallel
         Only relevant for LazyFrames. This determines if the concatenated
         lazy computations may be executed in parallel.
@@ -305,8 +310,8 @@ def _interval_granularity(interval: str) -> str:
 
 @overload
 def date_range(
-    low: Expr,
-    high: date | datetime | Expr | str,
+    start: Expr,
+    end: date | datetime | Expr | str,
     interval: str | timedelta = ...,
     *,
     lazy: Literal[False] = ...,
@@ -320,8 +325,8 @@ def date_range(
 
 @overload
 def date_range(
-    low: date | datetime | Expr | str,
-    high: Expr,
+    start: date | datetime | Expr | str,
+    end: Expr,
     interval: str | timedelta = ...,
     *,
     lazy: Literal[False] = ...,
@@ -335,8 +340,8 @@ def date_range(
 
 @overload
 def date_range(
-    low: date | datetime | str,
-    high: date | datetime | str,
+    start: date | datetime | str,
+    end: date | datetime | str,
     interval: str | timedelta = ...,
     *,
     lazy: Literal[False] = ...,
@@ -350,8 +355,8 @@ def date_range(
 
 @overload
 def date_range(
-    low: date | datetime | Expr | str,
-    high: date | datetime | Expr | str,
+    start: date | datetime | Expr | str,
+    end: date | datetime | Expr | str,
     interval: str | timedelta = ...,
     *,
     lazy: Literal[True],
@@ -363,9 +368,10 @@ def date_range(
     ...
 
 
+@deprecated_alias(low="start", high="end")
 def date_range(
-    low: date | datetime | Expr | str,
-    high: date | datetime | Expr | str,
+    start: date | datetime | Expr | str,
+    end: date | datetime | Expr | str,
     interval: str | timedelta = "1d",
     *,
     lazy: bool = False,
@@ -379,9 +385,9 @@ def date_range(
 
     Parameters
     ----------
-    low
+    start
         Lower bound of the date range, given as a date, datetime, Expr, or column name.
-    high
+    end
         Upper bound of the date range, given as a date, datetime, Expr, or column name.
     interval
         Interval periods. It can be a python timedelta object, like
@@ -401,7 +407,7 @@ def date_range(
 
     Notes
     -----
-    If both ``low`` and ``high`` are passed as date types (not datetime), and the
+    If both ``start`` and ``end`` are passed as date types (not datetime), and the
     interval granularity is no finer than 1d, the returned range is also of
     type date. All other permutations return a datetime Series.
 
@@ -460,6 +466,25 @@ def date_range(
         2022-03-01 00:00:00 EST
     ]
 
+    Combine with ``offset_by`` to get the last day of the month:
+
+    >>> (
+    ...     pl.date_range(
+    ...         datetime(2022, 1, 1),
+    ...         datetime(2022, 3, 1),
+    ...         "1mo",
+    ...     )
+    ...     .dt.offset_by("1mo")
+    ...     .dt.offset_by("-1d")
+    ... )
+    shape: (3,)
+    Series: '' [datetime[μs]]
+    [
+        2022-01-31 00:00:00
+        2022-02-28 00:00:00
+        2022-03-31 00:00:00
+    ]
+
     """
     if name is None:
         name = ""
@@ -468,48 +493,48 @@ def date_range(
     elif " " in interval:
         interval = interval.replace(" ", "")
 
-    if isinstance(low, (str, pli.Expr)) or isinstance(high, (str, pli.Expr)) or lazy:
-        low = expr_to_lit_or_expr(low, str_to_lit=False)._pyexpr
-        high = expr_to_lit_or_expr(high, str_to_lit=False)._pyexpr
+    if isinstance(start, (str, pli.Expr)) or isinstance(end, (str, pli.Expr)) or lazy:
+        start = expr_to_lit_or_expr(start, str_to_lit=False)._pyexpr
+        end = expr_to_lit_or_expr(end, str_to_lit=False)._pyexpr
         return wrap_expr(
-            _py_date_range_lazy(low, high, interval, closed, name, time_zone)
+            _py_date_range_lazy(start, end, interval, closed, name, time_zone)
         )
 
-    low, low_is_date = _ensure_datetime(low)
-    high, high_is_date = _ensure_datetime(high)
+    start, start_is_date = _ensure_datetime(start)
+    end, end_is_date = _ensure_datetime(end)
 
-    if low.tzinfo is not None or time_zone is not None:
-        if low.tzinfo != high.tzinfo:
+    if start.tzinfo is not None or time_zone is not None:
+        if start.tzinfo != end.tzinfo:
             raise ValueError(
                 "Cannot mix different timezone aware datetimes."
-                f" Got: '{low.tzinfo}' and '{high.tzinfo}'."
+                f" Got: '{start.tzinfo}' and '{end.tzinfo}'."
             )
 
-        if time_zone is not None and low.tzinfo is not None:
-            if _tzinfo_to_str(low.tzinfo) != time_zone:
+        if time_zone is not None and start.tzinfo is not None:
+            if _tzinfo_to_str(start.tzinfo) != time_zone:
                 raise ValueError(
                     "Given time_zone is different from that of timezone aware datetimes."
-                    f" Given: '{time_zone}', got: '{low.tzinfo}'."
+                    f" Given: '{time_zone}', got: '{start.tzinfo}'."
                 )
-        if time_zone is None and low.tzinfo is not None:
-            time_zone = _tzinfo_to_str(low.tzinfo)
+        if time_zone is None and start.tzinfo is not None:
+            time_zone = _tzinfo_to_str(start.tzinfo)
 
-    tu: TimeUnit
+    time_unit_: TimeUnit
     if time_unit is not None:
-        tu = time_unit
+        time_unit_ = time_unit
     elif "ns" in interval:
-        tu = "ns"
+        time_unit_ = "ns"
     else:
-        tu = "us"
+        time_unit_ = "us"
 
-    start = _datetime_to_pl_timestamp(low, tu)
-    stop = _datetime_to_pl_timestamp(high, tu)
+    start_pl = _datetime_to_pl_timestamp(start, time_unit_)
+    end_pl = _datetime_to_pl_timestamp(end, time_unit_)
     dt_range = wrap_s(
-        _py_date_range(start, stop, interval, closed, name, tu, time_zone)
+        _py_date_range(start_pl, end_pl, interval, closed, name, time_unit_, time_zone)
     )
     if (
-        low_is_date
-        and high_is_date
+        start_is_date
+        and end_is_date
         and not _interval_granularity(interval).endswith(("h", "m", "s"))
     ):
         dt_range = dt_range.cast(Date)
@@ -556,7 +581,7 @@ def cut(
     Examples
     --------
     >>> a = pl.Series("a", [v / 10 for v in range(-30, 30, 5)])
-    >>> pl.cut(a, bins=[-1, 1])
+    >>> pl.cut(a, bins=[-1, 1])  # doctest: +SKIP
     shape: (12, 3)
     ┌──────┬─────────────┬──────────────┐
     │ a    ┆ break_point ┆ category     │
@@ -578,7 +603,7 @@ def cut(
     warnings.warn(
         "`pl.cut(series)` has been deprecated; use `series.cut()`",
         category=DeprecationWarning,
-        stacklevel=2,
+        stacklevel=find_stacklevel(),
     )
     return s.cut(bins, labels, break_point_label, category_label)
 
@@ -603,7 +628,6 @@ def align_frames(
     ...
 
 
-@deprecated_alias(reverse="descending")
 def align_frames(
     *frames: DataFrame | LazyFrame,
     on: str | Expr | Sequence[str] | Sequence[Expr] | Sequence[str | Expr],

@@ -188,9 +188,9 @@ fn pivot_impl(
 
     let mut count = 0;
     let out: PolarsResult<()> = POOL.install(|| {
-        for column in columns {
+        for column_column_name in columns {
             let mut groupby = index.to_vec();
-            groupby.push(column.clone());
+            groupby.push(column_column_name.clone());
 
             let groups = pivot_df.groupby_stable(groupby)?.take_groups();
 
@@ -200,7 +200,7 @@ fn pivot_impl(
             };
 
             let (col, row) = POOL.join(
-                || positioning::compute_col_idx(pivot_df, column, &groups),
+                || positioning::compute_col_idx(pivot_df, column_column_name, &groups),
                 || positioning::compute_row_idx(pivot_df, index, &groups, count),
             );
             let (col_locations, column_agg) = col?;
@@ -241,7 +241,7 @@ fn pivot_impl(
                 let headers = column_agg.unique_stable()?.cast(&DataType::Utf8)?;
                 let mut headers = headers.utf8().unwrap().clone();
                 if values.len() > 1 {
-                    headers = headers.apply(|v| Cow::from(format!("{value_col_name}{sep}{v}")))
+                    headers = headers.apply(|v| Cow::from(format!("{value_col_name}{sep}{column_column_name}{sep}{v}")))
                 }
 
                 let n_cols = headers.len();

@@ -74,6 +74,28 @@ def test_str_decode_exception() -> None:
         s.str.decode("utf8")  # type: ignore[arg-type]
 
 
+def test_hex_decode_return_dtype() -> None:
+    data = {"a": ["68656c6c6f", "776f726c64"]}
+    expr = pl.col("a").str.decode("hex")
+
+    df = pl.DataFrame(data).select(expr)
+    assert df.schema == {"a": pl.Binary}
+
+    ldf = pl.LazyFrame(data).select(expr)
+    assert ldf.schema == {"a": pl.Binary}
+
+
+def test_base64_decode_return_dtype() -> None:
+    data = {"a": ["Zm9v", "YmFy"]}
+    expr = pl.col("a").str.decode("base64")
+
+    df = pl.DataFrame(data).select(expr)
+    assert df.schema == {"a": pl.Binary}
+
+    ldf = pl.LazyFrame(data).select(expr)
+    assert ldf.schema == {"a": pl.Binary}
+
+
 def test_str_replace_str_replace_all() -> None:
     s = pl.Series(["hello", "world", "test", "rooted"])
     expected = pl.Series(["hell0", "w0rld", "test", "r0oted"])
@@ -125,7 +147,7 @@ def test_str_parse_int() -> None:
 
     hex = pl.Series(["fa1e", "ff00", "cafe", "invalid", None])
     assert_series_equal(
-        hex.str.parse_int(16, False),
+        hex.str.parse_int(16, strict=False),
         pl.Series([64030, 65280, 51966, None, None]).cast(pl.Int32),
         check_exact=True,
     )
@@ -142,7 +164,10 @@ def test_str_parse_int_df() -> None:
         }
     )
     out = df.with_columns(
-        [pl.col("bin").str.parse_int(2, False), pl.col("hex").str.parse_int(16, False)]
+        [
+            pl.col("bin").str.parse_int(2, strict=False),
+            pl.col("hex").str.parse_int(16, strict=False),
+        ]
     )
 
     expected = pl.DataFrame(

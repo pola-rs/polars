@@ -841,9 +841,8 @@ def test_struct_args_kwargs() -> None:
     assert_frame_equal(result, expected)
 
     # Positional input
-    # TODO: Enable when keyword args input is supported
-    # result = df.select(r=pl.struct(pl.col("a").alias("p"), pl.col("b").alias("q")))
-    # assert_frame_equal(result, expected)
+    result = df.select(r=pl.struct(pl.col("a").alias("p"), pl.col("b").alias("q")))
+    assert_frame_equal(result, expected)
 
     # Keyword input
     result = df.select(r=pl.struct(p="a", q="b"))
@@ -878,3 +877,14 @@ def test_struct_with_lit() -> None:
         .select(expr)
         .to_dict(False)
     ) == {"a": [{"a": 1, "b": 1}, {"a": 2, "b": 1}]}
+
+
+def test_struct_unique_df() -> None:
+    df = pl.DataFrame(
+        {
+            "numerical": [1, 2, 1],
+            "struct": [{"x": 1, "y": 2}, {"x": 3, "y": 4}, {"x": 1, "y": 2}],
+        }
+    )
+
+    df.select("numerical", "struct").unique().sort("numerical")

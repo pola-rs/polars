@@ -175,24 +175,28 @@ def test_cumulative_eval_window_functions() -> None:
         }
     )
 
-    assert (
-        df.with_columns(
-            pl.col("val")
-            .cumulative_eval(pl.element().max())
-            .over("group")
-            .alias("cumulative_eval_max")
-        ).to_dict(False)
-    ) == {
-        "group": [0, 0, 0, 1, 1, 1],
-        "val": [20, 40, 30, 2, 4, 3],
-        "cumulative_eval_max": [20, 40, 40, 2, 4, 4],
-    }
+    result = df.with_columns(
+        pl.col("val")
+        .cumulative_eval(pl.element().max())
+        .over("group")
+        .alias("cumulative_eval_max")
+    )
+    expected = pl.DataFrame(
+        {
+            "group": [0, 0, 0, 1, 1, 1],
+            "val": [20, 40, 30, 2, 4, 3],
+            "cumulative_eval_max": [20, 40, 40, 2, 4, 4],
+        }
+    )
+    assert_frame_equal(result, expected)
 
     # 6394
     df = pl.DataFrame({"group": [1, 1, 2, 3], "value": [1, None, 3, None]})
-    assert df.select(
+    result = df.select(
         pl.col("value").cumulative_eval(pl.element().mean()).over("group")
-    ).to_dict(False) == {"value": [1.0, 1.0, 3.0, None]}
+    )
+    expected = pl.DataFrame({"value": [1.0, 1.0, 3.0, None]})
+    assert_frame_equal(result, expected)
 
 
 def test_count_window() -> None:
@@ -210,15 +214,11 @@ def test_count_window() -> None:
 def test_window_cached_keys_sorted_update_4183() -> None:
     df = pl.DataFrame(
         {
-            "customer_ID": [
-                "0",
-                "0",
-                "1",
-            ],
+            "customer_ID": ["0", "0", "1"],
             "date": [1, 2, 3],
         }
     )
-    assert df.sort(by=["customer_ID", "date"]).select(
+    result = df.sort(by=["customer_ID", "date"]).select(
         [
             pl.count("date").over(pl.col("customer_ID")).alias("count"),
             pl.col("date")
@@ -226,7 +226,12 @@ def test_window_cached_keys_sorted_update_4183() -> None:
             .over(pl.col("customer_ID"))
             .alias("rank"),
         ]
-    ).to_dict(False) == {"count": [2, 2, 1], "rank": [1, 2, 1]}
+    )
+    expected = pl.DataFrame(
+        {"count": [2, 2, 1], "rank": [1, 2, 1]},
+        schema={"count": pl.UInt32, "rank": pl.UInt32},
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_window_functions_list_types() -> None:
@@ -246,14 +251,16 @@ def test_window_functions_list_types() -> None:
     assert (
         df.select(
             pl.col("col_list")
-            .shift_and_fill(1, None)  # type: ignore[arg-type]
+            .shift_and_fill(None, periods=1)  # type: ignore[arg-type]
             .alias("list_shifted")
         )
     )["list_shifted"].to_list() == [None, [1], [1], [2]]
 
-    assert (df.select(pl.col("col_list").shift_and_fill(1, []).alias("list_shifted")))[
-        "list_shifted"
-    ].to_list() == [[], [1], [1], [2]]
+    assert (
+        df.select(
+            pl.col("col_list").shift_and_fill([], periods=1).alias("list_shifted")
+        )
+    )["list_shifted"].to_list() == [[], [1], [1], [2]]
 
 
 def test_sorted_window_expression() -> None:
@@ -280,54 +287,53 @@ def test_nested_aggregation_window_expression() -> None:
         }
     )
 
-    assert df.with_columns(
-        [
-            pl.when(pl.col("x") >= pl.col("x").quantile(0.1))
-            .then(1)
-            .otherwise(None)
-            .over("y")
-            .alias("foo")
-        ]
-    ).to_dict(False) == {
-        "x": [1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 2, 13, 4, 15, 6, None, None, 19],
-        "y": [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-        "foo": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, None, None, 1],
-    }
+    result = df.with_columns(
+        pl.when(pl.col("x") >= pl.col("x").quantile(0.1))
+        .then(1)
+        .otherwise(None)
+        .over("y")
+        .alias("foo")
+    )
+    expected = pl.DataFrame(
+        {
+            "x": [1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 2, 13, 4, 15, 6, None, None, 19],
+            "y": [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            "foo": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, None, None, 1],
+        },
+        # Resulting column is Int32, see https://github.com/pola-rs/polars/issues/8041
+        schema_overrides={"foo": pl.Int32},
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_window_5868() -> None:
     df = pl.DataFrame({"value": [None, 2], "id": [None, 1]})
 
-    assert df.with_columns(pl.col("value").max().over("id")).to_dict(False) == {
-        "value": [None, 2],
-        "id": [None, 1],
-    }
+    result_df = df.with_columns(pl.col("value").max().over("id"))
+    expected_df = pl.DataFrame({"value": [None, 2], "id": [None, 1]})
+    assert_frame_equal(result_df, expected_df)
 
     df = pl.DataFrame({"a": [None, 1, 2, 3, 3, 3, 4, 4]})
 
-    assert df.select(pl.col("a").sum().over("a"))["a"].to_list() == [
-        None,
-        1,
-        2,
-        9,
-        9,
-        9,
-        8,
-        8,
-    ]
-    assert df.with_columns(pl.col("a").set_sorted()).select(
-        pl.col("a").sum().over("a")
-    )["a"].to_list() == [None, 1, 2, 9, 9, 9, 8, 8]
+    result = df.select(pl.col("a").sum().over("a")).get_column("a")
+    expected = pl.Series("a", [None, 1, 2, 9, 9, 9, 8, 8])
+    assert_series_equal(result, expected)
 
-    assert df.drop_nulls().select(pl.col("a").sum().over("a"))["a"].to_list() == [
-        1,
-        2,
-        9,
-        9,
-        9,
-        8,
-        8,
-    ]
-    assert df.drop_nulls().with_columns(pl.col("a").set_sorted()).select(
-        pl.col("a").sum().over("a")
-    )["a"].to_list() == [1, 2, 9, 9, 9, 8, 8]
+    result = (
+        df.with_columns(pl.col("a").set_sorted())
+        .select(pl.col("a").sum().over("a"))
+        .get_column("a")
+    )
+    assert_series_equal(result, expected)
+
+    result = df.drop_nulls().select(pl.col("a").sum().over("a")).get_column("a")
+    expected = pl.Series("a", [1, 2, 9, 9, 9, 8, 8])
+    assert_series_equal(result, expected)
+
+    result = (
+        df.drop_nulls()
+        .with_columns(pl.col("a").set_sorted())
+        .select(pl.col("a").sum().over("a"))
+        .get_column("a")
+    )
+    assert_series_equal(result, expected)

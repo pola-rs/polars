@@ -17,13 +17,13 @@ class ExprBinaryNameSpace:
     def __init__(self, expr: Expr):
         self._pyexpr = expr._pyexpr
 
-    def contains(self, lit: bytes) -> Expr:
+    def contains(self, literal: bytes) -> Expr:
         """
         Check if binaries in Series contain a binary substring.
 
         Parameters
         ----------
-        lit
+        literal
             The binary substring to look for
 
         Returns
@@ -31,31 +31,31 @@ class ExprBinaryNameSpace:
         Boolean mask
 
         """
-        return wrap_expr(self._pyexpr.binary_contains(lit))
+        return wrap_expr(self._pyexpr.binary_contains(literal))
 
-    def ends_with(self, sub: bytes) -> Expr:
+    def ends_with(self, suffix: bytes) -> Expr:
         """
         Check if string values end with a binary substring.
 
         Parameters
         ----------
-        sub
+        suffix
             Suffix substring.
 
         """
-        return wrap_expr(self._pyexpr.binary_ends_with(sub))
+        return wrap_expr(self._pyexpr.binary_ends_with(suffix))
 
-    def starts_with(self, sub: bytes) -> Expr:
+    def starts_with(self, prefix: bytes) -> Expr:
         """
         Check if values start with a binary substring.
 
         Parameters
         ----------
-        sub
+        prefix
             Prefix substring.
 
         """
-        return wrap_expr(self._pyexpr.binary_starts_with(sub))
+        return wrap_expr(self._pyexpr.binary_starts_with(prefix))
 
     def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> Expr:
         """

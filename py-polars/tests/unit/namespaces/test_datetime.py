@@ -117,7 +117,7 @@ def test_dt_datetime_date_time_invalid() -> None:
 
 
 @pytest.mark.parametrize(
-    ("temporal_unit", "expected"),
+    ("time_unit", "expected"),
     [
         ("d", pl.Series(values=[18262, 18294], dtype=pl.Int32)),
         ("s", pl.Series(values=[1_577_836_800, 1_580_613_610], dtype=pl.Int64)),
@@ -128,13 +128,13 @@ def test_dt_datetime_date_time_invalid() -> None:
     ],
 )
 def test_strptime_epoch(
-    temporal_unit: TimeUnit,
+    time_unit: TimeUnit,
     expected: pl.Series,
     series_of_str_dates: pl.Series,
 ) -> None:
     s = series_of_str_dates.str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S.%9f")
 
-    assert_series_equal(s.dt.epoch(tu=temporal_unit), expected)
+    assert_series_equal(s.dt.epoch(time_unit=time_unit), expected)
 
 
 def test_strptime_fractional_seconds(series_of_str_dates: pl.Series) -> None:

@@ -1,7 +1,7 @@
 import pytest
 
 import polars as pl
-from polars.exceptions import NoRowsReturned, TooManyRowsReturned
+from polars.exceptions import NoRowsReturnedError, TooManyRowsReturnedError
 
 
 def test_row_tuple() -> None:
@@ -25,10 +25,10 @@ def test_row_tuple() -> None:
     assert row == {"a": "bar", "b": 2, "c": 2.0}
 
     # expected error conditions
-    with pytest.raises(TooManyRowsReturned):
+    with pytest.raises(TooManyRowsReturnedError):
         df.row(by_predicate=pl.col("b").is_in([1, 3, 5]))
 
-    with pytest.raises(NoRowsReturned):
+    with pytest.raises(NoRowsReturnedError):
         df.row(by_predicate=pl.col("a") == "???")
 
     # cannot set both 'index' and 'by_predicate'
@@ -89,15 +89,6 @@ def test_iter_rows() -> None:
     assert next(it) == (3, None, c3)
     with pytest.raises(StopIteration):
         next(it)
-
-    # TODO: Remove this section once iterrows is removed
-    with pytest.deprecated_call():
-        it = df.iterrows()  # type: ignore[attr-defined]
-        assert next(it) == (1, True, c1)
-        assert next(it) == (2, False, c2)
-        assert next(it) == (3, None, c3)
-        with pytest.raises(StopIteration):
-            next(it)
 
     # Apply explicit row-buffer size
     for sz in (0, 1, 2, 3, 4):

@@ -54,6 +54,9 @@ def test_init_inputs(monkeypatch: Any) -> None:
     assert pl.Series([]).dtype == pl.Float32
     assert pl.Series(dtype_if_empty=pl.Utf8).dtype == pl.Utf8
     assert pl.Series([], dtype_if_empty=pl.UInt16).dtype == pl.UInt16
+    assert (
+        pl.Series([None, None, None]).dtype == pl.Float32
+    )  # f32 type used for list with only None
     assert pl.Series([None, None, None], dtype_if_empty=pl.Int8).dtype == pl.Int8
     # note: "== []" will be cast to empty Series with Utf8 dtype.
     assert_series_equal(
@@ -120,10 +123,10 @@ def test_init_inputs(monkeypatch: Any) -> None:
         s = pl.Series("dates", d64, dtype)
         assert s.to_list() == expected
         assert Datetime == s.dtype
-        assert s.dtype.tu == "ns"  # type: ignore[union-attr]
+        assert s.dtype.time_unit == "ns"  # type: ignore[union-attr]
 
     s = pl.Series(values=d64.astype("<M8[ms]"))
-    assert s.dtype.tu == "ms"  # type: ignore[union-attr]
+    assert s.dtype.time_unit == "ms"  # type: ignore[union-attr]
     assert expected == s.to_list()
 
     # pandas
@@ -534,7 +537,7 @@ def test_to_pandas() -> None:
             vals_c = [None if x is pd.NA else x for x in c.tolist()]
             assert vals_c == test_data
         except ModuleNotFoundError:
-            # Skip test if Pandas 1.5.x is not installed.
+            # Skip test if pandas>=1.5.0 or Pyarrow>=8.0.0 is not installed.
             pass
 
 
@@ -596,6 +599,12 @@ def test_arrow() -> None:
     c = pl.Series("c", ["A", "BB", "CCC", None])
     out = c.to_arrow()
     assert out == pa.array(["A", "BB", "CCC", None], type=pa.large_string())
+    assert_series_equal(pl.from_arrow(out), c.rename(""))  # type: ignore[arg-type]
+
+    out = c.to_frame().to_arrow()["c"]
+    assert isinstance(out, (pa.Array, pa.ChunkedArray))
+    assert_series_equal(pl.from_arrow(out), c)  # type: ignore[arg-type]
+    assert_series_equal(pl.from_arrow(out, schema=["x"]), c.rename("x"))  # type: ignore[arg-type]
 
     d = pl.Series("d", [None, None, None], pl.Null)
     out = d.to_arrow()
@@ -931,7 +940,7 @@ def test_shift() -> None:
     assert_series_equal(a.shift(1), pl.Series("a", [None, 1, 2]))
     assert_series_equal(a.shift(-1), pl.Series("a", [2, 3, None]))
     assert_series_equal(a.shift(-2), pl.Series("a", [3, None, None]))
-    assert_series_equal(a.shift_and_fill(-1, 10), pl.Series("a", [2, 3, 10]))
+    assert_series_equal(a.shift_and_fill(10, periods=-1), pl.Series("a", [2, 3, 10]))
 
 
 def test_rolling() -> None:
@@ -1121,6 +1130,7 @@ def test_describe() -> None:
         "min": 1.0,
         "null_count": 0.0,
         "std": 1.0,
+        "median": 2.0,
     }
     assert dict(float_s.describe().rows()) == {  # type: ignore[arg-type]
         "count": 3.0,
@@ -1129,6 +1139,7 @@ def test_describe() -> None:
         "min": 1.3,
         "null_count": 0.0,
         "std": 3.8109491381194442,
+        "median": 4.6,
     }
     assert dict(str_s.describe().rows()) == {  # type: ignore[arg-type]
         "count": 3,
@@ -1144,6 +1155,7 @@ def test_describe() -> None:
         "count": "3",
         "max": "2021-01-03",
         "min": "2021-01-01",
+        "median": "2021-01-02",
         "null_count": "0",
     }
 
@@ -1284,6 +1296,13 @@ def test_rank() -> None:
     )
 
 
+def test_rank_random() -> None:
+    s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
+    assert_series_equal(
+        s.rank("random", seed=1), pl.Series("a", [2, 4, 7, 3, 5, 6, 1], dtype=UInt32)
+    )
+
+
 def test_diff() -> None:
     s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
     expected = pl.Series("a", [1, 1, -1, 0, 1, -3])
@@ -1305,11 +1324,13 @@ def test_pct_change() -> None:
 def test_skew() -> None:
     s = pl.Series("a", [1, 2, 3, 2, 2, 3, 0])
 
-    assert s.skew(True) == pytest.approx(-0.5953924651018018)
-    assert s.skew(False) == pytest.approx(-0.7717168360221258)
+    assert s.skew(bias=True) == pytest.approx(-0.5953924651018018)
+    assert s.skew(bias=False) == pytest.approx(-0.7717168360221258)
 
     df = pl.DataFrame([s])
-    assert np.isclose(df.select(pl.col("a").skew(False))["a"][0], -0.7717168360221258)
+    assert np.isclose(
+        df.select(pl.col("a").skew(bias=False))["a"][0], -0.7717168360221258
+    )
 
 
 def test_kurtosis() -> None:
@@ -1722,17 +1743,6 @@ def test_arg_sort() -> None:
     assert_series_equal(s.arg_sort(descending=True), expected_descending)
 
 
-def test_argsort_deprecated() -> None:
-    s = pl.Series("a", [5, 3, 4, 1, 2])
-    expected = pl.Series("a", [3, 4, 1, 2, 0], dtype=UInt32)
-    with pytest.deprecated_call():
-        assert_series_equal(s.argsort(), expected)
-
-    expected_descending = pl.Series("a", [0, 2, 1, 4, 3], dtype=UInt32)
-    with pytest.deprecated_call():
-        assert_series_equal(s.argsort(descending=True), expected_descending)
-
-
 def test_arg_min_and_arg_max() -> None:
     s = pl.Series("a", [5, 3, 4, 1, 2])
     assert s.arg_min() == 3
@@ -1831,7 +1841,7 @@ def test_sample() -> None:
     s = pl.Series("a", [1, 2, 3, 4, 5])
 
     assert len(s.sample(n=2, seed=0)) == 2
-    assert len(s.sample(frac=0.4, seed=0)) == 2
+    assert len(s.sample(fraction=0.4, seed=0)) == 2
 
     assert len(s.sample(n=2, with_replacement=True, seed=0)) == 2
 
@@ -2389,7 +2399,7 @@ def test_builtin_abs() -> None:
 
 
 @pytest.mark.parametrize(
-    ("value", "unit", "exp", "exp_type"),
+    ("value", "time_unit", "exp", "exp_type"),
     [
         (13285, "d", date(2006, 5, 17), pl.Date),
         (1147880044, "s", datetime(2006, 5, 17, 15, 34, 4), pl.Datetime),
@@ -2409,10 +2419,13 @@ def test_builtin_abs() -> None:
     ],
 )
 def test_from_epoch_expr(
-    value: int, unit: EpochTimeUnit, exp: date | datetime, exp_type: pl.PolarsDataType
+    value: int,
+    time_unit: EpochTimeUnit,
+    exp: date | datetime,
+    exp_type: pl.PolarsDataType,
 ) -> None:
     s = pl.Series("timestamp", [value, None])
-    result = pl.from_epoch(s, unit=unit)
+    result = pl.from_epoch(s, time_unit=time_unit)
 
     expected = pl.Series("timestamp", [exp, None]).cast(exp_type)
     assert_series_equal(result, expected)
@@ -2535,7 +2548,9 @@ def test_map_dict() -> None:
     )
 
     assert_series_equal(
-        s.cast(pl.Int16).map_dict(remap_int, default=pl.first(), dtype=pl.Float32),
+        s.cast(pl.Int16).map_dict(
+            remap_int, default=pl.first(), return_dtype=pl.Float32
+        ),
         pl.Series("s", [-1.0, 22.0, None, 44.0, -5.0], dtype=pl.Float32),
     )
 
@@ -2545,8 +2560,18 @@ def test_map_dict() -> None:
     )
 
     assert_series_equal(
-        s.cast(pl.Int16).map_dict(remap_int, default=9, dtype=pl.Float32),
+        s.cast(pl.Int16).map_dict(remap_int, default=9, return_dtype=pl.Float32),
         pl.Series("s", [9.0, 22.0, 9.0, 44.0, 9.0], dtype=pl.Float32),
+    )
+
+    assert_series_equal(
+        pl.Series("boolean_to_int", [True, False]).map_dict({True: 1, False: 0}),
+        pl.Series("boolean_to_int", [1, 0]),
+    )
+
+    assert_series_equal(
+        pl.Series("boolean_to_str", [True, False]).map_dict({True: "1", False: "0"}),
+        pl.Series("boolean_to_str", ["1", "0"]),
     )
 
 

@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.16.17"
+version = "0.17.1"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -180,3 +180,6 @@ lto = "fat"
 
 [build-dependencies]
 built = { version = "0.6", features = ["chrono", "git2"], optional = true }
+
+[patch.crates-io]
+simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "alignment" }

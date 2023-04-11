@@ -43,7 +43,7 @@ package = "arrow2"
 git = "https://github.com/ritchie46/arrow2"
 # rev = "f258a3e06ac408aebe7a7a497694729dc65a5e46"
 # path = "../arrow2"
-branch = "polars_2023-03-29"
+branch = "polars_2023-04-05"
 version = "0.17"
 default-features = false
 features = [
@@ -59,3 +59,4 @@ features = [
 ]
 [patch.crates-io]
 # packed_simd_2 = { git = "https://github.com/rust-lang/packed_simd", rev = "e57c7ba11386147e6d2cbad7c88f376aab4bdc86" }
+simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "alignment" }

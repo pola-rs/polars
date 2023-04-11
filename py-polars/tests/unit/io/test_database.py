@@ -97,19 +97,31 @@ def test_read_database(
     expected_dtypes: dict[str, pl.DataType],
     expected_dates: list[date | str],
 ) -> None:
-    with tempfile.TemporaryDirectory() as tmpdir_name:
-        test_db = os.path.join(tmpdir_name, "test.db")
-        create_temp_sqlite_db(test_db)
+    try:
+        with tempfile.TemporaryDirectory(prefix=f"pl_{engine}_") as tmpdir_name:
+            test_db = os.path.join(tmpdir_name, "test.db")
+            create_temp_sqlite_db(test_db)
 
-        df = pl.read_database(
-            connection_uri=f"sqlite:///{test_db}",
-            query="SELECT * FROM test_data",
-            engine=engine,
-        )
+            df = pl.read_database(
+                connection_uri=f"sqlite:///{test_db}",
+                query="SELECT * FROM test_data",
+                engine=engine,
+            )
+            assert df.schema == expected_dtypes
+            assert df.shape == (2, 4)
+            assert df["date"].to_list() == expected_dates
 
-        assert df.schema == expected_dtypes
-        assert df.shape == (2, 4)
-        assert df["date"].to_list() == expected_dates
+    except (PermissionError, NotADirectoryError):
+        # Note: Windows can sometimes lock files without a great reason; the situation
+        # is bad enough that python 3.10 added a dedicated 'ignore_cleanup_errors'
+        # parameter to TemporaryDirectory just to handle it, and go out of their
+        # way to mention Windows in the associated docs... ;p
+        # ----------------------------------------------------------------------------
+        # https://docs.python.org/3/library/tempfile.html#tempfile.TemporaryDirectory
+        # ----------------------------------------------------------------------------
+        print(f"tempdir cleanup failed: {tmpdir_name}")
+        if os.name != "nt":
+            raise
 
 
 @pytest.mark.parametrize(

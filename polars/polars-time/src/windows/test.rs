@@ -92,7 +92,7 @@ fn test_groups_large_interval() {
         .collect::<Vec<_>>();
 
     let dur = Duration::parse("2d");
-    let w = Window::new(Duration::parse("2d"), dur.clone(), Duration::from_nsecs(0));
+    let w = Window::new(Duration::parse("2d"), dur, Duration::from_nsecs(0));
     let (groups, _, _) = groupby_windows(
         w,
         &ts,

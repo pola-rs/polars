@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 use std::ops::Mul;
 
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike, Weekday};
+use polars_arrow::error::polars_err;
 use polars_arrow::export::arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
 };
@@ -16,8 +17,7 @@ use polars_core::utils::arrow::temporal_conversions::NANOSECONDS;
 use serde::{Deserialize, Serialize};
 
 use super::calendar::{
-    is_leap_year, last_day_of_month, NS_DAY, NS_HOUR, NS_MICROSECOND, NS_MILLISECOND, NS_MINUTE,
-    NS_SECOND, NS_WEEK,
+    NS_DAY, NS_HOUR, NS_MICROSECOND, NS_MILLISECOND, NS_MINUTE, NS_SECOND, NS_WEEK,
 };
 #[cfg(feature = "timezones")]
 use crate::utils::{localize_datetime, unlocalize_datetime};
@@ -64,21 +64,34 @@ impl Duration {
         }
     }
 
-    /// 1ns // 1 nanosecond
-    /// 1us // 1 microsecond
-    /// 1ms // 1 millisecond
-    /// 1s  // 1 second
-    /// 1m  // 1 minute
-    /// 1h  // 1 hour
-    /// 1d  // 1 day
-    /// 1w  // 1 week
-    /// 1mo // 1 calendar month
-    /// 1y  // 1 calendar year
-    /// 1i  // 1 index value (only for {Int32, Int64} dtypes
+    /// Parse a string into a `Duration`
     ///
-    /// 3d12h4m25s // 3 days, 12 hours, 4 minutes, and 25 seconds
+    /// Strings are composed of a sequence of number-unit pairs, such as `5d` (5 days). A string may begin with a minus
+    /// sign, in which case it is interpreted as a negative duration. Some examples:
     ///
-    /// # Panics if given str is incorrect
+    /// * `"1y"`: 1 year
+    /// * `"-1w2d"`: negative 1 week, 2 days (i.e. -9 days)
+    /// * `"3d12h4m25s"`: 3 days, 12 hours, 4 minutes, and 25 seconds
+    ///
+    /// Aside from a leading minus sign, strings may not contain any characters other than numbers and letters
+    /// (including whitespace).
+    ///
+    /// The available units, in ascending order of magnitude, are as follows:
+    ///
+    /// * `ns`: nanosecond
+    /// * `us`: microsecond
+    /// * `ms`: millisecond
+    /// * `s`:  second
+    /// * `m`:  minute
+    /// * `h`:  hour
+    /// * `d`:  day
+    /// * `w`:  week
+    /// * `mo`: calendar month
+    /// * `y`:  calendar year
+    /// * `i`:  index value (only for {Int32, Int64} dtypes)
+    ///
+    /// # Panics
+    /// If the given str is invalid for any reason.
     pub fn parse(duration: &str) -> Self {
         let num_minus_signs = duration.matches('-').count();
         if num_minus_signs > 1 {
@@ -426,7 +439,9 @@ impl Duration {
                 // recreate a new time from the year and month combination
                 let (year, month) = ((total / 12), ((total % 12) + 1) as u32);
 
-                let dt = new_datetime(year, month, 1, 0, 0, 0, 0);
+                let dt = new_datetime(year, month, 1, 0, 0, 0, 0).ok_or(polars_err!(
+                    ComputeError: format!("date '{}-{}-1' does not exist", year, month)
+                ))?;
                 match tz {
                     #[cfg(feature = "timezones")]
                     Some(tz) => Ok(datetime_to_timestamp(localize_datetime(dt, tz)?)),
@@ -506,7 +521,7 @@ impl Duration {
             };
             let mut year = ts.year();
             let mut month = ts.month() as i32;
-            let mut day = ts.day();
+            let day = ts.day();
             year += (months / 12) as i32;
             month += (months % 12) as i32;
 
@@ -521,23 +536,17 @@ impl Duration {
                 month += 12;
             }
 
-            // Normalize the day if we are past the end of the month.
-            let mut last_day_of_month = last_day_of_month(month);
-            if month == (chrono::Month::February.number_from_month() as i32) && is_leap_year(year) {
-                last_day_of_month += 1;
-            }
-
-            if day > last_day_of_month {
-                day = last_day_of_month
-            }
-
             // Retrieve the original time and construct a data
             // with the new year, month and day
             let hour = ts.hour();
             let minute = ts.minute();
             let sec = ts.second();
             let nsec = ts.nanosecond();
-            let dt = new_datetime(year, month as u32, day, hour, minute, sec, nsec);
+            let dt = new_datetime(year, month as u32, day, hour, minute, sec, nsec).ok_or(
+                polars_err!(
+                    ComputeError: format!("cannot advance '{}' by {} month(s)", ts, d.months)
+                ),
+            )?;
             new_t = match tz {
                 #[cfg(feature = "timezones")]
                 Some(tz) => datetime_to_timestamp(localize_datetime(dt, tz)?),
@@ -642,11 +651,10 @@ fn new_datetime(
     min: u32,
     sec: u32,
     nano: u32,
-) -> NaiveDateTime {
-    let date = NaiveDate::from_ymd_opt(year, month, days).unwrap();
-    let time = NaiveTime::from_hms_nano_opt(hour, min, sec, nano).unwrap();
-
-    NaiveDateTime::new(date, time)
+) -> Option<NaiveDateTime> {
+    let date = NaiveDate::from_ymd_opt(year, month, days)?;
+    let time = NaiveTime::from_hms_nano_opt(hour, min, sec, nano)?;
+    Some(NaiveDateTime::new(date, time))
 }
 
 #[cfg(test)]

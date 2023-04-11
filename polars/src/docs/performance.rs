@@ -56,11 +56,11 @@
 //!
 //! ```rust
 //! use polars::prelude::*;
-//! use polars::toggle_string_cache;
+//! use polars::enable_string_cache;
 //!
 //! fn example(mut df_a: DataFrame, mut df_b: DataFrame) -> PolarsResult<DataFrame> {
 //!     // Set a global string cache
-//!     toggle_string_cache(true);
+//!     enable_string_cache(true);
 //!
 //!     df_a.try_apply("a", |s| s.categorical().cloned())?;
 //!     df_b.try_apply("b", |s| s.categorical().cloned())?;

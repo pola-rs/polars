@@ -13,11 +13,11 @@ Exceptions
     DuplicateError
     InvalidOperationError
     NoDataError
-    NoRowsReturned
-    PanicException
-    RowsException
+    NoRowsReturnedError
+    PolarsPanicError
+    RowsError
     SchemaError
     SchemaFieldNotFoundError
     ShapeError
     StructFieldNotFoundError
-    TooManyRowsReturned
+    TooManyRowsReturnedError

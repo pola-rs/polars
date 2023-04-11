@@ -84,7 +84,7 @@ def test_min_max_2850() -> None:
     maximum = 130352833.0
 
     for _ in range(10):
-        permuted = df.sample(frac=1.0, seed=0)
+        permuted = df.sample(fraction=1.0, seed=0)
         computed = permuted.select(
             [pl.col("id").min().alias("min"), pl.col("id").max().alias("max")]
         )
@@ -159,6 +159,6 @@ def test_max_statistic_parquet_writer() -> None:
     df = pl.arange(0, n, eager=True, dtype=pl.Int64).to_frame()
     f = "/tmp/tmp.parquet"
     df.write_parquet(f, statistics=True, use_pyarrow=False, row_group_size=n)
-    assert pl.scan_parquet(f).filter(pl.col("arange") > n - 3).collect().to_dict(
-        False
-    ) == {"arange": [149998, 149999]}
+    result = pl.scan_parquet(f).filter(pl.col("arange") > n - 3).collect()
+    expected = pl.DataFrame({"arange": [149998, 149999]})
+    assert_frame_equal(result, expected)

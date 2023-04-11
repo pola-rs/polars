@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import inspect
 import os
 import re
 import sys
 from collections.abc import MappingView, Sized
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Generator, Iterable, Sequence, TypeVar
+
+import polars as pl
 
 if sys.version_info >= (3, 8):
     from typing import Literal
@@ -105,8 +108,8 @@ def range_to_series(
 ) -> Series:
     """Fast conversion of the given range to a Series."""
     return F.arange(
-        low=rng.start,
-        high=rng.stop,
+        start=rng.start,
+        end=rng.stop,
         step=rng.step,
         eager=True,
         dtype=dtype,
@@ -266,7 +269,7 @@ def _cast_repr_strings_with_schema(
     for c, tp in schema.items():
         if tp is not None:
             if tp.base_type() == Datetime:
-                tp_base = Datetime(tp.tu)  # type: ignore[union-attr]
+                tp_base = Datetime(tp.time_unit)  # type: ignore[union-attr]
                 d = F.col(c).str.replace(r"[A-Z ]+$", "")
                 cast_cols[c] = (
                     F.when(d.str.lengths() == 19)
@@ -275,8 +278,8 @@ def _cast_repr_strings_with_schema(
                     .str.slice(0, 29)
                     .str.strptime(tp_base, "%Y-%m-%d %H:%M:%S.%9f")
                 )
-                if getattr(tp, "tz", None) is not None:
-                    cast_cols[c] = cast_cols[c].dt.replace_time_zone(tp.tz)  # type: ignore[union-attr]
+                if getattr(tp, "time_zone", None) is not None:
+                    cast_cols[c] = cast_cols[c].dt.replace_time_zone(tp.time_zone)  # type: ignore[union-attr]
             elif tp == Date:
                 cast_cols[c] = F.col(c).str.strptime(tp, "%Y-%m-%d")  # type: ignore[arg-type]
             elif tp == Time:
@@ -295,7 +298,9 @@ def _cast_repr_strings_with_schema(
                     .cast(tp)
                 )
             elif tp == Boolean:
-                cast_cols[c] = F.col(c).map_dict({"true": True, "false": False})
+                cast_cols[c] = F.col(c).map_dict(
+                    {"true": True, "false": False}, return_dtype=Boolean
+                )
             elif tp != df.schema[c]:
                 cast_cols[c] = F.col(c).cast(tp)
 
@@ -333,3 +338,26 @@ class _NoDefault(Enum):
 
 no_default = _NoDefault.no_default  # Sentinel indicating the default value.
 NoDefault = Literal[_NoDefault.no_default]
+
+
+def find_stacklevel() -> int:
+    """
+    Find the first place in the stack that is not inside polars (tests notwithstanding).
+
+    Taken from:
+    https://github.com/pandas-dev/pandas/blob/ab89c53f48df67709a533b6a95ce3d911871a0a8/pandas/util/_exceptions.py#L30-L51
+    """
+    pkg_dir = os.path.dirname(pl.__file__)
+    test_dir = os.path.join(pkg_dir, "tests")
+
+    # https://stackoverflow.com/questions/17407119/python-inspect-stack-is-slow
+    frame = inspect.currentframe()
+    n = 0
+    while frame:
+        fname = inspect.getfile(frame)
+        if fname.startswith(pkg_dir) and not fname.startswith(test_dir):
+            frame = frame.f_back
+            n += 1
+        else:
+            break
+    return n

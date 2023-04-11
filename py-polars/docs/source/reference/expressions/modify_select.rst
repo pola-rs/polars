@@ -8,9 +8,9 @@ Manipulation/selection
 
     Expr.append
     Expr.arg_sort
-    Expr.argsort
     Expr.arg_true
     Expr.backward_fill
+    Expr.bottom_k
     Expr.cast
     Expr.ceil
     Expr.clip

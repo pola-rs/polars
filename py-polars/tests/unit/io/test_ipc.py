@@ -20,15 +20,31 @@ COMPRESSIONS = ["uncompressed", "lz4", "zstd"]
 
 @pytest.mark.parametrize("compression", COMPRESSIONS)
 def test_from_to_buffer(df: pl.DataFrame, compression: IpcCompression) -> None:
-    buf = io.BytesIO()
-    df.write_ipc(buf, compression=compression)
-    buf.seek(0)
-    read_df = pl.read_ipc(buf, use_pyarrow=False)
+    # use an ad-hoc buffer (file=None)
+    buf1 = df.write_ipc(None, compression=compression)
+    assert_frame_equal_local_categoricals(df, pl.read_ipc(buf1, use_pyarrow=False))
+
+    # explicitly supply an existing buffer
+    buf2 = io.BytesIO()
+    df.write_ipc(buf2, compression=compression)
+    buf2.seek(0)
+    read_df = pl.read_ipc(buf2, use_pyarrow=False)
     assert_frame_equal_local_categoricals(df, read_df)
 
 
-@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
-@pytest.mark.parametrize("compression", COMPRESSIONS)
+@pytest.mark.parametrize(
+    "compression",
+    [
+        pytest.param(
+            "uncompressed",
+            marks=pytest.mark.xfail(
+                sys.platform == "win32", reason="Does not work on Windows"
+            ),
+        ),
+        "lz4",
+        "zstd",
+    ],
+)
 @pytest.mark.parametrize("path_type", [str, Path])
 @pytest.mark.write_disk()
 def test_from_to_file(
@@ -103,7 +119,6 @@ def test_ipc_schema(compression: IpcCompression) -> None:
 
 
 @pytest.mark.write_disk()
-@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 @pytest.mark.parametrize("compression", COMPRESSIONS)
 @pytest.mark.parametrize("path_type", [str, Path])
 def test_ipc_schema_from_file(

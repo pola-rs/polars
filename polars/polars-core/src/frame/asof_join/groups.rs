@@ -15,7 +15,7 @@ use crate::frame::hash_join::_check_categorical_src;
 use crate::frame::hash_join::{
     create_probe_table, get_hash_tbl_threaded_join_partitioned, multiple_keys as mk, prepare_bytes,
 };
-use crate::hashing::{df_rows_to_hashes_threaded, AsU64};
+use crate::hashing::{df_rows_to_hashes_threaded_vertical, AsU64};
 use crate::utils::{split_ca, split_df};
 use crate::POOL;
 
@@ -499,8 +499,9 @@ where
     let dfs_a = split_df(a, n_threads).unwrap();
     let dfs_b = split_df(b, n_threads).unwrap();
 
-    let (build_hashes, random_state) = df_rows_to_hashes_threaded(&dfs_b, None).unwrap();
-    let (probe_hashes, _) = df_rows_to_hashes_threaded(&dfs_a, Some(random_state)).unwrap();
+    let (build_hashes, random_state) = df_rows_to_hashes_threaded_vertical(&dfs_b, None).unwrap();
+    let (probe_hashes, _) =
+        df_rows_to_hashes_threaded_vertical(&dfs_a, Some(random_state)).unwrap();
 
     let hash_tbls = mk::create_probe_table(&build_hashes, b);
     // early drop to reduce memory pressure

@@ -159,6 +159,17 @@ impl Series {
     }
 
     pub fn clear(&self) -> Series {
+        // only the inner of objects know their type
+        // so use this hack
+        #[cfg(feature = "object")]
+        if matches!(self.dtype(), DataType::Object(_)) {
+            return if self.is_empty() {
+                self.clone()
+            } else {
+                let av = self.get(0).unwrap();
+                Series::new(self.name(), [av]).slice(0, 0)
+            };
+        }
         Series::new_empty(self.name(), self.dtype())
     }
 
@@ -695,8 +706,8 @@ impl Series {
     }
 
     #[cfg(feature = "rank")]
-    pub fn rank(&self, options: RankOptions) -> Series {
-        rank(self, options.method, options.descending)
+    pub fn rank(&self, options: RankOptions, seed: Option<u64>) -> Series {
+        rank(self, options.method, options.descending, seed)
     }
 
     /// Cast throws an error if conversion had overflows
@@ -1033,7 +1044,7 @@ mod test {
     }
     #[test]
     fn new_series_from_arrow_primitive_array() {
-        let array = UInt32Array::from_slice(&[1, 2, 3, 4, 5]);
+        let array = UInt32Array::from_slice([1, 2, 3, 4, 5]);
         let array_ref: ArrayRef = Box::new(array);
 
         let _ = Series::try_from(("foo", array_ref)).unwrap();

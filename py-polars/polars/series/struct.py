@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING, Sequence
 
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_df
-from polars.utils.decorators import redirect
 from polars.utils.various import sphinx_accessor
 
 if TYPE_CHECKING:
@@ -17,7 +16,6 @@ elif os.getenv("BUILDING_SPHINX_DOCS"):
 
 
 @expr_dispatch
-@redirect({"to_frame": "unnest"})
 class StructNameSpace:
     """Series.struct namespace."""
 

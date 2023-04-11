@@ -7,7 +7,7 @@ import os
 import random
 import warnings
 from datetime import timedelta
-from functools import reduce
+from functools import partial, reduce
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -25,8 +25,12 @@ from typing import (
 from polars import functions as F
 from polars import internals as pli
 from polars.datatypes import (
+    FLOAT_DTYPES,
+    INTEGER_DTYPES,
+    Categorical,
     Struct,
     UInt32,
+    Utf8,
     is_polars_dtype,
     py_type_to_dtype,
 )
@@ -41,13 +45,13 @@ from polars.expr.string import ExprStringNameSpace
 from polars.expr.struct import ExprStructNameSpace
 from polars.utils._parse_expr_input import expr_to_lit_or_expr, selection_to_pyexpr_list
 from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
+from polars.utils.decorators import deprecated_alias
 from polars.utils.meta import threadpool_size
-from polars.utils.various import sphinx_accessor
+from polars.utils.various import find_stacklevel, sphinx_accessor
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arg_where as py_arg_where
-
+    from polars.polars import reduce as pyreduce
 if TYPE_CHECKING:
     import sys
 
@@ -117,6 +121,7 @@ class Expr:
     def __abs__(self) -> Self:
         return self.abs()
 
+    # operators
     def __add__(self, other: Any) -> Self:
         return self._from_pyexpr(self._pyexpr + self._to_pyexpr(other))
 
@@ -204,69 +209,6 @@ class Expr:
     def __rxor__(self, other: Expr) -> Self:
         return self._from_pyexpr(self._pyexpr._xor(self._to_pyexpr(other)))
 
-    # conjunction
-    def and_(self, *others: Any) -> Self:
-        """Method equivalent of operator expression ``expr & other1 & other2 & ...``."""
-        return reduce(operator.and_, (self,) + others)
-
-    def or_(self, *others: Any) -> Self:
-        """Method equivalent of operator expression ``expr | other1 | other2 | ...``."""
-        return reduce(operator.or_, (self,) + others)
-
-    # comparison
-    def eq(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr == other``."""
-        return self.__eq__(other)
-
-    def ge(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr >= other``."""
-        return self.__ge__(other)
-
-    def gt(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr > other``."""
-        return self.__gt__(other)
-
-    def le(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr <= other``."""
-        return self.__le__(other)
-
-    def lt(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr < other``."""
-        return self.__lt__(other)
-
-    def ne(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr != other``."""
-        return self.__ne__(other)
-
-    # math / binary
-    def add(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr + other``."""
-        return self.__add__(other)
-
-    def floordiv(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr // other``."""
-        return self.__floordiv__(other)
-
-    def mod(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr % other``."""
-        return self.__mod__(other)
-
-    def mul(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr * other``."""
-        return self.__mul__(other)
-
-    def sub(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr - other``."""
-        return self.__sub__(other)
-
-    def truediv(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr / other``."""
-        return self.__truediv__(other)
-
-    def xor(self, other: Any) -> Self:
-        """Method equivalent of operator expression ``expr ^ other``."""
-        return self.__xor__(other)
-
     # state
     def __getstate__(self) -> Any:
         return self._pyexpr.__getstate__()
@@ -282,9 +224,13 @@ class Expr:
         """Numpy universal functions."""
         num_expr = sum(isinstance(inp, Expr) for inp in inputs)
         if num_expr > 1:
-            raise ValueError(
-                f"Numpy ufunc can only be used with one expression, {num_expr} given. Use `pl.reduce` to call numpy functions over multiple expressions."
-            )
+            if num_expr < len(inputs):
+                raise ValueError(
+                    "Numpy ufunc with more than one expression can only be used if all non-expression inputs are provided as keyword arguments only"
+                )
+
+            exprs = selection_to_pyexpr_list(inputs)
+            return self._from_pyexpr(pyreduce(partial(ufunc, **kwargs), exprs))
 
         def function(s: Series) -> Series:  # pragma: no cover
             args = [inp if not isinstance(inp, Expr) else s for inp in inputs]
@@ -301,7 +247,8 @@ class Expr:
         - :func:`polars.datatypes.Time` -> :func:`polars.datatypes.Int64`
         - :func:`polars.datatypes.Duration` -> :func:`polars.datatypes.Int64`
         - :func:`polars.datatypes.Categorical` -> :func:`polars.datatypes.UInt32`
-        - Other data types will be left unchanged.
+
+        Other data types will be left unchanged.
 
         Examples
         --------
@@ -835,7 +782,6 @@ class Expr:
         """  # noqa: W505
         return self._from_pyexpr(self._pyexpr.suffix(suffix))
 
-    @deprecated_alias(f="function")
     def map_alias(self, function: Callable[[str], str]) -> Self:
         """
         Rename the output of an expression by mapping a function over the root name.
@@ -1215,7 +1161,7 @@ class Expr:
             length = F.lit(length)
         return self._from_pyexpr(self._pyexpr.slice(offset._pyexpr, length._pyexpr))
 
-    def append(self, other: Expr, upcast: bool = True) -> Self:
+    def append(self, other: Expr, *, upcast: bool = True) -> Self:
         """
         Append expressions.
 
@@ -1343,7 +1289,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.drop_nans())
 
-    def cumsum(self, reverse: bool = False) -> Self:
+    def cumsum(self, *, reverse: bool = False) -> Self:
         """
         Get an array with the cumulative sum computed at every element.
 
@@ -1409,7 +1355,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.cumsum(reverse))
 
-    def cumprod(self, reverse: bool = False) -> Self:
+    def cumprod(self, *, reverse: bool = False) -> Self:
         """
         Get an array with the cumulative product computed at every element.
 
@@ -1447,7 +1393,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.cumprod(reverse))
 
-    def cummin(self, reverse: bool = False) -> Self:
+    def cummin(self, *, reverse: bool = False) -> Self:
         """
         Get an array with the cumulative min computed at every element.
 
@@ -1480,7 +1426,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.cummin(reverse))
 
-    def cummax(self, reverse: bool = False) -> Self:
+    def cummax(self, *, reverse: bool = False) -> Self:
         """
         Get an array with the cumulative max computed at every element.
 
@@ -1541,7 +1487,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.cummax(reverse))
 
-    def cumcount(self, reverse: bool = False) -> Self:
+    def cumcount(self, *, reverse: bool = False) -> Self:
         """
         Get an array with the cumulative count computed at every element.
 
@@ -1713,7 +1659,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.mode())
 
-    def cast(self, dtype: PolarsDataType | type[Any], strict: bool = True) -> Self:
+    def cast(self, dtype: PolarsDataType | type[Any], *, strict: bool = True) -> Self:
         """
         Cast between data types.
 
@@ -1754,9 +1700,7 @@ class Expr:
         dtype = py_type_to_dtype(dtype)
         return self._from_pyexpr(self._pyexpr.cast(dtype, strict))
 
-    @deprecated_alias(reverse="descending")
-    @deprecate_nonkeyword_arguments(stacklevel=3)
-    def sort(self, descending: bool = False, nulls_last: bool = False) -> Self:
+    def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Self:
         """
         Sort this column.
 
@@ -1836,12 +1780,9 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.sort_with(descending, nulls_last))
 
-    @deprecated_alias(reverse="descending")
-    def top_k(self, k: int = 5, descending: bool = False) -> Self:
+    def top_k(self, k: int = 5) -> Self:
         r"""
         Return the `k` largest elements.
-
-        If 'descending=True` the smallest elements will be given.
 
         This has time complexity:
 
@@ -1851,8 +1792,10 @@ class Expr:
         ----------
         k
             Number of elements to return.
-        descending
-            Return the smallest elements.
+
+        See Also
+        --------
+        bottom_k
 
         Examples
         --------
@@ -1864,7 +1807,7 @@ class Expr:
         >>> df.select(
         ...     [
         ...         pl.col("value").top_k().alias("top_k"),
-        ...         pl.col("value").top_k(descending=True).alias("bottom_k"),
+        ...         pl.col("value").bottom_k().alias("bottom_k"),
         ...     ]
         ... )
         shape: (5, 2)
@@ -1881,11 +1824,55 @@ class Expr:
         └───────┴──────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.top_k(k, descending))
+        return self._from_pyexpr(self._pyexpr.top_k(k))
 
-    @deprecated_alias(reverse="descending")
-    @deprecate_nonkeyword_arguments(stacklevel=3)
-    def arg_sort(self, descending: bool = False, nulls_last: bool = False) -> Self:
+    def bottom_k(self, k: int = 5) -> Self:
+        r"""
+        Return the `k` smallest elements.
+
+        This has time complexity:
+
+        .. math:: O(n + k \\log{}n - \frac{k}{2})
+
+        Parameters
+        ----------
+        k
+            Number of elements to return.
+
+        See Also
+        --------
+        top_k
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "value": [1, 98, 2, 3, 99, 4],
+        ...     }
+        ... )
+        >>> df.select(
+        ...     [
+        ...         pl.col("value").top_k().alias("top_k"),
+        ...         pl.col("value").bottom_k().alias("bottom_k"),
+        ...     ]
+        ... )
+        shape: (5, 2)
+        ┌───────┬──────────┐
+        │ top_k ┆ bottom_k │
+        │ ---   ┆ ---      │
+        │ i64   ┆ i64      │
+        ╞═══════╪══════════╡
+        │ 99    ┆ 1        │
+        │ 98    ┆ 2        │
+        │ 4     ┆ 3        │
+        │ 3     ┆ 4        │
+        │ 2     ┆ 98       │
+        └───────┴──────────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.bottom_k(k))
+
+    def arg_sort(self, *, descending: bool = False, nulls_last: bool = False) -> Self:
         """
         Get the index values that would sort this column.
 
@@ -2015,7 +2002,6 @@ class Expr:
         element = expr_to_lit_or_expr(element, str_to_lit=False)
         return self._from_pyexpr(self._pyexpr.search_sorted(element._pyexpr, side))
 
-    @deprecated_alias(reverse="descending")
     def sort_by(
         self,
         by: IntoExpr | Iterable[IntoExpr],
@@ -2140,11 +2126,15 @@ class Expr:
         └───────┴────────┴────────┘
 
         """
-        if isinstance(descending, bool):
-            descending = [descending]
         by = selection_to_pyexpr_list(by)
         if more_by:
             by.extend(selection_to_pyexpr_list(more_by))
+        if isinstance(descending, bool):
+            descending = [descending]
+        elif len(by) != len(descending):
+            raise ValueError(
+                f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
+            )
         return self._from_pyexpr(self._pyexpr.sort_by(by, descending))
 
     def take(
@@ -2228,23 +2218,24 @@ class Expr:
 
     def shift_and_fill(
         self,
-        periods: int,
         fill_value: int | float | bool | str | Expr | list[Any],
+        *,
+        periods: int = 1,
     ) -> Self:
         """
         Shift the values by a given period and fill the resulting null values.
 
         Parameters
         ----------
-        periods
-            Number of places to shift (may be negative).
         fill_value
             Fill None values with the result of this expression.
+        periods
+            Number of places to shift (may be negative).
 
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 2, 3, 4]})
-        >>> df.select(pl.col("foo").shift_and_fill(1, "a"))
+        >>> df.select(pl.col("foo").shift_and_fill("a", periods=1))
         shape: (4, 1)
         ┌─────┐
         │ foo │
@@ -2345,7 +2336,7 @@ class Expr:
                 self._pyexpr.fill_null_with_strategy(strategy, limit)
             )
 
-    def fill_nan(self, fill_value: int | float | Expr | None) -> Self:
+    def fill_nan(self, value: int | float | Expr | None) -> Self:
         """
         Fill floating point NaN value with a fill value.
 
@@ -2370,7 +2361,7 @@ class Expr:
         └──────┴──────┘
 
         """
-        fill_value = expr_to_lit_or_expr(fill_value, str_to_lit=True)
+        fill_value = expr_to_lit_or_expr(value, str_to_lit=True)
         return self._from_pyexpr(self._pyexpr.fill_nan(fill_value._pyexpr))
 
     def forward_fill(self, limit: int | None = None) -> Self:
@@ -2780,7 +2771,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.arg_unique())
 
-    def unique(self, maintain_order: bool = False) -> Self:
+    def unique(self, *, maintain_order: bool = False) -> Self:
         """
         Get unique values of this expression.
 
@@ -3177,14 +3168,11 @@ class Expr:
         """
         return self.filter(predicate)
 
-    @deprecated_alias(f="function")
-    @deprecate_nonkeyword_arguments(
-        allowed_args=["self", "function", "return_dtype"], stacklevel=3
-    )
     def map(
         self,
         function: Callable[[Series], Series | Any],
         return_dtype: PolarsDataType | None = None,
+        *,
         agg_list: bool = False,
     ) -> Self:
         """
@@ -3230,17 +3218,13 @@ class Expr:
             return_dtype = py_type_to_dtype(return_dtype)
         return self._from_pyexpr(self._pyexpr.map(function, return_dtype, agg_list))
 
-    @deprecated_alias(f="function")
-    @deprecate_nonkeyword_arguments(
-        allowed_args=["self", "function", "return_dtype"], stacklevel=3
-    )
     def apply(
         self,
         function: Callable[[Series], Series] | Callable[[Any], Any],
         return_dtype: PolarsDataType | None = None,
+        *,
         skip_nulls: bool = True,
         pass_name: bool = False,
-        *,
         strategy: ApplyStrategy = "thread_local",
     ) -> Self:
         """
@@ -3271,8 +3255,8 @@ class Expr:
             Lambda/ function to apply.
         return_dtype
             Dtype of the output Series.
-            If not set, polars will assume that
-            the dtype remains unchanged.
+            If not set, the dtype will be
+            ``polars.Unknown``.
         skip_nulls
             Don't apply the function over values
             that contain nulls. This is faster.
@@ -3455,7 +3439,7 @@ class Expr:
             " under the list and string namespaces. Use `.arr.explode()` or"
             " `.str.explode()` instead.",
             DeprecationWarning,
-            stacklevel=2,
+            stacklevel=find_stacklevel(),
         )
         return self._from_pyexpr(self._pyexpr.explode())
 
@@ -3481,7 +3465,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.take_every(n))
 
-    def head(self, n: int = 10) -> Self:
+    def head(self, n: int | Expr = 10) -> Self:
         """
         Get the first `n` rows.
 
@@ -3506,9 +3490,9 @@ class Expr:
         └─────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.head(n))
+        return self.slice(0, n)
 
-    def tail(self, n: int = 10) -> Self:
+    def tail(self, n: int | Expr = 10) -> Self:
         """
         Get the last `n` rows.
 
@@ -3533,50 +3517,640 @@ class Expr:
         └─────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.tail(n))
+        offset = -expr_to_lit_or_expr(n, str_to_lit=False)
+        return self.slice(offset, n)
 
-    def limit(self, n: int = 10) -> Self:
+    def limit(self, n: int | Expr = 10) -> Self:
         """
-        Get the first `n` rows.
-
-        Alias for :func:`Expr.head`.
+        Get the first `n` rows (alias for :func:`Expr.head`).
 
         Parameters
         ----------
         n
             Number of rows to return.
 
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7]})
+        >>> df.limit(3)
+        shape: (3, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        │ 2   │
+        │ 3   │
+        └─────┘
+
         """
         return self.head(n)
 
+    def and_(self, *others: Any) -> Self:
+        """
+        Method equivalent of logical "and" operator ``expr & other & ...``.
+
+        Parameters
+        ----------
+        *others
+            One or more logical boolean expressions to evaluate/combine.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "x": [5, 6, 7, 4, 8],
+        ...         "y": [1.5, 2.5, 1.0, 4.0, -5.75],
+        ...         "z": [-9, 2, -1, 4, 8],
+        ...     }
+        ... )
+        >>> df.select(
+        ...     (pl.col("x") >= pl.col("z"))
+        ...     .and_(
+        ...         pl.col("y") >= pl.col("z"),
+        ...         pl.col("y") == pl.col("y"),
+        ...         pl.col("z") <= pl.col("x"),
+        ...         pl.col("y") != pl.col("x"),
+        ...     )
+        ...     .alias("all")
+        ... )
+        shape: (5, 1)
+        ┌───────┐
+        │ all   │
+        │ ---   │
+        │ bool  │
+        ╞═══════╡
+        │ true  │
+        │ true  │
+        │ true  │
+        │ false │
+        │ false │
+        └───────┘
+
+        """
+        return reduce(operator.and_, (self,) + others)
+
+    def or_(self, *others: Any) -> Self:
+        """
+        Method equivalent of logical "or" operator ``expr | other | ...``.
+
+        Parameters
+        ----------
+        *others
+            One or more logical boolean expressions to evaluate/combine.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "x": [5, 6, 7, 4, 8],
+        ...         "y": [1.5, 2.5, 1.0, 4.0, -5.75],
+        ...         "z": [-9, 2, -1, 4, 8],
+        ...     }
+        ... )
+        >>> df.select(
+        ...     (pl.col("x") == pl.col("y"))
+        ...     .or_(
+        ...         pl.col("x") == pl.col("y"),
+        ...         pl.col("y") == pl.col("z"),
+        ...         pl.col("y").cast(int) == pl.col("z"),
+        ...     )
+        ...     .alias("any")
+        ... )
+        shape: (5, 1)
+        ┌───────┐
+        │ any   │
+        │ ---   │
+        │ bool  │
+        ╞═══════╡
+        │ false │
+        │ true  │
+        │ false │
+        │ true  │
+        │ false │
+        └───────┘
+
+        """
+        return reduce(operator.or_, (self,) + others)
+
+    def eq(self, other: Any) -> Self:
+        """
+        Method equivalent of equality operator ``expr == other``.
+
+        Parameters
+        ----------
+        other
+            A literal or expression value to compare with.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "x": [1.0, 2.0, float("nan"), 4.0],
+        ...         "y": [2.0, 2.0, float("nan"), 4.0],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("x").eq(pl.col("y")).alias("x == y"),
+        ... )
+        shape: (4, 3)
+        ┌─────┬─────┬────────┐
+        │ x   ┆ y   ┆ x == y │
+        │ --- ┆ --- ┆ ---    │
+        │ f64 ┆ f64 ┆ bool   │
+        ╞═════╪═════╪════════╡
+        │ 1.0 ┆ 2.0 ┆ false  │
+        │ 2.0 ┆ 2.0 ┆ true   │
+        │ NaN ┆ NaN ┆ false  │
+        │ 4.0 ┆ 4.0 ┆ true   │
+        └─────┴─────┴────────┘
+
+        """
+        return self.__eq__(other)
+
+    def ge(self, other: Any) -> Self:
+        """
+        Method equivalent of "greater than or equal" operator ``expr >= other``.
+
+        Parameters
+        ----------
+        other
+            A literal or expression value to compare with.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "x": [5.0, 4.0, float("nan"), 2.0],
+        ...         "y": [5.0, 3.0, float("nan"), 1.0],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("x").ge(pl.col("y")).alias("x >= y"),
+        ... )
+        shape: (4, 3)
+        ┌─────┬─────┬────────┐
+        │ x   ┆ y   ┆ x >= y │
+        │ --- ┆ --- ┆ ---    │
+        │ f64 ┆ f64 ┆ bool   │
+        ╞═════╪═════╪════════╡
+        │ 5.0 ┆ 5.0 ┆ true   │
+        │ 4.0 ┆ 3.0 ┆ true   │
+        │ NaN ┆ NaN ┆ false  │
+        │ 2.0 ┆ 1.0 ┆ true   │
+        └─────┴─────┴────────┘
+
+        """
+        return self.__ge__(other)
+
+    def gt(self, other: Any) -> Self:
+        """
+        Method equivalent of "greater than" operator ``expr > other``.
+
+        Parameters
+        ----------
+        other
+            A literal or expression value to compare with.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "x": [5.0, 4.0, float("nan"), 2.0],
+        ...         "y": [5.0, 3.0, float("nan"), 1.0],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("x").gt(pl.col("y")).alias("x > y"),
+        ... )
+        shape: (4, 3)
+        ┌─────┬─────┬───────┐
+        │ x   ┆ y   ┆ x > y │
+        │ --- ┆ --- ┆ ---   │
+        │ f64 ┆ f64 ┆ bool  │
+        ╞═════╪═════╪═══════╡
+        │ 5.0 ┆ 5.0 ┆ false │
+        │ 4.0 ┆ 3.0 ┆ true  │
+        │ NaN ┆ NaN ┆ false │
+        │ 2.0 ┆ 1.0 ┆ true  │
+        └─────┴─────┴───────┘
+
+        """
+        return self.__gt__(other)
+
+    def le(self, other: Any) -> Self:
+        """
+        Method equivalent of "less than or equal" operator ``expr <= other``.
+
+        Parameters
+        ----------
+        other
+            A literal or expression value to compare with.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "x": [5.0, 4.0, float("nan"), 0.5],
+        ...         "y": [5.0, 3.5, float("nan"), 2.0],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("x").le(pl.col("y")).alias("x <= y"),
+        ... )
+        shape: (4, 3)
+        ┌─────┬─────┬────────┐
+        │ x   ┆ y   ┆ x <= y │
+        │ --- ┆ --- ┆ ---    │
+        │ f64 ┆ f64 ┆ bool   │
+        ╞═════╪═════╪════════╡
+        │ 5.0 ┆ 5.0 ┆ true   │
+        │ 4.0 ┆ 3.5 ┆ false  │
+        │ NaN ┆ NaN ┆ false  │
+        │ 0.5 ┆ 2.0 ┆ true   │
+        └─────┴─────┴────────┘
+
+        """
+        return self.__le__(other)
+
+    def lt(self, other: Any) -> Self:
+        """
+        Method equivalent of "less than" operator ``expr < other``.
+
+        Parameters
+        ----------
+        other
+            A literal or expression value to compare with.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "x": [1.0, 2.0, float("nan"), 3.0],
+        ...         "y": [2.0, 2.0, float("nan"), 4.0],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("x").lt(pl.col("y")).alias("x < y"),
+        ... )
+        shape: (4, 3)
+        ┌─────┬─────┬───────┐
+        │ x   ┆ y   ┆ x < y │
+        │ --- ┆ --- ┆ ---   │
+        │ f64 ┆ f64 ┆ bool  │
+        ╞═════╪═════╪═══════╡
+        │ 1.0 ┆ 2.0 ┆ true  │
+        │ 2.0 ┆ 2.0 ┆ false │
+        │ NaN ┆ NaN ┆ false │
+        │ 3.0 ┆ 4.0 ┆ true  │
+        └─────┴─────┴───────┘
+
+        """
+        return self.__lt__(other)
+
+    def ne(self, other: Any) -> Self:
+        """
+        Method equivalent of inequality operator ``expr != other``.
+
+        Parameters
+        ----------
+        other
+            A literal or expression value to compare with.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "x": [1.0, 2.0, float("nan"), 4.0],
+        ...         "y": [2.0, 2.0, float("nan"), 4.0],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("x").ne(pl.col("y")).alias("x != y"),
+        ... )
+        shape: (4, 3)
+        ┌─────┬─────┬────────┐
+        │ x   ┆ y   ┆ x != y │
+        │ --- ┆ --- ┆ ---    │
+        │ f64 ┆ f64 ┆ bool   │
+        ╞═════╪═════╪════════╡
+        │ 1.0 ┆ 2.0 ┆ true   │
+        │ 2.0 ┆ 2.0 ┆ false  │
+        │ NaN ┆ NaN ┆ true   │
+        │ 4.0 ┆ 4.0 ┆ false  │
+        └─────┴─────┴────────┘
+
+        """
+        return self.__ne__(other)
+
+    def add(self, other: Any) -> Self:
+        """
+        Method equivalent of addition operator ``expr + other``.
+
+        Parameters
+        ----------
+        other
+            numeric or string value; accepts expression input.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [1, 2, 3, 4, 5]})
+        >>> df.with_columns(
+        ...     pl.col("x").add(2).alias("x+int"),
+        ...     pl.col("x").add(pl.col("x").cumprod()).alias("x+expr"),
+        ... )
+        shape: (5, 3)
+        ┌─────┬───────┬────────┐
+        │ x   ┆ x+int ┆ x+expr │
+        │ --- ┆ ---   ┆ ---    │
+        │ i64 ┆ i64   ┆ i64    │
+        ╞═════╪═══════╪════════╡
+        │ 1   ┆ 3     ┆ 2      │
+        │ 2   ┆ 4     ┆ 4      │
+        │ 3   ┆ 5     ┆ 9      │
+        │ 4   ┆ 6     ┆ 28     │
+        │ 5   ┆ 7     ┆ 125    │
+        └─────┴───────┴────────┘
+
+        >>> df = pl.DataFrame(
+        ...     {"x": ["a", "d", "g"], "y": ["b", "e", "h"], "z": ["c", "f", "i"]}
+        ... )
+        >>> df.with_columns(pl.col("x").add(pl.col("y")).add(pl.col("z")).alias("xyz"))
+        shape: (3, 4)
+        ┌─────┬─────┬─────┬─────┐
+        │ x   ┆ y   ┆ z   ┆ xyz │
+        │ --- ┆ --- ┆ --- ┆ --- │
+        │ str ┆ str ┆ str ┆ str │
+        ╞═════╪═════╪═════╪═════╡
+        │ a   ┆ b   ┆ c   ┆ abc │
+        │ d   ┆ e   ┆ f   ┆ def │
+        │ g   ┆ h   ┆ i   ┆ ghi │
+        └─────┴─────┴─────┴─────┘
+
+        """
+        return self.__add__(other)
+
+    def floordiv(self, other: Any) -> Self:
+        """
+        Method equivalent of integer division operator ``expr // other``.
+
+        Parameters
+        ----------
+        other
+            Numeric literal or expression value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [1, 2, 3, 4, 5]})
+        >>> df.with_columns(
+        ...     pl.col("x").truediv(2).alias("x/2"),
+        ...     pl.col("x").floordiv(2).alias("x//2"),
+        ... )
+        shape: (5, 3)
+        ┌─────┬─────┬──────┐
+        │ x   ┆ x/2 ┆ x//2 │
+        │ --- ┆ --- ┆ ---  │
+        │ i64 ┆ f64 ┆ i64  │
+        ╞═════╪═════╪══════╡
+        │ 1   ┆ 0.5 ┆ 0    │
+        │ 2   ┆ 1.0 ┆ 1    │
+        │ 3   ┆ 1.5 ┆ 1    │
+        │ 4   ┆ 2.0 ┆ 2    │
+        │ 5   ┆ 2.5 ┆ 2    │
+        └─────┴─────┴──────┘
+
+        See Also
+        --------
+        truediv
+
+        """
+        return self.__floordiv__(other)
+
+    def mod(self, other: Any) -> Self:
+        """
+        Method equivalent of modulus operator ``expr % other``.
+
+        Parameters
+        ----------
+        other
+            Numeric literal or expression value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [0, 1, 2, 3, 4]})
+        >>> df.with_columns(pl.col("x").mod(2).alias("x%2"))
+        shape: (5, 2)
+        ┌─────┬─────┐
+        │ x   ┆ x%2 │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 0   ┆ 0   │
+        │ 1   ┆ 1   │
+        │ 2   ┆ 0   │
+        │ 3   ┆ 1   │
+        │ 4   ┆ 0   │
+        └─────┴─────┘
+
+        """
+        return self.__mod__(other)
+
+    def mul(self, other: Any) -> Self:
+        """
+        Method equivalent of multiplication operator ``expr * other``.
+
+        Parameters
+        ----------
+        other
+            Numeric literal or expression value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [1, 2, 4, 8, 16]})
+        >>> df.with_columns(
+        ...     pl.col("x").mul(2).alias("x*2"),
+        ...     pl.col("x").mul(pl.col("x").log(2)).alias("x * xlog2"),
+        ... )
+        shape: (5, 3)
+        ┌─────┬─────┬───────────┐
+        │ x   ┆ x*2 ┆ x * xlog2 │
+        │ --- ┆ --- ┆ ---       │
+        │ i64 ┆ i64 ┆ f64       │
+        ╞═════╪═════╪═══════════╡
+        │ 1   ┆ 2   ┆ 0.0       │
+        │ 2   ┆ 4   ┆ 2.0       │
+        │ 4   ┆ 8   ┆ 8.0       │
+        │ 8   ┆ 16  ┆ 24.0      │
+        │ 16  ┆ 32  ┆ 64.0      │
+        └─────┴─────┴───────────┘
+
+        """
+        return self.__mul__(other)
+
+    def sub(self, other: Any) -> Self:
+        """
+        Method equivalent of subtraction operator ``expr - other``.
+
+        Parameters
+        ----------
+        other
+            Numeric literal or expression value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [0, 1, 2, 3, 4]})
+        >>> df.with_columns(
+        ...     pl.col("x").sub(2).alias("x-2"),
+        ...     pl.col("x").sub(pl.col("x").cumsum()).alias("x-expr"),
+        ... )
+        shape: (5, 3)
+        ┌─────┬─────┬────────┐
+        │ x   ┆ x-2 ┆ x-expr │
+        │ --- ┆ --- ┆ ---    │
+        │ i64 ┆ i64 ┆ i64    │
+        ╞═════╪═════╪════════╡
+        │ 0   ┆ -2  ┆ 0      │
+        │ 1   ┆ -1  ┆ 0      │
+        │ 2   ┆ 0   ┆ -1     │
+        │ 3   ┆ 1   ┆ -3     │
+        │ 4   ┆ 2   ┆ -6     │
+        └─────┴─────┴────────┘
+
+        """
+        return self.__sub__(other)
+
+    def truediv(self, other: Any) -> Self:
+        """
+        Method equivalent of float division operator ``expr / other``.
+
+        Parameters
+        ----------
+        other
+            Numeric literal or expression value.
+
+        Notes
+        -----
+        Zero-division behaviour follows IEEE-754:
+
+        0/0: Invalid operation - mathematically undefined, returns NaN.
+        n/0: On finite operands gives an exact infinite result, eg: ±infinity.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={"x": [-2, -1, 0, 1, 2], "y": [0.5, 0.0, 0.0, -4.0, -0.5]}
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("x").truediv(2).alias("x/2"),
+        ...     pl.col("x").truediv(pl.col("y")).alias("x/y"),
+        ... )
+        shape: (5, 4)
+        ┌─────┬──────┬──────┬───────┐
+        │ x   ┆ y    ┆ x/2  ┆ x/y   │
+        │ --- ┆ ---  ┆ ---  ┆ ---   │
+        │ i64 ┆ f64  ┆ f64  ┆ f64   │
+        ╞═════╪══════╪══════╪═══════╡
+        │ -2  ┆ 0.5  ┆ -1.0 ┆ -4.0  │
+        │ -1  ┆ 0.0  ┆ -0.5 ┆ -inf  │
+        │ 0   ┆ 0.0  ┆ 0.0  ┆ NaN   │
+        │ 1   ┆ -4.0 ┆ 0.5  ┆ -0.25 │
+        │ 2   ┆ -0.5 ┆ 1.0  ┆ -4.0  │
+        └─────┴──────┴──────┴───────┘
+
+        See Also
+        --------
+        floordiv
+
+        """
+        return self.__truediv__(other)
+
     def pow(self, exponent: int | float | Series | Expr) -> Self:
         """
-        Raise to the power of the given exponent.
+        Method equivalent of exponentiation operator ``expr ** exponent``.
 
         Parameters
         ----------
         exponent
-            The exponent. Accepts expression input.
+            Numeric literal or expression exponent value.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4]})
-        >>> df.select(pl.col("foo").pow(3))
-        shape: (4, 1)
-        ┌──────┐
-        │ foo  │
-        │ ---  │
-        │ f64  │
-        ╞══════╡
-        │ 1.0  │
-        │ 8.0  │
-        │ 27.0 │
-        │ 64.0 │
-        └──────┘
+        >>> df = pl.DataFrame({"x": [1, 2, 4, 8]})
+        >>> df.with_columns(
+        ...     pl.col("x").pow(3).alias("cube"),
+        ...     pl.col("x").pow(pl.col("x").log(2)).alias("x ** xlog2"),
+        ... )
+        shape: (4, 3)
+        ┌─────┬───────┬────────────┐
+        │ x   ┆ cube  ┆ x ** xlog2 │
+        │ --- ┆ ---   ┆ ---        │
+        │ i64 ┆ f64   ┆ f64        │
+        ╞═════╪═══════╪════════════╡
+        │ 1   ┆ 1.0   ┆ 1.0        │
+        │ 2   ┆ 8.0   ┆ 2.0        │
+        │ 4   ┆ 64.0  ┆ 16.0       │
+        │ 8   ┆ 512.0 ┆ 512.0      │
+        └─────┴───────┴────────────┘
 
         """
         exponent = expr_to_lit_or_expr(exponent)
         return self._from_pyexpr(self._pyexpr.pow(exponent._pyexpr))
+
+    def xor(self, other: Any) -> Self:
+        """
+        Method equivalent of logical exclusive-or operator ``expr ^ other``.
+
+        Parameters
+        ----------
+        other
+            Integer or boolean value; accepts expression input.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"x": [True, False, True, False], "y": [True, True, False, False]}
+        ... )
+        >>> df.with_columns(pl.col("x").xor(pl.col("y")).alias("x ^ y"))
+        shape: (4, 3)
+        ┌───────┬───────┬───────┐
+        │ x     ┆ y     ┆ x ^ y │
+        │ ---   ┆ ---   ┆ ---   │
+        │ bool  ┆ bool  ┆ bool  │
+        ╞═══════╪═══════╪═══════╡
+        │ true  ┆ true  ┆ false │
+        │ false ┆ true  ┆ true  │
+        │ true  ┆ false ┆ true  │
+        │ false ┆ false ┆ false │
+        └───────┴───────┴───────┘
+
+        >>> def binary_string(n: int) -> str:
+        ...     return bin(n)[2:].zfill(8)
+        >>>
+        >>> df = pl.DataFrame(
+        ...     data={"x": [10, 8, 250, 66], "y": [1, 2, 3, 4]},
+        ...     schema={"x": pl.UInt8, "y": pl.UInt8},
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("x").apply(binary_string).alias("bin_x"),
+        ...     pl.col("y").apply(binary_string).alias("bin_y"),
+        ...     pl.col("x").xor(pl.col("y")).alias("xor_xy"),
+        ...     pl.col("x").xor(pl.col("y")).apply(binary_string).alias("bin_xor_xy"),
+        ... )
+        shape: (4, 6)
+        ┌─────┬─────┬──────────┬──────────┬────────┬────────────┐
+        │ x   ┆ y   ┆ bin_x    ┆ bin_y    ┆ xor_xy ┆ bin_xor_xy │
+        │ --- ┆ --- ┆ ---      ┆ ---      ┆ ---    ┆ ---        │
+        │ u8  ┆ u8  ┆ str      ┆ str      ┆ u8     ┆ str        │
+        ╞═════╪═════╪══════════╪══════════╪════════╪════════════╡
+        │ 10  ┆ 1   ┆ 00001010 ┆ 00000001 ┆ 11     ┆ 00001011   │
+        │ 8   ┆ 2   ┆ 00001000 ┆ 00000010 ┆ 10     ┆ 00001010   │
+        │ 250 ┆ 3   ┆ 11111010 ┆ 00000011 ┆ 249    ┆ 11111001   │
+        │ 66  ┆ 4   ┆ 01000010 ┆ 00000100 ┆ 70     ┆ 01000110   │
+        └─────┴─────┴──────────┴──────────┴────────┴────────────┘
+
+        """
+        return self.__xor__(other)
 
     def is_in(self, other: Expr | Collection[Any] | Series) -> Self:
         """
@@ -3659,17 +4233,20 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.repeat_by(by._pyexpr))
 
     def is_between(
-        self, start: IntoExpr, end: IntoExpr, closed: ClosedInterval = "both"
+        self,
+        lower_bound: IntoExpr,
+        upper_bound: IntoExpr,
+        closed: ClosedInterval = "both",
     ) -> Self:
         """
         Check if this expression is between the given start and end values.
 
         Parameters
         ----------
-        start
+        lower_bound
             Lower bound value. Accepts expression input. Strings are parsed as column
             names, other non-expression inputs are parsed as literals.
-        end
+        upper_bound
             Upper bound value. Accepts expression input. Strings are parsed as column
             names, other non-expression inputs are parsed as literals.
         closed : {'both', 'left', 'right', 'none'}
@@ -3738,17 +4315,17 @@ class Expr:
         └─────┴────────────┘
 
         """
-        start = expr_to_lit_or_expr(start, str_to_lit=False)
-        end = expr_to_lit_or_expr(end, str_to_lit=False)
+        lower_bound = expr_to_lit_or_expr(lower_bound, str_to_lit=False)
+        upper_bound = expr_to_lit_or_expr(upper_bound, str_to_lit=False)
 
         if closed == "none":
-            return (self > start) & (self < end)
+            return (self > lower_bound) & (self < upper_bound)
         elif closed == "both":
-            return (self >= start) & (self <= end)
+            return (self >= lower_bound) & (self <= upper_bound)
         elif closed == "right":
-            return (self > start) & (self <= end)
+            return (self > lower_bound) & (self <= upper_bound)
         elif closed == "left":
-            return (self >= start) & (self < end)
+            return (self >= lower_bound) & (self < upper_bound)
         else:
             raise ValueError(
                 "closed must be one of {'left', 'right', 'both', 'none'},"
@@ -3805,7 +4382,7 @@ class Expr:
         k3 = seed_3 if seed_3 is not None else seed
         return self._from_pyexpr(self._pyexpr.hash(k0, k1, k2, k3))
 
-    def reinterpret(self, signed: bool = True) -> Self:
+    def reinterpret(self, *, signed: bool = True) -> Self:
         """
         Reinterpret the underlying bits as a signed/unsigned integer.
 
@@ -3941,6 +4518,7 @@ class Expr:
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
@@ -4035,6 +4613,7 @@ class Expr:
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
@@ -4129,6 +4708,7 @@ class Expr:
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
@@ -4223,6 +4803,7 @@ class Expr:
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
@@ -4317,6 +4898,7 @@ class Expr:
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
@@ -4411,6 +4993,7 @@ class Expr:
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
@@ -4505,6 +5088,7 @@ class Expr:
         window_size: int | timedelta | str,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
@@ -4597,6 +5181,7 @@ class Expr:
         window_size: int | timedelta | str = 2,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
@@ -4699,6 +5284,7 @@ class Expr:
         window_size: int,
         weights: list[float] | None = None,
         min_periods: int | None = None,
+        *,
         center: bool = False,
     ) -> Self:
         """
@@ -4762,7 +5348,7 @@ class Expr:
             )
         )
 
-    def rolling_skew(self, window_size: int, bias: bool = True) -> Self:
+    def rolling_skew(self, window_size: int, *, bias: bool = True) -> Self:
         """
         Compute a rolling skew.
 
@@ -4805,57 +5391,13 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.abs())
 
-    @deprecated_alias(reverse="descending")
-    def argsort(self, descending: bool = False, nulls_last: bool = False) -> Self:
-        """
-        Get the index values that would sort this column.
-
-        Alias for :func:`Expr.arg_sort`.
-
-        .. deprecated:: 0.16.5
-            `Expr.argsort` will be removed in favour of `Expr.arg_sort`.
-
-        Parameters
-        ----------
-        descending
-            Sort in descending order.
-        nulls_last
-            Place null values last instead of first.
-
-        Returns
-        -------
-        Expr
-            Series of dtype UInt32.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [20, 10, 30],
-        ...     }
-        ... )
-        >>> df.select(pl.col("a").argsort())
-        shape: (3, 1)
-        ┌─────┐
-        │ a   │
-        │ --- │
-        │ u32 │
-        ╞═════╡
-        │ 1   │
-        │ 0   │
-        │ 2   │
-        └─────┘
-
-        """
-        warnings.warn(
-            "`Expr.argsort()` is deprecated in favor of `Expr.arg_sort()`",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.arg_sort(descending, nulls_last)
-
-    @deprecated_alias(reverse="descending")
-    def rank(self, method: RankMethod = "average", descending: bool = False) -> Self:
+    def rank(
+        self,
+        method: RankMethod = "average",
+        *,
+        descending: bool = False,
+        seed: int | None = None,
+    ) -> Self:
         """
         Assign ranks to data, dealing with ties appropriately.
 
@@ -4881,6 +5423,8 @@ class Expr:
               on the order that the values occur in the Series.
         descending
             Rank in descending order.
+        seed
+            If `method="random"`, use this as seed.
 
         Examples
         --------
@@ -4919,7 +5463,7 @@ class Expr:
         └─────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.rank(method, descending))
+        return self._from_pyexpr(self._pyexpr.rank(method, descending, seed))
 
     def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Self:
         """
@@ -5016,7 +5560,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.pct_change(n))
 
-    def skew(self, bias: bool = True) -> Self:
+    def skew(self, *, bias: bool = True) -> Self:
         r"""
         Compute the sample skewness of a data set.
 
@@ -5070,7 +5614,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.skew(bias))
 
-    def kurtosis(self, fisher: bool = True, bias: bool = True) -> Self:
+    def kurtosis(self, *, fisher: bool = True, bias: bool = True) -> Self:
         """
         Compute the kurtosis (Fisher or Pearson) of a dataset.
 
@@ -5106,7 +5650,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.kurtosis(fisher, bias))
 
-    def clip(self, min_val: int | float, max_val: int | float) -> Self:
+    def clip(self, lower_bound: int | float, upper_bound: int | float) -> Self:
         """
         Clip (limit) the values in an array to a `min` and `max` boundary.
 
@@ -5117,10 +5661,10 @@ class Expr:
 
         Parameters
         ----------
-        min_val
-            Minimum value.
-        max_val
-            Maximum value.
+        lower_bound
+            Lower bound.
+        upper_bound
+            Upper bound.
 
         Examples
         --------
@@ -5139,9 +5683,9 @@ class Expr:
         └──────┴─────────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.clip(min_val, max_val))
+        return self._from_pyexpr(self._pyexpr.clip(lower_bound, upper_bound))
 
-    def clip_min(self, min_val: int | float) -> Self:
+    def clip_min(self, lower_bound: int | float) -> Self:
         """
         Clip (limit) the values in an array to a `min` boundary.
 
@@ -5152,8 +5696,8 @@ class Expr:
 
         Parameters
         ----------
-        min_val
-            Minimum value.
+        lower_bound
+            Lower bound.
 
         Examples
         --------
@@ -5172,9 +5716,9 @@ class Expr:
         └──────┴─────────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.clip_min(min_val))
+        return self._from_pyexpr(self._pyexpr.clip_min(lower_bound))
 
-    def clip_max(self, max_val: int | float) -> Self:
+    def clip_max(self, upper_bound: int | float) -> Self:
         """
         Clip (limit) the values in an array to a `max` boundary.
 
@@ -5185,8 +5729,8 @@ class Expr:
 
         Parameters
         ----------
-        max_val
-            Maximum value.
+        upper_bound
+            Upper bound.
 
         Examples
         --------
@@ -5205,7 +5749,7 @@ class Expr:
         └──────┴─────────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.clip_max(max_val))
+        return self._from_pyexpr(self._pyexpr.clip_max(upper_bound))
 
     def lower_bound(self) -> Self:
         """
@@ -5573,13 +6117,13 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.arctanh())
 
-    def reshape(self, dims: tuple[int, ...]) -> Self:
+    def reshape(self, dimensions: tuple[int, ...]) -> Self:
         """
         Reshape this Expr to a flat Series or a Series of Lists.
 
         Parameters
         ----------
-        dims
+        dimensions
             Tuple of the dimension sizes. If a -1 is used in any of the dimensions, that
             dimension is inferred.
 
@@ -5589,10 +6133,6 @@ class Expr:
             If a single dimension is given, results in a flat Series of shape (len,).
             If a multiple dimensions are given, results in a Series of Lists with shape
             (rows, cols).
-
-        See Also
-        --------
-        ExprListNameSpace.explode : Explode a list column.
 
         Examples
         --------
@@ -5609,8 +6149,12 @@ class Expr:
         │ [7, 8, 9] │
         └───────────┘
 
+        See Also
+        --------
+        ExprListNameSpace.explode : Explode a list column.
+
         """
-        return self._from_pyexpr(self._pyexpr.reshape(dims))
+        return self._from_pyexpr(self._pyexpr.reshape(dimensions))
 
     def shuffle(self, seed: int | None = None) -> Self:
         """
@@ -5642,10 +6186,12 @@ class Expr:
             seed = random.randint(0, 10000)
         return self._from_pyexpr(self._pyexpr.shuffle(seed))
 
+    @deprecated_alias(frac="fraction")
     def sample(
         self,
         n: int | None = None,
-        frac: float | None = None,
+        *,
+        fraction: float | None = None,
         with_replacement: bool = False,
         shuffle: bool = False,
         seed: int | None = None,
@@ -5656,9 +6202,9 @@ class Expr:
         Parameters
         ----------
         n
-            Number of items to return. Cannot be used with `frac`. Defaults to 1 if
-            `frac` is None.
-        frac
+            Number of items to return. Cannot be used with `fraction`. Defaults to 1 if
+            `fraction` is None.
+        fraction
             Fraction of items to return. Cannot be used with `n`.
         with_replacement
             Allow values to be sampled more than once.
@@ -5671,7 +6217,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
-        >>> df.select(pl.col("a").sample(frac=1.0, with_replacement=True, seed=1))
+        >>> df.select(pl.col("a").sample(fraction=1.0, with_replacement=True, seed=1))
         shape: (3, 1)
         ┌─────┐
         │ a   │
@@ -5684,15 +6230,15 @@ class Expr:
         └─────┘
 
         """
-        if n is not None and frac is not None:
-            raise ValueError("cannot specify both `n` and `frac`")
+        if n is not None and fraction is not None:
+            raise ValueError("cannot specify both `n` and `fraction`")
 
         if seed is None:
             seed = random.randint(0, 10000)
 
-        if frac is not None:
+        if fraction is not None:
             return self._from_pyexpr(
-                self._pyexpr.sample_frac(frac, with_replacement, shuffle, seed)
+                self._pyexpr.sample_frac(fraction, with_replacement, shuffle, seed)
             )
 
         if n is None:
@@ -5707,6 +6253,7 @@ class Expr:
         span: float | None = None,
         half_life: float | None = None,
         alpha: float | None = None,
+        *,
         adjust: bool = True,
         min_periods: int = 1,
         ignore_nulls: bool = True,
@@ -5795,6 +6342,7 @@ class Expr:
         span: float | None = None,
         half_life: float | None = None,
         alpha: float | None = None,
+        *,
         adjust: bool = True,
         bias: bool = False,
         min_periods: int = 1,
@@ -5886,6 +6434,7 @@ class Expr:
         span: float | None = None,
         half_life: float | None = None,
         alpha: float | None = None,
+        *,
         adjust: bool = True,
         bias: bool = False,
         min_periods: int = 1,
@@ -6006,7 +6555,7 @@ class Expr:
 
         return self._from_pyexpr(self._pyexpr.extend_constant(value, n))
 
-    def value_counts(self, multithreaded: bool = False, sort: bool = False) -> Self:
+    def value_counts(self, *, multithreaded: bool = False, sort: bool = False) -> Self:
         """
         Count all unique values and create a struct mapping value to count.
 
@@ -6108,7 +6657,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.log(base))
 
-    def entropy(self, base: float = math.e, normalize: bool = True) -> Self:
+    def entropy(self, base: float = math.e, *, normalize: bool = True) -> Self:
         """
         Computes the entropy.
 
@@ -6147,7 +6696,7 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.entropy(base, normalize))
 
     def cumulative_eval(
-        self, expr: Expr, min_periods: int = 1, parallel: bool = False
+        self, expr: Expr, min_periods: int = 1, *, parallel: bool = False
     ) -> Self:
         """
         Run an expression over a sliding window that increases `1` slot every iteration.
@@ -6199,8 +6748,7 @@ class Expr:
             self._pyexpr.cumulative_eval(expr._pyexpr, min_periods, parallel)
         )
 
-    @deprecated_alias(reverse="descending")
-    def set_sorted(self, descending: bool = False) -> Self:
+    def set_sorted(self, *, descending: bool = False) -> Self:
         """
         Flags the expression as 'sorted'.
 
@@ -6300,7 +6848,7 @@ class Expr:
         remapping: dict[Any, Any],
         *,
         default: Any = None,
-        dtype: PolarsDataType | None = None,
+        return_dtype: PolarsDataType | None = None,
     ) -> Self:
         """
         Replace values in column according to remapping dictionary.
@@ -6315,8 +6863,8 @@ class Expr:
         default
             Value to use when the remapping dict does not contain the lookup value.
             Use ``pl.first()``, to keep the original value.
-        dtype
-            Override output dtype.
+        return_dtype
+            Set return dtype to override automatic return dtype determination.
 
         Examples
         --------
@@ -6438,11 +6986,11 @@ class Expr:
         │ 3      ┆ Germany       │
         └────────┴───────────────┘
 
-        Override output dtype:
+        Override return dtype:
 
         >>> df.with_columns(
         ...     pl.col("row_nr")
-        ...     .map_dict({1: 7, 3: 4}, default=3, dtype=pl.UInt8)
+        ...     .map_dict({1: 7, 3: 4}, default=3, return_dtype=pl.UInt8)
         ...     .alias("remapped")
         ... )
         shape: (4, 3)
@@ -6462,7 +7010,9 @@ class Expr:
         def _remap_key_or_value_series(
             name: str,
             values: Iterable[Any],
-            dtype: PolarsDataType,
+            dtype: PolarsDataType | None,
+            dtype_if_empty: PolarsDataType | None,
+            dtype_keys: PolarsDataType | None,
             is_keys: bool,
         ) -> Series:
             """
@@ -6472,23 +7022,88 @@ class Expr:
             the specified dtype and check that none of the values are accidentally
             lost (replaced by nulls) during the conversion.
 
+            Parameters
+            ----------
+            name
+                Name of the keys or values series.
+            values
+                Values for the series: `remapping.keys()` or `remapping.values()`.
+            dtype
+                User specified dtype. If None,
+            dtype_if_empty
+                If no dtype is specified and values contains None, an empty list,
+                or a list with only None values, set the Polars dtype of the Series
+                data.
+            dtype_keys
+                If user set dtype is None, try to see if Series for remapping.values()
+                can be converted to same dtype as the remapping.keys() Series dtype.
+            is_keys
+                If values contains keys or values from remapping dict.
+
             """
             try:
-                s = pli.Series(
-                    name,
-                    values,
-                    dtype=dtype,
-                    strict=True,
-                )
-                if dtype != s.dtype:
-                    raise ValueError(
-                        f"Remapping {'keys' if is_keys else 'values'} could not be converted to {dtype}: found {s.dtype}"
+                if dtype is None:
+                    # If no dtype was set, which should only happen when:
+                    #     values = remapping.values()
+                    # create a Series from those values and infer the dtype.
+                    s = pli.Series(
+                        name,
+                        values,
+                        dtype=None,
+                        dtype_if_empty=dtype_if_empty,
+                        strict=True,
                     )
 
-            except TypeError as exc:
-                raise ValueError(
-                    f"Remapping {'keys' if is_keys else 'values'} could not be converted to {dtype}: {str(exc)}"
-                ) from exc
+                    if dtype_keys is not None:
+                        if s.dtype == dtype_keys:
+                            # Values Series has same dtype as keys Series.
+                            dtype = s.dtype
+                        elif (
+                            (s.dtype in INTEGER_DTYPES and dtype_keys in INTEGER_DTYPES)
+                            or (s.dtype in FLOAT_DTYPES and dtype_keys in FLOAT_DTYPES)
+                            or (s.dtype == Utf8 and dtype_keys == Categorical)
+                        ):
+                            # Values Series and keys Series are of similar dtypes,
+                            # that we can assume that the user wants the values Series
+                            # of the same dtype as the key Series.
+                            dtype = dtype_keys
+                            s = pli.Series(
+                                name,
+                                values,
+                                dtype=dtype_keys,
+                                dtype_if_empty=dtype_if_empty,
+                                strict=True,
+                            )
+                            if dtype != s.dtype:
+                                raise ValueError(
+                                    f"Remapping values for map_dict could not be converted to {dtype}: found {s.dtype}"
+                                )
+                else:
+                    # dtype was set, which should always be the case when:
+                    #     values = remapping.keys()
+                    # and in cases where the user set the output dtype when:
+                    #     values = remapping.values()
+                    s = pli.Series(
+                        name,
+                        values,
+                        dtype=dtype,
+                        dtype_if_empty=dtype_if_empty,
+                        strict=True,
+                    )
+                    if dtype != s.dtype:
+                        raise ValueError(
+                            f"Remapping {'keys' if is_keys else 'values'} for map_dict could not be converted to {dtype}: found {s.dtype}"
+                        )
+
+            except OverflowError as exc:
+                if is_keys:
+                    raise ValueError(
+                        f"Remapping keys for map_dict could not be converted to {dtype}: {str(exc)}"
+                    ) from exc
+                else:
+                    raise ValueError(
+                        f"Choose a more suitable output dtype for map_dict as remapping value could not be converted to {dtype}: {str(exc)}"
+                    ) from exc
 
             if is_keys:
                 # values = remapping.keys()
@@ -6498,7 +7113,7 @@ class Expr:
                     pass
                 else:
                     raise ValueError(
-                        f"Remapping keys could not be converted to {dtype} without losing values in the conversion."
+                        f"Remapping keys for map_dict could not be converted to {dtype} without losing values in the conversion."
                     )
             else:
                 # values = remapping.values()
@@ -6508,7 +7123,7 @@ class Expr:
                     pass
                 else:
                     raise ValueError(
-                        f"Remapping values could not be converted to {dtype} without losing values in the conversion."
+                        f"Remapping values for map_dict could not be converted to {dtype} without losing values in the conversion."
                     )
 
             return s
@@ -6532,44 +7147,41 @@ class Expr:
             #  - to dtype, if specified.
             #  - to same dtype as expression specified as default value.
             #  - to None, if dtype was not specified and default was not an expression.
-            output_dtype = (
+            return_dtype_ = (
                 df.lazy().select(default).dtypes[0]
-                if dtype is None and isinstance(default, Expr)
-                else dtype
+                if return_dtype is None and isinstance(default, Expr)
+                else return_dtype
             )
 
             remap_key_s = _remap_key_or_value_series(
                 name=remap_key_column,
                 values=remapping.keys(),
                 dtype=input_dtype,
+                dtype_if_empty=input_dtype,
+                dtype_keys=input_dtype,
                 is_keys=True,
             )
 
-            if output_dtype:
+            if return_dtype_:
                 # Create remap value Series with specified output dtype.
                 remap_value_s = pli.Series(
                     remap_value_column,
                     remapping.values(),
-                    dtype=output_dtype,
+                    dtype=return_dtype_,
                     dtype_if_empty=input_dtype,
                 )
             else:
-                try:
-                    # First, try to create a value Series with same dtype as input
-                    # column.
-                    remap_value_s = _remap_key_or_value_series(
-                        name=remap_value_column,
-                        values=remapping.values(),
-                        dtype=remap_key_s.dtype,
-                        is_keys=False,
-                    )
-                except ValueError:
-                    # If that fails create a value Series without a specific dtype.
-                    remap_value_s = pli.Series(
-                        remap_value_column,
-                        remapping.values(),
-                        dtype_if_empty=input_dtype,
-                    )
+                # Create remap value Series with same output dtype as remap key Series,
+                # if possible (if both are integers, both are floats or remap value
+                # Series is pl.Utf8 and remap key Series is pl.Categorical).
+                remap_value_s = _remap_key_or_value_series(
+                    name=remap_value_column,
+                    values=remapping.values(),
+                    dtype=None,
+                    dtype_if_empty=input_dtype,
+                    dtype_keys=input_dtype,
+                    is_keys=False,
+                )
 
             return (
                 (
@@ -6609,34 +7221,31 @@ class Expr:
                 name=remap_key_column,
                 values=list(remapping.keys()),
                 dtype=input_dtype,
+                dtype_if_empty=input_dtype,
+                dtype_keys=input_dtype,
                 is_keys=True,
             )
 
-            if dtype:
+            if return_dtype:
                 # Create remap value Series with specified output dtype.
                 remap_value_s = pli.Series(
                     remap_value_column,
                     remapping.values(),
-                    dtype=dtype,
+                    dtype=return_dtype,
                     dtype_if_empty=input_dtype,
                 )
             else:
-                try:
-                    # First, try to create a value Series with same dtype as input
-                    # column.
-                    remap_value_s = _remap_key_or_value_series(
-                        name=remap_value_column,
-                        values=remapping.values(),
-                        dtype=remap_key_s.dtype,
-                        is_keys=False,
-                    )
-                except ValueError:
-                    # If that fails create a value Series without a specific dtype.
-                    remap_value_s = pli.Series(
-                        remap_value_column,
-                        remapping.values(),
-                        dtype_if_empty=input_dtype,
-                    )
+                # Create remap value Series with same output dtype as remap key Series,
+                # if possible (if both are integers, both are floats or remap value
+                # Series is pl.Utf8 and remap key Series is pl.Categorical).
+                remap_value_s = _remap_key_or_value_series(
+                    name=remap_value_column,
+                    values=remapping.values(),
+                    dtype=None,
+                    dtype_if_empty=input_dtype,
+                    dtype_keys=input_dtype,
+                    is_keys=False,
+                )
 
             return (
                 (

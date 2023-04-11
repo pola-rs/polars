@@ -28,7 +28,8 @@ from polars.utils.convert import (
     _time_to_pl_time,
     _timedelta_to_pl_timedelta,
 )
-from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
+from polars.utils.decorators import deprecated_alias
+from polars.utils.various import find_stacklevel
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arange as pyarange
@@ -472,7 +473,6 @@ def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
     ...
 
 
-@deprecated_alias(column="exprs")
 def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | Any:
     """
     Get the maximum value.
@@ -565,7 +565,6 @@ def min(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
     ...
 
 
-@deprecated_alias(column="exprs")
 def min(
     exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr
 ) -> Expr | PythonLiteral | None:
@@ -1159,9 +1158,8 @@ def tail(column: str | Series, n: int = 10) -> Expr | Series:
     return col(column).tail(n)
 
 
-@deprecate_nonkeyword_arguments(allowed_args=["value", "dtype"])
 def lit(
-    value: Any, dtype: PolarsDataType | None = None, allow_object: bool = False
+    value: Any, dtype: PolarsDataType | None = None, *, allow_object: bool = False
 ) -> Expr:
     """
     Return an expression representing a literal value.
@@ -1179,51 +1177,51 @@ def lit(
 
     Examples
     --------
-    Literal integer:
+    Literal scalar values:
 
     >>> pl.lit(1)  # doctest: +IGNORE_RESULT
-
-    Literal str:
-
-    >>> pl.lit("foo")  # doctest: +IGNORE_RESULT
-
-    Literal datetime:
-
-    >>> from datetime import datetime
-    >>> pl.lit(datetime(2021, 1, 20))  # doctest: +IGNORE_RESULT
-
-    Literal Null:
-
+    >>> pl.lit(5.5)  # doctest: +IGNORE_RESULT
     >>> pl.lit(None)  # doctest: +IGNORE_RESULT
+    >>> pl.lit("foo_bar")  # doctest: +IGNORE_RESULT
+    >>> pl.lit(date(2021, 1, 20))  # doctest: +IGNORE_RESULT
+    >>> pl.lit(datetime(2023, 3, 31, 10, 30, 45))  # doctest: +IGNORE_RESULT
 
-    Literal eager Series:
+    Literal list/Series data (1D):
 
-    >>> pl.lit(pl.Series("a", [1, 2, 3]))  # doctest: +IGNORE_RESULT
+    >>> pl.lit([1, 2, 3])  # doctest: +IGNORE_RESULT
+    >>> pl.lit(pl.Series("x", [1, 2, 3]))  # doctest: +IGNORE_RESULT
+
+    Literal list/Series data (2D):
+
+    >>> pl.lit([[1, 2], [3, 4]])  # doctest: +IGNORE_RESULT
+    >>> pl.lit(pl.Series("y", [[1, 2], [3, 4]]))  # doctest: +IGNORE_RESULT
 
     """
-    tu: TimeUnit
+    time_unit: TimeUnit
 
     if isinstance(value, datetime):
-        tu = "us" if dtype is None else getattr(dtype, "tu", "us")
-        tz = (
+        time_unit = "us" if dtype is None else getattr(dtype, "time_unit", "us")
+        time_zone = (
             value.tzinfo
-            if getattr(dtype, "tz", None) is None
-            else getattr(dtype, "tz", None)
+            if getattr(dtype, "time_zone", None) is None
+            else getattr(dtype, "time_zone", None)
         )
-        if value.tzinfo is not None and getattr(dtype, "tz", None) is not None:
+        if value.tzinfo is not None and getattr(dtype, "time_zone", None) is not None:
             raise TypeError(
                 "Cannot cast tz-aware value to tz-aware dtype. "
                 "Please drop the time zone from the dtype."
             )
-        e = lit(_datetime_to_pl_timestamp(value, tu)).cast(Datetime(tu))
-        if tz is not None:
-            return e.dt.replace_time_zone(str(tz))
+        e = lit(_datetime_to_pl_timestamp(value, time_unit)).cast(Datetime(time_unit))
+        if time_zone is not None:
+            return e.dt.replace_time_zone(str(time_zone))
         else:
             return e
 
     elif isinstance(value, timedelta):
-        tu = "us" if dtype is None else getattr(dtype, "tu", "us")
-        return lit(_timedelta_to_pl_timedelta(value, tu)).cast(Duration(tu))
+        time_unit = "us" if dtype is None else getattr(dtype, "time_unit", "us")
+        return lit(_timedelta_to_pl_timedelta(value, time_unit)).cast(
+            Duration(time_unit)
+        )
 
     elif isinstance(value, time):
         return lit(_time_to_pl_time(value)).cast(Time)
@@ -1259,9 +1257,11 @@ def lit(
         if isinstance(item, int) and hasattr(value, "dtype"):
             dtype_name = value.dtype.name
             if dtype_name.startswith(("datetime64[", "timedelta64[")):
-                tu = dtype_name[11:-1]
+                time_unit = dtype_name[11:-1]
                 return lit(item).cast(
-                    Datetime(tu) if dtype_name.startswith("date") else Duration(tu)
+                    Datetime(time_unit)
+                    if dtype_name.startswith("date")
+                    else Duration(time_unit)
                 )
 
     except AttributeError:
@@ -1359,9 +1359,8 @@ def cumsum(
     return cumfold(lit(0).cast(UInt32), lambda a, b: a + b, column).alias("cumsum")
 
 
-@deprecate_nonkeyword_arguments(allowed_args=["a", "b", "ddof"])
 def spearman_rank_corr(
-    a: str | Expr, b: str | Expr, ddof: int = 1, propagate_nans: bool = False
+    a: str | Expr, b: str | Expr, ddof: int = 1, *, propagate_nans: bool = False
 ) -> Expr:
     """
     Compute the spearman rank correlation between two columns.
@@ -1394,7 +1393,7 @@ def spearman_rank_corr(
     Examples
     --------
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
-    >>> df.select(pl.spearman_rank_corr("a", "b"))
+    >>> df.select(pl.spearman_rank_corr("a", "b"))  # doctest: +SKIP
     shape: (1, 1)
     ┌─────┐
     │ a   │
@@ -1407,7 +1406,7 @@ def spearman_rank_corr(
     warnings.warn(
         "`spearman_rank_corr()` is deprecated in favor of `corr()`",
         DeprecationWarning,
-        stacklevel=2,
+        stacklevel=find_stacklevel(),
     )
     if isinstance(a, str):
         a = col(a)
@@ -1441,7 +1440,7 @@ def pearson_corr(a: str | Expr, b: str | Expr, ddof: int = 1) -> Expr:
     Examples
     --------
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
-    >>> df.select(pl.pearson_corr("a", "b"))
+    >>> df.select(pl.pearson_corr("a", "b"))  # doctest: +SKIP
     shape: (1, 1)
     ┌──────────┐
     │ a        │
@@ -1454,7 +1453,7 @@ def pearson_corr(a: str | Expr, b: str | Expr, ddof: int = 1) -> Expr:
     warnings.warn(
         "`pearson_corr()` is deprecated in favor of `corr()`",
         DeprecationWarning,
-        stacklevel=2,
+        stacklevel=find_stacklevel(),
     )
     if isinstance(a, str):
         a = col(a)
@@ -1568,7 +1567,6 @@ def cov(a: str | Expr, b: str | Expr) -> Expr:
     return wrap_expr(pycov(a._pyexpr, b._pyexpr))
 
 
-@deprecated_alias(f="function")
 def map(
     exprs: Sequence[str] | Sequence[Expr],
     function: Callable[[Sequence[Series]], Series],
@@ -1631,14 +1629,11 @@ def map(
     )
 
 
-@deprecated_alias(f="function")
-@deprecate_nonkeyword_arguments(
-    allowed_args=["exprs", "function", "return_dtype"], stacklevel=3
-)
 def apply(
     exprs: Sequence[str | Expr],
     function: Callable[[Sequence[Series]], Series | Any],
     return_dtype: PolarsDataType | None = None,
+    *,
     returns_scalar: bool = True,
 ) -> Expr:
     """
@@ -1715,7 +1710,6 @@ def apply(
     )
 
 
-@deprecated_alias(f="function")
 def fold(
     acc: IntoExpr,
     function: Callable[[Series, Series], Series],
@@ -1764,9 +1758,9 @@ def fold(
     Horizontally sum over all columns and add 1.
 
     >>> df.select(
-    ...     pl.fold(acc=pl.lit(1), f=lambda acc, x: acc + x, exprs=pl.col("*")).alias(
-    ...         "sum"
-    ...     ),
+    ...     pl.fold(
+    ...         acc=pl.lit(1), function=lambda acc, x: acc + x, exprs=pl.col("*")
+    ...     ).alias("sum"),
     ... )
     shape: (3, 1)
     ┌─────┐
@@ -1802,7 +1796,7 @@ def fold(
     >>> df.filter(
     ...     pl.fold(
     ...         acc=pl.lit(True),
-    ...         f=lambda acc, x: acc & x,
+    ...         function=lambda acc, x: acc & x,
     ...         exprs=pl.col("*") > 1,
     ...     )
     ... )
@@ -1824,7 +1818,6 @@ def fold(
     return wrap_expr(pyfold(acc._pyexpr, function, exprs))
 
 
-@deprecated_alias(f="function")
 def reduce(
     function: Callable[[Series, Series], Series],
     exprs: Sequence[Expr | str] | Expr,
@@ -1867,7 +1860,7 @@ def reduce(
     Horizontally sum over all columns.
 
     >>> df.select(
-    ...     pl.reduce(f=lambda acc, x: acc + x, exprs=pl.col("*")).alias("sum"),
+    ...     pl.reduce(function=lambda acc, x: acc + x, exprs=pl.col("*")).alias("sum"),
     ... )
     shape: (3, 1)
     ┌─────┐
@@ -1889,12 +1882,11 @@ def reduce(
     return wrap_expr(pyreduce(function, exprs))
 
 
-@deprecated_alias(f="function")
-@deprecate_nonkeyword_arguments(stacklevel=3)
 def cumfold(
     acc: IntoExpr,
     function: Callable[[Series, Series], Series],
     exprs: Sequence[Expr | str] | Expr,
+    *,
     include_init: bool = False,
 ) -> Expr:
     """
@@ -1943,7 +1935,7 @@ def cumfold(
 
     >>> df.select(
     ...     pl.cumfold(
-    ...         acc=pl.lit(1), f=lambda acc, x: acc + x, exprs=pl.col("*")
+    ...         acc=pl.lit(1), function=lambda acc, x: acc + x, exprs=pl.col("*")
     ...     ).alias("cumfold"),
     ... )
     shape: (3, 1)
@@ -1967,7 +1959,6 @@ def cumfold(
     return wrap_expr(pycumfold(acc._pyexpr, function, exprs, include_init))
 
 
-@deprecated_alias(f="function")
 def cumreduce(
     function: Callable[[Series, Series], Series],
     exprs: Sequence[Expr | str] | Expr,
@@ -2007,7 +1998,7 @@ def cumreduce(
     └─────┴─────┴─────┘
 
     >>> df.select(
-    ...     pl.cumreduce(f=lambda acc, x: acc + x, exprs=pl.col("*")).alias(
+    ...     pl.cumreduce(function=lambda acc, x: acc + x, exprs=pl.col("*")).alias(
     ...         "cumreduce"
     ...     ),
     ... )
@@ -2030,9 +2021,14 @@ def cumreduce(
     return wrap_expr(pycumreduce(function, exprs))
 
 
-def any(name: str | Sequence[str] | Sequence[Expr] | Expr) -> Expr:
+def any(columns: str | Sequence[str] | Sequence[Expr] | Expr) -> Expr:
     """
     Evaluate columnwise or elementwise with a bitwise OR operation.
+
+    Parameters
+    ----------
+    columns
+        If given this function will apply a bitwise or on the columns.
 
     Examples
     --------
@@ -2069,11 +2065,51 @@ def any(name: str | Sequence[str] | Sequence[Expr] | Expr) -> Expr:
     └──────┴───────┴──────┘
 
     """
-    if isinstance(name, str):
-        return col(name).any()
+    if isinstance(columns, str):
+        return col(columns).any()
     else:
-        return fold(lit(False), lambda a, b: a.cast(bool) | b.cast(bool), name).alias(
-            "any"
+        return fold(
+            lit(False), lambda a, b: a.cast(bool) | b.cast(bool), columns
+        ).alias("any")
+
+
+def all(columns: str | Sequence[Expr] | Expr | None = None) -> Expr:
+    """
+    Do one of two things.
+
+    * function can do a columnwise or elementwise AND operation
+    * a wildcard column selection
+
+    Parameters
+    ----------
+    columns
+        If given this function will apply a bitwise & on the columns.
+
+    Examples
+    --------
+    Sum all columns
+
+    >>> df = pl.DataFrame(
+    ...     {"a": [1, 2, 3], "b": ["hello", "foo", "bar"], "c": [1, 1, 1]}
+    ... )
+    >>> df.select(pl.all().sum())
+    shape: (1, 3)
+    ┌─────┬──────┬─────┐
+    │ a   ┆ b    ┆ c   │
+    │ --- ┆ ---  ┆ --- │
+    │ i64 ┆ str  ┆ i64 │
+    ╞═════╪══════╪═════╡
+    │ 6   ┆ null ┆ 3   │
+    └─────┴──────┴─────┘
+
+    """
+    if columns is None:
+        return col("*")
+    elif isinstance(columns, str):
+        return col(columns).all()
+    else:
+        return fold(lit(True), lambda a, b: a.cast(bool) & b.cast(bool), columns).alias(
+            "all"
         )
 
 
@@ -2150,46 +2186,6 @@ def exclude(
     return col("*").exclude(columns, *more_columns)
 
 
-def all(name: str | Sequence[Expr] | Expr | None = None) -> Expr:
-    """
-    Do one of two things.
-
-    * function can do a columnwise or elementwise AND operation
-    * a wildcard column selection
-
-    Parameters
-    ----------
-    name
-        If given this function will apply a bitwise & on the columns.
-
-    Examples
-    --------
-    Sum all columns
-
-    >>> df = pl.DataFrame(
-    ...     {"a": [1, 2, 3], "b": ["hello", "foo", "bar"], "c": [1, 1, 1]}
-    ... )
-    >>> df.select(pl.all().sum())
-    shape: (1, 3)
-    ┌─────┬──────┬─────┐
-    │ a   ┆ b    ┆ c   │
-    │ --- ┆ ---  ┆ --- │
-    │ i64 ┆ str  ┆ i64 │
-    ╞═════╪══════╪═════╡
-    │ 6   ┆ null ┆ 3   │
-    └─────┴──────┴─────┘
-
-    """
-    if name is None:
-        return col("*")
-    elif isinstance(name, str):
-        return col(name).all()
-    else:
-        return fold(lit(True), lambda a, b: a.cast(bool) & b.cast(bool), name).alias(
-            "all"
-        )
-
-
 def groups(column: str) -> Expr:
     """Syntactic sugar for `pl.col("foo").agg_groups()`."""
     return col(column).agg_groups()
@@ -2218,8 +2214,8 @@ def quantile(
 
 @overload
 def arange(
-    low: int | Expr | Series,
-    high: int | Expr | Series,
+    start: int | Expr | Series,
+    end: int | Expr | Series,
     step: int = ...,
     *,
     eager: Literal[False],
@@ -2229,8 +2225,8 @@ def arange(
 
 @overload
 def arange(
-    low: int | Expr | Series,
-    high: int | Expr | Series,
+    start: int | Expr | Series,
+    end: int | Expr | Series,
     step: int = ...,
     *,
     eager: Literal[True],
@@ -2241,8 +2237,8 @@ def arange(
 
 @overload
 def arange(
-    low: int | Expr | Series,
-    high: int | Expr | Series,
+    start: int | Expr | Series,
+    end: int | Expr | Series,
     step: int = ...,
     *,
     eager: bool = ...,
@@ -2251,9 +2247,10 @@ def arange(
     ...
 
 
+@deprecated_alias(low="start", high="end")
 def arange(
-    low: int | Expr | Series,
-    high: int | Expr | Series,
+    start: int | Expr | Series,
+    end: int | Expr | Series,
     step: int = 1,
     *,
     eager: bool = False,
@@ -2271,9 +2268,9 @@ def arange(
 
     Parameters
     ----------
-    low
+    start
         Lower bound of range.
-    high
+    end
         Upper bound of range.
     step
         Step size of the range.
@@ -2284,9 +2281,9 @@ def arange(
         Apply an explicit integer dtype to the resulting expression (default is Int64).
 
     """
-    low = expr_to_lit_or_expr(low, str_to_lit=False)
-    high = expr_to_lit_or_expr(high, str_to_lit=False)
-    range_expr = wrap_expr(pyarange(low._pyexpr, high._pyexpr, step))
+    start = expr_to_lit_or_expr(start, str_to_lit=False)
+    end = expr_to_lit_or_expr(end, str_to_lit=False)
+    range_expr = wrap_expr(pyarange(start._pyexpr, end._pyexpr, step))
 
     if dtype is not None and dtype != Int64:
         range_expr = range_expr.cast(dtype)
@@ -2301,10 +2298,9 @@ def arange(
         )
 
 
-@deprecated_alias(reverse="descending")
-@deprecate_nonkeyword_arguments(stacklevel=3)
 def arg_sort_by(
     exprs: IntoExpr | Iterable[IntoExpr],
+    *more_exprs: IntoExpr,
     descending: bool | Sequence[bool] = False,
 ) -> Expr:
     """
@@ -2315,6 +2311,8 @@ def arg_sort_by(
     exprs
         Column(s) to arg sort by. Accepts expression input. Strings are parsed as column
         names.
+    *more_exprs
+        Additional columns to arg sort by, specified as positional arguments.
     descending
         Sort in descending order. When sorting by multiple columns, can be specified
         per column by passing a sequence of booleans.
@@ -2342,7 +2340,8 @@ def arg_sort_by(
     │ 2   │
     └─────┘
 
-    Compute the arg sort by multiple columns by passing a list of columns.
+    Compute the arg sort by multiple columns by either passing a list of columns, or by
+    specifying each column as a positional argument.
 
     >>> df.select(pl.arg_sort_by(["a", "b"], descending=True))
     shape: (4, 1)
@@ -2359,40 +2358,16 @@ def arg_sort_by(
 
     """
     exprs = selection_to_pyexpr_list(exprs)
+    if more_exprs:
+        exprs.extend(selection_to_pyexpr_list(more_exprs))
+
     if isinstance(descending, bool):
         descending = [descending] * len(exprs)
+    elif len(exprs) != len(descending):
+        raise ValueError(
+            f"the length of `descending` ({len(descending)}) does not match the length of `exprs` ({len(exprs)})"
+        )
     return wrap_expr(py_arg_sort_by(exprs, descending))
-
-
-@deprecated_alias(reverse="descending")
-def argsort_by(
-    exprs: Expr | str | Sequence[Expr | str],
-    descending: Sequence[bool] | bool = False,
-) -> Expr:
-    """
-    Find the indexes that would sort the columns.
-
-    Argsort by multiple columns. The first column will be used for the ordering.
-    If there are duplicates in the first column, the second column will be used to
-    determine the ordering and so on.
-
-    .. deprecated:: 0.16.5
-        `argsort_by` will be removed in favour of `arg_sort_by`.
-
-    Parameters
-    ----------
-    exprs
-        Columns use to determine the ordering.
-    descending
-        Sort in descending order; default is ascending.
-
-    """
-    warnings.warn(
-        "`argsort_by()` is deprecated in favor of `arg_sort_by()`",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return arg_sort_by(exprs, descending=descending)
 
 
 def duration(
@@ -2563,9 +2538,11 @@ def date_(
     return datetime_(year, month, day).cast(Date).alias("date")
 
 
-@deprecated_alias(sep="separator")
-@deprecate_nonkeyword_arguments(stacklevel=3)
-def concat_str(exprs: IntoExpr | Iterable[IntoExpr], separator: str = "") -> Expr:
+def concat_str(
+    exprs: IntoExpr | Iterable[IntoExpr],
+    *more_exprs: IntoExpr,
+    separator: str = "",
+) -> Expr:
     """
     Horizontally concatenate columns into a single string column.
 
@@ -2577,6 +2554,9 @@ def concat_str(exprs: IntoExpr | Iterable[IntoExpr], separator: str = "") -> Exp
         Columns to concatenate into a single string column. Accepts expression input.
         Strings are parsed as column names, other non-expression inputs are parsed as
         literals. Non-``Utf8`` columns are cast to ``Utf8``.
+    *more_exprs
+        Additional columns to concatenate into a single string column, specified as
+        positional arguments.
     separator
         String that will be used to separate the values of each column.
 
@@ -2612,16 +2592,18 @@ def concat_str(exprs: IntoExpr | Iterable[IntoExpr], separator: str = "") -> Exp
 
     """
     exprs = selection_to_pyexpr_list(exprs)
+    if more_exprs:
+        exprs.extend(selection_to_pyexpr_list(more_exprs))
     return wrap_expr(_concat_str(exprs, separator))
 
 
-def format(fstring: str, *args: Expr | str) -> Expr:
+def format(f_string: str, *args: Expr | str) -> Expr:
     """
     Format expressions as a string.
 
     Parameters
     ----------
-    fstring
+    f_string
         A string that with placeholders.
         For example: "hello_{}" or "{}_world
     args
@@ -2652,13 +2634,13 @@ def format(fstring: str, *args: Expr | str) -> Expr:
     └─────────────┘
 
     """
-    if fstring.count("{}") != len(args):
+    if f_string.count("{}") != len(args):
         raise ValueError("number of placeholders should equal the number of arguments")
 
     exprs = []
 
     arguments = iter(args)
-    for i, s in enumerate(fstring.split("{}")):
+    for i, s in enumerate(f_string.split("{}")):
         if i > 0:
             e = expr_to_lit_or_expr(next(arguments), str_to_lit=False)
             exprs.append(e)
@@ -2714,9 +2696,9 @@ def concat_list(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> 
     return wrap_expr(_concat_lst(exprs))
 
 
-@deprecate_nonkeyword_arguments()
 def collect_all(
     lazy_frames: Sequence[LazyFrame],
+    *,
     type_coercion: bool = True,
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
@@ -2830,8 +2812,9 @@ def select(
 
 
 @overload
-def struct(  # type: ignore[misc]
+def struct(
     exprs: IntoExpr | Iterable[IntoExpr] = ...,
+    *more_exprs: IntoExpr,
     eager: Literal[False] = ...,
     schema: SchemaDict | None = ...,
     **named_exprs: IntoExpr,
@@ -2842,7 +2825,8 @@ def struct(  # type: ignore[misc]
 @overload
 def struct(
     exprs: IntoExpr | Iterable[IntoExpr] = ...,
-    eager: Literal[True] = ...,
+    *more_exprs: IntoExpr,
+    eager: Literal[True],
     schema: SchemaDict | None = ...,
     **named_exprs: IntoExpr,
 ) -> Series:
@@ -2852,16 +2836,17 @@ def struct(
 @overload
 def struct(
     exprs: IntoExpr | Iterable[IntoExpr] = ...,
-    eager: bool = ...,
+    *more_exprs: IntoExpr,
+    eager: bool,
     schema: SchemaDict | None = ...,
     **named_exprs: IntoExpr,
 ) -> Expr | Series:
     ...
 
 
-@deprecate_nonkeyword_arguments(allowed_args=["exprs"])
 def struct(
     exprs: IntoExpr | Iterable[IntoExpr] = None,
+    *more_exprs: IntoExpr,
     eager: bool = False,
     schema: SchemaDict | None = None,
     **named_exprs: IntoExpr,
@@ -2874,13 +2859,16 @@ def struct(
     exprs
         Column(s) to collect into a struct column. Accepts expression input. Strings are
         parsed as column names, other non-expression inputs are parsed as literals.
+    *more_exprs
+        Additional columns to collect into the struct column, specified as positional
+        arguments.
     eager
         Evaluate immediately and return a ``Series``. If set to ``False`` (default),
         return an expression instead.
     schema
         Optional schema that explicitly defines the struct field dtypes.
     **named_exprs
-        Additional column(s) to collect into the struct column, specified as keyword
+        Additional columns to collect into the struct column, specified as keyword
         arguments. The columns will be renamed to the keyword used.
 
     Examples
@@ -2906,9 +2894,10 @@ def struct(
     │ {2,"b",null,[3]}    │
     └─────────────────────┘
 
-    Collect selected columns into a struct by passing a list of columns.
+    Collect selected columns into a struct by either passing a list of columns, or by
+    specifying each column as a positional argument.
 
-    >>> df.select(pl.struct(["int", False]).alias("my_struct"))
+    >>> df.select(pl.struct("int", False).alias("my_struct"))
     shape: (2, 1)
     ┌───────────┐
     │ my_struct │
@@ -2926,6 +2915,8 @@ def struct(
 
     """
     exprs = selection_to_pyexpr_list(exprs)
+    if more_exprs:
+        exprs.extend(selection_to_pyexpr_list(more_exprs))
     if named_exprs:
         exprs.extend(
             expr_to_lit_or_expr(expr, name=name, str_to_lit=False)._pyexpr
@@ -3017,21 +3008,21 @@ def repeat(
 
 
 @overload
-def arg_where(condition: Expr | Series, eager: Literal[False] = ...) -> Expr:
+def arg_where(condition: Expr | Series, *, eager: Literal[False] = ...) -> Expr:
     ...
 
 
 @overload
-def arg_where(condition: Expr | Series, eager: Literal[True]) -> Series:
+def arg_where(condition: Expr | Series, *, eager: Literal[True]) -> Series:
     ...
 
 
 @overload
-def arg_where(condition: Expr | Series, eager: bool) -> Expr | Series:
+def arg_where(condition: Expr | Series, *, eager: bool) -> Expr | Series:
     ...
 
 
-def arg_where(condition: Expr | Series, eager: bool = False) -> Expr | Series:
+def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series:
     """
     Return indices where `condition` evaluates `True`.
 
@@ -3129,39 +3120,41 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
 
 
 @overload
-def from_epoch(column: str | Expr, unit: EpochTimeUnit = ...) -> Expr:
+def from_epoch(column: str | Expr, time_unit: EpochTimeUnit = ...) -> Expr:
     ...
 
 
 @overload
-def from_epoch(column: Series | Sequence[int], unit: EpochTimeUnit = ...) -> Series:
+def from_epoch(
+    column: Series | Sequence[int], time_unit: EpochTimeUnit = ...
+) -> Series:
     ...
 
 
 def from_epoch(
-    column: str | Expr | Series | Sequence[int], unit: EpochTimeUnit = "s"
+    column: str | Expr | Series | Sequence[int], time_unit: EpochTimeUnit = "s"
 ) -> Expr | Series:
     """
     Utility function that parses an epoch timestamp (or Unix time) to Polars Date(time).
 
-    Depending on the `unit` provided, this function will return a different dtype:
-    - unit="d" returns pl.Date
-    - unit="s" returns pl.Datetime["us"] (pl.Datetime's default)
-    - unit="ms" returns pl.Datetime["ms"]
-    - unit="us" returns pl.Datetime["us"]
-    - unit="ns" returns pl.Datetime["ns"]
+    Depending on the `time_unit` provided, this function will return a different dtype:
+    - time_unit="d" returns pl.Date
+    - time_unit="s" returns pl.Datetime["us"] (pl.Datetime's default)
+    - time_unit="ms" returns pl.Datetime["ms"]
+    - time_unit="us" returns pl.Datetime["us"]
+    - time_unit="ns" returns pl.Datetime["ns"]
 
     Parameters
     ----------
     column
         Series or expression to parse integers to pl.Datetime.
-    unit
-        The unit of the timesteps since epoch time.
+    time_unit
+        The unit of time of the timesteps since epoch time.
 
     Examples
     --------
     >>> df = pl.DataFrame({"timestamp": [1666683077, 1666683099]}).lazy()
-    >>> df.select(pl.from_epoch(pl.col("timestamp"), unit="s")).collect()
+    >>> df.select(pl.from_epoch(pl.col("timestamp"), time_unit="s")).collect()
     shape: (2, 1)
     ┌─────────────────────┐
     │ timestamp           │
@@ -3175,7 +3168,7 @@ def from_epoch(
     The function can also be used in an eager context by passing a Series.
 
     >>> s = pl.Series([12345, 12346])
-    >>> pl.from_epoch(s, unit="d")
+    >>> pl.from_epoch(s, time_unit="d")
     shape: (2,)
     Series: '' [date]
     [
@@ -3189,13 +3182,13 @@ def from_epoch(
     elif not isinstance(column, (pli.Series, pli.Expr)):
         column = pli.Series(column)  # Sequence input handled by Series constructor
 
-    if unit == "d":
+    if time_unit == "d":
         return column.cast(Date)
-    elif unit == "s":
+    elif time_unit == "s":
         return (column.cast(Int64) * 1_000_000).cast(Datetime("us"))
-    elif unit in DTYPE_TEMPORAL_UNITS:
-        return column.cast(Datetime(unit))
+    elif time_unit in DTYPE_TEMPORAL_UNITS:
+        return column.cast(Datetime(time_unit))
     else:
         raise ValueError(
-            f"'unit' must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got '{unit}'."
+            f"'time_unit' must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {time_unit!r}."
         )

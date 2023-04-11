@@ -18,7 +18,7 @@ use pyo3::basic::CompareOp;
 use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyBytes, PyDict, PyList, PySequence, PyTuple};
+use pyo3::types::{PyBool, PyBytes, PyDict, PyFloat, PyList, PySequence, PyString, PyTuple};
 use pyo3::{PyAny, PyResult};
 use smartstring::alias::String as SmartString;
 
@@ -179,11 +179,12 @@ fn struct_dict<'a>(
     dict.into_py(py)
 }
 
-fn decimal_to_digits(v: i128, buf: &mut [u8; 48]) -> usize {
+// accept u128 array to ensure alignment is correct
+fn decimal_to_digits(v: i128, buf: &mut [u128; 3]) -> usize {
     const ZEROS: i128 = 0x3030_3030_3030_3030_3030_3030_3030_3030;
-    if buf.len() < 48 {
-        panic!("decimal_to_digits: buffer size < 48");
-    }
+    // safety: transmute is safe as there are 48 bytes in 3 128bit ints
+    // and the minimal alignment of u8 fits u16
+    let buf = unsafe { std::mem::transmute::<&mut [u128; 3], &mut [u8; 48]>(buf) };
     let len = lexical_core::write(v, buf).len();
     let ptr = buf.as_mut_ptr() as *mut i128;
     unsafe {
@@ -227,19 +228,24 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                 let py_date_dtype = pl.getattr("Date").unwrap();
                 convert.call1((v, py_date_dtype)).unwrap().into_py(py)
             }
-            AnyValue::Datetime(v, tu, tz) => {
+            AnyValue::Datetime(v, time_unit, time_zone) => {
                 let convert = utils.getattr("_to_python_datetime").unwrap();
                 let py_datetime_dtype = pl.getattr("Datetime").unwrap();
-                let tu = tu.to_ascii();
+                let time_unit = time_unit.to_ascii();
                 convert
-                    .call1((v, py_datetime_dtype, tu, tz.as_ref().map(|s| s.as_str())))
+                    .call1((
+                        v,
+                        py_datetime_dtype,
+                        time_unit,
+                        time_zone.as_ref().map(|s| s.as_str()),
+                    ))
                     .unwrap()
                     .into_py(py)
             }
-            AnyValue::Duration(v, tu) => {
+            AnyValue::Duration(v, time_unit) => {
                 let convert = utils.getattr("_to_python_timedelta").unwrap();
-                let tu = tu.to_ascii();
-                convert.call1((v, tu)).unwrap().into_py(py)
+                let time_unit = time_unit.to_ascii();
+                convert.call1((v, time_unit)).unwrap().into_py(py)
             }
             AnyValue::Time(v) => {
                 let convert = utils.getattr("_to_python_time").unwrap();
@@ -262,9 +268,16 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
             AnyValue::BinaryOwned(v) => v.into_py(py),
             AnyValue::Decimal(v, scale) => {
                 let convert = utils.getattr("_to_python_decimal").unwrap();
-                let mut buf = [0_u8; 48];
+                const N: usize = 3;
+                let mut buf = [0_u128; N];
                 let n_digits = decimal_to_digits(v.abs(), &mut buf);
-                let digits = PyTuple::new(py, buf.into_iter().take(n_digits));
+                let buf = unsafe {
+                    std::slice::from_raw_parts(
+                        buf.as_slice().as_ptr() as *const u8,
+                        N * std::mem::size_of::<u128>(),
+                    )
+                };
+                let digits = PyTuple::new(py, buf.iter().take(n_digits));
                 convert
                     .call1((v.is_negative() as u8, digits, n_digits, -(scale as i32)))
                     .unwrap()
@@ -385,16 +398,16 @@ impl FromPyObject<'_> for Wrap<DataType> {
                 }
             }
             "Duration" => {
-                let tu = ob.getattr("tu").unwrap();
-                let tu = tu.extract::<Wrap<TimeUnit>>()?.0;
-                DataType::Duration(tu)
+                let time_unit = ob.getattr("time_unit").unwrap();
+                let time_unit = time_unit.extract::<Wrap<TimeUnit>>()?.0;
+                DataType::Duration(time_unit)
             }
             "Datetime" => {
-                let tu = ob.getattr("tu").unwrap();
-                let tu = tu.extract::<Wrap<TimeUnit>>()?.0;
-                let tz = ob.getattr("tz").unwrap();
-                let tz = tz.extract()?;
-                DataType::Datetime(tu, tz)
+                let time_unit = ob.getattr("time_unit").unwrap();
+                let time_unit = time_unit.extract::<Wrap<TimeUnit>>()?.0;
+                let time_zone = ob.getattr("time_zone").unwrap();
+                let time_zone = time_zone.extract()?;
+                DataType::Datetime(time_unit, time_zone)
             }
             "Decimal" => {
                 let precision = ob.getattr("precision")?.extract()?;
@@ -434,12 +447,12 @@ impl ToPyObject for Wrap<AnyValue<'_>> {
 
 impl ToPyObject for Wrap<TimeUnit> {
     fn to_object(&self, py: Python) -> PyObject {
-        let tu = match self.0 {
+        let time_unit = match self.0 {
             TimeUnit::Nanoseconds => "ns",
             TimeUnit::Microseconds => "us",
             TimeUnit::Milliseconds => "ms",
         };
-        tu.into_py(py)
+        time_unit.into_py(py)
     }
 }
 
@@ -482,11 +495,11 @@ impl ToPyObject for Wrap<&DurationChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let utils = UTILS.as_ref(py);
         let convert = utils.getattr("_to_python_timedelta").unwrap();
-        let tu = Wrap(self.0.time_unit()).to_object(py);
+        let time_unit = Wrap(self.0.time_unit()).to_object(py);
         let iter = self
             .0
             .into_iter()
-            .map(|opt_v| opt_v.map(|v| convert.call1((v, &tu)).unwrap()));
+            .map(|opt_v| opt_v.map(|v| convert.call1((v, &time_unit)).unwrap()));
         PyList::new(py, iter).into_py(py)
     }
 }
@@ -496,12 +509,15 @@ impl ToPyObject for Wrap<&DatetimeChunked> {
         let (pl, utils) = (POLARS.as_ref(py), UTILS.as_ref(py));
         let convert = utils.getattr("_to_python_datetime").unwrap();
         let py_date_dtype = pl.getattr("Datetime").unwrap();
-        let tu = Wrap(self.0.time_unit()).to_object(py);
-        let tz = self.0.time_zone().to_object(py);
-        let iter = self
-            .0
-            .into_iter()
-            .map(|opt_v| opt_v.map(|v| convert.call1((v, py_date_dtype, &tu, &tz)).unwrap()));
+        let time_unit = Wrap(self.0.time_unit()).to_object(py);
+        let time_zone = self.0.time_zone().to_object(py);
+        let iter = self.0.into_iter().map(|opt_v| {
+            opt_v.map(|v| {
+                convert
+                    .call1((v, py_date_dtype, &time_unit, &time_zone))
+                    .unwrap()
+            })
+        });
         PyList::new(py, iter).into_py(py)
     }
 }
@@ -541,9 +557,16 @@ impl ToPyObject for Wrap<&DecimalChunked> {
         let iter = self.0.into_iter().map(|opt_v| {
             opt_v.map(|v| {
                 // TODO! use anyvalue so that we have a single impl.
-                let mut buf = [0_u8; 48];
+                const N: usize = 3;
+                let mut buf = [0_u128; N];
                 let n_digits = decimal_to_digits(v.abs(), &mut buf);
-                let digits = PyTuple::new(py, buf.into_iter().take(n_digits));
+                let buf = unsafe {
+                    std::slice::from_raw_parts(
+                        buf.as_slice().as_ptr() as *const u8,
+                        N * std::mem::size_of::<u128>(),
+                    )
+                };
+                let digits = PyTuple::new(py, buf.iter().take(n_digits));
                 convert
                     .call1((v.is_negative() as u8, digits, &py_precision, &py_scale))
                     .unwrap()
@@ -665,12 +688,16 @@ fn convert_datetime(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
 
 impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
-        if ob.is_instance_of::<PyBool>().unwrap() {
+        if ob.is_instance_of::<PyBool>()? {
             Ok(AnyValue::Boolean(ob.extract::<bool>().unwrap()).into())
-        } else if let Ok(v) = ob.extract::<i64>() {
-            Ok(AnyValue::Int64(v).into())
-        } else if let Ok(v) = ob.extract::<&'s str>() {
-            Ok(AnyValue::Utf8(v).into())
+        } else if let Ok(value) = ob.extract::<i64>() {
+            Ok(AnyValue::Int64(value).into())
+        } else if ob.is_instance_of::<PyFloat>()? {
+            let value = ob.extract::<f64>().unwrap();
+            Ok(AnyValue::Float64(value).into())
+        } else if ob.is_instance_of::<PyString>()? {
+            let value = ob.extract::<&'s str>().unwrap();
+            Ok(AnyValue::Utf8(value).into())
         } else if ob.is_none() {
             Ok(AnyValue::Null.into())
         } else if ob.is_instance_of::<PyDict>()? {
@@ -696,9 +723,6 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             Ok(AnyValue::Binary(v).into())
         } else {
             let type_name = ob.get_type().name()?;
-            if let Some(Ok(v)) = (type_name != "Decimal").then_some(ob.extract::<f64>()) {
-                return Ok(AnyValue::Float64(v).into());
-            };
             match type_name {
                 "datetime" => convert_datetime(ob),
                 "date" => convert_date(ob),

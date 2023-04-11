@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING, Any, Callable
 from polars import functions as F
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
-from polars.utils.decorators import deprecate_nonkeyword_arguments
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time
@@ -54,8 +53,7 @@ class ListNameSpace:
     def mean(self) -> Series:
         """Compute the mean value of the arrays in the list."""
 
-    @deprecate_nonkeyword_arguments()
-    def sort(self, descending: bool = False) -> Series:
+    def sort(self, *, descending: bool = False) -> Series:
         """
         Sort the arrays in this column.
 
@@ -83,17 +81,11 @@ class ListNameSpace:
         ]
 
         """
-        return (
-            wrap_s(self._s)
-            .to_frame()
-            .select(F.col(self._s.name()).arr.sort(descending=descending))
-            .to_series()
-        )
 
     def reverse(self) -> Series:
         """Reverse the arrays in the list."""
 
-    def unique(self, maintain_order: bool = False) -> Series:
+    def unique(self, *, maintain_order: bool = False) -> Series:
         """
         Get the unique/distinct values in the list.
 
@@ -131,7 +123,7 @@ class ListNameSpace:
         """
 
     def take(
-        self, index: Series | list[int] | list[list[int]], null_on_oob: bool = False
+        self, index: Series | list[int] | list[list[int]], *, null_on_oob: bool = False
     ) -> Series:
         """
         Take sublists by multiple indices.
@@ -452,7 +444,7 @@ class ListNameSpace:
             .to_series()
         )
 
-    def eval(self, expr: Expr, parallel: bool = False) -> Series:
+    def eval(self, expr: Expr, *, parallel: bool = False) -> Series:
         """
         Run any polars expression against the lists' elements.
 

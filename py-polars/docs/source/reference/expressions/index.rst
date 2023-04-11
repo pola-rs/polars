@@ -19,6 +19,7 @@ This page gives an overview of all public polars expressions.
    modify_select
    meta
    miscellaneous
+   operators
    string
    struct
    temporal

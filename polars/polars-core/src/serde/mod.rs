@@ -177,9 +177,8 @@ mod test {
         )));
         let row_3 = AnyValue::Null;
 
-        let s =
-            Series::from_any_values_and_dtype("item", &vec![row_1, row_2, row_3], &dtype, false)
-                .unwrap();
+        let s = Series::from_any_values_and_dtype("item", &[row_1, row_2, row_3], &dtype, false)
+            .unwrap();
         let df = DataFrame::new(vec![s]).unwrap();
 
         let df_str = serde_json::to_string(&df).unwrap();

@@ -170,7 +170,7 @@ def test_shuffle() -> None:
 def test_sample() -> None:
     a = pl.Series("a", range(0, 20))
     out = pl.select(
-        pl.lit(a).sample(frac=0.5, with_replacement=False, seed=1)
+        pl.lit(a).sample(fraction=0.5, with_replacement=False, seed=1)
     ).to_series()
 
     assert out.shape == (10,)
@@ -460,6 +460,20 @@ def test_rank_so_4109() -> None:
     }
 
 
+def test_rank_random() -> None:
+    df = pl.from_dict(
+        {"a": [1] * 5, "b": [1, 2, 3, 4, 5], "c": [200, 100, 100, 50, 100]}
+    )
+
+    df_ranks1 = df.with_columns(
+        pl.col("c").rank(method="random", seed=1).over("a").alias("rank")
+    )
+    df_ranks2 = df.with_columns(
+        pl.col("c").rank(method="random", seed=1).over("a").alias("rank")
+    )
+    assert_frame_equal(df_ranks1, df_ranks2)
+
+
 def test_unique_empty() -> None:
     for dt in [pl.Utf8, pl.Boolean, pl.Int32, pl.UInt32]:
         s = pl.Series([], dtype=dt)
@@ -746,7 +760,7 @@ def test_map_dict() -> None:
     assert_frame_equal(
         df.with_columns(
             pl.col("int")
-            .map_dict(int_with_only_none_values_dict, default=6, dtype=pl.Int32)
+            .map_dict(int_with_only_none_values_dict, default=6, return_dtype=pl.Int32)
             .alias("remapped")
         ),
         pl.DataFrame(
@@ -789,7 +803,8 @@ def test_map_dict() -> None:
     float_dict = {1.0: "b", 3.0: "d"}
 
     with pytest.raises(
-        pl.ComputeError, match="Remapping keys could not be converted to Int16: "
+        pl.ComputeError,
+        match="Remapping keys for map_dict could not be converted to Int16: ",
     ):
         df.with_columns(pl.col("int").map_dict(float_dict))
 
@@ -797,13 +812,13 @@ def test_map_dict() -> None:
 
     with pytest.raises(
         pl.ComputeError,
-        match="Remapping keys could not be converted to Utf8 without losing values in the conversion.",
+        match="Remapping keys for map_dict could not be converted to Utf8 without losing values in the conversion.",
     ):
         df_int_as_str.with_columns(pl.col("int").map_dict(int_dict))
 
     with pytest.raises(
         pl.ComputeError,
-        match="Remapping keys could not be converted to Utf8 without losing values in the conversion.",
+        match="Remapping keys for map_dict could not be converted to Utf8 without losing values in the conversion.",
     ):
         df_int_as_str.with_columns(pl.col("int").map_dict(int_with_none_dict))
 
@@ -815,6 +830,27 @@ def test_map_dict() -> None:
         pl.DataFrame(
             [
                 pl.Series("text", ["-23"], dtype=pl.Utf8),
+            ]
+        ),
+    )
+
+    assert_frame_equal(
+        pl.DataFrame(
+            [
+                pl.Series("float_to_boolean", [1.0, None]),
+                pl.Series("boolean_to_int", [True, False]),
+                pl.Series("boolean_to_str", [True, False]),
+            ]
+        ).with_columns(
+            pl.col("float_to_boolean").map_dict({1.0: True}),
+            pl.col("boolean_to_int").map_dict({True: 1, False: 0}),
+            pl.col("boolean_to_str").map_dict({True: "1", False: "0"}),
+        ),
+        pl.DataFrame(
+            [
+                pl.Series("float_to_boolean", [True, None], dtype=pl.Boolean),
+                pl.Series("boolean_to_int", [1, 0], dtype=pl.Int64),
+                pl.Series("boolean_to_str", ["1", "0"], dtype=pl.Utf8),
             ]
         ),
     )
@@ -998,3 +1034,19 @@ def test_operators_vs_expressions() -> None:
             | (pl.col("y").cast(int) == pl.col("z"))
         ),
     )
+
+
+def test_head() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
+    assert df.select(pl.col("a").head(0)).to_dict(False) == {"a": []}
+    assert df.select(pl.col("a").head(3)).to_dict(False) == {"a": [1, 2, 3]}
+    assert df.select(pl.col("a").head(10)).to_dict(False) == {"a": [1, 2, 3, 4, 5]}
+    assert df.select(pl.col("a").head(pl.count() / 2)).to_dict(False) == {"a": [1, 2]}
+
+
+def test_tail() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
+    assert df.select(pl.col("a").tail(0)).to_dict(False) == {"a": []}
+    assert df.select(pl.col("a").tail(3)).to_dict(False) == {"a": [3, 4, 5]}
+    assert df.select(pl.col("a").tail(10)).to_dict(False) == {"a": [1, 2, 3, 4, 5]}
+    assert df.select(pl.col("a").tail(pl.count() / 2)).to_dict(False) == {"a": [4, 5]}

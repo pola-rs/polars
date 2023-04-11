@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 
 from polars import internals as pli
 from polars.datatypes import N_INFER_DEFAULT
-from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 from polars.utils.various import normalise_filepath
 
 if TYPE_CHECKING:
@@ -15,7 +14,6 @@ if TYPE_CHECKING:
     from polars.lazyframe import LazyFrame
 
 
-@deprecated_alias(file="source")
 def read_ndjson(source: str | Path | IOBase) -> DataFrame:
     """
     Read into a DataFrame from a newline delimited JSON file.
@@ -29,10 +27,9 @@ def read_ndjson(source: str | Path | IOBase) -> DataFrame:
     return pli.DataFrame._read_ndjson(source)
 
 
-@deprecate_nonkeyword_arguments()
-@deprecated_alias(file="source", stacklevel=4)
 def scan_ndjson(
     source: str | Path,
+    *,
     infer_schema_length: int | None = N_INFER_DEFAULT,
     batch_size: int | None = 1024,
     n_rows: int | None = None,

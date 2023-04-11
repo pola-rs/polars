@@ -14,6 +14,7 @@ from polars.datatypes import (
 from polars.utils import no_default
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
 from polars.utils._wrap import wrap_expr
+from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
     from polars.expr.expr import Expr
@@ -33,6 +34,7 @@ class ExprStringNameSpace:
         self,
         datatype: PolarsTemporalType,
         fmt: str | None = None,
+        *,
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
@@ -128,14 +130,14 @@ class ExprStringNameSpace:
                 "`tz_aware` is now auto-inferred from `fmt` and will be removed "
                 "in a future version. You can safely drop this argument.",
                 category=DeprecationWarning,
-                stacklevel=2,
+                stacklevel=find_stacklevel(),
             )
 
         if datatype == Date:
             return wrap_expr(self._pyexpr.str_parse_date(fmt, strict, exact, cache))
         elif datatype == Datetime:
-            tu = datatype.tu  # type: ignore[union-attr]
-            tz = datatype.tz  # type: ignore[union-attr]
+            time_unit = datatype.time_unit  # type: ignore[union-attr]
+            time_zone = datatype.time_zone  # type: ignore[union-attr]
             dtcol = wrap_expr(
                 self._pyexpr.str_parse_datetime(
                     fmt,
@@ -144,11 +146,11 @@ class ExprStringNameSpace:
                     cache,
                     tz_aware,
                     utc,
-                    tu,
-                    tz,
+                    time_unit,
+                    time_zone,
                 )
             )
-            return dtcol if (tu is None) else dtcol.dt.cast_time_unit(tu)
+            return dtcol if (time_unit is None) else dtcol.dt.cast_time_unit(time_unit)
         elif datatype == Time:
             return wrap_expr(self._pyexpr.str_parse_time(fmt, strict, exact, cache))
         else:  # pragma: no cover
@@ -291,13 +293,13 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_to_lowercase())
 
-    def strip(self, matches: str | None = None) -> Expr:
+    def strip(self, characters: str | None = None) -> Expr:
         r"""
         Remove leading and trailing characters.
 
         Parameters
         ----------
-        matches
+        characters
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
@@ -331,15 +333,15 @@ class ExprStringNameSpace:
         └─────────┘
 
         """
-        return wrap_expr(self._pyexpr.str_strip(matches))
+        return wrap_expr(self._pyexpr.str_strip(characters))
 
-    def lstrip(self, matches: str | None = None) -> Expr:
+    def lstrip(self, characters: str | None = None) -> Expr:
         r"""
         Remove leading characters.
 
         Parameters
         ----------
-        matches
+        characters
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
@@ -373,15 +375,15 @@ class ExprStringNameSpace:
         └─────────┘
 
         """
-        return wrap_expr(self._pyexpr.str_lstrip(matches))
+        return wrap_expr(self._pyexpr.str_lstrip(characters))
 
-    def rstrip(self, matches: str | None = None) -> Expr:
+    def rstrip(self, characters: str | None = None) -> Expr:
         r"""
         Remove trailing characters.
 
         Parameters
         ----------
-        matches
+        characters
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
@@ -415,7 +417,7 @@ class ExprStringNameSpace:
         └─────────┘
 
         """
-        return wrap_expr(self._pyexpr.str_rstrip(matches))
+        return wrap_expr(self._pyexpr.str_rstrip(characters))
 
     def zfill(self, alignment: int) -> Expr:
         """
@@ -461,11 +463,11 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_zfill(alignment))
 
-    def ljust(self, width: int, fillchar: str = " ") -> Expr:
+    def ljust(self, width: int, fill_char: str = " ") -> Expr:
         """
         Return the string left justified in a string of length ``width``.
 
-        Padding is done using the specified ``fillchar``.
+        Padding is done using the specified ``fill_char``.
         The original string is returned if ``width`` is less than or equal to
         ``len(s)``.
 
@@ -473,7 +475,7 @@ class ExprStringNameSpace:
         ----------
         width
             Justify left to this length.
-        fillchar
+        fill_char
             Fill with this ASCII character.
 
         Examples
@@ -493,13 +495,13 @@ class ExprStringNameSpace:
         └──────────────┘
 
         """
-        return wrap_expr(self._pyexpr.str_ljust(width, fillchar))
+        return wrap_expr(self._pyexpr.str_ljust(width, fill_char))
 
-    def rjust(self, width: int, fillchar: str = " ") -> Expr:
+    def rjust(self, width: int, fill_char: str = " ") -> Expr:
         """
         Return the string right justified in a string of length ``width``.
 
-        Padding is done using the specified ``fillchar``.
+        Padding is done using the specified ``fill_char``.
         The original string is returned if ``width`` is less than or equal to
         ``len(s)``.
 
@@ -507,7 +509,7 @@ class ExprStringNameSpace:
         ----------
         width
             Justify right to this length.
-        fillchar
+        fill_char
             Fill with this ASCII character.
 
         Examples
@@ -527,10 +529,10 @@ class ExprStringNameSpace:
         └──────────────┘
 
         """
-        return wrap_expr(self._pyexpr.str_rjust(width, fillchar))
+        return wrap_expr(self._pyexpr.str_rjust(width, fill_char))
 
     def contains(
-        self, pattern: str | Expr, literal: bool = False, strict: bool = True
+        self, pattern: str | Expr, *, literal: bool = False, strict: bool = True
     ) -> Expr:
         """
         Check if string contains a substring that matches a regex.
@@ -577,13 +579,13 @@ class ExprStringNameSpace:
         pattern = expr_to_lit_or_expr(pattern, str_to_lit=True)._pyexpr
         return wrap_expr(self._pyexpr.str_contains(pattern, literal, strict))
 
-    def ends_with(self, sub: str | Expr) -> Expr:
+    def ends_with(self, suffix: str | Expr) -> Expr:
         """
         Check if string values end with a substring.
 
         Parameters
         ----------
-        sub
+        suffix
             Suffix substring.
 
         Examples
@@ -621,16 +623,16 @@ class ExprStringNameSpace:
         starts_with : Check if string values start with a substring.
 
         """
-        sub = expr_to_lit_or_expr(sub, str_to_lit=True)._pyexpr
-        return wrap_expr(self._pyexpr.str_ends_with(sub))
+        suffix = expr_to_lit_or_expr(suffix, str_to_lit=True)._pyexpr
+        return wrap_expr(self._pyexpr.str_ends_with(suffix))
 
-    def starts_with(self, sub: str | Expr) -> Expr:
+    def starts_with(self, prefix: str | Expr) -> Expr:
         """
         Check if string values start with a substring.
 
         Parameters
         ----------
-        sub
+        prefix
             Prefix substring.
 
         Examples
@@ -668,8 +670,8 @@ class ExprStringNameSpace:
         ends_with : Check if string values end with a substring.
 
         """
-        sub = expr_to_lit_or_expr(sub, str_to_lit=True)._pyexpr
-        return wrap_expr(self._pyexpr.str_starts_with(sub))
+        prefix = expr_to_lit_or_expr(prefix, str_to_lit=True)._pyexpr
+        return wrap_expr(self._pyexpr.str_starts_with(prefix))
 
     def json_extract(self, dtype: PolarsDataType | None = None) -> Expr:
         """
@@ -936,7 +938,7 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.count_match(pattern))
 
-    def split(self, by: str, inclusive: bool = False) -> Expr:
+    def split(self, by: str, *, inclusive: bool = False) -> Expr:
         """
         Split the string by a substring.
 
@@ -971,7 +973,7 @@ class ExprStringNameSpace:
             return wrap_expr(self._pyexpr.str_split_inclusive(by))
         return wrap_expr(self._pyexpr.str_split(by))
 
-    def split_exact(self, by: str, n: int, inclusive: bool = False) -> Expr:
+    def split_exact(self, by: str, n: int, *, inclusive: bool = False) -> Expr:
         """
         Split the string by a substring using ``n`` splits.
 
@@ -1106,8 +1108,8 @@ class ExprStringNameSpace:
         self,
         pattern: str | Expr,
         value: str | Expr,
-        literal: bool = False,
         *,
+        literal: bool = False,
         n: int = 1,
     ) -> Expr:
         r"""
@@ -1153,7 +1155,7 @@ class ExprStringNameSpace:
         )
 
     def replace_all(
-        self, pattern: str | Expr, value: str | Expr, literal: bool = False
+        self, pattern: str | Expr, value: str | Expr, *, literal: bool = False
     ) -> Expr:
         """
         Replace all matching regex/literal substrings with a new string value.
@@ -1277,7 +1279,7 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.explode())
 
-    def parse_int(self, radix: int = 2, strict: bool = True) -> Expr:
+    def parse_int(self, radix: int = 2, *, strict: bool = True) -> Expr:
         """
         Parse integers with base radix from strings.
 
@@ -1300,7 +1302,7 @@ class ExprStringNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"bin": ["110", "101", "010", "invalid"]})
-        >>> df.select(pl.col("bin").str.parse_int(2, False))
+        >>> df.select(pl.col("bin").str.parse_int(2, strict=False))
         shape: (4, 1)
         ┌──────┐
         │ bin  │
@@ -1314,7 +1316,7 @@ class ExprStringNameSpace:
         └──────┘
 
         >>> df = pl.DataFrame({"hex": ["fa1e", "ff00", "cafe", None]})
-        >>> df.select(pl.col("hex").str.parse_int(16, True))
+        >>> df.select(pl.col("hex").str.parse_int(16, strict=True))
         shape: (4, 1)
         ┌───────┐
         │ hex   │
