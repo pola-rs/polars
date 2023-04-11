@@ -137,7 +137,7 @@ where
 
 impl<R> SerReader<R> for IpcStreamReader<R>
 where
-    R: Read
+    R: Read,
 {
     fn new(reader: R) -> Self {
         IpcStreamReader {
