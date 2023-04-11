@@ -468,18 +468,13 @@ impl Expr {
 
     /// Get unique values of this expression.
     pub fn unique(self) -> Self {
-        self.apply(|s: Series| s.unique().map(Some), GetOutput::same_type())
-            .with_fmt("unique")
+        self.apply_private(FunctionExpr::Unique(false))
     }
 
     /// Get unique values of this expression, while maintaining order.
     /// This requires more work than [`Expr::unique`].
     pub fn unique_stable(self) -> Self {
-        self.apply(
-            |s: Series| s.unique_stable().map(Some),
-            GetOutput::same_type(),
-        )
-        .with_fmt("unique_stable")
+        self.apply_private(FunctionExpr::Unique(true))
     }
 
     /// Get the first index of unique values of this expression.
