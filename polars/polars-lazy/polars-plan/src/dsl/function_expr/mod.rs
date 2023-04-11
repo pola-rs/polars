@@ -115,7 +115,7 @@ pub enum FunctionExpr {
     Coalesce,
     ShrinkType,
     #[cfg(feature = "diff")]
-    Diff(usize, NullBehavior),
+    Diff(i64, NullBehavior),
     #[cfg(feature = "interpolate")]
     Interpolate(InterpolationMethod),
     #[cfg(feature = "dot_product")]
