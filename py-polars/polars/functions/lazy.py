@@ -682,13 +682,13 @@ def sum(column: str | Sequence[Expr | str] | Expr) -> Expr:
 
 
 @overload
-def sum(column: Series) -> int | float:
+def sum(column: Series) -> int | float | timedelta | None:
     ...
 
 
 def sum(
     column: str | Sequence[Expr | str] | Series | Expr,
-) -> Expr | Any:
+) -> Expr | int | float | timedelta | None:
     """
     Sum values in a column/Series, or horizontally across list of columns/expressions.
 

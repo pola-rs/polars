@@ -1296,7 +1296,7 @@ class Series:
 
         return pli.DataFrame({"statistic": stats.keys(), "value": stats.values()})
 
-    def sum(self) -> int | float:
+    def sum(self) -> int | float | timedelta | None:
         """
         Reduce this Series to the sum value.
 
@@ -1314,7 +1314,7 @@ class Series:
         """
         return self._s.sum()
 
-    def mean(self) -> int | float | None:
+    def mean(self) -> float | None:
         """
         Reduce this Series to the mean value.
 
@@ -1327,9 +1327,18 @@ class Series:
         """
         return self._s.mean()
 
-    def product(self) -> int | float:
-        """Reduce this Series to the product value."""
-        return self.to_frame().select(F.col(self.name).product()).to_series()[0]
+    def product(self) -> int | float | None:
+        """
+        Reduce this Series to the product of its elements.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.product()
+        6
+
+        """
+        return self.to_frame().select(F.col(self.name).product()).to_series().item()
 
     def pow(self, exponent: int | float | Series) -> Series:
         """
@@ -1388,7 +1397,7 @@ class Series:
         """
         return self._s.max()
 
-    def nan_max(self) -> int | float | date | datetime | timedelta | str:
+    def nan_max(self) -> PythonLiteral | None:
         """
         Get maximum value, but propagate/poison encountered NaN values.
 
@@ -1398,7 +1407,7 @@ class Series:
         """
         return self.to_frame().select(F.col(self.name).nan_max()).item()
 
-    def nan_min(self) -> int | float | date | datetime | timedelta | str:
+    def nan_min(self) -> PythonLiteral | None:
         """
         Get minimum value, but propagate/poison encountered NaN values.
 
