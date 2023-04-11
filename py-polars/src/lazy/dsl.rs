@@ -724,6 +724,7 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (pat, literal, strict))]
+    #[cfg(feature = "lazy_regex")]
     pub fn str_contains(&self, pat: PyExpr, literal: Option<bool>, strict: bool) -> PyExpr {
         match literal {
             Some(true) => self.inner.clone().str().contains_literal(pat.inner).into(),
@@ -863,6 +864,7 @@ impl PyExpr {
             .into()
     }
 
+    #[cfg(feature = "extract_jsonpath")]
     pub fn str_json_extract(&self, dtype: Option<Wrap<DataType>>) -> PyExpr {
         let dtype = dtype.map(|wrap| wrap.0);
 
