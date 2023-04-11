@@ -864,7 +864,7 @@ impl PyExpr {
             .into()
     }
 
-    #[cfg(all(feature = "json", feature = "strings"))]
+    #[cfg(feature = "extract_jsonpath"))]
     pub fn str_json_extract(&self, dtype: Option<Wrap<DataType>>) -> PyExpr {
         let dtype = dtype.map(|wrap| wrap.0);
 
