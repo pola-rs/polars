@@ -312,9 +312,9 @@ impl PhysicalExpr for ApplyExpr {
         };
 
         match function {
-            FunctionExpr::IsNull => Some(self),
+            FunctionExpr::Boolean(BooleanFunction::IsNull) => Some(self),
             #[cfg(feature = "is_in")]
-            FunctionExpr::IsIn => Some(self),
+            FunctionExpr::Boolean(BooleanFunction::IsIn) => Some(self),
             _ => None,
         }
     }
@@ -409,7 +409,7 @@ impl ApplyExpr {
         };
 
         match function {
-            FunctionExpr::IsNull => {
+            FunctionExpr::Boolean(BooleanFunction::IsNull) => {
                 let root = expr_to_leaf_column_name(&self.expr)?;
 
                 match stats.get_stats(&root).ok() {
@@ -421,7 +421,7 @@ impl ApplyExpr {
                 }
             }
             #[cfg(feature = "is_in")]
-            FunctionExpr::IsIn => {
+            FunctionExpr::Boolean(BooleanFunction::IsIn) => {
                 let root = match expr_to_leaf_column_name(&input[0]) {
                     Ok(root) => root,
                     Err(_) => return Ok(true),

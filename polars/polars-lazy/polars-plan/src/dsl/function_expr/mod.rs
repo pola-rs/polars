@@ -39,7 +39,7 @@ use polars_core::prelude::*;
 use serde::{Deserialize, Serialize};
 
 pub(crate) use self::binary::BinaryFunction;
-pub(super) use self::boolean::BooleanFunction;
+pub use self::boolean::BooleanFunction;
 #[cfg(feature = "temporal")]
 pub(super) use self::datetime::TemporalFunction;
 #[cfg(feature = "strings")]

@@ -109,8 +109,6 @@ impl FunctionExpr {
             Coalesce => super_type(),
             #[cfg(feature = "row_hash")]
             Hash(..) => with_dtype(DataType::UInt64),
-            #[cfg(feature = "is_in")]
-            IsIn => with_dtype(DataType::Boolean),
             #[cfg(feature = "arg_where")]
             ArgWhere => with_dtype(IDX_DTYPE),
             #[cfg(feature = "search_sorted")]

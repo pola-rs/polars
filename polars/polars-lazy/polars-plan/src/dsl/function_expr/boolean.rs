@@ -1,7 +1,9 @@
 use std::ops::Not;
 
 use super::*;
-use crate::{map, wrap};
+use crate::map;
+#[cfg(feature = "is_in")]
+use crate::wrap;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
@@ -136,7 +138,7 @@ pub(super) fn is_not_nan(s: &Series) -> PolarsResult<Series> {
 
 #[cfg(feature = "is_first")]
 fn is_first(s: &Series) -> PolarsResult<Series> {
-    polars_ops::prelude::is_first(&s).map(|ca| ca.into_series())
+    polars_ops::prelude::is_first(s).map(|ca| ca.into_series())
 }
 
 #[cfg(feature = "is_unique")]
