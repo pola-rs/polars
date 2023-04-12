@@ -242,6 +242,7 @@ impl FunctionExpr {
             TopK { .. } => same_type(),
             Shift(..) | Reverse => same_type(),
             Boolean(f) => with_dtype(f.dtype_out()),
+            Categorical(f) => with_dtype(f.dtype_out()),
             Cumcount { .. } => with_dtype(IDX_DTYPE),
             Cumsum { .. } => map_dtype(&cum::dtypes::cumsum),
             Cumprod { .. } => map_dtype(&cum::dtypes::cumprod),
