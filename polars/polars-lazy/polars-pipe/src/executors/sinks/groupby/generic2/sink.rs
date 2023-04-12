@@ -24,19 +24,24 @@ impl GenericGroupby2 {
         output_schema: SchemaRef,
         slice: Option<(i64, usize)>,
     ) -> Self {
-        let key_dtypes = output_schema
-            .iter_dtypes()
-            .take(key_columns.len())
-            .cloned()
-            .collect::<Vec<_>>();
+        let key_dtypes: Arc<[DataType]> = Arc::from(
+            output_schema
+                .iter_dtypes()
+                .take(key_columns.len())
+                .cloned()
+                .collect::<Vec<_>>(),
+        );
 
-        let global_map =
-            GlobalTable::new(agg_constructors.clone(), &key_dtypes, output_schema.clone());
+        let global_map = GlobalTable::new(
+            agg_constructors.clone(),
+            key_dtypes.as_ref(),
+            output_schema.clone(),
+        );
 
         Self {
             thread_local_table: UnsafeCell::new(ThreadLocalTable::new(
                 agg_constructors,
-                &key_dtypes,
+                key_dtypes,
                 output_schema,
             )),
             global_table: Arc::new(global_map),

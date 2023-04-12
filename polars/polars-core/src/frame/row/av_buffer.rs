@@ -577,6 +577,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
         self.reset(0)
     }
 }
+
 impl From<(&DataType, usize)> for AnyValueBufferTrusted<'_> {
     fn from(a: (&DataType, usize)) -> Self {
         let (dt, len) = a;

@@ -3,7 +3,6 @@ use crate::pipeline::PARTITION_SIZE;
 
 const OB_SIZE: usize = 2048;
 
-#[derive(Clone)]
 struct SpillPartitions {
     // outer vec: partitions (factor of 2)
     // inner vec: number of keys + number of aggregated columns
@@ -15,33 +14,59 @@ struct SpillPartitions {
     // this only fills during the reduce phase IFF
     // there are spilled tuples
     finished_payloads: PartitionVec<Vec<SpillPayload>>,
+    keys_dtypes: Arc<[DataType]>,
+    agg_dtypes: Arc<[DataType]>,
 }
 
 impl SpillPartitions {
-    fn new(keys: &[DataType], aggs: &[DataType]) -> Self {
-        let n_columns = keys.len() + aggs.len();
+    fn new(keys: Arc<[DataType]>, aggs: Arc<[DataType]>) -> Self {
+        let hash_partitioned = vec![];
+        let chunk_index_partitioned = vec![];
 
-        let mut buf = Vec::with_capacity(n_columns);
-        for dtype in keys {
-            let builder = AnyValueBufferTrusted::new(dtype, OB_SIZE);
-            buf.push(builder);
+        // construct via split so that preallocation succeeds
+        Self {
+            keys_aggs_partitioned: vec![],
+            hash_partitioned,
+            chunk_index_partitioned,
+            num_keys: keys.as_ref().len(),
+            spilled: false,
+            finished_payloads: vec![],
+            keys_dtypes: keys,
+            agg_dtypes: aggs,
         }
-        for dtype in aggs {
-            let builder = AnyValueBufferTrusted::new(dtype, OB_SIZE);
-            buf.push(builder);
-        }
+        .split()
+    }
 
-        let partitions: Vec<_> = (0..PARTITION_SIZE).map(|_partition| buf.clone()).collect();
+    fn split(&self) -> Self {
+        let n_columns = self.keys_dtypes.as_ref().len() + self.agg_dtypes.as_ref().len();
+
+        let keys_aggs_partitioned = (0..PARTITION_SIZE)
+            .map(|_| {
+                let mut buf = Vec::with_capacity(n_columns);
+                for dtype in self.keys_dtypes.as_ref() {
+                    let builder = AnyValueBufferTrusted::new(dtype, OB_SIZE);
+                    buf.push(builder);
+                }
+                for dtype in self.agg_dtypes.as_ref() {
+                    let builder = AnyValueBufferTrusted::new(dtype, OB_SIZE);
+                    buf.push(builder);
+                }
+                buf
+            })
+            .collect();
+
         let hash_partitioned = vec![Vec::with_capacity(OB_SIZE); PARTITION_SIZE];
         let chunk_index_partitioned = vec![Vec::with_capacity(OB_SIZE); PARTITION_SIZE];
 
         Self {
-            keys_aggs_partitioned: partitions,
+            keys_aggs_partitioned,
             hash_partitioned,
             chunk_index_partitioned,
-            num_keys: keys.len(),
+            num_keys: self.num_keys,
             spilled: false,
             finished_payloads: vec![],
+            keys_dtypes: self.keys_dtypes.clone(),
+            agg_dtypes: self.agg_dtypes.clone(),
         }
     }
 }
@@ -185,17 +210,24 @@ pub(super) struct ThreadLocalTable {
 impl ThreadLocalTable {
     pub(super) fn new(
         agg_constructors: Arc<[AggregateFunction]>,
-        key_dtypes: &[DataType],
+        key_dtypes: Arc<[DataType]>,
         output_schema: SchemaRef,
     ) -> Self {
-        let agg_dtypes = agg_constructors
-            .iter()
-            .map(|agg| agg.dtype())
-            .collect::<Vec<_>>();
-        let spill_partitions = SpillPartitions::new(key_dtypes, &agg_dtypes);
+        let agg_dtypes: Arc<[DataType]> = Arc::from(
+            agg_constructors
+                .iter()
+                .map(|agg| agg.dtype())
+                .collect::<Vec<_>>(),
+        );
+        let spill_partitions = SpillPartitions::new(key_dtypes.clone(), agg_dtypes);
 
         Self {
-            inner_map: AggHashTable::new(agg_constructors, key_dtypes, output_schema, Some(256)),
+            inner_map: AggHashTable::new(
+                agg_constructors,
+                key_dtypes.as_ref(),
+                output_schema,
+                Some(256),
+            ),
             spill_partitions,
         }
     }
@@ -206,7 +238,7 @@ impl ThreadLocalTable {
 
         Self {
             inner_map: self.inner_map.split(),
-            spill_partitions: self.spill_partitions.clone(),
+            spill_partitions: self.spill_partitions.split(),
         }
     }
 
