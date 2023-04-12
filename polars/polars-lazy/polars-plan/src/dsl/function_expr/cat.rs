@@ -4,7 +4,7 @@ use crate::map;
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum CategoricalFunction {
-    SetOrdering(CategoricalOrdering),
+    SetOrdering { lexical: bool },
 }
 
 impl CategoricalFunction {
@@ -17,7 +17,7 @@ impl Display for CategoricalFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use CategoricalFunction::*;
         let s = match self {
-            SetOrdering(..) => "set_ordering",
+            SetOrdering { .. } => "set_ordering",
         };
         write!(f, "{s}")
     }
@@ -27,7 +27,7 @@ impl From<CategoricalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: CategoricalFunction) -> Self {
         use CategoricalFunction::*;
         match func {
-            SetOrdering(ordering) => map!(set_ordering, ordering),
+            SetOrdering { lexical } => map!(set_ordering, lexical),
         }
     }
 }
@@ -38,12 +38,8 @@ impl From<CategoricalFunction> for FunctionExpr {
     }
 }
 
-fn set_ordering(s: &Series, ordering: CategoricalOrdering) -> PolarsResult<Series> {
+fn set_ordering(s: &Series, lexical: bool) -> PolarsResult<Series> {
     let mut ca = s.categorical()?.clone();
-    let set_lexical = match ordering {
-        CategoricalOrdering::Lexical => true,
-        CategoricalOrdering::Physical => false,
-    };
-    ca.set_lexical_sorted(set_lexical);
+    ca.set_lexical_sorted(lexical);
     Ok(ca.into_series())
 }

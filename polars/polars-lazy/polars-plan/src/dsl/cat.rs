@@ -1,12 +1,9 @@
-use serde::{Deserialize, Serialize};
-
 use super::*;
 
 /// Specialized expressions for Categorical dtypes.
 pub struct CategoricalNameSpace(pub(crate) Expr);
 
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Copy, Clone, PartialEq, Debug, Eq, Hash)]
+#[derive(Copy, Clone, Debug)]
 pub enum CategoricalOrdering {
     /// Use the physical categories for sorting
     Physical,
@@ -16,7 +13,11 @@ pub enum CategoricalOrdering {
 
 impl CategoricalNameSpace {
     pub fn set_ordering(self, ordering: CategoricalOrdering) -> Expr {
+        let lexical = match ordering {
+            CategoricalOrdering::Lexical => true,
+            CategoricalOrdering::Physical => false,
+        };
         self.0
-            .map_private(CategoricalFunction::SetOrdering(ordering).into())
+            .map_private(CategoricalFunction::SetOrdering { lexical }.into())
     }
 }

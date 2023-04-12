@@ -4,6 +4,7 @@ mod abs;
 mod arg_where;
 mod binary;
 mod boolean;
+#[cfg(feature = "dtype-categorical")]
 mod cat;
 #[cfg(feature = "round_series")]
 mod clip;
@@ -47,6 +48,7 @@ use serde::{Deserialize, Serialize};
 
 pub(crate) use self::binary::BinaryFunction;
 pub use self::boolean::BooleanFunction;
+#[cfg(feature = "dtype-categorical")]
 pub(crate) use self::cat::CategoricalFunction;
 #[cfg(feature = "temporal")]
 pub(super) use self::datetime::TemporalFunction;
@@ -126,6 +128,7 @@ pub enum FunctionExpr {
     },
     Reverse,
     Boolean(BooleanFunction),
+    #[cfg(feature = "dtype-categorical")]
     Categorical(CategoricalFunction),
     Coalesce,
     ShrinkType,
@@ -202,6 +205,7 @@ impl Display for FunctionExpr {
             Cummax { .. } => "cummax",
             Reverse => "reverse",
             Boolean(func) => return write!(f, "{func}"),
+            #[cfg(feature = "dtype-categorical")]
             Categorical(func) => return write!(f, "{func}"),
             Coalesce => "coalesce",
             ShrinkType => "shrink_dtype",
@@ -401,6 +405,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Cummax { reverse } => map!(cum::cummax, reverse),
             Reverse => map!(dispatch::reverse),
             Boolean(func) => func.into(),
+            #[cfg(feature = "dtype-categorical")]
             Categorical(func) => func.into(),
             Coalesce => map_as_slice!(fill_null::coalesce),
             ShrinkType => map_owned!(shrink_type::shrink),
