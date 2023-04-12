@@ -81,7 +81,6 @@ def df() -> pl.DataFrame:
         ("median", [("a", 1.5, 1.0), ("b", 4.0, 1.0)]),
         ("min", [("a", 1, 1), ("b", 3, 1)]),
         ("n_unique", [("a", 2, 2), ("b", 3, 2)]),
-        ("approx_unique", [("a", 2, 2), ("b", 3, 2)]),
     ],
 )
 def test_groupby_shorthands(

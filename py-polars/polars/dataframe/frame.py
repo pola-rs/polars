@@ -7619,33 +7619,6 @@ class DataFrame:
         df = self.lazy().select(expr.n_unique()).collect()
         return 0 if df.is_empty() else df.row(0)[0]
 
-    def approx_unique(self) -> Self:
-        """
-        Approx count unique values.
-
-        This is done using the HyperLogLog++ algorithm for cardinality estimation.
-
-        Examples
-        --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [1, 2, 3, 4],
-        ...         "b": [1, 2, 1, 1],
-        ...     }
-        ... )
-        >>> df.approx_unique()
-        shape: (1, 2)
-        ┌─────┬─────┐
-        │ a   ┆ b   │
-        │ --- ┆ --- │
-        │ u32 ┆ u32 │
-        ╞═════╪═════╡
-        │ 4   ┆ 2   │
-        └─────┴─────┘
-
-        """
-        return self.select(F.all().approx_unique())
-
     def rechunk(self) -> Self:
         """
         Rechunk the data in this DataFrame to a contiguous allocation.
