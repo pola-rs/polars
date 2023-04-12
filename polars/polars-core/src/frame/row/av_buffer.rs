@@ -464,6 +464,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
                     }
                     #[cfg(feature = "dtype-struct")]
                     Struct(builders) => {
+                        dbg!(&val);
                         let AnyValue::Struct(idx, arr, fields) = val else { unreachable_unchecked_release!() };
                         let arrays = arr.values();
                         // amortize loop counter

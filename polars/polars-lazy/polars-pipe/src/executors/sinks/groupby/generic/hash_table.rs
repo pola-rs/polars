@@ -317,7 +317,8 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
                     unsafe {
                         let key = keys.get_unchecked_release(i);
                         let key_builder = key_builders.get_unchecked_release_mut(i);
-                        key_builder.add_unchecked_borrowed_physical(&key.as_borrowed());
+                        // safety: we own the keys
+                        key_builder.add_unchecked_owned_physical(key);
                     }
                 }
 
@@ -327,6 +328,7 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
                     unsafe {
                         let running_agg = self.running_aggregations.get_unchecked_release_mut(i);
                         let av = running_agg.finalize();
+                        // safety: finalize creates owned anyvalues
                         buffer.add_unchecked_owned_physical(&av);
                     }
                 }
