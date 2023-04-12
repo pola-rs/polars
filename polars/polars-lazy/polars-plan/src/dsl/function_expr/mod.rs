@@ -4,6 +4,7 @@ mod abs;
 mod arg_where;
 mod binary;
 mod boolean;
+mod bounds;
 #[cfg(feature = "round_series")]
 mod clip;
 mod cum;
@@ -18,6 +19,8 @@ mod nan;
 mod pow;
 #[cfg(all(feature = "rolling_window", feature = "moment"))]
 mod rolling;
+#[cfg(feature = "round_series")]
+mod round;
 #[cfg(feature = "row_hash")]
 mod row_hash;
 mod schema;
@@ -148,6 +151,16 @@ pub enum FunctionExpr {
     #[cfg(feature = "log")]
     Exp,
     Unique(bool),
+    #[cfg(feature = "round_series")]
+    Round {
+        decimals: u32,
+    },
+    #[cfg(feature = "round_series")]
+    Floor,
+    #[cfg(feature = "round_series")]
+    Ceil,
+    UpperBound,
+    LowerBound,
 }
 
 impl Display for FunctionExpr {
@@ -226,6 +239,14 @@ impl Display for FunctionExpr {
                     "unique"
                 }
             }
+            #[cfg(feature = "round_series")]
+            Round { .. } => "round",
+            #[cfg(feature = "round_series")]
+            Floor => "floor",
+            #[cfg(feature = "round_series")]
+            Ceil => "ceil",
+            UpperBound => "upper_bound",
+            LowerBound => "lower_bound",
         };
         write!(f, "{s}")
     }
@@ -424,6 +445,14 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "log")]
             Exp => map!(log::exp),
             Unique(stable) => map!(unique::unique, stable),
+            #[cfg(feature = "round_series")]
+            Round { decimals } => map!(round::round, decimals),
+            #[cfg(feature = "round_series")]
+            Floor => map!(round::floor),
+            #[cfg(feature = "round_series")]
+            Ceil => map!(round::ceil),
+            UpperBound => map!(bounds::upper_bound),
+            LowerBound => map!(bounds::lower_bound),
         }
     }
 }

@@ -260,35 +260,6 @@ class _DataTypeMappings:
 
     @property
     @cache
-    def DTYPE_TO_ARROW_TYPE(self) -> dict[PolarsDataType, pa.lib.DataType]:
-        return {
-            Int8: pa.int8(),
-            Int16: pa.int16(),
-            Int32: pa.int32(),
-            Int64: pa.int64(),
-            UInt8: pa.uint8(),
-            UInt16: pa.uint16(),
-            UInt32: pa.uint32(),
-            UInt64: pa.uint64(),
-            Float32: pa.float32(),
-            Float64: pa.float64(),
-            Boolean: pa.bool_(),
-            Utf8: pa.large_utf8(),
-            Date: pa.date32(),
-            Datetime: pa.timestamp("us"),
-            Datetime("ms"): pa.timestamp("ms"),
-            Datetime("us"): pa.timestamp("us"),
-            Datetime("ns"): pa.timestamp("ns"),
-            Duration: pa.duration("us"),
-            Duration("ms"): pa.duration("ms"),
-            Duration("us"): pa.duration("us"),
-            Duration("ns"): pa.duration("ns"),
-            Time: pa.time64("us"),
-            Null: pa.null(),
-        }
-
-    @property
-    @cache
     def REPR_TO_DTYPE(self) -> dict[str, PolarsDataType]:
         def _dtype_str_repr_safe(o: Any) -> PolarsDataType | None:
             try:
@@ -399,25 +370,6 @@ def py_type_to_arrow_type(dtype: PythonDataType) -> pa.lib.DataType:
     except KeyError:  # pragma: no cover
         raise ValueError(
             f"Cannot parse Python data type {dtype} into Arrow data type."
-        ) from None
-
-
-def dtype_to_arrow_type(dtype: PolarsDataType) -> pa.lib.DataType:
-    """Convert a Polars dtype to an Arrow dtype."""
-    try:
-        # special handling for mapping to tz-aware timestamp type.
-        # (don't want to include every possible tz string in the lookup)
-        time_zone = None
-        if dtype == Datetime:
-            dtype, time_zone = Datetime(dtype.time_unit), dtype.time_zone  # type: ignore[union-attr]
-
-        arrow_type = DataTypeMappings.DTYPE_TO_ARROW_TYPE[dtype]
-        if time_zone:
-            arrow_type = pa.timestamp(dtype.time_unit or "us", time_zone)  # type: ignore[union-attr]
-        return arrow_type
-    except KeyError:  # pragma: no cover
-        raise ValueError(
-            f"Cannot parse data type {dtype} into Arrow data type."
         ) from None
 
 
