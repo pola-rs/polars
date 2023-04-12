@@ -3,6 +3,7 @@ use crate::pipeline::PARTITION_SIZE;
 
 const OB_SIZE: usize = 2048;
 
+#[derive(Clone)]
 struct SpillPartitions {
     // outer vec: partitions (factor of 2)
     // inner vec: number of keys + number of aggregated columns
@@ -72,6 +73,29 @@ impl SpillPartitions {
 }
 
 impl SpillPartitions {
+    fn pre_alloc(&mut self) {
+        if !self.spilled {
+            let n_columns = self.keys_dtypes.as_ref().len() + self.agg_dtypes.as_ref().len();
+
+            self.keys_aggs_partitioned = (0..PARTITION_SIZE)
+                .map(|_| {
+                    let mut buf = Vec::with_capacity(n_columns);
+                    for dtype in self.keys_dtypes.as_ref() {
+                        let builder = AnyValueBufferTrusted::new(dtype, OB_SIZE);
+                        buf.push(builder);
+                    }
+                    for dtype in self.agg_dtypes.as_ref() {
+                        let builder = AnyValueBufferTrusted::new(dtype, OB_SIZE);
+                        buf.push(builder);
+                    }
+                    buf
+                })
+                .collect();
+
+            self.hash_partitioned = vec![Vec::with_capacity(OB_SIZE); PARTITION_SIZE];
+            self.chunk_index_partitioned = vec![Vec::with_capacity(OB_SIZE); PARTITION_SIZE];
+        }
+    }
     /// Returns (partition, overflowing hashes, chunk_indexes, keys and aggs)
     fn insert(
         &mut self,
@@ -80,6 +104,7 @@ impl SpillPartitions {
         keys: &[AnyValue<'_>],
         aggs: &mut [SeriesPhysIter],
     ) -> Option<(usize, SpillPayload)> {
+        self.pre_alloc();
         let partition = hash_to_partition(hash, self.keys_aggs_partitioned.len());
         self.spilled = true;
         unsafe {
@@ -238,7 +263,7 @@ impl ThreadLocalTable {
 
         Self {
             inner_map: self.inner_map.split(),
-            spill_partitions: self.spill_partitions.split(),
+            spill_partitions: self.spill_partitions.clone(),
         }
     }
 
