@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+from polars.testing._tempdir import TemporaryDirectory
 
 
 @pytest.fixture()
@@ -52,7 +52,7 @@ def test_scan_with_projection() -> None:
 """
     json_bytes = bytes(json, "utf-8")
 
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "escape_chars.json"
         with open(file_path, "wb") as f:
             f.write(json_bytes)

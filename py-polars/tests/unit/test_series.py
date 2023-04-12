@@ -150,6 +150,8 @@ def test_init_dataclass_namedtuple() -> None:
     from dataclasses import dataclass
     from typing import NamedTuple
 
+    from polars.dependencies import pydantic
+
     @dataclass
     class TeaShipmentDC:
         exporter: str
@@ -163,11 +165,18 @@ def test_init_dataclass_namedtuple() -> None:
         product: str
         tonnes: None | int
 
-    for Tea in (TeaShipmentDC, TeaShipmentNT):
+    class TeaShipmentPD(pydantic.BaseModel):
+        exporter: str
+        importer: str
+        product: str
+        tonnes: int
+
+    for Tea in (TeaShipmentDC, TeaShipmentNT, TeaShipmentPD):
         t0 = Tea(exporter="Sri Lanka", importer="USA", product="Ceylon", tonnes=10)
         t1 = Tea(exporter="India", importer="UK", product="Darjeeling", tonnes=25)
+        t2 = Tea(exporter="China", importer="UK", product="Keemum", tonnes=40)
 
-        s = pl.Series("t", [t0, t1])
+        s = pl.Series("t", [t0, t1, t2])
 
         assert isinstance(s, pl.Series)
         assert s.dtype.fields == [  # type: ignore[union-attr]
@@ -189,8 +198,14 @@ def test_init_dataclass_namedtuple() -> None:
                 "product": "Darjeeling",
                 "tonnes": 25,
             },
+            {
+                "exporter": "China",
+                "importer": "UK",
+                "product": "Keemum",
+                "tonnes": 40,
+            },
         ]
-        assert_frame_equal(s.to_frame(), pl.DataFrame({"t": [t0, t1]}))
+        assert_frame_equal(s.to_frame(), pl.DataFrame({"t": [t0, t1, t2]}))
 
 
 def test_concat() -> None:

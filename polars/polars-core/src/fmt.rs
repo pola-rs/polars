@@ -94,7 +94,7 @@ macro_rules! format_array {
             };
             Ok(())
         };
-        if limit < $a.len() {
+        if (limit == 0 && $a.len() > 0) || ($a.len() > limit + 1) {
             if limit > 0 {
                 for i in 0..std::cmp::max((limit / 2), 1) {
                     let v = $a.get_any_value(i).unwrap();
@@ -109,7 +109,7 @@ macro_rules! format_array {
                 }
             }
         } else {
-            for i in 0..limit {
+            for i in 0..$a.len() {
                 let v = $a.get_any_value(i).unwrap();
                 write_fn(v, $f)?;
             }
@@ -498,7 +498,9 @@ impl Display for DataFrame {
                 table.apply_modifier(UTF8_ROUND_CORNERS);
             }
             if max_n_rows > 0 {
-                if height > max_n_rows {
+                if height > max_n_rows + 1 {
+                    // Truncate the table if we have more rows than the configured maximum number
+                    // of rows plus the single row which would contain "…".
                     let mut rows = Vec::with_capacity(std::cmp::max(max_n_rows, 2));
                     for i in 0..std::cmp::max(max_n_rows / 2, 1) {
                         let row = self
