@@ -1,5 +1,6 @@
 use std::ops::Not;
 
+use super::schema::FieldsMapper;
 use super::*;
 use crate::map;
 #[cfg(feature = "is_in")]
@@ -28,8 +29,8 @@ pub enum BooleanFunction {
 }
 
 impl BooleanFunction {
-    pub(super) fn dtype_out(&self) -> DataType {
-        DataType::Boolean
+    pub(super) fn get_field<'a>(&self, mapper: FieldsMapper<'a>) -> PolarsResult<Field> {
+        mapper.with_dtype(DataType::Boolean)
     }
 }
 
