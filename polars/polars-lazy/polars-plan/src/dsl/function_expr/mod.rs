@@ -41,6 +41,7 @@ use std::fmt::{Display, Formatter};
 
 pub(super) use list::ListFunction;
 use polars_core::prelude::*;
+use schema::FieldsMapper;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -48,7 +49,6 @@ pub(crate) use self::binary::BinaryFunction;
 pub use self::boolean::BooleanFunction;
 #[cfg(feature = "temporal")]
 pub(super) use self::datetime::TemporalFunction;
-use self::schema::FieldsMapper;
 #[cfg(feature = "strings")]
 pub(crate) use self::strings::StringFunction;
 #[cfg(feature = "dtype-struct")]

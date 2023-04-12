@@ -1,6 +1,5 @@
 use std::ops::Not;
 
-use super::schema::FieldsMapper;
 use super::*;
 use crate::map;
 #[cfg(feature = "is_in")]
