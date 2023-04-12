@@ -146,13 +146,13 @@ def test_init_inputs(monkeypatch: Any) -> None:
         pl.DataFrame(np.array([1, 2, 3]), schema=["a"])
 
 
-def test_init_dataclass_namedtuple() -> None:
-    from dataclasses import dataclass
+def test_init_structured_objects() -> None:
+    # validate init from dataclass, namedtuple, and pydantic model objects
     from typing import NamedTuple
 
-    from polars.dependencies import pydantic
+    from polars.dependencies import dataclasses, pydantic
 
-    @dataclass
+    @dataclasses.dataclass
     class TeaShipmentDC:
         exporter: str
         importer: str
