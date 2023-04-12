@@ -29,7 +29,7 @@ pub enum BooleanFunction {
 }
 
 impl BooleanFunction {
-    pub(super) fn get_field<'a>(&self, mapper: FieldsMapper<'a>) -> PolarsResult<Field> {
+    pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         mapper.with_dtype(DataType::Boolean)
     }
 }
