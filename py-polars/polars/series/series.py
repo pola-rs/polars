@@ -4772,21 +4772,6 @@ class Series:
         """
         return self._s.n_unique()
 
-    def approx_unique(self) -> int:
-        """
-        Approx count unique values in this Series.
-
-        This is done using the HyperLogLog++ algorithm for cardinality estimation.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", [1, 2, 2, 3])
-        >>> s.approx_unique()
-        3
-
-        """
-        return self._from_pyseries(self._s.approx_unique()).item()
-
     def shrink_to_fit(self, *, in_place: bool = False) -> Series:
         """
         Shrink Series memory usage.

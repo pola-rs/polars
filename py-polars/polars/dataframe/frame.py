@@ -7644,7 +7644,7 @@ class DataFrame:
         └─────┴─────┘
 
         """
-        return self._from_pydf(self._df.approx_unique())
+        return self.select(F.all().approx_unique())
 
     def rechunk(self) -> Self:
         """

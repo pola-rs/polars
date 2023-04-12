@@ -42,6 +42,33 @@ fn dispatcher(s: &Series) -> PolarsResult<Series> {
     }
 }
 
+/// Approx count unique values.
+///
+/// This is done using the HyperLogLog++ algorithm for cardinality estimation.
+///
+/// # Example
+///
+/// ```ignore
+///
+/// # #[macro_use] extern crate polars_core;
+/// # fn main() {
+///
+///  use polars_core::prelude::*;
+///
+///  let s = Series::new("s", [1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3]);
+///
+///   let approx_count = approx_unique(&s).unwrap();
+///   dbg!(approx_count);
+/// # }
+/// ```
+/// Outputs:
+/// ```text
+/// approx_count = shape: (1,)
+/// Series: 's' [u32]
+/// [
+///     3
+/// ]
+/// ```
 pub fn approx_unique(s: &Series) -> PolarsResult<Series> {
     dispatcher(s)
 }

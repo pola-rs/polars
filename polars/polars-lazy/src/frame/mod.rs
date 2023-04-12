@@ -954,12 +954,6 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
-    /// Get the approximate count of unique values for all the columns.
-    #[cfg(feature = "approx_unique")]
-    pub fn approx_unique(self) -> LazyFrame {
-        self.select_local(vec![col("*").approx_unique()])
-    }
-
     /// Aggregate all the columns as their maximum values.
     pub fn max(self) -> LazyFrame {
         self.select_local(vec![col("*").max()])

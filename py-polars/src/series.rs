@@ -1123,11 +1123,6 @@ impl PySeries {
         Ok(n)
     }
 
-    pub fn approx_unique(&self) -> PyResult<Self> {
-        let s = self.series.approx_unique().map_err(PyPolarsErr::from)?;
-        Ok(s.into())
-    }
-
     pub fn floor(&self) -> PyResult<Self> {
         let s = self.series.floor().map_err(PyPolarsErr::from)?;
         Ok(s.into())

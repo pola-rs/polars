@@ -3712,7 +3712,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┘
 
         """
-        return self._from_pyldf(self._ldf.approx_unique())
+        return self.select(F.all().approx_unique())
 
     def with_row_count(self, name: str = "row_nr", offset: int = 0) -> Self:
         """

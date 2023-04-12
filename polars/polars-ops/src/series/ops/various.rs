@@ -3,8 +3,6 @@ use polars_core::export::ahash;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 
-#[cfg(feature = "approx_unique")]
-use crate::series::approx_unique;
 use crate::series::ops::SeriesSealed;
 
 pub trait SeriesMethods: SeriesSealed {
@@ -58,12 +56,6 @@ pub trait SeriesMethods: SeriesSealed {
         // TODO! optimize
         let out = s.sort_with(options);
         out.eq(s)
-    }
-
-    #[cfg(feature = "approx_unique")]
-    fn approx_unique(&self) -> PolarsResult<Series> {
-        let s = self.as_series();
-        approx_unique(s)
     }
 }
 
