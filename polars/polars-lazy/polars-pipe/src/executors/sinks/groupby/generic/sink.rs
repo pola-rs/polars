@@ -3,8 +3,8 @@ use std::cell::UnsafeCell;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 
 use super::*;
-use crate::executors::sinks::groupby::generic2::global::GlobalTable;
-use crate::executors::sinks::groupby::generic2::ooc_state::{OocState, SpillAction};
+use crate::executors::sinks::groupby::generic::global::GlobalTable;
+use crate::executors::sinks::groupby::generic::ooc_state::{OocState, SpillAction};
 use crate::executors::sources::DataFrameSource;
 use crate::expressions::PhysicalPipedExpr;
 

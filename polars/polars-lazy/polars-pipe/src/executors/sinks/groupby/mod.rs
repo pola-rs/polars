@@ -1,12 +1,12 @@
 pub(crate) mod aggregates;
-mod generic2;
+mod generic;
 mod ooc;
 mod ooc_state;
 mod primitive;
 mod string;
 mod utils;
 
-pub(crate) use generic2::GenericGroupby2;
+pub(crate) use generic::GenericGroupby2;
 use polars_core::prelude::*;
 #[cfg(feature = "dtype-categorical")]
 use polars_core::using_string_cache;
