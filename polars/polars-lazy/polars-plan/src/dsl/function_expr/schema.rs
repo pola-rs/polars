@@ -15,7 +15,7 @@ impl FunctionExpr {
             Abs => mapper.with_same_dtype(),
             NullCount => mapper.with_dtype(IDX_DTYPE),
             Pow => mapper.map_to_float_dtype(),
-            Coalesce => mapper.map_to_list_super_dtype(),
+            Coalesce => mapper.map_to_list_supertype(),
             #[cfg(feature = "row_hash")]
             Hash(..) => mapper.with_dtype(DataType::UInt64),
             #[cfg(feature = "arg_where")]
@@ -53,7 +53,7 @@ impl FunctionExpr {
                     CastTimezone(tz) => return mapper.map_datetime_dtype_timezone(tz.as_ref()),
                     #[cfg(feature = "timezones")]
                     TzLocalize(tz) => return mapper.map_datetime_dtype_timezone(Some(tz)),
-                    DateRange { .. } => return mapper.map_to_super_dtype(),
+                    DateRange { .. } => return mapper.map_to_supertype(),
                     Combine(tu) => DataType::Datetime(*tu, None),
                 };
                 mapper.with_dtype(dtype)
@@ -75,7 +75,7 @@ impl FunctionExpr {
             ListExpr(l) => {
                 use ListFunction::*;
                 match l {
-                    Concat => mapper.map_to_list_super_dtype(),
+                    Concat => mapper.map_to_list_supertype(),
                     #[cfg(feature = "is_in")]
                     Contains => mapper.with_dtype(DataType::Boolean),
                     Slice => mapper.with_same_dtype(),
@@ -245,7 +245,7 @@ impl<'a> FieldsMapper<'a> {
     }
 
     /// Map the dtype to the "supertype" of all fields.
-    pub(super) fn map_to_super_dtype(&self) -> PolarsResult<Field> {
+    pub(super) fn map_to_supertype(&self) -> PolarsResult<Field> {
         let mut first = self.fields[0].clone();
         let mut st = first.data_type().clone();
         for field in &self.fields[1..] {
@@ -268,7 +268,7 @@ impl<'a> FieldsMapper<'a> {
     }
 
     /// Map the dtypes to the "supertype" of a list of lists.
-    pub(super) fn map_to_list_super_dtype(&self) -> PolarsResult<Field> {
+    pub(super) fn map_to_list_supertype(&self) -> PolarsResult<Field> {
         self.try_map_dtypes(|dts| {
             let mut super_type_inner = None;
 
