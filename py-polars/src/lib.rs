@@ -247,6 +247,12 @@ fn concat_lst(s: Vec<dsl::PyExpr>) -> PyResult<dsl::PyExpr> {
     Ok(expr.into())
 }
 
+macro_rules! set_unwrapped_or_0 {
+    ($($var:ident),+ $(,)?) => {
+        $(let $var = $var.map(|e| e.inner).unwrap_or(polars_rs::lazy::dsl::lit(0));)+
+    };
+}
+
 #[pyfunction]
 fn py_datetime(
     year: dsl::PyExpr,
@@ -257,15 +263,16 @@ fn py_datetime(
     second: Option<dsl::PyExpr>,
     microsecond: Option<dsl::PyExpr>,
 ) -> dsl::PyExpr {
-    let hour = hour.map(|e| e.inner);
-    let minute = minute.map(|e| e.inner);
-    let second = second.map(|e| e.inner);
-    let microsecond = microsecond.map(|e| e.inner);
+    let year = year.inner;
+    let month = month.inner;
+    let day = day.inner;
+
+    set_unwrapped_or_0!(hour, minute, second, microsecond);
 
     let args = DatetimeArgs {
-        year: year.inner,
-        month: month.inner,
-        day: day.inner,
+        year,
+        month,
+        day,
         hour,
         minute,
         second,
@@ -287,15 +294,26 @@ fn py_duration(
     hours: Option<PyExpr>,
     weeks: Option<PyExpr>,
 ) -> dsl::PyExpr {
+    set_unwrapped_or_0!(
+        days,
+        seconds,
+        nanoseconds,
+        microseconds,
+        milliseconds,
+        minutes,
+        hours,
+        weeks,
+    );
+
     let args = DurationArgs {
-        days: days.map(|e| e.inner),
-        seconds: seconds.map(|e| e.inner),
-        nanoseconds: nanoseconds.map(|e| e.inner),
-        microseconds: microseconds.map(|e| e.inner),
-        milliseconds: milliseconds.map(|e| e.inner),
-        minutes: minutes.map(|e| e.inner),
-        hours: hours.map(|e| e.inner),
-        weeks: weeks.map(|e| e.inner),
+        days,
+        seconds,
+        nanoseconds,
+        microseconds,
+        milliseconds,
+        minutes,
+        hours,
+        weeks,
     };
 
     polars_rs::lazy::dsl::duration(args).into()
