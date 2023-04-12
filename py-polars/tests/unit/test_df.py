@@ -1221,13 +1221,33 @@ def test_describe() -> None:
     df = df.with_columns(pl.col("e").cast(pl.Categorical))
     expected = pl.DataFrame(
         {
-            "describe": ["count", "null_count", "mean", "std", "min", "max", "median"],
-            "a": [3.0, 0.0, 2.2666667, 1.101514, 1.0, 3.0, 2.8],
-            "b": [3.0, 1.0, 4.5, 0.7071067811865476, 4.0, 5.0, 4.5],
-            "c": [3.0, 0.0, 0.6666666666666666, 0.5773502588272095, 0.0, 1.0, 1.0],
-            "d": ["3", "1", None, None, "b", "c", None],
-            "e": ["3", "1", None, None, None, None, None],
-            "f": ["3", "0", None, None, "2020-01-01", "2022-01-01", None],
+            "describe": [
+                "count",
+                "null_count",
+                "mean",
+                "std",
+                "min",
+                "max",
+                "median",
+                "25%",
+                "75%",
+            ],
+            "a": [3.0, 0.0, 2.2666667, 1.101514, 1.0, 3.0, 2.8, 1.0, 3.0],
+            "b": [3.0, 1.0, 4.5, 0.7071067811865476, 4.0, 5.0, 4.5, 4.0, 5.0],
+            "c": [
+                3.0,
+                0.0,
+                0.6666666666666666,
+                0.5773502588272095,
+                0.0,
+                1.0,
+                1.0,
+                None,
+                None,
+            ],
+            "d": ["3", "1", None, None, "b", "c", None, None, None],
+            "e": ["3", "1", None, None, None, None, None, None, None],
+            "f": ["3", "0", None, None, "2020-01-01", "2022-01-01", None, None, None],
         }
     )
     assert_frame_equal(df.describe(), expected)
@@ -1241,7 +1261,7 @@ def test_describe() -> None:
         }
     )
 
-    assert df.describe().to_dict(False) == {
+    assert df.describe(percentiles=[]).to_dict(False) == {
         "describe": ["count", "null_count", "mean", "std", "min", "max", "median"],
         "numerical": [4.0, 1.0, 1.3333333333333333, 0.5773502691896257, 1.0, 2.0, 1.0],
         "struct": ["4", "1", None, None, None, None, None],
