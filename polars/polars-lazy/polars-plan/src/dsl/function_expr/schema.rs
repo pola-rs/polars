@@ -128,6 +128,8 @@ impl FunctionExpr {
             TopK { .. } => mapper.with_same_dtype(),
             Shift(..) | Reverse => mapper.with_same_dtype(),
             Boolean(func) => func.get_field(mapper),
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(func) => func.get_field(mapper),
             Cumcount { .. } => mapper.with_dtype(IDX_DTYPE),
             Cumsum { .. } => mapper.map_dtype(cum::dtypes::cumsum),
             Cumprod { .. } => mapper.map_dtype(cum::dtypes::cumprod),

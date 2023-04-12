@@ -1146,6 +1146,8 @@ def test_describe() -> None:
         "null_count": 0.0,
         "std": 1.0,
         "median": 2.0,
+        "25%": 1.0,
+        "75%": 3.0,
     }
     assert dict(float_s.describe().rows()) == {  # type: ignore[arg-type]
         "count": 3.0,
@@ -1155,6 +1157,8 @@ def test_describe() -> None:
         "null_count": 0.0,
         "std": 3.8109491381194442,
         "median": 4.6,
+        "25%": 1.3,
+        "75%": 8.9,
     }
     assert dict(str_s.describe().rows()) == {  # type: ignore[arg-type]
         "count": 3,
