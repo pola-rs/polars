@@ -225,12 +225,12 @@ where
             // We create a Groupby.agg_first()/agg_last (depending on the keep strategy
             let input_schema = lp_arena.get(*input).schema(lp_arena).into_owned();
 
-            let (keys, aggs, schema) = match &options.subset {
+            let (keys, aggs, output_schema) = match &options.subset {
                 None => {
                     let keys = input_schema
                         .iter_names()
                         .map(|name| expr_arena.add(AExpr::Column(Arc::from(name.as_str()))))
-                        .collect();
+                        .collect::<Vec<_>>();
                     let aggs = vec![];
                     (keys, aggs, input_schema.clone())
                 }
@@ -273,20 +273,33 @@ where
                     (keys, aggs, groupby_out_schema.into())
                 }
             };
-            let lp = Aggregate {
-                input: *input,
-                keys,
-                aggs,
-                schema,
-                apply: None,
-                maintain_order: false,
-                options: GroupbyOptions {
-                    slice: options.slice,
-                    ..Default::default()
-                },
-            };
-            let node = lp_arena.add(lp);
-            let groupby_sink = get_sink(node, lp_arena, expr_arena, to_physical)?;
+
+            let key_columns = Arc::new(exprs_to_physical(
+                &keys,
+                expr_arena,
+                to_physical,
+                Some(&input_schema),
+            )?);
+
+            let mut aggregation_columns = Vec::with_capacity(aggs.len());
+            let mut agg_fns = Vec::with_capacity(aggs.len());
+
+            for node in &aggs {
+                let (index, agg_fn) =
+                    convert_to_hash_agg(*node, expr_arena, &input_schema, &to_physical);
+                aggregation_columns.push(index);
+                agg_fns.push(agg_fn)
+            }
+            let aggregation_columns = Arc::new(aggregation_columns);
+
+            let groupby_sink = Box::new(GenericGroupby2::new(
+                key_columns,
+                aggregation_columns,
+                Arc::from(agg_fns),
+                output_schema,
+                options.slice,
+            ));
+
             Box::new(ReProjectSink::new(input_schema, groupby_sink))
         }
         Aggregate {
