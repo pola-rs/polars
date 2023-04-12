@@ -1261,12 +1261,57 @@ def test_describe() -> None:
         }
     )
 
-    assert df.describe(percentiles=[]).to_dict(False) == {
-        "describe": ["count", "null_count", "mean", "std", "min", "max", "median"],
-        "numerical": [4.0, 1.0, 1.3333333333333333, 0.5773502691896257, 1.0, 2.0, 1.0],
-        "struct": ["4", "1", None, None, None, None, None],
-        "list": ["4", "1", None, None, None, None, None],
+    assert df.describe().to_dict(False) == {
+        "describe": [
+            "count",
+            "null_count",
+            "mean",
+            "std",
+            "min",
+            "max",
+            "median",
+            "25%",
+            "75%",
+        ],
+        "numerical": [
+            4.0,
+            1.0,
+            1.3333333333333333,
+            0.5773502691896257,
+            1.0,
+            2.0,
+            1.0,
+            1.0,
+            2.0,
+        ],
+        "struct": ["4", "1", None, None, None, None, None, None, None],
+        "list": ["4", "1", None, None, None, None, None, None, None],
     }
+
+    for pcts in (None, []):  # type:ignore[var-annotated]
+        assert df.describe(percentiles=pcts).rows() == [
+            ("count", 4.0, "4", "4"),
+            ("null_count", 1.0, "1", "1"),
+            ("mean", 1.3333333333333333, None, None),
+            ("std", 0.5773502691896257, None, None),
+            ("min", 1.0, None, None),
+            ("max", 2.0, None, None),
+            ("median", 1.0, None, None),
+        ]
+
+    assert df.describe(percentiles=(0.2, 0.4, 0.6, 0.8)).rows() == [
+        ("count", 4.0, "4", "4"),
+        ("null_count", 1.0, "1", "1"),
+        ("mean", 1.3333333333333333, None, None),
+        ("std", 0.5773502691896257, None, None),
+        ("min", 1.0, None, None),
+        ("max", 2.0, None, None),
+        ("median", 1.0, None, None),
+        ("20%", 1.0, None, None),
+        ("40%", 1.0, None, None),
+        ("60%", 1.0, None, None),
+        ("80%", 2.0, None, None),
+    ]
 
 
 def test_duration_arithmetic() -> None:
