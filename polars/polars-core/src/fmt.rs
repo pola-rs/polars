@@ -94,7 +94,7 @@ macro_rules! format_array {
             };
             Ok(())
         };
-        if (limit == 0) || ($a.len() > limit + 1) {
+        if (limit == 0 && $a.len() > 0) || ($a.len() > limit + 1) {
             if limit > 0 {
                 for i in 0..std::cmp::max((limit / 2), 1) {
                     let v = $a.get_any_value(i).unwrap();
