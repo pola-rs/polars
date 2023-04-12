@@ -117,9 +117,10 @@ def test_init_dataclasses_and_namedtuple(monkeypatch: Any) -> None:
     from dataclasses import dataclass
     from typing import NamedTuple
 
-    monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
+    from polars.dependencies import pydantic
+    from polars.utils._construction import type_hints
 
-    from polars.utils._construction import dataclass_type_hints
+    monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
 
     @dataclass
     class TradeDC:
@@ -127,6 +128,12 @@ def test_init_dataclasses_and_namedtuple(monkeypatch: Any) -> None:
         ticker: str
         price: Decimal
         size: int | None = None
+
+    class TradePD(pydantic.BaseModel):
+        timestamp: datetime
+        ticker: str
+        price: Decimal
+        size: int
 
     class TradeNT(NamedTuple):
         timestamp: datetime
@@ -139,9 +146,10 @@ def test_init_dataclasses_and_namedtuple(monkeypatch: Any) -> None:
         (datetime(2022, 9, 9, 10, 15, 12), "FLSY", Decimal("10.0"), 1500),
         (datetime(2022, 9, 7, 15, 30), "MU", Decimal("55.5"), 400),
     ]
+    columns = ["timestamp", "ticker", "price", "size"]
 
-    for TradeClass in (TradeDC, TradeNT):
-        trades = [TradeClass(*values) for values in raw_data]
+    for TradeClass in (TradeDC, TradeNT, TradePD):
+        trades = [TradeClass(**dict(zip(columns, values))) for values in raw_data]
 
         for DF in (pl.DataFrame, pl.from_records):
             df = DF(data=trades)  # type: ignore[operator]
@@ -184,7 +192,7 @@ def test_init_dataclasses_and_namedtuple(monkeypatch: Any) -> None:
         assert df.rows() == raw_data
 
         # cover a miscellaneous edge-case when detecting the annotations
-        assert dataclass_type_hints(obj=type(None)) == {}
+        assert type_hints(obj=type(None)) == {}
 
 
 def test_init_ndarray(monkeypatch: Any) -> None:
