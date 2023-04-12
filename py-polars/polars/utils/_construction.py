@@ -48,7 +48,9 @@ from polars.dependencies import (
     _NUMPY_AVAILABLE,
     _check_for_numpy,
     _check_for_pandas,
+    _check_for_pydantic,
     dataclasses,
+    pydantic,
 )
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
@@ -74,20 +76,25 @@ if TYPE_CHECKING:
 
 if version_info >= (3, 10):
 
-    def dataclass_type_hints(obj: type) -> dict[str, Any]:
+    def type_hints(obj: type) -> dict[str, Any]:
         return get_type_hints(obj)
 
 else:
 
-    def dataclass_type_hints(obj: type) -> dict[str, Any]:
+    def type_hints(obj: type) -> dict[str, Any]:
         return getattr(obj, "__annotations__", {})
 
 
 def is_namedtuple(value: Any, annotated: bool = False) -> bool:
-    """Infer whether value is a NamedTuple."""
+    """Check whether value is a NamedTuple."""
     if all(hasattr(value, attr) for attr in ("_fields", "_field_defaults", "_replace")):
         return len(value.__annotations__) == len(value._fields) if annotated else True
     return False
+
+
+def is_pydantic_model(value: Any) -> bool:
+    """Check whether value is a pydantic.BaseModel."""
+    return _check_for_pydantic(value) and isinstance(value, pydantic.BaseModel)
 
 
 def include_unknowns(
@@ -316,7 +323,11 @@ def sequence_to_pyseries(
 
     value = _get_first_non_none(values)
     if value is not None:
-        if dataclasses.is_dataclass(value) or is_namedtuple(value, annotated=True):
+        if (
+            dataclasses.is_dataclass(value)
+            or is_namedtuple(value, annotated=True)
+            or is_pydantic_model(value)
+        ):
             return pli.DataFrame(values).to_struct(name)._s
         elif isinstance(value, range):
             values = [range_to_series("", v) for v in values]
@@ -809,6 +820,9 @@ def _sequence_to_pydf_dispatcher(
 
     elif dataclasses.is_dataclass(first_element):
         to_pydf = _sequence_of_dataclasses_to_pydf
+
+    elif is_pydantic_model(first_element):
+        to_pydf = _sequence_of_models_to_pydf
     else:
         to_pydf = _sequence_of_elements_to_pydf
 
@@ -893,10 +907,11 @@ def _sequence_of_tuple_to_pydf(
     orient: Orientation | None,
     infer_schema_length: int | None,
 ) -> PyDataFrame:
-    # infer additional meta information if NAMED tuple...
-    if is_namedtuple(first_element):
+    # infer additional meta information if named tuple or pydantic model...
+    named_tuple = is_namedtuple(first_element)
+    if named_tuple or is_pydantic_model(first_element):
         if schema is None:
-            schema = first_element._fields  # type: ignore[attr-defined]
+            schema = first_element._fields if named_tuple else list(data.__fields__)  # type: ignore[attr-defined]
             if len(first_element.__annotations__) == len(schema):
                 schema = [
                     (name, py_type_to_dtype(tp, raise_unmatched=False))
@@ -1003,6 +1018,25 @@ def _sequence_of_pandas_to_pydf(
     return PyDataFrame(data_series)
 
 
+def _sequence_of_models_to_pydf(
+    first_element: Any,
+    data: Sequence[Any],
+    schema: SchemaDefinition | None,
+    schema_overrides: SchemaDict | None,
+    infer_schema_length: int | None,
+    **kwargs: Any,
+) -> PyDataFrame:
+    kwargs["pydantic_model"] = True
+    return _sequence_of_dataclasses_to_pydf(
+        first_element=first_element,
+        data=data,
+        schema=schema,
+        schema_overrides=schema_overrides,
+        infer_schema_length=infer_schema_length,
+        **kwargs,
+    )
+
+
 def _sequence_of_dataclasses_to_pydf(
     first_element: Any,
     data: Sequence[Any],
@@ -1013,6 +1047,7 @@ def _sequence_of_dataclasses_to_pydf(
 ) -> PyDataFrame:
     from dataclasses import astuple
 
+    from_model = kwargs.get("pydantic_model")
     if schema:
         column_names, schema_overrides = _unpack_schema(schema, schema_overrides)
         schema_override = {
@@ -1022,19 +1057,24 @@ def _sequence_of_dataclasses_to_pydf(
         column_names = []
         schema_override = {
             col: (py_type_to_dtype(tp, raise_unmatched=False) or Unknown)
-            for col, tp in dataclass_type_hints(first_element.__class__).items()
+            for col, tp in type_hints(first_element.__class__).items()
         }
+        if from_model:
+            schema_override.pop("__slots__", None)
         schema_override.update(schema_overrides or {})
 
     for col, tp in schema_override.items():
         if tp == Categorical:
             schema_override[col] = Utf8
 
-    pydf = PyDataFrame.read_rows(
-        [astuple(dc) for dc in data],
-        infer_schema_length,
-        schema_override or None,
-    )
+    if from_model:
+        pydf = PyDataFrame.read_dicts([md.dict() for md in data], infer_schema_length)
+    else:
+        pydf = PyDataFrame.read_rows(
+            [astuple(dc) for dc in data],
+            infer_schema_length,
+            schema_override or None,
+        )
     if schema_override:
         structs = {c: tp for c, tp in schema_override.items() if isinstance(tp, Struct)}
         pydf = _post_apply_columns(pydf, column_names, structs, schema_overrides)

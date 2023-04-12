@@ -9,6 +9,7 @@ deltalake >= 0.8.0
 numpy
 pandas
 pyarrow
+pydantic
 backports.zoneinfo; python_version < '3.9'
 tzdata; platform_system == 'Windows'
 xlsx2csv

@@ -70,21 +70,19 @@ disable_error_code = [
 
 [[tool.mypy.overrides]]
 module = [
+  "IPython.*",
   "backports",
-  "pyarrow.*",
-  "polars.polars",
-  "matplotlib.*",
-  "fsspec.*",
   "connectorx",
   "deltalake",
-  "IPython.*",
-  "xlsx2csv",
-  "xlsxwriter",
-  "xlsxwriter.format",
-  "xlsxwriter.utility",
-  "xlsxwriter.worksheet",
-  "zoneinfo",
+  "fsspec.*",
+  "matplotlib.*",
+  "polars.polars",
+  "pyarrow.*",
+  "pydantic",
   "sqlalchemy",
+  "xlsx2csv",
+  "xlsxwriter.*",
+  "zoneinfo",
 ]
 ignore_missing_imports = true
 
