@@ -182,6 +182,9 @@ impl FunctionExpr {
             #[cfg(feature = "log")]
             Entropy { .. } | Log { .. } | Log1p | Exp => mapper.map_to_float_dtype(),
             Unique(_) => mapper.with_same_dtype(),
+            #[cfg(feature = "round_series")]
+            Round { .. } | Floor | Ceil => mapper.with_same_dtype(),
+            UpperBound | LowerBound => mapper.with_same_dtype(),
         }
     }
 }

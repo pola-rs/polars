@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import tempfile
 import typing
 from datetime import date, datetime, time
 from pathlib import Path
@@ -10,6 +9,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+from polars.testing._tempdir import TemporaryDirectory
 
 
 @typing.no_type_check
@@ -23,7 +23,7 @@ def helper_dataset_test(file_path: Path, query) -> None:
 
 @pytest.mark.write_disk()
 def test_dataset(df: pl.DataFrame) -> None:
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "small.ipc"
         df.write_ipc(file_path)
 

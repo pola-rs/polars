@@ -959,25 +959,19 @@ impl Expr {
     /// Round underlying floating point array to given decimal numbers.
     #[cfg(feature = "round_series")]
     pub fn round(self, decimals: u32) -> Self {
-        self.map(
-            move |s: Series| s.round(decimals).map(Some),
-            GetOutput::same_type(),
-        )
-        .with_fmt("round")
+        self.map_private(FunctionExpr::Round { decimals })
     }
 
     /// Floor underlying floating point array to the lowest integers smaller or equal to the float value.
     #[cfg(feature = "round_series")]
     pub fn floor(self) -> Self {
-        self.map(move |s: Series| s.floor().map(Some), GetOutput::same_type())
-            .with_fmt("floor")
+        self.map_private(FunctionExpr::Floor)
     }
 
     /// Ceil underlying floating point array to the highest integers smaller or equal to the float value.
     #[cfg(feature = "round_series")]
     pub fn ceil(self) -> Self {
-        self.map(move |s: Series| s.ceil().map(Some), GetOutput::same_type())
-            .with_fmt("ceil")
+        self.map_private(FunctionExpr::Ceil)
     }
 
     /// Clip underlying values to a set boundary.
@@ -1655,66 +1649,12 @@ impl Expr {
 
     /// Get maximal value that could be hold by this dtype.
     pub fn upper_bound(self) -> Expr {
-        self.map(
-            |s| {
-                let name = s.name();
-                use DataType::*;
-                let s = match s.dtype().to_physical() {
-                    #[cfg(feature = "dtype-i8")]
-                    Int8 => Series::new(name, &[i8::MAX]),
-                    #[cfg(feature = "dtype-i16")]
-                    Int16 => Series::new(name, &[i16::MAX]),
-                    Int32 => Series::new(name, &[i32::MAX]),
-                    Int64 => Series::new(name, &[i64::MAX]),
-                    #[cfg(feature = "dtype-u8")]
-                    UInt8 => Series::new(name, &[u8::MAX]),
-                    #[cfg(feature = "dtype-u16")]
-                    UInt16 => Series::new(name, &[u16::MAX]),
-                    UInt32 => Series::new(name, &[u32::MAX]),
-                    UInt64 => Series::new(name, &[u64::MAX]),
-                    Float32 => Series::new(name, &[f32::INFINITY]),
-                    Float64 => Series::new(name, &[f64::INFINITY]),
-                    dt => polars_bail!(
-                        ComputeError: "cannot determine upper bound for dtype `{}`", dt,
-                    ),
-                };
-                Ok(Some(s))
-            },
-            GetOutput::same_type(),
-        )
-        .with_fmt("upper_bound")
+        self.map_private(FunctionExpr::UpperBound)
     }
 
     /// Get minimal value that could be hold by this dtype.
     pub fn lower_bound(self) -> Expr {
-        self.map(
-            |s| {
-                let name = s.name();
-                use DataType::*;
-                let s = match s.dtype().to_physical() {
-                    #[cfg(feature = "dtype-i8")]
-                    Int8 => Series::new(name, &[i8::MIN]),
-                    #[cfg(feature = "dtype-i16")]
-                    Int16 => Series::new(name, &[i16::MIN]),
-                    Int32 => Series::new(name, &[i32::MIN]),
-                    Int64 => Series::new(name, &[i64::MIN]),
-                    #[cfg(feature = "dtype-u8")]
-                    UInt8 => Series::new(name, &[u8::MIN]),
-                    #[cfg(feature = "dtype-u16")]
-                    UInt16 => Series::new(name, &[u16::MIN]),
-                    UInt32 => Series::new(name, &[u32::MIN]),
-                    UInt64 => Series::new(name, &[u64::MIN]),
-                    Float32 => Series::new(name, &[f32::NEG_INFINITY]),
-                    Float64 => Series::new(name, &[f64::NEG_INFINITY]),
-                    dt => polars_bail!(
-                        ComputeError: "cannot determine lower bound for dtype `{}`", dt,
-                    ),
-                };
-                Ok(Some(s))
-            },
-            GetOutput::same_type(),
-        )
-        .with_fmt("lower_bound")
+        self.map_private(FunctionExpr::LowerBound)
     }
 
     pub fn reshape(self, dims: &[i64]) -> Self {

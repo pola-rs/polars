@@ -48,7 +48,6 @@ from polars.datatypes.constructor import (
     py_type_to_constructor,
 )
 from polars.datatypes.convert import (
-    dtype_to_arrow_type,
     dtype_to_ctype,
     dtype_to_ffiname,
     dtype_to_py_type,
