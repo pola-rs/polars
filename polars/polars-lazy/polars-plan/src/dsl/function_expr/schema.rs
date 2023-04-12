@@ -23,30 +23,7 @@ impl FunctionExpr {
             #[cfg(feature = "search_sorted")]
             SearchSorted(_) => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "strings")]
-            StringExpr(s) => {
-                use StringFunction::*;
-                match s {
-                    #[cfg(feature = "regex")]
-                    Contains { .. } => mapper.with_dtype(DataType::Boolean),
-                    EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
-                    Extract { .. } => mapper.with_same_dtype(),
-                    ExtractAll => mapper.with_dtype(DataType::List(Box::new(DataType::Utf8))),
-                    CountMatch(_) => mapper.with_dtype(DataType::UInt32),
-                    #[cfg(feature = "string_justify")]
-                    Zfill { .. } | LJust { .. } | RJust { .. } => mapper.with_same_dtype(),
-                    #[cfg(feature = "temporal")]
-                    Strptime(options) => mapper.with_dtype(options.date_dtype.clone()),
-                    #[cfg(feature = "concat_str")]
-                    ConcatVertical(_) | ConcatHorizontal(_) => mapper.with_dtype(DataType::Utf8),
-                    #[cfg(feature = "regex")]
-                    Replace { .. } => mapper.with_dtype(DataType::Utf8),
-                    Uppercase | Lowercase | Strip(_) | LStrip(_) | RStrip(_) => {
-                        mapper.with_dtype(DataType::Utf8)
-                    }
-                    #[cfg(feature = "string_from_radix")]
-                    FromRadix { .. } => mapper.with_dtype(DataType::Int32),
-                }
-            }
+            StringExpr(s) => s.get_field(mapper),
             BinaryExpr(s) => {
                 use BinaryFunction::*;
                 match s {
