@@ -6,7 +6,6 @@ Descriptive
 .. autosummary::
    :toctree: api/
 
-    DataFrame.approx_unique
     DataFrame.describe
     DataFrame.glimpse
     DataFrame.estimated_size
