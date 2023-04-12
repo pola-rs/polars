@@ -3587,9 +3587,16 @@ class DataFrame:
         else:
             return s
 
-    def describe(self) -> Self:
+    def describe(self, percentiles: list[float] | None = None) -> Self:
         """
         Summary statistics for a DataFrame.
+
+        Parameters
+        ----------
+        percentiles
+            The percentiles to include in the summary statistics. All values must be in
+            the range `[0, 1]`. If not provided, uses `0.25` and `0.75`, i.e the 25th
+            and 75th percentile are included in the output.
 
         See Also
         --------
@@ -3609,7 +3616,7 @@ class DataFrame:
         ...     }
         ... )
         >>> df.describe()
-        shape: (7, 7)
+        shape: (9, 7)
         ┌────────────┬──────────┬──────────┬──────────┬──────┬──────┬────────────┐
         │ describe   ┆ a        ┆ b        ┆ c        ┆ d    ┆ e    ┆ f          │
         │ ---        ┆ ---      ┆ ---      ┆ ---      ┆ ---  ┆ ---  ┆ ---        │
@@ -3622,6 +3629,8 @@ class DataFrame:
         │ min        ┆ 1.0      ┆ 4.0      ┆ 0.0      ┆ b    ┆ eur  ┆ 2020-01-01 │
         │ max        ┆ 3.0      ┆ 5.0      ┆ 1.0      ┆ c    ┆ usd  ┆ 2022-01-01 │
         │ median     ┆ 2.8      ┆ 4.5      ┆ 1.0      ┆ null ┆ null ┆ null       │
+        │ 25%        ┆ 1.0      ┆ 4.0      ┆ null     ┆ null ┆ null ┆ null       │
+        │ 75%        ┆ 3.0      ┆ 5.0      ┆ null     ┆ null ┆ null ┆ null       │
         └────────────┴──────────┴──────────┴──────────┴──────┴──────┴────────────┘
 
         """
@@ -3637,28 +3646,31 @@ class DataFrame:
                     columns.append(stat[:, i].cast(str))
             return self.__class__(columns)
 
-        summary = self._from_pydf(
-            F.concat(
-                [
-                    describe_cast(
-                        self.__class__({c: [len(self)] for c in self.columns})
-                    ),
-                    describe_cast(self.null_count()),
-                    describe_cast(self.mean()),
-                    describe_cast(self.std()),
-                    describe_cast(self.min()),
-                    describe_cast(self.max()),
-                    describe_cast(self.median()),
-                ]
-            )._df
-        )
-        summary.insert_at_idx(
-            0,
-            pli.Series(
-                "describe",
-                ["count", "null_count", "mean", "std", "min", "max", "median"],
-            ),
-        )
+        # Validate parameters
+        percentiles = [0.25, 0.75] if percentiles is None else []
+        if not all(p >= 0 and p <= 1 for p in percentiles):
+            raise ValueError("Not all percentiles are in the range [0, 1].")
+
+        # Build output rows
+        output_rows = [
+            describe_cast(self.__class__({c: [len(self)] for c in self.columns})),
+            describe_cast(self.null_count()),
+            describe_cast(self.mean()),
+            describe_cast(self.std()),
+            describe_cast(self.min()),
+            describe_cast(self.max()),
+            describe_cast(self.median()),
+        ]
+        row_identifiers = ["count", "null_count", "mean", "std", "min", "max", "median"]
+
+        # Dynamically add rows for quantiles
+        for p in percentiles:
+            output_rows.append(describe_cast(self.quantile(p)))
+            row_identifiers.append(f"{p:.0%}")
+
+        # Build summary dataframe
+        summary = self._from_pydf(F.concat(output_rows)._df)
+        summary.insert_at_idx(0, pli.Series("describe", row_identifiers))
         return summary
 
     def find_idx_by_name(self, name: str) -> int:

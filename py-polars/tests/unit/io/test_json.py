@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import io
-import tempfile
 from pathlib import Path
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_frame_equal_local_categoricals
+from polars.testing._tempdir import TemporaryDirectory
 
 
 @pytest.mark.parametrize("buf", [io.BytesIO(), io.StringIO()])
@@ -20,7 +20,7 @@ def test_to_from_buffer(df: pl.DataFrame, buf: io.IOBase) -> None:
 
 @pytest.mark.write_disk()
 def test_to_from_file(df: pl.DataFrame) -> None:
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "small.json"
         df.write_json(file_path)
         out = pl.read_json(file_path)

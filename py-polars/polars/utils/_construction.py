@@ -1068,16 +1068,15 @@ def _sequence_of_dataclasses_to_pydf(
             schema_override[col] = Utf8
 
     if from_model:
-        pydf = PyDataFrame.read_dicts([md.dict() for md in data], infer_schema_length)
+        rows = [tuple(md.__dict__.values()) for md in data]
     else:
-        pydf = PyDataFrame.read_rows(
-            [astuple(dc) for dc in data],
-            infer_schema_length,
-            schema_override or None,
-        )
+        rows = [astuple(dc) for dc in data]
+
+    pydf = PyDataFrame.read_rows(rows, infer_schema_length, schema_override or None)
     if schema_override:
         structs = {c: tp for c, tp in schema_override.items() if isinstance(tp, Struct)}
         pydf = _post_apply_columns(pydf, column_names, structs, schema_overrides)
+
     return pydf
 
 

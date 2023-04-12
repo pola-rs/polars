@@ -5,6 +5,8 @@ mod arg_where;
 mod binary;
 mod boolean;
 mod bounds;
+#[cfg(feature = "dtype-categorical")]
+mod cat;
 #[cfg(feature = "round_series")]
 mod clip;
 mod cum;
@@ -49,6 +51,8 @@ use serde::{Deserialize, Serialize};
 
 pub(crate) use self::binary::BinaryFunction;
 pub use self::boolean::BooleanFunction;
+#[cfg(feature = "dtype-categorical")]
+pub(crate) use self::cat::CategoricalFunction;
 #[cfg(feature = "temporal")]
 pub(super) use self::datetime::TemporalFunction;
 #[cfg(feature = "strings")]
@@ -129,6 +133,8 @@ pub enum FunctionExpr {
     Boolean(BooleanFunction),
     #[cfg(feature = "approx_unique")]
     ApproxUnique,
+    #[cfg(feature = "dtype-categorical")]
+    Categorical(CategoricalFunction),
     Coalesce,
     ShrinkType,
     #[cfg(feature = "diff")]
@@ -216,6 +222,8 @@ impl Display for FunctionExpr {
             Boolean(func) => return write!(f, "{func}"),
             #[cfg(feature = "approx_unique")]
             ApproxUnique => "approx_unique",
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(func) => return write!(f, "{func}"),
             Coalesce => "coalesce",
             ShrinkType => "shrink_dtype",
             #[cfg(feature = "diff")]
@@ -424,6 +432,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Boolean(func) => func.into(),
             #[cfg(feature = "approx_unique")]
             ApproxUnique => map!(dispatch::approx_unique),
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(func) => func.into(),
             Coalesce => map_as_slice!(fill_null::coalesce),
             ShrinkType => map_owned!(shrink_type::shrink),
             #[cfg(feature = "diff")]
