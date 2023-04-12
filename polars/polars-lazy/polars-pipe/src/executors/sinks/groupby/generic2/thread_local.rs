@@ -1,7 +1,7 @@
 use super::*;
 use crate::pipeline::PARTITION_SIZE;
 
-const OB_SIZE: usize = 1024;
+const OB_SIZE: usize = 2048;
 
 #[derive(Clone)]
 struct SpillPartitions {
@@ -195,7 +195,7 @@ impl ThreadLocalTable {
         let spill_partitions = SpillPartitions::new(key_dtypes, &agg_dtypes);
 
         Self {
-            inner_map: AggHashTable::new(agg_constructors, key_dtypes, output_schema, Some(128)),
+            inner_map: AggHashTable::new(agg_constructors, key_dtypes, output_schema, Some(256)),
             spill_partitions,
         }
     }

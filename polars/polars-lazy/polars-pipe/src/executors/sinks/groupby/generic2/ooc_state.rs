@@ -17,6 +17,7 @@ pub(super) struct OocState {
     pub(super) ooc: bool,
     // when ooc, we write to disk using an IO thread
     pub(super) io_thread: Arc<Mutex<Option<IOThread>>>,
+    count: u16,
 }
 
 impl Default for OocState {
@@ -25,6 +26,7 @@ impl Default for OocState {
             mem_track: MemTracker::new(morsels_per_sink()),
             ooc: false,
             io_thread: Default::default(),
+            count: 0,
         }
     }
 }
@@ -67,12 +69,16 @@ impl OocState {
             return Ok(SpillAction::Dump);
         }
         let free_frac = self.mem_track.free_memory_fraction_since_start();
+        self.count += 1;
 
         if free_frac < TO_DISK_THRESHOLD {
             self.init_ooc(spill_schema)?;
             Ok(SpillAction::Dump)
-        } else if free_frac < EARLY_MERGE_THRESHOLD {
-            return Ok(SpillAction::EarlyMerge);
+        } else if free_frac < EARLY_MERGE_THRESHOLD
+        // clean up some spills
+         || (self.count % 512) == 0
+        {
+            Ok(SpillAction::EarlyMerge)
         } else {
             Ok(SpillAction::None)
         }
