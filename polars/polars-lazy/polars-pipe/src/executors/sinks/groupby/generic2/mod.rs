@@ -6,6 +6,7 @@ mod sink;
 mod thread_local;
 
 use std::any::Any;
+use std::hash::{Hash, Hasher};
 
 use eval::Eval;
 use hash_table::AggHashTable;
@@ -74,5 +75,26 @@ impl SpillPayload {
         cols.push(chunk_idx);
         cols.extend(self.keys_and_aggs);
         DataFrame::new_no_checks(cols)
+    }
+}
+
+// This is the hash and the Index offset in the linear buffer
+#[derive(Copy, Clone)]
+pub(super) struct Key {
+    pub(super) hash: u64,
+    pub(super) idx: IdxSize,
+}
+
+impl Key {
+    #[inline]
+    pub(super) fn new(hash: u64, idx: IdxSize) -> Self {
+        Self { hash, idx }
+    }
+}
+
+impl Hash for Key {
+    #[inline]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u64(self.hash)
     }
 }

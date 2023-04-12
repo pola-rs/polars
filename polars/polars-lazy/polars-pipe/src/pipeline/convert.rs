@@ -362,14 +362,13 @@ where
                         output_schema.clone(),
                         options.slice,
                     )) as Box<dyn Sink>,
-                    _ => Box::new(groupby::GenericGroupbySink::new(
+                    _ => Box::new(GenericGroupby2::new(
                         key_columns,
                         aggregation_columns,
-                        agg_fns,
-                        input_schema,
+                        Arc::from(agg_fns),
                         output_schema.clone(),
                         options.slice,
-                    )) as Box<dyn Sink>,
+                    )),
                 }
             }
         }
