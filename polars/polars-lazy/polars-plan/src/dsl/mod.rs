@@ -1134,6 +1134,16 @@ impl Expr {
         self.apply_private(BooleanFunction::IsUnique.into())
     }
 
+    /// Get the approximate count of unique values.
+    #[cfg(feature = "approx_unique")]
+    pub fn approx_unique(self) -> Self {
+        self.apply_private(FunctionExpr::ApproxUnique)
+            .with_function_options(|mut options| {
+                options.auto_explode = true;
+                options
+            })
+    }
+
     /// and operation
     pub fn and<E: Into<Expr>>(self, expr: E) -> Self {
         binary_expr(self, Operator::And, expr.into())

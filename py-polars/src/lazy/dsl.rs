@@ -349,6 +349,10 @@ impl PyExpr {
         self.clone().inner.is_unique().into()
     }
 
+    pub fn approx_unique(&self) -> PyExpr {
+        self.clone().inner.approx_unique().into()
+    }
+
     pub fn is_first(&self) -> PyExpr {
         self.clone().inner.is_first().into()
     }

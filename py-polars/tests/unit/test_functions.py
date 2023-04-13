@@ -363,3 +363,22 @@ def test_max() -> None:
 def test_abs_logical_type() -> None:
     s = pl.Series([timedelta(hours=1), timedelta(hours=-1)])
     assert s.abs().to_list() == [timedelta(hours=1), timedelta(hours=1)]
+
+
+def test_approx_unique() -> None:
+    df1 = pl.DataFrame({"a": [None, 1, 2], "b": [None, 2, 1]})
+
+    assert_frame_equal(
+        df1.select(pl.approx_unique("b")),
+        pl.DataFrame({"b": pl.Series(values=[3], dtype=pl.UInt32)}),
+    )
+
+    assert_frame_equal(
+        df1.select(pl.approx_unique(pl.col("b"))),
+        pl.DataFrame({"b": pl.Series(values=[3], dtype=pl.UInt32)}),
+    )
+
+    assert_frame_equal(
+        df1.select(pl.col("b").approx_unique()),
+        pl.DataFrame({"b": pl.Series(values=[3], dtype=pl.UInt32)}),
+    )
