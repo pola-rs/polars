@@ -174,7 +174,7 @@ where
                         let agg_fns =
                             unsafe { std::slice::from_raw_parts_mut(ptr, aggregators_len) };
                         let mut key_builder = PrimitiveChunkedBuilder::<K>::new(
-                            self.output_schema.get_index(0).unwrap().0,
+                            self.output_schema.get_at_index(0).unwrap().0,
                             agg_map.len(),
                         );
                         let dtypes = agg_fns

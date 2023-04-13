@@ -241,7 +241,7 @@ impl<'a> CoreReader<'a> {
         if let Some(dtypes) = dtype_overwrite {
             let s = Arc::make_mut(&mut schema);
             for (index, dt) in dtypes.iter().enumerate() {
-                s.coerce_by_index(index, dt.clone()).unwrap();
+                s.set_dtype_at_index(index, dt.clone()).unwrap();
             }
         }
 
@@ -485,7 +485,7 @@ impl<'a> CoreReader<'a> {
         let mut new_projection = Vec::with_capacity(projection.len());
 
         for i in projection {
-            let (_, dtype) = self.schema.get_index(*i).ok_or_else(|| {
+            let (_, dtype) = self.schema.get_at_index(*i).ok_or_else(|| {
                 polars_err!(
                     ComputeError:
                     "projection index {} is out of bounds for CSV schema with {} columns",
@@ -879,7 +879,7 @@ impl StringColumns {
 
     fn iter(&self) -> impl Iterator<Item = &str> {
         self.fields.iter().map(|schema_i| {
-            let (name, _) = self.schema.get_index(*schema_i).unwrap();
+            let (name, _) = self.schema.get_at_index(*schema_i).unwrap();
             name.as_str()
         })
     }

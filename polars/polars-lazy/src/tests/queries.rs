@@ -1415,7 +1415,7 @@ fn test_when_then_schema() -> PolarsResult<()> {
             .then(Null {}.lit())
             .otherwise(col("A"))])
         .schema();
-    assert_ne!(schema?.get_index(0).unwrap().1, &DataType::Null);
+    assert_ne!(schema?.get_at_index(0).unwrap().1, &DataType::Null);
 
     Ok(())
 }

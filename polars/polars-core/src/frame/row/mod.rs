@@ -174,7 +174,7 @@ pub fn rows_to_schema_first_non_null(rows: &[Row], infer_schema_length: Option<u
 
                 if !is_nested_null(val) {
                     let dtype = val.into();
-                    schema.coerce_by_index(i, dtype).unwrap();
+                    schema.set_dtype_at_index(i, dtype).unwrap();
                 }
             }
         }
