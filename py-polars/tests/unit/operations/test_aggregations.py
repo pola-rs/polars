@@ -1,5 +1,5 @@
 import typing
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import numpy as np
 import pytest
@@ -159,3 +159,32 @@ def test_literal_group_agg_chunked_7968() -> None:
             ]
         ),
     )
+
+
+def test_duration_function_literal() -> None:
+    df = pl.DataFrame(
+        {
+            "A": ["x", "x", "y", "y", "y"],
+            "T": [date(2022, m, 1) for m in range(1, 6)],
+            "S": [1, 2, 4, 8, 16],
+        }
+    ).with_columns(
+        [
+            pl.col("T").cast(pl.Datetime),
+        ]
+    )
+
+    # this checks if the `pl.duration` is flagged as AggState::Literal
+    assert df.groupby("A", maintain_order=True).agg(
+        [((pl.col("T").max() + pl.duration(seconds=1)) - pl.col("T"))]
+    ).to_dict(False) == {
+        "A": ["x", "y"],
+        "T": [
+            [timedelta(days=31, seconds=1), timedelta(seconds=1)],
+            [
+                timedelta(days=61, seconds=1),
+                timedelta(days=30, seconds=1),
+                timedelta(seconds=1),
+            ],
+        ],
+    }
