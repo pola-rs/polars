@@ -637,48 +637,22 @@ fn convert_datetime(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
         // windows
         #[cfg(target_arch = "windows")]
         let (seconds, microseconds) = {
-            let tzinfo = ob.getattr("tzinfo")?;
-            let dt = if tzinfo.is_none() {
-                let kwargs = PyDict::new(py);
-                kwargs.set_item("tzinfo", py.None())?;
-                let dt = ob.call_method("replace", (), Some(kwargs))?;
-                let localize = UTILS.getattr("_localize").unwrap();
-                localize.call1((dt, "UTC"))
-            } else {
-                ob
-            };
-            let kwargs = PyDict::new(py);
-            kwargs.set_item("microsecond", 0)?;
-            let seconds = dt
-                .call_method("replace", (), Some(kwargs))?
-                .call_method0("timestamp")?;
-            let microseconds = dt.getattr("microsecond")?.extract::<i64>()?;
-            (seconds, microseconds)
+            let convert = UTILS.getattr(py, "_datetime_for_anyvalue_windows").unwrap();
+            let out = convert.call1(py, (ob,)).unwrap();
+            let out: (f64, i64) = out.extract(py).unwrap();
+            out
         };
         // unix
         #[cfg(not(target_arch = "windows"))]
         let (seconds, microseconds) = {
-            let datetime = PyModule::import(py, "datetime")?;
-            let timezone = datetime.getattr("timezone")?;
-            let tzinfo = ob.getattr("tzinfo")?;
-            let dt = if tzinfo.is_none() {
-                let kwargs = PyDict::new(py);
-                kwargs.set_item("tzinfo", timezone.getattr("utc")?)?;
-                ob.call_method("replace", (), Some(kwargs))?
-            } else {
-                ob
-            };
-            let kwargs = PyDict::new(py);
-            kwargs.set_item("microsecond", 0)?;
-            let seconds = dt
-                .call_method("replace", (), Some(kwargs))?
-                .call_method0("timestamp")?;
-            let microseconds = dt.getattr("microsecond")?.extract::<i64>()?;
-            (seconds, microseconds)
+            let convert = UTILS.getattr(py, "_datetime_for_anyvalue").unwrap();
+            let out = convert.call1(py, (ob,)).unwrap();
+            let out: (f64, i64) = out.extract(py).unwrap();
+            out
         };
 
         // s to us
-        let mut v = (seconds.extract::<f64>()? as i64) * 1_000_000;
+        let mut v = (seconds as i64) * 1_000_000;
         v += microseconds;
 
         // choose "us" as that is python's default unit
