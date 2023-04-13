@@ -93,7 +93,7 @@ impl SqlExprVisitor<'_> {
         );
         let tbl_name = &idents[0].value;
         let refers_main_table =
-            { self.ctx.tables.len() == 1 && self.ctx.tables.contains(tbl_name) };
+            { self.ctx.table_map.len() == 1 && self.ctx.table_map.contains_key(tbl_name) };
         polars_ensure!(
             refers_main_table, ComputeError:
             "compound identifier {:?} is not yet supported if multiple tables are registered",

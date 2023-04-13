@@ -22,7 +22,6 @@ thread_local! {pub(crate) static TABLES: RefCell<Vec<String>> = RefCell::new(vec
 #[derive(Default, Clone)]
 pub struct SQLContext {
     pub(crate) table_map: PlHashMap<String, LazyFrame>,
-    pub(crate) tables: Vec<String>,
     cte_map: RefCell<PlHashMap<String, LazyFrame>>,
 }
 
@@ -31,13 +30,11 @@ impl SQLContext {
     pub fn new() -> Self {
         Self {
             table_map: PlHashMap::new(),
-            tables: vec![],
             cte_map: RefCell::new(PlHashMap::new()),
         }
     }
     /// Register a DataFrame as a table in the SQLContext.
     pub fn register(&mut self, name: &str, lf: LazyFrame) {
-        self.tables.push(name.to_owned());
         self.table_map.insert(name.to_owned(), lf);
     }
 
@@ -103,7 +100,10 @@ impl SQLContext {
     }
 
     fn execute_show_tables(&mut self, _: &Statement) -> PolarsResult<LazyFrame> {
-        let tables = Series::new("name", self.tables.clone());
+        let tables = Series::new(
+            "name",
+            self.table_map.clone().into_keys().collect::<Vec<_>>(),
+        );
         let df = DataFrame::new(vec![tables])?;
         Ok(df.lazy())
     }
@@ -287,7 +287,7 @@ impl SQLContext {
         args: &[FunctionArg],
     ) -> PolarsResult<(String, LazyFrame)> {
         let tbl_fn = name.0.get(0).unwrap().value.as_str();
-
+        println!("executing tbl function");
         let read_fn = tbl_fn.parse::<PolarsTableFunctions>()?;
         let (tbl_name, lf) = read_fn.execute(args)?;
         let tbl_name = alias
