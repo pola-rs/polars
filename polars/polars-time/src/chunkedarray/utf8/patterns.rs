@@ -219,6 +219,7 @@ pub enum Pattern {
     DatetimeYMDZ,
 }
 
+#[derive(Clone)]
 pub struct PatternWithOffset {
     pub pattern: Pattern,
     pub offset: Option<FixedOffset>,
