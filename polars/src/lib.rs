@@ -385,8 +385,6 @@ pub use polars_core::{
 };
 #[cfg(feature = "dtype-categorical")]
 pub use polars_core::{enable_string_cache, using_string_cache};
-#[cfg(feature = "polars-io")]
-pub use polars_io as io;
 #[cfg(feature = "lazy")]
 pub use polars_lazy as lazy;
 #[cfg(feature = "temporal")]
@@ -394,3 +392,4 @@ pub use polars_time as time;
 
 /// Polars crate version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub mod io;

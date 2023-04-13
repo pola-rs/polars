@@ -25,6 +25,36 @@ pub enum NullValues {
     Named(Vec<(String, String)>),
 }
 
+impl From<Vec<String>> for NullValues {
+    fn from(v: Vec<String>) -> Self {
+        Self::AllColumns(v)
+    }
+}
+
+impl From<String> for NullValues {
+    fn from(v: String) -> Self {
+        Self::AllColumnsSingle(v)
+    }
+}
+
+impl From<&str> for NullValues {
+    fn from(v: &str) -> Self {
+        Self::AllColumnsSingle(v.to_string())
+    }
+}
+
+impl From<&[&str]> for NullValues {
+    fn from(v: &[&str]) -> Self {
+        Self::AllColumns(v.iter().map(|s| s.to_string()).collect())
+    }
+}
+
+impl From<Vec<&str>> for NullValues {
+    fn from(v: Vec<&str>) -> Self {
+        Self::AllColumns(v.iter().map(|s| s.to_string()).collect())
+    }
+}
+
 pub(super) enum NullValuesCompiled {
     /// A single value that's used for all columns
     AllColumnsSingle(String),
