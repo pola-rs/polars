@@ -97,7 +97,10 @@ impl TryFrom<Pattern> for DatetimeInfer<i64> {
     fn try_from(value: Pattern) -> PolarsResult<Self> {
         match value {
             Pattern::DatetimeDMY => Ok(DatetimeInfer {
-                pattern_with_offset: PatternWithOffset{pattern: Pattern::DatetimeDMY, offset: None},
+                pattern_with_offset: PatternWithOffset {
+                    pattern: Pattern::DatetimeDMY,
+                    offset: None,
+                },
                 patterns: patterns::DATETIME_D_M_Y,
                 latest_fmt: patterns::DATETIME_D_M_Y[0],
                 transform: transform_datetime_us,
@@ -107,7 +110,10 @@ impl TryFrom<Pattern> for DatetimeInfer<i64> {
                 utc: false,
             }),
             Pattern::DatetimeYMD => Ok(DatetimeInfer {
-                pattern_with_offset: PatternWithOffset{pattern:Pattern::DatetimeYMD, offset:None},
+                pattern_with_offset: PatternWithOffset {
+                    pattern: Pattern::DatetimeYMD,
+                    offset: None,
+                },
                 patterns: patterns::DATETIME_Y_M_D,
                 latest_fmt: patterns::DATETIME_Y_M_D[0],
                 transform: transform_datetime_us,
@@ -117,7 +123,10 @@ impl TryFrom<Pattern> for DatetimeInfer<i64> {
                 utc: false,
             }),
             Pattern::DatetimeYMDZ => Ok(DatetimeInfer {
-                pattern_with_offset: PatternWithOffset{pattern:Pattern::DatetimeYMDZ, offset:None},
+                pattern_with_offset: PatternWithOffset {
+                    pattern: Pattern::DatetimeYMDZ,
+                    offset: None,
+                },
                 patterns: patterns::DATETIME_Y_M_D_Z,
                 latest_fmt: patterns::DATETIME_Y_M_D_Z[0],
                 transform: transform_tzaware_datetime_us,
@@ -138,7 +147,10 @@ impl TryFrom<Pattern> for DatetimeInfer<i32> {
     fn try_from(value: Pattern) -> PolarsResult<Self> {
         match value {
             Pattern::DateDMY => Ok(DatetimeInfer {
-                pattern_with_offset: PatternWithOffset{pattern: Pattern::DateDMY, offset: None},
+                pattern_with_offset: PatternWithOffset {
+                    pattern: Pattern::DateDMY,
+                    offset: None,
+                },
                 patterns: patterns::DATE_D_M_Y,
                 latest_fmt: patterns::DATE_D_M_Y[0],
                 transform: transform_date,
@@ -148,7 +160,10 @@ impl TryFrom<Pattern> for DatetimeInfer<i32> {
                 utc: false,
             }),
             Pattern::DateYMD => Ok(DatetimeInfer {
-                pattern_with_offset: PatternWithOffset{pattern: Pattern::DateYMD, offset: None},
+                pattern_with_offset: PatternWithOffset {
+                    pattern: Pattern::DateYMD,
+                    offset: None,
+                },
                 patterns: patterns::DATE_Y_M_D,
                 latest_fmt: patterns::DATE_Y_M_D[0],
                 transform: transform_date,

@@ -122,8 +122,9 @@ fn infer_field_schema(string: &str, try_parse_dates: bool) -> DataType {
                         } => DataType::Date,
                         PatternWithOffset {
                             pattern: Pattern::DatetimeYMDZ,
-                            offset,
-                        } => DataType::Utf8,  // TODO: support this
+                            offset: _,
+                        } => DataType::Utf8, // TODO: support tz-aware,
+                                             // need to keep track of offset
                     },
                     None => DataType::Utf8,
                 }
@@ -158,8 +159,9 @@ fn infer_field_schema(string: &str, try_parse_dates: bool) -> DataType {
                     } => DataType::Date,
                     PatternWithOffset {
                         pattern: Pattern::DatetimeYMDZ,
-                        offset,
-                    } => DataType::Utf8,  // TODO: support this
+                        offset: _,
+                    } => DataType::Utf8, // TODO: support tz-aware,
+                                         // need to keep track of offset
                 },
                 None => DataType::Utf8,
             }

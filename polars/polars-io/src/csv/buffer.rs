@@ -438,28 +438,26 @@ where
                 }
             }
         }
-        None => {
-            match infer_pattern_single(val) {
-                None => {
-                    buf.builder.append_null();
-                    Ok(())
-                }
-                Some(pattern_with_offset) => {
-                    match DatetimeInfer::<T::Native>::try_from(pattern_with_offset.pattern) {
-                        Ok(mut infer) => {
-                            let parsed = infer.parse(val, pattern_with_offset.offset);
-                            buf.compiled = Some(infer);
-                            buf.builder.append_option(parsed);
-                            Ok(())
-                        }
-                        Err(_) => {
-                            buf.builder.append_null();
-                            Ok(())
-                        }
+        None => match infer_pattern_single(val) {
+            None => {
+                buf.builder.append_null();
+                Ok(())
+            }
+            Some(pattern_with_offset) => {
+                match DatetimeInfer::<T::Native>::try_from(pattern_with_offset.pattern) {
+                    Ok(mut infer) => {
+                        let parsed = infer.parse(val, pattern_with_offset.offset);
+                        buf.compiled = Some(infer);
+                        buf.builder.append_option(parsed);
+                        Ok(())
+                    }
+                    Err(_) => {
+                        buf.builder.append_null();
+                        Ok(())
                     }
                 }
             }
-        }
+        },
     }
 }
 
