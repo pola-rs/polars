@@ -3587,16 +3587,17 @@ class DataFrame:
         else:
             return s
 
-    def describe(self, percentiles: list[float] | None = None) -> Self:
+    def describe(
+        self, percentiles: Sequence[float] | float | None = (0.25, 0.75)
+    ) -> Self:
         """
         Summary statistics for a DataFrame.
 
         Parameters
         ----------
         percentiles
-            The percentiles to include in the summary statistics. All values must be in
-            the range `[0, 1]`. If not provided, uses `0.25` and `0.75`, i.e the 25th
-            and 75th percentile are included in the output.
+            One or more percentiles to include in the summary statistics.
+            All values must be in the range `[0, 1]`.
 
         See Also
         --------
@@ -3634,6 +3635,10 @@ class DataFrame:
         └────────────┴──────────┴──────────┴──────────┴──────┴──────┴────────────┘
 
         """
+        if isinstance(percentiles, float):
+            percentiles = [percentiles]
+        if percentiles and not all((0 <= p <= 1) for p in percentiles):
+            raise ValueError("Percentiles must all be in the range [0, 1].")
 
         def describe_cast(stat: Self) -> Self:
             columns = []
@@ -3645,11 +3650,6 @@ class DataFrame:
                     # statistics can be shown
                     columns.append(stat[:, i].cast(str))
             return self.__class__(columns)
-
-        # Validate parameters
-        percentiles = [0.25, 0.75] if percentiles is None else []
-        if not all(p >= 0 and p <= 1 for p in percentiles):
-            raise ValueError("Not all percentiles are in the range [0, 1].")
 
         # Build output rows
         output_rows = [
@@ -3664,7 +3664,7 @@ class DataFrame:
         row_identifiers = ["count", "null_count", "mean", "std", "min", "max", "median"]
 
         # Dynamically add rows for quantiles
-        for p in percentiles:
+        for p in percentiles or ():
             output_rows.append(describe_cast(self.quantile(p)))
             row_identifiers.append(f"{p:.0%}")
 

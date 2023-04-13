@@ -79,7 +79,7 @@ pub(super) fn position_aggregates(
                         let mut buf = AnyValueBufferTrusted::new(&phys_type, avs.len());
                         for av in avs {
                             unsafe {
-                                buf.add_unchecked_owned_physical(av);
+                                buf.add_unchecked_borrowed_physical(av);
                             }
                         }
                         let mut out = buf.into_series();

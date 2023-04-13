@@ -43,6 +43,7 @@ big_idx = ["polars-core/bigidx"]
 round_series = []
 is_first = []
 is_unique = []
+approx_unique = []
 
 # extra utilities for BinaryChunked
 binary_encoding = ["base64", "hex"]

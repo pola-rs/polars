@@ -7,6 +7,7 @@ Computation
    :toctree: api/
 
     Expr.abs
+    Expr.approx_unique
     Expr.arccos
     Expr.arccosh
     Expr.arcsin

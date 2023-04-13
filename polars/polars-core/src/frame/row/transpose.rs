@@ -41,9 +41,9 @@ impl DataFrame {
                 for s in columns {
                     polars_ensure!(s.dtype() == &phys_dtype, ComputeError: "cannot transpose with supertype: {}", dtype);
                     s.iter().zip(buffers.iter_mut()).for_each(|(av, buf)| {
-                        // safety: we checked the type
+                        // safety: we checked the type and we borrow
                         unsafe {
-                            buf.add_unchecked_owned_physical(&av);
+                            buf.add_unchecked_borrowed_physical(&av);
                         }
                     });
                 }

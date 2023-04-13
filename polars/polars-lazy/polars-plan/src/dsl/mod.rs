@@ -40,6 +40,7 @@ use polars_core::utils::{try_get_supertype, NoNull};
 #[cfg(feature = "rolling_window")]
 use polars_time::series::SeriesOpsTime;
 
+use crate::constants::MAP_LIST_NAME;
 pub use crate::logical_plan::lit;
 use crate::prelude::*;
 use crate::utils::has_expr;
@@ -720,7 +721,7 @@ impl Expr {
             output_type,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyList,
-                fmt_str: "map_list",
+                fmt_str: MAP_LIST_NAME,
                 ..Default::default()
             },
         }
@@ -1132,6 +1133,16 @@ impl Expr {
     #[cfg(feature = "is_unique")]
     pub fn is_unique(self) -> Self {
         self.apply_private(BooleanFunction::IsUnique.into())
+    }
+
+    /// Get the approximate count of unique values.
+    #[cfg(feature = "approx_unique")]
+    pub fn approx_unique(self) -> Self {
+        self.apply_private(FunctionExpr::ApproxUnique)
+            .with_function_options(|mut options| {
+                options.auto_explode = true;
+                options
+            })
     }
 
     /// and operation

@@ -135,6 +135,8 @@ impl FunctionExpr {
             Cumprod { .. } => mapper.map_dtype(cum::dtypes::cumprod),
             Cummin { .. } => mapper.with_same_dtype(),
             Cummax { .. } => mapper.with_same_dtype(),
+            #[cfg(feature = "approx_unique")]
+            ApproxUnique => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "diff")]
             Diff(_, _) => mapper.map_dtype(|dt| match dt {
                 #[cfg(feature = "dtype-datetime")]

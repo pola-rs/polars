@@ -164,6 +164,7 @@ features = [
   "string_from_radix",
   "arg_where",
   "date_offset",
+  "approx_unique",
 ]
 
 [lib]

@@ -1,8 +1,9 @@
 use super::*;
 
+#[derive(Clone)]
 pub struct BooleanChunkedBuilder {
     pub(crate) array_builder: MutableBooleanArray,
-    field: Field,
+    pub(crate) field: Field,
 }
 
 impl ChunkedBuilder<bool, BooleanType> for BooleanChunkedBuilder {

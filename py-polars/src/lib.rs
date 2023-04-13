@@ -23,7 +23,6 @@ pub mod datatypes;
 pub mod error;
 pub mod file;
 pub mod lazy;
-mod list_construction;
 pub mod npy;
 #[cfg(feature = "object")]
 mod object;
