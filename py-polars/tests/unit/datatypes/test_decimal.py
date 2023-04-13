@@ -92,3 +92,8 @@ def test_decimal_cast() -> None:
     assert df.with_columns(pl.col("decimals").cast(pl.Float32).alias("b2")).to_dict(
         False
     ) == {"decimals": [D("2"), D("2")], "b2": [2.0, 2.0]}
+
+
+def test_decimal_scale_precision_roundtrip(monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
+    assert pl.from_arrow(pl.Series("dec", [D("10.0")]).to_arrow()).item() == D("10.0")
