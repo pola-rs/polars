@@ -811,4 +811,21 @@ mod test {
         assert!(df_sql.frame_equal(&expected));
         Ok(())
     }
+
+    #[test]
+    fn test_ctes() -> PolarsResult<()> {
+        let mut context = SQLContext::new();
+        let sql = r#"
+        with foods as (
+            SELECT *
+            FROM read_csv('../../examples/datasets/foods1.csv')
+        )
+        select * from foods "#;
+        assert!(context.execute(sql).is_ok());
+
+        let sql = r#"select * from foods"#;
+        assert!(context.execute(sql).is_err());
+
+        Ok(())
+    }
 }

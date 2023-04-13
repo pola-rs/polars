@@ -16,7 +16,8 @@ check:
 	    -p polars-arrow \
 	    -p polars-time \
 	    -p polars-error \
-	    -p polars-ops
+	    -p polars-ops \
+			-p polars-sql
 
 clippy:
 	cargo clippy --all-features \
@@ -28,7 +29,8 @@ clippy:
 	    -p polars-ops \
 	    -p polars-error \
 	    -p polars-row \
-	    -p polars-time
+	    -p polars-time \
+			-p polars-sql
 
 clippy-default:
 	cargo clippy
@@ -43,6 +45,7 @@ test:  ## Run tests
 	    -p polars-time \
 	    -p polars-utils \
 	    -p polars-row \
+			-p polars-sql \
 	    -- \
 	    --test-threads=2
 
