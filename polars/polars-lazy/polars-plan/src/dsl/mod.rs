@@ -40,6 +40,7 @@ use polars_core::utils::{try_get_supertype, NoNull};
 #[cfg(feature = "rolling_window")]
 use polars_time::series::SeriesOpsTime;
 
+use crate::constants::MAP_LIST_NAME;
 pub use crate::logical_plan::lit;
 use crate::prelude::*;
 use crate::utils::has_expr;
@@ -720,7 +721,7 @@ impl Expr {
             output_type,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyList,
-                fmt_str: "map_list",
+                fmt_str: MAP_LIST_NAME,
                 ..Default::default()
             },
         }
