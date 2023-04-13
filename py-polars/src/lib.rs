@@ -15,7 +15,7 @@ mod build {
 
 pub mod apply;
 pub mod arrow_interop;
-#[cfg(feature = "csv-file")]
+#[cfg(feature = "csv")]
 mod batched_csv;
 pub mod conversion;
 pub mod dataframe;
@@ -664,7 +664,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyLazyFrame>().unwrap();
     m.add_class::<PyLazyGroupBy>().unwrap();
     m.add_class::<dsl::PyExpr>().unwrap();
-    #[cfg(feature = "csv-file")]
+    #[cfg(feature = "csv")]
     m.add_class::<batched_csv::PyBatchedCsv>().unwrap();
     #[cfg(feature = "sql")]
     m.add_class::<sql::PySQLContext>().unwrap();

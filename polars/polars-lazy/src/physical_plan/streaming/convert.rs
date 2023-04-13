@@ -240,7 +240,7 @@ pub(crate) fn insert_streaming_nodes(
                     )
                 }
             }
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             CsvScan { .. } => {
                 if state.streamable {
                     state.sources.push(root);
@@ -304,7 +304,7 @@ pub(crate) fn insert_streaming_nodes(
                 stack.push((input_left, state_left, current_idx));
             }
             // add globbing patterns
-            #[cfg(all(feature = "csv-file", feature = "parquet"))]
+            #[cfg(all(feature = "csv", feature = "parquet"))]
             Union { inputs, .. } => {
                 if state.streamable
                     && inputs.iter().all(|node| match lp_arena.get(*node) {

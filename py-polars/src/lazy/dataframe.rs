@@ -4,7 +4,7 @@ use std::io::BufWriter;
 use std::path::PathBuf;
 
 use polars::io::RowCount;
-#[cfg(feature = "csv-file")]
+#[cfg(feature = "csv")]
 use polars::lazy::frame::LazyCsvReader;
 #[cfg(feature = "json")]
 use polars::lazy::frame::LazyJsonLineReader;
@@ -193,7 +193,7 @@ impl PyLazyFrame {
 
     #[staticmethod]
     #[allow(clippy::too_many_arguments)]
-    #[cfg(feature = "csv-file")]
+    #[cfg(feature = "csv")]
     #[pyo3(signature = (path, separator, has_header, ignore_errors, skip_rows, n_rows, cache, overwrite_dtype,
         low_memory, comment_char, quote_char, null_values, missing_utf8_is_empty_string,
         infer_schema_length, with_schema_modify, rechunk, skip_rows_after_header,

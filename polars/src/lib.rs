@@ -195,7 +195,7 @@
 //!     - `parquet` - Read Apache Parquet format
 //!     - `json` - JSON serialization
 //!     - `ipc` - Arrow's IPC format serialization
-//!     - `decompress` - Automatically infer compression of csv-files and decompress them.
+//!     - `decompress` - Automatically infer compression of csvs and decompress them.
 //!                      Supported compressions:
 //!                         * zip
 //!                         * gzip
@@ -394,3 +394,6 @@ pub use polars_io as io;
 pub use polars_lazy as lazy;
 #[cfg(feature = "temporal")]
 pub use polars_time as time;
+
+#[cfg(feature = "csv-file")]
+compile_error!("feature 'csv-file' has been removed, use 'csv' instead");

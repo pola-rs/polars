@@ -202,7 +202,7 @@ pub fn to_alp(
             let input = to_alp(*input, expr_arena, lp_arena)?;
             ALogicalPlan::Slice { input, offset, len }
         }
-        #[cfg(feature = "csv-file")]
+        #[cfg(feature = "csv")]
         LogicalPlan::CsvScan {
             path,
             file_info,
@@ -684,7 +684,7 @@ impl ALogicalPlan {
                     predicate: p,
                 }
             }
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             ALogicalPlan::CsvScan {
                 path,
                 file_info,

@@ -154,7 +154,7 @@ fn lp_node_equal(a: &ALogicalPlan, b: &ALogicalPlan, expr_arena: &Arena<AExpr>) 
                 && options_l == options_r
                 && predicate_equal(*predicate_l, *predicate_r, expr_arena)
         }
-        #[cfg(feature = "csv-file")]
+        #[cfg(feature = "csv")]
         (
             CsvScan {
                 path: path_left,
@@ -439,7 +439,7 @@ pub(crate) fn decrement_file_counters_by_cache_hits(
                 options.file_counter -= acc_count as FileCount
             }
         }
-        #[cfg(feature = "csv-file")]
+        #[cfg(feature = "csv")]
         CsvScan { options, .. } => {
             if acc_count >= options.file_counter {
                 options.file_counter = 1;

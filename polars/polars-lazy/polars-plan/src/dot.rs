@@ -340,7 +340,7 @@ impl LogicalPlan {
                     self.write_dot(acc_str, prev_node, current_node, id_map)
                 }
             }
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             CsvScan {
                 path,
                 options,

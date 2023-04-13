@@ -1,7 +1,7 @@
 use std::sync::Mutex;
 
 use polars_core::prelude::*;
-#[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
+#[cfg(any(feature = "parquet", feature = "csv", feature = "ipc"))]
 use polars_plan::logical_plan::FileFingerPrint;
 
 use crate::prelude::*;
