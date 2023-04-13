@@ -813,6 +813,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature="csv")]
     fn test_ctes() -> PolarsResult<()> {
         let mut context = SQLContext::new();
         let sql = r#"
