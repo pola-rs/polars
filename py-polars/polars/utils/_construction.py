@@ -893,16 +893,16 @@ def _sequence_of_sequence_to_pydf(
         if column_names and len(first_element) != len(column_names):
             raise ShapeError("The row data does not match the number of columns")
 
-        unpack_nested_namedtuple = False
+        unpack_nested = False
         for col, tp in local_schema_override.items():
             if tp == Categorical:
                 local_schema_override[col] = Utf8
-            elif tp == Unknown and not unpack_nested_namedtuple:
-                unpack_nested_namedtuple = contains_nested(
+            elif not unpack_nested and (tp.base_type() in (Unknown, Struct)):
+                unpack_nested = contains_nested(
                     getattr(first_element, col, None), is_namedtuple
                 )
 
-        if unpack_nested_namedtuple:
+        if unpack_nested:
             dicts = [nt_unpack(d) for d in data]
             pydf = PyDataFrame.read_dicts(dicts, infer_schema_length)
         else:
@@ -1083,7 +1083,7 @@ def _dataclasses_or_models_to_pydf(
     for col, tp in schema_override.items():
         if tp == Categorical:
             schema_override[col] = Utf8
-        elif tp == Unknown and not unpack_nested:
+        elif not unpack_nested and (tp.base_type() in (Unknown, Struct)):
             unpack_nested = contains_nested(
                 getattr(first_element, col, None),
                 is_pydantic_model if from_model else dataclasses.is_dataclass,  # type: ignore[arg-type]

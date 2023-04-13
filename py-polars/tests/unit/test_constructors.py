@@ -5,7 +5,7 @@ import typing
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from random import shuffle
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
 import pandas as pd
@@ -16,6 +16,9 @@ import polars as pl
 from polars.dependencies import _ZONEINFO_AVAILABLE, dataclasses, pydantic
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils._construction import type_hints
+
+if TYPE_CHECKING:
+    from polars.datatypes import PolarsDataType
 
 if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo
@@ -309,23 +312,45 @@ def test_init_structured_objects_nested() -> None:
             },
         )
 
+        # validate nested schema override
+        override_struct_schema: dict[str, PolarsDataType] = {
+            "x": pl.Int16,
+            "y": pl.Struct(
+                [
+                    pl.Field("a", pl.Utf8),
+                    pl.Field("b", pl.Int32),
+                    pl.Field(
+                        name="c",
+                        dtype=pl.Struct(
+                            [
+                                pl.Field("d", pl.Datetime("ms")),
+                                pl.Field("e", pl.Float32),
+                                pl.Field("f", pl.Utf8),
+                            ]
+                        ),
+                    ),
+                ]
+            ),
+        }
         df = (
-            pl.DataFrame(data, schema_overrides={"x": pl.Int16}).unnest("y").unnest("c")
+            pl.DataFrame(data, schema_overrides=override_struct_schema)
+            .unnest("y")
+            .unnest("c")
         )
         # shape: (1, 6)
         # ┌─────┬───────┬─────┬─────────────────────┬───────┬───────┐
         # │ x   ┆ a     ┆ b   ┆ d                   ┆ e     ┆ f     │
         # │ --- ┆ ---   ┆ --- ┆ ---                 ┆ ---   ┆ ---   │
-        # │ i16 ┆ str   ┆ i64 ┆ datetime[μs]        ┆ f64   ┆ str   │
+        # │ i16 ┆ str   ┆ i32 ┆ datetime[ms]        ┆ f32   ┆ str   │
         # ╞═════╪═══════╪═════╪═════════════════════╪═══════╪═══════╡
         # │ 100 ┆ hello ┆ 800 ┆ 2023-04-12 10:30:00 ┆ -10.5 ┆ world │
         # └─────┴───────┴─────┴─────────────────────┴───────┴───────┘
         assert df.schema == {
             "x": pl.Int16,
             "a": pl.Utf8,
-            "b": pl.Int64,
-            "d": pl.Datetime("us"),
-            "e": pl.Float64,
+            "b": pl.Int32,
+            "d": pl.Datetime("ms"),
+            "e": pl.Float32,
             "f": pl.Utf8,
         }
         assert df.row(0) == (
