@@ -332,35 +332,39 @@ def test_init_structured_objects_nested() -> None:
                 ]
             ),
         }
-        df = (
-            pl.DataFrame(data, schema_overrides=override_struct_schema)
-            .unnest("y")
-            .unnest("c")
-        )
-        # shape: (1, 6)
-        # ┌─────┬───────┬─────┬─────────────────────┬───────┬───────┐
-        # │ x   ┆ a     ┆ b   ┆ d                   ┆ e     ┆ f     │
-        # │ --- ┆ ---   ┆ --- ┆ ---                 ┆ ---   ┆ ---   │
-        # │ i16 ┆ str   ┆ i32 ┆ datetime[ms]        ┆ f32   ┆ str   │
-        # ╞═════╪═══════╪═════╪═════════════════════╪═══════╪═══════╡
-        # │ 100 ┆ hello ┆ 800 ┆ 2023-04-12 10:30:00 ┆ -10.5 ┆ world │
-        # └─────┴───────┴─────┴─────────────────────┴───────┴───────┘
-        assert df.schema == {
-            "x": pl.Int16,
-            "a": pl.Utf8,
-            "b": pl.Int32,
-            "d": pl.Datetime("ms"),
-            "e": pl.Float32,
-            "f": pl.Utf8,
-        }
-        assert df.row(0) == (
-            100,
-            "hello",
-            800,
-            datetime(2023, 4, 12, 10, 30),
-            -10.5,
-            "world",
-        )
+        for schema, schema_overrides in (
+            (None, override_struct_schema),
+            (override_struct_schema, None),
+        ):
+            df = (
+                pl.DataFrame(data, schema=schema, schema_overrides=schema_overrides)
+                .unnest("y")
+                .unnest("c")
+            )
+            # shape: (1, 6)
+            # ┌─────┬───────┬─────┬─────────────────────┬───────┬───────┐
+            # │ x   ┆ a     ┆ b   ┆ d                   ┆ e     ┆ f     │
+            # │ --- ┆ ---   ┆ --- ┆ ---                 ┆ ---   ┆ ---   │
+            # │ i16 ┆ str   ┆ i32 ┆ datetime[ms]        ┆ f32   ┆ str   │
+            # ╞═════╪═══════╪═════╪═════════════════════╪═══════╪═══════╡
+            # │ 100 ┆ hello ┆ 800 ┆ 2023-04-12 10:30:00 ┆ -10.5 ┆ world │
+            # └─────┴───────┴─────┴─────────────────────┴───────┴───────┘
+            assert df.schema == {
+                "x": pl.Int16,
+                "a": pl.Utf8,
+                "b": pl.Int32,
+                "d": pl.Datetime("ms"),
+                "e": pl.Float32,
+                "f": pl.Utf8,
+            }
+            assert df.row(0) == (
+                100,
+                "hello",
+                800,
+                datetime(2023, 4, 12, 10, 30),
+                -10.5,
+                "world",
+            )
 
 
 def test_init_ndarray(monkeypatch: Any) -> None:
