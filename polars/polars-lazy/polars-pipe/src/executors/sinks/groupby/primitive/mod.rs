@@ -418,7 +418,7 @@ where
                             entry.insert(*key, offset);
                             // initialize the aggregators
                             for agg_fn in &self.agg_fns {
-                                self.aggregators.push(agg_fn.split2())
+                                self.aggregators.push(agg_fn.split())
                             }
                             offset
                         }
@@ -461,7 +461,7 @@ where
         let mut new = Self::new_inner(
             self.key.clone(),
             self.aggregation_columns.clone(),
-            self.agg_fns.iter().map(|func| func.split2()).collect(),
+            self.agg_fns.iter().map(|func| func.split()).collect(),
             self.input_schema.clone(),
             self.output_schema.clone(),
             self.slice,
@@ -509,7 +509,7 @@ where
             entry.insert(key, offset);
             // initialize the aggregators
             for agg_fn in agg_fns {
-                current_aggregators.push(agg_fn.split2())
+                current_aggregators.push(agg_fn.split())
             }
             offset
         }
