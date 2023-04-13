@@ -284,6 +284,16 @@ def test_assert_series_equal_int_overflow() -> None:
             assert_series_equal(s1, s2, check_exact=check_exact)
 
 
+def test_assert_series_equal_uint_overflow() -> None:
+    # 'atol' is checked following "(left-right).abs()", which can overflow on uint
+    s1 = pl.Series([1, 2, 3], dtype=pl.UInt8)
+    s2 = pl.Series([2, 3, 4], dtype=pl.UInt8)
+
+    with pytest.raises(AssertionError):
+        assert_series_equal(s1, s2, atol=0)
+    assert_series_equal(s1, s2, atol=1)
+
+
 @pytest.mark.parametrize(
     ("data1", "data2"),
     [
