@@ -32,12 +32,21 @@ impl Debug for Schema {
     }
 }
 
-impl<I, J> From<I> for Schema
+impl<'a> FromIterator<&'a arrow::datatypes::Field> for Schema {
+    fn from_iter<T: IntoIterator<Item = &'a arrow::datatypes::Field>>(fields: T) -> Self {
+        fields
+            .into_iter()
+            .map(|fld| Field::new(&fld.name, (&fld.data_type).into()))
+            .collect()
+    }
+}
+
+impl<F> FromIterator<F> for Schema
 where
-    I: Iterator<Item = J>,
-    J: Into<Field>,
+    F: Into<Field>,
 {
-    fn from(iter: I) -> Self {
+    fn from_iter<T: IntoIterator<Item = F>>(iter: T) -> Self {
+        let iter = iter.into_iter();
         let mut map: PlIndexMap<_, _> =
             IndexMap::with_capacity_and_hasher(iter.size_hint().0, ahash::RandomState::default());
         for fld in iter {
@@ -63,45 +72,7 @@ where
     }
 }
 
-impl<J> FromIterator<J> for Schema
-where
-    J: Into<Field>,
-{
-    fn from_iter<I: IntoIterator<Item = J>>(iter: I) -> Self {
-        Schema::from(iter.into_iter())
-    }
-}
-
 impl Schema {
-    // cannot implement TryFrom<I> due to conflicting implementation with blanket impl
-    // ```
-    // conflicting implementations of trait `std::convert::TryFrom<_>` for type `schema::Schema`
-    // conflicting implementation in crate `core`:
-    // - impl<T, U> std::convert::TryFrom<U> for T
-    //   where U: std::convert::Into<T>;
-    // ```
-    // Basically, `TryFrom` cannot be generic due to <https://stackoverflow.com/a/42783264>
-    //
-    // So, we need a version of try_from not part of the TryFrom trait
-    //
-    // (We also can't `impl FromIterator<PolarsResult<Field>> for PolarsResult<Schema>` due to orphan rules.)
-    //
-    // TODO: remove this method altogether? You can already collect an `Iterator<Result<T, E>>` into a `Result<impl
-    // FromIterator<T>, E>`.
-    pub fn try_from_fallible<I>(flds: I) -> PolarsResult<Self>
-    where
-        I: IntoIterator<Item = PolarsResult<Field>>,
-    {
-        let iter = flds.into_iter();
-        let mut map: PlIndexMap<_, _> =
-            IndexMap::with_capacity_and_hasher(iter.size_hint().0, ahash::RandomState::default());
-        for fld in iter {
-            let fld = fld?;
-            map.insert(fld.name().clone(), fld.data_type().clone());
-        }
-        Ok(Self { inner: map })
-    }
-
     /// Create a new, empty schema
     pub fn new() -> Self {
         Self::with_capacity(0)

@@ -59,7 +59,7 @@ impl ParquetObjectStore {
 
         let arrow_schema = parquet2_read::infer_schema(metadata)?;
 
-        Ok(arrow_schema.fields.iter().into())
+        Ok(Schema::from_iter(arrow_schema.fields))
     }
 
     /// Number of rows in the parquet file.

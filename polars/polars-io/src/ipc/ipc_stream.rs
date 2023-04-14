@@ -76,7 +76,7 @@ pub struct IpcStreamReader<R> {
 impl<R: Read> IpcStreamReader<R> {
     /// Get schema of the Ipc Stream File
     pub fn schema(&mut self) -> PolarsResult<Schema> {
-        Ok((self.metadata()?.schema.fields.iter()).into())
+        Ok(Schema::from_iter(self.metadata()?.schema.fields))
     }
 
     /// Get arrow schema of the Ipc Stream File, this is faster than creating a polars schema.

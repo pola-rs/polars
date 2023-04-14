@@ -502,7 +502,7 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn schema(&self) -> Schema {
-        Schema::from(self.iter().map(|s| s.field().into_owned()))
+        self.iter().map(|s| s.field().into_owned()).collect()
     }
 
     /// Get a reference to the `DataFrame` columns.

@@ -507,11 +507,7 @@ pub fn infer_file_schema(
         );
     }
 
-    Ok((
-        Schema::from(fields.into_iter()),
-        rows_count,
-        end_ptr - start_ptr,
-    ))
+    Ok((Schema::from_iter(fields), rows_count, end_ptr - start_ptr))
 }
 
 // magic numbers
