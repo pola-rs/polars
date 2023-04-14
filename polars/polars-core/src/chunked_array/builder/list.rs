@@ -482,7 +482,7 @@ macro_rules! finish_anonymous_list_builder {
         // safety: same type
         let mut ca = unsafe { ListChunked::from_chunks(&slf.name, vec![Box::new(arr)]) };
 
-        if $self.fast_explode {
+        if slf.fast_explode {
             ca.set_fast_explode()
         }
         ca

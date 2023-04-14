@@ -94,7 +94,7 @@ impl<'a> AnonymousBuilder<'a> {
         // offsets are monotonically increasing
         let offsets = unsafe { Offsets::new_unchecked(self.offsets).into() };
         Ok(ListArray::<i64>::new(
-            ListArray::<i64>::default_datatype(inner_dtype.clone()),
+            ListArray::<i64>::default_datatype(inner_dtype),
             offsets,
             values,
             self.validity.map(|validity| validity.into()),
