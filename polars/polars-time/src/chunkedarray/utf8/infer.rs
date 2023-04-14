@@ -240,9 +240,9 @@ impl StrpTimeParser<i64> for DatetimeInfer<i64> {
                 .or_else(|| {
                     // TODO! this will try all patterns.
                     // somehow we must early escape if value is invalid
-                    if !self.pattern_with_offset.pattern.is_inferable_bytes(val) {
-                        return None;
-                    }
+                    // if !self.pattern_with_offset.pattern.is_inferable_bytes(val) {
+                    //     return None;
+                    // }
                     for fmt in self.patterns {
                         if self.fmt_len == 0 {
                             self.fmt_len = strptime::fmt_len(fmt.as_bytes())?;
@@ -273,9 +273,10 @@ impl StrpTimeParser<i32> for DatetimeInfer<i32> {
                 .parse(val, self.latest_fmt.as_bytes(), self.fmt_len)
                 .map(|ndt| naive_date_to_date(ndt.date()))
                 .or_else(|| {
-                    if !self.pattern_with_offset.pattern.is_inferable_bytes(val) {
-                        return None;
-                    }
+                    // if !self.pattern_with_offset.pattern.is_inferable_bytes(val) {
+                    //     println!("returning early from bytes parser!");
+                    //     return None;
+                    // }
                     for fmt in self.patterns {
                         if self.fmt_len == 0 {
                             self.fmt_len = strptime::fmt_len(fmt.as_bytes())?;
@@ -401,6 +402,7 @@ impl<T: NativeType> DatetimeInfer<T> {
             // try other patterns
             None => {
                 if !self.pattern_with_offset.pattern.is_inferable(val) {
+                    // println!("returning early from slow parser!");
                     return None;
                 }
                 for fmt in self.patterns {
