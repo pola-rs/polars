@@ -143,15 +143,15 @@ impl Pattern {
             },
         }
     }
-    pub fn is_inferable_bytes(&self, val: &[u8]) -> bool {
-        match self {
-            Pattern::DateDMY => true, // there are very few Date patterns, so it's
-            Pattern::DateYMD => true, // cheaper to just try them
-            Pattern::DatetimeDMY => DATETIME_DMY_BYTES_RE.is_match(val),
-            Pattern::DatetimeYMD => DATETIME_YMD_BYTES_RE.is_match(val),
-            Pattern::DatetimeYMDZ => DATETIME_YMDZ_BYTES_RE.is_match(val),
-        }
-    }
+    // pub fn is_inferable_bytes(&self, val: &[u8]) -> bool {
+    //     match self {
+    //         Pattern::DateDMY => true, // there are very few Date patterns, so it's
+    //         Pattern::DateYMD => true, // cheaper to just try them
+    //         Pattern::DatetimeDMY => DATETIME_DMY_BYTES_RE.is_match(val),
+    //         Pattern::DatetimeYMD => DATETIME_YMD_BYTES_RE.is_match(val),
+    //         Pattern::DatetimeYMDZ => DATETIME_YMDZ_BYTES_RE.is_match(val),
+    //     }
+    // }
 }
 
 pub trait StrpTimeParser<T> {
@@ -171,9 +171,9 @@ impl StrpTimeParser<i64> for DatetimeInfer<i64> {
                 .or_else(|| {
                     // TODO! this will try all patterns.
                     // somehow we must early escape if value is invalid
-                    if !self.pattern_with_offset.pattern.is_inferable_bytes(val) {
-                        return None;
-                    }
+                    // if !self.pattern_with_offset.pattern.is_inferable_bytes(val) {
+                    //     return None;
+                    // }
                     for fmt in self.patterns {
                         if self.fmt_len == 0 {
                             self.fmt_len = strptime::fmt_len(fmt.as_bytes())?;
@@ -204,9 +204,9 @@ impl StrpTimeParser<i32> for DatetimeInfer<i32> {
                 .parse(val, self.latest_fmt.as_bytes(), self.fmt_len)
                 .map(|ndt| naive_date_to_date(ndt.date()))
                 .or_else(|| {
-                    if !self.pattern_with_offset.pattern.is_inferable_bytes(val) {
-                        return None;
-                    }
+                    // if !self.pattern_with_offset.pattern.is_inferable_bytes(val) {
+                    //     return None;
+                    // }
                     for fmt in self.patterns {
                         if self.fmt_len == 0 {
                             self.fmt_len = strptime::fmt_len(fmt.as_bytes())?;
