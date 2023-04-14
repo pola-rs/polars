@@ -12,7 +12,7 @@ description = "DataFrame Library based on Apache Arrow"
 [features]
 sql = ["polars-sql"]
 rows = ["polars-core/rows"]
-simd = ["polars-core/simd", "polars-io/simd"]
+simd = ["polars-core/simd", "polars-io/simd", "polars-ops/simd"]
 avx512 = ["polars-core/avx512"]
 nightly = ["polars-core/nightly", "polars-ops/nightly", "simd"]
 docs = ["polars-core/docs"]
