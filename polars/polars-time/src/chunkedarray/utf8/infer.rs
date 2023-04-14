@@ -18,7 +18,7 @@ const DATE_DMY_PATTERN: &str = r#"(?x)
         ['"]?            # optional quotes
         (?:\d{1,2})
         [-/]             # separator
-        (?P<month>\d{1,2})
+        (?:[01]?\d)
         [-/]             # separator
         (?:\d{4,})
         ['"]?            # optional quotes
@@ -32,7 +32,7 @@ const DATE_YMD_PATTERN: &str = r#"(?x)
         ['"]?            # optional quotes
         (?:\d{4,})
         [-/]             # separator
-        (?P<month>\d{1,2})
+        (?:[01]?\d)
         [-/]             # separator
         (?:\d{1,2})
         ['"]?            # optional quotes
@@ -46,7 +46,7 @@ const DATETIME_DMY_PATTERN: &str = r#"(?x)
         ['"]?  # optional quotes
         (?:\d{1,2})
         [-/]   # separator
-        (?P<month>\d{1,2})
+        (?:[01]?\d)
         [-/]   # separator
         (?:\d{4,})
         (?:
@@ -74,7 +74,7 @@ const DATETIME_YMD_PATTERN: &str = r#"(?x)
         ['"]?  # optional quotes
         (?:\d{4,})   # year
         [-/]   # separator
-        (?P<month>\d{1,2})  # month
+        (?:[01]?\d)  # month
         [-/]   # separator
         (?:\d{1,2})  # day
         (?:
@@ -101,7 +101,7 @@ const DATETIME_YMDZ_PATTERN: &str = r#"(?x)
         ['"]?  # optional quotes
         (?:\d{4,})
         [-/]  # separator
-        (?P<month>\d{1,2})
+        (?:[01]?\d)
         [-/]  # separator
         (?:\d{1,2})
         [T\ ]  # separator
@@ -134,91 +134,20 @@ static DATETIME_YMDZ_BYTES_RE: Lazy<BytesRegex> =
 impl Pattern {
     pub fn is_inferable(&self, val: &str) -> bool {
         match self {
-            Pattern::DateDMY => match DATE_DMY_RE.captures(val) {
-                Some(search) => (1..=12).contains(
-                    &search
-                        .name("month")
-                        .unwrap()
-                        .as_str()
-                        .parse::<u8>()
-                        .unwrap(),
-                ),
-                None => false,
-            },
-            Pattern::DateYMD => match DATE_YMD_RE.captures(val) {
-                Some(search) => (1..=12).contains(
-                    &search
-                        .name("month")
-                        .unwrap()
-                        .as_str()
-                        .parse::<u8>()
-                        .unwrap(),
-                ),
-                None => false,
-            },
-            Pattern::DatetimeDMY => match DATETIME_DMY_RE.captures(val) {
-                Some(search) => (1..=12).contains(
-                    &search
-                        .name("month")
-                        .unwrap()
-                        .as_str()
-                        .parse::<u8>()
-                        .unwrap(),
-                ),
-                None => false,
-            },
-            Pattern::DatetimeYMD => match DATETIME_YMD_RE.captures(val) {
-                Some(search) => (1..=12).contains(
-                    &search
-                        .name("month")
-                        .unwrap()
-                        .as_str()
-                        .parse::<u8>()
-                        .unwrap(),
-                ),
-                None => false,
-            },
-            Pattern::DatetimeYMDZ => match DATETIME_YMDZ_RE.captures(val) {
-                Some(search) => (1..=12).contains(
-                    &search
-                        .name("month")
-                        .unwrap()
-                        .as_str()
-                        .parse::<u8>()
-                        .unwrap(),
-                ),
-                None => false,
-            },
+            Pattern::DateDMY => DATE_DMY_RE.is_match(val), //{
+            Pattern::DateYMD => DATE_YMD_RE.is_match(val), //{
+            Pattern::DatetimeDMY => DATETIME_DMY_RE.is_match(val),
+            Pattern::DatetimeYMD => DATETIME_YMD_RE.is_match(val),
+            Pattern::DatetimeYMDZ => DATETIME_YMDZ_RE.is_match(val),
         }
     }
     pub fn is_inferable_bytes(&self, val: &[u8]) -> bool {
         match self {
-            Pattern::DateDMY => match DATE_DMY_BYTES_RE.captures(val) {
-                Some(search) => (1..=12).contains(
-                    &search.name("month").unwrap().as_bytes().iter().fold(0, |acc, c| acc*10 + (c - b'0'))
-                ),
-                None => false,
-            },
-            Pattern::DateYMD => match DATE_YMD_BYTES_RE.captures(val) {
-                Some(search) => (1..=12).contains(
-                    &search.name("month").unwrap().as_bytes().iter().fold (0, |acc, c| acc*10 + (c - b'0'))),
-                    None => false,
-            },
-            Pattern::DatetimeDMY => match DATETIME_DMY_BYTES_RE.captures(val) {
-                Some(search) => (1..=12).contains(
-                    &search.name("month").unwrap().as_bytes().iter().fold (0, |acc, c| acc*10 + (c - b'0'))),
-                None => false,
-            },
-            Pattern::DatetimeYMD => match DATETIME_YMD_BYTES_RE.captures(val) {
-                Some(search) => (1..=12).contains(
-                    &search.name("month").unwrap().as_bytes().iter().fold (0, |acc, c| acc*10 + (c - b'0'))),
-                None => false,
-            },
-            Pattern::DatetimeYMDZ => match DATETIME_YMDZ_BYTES_RE.captures(val) {
-                Some(search) => (1..=12).contains(
-                    &search.name("month").unwrap().as_bytes().iter().fold (0, |acc, c| acc*10 + (c - b'0'))),
-                None => false,
-            },
+            Pattern::DateDMY => DATE_DMY_BYTES_RE.is_match(val), //{
+            Pattern::DateYMD => DATE_YMD_BYTES_RE.is_match(val), //{
+            Pattern::DatetimeDMY => DATETIME_DMY_BYTES_RE.is_match(val),
+            Pattern::DatetimeYMD => DATETIME_YMD_BYTES_RE.is_match(val),
+            Pattern::DatetimeYMDZ => DATETIME_YMDZ_BYTES_RE.is_match(val),
         }
     }
 }
@@ -240,9 +169,9 @@ impl StrpTimeParser<i64> for DatetimeInfer<i64> {
                 .or_else(|| {
                     // TODO! this will try all patterns.
                     // somehow we must early escape if value is invalid
-                    // if !self.pattern_with_offset.pattern.is_inferable_bytes(val) {
-                    //     return None;
-                    // }
+                    if !self.pattern_with_offset.pattern.is_inferable_bytes(val) {
+                        return None;
+                    }
                     for fmt in self.patterns {
                         if self.fmt_len == 0 {
                             self.fmt_len = strptime::fmt_len(fmt.as_bytes())?;
@@ -273,10 +202,9 @@ impl StrpTimeParser<i32> for DatetimeInfer<i32> {
                 .parse(val, self.latest_fmt.as_bytes(), self.fmt_len)
                 .map(|ndt| naive_date_to_date(ndt.date()))
                 .or_else(|| {
-                    // if !self.pattern_with_offset.pattern.is_inferable_bytes(val) {
-                    //     println!("returning early from bytes parser!");
-                    //     return None;
-                    // }
+                    if !self.pattern_with_offset.pattern.is_inferable_bytes(val) {
+                        return None;
+                    }
                     for fmt in self.patterns {
                         if self.fmt_len == 0 {
                             self.fmt_len = strptime::fmt_len(fmt.as_bytes())?;
@@ -402,7 +330,6 @@ impl<T: NativeType> DatetimeInfer<T> {
             // try other patterns
             None => {
                 if !self.pattern_with_offset.pattern.is_inferable(val) {
-                    // println!("returning early from slow parser!");
                     return None;
                 }
                 for fmt in self.patterns {
