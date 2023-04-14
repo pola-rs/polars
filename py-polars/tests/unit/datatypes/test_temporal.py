@@ -1924,6 +1924,28 @@ def test_replace_timezone_from_to(
     assert result == expected
 
 
+def test_strptime_subseconds_datetime() -> None:
+    with pytest.raises(ValueError, match="not supported"):
+        pl.Series(["2023-02-05T05:10:10.074000"]).str.strptime(
+            pl.Datetime, "%Y-%m-%dT%H:%M:%S.%f"
+        )
+    result = (
+        pl.Series(["2023-02-05T05:10:10.074000"])
+        .str.strptime(pl.Datetime, "%Y-%m-%dT%H:%M:%S%.f")
+        .item()
+    )
+    expected = datetime(2023, 2, 5, 5, 10, 10, 74000)
+    assert result == expected
+
+
+def test_strptime_subseconds_time() -> None:
+    with pytest.raises(ValueError, match="not supported"):
+        pl.Series(["05:10:10.074000"]).str.strptime(pl.Time, "%H:%M:%S.%f")
+    result = pl.Series(["05:10:10.074000"]).str.strptime(pl.Time, "%H:%M:%S%.f").item()
+    expected = time(5, 10, 10, 74000)
+    assert result == expected
+
+
 def test_strptime_with_tz() -> None:
     result = (
         pl.Series(["2020-01-01 03:00:00"])
