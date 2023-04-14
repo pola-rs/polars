@@ -126,14 +126,14 @@ fn estimate_unique_count(keys: &[Series], mut sample_size: usize) -> PolarsResul
     }
 
     let finish = |groups: &GroupsProxy| {
-        let u = groups.len() as f32;
+        let u = groups.len() as f64;
         let ui = if groups.len() == sample_size {
             u
         } else {
-            groups.iter().filter(|g| g.len() == 1).count() as f32
+            groups.iter().filter(|g| g.len() == 1).count() as f64
         };
 
-        (u + (ui / sample_size as f32) * (set_size - sample_size) as f32) as usize
+        (u + (ui / sample_size as f64) * (set_size - sample_size) as f64) as usize
     };
 
     if keys.len() == 1 {
@@ -189,13 +189,10 @@ fn can_run_partitioned(
             #[cfg(feature = "dtype-categorical")]
             (1, DataType::Categorical(Some(rev_map))) => (rev_map.len(), "known"),
             _ => {
-                let sample_frac = std::env::var("POLARS_PARTITION_SAMPLE_FRAC")
-                    .map(|s| s.parse::<f32>().unwrap())
-                    .unwrap_or(0.001);
-                let sample_size = (original_df.height() as f32 * sample_frac) as usize;
+                // sqrt(N) is a good sample size as it remains low on large numbers
+                // it is better than taking a fraction as it saturates
+                let sample_size = (original_df.height() as f64).powf(0.5) as usize;
 
-                // we never sample more than 1k data points
-                let sample_size = std::cmp::min(sample_size, 1_000);
                 // we never sample less than 100 data points.
                 let sample_size = std::cmp::max(100, sample_size);
                 (estimate_unique_count(keys, sample_size)?, "estimated")
