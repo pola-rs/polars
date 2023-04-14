@@ -174,10 +174,8 @@ def test_diff_datetime() -> None:
     )
     out = (
         df.with_columns(
-            [
-                pl.col("timestamp").str.strptime(pl.Date, fmt="%Y-%m-%d"),
-            ]
-        ).with_columns([pl.col("timestamp").diff().implode().over("char")])
+            pl.col("timestamp").str.strptime(pl.Date, format="%Y-%m-%d"),
+        ).with_columns(pl.col("timestamp").diff().implode().over("char"))
     )["timestamp"]
     assert (out[0] == out[1]).all()
 
@@ -799,7 +797,7 @@ def test_groupby_dynamic_when_conversion_crosses_dates_7274() -> None:
             }
         )
         .with_columns(
-            pl.col("timestamp").str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S%:z")
+            pl.col("timestamp").str.strptime(pl.Datetime, format="%Y-%m-%d %H:%M:%S%:z")
         )
         .with_columns(
             pl.col("timestamp").dt.convert_time_zone("UTC").alias("timestamp_utc")
@@ -1303,7 +1301,7 @@ def test_groupby_rolling_mean_3020() -> None:
 
 
 def test_asof_join() -> None:
-    fmt = "%F %T%.3f"
+    format = "%F %T%.3f"
     dates = [
         "2016-05-25 13:30:00.023",
         "2016-05-25 13:30:00.023",
@@ -1326,7 +1324,7 @@ def test_asof_join() -> None:
     ]
     quotes = pl.DataFrame(
         {
-            "dates": pl.Series(dates).str.strptime(pl.Datetime, fmt=fmt),
+            "dates": pl.Series(dates).str.strptime(pl.Datetime, format=format),
             "ticker": ticker,
             "bid": [720.5, 51.95, 51.97, 51.99, 720.50, 97.99, 720.50, 52.01],
         }
@@ -1347,7 +1345,7 @@ def test_asof_join() -> None:
     ]
     trades = pl.DataFrame(
         {
-            "dates": pl.Series(dates).str.strptime(pl.Datetime, fmt=fmt),
+            "dates": pl.Series(dates).str.strptime(pl.Datetime, format=format),
             "ticker": ticker,
             "bid": [51.95, 51.95, 720.77, 720.92, 98.0],
         }

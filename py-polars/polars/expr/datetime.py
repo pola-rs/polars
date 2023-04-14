@@ -9,6 +9,7 @@ from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
 from polars.utils._wrap import wrap_expr
 from polars.utils.convert import _timedelta_to_pl_duration
+from polars.utils.decorators import deprecated_alias
 
 if TYPE_CHECKING:
     from datetime import timedelta
@@ -320,12 +321,17 @@ class ExprDateTimeNameSpace:
         time = expr_to_lit_or_expr(time)
         return wrap_expr(self._pyexpr.dt_combine(time._pyexpr, time_unit))
 
-    def strftime(self, fmt: str) -> Expr:
+    @deprecated_alias(fmt="format")
+    def strftime(self, format: str) -> Expr:
         """
         Format Date/Datetime with a formatting rule.
 
-        See `chrono strftime/strptime
-        <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_.
+        Parameters
+        ----------
+        format
+            Format to use, refer to the `chrono strftime documentation
+            <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            for specification. Example: ``"%y-%m-%d"``.
 
         Examples
         --------
@@ -357,7 +363,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴─────────────────────┘
 
         """
-        return wrap_expr(self._pyexpr.strftime(fmt))
+        return wrap_expr(self._pyexpr.strftime(format))
 
     def year(self) -> Expr:
         """
