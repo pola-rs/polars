@@ -51,6 +51,9 @@ pub struct Utf8Type {}
 
 pub struct BinaryType {}
 
+#[cfg(feature = "dtype-fixed-size-list")]
+pub struct FixedSizeListType {}
+
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ListType {}
 
@@ -114,8 +117,16 @@ impl PolarsDataType for BooleanType {
 
 impl PolarsDataType for ListType {
     fn get_dtype() -> DataType {
-        // null as we cannot no anything without self.
+        // null as we cannot know anything without self.
         DataType::List(Box::new(DataType::Null))
+    }
+}
+
+#[cfg(feature = "dtype-fixed-size-list")]
+impl PolarsDataType for FixedSizeListType {
+    fn get_dtype() -> DataType {
+        // null as we cannot know anything without self.
+        DataType::FixedSizeList(Box::new(DataType::Null), 0)
     }
 }
 
@@ -150,6 +161,8 @@ impl PolarsSingleType for Utf8Type {}
 
 impl PolarsSingleType for BinaryType {}
 
+#[cfg(feature = "dtype-fixed-size-list")]
+pub type FixedSizeListChunked = ChunkedArray<FixedSizeListType>;
 pub type ListChunked = ChunkedArray<ListType>;
 pub type BooleanChunked = ChunkedArray<BooleanType>;
 pub type UInt8Chunked = ChunkedArray<UInt8Type>;

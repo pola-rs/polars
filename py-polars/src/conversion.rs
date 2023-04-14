@@ -311,6 +311,12 @@ impl ToPyObject for Wrap<DataType> {
             DataType::Boolean => pl.getattr("Boolean").unwrap().into(),
             DataType::Utf8 => pl.getattr("Utf8").unwrap().into(),
             DataType::Binary => pl.getattr("Binary").unwrap().into(),
+            DataType::FixedSizeList(inner, size) => {
+                // TODO: not sure this is correct; do we need a new FixedSizeList python class?
+                let inner = Wrap(*inner.clone()).to_object(py);
+                let list_class = pl.getattr("List").unwrap();
+                list_class.call1((inner,)).unwrap().into()
+            }
             DataType::List(inner) => {
                 let inner = Wrap(*inner.clone()).to_object(py);
                 let list_class = pl.getattr("List").unwrap();

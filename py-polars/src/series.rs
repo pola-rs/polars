@@ -703,6 +703,22 @@ impl PySeries {
                         }
                         v
                     }
+                    DataType::FixedSizeList(_, _) => {
+                        let v = PyList::empty(py);
+                        let ca = series.list().unwrap();
+                        for opt_s in ca.amortized_iter() {
+                            match opt_s {
+                                None => {
+                                    v.append(py.None()).unwrap();
+                                }
+                                Some(s) => {
+                                    let pylst = to_list_recursive(py, s.as_ref());
+                                    v.append(pylst).unwrap();
+                                }
+                            }
+                        }
+                        v
+                    }
                     DataType::List(_) => {
                         let v = PyList::empty(py);
                         let ca = series.list().unwrap();

@@ -32,6 +32,9 @@ pub enum DataType {
     Duration(TimeUnit),
     /// A 64-bit time representing the elapsed time since midnight in nanoseconds
     Time,
+    /// A nested list with a fixed size
+    #[cfg(feature = "dtype-fixed-size-list")]
+    FixedSizeList(Box<DataType>, usize),
     List(Box<DataType>),
     #[cfg(feature = "object")]
     /// A generic type that can be used in a `Series`
@@ -220,6 +223,11 @@ impl DataType {
             Datetime(unit, tz) => ArrowDataType::Timestamp(unit.to_arrow(), tz.clone()),
             Duration(unit) => ArrowDataType::Duration(unit.to_arrow()),
             Time => ArrowDataType::Time64(ArrowTimeUnit::Nanosecond),
+            #[cfg(feature = "dtype-fixed-size-list")]
+            FixedSizeList(dt, size) => ArrowDataType::FixedSizeList(
+                Box::new(arrow::datatypes::Field::new("item", dt.to_arrow(), true)),
+                size,
+            ),
             List(dt) => ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
                 "item",
                 dt.to_arrow(),
@@ -288,6 +296,8 @@ impl Display for DataType {
             }
             DataType::Duration(tu) => return write!(f, "duration[{tu}]"),
             DataType::Time => "time",
+            #[cfg(feature = "dtype-fixed-size-list")]
+            DataType::FixedSizeList(tp, size) => return write!(f, "list[{tp}, {size}]"),
             DataType::List(tp) => return write!(f, "list[{tp}]"),
             #[cfg(feature = "object")]
             DataType::Object(s) => s,

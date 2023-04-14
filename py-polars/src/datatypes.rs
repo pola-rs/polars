@@ -51,6 +51,7 @@ impl From<&DataType> for PyDataType {
             DataType::Boolean => Bool,
             DataType::Utf8 => Utf8,
             DataType::Binary => Binary,
+            DataType::FixedSizeList(_, _) => List,
             DataType::List(_) => List,
             DataType::Date => Date,
             DataType::Datetime(tu, tz) => Datetime(*tu, tz.clone()),
