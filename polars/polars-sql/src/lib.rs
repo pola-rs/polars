@@ -194,6 +194,7 @@ mod test {
             .unwrap();
         assert!(df_sql.frame_equal(&df_pl));
     }
+    
     #[test]
     fn test_binary_functions() {
         let df = create_sample_df().unwrap();
@@ -371,6 +372,7 @@ mod test {
             .unwrap();
         assert!(df_sql.frame_equal_missing(&df_pl));
     }
+
     #[test]
     fn test_string_functions() {
         let df = df! {
@@ -449,6 +451,7 @@ mod test {
             .unwrap();
         assert!(df_sql.frame_equal_missing(&df_pl));
     }
+
     #[test]
     fn test_agg_functions() {
         let df = create_sample_df().unwrap();
