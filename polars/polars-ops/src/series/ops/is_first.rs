@@ -6,7 +6,7 @@ use polars_arrow::utils::CustomIterTools;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_integer_polars_type;
 
-use crate::series::ops::arg_min_max::arg_max;
+use crate::series::ops::arg_min_max::arg_max_bool;
 
 fn is_first_numeric<T>(ca: &ChunkedArray<T>) -> BooleanChunked
 where
@@ -47,7 +47,7 @@ fn is_first_bin(ca: &BinaryChunked) -> BooleanChunked {
 fn is_first_boolean(ca: &BooleanChunked) -> BooleanChunked {
     let mut out = MutableBitmap::with_capacity(ca.len());
     out.extend_constant(ca.len(), false);
-    if let Some(index) = arg_max(ca) {
+    if let Some(index) = arg_max_bool(ca) {
         out.set(index, true)
     }
     if let Some(index) = ca.first_non_null() {
