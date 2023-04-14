@@ -210,13 +210,13 @@ impl WindowExpr {
     }
 
     fn is_explicit_list_agg(&self) -> bool {
-        // col("foo").list()
-        // col("foo").list().alias()
+        // col("foo").implode()
+        // col("foo").implode().alias()
         // ..
-        // col("foo").list().alias().alias()
+        // col("foo").implode().alias().alias()
         //
         // but not:
-        // col("foo").list().sum().alias()
+        // col("foo").implode().sum().alias()
         // ..
         // col("foo").min()
         let mut explicit_list = false;

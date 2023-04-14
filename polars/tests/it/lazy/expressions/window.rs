@@ -49,7 +49,7 @@ fn test_shift_and_fill_window_function() -> PolarsResult<()> {
             col("fruits"),
             col("B")
                 .shift_and_fill(-1, lit(-1))
-                .list()
+                .implode()
                 .over([col("fruits")]),
         ])
         .collect()?;
@@ -61,7 +61,7 @@ fn test_shift_and_fill_window_function() -> PolarsResult<()> {
             col("fruits"),
             col("B")
                 .shift_and_fill(-1, lit(-1))
-                .list()
+                .implode()
                 .over([col("fruits")]),
         ])
         .collect()?;
@@ -83,7 +83,7 @@ fn test_exploded_window_function() -> PolarsResult<()> {
             col("fruits"),
             col("B")
                 .shift(1)
-                .list()
+                .implode()
                 .over([col("fruits")])
                 .explode()
                 .alias("shifted"),
@@ -104,7 +104,7 @@ fn test_exploded_window_function() -> PolarsResult<()> {
             col("fruits"),
             col("B")
                 .shift_and_fill(1, lit(-1.0f32))
-                .list()
+                .implode()
                 .over([col("fruits")])
                 .explode()
                 .alias("shifted"),
@@ -152,7 +152,7 @@ fn test_sort_by_in_groups() -> PolarsResult<()> {
             col("cars"),
             col("A")
                 .sort_by([col("B")], [false])
-                .list()
+                .implode()
                 .over([col("cars")])
                 .explode()
                 .alias("sorted_A_by_B"),
@@ -175,7 +175,7 @@ fn test_literal_window_fn() -> PolarsResult<()> {
         .lazy()
         .select([repeat(1, count())
             .cumsum(false)
-            .list()
+            .implode()
             .over([col("chars")])
             .alias("foo")])
         .collect()?;

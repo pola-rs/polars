@@ -109,10 +109,10 @@ mod test {
         let mut context = SQLContext::new();
         context.register("df", df.clone().lazy());
         let sql = r#"
-            SELECT 
-                cast(a as FLOAT) as floats, 
-                cast(a as INT) as ints, 
-                cast(a as BIGINT) as bigints, 
+            SELECT
+                cast(a as FLOAT) as floats,
+                cast(a as INT) as ints,
+                cast(a as BIGINT) as bigints,
                 cast(a as STRING) as strings
             FROM df"#;
         let df_sql = context.execute(sql).unwrap().collect().unwrap();
@@ -135,9 +135,9 @@ mod test {
         let mut context = SQLContext::new();
         context.register("df", df.clone().lazy());
         let sql = r#"
-            SELECT 
-                1 as int_lit, 
-                1.0 as float_lit, 
+            SELECT
+                1 as int_lit,
+                1.0 as float_lit,
                 'foo' as string_lit,
                 true as bool_lit,
                 null as null_lit
@@ -163,8 +163,8 @@ mod test {
         let mut context = SQLContext::new();
         context.register("df", df.clone().lazy());
         let sql = r#"
-            SELECT 
-                df.a as a, 
+            SELECT
+                df.a as a,
                 df.b as b
             FROM df"#;
         let df_sql = context.execute(sql).unwrap().collect().unwrap();
@@ -182,8 +182,8 @@ mod test {
         let mut context = SQLContext::new();
         context.register("df", df.clone().lazy());
         let sql = r#"
-            SELECT 
-                "df"."a" as a, 
+            SELECT
+                "df"."a" as a,
                 "df"."b" as b
             FROM df"#;
         let df_sql = context.execute(sql).unwrap().collect().unwrap();
@@ -200,13 +200,13 @@ mod test {
         let mut context = SQLContext::new();
         context.register("df", df.clone().lazy());
         let sql = r#"
-            SELECT 
-                a, 
-                b, 
-                a + b as add, 
-                a - b as sub, 
-                a * b as mul, 
-                a / b as div, 
+            SELECT
+                a,
+                b,
+                a + b as add,
+                a - b as sub,
+                a * b as mul,
+                a / b as div,
                 a % b as rem,
                 a <> b as neq,
                 a = b as eq,
@@ -249,13 +249,13 @@ mod test {
         let mut context = SQLContext::new();
         context.register("df", df.clone().lazy());
         let sql = r#"
-            SELECT 
-                a, 
+            SELECT
+                a,
                 b,
-                a is null as isnull_a, 
-                b is null as isnull_b, 
+                a is null as isnull_a,
+                b is null as isnull_b,
                 a is not null as isnotnull_a,
-                b is not null as isnotnull_b 
+                b is not null as isnotnull_b
             FROM df"#;
         let df_sql = context.execute(sql).unwrap().collect().unwrap();
         let df_pl = df
@@ -284,8 +284,8 @@ mod test {
         let mut context = SQLContext::new();
         context.register("df", df.clone().lazy());
         let sql = r#"
-            SELECT 
-                a, 
+            SELECT
+                a,
                 b
             FROM df
             WHERE a is null and b is not null"#;
@@ -308,8 +308,8 @@ mod test {
         let mut context = SQLContext::new();
         context.register("df", df.clone().lazy());
         let sql = r#"
-            SELECT 
-                a, 
+            SELECT
+                a,
                 ABS(a) AS abs,
                 ACOS(a) AS acos,
                 ASIN(a) AS asin,
@@ -380,8 +380,8 @@ mod test {
         let mut context = SQLContext::new();
         context.register("df", df.clone().lazy());
         let sql = r#"
-            SELECT 
-                a, 
+            SELECT
+                a,
                 lower('LITERAL') as lower_literal,
                 lower(a) as lower_a,
                 lower("a") as lower_a2,
@@ -455,7 +455,7 @@ mod test {
         let mut context = SQLContext::new();
         context.register("df", df.clone().lazy());
         let sql = r#"
-            SELECT 
+            SELECT
                 sum(a) as sum_a,
                 first(a) as first_a,
                 last(a) as last_a,
@@ -562,33 +562,33 @@ mod test {
         let exprs = vec![
             (
                 "SELECT ARRAY_AGG(a) AS a FROM df",
-                vec![col("a").list().alias("a")],
+                vec![col("a").implode().alias("a")],
             ),
             (
                 "SELECT ARRAY_AGG(a) AS a, ARRAY_AGG(b) as b FROM df",
-                vec![col("a").list().alias("a"), col("b").list().alias("b")],
+                vec![col("a").implode().alias("a"), col("b").implode().alias("b")],
             ),
             (
                 "SELECT ARRAY_AGG(a ORDER BY a) AS a FROM df",
                 vec![col("a")
                     .sort_by(vec![col("a")], vec![false])
-                    .list()
+                    .implode()
                     .alias("a")],
             ),
             (
                 "SELECT ARRAY_AGG(a) AS a FROM df",
-                vec![col("a").list().alias("a")],
+                vec![col("a").implode().alias("a")],
             ),
             (
                 "SELECT unnest(ARRAY_AGG(DISTINCT a)) FROM df",
-                vec![col("a").unique_stable().list().explode().alias("a")],
+                vec![col("a").unique_stable().implode().explode().alias("a")],
             ),
             (
                 "SELECT ARRAY_AGG(a ORDER BY b LIMIT 2) FROM df",
                 vec![col("a")
                     .sort_by(vec![col("b")], vec![false])
                     .head(Some(2))
-                    .list()],
+                    .implode()],
             ),
         ];
 
@@ -711,7 +711,7 @@ mod test {
         let df_sql = context
             .execute(
                 r#"
-            SELECT 
+            SELECT
                 "fats_g" AS fats,
                 AVG(calories) OVER (PARTITION BY "category") AS avg_calories_by_category
             FROM foods
@@ -778,7 +778,7 @@ mod test {
         FROM read_ipc('../../examples/datasets/foods1.ipc')"#;
 
         context.execute(sql)?.collect()?;
-        let sql = r#"   
+        let sql = r#"
         SELECT
             category,
             count(category) as count,
