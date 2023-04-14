@@ -226,7 +226,7 @@ impl DataType {
             #[cfg(feature = "dtype-fixed-size-list")]
             FixedSizeList(dt, size) => ArrowDataType::FixedSizeList(
                 Box::new(arrow::datatypes::Field::new("item", dt.to_arrow(), true)),
-                size,
+                *size,
             ),
             List(dt) => ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
                 "item",
