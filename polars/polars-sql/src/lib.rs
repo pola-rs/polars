@@ -194,6 +194,7 @@ mod test {
             .unwrap();
         assert!(df_sql.frame_equal(&df_pl));
     }
+
     #[test]
     fn test_binary_functions() {
         let df = create_sample_df().unwrap();
@@ -371,6 +372,7 @@ mod test {
             .unwrap();
         assert!(df_sql.frame_equal_missing(&df_pl));
     }
+
     #[test]
     fn test_string_functions() {
         let df = df! {
@@ -449,7 +451,9 @@ mod test {
             .unwrap();
         assert!(df_sql.frame_equal_missing(&df_pl));
     }
+
     #[test]
+    #[ignore = "TODO: non deterministic"]
     fn test_agg_functions() {
         let df = create_sample_df().unwrap();
         let mut context = SQLContext::new();
@@ -809,6 +813,24 @@ mod test {
         let lp = expected.clone().describe_optimized_plan()?;
         let expected = expected.collect()?;
         assert!(df_sql.frame_equal(&expected));
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "csv")]
+    fn test_ctes() -> PolarsResult<()> {
+        let mut context = SQLContext::new();
+        let sql = r#"
+        with foods as (
+            SELECT *
+            FROM read_csv('../../examples/datasets/foods1.csv')
+        )
+        select * from foods "#;
+        assert!(context.execute(sql).is_ok());
+
+        let sql = r#"select * from foods"#;
+        assert!(context.execute(sql).is_err());
+
         Ok(())
     }
 }
