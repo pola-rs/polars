@@ -618,6 +618,12 @@ impl Series {
                     let ca = self.f64().unwrap();
                     ca.cumsum(reverse).into_series()
                 }
+                #[cfg(feature = "dtype-duration")]
+                Duration(tu) => {
+                    let ca = self.to_physical_repr();
+                    let ca = ca.i64().unwrap();
+                    ca.cumsum(reverse).cast(&Duration(*tu)).unwrap()
+                }
                 dt => panic!("cumsum not supported for dtype: {dt:?}"),
             }
         }
