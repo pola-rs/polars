@@ -81,7 +81,7 @@ def test_strptime_precision() -> None:
     ("unit", "expected"),
     [("ms", "123000000"), ("us", "123456000"), ("ns", "123456789")],
 )
-@pytest.mark.parametrize("format", ["%Y-%m-%d %H:%M:%S.%f", None])
+@pytest.mark.parametrize("format", ["%Y-%m-%d %H:%M:%S%.f", None])
 def test_strptime_precision_with_time_unit(
     unit: TimeUnit, expected: str, format: str
 ) -> None:
@@ -334,7 +334,7 @@ def test_short_formats() -> None:
         None,
         date(2020, 1, 1),
     ]
-    assert s.str.strptime(pl.Date, "%foo", strict=False).to_list() == [None, None]
+    assert s.str.strptime(pl.Date, "%bar", strict=False).to_list() == [None, None]
 
 
 @pytest.mark.parametrize(
