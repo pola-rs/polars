@@ -4,13 +4,16 @@ from typing import TYPE_CHECKING
 
 from polars import functions as F
 from polars.series.utils import expr_dispatch
+from polars.utils import no_default
 from polars.utils._wrap import wrap_s
+from polars.utils.decorators import deprecated_alias
 
 if TYPE_CHECKING:
     from polars.expr import Expr
     from polars.polars import PySeries
     from polars.series import Series
     from polars.type_aliases import PolarsDataType, PolarsTemporalType, TransferEncoding
+    from polars.utils import NoDefault
 
 
 @expr_dispatch
@@ -22,15 +25,16 @@ class StringNameSpace:
     def __init__(self, series: Series):
         self._s: PySeries = series._s
 
+    @deprecated_alias(datatype="dtype", fmt="format")
     def strptime(
         self,
-        datatype: PolarsTemporalType,
-        fmt: str | None = None,
+        dtype: PolarsTemporalType,
+        format: str | None = None,
         *,
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        tz_aware: bool = False,
+        tz_aware: bool | NoDefault = no_default,
         utc: bool = False,
     ) -> Series:
         """
@@ -38,9 +42,9 @@ class StringNameSpace:
 
         Parameters
         ----------
-        datatype
+        dtype
             Date, Datetime or Time.
-        fmt
+        format
             Format to use, refer to the
             `chrono strftime documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
@@ -54,7 +58,11 @@ class StringNameSpace:
             Use a cache of unique, converted dates to apply the datetime conversion.
         tz_aware
             Parse timezone aware datetimes. This may be automatically toggled by the
-            'fmt' given.
+            `fmt` given.
+
+            .. deprecated:: 0.16.17
+                This is now auto-inferred from the given `fmt`. You can safely drop
+                this argument, it will be removed in a future version.
         utc
             Parse timezone aware datetimes as UTC. This may be useful if you have data
             with mixed offsets.
@@ -111,6 +119,22 @@ class StringNameSpace:
         └────────────┘
 
         """
+        s = wrap_s(self._s)
+        return (
+            s.to_frame()
+            .select(
+                F.col(s.name).str.strptime(
+                    dtype,
+                    format,
+                    strict=strict,
+                    exact=exact,
+                    cache=cache,
+                    tz_aware=tz_aware,
+                    utc=utc,
+                )
+            )
+            .to_series()
+        )
 
     def lengths(self) -> Series:
         """

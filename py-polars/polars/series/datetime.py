@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from polars import functions as F
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
 from polars.utils.convert import _to_python_datetime
+from polars.utils.decorators import deprecated_alias
 
 if TYPE_CHECKING:
     import datetime as dt
@@ -124,7 +126,8 @@ class DateTimeNameSpace:
             return _to_python_datetime(int(out), s.dtype, s.time_unit)
         return None
 
-    def strftime(self, fmt: str) -> Series:
+    @deprecated_alias(fmt="format")
+    def strftime(self, format: str) -> Series:
         """
         Format Date/datetime with a formatting rule.
 
@@ -150,7 +153,7 @@ class DateTimeNameSpace:
                 2001-01-03 00:00:00
                 2001-01-04 00:00:00
         ]
-        >>> date.dt.strftime(fmt="%Y-%m-%d")
+        >>> date.dt.strftime(format="%Y-%m-%d")
         shape: (4,)
         Series: '' [str]
         [
@@ -161,6 +164,8 @@ class DateTimeNameSpace:
         ]
 
         """
+        s = wrap_s(self._s)
+        return s.to_frame().select(F.col(s.name).dt.strftime(format)).to_series()
 
     def year(self) -> Series:
         """
