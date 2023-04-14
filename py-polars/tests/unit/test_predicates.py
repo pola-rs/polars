@@ -124,7 +124,7 @@ def test_predicate_arr_first_6573() -> None:
 
     assert (
         df.lazy()
-        .with_columns(pl.col("a").list())
+        .with_columns(pl.col("a").implode())
         .with_columns(pl.col("a").arr.first())
         .filter(pl.col("a") == pl.col("b"))
         .collect()

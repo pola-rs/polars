@@ -538,7 +538,7 @@ def test_take_misc(fruits_cars: pl.DataFrame) -> None:
     with pytest.raises(pl.ComputeError):
         (
             df.sort("fruits").select(
-                [pl.col("B").reverse().take([1, 2]).list().over("fruits"), "fruits"]
+                [pl.col("B").reverse().take([1, 2]).implode().over("fruits"), "fruits"]
             )
         )
 
@@ -548,7 +548,7 @@ def test_take_misc(fruits_cars: pl.DataFrame) -> None:
                 pl.col("B")
                 .reverse()
                 .take(index)  # type: ignore[arg-type]
-                .list()
+                .implode()
                 .over("fruits"),
                 "fruits",
             ]
@@ -558,7 +558,7 @@ def test_take_misc(fruits_cars: pl.DataFrame) -> None:
         assert out[4, "B"].to_list() == [1, 4]
 
     out = df.sort("fruits").select(
-        [pl.col("B").reverse().take(pl.lit(1)).list().over("fruits"), "fruits"]
+        [pl.col("B").reverse().take(pl.lit(1)).implode().over("fruits"), "fruits"]
     )
     assert out[0, "B"] == 3
     assert out[4, "B"] == 4
@@ -2018,7 +2018,7 @@ def test_partitioned_groupby_order() -> None:
     # check if group ordering is maintained.
     # we only have 30 groups, so this triggers a partitioned group by
     df = pl.DataFrame({"x": [chr(v) for v in range(33, 63)], "y": range(30)})
-    out = df.groupby("x", maintain_order=True).agg(pl.all().list())
+    out = df.groupby("x", maintain_order=True).agg(pl.all().implode())
     assert_series_equal(out["x"], df["x"])
 
 
@@ -3779,6 +3779,6 @@ def test_window_deadlock() -> None:
         [
             pl.col("*"),  # select all
             pl.col("random").sum().over("groups").alias("sum[random]/groups"),
-            pl.col("random").list().over("names").alias("random/name"),
+            pl.col("random").implode().over("names").alias("random/name"),
         ]
     )

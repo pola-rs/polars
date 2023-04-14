@@ -3468,7 +3468,7 @@ class Expr:
 
     def implode(self) -> Self:
         """
-        Aggregate all values into a list.
+        Aggregate all column values into a list.
 
         Examples
         --------

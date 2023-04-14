@@ -37,11 +37,11 @@ def test_lazy() -> None:
     ).collect()
 
     # test if pl.list is available, this is `to_list` re-exported as list
-    eager = ldf.groupby("a").agg(pl.list("b")).collect()
+    eager = ldf.groupby("a").agg(pl.implode("b")).collect()
     assert sorted(eager.rows()) == [(1, [[1.0]]), (2, [[2.0]]), (3, [[3.0]])]
 
     # profile lazyframe operation/plan
-    lazy = ldf.groupby("a").agg(pl.list("b"))
+    lazy = ldf.groupby("a").agg(pl.implode("b"))
     profiling_info = lazy.profile()
     # ┌──────────────┬───────┬─────┐
     # │ node         ┆ start ┆ end │
@@ -669,7 +669,7 @@ def test_take(fruits_cars: pl.DataFrame) -> None:
         (
             ldf.sort("fruits")
             .select(
-                [pl.col("B").reverse().take([1, 2]).list().over("fruits"), "fruits"]
+                [pl.col("B").reverse().take([1, 2]).implode().over("fruits"), "fruits"]
             )
             .collect()
         )
@@ -682,7 +682,7 @@ def test_take(fruits_cars: pl.DataFrame) -> None:
                     pl.col("B")
                     .reverse()
                     .take(index)  # type: ignore[arg-type]
-                    .list()
+                    .implode()
                     .over("fruits"),
                     "fruits",
                 ]
@@ -695,7 +695,9 @@ def test_take(fruits_cars: pl.DataFrame) -> None:
 
     out = (
         ldf.sort("fruits")
-        .select([pl.col("B").reverse().take(pl.lit(1)).list().over("fruits"), "fruits"])
+        .select(
+            [pl.col("B").reverse().take(pl.lit(1)).implode().over("fruits"), "fruits"]
+        )
         .collect()
     )
     assert out[0, "B"] == 3
@@ -789,14 +791,14 @@ def test_arr_namespace(fruits_cars: pl.DataFrame) -> None:
     out = ldf.select(
         [
             "fruits",
-            pl.col("B").list().over("fruits").arr.min().alias("B_by_fruits_min1"),
-            pl.col("B").min().list().over("fruits").alias("B_by_fruits_min2"),
-            pl.col("B").list().over("fruits").arr.max().alias("B_by_fruits_max1"),
-            pl.col("B").max().list().over("fruits").alias("B_by_fruits_max2"),
-            pl.col("B").list().over("fruits").arr.sum().alias("B_by_fruits_sum1"),
-            pl.col("B").sum().list().over("fruits").alias("B_by_fruits_sum2"),
-            pl.col("B").list().over("fruits").arr.mean().alias("B_by_fruits_mean1"),
-            pl.col("B").mean().list().over("fruits").alias("B_by_fruits_mean2"),
+            pl.col("B").implode().over("fruits").arr.min().alias("B_by_fruits_min1"),
+            pl.col("B").min().implode().over("fruits").alias("B_by_fruits_min2"),
+            pl.col("B").implode().over("fruits").arr.max().alias("B_by_fruits_max1"),
+            pl.col("B").max().implode().over("fruits").alias("B_by_fruits_max2"),
+            pl.col("B").implode().over("fruits").arr.sum().alias("B_by_fruits_sum1"),
+            pl.col("B").sum().implode().over("fruits").alias("B_by_fruits_sum2"),
+            pl.col("B").implode().over("fruits").arr.mean().alias("B_by_fruits_mean1"),
+            pl.col("B").mean().implode().over("fruits").alias("B_by_fruits_mean2"),
         ]
     )
     expected = pl.DataFrame(

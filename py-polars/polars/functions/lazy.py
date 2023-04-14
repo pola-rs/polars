@@ -362,12 +362,25 @@ def count(column: str | Series | None = None) -> Expr | int:
     return col(column).count()
 
 
+def implode(name: str) -> Expr:
+    """
+    Aggregate all column values into a list.
+
+    Parameters
+    ----------
+    name
+        Name of the column that should be imploded.
+
+    """
+    return col(name).implode()
+
+
 def list_(name: str) -> Expr:
     """
     Aggregate to list.
 
-    .. deprecated:: 0.16.10
-        ``list`` will be removed in favor of ``Expr.implode``.
+    .. deprecated:: 0.17.3
+        ``list`` will be removed in favor of ``implode``.
 
     Parameters
     ----------
@@ -376,7 +389,7 @@ def list_(name: str) -> Expr:
 
     """
     warnings.warn(
-        "`pl.list('name')` is deprecated, please use `pl.col('name').implode()` instead.",
+        "`pl.list` is deprecated, please use `pl.implode` instead.",
         DeprecationWarning,
         stacklevel=find_stacklevel(),
     )
