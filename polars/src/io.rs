@@ -1,8 +1,7 @@
 use polars_core::schema::SchemaRef;
 use polars_io::mmap::MmapBytesReader;
 use polars_io::prelude::{CsvEncoding, CsvReader, NullValues};
-use polars_io::RowCount;
-pub use polars_io::*;
+pub use polars_io::{RowCount, *};
 
 /// Read a CSV file into a DataFrame.
 #[cfg(feature = "csv-file")]
@@ -10,16 +9,42 @@ pub mod read_csv {
     use super::*;
 
     #[macro_export]
+    /// Read a CSV file into a DataFrame.
+    /// This macro is a convenience macro to read a CSV file into a DataFrame.
+    /// examples:
+    /// ```rust no_run
+    /// # use polars::prelude::*;
+    ///
+    /// # fn main() -> PolarsResult<DataFrame> {
+    /// let df = polars::read_csv!("foo.csv")?;
+    /// let df = polars::read_csv!("foo.csv", delimiter = b';')?;
+    /// let df = polars::read_csv!("foo.csv", delimiter = b';', has_header = true)?;
+    /// // Or reading from a PathBuf
+    /// let path = std::path::PathBuf::from("foo.csv");
+    /// let df = polars::read_csv!(&path)?;
+    /// # }
+    /// ```
+    /// _Note: PathBuf must be taken by reference: `&path`. This is because the macro is not able to disambiguate between a PathBuf and a string literal_
+    ///
+    /// You can also consume a reader:
+    /// ```rust no_run
+    /// # use polars::prelude::*;
+    /// # fn main() -> PolarsResult<DataFrame> {
+    /// let buf = br#"foo,bar\n1,2"#;
+    /// let cursor = std::io::Cursor::new(buf);
+    /// let df = polars::read_csv!(cursor)?;
+    /// // It also works with &mut readers
+    /// let df = polars::read_csv!(&mut cursor)?;
+    /// # }
     macro_rules! read_csv {
-        (&mut $path:expr) => {
-            $crate::prelude::CsvReader::new($path).finish()
-        };
-        ($path:expr) => {
+        // read_csv!("foo.csv")
+        ($path:literal) => {
             $crate::prelude::CsvReader::from_path($path).and_then(|mut rdr| {
                 rdr.finish()
             })
         };
-        ($path:expr, $($field:ident = $value:expr),* $(,)?) => {
+        // read_csv!("foo.csv", ...options)
+        ($path:literal, $($field:ident = $value:expr),* $(,)?) => {
             $crate::prelude::CsvReader::from_path($path).and_then(|rdr| {
                 let mut options = $crate::io::read_csv::CsvReaderOptions::new();
                 $(
@@ -28,7 +53,59 @@ pub mod read_csv {
                 let rdr = $crate::io::read_csv::set_options(rdr, options);
                 rdr.finish()
             })
-        }
+        };
+
+        // read_csv!(&mut reader)
+        (&mut $reader:expr) => {
+            $crate::prelude::CsvReader::new($reader).finish()
+        };
+
+        // read_csv!(&mut reader, ...options)
+        (&mut $reader:expr, $($field:ident = $value:expr),* $(,)?) => {{
+            let rdr = $crate::prelude::CsvReader::new($reader);
+            let mut options = $crate::io::read_csv::CsvReaderOptions::new();
+            $(
+                options = options.$field($value);
+            )*
+            let rdr = $crate::io::read_csv::set_options(rdr, options);
+            rdr.finish()
+        }};
+
+        // read_csv!(&path)
+        (&$path:expr) => {
+            $crate::prelude::CsvReader::from_path($path).and_then(|mut rdr| {
+                rdr.finish()
+            })
+        };
+
+        // read_csv!(&path, ...options)
+        (&$path:expr, $($field:ident = $value:expr),* $(,)?) => {
+            $crate::prelude::CsvReader::from_path($path).and_then(|rdr| {
+                let mut options = $crate::io::read_csv::CsvReaderOptions::new();
+                $(
+                    options = options.$field($value);
+                )*
+                let rdr = $crate::io::read_csv::set_options(rdr, options);
+                rdr.finish()
+            })
+        };
+
+        // read_csv!(reader)
+        ($read:expr) => {
+            $crate::prelude::CsvReader::new($read).finish()
+        };
+
+        // read_csv!(reader, ...options)
+        ($reader:expr, $($field:ident = $value:expr),* $(,)?) => {{
+            let rdr = $crate::prelude::CsvReader::new($reader);
+            let mut options = $crate::io::read_csv::CsvReaderOptions::new();
+            $(
+                options = options.$field($value);
+            )*
+            let rdr = $crate::io::read_csv::set_options(rdr, options);
+            rdr.finish()
+        }};
+
   }
     #[must_use]
     pub struct CsvReaderOptions {
@@ -224,6 +301,18 @@ pub mod scan_csv {
     use polars_lazy::prelude::LazyCsvReader;
 
     #[macro_export]
+    /// Lazily load a csv file into a LazyFrame
+    /// ```rust no_run
+    /// # use polars::prelude::*;
+    /// # fn main() {
+    /// let df = polars::scan_csv!("foo.csv", has_header = true)?
+    ///     .select(&[
+    ///         col("A"),
+    ///         col("B"),
+    ///     ])
+    ///     .filter(col("A").gt(lit(2)))
+    ///     .collect();
+    /// }
     macro_rules! scan_csv {
       ($path:expr) => {
           $crate::prelude::LazyCsvReader::new($path).finish()
@@ -240,7 +329,6 @@ pub mod scan_csv {
         }}
     }
 
-    #[allow(dead_code)]
     pub struct LazyCsvOptions {
         delimiter: u8,
         has_header: bool,
@@ -394,12 +482,11 @@ pub mod scan_csv {
 
 #[cfg(feature = "parquet")]
 pub mod read_parquet {
-    use std::io::Read;
-
-    use polars_core::prelude::*;
     use polars_core::utils::arrow::io::parquet::write::FileMetaData;
+    use polars_io::mmap::MmapBytesReader;
     use polars_io::RowCount;
 
+    use super::*;
     use crate::prelude::*;
     #[macro_export]
     macro_rules! read_parquet {
@@ -411,17 +498,39 @@ pub mod read_parquet {
                 rdr.finish()
             })
         };
+        (&mut $path:expr, $($field:ident = $value:expr),* $(,)?) => {{
+            let rdr = $crate::prelude::ParquetReader::new($path);
+            let mut options = $crate::io::read_parquet::ParquetReaderOptions::default();
+            $(
+                options = options.$field($value);
+            )*
+            let rdr = $crate::io::read_parquet::set_options(rdr, options);
+            rdr.finish()
+        }};
         ($path:expr, $($field:ident = $value:expr),* $(,)?) => {
-            $crate::prelude::CsvReader::from_path($path).and_then(|rdr| {
-                let mut options = $crate::io::read_csv::CsvReaderOptions::new();
+            $crate::prelude::ParquetReader::from_path($path).and_then(|rdr| {
+                let mut options = $crate::io::read_parquet::ParquetReaderOptions::default();
                 $(
                     options = options.$field($value);
                 )*
-                let rdr = $crate::io::read_csv::set_options(rdr, options);
+                let rdr = $crate::io::read_parquet::set_options(rdr, options);
                 rdr.finish()
             })
-        }
-  }
+        };
+    }
+
+    pub fn set_options<R: MmapBytesReader>(
+        rdr: ParquetReader<R>,
+        options: ParquetReaderOptions,
+    ) -> ParquetReader<R> {
+        rdr.with_row_count(options.row_count)
+            .with_n_rows(options.n_rows)
+            .with_columns(options.columns)
+            .with_projection(options.projection)
+            .read_parallel(options.parallel)
+            .set_low_memory(options.low_memory)
+            .use_statistics(options.use_statistics)
+    }
 
     pub struct ParquetReaderOptions {
         rechunk: bool,
@@ -460,8 +569,9 @@ pub mod read_parquet {
             self.n_rows = Some(n_rows);
             self
         }
-        pub fn columns<T: Into<Vec<String>>>(mut self, columns: T) -> Self {
-            self.columns = Some(columns.into());
+
+        pub fn columns<S: Into<String>, T: IntoIterator<Item = S>>(mut self, columns: T) -> Self {
+            self.columns = Some(columns.into_iter().map(|s| s.into()).collect());
             self
         }
         pub fn projection<T: Into<Vec<usize>>>(mut self, projection: T) -> Self {
