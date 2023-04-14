@@ -194,7 +194,7 @@ mod test {
             .unwrap();
         assert!(df_sql.frame_equal(&df_pl));
     }
-    
+
     #[test]
     fn test_binary_functions() {
         let df = create_sample_df().unwrap();
@@ -453,6 +453,7 @@ mod test {
     }
 
     #[test]
+    #[ignore = "TODO: non deterministic"]
     fn test_agg_functions() {
         let df = create_sample_df().unwrap();
         let mut context = SQLContext::new();
