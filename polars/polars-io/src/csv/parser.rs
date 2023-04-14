@@ -48,7 +48,17 @@ pub(crate) fn next_line_position(
             }
             count += 1;
         }
-        count == expected_fields
+
+        // if the latest field is missing
+        // e.g.:
+        // a,b,c
+        // vala,valb,
+        // SplitFields returns a count that is 1 less
+        // There fore we accept:
+        // expected == count
+        // and
+        // expected == count - 1
+        expected_fields.wrapping_sub(count) <= 1
     }
 
     // we check 3 subsequent lines for `accept_line` before we accept

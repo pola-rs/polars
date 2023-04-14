@@ -521,11 +521,13 @@ impl<'a> CoreReader<'a> {
         bytes: &[u8],
         predicate: Option<&Arc<dyn PhysicalIoExpr>>,
     ) -> PolarsResult<DataFrame> {
+        dbg!("parse", n_threads);
         let logging = verbose();
         let (file_chunks, chunk_size, total_rows, starting_point_offset, bytes, remaining_bytes) =
             self.determine_file_chunks_and_statistics(&mut n_threads, bytes, logging)?;
         let projection = self.get_projection();
         let str_columns = self.get_string_columns(&projection)?;
+        dbg!(file_chunks.len());
 
         // If the number of threads given by the user is lower than our global thread pool we create
         // new one.
@@ -661,6 +663,7 @@ impl<'a> CoreReader<'a> {
             } else {
                 std::cmp::min(rows_per_thread, max_proxy)
             };
+            dbg!(capacity, rows_per_thread, chunk_size);
 
             let str_capacities = self.init_string_size_stats(&str_columns, capacity);
 
