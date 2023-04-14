@@ -326,8 +326,12 @@ class ExprDateTimeNameSpace:
         """
         Format Date/Datetime with a formatting rule.
 
-        See `chrono strftime/strptime
-        <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_.
+        Parameters
+        ----------
+        format
+            Format to use, refer to the `chrono strftime documentation
+            <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            for specification. Example: ``"%y-%m-%d"``.
 
         Examples
         --------
