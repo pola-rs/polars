@@ -19,12 +19,12 @@ pub(super) static DATETIME_D_M_Y: &[&str] = &[
     // --
     // supported by polars' parser
     // ---
+    // 31/12/2021 24:58:01
+    "%d/%m/%Y %H:%M:%S",
     // 31-12-2021 24:58
     "%d-%m-%Y %H:%M",
     // 31-12-2021 24:58:01
     "%d-%m-%Y %H:%M:%S",
-    // 31/12/2021 24:58:01
-    "%d/%m/%Y %H:%M:%S",
     // 31-04-2021T02:45:55.555000000
     // milliseconds
     "%d-%m-%YT%H:%M:%S.%3f",
