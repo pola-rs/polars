@@ -121,7 +121,7 @@ jobs:
           pip install target/wheels/polars-*.whl
 
       - name: Run tests
-        run: pytest -m "not benchmark"
+        run: pytest -n auto --dist worksteal -m "not benchmark"
 
       - name: Check import without optional dependencies
         run: |
