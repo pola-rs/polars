@@ -73,7 +73,7 @@ pre-commit: fmt clippy clippy-default  ## Run autoformatting and linting
 
 
 check-features:
-	cargo hack check --each-feature --no-dev-deps --features private --exclude-features csv-file
+	cargo hack check --each-feature --no-dev-deps --features private 
 
 bench-save:
 	cargo bench --features=random --bench $(BENCH) -- --save-baseline $(SAVE)

@@ -394,6 +394,3 @@ pub use polars_io as io;
 pub use polars_lazy as lazy;
 #[cfg(feature = "temporal")]
 pub use polars_time as time;
-
-#[cfg(feature = "csv-file")]
-compile_error!("feature 'csv-file' has been removed, use 'csv' instead");

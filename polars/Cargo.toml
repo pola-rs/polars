@@ -59,7 +59,6 @@ avro = ["polars-io", "polars-io/avro"]
 
 # support for arrows csv file parsing
 csv = ["polars-io", "polars-io/csv", "polars-lazy/csv"]
-csv-file = []
 
 # slower builds
 performant = [
