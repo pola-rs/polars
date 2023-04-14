@@ -13,34 +13,6 @@ use crate::chunkedarray::utf8::patterns::Pattern;
 use crate::chunkedarray::utf8::strptime;
 use crate::prelude::utf8::strptime::StrpTimeState;
 
-const DATE_DMY_PATTERN: &str = r#"(?x)
-        ^
-        ['"]?            # optional quotes
-        (?:\d{1,2})
-        [-/]             # separator
-        (?P<month>[01]?\d{1})
-        [-/]             # separator
-        (?:\d{4,})
-        ['"]?            # optional quotes
-        $
-        "#;
-static DATE_DMY_RE: Lazy<Regex> = Lazy::new(|| Regex::new(DATE_DMY_PATTERN).unwrap());
-static DATE_DMY_BYTES_RE: Lazy<BytesRegex> =
-    Lazy::new(|| BytesRegex::new(DATE_DMY_PATTERN).unwrap());
-const DATE_YMD_PATTERN: &str = r#"(?x)
-        ^
-        ['"]?            # optional quotes
-        (?:\d{4,})
-        [-/]             # separator
-        (?P<month>[01]?\d{1})
-        [-/]             # separator
-        (?:\d{1,2})
-        ['"]?            # optional quotes
-        $
-        "#;
-static DATE_YMD_RE: Lazy<Regex> = Lazy::new(|| Regex::new(DATE_YMD_PATTERN).unwrap());
-static DATE_YMD_BYTES_RE: Lazy<BytesRegex> =
-    Lazy::new(|| BytesRegex::new(DATE_YMD_PATTERN).unwrap());
 const DATETIME_DMY_PATTERN: &str = r#"(?x)
         ^
         ['"]?  # optional quotes
@@ -134,28 +106,8 @@ static DATETIME_YMDZ_BYTES_RE: Lazy<BytesRegex> =
 impl Pattern {
     pub fn is_inferable(&self, val: &str) -> bool {
         match self {
-            Pattern::DateDMY => match DATE_DMY_RE.captures(val) {
-                Some(search) => (1..=12).contains(
-                    &search
-                        .name("month")
-                        .unwrap()
-                        .as_str()
-                        .parse::<u8>()
-                        .unwrap(),
-                ),
-                None => false,
-            },
-            Pattern::DateYMD => match DATE_YMD_RE.captures(val) {
-                Some(search) => (1..=12).contains(
-                    &search
-                        .name("month")
-                        .unwrap()
-                        .as_str()
-                        .parse::<u8>()
-                        .unwrap(),
-                ),
-                None => false,
-            },
+            Pattern::DateDMY => true, // there are very few Date patterns, so it's cheaper
+            Pattern::DateYMD => true, // to just try them
             Pattern::DatetimeDMY => match DATETIME_DMY_RE.captures(val) {
                 Some(search) => (1..=12).contains(
                     &search
@@ -193,8 +145,8 @@ impl Pattern {
     }
     pub fn is_inferable_bytes(&self, val: &[u8]) -> bool {
         match self {
-            Pattern::DateDMY => DATE_DMY_BYTES_RE.is_match(val), //{
-            Pattern::DateYMD => DATE_YMD_BYTES_RE.is_match(val), //{
+            Pattern::DateDMY => true, // there are very few Date patterns, so it's
+            Pattern::DateYMD => true, // cheaper to just try them
             Pattern::DatetimeDMY => DATETIME_DMY_BYTES_RE.is_match(val),
             Pattern::DatetimeYMD => DATETIME_YMD_BYTES_RE.is_match(val),
             Pattern::DatetimeYMDZ => DATETIME_YMDZ_BYTES_RE.is_match(val),
