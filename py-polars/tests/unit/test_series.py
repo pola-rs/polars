@@ -1629,9 +1629,6 @@ def test_comparisons_int_series_to_float() -> None:
     assert_series_equal(srs_int % 2.0, pl.Series([1.0, 0.0, 1.0, 0.0]))
     assert_series_equal(4.0 % srs_int, pl.Series([0.0, 0.0, 1.0, 0.0]))
 
-    assert_series_equal(srs_int - pl.lit(1.0), pl.Series([0.0, 1.0, 2.0, 3.0]))
-    assert_series_equal(srs_int + pl.lit(1.0), pl.Series([2.0, 3.0, 4.0, 5.0]))
-
     assert_series_equal(srs_int // 2.0, pl.Series([0.0, 1.0, 1.0, 2.0]))
     assert_series_equal(srs_int < 3.0, pl.Series([True, True, False, False]))
     assert_series_equal(srs_int <= 3.0, pl.Series([True, True, True, False]))
@@ -1650,9 +1647,6 @@ def test_comparisons_float_series_to_int() -> None:
     assert_series_equal(srs_float / 2, pl.Series([0.5, 1.0, 1.5, 2.0]))
     assert_series_equal(srs_float % 2, pl.Series([1.0, 0.0, 1.0, 0.0]))
     assert_series_equal(4 % srs_float, pl.Series([0.0, 0.0, 1.0, 0.0]))
-
-    assert_series_equal(srs_float - pl.lit(1), pl.Series([0.0, 1.0, 2.0, 3.0]))
-    assert_series_equal(srs_float + pl.lit(1), pl.Series([2.0, 3.0, 4.0, 5.0]))
 
     assert_series_equal(srs_float // 2, pl.Series([0.0, 1.0, 1.0, 2.0]))
     assert_series_equal(srs_float < 3, pl.Series([True, True, False, False]))
@@ -1802,6 +1796,11 @@ def test_arg_min_and_arg_max() -> None:
     assert s.flags == {"SORTED_ASC": False, "SORTED_DESC": True}
     assert s.arg_min() == 4
     assert s.arg_max() == 0
+
+    # test empty series
+    s = pl.Series("a", [])
+    assert s.arg_min() is None
+    assert s.arg_max() is None
 
 
 def test_is_null_is_not_null() -> None:

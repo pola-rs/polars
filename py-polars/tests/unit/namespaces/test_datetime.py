@@ -66,7 +66,7 @@ def test_strptime_extract_times(
     series_of_int_dates: pl.Series,
     series_of_str_dates: pl.Series,
 ) -> None:
-    s = series_of_str_dates.str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S.%9f")
+    s = series_of_str_dates.str.strptime(pl.Datetime, format="%Y-%m-%d %H:%M:%S.%9f")
 
     assert_series_equal(getattr(s.dt, unit_attr)(), expected)
 
@@ -132,13 +132,13 @@ def test_strptime_epoch(
     expected: pl.Series,
     series_of_str_dates: pl.Series,
 ) -> None:
-    s = series_of_str_dates.str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S.%9f")
+    s = series_of_str_dates.str.strptime(pl.Datetime, format="%Y-%m-%d %H:%M:%S.%9f")
 
     assert_series_equal(s.dt.epoch(time_unit=time_unit), expected)
 
 
 def test_strptime_fractional_seconds(series_of_str_dates: pl.Series) -> None:
-    s = series_of_str_dates.str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S.%9f")
+    s = series_of_str_dates.str.strptime(pl.Datetime, format="%Y-%m-%d %H:%M:%S.%9f")
 
     assert_series_equal(
         s.dt.second(fractional=True),

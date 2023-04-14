@@ -920,8 +920,8 @@ impl PyExpr {
         self.inner.clone().str().count_match(pat).into()
     }
 
-    pub fn strftime(&self, fmt: &str) -> PyExpr {
-        self.inner.clone().dt().strftime(fmt).into()
+    pub fn strftime(&self, format: &str) -> PyExpr {
+        self.inner.clone().dt().strftime(format).into()
     }
     pub fn str_split(&self, by: &str) -> PyExpr {
         self.inner.clone().str().split(by).into()

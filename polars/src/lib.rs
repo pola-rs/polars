@@ -360,8 +360,6 @@
 //! * `POLARS_VERBOSE` -> print logging info to stderr.
 //! * `POLARS_NO_PARTITION` -> polars may choose to partition the groupby operation, based on data
 //!                            cardinality. Setting this env var will turn partitioned groupby's off.
-//! * `POLARS_PARTITION_SAMPLE_FRAC` -> how large chunk of the dataset to sample to determine cardinality,
-//!                                     defaults to `0.001`.
 //! * `POLARS_PARTITION_UNIQUE_COUNT` -> at which (estimated) key count a partitioned groupby should run.
 //!                                          defaults to `1000`, any higher cardinality will run default groupby.
 //! * `POLARS_FORCE_PARTITION` -> force partitioned groupby if the keys and aggregations allow it.

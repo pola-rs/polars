@@ -4,7 +4,7 @@ import pickle
 from datetime import datetime, timedelta
 
 import polars as pl
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_pickling_simple_expression() -> None:
@@ -77,3 +77,10 @@ def test_serde_binary() -> None:
         data,
         pickle.loads(pickle.dumps(data)),
     )
+
+
+def test_pickle_lazyframe() -> None:
+    q = pl.LazyFrame({"a": [1, 4, 3]}).sort("a")
+
+    s = pickle.dumps(q)
+    assert_frame_equal(pickle.loads(s).collect(), pl.DataFrame({"a": [1, 3, 4]}))

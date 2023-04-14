@@ -304,18 +304,18 @@ pub trait TemporalMethods: AsSeries {
         }
     }
 
-    /// Format Date/Datetimewith a `fmt` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
-    fn strftime(&self, fmt: &str) -> PolarsResult<Series> {
+    /// Format Date/Datetimewith a `format` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+    fn strftime(&self, format: &str) -> PolarsResult<Series> {
         let s = self.as_series();
         match s.dtype() {
             #[cfg(feature = "dtype-date")]
-            DataType::Date => s.date().map(|ca| ca.strftime(fmt).into_series()),
+            DataType::Date => s.date().map(|ca| ca.strftime(format).into_series()),
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(_, _) => {
-                s.datetime().map(|ca| Ok(ca.strftime(fmt)?.into_series()))?
-            }
+            DataType::Datetime(_, _) => s
+                .datetime()
+                .map(|ca| Ok(ca.strftime(format)?.into_series()))?,
             #[cfg(feature = "dtype-time")]
-            DataType::Time => s.time().map(|ca| ca.strftime(fmt).into_series()),
+            DataType::Time => s.time().map(|ca| ca.strftime(format).into_series()),
             dt => polars_bail!(opq = strftime, dt),
         }
     }
