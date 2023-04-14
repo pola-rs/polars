@@ -294,6 +294,13 @@ class LazyFrame:
         self._ldf = ldf
         return self
 
+    def __getstate__(self) -> Any:
+        return self._ldf.__getstate__()
+
+    def __setstate__(self, state) -> None:  # type: ignore[no-untyped-def]
+        self._ldf = LazyFrame("", [])._ldf
+        self._ldf.__setstate__(state)
+
     @classmethod
     def _scan_csv(
         cls,
