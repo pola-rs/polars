@@ -125,7 +125,6 @@ fn estimate_unique_count(keys: &[Series], mut sample_size: usize) -> PolarsResul
         sample_size = set_size;
     }
 
-    dbg!(sample_size);
     let finish = |groups: &GroupsProxy| {
         let u = groups.len() as f64;
         let ui = if groups.len() == sample_size {
@@ -133,7 +132,6 @@ fn estimate_unique_count(keys: &[Series], mut sample_size: usize) -> PolarsResul
         } else {
             groups.iter().filter(|g| g.len() == 1).count() as f64
         };
-        dbg!(ui);
 
         (u + (ui / sample_size as f64) * (set_size - sample_size) as f64) as usize
     };
