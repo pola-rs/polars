@@ -139,16 +139,6 @@ where
     T: PolarsNumericType,
 {
     #[inline]
-    fn append_opt_series(&mut self, opt_s: Option<&Series>) {
-        match opt_s {
-            Some(s) => {
-                self.append_series(s);
-            }
-            None => self.append_null(),
-        }
-    }
-
-    #[inline]
     fn append_null(&mut self) {
         self.fast_explode = false;
         self.builder.push_null();
@@ -243,16 +233,6 @@ impl ListUtf8ChunkedBuilder {
 
 impl ListBuilderTrait for ListUtf8ChunkedBuilder {
     #[inline]
-    fn append_opt_series(&mut self, opt_s: Option<&Series>) {
-        match opt_s {
-            Some(s) => self.append_series(s),
-            None => {
-                self.append_null();
-            }
-        }
-    }
-
-    #[inline]
     fn append_null(&mut self) {
         self.fast_explode = false;
         self.builder.push_null();
@@ -324,15 +304,6 @@ impl ListBinaryChunkedBuilder {
 }
 
 impl ListBuilderTrait for ListBinaryChunkedBuilder {
-    fn append_opt_series(&mut self, opt_s: Option<&Series>) {
-        match opt_s {
-            Some(s) => self.append_series(s),
-            None => {
-                self.append_null();
-            }
-        }
-    }
-
     #[inline]
     fn append_null(&mut self) {
         self.fast_explode = false;
@@ -396,15 +367,6 @@ impl ListBooleanChunkedBuilder {
 }
 
 impl ListBuilderTrait for ListBooleanChunkedBuilder {
-    fn append_opt_series(&mut self, opt_s: Option<&Series>) {
-        match opt_s {
-            Some(s) => self.append_series(s),
-            None => {
-                self.append_null();
-            }
-        }
-    }
-
     #[inline]
     fn append_null(&mut self) {
         self.fast_explode = false;
@@ -511,11 +473,27 @@ pub fn get_list_builder(
     }
 }
 
+macro_rules! finish_anonymous_list_builder {
+    ($self:ident) => {{
+        // don't use self from here on one
+        let slf = std::mem::take($self);
+        let inner_dtype = slf.inner_dtype.map(|dt| dt.to_arrow());
+        let arr = slf.builder.finish(inner_dtype).unwrap();
+        // safety: same type
+        let mut ca = unsafe { ListChunked::from_chunks(&slf.name, vec![Box::new(arr)]) };
+
+        if $self.fast_explode {
+            ca.set_fast_explode()
+        }
+        ca
+    }};
+}
+
 pub struct AnonymousListBuilder<'a> {
     name: String,
     builder: AnonymousBuilder<'a>,
+    inner_dtype: Option<DataType>,
     fast_explode: bool,
-    pub dtype: Option<DataType>,
 }
 
 impl Default for AnonymousListBuilder<'_> {
@@ -529,17 +507,8 @@ impl<'a> AnonymousListBuilder<'a> {
         Self {
             name: name.into(),
             builder: AnonymousBuilder::new(capacity),
+            inner_dtype: inner_dtype,
             fast_explode: true,
-            dtype: inner_dtype,
-        }
-    }
-
-    pub fn append_opt_series(&mut self, opt_s: Option<&'a Series>) {
-        match opt_s {
-            Some(s) => self.append_series(s),
-            None => {
-                self.append_null();
-            }
         }
     }
 
@@ -588,37 +557,39 @@ impl<'a> AnonymousListBuilder<'a> {
     }
 
     pub fn finish(&mut self) -> ListChunked {
-        // don't use self from here on one
-        let slf = std::mem::take(self);
-        if slf.builder.is_empty() {
-            ListChunked::full_null_with_dtype(&slf.name, 0, &slf.dtype.unwrap_or(DataType::Null))
-        } else {
-            let dtype = slf.dtype.map(|dt| dt.to_physical().to_arrow());
-            let arr = slf.builder.finish(dtype.as_ref()).unwrap();
-            let dtype = DataType::from(arr.data_type());
-            let mut ca = unsafe { ListChunked::from_chunks("", vec![Box::new(arr)]) };
-
-            if slf.fast_explode {
-                ca.set_fast_explode();
-            }
-
-            ca.field = Arc::new(Field::new(&slf.name, dtype));
-            ca
-        }
+        finish_anonymous_list_builder!(self)
     }
 }
 
 pub struct AnonymousOwnedListBuilder {
     name: String,
     builder: AnonymousBuilder<'static>,
-    owned: Vec<Series>,
     inner_dtype: Option<DataType>,
     fast_explode: bool,
+    owned: Vec<Series>,
 }
 
 impl Default for AnonymousOwnedListBuilder {
     fn default() -> Self {
         Self::new("", 0, None)
+    }
+}
+
+impl AnonymousOwnedListBuilder {
+    pub fn new(name: &str, capacity: usize, inner_dtype: Option<DataType>) -> Self {
+        Self {
+            name: name.into(),
+            builder: AnonymousBuilder::new(capacity),
+            inner_dtype,
+            fast_explode: true,
+            owned: Vec::with_capacity(capacity),
+        }
+    }
+
+    #[inline]
+    pub fn append_empty(&mut self) {
+        self.fast_explode = false;
+        self.builder.push_empty()
     }
 }
 
@@ -655,56 +626,6 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
     }
 
     fn finish(&mut self) -> ListChunked {
-        // don't use self from here on one
-        let slf = std::mem::take(self);
-        if slf.builder.is_empty() {
-            // not really empty, there were empty null list added probably e.g. []
-            let real_length = slf.builder.offsets().len() - 1;
-            if real_length > 0 {
-                let dtype = slf.inner_dtype.unwrap_or(NULL_DTYPE).to_arrow();
-                let array = new_null_array(dtype.clone(), real_length);
-                let dtype = ListArray::<i64>::default_datatype(dtype);
-                let array = ListArray::new(dtype, slf.builder.take_offsets().into(), array, None);
-                // safety: same type
-                unsafe { ListChunked::from_chunks(&slf.name, vec![Box::new(array)]) }
-            } else {
-                ListChunked::full_null_with_dtype(
-                    &slf.name,
-                    0,
-                    &slf.inner_dtype.unwrap_or(DataType::Null),
-                )
-            }
-        } else {
-            let inner_dtype = slf.inner_dtype.map(|dt| dt.to_physical().to_arrow());
-            let arr = slf.builder.finish(inner_dtype.as_ref()).unwrap();
-            let dtype = DataType::from(arr.data_type());
-            // safety: same type
-            let mut ca = unsafe { ListChunked::from_chunks("", vec![Box::new(arr)]) };
-
-            if slf.fast_explode {
-                ca.set_fast_explode();
-            }
-
-            ca.field = Arc::new(Field::new(&slf.name, dtype));
-            ca
-        }
-    }
-}
-
-impl AnonymousOwnedListBuilder {
-    pub fn new(name: &str, capacity: usize, inner_dtype: Option<DataType>) -> Self {
-        Self {
-            name: name.into(),
-            builder: AnonymousBuilder::new(capacity),
-            owned: Vec::with_capacity(capacity),
-            inner_dtype,
-            fast_explode: true,
-        }
-    }
-
-    #[inline]
-    pub fn append_empty(&mut self) {
-        self.fast_explode = false;
-        self.builder.push_empty()
+        finish_anonymous_list_builder!(self)
     }
 }

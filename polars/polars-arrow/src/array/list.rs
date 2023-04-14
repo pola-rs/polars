@@ -1,7 +1,7 @@
-use arrow::array::{Array, ListArray};
+use arrow::array::{new_empty_array, Array, ListArray};
 use arrow::bitmap::MutableBitmap;
 use arrow::compute::concatenate;
-use arrow::datatypes::DataType;
+use arrow::datatypes::DataType as ArrowDataType;
 use arrow::error::Result;
 use arrow::offset::Offsets;
 
@@ -30,17 +30,9 @@ impl<'a> AnonymousBuilder<'a> {
         *self.offsets.last().unwrap()
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.arrays.is_empty()
-    }
-
-    pub fn offsets(&self) -> &[i64] {
-        &self.offsets
-    }
-
-    pub fn take_offsets(self) -> Offsets<i64> {
-        // safety: offsets are correct
-        unsafe { Offsets::new_unchecked(self.offsets) }
+    #[inline]
+    fn length(&self) -> usize {
+        self.offsets.len() - 1
     }
 
     #[inline]
@@ -84,25 +76,41 @@ impl<'a> AnonymousBuilder<'a> {
         validity.set(len - 1, false);
         self.validity = Some(validity)
     }
+
     fn update_validity(&mut self) {
         if let Some(validity) = &mut self.validity {
             validity.push(true)
         }
     }
 
-    pub fn finish(self, inner_dtype: Option<&DataType>) -> Result<ListArray<i64>> {
-        let inner_dtype = inner_dtype.unwrap_or_else(|| self.arrays[0].data_type());
-        let values = concatenate::concatenate(&self.arrays)?;
-        let dtype = ListArray::<i64>::default_datatype(inner_dtype.clone());
+    pub fn finish(self, inner_dtype: Option<ArrowDataType>) -> Result<ListArray<i64>> {
+        let inner_dtype = inner_dtype.unwrap_or_else(|| self.infer_inner_dtype());
+        let values = if self.arrays.is_empty() {
+            new_empty_array(inner_dtype.clone())
+        } else {
+            concatenate::concatenate(&self.arrays)?
+        };
         // Safety:
         // offsets are monotonically increasing
-        unsafe {
-            Ok(ListArray::<i64>::new(
-                dtype,
-                Offsets::new_unchecked(self.offsets).into(),
-                values,
-                self.validity.map(|validity| validity.into()),
-            ))
+        let offsets = unsafe { Offsets::new_unchecked(self.offsets).into() };
+        Ok(ListArray::<i64>::new(
+            ListArray::<i64>::default_datatype(inner_dtype.clone()),
+            offsets,
+            values,
+            self.validity.map(|validity| validity.into()),
+        ))
+    }
+
+    #[inline]
+    fn infer_inner_dtype(&self) -> ArrowDataType {
+        if self.arrays.is_empty() {
+            if self.length() > 0 {
+                ArrowDataType::Int32 // todo NULL_DTYPE
+            } else {
+                ArrowDataType::Null
+            }
+        } else {
+            self.arrays[0].data_type().clone()
         }
     }
 }

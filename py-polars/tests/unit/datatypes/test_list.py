@@ -459,9 +459,23 @@ def test_list_min_max() -> None:
 
 def test_fill_null_empty_list() -> None:
     assert pl.Series([["a"], None]).fill_null([]).to_list() == [["a"], []]
+    assert pl.Series([["a"], None]).fill_null(["b"]).to_list() == [["a"], ["b"]]
 
 
 def test_nested_logical() -> None:
     assert pl.select(
         pl.lit(pl.Series(["a", "b"], dtype=pl.Categorical)).implode().implode()
     ).to_dict(False) == {"": [[["a", "b"]]]}
+
+
+def test_list_dtypes() -> None:
+    assert pl.Series([[]]).dtype == pl.List(pl.Int32)
+    assert pl.Series([[]], dtype=pl.List(pl.Int64)).dtype == pl.List(pl.Int64)
+    assert pl.Series([[]], dtype=pl.List(pl.Utf8)).dtype == pl.List(pl.Utf8)
+
+
+def test_list_empty_list() -> None:
+    assert pl.Series([[], None]).to_list() == [[], None]
+    assert pl.Series([None, []]).to_list() == [None, []]
+    assert pl.Series([["a"], None]).to_list() == [["a"], None]
+    assert pl.Series([None, ["a"]]).to_list() == [None, ["a"]]
