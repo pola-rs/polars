@@ -507,7 +507,7 @@ impl<'a> AnonymousListBuilder<'a> {
         Self {
             name: name.into(),
             builder: AnonymousBuilder::new(capacity),
-            inner_dtype: inner_dtype,
+            inner_dtype,
             fast_explode: true,
         }
     }
