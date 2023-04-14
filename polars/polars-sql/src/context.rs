@@ -287,7 +287,6 @@ impl SQLContext {
         args: &[FunctionArg],
     ) -> PolarsResult<(String, LazyFrame)> {
         let tbl_fn = name.0.get(0).unwrap().value.as_str();
-        println!("executing tbl function");
         let read_fn = tbl_fn.parse::<PolarsTableFunctions>()?;
         let (tbl_name, lf) = read_fn.execute(args)?;
         let tbl_name = alias
