@@ -216,10 +216,12 @@ impl DataType {
             Utf8 => ArrowDataType::LargeUtf8,
             Binary => ArrowDataType::LargeBinary,
             Date => ArrowDataType::Date32,
-            Datetime(unit, tz) => ArrowDataType::Timestamp(unit.to_arrow(), tz.clone()),
+            Datetime(unit, tz) => {
+                ArrowDataType::Timestamp(unit.to_arrow(), tz.clone().map(Arc::new))
+            }
             Duration(unit) => ArrowDataType::Duration(unit.to_arrow()),
             Time => ArrowDataType::Time64(ArrowTimeUnit::Nanosecond),
-            List(dt) => ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
+            List(dt) => ArrowDataType::LargeList(Arc::new(arrow::datatypes::Field::new(
                 "item",
                 dt.to_arrow(),
                 true,
@@ -230,13 +232,13 @@ impl DataType {
             #[cfg(feature = "dtype-categorical")]
             Categorical(_) => ArrowDataType::Dictionary(
                 IntegerType::UInt32,
-                Box::new(ArrowDataType::LargeUtf8),
+                Arc::new(ArrowDataType::LargeUtf8),
                 false,
             ),
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => {
                 let fields = fields.iter().map(|fld| fld.to_arrow()).collect();
-                ArrowDataType::Struct(fields)
+                ArrowDataType::Struct(Arc::new(fields))
             }
             Unknown => unreachable!(),
         }

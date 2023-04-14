@@ -6,7 +6,7 @@ use arrow::types::NativeType;
 use crate::prelude::*;
 
 pub fn chunk_to_struct(chunk: Chunk<ArrayRef>, fields: Vec<Field>) -> StructArray {
-    let dtype = DataType::Struct(fields);
+    let dtype = DataType::Struct(std::sync::Arc::new(fields));
     StructArray::new(dtype, chunk.into_arrays(), None)
 }
 

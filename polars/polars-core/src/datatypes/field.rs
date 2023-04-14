@@ -127,7 +127,7 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::LargeList(f) => DataType::List(Box::new(f.data_type().into())),
             ArrowDataType::List(f) => DataType::List(Box::new(f.data_type().into())),
             ArrowDataType::Date32 => DataType::Date,
-            ArrowDataType::Timestamp(tu, tz) => DataType::Datetime(tu.into(), tz.clone()),
+            ArrowDataType::Timestamp(tu, tz) => DataType::Datetime(tu.into(), tz.as_ref().map(|tz| tz.to_string())),
             ArrowDataType::Duration(tu) => DataType::Duration(tu.into()),
             ArrowDataType::Date64 => DataType::Datetime(TimeUnit::Milliseconds, None),
             ArrowDataType::LargeUtf8 | ArrowDataType::Utf8 => DataType::Utf8,

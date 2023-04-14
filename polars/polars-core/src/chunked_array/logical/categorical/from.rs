@@ -12,7 +12,7 @@ impl From<&CategoricalChunked> for DictionaryArray<u32> {
         let map = &**ca.get_rev_map();
         let dtype = ArrowDataType::Dictionary(
             IntegerType::UInt32,
-            Box::new(ArrowDataType::LargeUtf8),
+            Arc::new(ArrowDataType::LargeUtf8),
             false,
         );
         match map {
@@ -47,7 +47,7 @@ impl From<&CategoricalChunked> for DictionaryArray<i64> {
         let map = &**ca.get_rev_map();
         let dtype = ArrowDataType::Dictionary(
             IntegerType::UInt32,
-            Box::new(ArrowDataType::LargeUtf8),
+            Arc::new(ArrowDataType::LargeUtf8),
             false,
         );
         match map {

@@ -104,7 +104,7 @@ impl ChunkFullNull for ListChunked {
 impl ListChunked {
     pub fn full_null_with_dtype(name: &str, length: usize, inner_dtype: &DataType) -> ListChunked {
         let arr = new_null_array(
-            ArrowDataType::LargeList(Box::new(ArrowField::new(
+            ArrowDataType::LargeList(Arc::new(ArrowField::new(
                 "item",
                 inner_dtype.to_arrow(),
                 true,

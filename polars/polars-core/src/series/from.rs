@@ -154,13 +154,13 @@ impl Series {
             #[cfg(feature = "dtype-datetime")]
             ArrowDataType::Timestamp(tu, tz) => {
                 let mut tz = tz.clone();
-                if tz.as_deref() == Some("") {
+                if tz.as_ref().map(|tz| tz.as_str()) == Some("") {
                     tz = None;
                 }
                 // we still drop timezone for now
                 let chunks = cast_chunks(&chunks, &DataType::Int64, false).unwrap();
                 let s = Int64Chunked::from_chunks(name, chunks)
-                    .into_datetime(tu.into(), tz)
+                    .into_datetime(tu.into(), tz.map(|tz| tz.to_string()))
                     .into_series();
                 Ok(match tu {
                     ArrowTimeUnit::Second => &s * MILLISECONDS,
@@ -461,7 +461,7 @@ fn convert_inner_types(arr: &ArrayRef) -> ArrayRef {
                 .map(|(arr, field)| ArrowField::new(&field.name, arr.data_type().clone(), true))
                 .collect();
             Box::new(StructArray::new(
-                ArrowDataType::Struct(fields),
+                ArrowDataType::Struct(Arc::new(fields)),
                 values,
                 arr.validity().cloned(),
             ))

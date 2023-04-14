@@ -793,7 +793,7 @@ mod test {
                 DataType::Datetime(TimeUnit::Milliseconds, None),
             ),
             (
-                ArrowDataType::Timestamp(ArrowTimeUnit::Second, Some("".to_string())),
+                ArrowDataType::Timestamp(ArrowTimeUnit::Second, Some(Arc::new("".to_string()))),
                 DataType::Datetime(TimeUnit::Milliseconds, Some("".to_string())),
             ),
             (ArrowDataType::LargeUtf8, DataType::Utf8),
@@ -827,7 +827,7 @@ mod test {
             ),
             (ArrowDataType::Time32(ArrowTimeUnit::Second), DataType::Time),
             (
-                ArrowDataType::List(Box::new(ArrowField::new(
+                ArrowDataType::List(Arc::new(ArrowField::new(
                     "item",
                     ArrowDataType::Float64,
                     true,
@@ -835,7 +835,7 @@ mod test {
                 DataType::List(DataType::Float64.into()),
             ),
             (
-                ArrowDataType::LargeList(Box::new(ArrowField::new(
+                ArrowDataType::LargeList(Arc::new(ArrowField::new(
                     "item",
                     ArrowDataType::Float64,
                     true,

@@ -40,7 +40,11 @@ fn fields_to_struct_array(fields: &[Series]) -> (ArrayRef, Vec<Series>) {
     // we determine fields from arrays as there might be object arrays
     // where the dtype is bound to that single array
     let new_fields = arrays_to_fields(&field_arrays, &fields);
-    let arr = StructArray::new(ArrowDataType::Struct(new_fields), field_arrays, None);
+    let arr = StructArray::new(
+        ArrowDataType::Struct(Arc::new(new_fields)),
+        field_arrays,
+        None,
+    );
     (Box::new(arr), fields)
 }
 
@@ -116,7 +120,7 @@ impl StructChunked {
             // where the dtype is bound to that single array
             let new_fields = arrays_to_fields(&field_arrays, &self.fields);
             let arr = Box::new(StructArray::new(
-                ArrowDataType::Struct(new_fields),
+                ArrowDataType::Struct(Arc::new(new_fields)),
                 field_arrays,
                 None,
             )) as ArrayRef;
