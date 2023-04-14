@@ -5,3 +5,6 @@ build-backend = "maturin"
 [project]
 name = "my_polars_functions"
 version = "0.1.0"
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
