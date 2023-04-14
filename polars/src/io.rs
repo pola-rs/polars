@@ -1,35 +1,36 @@
+use polars_core::schema::SchemaRef;
+use polars_io::mmap::MmapBytesReader;
+use polars_io::prelude::{CsvEncoding, CsvReader, NullValues};
+use polars_io::RowCount;
 pub use polars_io::*;
 
 /// Read a CSV file into a DataFrame.
 #[cfg(feature = "csv-file")]
 pub mod read_csv {
-    use polars_core::schema::SchemaRef;
-    use polars_io::mmap::MmapBytesReader;
-    use polars_io::prelude::{CsvEncoding, CsvReader, NullValues};
-    use polars_io::RowCount;
+    use super::*;
 
     #[macro_export]
     macro_rules! read_csv {
-      ($path:expr) => {
-
-          $crate::prelude::CsvReader::from_path($path).and_then(|mut rdr| {
-              rdr.finish()
-          })
-      };
-      ($path:expr, $($field:ident = $value:expr),* $(,)?) => {
-          $crate::prelude::CsvReader::from_path($path).and_then(|rdr| {
-              let mut options = $crate::io::read_csv::CsvReaderOptions::new();
-              $(
-                  options = options.$field($value);
-              )*
-              let rdr = $crate::io::read_csv::set_options(rdr, options);
-
-              rdr.finish()
-          })
-      }
+        (&mut $path:expr) => {
+            $crate::prelude::CsvReader::new($path).finish()
+        };
+        ($path:expr) => {
+            $crate::prelude::CsvReader::from_path($path).and_then(|mut rdr| {
+                rdr.finish()
+            })
+        };
+        ($path:expr, $($field:ident = $value:expr),* $(,)?) => {
+            $crate::prelude::CsvReader::from_path($path).and_then(|rdr| {
+                let mut options = $crate::io::read_csv::CsvReaderOptions::new();
+                $(
+                    options = options.$field($value);
+                )*
+                let rdr = $crate::io::read_csv::set_options(rdr, options);
+                rdr.finish()
+            })
+        }
   }
     #[must_use]
-    #[allow(dead_code)]
     pub struct CsvReaderOptions {
         rechunk: bool,
         n_rows: Option<usize>,
@@ -388,5 +389,104 @@ pub mod scan_csv {
         }
 
         rdr
+    }
+}
+
+#[cfg(feature = "parquet")]
+pub mod read_parquet {
+    use std::io::Read;
+
+    use polars_core::prelude::*;
+    use polars_core::utils::arrow::io::parquet::write::FileMetaData;
+    use polars_io::RowCount;
+
+    use crate::prelude::*;
+    #[macro_export]
+    macro_rules! read_parquet {
+        (&mut $path:expr) => {
+            $crate::prelude::ParquetReader::new($path).finish()
+        };
+        ($path:expr) => {
+            $crate::prelude::ParquetReader::from_path($path).and_then(|mut rdr| {
+                rdr.finish()
+            })
+        };
+        ($path:expr, $($field:ident = $value:expr),* $(,)?) => {
+            $crate::prelude::CsvReader::from_path($path).and_then(|rdr| {
+                let mut options = $crate::io::read_csv::CsvReaderOptions::new();
+                $(
+                    options = options.$field($value);
+                )*
+                let rdr = $crate::io::read_csv::set_options(rdr, options);
+                rdr.finish()
+            })
+        }
+  }
+
+    pub struct ParquetReaderOptions {
+        rechunk: bool,
+        n_rows: Option<usize>,
+        columns: Option<Vec<String>>,
+        projection: Option<Vec<usize>>,
+        parallel: ParallelStrategy,
+        row_count: Option<RowCount>,
+        low_memory: bool,
+        metadata: Option<FileMetaData>,
+        use_statistics: bool,
+    }
+
+    impl Default for ParquetReaderOptions {
+        fn default() -> Self {
+            Self {
+                rechunk: false,
+                n_rows: None,
+                columns: None,
+                projection: None,
+                parallel: Default::default(),
+                row_count: None,
+                low_memory: false,
+                metadata: None,
+                use_statistics: true,
+            }
+        }
+    }
+
+    impl ParquetReaderOptions {
+        pub fn rechunk(mut self, rechunk: bool) -> Self {
+            self.rechunk = rechunk;
+            self
+        }
+        pub fn n_rows(mut self, n_rows: usize) -> Self {
+            self.n_rows = Some(n_rows);
+            self
+        }
+        pub fn columns<T: Into<Vec<String>>>(mut self, columns: T) -> Self {
+            self.columns = Some(columns.into());
+            self
+        }
+        pub fn projection<T: Into<Vec<usize>>>(mut self, projection: T) -> Self {
+            self.projection = Some(projection.into());
+            self
+        }
+        pub fn parallel(mut self, parallel: ParallelStrategy) -> Self {
+            self.parallel = parallel;
+            self
+        }
+        pub fn row_count(mut self, row_count: RowCount) -> Self {
+            self.row_count = Some(row_count);
+            self
+        }
+        pub fn low_memory(mut self, low_memory: bool) -> Self {
+            self.low_memory = low_memory;
+            self
+        }
+        pub fn metadata(mut self, metadata: FileMetaData) -> Self {
+            self.metadata = Some(metadata);
+            self
+        }
+        pub fn use_statistics(mut self, use_statistics: bool) -> Self {
+            self.use_statistics = use_statistics;
+            self
+        }
     }
 }

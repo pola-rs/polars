@@ -1,4 +1,6 @@
+use std::fs::File;
 use std::io::{Read, Seek};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use arrow::io::parquet::read;
@@ -213,6 +215,14 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
             }
             df
         })
+    }
+}
+
+impl ParquetReader<File> {
+    pub fn from_path<P: Into<PathBuf>>(path: P) -> PolarsResult<Self> {
+        let path = resolve_homedir(&path.into());
+        let f = std::fs::File::open(&path)?;
+        Ok(Self::new(f))
     }
 }
 
