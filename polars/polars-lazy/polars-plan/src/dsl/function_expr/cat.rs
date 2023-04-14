@@ -8,8 +8,8 @@ pub enum CategoricalFunction {
 }
 
 impl CategoricalFunction {
-    pub(super) fn dtype_out(&self) -> DataType {
-        DataType::Categorical(None)
+    pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
+        mapper.with_dtype(DataType::Boolean)
     }
 }
 
