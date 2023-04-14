@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Callable, TypeVar
 from warnings import warn
 
 from polars import internals as pli
+from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
     from polars.dataframe import DataFrame
@@ -61,7 +62,7 @@ def _create_namespace(
             warn(
                 f"Overriding existing custom namespace {name!r} (on {cls.__name__})",
                 UserWarning,
-                stacklevel=2,
+                stacklevel=find_stacklevel(),
             )
 
         setattr(cls, name, NameSpace(name, ns_class))

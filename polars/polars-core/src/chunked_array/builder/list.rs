@@ -1,4 +1,5 @@
 use polars_arrow::array::list::AnonymousBuilder;
+use polars_arrow::array::null::MutableNullArray;
 use polars_arrow::prelude::*;
 
 use super::*;
@@ -84,6 +85,7 @@ where
         }
     }
 
+    #[inline]
     pub fn append_slice(&mut self, items: &[T::Native]) {
         let values = self.builder.mut_values();
         values.extend_from_slice(items);
@@ -94,6 +96,7 @@ where
         }
     }
 
+    #[inline]
     pub fn append_opt_slice(&mut self, opt_v: Option<&[T::Native]>) {
         match opt_v {
             Some(items) => self.append_slice(items),
@@ -182,6 +185,7 @@ type LargePrimitiveBuilder<T> = MutableListArray<i64, MutablePrimitiveArray<T>>;
 type LargeListUtf8Builder = MutableListArray<i64, MutableUtf8Array<i64>>;
 type LargeListBinaryBuilder = MutableListArray<i64, MutableBinaryArray<i64>>;
 type LargeListBooleanBuilder = MutableListArray<i64, MutableBooleanArray>;
+type LargeListNullBuilder = MutableListArray<i64, MutableNullArray>;
 
 pub struct ListUtf8ChunkedBuilder {
     builder: LargeListUtf8Builder,
@@ -202,6 +206,7 @@ impl ListUtf8ChunkedBuilder {
         }
     }
 
+    #[inline]
     pub fn append_trusted_len_iter<'a, I: Iterator<Item = Option<&'a str>> + TrustedLen>(
         &mut self,
         iter: I,
@@ -217,6 +222,7 @@ impl ListUtf8ChunkedBuilder {
         self.builder.try_push_valid().unwrap();
     }
 
+    #[inline]
     pub fn append_values_iter<'a, I: Iterator<Item = &'a str>>(&mut self, iter: I) {
         let values = self.builder.mut_values();
 
@@ -227,6 +233,7 @@ impl ListUtf8ChunkedBuilder {
         self.builder.try_push_valid().unwrap();
     }
 
+    #[inline]
     pub(crate) fn append(&mut self, ca: &Utf8Chunked) {
         let value_builder = self.builder.mut_values();
         value_builder.try_extend(ca).unwrap();
@@ -235,6 +242,7 @@ impl ListUtf8ChunkedBuilder {
 }
 
 impl ListBuilderTrait for ListUtf8ChunkedBuilder {
+    #[inline]
     fn append_opt_series(&mut self, opt_s: Option<&Series>) {
         match opt_s {
             Some(s) => self.append_series(s),
@@ -250,6 +258,7 @@ impl ListBuilderTrait for ListUtf8ChunkedBuilder {
         self.builder.push_null();
     }
 
+    #[inline]
     fn append_series(&mut self, s: &Series) {
         if s.is_empty() {
             self.fast_explode = false;
@@ -413,6 +422,28 @@ impl ListBuilderTrait for ListBooleanChunkedBuilder {
     }
 }
 
+impl ListBuilderTrait for LargeListNullBuilder {
+    #[inline]
+    fn append_series(&mut self, _s: &Series) {
+        self.push_null()
+    }
+
+    #[inline]
+    fn append_null(&mut self) {
+        self.push_null()
+    }
+
+    fn finish(&mut self) -> ListChunked {
+        unsafe {
+            ListChunked::from_chunks_and_dtype_unchecked(
+                "",
+                vec![self.as_box()],
+                DataType::List(Box::new(DataType::Null)),
+            )
+        }
+    }
+}
+
 pub fn get_list_builder(
     dt: &DataType,
     value_capacity: usize,
@@ -430,6 +461,7 @@ pub fn get_list_builder(
             list_capacity,
             Some(physical_type),
         ))),
+        DataType::Null => Ok(Box::new(LargeListNullBuilder::with_capacity(list_capacity))),
         DataType::List(_) => Ok(Box::new(AnonymousOwnedListBuilder::new(
             name,
             list_capacity,

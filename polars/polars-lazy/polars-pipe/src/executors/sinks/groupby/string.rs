@@ -346,7 +346,7 @@ impl Sink for Utf8GroupbySink {
 
                     // initialize the aggregators
                     for agg_fn in &agg_fns {
-                        aggregators.push(agg_fn.split2())
+                        aggregators.push(agg_fn.split())
                     }
                     value_offset
                 }
@@ -434,7 +434,7 @@ impl Sink for Utf8GroupbySink {
                             entry.insert(key, values_offset);
                             // initialize the new aggregators
                             for agg_fn in &self.agg_fns {
-                                self.aggregators.push(agg_fn.split2())
+                                self.aggregators.push(agg_fn.split())
                             }
                             values_offset
                         }
@@ -461,7 +461,7 @@ impl Sink for Utf8GroupbySink {
         let mut new = Self::new_inner(
             self.key_column.clone(),
             self.aggregation_columns.clone(),
-            self.agg_fns.iter().map(|func| func.split2()).collect(),
+            self.agg_fns.iter().map(|func| func.split()).collect(),
             self.input_schema.clone(),
             self.output_schema.clone(),
             self.slice,

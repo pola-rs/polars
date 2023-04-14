@@ -95,8 +95,13 @@ impl AExpr {
                     Sum(expr) => {
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;
-                        if matches!(field.data_type(), UInt8 | Int8 | Int16 | UInt16) {
-                            field.coerce(DataType::Int64);
+                        let dt = match field.data_type() {
+                            Boolean => Some(IDX_DTYPE),
+                            UInt8 | Int8 | Int16 | UInt16 => Some(Int64),
+                            _ => None,
+                        };
+                        if let Some(dt) = dt {
+                            field.coerce(dt);
                         }
                         Ok(field)
                     }
@@ -112,7 +117,7 @@ impl AExpr {
                         float_type(&mut field);
                         Ok(field)
                     }
-                    List(expr) => {
+                    Implode(expr) => {
                         // default context because `col()` would return a list in aggregation context
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;

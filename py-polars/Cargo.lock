@@ -87,7 +87,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.17.0"
-source = "git+https://github.com/ritchie46/arrow2?branch=polars_2023-04-05#d0174d399dd635be6ca498f76a8d250bd9ccbb0a"
+source = "git+https://github.com/ritchie46/arrow2?rev=11933119612e072a6eefaa65abec8c16241073c6#11933119612e072a6eefaa65abec8c16241073c6"
 dependencies = [
  "ahash",
  "arrow-format",
@@ -187,15 +187,6 @@ name = "base64"
 version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4a4ddaa51a5bc52a6948f74c06d20aaaddb71924eab79b8c97a8c556e942d6a"
-
-[[package]]
-name = "bincode"
-version = "1.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1f45e9417d87227c7a56d22e471c6206462cba514c7590c09aff4cf6d1ddcad"
-dependencies = [
- "serde",
-]
 
 [[package]]
 name = "bitflags"
@@ -336,6 +327,33 @@ dependencies = [
  "parse-zoneinfo",
  "phf",
  "phf_codegen",
+]
+
+[[package]]
+name = "ciborium"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0c137568cc60b904a7724001b35ce2630fd00d5d84805fbb608ab89509d788f"
+dependencies = [
+ "ciborium-io",
+ "ciborium-ll",
+ "serde",
+]
+
+[[package]]
+name = "ciborium-io"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "346de753af073cc87b52b2083a506b38ac176a44cfb05497b622e27be899b369"
+
+[[package]]
+name = "ciborium-ll"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "213030a2b5a4e0c0892b6652260cf6ccac84827b83a85a534e178e3906c4cf1b"
+dependencies = [
+ "ciborium-io",
+ "half",
 ]
 
 [[package]]
@@ -748,6 +766,12 @@ name = "glob"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
+
+[[package]]
+name = "half"
+version = "1.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eabb4a44450da02c90444cf74558da904edde8fb4e9035a9a6a4e15445af0bd7"
 
 [[package]]
 name = "halfbrown"
@@ -1581,6 +1605,7 @@ dependencies = [
  "ahash",
  "bitflags",
  "glob",
+ "once_cell",
  "polars-arrow",
  "polars-core",
  "polars-io",
@@ -1722,11 +1747,11 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.17.0"
+version = "0.17.2"
 dependencies = [
  "ahash",
- "bincode",
  "built",
+ "ciborium",
  "jemallocator",
  "lexical-core",
  "libc",

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import contextlib
-import math
 import os
 import random
 import typing
@@ -91,6 +90,7 @@ from polars.utils.meta import get_index_type
 from polars.utils.various import (
     _prepare_row_count_args,
     _process_null_values,
+    find_stacklevel,
     handle_projection_columns,
     is_bool_sequence,
     is_int_sequence,
@@ -3587,9 +3587,17 @@ class DataFrame:
         else:
             return s
 
-    def describe(self) -> Self:
+    def describe(
+        self, percentiles: Sequence[float] | float | None = (0.25, 0.75)
+    ) -> Self:
         """
         Summary statistics for a DataFrame.
+
+        Parameters
+        ----------
+        percentiles
+            One or more percentiles to include in the summary statistics.
+            All values must be in the range `[0, 1]`.
 
         See Also
         --------
@@ -3609,7 +3617,7 @@ class DataFrame:
         ...     }
         ... )
         >>> df.describe()
-        shape: (7, 7)
+        shape: (9, 7)
         ┌────────────┬──────────┬──────────┬──────────┬──────┬──────┬────────────┐
         │ describe   ┆ a        ┆ b        ┆ c        ┆ d    ┆ e    ┆ f          │
         │ ---        ┆ ---      ┆ ---      ┆ ---      ┆ ---  ┆ ---  ┆ ---        │
@@ -3622,9 +3630,15 @@ class DataFrame:
         │ min        ┆ 1.0      ┆ 4.0      ┆ 0.0      ┆ b    ┆ eur  ┆ 2020-01-01 │
         │ max        ┆ 3.0      ┆ 5.0      ┆ 1.0      ┆ c    ┆ usd  ┆ 2022-01-01 │
         │ median     ┆ 2.8      ┆ 4.5      ┆ 1.0      ┆ null ┆ null ┆ null       │
+        │ 25%        ┆ 1.0      ┆ 4.0      ┆ null     ┆ null ┆ null ┆ null       │
+        │ 75%        ┆ 3.0      ┆ 5.0      ┆ null     ┆ null ┆ null ┆ null       │
         └────────────┴──────────┴──────────┴──────────┴──────┴──────┴────────────┘
 
         """
+        if isinstance(percentiles, float):
+            percentiles = [percentiles]
+        if percentiles and not all((0 <= p <= 1) for p in percentiles):
+            raise ValueError("Percentiles must all be in the range [0, 1].")
 
         def describe_cast(stat: Self) -> Self:
             columns = []
@@ -3637,28 +3651,26 @@ class DataFrame:
                     columns.append(stat[:, i].cast(str))
             return self.__class__(columns)
 
-        summary = self._from_pydf(
-            F.concat(
-                [
-                    describe_cast(
-                        self.__class__({c: [len(self)] for c in self.columns})
-                    ),
-                    describe_cast(self.null_count()),
-                    describe_cast(self.mean()),
-                    describe_cast(self.std()),
-                    describe_cast(self.min()),
-                    describe_cast(self.max()),
-                    describe_cast(self.median()),
-                ]
-            )._df
-        )
-        summary.insert_at_idx(
-            0,
-            pli.Series(
-                "describe",
-                ["count", "null_count", "mean", "std", "min", "max", "median"],
-            ),
-        )
+        # Build output rows
+        output_rows = [
+            describe_cast(self.__class__({c: [len(self)] for c in self.columns})),
+            describe_cast(self.null_count()),
+            describe_cast(self.mean()),
+            describe_cast(self.std()),
+            describe_cast(self.min()),
+            describe_cast(self.max()),
+            describe_cast(self.median()),
+        ]
+        row_identifiers = ["count", "null_count", "mean", "std", "min", "max", "median"]
+
+        # Dynamically add rows for quantiles
+        for p in percentiles or ():
+            output_rows.append(describe_cast(self.quantile(p)))
+            row_identifiers.append(f"{p:.0%}")
+
+        # Build summary dataframe
+        summary = self._from_pydf(F.concat(output_rows)._df)
+        summary.insert_at_idx(0, pli.Series("describe", row_identifiers))
         return summary
 
     def find_idx_by_name(self, name: str) -> int:
@@ -6066,7 +6078,9 @@ class DataFrame:
         ...         "baz": [1, 2, 3, 4, 5, 6],
         ...     }
         ... )
-        >>> df.pivot(values="baz", index="foo", columns="bar")
+        >>> df.pivot(
+        ...     values="baz", index="foo", columns="bar", aggregate_function="first"
+        ... )
         shape: (2, 4)
         ┌─────┬─────┬─────┬─────┐
         │ foo ┆ A   ┆ B   ┆ C   │
@@ -6091,7 +6105,7 @@ class DataFrame:
                 "will change from `'first'` to `None`. Please pass `'first'` to keep the "
                 "current behaviour, or `None` to accept the new one.",
                 DeprecationWarning,
-                stacklevel=4,
+                stacklevel=find_stacklevel(),
             )
             aggregate_function = "first"
 
@@ -6248,7 +6262,7 @@ class DataFrame:
         │ B    ┆ 1    │
         │ C    ┆ 2    │
         │ D    ┆ 3    │
-        │ …    ┆ …    │
+        │ E    ┆ 4    │
         │ F    ┆ 5    │
         │ G    ┆ 6    │
         │ H    ┆ 7    │
@@ -6278,6 +6292,8 @@ class DataFrame:
         └────────┴────────┴────────┴────────┴────────┴────────┘
 
         """
+        import math
+
         df = self.select(columns) if columns is not None else self
 
         height = df.height

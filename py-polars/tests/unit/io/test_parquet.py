@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import io
-import sys
-import tempfile
 import typing
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -16,6 +14,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_frame_equal_local_categoricals
+from polars.testing._tempdir import TemporaryDirectory
 
 if TYPE_CHECKING:
     from polars.type_aliases import ParquetCompression
@@ -71,7 +70,7 @@ def test_to_from_buffer_lzo(df: pl.DataFrame) -> None:
 @pytest.mark.write_disk()
 @pytest.mark.parametrize("compression", COMPRESSIONS)
 def test_to_from_file(df: pl.DataFrame, compression: ParquetCompression) -> None:
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "small.avro"
         df.write_parquet(file_path, compression=compression)
         read_df = pl.read_parquet(file_path)
@@ -80,7 +79,7 @@ def test_to_from_file(df: pl.DataFrame, compression: ParquetCompression) -> None
 
 @pytest.mark.write_disk()
 def test_to_from_file_lzo(df: pl.DataFrame) -> None:
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "small.avro"
 
         # Writing lzo compressed parquet files is not supported for now.
@@ -163,7 +162,7 @@ def test_nested_parquet() -> None:
 
 @pytest.mark.write_disk()
 def test_glob_parquet(df: pl.DataFrame) -> None:
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "small.parquet"
         df.write_parquet(file_path)
 
@@ -174,7 +173,7 @@ def test_glob_parquet(df: pl.DataFrame) -> None:
 
 @pytest.mark.write_disk()
 def test_streaming_parquet_glob_5900(df: pl.DataFrame) -> None:
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "small.parquet"
         df.write_parquet(file_path)
 
@@ -209,7 +208,7 @@ def test_chunked_round_trip() -> None:
 
 @pytest.mark.write_disk()
 def test_lazy_self_join_file_cache_prop_3979(df: pl.DataFrame) -> None:
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "small.parquet"
         df.write_parquet(file_path)
 
@@ -357,11 +356,10 @@ def test_parquet_nested_dictionaries_6217() -> None:
 
 
 @pytest.mark.write_disk()
-@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 def test_sink_parquet(io_files_path: Path) -> None:
     file = io_files_path / "small.parquet"
 
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "sink.parquet"
 
         df_scanned = pl.scan_parquet(file)
@@ -374,11 +372,10 @@ def test_sink_parquet(io_files_path: Path) -> None:
 
 
 @pytest.mark.write_disk()
-@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 def test_sink_ipc(io_files_path: Path) -> None:
     file = io_files_path / "small.parquet"
 
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "sink.ipc"
 
         df_scanned = pl.scan_parquet(file)
@@ -391,12 +388,11 @@ def test_sink_ipc(io_files_path: Path) -> None:
 
 
 @pytest.mark.write_disk()
-@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 def test_fetch_union() -> None:
     df1 = pl.DataFrame({"a": [0, 1, 2], "b": [1, 2, 3]})
     df2 = pl.DataFrame({"a": [3, 4, 5], "b": [4, 5, 6]})
 
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path_1 = Path(temp_dir) / "df_fetch_1.parquet"
         file_path_2 = Path(temp_dir) / "df_fetch_2.parquet"
         file_path_glob = Path(temp_dir) / "df_fetch_*.parquet"
@@ -416,14 +412,13 @@ def test_fetch_union() -> None:
 
 @pytest.mark.slow()
 @typing.no_type_check
-@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 def test_struct_pyarrow_dataset_5796() -> None:
     num_rows = 2**17 + 1
 
     df = pl.from_records(
         [dict(id=i, nested=dict(a=i)) for i in range(num_rows)]  # noqa: C408
     )
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "out.parquet"
         df.write_parquet(file_path, use_pyarrow=True)
         tbl = ds.dataset(file_path).to_table()

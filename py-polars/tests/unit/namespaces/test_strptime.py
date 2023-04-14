@@ -164,11 +164,74 @@ def test_strptime_dates_datetimes() -> None:
         ("2018-09-05T14:24:02.123", datetime(2018, 9, 5, 14, 24, 2, 123000)),
         ("2019-04-18T02:45:55.555000000", datetime(2019, 4, 18, 2, 45, 55, 555000)),
         ("2019-04-18T22:45:55.555123", datetime(2019, 4, 18, 22, 45, 55, 555123)),
+        (
+            "2018-09-05T04:05:01+01:00",
+            datetime(2018, 9, 5, 4, 5, 1, tzinfo=timezone(timedelta(hours=1))),
+        ),
+        (
+            "2018-09-05T04:24:01.9+01:00",
+            datetime(2018, 9, 5, 4, 24, 1, 900000, tzinfo=timezone(timedelta(hours=1))),
+        ),
+        (
+            "2018-09-05T04:24:02.11+01:00",
+            datetime(2018, 9, 5, 4, 24, 2, 110000, tzinfo=timezone(timedelta(hours=1))),
+        ),
+        (
+            "2018-09-05T14:24:02.123+01:00",
+            datetime(
+                2018, 9, 5, 14, 24, 2, 123000, tzinfo=timezone(timedelta(hours=1))
+            ),
+        ),
+        (
+            "2019-04-18T02:45:55.555000000+01:00",
+            datetime(
+                2019, 4, 18, 2, 45, 55, 555000, tzinfo=timezone(timedelta(hours=1))
+            ),
+        ),
+        (
+            "2019-04-18T22:45:55.555123+01:00",
+            datetime(
+                2019, 4, 18, 22, 45, 55, 555123, tzinfo=timezone(timedelta(hours=1))
+            ),
+        ),
     ],
 )
 def test_datetime_strptime_patterns_single(time_string: str, expected: str) -> None:
     result = pl.Series([time_string]).str.strptime(pl.Datetime).item()
     assert result == expected
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_infer_tz_aware_time_unit(time_unit: TimeUnit) -> None:
+    result = pl.Series(["2020-01-02T04:00:00+02:00"]).str.strptime(
+        pl.Datetime(time_unit)
+    )
+    assert result.dtype == pl.Datetime(time_unit, "+02:00")
+    assert result.item() == datetime(
+        2020, 1, 2, 4, 0, tzinfo=timezone(timedelta(hours=2))
+    )
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_infer_tz_aware_with_utc(time_unit: TimeUnit) -> None:
+    result = pl.Series(["2020-01-02T04:00:00+02:00"]).str.strptime(
+        pl.Datetime(time_unit), utc=True
+    )
+    assert result.dtype == pl.Datetime(time_unit, "UTC")
+    assert result.item() == datetime(2020, 1, 2, 2, 0, tzinfo=timezone.utc)
+
+
+def test_infer_tz_aware_raises() -> None:
+    msg = "cannot parse tz-aware values with tz-aware dtype - please drop the time zone from the dtype"
+    with pytest.raises(ComputeError, match=msg):
+        pl.Series(["2020-01-02T04:00:00+02:00"]).str.strptime(
+            pl.Datetime("us", "Europe/Vienna")
+        )
+    msg = "cannot use strptime with both 'utc=True' and tz-aware dtype, please drop time zone from the dtype"
+    with pytest.raises(ComputeError, match=msg):
+        pl.Series(["2020-01-02T04:00:00+02:00"]).str.strptime(
+            pl.Datetime("us", "Europe/Vienna"), utc=True
+        )
 
 
 def test_datetime_strptime_patterns_consistent() -> None:
@@ -320,7 +383,7 @@ def test_replace_timezone_invalid_timezone() -> None:
     ts = pl.Series(["2020-01-01 00:00:00+01:00"]).str.strptime(
         pl.Datetime, "%Y-%m-%d %H:%M:%S%z"
     )
-    with pytest.raises(ComputeError, match=r"unable to parse time zone: foo"):
+    with pytest.raises(ComputeError, match=r"unable to parse time zone: 'foo'"):
         ts.dt.replace_time_zone("foo")
 
 

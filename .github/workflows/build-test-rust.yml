@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - polars/**
+      - examples/**
       - .github/workflows/build-test-rust.yml
 
 concurrency:

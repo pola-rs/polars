@@ -257,7 +257,7 @@ fn test_groupby_on_lists() -> PolarsResult<()> {
         .clone()
         .lazy()
         .groupby([col("groups")])
-        .agg([col("arrays").list()])
+        .agg([col("arrays").implode()])
         .collect()?;
 
     // a list of lists

@@ -538,7 +538,7 @@ def test_take_misc(fruits_cars: pl.DataFrame) -> None:
     with pytest.raises(pl.ComputeError):
         (
             df.sort("fruits").select(
-                [pl.col("B").reverse().take([1, 2]).list().over("fruits"), "fruits"]
+                [pl.col("B").reverse().take([1, 2]).implode().over("fruits"), "fruits"]
             )
         )
 
@@ -548,7 +548,7 @@ def test_take_misc(fruits_cars: pl.DataFrame) -> None:
                 pl.col("B")
                 .reverse()
                 .take(index)  # type: ignore[arg-type]
-                .list()
+                .implode()
                 .over("fruits"),
                 "fruits",
             ]
@@ -558,7 +558,7 @@ def test_take_misc(fruits_cars: pl.DataFrame) -> None:
         assert out[4, "B"].to_list() == [1, 4]
 
     out = df.sort("fruits").select(
-        [pl.col("B").reverse().take(pl.lit(1)).list().over("fruits"), "fruits"]
+        [pl.col("B").reverse().take(pl.lit(1)).implode().over("fruits"), "fruits"]
     )
     assert out[0, "B"] == 3
     assert out[4, "B"] == 4
@@ -1221,13 +1221,33 @@ def test_describe() -> None:
     df = df.with_columns(pl.col("e").cast(pl.Categorical))
     expected = pl.DataFrame(
         {
-            "describe": ["count", "null_count", "mean", "std", "min", "max", "median"],
-            "a": [3.0, 0.0, 2.2666667, 1.101514, 1.0, 3.0, 2.8],
-            "b": [3.0, 1.0, 4.5, 0.7071067811865476, 4.0, 5.0, 4.5],
-            "c": [3.0, 0.0, 0.6666666666666666, 0.5773502588272095, 0.0, 1.0, 1.0],
-            "d": ["3", "1", None, None, "b", "c", None],
-            "e": ["3", "1", None, None, None, None, None],
-            "f": ["3", "0", None, None, "2020-01-01", "2022-01-01", None],
+            "describe": [
+                "count",
+                "null_count",
+                "mean",
+                "std",
+                "min",
+                "max",
+                "median",
+                "25%",
+                "75%",
+            ],
+            "a": [3.0, 0.0, 2.2666667, 1.101514, 1.0, 3.0, 2.8, 1.0, 3.0],
+            "b": [3.0, 1.0, 4.5, 0.7071067811865476, 4.0, 5.0, 4.5, 4.0, 5.0],
+            "c": [
+                3.0,
+                0.0,
+                0.6666666666666666,
+                0.5773502588272095,
+                0.0,
+                1.0,
+                1.0,
+                None,
+                None,
+            ],
+            "d": ["3", "1", None, None, "b", "c", None, None, None],
+            "e": ["3", "1", None, None, None, None, None, None, None],
+            "f": ["3", "0", None, None, "2020-01-01", "2022-01-01", None, None, None],
         }
     )
     assert_frame_equal(df.describe(), expected)
@@ -1242,11 +1262,56 @@ def test_describe() -> None:
     )
 
     assert df.describe().to_dict(False) == {
-        "describe": ["count", "null_count", "mean", "std", "min", "max", "median"],
-        "numerical": [4.0, 1.0, 1.3333333333333333, 0.5773502691896257, 1.0, 2.0, 1.0],
-        "struct": ["4", "1", None, None, None, None, None],
-        "list": ["4", "1", None, None, None, None, None],
+        "describe": [
+            "count",
+            "null_count",
+            "mean",
+            "std",
+            "min",
+            "max",
+            "median",
+            "25%",
+            "75%",
+        ],
+        "numerical": [
+            4.0,
+            1.0,
+            1.3333333333333333,
+            0.5773502691896257,
+            1.0,
+            2.0,
+            1.0,
+            1.0,
+            2.0,
+        ],
+        "struct": ["4", "1", None, None, None, None, None, None, None],
+        "list": ["4", "1", None, None, None, None, None, None, None],
     }
+
+    for pcts in (None, []):  # type:ignore[var-annotated]
+        assert df.describe(percentiles=pcts).rows() == [
+            ("count", 4.0, "4", "4"),
+            ("null_count", 1.0, "1", "1"),
+            ("mean", 1.3333333333333333, None, None),
+            ("std", 0.5773502691896257, None, None),
+            ("min", 1.0, None, None),
+            ("max", 2.0, None, None),
+            ("median", 1.0, None, None),
+        ]
+
+    assert df.describe(percentiles=(0.2, 0.4, 0.6, 0.8)).rows() == [
+        ("count", 4.0, "4", "4"),
+        ("null_count", 1.0, "1", "1"),
+        ("mean", 1.3333333333333333, None, None),
+        ("std", 0.5773502691896257, None, None),
+        ("min", 1.0, None, None),
+        ("max", 2.0, None, None),
+        ("median", 1.0, None, None),
+        ("20%", 1.0, None, None),
+        ("40%", 1.0, None, None),
+        ("60%", 1.0, None, None),
+        ("80%", 2.0, None, None),
+    ]
 
 
 def test_duration_arithmetic() -> None:
@@ -1953,7 +2018,7 @@ def test_partitioned_groupby_order() -> None:
     # check if group ordering is maintained.
     # we only have 30 groups, so this triggers a partitioned group by
     df = pl.DataFrame({"x": [chr(v) for v in range(33, 63)], "y": range(30)})
-    out = df.groupby("x", maintain_order=True).agg(pl.all().list())
+    out = df.groupby("x", maintain_order=True).agg(pl.all().implode())
     assert_series_equal(out["x"], df["x"])
 
 
@@ -3714,6 +3779,6 @@ def test_window_deadlock() -> None:
         [
             pl.col("*"),  # select all
             pl.col("random").sum().over("groups").alias("sum[random]/groups"),
-            pl.col("random").list().over("names").alias("random/name"),
+            pl.col("random").implode().over("names").alias("random/name"),
         ]
     )

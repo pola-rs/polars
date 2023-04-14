@@ -26,7 +26,7 @@ fn validate_time_zone(tz: TimeZone) -> PolarsResult<()> {
         Ok(_) => Ok(()),
         Err(_) => match tz.parse::<Tz>() {
             Ok(_) => Ok(()),
-            Err(_) => polars_bail!(ComputeError: "unable to parse timezone: '{}'", tz),
+            Err(_) => polars_bail!(ComputeError: "unable to parse time zone: '{}'", tz),
         },
     }
 }
@@ -124,14 +124,7 @@ impl DatetimeChunked {
             (Some(from), Some(to)) => {
                 let chunks = self
                     .downcast_iter()
-                    .map(|arr| {
-                        replace_timezone(
-                            arr,
-                            self.time_unit().to_arrow(),
-                            to.to_string(),
-                            from.to_string(),
-                        )
-                    })
+                    .map(|arr| replace_timezone(arr, self.time_unit().to_arrow(), to, from))
                     .collect::<PolarsResult<_>>()?;
                 let out = unsafe { ChunkedArray::from_chunks(self.name(), chunks) };
                 Ok(out.into_datetime(self.time_unit(), Some(to.to_string())))
@@ -139,14 +132,7 @@ impl DatetimeChunked {
             (Some(from), None) => {
                 let chunks = self
                     .downcast_iter()
-                    .map(|arr| {
-                        replace_timezone(
-                            arr,
-                            self.time_unit().to_arrow(),
-                            "UTC".to_string(),
-                            from.to_string(),
-                        )
-                    })
+                    .map(|arr| replace_timezone(arr, self.time_unit().to_arrow(), "UTC", from))
                     .collect::<PolarsResult<_>>()?;
                 let out = unsafe { ChunkedArray::from_chunks(self.name(), chunks) };
                 Ok(out.into_datetime(self.time_unit(), None))
@@ -154,14 +140,7 @@ impl DatetimeChunked {
             (None, Some(to)) => {
                 let chunks = self
                     .downcast_iter()
-                    .map(|arr| {
-                        replace_timezone(
-                            arr,
-                            self.time_unit().to_arrow(),
-                            to.to_string(),
-                            "UTC".to_string(),
-                        )
-                    })
+                    .map(|arr| replace_timezone(arr, self.time_unit().to_arrow(), to, "UTC"))
                     .collect::<PolarsResult<_>>()?;
                 let out = unsafe { ChunkedArray::from_chunks(self.name(), chunks) };
                 Ok(out.into_datetime(self.time_unit(), Some(to.to_string())))

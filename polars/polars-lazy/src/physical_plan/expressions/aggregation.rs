@@ -188,8 +188,7 @@ impl PhysicalExpr for AggregationExpr {
                             AggState::AggregatedFlat(s) => s.reshape(&[-1, 1]).unwrap(),
                             _ => {
                                 let agg = ac.aggregated();
-                                let ca = agg.list().unwrap();
-                                run_list_agg(ca)
+                                agg.as_list().into_series()
                             }
                         };
                         rename_series(s, &keep_name)
@@ -454,7 +453,7 @@ impl PartitionedAggregation for AggregationExpr {
                 if can_fast_explode {
                     ca.set_fast_explode()
                 }
-                Ok(run_list_agg(&ca))
+                Ok(ca.into_series().as_list().into_series())
             }
             GroupByMethod::First => {
                 let mut agg = unsafe { partitioned.agg_first(groups) };
@@ -551,20 +550,4 @@ impl PhysicalExpr for AggQuantileExpr {
     fn is_valid_aggregation(&self) -> bool {
         true
     }
-}
-
-fn run_list_agg(ca: &ListChunked) -> Series {
-    assert_eq!(ca.chunks().len(), 1);
-    let arr = ca.chunks()[0].clone();
-
-    let offsets = (0i64..(ca.len() as i64 + 1)).collect::<Vec<_>>();
-    let offsets = unsafe { Offsets::new_unchecked(offsets) };
-
-    let new_arr = LargeListArray::new(
-        DataType::List(Box::new(ca.dtype().clone())).to_arrow(),
-        offsets.into(),
-        arr,
-        None,
-    );
-    unsafe { ListChunked::from_chunks(ca.name(), vec![Box::new(new_arr)]).into_series() }
 }

@@ -1085,6 +1085,9 @@ class Series:
     def log(self, base: float = math.e) -> Series:
         """Compute the logarithm to a given base."""
 
+    def log1p(self) -> Series:
+        """Compute the natural logarithm of the input array plus one, element-wise."""
+
     def log10(self) -> Series:
         """Compute the base 10 logarithm of the input array, element-wise."""
 
@@ -1142,12 +1145,20 @@ class Series:
             return wrap_df(PyDataFrame([self.rename(name)._s]))
         return wrap_df(PyDataFrame([self._s]))
 
-    def describe(self) -> DataFrame:
+    def describe(
+        self, percentiles: Sequence[float] | float | None = (0.25, 0.75)
+    ) -> DataFrame:
         """
         Quick summary statistics of a series.
 
         Series with mixed datatypes will return summary statistics for the datatype of
         the first value.
+
+        Parameters
+        ----------
+        percentiles
+            One or more percentiles to include in the summary statistics (if the
+            series has a numeric dtype). All values must be in the range `[0, 1]`.
 
         Returns
         -------
@@ -1157,18 +1168,21 @@ class Series:
         --------
         >>> series_num = pl.Series([1, 2, 3, 4, 5])
         >>> series_num.describe()
-        shape: (6, 2)
+        shape: (9, 2)
         ┌────────────┬──────────┐
         │ statistic  ┆ value    │
         │ ---        ┆ ---      │
         │ str        ┆ f64      │
         ╞════════════╪══════════╡
-        │ min        ┆ 1.0      │
-        │ max        ┆ 5.0      │
+        │ count      ┆ 5.0      │
         │ null_count ┆ 0.0      │
         │ mean       ┆ 3.0      │
         │ std        ┆ 1.581139 │
-        │ count      ┆ 5.0      │
+        │ min        ┆ 1.0      │
+        │ max        ┆ 5.0      │
+        │ median     ┆ 3.0      │
+        │ 25%        ┆ 2.0      │
+        │ 75%        ┆ 4.0      │
         └────────────┴──────────┘
 
         >>> series_str = pl.Series(["a", "a", None, "b", "c"])
@@ -1179,46 +1193,57 @@ class Series:
         │ ---        ┆ ---   │
         │ str        ┆ i64   │
         ╞════════════╪═══════╡
-        │ unique     ┆ 4     │
-        │ null_count ┆ 1     │
         │ count      ┆ 5     │
+        │ null_count ┆ 1     │
+        │ unique     ┆ 4     │
         └────────────┴───────┘
 
         """
+        if isinstance(percentiles, float):
+            percentiles = [percentiles]
+        if percentiles and not all((0 <= p <= 1) for p in percentiles):
+            raise ValueError("Percentiles must all be in the range [0, 1].")
+
         stats: dict[str, PythonLiteral | None]
 
         if self.len() == 0:
             raise ValueError("Series must contain at least one value")
+
         elif self.is_numeric():
             s = self.cast(Float64)
             stats = {
-                "min": s.min(),
-                "max": s.max(),
+                "count": s.len(),
                 "null_count": s.null_count(),
                 "mean": s.mean(),
                 "std": s.std(),
-                "count": s.len(),
+                "min": s.min(),
+                "max": s.max(),
+                "median": s.median(),
             }
+            if percentiles:
+                stats.update({f"{p:.0%}": s.quantile(p) for p in percentiles})
+
         elif self.is_boolean():
             stats = {
-                "sum": self.sum(),
-                "null_count": self.null_count(),
                 "count": self.len(),
+                "null_count": self.null_count(),
+                "sum": self.sum(),
             }
         elif self.is_utf8():
             stats = {
-                "unique": len(self.unique()),
-                "null_count": self.null_count(),
                 "count": self.len(),
+                "null_count": self.null_count(),
+                "unique": len(self.unique()),
             }
         elif self.is_temporal():
             # we coerce all to string, because a polars column
             # only has a single dtype and dates: datetime and count: int don't match
             stats = {
+                "count": str(self.len()),
+                "null_count": str(self.null_count()),
                 "min": str(self.dt.min()),
                 "max": str(self.dt.max()),
-                "null_count": str(self.null_count()),
-                "count": str(self.len()),
+                "median": str(self.dt.median()),
             }
         else:
             raise TypeError("This type is not supported")

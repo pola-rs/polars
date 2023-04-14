@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib
 import sys
 
 from polars.utils.meta import get_index_type
@@ -63,6 +62,13 @@ def _get_dependency_info() -> dict[str, str]:
 
 
 def _get_dependency_version(dep_name: str) -> str:
+    # note: we import 'importlib' here as a significiant optimisation for initial import
+    import importlib
+
+    if sys.version_info >= (3, 8):
+        # importlib.metadata was introduced in Python 3.8;
+        # metadata submodule must be imported explicitly
+        import importlib.metadata
     try:
         module = importlib.import_module(dep_name)
     except ImportError:
@@ -71,7 +77,6 @@ def _get_dependency_version(dep_name: str) -> str:
     if hasattr(module, "__version__"):
         module_version = module.__version__
     elif sys.version_info >= (3, 8):
-        # importlib.metadata was introduced in Python 3.8
         module_version = importlib.metadata.version(dep_name)
     else:
         module_version = "<version not detected>"

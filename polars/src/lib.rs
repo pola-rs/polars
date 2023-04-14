@@ -24,7 +24,7 @@
 //!         // every expression runs in parallel
 //!         col("foo").cummin(false).alias("cumulative_min_per_group"),
 //!         // every expression runs in parallel
-//!         col("foo").reverse().list().alias("reverse_group"),
+//!         col("foo").reverse().implode().alias("reverse_group"),
 //!     ]);
 //!
 //! let lf2 = LazyFrame::scan_parquet("myfile_2.parquet", Default::default())?
@@ -324,7 +324,7 @@
 //! ## Config with ENV vars
 //!
 //! * `POLARS_FMT_TABLE_FORMATTING` -> define styling of tables using any of the following options (default = UTF8_FULL_CONDENSED):
-//!     
+//!
 //!                                    ASCII_FULL
 //!                                    ASCII_FULL_CONDENSED
 //!                                    ASCII_NO_BORDERS
@@ -338,7 +338,7 @@
 //!                                    UTF8_BORDERS_ONLY
 //!                                    UTF8_HORIZONTAL_ONLY
 //!                                    NOTHING
-//!                                     
+//!
 //!                                    These options are defined by comfy-table which provides examples for each at:
 //!                                    https://github.com/Nukesor/comfy-table/blob/main/src/style/presets.rs
 //! * `POLARS_FMT_TABLE_CELL_ALIGNMENT` -> define cell alignment using any of the following options (default = LEFT):
@@ -353,7 +353,7 @@
 //! * `POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE` -> put column data type on the same line as the column name.
 //! * `POLARS_FMT_TABLE_ROUNDED_CORNERS` -> apply rounded corners to UTF8-styled tables.
 //! * `POLARS_FMT_MAX_COLS` -> maximum number of columns shown when formatting DataFrames.
-//! * `POLARS_FMT_MAX_ROWS` -> maximum number of rows shown when formatting DataFrames.
+//! * `POLARS_FMT_MAX_ROWS` -> maximum number of rows shown when formatting DataFrames, `-1` to show all.
 //! * `POLARS_FMT_STR_LEN` -> maximum number of characters printed per string value.
 //! * `POLARS_TABLE_WIDTH` -> width of the tables used during DataFrame formatting.
 //! * `POLARS_MAX_THREADS` -> maximum number of threads used to initialize thread pool (on startup).

@@ -73,6 +73,11 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT LOG(column_1, 10) from df;
     /// ```
     Log,
+    /// SQL 'log1p' function
+    /// ```sql
+    /// SELECT LOG1P(column_1) from df;
+    /// ```
+    Log1p,
     /// SQL 'pow' function
     /// ```sql
     /// SELECT POW(column_1, 2) from df;
@@ -247,6 +252,7 @@ impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
             "log2" => Self::Log2,
             "log10" => Self::Log10,
             "log" => Self::Log,
+            "log1p" => Self::Log1p,
             "pow" => Self::Pow,
             // ----
             // String functions
@@ -308,6 +314,7 @@ impl SqlFunctionVisitor<'_> {
             Log2 => self.visit_unary(|e| e.log(2.0)),
             Log10 => self.visit_unary(|e| e.log(10.0)),
             Log => self.visit_binary(Expr::log),
+            Log1p => self.visit_unary(Expr::log1p),
             Pow => self.visit_binary::<Expr>(Expr::pow),
             // ----
             // String functions
@@ -472,7 +479,7 @@ pub(crate) trait FromSqlExpr {
 }
 
 impl FromSqlExpr for f64 {
-    fn from_sql_expr(expr: &SqlExpr, ctx: &SQLContext) -> PolarsResult<Self>
+    fn from_sql_expr(expr: &SqlExpr, _ctx: &SQLContext) -> PolarsResult<Self>
     where
         Self: Sized,
     {

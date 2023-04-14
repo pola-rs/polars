@@ -117,7 +117,7 @@ def read_csv(
         ``infer_schema_length=0`` to read all columns as ``pl.Utf8`` to check which
         values might cause an issue.
     try_parse_dates
-        Try to automatically parse dates. Most ISO8601-like time zone naive formats can
+        Try to automatically parse dates. Most ISO8601-like formats can
         be inferred, as well as a handful of others. If this does not succeed,
         the column remains of data type ``pl.Utf8``.
         If ``use_pyarrow=True``, dates will always be parsed.
@@ -141,7 +141,7 @@ def read_csv(
     encoding : {'utf8', 'utf8-lossy', ...}
         Lossy means that invalid utf8 values are replaced with ``�``
         characters. When using other encodings than ``utf8`` or
-        ``utf8-lossy``, the input is first decoded im memory with
+        ``utf8-lossy``, the input is first decoded in memory with
         python. Defaults to ``utf8``.
     low_memory
         Reduce memory usage at expense of performance.
@@ -467,7 +467,7 @@ def read_csv_batched(
         First try ``infer_schema_length=0`` to read all columns as
         ``pl.Utf8`` to check which values might cause an issue.
     try_parse_dates
-        Try to automatically parse dates. Most ISO8601-like time zone naive formats can
+        Try to automatically parse dates. Most ISO8601-like formats can
         be inferred, as well as a handful of others. If this does not succeed,
         the column remains of data type ``pl.Utf8``.
     n_threads
@@ -488,7 +488,7 @@ def read_csv_batched(
     encoding : {'utf8', 'utf8-lossy', ...}
         Lossy means that invalid utf8 values are replaced with ``�``
         characters. When using other encodings than ``utf8`` or
-        ``utf8-lossy``, the input is first decoded im memory with
+        ``utf8-lossy``, the input is first decoded in memory with
         python. Defaults to ``utf8``.
     low_memory
         Reduce memory usage at expense of performance.
@@ -775,7 +775,7 @@ def scan_csv(
     row_count_offset
         Offset to start the row_count column (only used if the name is set).
     try_parse_dates
-        Try to automatically parse dates. Most ISO8601-like time zone naive formats
+        Try to automatically parse dates. Most ISO8601-like formats
         can be inferred, as well as a handful of others. If this does not succeed,
         the column remains of data type ``pl.Utf8``.
     eol_char

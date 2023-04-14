@@ -64,6 +64,33 @@ pub enum StringFunction {
     FromRadix(u32, bool),
 }
 
+impl StringFunction {
+    pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
+        use StringFunction::*;
+        match self {
+            #[cfg(feature = "regex")]
+            Contains { .. } => mapper.with_dtype(DataType::Boolean),
+            EndsWith | StartsWith => mapper.with_dtype(DataType::Boolean),
+            Extract { .. } => mapper.with_same_dtype(),
+            ExtractAll => mapper.with_dtype(DataType::List(Box::new(DataType::Utf8))),
+            CountMatch(_) => mapper.with_dtype(DataType::UInt32),
+            #[cfg(feature = "string_justify")]
+            Zfill { .. } | LJust { .. } | RJust { .. } => mapper.with_same_dtype(),
+            #[cfg(feature = "temporal")]
+            Strptime(options) => mapper.with_dtype(options.date_dtype.clone()),
+            #[cfg(feature = "concat_str")]
+            ConcatVertical(_) | ConcatHorizontal(_) => mapper.with_dtype(DataType::Utf8),
+            #[cfg(feature = "regex")]
+            Replace { .. } => mapper.with_dtype(DataType::Utf8),
+            Uppercase | Lowercase | Strip(_) | LStrip(_) | RStrip(_) => {
+                mapper.with_dtype(DataType::Utf8)
+            }
+            #[cfg(feature = "string_from_radix")]
+            FromRadix { .. } => mapper.with_dtype(DataType::Int32),
+        }
+    }
+}
+
 impl Display for StringFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use self::*;
@@ -338,8 +365,7 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
             }
         }
         DataType::Datetime(tu, tz) => {
-            let tz = match (tz, tz_aware, options.utc) {
-                (Some(tz), false, false) => Some(tz.clone()),
+            match (tz, tz_aware, options.utc) {
                 (Some(_), true, _) => polars_bail!(
                     ComputeError:
                     "cannot use strptime with both a tz-aware format and a tz-aware dtype, \
@@ -347,11 +373,10 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
                 ),
                 (Some(_), _, true) => polars_bail!(
                     ComputeError:
-                    "cannot use strptime with both 'utc=True' and tz-aware datetime, \
+                    "cannot use strptime with both 'utc=True' and tz-aware dtype, \
                     please drop time zone from the dtype"
                 ),
-                (None, _, true) => Some("UTC".to_string()),
-                (None, _, false) => None,
+                _ => (),
             };
             if options.exact {
                 ca.as_datetime(
@@ -380,7 +405,13 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
     if options.strict {
         polars_ensure!(
             out.null_count() == ca.null_count(),
-            ComputeError: "strict conversion to dates failed, try setting strict=False",
+            ComputeError:
+            "strict conversion to date(time)s failed.\n\
+            \n\
+            You might want to try:\n\
+            - setting `strict=False`,\n\
+            - explicitly specifying a `fmt`,\n\
+            - setting `utf=True` (if you are parsing datetimes with multiple offsets)."
         );
     }
     Ok(out.into_series())

@@ -226,6 +226,22 @@ def _localize(dt: datetime, time_zone: str) -> datetime:
     return dt.astimezone(_tzinfo)
 
 
+def _datetime_for_anyvalue(dt: datetime) -> tuple[float, int]:
+    """Used in pyo3 anyvalue conversion."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    # returns (s, ms)
+    return (dt.replace(microsecond=0).timestamp(), dt.microsecond)
+
+
+def _datetime_for_anyvalue_windows(dt: datetime) -> tuple[float, int]:
+    """Used in pyo3 anyvalue conversion."""
+    if dt.tzinfo is None:
+        dt = _localize(dt, "UTC")
+    # returns (s, ms)
+    return (dt.replace(microsecond=0).timestamp(), dt.microsecond)
+
+
 # cache here as we have a single tz per column
 # and this function will be called on every conversion
 @functools.lru_cache(16)

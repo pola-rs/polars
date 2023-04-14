@@ -12,7 +12,6 @@ use crate::apply::series::{call_lambda_and_extract, ApplyLambda};
 use crate::arrow_interop::to_rust::array_to_rust;
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
-use crate::list_construction::py_seq_to_list;
 use crate::prelude::*;
 use crate::py_modules::POLARS;
 use crate::set::set_at_idx;
@@ -261,8 +260,7 @@ impl PySeries {
     pub fn new_object(name: &str, val: Vec<ObjectValue>, _strict: bool) -> Self {
         #[cfg(feature = "object")]
         {
-            // object builder must be registered.
-            crate::object::register_object_builder();
+            // object builder must be registered. this is done on import
             let s = ObjectChunked::<ObjectValue>::new_from_vec(name, val).into_series();
             s.into()
         }
@@ -365,11 +363,6 @@ impl PySeries {
                 Ok(series.into())
             }
         }
-    }
-
-    #[staticmethod]
-    pub fn new_list(name: &str, seq: &PyAny, dtype: Wrap<DataType>) -> PyResult<Self> {
-        py_seq_to_list(name, seq, &dtype.0).map(|s| s.into())
     }
 
     pub fn estimated_size(&self) -> usize {
@@ -1138,14 +1131,19 @@ impl PySeries {
 
     pub fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         // Used in pickle/pickling
-        Ok(PyBytes::new(py, &bincode::serialize(&self.series).unwrap()).to_object(py))
+        let mut writer: Vec<u8> = vec![];
+        ciborium::ser::into_writer(&self.series, &mut writer)
+            .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
+
+        Ok(PyBytes::new(py, &writer).to_object(py))
     }
 
     pub fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
         // Used in pickle/pickling
         match state.extract::<&PyBytes>(py) {
             Ok(s) => {
-                self.series = bincode::deserialize(s.as_bytes()).unwrap();
+                self.series = ciborium::de::from_reader(s.as_bytes())
+                    .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
                 Ok(())
             }
             Err(e) => Err(e),

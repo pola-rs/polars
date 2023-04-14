@@ -15,6 +15,7 @@ These functions are available from the polars module root and can be used as exp
    all
    any
    apply
+   approx_unique
    arange
    arg_sort_by
    avg
@@ -68,12 +69,13 @@ These functions are available from the polars module root and can be used as exp
    Expr.all
    Expr.any
    Expr.apply
+   Expr.approx_unique
    Expr.count
    Expr.cumsum
    Expr.exclude
    Expr.first
    Expr.head
-   Expr.list
+   Expr.implode
    Expr.map
    Expr.max
    Expr.mean

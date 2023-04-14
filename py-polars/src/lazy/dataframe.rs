@@ -18,7 +18,7 @@ use polars_core::frame::UniqueKeepStrategy;
 use polars_core::prelude::*;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList};
+use pyo3::types::{PyBytes, PyDict, PyList};
 
 use crate::arrow_interop::to_rust::pyarrow_schema_to_rust;
 use crate::conversion::Wrap;
@@ -133,6 +133,28 @@ impl From<LazyFrame> for PyLazyFrame {
 #[pymethods]
 #[allow(clippy::should_implement_trait)]
 impl PyLazyFrame {
+    pub fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+        // Used in pickle/pickling
+        let mut writer: Vec<u8> = vec![];
+        ciborium::ser::into_writer(&self.ldf.logical_plan, &mut writer)
+            .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
+
+        Ok(PyBytes::new(py, &writer).to_object(py))
+    }
+
+    pub fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+        // Used in pickle/pickling
+        match state.extract::<&PyBytes>(py) {
+            Ok(s) => {
+                let lp: LogicalPlan = ciborium::de::from_reader(s.as_bytes())
+                    .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
+                self.ldf = LazyFrame::from(lp);
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     #[cfg(all(feature = "json", feature = "serde_json"))]
     pub fn write_json(&self, py_f: PyObject) -> PyResult<()> {
         let file = BufWriter::new(get_file_like(py_f, true)?);
@@ -478,7 +500,7 @@ impl PyLazyFrame {
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[cfg(feature = "streaming")]
+    #[cfg(all(feature = "streaming", feature = "parquet"))]
     #[pyo3(signature = (path, compression, compression_level, statistics, row_group_size, data_pagesize_limit, maintain_order))]
     pub fn sink_parquet(
         &self,
@@ -511,7 +533,7 @@ impl PyLazyFrame {
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[cfg(feature = "streaming")]
+    #[cfg(all(feature = "streaming", feature = "ipc"))]
     #[pyo3(signature = (path, compression, maintain_order))]
     pub fn sink_ipc(
         &self,

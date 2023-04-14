@@ -1,6 +1,8 @@
 //! Patterns are grouped together by order of month, day, year. This is to prevent
 //! parsing different orders of dates in a single column.
 
+use chrono::FixedOffset;
+
 pub(super) static DATE_D_M_Y: &[&str] = &[
     // 8-Jul-2001
     "%v",       // 8-Jul-2001
@@ -55,7 +57,7 @@ pub(super) static DATETIME_D_M_Y: &[&str] = &[
 /// polars parsers does not support them, so it will be slower
 pub(super) static DATETIME_Y_M_D: &[&str] = &[
     // ---
-    // ISO8601, generated via the `iso8601_format_datetime` test fixture
+    // ISO8601-like, generated via the `iso8601_format_datetime` test fixture
     // ---
     "%Y/%m/%dT%H:%M:%S",
     "%Y-%m-%dT%H:%M:%S",
@@ -140,10 +142,85 @@ pub(super) static DATETIME_Y_M_D: &[&str] = &[
     "%FT%H:%M:%S%.f",
 ];
 
+pub(super) static DATETIME_Y_M_D_Z: &[&str] = &[
+    // ---
+    // ISO8601-like, generated via the `iso8601_tz_aware_format_datetime` test fixture
+    // ---
+    "%Y/%m/%dT%H:%M:%S%#z",
+    "%Y-%m-%dT%H:%M:%S%#z",
+    "%Y%m%dT%H:%M:%S%#z",
+    "%Y/%m/%dT%H%M%S%#z",
+    "%Y-%m-%dT%H%M%S%#z",
+    "%Y%m%dT%H%M%S%#z",
+    "%Y/%m/%dT%H:%M%#z",
+    "%Y-%m-%dT%H:%M%#z",
+    "%Y%m%dT%H:%M%#z",
+    "%Y/%m/%dT%H%M%#z",
+    "%Y-%m-%dT%H%M%#z",
+    "%Y%m%dT%H%M%#z",
+    "%Y/%m/%dT%H:%M:%S.%9f%#z",
+    "%Y-%m-%dT%H:%M:%S.%9f%#z",
+    "%Y%m%dT%H:%M:%S.%9f%#z",
+    "%Y/%m/%dT%H:%M:%S.%6f%#z",
+    "%Y-%m-%dT%H:%M:%S.%6f%#z",
+    "%Y%m%dT%H:%M:%S.%6f%#z",
+    "%Y/%m/%dT%H:%M:%S.%3f%#z",
+    "%Y-%m-%dT%H:%M:%S.%3f%#z",
+    "%Y%m%dT%H:%M:%S.%3f%#z",
+    "%Y/%m/%dT%H%M%S.%9f%#z",
+    "%Y-%m-%dT%H%M%S.%9f%#z",
+    "%Y%m%dT%H%M%S.%9f%#z",
+    "%Y/%m/%dT%H%M%S.%6f%#z",
+    "%Y-%m-%dT%H%M%S.%6f%#z",
+    "%Y%m%dT%H%M%S.%6f%#z",
+    "%Y/%m/%dT%H%M%S.%3f%#z",
+    "%Y-%m-%dT%H%M%S.%3f%#z",
+    "%Y%m%dT%H%M%S.%3f%#z",
+    "%Y/%m/%d %H:%M:%S%#z",
+    "%Y-%m-%d %H:%M:%S%#z",
+    "%Y%m%d %H:%M:%S%#z",
+    "%Y/%m/%d %H%M%S%#z",
+    "%Y-%m-%d %H%M%S%#z",
+    "%Y%m%d %H%M%S%#z",
+    "%Y/%m/%d %H:%M%#z",
+    "%Y-%m-%d %H:%M%#z",
+    "%Y%m%d %H:%M%#z",
+    "%Y/%m/%d %H%M%#z",
+    "%Y-%m-%d %H%M%#z",
+    "%Y%m%d %H%M%#z",
+    "%Y/%m/%d %H:%M:%S.%9f%#z",
+    "%Y-%m-%d %H:%M:%S.%9f%#z",
+    "%Y%m%d %H:%M:%S.%9f%#z",
+    "%Y/%m/%d %H:%M:%S.%6f%#z",
+    "%Y-%m-%d %H:%M:%S.%6f%#z",
+    "%Y%m%d %H:%M:%S.%6f%#z",
+    "%Y/%m/%d %H:%M:%S.%3f%#z",
+    "%Y-%m-%d %H:%M:%S.%3f%#z",
+    "%Y%m%d %H:%M:%S.%3f%#z",
+    "%Y/%m/%d %H%M%S.%9f%#z",
+    "%Y-%m-%d %H%M%S.%9f%#z",
+    "%Y%m%d %H%M%S.%9f%#z",
+    "%Y/%m/%d %H%M%S.%6f%#z",
+    "%Y-%m-%d %H%M%S.%6f%#z",
+    "%Y%m%d %H%M%S.%6f%#z",
+    "%Y/%m/%d %H%M%S.%3f%#z",
+    "%Y-%m-%d %H%M%S.%3f%#z",
+    "%Y%m%d %H%M%S.%3f%#z",
+    // other
+    "%+",
+];
+
 #[derive(Eq, Hash, PartialEq, Clone, Copy, Debug)]
 pub enum Pattern {
     DateDMY,
     DateYMD,
     DatetimeYMD,
     DatetimeDMY,
+    DatetimeYMDZ,
+}
+
+#[derive(Clone)]
+pub struct PatternWithOffset {
+    pub pattern: Pattern,
+    pub offset: Option<FixedOffset>,
 }

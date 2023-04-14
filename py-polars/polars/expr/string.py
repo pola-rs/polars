@@ -14,6 +14,7 @@ from polars.datatypes import (
 from polars.utils import no_default
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
 from polars.utils._wrap import wrap_expr
+from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
     from polars.expr.expr import Expr
@@ -129,7 +130,7 @@ class ExprStringNameSpace:
                 "`tz_aware` is now auto-inferred from `fmt` and will be removed "
                 "in a future version. You can safely drop this argument.",
                 category=DeprecationWarning,
-                stacklevel=2,
+                stacklevel=find_stacklevel(),
             )
 
         if datatype == Date:

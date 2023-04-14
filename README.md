@@ -159,7 +159,7 @@ Releases happen quite often (weekly / every few days) at the moment, so updating
 ### Rust
 
 You can take latest release from `crates.io`, or if you want to use the latest features / performance improvements
-point to the `master` branch of this repo.
+point to the `main` branch of this repo.
 
 ```toml
 polars = { git = "https://github.com/pola-rs/polars", rev = "<optional git tag>" }

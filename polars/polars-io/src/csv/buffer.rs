@@ -423,21 +423,39 @@ where
         return Ok(());
     };
 
-    match infer_pattern_single(val) {
-        None => {
-            buf.builder.append_null();
-            Ok(())
-        }
-        Some(pattern) => match DatetimeInfer::<T::Native>::try_from(pattern) {
-            Ok(mut infer) => {
-                let parsed = infer.parse(val);
-                buf.compiled = Some(infer);
-                buf.builder.append_option(parsed);
-                Ok(())
+    match &buf.compiled {
+        Some(compiled) => {
+            match DatetimeInfer::<T::Native>::try_from(compiled.pattern_with_offset.pattern) {
+                Ok(mut infer) => {
+                    let parsed = infer.parse(val, compiled.pattern_with_offset.offset);
+                    buf.compiled = Some(infer);
+                    buf.builder.append_option(parsed);
+                    Ok(())
+                }
+                Err(_) => {
+                    buf.builder.append_null();
+                    Ok(())
+                }
             }
-            Err(_) => {
+        }
+        None => match infer_pattern_single(val) {
+            None => {
                 buf.builder.append_null();
                 Ok(())
+            }
+            Some(pattern_with_offset) => {
+                match DatetimeInfer::<T::Native>::try_from(pattern_with_offset.pattern) {
+                    Ok(mut infer) => {
+                        let parsed = infer.parse(val, pattern_with_offset.offset);
+                        buf.compiled = Some(infer);
+                        buf.builder.append_option(parsed);
+                        Ok(())
+                    }
+                    Err(_) => {
+                        buf.builder.append_null();
+                        Ok(())
+                    }
+                }
             }
         },
     }
@@ -520,9 +538,10 @@ pub(crate) fn init_buffers<'a>(
                     ignore_errors,
                 )),
                 #[cfg(feature = "dtype-datetime")]
-                &DataType::Datetime(tu, _) => Buffer::Datetime {
+                DataType::Datetime(tu, offset) => Buffer::Datetime {
                     buf: DatetimeField::new(name, capacity),
-                    tu,
+                    tu: *tu,
+                    offset: offset.clone(),
                 },
                 #[cfg(feature = "dtype-date")]
                 &DataType::Date => Buffer::Date(DatetimeField::new(name, capacity)),
@@ -554,6 +573,7 @@ pub(crate) enum Buffer<'a> {
     Datetime {
         buf: DatetimeField<Int64Type>,
         tu: TimeUnit,
+        offset: Option<String>,
     },
     #[cfg(feature = "dtype-date")]
     Date(DatetimeField<Int32Type>),
@@ -572,11 +592,11 @@ impl<'a> Buffer<'a> {
             Buffer::Float32(v) => v.finish().into_series(),
             Buffer::Float64(v) => v.finish().into_series(),
             #[cfg(feature = "dtype-datetime")]
-            Buffer::Datetime { buf, tu } => buf
+            Buffer::Datetime { buf, tu, offset } => buf
                 .builder
                 .finish()
                 .into_series()
-                .cast(&DataType::Datetime(tu, None))
+                .cast(&DataType::Datetime(tu, offset))
                 .unwrap(),
             #[cfg(feature = "dtype-date")]
             Buffer::Date(v) => v

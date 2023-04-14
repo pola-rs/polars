@@ -19,11 +19,7 @@ pub(super) fn date_offset(s: Series, offset: Duration) -> PolarsResult<Series> {
             date_offset(s, offset).and_then(|s| s.cast(&DataType::Date))
         }
         DataType::Datetime(tu, tz) => {
-            // drop series, so that we might modify in place
-            let mut ca = {
-                let me = std::mem::ManuallyDrop::new(s);
-                me.datetime().unwrap().clone()
-            };
+            let ca = s.datetime().unwrap();
 
             fn adder<T: PolarsTimeZone>(
                 tu: TimeUnit,
@@ -35,26 +31,18 @@ pub(super) fn date_offset(s: Series, offset: Duration) -> PolarsResult<Series> {
                 }
             }
 
-            match tz {
+            let out = match tz {
                 #[cfg(feature = "timezones")]
-                Some(tz) => match tz.parse::<Tz>() {
-                    // TODO write `try_apply_mut` and use that instead of `apply_mut`,
-                    // then remove `unwrap`.
-                    Ok(tz) => {
-                        ca.0.apply_mut(|v| adder(tu)(&offset, v, Some(&tz)).unwrap())
-                    }
-                    Err(_) => match parse_offset(&tz) {
-                        Ok(tz) => {
-                            ca.0.apply_mut(|v| adder(tu)(&offset, v, Some(&tz)).unwrap())
-                        }
+                Some(ref tz) => match tz.parse::<Tz>() {
+                    Ok(tz) => ca.0.try_apply(|v| adder(tu)(&offset, v, Some(&tz))),
+                    Err(_) => match parse_offset(tz) {
+                        Ok(tz) => ca.0.try_apply(|v| adder(tu)(&offset, v, Some(&tz))),
                         Err(_) => unreachable!(),
                     },
                 },
-                _ => {
-                    ca.0.apply_mut(|v| adder(tu)(&offset, v, NO_TIMEZONE).unwrap())
-                }
-            };
-            Ok(ca.into_series())
+                _ => ca.0.try_apply(|v| adder(tu)(&offset, v, NO_TIMEZONE)),
+            }?;
+            out.cast(&DataType::Datetime(tu, tz))
         }
         dt => polars_bail!(
             ComputeError: "cannot use 'date_offset' on Series of datatype {}", dt,

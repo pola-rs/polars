@@ -272,7 +272,7 @@ impl SqlExprVisitor<'_> {
             !expr.within_group,
             ComputeError: "ARRAY_AGG WITHIN GROUP is not yet supported"
         );
-        Ok(base.list())
+        Ok(base.implode())
     }
 
     fn visit_order_by(&self, order_by: &OrderByExpr) -> PolarsResult<(Expr, bool)> {
