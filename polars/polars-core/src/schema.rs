@@ -114,27 +114,23 @@ impl Schema {
         Some(old_name)
     }
 
-    /// Insert a field, with `name` and `dtype`, at the given `index`
+    /// Create a new schema from this one, inserting a field with `name` and `dtype` at the given `index`
     ///
-    /// If a field named `name` already exists, it is updated with the new dtype. Regardless, the field is always moved
-    /// to the given index.
+    /// If a field named `name` already exists, it is updated with the new dtype. Regardless, the field named `name` is
+    /// always moved to the given index.
     ///
     /// Valid indices range from `0` (front of the schema) to `self.len()` (after the end of the schema).
     ///
-    /// Runtime: **O(n)**, as several fields may need to be shifted to move the new item to position `index`.
+    /// Runtime: **O(m * n)** where `m` is the (average) length of the field names and `n` is the number of fields in
+    /// the schema. This method clones every field in the schema.
     ///
-    /// Returns:
-    /// - If `index <= self.len()`:
-    ///   - If a field with this name already existed, then `Ok(Some(old_dtype))`
-    ///   - Else,`Ok(None)`
-    /// - Else (meaning that `index > self.len()`), return `Err(PolarsError)`
-    pub fn insert_at_index(
-        &mut self,
+    /// Returns: `Ok(new_schema)` if `index <= self.len()`, else `Err(PolarsError)`
+    pub fn new_inserting_at_index(
+        &self,
         index: usize,
         name: SmartString,
         dtype: DataType,
-    ) -> PolarsResult<Option<DataType>> {
-        // 0 and self.len() are allowed
+    ) -> PolarsResult<Self> {
         polars_ensure!(
             index <= self.len(),
             ComputeError:
@@ -143,9 +139,14 @@ impl Schema {
                     self.len()
         );
 
-        let old_dtype = self.inner.insert(name, dtype);
-        self.inner.move_index(self.len() - 1, index);
-        Ok(old_dtype)
+        let mut new = Self::default();
+        let mut iter = self.inner.iter().filter_map(|(fld_name, dtype)| {
+            (fld_name != &name).then_some((fld_name.clone(), dtype.clone()))
+        });
+        new.inner.extend(iter.by_ref().take(index));
+        new.inner.insert(name.clone(), dtype);
+        new.inner.extend(iter);
+        Ok(new)
     }
 
     /// Get the dtype of the field named `name`, or `None` if the field doesn't exist
