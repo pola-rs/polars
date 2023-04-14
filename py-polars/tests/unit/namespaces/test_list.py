@@ -368,9 +368,9 @@ def test_list_function_group_awareness() -> None:
 
     assert df.groupby("group").agg(
         [
-            pl.col("a").list().arr.get(0).alias("get"),
-            pl.col("a").list().arr.take([0]).alias("take"),
-            pl.col("a").list().arr.slice(0, 3).alias("slice"),
+            pl.col("a").implode().arr.get(0).alias("get"),
+            pl.col("a").implode().arr.take([0]).alias("take"),
+            pl.col("a").implode().arr.slice(0, 3).alias("slice"),
         ]
     ).sort("group").to_dict(False) == {
         "group": [0, 1, 2],

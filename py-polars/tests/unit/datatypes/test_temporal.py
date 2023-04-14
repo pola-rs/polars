@@ -177,7 +177,7 @@ def test_diff_datetime() -> None:
             [
                 pl.col("timestamp").str.strptime(pl.Date, fmt="%Y-%m-%d"),
             ]
-        ).with_columns([pl.col("timestamp").diff().list().over("char")])
+        ).with_columns([pl.col("timestamp").diff().implode().over("char")])
     )["timestamp"]
     assert (out[0] == out[1]).all()
 
@@ -547,7 +547,7 @@ def test_date_range_lazy_with_literals() -> None:
             interval="987d",
             lazy=True,
         )
-        .list()
+        .implode()
         .alias("dts")
     )
     assert df.rows() == [
@@ -582,7 +582,7 @@ def test_date_range_lazy_with_expressions(
     ldf = (
         pl.DataFrame({"start": [date(2015, 6, 30)], "stop": [date(2022, 12, 31)]})
         .with_columns(
-            pl.date_range(low, high, interval="678d", lazy=True).list().alias("dts")
+            pl.date_range(low, high, interval="678d", lazy=True).implode().alias("dts")
         )
         .lazy()
     )
