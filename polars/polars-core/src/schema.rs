@@ -121,9 +121,14 @@ impl Schema {
     ///
     /// Valid indices range from `0` (front of the schema) to `self.len()` (after the end of the schema).
     ///
-    /// Returns: if `index <= self.len()`, then `Ok(Some(old_dtype))` if a field with this name already existed, else
-    /// `Ok(None)`. If `index > self.len()`, returns `Err(PolarsError)`.
-    pub fn insert_index(
+    /// Runtime: **O(n)**, as several fields may need to be shifted to move the new item to position `index`.
+    ///
+    /// Returns:
+    /// - If `index <= self.len()`:
+    ///   - If a field with this name already existed, then `Ok(Some(old_dtype))`
+    ///   - Else,`Ok(None)`
+    /// - Else (meaning that `index > self.len()`), return `Err(PolarsError)`
+    pub fn insert_at_index(
         &mut self,
         index: usize,
         name: SmartString,

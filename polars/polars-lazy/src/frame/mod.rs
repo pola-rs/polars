@@ -1167,7 +1167,7 @@ impl LazyFrame {
 
         let name2: SmartString = name.into();
         let udf_schema = move |s: &Schema| {
-            let new = s.insert_index(0, name2.clone(), IDX_DTYPE).unwrap();
+            let new = s.insert_at_index(0, name2.clone(), IDX_DTYPE).unwrap();
             Ok(Arc::new(new))
         };
 
