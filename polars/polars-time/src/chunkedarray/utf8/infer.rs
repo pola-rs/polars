@@ -3,7 +3,6 @@ use once_cell::sync::Lazy;
 use polars_arrow::export::arrow::array::PrimitiveArray;
 use polars_core::prelude::*;
 use polars_core::utils::arrow::types::NativeType;
-use regex::bytes::Regex as BytesRegex;
 use regex::Regex;
 
 use super::patterns::{self, PatternWithOffset};
@@ -15,93 +14,86 @@ use crate::prelude::utf8::strptime::StrpTimeState;
 
 const DATETIME_DMY_PATTERN: &str = r#"(?x)
         ^
-        ['"]?  # optional quotes
-        (?:\d{1,2})
-        [-/]   # separator
-        (?P<month>[01]?\d{1})
-        [-/]   # separator
-        (?:\d{4,})
+        ['"]?                        # optional quotes
+        (?:\d{1,2})                  # day
+        [-/]                         # separator
+        (?P<month>[01]?\d{1})        # month
+        [-/]                         # separator
+        (?:\d{4,})                   # year
         (?:
-            [T\ ]  # separator
-            (?:\d{2})
-            :?  # separator
-            (?:\d{2})
+            [T\ ]                    # separator
+            (?:\d{2})                # hour
+            :?                       # separator
+            (?:\d{2})                # minute
             (?:
-                :?  # separator
-                (?:\d{2})
+                :?                   # separator
+                (?:\d{2})            # second
                 (?:
-                    \.(?:\d{1,9})
+                    \.(?:\d{1,9})    # subsecond
                 )?
             )?
         )?
-        ['"]?  # optional quotes
+        ['"]?                        # optional quotes
         $
         "#;
 
 static DATETIME_DMY_RE: Lazy<Regex> = Lazy::new(|| Regex::new(DATETIME_DMY_PATTERN).unwrap());
-static DATETIME_DMY_BYTES_RE: Lazy<BytesRegex> =
-    Lazy::new(|| BytesRegex::new(DATETIME_DMY_PATTERN).unwrap());
 const DATETIME_YMD_PATTERN: &str = r#"(?x)
         ^
-        ['"]?  # optional quotes
-        (?:\d{4,})   # year
-        [-/]   # separator
-        (?P<month>[01]?\d{1})  # month
-        [-/]   # separator
-        (?:\d{1,2})  # day
+        ['"]?                      # optional quotes
+        (?:\d{4,})                 # year
+        [-/]                       # separator
+        (?P<month>[01]?\d{1})      # month
+        [-/]                       # separator
+        (?:\d{1,2})                # day
         (?:
-            [T\ ]  # separator
-            (?:\d{2})  # hour
-            :?  # separator
-            (?:\d{2})  # minute
+            [T\ ]                  # separator
+            (?:\d{2})              # hour
+            :?                     # separator
+            (?:\d{2})              # minute
             (?:
-                :?  # separator
-                (?:\d{2})  # seconds
+                :?                 # separator
+                (?:\d{2})          # seconds
                 (?:
-                    \.(?:\d{1,9})
+                    \.(?:\d{1,9})  # subsecond
                 )?
             )?
         )?
-        ['"]?  # optional quotes
+        ['"]?                      # optional quotes
         $
         "#;
 static DATETIME_YMD_RE: Lazy<Regex> = Lazy::new(|| Regex::new(DATETIME_YMD_PATTERN).unwrap());
-static DATETIME_YMD_BYTES_RE: Lazy<BytesRegex> =
-    Lazy::new(|| BytesRegex::new(DATETIME_YMD_PATTERN).unwrap());
 const DATETIME_YMDZ_PATTERN: &str = r#"(?x)
         ^
-        ['"]?  # optional quotes
-        (?:\d{4,})
-        [-/]  # separator
-        (?P<month>[01]?\d{1})
-        [-/]  # separator
-        (?:\d{1,2})
-        [T\ ]  # separator
-        (?:\d{2})
-        :?  # separator
-        (?:\d{2})
+        ['"]?                  # optional quotes
+        (?:\d{4,})             # year
+        [-/]                   # separator
+        (?P<month>[01]?\d{1})  # month
+        [-/]                   # separator
+        (?:\d{1,2})            # year
+        [T\ ]                  # separator
+        (?:\d{2})              # hour
+        :?                     # separator
+        (?:\d{2})              # minute
         (?:
-            :?  # separator
-            (?:\d{2})
+            :?                 # separator
+            (?:\d{2})          # second
             (?:
-                \.(?:\d{1,9})
+                \.(?:\d{1,9})  # subsecond
             )?
         )?
         (?:
             # offset (e.g. +01:00)
-            [+-]
-            (?:\d{2})
+            [+-](?:\d{2})
             :?
             (?:\d{2})
             # or Zulu suffix
             |Z
         )
-        ['"]?  # optional quotes
+        ['"]?                  # optional quotes
         $
         "#;
 static DATETIME_YMDZ_RE: Lazy<Regex> = Lazy::new(|| Regex::new(DATETIME_YMDZ_PATTERN).unwrap());
-static DATETIME_YMDZ_BYTES_RE: Lazy<BytesRegex> =
-    Lazy::new(|| BytesRegex::new(DATETIME_YMDZ_PATTERN).unwrap());
 
 impl Pattern {
     pub fn is_inferable(&self, val: &str) -> bool {
