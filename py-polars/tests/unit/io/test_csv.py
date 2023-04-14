@@ -747,6 +747,7 @@ def test_fallback_chrono_parser() -> None:
     assert df.null_count().row(0) == (0, 0)
 
 
+@pytest.mark.xfail(reason="Not yet supported, GH8213", strict=True)
 def test_tz_aware_try_parse_dates() -> None:
     data = (
         "a,b,c,d\n"
