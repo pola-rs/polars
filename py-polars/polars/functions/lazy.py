@@ -366,6 +366,9 @@ def list_(name: str) -> Expr:
     """
     Aggregate to list.
 
+    .. deprecated:: 0.16.10
+        ``list`` will be removed in favor of ``Expr.implode``.
+
     Parameters
     ----------
     name

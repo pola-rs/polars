@@ -188,7 +188,7 @@ impl PyExpr {
         self.clone().inner.last().into()
     }
     pub fn implode(&self) -> PyExpr {
-        self.clone().inner.list().into()
+        self.clone().inner.implode().into()
     }
     pub fn quantile(
         &self,
