@@ -6,6 +6,7 @@ from typing import Any
 from polars import functions as F
 from polars.dataframe import DataFrame
 from polars.datatypes import (
+    UNSIGNED_INTEGER_DTYPES,
     Categorical,
     DataTypeClass,
     Float32,
@@ -343,8 +344,15 @@ def _assert_series_inner(
         else:
             # apply check with tolerance (to the known-unequal matches).
             left, right = left.filter(unequal), right.filter(unequal)
+
+            if all(tp in UNSIGNED_INTEGER_DTYPES for tp in (left.dtype, right.dtype)):
+                # avoid potential "subtract-with-overflow" panic on uint math
+                s_diff = Series("diff", [abs(v1 - v2) for v1, v2 in zip(left, right)])
+            else:
+                s_diff = (left - right).abs()
+
             mismatch, nan_info = False, ""
-            if (((left - right).abs() > (atol + rtol * right.abs())).sum() != 0) or (
+            if ((s_diff > (atol + rtol * right.abs())).sum() != 0) or (
                 left.is_null() != right.is_null()
             ).any():
                 mismatch = True

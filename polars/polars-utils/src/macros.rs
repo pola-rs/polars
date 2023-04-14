@@ -5,3 +5,14 @@ macro_rules! matches_any_order {
         matches!($expression2, $( $pattern1 ) |+) && matches!($expression1, $( $pattern2)|+)
     }
 }
+
+#[macro_export]
+macro_rules! unreachable_unchecked_release {
+    ($($arg:tt)*) => {
+        if cfg!(debug_assertions) {
+            unreachable!()
+        } else {
+            unreachable_unchecked()
+        }
+    };
+}

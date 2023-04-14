@@ -343,12 +343,13 @@ impl<'a> AggregationContext<'a> {
             }
             (true, _) => AggState::AggregatedFlat(series),
             _ => {
-                // already aggregated to sum, min even this series was flattened it never could
-                // retrieve the length before grouping, so it stays  in this state.
-                if let AggState::AggregatedFlat(_) = self.state {
-                    AggState::AggregatedFlat(series)
-                } else {
-                    AggState::NotAggregated(series)
+                match self.state {
+                    // already aggregated to sum, min even this series was flattened it never could
+                    // retrieve the length before grouping, so it stays  in this state.
+                    AggState::AggregatedFlat(_) => AggState::AggregatedFlat(series),
+                    // applying a function on a literal, keeps the literal state
+                    AggState::Literal(_) if series.len() == 1 => AggState::Literal(series),
+                    _ => AggState::NotAggregated(series),
                 }
             }
         };

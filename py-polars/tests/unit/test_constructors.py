@@ -5,7 +5,7 @@ import typing
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from random import shuffle
-from typing import Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
 import pandas as pd
@@ -13,8 +13,12 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
-from polars.dependencies import _ZONEINFO_AVAILABLE
+from polars.dependencies import _ZONEINFO_AVAILABLE, dataclasses, pydantic
 from polars.testing import assert_frame_equal, assert_series_equal
+from polars.utils._construction import type_hints
+
+if TYPE_CHECKING:
+    from polars.datatypes import PolarsDataType
 
 if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo
@@ -22,6 +26,66 @@ elif _ZONEINFO_AVAILABLE:
     # Import from submodule due to typing issue with backports.zoneinfo package:
     # https://github.com/pganssle/zoneinfo/issues/125
     from backports.zoneinfo._zoneinfo import ZoneInfo
+
+
+# -----------------------------------------------------------------------------------
+# nested dataclasses, models, namedtuple classes (can't be defined inside test func)
+# -----------------------------------------------------------------------------------
+@dataclasses.dataclass
+class _TestBazDC:
+    d: datetime
+    e: float
+    f: str
+
+
+@dataclasses.dataclass
+class _TestBarDC:
+    a: str
+    b: int
+    c: _TestBazDC
+
+
+@dataclasses.dataclass
+class _TestFooDC:
+    x: int
+    y: _TestBarDC
+
+
+class _TestBazPD(pydantic.BaseModel):
+    d: datetime
+    e: float
+    f: str
+
+
+class _TestBarPD(pydantic.BaseModel):
+    a: str
+    b: int
+    c: _TestBazPD
+
+
+class _TestFooPD(pydantic.BaseModel):
+    x: int
+    y: _TestBarPD
+
+
+class _TestBazNT(NamedTuple):
+    d: datetime
+    e: float
+    f: str
+
+
+class _TestBarNT(NamedTuple):
+    a: str
+    b: int
+    c: _TestBazNT
+
+
+class _TestFooNT(NamedTuple):
+    x: int
+    y: _TestBarNT
+
+
+# --------------------------------------------------------------------------------
 
 
 def test_init_dict() -> None:
@@ -113,20 +177,22 @@ def test_init_dict() -> None:
         assert df.to_dict(False)["field"][0] == test[0]["field"]
 
 
-def test_init_dataclasses_and_namedtuple(monkeypatch: Any) -> None:
-    from dataclasses import dataclass
-    from typing import NamedTuple
-
+def test_init_structured_objects(monkeypatch: Any) -> None:
+    # validate init from dataclass, namedtuple, and pydantic model objects
     monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
 
-    from polars.utils._construction import dataclass_type_hints
-
-    @dataclass
+    @dataclasses.dataclass
     class TradeDC:
         timestamp: datetime
         ticker: str
         price: Decimal
         size: int | None = None
+
+    class TradePD(pydantic.BaseModel):
+        timestamp: datetime
+        ticker: str
+        price: Decimal
+        size: int
 
     class TradeNT(NamedTuple):
         timestamp: datetime
@@ -139,9 +205,10 @@ def test_init_dataclasses_and_namedtuple(monkeypatch: Any) -> None:
         (datetime(2022, 9, 9, 10, 15, 12), "FLSY", Decimal("10.0"), 1500),
         (datetime(2022, 9, 7, 15, 30), "MU", Decimal("55.5"), 400),
     ]
+    columns = ["timestamp", "ticker", "price", "size"]
 
-    for TradeClass in (TradeDC, TradeNT):
-        trades = [TradeClass(*values) for values in raw_data]
+    for TradeClass in (TradeDC, TradeNT, TradePD):
+        trades = [TradeClass(**dict(zip(columns, values))) for values in raw_data]
 
         for DF in (pl.DataFrame, pl.from_records):
             df = DF(data=trades)  # type: ignore[operator]
@@ -184,7 +251,120 @@ def test_init_dataclasses_and_namedtuple(monkeypatch: Any) -> None:
         assert df.rows() == raw_data
 
         # cover a miscellaneous edge-case when detecting the annotations
-        assert dataclass_type_hints(obj=type(None)) == {}
+        assert type_hints(obj=type(None)) == {}
+
+
+def test_init_structured_objects_nested() -> None:
+    for Foo, Bar, Baz in (
+        (_TestFooDC, _TestBarDC, _TestBazDC),
+        (_TestFooPD, _TestBarPD, _TestBazPD),
+        (_TestFooNT, _TestBarNT, _TestBazNT),
+    ):
+        data = [
+            Foo(
+                x=100,
+                y=Bar(
+                    a="hello",
+                    b=800,
+                    c=Baz(d=datetime(2023, 4, 12, 10, 30), e=-10.5, f="world"),
+                ),
+            )
+        ]
+        df = pl.DataFrame(data)
+        # shape: (1, 2)
+        # ┌─────┬───────────────────────────────────┐
+        # │ x   ┆ y                                 │
+        # │ --- ┆ ---                               │
+        # │ i64 ┆ struct[3]                         │
+        # ╞═════╪═══════════════════════════════════╡
+        # │ 100 ┆ {"hello",800,{2023-04-12 10:30:0… │
+        # └─────┴───────────────────────────────────┘
+
+        assert df.schema == {
+            "x": pl.Int64,
+            "y": pl.Struct(
+                [
+                    pl.Field("a", pl.Utf8),
+                    pl.Field("b", pl.Int64),
+                    pl.Field(
+                        "c",
+                        pl.Struct(
+                            [
+                                pl.Field("d", pl.Datetime("us")),
+                                pl.Field("e", pl.Float64),
+                                pl.Field("f", pl.Utf8),
+                            ]
+                        ),
+                    ),
+                ]
+            ),
+        }
+        assert df.row(0) == (
+            100,
+            {
+                "a": "hello",
+                "b": 800,
+                "c": {
+                    "d": datetime(2023, 4, 12, 10, 30),
+                    "e": -10.5,
+                    "f": "world",
+                },
+            },
+        )
+
+        # validate nested schema override
+        override_struct_schema: dict[str, PolarsDataType] = {
+            "x": pl.Int16,
+            "y": pl.Struct(
+                [
+                    pl.Field("a", pl.Utf8),
+                    pl.Field("b", pl.Int32),
+                    pl.Field(
+                        name="c",
+                        dtype=pl.Struct(
+                            [
+                                pl.Field("d", pl.Datetime("ms")),
+                                pl.Field("e", pl.Float32),
+                                pl.Field("f", pl.Utf8),
+                            ]
+                        ),
+                    ),
+                ]
+            ),
+        }
+        for schema, schema_overrides in (
+            (None, override_struct_schema),
+            (override_struct_schema, None),
+        ):
+            df = (
+                pl.DataFrame(data, schema=schema, schema_overrides=schema_overrides)
+                .unnest("y")
+                .unnest("c")
+            )
+            # shape: (1, 6)
+            # ┌─────┬───────┬─────┬─────────────────────┬───────┬───────┐
+            # │ x   ┆ a     ┆ b   ┆ d                   ┆ e     ┆ f     │
+            # │ --- ┆ ---   ┆ --- ┆ ---                 ┆ ---   ┆ ---   │
+            # │ i16 ┆ str   ┆ i32 ┆ datetime[ms]        ┆ f32   ┆ str   │
+            # ╞═════╪═══════╪═════╪═════════════════════╪═══════╪═══════╡
+            # │ 100 ┆ hello ┆ 800 ┆ 2023-04-12 10:30:00 ┆ -10.5 ┆ world │
+            # └─────┴───────┴─────┴─────────────────────┴───────┴───────┘
+            assert df.schema == {
+                "x": pl.Int16,
+                "a": pl.Utf8,
+                "b": pl.Int32,
+                "d": pl.Datetime("ms"),
+                "e": pl.Float32,
+                "f": pl.Utf8,
+            }
+            assert df.row(0) == (
+                100,
+                "hello",
+                800,
+                datetime(2023, 4, 12, 10, 30),
+                -10.5,
+                "world",
+            )
 
 
 def test_init_ndarray(monkeypatch: Any) -> None:

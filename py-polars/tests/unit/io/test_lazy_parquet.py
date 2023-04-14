@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -9,6 +8,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+from polars.testing._tempdir import TemporaryDirectory
 
 if TYPE_CHECKING:
     from polars.type_aliases import ParallelStrategy
@@ -70,7 +70,7 @@ def test_categorical_parquet_statistics() -> None:
         }
     ).with_columns(pl.col("book").cast(pl.Categorical))
 
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "books.parquet"
         df.write_parquet(file_path, statistics=True)
 
@@ -92,7 +92,7 @@ def test_categorical_parquet_statistics() -> None:
 @pytest.mark.write_disk()
 def test_null_parquet() -> None:
     df = pl.DataFrame([pl.Series("foo", [], dtype=pl.Int8)])
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "null.parquet"
         df.write_parquet(file_path)
         out = pl.read_parquet(file_path)
@@ -101,7 +101,7 @@ def test_null_parquet() -> None:
 
 @pytest.mark.write_disk()
 def test_parquet_eq_stats() -> None:
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "stats.parquet"
 
         df1 = pd.DataFrame({"a": [None, 1, None, 2, 3, 3, 4, 4, 5, 5]})
@@ -123,7 +123,7 @@ def test_parquet_eq_stats() -> None:
 
 @pytest.mark.write_disk()
 def test_parquet_is_in_stats() -> None:
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "stats.parquet"
 
         df1 = pd.DataFrame({"a": [None, 1, None, 2, 3, 3, 4, 4, 5, 5]})
@@ -162,7 +162,7 @@ def test_parquet_is_in_stats() -> None:
 
 @pytest.mark.write_disk()
 def test_parquet_stats() -> None:
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "binary_stats.parquet"
 
         df1 = pd.DataFrame({"a": [None, 1, None, 2, 3, 3, 4, 4, 5, 5]})
@@ -212,11 +212,11 @@ def test_parquet_eq_statistics(monkeypatch: Any, capfd: Any) -> None:
     df = pl.concat(df.partition_by("part", as_dict=False), rechunk=False)
     assert df.n_chunks("all") == [4, 4]
 
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "stats.parquet"
         df.write_parquet(file_path, statistics=True, use_pyarrow=False)
 
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "stats.parquet"
         df.write_parquet(file_path, statistics=True, use_pyarrow=False)
 
@@ -249,11 +249,11 @@ def test_parquet_is_in_statistics(monkeypatch: Any, capfd: Any) -> None:
     df = pl.concat(df.partition_by("part", as_dict=False), rechunk=False)
     assert df.n_chunks("all") == [4, 4]
 
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "stats.parquet"
         df.write_parquet(file_path, statistics=True, use_pyarrow=False)
 
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "stats.parquet"
         df.write_parquet(file_path, statistics=True, use_pyarrow=False)
 
@@ -285,7 +285,7 @@ def test_parquet_statistics(monkeypatch: Any, capfd: Any) -> None:
     df = pl.concat(df.partition_by("part", as_dict=False), rechunk=False)
     assert df.n_chunks("all") == [4, 4]
 
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "stats.parquet"
         df.write_parquet(file_path, statistics=True, use_pyarrow=False)
 
@@ -319,7 +319,7 @@ def test_streaming_categorical() -> None:
         ]
     )
 
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "categorical.parquet"
         df.write_parquet(file_path)
 
@@ -347,7 +347,7 @@ def test_parquet_struct_categorical() -> None:
         ]
     )
 
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "categorical.parquet"
         df.write_parquet(file_path)
 

@@ -1145,12 +1145,20 @@ class Series:
             return wrap_df(PyDataFrame([self.rename(name)._s]))
         return wrap_df(PyDataFrame([self._s]))
 
-    def describe(self) -> DataFrame:
+    def describe(
+        self, percentiles: Sequence[float] | float | None = (0.25, 0.75)
+    ) -> DataFrame:
         """
         Quick summary statistics of a series.
 
         Series with mixed datatypes will return summary statistics for the datatype of
         the first value.
+
+        Parameters
+        ----------
+        percentiles
+            One or more percentiles to include in the summary statistics (if the
+            series has a numeric dtype). All values must be in the range `[0, 1]`.
 
         Returns
         -------
@@ -1160,7 +1168,7 @@ class Series:
         --------
         >>> series_num = pl.Series([1, 2, 3, 4, 5])
         >>> series_num.describe()
-        shape: (7, 2)
+        shape: (9, 2)
         ┌────────────┬──────────┐
         │ statistic  ┆ value    │
         │ ---        ┆ ---      │
@@ -1173,6 +1181,8 @@ class Series:
         │ min        ┆ 1.0      │
         │ max        ┆ 5.0      │
         │ median     ┆ 3.0      │
+        │ 25%        ┆ 2.0      │
+        │ 75%        ┆ 4.0      │
         └────────────┴──────────┘
 
         >>> series_str = pl.Series(["a", "a", None, "b", "c"])
@@ -1189,10 +1199,16 @@ class Series:
         └────────────┴───────┘
 
         """
+        if isinstance(percentiles, float):
+            percentiles = [percentiles]
+        if percentiles and not all((0 <= p <= 1) for p in percentiles):
+            raise ValueError("Percentiles must all be in the range [0, 1].")
+
         stats: dict[str, PythonLiteral | None]
 
         if self.len() == 0:
             raise ValueError("Series must contain at least one value")
+
         elif self.is_numeric():
             s = self.cast(Float64)
             stats = {
@@ -1204,6 +1220,9 @@ class Series:
                 "max": s.max(),
                 "median": s.median(),
             }
+            if percentiles:
+                stats.update({f"{p:.0%}": s.quantile(p) for p in percentiles})
+
         elif self.is_boolean():
             stats = {
                 "count": self.len(),

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import gzip
 import io
-import tempfile
 import textwrap
 import typing
 import zlib
@@ -20,6 +19,7 @@ from polars.testing import (
     assert_frame_equal_local_categoricals,
     assert_series_equal,
 )
+from polars.testing._tempdir import TemporaryDirectory
 from polars.utils.various import normalise_filepath
 
 if TYPE_CHECKING:
@@ -63,7 +63,7 @@ def test_to_from_buffer(df_no_lists: pl.DataFrame) -> None:
 def test_to_from_file(df_no_lists: pl.DataFrame) -> None:
     df = df_no_lists.drop("strings_nulls")
 
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "small.csv"
         df.write_csv(file_path)
         read_df = pl.read_csv(file_path, try_parse_dates=True)
@@ -375,7 +375,7 @@ def test_read_csv_encoding() -> None:
         b"-20,7.91,3384,4,\xac\xfc\xb0\xea\n"
     )
 
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "encoding.csv"
         with open(file_path, "wb") as f:
             f.write(bts)
@@ -784,7 +784,7 @@ def test_csv_string_escaping() -> None:
 @pytest.mark.write_disk()
 def test_glob_csv(df_no_lists: pl.DataFrame) -> None:
     df = df_no_lists.drop("strings_nulls")
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "small.csv"
         df.write_csv(file_path)
 
@@ -1226,7 +1226,7 @@ def test_csv_statistics_offset() -> None:
 def test_csv_scan_categorical() -> None:
     N = 5_000
     df = pl.DataFrame({"x": ["A"] * N})
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "test_csv_scan_categorical.csv"
         df.write_csv(file_path)
         result = pl.scan_csv(file_path, dtypes={"x": pl.Categorical}).collect()

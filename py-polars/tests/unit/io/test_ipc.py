@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import io
 import sys
-import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -11,6 +10,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_frame_equal_local_categoricals
+from polars.testing._tempdir import TemporaryDirectory
 
 if TYPE_CHECKING:
     from polars.type_aliases import IpcCompression
@@ -50,7 +50,7 @@ def test_from_to_buffer(df: pl.DataFrame, compression: IpcCompression) -> None:
 def test_from_to_file(
     df: pl.DataFrame, compression: IpcCompression, path_type: type[str] | type[Path]
 ) -> None:
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "small.ipc"
         file_path_cast = path_type(file_path)
         df.write_ipc(file_path_cast, compression=compression)
@@ -62,7 +62,7 @@ def test_from_to_file(
 @pytest.mark.write_disk()
 @pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 def test_select_columns_from_file(df: pl.DataFrame) -> None:
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "small.ipc"
         df.write_ipc(file_path)
         df_read = pl.read_ipc(file_path, columns=["bools"])
@@ -126,7 +126,7 @@ def test_ipc_schema_from_file(
     compression: IpcCompression,
     path_type: type[str] | type[Path],
 ) -> None:
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "small.ipc"
         file_path_cast = path_type(file_path)
         df_no_lists.write_ipc(file_path_cast, compression=compression)
@@ -169,7 +169,7 @@ def test_ipc_column_order() -> None:
 @pytest.mark.write_disk()
 @pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 def test_glob_ipc(df: pl.DataFrame) -> None:
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "small.ipc"
         df.write_ipc(file_path)
 

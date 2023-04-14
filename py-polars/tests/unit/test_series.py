@@ -146,11 +146,13 @@ def test_init_inputs(monkeypatch: Any) -> None:
         pl.DataFrame(np.array([1, 2, 3]), schema=["a"])
 
 
-def test_init_dataclass_namedtuple() -> None:
-    from dataclasses import dataclass
+def test_init_structured_objects() -> None:
+    # validate init from dataclass, namedtuple, and pydantic model objects
     from typing import NamedTuple
 
-    @dataclass
+    from polars.dependencies import dataclasses, pydantic
+
+    @dataclasses.dataclass
     class TeaShipmentDC:
         exporter: str
         importer: str
@@ -163,11 +165,18 @@ def test_init_dataclass_namedtuple() -> None:
         product: str
         tonnes: None | int
 
-    for Tea in (TeaShipmentDC, TeaShipmentNT):
+    class TeaShipmentPD(pydantic.BaseModel):
+        exporter: str
+        importer: str
+        product: str
+        tonnes: int
+
+    for Tea in (TeaShipmentDC, TeaShipmentNT, TeaShipmentPD):
         t0 = Tea(exporter="Sri Lanka", importer="USA", product="Ceylon", tonnes=10)
         t1 = Tea(exporter="India", importer="UK", product="Darjeeling", tonnes=25)
+        t2 = Tea(exporter="China", importer="UK", product="Keemum", tonnes=40)
 
-        s = pl.Series("t", [t0, t1])
+        s = pl.Series("t", [t0, t1, t2])
 
         assert isinstance(s, pl.Series)
         assert s.dtype.fields == [  # type: ignore[union-attr]
@@ -189,8 +198,14 @@ def test_init_dataclass_namedtuple() -> None:
                 "product": "Darjeeling",
                 "tonnes": 25,
             },
+            {
+                "exporter": "China",
+                "importer": "UK",
+                "product": "Keemum",
+                "tonnes": 40,
+            },
         ]
-        assert_frame_equal(s.to_frame(), pl.DataFrame({"t": [t0, t1]}))
+        assert_frame_equal(s.to_frame(), pl.DataFrame({"t": [t0, t1, t2]}))
 
 
 def test_concat() -> None:
@@ -1131,6 +1146,8 @@ def test_describe() -> None:
         "null_count": 0.0,
         "std": 1.0,
         "median": 2.0,
+        "25%": 1.0,
+        "75%": 3.0,
     }
     assert dict(float_s.describe().rows()) == {  # type: ignore[arg-type]
         "count": 3.0,
@@ -1140,6 +1157,8 @@ def test_describe() -> None:
         "null_count": 0.0,
         "std": 3.8109491381194442,
         "median": 4.6,
+        "25%": 1.3,
+        "75%": 8.9,
     }
     assert dict(str_s.describe().rows()) == {  # type: ignore[arg-type]
         "count": 3,

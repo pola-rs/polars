@@ -4,6 +4,9 @@ mod abs;
 mod arg_where;
 mod binary;
 mod boolean;
+mod bounds;
+#[cfg(feature = "dtype-categorical")]
+mod cat;
 #[cfg(feature = "round_series")]
 mod clip;
 mod cum;
@@ -18,6 +21,8 @@ mod nan;
 mod pow;
 #[cfg(all(feature = "rolling_window", feature = "moment"))]
 mod rolling;
+#[cfg(feature = "round_series")]
+mod round;
 #[cfg(feature = "row_hash")]
 mod row_hash;
 mod schema;
@@ -46,6 +51,8 @@ use serde::{Deserialize, Serialize};
 
 pub(crate) use self::binary::BinaryFunction;
 pub use self::boolean::BooleanFunction;
+#[cfg(feature = "dtype-categorical")]
+pub(crate) use self::cat::CategoricalFunction;
 #[cfg(feature = "temporal")]
 pub(super) use self::datetime::TemporalFunction;
 #[cfg(feature = "strings")]
@@ -124,6 +131,10 @@ pub enum FunctionExpr {
     },
     Reverse,
     Boolean(BooleanFunction),
+    #[cfg(feature = "approx_unique")]
+    ApproxUnique,
+    #[cfg(feature = "dtype-categorical")]
+    Categorical(CategoricalFunction),
     Coalesce,
     ShrinkType,
     #[cfg(feature = "diff")]
@@ -146,6 +157,16 @@ pub enum FunctionExpr {
     #[cfg(feature = "log")]
     Exp,
     Unique(bool),
+    #[cfg(feature = "round_series")]
+    Round {
+        decimals: u32,
+    },
+    #[cfg(feature = "round_series")]
+    Floor,
+    #[cfg(feature = "round_series")]
+    Ceil,
+    UpperBound,
+    LowerBound,
 }
 
 impl Display for FunctionExpr {
@@ -199,6 +220,10 @@ impl Display for FunctionExpr {
             Cummax { .. } => "cummax",
             Reverse => "reverse",
             Boolean(func) => return write!(f, "{func}"),
+            #[cfg(feature = "approx_unique")]
+            ApproxUnique => "approx_unique",
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(func) => return write!(f, "{func}"),
             Coalesce => "coalesce",
             ShrinkType => "shrink_dtype",
             #[cfg(feature = "diff")]
@@ -222,6 +247,14 @@ impl Display for FunctionExpr {
                     "unique"
                 }
             }
+            #[cfg(feature = "round_series")]
+            Round { .. } => "round",
+            #[cfg(feature = "round_series")]
+            Floor => "floor",
+            #[cfg(feature = "round_series")]
+            Ceil => "ceil",
+            UpperBound => "upper_bound",
+            LowerBound => "lower_bound",
         };
         write!(f, "{s}")
     }
@@ -397,6 +430,10 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Cummax { reverse } => map!(cum::cummax, reverse),
             Reverse => map!(dispatch::reverse),
             Boolean(func) => func.into(),
+            #[cfg(feature = "approx_unique")]
+            ApproxUnique => map!(dispatch::approx_unique),
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(func) => func.into(),
             Coalesce => map_as_slice!(fill_null::coalesce),
             ShrinkType => map_owned!(shrink_type::shrink),
             #[cfg(feature = "diff")]
@@ -418,6 +455,14 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "log")]
             Exp => map!(log::exp),
             Unique(stable) => map!(unique::unique, stable),
+            #[cfg(feature = "round_series")]
+            Round { decimals } => map!(round::round, decimals),
+            #[cfg(feature = "round_series")]
+            Floor => map!(round::floor),
+            #[cfg(feature = "round_series")]
+            Ceil => map!(round::ceil),
+            UpperBound => map!(bounds::upper_bound),
+            LowerBound => map!(bounds::lower_bound),
         }
     }
 }

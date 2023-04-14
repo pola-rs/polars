@@ -242,11 +242,15 @@ impl FunctionExpr {
             TopK { .. } => same_type(),
             Shift(..) | Reverse => same_type(),
             Boolean(f) => with_dtype(f.dtype_out()),
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(f) => with_dtype(f.dtype_out()),
             Cumcount { .. } => with_dtype(IDX_DTYPE),
             Cumsum { .. } => map_dtype(&cum::dtypes::cumsum),
             Cumprod { .. } => map_dtype(&cum::dtypes::cumprod),
             Cummin { .. } => same_type(),
             Cummax { .. } => same_type(),
+            #[cfg(feature = "approx_unique")]
+            ApproxUnique => with_dtype(IDX_DTYPE),
             #[cfg(feature = "diff")]
             Diff(_, _) => map_dtype(&|dt| match dt {
                 #[cfg(feature = "dtype-datetime")]
@@ -296,6 +300,9 @@ impl FunctionExpr {
             #[cfg(feature = "log")]
             Entropy { .. } | Log { .. } | Log1p | Exp => float_dtype(),
             Unique(_) => same_type(),
+            #[cfg(feature = "round_series")]
+            Round { .. } | Floor | Ceil => same_type(),
+            UpperBound | LowerBound => same_type(),
         }
     }
 }
