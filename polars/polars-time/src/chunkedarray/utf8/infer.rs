@@ -38,7 +38,7 @@ const DATETIME_DMY_PATTERN: &str = r#"(?x)
         $
         "#;
 
-static DATETIME_DMY_RE: Lazy<Regex> = Lazy::new(|| Regex::new(DATETIME_DMY_PATTERN).unwrap());
+static DATETIME_DMY_RE: Regex = Regex::new(DATETIME_DMY_PATTERN).unwrap();
 static DATETIME_DMY_BYTES_RE: Lazy<BytesRegex> =
     Lazy::new(|| BytesRegex::new(DATETIME_DMY_PATTERN).unwrap());
 const DATETIME_YMD_PATTERN: &str = r#"(?x)
@@ -65,7 +65,7 @@ const DATETIME_YMD_PATTERN: &str = r#"(?x)
         ['"]?  # optional quotes
         $
         "#;
-static DATETIME_YMD_RE: Lazy<Regex> = Lazy::new(|| Regex::new(DATETIME_YMD_PATTERN).unwrap());
+static DATETIME_YMD_RE: Regex = Regex::new(DATETIME_YMD_PATTERN).unwrap();
 static DATETIME_YMD_BYTES_RE: Lazy<BytesRegex> =
     Lazy::new(|| BytesRegex::new(DATETIME_YMD_PATTERN).unwrap());
 const DATETIME_YMDZ_PATTERN: &str = r#"(?x)
@@ -99,15 +99,15 @@ const DATETIME_YMDZ_PATTERN: &str = r#"(?x)
         ['"]?  # optional quotes
         $
         "#;
-static DATETIME_YMDZ_RE: Lazy<Regex> = Lazy::new(|| Regex::new(DATETIME_YMDZ_PATTERN).unwrap());
+static DATETIME_YMDZ_RE: Regex = Regex::new(DATETIME_YMDZ_PATTERN).unwrap();
 static DATETIME_YMDZ_BYTES_RE: Lazy<BytesRegex> =
     Lazy::new(|| BytesRegex::new(DATETIME_YMDZ_PATTERN).unwrap());
 
 impl Pattern {
     pub fn is_inferable(&self, val: &str) -> bool {
         match self {
-            Pattern::DateDMY => true, // there are very few Date patterns, so it's cheaper
-            Pattern::DateYMD => true, // to just try them
+            Pattern::DateDMY => true,  // there are very few Date patterns, so it's cheaper
+            Pattern::DateYMD => true,  // to just try them
             Pattern::DatetimeDMY => match DATETIME_DMY_RE.captures(val) {
                 Some(search) => (1..=12).contains(
                     &search
@@ -145,8 +145,8 @@ impl Pattern {
     }
     pub fn is_inferable_bytes(&self, val: &[u8]) -> bool {
         match self {
-            Pattern::DateDMY => true, // there are very few Date patterns, so it's
-            Pattern::DateYMD => true, // cheaper to just try them
+            Pattern::DateDMY => true,  // there are very few Date patterns, so it's
+            Pattern::DateYMD => true,  // cheaper to just try them
             Pattern::DatetimeDMY => DATETIME_DMY_BYTES_RE.is_match(val),
             Pattern::DatetimeYMD => DATETIME_YMD_BYTES_RE.is_match(val),
             Pattern::DatetimeYMDZ => DATETIME_YMDZ_BYTES_RE.is_match(val),
