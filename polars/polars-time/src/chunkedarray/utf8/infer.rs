@@ -195,50 +195,28 @@ impl Pattern {
         match self {
             Pattern::DateDMY => match DATE_DMY_BYTES_RE.captures(val) {
                 Some(search) => (1..=12).contains(
-                    &std::str::from_utf8(&search.name("month").unwrap().as_bytes())
-                        .unwrap()
-                        .parse::<u8>()
-                        .unwrap(),
+                    &search.name("month").unwrap().as_bytes().iter().fold(0, |acc, c| acc*10 + (c - b'0'))
                 ),
                 None => false,
             },
             Pattern::DateYMD => match DATE_YMD_BYTES_RE.captures(val) {
-                Some(search) => {
-                    let month = &std::str::from_utf8(&search.name("month").unwrap().as_bytes())
-                        .unwrap()
-                        .parse::<u8>()
-                        .unwrap();
-                    println!("month: {:?}", month);
-                    println!("ret value will be: {:?}", (1..=12).contains(month));
-                    (1..=12).contains(month)
-                }
-                None => false,
+                Some(search) => (1..=12).contains(
+                    &search.name("month").unwrap().as_bytes().iter().fold (0, |acc, c| acc*10 + (c - b'0'))),
+                    None => false,
             },
             Pattern::DatetimeDMY => match DATETIME_DMY_BYTES_RE.captures(val) {
                 Some(search) => (1..=12).contains(
-                    &std::str::from_utf8(&search.name("month").unwrap().as_bytes())
-                        .unwrap()
-                        .parse::<u8>()
-                        .unwrap(),
-                ),
+                    &search.name("month").unwrap().as_bytes().iter().fold (0, |acc, c| acc*10 + (c - b'0'))),
                 None => false,
             },
             Pattern::DatetimeYMD => match DATETIME_YMD_BYTES_RE.captures(val) {
                 Some(search) => (1..=12).contains(
-                    &std::str::from_utf8(&search.name("month").unwrap().as_bytes())
-                        .unwrap()
-                        .parse::<u8>()
-                        .unwrap(),
-                ),
+                    &search.name("month").unwrap().as_bytes().iter().fold (0, |acc, c| acc*10 + (c - b'0'))),
                 None => false,
             },
             Pattern::DatetimeYMDZ => match DATETIME_YMDZ_BYTES_RE.captures(val) {
                 Some(search) => (1..=12).contains(
-                    &std::str::from_utf8(&search.name("month").unwrap().as_bytes())
-                        .unwrap()
-                        .parse::<u8>()
-                        .unwrap(),
-                ),
+                    &search.name("month").unwrap().as_bytes().iter().fold (0, |acc, c| acc*10 + (c - b'0'))),
                 None => false,
             },
         }
