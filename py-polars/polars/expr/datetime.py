@@ -1660,5 +1660,26 @@ class ExprDateTimeNameSpace:
         │ 2006-01-01 00:00:00 ┆ 2003-11-01 00:00:00 │
         └─────────────────────┴─────────────────────┘
 
+        To get to the end of each month, combine with `truncate`:
+
+        >>> df.select(
+        ...     pl.col("dates")
+        ...     .dt.truncate("1mo")
+        ...     .dt.offset_by("1mo")
+        ...     .dt.offset_by("-1d")
+        ... )
+        shape: (6, 1)
+        ┌─────────────────────┐
+        │ dates               │
+        │ ---                 │
+        │ datetime[μs]        │
+        ╞═════════════════════╡
+        │ 2000-01-31 00:00:00 │
+        │ 2001-01-31 00:00:00 │
+        │ 2002-01-31 00:00:00 │
+        │ 2003-01-31 00:00:00 │
+        │ 2004-01-31 00:00:00 │
+        │ 2005-01-31 00:00:00 │
+        └─────────────────────┘
         """
         return wrap_expr(self._pyexpr.dt_offset_by(by))
