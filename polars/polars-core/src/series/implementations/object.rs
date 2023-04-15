@@ -5,7 +5,6 @@ use ahash::RandomState;
 
 use crate::chunked_array::object::compare_inner::{IntoPartialEqInner, PartialEqInner};
 use crate::chunked_array::object::PolarsObjectSafe;
-use crate::fmt::FmtList;
 use crate::frame::groupby::{GroupsProxy, IntoGroupsProxy};
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
@@ -25,6 +24,10 @@ where
         _list_capacity: usize,
     ) -> Box<dyn ListBuilderTrait> {
         ObjectChunked::<T>::get_list_builder(_name, _values_capacity, _list_capacity)
+    }
+
+    fn compute_len(&mut self) {
+        self.0.compute_len()
     }
 
     fn _field(&self) -> Cow<Field> {
@@ -205,10 +208,6 @@ where
 
     fn shift(&self, periods: i64) -> Series {
         ChunkShift::shift(&self.0, periods).into_series()
-    }
-
-    fn fmt_list(&self) -> String {
-        FmtList::fmt_list(&self.0)
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

@@ -330,10 +330,6 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         self.0.is_in(other)
     }
 
-    fn fmt_list(&self) -> String {
-        self.0.fmt_list()
-    }
-
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }

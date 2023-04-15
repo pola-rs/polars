@@ -1,4 +1,4 @@
-use arrow::array::{Array, ListArray};
+use arrow::array::{Array, ListArray, NullArray};
 use arrow::bitmap::MutableBitmap;
 use arrow::compute::concatenate;
 use arrow::datatypes::DataType;
@@ -91,18 +91,24 @@ impl<'a> AnonymousBuilder<'a> {
     }
 
     pub fn finish(self, inner_dtype: Option<&DataType>) -> Result<ListArray<i64>> {
-        let inner_dtype = inner_dtype.unwrap_or_else(|| self.arrays[0].data_type());
-        let values = concatenate::concatenate(&self.arrays)?;
-        let dtype = ListArray::<i64>::default_datatype(inner_dtype.clone());
         // Safety:
         // offsets are monotonically increasing
-        unsafe {
-            Ok(ListArray::<i64>::new(
-                dtype,
-                Offsets::new_unchecked(self.offsets).into(),
-                values,
-                self.validity.map(|validity| validity.into()),
-            ))
-        }
+        let offsets = unsafe { Offsets::new_unchecked(self.offsets) };
+        let (inner_dtype, values) = if self.arrays.is_empty() {
+            let len = *offsets.last() as usize;
+            let values = NullArray::new(DataType::Null, len).boxed();
+            (DataType::Null, values)
+        } else {
+            let inner_dtype = inner_dtype.unwrap_or_else(|| self.arrays[0].data_type());
+            let values = concatenate::concatenate(&self.arrays)?;
+            (inner_dtype.clone(), values)
+        };
+        let dtype = ListArray::<i64>::default_datatype(inner_dtype);
+        Ok(ListArray::<i64>::new(
+            dtype,
+            offsets.into(),
+            values,
+            self.validity.map(|validity| validity.into()),
+        ))
     }
 }
