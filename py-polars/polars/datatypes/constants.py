@@ -42,17 +42,24 @@ DURATION_DTYPES: frozenset[PolarsDataType] = frozenset(
 TEMPORAL_DTYPES: frozenset[PolarsDataType] = (
     frozenset([Date, Time]) | DATETIME_DTYPES | DURATION_DTYPES
 )
-INTEGER_DTYPES: frozenset[PolarsDataType] = frozenset(
+SIGNED_INTEGER_DTYPES: frozenset[PolarsDataType] = frozenset(
     [
-        UInt8,
-        UInt16,
-        UInt32,
-        UInt64,
         Int8,
         Int16,
         Int32,
         Int64,
     ]
+)
+UNSIGNED_INTEGER_DTYPES: frozenset[PolarsDataType] = frozenset(
+    [
+        UInt8,
+        UInt16,
+        UInt32,
+        UInt64,
+    ]
+)
+INTEGER_DTYPES: frozenset[PolarsDataType] = (
+    SIGNED_INTEGER_DTYPES | UNSIGNED_INTEGER_DTYPES
 )
 FLOAT_DTYPES: frozenset[PolarsDataType] = frozenset([Float32, Float64])
 NUMERIC_DTYPES: frozenset[PolarsDataType] = (

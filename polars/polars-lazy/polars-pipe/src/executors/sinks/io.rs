@@ -110,6 +110,12 @@ impl IOThread {
             let _keep_hold_on_lockfile = lockfile2;
 
             let mut count = 0usize;
+
+            // We accept 2 cases. E.g.
+            // 1. (None, DfIter):
+            //    This will dump to `dir/count.ipc`
+            // 2. (Some(partitions), DfIter)
+            //    This will dump to `dir/partition/count.ipc`
             while let Ok((partitions, iter)) = receiver.recv() {
                 if let Some(partitions) = partitions {
                     for (part, df) in partitions.into_no_null_iter().zip(iter) {
@@ -172,6 +178,12 @@ impl IOThread {
             let iter = Box::new(std::iter::once(df));
             self.dump_iter(None, iter)
         }
+    }
+
+    pub(in crate::executors::sinks) fn dump_partition(&self, partition_no: IdxSize, df: DataFrame) {
+        let partition = Some(IdxCa::from_vec("", vec![partition_no]));
+        let iter = Box::new(std::iter::once(df));
+        self.dump_iter(partition, iter)
     }
 
     pub(in crate::executors::sinks) fn dump_iter(&self, partition: Option<IdxCa>, iter: DfIter) {

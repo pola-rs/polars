@@ -96,7 +96,7 @@ pub(crate) enum AggregateFunction {
 }
 
 impl AggregateFunction {
-    pub(crate) fn split2(&self) -> Self {
+    pub(crate) fn split(&self) -> Self {
         use AggregateFunction::*;
         match self {
             First(agg) => First(FirstAgg::new(agg.dtype.clone())),

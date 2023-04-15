@@ -17,7 +17,6 @@ from polars.testing.parametric import (
     columns,
     dataframes,
     series,
-    strategy_dtypes,
 )
 
 # TODO: make dtype categories flexible and available from datatypes module
@@ -55,7 +54,7 @@ def test_strategy_shape(
     assert s1.name == ""
     assert s2.name == "col"
 
-    from polars.testing._parametric import MAX_COLS
+    from polars.testing.parametric.primitives import MAX_COLS
 
     assert 0 <= len(columns(None)) <= MAX_COLS
 
@@ -100,10 +99,9 @@ def test_strategy_frame_columns(lf: pl.LazyFrame) -> None:
 @given(
     df=dataframes(allowed_dtypes=TEMPORAL_DTYPES, max_size=1, max_cols=5),
     lf=dataframes(excluded_dtypes=TEMPORAL_DTYPES, max_size=1, max_cols=5, lazy=True),
-    s1=series(max_size=1),
-    s2=series(dtype=pl.Boolean, max_size=1),
-    s3=series(allowed_dtypes=TEMPORAL_DTYPES, max_size=1),
-    s4=series(excluded_dtypes=TEMPORAL_DTYPES, max_size=1),
+    s1=series(dtype=pl.Boolean, max_size=1),
+    s2=series(allowed_dtypes=TEMPORAL_DTYPES, max_size=1),
+    s3=series(excluded_dtypes=TEMPORAL_DTYPES, max_size=1),
 )
 @settings(max_examples=50)
 def test_strategy_dtypes(
@@ -112,17 +110,15 @@ def test_strategy_dtypes(
     s1: pl.Series,
     s2: pl.Series,
     s3: pl.Series,
-    s4: pl.Series,
 ) -> None:
     # dataframe, lazyframe
     assert all(tp in TEMPORAL_DTYPES for tp in df.dtypes)
     assert all(tp not in TEMPORAL_DTYPES for tp in lf.dtypes)
 
     # series
-    assert s1.dtype in strategy_dtypes
-    assert s2.dtype == pl.Boolean
-    assert s3.dtype in TEMPORAL_DTYPES
-    assert s4.dtype not in TEMPORAL_DTYPES
+    assert s1.dtype == pl.Boolean
+    assert s2.dtype in TEMPORAL_DTYPES
+    assert s3.dtype not in TEMPORAL_DTYPES
 
 
 @given(
@@ -220,10 +216,9 @@ def test_invalid_arguments() -> None:
                     null_probability=invalid_probability,
                 ).example()
 
-    for unsupported_type in (pl.List, pl.Struct):
-        # TODO: add support for compound types
-        with pytest.raises(InvalidArgument, match=f"for {unsupported_type} type"):
-            column("colx", dtype=unsupported_type)
+    with pytest.raises(InvalidArgument):
+        # TODO: add support for remaining compound types
+        column("colx", dtype=pl.Struct)
 
     with pytest.raises(InvalidArgument, match="not a valid polars datatype"):
         columns(["colx", "coly"], dtype=pl.DataFrame)  # type: ignore[arg-type]

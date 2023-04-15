@@ -289,7 +289,7 @@ impl Series {
                 Ok(s)
             }
             #[cfg(feature = "dtype-struct")]
-            ArrowDataType::Struct(_) => {
+            ArrowDataType::Struct(logical_fields) => {
                 let arr = if chunks.len() > 1 {
                     // don't spuriously call this. This triggers a read on memmapped data
                     concatenate_owned_unchecked(&chunks).unwrap() as ArrayRef
@@ -321,10 +321,18 @@ impl Series {
                         None,
                     ));
                 }
+
+                // ensure we maintain logical types if proved by the caller
+                let dtype_fields = if logical_fields.is_empty() {
+                    struct_arr.fields()
+                } else {
+                    logical_fields
+                };
+
                 let fields = struct_arr
                     .values()
                     .iter()
-                    .zip(struct_arr.fields())
+                    .zip(dtype_fields)
                     .map(|(arr, field)| {
                         Series::try_from_arrow_unchecked(
                             &field.name,

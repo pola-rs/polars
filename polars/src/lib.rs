@@ -24,7 +24,7 @@
 //!         // every expression runs in parallel
 //!         col("foo").cummin(false).alias("cumulative_min_per_group"),
 //!         // every expression runs in parallel
-//!         col("foo").reverse().list().alias("reverse_group"),
+//!         col("foo").reverse().implode().alias("reverse_group"),
 //!     ]);
 //!
 //! let lf2 = LazyFrame::scan_parquet("myfile_2.parquet", Default::default())?
@@ -324,7 +324,7 @@
 //! ## Config with ENV vars
 //!
 //! * `POLARS_FMT_TABLE_FORMATTING` -> define styling of tables using any of the following options (default = UTF8_FULL_CONDENSED):
-//!     
+//!
 //!                                    ASCII_FULL
 //!                                    ASCII_FULL_CONDENSED
 //!                                    ASCII_NO_BORDERS
@@ -338,7 +338,7 @@
 //!                                    UTF8_BORDERS_ONLY
 //!                                    UTF8_HORIZONTAL_ONLY
 //!                                    NOTHING
-//!                                     
+//!
 //!                                    These options are defined by comfy-table which provides examples for each at:
 //!                                    https://github.com/Nukesor/comfy-table/blob/main/src/style/presets.rs
 //! * `POLARS_FMT_TABLE_CELL_ALIGNMENT` -> define cell alignment using any of the following options (default = LEFT):
@@ -360,8 +360,6 @@
 //! * `POLARS_VERBOSE` -> print logging info to stderr.
 //! * `POLARS_NO_PARTITION` -> polars may choose to partition the groupby operation, based on data
 //!                            cardinality. Setting this env var will turn partitioned groupby's off.
-//! * `POLARS_PARTITION_SAMPLE_FRAC` -> how large chunk of the dataset to sample to determine cardinality,
-//!                                     defaults to `0.001`.
 //! * `POLARS_PARTITION_UNIQUE_COUNT` -> at which (estimated) key count a partitioned groupby should run.
 //!                                          defaults to `1000`, any higher cardinality will run default groupby.
 //! * `POLARS_FORCE_PARTITION` -> force partitioned groupby if the keys and aggregations allow it.

@@ -1,19 +1,28 @@
+#[cfg(feature = "abs")]
+mod abs;
 #[cfg(feature = "arg_where")]
 mod arg_where;
 mod binary;
+mod boolean;
+mod bounds;
+#[cfg(feature = "dtype-categorical")]
+mod cat;
 #[cfg(feature = "round_series")]
 mod clip;
+mod cum;
 #[cfg(feature = "temporal")]
 mod datetime;
 mod dispatch;
 mod fill_null;
-#[cfg(feature = "is_in")]
-mod is_in;
 mod list;
+#[cfg(feature = "log")]
+mod log;
 mod nan;
 mod pow;
 #[cfg(all(feature = "rolling_window", feature = "moment"))]
 mod rolling;
+#[cfg(feature = "round_series")]
+mod round;
 #[cfg(feature = "row_hash")]
 mod row_hash;
 mod schema;
@@ -31,18 +40,22 @@ mod struct_;
 mod temporal;
 #[cfg(feature = "trigonometry")]
 mod trigonometry;
+mod unique;
 
 use std::fmt::{Display, Formatter};
 
 pub(super) use list::ListFunction;
 use polars_core::prelude::*;
+use schema::FieldsMapper;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 pub(crate) use self::binary::BinaryFunction;
+pub use self::boolean::BooleanFunction;
+#[cfg(feature = "dtype-categorical")]
+pub(crate) use self::cat::CategoricalFunction;
 #[cfg(feature = "temporal")]
 pub(super) use self::datetime::TemporalFunction;
-pub(super) use self::nan::NanFunction;
 #[cfg(feature = "strings")]
 pub(crate) use self::strings::StringFunction;
 #[cfg(feature = "dtype-struct")]
@@ -54,12 +67,12 @@ use super::*;
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug)]
 pub enum FunctionExpr {
+    #[cfg(feature = "abs")]
+    Abs,
     NullCount,
     Pow,
     #[cfg(feature = "row_hash")]
     Hash(u64, u64, u64, u64),
-    #[cfg(feature = "is_in")]
-    IsIn,
     #[cfg(feature = "arg_where")]
     ArgWhere,
     #[cfg(feature = "search_sorted")]
@@ -87,7 +100,7 @@ pub enum FunctionExpr {
     ShiftAndFill {
         periods: i64,
     },
-    Nan(NanFunction),
+    DropNans,
     #[cfg(feature = "round_series")]
     Clip {
         min: Option<AnyValue<'static>>,
@@ -102,18 +115,31 @@ pub enum FunctionExpr {
         descending: bool,
     },
     Shift(i64),
+    Cumcount {
+        reverse: bool,
+    },
+    Cumsum {
+        reverse: bool,
+    },
+    Cumprod {
+        reverse: bool,
+    },
+    Cummin {
+        reverse: bool,
+    },
+    Cummax {
+        reverse: bool,
+    },
     Reverse,
-    IsNull,
-    IsNotNull,
-    Not,
-    #[cfg(feature = "is_unique")]
-    IsUnique,
-    #[cfg(feature = "is_unique")]
-    IsDuplicated,
+    Boolean(BooleanFunction),
+    #[cfg(feature = "approx_unique")]
+    ApproxUnique,
+    #[cfg(feature = "dtype-categorical")]
+    Categorical(CategoricalFunction),
     Coalesce,
     ShrinkType,
     #[cfg(feature = "diff")]
-    Diff(usize, NullBehavior),
+    Diff(i64, NullBehavior),
     #[cfg(feature = "interpolate")]
     Interpolate(InterpolationMethod),
     #[cfg(feature = "dot_product")]
@@ -123,6 +149,25 @@ pub enum FunctionExpr {
         base: f64,
         normalize: bool,
     },
+    #[cfg(feature = "log")]
+    Log {
+        base: f64,
+    },
+    #[cfg(feature = "log")]
+    Log1p,
+    #[cfg(feature = "log")]
+    Exp,
+    Unique(bool),
+    #[cfg(feature = "round_series")]
+    Round {
+        decimals: u32,
+    },
+    #[cfg(feature = "round_series")]
+    Floor,
+    #[cfg(feature = "round_series")]
+    Ceil,
+    UpperBound,
+    LowerBound,
 }
 
 impl Display for FunctionExpr {
@@ -130,12 +175,12 @@ impl Display for FunctionExpr {
         use FunctionExpr::*;
 
         let s = match self {
+            #[cfg(feature = "abs")]
+            Abs => "abs",
             NullCount => "null_count",
             Pow => "pow",
             #[cfg(feature = "row_hash")]
             Hash(_, _, _, _) => "hash",
-            #[cfg(feature = "is_in")]
-            IsIn => "is_in",
             #[cfg(feature = "arg_where")]
             ArgWhere => "arg_where",
             #[cfg(feature = "search_sorted")]
@@ -155,11 +200,7 @@ impl Display for FunctionExpr {
             #[cfg(all(feature = "rolling_window", feature = "moment"))]
             RollingSkew { .. } => "rolling_skew",
             ShiftAndFill { .. } => "shift_and_fill",
-            Nan(func) => match func {
-                NanFunction::IsNan => "is_nan",
-                NanFunction::IsNotNan => "is_not_nan",
-                NanFunction::DropNans => "drop_nans",
-            },
+            DropNans => "drop_nans",
             #[cfg(feature = "round_series")]
             Clip { min, max } => match (min, max) {
                 (Some(_), Some(_)) => "clip",
@@ -173,14 +214,17 @@ impl Display for FunctionExpr {
             #[cfg(feature = "top_k")]
             TopK { .. } => "top_k",
             Shift(_) => "shift",
+            Cumcount { .. } => "cumcount",
+            Cumsum { .. } => "cumsum",
+            Cumprod { .. } => "cumprod",
+            Cummin { .. } => "cummin",
+            Cummax { .. } => "cummax",
             Reverse => "reverse",
-            Not => "is_not",
-            IsNull => "is_null",
-            IsNotNull => "is_not_null",
-            #[cfg(feature = "is_unique")]
-            IsUnique => "is_unique",
-            #[cfg(feature = "is_unique")]
-            IsDuplicated => "is_duplicated",
+            Boolean(func) => return write!(f, "{func}"),
+            #[cfg(feature = "approx_unique")]
+            ApproxUnique => "approx_unique",
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(func) => return write!(f, "{func}"),
             Coalesce => "coalesce",
             ShrinkType => "shrink_dtype",
             #[cfg(feature = "diff")]
@@ -191,11 +235,33 @@ impl Display for FunctionExpr {
             Dot => "dot",
             #[cfg(feature = "log")]
             Entropy { .. } => "entropy",
+            #[cfg(feature = "log")]
+            Log { .. } => "log",
+            #[cfg(feature = "log")]
+            Log1p => "log1p",
+            #[cfg(feature = "log")]
+            Exp => "exp",
+            Unique(stable) => {
+                if *stable {
+                    "unique_stable"
+                } else {
+                    "unique"
+                }
+            }
+            #[cfg(feature = "round_series")]
+            Round { .. } => "round",
+            #[cfg(feature = "round_series")]
+            Floor => "floor",
+            #[cfg(feature = "round_series")]
+            Ceil => "ceil",
+            UpperBound => "upper_bound",
+            LowerBound => "lower_bound",
         };
         write!(f, "{s}")
     }
 }
 
+#[macro_export]
 macro_rules! wrap {
     ($e:expr) => {
         SpecialEq::new(Arc::new($e))
@@ -272,6 +338,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
     fn from(func: FunctionExpr) -> Self {
         use FunctionExpr::*;
         match func {
+            #[cfg(feature = "abs")]
+            Abs => map!(abs::abs),
             NullCount => {
                 let f = |s: &mut [Series]| {
                     let s = &s[0];
@@ -285,10 +353,6 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "row_hash")]
             Hash(k0, k1, k2, k3) => {
                 map!(row_hash::row_hash, k0, k1, k2, k3)
-            }
-            #[cfg(feature = "is_in")]
-            IsIn => {
-                wrap!(is_in::is_in)
             }
             #[cfg(feature = "arg_where")]
             ArgWhere => {
@@ -327,7 +391,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             ShiftAndFill { periods } => {
                 map_as_slice!(shift_and_fill::shift_and_fill, periods)
             }
-            Nan(n) => n.into(),
+            DropNans => map_owned!(nan::drop_nans),
             #[cfg(feature = "round_series")]
             Clip { min, max } => {
                 map_owned!(clip::clip, min.clone(), max.clone())
@@ -360,14 +424,17 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map!(top_k, k, descending)
             }
             Shift(periods) => map!(dispatch::shift, periods),
+            Cumcount { reverse } => map!(cum::cumcount, reverse),
+            Cumsum { reverse } => map!(cum::cumsum, reverse),
+            Cumprod { reverse } => map!(cum::cumprod, reverse),
+            Cummin { reverse } => map!(cum::cummin, reverse),
+            Cummax { reverse } => map!(cum::cummax, reverse),
             Reverse => map!(dispatch::reverse),
-            IsNull => map!(dispatch::is_null),
-            IsNotNull => map!(dispatch::is_not_null),
-            Not => map!(dispatch::is_not),
-            #[cfg(feature = "is_unique")]
-            IsUnique => map!(dispatch::is_unique),
-            #[cfg(feature = "is_unique")]
-            IsDuplicated => map!(dispatch::is_duplicated),
+            Boolean(func) => func.into(),
+            #[cfg(feature = "approx_unique")]
+            ApproxUnique => map!(dispatch::approx_unique),
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(func) => func.into(),
             Coalesce => map_as_slice!(fill_null::coalesce),
             ShrinkType => map_owned!(shrink_type::shrink),
             #[cfg(feature = "diff")]
@@ -381,7 +448,22 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map_as_slice!(dispatch::dot_impl)
             }
             #[cfg(feature = "log")]
-            Entropy { base, normalize } => map!(dispatch::entropy, base, normalize),
+            Entropy { base, normalize } => map!(log::entropy, base, normalize),
+            #[cfg(feature = "log")]
+            Log { base } => map!(log::log, base),
+            #[cfg(feature = "log")]
+            Log1p => map!(log::log1p),
+            #[cfg(feature = "log")]
+            Exp => map!(log::exp),
+            Unique(stable) => map!(unique::unique, stable),
+            #[cfg(feature = "round_series")]
+            Round { decimals } => map!(round::round, decimals),
+            #[cfg(feature = "round_series")]
+            Floor => map!(round::floor),
+            #[cfg(feature = "round_series")]
+            Ceil => map!(round::ceil),
+            UpperBound => map!(bounds::upper_bound),
+            LowerBound => map!(bounds::lower_bound),
         }
     }
 }

@@ -13,7 +13,7 @@ fn ternary_apply<T>(predicate: bool, truthy: T, falsy: T) -> T {
 }
 
 fn prepare_mask(mask: &BooleanArray) -> BooleanArray {
-    // make sure that zip works same as master branch
+    // make sure that zip works same as main branch
     // that is that null are ignored from mask and that we take from the right array
 
     match mask.validity() {

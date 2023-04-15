@@ -29,6 +29,7 @@ from polars.utils.convert import (
     _timedelta_to_pl_timedelta,
 )
 from polars.utils.decorators import deprecated_alias
+from polars.utils.various import find_stacklevel
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arange as pyarange
@@ -361,9 +362,25 @@ def count(column: str | Series | None = None) -> Expr | int:
     return col(column).count()
 
 
+def implode(name: str) -> Expr:
+    """
+    Aggregate all column values into a list.
+
+    Parameters
+    ----------
+    name
+        Name of the column that should be imploded.
+
+    """
+    return col(name).implode()
+
+
 def list_(name: str) -> Expr:
     """
     Aggregate to list.
+
+    .. deprecated:: 0.17.3
+        ``list`` will be removed in favor of ``implode``.
 
     Parameters
     ----------
@@ -371,7 +388,12 @@ def list_(name: str) -> Expr:
         Name of the column that should be aggregated into a list.
 
     """
-    return col(name).list()
+    warnings.warn(
+        "`pl.list` is deprecated, please use `pl.implode` instead.",
+        DeprecationWarning,
+        stacklevel=find_stacklevel(),
+    )
+    return col(name).implode()
 
 
 @overload
@@ -911,6 +933,36 @@ def n_unique(column: str | Series) -> Expr | int:
     return col(column).n_unique()
 
 
+def approx_unique(column: str | Expr) -> Expr:
+    """
+    Approx count unique values.
+
+    This is done using the HyperLogLog++ algorithm for cardinality estimation.
+
+    Parameters
+    ----------
+    column
+        Column name or Series.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"a": [1, 8, 1], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
+    >>> df.select(pl.approx_unique("a"))
+    shape: (1, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ u32 │
+    ╞═════╡
+    │ 2   │
+    └─────┘
+
+    """
+    if isinstance(column, pli.Expr):
+        return column.approx_unique()
+    return col(column).approx_unique()
+
+
 @overload
 def first(column: str) -> Expr:
     ...
@@ -1392,7 +1444,7 @@ def spearman_rank_corr(
     Examples
     --------
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
-    >>> df.select(pl.spearman_rank_corr("a", "b"))
+    >>> df.select(pl.spearman_rank_corr("a", "b"))  # doctest: +SKIP
     shape: (1, 1)
     ┌─────┐
     │ a   │
@@ -1405,7 +1457,7 @@ def spearman_rank_corr(
     warnings.warn(
         "`spearman_rank_corr()` is deprecated in favor of `corr()`",
         DeprecationWarning,
-        stacklevel=2,
+        stacklevel=find_stacklevel(),
     )
     if isinstance(a, str):
         a = col(a)
@@ -1439,7 +1491,7 @@ def pearson_corr(a: str | Expr, b: str | Expr, ddof: int = 1) -> Expr:
     Examples
     --------
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
-    >>> df.select(pl.pearson_corr("a", "b"))
+    >>> df.select(pl.pearson_corr("a", "b"))  # doctest: +SKIP
     shape: (1, 1)
     ┌──────────┐
     │ a        │
@@ -1452,7 +1504,7 @@ def pearson_corr(a: str | Expr, b: str | Expr, ddof: int = 1) -> Expr:
     warnings.warn(
         "`pearson_corr()` is deprecated in favor of `corr()`",
         DeprecationWarning,
-        stacklevel=2,
+        stacklevel=find_stacklevel(),
     )
     if isinstance(a, str):
         a = col(a)

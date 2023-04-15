@@ -266,7 +266,7 @@ pub enum AggExpr {
     First(Box<Expr>),
     Last(Box<Expr>),
     Mean(Box<Expr>),
-    List(Box<Expr>),
+    Implode(Box<Expr>),
     Count(Box<Expr>),
     Quantile {
         expr: Box<Expr>,
@@ -290,7 +290,7 @@ impl AsRef<Expr> for AggExpr {
             First(e) => e,
             Last(e) => e,
             Mean(e) => e,
-            List(e) => e,
+            Implode(e) => e,
             Count(e) => e,
             Quantile { expr, .. } => expr,
             Sum(e) => e,

@@ -55,6 +55,7 @@ from polars.utils.various import (
     _in_notebook,
     _prepare_row_count_args,
     _process_null_values,
+    find_stacklevel,
     normalise_filepath,
 )
 
@@ -292,6 +293,13 @@ class LazyFrame:
         self = cls.__new__(cls)
         self._ldf = ldf
         return self
+
+    def __getstate__(self) -> Any:
+        return self._ldf.__getstate__()
+
+    def __setstate__(self, state) -> None:  # type: ignore[no-untyped-def]
+        self._ldf = LazyFrame("", [])._ldf
+        self._ldf.__setstate__(state)
 
     @classmethod
     def _scan_csv(
@@ -933,7 +941,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         warnings.warn(
             "`LazyFrame.describe_plan` has been deprecated; Please use `LazyFrame.explain` instead",
             category=DeprecationWarning,
-            stacklevel=2,
+            stacklevel=find_stacklevel(),
         )
         if optimized:
             ldf = self._ldf.optimization_toggle(
@@ -963,7 +971,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         warnings.warn(
             "`LazyFrame.describe_optimized_plan` has been deprecated; Please use `LazyFrame.explain` instead",
             category=DeprecationWarning,
-            stacklevel=2,
+            stacklevel=find_stacklevel(),
         )
         ldf = self._ldf.optimization_toggle(
             type_coercion,
@@ -3685,6 +3693,33 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         """
         return self.slice(0, 1)
+
+    def approx_unique(self) -> Self:
+        """
+        Approx count unique values.
+
+        This is done using the HyperLogLog++ algorithm for cardinality estimation.
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": [1, 2, 3, 4],
+        ...         "b": [1, 2, 1, 1],
+        ...     }
+        ... )
+        >>> lf.approx_unique().collect()
+        shape: (1, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ u32 ┆ u32 │
+        ╞═════╪═════╡
+        │ 4   ┆ 2   │
+        └─────┴─────┘
+
+        """
+        return self.select(F.all().approx_unique())
 
     def with_row_count(self, name: str = "row_nr", offset: int = 0) -> Self:
         """

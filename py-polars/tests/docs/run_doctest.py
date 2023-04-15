@@ -33,6 +33,7 @@ import doctest
 import importlib
 import sys
 import unittest
+import warnings
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any, Iterator
@@ -68,6 +69,9 @@ if __name__ == "__main__":
     # the code block. The difference with SKIP is that if the code errors on running,
     # that will still be reported.
     IGNORE_RESULT = doctest.register_optionflag("IGNORE_RESULT")
+
+    # Set doctests to fail on warnings
+    warnings.simplefilter("error", DeprecationWarning)
 
     OutputChecker = doctest.OutputChecker
 

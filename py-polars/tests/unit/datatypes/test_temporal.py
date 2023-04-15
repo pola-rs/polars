@@ -174,10 +174,8 @@ def test_diff_datetime() -> None:
     )
     out = (
         df.with_columns(
-            [
-                pl.col("timestamp").str.strptime(pl.Date, fmt="%Y-%m-%d"),
-            ]
-        ).with_columns([pl.col("timestamp").diff().list().over("char")])
+            pl.col("timestamp").str.strptime(pl.Date, format="%Y-%m-%d"),
+        ).with_columns(pl.col("timestamp").diff().implode().over("char"))
     )["timestamp"]
     assert (out[0] == out[1]).all()
 
@@ -547,7 +545,7 @@ def test_date_range_lazy_with_literals() -> None:
             interval="987d",
             lazy=True,
         )
-        .list()
+        .implode()
         .alias("dts")
     )
     assert df.rows() == [
@@ -582,7 +580,7 @@ def test_date_range_lazy_with_expressions(
     ldf = (
         pl.DataFrame({"start": [date(2015, 6, 30)], "stop": [date(2022, 12, 31)]})
         .with_columns(
-            pl.date_range(low, high, interval="678d", lazy=True).list().alias("dts")
+            pl.date_range(low, high, interval="678d", lazy=True).implode().alias("dts")
         )
         .lazy()
     )
@@ -799,7 +797,7 @@ def test_groupby_dynamic_when_conversion_crosses_dates_7274() -> None:
             }
         )
         .with_columns(
-            pl.col("timestamp").str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S%:z")
+            pl.col("timestamp").str.strptime(pl.Datetime, format="%Y-%m-%d %H:%M:%S%:z")
         )
         .with_columns(
             pl.col("timestamp").dt.convert_time_zone("UTC").alias("timestamp_utc")
@@ -1303,7 +1301,7 @@ def test_groupby_rolling_mean_3020() -> None:
 
 
 def test_asof_join() -> None:
-    fmt = "%F %T%.3f"
+    format = "%F %T%.3f"
     dates = [
         "2016-05-25 13:30:00.023",
         "2016-05-25 13:30:00.023",
@@ -1326,7 +1324,7 @@ def test_asof_join() -> None:
     ]
     quotes = pl.DataFrame(
         {
-            "dates": pl.Series(dates).str.strptime(pl.Datetime, fmt=fmt),
+            "dates": pl.Series(dates).str.strptime(pl.Datetime, format=format),
             "ticker": ticker,
             "bid": [720.5, 51.95, 51.97, 51.99, 720.50, 97.99, 720.50, 52.01],
         }
@@ -1347,7 +1345,7 @@ def test_asof_join() -> None:
     ]
     trades = pl.DataFrame(
         {
-            "dates": pl.Series(dates).str.strptime(pl.Datetime, fmt=fmt),
+            "dates": pl.Series(dates).str.strptime(pl.Datetime, format=format),
             "ticker": ticker,
             "bid": [51.95, 51.95, 720.77, 720.92, 98.0],
         }
@@ -1926,6 +1924,28 @@ def test_replace_timezone_from_to(
     assert result == expected
 
 
+def test_strptime_subseconds_datetime() -> None:
+    with pytest.raises(ValueError, match="not supported"):
+        pl.Series(["2023-02-05T05:10:10.074000"]).str.strptime(
+            pl.Datetime, "%Y-%m-%dT%H:%M:%S.%f"
+        )
+    result = (
+        pl.Series(["2023-02-05T05:10:10.074000"])
+        .str.strptime(pl.Datetime, "%Y-%m-%dT%H:%M:%S%.f")
+        .item()
+    )
+    expected = datetime(2023, 2, 5, 5, 10, 10, 74000)
+    assert result == expected
+
+
+def test_strptime_subseconds_time() -> None:
+    with pytest.raises(ValueError, match="not supported"):
+        pl.Series(["05:10:10.074000"]).str.strptime(pl.Time, "%H:%M:%S.%f")
+    result = pl.Series(["05:10:10.074000"]).str.strptime(pl.Time, "%H:%M:%S%.f").item()
+    expected = time(5, 10, 10, 74000)
+    assert result == expected
+
+
 def test_strptime_with_tz() -> None:
     result = (
         pl.Series(["2020-01-01 03:00:00"])
@@ -2159,6 +2179,15 @@ def test_date_range_descending() -> None:
         pl.date_range(datetime(2000, 3, 20), datetime(2000, 3, 5), interval="1h")
     with pytest.raises(ComputeError, match="'interval' cannot be negative"):
         pl.date_range(datetime(2000, 3, 20), datetime(2000, 3, 21), interval="-1h")
+
+
+def test_date_range_end_of_month_5441() -> None:
+    start = date(2020, 1, 31)
+    stop = date(2021, 1, 31)
+    with pytest.raises(
+        ComputeError, match=r"cannot advance '2020-01-31 00:00:00' by 1 month\(s\)"
+    ):
+        pl.date_range(start, stop, interval="1mo")
 
 
 def test_logical_nested_take() -> None:
@@ -2702,6 +2731,39 @@ def test_infer_iso8601_datetime(iso8601_format_datetime: str) -> None:
         assert parsed.dt.nanosecond().item() == 123456000
     if "%3f" in iso8601_format_datetime:
         assert parsed.dt.nanosecond().item() == 123000000
+
+
+def test_infer_iso8601_tz_aware_datetime(iso8601_tz_aware_format_datetime: str) -> None:
+    # construct an example time string
+    time_string = (
+        iso8601_tz_aware_format_datetime.replace("%Y", "2134")
+        .replace("%m", "12")
+        .replace("%d", "13")
+        .replace("%H", "01")
+        .replace("%M", "12")
+        .replace("%S", "34")
+        .replace("%3f", "123")
+        .replace("%6f", "123456")
+        .replace("%9f", "123456789")
+        .replace("%#z", "+01:00")
+    )
+    parsed = pl.Series([time_string]).str.strptime(pl.Datetime("ns"))
+    assert parsed.dt.year().item() == 2134
+    assert parsed.dt.month().item() == 12
+    assert parsed.dt.day().item() == 13
+    if "%H" in iso8601_tz_aware_format_datetime:
+        assert parsed.dt.hour().item() == 1
+    if "%M" in iso8601_tz_aware_format_datetime:
+        assert parsed.dt.minute().item() == 12
+    if "%S" in iso8601_tz_aware_format_datetime:
+        assert parsed.dt.second().item() == 34
+    if "%9f" in iso8601_tz_aware_format_datetime:
+        assert parsed.dt.nanosecond().item() == 123456789
+    if "%6f" in iso8601_tz_aware_format_datetime:
+        assert parsed.dt.nanosecond().item() == 123456000
+    if "%3f" in iso8601_tz_aware_format_datetime:
+        assert parsed.dt.nanosecond().item() == 123000000
+    assert parsed.dtype == pl.Datetime("ns", "+01:00")
 
 
 def test_infer_iso8601_date(iso8601_format_date: str) -> None:

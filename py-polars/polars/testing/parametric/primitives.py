@@ -1,56 +1,35 @@
 from __future__ import annotations
 
-import os
 import random
 import warnings
 from dataclasses import dataclass
-from datetime import datetime, timedelta
 from math import isfinite
+from textwrap import dedent
 from typing import TYPE_CHECKING, Any, Sequence
 
-from hypothesis import settings
 from hypothesis.errors import InvalidArgument, NonInteractiveExampleWarning
 from hypothesis.strategies import (
     booleans,
     composite,
-    dates,
-    datetimes,
-    floats,
-    from_type,
-    integers,
     lists,
     sampled_from,
-    text,
-    timedeltas,
-    times,
 )
 from hypothesis.strategies._internal.utils import defines_strategy
 
 from polars.dataframe import DataFrame
 from polars.datatypes import (
-    Boolean,
+    FLOAT_DTYPES,
     Categorical,
-    Date,
-    Datetime,
-    Duration,
-    Float32,
-    Float64,
-    Int8,
-    Int16,
-    Int32,
-    Int64,
-    Time,
-    UInt8,
-    UInt16,
-    UInt32,
-    UInt64,
-    Utf8,
     is_polars_dtype,
     py_type_to_dtype,
 )
 from polars.series import Series
 from polars.string_cache import StringCache
 from polars.testing.asserts import is_categorical_dtype
+from polars.testing.parametric.strategies import (
+    between,
+    scalar_strategies,
+)
 
 if TYPE_CHECKING:
     from hypothesis.strategies import DrawFn, SearchStrategy
@@ -58,81 +37,22 @@ if TYPE_CHECKING:
     from polars.lazyframe import LazyFrame
     from polars.type_aliases import OneOrMoreDataTypes, PolarsDataType
 
-# Default profile (eg: running locally)
-common_settings = {"print_blob": True, "deadline": None}
-settings.register_profile(
-    name="polars.default",
-    max_examples=100,
-    **common_settings,  # type: ignore[arg-type]
-)
-# CI 'max' profile (10x the number of iterations).
-# this is expensive, and not actually enabled in
-# our usual CI pipeline; requires explicit opt-in.
-settings.register_profile(
-    name="polars.ci",
-    max_examples=1000,
-    **common_settings,  # type: ignore[arg-type]
-)
-if os.getenv("CI_MAX"):
-    settings.load_profile("polars.ci")
-else:
-    settings.load_profile("polars.default")
+
+def empty_list(value: Any, nested: bool) -> bool:
+    """Check if value is an empty list, or a list that contains only empty lists."""
+    if isinstance(value, list):
+        return True if value and not nested else all(empty_list(v, True) for v in value)
+    return False
 
 
-MAX_DATA_SIZE = 10
-MAX_COLS = 8
-
-# =====================================================================
-# Polars-specific 'hypothesis' strategies and helper functions
+# ====================================================================
+# Polars 'hypothesis' primitives for Series, DataFrame, and LazyFrame
 # See: https://hypothesis.readthedocs.io/
-# =====================================================================
+# ====================================================================
+MAX_DATA_SIZE = 10  # max generated frame length
+MAX_COLS = 8  # max number of generated cols
 
-dtype_strategy_mapping: dict[PolarsDataType, Any] = {
-    Boolean: booleans(),
-    Float32: floats(width=32),
-    Float64: floats(width=64),
-    Int8: integers(min_value=-(2**7), max_value=(2**7) - 1),
-    Int16: integers(min_value=-(2**15), max_value=(2**15) - 1),
-    Int32: integers(min_value=-(2**31), max_value=(2**31) - 1),
-    Int64: integers(min_value=-(2**63), max_value=(2**63) - 1),
-    UInt8: integers(min_value=0, max_value=(2**8) - 1),
-    UInt16: integers(min_value=0, max_value=(2**16) - 1),
-    UInt32: integers(min_value=0, max_value=(2**32) - 1),
-    UInt64: integers(min_value=0, max_value=(2**64) - 1),
-    # TODO: when generating text for categorical, ensure there are repeats -
-    #  don't want all to be unique.
-    Categorical: text(max_size=10),
-    Utf8: text(max_size=10),
-    # TODO: generate arrow temporal types with different resolution (32/64) to
-    #  validate compatibility.
-    Time: times(),
-    Date: dates(),
-    Duration: timedeltas(
-        min_value=timedelta(microseconds=-(2**63)),
-        max_value=timedelta(microseconds=(2**63) - 1),
-    ),
-    # TODO: confirm datetime min/max limits with different timeunit granularity.
-    # TODO: specific strategies for temporal dtypes with timeunits.
-    Datetime: datetimes(min_value=datetime(1970, 1, 1)),
-    # Datetime("ms")
-    # Datetime("us")
-    # Datetime("ns")
-    # Duration("ms")
-    # Duration("us")
-    # Duration("ns")
-    # TODO: strategies for non-scalar/structured dtypes.
-    # List
-    # Struct
-    # Object
-}
-
-strategy_dtypes = list(dtype_strategy_mapping)
-
-
-def between(draw: DrawFn, type_: type, min_: Any, max_: Any) -> Any:
-    """Draw a value in a given range from a type-inferred strategy."""
-    strategy_init = from_type(type_).function  # type: ignore[attr-defined]
-    return draw(strategy_init(min_, max_))
+strategy_dtypes = list(scalar_strategies)
 
 
 @dataclass
@@ -144,7 +64,7 @@ class column:
     ----------
     name : str
         string column name.
-    dtype : dtype
+    dtype : PolarsDataType
         a recognised polars dtype.
     strategy : strategy, optional
         supports overriding the default strategy for the given dtype.
@@ -180,9 +100,16 @@ class column:
                 "null_probability should be between 0.0 and 1.0, or None; found"
                 f" {self.null_probability}"
             )
+
+        if self.dtype is None:
+            tp = getattr(self.strategy, "_dtype", None)
+            if is_polars_dtype(tp):
+                self.dtype = tp
+
         if self.dtype is None and self.strategy is None:
             self.dtype = random.choice(strategy_dtypes)
-        elif self.dtype not in dtype_strategy_mapping:
+
+        elif self.dtype not in scalar_strategies:
             if self.dtype is not None:
                 raise InvalidArgument(
                     f"No strategy (currently) available for {self.dtype} type"
@@ -201,7 +128,11 @@ class column:
                     )
                     try:
                         sample_value_type = type(
-                            next(e for e in sample_value_iter if e is not None)
+                            next(
+                                e
+                                for e in sample_value_iter
+                                if e is not None and not empty_list(e, nested=True)
+                            )
                         )
                     except StopIteration:
                         raise InvalidArgument(
@@ -238,7 +169,7 @@ def columns(
         integer number of cols to create, or explicit list of column names. if
         omitted a random number of columns (between mincol and max_cols) are
         created.
-    dtype : dtype, optional
+    dtype : PolarsDataType, optional
         a single dtype for all cols, or list of dtypes (the same length as `cols`).
         if omitted, each generated column is assigned a random dtype.
     min_cols : int, optional
@@ -319,7 +250,7 @@ def series(
     name : {str, strategy}, optional
         literal string or a strategy for strings (or None), passed to the Series
         constructor name-param.
-    dtype : dtype, optional
+    dtype : PolarsDataType, optional
         a valid polars DataType for the resulting series.
     size : int, optional
         if set, creates a Series of exactly this size (ignoring min/max params).
@@ -396,11 +327,11 @@ def series(
                 draw(sampled_from(selectable_dtypes)) if dtype is None else dtype
             )
             if strategy is None:
-                dtype_strategy = dtype_strategy_mapping[series_dtype]
+                dtype_strategy = scalar_strategies[series_dtype]
             else:
                 dtype_strategy = strategy
 
-            if series_dtype in (Float32, Float64) and not allow_infinities:
+            if series_dtype in FLOAT_DTYPES and not allow_infinities:
                 dtype_strategy = dtype_strategy.filter(
                     lambda x: not isinstance(x, float) or isfinite(x)
                 )
@@ -451,6 +382,9 @@ def series(
             return s
 
     return draw_series()
+
+
+_failed_frame_init_msgs_: set[str] = set()
 
 
 @defines_strategy()
@@ -563,6 +497,8 @@ def dataframes(
     │ 575050513 ┆ NaN        │
     └───────────┴────────────┘
     """  # noqa: 501
+    _failed_frame_init_msgs_.clear()
+
     if isinstance(min_size, int) and min_cols in (0, None):
         min_cols = 1
 
@@ -574,6 +510,7 @@ def dataframes(
 
     @composite
     def draw_frames(draw: DrawFn) -> DataFrame | LazyFrame:
+        """Reproducibly generate random DataFrames according to the given spec."""
         with StringCache():
             # if not given, create 'n' cols with random dtypes
             if cols is None or isinstance(cols, int):
@@ -598,8 +535,8 @@ def dataframes(
                 if size is None
                 else size
             )
-            # init dataframe from generated series data; series data is
-            # given as a python-native sequence (TODO: or as an arrow array).
+
+            # assign names, null probability
             for idx, c in enumerate(coldefs):
                 if c.name is None:
                     c.name = f"col{idx}"
@@ -609,33 +546,60 @@ def dataframes(
                     else:
                         c.null_probability = null_probability
 
-            frame_columns = [
-                c.name if (c.dtype is None) else (c.name, c.dtype) for c in coldefs
-            ]
-            df = DataFrame(
-                data={
-                    c.name: draw(
-                        series(
-                            name=c.name,
-                            dtype=c.dtype,
-                            size=series_size,
-                            null_probability=(c.null_probability or 0.0),
-                            allow_infinities=allow_infinities,
-                            strategy=c.strategy,
-                            unique=c.unique,
-                            chunked=(chunked is None and draw(booleans())),
-                        )
+            # init dataframe from generated series data; series data is
+            # given as a python-native sequence.
+            data = {
+                c.name: draw(
+                    series(
+                        name=c.name,
+                        dtype=c.dtype,
+                        size=series_size,
+                        null_probability=(c.null_probability or 0.0),
+                        allow_infinities=allow_infinities,
+                        strategy=c.strategy,
+                        unique=c.unique,
+                        chunked=(chunked is None and draw(booleans())),
                     )
-                    for c in coldefs
-                },
-                schema=frame_columns,  # type: ignore[arg-type]
-            )
-            # optionally generate frames with n_chunks > 1
-            if series_size > 1 and chunked is True:
-                split_at = series_size // 2
-                df = df[:split_at].vstack(df[split_at:])
+                )
+                for c in coldefs
+            }
 
-            # optionally make lazy
-            return df.lazy() if lazy else df
+            # note: randomly change between column-wise and row-wise frame init
+            orient = "col"
+            if draw(booleans()):
+                data = list(zip(*data.values()))  # type: ignore[assignment]
+                orient = "row"
+
+            schema = [(c.name, c.dtype) for c in coldefs]
+            try:
+                df = DataFrame(data=data, schema=schema, orient=orient)  # type: ignore[arg-type]
+
+                # optionally generate chunked frames
+                if series_size > 1 and chunked is True:
+                    split_at = series_size // 2
+                    df = df[:split_at].vstack(df[split_at:])
+
+                _failed_frame_init_msgs_.clear()
+                return df.lazy() if lazy else df
+
+            except Exception:
+                # print code that will allow any init failure to be reproduced
+                failed_frame_init = dedent(
+                    f"""
+                    # failed frame init: reproduce with...
+                    pl.DataFrame(
+                        data={data!r},
+                        schema={repr(schema).replace("', ","', pl.")},
+                        orient={orient!r},
+                    )
+                    """.replace(
+                        "datetime.", ""
+                    )
+                )
+                # note: this avoids printing the repro twice
+                if failed_frame_init not in _failed_frame_init_msgs_:
+                    _failed_frame_init_msgs_.add(failed_frame_init)
+                    print(failed_frame_init)
+                raise
 
     return draw_frames()

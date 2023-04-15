@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
-from functools import singledispatch
+from functools import lru_cache, partial, singledispatch
 from itertools import islice, zip_longest
 from sys import version_info
 from typing import (
@@ -48,7 +48,9 @@ from polars.dependencies import (
     _NUMPY_AVAILABLE,
     _check_for_numpy,
     _check_for_pandas,
+    _check_for_pydantic,
     dataclasses,
+    pydantic,
 )
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
@@ -74,19 +76,37 @@ if TYPE_CHECKING:
 
 if version_info >= (3, 10):
 
-    def dataclass_type_hints(obj: type) -> dict[str, Any]:
+    def type_hints(obj: type) -> dict[str, Any]:
         return get_type_hints(obj)
 
 else:
 
-    def dataclass_type_hints(obj: type) -> dict[str, Any]:
+    def type_hints(obj: type) -> dict[str, Any]:
         return getattr(obj, "__annotations__", {})
 
 
-def is_namedtuple(value: Any, annotated: bool = False) -> bool:
-    """Infer whether value is a NamedTuple."""
-    if all(hasattr(value, attr) for attr in ("_fields", "_field_defaults", "_replace")):
-        return len(value.__annotations__) == len(value._fields) if annotated else True
+@lru_cache(64)
+def is_namedtuple(cls: Any, annotated: bool = False) -> bool:
+    """Check whether given class derives from NamedTuple."""
+    if all(hasattr(cls, attr) for attr in ("_fields", "_field_defaults", "_replace")):
+        if len(cls.__annotations__) == len(cls._fields) if annotated else True:
+            return all(isinstance(fld, str) for fld in cls._fields)
+    return False
+
+
+def is_pydantic_model(value: Any) -> bool:
+    """Check whether value derives from a pydantic.BaseModel."""
+    return _check_for_pydantic(value) and isinstance(value, pydantic.BaseModel)
+
+
+def contains_nested(value: Any, is_nested: Callable[[Any], bool]) -> bool:
+    """Determine if value contains (or is) nested structured data."""
+    if is_nested(value):
+        return True
+    elif isinstance(value, dict):
+        return any(contains_nested(v, is_nested) for v in value.values())
+    elif isinstance(value, (list, tuple)):
+        return any(contains_nested(v, is_nested) for v in value)
     return False
 
 
@@ -98,6 +118,20 @@ def include_unknowns(
         col: (schema.get(col, Unknown) or Unknown)  # type: ignore[truthy-bool]
         for col in cols
     }
+
+
+def nt_unpack(obj: Any) -> Any:
+    """Recursively unpack a nested NamedTuple."""
+    if isinstance(obj, dict):
+        return {key: nt_unpack(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [nt_unpack(value) for value in obj]
+    elif is_namedtuple(obj):
+        return {key: nt_unpack(value) for key, value in obj._asdict().items()}
+    elif isinstance(obj, tuple):
+        return tuple(nt_unpack(value) for value in obj)
+    else:
+        return obj
 
 
 ################################
@@ -316,7 +350,11 @@ def sequence_to_pyseries(
 
     value = _get_first_non_none(values)
     if value is not None:
-        if dataclasses.is_dataclass(value) or is_namedtuple(value, annotated=True):
+        if (
+            dataclasses.is_dataclass(value)
+            or is_pydantic_model(value)
+            or is_namedtuple(value.__class__, annotated=True)
+        ):
             return pli.DataFrame(values).to_struct(name)._s
         elif isinstance(value, range):
             values = [range_to_series("", v) for v in values]
@@ -808,7 +846,10 @@ def _sequence_to_pydf_dispatcher(
         to_pydf = _sequence_of_pandas_to_pydf
 
     elif dataclasses.is_dataclass(first_element):
-        to_pydf = _sequence_of_dataclasses_to_pydf
+        to_pydf = _dataclasses_or_models_to_pydf
+
+    elif is_pydantic_model(first_element):
+        to_pydf = partial(_dataclasses_or_models_to_pydf, pydantic_model=True)
     else:
         to_pydf = _sequence_of_elements_to_pydf
 
@@ -846,21 +887,30 @@ def _sequence_of_sequence_to_pydf(
         column_names, schema_overrides = _unpack_schema(
             schema, schema_overrides=schema_overrides, n_expected=len(first_element)
         )
-        schema_override = (
+        local_schema_override = (
             include_unknowns(schema_overrides, column_names) if schema_overrides else {}
         )
         if column_names and len(first_element) != len(column_names):
             raise ShapeError("The row data does not match the number of columns")
 
-        for col, tp in schema_override.items():
+        unpack_nested = False
+        for col, tp in local_schema_override.items():
             if tp == Categorical:
-                schema_override[col] = Utf8
+                local_schema_override[col] = Utf8
+            elif not unpack_nested and (tp.base_type() in (Unknown, Struct)):
+                unpack_nested = contains_nested(
+                    getattr(first_element, col, None), is_namedtuple
+                )
 
-        pydf = PyDataFrame.read_rows(
-            data,
-            infer_schema_length,
-            schema_override or None,
-        )
+        if unpack_nested:
+            dicts = [nt_unpack(d) for d in data]
+            pydf = PyDataFrame.read_dicts(dicts, infer_schema_length)
+        else:
+            pydf = PyDataFrame.read_rows(
+                data,
+                infer_schema_length,
+                local_schema_override or None,
+            )
         if column_names or schema_overrides:
             pydf = _post_apply_columns(
                 pydf, column_names, schema_overrides=schema_overrides
@@ -893,8 +943,8 @@ def _sequence_of_tuple_to_pydf(
     orient: Orientation | None,
     infer_schema_length: int | None,
 ) -> PyDataFrame:
-    # infer additional meta information if NAMED tuple...
-    if is_namedtuple(first_element):
+    # infer additional meta information if named tuple
+    if is_namedtuple(first_element.__class__):
         if schema is None:
             schema = first_element._fields  # type: ignore[attr-defined]
             if len(first_element.__annotations__) == len(schema):
@@ -1003,7 +1053,7 @@ def _sequence_of_pandas_to_pydf(
     return PyDataFrame(data_series)
 
 
-def _sequence_of_dataclasses_to_pydf(
+def _dataclasses_or_models_to_pydf(
     first_element: Any,
     data: Sequence[Any],
     schema: SchemaDefinition | None,
@@ -1011,8 +1061,11 @@ def _sequence_of_dataclasses_to_pydf(
     infer_schema_length: int | None,
     **kwargs: Any,
 ) -> PyDataFrame:
-    from dataclasses import astuple
+    """Initialise DataFrame from python dataclass and/or pydantic model objects."""
+    from dataclasses import asdict, astuple
 
+    from_model = kwargs.get("pydantic_model")
+    unpack_nested = False
     if schema:
         column_names, schema_overrides = _unpack_schema(schema, schema_overrides)
         schema_override = {
@@ -1022,22 +1075,42 @@ def _sequence_of_dataclasses_to_pydf(
         column_names = []
         schema_override = {
             col: (py_type_to_dtype(tp, raise_unmatched=False) or Unknown)
-            for col, tp in dataclass_type_hints(first_element.__class__).items()
+            for col, tp in type_hints(first_element.__class__).items()
+            if col != "__slots__"
         }
         schema_override.update(schema_overrides or {})
 
     for col, tp in schema_override.items():
         if tp == Categorical:
             schema_override[col] = Utf8
+        elif not unpack_nested and (tp.base_type() in (Unknown, Struct)):
+            unpack_nested = contains_nested(
+                getattr(first_element, col, None),
+                is_pydantic_model if from_model else dataclasses.is_dataclass,  # type: ignore[arg-type]
+            )
 
-    pydf = PyDataFrame.read_rows(
-        [astuple(dc) for dc in data],
-        infer_schema_length,
-        schema_override or None,
-    )
+    if unpack_nested:
+        if from_model:
+            dicts = (
+                [md.model_dump(mode="python") for md in data]
+                if hasattr(first_element, "model_dump")
+                else [md.dict() for md in data]
+            )
+        else:
+            dicts = [asdict(md) for md in data]
+        pydf = PyDataFrame.read_dicts(dicts, infer_schema_length)
+    else:
+        rows = (
+            [tuple(md.__dict__.values()) for md in data]
+            if from_model
+            else [astuple(dc) for dc in data]
+        )
+        pydf = PyDataFrame.read_rows(rows, infer_schema_length, schema_override or None)
+
     if schema_override:
         structs = {c: tp for c, tp in schema_override.items() if isinstance(tp, Struct)}
         pydf = _post_apply_columns(pydf, column_names, structs, schema_overrides)
+
     return pydf
 
 
@@ -1339,7 +1412,7 @@ def pandas_has_default_index(df: pd.DataFrame) -> bool:
         # finally, is the index _equivalent_ to a default unnamed
         # integer index with frame data that was previously sorted
         return (
-            df.index.dtype == "int"  # type: ignore[comparison-overlap]
+            str(df.index.dtype).startswith("int")
             and (df.index.sort_values() == np.arange(len(df))).all()
         )
 

@@ -133,7 +133,8 @@ fn any_values_to_list(
 ) -> PolarsResult<ListChunked> {
     // this is handled downstream. The builder will choose the first non null type
     let mut valid = true;
-    let out = if inner_type == &DataType::Null {
+    #[allow(unused_mut)]
+    let mut out: ListChunked = if inner_type == &DataType::Null {
         avs.iter()
             .map(|av| match av {
                 AnyValue::List(b) => Some(b.clone()),
@@ -167,6 +168,15 @@ fn any_values_to_list(
             })
             .collect_trusted()
     };
+    #[cfg(feature = "dtype-struct")]
+    if !matches!(inner_type, DataType::Null)
+        && matches!(out.inner_dtype(), DataType::Struct(_) | DataType::List(_))
+    {
+        // ensure the logical type is correct
+        unsafe {
+            out.set_dtype(DataType::List(Box::new(inner_type.clone())));
+        };
+    }
     if valid || !strict {
         Ok(out)
     } else {

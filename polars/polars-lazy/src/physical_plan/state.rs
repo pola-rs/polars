@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Mutex, RwLock};
 
 use bitflags::bitflags;
+use once_cell::sync::OnceCell;
 use polars_core::config::verbose;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::frame::hash_join::JoinOptIds;
@@ -63,7 +64,7 @@ impl From<u8> for StateFlags {
 /// State/ cache that is maintained during the Execution of the physical plan.
 pub struct ExecutionState {
     // cached by a `.cache` call and kept in memory for the duration of the plan.
-    df_cache: Arc<Mutex<PlHashMap<usize, DataFrame>>>,
+    df_cache: Arc<Mutex<PlHashMap<usize, Arc<OnceCell<DataFrame>>>>>,
     // cache file reads until all branches got there file, then we delete it
     #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
     pub(crate) file_cache: FileCache,
@@ -193,16 +194,12 @@ impl ExecutionState {
         lock.clone()
     }
 
-    /// Check if we have DataFrame in cache
-    pub(crate) fn cache_hit(&self, key: &usize) -> Option<DataFrame> {
-        let guard = self.df_cache.lock().unwrap();
-        guard.get(key).cloned()
-    }
-
-    /// Store DataFrame in cache.
-    pub(crate) fn store_cache(&self, key: usize, df: DataFrame) {
+    pub(crate) fn get_df_cache(&self, key: usize) -> Arc<OnceCell<DataFrame>> {
         let mut guard = self.df_cache.lock().unwrap();
-        guard.insert(key, df);
+        guard
+            .entry(key)
+            .or_insert_with(|| Arc::new(OnceCell::new()))
+            .clone()
     }
 
     /// Clear the cache used by the Window expressions

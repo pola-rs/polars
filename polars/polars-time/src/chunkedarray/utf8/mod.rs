@@ -3,7 +3,7 @@ mod patterns;
 mod strptime;
 
 use chrono::ParseError;
-pub use patterns::Pattern;
+pub use patterns::{Pattern, PatternWithOffset};
 
 use super::*;
 #[cfg(feature = "dtype-date")]

@@ -187,8 +187,8 @@ impl PyExpr {
     pub fn last(&self) -> PyExpr {
         self.clone().inner.last().into()
     }
-    pub fn list(&self) -> PyExpr {
-        self.clone().inner.list().into()
+    pub fn implode(&self) -> PyExpr {
+        self.clone().inner.implode().into()
     }
     pub fn quantile(
         &self,
@@ -347,6 +347,10 @@ impl PyExpr {
     }
     pub fn is_unique(&self) -> PyExpr {
         self.clone().inner.is_unique().into()
+    }
+
+    pub fn approx_unique(&self) -> PyExpr {
+        self.clone().inner.approx_unique().into()
     }
 
     pub fn is_first(&self) -> PyExpr {
@@ -724,6 +728,7 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (pat, literal, strict))]
+    #[cfg(feature = "lazy_regex")]
     pub fn str_contains(&self, pat: PyExpr, literal: Option<bool>, strict: bool) -> PyExpr {
         match literal {
             Some(true) => self.inner.clone().str().contains_literal(pat.inner).into(),
@@ -767,7 +772,7 @@ impl PyExpr {
             .inner
             .map(
                 move |s| s.utf8()?.hex_decode(strict).map(|s| Some(s.into_series())),
-                GetOutput::same_type(),
+                GetOutput::from_type(DataType::Binary),
             )
             .with_fmt("str.hex_decode")
             .into()
@@ -793,7 +798,7 @@ impl PyExpr {
                         .base64_decode(strict)
                         .map(|s| Some(s.into_series()))
                 },
-                GetOutput::same_type(),
+                GetOutput::from_type(DataType::Binary),
             )
             .with_fmt("str.base64_decode")
             .into()
@@ -863,6 +868,7 @@ impl PyExpr {
             .into()
     }
 
+    #[cfg(feature = "extract_jsonpath")]
     pub fn str_json_extract(&self, dtype: Option<Wrap<DataType>>) -> PyExpr {
         let dtype = dtype.map(|wrap| wrap.0);
 
@@ -914,8 +920,8 @@ impl PyExpr {
         self.inner.clone().str().count_match(pat).into()
     }
 
-    pub fn strftime(&self, fmt: &str) -> PyExpr {
-        self.inner.clone().dt().strftime(fmt).into()
+    pub fn strftime(&self, format: &str) -> PyExpr {
+        self.inner.clone().dt().strftime(format).into()
     }
     pub fn str_split(&self, by: &str) -> PyExpr {
         self.inner.clone().str().split(by).into()
@@ -1588,7 +1594,7 @@ impl PyExpr {
         self.inner.clone().arr().arg_max().into()
     }
 
-    fn lst_diff(&self, n: usize, null_behavior: Wrap<NullBehavior>) -> PyResult<Self> {
+    fn lst_diff(&self, n: i64, null_behavior: Wrap<NullBehavior>) -> PyResult<Self> {
         Ok(self.inner.clone().arr().diff(n, null_behavior.0).into())
     }
 
@@ -1653,12 +1659,12 @@ impl PyExpr {
         self.inner.clone().rank(options, seed).into()
     }
 
-    fn diff(&self, n: usize, null_behavior: Wrap<NullBehavior>) -> Self {
+    fn diff(&self, n: i64, null_behavior: Wrap<NullBehavior>) -> Self {
         self.inner.clone().diff(n, null_behavior.0).into()
     }
 
     #[cfg(feature = "pct_change")]
-    fn pct_change(&self, n: usize) -> Self {
+    fn pct_change(&self, n: i64) -> Self {
         self.inner.clone().pct_change(n).into()
     }
 
@@ -1813,6 +1819,10 @@ impl PyExpr {
 
     pub fn log(&self, base: f64) -> Self {
         self.inner.clone().log(base).into()
+    }
+
+    pub fn log1p(&self) -> Self {
+        self.inner.clone().log1p().into()
     }
 
     pub fn exp(&self) -> Self {

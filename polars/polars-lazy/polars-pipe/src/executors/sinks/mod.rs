@@ -1,4 +1,4 @@
-#[cfg(feature = "parquet")]
+#[cfg(any(feature = "parquet", feature = "ipc"))]
 mod file_sink;
 pub(crate) mod groupby;
 mod io;

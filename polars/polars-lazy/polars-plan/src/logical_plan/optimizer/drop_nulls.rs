@@ -40,7 +40,7 @@ impl OptimizationRule for ReplaceDropNulls {
                     matches!(
                         e,
                         &AExpr::Function {
-                            function: FunctionExpr::IsNotNull,
+                            function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
                             ..
                         }
                     )

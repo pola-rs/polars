@@ -12,7 +12,7 @@ description = "DataFrame Library based on Apache Arrow"
 [features]
 sql = ["polars-sql"]
 rows = ["polars-core/rows"]
-simd = ["polars-core/simd", "polars-io/simd"]
+simd = ["polars-core/simd", "polars-io/simd", "polars-ops/simd"]
 avx512 = ["polars-core/avx512"]
 nightly = ["polars-core/nightly", "polars-ops/nightly", "simd"]
 docs = ["polars-core/docs"]
@@ -80,6 +80,7 @@ fmt_no_tty = ["polars-core/fmt_no_tty"]
 sort_multiple = ["polars-core/sort_multiple"]
 
 # extra operations
+approx_unique = ["polars-lazy/approx_unique", "polars-ops/approx_unique"]
 is_in = ["polars-core/is_in", "polars-lazy/is_in"]
 zip_with = ["polars-core/zip_with"]
 round_series = ["polars-core/round_series", "polars-lazy/round_series", "polars-ops/round_series"]
