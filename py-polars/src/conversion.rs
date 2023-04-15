@@ -738,6 +738,11 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                 }
                 "range" => materialize_list(ob),
                 _ => {
+                    // special branch for np.float as this fails isinstance float
+                    if let Ok(value) = ob.extract::<f64>() {
+                        return Ok(AnyValue::Float64(value).into());
+                    }
+
                     // Can't use pyo3::types::PyDateTime with abi3-py37 feature,
                     // so need this workaround instead of `isinstance(ob, datetime)`.
                     let bases = ob.get_type().getattr("__bases__")?.iter()?;
