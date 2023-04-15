@@ -56,9 +56,14 @@ jobs:
         with:
           workspaces: py-polars
 
+      - name: Use sccache
+        uses: mozilla-actions/sccache-action@v0.0.3
+
       - name: Install Polars release build
         env:
           RUSTFLAGS: -C embed-bitcode
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
         working-directory: py-polars
         run: |
           source activate

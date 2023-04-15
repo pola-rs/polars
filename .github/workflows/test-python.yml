@@ -51,9 +51,14 @@ jobs:
         with:
           workspaces: py-polars
 
+      - name: Use sccache
+        uses: mozilla-actions/sccache-action@v0.0.3
+
       - name: Install Polars
         env:
           RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
         run: |
           source activate
           maturin develop

@@ -38,12 +38,18 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
 
+      - name: Use sccache
+        uses: mozilla-actions/sccache-action@v0.0.3
+
       - name: Install dependencies
         run: cargo install cargo-hack
 
       - name: Run cargo hack
         working-directory: polars
         run: cargo hack check --each-feature --no-dev-deps --features private
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
 
   lint:
     runs-on: ubuntu-latest
@@ -103,12 +109,19 @@ jobs:
         with:
           workspaces: polars
 
+      - name: Use sccache
+        uses: mozilla-actions/sccache-action@v0.0.3
+
       - name: Run tests
         env:
           RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
         run: make test
 
       - name: Run integration tests
         env:
           RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
         run: make integration-tests
