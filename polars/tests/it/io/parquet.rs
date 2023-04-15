@@ -19,7 +19,6 @@ fn test_vstack_empty_3220() -> PolarsResult<()> {
     Ok(())
 }
 
-// TODO: "../examples/datasets/foods*.parquet" don't exist
 #[test]
 fn test_scan_parquet_files() -> PolarsResult<()> {
     let files_to_load_set = vec![
