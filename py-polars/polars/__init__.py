@@ -1,4 +1,12 @@
+import contextlib
 import os
+
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    # ensure the object constructor is known by polars
+    # we set this once on import
+    from polars.polars import register_object_builder
+
+    register_object_builder()
 
 from polars import api
 from polars.config import Config
@@ -99,6 +107,7 @@ from polars.functions.lazy import (
     from_epoch,
     groups,
     head,
+    implode,
     last,
     lit,
     map,
@@ -295,6 +304,7 @@ __all__ = [
     "from_epoch",
     "groups",
     "head",
+    "implode",
     "last",
     "list",  # named list_, see import above
     "lit",

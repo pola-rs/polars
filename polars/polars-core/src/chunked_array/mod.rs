@@ -347,6 +347,11 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.field.data_type()
     }
 
+    #[cfg(feature = "dtype-struct")]
+    pub(crate) unsafe fn set_dtype(&mut self, dtype: DataType) {
+        self.field = Arc::new(Field::new(self.name(), dtype))
+    }
+
     /// Name of the ChunkedArray.
     pub fn name(&self) -> &str {
         self.field.name()

@@ -562,20 +562,46 @@ class Series:
         ...
 
     @overload
+    def __add__(self, other: Expr) -> Expr:  # type: ignore[misc]
+        ...
+
+    @overload
     def __add__(self, other: Any) -> Self:
         ...
 
-    def __add__(self, other: Any) -> Self | DataFrame:
+    def __add__(self, other: Any) -> Self | DataFrame | Expr:
         if isinstance(other, str):
             other = Series("", [other])
         elif isinstance(other, pli.DataFrame):
             return other + self
+        elif isinstance(other, pli.Expr):
+            return F.lit(self) + other
         return self._arithmetic(other, "add", "add_<>")
 
+    @overload
+    def __sub__(self, other: Expr) -> Expr:  # type: ignore[misc]
+        ...
+
+    @overload
     def __sub__(self, other: Any) -> Self:
+        ...
+
+    def __sub__(self, other: Any) -> Self | Expr:
+        if isinstance(other, pli.Expr):
+            return F.lit(self) - other
         return self._arithmetic(other, "sub", "sub_<>")
 
-    def __truediv__(self, other: Any) -> Self:
+    @overload
+    def __truediv__(self, other: Expr) -> Expr:  # type: ignore[misc]
+        ...
+
+    @overload
+    def __truediv__(self, other: Any) -> Series:
+        ...
+
+    def __truediv__(self, other: Any) -> Series | Expr:
+        if isinstance(other, pli.Expr):
+            return F.lit(self) / other
         if self.is_temporal():
             raise ValueError("first cast to integer before dividing datelike dtypes")
 
@@ -588,6 +614,8 @@ class Series:
     # python 3.7 is not happy. Remove this when we finally ditch that
     @typing.no_type_check
     def __floordiv__(self, other: Any) -> Series:
+        if isinstance(other, pli.Expr):
+            return F.lit(self).__floordiv__(other)
         if self.is_temporal():
             raise ValueError("first cast to integer before dividing datelike dtypes")
         if not isinstance(other, pli.Expr):
@@ -600,6 +628,10 @@ class Series:
         return NotImplemented
 
     @overload
+    def __mul__(self, other: Expr) -> Expr:  # type: ignore[misc]
+        ...
+
+    @overload
     def __mul__(self, other: DataFrame) -> DataFrame:  # type: ignore[misc]
         ...
 
@@ -607,7 +639,9 @@ class Series:
     def __mul__(self, other: Any) -> Series:
         ...
 
-    def __mul__(self, other: Any) -> Series | DataFrame:
+    def __mul__(self, other: Any) -> Series | DataFrame | Expr:
+        if isinstance(other, pli.Expr):
+            return F.lit(self) * other
         if self.is_temporal():
             raise ValueError("first cast to integer before multiplying datelike dtypes")
         elif isinstance(other, pli.DataFrame):
@@ -615,7 +649,17 @@ class Series:
         else:
             return self._arithmetic(other, "mul", "mul_<>")
 
+    @overload
+    def __mod__(self, other: Expr) -> Expr:  # type: ignore[misc]
+        ...
+
+    @overload
     def __mod__(self, other: Any) -> Series:
+        ...
+
+    def __mod__(self, other: Any) -> Series | Expr:
+        if isinstance(other, pli.Expr):
+            return F.lit(self).__mod__(other)
         if self.is_temporal():
             raise ValueError(
                 "first cast to integer before applying modulo on datelike dtypes"

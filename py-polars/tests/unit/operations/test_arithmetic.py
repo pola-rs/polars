@@ -128,3 +128,13 @@ def test_unary_plus() -> None:
 
     with pytest.raises(pl.exceptions.ComputeError):
         pl.select(+pl.lit(""))
+
+
+def test_series_expr_arithm() -> None:
+    s = pl.Series([1, 2, 3])
+    assert (s + pl.col("a")).meta == pl.lit(s) + pl.col("a")
+    assert (s - pl.col("a")).meta == pl.lit(s) - pl.col("a")
+    assert (s / pl.col("a")).meta == pl.lit(s) / pl.col("a")
+    assert (s // pl.col("a")).meta == pl.lit(s) // pl.col("a")
+    assert (s * pl.col("a")).meta == pl.lit(s) * pl.col("a")
+    assert (s % pl.col("a")).meta == pl.lit(s) % pl.col("a")

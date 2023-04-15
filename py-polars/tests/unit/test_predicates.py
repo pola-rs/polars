@@ -108,7 +108,7 @@ def test_predicate_strptime_6558() -> None:
     assert (
         pl.DataFrame({"date": ["2022-01-03", "2020-01-04", "2021-02-03", "2019-01-04"]})
         .lazy()
-        .select(pl.col("date").str.strptime(pl.Date, fmt="%F"))
+        .select(pl.col("date").str.strptime(pl.Date, format="%F"))
         .filter((pl.col("date").dt.year() == 2022) & (pl.col("date").dt.month() == 1))
         .collect()
     ).to_dict(False) == {"date": [date(2022, 1, 3)]}
@@ -124,7 +124,7 @@ def test_predicate_arr_first_6573() -> None:
 
     assert (
         df.lazy()
-        .with_columns(pl.col("a").list())
+        .with_columns(pl.col("a").implode())
         .with_columns(pl.col("a").arr.first())
         .filter(pl.col("a") == pl.col("b"))
         .collect()

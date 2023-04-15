@@ -10,13 +10,14 @@ fmt:
 
 check:
 	cargo check --all-features \
-	    -p polars-core \
-	    -p polars-io \
-	    -p polars-lazy \
-	    -p polars-arrow \
-	    -p polars-time \
-	    -p polars-error \
-	    -p polars-ops
+		-p polars-core \
+		-p polars-io \
+		-p polars-lazy \
+		-p polars-arrow \
+		-p polars-time \
+		-p polars-error \
+		-p polars-ops \
+		-p polars-sql
 
 clippy:
 	cargo clippy --all-features \
@@ -28,7 +29,8 @@ clippy:
 	    -p polars-ops \
 	    -p polars-error \
 	    -p polars-row \
-	    -p polars-time
+	    -p polars-time \
+			-p polars-sql
 
 clippy-default:
 	cargo clippy
@@ -36,15 +38,16 @@ clippy-default:
 test:  ## Run tests
 	POLARS_NO_STREAMING_GROUPBY=1 POLARS_MAX_THREADS=4 cargo t -p polars-core test_4_threads
 	cargo test --all-features \
-	    -p polars-lazy \
-	    -p polars-io \
-	    -p polars-core \
-	    -p polars-arrow \
-	    -p polars-time \
-	    -p polars-utils \
-	    -p polars-row \
-	    -- \
-	    --test-threads=2
+		-p polars-lazy \
+		-p polars-io \
+		-p polars-core \
+		-p polars-arrow \
+		-p polars-time \
+		-p polars-utils \
+		-p polars-row \
+		-p polars-sql \
+		-- \
+		--test-threads=2
 
 integration-tests:
 	cargo t --all-features --test it -- --test-threads=2

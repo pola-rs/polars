@@ -702,9 +702,17 @@ where
                 first = false;
             } else {
                 // offset lengths must be updated
-                offsets.extend(local_offsets[1..].iter().map(|v| *v + offsets_so_far))
+                unsafe {
+                    // safety: there is always a single offset
+                    offsets.extend(
+                        local_offsets
+                            .get_unchecked(1..)
+                            .iter()
+                            .map(|v| *v + offsets_so_far),
+                    )
+                }
             }
-            offsets_so_far = *local_offsets.last().unwrap();
+            offsets_so_far = unsafe { *offsets.last().unwrap_unchecked() };
         }
 
         unsafe {

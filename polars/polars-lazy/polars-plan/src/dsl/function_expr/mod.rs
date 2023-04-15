@@ -46,6 +46,7 @@ use std::fmt::{Display, Formatter};
 
 pub(super) use list::ListFunction;
 use polars_core::prelude::*;
+use schema::FieldsMapper;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 

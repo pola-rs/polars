@@ -266,7 +266,7 @@ def test_is_in_empty_list_4639() -> None:
 
 def test_inner_type_categorical_on_rechunk() -> None:
     df = pl.DataFrame({"cats": ["foo", "bar"]}).select(
-        pl.col(pl.Utf8).cast(pl.Categorical).list()
+        pl.col(pl.Utf8).cast(pl.Categorical).implode()
     )
 
     assert pl.concat([df, df], rechunk=True).dtypes == [pl.List(pl.Categorical)]
@@ -353,7 +353,7 @@ def test_concat_list_in_agg_6397() -> None:
     # nested list
     assert df.groupby("group").agg(
         [
-            pl.concat_list(pl.col("value").list()).alias("result"),
+            pl.concat_list(pl.col("value").implode()).alias("result"),
         ]
     ).sort("group").to_dict(False) == {
         "group": [1, 2, 3],
@@ -370,7 +370,7 @@ def test_flat_aggregation_to_list_conversion_6918() -> None:
     df = pl.DataFrame({"a": [1, 2, 2], "b": [[0, 1], [2, 3], [4, 5]]})
 
     assert df.groupby("a", maintain_order=True).agg(
-        pl.concat_list([pl.col("b").arr.get(i).mean().list() for i in range(2)])
+        pl.concat_list([pl.col("b").arr.get(i).mean().implode() for i in range(2)])
     ).to_dict(False) == {"a": [1, 2], "b": [[[0.0, 1.0]], [[3.0, 4.0]]]}
 
 
@@ -463,5 +463,11 @@ def test_fill_null_empty_list() -> None:
 
 def test_nested_logical() -> None:
     assert pl.select(
-        pl.lit(pl.Series(["a", "b"], dtype=pl.Categorical)).list().list()
+        pl.lit(pl.Series(["a", "b"], dtype=pl.Categorical)).implode().implode()
     ).to_dict(False) == {"": [[["a", "b"]]]}
+
+
+def test_null_list_construction_and_materialization() -> None:
+    s = pl.Series([None, []])
+    assert s.dtype == pl.List(pl.Null)
+    assert s.to_list() == [None, []]

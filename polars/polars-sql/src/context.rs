@@ -22,7 +22,7 @@ thread_local! {pub(crate) static TABLES: RefCell<Vec<String>> = RefCell::new(vec
 #[derive(Default, Clone)]
 pub struct SQLContext {
     pub(crate) table_map: PlHashMap<String, LazyFrame>,
-    pub(crate) tables: Vec<String>,
+    cte_map: RefCell<PlHashMap<String, LazyFrame>>,
 }
 
 impl SQLContext {
@@ -30,13 +30,24 @@ impl SQLContext {
     pub fn new() -> Self {
         Self {
             table_map: PlHashMap::new(),
-            tables: vec![],
+            cte_map: RefCell::new(PlHashMap::new()),
         }
     }
     /// Register a DataFrame as a table in the SQLContext.
     pub fn register(&mut self, name: &str, lf: LazyFrame) {
-        self.tables.push(name.to_owned());
         self.table_map.insert(name.to_owned(), lf);
+    }
+
+    fn register_cte(&mut self, name: &str, lf: LazyFrame) {
+        self.cte_map.borrow_mut().insert(name.to_owned(), lf);
+    }
+
+    fn get_table_from_current_scope(&mut self, name: &str) -> Option<LazyFrame> {
+        if let Some(lf) = self.table_map.get(name) {
+            Some(lf.clone())
+        } else {
+            self.cte_map.borrow().get(name).cloned()
+        }
     }
 }
 
@@ -45,13 +56,17 @@ impl SQLContext {
     pub fn execute(&mut self, query: &str) -> PolarsResult<LazyFrame> {
         let ast = Parser::parse_sql(&GenericDialect::default(), query).map_err(to_compute_err)?;
         polars_ensure!(ast.len() == 1, ComputeError: "One and only one statement at a time please");
-        self.execute_statement(ast.get(0).unwrap())
+        let res = self.execute_statement(ast.get(0).unwrap());
+        // every execution should clear the cte map
+        self.cte_map.borrow_mut().clear();
+        res
     }
 
     pub(crate) fn execute_statement(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
         let ast = stmt;
         Ok(match ast {
             Statement::Query(query) => self.execute_query(query)?,
+
             stmt @ Statement::ShowTables { .. } => self.execute_show_tables(stmt)?,
             stmt @ Statement::CreateTable { .. } => self.execute_create_table(stmt)?,
             _ => polars_bail!(
@@ -61,10 +76,12 @@ impl SQLContext {
     }
 
     pub(crate) fn execute_query(&mut self, query: &Query) -> PolarsResult<LazyFrame> {
+        self.register_ctes(query)?;
         let mut lf = match &query.body.as_ref() {
             SetExpr::Select(select_stmt) => self.execute_select(select_stmt)?,
             _ => polars_bail!(ComputeError: "INSERT, UPDATE is not supported"),
         };
+
         if !query.order_by.is_empty() {
             lf = self.process_order_by(lf, &query.order_by)?;
         }
@@ -83,9 +100,26 @@ impl SQLContext {
     }
 
     fn execute_show_tables(&mut self, _: &Statement) -> PolarsResult<LazyFrame> {
-        let tables = Series::new("name", self.tables.clone());
+        let tables = Series::new(
+            "name",
+            self.table_map.clone().into_keys().collect::<Vec<_>>(),
+        );
         let df = DataFrame::new(vec![tables])?;
         Ok(df.lazy())
+    }
+
+    fn register_ctes(&mut self, query: &Query) -> PolarsResult<()> {
+        if let Some(with) = &query.with {
+            if with.recursive {
+                polars_bail!(ComputeError: "Recursive CTEs are not supported")
+            }
+            for cte in &with.cte_tables {
+                let cte_name = cte.alias.name.to_string();
+                let cte_lf = self.execute_query(&cte.query)?;
+                self.register_cte(&cte_name, cte_lf);
+            }
+        }
+        Ok(())
     }
 
     /// execute the 'FROM' part of the query
@@ -235,16 +269,10 @@ impl SQLContext {
                     return self.execute_tbl_function(name, alias, args);
                 }
                 let tbl_name = name.0.get(0).unwrap().value.as_str();
-
-                if self.table_map.contains_key(tbl_name) {
-                    let lf = self.table_map.get(tbl_name).cloned().ok_or_else(|| {
-                        polars_err!(
-                            ComputeError: "table '{}' was not registered in the SQLContext", name,
-                        )
-                    })?;
+                if let Some(lf) = self.get_table_from_current_scope(tbl_name) {
                     Ok((tbl_name.to_string(), lf))
                 } else {
-                    polars_bail!(ComputeError: "relation {} was not found", tbl_name);
+                    polars_bail!(ComputeError: "relation '{}' was not found", tbl_name);
                 }
             }
             // Support bare table, optional with alias for now
@@ -259,7 +287,6 @@ impl SQLContext {
         args: &[FunctionArg],
     ) -> PolarsResult<(String, LazyFrame)> {
         let tbl_fn = name.0.get(0).unwrap().value.as_str();
-
         let read_fn = tbl_fn.parse::<PolarsTableFunctions>()?;
         let (tbl_name, lf) = read_fn.execute(args)?;
         let tbl_name = alias

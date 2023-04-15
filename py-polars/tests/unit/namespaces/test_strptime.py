@@ -44,11 +44,11 @@ def test_str_strptime() -> None:
 
 def test_date_parse_omit_day() -> None:
     df = pl.DataFrame({"month": ["2022-01"]})
-    assert df.select(pl.col("month").str.strptime(pl.Date, fmt="%Y-%m")).item() == date(
-        2022, 1, 1
-    )
     assert df.select(
-        pl.col("month").str.strptime(pl.Datetime, fmt="%Y-%m")
+        pl.col("month").str.strptime(pl.Date, format="%Y-%m")
+    ).item() == date(2022, 1, 1)
+    assert df.select(
+        pl.col("month").str.strptime(pl.Datetime, format="%Y-%m")
     ).item() == datetime(2022, 1, 1)
 
 
@@ -81,12 +81,12 @@ def test_strptime_precision() -> None:
     ("unit", "expected"),
     [("ms", "123000000"), ("us", "123456000"), ("ns", "123456789")],
 )
-@pytest.mark.parametrize("fmt", ["%Y-%m-%d %H:%M:%S.%f", None])
+@pytest.mark.parametrize("format", ["%Y-%m-%d %H:%M:%S%.f", None])
 def test_strptime_precision_with_time_unit(
-    unit: TimeUnit, expected: str, fmt: str
+    unit: TimeUnit, expected: str, format: str
 ) -> None:
     ser = pl.Series(["2020-01-01 00:00:00.123456789"])
-    result = ser.str.strptime(pl.Datetime(unit), fmt=fmt).dt.strftime("%f")[0]
+    result = ser.str.strptime(pl.Datetime(unit), format=format).dt.strftime("%f")[0]
     assert result == expected
 
 
@@ -116,7 +116,9 @@ def test_timezone_aware_strptime(tz_string: str, timedelta: timedelta) -> None:
         }
     )
     assert times.with_columns(
-        pl.col("delivery_datetime").str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S%z")
+        pl.col("delivery_datetime").str.strptime(
+            pl.Datetime, format="%Y-%m-%d %H:%M:%S%z"
+        )
     ).to_dict(False) == {
         "delivery_datetime": [
             datetime(2021, 12, 5, 6, 0, tzinfo=timezone(timedelta)),
@@ -252,7 +254,7 @@ def test_datetime_strptime_patterns_consistent() -> None:
     s = df.with_columns(
         [
             pl.col("date")
-            .str.strptime(pl.Datetime, fmt=None, strict=False)
+            .str.strptime(pl.Datetime, format=None, strict=False)
             .alias("parsed"),
         ]
     )["parsed"]
@@ -280,7 +282,7 @@ def test_datetime_strptime_patterns_inconsistent() -> None:
     s = df.with_columns(
         [
             pl.col("date")
-            .str.strptime(pl.Datetime, fmt=None, strict=False)
+            .str.strptime(pl.Datetime, format=None, strict=False)
             .alias("parsed"),
         ]
     )["parsed"]
@@ -291,7 +293,7 @@ def test_datetime_strptime_patterns_inconsistent() -> None:
 @pytest.mark.parametrize(
     (
         "ts",
-        "fmt",
+        "format",
         "exp_year",
         "exp_month",
         "exp_day",
@@ -306,7 +308,7 @@ def test_datetime_strptime_patterns_inconsistent() -> None:
 )
 def test_parse_negative_dates(
     ts: str,
-    fmt: str,
+    format: str,
     exp_year: int,
     exp_month: int,
     exp_day: int,
@@ -315,7 +317,7 @@ def test_parse_negative_dates(
     exp_second: int,
 ) -> None:
     ser = pl.Series([ts])
-    result = ser.str.strptime(pl.Datetime("ms"), fmt=fmt)
+    result = ser.str.strptime(pl.Datetime("ms"), format=format)
     # Python datetime.datetime doesn't support negative dates, so comparing
     # with `result.item()` directly won't work.
     assert result.dt.year().item() == exp_year
@@ -332,7 +334,7 @@ def test_short_formats() -> None:
         None,
         date(2020, 1, 1),
     ]
-    assert s.str.strptime(pl.Date, "%foo", strict=False).to_list() == [None, None]
+    assert s.str.strptime(pl.Date, "%bar", strict=False).to_list() == [None, None]
 
 
 @pytest.mark.parametrize(
@@ -403,6 +405,7 @@ def test_replace_time_zone_ambiguous_or_non_existent() -> None:
 @pytest.mark.parametrize(
     ("ts", "fmt", "expected"),
     [
+        ("2020-01-01T00:00:00Z", None, datetime(2020, 1, 1, tzinfo=timezone.utc)),
         ("2020-01-01T00:00:00Z", "%+", datetime(2020, 1, 1, tzinfo=timezone.utc)),
         (
             "2020-01-01T00:00:00+01:00",

@@ -12,7 +12,8 @@ use crate::Wrap;
 
 pub(crate) const OBJECT_NAME: &str = "object";
 
-pub(crate) fn register_object_builder() {
+#[pyfunction]
+pub fn register_object_builder() {
     if !registry::is_object_builder_registered() {
         let object_builder = Box::new(|name: &str, capacity: usize| {
             Box::new(ObjectChunkedBuilder::<ObjectValue>::new(name, capacity))

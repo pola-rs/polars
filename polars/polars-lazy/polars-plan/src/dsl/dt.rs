@@ -9,9 +9,9 @@ pub struct DateLikeNameSpace(pub(crate) Expr);
 impl DateLikeNameSpace {
     /// Format Date/datetime with a formatting rule
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
-    pub fn strftime(self, fmt: &str) -> Expr {
-        let fmt = fmt.to_string();
-        let function = move |s: Series| s.strftime(&fmt).map(Some);
+    pub fn strftime(self, format: &str) -> Expr {
+        let format = format.to_string();
+        let function = move |s: Series| s.strftime(&format).map(Some);
         self.0
             .map(function, GetOutput::from_type(DataType::Utf8))
             .with_fmt("strftime")

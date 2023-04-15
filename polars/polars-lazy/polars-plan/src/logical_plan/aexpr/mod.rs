@@ -28,7 +28,7 @@ pub enum AAggExpr {
     First(Node),
     Last(Node),
     Mean(Node),
-    List(Node),
+    Implode(Node),
     Quantile {
         expr: Node,
         quantile: Node,
@@ -235,7 +235,7 @@ impl AAggExpr {
             First(input) => Single(*input),
             Last(input) => Single(*input),
             Mean(input) => Single(*input),
-            List(input) => Single(*input),
+            Implode(input) => Single(*input),
             Quantile { expr, .. } => Single(*expr),
             Sum(input) => Single(*input),
             Count(input) => Single(*input),

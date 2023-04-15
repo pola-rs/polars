@@ -188,3 +188,17 @@ def test_duration_function_literal() -> None:
             ],
         ],
     }
+
+
+def test_string_par_materialize_8207() -> None:
+    df = pl.LazyFrame(
+        {
+            "a": ["a", "b", "d", "c", "e"],
+            "b": ["P", "L", "R", "T", "a long string"],
+        }
+    )
+
+    assert df.groupby(["a"]).agg(pl.min("b")).sort("a").collect().to_dict(False) == {
+        "a": ["a", "b", "c", "d", "e"],
+        "b": ["P", "L", "T", "R", "a long string"],
+    }

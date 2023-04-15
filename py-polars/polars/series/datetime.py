@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from polars import functions as F
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
 from polars.utils.convert import _to_python_datetime
+from polars.utils.decorators import deprecated_alias
 
 if TYPE_CHECKING:
     import datetime as dt
@@ -124,12 +126,17 @@ class DateTimeNameSpace:
             return _to_python_datetime(int(out), s.dtype, s.time_unit)
         return None
 
-    def strftime(self, fmt: str) -> Series:
+    @deprecated_alias(fmt="format")
+    def strftime(self, format: str) -> Series:
         """
         Format Date/datetime with a formatting rule.
 
-        See `chrono strftime/strptime
-        <https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html>`_.
+        Parameters
+        ----------
+        format
+            Format to use, refer to the `chrono strftime documentation
+            <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            for specification. Example: ``"%y-%m-%d"``.
 
         Returns
         -------
@@ -150,7 +157,7 @@ class DateTimeNameSpace:
                 2001-01-03 00:00:00
                 2001-01-04 00:00:00
         ]
-        >>> date.dt.strftime(fmt="%Y-%m-%d")
+        >>> date.dt.strftime(format="%Y-%m-%d")
         shape: (4,)
         Series: '' [str]
         [
@@ -161,6 +168,8 @@ class DateTimeNameSpace:
         ]
 
         """
+        s = wrap_s(self._s)
+        return s.to_frame().select(F.col(s.name).dt.strftime(format)).to_series()
 
     def year(self) -> Series:
         """
@@ -1449,6 +1458,19 @@ class DateTimeNameSpace:
                 2003-11-01 00:00:00
         ]
 
+        To get to the end of each month, combine with `truncate`:
+
+        >>> dates.dt.truncate("1mo").dt.offset_by("1mo").dt.offset_by("-1d")
+        shape: (6,)
+        Series: '' [datetime[μs]]
+        [
+                2000-01-31 00:00:00
+                2001-01-31 00:00:00
+                2002-01-31 00:00:00
+                2003-01-31 00:00:00
+                2004-01-31 00:00:00
+                2005-01-31 00:00:00
+        ]
         """
 
     def truncate(

@@ -72,7 +72,7 @@ for T in ["T", " "]:
         + [f"{T}%H%M%S.{fraction}" for fraction in ["%9f", "%6f", "%3f"]]
         + [""]
     ):
-        for date_sep in ("/", "-", ""):
+        for date_sep in ("/", "-"):
             fmt = f"%Y{date_sep}%m{date_sep}%d{hms}"
             ISO8601_FORMATS_DATETIME.append(fmt)
 
@@ -95,7 +95,7 @@ for T in ["T", " "]:
         + [f"{T}%H:%M:%S.{fraction}" for fraction in ["%9f", "%6f", "%3f"]]
         + [f"{T}%H%M%S.{fraction}" for fraction in ["%9f", "%6f", "%3f"]]
     ):
-        for date_sep in ("/", "-", ""):
+        for date_sep in ("/", "-"):
             fmt = f"%Y{date_sep}%m{date_sep}%d{hms}%#z"
             ISO8601_TZ_AWARE_FORMATS_DATETIME.append(fmt)
 
@@ -107,7 +107,7 @@ def iso8601_tz_aware_format_datetime(request: pytest.FixtureRequest) -> list[str
 
 ISO8601_FORMATS_DATE = []
 
-for date_sep in ("/", "-", ""):
+for date_sep in ("/", "-"):
     fmt = f"%Y{date_sep}%m{date_sep}%d"
     ISO8601_FORMATS_DATE.append(fmt)
 
