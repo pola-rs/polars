@@ -54,9 +54,26 @@ pub(super) fn combine(s: &[Series], tu: TimeUnit) -> PolarsResult<Series> {
     let date = &s[0];
     let time = &s[1];
 
+    let tz = match date.dtype() {
+        DataType::Date => None,
+        DataType::Datetime(_, tz) => tz.as_ref(),
+        _dtype => {
+            polars_bail!(ComputeError: format!("expected Date or Datetime dtype, got: {}", _dtype))
+        }
+    };
+
     let date = date.cast(&DataType::Date)?;
     let datetime = date.cast(&DataType::Datetime(tu, None)).unwrap();
 
     let duration = time.cast(&DataType::Duration(tu))?;
-    Ok(datetime + duration)
+    let result_naive = datetime + duration;
+    match tz {
+        #[cfg(feature = "timezones")]
+        Some(tz) => Ok(result_naive
+            .datetime()
+            .unwrap()
+            .replace_time_zone(Some(tz))?
+            .into()),
+        _ => Ok(result_naive),
+    }
 }
