@@ -564,7 +564,9 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Truncate(every, offset) => map!(datetime::truncate, &every, &offset),
             Round(every, offset) => map!(datetime::round, &every, &offset),
             #[cfg(feature = "timezones")]
-            CastTimezone(tz) => map!(datetime::replace_timezone, tz.as_deref()),
+            CastTimezone(tz, use_earliest) => {
+                map!(datetime::replace_timezone, tz.as_deref(), use_earliest)
+            }
             #[cfg(feature = "timezones")]
             TzLocalize(tz) => map!(datetime::tz_localize, &tz),
             Combine(tu) => map_as_slice!(temporal::combine, tu),
