@@ -11,6 +11,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+defaults:
+  run:
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+
 jobs:
   examples:
     runs-on: ubuntu-latest
@@ -47,9 +53,6 @@ jobs:
       - name: Run cargo hack
         working-directory: polars
         run: cargo hack check --each-feature --no-dev-deps --features private
-        env:
-          SCCACHE_GHA_ENABLED: "true"
-          RUSTC_WRAPPER: "sccache"
 
   lint:
     runs-on: ubuntu-latest
@@ -115,13 +118,9 @@ jobs:
       - name: Run tests
         env:
           RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
-          SCCACHE_GHA_ENABLED: "true"
-          RUSTC_WRAPPER: "sccache"
         run: make test
 
       - name: Run integration tests
         env:
           RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
-          SCCACHE_GHA_ENABLED: "true"
-          RUSTC_WRAPPER: "sccache"
         run: make integration-tests
