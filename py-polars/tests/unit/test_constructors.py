@@ -107,7 +107,7 @@ def test_init_dict() -> None:
 
     # List of empty list
     df = pl.DataFrame({"a": [[]], "b": [[]]})
-    expected = {"a": pl.List(pl.Int32), "b": pl.List(pl.Int32)}
+    expected = {"a": pl.List(pl.Null), "b": pl.List(pl.Null)}
     assert df.schema == expected
     assert df.rows() == [([], [])]
 

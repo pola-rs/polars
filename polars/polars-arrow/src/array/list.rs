@@ -95,8 +95,8 @@ impl<'a> AnonymousBuilder<'a> {
         // offsets are monotonically increasing
         let offsets = unsafe { Offsets::new_unchecked(self.offsets) };
         let (inner_dtype, values) = if self.arrays.is_empty() {
-            let arr_len = offsets.len_proxy();
-            let values = NullArray::new(DataType::Null, arr_len).boxed();
+            let len = *offsets.last() as usize;
+            let values = NullArray::new(DataType::Null, len).boxed();
             (DataType::Null, values)
         } else {
             let inner_dtype = inner_dtype.unwrap_or_else(|| self.arrays[0].data_type());
