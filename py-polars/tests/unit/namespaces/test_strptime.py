@@ -405,6 +405,7 @@ def test_replace_time_zone_ambiguous_or_non_existent() -> None:
 @pytest.mark.parametrize(
     ("ts", "fmt", "expected"),
     [
+        ("2020-01-01T00:00:00Z", None, datetime(2020, 1, 1, tzinfo=timezone.utc)),
         ("2020-01-01T00:00:00Z", "%+", datetime(2020, 1, 1, tzinfo=timezone.utc)),
         (
             "2020-01-01T00:00:00+01:00",
