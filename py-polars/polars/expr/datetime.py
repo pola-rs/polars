@@ -1698,7 +1698,7 @@ class ExprDateTimeNameSpace:
         >>> df = pl.DataFrame(
         ...     {"dates": pl.date_range(date(2000, 1, 15), date(2000, 12, 15), "1mo")}
         ... )
-        >>> df.select(pl.col("dates").month_start())
+        >>> df.select(pl.col("dates").dt.month_start())
         shape: (12,)
         Series: '' [date]
         [
@@ -1736,7 +1736,7 @@ class ExprDateTimeNameSpace:
         >>> df = pl.DataFrame(
         ...     {"dates": pl.date_range(date(2000, 1, 1), date(2000, 12, 1), "1mo")}
         ... )
-        >>> df.select(pl.col("dates").month_end())
+        >>> df.select(pl.col("dates").dt.month_end())
         shape: (12,)
         Series: '' [date]
         [

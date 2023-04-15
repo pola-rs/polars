@@ -1724,7 +1724,7 @@ class DateTimeNameSpace:
         --------
         >>> from datetime import date
         >>> s = pl.date_range(date(2000, 1, 15), date(2000, 12, 15), "1mo", lazy=False)
-        >>> s.month_start()
+        >>> s.dt.month_start()
         shape: (12,)
         Series: '' [date]
         [
@@ -1755,7 +1755,7 @@ class DateTimeNameSpace:
         --------
         >>> from datetime import date
         >>> s = pl.date_range(date(2000, 1, 15), date(2000, 12, 15), "1mo", lazy=False)
-        >>> s.month_end()
+        >>> s.dt.month_end()
         shape: (12,)
         Series: '' [date]
         [
