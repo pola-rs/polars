@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from string import ascii_letters, digits, punctuation
+from string import ascii_letters, ascii_uppercase, digits, punctuation
 from typing import TYPE_CHECKING, Any
 
 from hypothesis.strategies import (
     booleans,
+    characters,
     dates,
     datetimes,
     floats,
@@ -62,11 +63,12 @@ strategy_u16 = integers(min_value=0, max_value=(2**16) - 1)
 strategy_u32 = integers(min_value=0, max_value=(2**32) - 1)
 strategy_u64 = integers(min_value=0, max_value=(2**64) - 1)
 
-# TODO: when generating text for categorical, ensure
-#  there are repeats; don't want all to be unique.
-strategy_ascii = text(max_size=10, alphabet=ascii_letters + digits + punctuation + " ")
-strategy_utf8 = text(max_size=10)
-strategy_cat = text(max_size=10)
+strategy_ascii = text(max_size=8, alphabet=ascii_letters + digits + punctuation)
+strategy_categorical = text(max_size=2, alphabet=ascii_uppercase)
+strategy_utf8 = text(
+    max_size=8,
+    alphabet=characters(max_codepoint=1000, blacklist_categories=("Cs", "Cc")),
+)
 
 # TODO: confirm datetime min/max limits with different timeunit
 #  granularity. support datetime/duration time_units (ms, us, ns).
@@ -90,7 +92,7 @@ scalar_strategies: dict[PolarsDataType, Any] = {
     UInt16: strategy_u16,
     UInt32: strategy_u32,
     UInt64: strategy_u64,
-    Categorical: strategy_cat,
+    Categorical: strategy_categorical,
     Utf8: strategy_utf8,
     Time: strategy_time,
     Date: strategy_date,
