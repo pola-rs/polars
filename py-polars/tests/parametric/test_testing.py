@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import warnings
+from datetime import datetime
 from typing import Any
 
 import pytest
@@ -16,6 +17,7 @@ from polars.datatypes import TEMPORAL_DTYPES
 from polars.testing.parametric import (
     column,
     columns,
+    create_list_strategy,
     dataframes,
     series,
 )
@@ -178,7 +180,9 @@ def test_chunking(
 
 @given(
     df=dataframes(
-        allowed_dtypes=[pl.Float32, pl.Float64], max_cols=4, allow_infinities=False
+        allowed_dtypes=[pl.Float32, pl.Float64],
+        allow_infinities=False,
+        max_cols=4,
     ),
     s=series(dtype=pl.Float64, allow_infinities=False),
 )
@@ -196,6 +200,37 @@ def test_infinities(
     assert all(finite_float(val) for val in s.to_list())
     for col in df.columns:
         assert all(finite_float(val) for val in df[col].to_list())
+
+
+@given(
+    df=dataframes(
+        cols=[
+            column("colx", dtype=pl.List(pl.UInt8)),
+            column("coly", dtype=pl.List(pl.Datetime("ms"))),
+            column(
+                name="colz",
+                strategy=create_list_strategy(
+                    inner_dtype=pl.List(pl.Utf8),
+                    select_from=["aa", "bb", "cc"],
+                    min_size=1,
+                ),
+            ),
+        ]
+    ),
+)
+def test_list_strategy(df: pl.DataFrame) -> None:
+    assert df.schema == {
+        "colx": pl.List(pl.UInt8),
+        "coly": pl.List(pl.Datetime("ms")),
+        "colz": pl.List(pl.List(pl.Utf8)),
+    }
+    uint8_max = (2**8) - 1
+
+    for colx, coly, colz in df.iter_rows():
+        assert all(i <= uint8_max for i in colx)
+        assert all(isinstance(d, datetime) for d in coly)
+        for inner_list in colz:
+            assert all(s in ("aa", "bb", "cc") for s in inner_list)
 
 
 @pytest.mark.hypothesis()
