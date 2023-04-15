@@ -6091,6 +6091,30 @@ class DataFrame:
         │ two ┆ 4   ┆ 5   ┆ 6   │
         └─────┴─────┴─────┴─────┘
 
+        Run an expression as aggregation function
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "col1": ["a", "a", "a", "b", "b", "b"],
+        ...         "col2": ["x", "x", "x", "x", "y", "y"],
+        ...         "col3": [6, 7, 3, 2, 5, 7],
+        ...     }
+        ... )
+        >>> df.pivot(
+        ...     index="col1",
+        ...     columns="col2",
+        ...     values="col3",
+        ...     aggregate_function=pl.element().tanh().mean(),
+        ... )
+        shape: (2, 3)
+        ┌──────┬──────────┬──────────┐
+        │ col1 ┆ x        ┆ y        │
+        │ ---  ┆ ---      ┆ ---      │
+        │ str  ┆ f64      ┆ f64      │
+        ╞══════╪══════════╪══════════╡
+        │ a    ┆ 0.998347 ┆ null     │
+        │ b    ┆ 0.964028 ┆ 0.999954 │
+        └──────┴──────────┴──────────┘
+
         """  # noqa: W505
         if isinstance(values, str):
             values = [values]
