@@ -36,12 +36,25 @@ fn arrays_to_fields(field_arrays: &[ArrayRef], fields: &[Series]) -> Vec<ArrowFi
         .collect()
 }
 
-fn fields_to_struct_array(fields: &[Series]) -> (ArrayRef, Vec<Series>) {
+fn fields_to_struct_array(fields: &[Series], physical: bool) -> (ArrayRef, Vec<Series>) {
     let fields = fields.iter().map(|s| s.rechunk()).collect::<Vec<_>>();
 
     let field_arrays = fields
         .iter()
-        .map(|s| s.rechunk().to_arrow(0))
+        .map(|s| {
+            let s = s.rechunk();
+            match s.dtype() {
+                #[cfg(feature = "object")]
+                DataType::Object(_) => s.to_arrow(0),
+                _ => {
+                    if physical {
+                        s.chunks()[0].clone()
+                    } else {
+                        s.to_arrow(0)
+                    }
+                }
+            }
+        })
         .collect::<Vec<_>>();
     // we determine fields from arrays as there might be object arrays
     // where the dtype is bound to that single array
@@ -118,7 +131,11 @@ impl StructChunked {
             let field_arrays = self
                 .fields
                 .iter()
-                .map(|s| s.to_arrow(i))
+                .map(|s| match s.dtype() {
+                    #[cfg(feature = "object")]
+                    DataType::Object(_) => s.to_arrow(0),
+                    _ => s.chunks()[i].clone(),
+                })
                 .collect::<Vec<_>>();
 
             // we determine fields from arrays as there might be object arrays
@@ -149,7 +166,7 @@ impl StructChunked {
                 .collect(),
         );
         let field = Field::new(name, dtype);
-        let (arrow_array, fields) = fields_to_struct_array(fields);
+        let (arrow_array, fields) = fields_to_struct_array(fields, true);
 
         let mut out = Self {
             fields,
@@ -244,6 +261,23 @@ impl StructChunked {
     }
     pub fn unnest(self) -> DataFrame {
         self.into()
+    }
+
+    pub(crate) fn to_arrow(&self, i: usize) -> ArrayRef {
+        let values = self
+            .fields
+            .iter()
+            .map(|s| s.to_arrow(i))
+            .collect::<Vec<_>>();
+
+        // we determine fields from arrays as there might be object arrays
+        // where the dtype is bound to that single array
+        let new_fields = arrays_to_fields(&values, &self.fields);
+        Box::new(StructArray::new(
+            ArrowDataType::Struct(new_fields),
+            values,
+            None,
+        ))
     }
 }
 
