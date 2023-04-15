@@ -1166,3 +1166,8 @@ def test_list_null_constructor() -> None:
     s = pl.Series("a", [[None], [None]], dtype=pl.List(pl.Null))
     assert s.dtype == pl.List(pl.Null)
     assert s.to_list() == [None, None]
+
+
+def test_numpy_float_construction_av() -> None:
+    np_dict = {"a": np.float64(1)}
+    assert_frame_equal(pl.DataFrame(np_dict), pl.DataFrame({"a": 1.0}))
