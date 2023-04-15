@@ -28,7 +28,8 @@ from polars.utils.convert import (
     _time_to_pl_time,
     _timedelta_to_pl_timedelta,
 )
-from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
+from polars.utils.decorators import deprecated_alias
+from polars.utils.various import find_stacklevel
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arange as pyarange
@@ -472,7 +473,6 @@ def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
     ...
 
 
-@deprecated_alias(column="exprs")
 def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | Any:
     """
     Get the maximum value.
@@ -565,7 +565,6 @@ def min(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
     ...
 
 
-@deprecated_alias(column="exprs")
 def min(
     exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr
 ) -> Expr | PythonLiteral | None:
@@ -913,6 +912,36 @@ def n_unique(column: str | Series) -> Expr | int:
     return col(column).n_unique()
 
 
+def approx_unique(column: str | Expr) -> Expr:
+    """
+    Approx count unique values.
+
+    This is done using the HyperLogLog++ algorithm for cardinality estimation.
+
+    Parameters
+    ----------
+    column
+        Column name or Series.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"a": [1, 8, 1], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
+    >>> df.select(pl.approx_unique("a"))
+    shape: (1, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ u32 │
+    ╞═════╡
+    │ 2   │
+    └─────┘
+
+    """
+    if isinstance(column, pli.Expr):
+        return column.approx_unique()
+    return col(column).approx_unique()
+
+
 @overload
 def first(column: str) -> Expr:
     ...
@@ -1159,9 +1188,8 @@ def tail(column: str | Series, n: int = 10) -> Expr | Series:
     return col(column).tail(n)
 
 
-@deprecate_nonkeyword_arguments(allowed_args=["value", "dtype"])
 def lit(
-    value: Any, dtype: PolarsDataType | None = None, allow_object: bool = False
+    value: Any, dtype: PolarsDataType | None = None, *, allow_object: bool = False
 ) -> Expr:
     """
     Return an expression representing a literal value.
@@ -1179,26 +1207,24 @@ def lit(
 
     Examples
     --------
-    Literal integer:
+    Literal scalar values:
 
     >>> pl.lit(1)  # doctest: +IGNORE_RESULT
-
-    Literal str:
-
-    >>> pl.lit("foo")  # doctest: +IGNORE_RESULT
-
-    Literal datetime:
-
-    >>> from datetime import datetime
-    >>> pl.lit(datetime(2021, 1, 20))  # doctest: +IGNORE_RESULT
-
-    Literal Null:
-
+    >>> pl.lit(5.5)  # doctest: +IGNORE_RESULT
     >>> pl.lit(None)  # doctest: +IGNORE_RESULT
+    >>> pl.lit("foo_bar")  # doctest: +IGNORE_RESULT
+    >>> pl.lit(date(2021, 1, 20))  # doctest: +IGNORE_RESULT
+    >>> pl.lit(datetime(2023, 3, 31, 10, 30, 45))  # doctest: +IGNORE_RESULT
 
-    Literal eager Series:
+    Literal list/Series data (1D):
 
-    >>> pl.lit(pl.Series("a", [1, 2, 3]))  # doctest: +IGNORE_RESULT
+    >>> pl.lit([1, 2, 3])  # doctest: +IGNORE_RESULT
+    >>> pl.lit(pl.Series("x", [1, 2, 3]))  # doctest: +IGNORE_RESULT
+
+    Literal list/Series data (2D):
+
+    >>> pl.lit([[1, 2], [3, 4]])  # doctest: +IGNORE_RESULT
+    >>> pl.lit(pl.Series("y", [[1, 2], [3, 4]]))  # doctest: +IGNORE_RESULT
 
     """
     time_unit: TimeUnit
@@ -1363,9 +1389,8 @@ def cumsum(
     return cumfold(lit(0).cast(UInt32), lambda a, b: a + b, column).alias("cumsum")
 
 
-@deprecate_nonkeyword_arguments(allowed_args=["a", "b", "ddof"])
 def spearman_rank_corr(
-    a: str | Expr, b: str | Expr, ddof: int = 1, propagate_nans: bool = False
+    a: str | Expr, b: str | Expr, ddof: int = 1, *, propagate_nans: bool = False
 ) -> Expr:
     """
     Compute the spearman rank correlation between two columns.
@@ -1398,7 +1423,7 @@ def spearman_rank_corr(
     Examples
     --------
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
-    >>> df.select(pl.spearman_rank_corr("a", "b"))
+    >>> df.select(pl.spearman_rank_corr("a", "b"))  # doctest: +SKIP
     shape: (1, 1)
     ┌─────┐
     │ a   │
@@ -1411,7 +1436,7 @@ def spearman_rank_corr(
     warnings.warn(
         "`spearman_rank_corr()` is deprecated in favor of `corr()`",
         DeprecationWarning,
-        stacklevel=2,
+        stacklevel=find_stacklevel(),
     )
     if isinstance(a, str):
         a = col(a)
@@ -1445,7 +1470,7 @@ def pearson_corr(a: str | Expr, b: str | Expr, ddof: int = 1) -> Expr:
     Examples
     --------
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
-    >>> df.select(pl.pearson_corr("a", "b"))
+    >>> df.select(pl.pearson_corr("a", "b"))  # doctest: +SKIP
     shape: (1, 1)
     ┌──────────┐
     │ a        │
@@ -1458,7 +1483,7 @@ def pearson_corr(a: str | Expr, b: str | Expr, ddof: int = 1) -> Expr:
     warnings.warn(
         "`pearson_corr()` is deprecated in favor of `corr()`",
         DeprecationWarning,
-        stacklevel=2,
+        stacklevel=find_stacklevel(),
     )
     if isinstance(a, str):
         a = col(a)
@@ -1572,7 +1597,6 @@ def cov(a: str | Expr, b: str | Expr) -> Expr:
     return wrap_expr(pycov(a._pyexpr, b._pyexpr))
 
 
-@deprecated_alias(f="function")
 def map(
     exprs: Sequence[str] | Sequence[Expr],
     function: Callable[[Sequence[Series]], Series],
@@ -1635,14 +1659,11 @@ def map(
     )
 
 
-@deprecated_alias(f="function")
-@deprecate_nonkeyword_arguments(
-    allowed_args=["exprs", "function", "return_dtype"], stacklevel=3
-)
 def apply(
     exprs: Sequence[str | Expr],
     function: Callable[[Sequence[Series]], Series | Any],
     return_dtype: PolarsDataType | None = None,
+    *,
     returns_scalar: bool = True,
 ) -> Expr:
     """
@@ -1719,7 +1740,6 @@ def apply(
     )
 
 
-@deprecated_alias(f="function")
 def fold(
     acc: IntoExpr,
     function: Callable[[Series, Series], Series],
@@ -1768,9 +1788,9 @@ def fold(
     Horizontally sum over all columns and add 1.
 
     >>> df.select(
-    ...     pl.fold(acc=pl.lit(1), f=lambda acc, x: acc + x, exprs=pl.col("*")).alias(
-    ...         "sum"
-    ...     ),
+    ...     pl.fold(
+    ...         acc=pl.lit(1), function=lambda acc, x: acc + x, exprs=pl.col("*")
+    ...     ).alias("sum"),
     ... )
     shape: (3, 1)
     ┌─────┐
@@ -1806,7 +1826,7 @@ def fold(
     >>> df.filter(
     ...     pl.fold(
     ...         acc=pl.lit(True),
-    ...         f=lambda acc, x: acc & x,
+    ...         function=lambda acc, x: acc & x,
     ...         exprs=pl.col("*") > 1,
     ...     )
     ... )
@@ -1828,7 +1848,6 @@ def fold(
     return wrap_expr(pyfold(acc._pyexpr, function, exprs))
 
 
-@deprecated_alias(f="function")
 def reduce(
     function: Callable[[Series, Series], Series],
     exprs: Sequence[Expr | str] | Expr,
@@ -1893,12 +1912,11 @@ def reduce(
     return wrap_expr(pyreduce(function, exprs))
 
 
-@deprecated_alias(f="function")
-@deprecate_nonkeyword_arguments(stacklevel=3)
 def cumfold(
     acc: IntoExpr,
     function: Callable[[Series, Series], Series],
     exprs: Sequence[Expr | str] | Expr,
+    *,
     include_init: bool = False,
 ) -> Expr:
     """
@@ -1947,7 +1965,7 @@ def cumfold(
 
     >>> df.select(
     ...     pl.cumfold(
-    ...         acc=pl.lit(1), f=lambda acc, x: acc + x, exprs=pl.col("*")
+    ...         acc=pl.lit(1), function=lambda acc, x: acc + x, exprs=pl.col("*")
     ...     ).alias("cumfold"),
     ... )
     shape: (3, 1)
@@ -1971,7 +1989,6 @@ def cumfold(
     return wrap_expr(pycumfold(acc._pyexpr, function, exprs, include_init))
 
 
-@deprecated_alias(f="function")
 def cumreduce(
     function: Callable[[Series, Series], Series],
     exprs: Sequence[Expr | str] | Expr,
@@ -2011,7 +2028,7 @@ def cumreduce(
     └─────┴─────┴─────┘
 
     >>> df.select(
-    ...     pl.cumreduce(f=lambda acc, x: acc + x, exprs=pl.col("*")).alias(
+    ...     pl.cumreduce(function=lambda acc, x: acc + x, exprs=pl.col("*")).alias(
     ...         "cumreduce"
     ...     ),
     ... )
@@ -2034,9 +2051,14 @@ def cumreduce(
     return wrap_expr(pycumreduce(function, exprs))
 
 
-def any(name: str | Sequence[str] | Sequence[Expr] | Expr) -> Expr:
+def any(columns: str | Sequence[str] | Sequence[Expr] | Expr) -> Expr:
     """
     Evaluate columnwise or elementwise with a bitwise OR operation.
+
+    Parameters
+    ----------
+    columns
+        If given this function will apply a bitwise or on the columns.
 
     Examples
     --------
@@ -2073,11 +2095,51 @@ def any(name: str | Sequence[str] | Sequence[Expr] | Expr) -> Expr:
     └──────┴───────┴──────┘
 
     """
-    if isinstance(name, str):
-        return col(name).any()
+    if isinstance(columns, str):
+        return col(columns).any()
     else:
-        return fold(lit(False), lambda a, b: a.cast(bool) | b.cast(bool), name).alias(
-            "any"
+        return fold(
+            lit(False), lambda a, b: a.cast(bool) | b.cast(bool), columns
+        ).alias("any")
+
+
+def all(columns: str | Sequence[Expr] | Expr | None = None) -> Expr:
+    """
+    Do one of two things.
+
+    * function can do a columnwise or elementwise AND operation
+    * a wildcard column selection
+
+    Parameters
+    ----------
+    columns
+        If given this function will apply a bitwise & on the columns.
+
+    Examples
+    --------
+    Sum all columns
+
+    >>> df = pl.DataFrame(
+    ...     {"a": [1, 2, 3], "b": ["hello", "foo", "bar"], "c": [1, 1, 1]}
+    ... )
+    >>> df.select(pl.all().sum())
+    shape: (1, 3)
+    ┌─────┬──────┬─────┐
+    │ a   ┆ b    ┆ c   │
+    │ --- ┆ ---  ┆ --- │
+    │ i64 ┆ str  ┆ i64 │
+    ╞═════╪══════╪═════╡
+    │ 6   ┆ null ┆ 3   │
+    └─────┴──────┴─────┘
+
+    """
+    if columns is None:
+        return col("*")
+    elif isinstance(columns, str):
+        return col(columns).all()
+    else:
+        return fold(lit(True), lambda a, b: a.cast(bool) & b.cast(bool), columns).alias(
+            "all"
         )
 
 
@@ -2154,46 +2216,6 @@ def exclude(
     return col("*").exclude(columns, *more_columns)
 
 
-def all(name: str | Sequence[Expr] | Expr | None = None) -> Expr:
-    """
-    Do one of two things.
-
-    * function can do a columnwise or elementwise AND operation
-    * a wildcard column selection
-
-    Parameters
-    ----------
-    name
-        If given this function will apply a bitwise & on the columns.
-
-    Examples
-    --------
-    Sum all columns
-
-    >>> df = pl.DataFrame(
-    ...     {"a": [1, 2, 3], "b": ["hello", "foo", "bar"], "c": [1, 1, 1]}
-    ... )
-    >>> df.select(pl.all().sum())
-    shape: (1, 3)
-    ┌─────┬──────┬─────┐
-    │ a   ┆ b    ┆ c   │
-    │ --- ┆ ---  ┆ --- │
-    │ i64 ┆ str  ┆ i64 │
-    ╞═════╪══════╪═════╡
-    │ 6   ┆ null ┆ 3   │
-    └─────┴──────┴─────┘
-
-    """
-    if name is None:
-        return col("*")
-    elif isinstance(name, str):
-        return col(name).all()
-    else:
-        return fold(lit(True), lambda a, b: a.cast(bool) & b.cast(bool), name).alias(
-            "all"
-        )
-
-
 def groups(column: str) -> Expr:
     """Syntactic sugar for `pl.col("foo").agg_groups()`."""
     return col(column).agg_groups()
@@ -2222,8 +2244,8 @@ def quantile(
 
 @overload
 def arange(
-    low: int | Expr | Series,
-    high: int | Expr | Series,
+    start: int | Expr | Series,
+    end: int | Expr | Series,
     step: int = ...,
     *,
     eager: Literal[False],
@@ -2233,8 +2255,8 @@ def arange(
 
 @overload
 def arange(
-    low: int | Expr | Series,
-    high: int | Expr | Series,
+    start: int | Expr | Series,
+    end: int | Expr | Series,
     step: int = ...,
     *,
     eager: Literal[True],
@@ -2245,8 +2267,8 @@ def arange(
 
 @overload
 def arange(
-    low: int | Expr | Series,
-    high: int | Expr | Series,
+    start: int | Expr | Series,
+    end: int | Expr | Series,
     step: int = ...,
     *,
     eager: bool = ...,
@@ -2255,9 +2277,10 @@ def arange(
     ...
 
 
+@deprecated_alias(low="start", high="end")
 def arange(
-    low: int | Expr | Series,
-    high: int | Expr | Series,
+    start: int | Expr | Series,
+    end: int | Expr | Series,
     step: int = 1,
     *,
     eager: bool = False,
@@ -2275,9 +2298,9 @@ def arange(
 
     Parameters
     ----------
-    low
+    start
         Lower bound of range.
-    high
+    end
         Upper bound of range.
     step
         Step size of the range.
@@ -2288,9 +2311,9 @@ def arange(
         Apply an explicit integer dtype to the resulting expression (default is Int64).
 
     """
-    low = expr_to_lit_or_expr(low, str_to_lit=False)
-    high = expr_to_lit_or_expr(high, str_to_lit=False)
-    range_expr = wrap_expr(pyarange(low._pyexpr, high._pyexpr, step))
+    start = expr_to_lit_or_expr(start, str_to_lit=False)
+    end = expr_to_lit_or_expr(end, str_to_lit=False)
+    range_expr = wrap_expr(pyarange(start._pyexpr, end._pyexpr, step))
 
     if dtype is not None and dtype != Int64:
         range_expr = range_expr.cast(dtype)
@@ -2370,6 +2393,10 @@ def arg_sort_by(
 
     if isinstance(descending, bool):
         descending = [descending] * len(exprs)
+    elif len(exprs) != len(descending):
+        raise ValueError(
+            f"the length of `descending` ({len(descending)}) does not match the length of `exprs` ({len(exprs)})"
+        )
     return wrap_expr(py_arg_sort_by(exprs, descending))
 
 
@@ -2600,13 +2627,13 @@ def concat_str(
     return wrap_expr(_concat_str(exprs, separator))
 
 
-def format(fstring: str, *args: Expr | str) -> Expr:
+def format(f_string: str, *args: Expr | str) -> Expr:
     """
     Format expressions as a string.
 
     Parameters
     ----------
-    fstring
+    f_string
         A string that with placeholders.
         For example: "hello_{}" or "{}_world
     args
@@ -2637,13 +2664,13 @@ def format(fstring: str, *args: Expr | str) -> Expr:
     └─────────────┘
 
     """
-    if fstring.count("{}") != len(args):
+    if f_string.count("{}") != len(args):
         raise ValueError("number of placeholders should equal the number of arguments")
 
     exprs = []
 
     arguments = iter(args)
-    for i, s in enumerate(fstring.split("{}")):
+    for i, s in enumerate(f_string.split("{}")):
         if i > 0:
             e = expr_to_lit_or_expr(next(arguments), str_to_lit=False)
             exprs.append(e)
@@ -2699,9 +2726,9 @@ def concat_list(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> 
     return wrap_expr(_concat_lst(exprs))
 
 
-@deprecate_nonkeyword_arguments()
 def collect_all(
     lazy_frames: Sequence[LazyFrame],
+    *,
     type_coercion: bool = True,
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
@@ -3011,21 +3038,21 @@ def repeat(
 
 
 @overload
-def arg_where(condition: Expr | Series, eager: Literal[False] = ...) -> Expr:
+def arg_where(condition: Expr | Series, *, eager: Literal[False] = ...) -> Expr:
     ...
 
 
 @overload
-def arg_where(condition: Expr | Series, eager: Literal[True]) -> Series:
+def arg_where(condition: Expr | Series, *, eager: Literal[True]) -> Series:
     ...
 
 
 @overload
-def arg_where(condition: Expr | Series, eager: bool) -> Expr | Series:
+def arg_where(condition: Expr | Series, *, eager: bool) -> Expr | Series:
     ...
 
 
-def arg_where(condition: Expr | Series, eager: bool = False) -> Expr | Series:
+def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series:
     """
     Return indices where `condition` evaluates `True`.
 

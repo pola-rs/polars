@@ -1,5 +1,5 @@
 import typing
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import numpy as np
 import pytest
@@ -43,10 +43,10 @@ def test_duration_aggs() -> None:
     df = pl.DataFrame(
         {
             "time1": pl.date_range(
-                low=datetime(2022, 12, 12), high=datetime(2022, 12, 18), interval="1d"
+                start=datetime(2022, 12, 12), end=datetime(2022, 12, 18), interval="1d"
             ),
             "time2": pl.date_range(
-                low=datetime(2023, 1, 12), high=datetime(2023, 1, 18), interval="1d"
+                start=datetime(2023, 1, 12), end=datetime(2023, 1, 18), interval="1d"
             ),
         }
     )
@@ -144,3 +144,47 @@ def test_mean_null_simd() -> None:
 
     s = df["a"]
     assert s.mean() == s.to_pandas().mean()
+
+
+def test_literal_group_agg_chunked_7968() -> None:
+    df = pl.DataFrame({"A": [1, 1], "B": [1, 3]})
+    ser = pl.concat([pl.Series([3]), pl.Series([4, 5])], rechunk=False)
+
+    assert_frame_equal(
+        df.groupby("A").agg(pl.col("B").search_sorted(ser)),
+        pl.DataFrame(
+            [
+                pl.Series("A", [1], dtype=pl.Int64),
+                pl.Series("B", [[1, 2, 2]], dtype=pl.List(pl.UInt32)),
+            ]
+        ),
+    )
+
+
+def test_duration_function_literal() -> None:
+    df = pl.DataFrame(
+        {
+            "A": ["x", "x", "y", "y", "y"],
+            "T": [date(2022, m, 1) for m in range(1, 6)],
+            "S": [1, 2, 4, 8, 16],
+        }
+    ).with_columns(
+        [
+            pl.col("T").cast(pl.Datetime),
+        ]
+    )
+
+    # this checks if the `pl.duration` is flagged as AggState::Literal
+    assert df.groupby("A", maintain_order=True).agg(
+        [((pl.col("T").max() + pl.duration(seconds=1)) - pl.col("T"))]
+    ).to_dict(False) == {
+        "A": ["x", "y"],
+        "T": [
+            [timedelta(days=31, seconds=1), timedelta(seconds=1)],
+            [
+                timedelta(days=61, seconds=1),
+                timedelta(days=30, seconds=1),
+                timedelta(seconds=1),
+            ],
+        ],
+    }

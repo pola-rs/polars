@@ -90,15 +90,6 @@ def test_iter_rows() -> None:
     with pytest.raises(StopIteration):
         next(it)
 
-    # TODO: Remove this section once iterrows is removed
-    with pytest.deprecated_call():
-        it = df.iterrows()  # type: ignore[attr-defined]
-        assert next(it) == (1, True, c1)
-        assert next(it) == (2, False, c2)
-        assert next(it) == (3, None, c3)
-        with pytest.raises(StopIteration):
-            next(it)
-
     # Apply explicit row-buffer size
     for sz in (0, 1, 2, 3, 4):
         it = df.iter_rows(buffer_size=sz)
@@ -135,3 +126,36 @@ def test_iter_rows() -> None:
         {"id": 2, "values": "c"},
         {"id": 3, "values": "d"},
     ]
+
+
+def test_row_constructor_schema() -> None:
+    expected = {"d": [1, 2, 3]}
+    for primitive in [
+        pl.UInt8,
+        pl.Int8,
+        pl.UInt16,
+        pl.Int16,
+        pl.UInt32,
+        pl.Int32,
+        pl.UInt64,
+        pl.Int64,
+    ]:
+        out = pl.DataFrame(
+            data=[
+                [1],
+                [2],
+                [3],
+            ],
+            schema={"d": primitive},
+        )
+        assert out.dtypes == [primitive]
+        assert out.to_dict(False) == expected
+
+
+def test_row_constructor_uint64() -> None:
+    # validate init with a valid UInt64 that exceeds Int64 upper bound
+    df = pl.DataFrame(
+        data=[[0], [int(2**63) + 1]],
+        schema={"x": pl.UInt64},
+    )
+    assert df.rows() == [(0,), (9223372036854775809,)]

@@ -453,7 +453,7 @@ where
     (hashes, build_hasher)
 }
 
-pub(crate) fn df_rows_to_hashes_threaded(
+pub(crate) fn df_rows_to_hashes_threaded_vertical(
     keys: &[DataFrame],
     hasher_builder: Option<RandomState>,
 ) -> PolarsResult<(Vec<UInt64Chunked>, RandomState)> {
@@ -463,34 +463,29 @@ pub(crate) fn df_rows_to_hashes_threaded(
         keys.into_par_iter()
             .map(|df| {
                 let hb = hasher_builder.clone();
-                let (ca, _) = df_rows_to_hashes(df, Some(hb))?;
-                Ok(ca)
+                let mut hashes = vec![];
+                series_to_hashes(df.get_columns(), Some(hb), &mut hashes)?;
+                Ok(UInt64Chunked::from_vec("", hashes))
             })
             .collect::<PolarsResult<Vec<_>>>()
     })?;
     Ok((hashes, hasher_builder))
 }
 
-pub(crate) fn df_rows_to_hashes(
-    keys: &DataFrame,
+pub(crate) fn series_to_hashes(
+    keys: &[Series],
     build_hasher: Option<RandomState>,
-) -> PolarsResult<(UInt64Chunked, RandomState)> {
+    hashes: &mut Vec<u64>,
+) -> PolarsResult<RandomState> {
     let build_hasher = build_hasher.unwrap_or_default();
 
     let mut iter = keys.iter();
     let first = iter.next().expect("at least one key");
-    let mut hashes = vec![];
-    first.vec_hash(build_hasher.clone(), &mut hashes)?;
-    let hslice = hashes.as_mut_slice();
+    first.vec_hash(build_hasher.clone(), hashes)?;
 
     for keys in iter {
-        keys.vec_hash_combine(build_hasher.clone(), hslice)?;
+        keys.vec_hash_combine(build_hasher.clone(), hashes)?;
     }
 
-    let chunks = vec![Box::new(PrimitiveArray::new(
-        ArrowDataType::UInt64,
-        hashes.into(),
-        None,
-    )) as ArrayRef];
-    unsafe { Ok((UInt64Chunked::from_chunks("", chunks), build_hasher)) }
+    Ok(build_hasher)
 }

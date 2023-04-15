@@ -1,6 +1,6 @@
 mod fx;
 mod identity;
-mod partition;
+pub mod partition;
 pub(crate) mod vector_hasher;
 
 use std::hash::{BuildHasher, BuildHasherDefault, Hash, Hasher};

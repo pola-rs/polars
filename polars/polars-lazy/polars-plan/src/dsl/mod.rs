@@ -40,6 +40,7 @@ use polars_core::utils::{try_get_supertype, NoNull};
 #[cfg(feature = "rolling_window")]
 use polars_time::series::SeriesOpsTime;
 
+use crate::constants::MAP_LIST_NAME;
 pub use crate::logical_plan::lit;
 use crate::prelude::*;
 use crate::utils::has_expr;
@@ -268,7 +269,7 @@ impl Expr {
     /// Negate `Expr`
     #[allow(clippy::should_implement_trait)]
     pub fn not(self) -> Expr {
-        self.map_private(FunctionExpr::Not)
+        self.map_private(BooleanFunction::IsNot.into())
     }
 
     /// Rename Column.
@@ -279,13 +280,13 @@ impl Expr {
     /// Run is_null operation on `Expr`.
     #[allow(clippy::wrong_self_convention)]
     pub fn is_null(self) -> Self {
-        self.map_private(FunctionExpr::IsNull)
+        self.map_private(BooleanFunction::IsNull.into())
     }
 
     /// Run is_not_null operation on `Expr`.
     #[allow(clippy::wrong_self_convention)]
     pub fn is_not_null(self) -> Self {
-        self.map_private(FunctionExpr::IsNotNull)
+        self.map_private(BooleanFunction::IsNotNull.into())
     }
 
     /// Drop null values
@@ -295,7 +296,7 @@ impl Expr {
 
     /// Drop NaN values
     pub fn drop_nans(self) -> Self {
-        self.apply_private(NanFunction::DropNans.into())
+        self.apply_private(FunctionExpr::DropNans)
     }
 
     /// Reduce groups to minimal value.
@@ -468,18 +469,13 @@ impl Expr {
 
     /// Get unique values of this expression.
     pub fn unique(self) -> Self {
-        self.apply(|s: Series| s.unique().map(Some), GetOutput::same_type())
-            .with_fmt("unique")
+        self.apply_private(FunctionExpr::Unique(false))
     }
 
     /// Get unique values of this expression, while maintaining order.
     /// This requires more work than [`Expr::unique`].
     pub fn unique_stable(self) -> Self {
-        self.apply(
-            |s: Series| s.unique_stable().map(Some),
-            GetOutput::same_type(),
-        )
-        .with_fmt("unique_stable")
+        self.apply_private(FunctionExpr::Unique(true))
     }
 
     /// Get the first index of unique values of this expression.
@@ -615,8 +611,22 @@ impl Expr {
     ///
     /// This has time complexity `O(n + k log(n))`.
     #[cfg(feature = "top_k")]
-    pub fn top_k(self, k: usize, descending: bool) -> Self {
-        self.apply_private(FunctionExpr::TopK { k, descending })
+    pub fn top_k(self, k: usize) -> Self {
+        self.apply_private(FunctionExpr::TopK {
+            k,
+            descending: false,
+        })
+    }
+
+    /// Returns the `k` smallest elements.
+    ///
+    /// This has time complexity `O(n + k log(n))`.
+    #[cfg(feature = "top_k")]
+    pub fn bottom_k(self, k: usize) -> Self {
+        self.apply_private(FunctionExpr::TopK {
+            k,
+            descending: true,
+        })
     }
 
     /// Reverse column
@@ -711,7 +721,7 @@ impl Expr {
             output_type,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyList,
-                fmt_str: "map_list",
+                fmt_str: MAP_LIST_NAME,
                 ..Default::default()
             },
         }
@@ -846,31 +856,23 @@ impl Expr {
     /// Get mask of finite values if dtype is Float
     #[allow(clippy::wrong_self_convention)]
     pub fn is_finite(self) -> Self {
-        self.map(
-            |s: Series| s.is_finite().map(|ca| Some(ca.into_series())),
-            GetOutput::from_type(DataType::Boolean),
-        )
-        .with_fmt("is_finite")
+        self.map_private(BooleanFunction::IsFinite.into())
     }
 
     /// Get mask of infinite values if dtype is Float
     #[allow(clippy::wrong_self_convention)]
     pub fn is_infinite(self) -> Self {
-        self.map(
-            |s: Series| s.is_infinite().map(|ca| Some(ca.into_series())),
-            GetOutput::from_type(DataType::Boolean),
-        )
-        .with_fmt("is_infinite")
+        self.map_private(BooleanFunction::IsInfinite.into())
     }
 
     /// Get mask of NaN values if dtype is Float
     pub fn is_nan(self) -> Self {
-        self.map_private(NanFunction::IsNan.into())
+        self.map_private(BooleanFunction::IsNan.into())
     }
 
     /// Get inverse mask of NaN values if dtype is Float
     pub fn is_not_nan(self) -> Self {
-        self.map_private(NanFunction::IsNotNan.into())
+        self.map_private(BooleanFunction::IsNotNan.into())
     }
 
     /// Shift the values in the array by some period. See [the eager implementation](polars_core::series::SeriesTrait::shift).
@@ -888,64 +890,29 @@ impl Expr {
         )
     }
 
+    /// Cumulatively count values from 0 to len.
+    pub fn cumcount(self, reverse: bool) -> Self {
+        self.apply_private(FunctionExpr::Cumcount { reverse })
+    }
+
     /// Get an array with the cumulative sum computed at every element
     pub fn cumsum(self, reverse: bool) -> Self {
-        self.apply(
-            move |s: Series| Ok(Some(s.cumsum(reverse))),
-            GetOutput::map_dtype(|dt| {
-                use DataType::*;
-                if dt.is_logical() {
-                    dt.clone()
-                } else {
-                    match dt {
-                        Boolean => UInt32,
-                        Int32 => Int32,
-                        UInt32 => UInt32,
-                        UInt64 => UInt64,
-                        Float32 => Float32,
-                        Float64 => Float64,
-                        _ => Int64,
-                    }
-                }
-            }),
-        )
-        .with_fmt("cumsum")
+        self.apply_private(FunctionExpr::Cumsum { reverse })
     }
 
     /// Get an array with the cumulative product computed at every element
     pub fn cumprod(self, reverse: bool) -> Self {
-        self.apply(
-            move |s: Series| Ok(Some(s.cumprod(reverse))),
-            GetOutput::map_dtype(|dt| {
-                use DataType::*;
-                match dt {
-                    Boolean => Int64,
-                    UInt64 => UInt64,
-                    Float32 => Float32,
-                    Float64 => Float64,
-                    _ => Int64,
-                }
-            }),
-        )
-        .with_fmt("cumprod")
+        self.apply_private(FunctionExpr::Cumprod { reverse })
     }
 
     /// Get an array with the cumulative min computed at every element
     pub fn cummin(self, reverse: bool) -> Self {
-        self.apply(
-            move |s: Series| Ok(Some(s.cummin(reverse))),
-            GetOutput::same_type(),
-        )
-        .with_fmt("cummin")
+        self.apply_private(FunctionExpr::Cummin { reverse })
     }
 
     /// Get an array with the cumulative max computed at every element
     pub fn cummax(self, reverse: bool) -> Self {
-        self.apply(
-            move |s: Series| Ok(Some(s.cummax(reverse))),
-            GetOutput::same_type(),
-        )
-        .with_fmt("cummax")
+        self.apply_private(FunctionExpr::Cummax { reverse })
     }
 
     /// Get the product aggregation of an expression
@@ -993,25 +960,19 @@ impl Expr {
     /// Round underlying floating point array to given decimal numbers.
     #[cfg(feature = "round_series")]
     pub fn round(self, decimals: u32) -> Self {
-        self.map(
-            move |s: Series| s.round(decimals).map(Some),
-            GetOutput::same_type(),
-        )
-        .with_fmt("round")
+        self.map_private(FunctionExpr::Round { decimals })
     }
 
     /// Floor underlying floating point array to the lowest integers smaller or equal to the float value.
     #[cfg(feature = "round_series")]
     pub fn floor(self) -> Self {
-        self.map(move |s: Series| s.floor().map(Some), GetOutput::same_type())
-            .with_fmt("floor")
+        self.map_private(FunctionExpr::Floor)
     }
 
     /// Ceil underlying floating point array to the highest integers smaller or equal to the float value.
     #[cfg(feature = "round_series")]
     pub fn ceil(self) -> Self {
-        self.map(move |s: Series| s.ceil().map(Some), GetOutput::same_type())
-            .with_fmt("ceil")
+        self.map_private(FunctionExpr::Ceil)
     }
 
     /// Clip underlying values to a set boundary.
@@ -1044,8 +1005,7 @@ impl Expr {
     /// Convert all values to their absolute/positive value.
     #[cfg(feature = "abs")]
     pub fn abs(self) -> Self {
-        self.map(move |s: Series| s.abs().map(Some), GetOutput::same_type())
-            .with_fmt("abs")
+        self.map_private(FunctionExpr::Abs)
     }
 
     /// Apply window function over a subgroup.
@@ -1165,14 +1125,24 @@ impl Expr {
     #[allow(clippy::wrong_self_convention)]
     #[cfg(feature = "is_unique")]
     pub fn is_duplicated(self) -> Self {
-        self.apply_private(FunctionExpr::IsDuplicated)
+        self.apply_private(BooleanFunction::IsDuplicated.into())
     }
 
     /// Get a mask of unique values
     #[allow(clippy::wrong_self_convention)]
     #[cfg(feature = "is_unique")]
     pub fn is_unique(self) -> Self {
-        self.apply_private(FunctionExpr::IsUnique)
+        self.apply_private(BooleanFunction::IsUnique.into())
+    }
+
+    /// Get the approximate count of unique values.
+    #[cfg(feature = "approx_unique")]
+    pub fn approx_unique(self) -> Self {
+        self.apply_private(FunctionExpr::ApproxUnique)
+            .with_function_options(|mut options| {
+                options.auto_explode = true;
+                options
+            })
     }
 
     /// and operation
@@ -1222,9 +1192,9 @@ impl Expr {
         let arguments = &[other];
         // we don't have to apply on groups, so this is faster
         if has_literal {
-            self.map_many_private(FunctionExpr::IsIn, arguments, true)
+            self.map_many_private(BooleanFunction::IsIn.into(), arguments, true)
         } else {
-            self.apply_many_private(FunctionExpr::IsIn, arguments, true, true)
+            self.apply_many_private(BooleanFunction::IsIn.into(), arguments, true, true)
         }
     }
 
@@ -1272,11 +1242,7 @@ impl Expr {
     #[allow(clippy::wrong_self_convention)]
     /// Get a mask of the first unique value.
     pub fn is_first(self) -> Expr {
-        self.apply(
-            |s| polars_ops::prelude::is_first(&s).map(|s| Some(s.into_series())),
-            GetOutput::from_type(DataType::Boolean),
-        )
-        .with_fmt("is_first")
+        self.apply_private(BooleanFunction::IsFirst.into())
     }
 
     #[cfg(feature = "dot_product")]
@@ -1633,12 +1599,12 @@ impl Expr {
     }
 
     #[cfg(feature = "diff")]
-    pub fn diff(self, n: usize, null_behavior: NullBehavior) -> Expr {
+    pub fn diff(self, n: i64, null_behavior: NullBehavior) -> Expr {
         self.apply_private(FunctionExpr::Diff(n, null_behavior))
     }
 
     #[cfg(feature = "pct_change")]
-    pub fn pct_change(self, n: usize) -> Expr {
+    pub fn pct_change(self, n: i64) -> Expr {
         use DataType::*;
         self.apply(
             move |s| s.pct_change(n).map(Some),
@@ -1694,66 +1660,12 @@ impl Expr {
 
     /// Get maximal value that could be hold by this dtype.
     pub fn upper_bound(self) -> Expr {
-        self.map(
-            |s| {
-                let name = s.name();
-                use DataType::*;
-                let s = match s.dtype().to_physical() {
-                    #[cfg(feature = "dtype-i8")]
-                    Int8 => Series::new(name, &[i8::MAX]),
-                    #[cfg(feature = "dtype-i16")]
-                    Int16 => Series::new(name, &[i16::MAX]),
-                    Int32 => Series::new(name, &[i32::MAX]),
-                    Int64 => Series::new(name, &[i64::MAX]),
-                    #[cfg(feature = "dtype-u8")]
-                    UInt8 => Series::new(name, &[u8::MAX]),
-                    #[cfg(feature = "dtype-u16")]
-                    UInt16 => Series::new(name, &[u16::MAX]),
-                    UInt32 => Series::new(name, &[u32::MAX]),
-                    UInt64 => Series::new(name, &[u64::MAX]),
-                    Float32 => Series::new(name, &[f32::INFINITY]),
-                    Float64 => Series::new(name, &[f64::INFINITY]),
-                    dt => polars_bail!(
-                        ComputeError: "cannot determine upper bound for dtype `{}`", dt,
-                    ),
-                };
-                Ok(Some(s))
-            },
-            GetOutput::same_type(),
-        )
-        .with_fmt("upper_bound")
+        self.map_private(FunctionExpr::UpperBound)
     }
 
     /// Get minimal value that could be hold by this dtype.
     pub fn lower_bound(self) -> Expr {
-        self.map(
-            |s| {
-                let name = s.name();
-                use DataType::*;
-                let s = match s.dtype().to_physical() {
-                    #[cfg(feature = "dtype-i8")]
-                    Int8 => Series::new(name, &[i8::MIN]),
-                    #[cfg(feature = "dtype-i16")]
-                    Int16 => Series::new(name, &[i16::MIN]),
-                    Int32 => Series::new(name, &[i32::MIN]),
-                    Int64 => Series::new(name, &[i64::MIN]),
-                    #[cfg(feature = "dtype-u8")]
-                    UInt8 => Series::new(name, &[u8::MIN]),
-                    #[cfg(feature = "dtype-u16")]
-                    UInt16 => Series::new(name, &[u16::MIN]),
-                    UInt32 => Series::new(name, &[u32::MIN]),
-                    UInt64 => Series::new(name, &[u64::MIN]),
-                    Float32 => Series::new(name, &[f32::NEG_INFINITY]),
-                    Float64 => Series::new(name, &[f64::NEG_INFINITY]),
-                    dt => polars_bail!(
-                        ComputeError: "cannot determine lower bound for dtype `{}`", dt,
-                    ),
-                };
-                Ok(Some(s))
-            },
-            GetOutput::same_type(),
-        )
-        .with_fmt("lower_bound")
+        self.map_private(FunctionExpr::LowerBound)
     }
 
     pub fn reshape(self, dims: &[i64]) -> Self {
@@ -1781,27 +1693,6 @@ impl Expr {
         };
         self.apply(move |s| s.reshape(&dims).map(Some), output_type)
             .with_fmt("reshape")
-    }
-
-    /// Cumulatively count values from 0 to len.
-    pub fn cumcount(self, reverse: bool) -> Self {
-        self.apply(
-            move |s| {
-                if reverse {
-                    let ca: NoNull<UInt32Chunked> = (0u32..s.len() as u32).rev().collect();
-                    let mut ca = ca.into_inner();
-                    ca.rename(s.name());
-                    Ok(Some(ca.into_series()))
-                } else {
-                    let ca: NoNull<UInt32Chunked> = (0u32..s.len() as u32).collect();
-                    let mut ca = ca.into_inner();
-                    ca.rename(s.name());
-                    Ok(Some(ca.into_series()))
-                }
-            },
-            GetOutput::from_type(IDX_DTYPE),
-        )
-        .with_fmt("cumcount")
     }
 
     #[cfg(feature = "random")]
@@ -1884,22 +1775,11 @@ impl Expr {
 
     /// Check if any boolean value is `true`
     pub fn any(self) -> Self {
-        self.apply(
-            move |s| {
-                let boolean = s.bool()?;
-                if boolean.any() {
-                    Ok(Some(Series::new(s.name(), [true])))
-                } else {
-                    Ok(Some(Series::new(s.name(), [false])))
-                }
-            },
-            GetOutput::from_type(DataType::Boolean),
-        )
-        .with_function_options(|mut opt| {
-            opt.fmt_str = "any";
-            opt.auto_explode = true;
-            opt
-        })
+        self.apply_private(BooleanFunction::Any.into())
+            .with_function_options(|mut opt| {
+                opt.auto_explode = true;
+                opt
+            })
     }
 
     /// Shrink numeric columns to the minimal required datatype
@@ -1911,22 +1791,11 @@ impl Expr {
 
     /// Check if all boolean values are `true`
     pub fn all(self) -> Self {
-        self.apply(
-            move |s| {
-                let boolean = s.bool()?;
-                if boolean.all() {
-                    Ok(Some(Series::new(s.name(), [true])))
-                } else {
-                    Ok(Some(Series::new(s.name(), [false])))
-                }
-            },
-            GetOutput::from_type(DataType::Boolean),
-        )
-        .with_function_options(|mut opt| {
-            opt.fmt_str = "all";
-            opt.auto_explode = true;
-            opt
-        })
+        self.apply_private(BooleanFunction::All.into())
+            .with_function_options(|mut opt| {
+                opt.auto_explode = true;
+                opt
+            })
     }
 
     #[cfg(feature = "dtype-struct")]
@@ -1967,33 +1836,19 @@ impl Expr {
     #[cfg(feature = "log")]
     /// Compute the logarithm to a given base
     pub fn log(self, base: f64) -> Self {
-        self.map(
-            move |s| Ok(Some(s.log(base))),
-            GetOutput::map_dtype(|dt| {
-                if matches!(dt, DataType::Float32) {
-                    DataType::Float32
-                } else {
-                    DataType::Float64
-                }
-            }),
-        )
-        .with_fmt("log")
+        self.map_private(FunctionExpr::Log { base })
+    }
+
+    #[cfg(feature = "log")]
+    /// Compute the natural logarithm of all elements plus one in the input array
+    pub fn log1p(self) -> Self {
+        self.map_private(FunctionExpr::Log1p)
     }
 
     #[cfg(feature = "log")]
     /// Calculate the exponential of all elements in the input array
     pub fn exp(self) -> Self {
-        self.map(
-            move |s| Ok(Some(s.exp())),
-            GetOutput::map_dtype(|dt| {
-                if matches!(dt, DataType::Float32) {
-                    DataType::Float32
-                } else {
-                    DataType::Float64
-                }
-            }),
-        )
-        .with_fmt("exp")
+        self.map_private(FunctionExpr::Exp)
     }
 
     #[cfg(feature = "log")]

@@ -232,13 +232,13 @@ class StringNameSpace:
 
         """
 
-    def ends_with(self, sub: str | Expr) -> Series:
+    def ends_with(self, suffix: str | Expr) -> Series:
         """
         Check if string values end with a substring.
 
         Parameters
         ----------
-        sub
+        suffix
             Suffix substring.
 
         Examples
@@ -260,13 +260,13 @@ class StringNameSpace:
 
         """
 
-    def starts_with(self, sub: str | Expr) -> Series:
+    def starts_with(self, prefix: str | Expr) -> Series:
         """
         Check if string values start with a substring.
 
         Parameters
         ----------
-        sub
+        prefix
             Prefix substring.
 
         Examples
@@ -696,13 +696,13 @@ class StringNameSpace:
 
         """
 
-    def strip(self, matches: str | None = None) -> Series:
+    def strip(self, characters: str | None = None) -> Series:
         r"""
         Remove leading and trailing characters.
 
         Parameters
         ----------
-        matches
+        characters
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
@@ -731,13 +731,13 @@ class StringNameSpace:
 
         """
 
-    def lstrip(self, matches: str | None = None) -> Series:
+    def lstrip(self, characters: str | None = None) -> Series:
         r"""
         Remove leading characters.
 
         Parameters
         ----------
-        matches
+        characters
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
@@ -766,13 +766,13 @@ class StringNameSpace:
 
         """
 
-    def rstrip(self, matches: str | None = None) -> Series:
+    def rstrip(self, characters: str | None = None) -> Series:
         r"""
         Remove trailing characters.
 
         Parameters
         ----------
-        matches
+        characters
             The set of characters to be removed. All combinations of this set of
             characters will be stripped. If set to None (default), all whitespace is
             removed instead.
@@ -819,18 +819,18 @@ class StringNameSpace:
 
         """
 
-    def ljust(self, width: int, fillchar: str = " ") -> Series:
+    def ljust(self, width: int, fill_char: str = " ") -> Series:
         """
         Return the string left justified in a string of length ``width``.
 
-        Padding is done using the specified ``fillchar``. The original string is
+        Padding is done using the specified ``fill_char``. The original string is
         returned if ``width`` is less than or equal to``len(s)``.
 
         Parameters
         ----------
         width
             Justify left to this length.
-        fillchar
+        fill_char
             Fill with this ASCII character.
 
         Examples
@@ -848,18 +848,18 @@ class StringNameSpace:
 
         """
 
-    def rjust(self, width: int, fillchar: str = " ") -> Series:
+    def rjust(self, width: int, fill_char: str = " ") -> Series:
         """
         Return the string right justified in a string of length ``width``.
 
-        Padding is done using the specified ``fillchar``. The original string is
+        Padding is done using the specified ``fill_char``. The original string is
         returned if ``width`` is less than or equal to ``len(s)``.
 
         Parameters
         ----------
         width
             Justify right to this length.
-        fillchar
+        fill_char
             Fill with this ASCII character.
 
         Examples

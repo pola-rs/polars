@@ -16,7 +16,6 @@ from polars.datatypes import N_INFER_DEFAULT, Utf8
 from polars.io._utils import _prepare_file_arg
 from polars.io.csv._utils import _check_arg_is_1byte, _update_columns
 from polars.io.csv.batched_reader import BatchedCsvReader
-from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 from polars.utils.various import handle_projection_columns, normalise_filepath
 
 if TYPE_CHECKING:
@@ -27,12 +26,9 @@ if TYPE_CHECKING:
     from polars.type_aliases import CsvEncoding, PolarsDataType, SchemaDict
 
 
-@deprecate_nonkeyword_arguments()
-@deprecated_alias(
-    file="source", sep="separator", parse_dates="try_parse_dates", stacklevel=4
-)
 def read_csv(
     source: str | TextIO | BytesIO | Path | BinaryIO | bytes,
+    *,
     has_header: bool = True,
     columns: Sequence[int] | Sequence[str] | None = None,
     new_columns: Sequence[str] | None = None,
@@ -121,7 +117,7 @@ def read_csv(
         ``infer_schema_length=0`` to read all columns as ``pl.Utf8`` to check which
         values might cause an issue.
     try_parse_dates
-        Try to automatically parse dates. Most ISO8601-like time zone naive formats can
+        Try to automatically parse dates. Most ISO8601-like formats can
         be inferred, as well as a handful of others. If this does not succeed,
         the column remains of data type ``pl.Utf8``.
         If ``use_pyarrow=True``, dates will always be parsed.
@@ -145,7 +141,7 @@ def read_csv(
     encoding : {'utf8', 'utf8-lossy', ...}
         Lossy means that invalid utf8 values are replaced with ``�``
         characters. When using other encodings than ``utf8`` or
-        ``utf8-lossy``, the input is first decoded im memory with
+        ``utf8-lossy``, the input is first decoded in memory with
         python. Defaults to ``utf8``.
     low_memory
         Reduce memory usage at expense of performance.
@@ -388,10 +384,9 @@ def read_csv(
     return df
 
 
-@deprecate_nonkeyword_arguments()
-@deprecated_alias(file="source", sep="separator", stacklevel=4)
 def read_csv_batched(
     source: str | Path,
+    *,
     has_header: bool = True,
     columns: Sequence[int] | Sequence[str] | None = None,
     new_columns: Sequence[str] | None = None,
@@ -472,7 +467,7 @@ def read_csv_batched(
         First try ``infer_schema_length=0`` to read all columns as
         ``pl.Utf8`` to check which values might cause an issue.
     try_parse_dates
-        Try to automatically parse dates. Most ISO8601-like time zone naive formats can
+        Try to automatically parse dates. Most ISO8601-like formats can
         be inferred, as well as a handful of others. If this does not succeed,
         the column remains of data type ``pl.Utf8``.
     n_threads
@@ -493,7 +488,7 @@ def read_csv_batched(
     encoding : {'utf8', 'utf8-lossy', ...}
         Lossy means that invalid utf8 values are replaced with ``�``
         characters. When using other encodings than ``utf8`` or
-        ``utf8-lossy``, the input is first decoded im memory with
+        ``utf8-lossy``, the input is first decoded in memory with
         python. Defaults to ``utf8``.
     low_memory
         Reduce memory usage at expense of performance.
@@ -683,12 +678,9 @@ def read_csv_batched(
     )
 
 
-@deprecate_nonkeyword_arguments()
-@deprecated_alias(
-    file="source", sep="separator", parse_dates="try_parse_dates", stacklevel=4
-)
 def scan_csv(
     source: str | Path,
+    *,
     has_header: bool = True,
     separator: str = ",",
     comment_char: str | None = None,
@@ -783,7 +775,7 @@ def scan_csv(
     row_count_offset
         Offset to start the row_count column (only used if the name is set).
     try_parse_dates
-        Try to automatically parse dates. Most ISO8601-like time zone naive formats
+        Try to automatically parse dates. Most ISO8601-like formats
         can be inferred, as well as a handful of others. If this does not succeed,
         the column remains of data type ``pl.Utf8``.
     eol_char

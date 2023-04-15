@@ -1,6 +1,7 @@
 use std::any::Any;
 
 use super::*;
+use crate::hashing::series_to_hashes;
 use crate::prelude::*;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
 
@@ -62,6 +63,18 @@ impl private::PrivateSeries for SeriesWrap<StructChunked> {
             .groupby_with_series(self.0.fields().to_vec(), multithreaded, sorted)
             .unwrap();
         Ok(gb.take_groups())
+    }
+
+    fn vec_hash(&self, random_state: RandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
+        series_to_hashes(self.0.fields(), Some(random_state), buf)?;
+        Ok(())
+    }
+
+    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) -> PolarsResult<()> {
+        for field in self.0.fields() {
+            field.vec_hash_combine(build_hasher.clone(), hashes)?;
+        }
+        Ok(())
     }
 }
 
@@ -262,41 +275,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
 
     /// Count the null values.
     fn null_count(&self) -> usize {
-        if self
-            .0
-            .fields()
-            .iter()
-            .map(|s| s.null_count())
-            .sum::<usize>()
-            > 0
-        {
-            let mut null_count = 0;
-
-            let chunks_lens = self.0.fields()[0].chunks().len();
-
-            for i in 0..chunks_lens {
-                // If all fields are null we count it as null
-                // so we bitand every chunk
-                let mut validity_agg = None;
-
-                for s in self.0.fields() {
-                    let arr = &s.chunks()[i];
-
-                    match (&validity_agg, arr.validity()) {
-                        (Some(agg), Some(validity)) => validity_agg = Some(validity.bitand(agg)),
-                        (None, Some(validity)) => validity_agg = Some(validity.clone()),
-                        _ => {}
-                    }
-                    if let Some(validity) = &validity_agg {
-                        null_count += validity.unset_bits()
-                    }
-                }
-            }
-
-            null_count
-        } else {
-            0
-        }
+        self.0.null_count()
     }
 
     /// Get unique values in the Series.
@@ -381,5 +360,9 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
             )
             .unwrap();
         StructChunked::new_unchecked(self.name(), &out.columns).into_series()
+    }
+
+    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        self.0.arg_sort(options)
     }
 }

@@ -877,3 +877,28 @@ def test_struct_with_lit() -> None:
         .select(expr)
         .to_dict(False)
     ) == {"a": [{"a": 1, "b": 1}, {"a": 2, "b": 1}]}
+
+
+def test_struct_unique_df() -> None:
+    df = pl.DataFrame(
+        {
+            "numerical": [1, 2, 1],
+            "struct": [{"x": 1, "y": 2}, {"x": 3, "y": 4}, {"x": 1, "y": 2}],
+        }
+    )
+
+    df.select("numerical", "struct").unique().sort("numerical")
+
+
+def test_struct_is_in() -> None:
+    s1 = (
+        pl.DataFrame({"x": [4, 3, 4, 9], "y": [0, 4, 6, 2]})
+        .select(pl.struct(["x", "y"]))
+        .to_series()
+    )
+    s2 = (
+        pl.DataFrame({"x": [4, 3, 5, 9], "y": [0, 7, 6, 2]})
+        .select(pl.struct(["x", "y"]))
+        .to_series()
+    )
+    assert s1.is_in(s2).to_list() == [True, False, False, True]

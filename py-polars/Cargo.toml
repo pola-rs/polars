@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.16.18"
+version = "0.17.2"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -164,6 +164,7 @@ features = [
   "string_from_radix",
   "arg_where",
   "date_offset",
+  "approx_unique",
 ]
 
 [lib]

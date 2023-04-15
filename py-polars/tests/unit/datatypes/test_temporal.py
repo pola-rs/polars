@@ -535,7 +535,7 @@ def test_date_range_precision(time_unit: TimeUnit | None, expected_micros: int) 
 def test_range_invalid_unit() -> None:
     with pytest.raises(PolarsPanicError, match="'D' not supported"):
         pl.date_range(
-            low=datetime(2021, 12, 16), high=datetime(2021, 12, 16, 3), interval="1D"
+            start=datetime(2021, 12, 16), end=datetime(2021, 12, 16, 3), interval="1D"
         )
 
 
@@ -647,7 +647,7 @@ def test_date_range_lazy_with_expressions(
 
 
 def test_date_range_invalid_time_zone() -> None:
-    with pytest.raises(ComputeError, match="unable to parse time zone: foo"):
+    with pytest.raises(ComputeError, match="unable to parse time zone: 'foo'"):
         pl.date_range(
             datetime(2001, 1, 1), datetime(2001, 1, 3), interval="1d", time_zone="foo"
         )
@@ -964,8 +964,8 @@ def test_upsample_time_zones(
     df = pl.DataFrame(
         {
             "time": pl.date_range(
-                low=datetime(2021, 12, 16),
-                high=datetime(2021, 12, 16, 3),
+                start=datetime(2021, 12, 16),
+                end=datetime(2021, 12, 16, 3),
                 interval="30m",
             ),
             "groups": ["a", "a", "a", "b", "b", "a", "a"],
@@ -1949,7 +1949,7 @@ def test_strptime_empty(time_unit: TimeUnit, time_zone: str | None) -> None:
 
 
 def test_strptime_with_invalid_tz() -> None:
-    with pytest.raises(ComputeError, match="unable to parse time zone: foo"):
+    with pytest.raises(ComputeError, match="unable to parse time zone: 'foo'"):
         pl.Series(["2020-01-01 03:00:00"]).str.strptime(pl.Datetime("us", "foo"))
     with pytest.raises(
         ComputeError,
@@ -1960,7 +1960,7 @@ def test_strptime_with_invalid_tz() -> None:
         )
     with pytest.raises(
         ComputeError,
-        match="cannot use strptime with both 'utc=True' and tz-aware datetime",
+        match="cannot use strptime with both 'utc=True' and tz-aware dtype",
     ):
         pl.Series(["2020-01-01 03:00:00"]).str.strptime(
             pl.Datetime("us", "foo"), "%Y-%m-%d %H:%M:%S", utc=True
@@ -1977,7 +1977,7 @@ def test_strptime_unguessable_format() -> None:
 
 def test_convert_time_zone_invalid() -> None:
     ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
-    with pytest.raises(ComputeError, match="unable to parse timezone: 'foo'"):
+    with pytest.raises(ComputeError, match="unable to parse time zone: 'foo'"):
         ts.dt.replace_time_zone("UTC").dt.convert_time_zone("foo")
 
 
@@ -2161,6 +2161,15 @@ def test_date_range_descending() -> None:
         pl.date_range(datetime(2000, 3, 20), datetime(2000, 3, 21), interval="-1h")
 
 
+def test_date_range_end_of_month_5441() -> None:
+    start = date(2020, 1, 31)
+    stop = date(2021, 1, 31)
+    with pytest.raises(
+        ComputeError, match=r"cannot advance '2020-01-31 00:00:00' by 1 month\(s\)"
+    ):
+        pl.date_range(start, stop, interval="1mo")
+
+
 def test_logical_nested_take() -> None:
     frame = pl.DataFrame(
         {
@@ -2223,7 +2232,7 @@ def test_tz_aware_truncate() -> None:
     test = pl.DataFrame(
         {
             "dt": pl.date_range(
-                low=datetime(2022, 11, 1), high=datetime(2022, 11, 4), interval="12h"
+                start=datetime(2022, 11, 1), end=datetime(2022, 11, 4), interval="12h"
             ).dt.replace_time_zone("America/New_York")
         }
     )
@@ -2254,8 +2263,8 @@ def test_tz_aware_truncate() -> None:
     lf = pl.DataFrame(
         {
             "naive": pl.date_range(
-                low=datetime(2021, 12, 31, 23),
-                high=datetime(2022, 1, 1, 6),
+                start=datetime(2021, 12, 31, 23),
+                end=datetime(2022, 1, 1, 6),
                 interval="1h",
             )
         }
@@ -2321,7 +2330,7 @@ def test_tz_aware_strftime() -> None:
     df = pl.DataFrame(
         {
             "dt": pl.date_range(
-                low=datetime(2022, 11, 1), high=datetime(2022, 11, 4), interval="24h"
+                start=datetime(2022, 11, 1), end=datetime(2022, 11, 4), interval="24h"
             ).dt.replace_time_zone("America/New_York")
         }
     )
@@ -2671,6 +2680,39 @@ def test_infer_iso8601_datetime(iso8601_format_datetime: str) -> None:
         assert parsed.dt.nanosecond().item() == 123456000
     if "%3f" in iso8601_format_datetime:
         assert parsed.dt.nanosecond().item() == 123000000
+
+
+def test_infer_iso8601_tz_aware_datetime(iso8601_tz_aware_format_datetime: str) -> None:
+    # construct an example time string
+    time_string = (
+        iso8601_tz_aware_format_datetime.replace("%Y", "2134")
+        .replace("%m", "12")
+        .replace("%d", "13")
+        .replace("%H", "01")
+        .replace("%M", "12")
+        .replace("%S", "34")
+        .replace("%3f", "123")
+        .replace("%6f", "123456")
+        .replace("%9f", "123456789")
+        .replace("%#z", "+01:00")
+    )
+    parsed = pl.Series([time_string]).str.strptime(pl.Datetime("ns"))
+    assert parsed.dt.year().item() == 2134
+    assert parsed.dt.month().item() == 12
+    assert parsed.dt.day().item() == 13
+    if "%H" in iso8601_tz_aware_format_datetime:
+        assert parsed.dt.hour().item() == 1
+    if "%M" in iso8601_tz_aware_format_datetime:
+        assert parsed.dt.minute().item() == 12
+    if "%S" in iso8601_tz_aware_format_datetime:
+        assert parsed.dt.second().item() == 34
+    if "%9f" in iso8601_tz_aware_format_datetime:
+        assert parsed.dt.nanosecond().item() == 123456789
+    if "%6f" in iso8601_tz_aware_format_datetime:
+        assert parsed.dt.nanosecond().item() == 123456000
+    if "%3f" in iso8601_tz_aware_format_datetime:
+        assert parsed.dt.nanosecond().item() == 123000000
+    assert parsed.dtype == pl.Datetime("ns", "+01:00")
 
 
 def test_infer_iso8601_date(iso8601_format_date: str) -> None:

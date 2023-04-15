@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pyarrow as pa
+import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
@@ -265,3 +266,16 @@ def test_explode_null_list() -> None:
     assert pl.Series([["a"], None], dtype=pl.List(pl.Utf8))[
         1:2
     ].arr.min().to_list() == [None]
+
+
+def test_explode_invalid_element_count() -> None:
+    df = pl.DataFrame(
+        {
+            "col1": [["X", "Y", "Z"], ["F", "G"], ["P"]],
+            "col2": [["A", "B", "C"], ["C"], ["D", "E"]],
+        }
+    ).with_row_count()
+    with pytest.raises(
+        pl.ShapeError, match=r"exploded columns must have matching element counts"
+    ):
+        df.explode(["col1", "col2"])

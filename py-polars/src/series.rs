@@ -12,7 +12,6 @@ use crate::apply::series::{call_lambda_and_extract, ApplyLambda};
 use crate::arrow_interop::to_rust::array_to_rust;
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
-use crate::list_construction::py_seq_to_list;
 use crate::prelude::*;
 use crate::py_modules::POLARS;
 use crate::set::set_at_idx;
@@ -365,11 +364,6 @@ impl PySeries {
                 Ok(series.into())
             }
         }
-    }
-
-    #[staticmethod]
-    pub fn new_list(name: &str, seq: &PyAny, dtype: Wrap<DataType>) -> PyResult<Self> {
-        py_seq_to_list(name, seq, &dtype.0).map(|s| s.into())
     }
 
     pub fn estimated_size(&self) -> usize {

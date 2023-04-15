@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import sys
-import tempfile
 from datetime import date
 from typing import TYPE_CHECKING
 
@@ -10,6 +9,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+from polars.testing._tempdir import TemporaryDirectory
 
 if TYPE_CHECKING:
     from polars.type_aliases import (
@@ -97,7 +97,7 @@ def test_read_database(
     expected_dtypes: dict[str, pl.DataType],
     expected_dates: list[date | str],
 ) -> None:
-    with tempfile.TemporaryDirectory() as tmpdir_name:
+    with TemporaryDirectory(prefix=f"pl_{engine}_") as tmpdir_name:
         test_db = os.path.join(tmpdir_name, "test.db")
         create_temp_sqlite_db(test_db)
 
@@ -106,7 +106,6 @@ def test_read_database(
             query="SELECT * FROM test_data",
             engine=engine,
         )
-
         assert df.schema == expected_dtypes
         assert df.shape == (2, 4)
         assert df["date"].to_list() == expected_dates
@@ -141,7 +140,7 @@ def test_read_database(
 def test_read_database_exceptions(
     engine: DbReadEngine, query: str, database: str, err: str
 ) -> None:
-    with tempfile.TemporaryDirectory() as tmpdir_name:
+    with TemporaryDirectory() as tmpdir_name:
         test_db = os.path.join(tmpdir_name, "test.db")
         create_temp_sqlite_db(test_db)
 
@@ -180,7 +179,7 @@ def test_read_database_exceptions(
 def test_write_database(
     engine: DbWriteEngine, mode: DbWriteMode, sample_df: pl.DataFrame
 ) -> None:
-    with tempfile.TemporaryDirectory() as tmpdir_name:
+    with TemporaryDirectory() as tmpdir_name:
         test_db = os.path.join(tmpdir_name, "test.db")
 
         sample_df.write_database(

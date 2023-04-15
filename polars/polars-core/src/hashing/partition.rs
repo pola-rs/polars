@@ -64,6 +64,23 @@ impl AsU64 for i64 {
     }
 }
 
+impl<T: AsU64 + Copy> AsU64 for Option<&T> {
+    #[inline]
+    fn as_u64(self) -> u64 {
+        match self {
+            Some(v) => v.as_u64(),
+            // just a number safe from overflow
+            None => u64::MAX >> 2,
+        }
+    }
+}
+
+impl<T: AsU64 + Copy> AsU64 for &T {
+    fn as_u64(self) -> u64 {
+        (*self).as_u64()
+    }
+}
+
 impl AsU64 for Option<u32> {
     #[inline]
     fn as_u64(self) -> u64 {
@@ -114,8 +131,8 @@ impl<'a> AsU64 for BytesHash<'a> {
 
 #[inline]
 /// For partitions that are a power of 2 we can use a bitshift instead of a modulo.
-pub(crate) fn this_partition(h: u64, thread_no: u64, n_partitions: u64) -> bool {
+pub fn this_partition(h: u64, thread_no: u64, n_partitions: u64) -> bool {
     debug_assert!(n_partitions.is_power_of_two());
     // n % 2^i = n & (2^i - 1)
-    (h.wrapping_add(thread_no)) & n_partitions.wrapping_sub(1) == 0
+    (h & n_partitions.wrapping_sub(1)) == thread_no
 }

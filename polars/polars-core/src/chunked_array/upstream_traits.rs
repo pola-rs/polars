@@ -6,7 +6,9 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use arrow::array::{BooleanArray, PrimitiveArray, Utf8Array};
-use polars_arrow::utils::TrustMyLength;
+use arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_arrow::bit_util::{set_bit_raw, unset_bit_raw};
+use polars_utils::sync::SyncPtr;
 use rayon::iter::{FromParallelIterator, IntoParallelIterator};
 use rayon::prelude::*;
 
@@ -301,8 +303,6 @@ impl FromIterator<Option<Box<dyn Array>>> for ListChunked {
 #[cfg(feature = "object")]
 impl<T: PolarsObject> FromIterator<Option<T>> for ObjectChunked<T> {
     fn from_iter<I: IntoIterator<Item = Option<T>>>(iter: I) -> Self {
-        use arrow::bitmap::{Bitmap, MutableBitmap};
-
         let iter = iter.into_iter();
         let size = iter.size_hint().0;
         let mut null_mask_builder = MutableBitmap::with_capacity(size);
@@ -378,6 +378,19 @@ fn get_capacity_from_par_results<T>(ll: &LinkedList<Vec<T>>) -> usize {
     ll.iter().map(|list| list.len()).sum()
 }
 
+fn get_capacity_from_par_results_slice<T>(bufs: &[Vec<T>]) -> usize {
+    bufs.iter().map(|list| list.len()).sum()
+}
+fn get_offsets<T>(bufs: &[Vec<T>]) -> Vec<usize> {
+    bufs.iter()
+        .scan(0usize, |acc, buf| {
+            let out = *acc;
+            *acc += buf.len();
+            Some(out)
+        })
+        .collect()
+}
+
 impl<T> FromParallelIterator<T::Native> for NoNull<ChunkedArray<T>>
 where
     T: PolarsNumericType,
@@ -396,6 +409,22 @@ where
     }
 }
 
+fn finish_validities(validities: Vec<(Option<Bitmap>, usize)>, capacity: usize) -> Option<Bitmap> {
+    if validities.iter().any(|(v, _)| v.is_some()) {
+        let mut bitmap = MutableBitmap::with_capacity(capacity);
+        for (valids, len) in validities {
+            if let Some(valids) = valids {
+                bitmap.extend_from_bitmap(&(valids))
+            } else {
+                bitmap.extend_constant(len, true)
+            }
+        }
+        Some(bitmap.into())
+    } else {
+        None
+    }
+}
+
 impl<T> FromParallelIterator<Option<T::Native>> for ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -404,11 +433,57 @@ where
         // Get linkedlist filled with different vec result from different threads
         let vectors = collect_into_linked_list(iter);
 
-        let capacity: usize = get_capacity_from_par_results(&vectors);
+        let vectors = vectors.into_iter().collect::<Vec<_>>();
+        let capacity: usize = get_capacity_from_par_results_slice(&vectors);
+        let offsets = get_offsets(&vectors);
 
-        let iter = TrustMyLength::new(vectors.into_iter().flatten(), capacity);
-        let arr =
-            PrimitiveArray::<T::Native>::from_trusted_len_iter(iter).to(T::get_dtype().to_arrow());
+        let mut values_buf: Vec<T::Native> = Vec::with_capacity(capacity);
+        let values_buf_ptr = unsafe { SyncPtr::new(values_buf.as_mut_ptr()) };
+
+        let validities = offsets
+            .into_par_iter()
+            .zip(vectors)
+            .map(|(offset, vector)| {
+                let mut local_validity = None;
+                let local_len = vector.len();
+                let mut latest_validy_written = 0;
+                unsafe {
+                    let values_buf_ptr = values_buf_ptr.get().add(offset);
+
+                    for (i, opt_v) in vector.into_iter().enumerate() {
+                        match opt_v {
+                            Some(v) => {
+                                std::ptr::write(values_buf_ptr.add(i), v);
+                            }
+                            None => {
+                                let validity = match &mut local_validity {
+                                    None => {
+                                        let validity = MutableBitmap::with_capacity(local_len);
+                                        local_validity = Some(validity);
+                                        local_validity.as_mut().unwrap_unchecked()
+                                    }
+                                    Some(validity) => validity,
+                                };
+                                validity.extend_constant(i - latest_validy_written, true);
+                                latest_validy_written = i + 1;
+                                validity.push_unchecked(false);
+                                // initialize value
+                                std::ptr::write(values_buf_ptr.add(i), T::Native::default());
+                            }
+                        }
+                    }
+                }
+                if let Some(validity) = &mut local_validity {
+                    validity.extend_constant(local_len - latest_validy_written, true);
+                }
+                (local_validity.map(|b| b.into()), local_len)
+            })
+            .collect::<Vec<_>>();
+        unsafe { values_buf.set_len(capacity) };
+
+        let validity = finish_validities(validities, capacity);
+
+        let arr = PrimitiveArray::from_data_default(values_buf.into(), validity);
         unsafe { Self::from_chunks("", vec![Box::new(arr)]) }
     }
 }
@@ -430,15 +505,95 @@ impl FromParallelIterator<bool> for BooleanChunked {
 
 impl FromParallelIterator<Option<bool>> for BooleanChunked {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<bool>>>(iter: I) -> Self {
+        // Get linkedlist filled with different vec result from different threads
         let vectors = collect_into_linked_list(iter);
 
-        let capacity: usize = get_capacity_from_par_results(&vectors);
+        let vectors = vectors.into_iter().collect::<Vec<_>>();
+        let capacity: usize = get_capacity_from_par_results_slice(&vectors);
+        let offsets = get_offsets(&vectors);
 
-        let arr = unsafe {
-            BooleanArray::from_trusted_len_iter(
-                vectors.into_iter().flatten().trust_my_length(capacity),
-            )
-        };
+        // We initialize the vec, as setting bits only doesn't seem to initialize the memory
+        let mut values_buf: Vec<u8> = vec![0; capacity.saturating_add(7) / 8];
+        let values_buf_ptr = unsafe { SyncPtr::new(values_buf.as_mut_ptr()) };
+
+        let validities = offsets
+            .par_iter()
+            .zip(vectors.par_iter())
+            .map(|(&offset, vector)| {
+                let mut local_validity = None;
+                let local_len = vector.len();
+                let mut latest_validy_written = 0;
+                unsafe {
+                    // don't add the offset here, we set bits, not bytes!
+                    let values_buf_ptr = values_buf_ptr.get();
+
+                    // this may/will race on the leading and trailing bits
+                    // we allow this racing and set the bits to the correct value in a second
+                    // single threaded pass
+                    for (i, opt_v) in vector.iter().enumerate() {
+                        match opt_v {
+                            Some(v) => {
+                                if *v {
+                                    set_bit_raw(values_buf_ptr, i + offset);
+                                };
+                            }
+                            None => {
+                                let validity = match &mut local_validity {
+                                    None => {
+                                        let validity = MutableBitmap::with_capacity(local_len);
+                                        local_validity = Some(validity);
+                                        local_validity.as_mut().unwrap_unchecked()
+                                    }
+                                    Some(validity) => validity,
+                                };
+                                validity.extend_constant(i - latest_validy_written, true);
+                                latest_validy_written = i + 1;
+                                validity.push_unchecked(false);
+                            }
+                        }
+                    }
+                }
+                if let Some(validity) = &mut local_validity {
+                    validity.extend_constant(local_len - latest_validy_written, true);
+                }
+                (local_validity.map(|b| b.into()), local_len)
+            })
+            .collect::<Vec<_>>();
+        unsafe { values_buf.set_len(capacity.saturating_add(7) / 8) };
+
+        // set the leading and trailing bits
+        // those can be in an invalid state due to racing threads
+        let ptr = values_buf_ptr.get();
+        for (vector, offset) in vectors.into_iter().zip(offsets) {
+            // set leading bits
+            for (i, opt_v) in vector.iter().enumerate().take(8) {
+                unsafe {
+                    if let Some(v) = opt_v {
+                        if *v {
+                            set_bit_raw(ptr, i + offset)
+                        } else {
+                            unset_bit_raw(ptr, i + offset)
+                        }
+                    }
+                }
+            }
+            // set trailing bits
+            for (i, opt_v) in vector.iter().enumerate().rev().take(8) {
+                unsafe {
+                    if let Some(v) = opt_v {
+                        if *v {
+                            set_bit_raw(ptr, i + offset)
+                        } else {
+                            unset_bit_raw(ptr, i + offset)
+                        }
+                    }
+                }
+            }
+        }
+
+        let validity = finish_validities(validities, capacity);
+        let values = Bitmap::from_u8_vec(values_buf, capacity);
+        let arr = BooleanArray::from_data_default(values, validity);
         unsafe { Self::from_chunks("", vec![Box::new(arr)]) }
     }
 }
@@ -449,9 +604,45 @@ where
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Ptr>>(iter: I) -> Self {
         let vectors = collect_into_linked_list(iter);
-        let arr = LargeStringArray::from_iter_values(vectors.into_iter().flatten());
+        let cap = get_capacity_from_par_results(&vectors);
+        let mut builder = MutableUtf8ValuesArray::with_capacities(cap, cap * 10);
+        for vec in vectors {
+            for val in vec {
+                builder.push(val.as_ref())
+            }
+        }
+        let arr: LargeStringArray = builder.into();
         unsafe { Self::from_chunks("", vec![Box::new(arr)]) }
     }
+}
+
+pub fn flatten_par<T: Send + Sync + Copy>(bufs: &[&[T]]) -> Vec<T> {
+    let len = bufs.iter().map(|b| b.as_ref().len()).sum();
+    let offsets = bufs
+        .iter()
+        .scan(0usize, |acc, buf| {
+            let out = *acc;
+            *acc += buf.len();
+            Some(out)
+        })
+        .collect::<Vec<_>>();
+
+    let mut out = Vec::with_capacity(len);
+    let out_ptr = unsafe { SyncPtr::new(out.as_mut_ptr()) };
+
+    offsets.into_par_iter().enumerate().for_each(|(i, offset)| {
+        let buf = bufs[i];
+        let ptr: *mut T = out_ptr.get();
+        unsafe {
+            let dst = ptr.add(offset);
+            let src = buf.as_ptr();
+            std::ptr::copy_nonoverlapping(src, dst, buf.len())
+        }
+    });
+    unsafe {
+        out.set_len(len);
+    }
+    out
 }
 
 impl<Ptr> FromParallelIterator<Option<Ptr>> for Utf8Chunked
@@ -460,8 +651,71 @@ where
 {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<Ptr>>>(iter: I) -> Self {
         let vectors = collect_into_linked_list(iter);
-        let arr = LargeStringArray::from_iter(vectors.into_iter().flatten());
-        unsafe { Self::from_chunks("", vec![Box::new(arr)]) }
+        let vectors = vectors.into_iter().collect::<Vec<_>>();
+
+        let arrays = vectors
+            .into_par_iter()
+            .map(|vector| {
+                let cap = vector.len();
+                let mut builder = MutableUtf8Array::with_capacities(cap, cap * 10);
+                for opt_val in vector {
+                    builder.push(opt_val)
+                }
+                let arr: LargeStringArray = builder.into();
+                arr
+            })
+            .collect::<Vec<_>>();
+
+        let mut len = 0;
+        let mut thread_offsets = Vec::with_capacity(arrays.len());
+        let values = arrays
+            .iter()
+            .map(|arr| {
+                thread_offsets.push(len);
+                len += arr.len();
+                arr.values().as_slice()
+            })
+            .collect::<Vec<_>>();
+        let values = flatten_par(&values);
+
+        let validity = finish_validities(
+            arrays
+                .iter()
+                .map(|arr| {
+                    let local_len = arr.len();
+                    (arr.validity().cloned(), local_len)
+                })
+                .collect(),
+            len,
+        );
+
+        // concat the offsets
+        // this is single threaded as the values depend on previous ones
+        // if this proves to slow we could try parallel reduce
+        let mut offsets = Vec::with_capacity(len + 1);
+        let mut offsets_so_far = 0;
+        let mut first = true;
+        for array in &arrays {
+            let local_offsets = array.offsets().as_slice();
+            if first {
+                offsets.extend_from_slice(local_offsets);
+                first = false;
+            } else {
+                // offset lengths must be updated
+                offsets.extend(local_offsets[1..].iter().map(|v| *v + offsets_so_far))
+            }
+            offsets_so_far = *local_offsets.last().unwrap();
+        }
+
+        unsafe {
+            offsets.set_len(len + 1);
+            let arr = Utf8Array::<i64>::from_data_unchecked_default(
+                offsets.into(),
+                values.into(),
+                validity,
+            );
+            Self::from_chunks("", vec![Box::new(arr)])
+        }
     }
 }
 
@@ -573,7 +827,7 @@ mod test {
         let ll: ListChunked = [&s1, &s2].iter().copied().collect();
         assert_eq!(ll.len(), 2);
         assert_eq!(ll.null_count(), 0);
-        let ll: ListChunked = [None, Some(s2)].iter().map(|opt| opt.clone()).collect();
+        let ll: ListChunked = [None, Some(s2)].into_iter().collect();
         assert_eq!(ll.len(), 2);
         assert_eq!(ll.null_count(), 1);
     }

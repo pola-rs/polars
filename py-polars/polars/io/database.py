@@ -4,7 +4,7 @@ import warnings
 from typing import TYPE_CHECKING, Any
 
 from polars.convert import from_arrow
-from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
+from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
     from polars.dataframe import DataFrame
@@ -108,16 +108,14 @@ def read_database(
         raise ValueError("Engine is not implemented, try either connectorx or adbc.")
 
 
-@deprecated_alias(sql="query")
-@deprecate_nonkeyword_arguments(stacklevel=3)
 def read_sql(
     query: list[str] | str,
     connection_uri: str,
+    *,
     partition_on: str | None = None,
     partition_range: tuple[int, int] | None = None,
     partition_num: int | None = None,
     protocol: str | None = None,
-    *,
     engine: DbReadEngine = "connectorx",
 ) -> DataFrame:
     """
@@ -193,7 +191,7 @@ def read_sql(
         "`read_sql` has been renamed; this"
         " redirect is temporary, please use `read_database` instead",
         category=DeprecationWarning,
-        stacklevel=2,
+        stacklevel=find_stacklevel(),
     )
     return read_database(
         query=query,

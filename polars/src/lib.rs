@@ -353,7 +353,7 @@
 //! * `POLARS_FMT_TABLE_INLINE_COLUMN_DATA_TYPE` -> put column data type on the same line as the column name.
 //! * `POLARS_FMT_TABLE_ROUNDED_CORNERS` -> apply rounded corners to UTF8-styled tables.
 //! * `POLARS_FMT_MAX_COLS` -> maximum number of columns shown when formatting DataFrames.
-//! * `POLARS_FMT_MAX_ROWS` -> maximum number of rows shown when formatting DataFrames.
+//! * `POLARS_FMT_MAX_ROWS` -> maximum number of rows shown when formatting DataFrames, `-1` to show all.
 //! * `POLARS_FMT_STR_LEN` -> maximum number of characters printed per string value.
 //! * `POLARS_TABLE_WIDTH` -> width of the tables used during DataFrame formatting.
 //! * `POLARS_MAX_THREADS` -> maximum number of threads used to initialize thread pool (on startup).
@@ -387,7 +387,7 @@ pub use polars_core::{
     series, testing,
 };
 #[cfg(feature = "dtype-categorical")]
-pub use polars_core::{toggle_string_cache, using_string_cache};
+pub use polars_core::{enable_string_cache, using_string_cache};
 #[cfg(feature = "polars-io")]
 pub use polars_io as io;
 #[cfg(feature = "lazy")]

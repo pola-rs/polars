@@ -6,8 +6,12 @@ use sqlparser::ast::{
 };
 
 use crate::sql_expr::parse_sql_expr;
+use crate::SQLContext;
 
-pub(crate) struct SqlFunctionVisitor<'a>(pub(crate) &'a SQLFunction);
+pub(crate) struct SqlFunctionVisitor<'a> {
+    pub(crate) func: &'a SQLFunction,
+    pub(crate) ctx: &'a SQLContext,
+}
 
 /// SQL functions that are supported by Polars
 pub(crate) enum PolarsSqlFunctions {
@@ -69,6 +73,11 @@ pub(crate) enum PolarsSqlFunctions {
     /// SELECT LOG(column_1, 10) from df;
     /// ```
     Log,
+    /// SQL 'log1p' function
+    /// ```sql
+    /// SELECT LOG1P(column_1) from df;
+    /// ```
+    Log1p,
     /// SQL 'pow' function
     /// ```sql
     /// SELECT POW(column_1, 2) from df;
@@ -243,6 +252,7 @@ impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
             "log2" => Self::Log2,
             "log10" => Self::Log10,
             "log" => Self::Log,
+            "log1p" => Self::Log1p,
             "pow" => Self::Pow,
             // ----
             // String functions
@@ -285,7 +295,7 @@ impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
 
 impl SqlFunctionVisitor<'_> {
     pub(crate) fn visit_function(&self) -> PolarsResult<Expr> {
-        let function = self.0;
+        let function = self.func;
 
         let function_name: PolarsSqlFunctions = function.try_into()?;
         use PolarsSqlFunctions::*;
@@ -304,6 +314,7 @@ impl SqlFunctionVisitor<'_> {
             Log2 => self.visit_unary(|e| e.log(2.0)),
             Log10 => self.visit_unary(|e| e.log(10.0)),
             Log => self.visit_binary(Expr::log),
+            Log1p => self.visit_unary(Expr::log1p),
             Pow => self.visit_binary::<Expr>(Expr::pow),
             // ----
             // String functions
@@ -357,27 +368,28 @@ impl SqlFunctionVisitor<'_> {
     }
 
     fn visit_unary(&self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
-        let function = self.0;
+        let function = self.func;
         let args = extract_args(function);
         if let FunctionArgExpr::Expr(sql_expr) = args[0] {
             // parse the inner sql expr -- e.g. SUM(a) -> a
-            let expr = parse_sql_expr(sql_expr)?;
+            let expr = parse_sql_expr(sql_expr, self.ctx)?;
             // apply the function on the inner expr -- e.g. SUM(a) -> SUM
             let expr = f(expr);
             // apply the window spec if present
-            apply_window_spec(expr, &function.over)
+            self.apply_window_spec(expr, &function.over)
         } else {
             not_supported_error(function.name.0[0].value.as_str(), &args)
         }
     }
 
     fn visit_binary<Arg: FromSqlExpr>(&self, f: impl Fn(Expr, Arg) -> Expr) -> PolarsResult<Expr> {
-        let function = self.0;
+        let function = self.func;
         let args = extract_args(function);
         if let FunctionArgExpr::Expr(sql_expr) = args[0] {
-            let expr = apply_window_spec(parse_sql_expr(sql_expr)?, &function.over)?;
+            let expr =
+                self.apply_window_spec(parse_sql_expr(sql_expr, self.ctx)?, &function.over)?;
             if let FunctionArgExpr::Expr(sql_expr) = args[1] {
-                let expr2 = Arg::from_sql_expr(sql_expr)?;
+                let expr2 = Arg::from_sql_expr(sql_expr, self.ctx)?;
                 Ok(f(expr, expr2))
             } else {
                 not_supported_error(function.name.0[0].value.as_str(), &args)
@@ -388,8 +400,8 @@ impl SqlFunctionVisitor<'_> {
     }
 
     fn visit_count(&self) -> PolarsResult<Expr> {
-        let args = extract_args(self.0);
-        Ok(match (args.len(), self.0.distinct) {
+        let args = extract_args(self.func);
+        Ok(match (args.len(), self.func.distinct) {
             // count()
             (0, false) => lit(1i32).count(),
             // count(distinct)
@@ -397,7 +409,8 @@ impl SqlFunctionVisitor<'_> {
             (1, false) => match args[0] {
                 // count(col)
                 FunctionArgExpr::Expr(sql_expr) => {
-                    let expr = apply_window_spec(parse_sql_expr(sql_expr)?, &self.0.over)?;
+                    let expr = self
+                        .apply_window_spec(parse_sql_expr(sql_expr, self.ctx)?, &self.func.over)?;
                     expr.count()
                 }
                 // count(*)
@@ -408,7 +421,8 @@ impl SqlFunctionVisitor<'_> {
             (1, true) => {
                 // count(distinct col)
                 if let FunctionArgExpr::Expr(sql_expr) = args[0] {
-                    let expr = apply_window_spec(parse_sql_expr(sql_expr)?, &self.0.over)?;
+                    let expr = self
+                        .apply_window_spec(parse_sql_expr(sql_expr, self.ctx)?, &self.func.over)?;
                     expr.n_unique()
                 } else {
                     // count(distinct *) or count(distinct tbl.*) is not supported
@@ -418,22 +432,25 @@ impl SqlFunctionVisitor<'_> {
             _ => return not_supported_error("count", &args),
         })
     }
-}
-
-fn apply_window_spec(expr: Expr, window_spec: &Option<WindowSpec>) -> PolarsResult<Expr> {
-    Ok(match &window_spec {
-        Some(window_spec) => {
-            // Process for simple window specification, partition by first
-            let partition_by = window_spec
-                .partition_by
-                .iter()
-                .map(parse_sql_expr)
-                .collect::<PolarsResult<Vec<_>>>()?;
-            expr.over(partition_by)
-            // Order by and Row range may not be supported at the moment
-        }
-        None => expr,
-    })
+    fn apply_window_spec(
+        &self,
+        expr: Expr,
+        window_spec: &Option<WindowSpec>,
+    ) -> PolarsResult<Expr> {
+        Ok(match &window_spec {
+            Some(window_spec) => {
+                // Process for simple window specification, partition by first
+                let partition_by = window_spec
+                    .partition_by
+                    .iter()
+                    .map(|p| parse_sql_expr(p, self.ctx))
+                    .collect::<PolarsResult<Vec<_>>>()?;
+                expr.over(partition_by)
+                // Order by and Row range may not be supported at the moment
+            }
+            None => expr,
+        })
+    }
 }
 
 fn not_supported_error(function_name: &str, args: &Vec<&FunctionArgExpr>) -> PolarsResult<Expr> {
@@ -456,13 +473,13 @@ fn extract_args(sql_function: &SQLFunction) -> Vec<&FunctionArgExpr> {
 }
 
 pub(crate) trait FromSqlExpr {
-    fn from_sql_expr(expr: &SqlExpr) -> PolarsResult<Self>
+    fn from_sql_expr(expr: &SqlExpr, ctx: &SQLContext) -> PolarsResult<Self>
     where
         Self: Sized;
 }
 
 impl FromSqlExpr for f64 {
-    fn from_sql_expr(expr: &SqlExpr) -> PolarsResult<Self>
+    fn from_sql_expr(expr: &SqlExpr, _ctx: &SQLContext) -> PolarsResult<Self>
     where
         Self: Sized,
     {
@@ -479,7 +496,7 @@ impl FromSqlExpr for f64 {
 }
 
 impl FromSqlExpr for String {
-    fn from_sql_expr(expr: &SqlExpr) -> PolarsResult<Self>
+    fn from_sql_expr(expr: &SqlExpr, _: &SQLContext) -> PolarsResult<Self>
     where
         Self: Sized,
     {
@@ -494,10 +511,10 @@ impl FromSqlExpr for String {
 }
 
 impl FromSqlExpr for Expr {
-    fn from_sql_expr(expr: &SqlExpr) -> PolarsResult<Self>
+    fn from_sql_expr(expr: &SqlExpr, ctx: &SQLContext) -> PolarsResult<Self>
     where
         Self: Sized,
     {
-        parse_sql_expr(expr)
+        parse_sql_expr(expr, ctx)
     }
 }

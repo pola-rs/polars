@@ -117,10 +117,10 @@ mod test {
         assert_eq!(slice[1], 1);
         assert_eq!(slice[0], 0);
 
-        let mask = BooleanArray::from_slice(&[
+        let mask = BooleanArray::from_slice([
             false, true, false, true, false, true, false, true, false, false,
         ]);
-        let val = UInt32Array::from_slice(&[0; 10]);
+        let val = UInt32Array::from_slice([0; 10]);
         let out = set_with_mask(&val, &mask, 1, DataType::UInt32);
         assert_eq!(out.values().as_slice(), &[0, 1, 0, 1, 0, 1, 0, 1, 0, 0]);
 
@@ -133,7 +133,7 @@ mod test {
 
     #[test]
     fn test_set_at_idx() {
-        let val = UInt32Array::from_slice(&[1, 2, 3]);
+        let val = UInt32Array::from_slice([1, 2, 3]);
         let out = set_at_idx_no_null(&val, std::iter::once(1), 100, DataType::UInt32).unwrap();
         assert_eq!(out.values().as_slice(), &[1, 100, 3]);
         let out = set_at_idx_no_null(&val, std::iter::once(100), 100, DataType::UInt32);

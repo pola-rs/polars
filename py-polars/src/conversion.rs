@@ -18,7 +18,7 @@ use pyo3::basic::CompareOp;
 use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyBytes, PyDict, PyList, PySequence, PyTuple};
+use pyo3::types::{PyBool, PyBytes, PyDict, PyFloat, PyList, PySequence, PyString, PyTuple};
 use pyo3::{PyAny, PyResult};
 use smartstring::alias::String as SmartString;
 
@@ -637,48 +637,22 @@ fn convert_datetime(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
         // windows
         #[cfg(target_arch = "windows")]
         let (seconds, microseconds) = {
-            let tzinfo = ob.getattr("tzinfo")?;
-            let dt = if tzinfo.is_none() {
-                let kwargs = PyDict::new(py);
-                kwargs.set_item("tzinfo", py.None())?;
-                let dt = ob.call_method("replace", (), Some(kwargs))?;
-                let localize = UTILS.getattr("_localize").unwrap();
-                localize.call1((dt, "UTC"))
-            } else {
-                ob
-            };
-            let kwargs = PyDict::new(py);
-            kwargs.set_item("microsecond", 0)?;
-            let seconds = dt
-                .call_method("replace", (), Some(kwargs))?
-                .call_method0("timestamp")?;
-            let microseconds = dt.getattr("microsecond")?.extract::<i64>()?;
-            (seconds, microseconds)
+            let convert = UTILS.getattr(py, "_datetime_for_anyvalue_windows").unwrap();
+            let out = convert.call1(py, (ob,)).unwrap();
+            let out: (f64, i64) = out.extract(py).unwrap();
+            out
         };
         // unix
         #[cfg(not(target_arch = "windows"))]
         let (seconds, microseconds) = {
-            let datetime = PyModule::import(py, "datetime")?;
-            let timezone = datetime.getattr("timezone")?;
-            let tzinfo = ob.getattr("tzinfo")?;
-            let dt = if tzinfo.is_none() {
-                let kwargs = PyDict::new(py);
-                kwargs.set_item("tzinfo", timezone.getattr("utc")?)?;
-                ob.call_method("replace", (), Some(kwargs))?
-            } else {
-                ob
-            };
-            let kwargs = PyDict::new(py);
-            kwargs.set_item("microsecond", 0)?;
-            let seconds = dt
-                .call_method("replace", (), Some(kwargs))?
-                .call_method0("timestamp")?;
-            let microseconds = dt.getattr("microsecond")?.extract::<i64>()?;
-            (seconds, microseconds)
+            let convert = UTILS.getattr(py, "_datetime_for_anyvalue").unwrap();
+            let out = convert.call1(py, (ob,)).unwrap();
+            let out: (f64, i64) = out.extract(py).unwrap();
+            out
         };
 
         // s to us
-        let mut v = (seconds.extract::<f64>()? as i64) * 1_000_000;
+        let mut v = (seconds as i64) * 1_000_000;
         v += microseconds;
 
         // choose "us" as that is python's default unit
@@ -688,12 +662,16 @@ fn convert_datetime(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
 
 impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
-        if ob.is_instance_of::<PyBool>().unwrap() {
+        if ob.is_instance_of::<PyBool>()? {
             Ok(AnyValue::Boolean(ob.extract::<bool>().unwrap()).into())
-        } else if let Ok(v) = ob.extract::<i64>() {
-            Ok(AnyValue::Int64(v).into())
-        } else if let Ok(v) = ob.extract::<&'s str>() {
-            Ok(AnyValue::Utf8(v).into())
+        } else if let Ok(value) = ob.extract::<i64>() {
+            Ok(AnyValue::Int64(value).into())
+        } else if ob.is_instance_of::<PyFloat>()? {
+            let value = ob.extract::<f64>().unwrap();
+            Ok(AnyValue::Float64(value).into())
+        } else if ob.is_instance_of::<PyString>()? {
+            let value = ob.extract::<&'s str>().unwrap();
+            Ok(AnyValue::Utf8(value).into())
         } else if ob.is_none() {
             Ok(AnyValue::Null.into())
         } else if ob.is_instance_of::<PyDict>()? {
@@ -711,6 +689,8 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             Ok(Wrap(AnyValue::StructOwned(Box::new((vals, keys)))))
         } else if ob.is_instance_of::<PyList>()? {
             materialize_list(ob)
+        } else if let Ok(value) = ob.extract::<u64>() {
+            Ok(AnyValue::UInt64(value).into())
         } else if ob.hasattr("_s")? {
             let py_pyseries = ob.getattr("_s").unwrap();
             let series = py_pyseries.extract::<PySeries>().unwrap().series;
@@ -719,9 +699,6 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             Ok(AnyValue::Binary(v).into())
         } else {
             let type_name = ob.get_type().name()?;
-            if let Some(Ok(v)) = (type_name != "Decimal").then_some(ob.extract::<f64>()) {
-                return Ok(AnyValue::Float64(v).into());
-            };
             match type_name {
                 "datetime" => convert_datetime(ob),
                 "date" => convert_date(ob),
@@ -778,9 +755,10 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                             _ => (),
                         }
                     }
-                    Err(PyErr::from(PyPolarsErr::Other(format!(
-                        "object type not supported {ob:?}",
-                    ))))
+
+                    // this is slow, but hey don't use objects
+                    let v = &ObjectValue { inner: ob.into() };
+                    Ok(Wrap(AnyValue::ObjectOwned(OwnedObject(v.to_boxed()))))
                 }
             }
         }

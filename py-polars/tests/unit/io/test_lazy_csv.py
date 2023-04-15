@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -9,6 +8,7 @@ import pytest
 import polars as pl
 from polars.exceptions import PolarsPanicError
 from polars.testing import assert_frame_equal
+from polars.testing._tempdir import TemporaryDirectory
 
 
 @pytest.fixture()
@@ -32,7 +32,7 @@ def test_invalid_utf8() -> None:
     np.random.seed(1)
     bts = bytes(np.random.randint(0, 255, 200))
 
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "nonutf8.csv"
         with open(file_path, "wb") as f:
             f.write(bts)
@@ -180,7 +180,7 @@ def test_scan_slice_streaming(foods_file_path: Path) -> None:
 
 @pytest.mark.write_disk()
 def test_glob_skip_rows() -> None:
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         for i in range(2):
             file_path = Path(temp_dir) / f"test_{i}.csv"
             with open(file_path, "w") as f:

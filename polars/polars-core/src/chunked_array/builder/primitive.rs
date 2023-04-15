@@ -1,11 +1,12 @@
 use super::*;
 
+#[derive(Clone)]
 pub struct PrimitiveChunkedBuilder<T>
 where
     T: PolarsNumericType,
 {
     array_builder: MutablePrimitiveArray<T::Native>,
-    field: Field,
+    pub(crate) field: Field,
 }
 
 impl<T> ChunkedBuilder<T::Native, T> for PrimitiveChunkedBuilder<T>

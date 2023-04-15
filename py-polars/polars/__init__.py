@@ -74,6 +74,7 @@ from polars.functions.lazy import (
     all,
     any,
     apply,
+    approx_unique,
     arange,
     arg_sort_by,
     arg_where,
@@ -147,7 +148,12 @@ from polars.io import (
 from polars.lazyframe import LazyFrame
 from polars.series import Series
 from polars.sql import SQLContext
-from polars.string_cache import StringCache, toggle_string_cache, using_string_cache
+from polars.string_cache import (
+    StringCache,
+    enable_string_cache,
+    toggle_string_cache,
+    using_string_cache,
+)
 from polars.type_aliases import PolarsDataType
 from polars.utils import (
     build_info,
@@ -243,6 +249,7 @@ __all__ = [
     "scan_pyarrow_dataset",
     # polars.stringcache
     "StringCache",
+    "enable_string_cache",
     "toggle_string_cache",
     "using_string_cache",
     # polars.config
@@ -297,6 +304,7 @@ __all__ = [
     "median",
     "min",
     "n_unique",
+    "approx_unique",
     "pearson_corr",
     "quantile",
     "reduce",

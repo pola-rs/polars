@@ -147,7 +147,7 @@ impl CategoricalChunked {
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-    use crate::{reset_string_cache, toggle_string_cache, SINGLE_LOCK};
+    use crate::{enable_string_cache, reset_string_cache, SINGLE_LOCK};
 
     fn assert_order(ca: &CategoricalChunked, cmp: &[&str]) {
         let s = ca.cast(&DataType::Utf8).unwrap();
@@ -162,7 +162,7 @@ mod test {
         let _lock = SINGLE_LOCK.lock();
         for toggle in [true, false] {
             reset_string_cache();
-            toggle_string_cache(toggle);
+            enable_string_cache(toggle);
             let s = Series::new("", init).cast(&DataType::Categorical(None))?;
             let ca = s.categorical()?;
             let mut ca_lexical = ca.clone();
@@ -189,8 +189,8 @@ mod test {
         let init = &["c", "b", "a", "a"];
 
         let _lock = SINGLE_LOCK.lock();
-        for toggle in [true, false] {
-            toggle_string_cache(toggle);
+        for enable in [true, false] {
+            enable_string_cache(enable);
             let s = Series::new("", init).cast(&DataType::Categorical(None))?;
             let ca = s.categorical()?;
             let mut ca_lexical: CategoricalChunked = ca.clone();
@@ -203,12 +203,12 @@ mod test {
                 "vals" => [1, 1, 2, 2]
             ]?;
 
-            let out = df.sort(&["cat", "vals"], vec![false, false])?;
+            let out = df.sort(["cat", "vals"], vec![false, false])?;
             let out = out.column("cat")?;
             let cat = out.categorical()?;
             assert_order(cat, &["a", "a", "b", "c"]);
 
-            let out = df.sort(&["vals", "cat"], vec![false, false])?;
+            let out = df.sort(["vals", "cat"], vec![false, false])?;
             let out = out.column("cat")?;
             let cat = out.categorical()?;
             assert_order(cat, &["b", "c", "a", "a"]);

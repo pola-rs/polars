@@ -1,7 +1,12 @@
 mod from;
 
 use std::collections::BTreeMap;
+use std::io::Write;
+use std::ops::BitAnd;
 
+use arrow::bitmap::MutableBitmap;
+use arrow::offset::OffsetsBuffer;
+use polars_arrow::trusted_len::PushUnchecked;
 use smartstring::alias::String as SmartString;
 
 use super::*;
@@ -20,6 +25,7 @@ pub struct StructChunked {
     fields: Vec<Series>,
     field: Field,
     chunks: Vec<ArrayRef>,
+    null_count: usize,
 }
 
 fn arrays_to_fields(field_arrays: &[ArrayRef], fields: &[Series]) -> Vec<ArrowField> {
@@ -45,6 +51,9 @@ fn fields_to_struct_array(fields: &[Series]) -> (ArrayRef, Vec<Series>) {
 }
 
 impl StructChunked {
+    pub fn null_count(&self) -> usize {
+        self.null_count
+    }
     pub fn new(name: &str, fields: &[Series]) -> PolarsResult<Self> {
         let mut names = PlHashSet::with_capacity(fields.len());
         let first_len = fields.get(0).map(|s| s.len()).unwrap_or(0);
@@ -128,6 +137,7 @@ impl StructChunked {
             }
         }
         self.chunks.truncate(n_chunks);
+        self.set_null_count()
     }
 
     /// Does not check the lengths of the fields
@@ -141,11 +151,39 @@ impl StructChunked {
         let field = Field::new(name, dtype);
         let (arrow_array, fields) = fields_to_struct_array(fields);
 
-        Self {
+        let mut out = Self {
             fields,
             field,
             chunks: vec![arrow_array],
+            null_count: 0,
+        };
+        out.set_null_count();
+        out
+    }
+
+    fn set_null_count(&mut self) {
+        let mut null_count = 0;
+        let chunks_lens = self.fields()[0].chunks().len();
+
+        for i in 0..chunks_lens {
+            // If all fields are null we count it as null
+            // so we bitand every chunk
+            let mut validity_agg = None;
+
+            for s in self.fields() {
+                let arr = &s.chunks()[i];
+
+                match (&validity_agg, arr.validity()) {
+                    (Some(agg), Some(validity)) => validity_agg = Some(validity.bitand(agg)),
+                    (None, Some(validity)) => validity_agg = Some(validity.clone()),
+                    _ => {}
+                }
+            }
+            if let Some(validity) = &validity_agg {
+                null_count += validity.unset_bits()
+            }
         }
+        self.null_count = null_count
     }
 
     /// Get access to one of this `[StructChunked]`'s fields
@@ -253,6 +291,60 @@ impl LogicalType for StructChunked {
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
                 StructChunked::new(self.name(), &new_fields).map(|ca| ca.into_series())
+            }
+            DataType::Utf8 => {
+                let mut ca = self.clone();
+                ca.rechunk();
+                let mut iters = ca.fields.iter().map(|s| s.iter()).collect::<Vec<_>>();
+                let mut values = Vec::with_capacity(self.len() * 8);
+                let mut offsets = Vec::with_capacity(ca.len() + 1);
+                let has_nulls = self.fields.iter().any(|s| s.null_count() > 0) as usize;
+                let cap = ca.len() * has_nulls;
+                let mut bitmap = MutableBitmap::with_capacity(cap);
+                bitmap.extend_constant(cap, true);
+
+                let mut length_so_far = 0_i64;
+                unsafe {
+                    // safety: we have pre-allocated
+                    offsets.push_unchecked(length_so_far);
+                }
+                for row in 0..ca.len() {
+                    let mut row_has_nulls = false;
+
+                    write!(values, "{{").unwrap();
+                    for iter in &mut iters {
+                        let av = unsafe { iter.next().unwrap_unchecked() };
+                        row_has_nulls |= matches!(&av, AnyValue::Null);
+                        write!(values, "{},", av).unwrap();
+                    }
+
+                    // replace latest comma with '|'
+                    unsafe {
+                        *values.last_mut().unwrap_unchecked() = b'}';
+
+                        // safety: we have pre-allocated
+                        length_so_far = values.len() as i64;
+                        offsets.push_unchecked(length_so_far);
+                    }
+                    if row_has_nulls {
+                        unsafe { bitmap.set_unchecked(row, false) }
+                    }
+                }
+                let validity = if has_nulls == 1 {
+                    Some(bitmap.into())
+                } else {
+                    None
+                };
+                unsafe {
+                    let offsets = OffsetsBuffer::new_unchecked(offsets.into());
+                    let array = Box::new(Utf8Array::new_unchecked(
+                        ArrowDataType::LargeUtf8,
+                        offsets,
+                        values.into(),
+                        validity,
+                    )) as ArrayRef;
+                    Series::try_from((ca.name().as_str(), array))
+                }
             }
             _ => {
                 let fields = self

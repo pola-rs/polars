@@ -10,6 +10,7 @@ use crate::utils::CustomIterTools;
 pub mod default_arrays;
 mod get;
 pub mod list;
+pub mod null;
 pub mod slice;
 pub mod utf8;
 

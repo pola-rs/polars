@@ -78,7 +78,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.17.0"
-source = "git+https://github.com/ritchie46/arrow2?branch=polars_2023-03-29#3d0765b15693428e8d61051d91257ce9c521df24"
+source = "git+https://github.com/ritchie46/arrow2?rev=11933119612e072a6eefaa65abec8c16241073c6#11933119612e072a6eefaa65abec8c16241073c6"
 dependencies = [
  "ahash",
  "arrow-format",
@@ -1572,6 +1572,7 @@ dependencies = [
  "ahash",
  "bitflags",
  "glob",
+ "once_cell",
  "polars-arrow",
  "polars-core",
  "polars-io",
@@ -1712,7 +1713,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.16.18"
+version = "0.17.2"
 dependencies = [
  "ahash",
  "bincode",

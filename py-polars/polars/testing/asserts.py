@@ -6,6 +6,7 @@ from typing import Any
 from polars import functions as F
 from polars.dataframe import DataFrame
 from polars.datatypes import (
+    UNSIGNED_INTEGER_DTYPES,
     Categorical,
     DataTypeClass,
     Float32,
@@ -15,14 +16,12 @@ from polars.datatypes import (
 from polars.exceptions import ComputeError, InvalidAssert
 from polars.lazyframe import LazyFrame
 from polars.series import Series
-from polars.utils.decorators import deprecate_nonkeyword_arguments, deprecated_alias
 
 
-@deprecate_nonkeyword_arguments()
-@deprecated_alias(check_column_names="check_column_order", stacklevel=4)
 def assert_frame_equal(
     left: DataFrame | LazyFrame,
     right: DataFrame | LazyFrame,
+    *,
     check_dtype: bool = True,
     check_exact: bool = False,
     rtol: float = 1.0e-5,
@@ -120,10 +119,10 @@ def assert_frame_equal(
             raise AssertionError(msg) from exc
 
 
-@deprecate_nonkeyword_arguments()
 def assert_frame_not_equal(
     left: DataFrame | LazyFrame,
     right: DataFrame | LazyFrame,
+    *,
     check_dtype: bool = True,
     check_exact: bool = False,
     rtol: float = 1.0e-5,
@@ -186,10 +185,10 @@ def assert_frame_not_equal(
         raise AssertionError("Expected the input frames to be unequal.")
 
 
-@deprecate_nonkeyword_arguments()
 def assert_series_equal(
     left: Series,
     right: Series,
+    *,
     check_dtype: bool = True,
     check_names: bool = True,
     check_exact: bool = False,
@@ -245,10 +244,10 @@ def assert_series_equal(
     )
 
 
-@deprecate_nonkeyword_arguments()
 def assert_series_not_equal(
     left: Series,
     right: Series,
+    *,
     check_dtype: bool = True,
     check_names: bool = True,
     check_exact: bool = False,
@@ -345,8 +344,15 @@ def _assert_series_inner(
         else:
             # apply check with tolerance (to the known-unequal matches).
             left, right = left.filter(unequal), right.filter(unequal)
+
+            if all(tp in UNSIGNED_INTEGER_DTYPES for tp in (left.dtype, right.dtype)):
+                # avoid potential "subtract-with-overflow" panic on uint math
+                s_diff = Series("diff", [abs(v1 - v2) for v1, v2 in zip(left, right)])
+            else:
+                s_diff = (left - right).abs()
+
             mismatch, nan_info = False, ""
-            if (((left - right).abs() > (atol + rtol * right.abs())).sum() != 0) or (
+            if ((s_diff > (atol + rtol * right.abs())).sum() != 0) or (
                 left.is_null() != right.is_null()
             ).any():
                 mismatch = True

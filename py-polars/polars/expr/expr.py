@@ -25,8 +25,12 @@ from typing import (
 from polars import functions as F
 from polars import internals as pli
 from polars.datatypes import (
+    FLOAT_DTYPES,
+    INTEGER_DTYPES,
+    Categorical,
     Struct,
     UInt32,
+    Utf8,
     is_polars_dtype,
     py_type_to_dtype,
 )
@@ -41,8 +45,9 @@ from polars.expr.string import ExprStringNameSpace
 from polars.expr.struct import ExprStructNameSpace
 from polars.utils._parse_expr_input import expr_to_lit_or_expr, selection_to_pyexpr_list
 from polars.utils.convert import _timedelta_to_pl_duration
+from polars.utils.decorators import deprecated_alias
 from polars.utils.meta import threadpool_size
-from polars.utils.various import sphinx_accessor
+from polars.utils.various import find_stacklevel, sphinx_accessor
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arg_where as py_arg_where
@@ -242,7 +247,8 @@ class Expr:
         - :func:`polars.datatypes.Time` -> :func:`polars.datatypes.Int64`
         - :func:`polars.datatypes.Duration` -> :func:`polars.datatypes.Int64`
         - :func:`polars.datatypes.Categorical` -> :func:`polars.datatypes.UInt32`
-        - Other data types will be left unchanged.
+
+        Other data types will be left unchanged.
 
         Examples
         --------
@@ -1774,11 +1780,9 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.sort_with(descending, nulls_last))
 
-    def top_k(self, k: int = 5, *, descending: bool = False) -> Self:
+    def top_k(self, k: int = 5) -> Self:
         r"""
         Return the `k` largest elements.
-
-        If 'descending=True` the smallest elements will be given.
 
         This has time complexity:
 
@@ -1788,8 +1792,10 @@ class Expr:
         ----------
         k
             Number of elements to return.
-        descending
-            Return the smallest elements.
+
+        See Also
+        --------
+        bottom_k
 
         Examples
         --------
@@ -1801,7 +1807,7 @@ class Expr:
         >>> df.select(
         ...     [
         ...         pl.col("value").top_k().alias("top_k"),
-        ...         pl.col("value").top_k(descending=True).alias("bottom_k"),
+        ...         pl.col("value").bottom_k().alias("bottom_k"),
         ...     ]
         ... )
         shape: (5, 2)
@@ -1818,7 +1824,53 @@ class Expr:
         └───────┴──────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.top_k(k, descending))
+        return self._from_pyexpr(self._pyexpr.top_k(k))
+
+    def bottom_k(self, k: int = 5) -> Self:
+        r"""
+        Return the `k` smallest elements.
+
+        This has time complexity:
+
+        .. math:: O(n + k \\log{}n - \frac{k}{2})
+
+        Parameters
+        ----------
+        k
+            Number of elements to return.
+
+        See Also
+        --------
+        top_k
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "value": [1, 98, 2, 3, 99, 4],
+        ...     }
+        ... )
+        >>> df.select(
+        ...     [
+        ...         pl.col("value").top_k().alias("top_k"),
+        ...         pl.col("value").bottom_k().alias("bottom_k"),
+        ...     ]
+        ... )
+        shape: (5, 2)
+        ┌───────┬──────────┐
+        │ top_k ┆ bottom_k │
+        │ ---   ┆ ---      │
+        │ i64   ┆ i64      │
+        ╞═══════╪══════════╡
+        │ 99    ┆ 1        │
+        │ 98    ┆ 2        │
+        │ 4     ┆ 3        │
+        │ 3     ┆ 4        │
+        │ 2     ┆ 98       │
+        └───────┴──────────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.bottom_k(k))
 
     def arg_sort(self, *, descending: bool = False, nulls_last: bool = False) -> Self:
         """
@@ -2074,11 +2126,15 @@ class Expr:
         └───────┴────────┴────────┘
 
         """
-        if isinstance(descending, bool):
-            descending = [descending]
         by = selection_to_pyexpr_list(by)
         if more_by:
             by.extend(selection_to_pyexpr_list(more_by))
+        if isinstance(descending, bool):
+            descending = [descending]
+        elif len(by) != len(descending):
+            raise ValueError(
+                f"the length of `descending` ({len(descending)}) does not match the length of `by` ({len(by)})"
+            )
         return self._from_pyexpr(self._pyexpr.sort_by(by, descending))
 
     def take(
@@ -2653,6 +2709,28 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.n_unique())
 
+    def approx_unique(self) -> Self:
+        """
+        Approx count unique values.
+
+        This is done using the HyperLogLog++ algorithm for cardinality estimation.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 1, 2]})
+        >>> df.select(pl.col("a").approx_unique())
+        shape: (1, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ u32 │
+        ╞═════╡
+        │ 2   │
+        └─────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.approx_unique())
+
     def null_count(self) -> Self:
         """
         Count null values.
@@ -3199,8 +3277,8 @@ class Expr:
             Lambda/ function to apply.
         return_dtype
             Dtype of the output Series.
-            If not set, polars will assume that
-            the dtype remains unchanged.
+            If not set, the dtype will be
+            ``polars.Unknown``.
         skip_nulls
             Don't apply the function over values
             that contain nulls. This is faster.
@@ -3383,7 +3461,7 @@ class Expr:
             " under the list and string namespaces. Use `.arr.explode()` or"
             " `.str.explode()` instead.",
             DeprecationWarning,
-            stacklevel=2,
+            stacklevel=find_stacklevel(),
         )
         return self._from_pyexpr(self._pyexpr.explode())
 
@@ -3409,7 +3487,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.take_every(n))
 
-    def head(self, n: int = 10) -> Self:
+    def head(self, n: int | Expr = 10) -> Self:
         """
         Get the first `n` rows.
 
@@ -3434,9 +3512,9 @@ class Expr:
         └─────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.head(n))
+        return self.slice(0, n)
 
-    def tail(self, n: int = 10) -> Self:
+    def tail(self, n: int | Expr = 10) -> Self:
         """
         Get the last `n` rows.
 
@@ -3461,9 +3539,10 @@ class Expr:
         └─────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.tail(n))
+        offset = -expr_to_lit_or_expr(n, str_to_lit=False)
+        return self.slice(offset, n)
 
-    def limit(self, n: int = 10) -> Self:
+    def limit(self, n: int | Expr = 10) -> Self:
         """
         Get the first `n` rows (alias for :func:`Expr.head`).
 
@@ -4176,17 +4255,20 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.repeat_by(by._pyexpr))
 
     def is_between(
-        self, start: IntoExpr, end: IntoExpr, closed: ClosedInterval = "both"
+        self,
+        lower_bound: IntoExpr,
+        upper_bound: IntoExpr,
+        closed: ClosedInterval = "both",
     ) -> Self:
         """
         Check if this expression is between the given start and end values.
 
         Parameters
         ----------
-        start
+        lower_bound
             Lower bound value. Accepts expression input. Strings are parsed as column
             names, other non-expression inputs are parsed as literals.
-        end
+        upper_bound
             Upper bound value. Accepts expression input. Strings are parsed as column
             names, other non-expression inputs are parsed as literals.
         closed : {'both', 'left', 'right', 'none'}
@@ -4255,17 +4337,17 @@ class Expr:
         └─────┴────────────┘
 
         """
-        start = expr_to_lit_or_expr(start, str_to_lit=False)
-        end = expr_to_lit_or_expr(end, str_to_lit=False)
+        lower_bound = expr_to_lit_or_expr(lower_bound, str_to_lit=False)
+        upper_bound = expr_to_lit_or_expr(upper_bound, str_to_lit=False)
 
         if closed == "none":
-            return (self > start) & (self < end)
+            return (self > lower_bound) & (self < upper_bound)
         elif closed == "both":
-            return (self >= start) & (self <= end)
+            return (self >= lower_bound) & (self <= upper_bound)
         elif closed == "right":
-            return (self > start) & (self <= end)
+            return (self > lower_bound) & (self <= upper_bound)
         elif closed == "left":
-            return (self >= start) & (self < end)
+            return (self >= lower_bound) & (self < upper_bound)
         else:
             raise ValueError(
                 "closed must be one of {'left', 'right', 'both', 'none'},"
@@ -5590,7 +5672,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.kurtosis(fisher, bias))
 
-    def clip(self, min_val: int | float, max_val: int | float) -> Self:
+    def clip(self, lower_bound: int | float, upper_bound: int | float) -> Self:
         """
         Clip (limit) the values in an array to a `min` and `max` boundary.
 
@@ -5601,10 +5683,10 @@ class Expr:
 
         Parameters
         ----------
-        min_val
-            Minimum value.
-        max_val
-            Maximum value.
+        lower_bound
+            Lower bound.
+        upper_bound
+            Upper bound.
 
         Examples
         --------
@@ -5623,9 +5705,9 @@ class Expr:
         └──────┴─────────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.clip(min_val, max_val))
+        return self._from_pyexpr(self._pyexpr.clip(lower_bound, upper_bound))
 
-    def clip_min(self, min_val: int | float) -> Self:
+    def clip_min(self, lower_bound: int | float) -> Self:
         """
         Clip (limit) the values in an array to a `min` boundary.
 
@@ -5636,8 +5718,8 @@ class Expr:
 
         Parameters
         ----------
-        min_val
-            Minimum value.
+        lower_bound
+            Lower bound.
 
         Examples
         --------
@@ -5656,9 +5738,9 @@ class Expr:
         └──────┴─────────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.clip_min(min_val))
+        return self._from_pyexpr(self._pyexpr.clip_min(lower_bound))
 
-    def clip_max(self, max_val: int | float) -> Self:
+    def clip_max(self, upper_bound: int | float) -> Self:
         """
         Clip (limit) the values in an array to a `max` boundary.
 
@@ -5669,8 +5751,8 @@ class Expr:
 
         Parameters
         ----------
-        max_val
-            Maximum value.
+        upper_bound
+            Upper bound.
 
         Examples
         --------
@@ -5689,7 +5771,7 @@ class Expr:
         └──────┴─────────────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.clip_max(max_val))
+        return self._from_pyexpr(self._pyexpr.clip_max(upper_bound))
 
     def lower_bound(self) -> Self:
         """
@@ -6057,13 +6139,13 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.arctanh())
 
-    def reshape(self, dims: tuple[int, ...]) -> Self:
+    def reshape(self, dimensions: tuple[int, ...]) -> Self:
         """
         Reshape this Expr to a flat Series or a Series of Lists.
 
         Parameters
         ----------
-        dims
+        dimensions
             Tuple of the dimension sizes. If a -1 is used in any of the dimensions, that
             dimension is inferred.
 
@@ -6094,7 +6176,7 @@ class Expr:
         ExprListNameSpace.explode : Explode a list column.
 
         """
-        return self._from_pyexpr(self._pyexpr.reshape(dims))
+        return self._from_pyexpr(self._pyexpr.reshape(dimensions))
 
     def shuffle(self, seed: int | None = None) -> Self:
         """
@@ -6126,11 +6208,12 @@ class Expr:
             seed = random.randint(0, 10000)
         return self._from_pyexpr(self._pyexpr.shuffle(seed))
 
+    @deprecated_alias(frac="fraction")
     def sample(
         self,
         n: int | None = None,
         *,
-        frac: float | None = None,
+        fraction: float | None = None,
         with_replacement: bool = False,
         shuffle: bool = False,
         seed: int | None = None,
@@ -6141,9 +6224,9 @@ class Expr:
         Parameters
         ----------
         n
-            Number of items to return. Cannot be used with `frac`. Defaults to 1 if
-            `frac` is None.
-        frac
+            Number of items to return. Cannot be used with `fraction`. Defaults to 1 if
+            `fraction` is None.
+        fraction
             Fraction of items to return. Cannot be used with `n`.
         with_replacement
             Allow values to be sampled more than once.
@@ -6156,7 +6239,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
-        >>> df.select(pl.col("a").sample(frac=1.0, with_replacement=True, seed=1))
+        >>> df.select(pl.col("a").sample(fraction=1.0, with_replacement=True, seed=1))
         shape: (3, 1)
         ┌─────┐
         │ a   │
@@ -6169,15 +6252,15 @@ class Expr:
         └─────┘
 
         """
-        if n is not None and frac is not None:
-            raise ValueError("cannot specify both `n` and `frac`")
+        if n is not None and fraction is not None:
+            raise ValueError("cannot specify both `n` and `fraction`")
 
         if seed is None:
             seed = random.randint(0, 10000)
 
-        if frac is not None:
+        if fraction is not None:
             return self._from_pyexpr(
-                self._pyexpr.sample_frac(frac, with_replacement, shuffle, seed)
+                self._pyexpr.sample_frac(fraction, with_replacement, shuffle, seed)
             )
 
         if n is None:
@@ -6596,6 +6679,30 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.log(base))
 
+    def log1p(self) -> Self:
+        """
+        Compute the natural logarithm of each element plus one.
+
+        This computes `log(1 + x)` but is more numerically stable for `x` close to zero.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select(pl.col("a").log1p())
+        shape: (3, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 0.693147 │
+        │ 1.098612 │
+        │ 1.386294 │
+        └──────────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.log1p())
+
     def entropy(self, base: float = math.e, *, normalize: bool = True) -> Self:
         """
         Computes the entropy.
@@ -6787,7 +6894,7 @@ class Expr:
         remapping: dict[Any, Any],
         *,
         default: Any = None,
-        dtype: PolarsDataType | None = None,
+        return_dtype: PolarsDataType | None = None,
     ) -> Self:
         """
         Replace values in column according to remapping dictionary.
@@ -6802,8 +6909,8 @@ class Expr:
         default
             Value to use when the remapping dict does not contain the lookup value.
             Use ``pl.first()``, to keep the original value.
-        dtype
-            Override output dtype.
+        return_dtype
+            Set return dtype to override automatic return dtype determination.
 
         Examples
         --------
@@ -6925,11 +7032,11 @@ class Expr:
         │ 3      ┆ Germany       │
         └────────┴───────────────┘
 
-        Override output dtype:
+        Override return dtype:
 
         >>> df.with_columns(
         ...     pl.col("row_nr")
-        ...     .map_dict({1: 7, 3: 4}, default=3, dtype=pl.UInt8)
+        ...     .map_dict({1: 7, 3: 4}, default=3, return_dtype=pl.UInt8)
         ...     .alias("remapped")
         ... )
         shape: (4, 3)
@@ -6949,7 +7056,9 @@ class Expr:
         def _remap_key_or_value_series(
             name: str,
             values: Iterable[Any],
-            dtype: PolarsDataType,
+            dtype: PolarsDataType | None,
+            dtype_if_empty: PolarsDataType | None,
+            dtype_keys: PolarsDataType | None,
             is_keys: bool,
         ) -> Series:
             """
@@ -6959,23 +7068,88 @@ class Expr:
             the specified dtype and check that none of the values are accidentally
             lost (replaced by nulls) during the conversion.
 
+            Parameters
+            ----------
+            name
+                Name of the keys or values series.
+            values
+                Values for the series: `remapping.keys()` or `remapping.values()`.
+            dtype
+                User specified dtype. If None,
+            dtype_if_empty
+                If no dtype is specified and values contains None, an empty list,
+                or a list with only None values, set the Polars dtype of the Series
+                data.
+            dtype_keys
+                If user set dtype is None, try to see if Series for remapping.values()
+                can be converted to same dtype as the remapping.keys() Series dtype.
+            is_keys
+                If values contains keys or values from remapping dict.
+
             """
             try:
-                s = pli.Series(
-                    name,
-                    values,
-                    dtype=dtype,
-                    strict=True,
-                )
-                if dtype != s.dtype:
-                    raise ValueError(
-                        f"Remapping {'keys' if is_keys else 'values'} could not be converted to {dtype}: found {s.dtype}"
+                if dtype is None:
+                    # If no dtype was set, which should only happen when:
+                    #     values = remapping.values()
+                    # create a Series from those values and infer the dtype.
+                    s = pli.Series(
+                        name,
+                        values,
+                        dtype=None,
+                        dtype_if_empty=dtype_if_empty,
+                        strict=True,
                     )
 
-            except TypeError as exc:
-                raise ValueError(
-                    f"Remapping {'keys' if is_keys else 'values'} could not be converted to {dtype}: {str(exc)}"
-                ) from exc
+                    if dtype_keys is not None:
+                        if s.dtype == dtype_keys:
+                            # Values Series has same dtype as keys Series.
+                            dtype = s.dtype
+                        elif (
+                            (s.dtype in INTEGER_DTYPES and dtype_keys in INTEGER_DTYPES)
+                            or (s.dtype in FLOAT_DTYPES and dtype_keys in FLOAT_DTYPES)
+                            or (s.dtype == Utf8 and dtype_keys == Categorical)
+                        ):
+                            # Values Series and keys Series are of similar dtypes,
+                            # that we can assume that the user wants the values Series
+                            # of the same dtype as the key Series.
+                            dtype = dtype_keys
+                            s = pli.Series(
+                                name,
+                                values,
+                                dtype=dtype_keys,
+                                dtype_if_empty=dtype_if_empty,
+                                strict=True,
+                            )
+                            if dtype != s.dtype:
+                                raise ValueError(
+                                    f"Remapping values for map_dict could not be converted to {dtype}: found {s.dtype}"
+                                )
+                else:
+                    # dtype was set, which should always be the case when:
+                    #     values = remapping.keys()
+                    # and in cases where the user set the output dtype when:
+                    #     values = remapping.values()
+                    s = pli.Series(
+                        name,
+                        values,
+                        dtype=dtype,
+                        dtype_if_empty=dtype_if_empty,
+                        strict=True,
+                    )
+                    if dtype != s.dtype:
+                        raise ValueError(
+                            f"Remapping {'keys' if is_keys else 'values'} for map_dict could not be converted to {dtype}: found {s.dtype}"
+                        )
+
+            except OverflowError as exc:
+                if is_keys:
+                    raise ValueError(
+                        f"Remapping keys for map_dict could not be converted to {dtype}: {str(exc)}"
+                    ) from exc
+                else:
+                    raise ValueError(
+                        f"Choose a more suitable output dtype for map_dict as remapping value could not be converted to {dtype}: {str(exc)}"
+                    ) from exc
 
             if is_keys:
                 # values = remapping.keys()
@@ -6985,7 +7159,7 @@ class Expr:
                     pass
                 else:
                     raise ValueError(
-                        f"Remapping keys could not be converted to {dtype} without losing values in the conversion."
+                        f"Remapping keys for map_dict could not be converted to {dtype} without losing values in the conversion."
                     )
             else:
                 # values = remapping.values()
@@ -6995,7 +7169,7 @@ class Expr:
                     pass
                 else:
                     raise ValueError(
-                        f"Remapping values could not be converted to {dtype} without losing values in the conversion."
+                        f"Remapping values for map_dict could not be converted to {dtype} without losing values in the conversion."
                     )
 
             return s
@@ -7019,44 +7193,41 @@ class Expr:
             #  - to dtype, if specified.
             #  - to same dtype as expression specified as default value.
             #  - to None, if dtype was not specified and default was not an expression.
-            output_dtype = (
+            return_dtype_ = (
                 df.lazy().select(default).dtypes[0]
-                if dtype is None and isinstance(default, Expr)
-                else dtype
+                if return_dtype is None and isinstance(default, Expr)
+                else return_dtype
             )
 
             remap_key_s = _remap_key_or_value_series(
                 name=remap_key_column,
                 values=remapping.keys(),
                 dtype=input_dtype,
+                dtype_if_empty=input_dtype,
+                dtype_keys=input_dtype,
                 is_keys=True,
             )
 
-            if output_dtype:
+            if return_dtype_:
                 # Create remap value Series with specified output dtype.
                 remap_value_s = pli.Series(
                     remap_value_column,
                     remapping.values(),
-                    dtype=output_dtype,
+                    dtype=return_dtype_,
                     dtype_if_empty=input_dtype,
                 )
             else:
-                try:
-                    # First, try to create a value Series with same dtype as input
-                    # column.
-                    remap_value_s = _remap_key_or_value_series(
-                        name=remap_value_column,
-                        values=remapping.values(),
-                        dtype=remap_key_s.dtype,
-                        is_keys=False,
-                    )
-                except ValueError:
-                    # If that fails create a value Series without a specific dtype.
-                    remap_value_s = pli.Series(
-                        remap_value_column,
-                        remapping.values(),
-                        dtype_if_empty=input_dtype,
-                    )
+                # Create remap value Series with same output dtype as remap key Series,
+                # if possible (if both are integers, both are floats or remap value
+                # Series is pl.Utf8 and remap key Series is pl.Categorical).
+                remap_value_s = _remap_key_or_value_series(
+                    name=remap_value_column,
+                    values=remapping.values(),
+                    dtype=None,
+                    dtype_if_empty=input_dtype,
+                    dtype_keys=input_dtype,
+                    is_keys=False,
+                )
 
             return (
                 (
@@ -7096,34 +7267,31 @@ class Expr:
                 name=remap_key_column,
                 values=list(remapping.keys()),
                 dtype=input_dtype,
+                dtype_if_empty=input_dtype,
+                dtype_keys=input_dtype,
                 is_keys=True,
             )
 
-            if dtype:
+            if return_dtype:
                 # Create remap value Series with specified output dtype.
                 remap_value_s = pli.Series(
                     remap_value_column,
                     remapping.values(),
-                    dtype=dtype,
+                    dtype=return_dtype,
                     dtype_if_empty=input_dtype,
                 )
             else:
-                try:
-                    # First, try to create a value Series with same dtype as input
-                    # column.
-                    remap_value_s = _remap_key_or_value_series(
-                        name=remap_value_column,
-                        values=remapping.values(),
-                        dtype=remap_key_s.dtype,
-                        is_keys=False,
-                    )
-                except ValueError:
-                    # If that fails create a value Series without a specific dtype.
-                    remap_value_s = pli.Series(
-                        remap_value_column,
-                        remapping.values(),
-                        dtype_if_empty=input_dtype,
-                    )
+                # Create remap value Series with same output dtype as remap key Series,
+                # if possible (if both are integers, both are floats or remap value
+                # Series is pl.Utf8 and remap key Series is pl.Categorical).
+                remap_value_s = _remap_key_or_value_series(
+                    name=remap_value_column,
+                    values=remapping.values(),
+                    dtype=None,
+                    dtype_if_empty=input_dtype,
+                    dtype_keys=input_dtype,
+                    is_keys=False,
+                )
 
             return (
                 (

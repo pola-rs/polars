@@ -21,6 +21,7 @@ use std::sync::Arc;
 
 use ahash::RandomState;
 use arrow::compute::aggregate::estimated_bytes_size;
+use arrow::offset::Offsets;
 pub use from::*;
 pub use iterator::{SeriesIter, SeriesPhysIter};
 use num_traits::NumCast;
@@ -946,6 +947,22 @@ impl Series {
 
         size
     }
+
+    /// Packs every element into a list
+    pub fn as_list(&self) -> ListChunked {
+        let s = self.rechunk();
+        let values = s.to_arrow(0);
+        let offsets = (0i64..(s.len() as i64 + 1)).collect::<Vec<_>>();
+        let offsets = unsafe { Offsets::new_unchecked(offsets) };
+
+        let new_arr = LargeListArray::new(
+            DataType::List(Box::new(s.dtype().clone())).to_arrow(),
+            offsets.into(),
+            values,
+            None,
+        );
+        unsafe { ListChunked::from_chunks(s.name(), vec![Box::new(new_arr)]) }
+    }
 }
 
 impl Deref for Series {
@@ -1044,7 +1061,7 @@ mod test {
     }
     #[test]
     fn new_series_from_arrow_primitive_array() {
-        let array = UInt32Array::from_slice(&[1, 2, 3, 4, 5]);
+        let array = UInt32Array::from_slice([1, 2, 3, 4, 5]);
         let array_ref: ArrayRef = Box::new(array);
 
         let _ = Series::try_from(("foo", array_ref)).unwrap();

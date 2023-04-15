@@ -229,7 +229,7 @@ mod test {
         let mut expected = [0u8; BLOCK_SIZE + 2];
         expected[0] = NON_EMPTY_SENTINEL;
         *expected.last_mut().unwrap() = 4;
-        (&mut expected[1..5]).copy_from_slice(b"meep");
+        expected[1..5].copy_from_slice(b"meep");
         assert_eq!(row3, expected);
 
         let row4 = rows_encoded.get(3);

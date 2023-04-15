@@ -23,7 +23,6 @@ pub mod datatypes;
 pub mod error;
 pub mod file;
 pub mod lazy;
-mod list_construction;
 pub mod npy;
 #[cfg(feature = "object")]
 mod object;
@@ -225,8 +224,8 @@ fn get_polars_version() -> &'static str {
 }
 
 #[pyfunction]
-fn toggle_string_cache(toggle: bool) {
-    polars_rs::toggle_string_cache(toggle)
+fn enable_string_cache(toggle: bool) {
+    polars_rs::enable_string_cache(toggle)
 }
 
 #[pyfunction]
@@ -247,6 +246,12 @@ fn concat_lst(s: Vec<dsl::PyExpr>) -> PyResult<dsl::PyExpr> {
     Ok(expr.into())
 }
 
+macro_rules! set_unwrapped_or_0 {
+    ($($var:ident),+ $(,)?) => {
+        $(let $var = $var.map(|e| e.inner).unwrap_or(polars_rs::lazy::dsl::lit(0));)+
+    };
+}
+
 #[pyfunction]
 fn py_datetime(
     year: dsl::PyExpr,
@@ -257,15 +262,16 @@ fn py_datetime(
     second: Option<dsl::PyExpr>,
     microsecond: Option<dsl::PyExpr>,
 ) -> dsl::PyExpr {
-    let hour = hour.map(|e| e.inner);
-    let minute = minute.map(|e| e.inner);
-    let second = second.map(|e| e.inner);
-    let microsecond = microsecond.map(|e| e.inner);
+    let year = year.inner;
+    let month = month.inner;
+    let day = day.inner;
+
+    set_unwrapped_or_0!(hour, minute, second, microsecond);
 
     let args = DatetimeArgs {
-        year: year.inner,
-        month: month.inner,
-        day: day.inner,
+        year,
+        month,
+        day,
         hour,
         minute,
         second,
@@ -287,15 +293,26 @@ fn py_duration(
     hours: Option<PyExpr>,
     weeks: Option<PyExpr>,
 ) -> dsl::PyExpr {
+    set_unwrapped_or_0!(
+        days,
+        seconds,
+        nanoseconds,
+        microseconds,
+        milliseconds,
+        minutes,
+        hours,
+        weeks,
+    );
+
     let args = DurationArgs {
-        days: days.map(|e| e.inner),
-        seconds: seconds.map(|e| e.inner),
-        nanoseconds: nanoseconds.map(|e| e.inner),
-        microseconds: microseconds.map(|e| e.inner),
-        milliseconds: milliseconds.map(|e| e.inner),
-        minutes: minutes.map(|e| e.inner),
-        hours: hours.map(|e| e.inner),
-        weeks: weeks.map(|e| e.inner),
+        days,
+        seconds,
+        nanoseconds,
+        microseconds,
+        milliseconds,
+        minutes,
+        hours,
+        weeks,
     };
 
     polars_rs::lazy::dsl::duration(args).into()
@@ -670,7 +687,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(arg_sort_by)).unwrap();
     m.add_wrapped(wrap_pyfunction!(when)).unwrap();
     m.add_wrapped(wrap_pyfunction!(get_polars_version)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(toggle_string_cache))
+    m.add_wrapped(wrap_pyfunction!(enable_string_cache))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(using_string_cache)).unwrap();
     m.add_wrapped(wrap_pyfunction!(concat_str)).unwrap();

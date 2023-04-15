@@ -254,7 +254,7 @@ impl OptimizationRule for SimplifyBooleanRule {
             }
             AExpr::Function {
                 input,
-                function: FunctionExpr::Not,
+                function: FunctionExpr::Boolean(BooleanFunction::IsNot),
                 ..
             } => {
                 let y = expr_arena.get(input[0]);
@@ -263,7 +263,7 @@ impl OptimizationRule for SimplifyBooleanRule {
                     // not(not x) => x
                     AExpr::Function {
                         input,
-                        function: FunctionExpr::Not,
+                        function: FunctionExpr::Boolean(BooleanFunction::IsNot),
                         ..
                     } => Some(expr_arena.get(input[0]).clone()),
                     // not(lit x) => !x
@@ -556,7 +556,7 @@ impl OptimizationRule for SimplifyExprRule {
                     // null == column -> column.is_null()
                     (true, Eq, false) => Some(AExpr::Function {
                         input: vec![*right],
-                        function: FunctionExpr::IsNull,
+                        function: BooleanFunction::IsNull.into(),
                         options: FunctionOptions {
                             collect_groups: ApplyOptions::ApplyGroups,
                             ..Default::default()
@@ -565,7 +565,7 @@ impl OptimizationRule for SimplifyExprRule {
                     // column == null -> column.is_null()
                     (false, Eq, true) => Some(AExpr::Function {
                         input: vec![*left],
-                        function: FunctionExpr::IsNull,
+                        function: BooleanFunction::IsNull.into(),
                         options: FunctionOptions {
                             collect_groups: ApplyOptions::ApplyGroups,
                             ..Default::default()
@@ -574,7 +574,7 @@ impl OptimizationRule for SimplifyExprRule {
                     // null != column -> column.is_not_null()
                     (true, NotEq, false) => Some(AExpr::Function {
                         input: vec![*right],
-                        function: FunctionExpr::IsNotNull,
+                        function: BooleanFunction::IsNotNull.into(),
                         options: FunctionOptions {
                             collect_groups: ApplyOptions::ApplyGroups,
                             ..Default::default()
@@ -583,7 +583,7 @@ impl OptimizationRule for SimplifyExprRule {
                     // column != null -> column.is_not_null()
                     (false, NotEq, true) => Some(AExpr::Function {
                         input: vec![*left],
-                        function: FunctionExpr::IsNotNull,
+                        function: BooleanFunction::IsNotNull.into(),
                         options: FunctionOptions {
                             collect_groups: ApplyOptions::ApplyGroups,
                             ..Default::default()

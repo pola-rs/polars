@@ -68,6 +68,7 @@ binary_encoding = ["polars-ops/binary_encoding"]
 true_div = []
 
 # operations
+approx_unique = ["polars-ops/approx_unique"]
 is_in = ["polars-core/is_in"]
 repeat_by = ["polars-core/repeat_by"]
 round_series = ["polars-core/round_series"]
