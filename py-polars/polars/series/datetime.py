@@ -1712,7 +1712,7 @@ class DateTimeNameSpace:
 
         """
 
-    def monthstart(self) -> Series:
+    def month_start(self) -> Series:
         """
         Adjust dates to start of the month.
         
@@ -1724,7 +1724,7 @@ class DateTimeNameSpace:
         --------
         >>> from datetime import date
         >>> s = pl.date_range(date(2000, 1, 15), date(2000, 12, 15), "1mo", lazy=False)
-        >>> s.monthstart()
+        >>> s.month_start()
         shape: (12,)
         Series: '' [date]
         [
@@ -1743,7 +1743,7 @@ class DateTimeNameSpace:
         ]
         """
         
-    def monthend(self) -> Series:
+    def month_end(self) -> Series:
         """
         Adjust dates to end of the month.
         
@@ -1755,7 +1755,7 @@ class DateTimeNameSpace:
         --------
         >>> from datetime import date
         >>> s = pl.date_range(date(2000, 1, 15), date(2000, 12, 15), "1mo", lazy=False)
-        >>> s.monthend()
+        >>> s.month_end()
         shape: (12,)
         Series: '' [date]
         [

@@ -1685,7 +1685,7 @@ class ExprDateTimeNameSpace:
         return wrap_expr(self._pyexpr.dt_offset_by(by))
 
     
-    def monthstart(self) -> Expr:
+    def month_start(self) -> Expr:
         """
         Adjust dates to start of the month.
         
@@ -1700,7 +1700,7 @@ class ExprDateTimeNameSpace:
         ...     "dates": pl.date_range(date(2000, 1, 15), date(2000, 12, 15), "1mo")
         ... })
         >>> df.select(
-        ...     pl.col("dates").monthstart()
+        ...     pl.col("dates").month_start()
         ... )
         shape: (12,)
         Series: '' [date]
@@ -1727,7 +1727,7 @@ class ExprDateTimeNameSpace:
         )
     
     
-    def monthend(self) -> Expr:
+    def month_end(self) -> Expr:
         """
         Adjust dates to end of the month.
         
@@ -1742,7 +1742,7 @@ class ExprDateTimeNameSpace:
         ...     "dates": pl.date_range(date(2000, 1, 1), date(2000, 12, 1), "1mo")
         ... })
         >>> df.select(
-        ...     pl.col("dates").monthend()
+        ...     pl.col("dates").month_end()
         ... )
         shape: (12,)
         Series: '' [date]
