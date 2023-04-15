@@ -1,3 +1,5 @@
+//! # Polars SQL
+#![deny(missing_docs)]
 mod context;
 mod functions;
 mod sql_expr;
@@ -21,7 +23,7 @@ mod test {
     #[test]
     fn test_simple_select() -> PolarsResult<()> {
         let df = create_sample_df()?;
-        let mut context = SQLContext::try_new()?;
+        let mut context = SQLContext::new();
         context.register("df", df.clone().lazy());
         let df_sql = context
             .execute(
@@ -46,7 +48,7 @@ mod test {
     #[test]
     fn test_nested_expr() -> PolarsResult<()> {
         let df = create_sample_df()?;
-        let mut context = SQLContext::try_new()?;
+        let mut context = SQLContext::new();
         context.register("df", df.clone().lazy());
         let df_sql = context
             .execute(r#"SELECT * FROM df WHERE (a > 3)"#)?
@@ -59,7 +61,7 @@ mod test {
     #[test]
     fn test_groupby_simple() -> PolarsResult<()> {
         let df = create_sample_df()?;
-        let mut context = SQLContext::try_new()?;
+        let mut context = SQLContext::new();
         context.register("df", df.clone().lazy());
         let df_sql = context
             .execute(
@@ -104,7 +106,7 @@ mod test {
     #[test]
     fn test_cast_exprs() {
         let df = create_sample_df().unwrap();
-        let mut context = SQLContext::try_new().unwrap();
+        let mut context = SQLContext::new();
         context.register("df", df.clone().lazy());
         let sql = r#"
             SELECT 
@@ -130,7 +132,7 @@ mod test {
     #[test]
     fn test_literal_exprs() {
         let df = create_sample_df().unwrap();
-        let mut context = SQLContext::try_new().unwrap();
+        let mut context = SQLContext::new();
         context.register("df", df.clone().lazy());
         let sql = r#"
             SELECT 
@@ -158,7 +160,7 @@ mod test {
     #[test]
     fn test_prefixed_column_names() {
         let df = create_sample_df().unwrap();
-        let mut context = SQLContext::try_new().unwrap();
+        let mut context = SQLContext::new();
         context.register("df", df.clone().lazy());
         let sql = r#"
             SELECT 
@@ -177,7 +179,7 @@ mod test {
     #[test]
     fn test_prefixed_column_names_2() {
         let df = create_sample_df().unwrap();
-        let mut context = SQLContext::try_new().unwrap();
+        let mut context = SQLContext::new();
         context.register("df", df.clone().lazy());
         let sql = r#"
             SELECT 
@@ -195,7 +197,7 @@ mod test {
     #[test]
     fn test_binary_functions() {
         let df = create_sample_df().unwrap();
-        let mut context = SQLContext::try_new().unwrap();
+        let mut context = SQLContext::new();
         context.register("df", df.clone().lazy());
         let sql = r#"
             SELECT 
@@ -244,7 +246,7 @@ mod test {
     #[test]
     fn test_null_exprs() {
         let df = create_sample_df().unwrap();
-        let mut context = SQLContext::try_new().unwrap();
+        let mut context = SQLContext::new();
         context.register("df", df.clone().lazy());
         let sql = r#"
             SELECT 
@@ -279,7 +281,7 @@ mod test {
         }
         .unwrap();
 
-        let mut context = SQLContext::try_new().unwrap();
+        let mut context = SQLContext::new();
         context.register("df", df.clone().lazy());
         let sql = r#"
             SELECT 
@@ -303,7 +305,7 @@ mod test {
             "a" => [1.0]
         }
         .unwrap();
-        let mut context = SQLContext::try_new().unwrap();
+        let mut context = SQLContext::new();
         context.register("df", df.clone().lazy());
         let sql = r#"
             SELECT 
@@ -319,6 +321,7 @@ mod test {
                 LOG2(a) AS log2,
                 LOG10(a) AS log10,
                 LOG(a, 5) AS log5,
+                LOG1P(a) AS log1p,
                 POW(a, 2) AS pow
             FROM df"#;
         let df_sql = context.execute(sql).unwrap().collect().unwrap();
@@ -337,6 +340,7 @@ mod test {
                 col("a").log(2.0).alias("log2"),
                 col("a").log(10.0).alias("log10"),
                 col("a").log(5.0).alias("log5"),
+                col("a").log1p().alias("log1p"),
                 col("a").pow(2.0).alias("pow"),
             ])
             .collect()
@@ -352,7 +356,7 @@ mod test {
         .unwrap()
         .lazy();
         let sql = r#"SELECT a, FLOOR(a) AS floor, CEIL(a) AS ceil FROM df"#;
-        let mut context = SQLContext::try_new().unwrap();
+        let mut context = SQLContext::new();
         context.register("df", df.clone());
 
         let df_sql = context.execute(sql).unwrap().collect().unwrap();
@@ -373,7 +377,7 @@ mod test {
             "a" => &["foo", "xxxbarxxx", "---bazyyy"]
         }
         .unwrap();
-        let mut context = SQLContext::try_new().unwrap();
+        let mut context = SQLContext::new();
         context.register("df", df.clone().lazy());
         let sql = r#"
             SELECT 
@@ -448,7 +452,7 @@ mod test {
     #[test]
     fn test_agg_functions() {
         let df = create_sample_df().unwrap();
-        let mut context = SQLContext::try_new().unwrap();
+        let mut context = SQLContext::new();
         context.register("df", df.clone().lazy());
         let sql = r#"
             SELECT 
@@ -489,7 +493,7 @@ mod test {
     #[test]
     fn create_table() {
         let df = create_sample_df().unwrap();
-        let mut context = SQLContext::try_new().unwrap();
+        let mut context = SQLContext::new();
         context.register("df", df.clone().lazy());
         let sql = r#"
             CREATE TABLE df2 AS
@@ -517,7 +521,7 @@ mod test {
         }
         .unwrap();
 
-        let mut context = SQLContext::try_new().unwrap();
+        let mut context = SQLContext::new();
         context.register("df", df.clone().lazy());
         let sql = r#"SELECT * FROM df WHERE value < -1"#;
         let df_sql = context.execute(sql).unwrap().collect().unwrap();
@@ -535,7 +539,7 @@ mod test {
         }
         .unwrap();
 
-        let mut context = SQLContext::try_new().unwrap();
+        let mut context = SQLContext::new();
         context.register("df", df.clone().lazy());
         let sql = r#"SELECT * FROM df WHERE -value < 1"#;
         let df_sql = context.execute(sql).unwrap().collect().unwrap();
@@ -545,7 +549,7 @@ mod test {
     }
 
     fn assert_sql_to_polars(df: &DataFrame, sql: &str, f: impl FnOnce(LazyFrame) -> LazyFrame) {
-        let mut context = SQLContext::try_new().unwrap();
+        let mut context = SQLContext::new();
         context.register("df", df.clone().lazy());
         let df_sql = context.execute(sql).unwrap().collect().unwrap();
         let df_pl = f(df.clone().lazy()).collect().unwrap();
@@ -596,7 +600,7 @@ mod test {
     #[test]
     #[cfg(feature = "csv")]
     fn read_csv_tbl_func() {
-        let mut context = SQLContext::try_new().unwrap();
+        let mut context = SQLContext::new();
         let sql = r#"
             CREATE TABLE foods1 AS
             SELECT *
@@ -618,7 +622,7 @@ mod test {
     #[test]
     #[cfg(feature = "csv")]
     fn read_csv_tbl_func_inline() {
-        let mut context = SQLContext::try_new().unwrap();
+        let mut context = SQLContext::new();
         let sql = r#"
             SELECT foods1.category
             FROM read_csv('../../examples/datasets/foods1.csv') as foods1"#;
@@ -635,7 +639,7 @@ mod test {
     #[test]
     #[cfg(feature = "csv")]
     fn read_csv_tbl_func_inline_2() {
-        let mut context = SQLContext::try_new().unwrap();
+        let mut context = SQLContext::new();
         let sql = r#"
             SELECT category
             FROM read_csv('../../examples/datasets/foods1.csv')"#;
@@ -653,7 +657,7 @@ mod test {
     #[test]
     #[cfg(feature = "parquet")]
     fn read_parquet_tbl() {
-        let mut context = SQLContext::try_new().unwrap();
+        let mut context = SQLContext::new();
         let sql = r#"
             CREATE TABLE foods1 AS
             SELECT *
@@ -675,7 +679,7 @@ mod test {
     #[test]
     #[cfg(feature = "ipc")]
     fn read_ipc_tbl() {
-        let mut context = SQLContext::try_new().unwrap();
+        let mut context = SQLContext::new();
         let sql = r#"
             CREATE TABLE foods1 AS
             SELECT *
@@ -698,7 +702,7 @@ mod test {
     #[test]
     #[cfg(feature = "csv")]
     fn iss_7436() {
-        let mut context = SQLContext::try_new().unwrap();
+        let mut context = SQLContext::new();
         let sql = r#"
             CREATE TABLE foods AS
             SELECT *
@@ -736,7 +740,7 @@ mod test {
     #[test]
     #[cfg(feature = "csv")]
     fn iss_7437() -> PolarsResult<()> {
-        let mut context = SQLContext::try_new()?;
+        let mut context = SQLContext::new();
         let sql = r#"
             CREATE TABLE foods AS
             SELECT *
@@ -767,7 +771,7 @@ mod test {
     #[test]
     #[cfg(feature = "ipc")]
     fn test_groupby_2() -> PolarsResult<()> {
-        let mut context = SQLContext::try_new()?;
+        let mut context = SQLContext::new();
         let sql = r#"
         CREATE TABLE foods AS
         SELECT *

@@ -338,8 +338,7 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
             }
         }
         DataType::Datetime(tu, tz) => {
-            let tz = match (tz, tz_aware, options.utc) {
-                (Some(tz), false, false) => Some(tz.clone()),
+            match (tz, tz_aware, options.utc) {
                 (Some(_), true, _) => polars_bail!(
                     ComputeError:
                     "cannot use strptime with both a tz-aware format and a tz-aware dtype, \
@@ -347,11 +346,10 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
                 ),
                 (Some(_), _, true) => polars_bail!(
                     ComputeError:
-                    "cannot use strptime with both 'utc=True' and tz-aware datetime, \
+                    "cannot use strptime with both 'utc=True' and tz-aware dtype, \
                     please drop time zone from the dtype"
                 ),
-                (None, _, true) => Some("UTC".to_string()),
-                (None, _, false) => None,
+                _ => (),
             };
             if options.exact {
                 ca.as_datetime(
@@ -380,7 +378,13 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
     if options.strict {
         polars_ensure!(
             out.null_count() == ca.null_count(),
-            ComputeError: "strict conversion to dates failed, try setting strict=False",
+            ComputeError:
+            "strict conversion to date(time)s failed.\n\
+            \n\
+            You might want to try:\n\
+            - setting `strict=False`,\n\
+            - explicitly specifying a `fmt`,\n\
+            - setting `utf=True` (if you are parsing datetimes with multiple offsets)."
         );
     }
     Ok(out.into_series())

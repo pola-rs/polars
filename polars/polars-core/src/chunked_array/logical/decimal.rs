@@ -5,18 +5,44 @@ use crate::prelude::*;
 pub type DecimalChunked = Logical<DecimalType, Int128Type>;
 
 impl Int128Chunked {
+    fn update_chunks_dtype(&mut self, precision: Option<usize>, scale: usize) {
+        // physical i128 type doesn't exist
+        // so we update the decimal dtype
+        for arr in self.chunks.iter_mut() {
+            let mut default = PrimitiveArray::new_empty(arr.data_type().clone());
+            let arr = arr
+                .as_any_mut()
+                .downcast_mut::<PrimitiveArray<i128>>()
+                .unwrap();
+            std::mem::swap(arr, &mut default);
+            let (_, values, validity) = default.into_inner();
+
+            *arr = PrimitiveArray::new(
+                DataType::Decimal(precision, Some(scale)).to_arrow(),
+                values,
+                validity,
+            );
+        }
+    }
+
     #[inline]
-    pub fn into_decimal_unchecked(self, precision: Option<usize>, scale: usize) -> DecimalChunked {
+    pub fn into_decimal_unchecked(
+        mut self,
+        precision: Option<usize>,
+        scale: usize,
+    ) -> DecimalChunked {
+        self.update_chunks_dtype(precision, scale);
         let mut dt = DecimalChunked::new_logical(self);
         dt.2 = Some(DataType::Decimal(precision, Some(scale)));
         dt
     }
 
     pub fn into_decimal(
-        self,
+        mut self,
         precision: Option<usize>,
         scale: usize,
     ) -> PolarsResult<DecimalChunked> {
+        self.update_chunks_dtype(precision, scale);
         // TODO: if precision is None, do we check that the value fits within precision of 38?...
         if let Some(precision) = precision {
             let precision_max = 10_i128.pow(precision as u32);

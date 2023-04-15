@@ -11,6 +11,7 @@ from polars.functions.lazy import (
     all,
     any,
     apply,
+    approx_unique,
     arange,
     arg_sort_by,
     arg_where,
@@ -63,6 +64,7 @@ from polars.functions.whenthen import when
 __all__ = [
     # polars.functions.eager
     "align_frames",
+    "approx_unique",
     "arg_where",
     "concat",
     "cut",

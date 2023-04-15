@@ -1,6 +1,7 @@
 import numpy as np
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_corr() -> None:
@@ -10,10 +11,14 @@ def test_corr() -> None:
             "b": [-1, 23, 8],
         }
     )
-    assert df.corr().to_dict(False) == {
-        "a": [1.0, 0.18898223650461357],
-        "b": [0.1889822365046136, 1.0],
-    }
+    result = df.corr()
+    expected = pl.DataFrame(
+        {
+            "a": [1.0, 0.18898223650461357],
+            "b": [0.1889822365046136, 1.0],
+        }
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_cut() -> None:

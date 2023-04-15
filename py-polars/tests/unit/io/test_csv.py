@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import gzip
 import io
-import sys
-import tempfile
 import textwrap
 import typing
 import zlib
@@ -21,6 +19,7 @@ from polars.testing import (
     assert_frame_equal_local_categoricals,
     assert_series_equal,
 )
+from polars.testing._tempdir import TemporaryDirectory
 from polars.utils.various import normalise_filepath
 
 if TYPE_CHECKING:
@@ -64,7 +63,7 @@ def test_to_from_buffer(df_no_lists: pl.DataFrame) -> None:
 def test_to_from_file(df_no_lists: pl.DataFrame) -> None:
     df = df_no_lists.drop("strings_nulls")
 
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "small.csv"
         df.write_csv(file_path)
         read_df = pl.read_csv(file_path, try_parse_dates=True)
@@ -376,7 +375,7 @@ def test_read_csv_encoding() -> None:
         b"-20,7.91,3384,4,\xac\xfc\xb0\xea\n"
     )
 
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "encoding.csv"
         with open(file_path, "wb") as f:
             f.write(bts)
@@ -748,6 +747,31 @@ def test_fallback_chrono_parser() -> None:
     assert df.null_count().row(0) == (0, 0)
 
 
+def test_tz_aware_try_parse_dates() -> None:
+    data = (
+        "a,b,c,d\n"
+        "2020-01-01T01:00:00+01:00,2021-04-28T00:00:00+02:00,2021-03-28T00:00:00+01:00,2\n"
+        "2020-01-01T02:00:00+01:00,2021-04-29T00:00:00+02:00,2021-03-29T00:00:00+02:00,3\n"
+    )
+    result = pl.read_csv(io.StringIO(data), try_parse_dates=True)
+    expected = pl.DataFrame(
+        {
+            "a": [
+                datetime(2020, 1, 1, 1, tzinfo=timezone(timedelta(hours=1))),
+                datetime(2020, 1, 1, 2, tzinfo=timezone(timedelta(hours=1))),
+            ],
+            "b": [
+                datetime(2021, 4, 28, tzinfo=timezone(timedelta(hours=2))),
+                datetime(2021, 4, 29, tzinfo=timezone(timedelta(hours=2))),
+            ],
+            # column 'c' has mixed offsets, so `try_parse_dates`  can't parse it
+            "c": ["2021-03-28T00:00:00+01:00", "2021-03-29T00:00:00+02:00"],
+            "d": [2, 3],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
 def test_csv_string_escaping() -> None:
     df = pl.DataFrame({"a": ["Free trip to A,B", '''Special rate "1.79"''']})
     f = io.BytesIO()
@@ -760,7 +784,7 @@ def test_csv_string_escaping() -> None:
 @pytest.mark.write_disk()
 def test_glob_csv(df_no_lists: pl.DataFrame) -> None:
     df = df_no_lists.drop("strings_nulls")
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "small.csv"
         df.write_csv(file_path)
 
@@ -1199,11 +1223,10 @@ def test_csv_statistics_offset() -> None:
 
 
 @pytest.mark.write_disk()
-@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
 def test_csv_scan_categorical() -> None:
     N = 5_000
     df = pl.DataFrame({"x": ["A"] * N})
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "test_csv_scan_categorical.csv"
         df.write_csv(file_path)
         result = pl.scan_csv(file_path, dtypes={"x": pl.Categorical}).collect()
@@ -1223,7 +1246,7 @@ def test_read_csv_chunked() -> None:
 
 @pytest.mark.slow()
 def test_read_web_file() -> None:
-    url = "https://raw.githubusercontent.com/pola-rs/polars/master/examples/datasets/foods1.csv"
+    url = "https://raw.githubusercontent.com/pola-rs/polars/main/examples/datasets/foods1.csv"
     df = pl.read_csv(url)
     assert df.shape == (27, 4)
 

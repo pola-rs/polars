@@ -19,10 +19,10 @@ pub struct PySQLContext {
 impl PySQLContext {
     #[staticmethod]
     #[allow(clippy::new_without_default)]
-    pub fn new() -> PyResult<PySQLContext> {
-        Ok(PySQLContext {
-            context: SQLContext::try_new().map_err(PyPolarsErr::from)?,
-        })
+    pub fn new() -> PySQLContext {
+        PySQLContext {
+            context: SQLContext::new(),
+        }
     }
 
     pub fn register(&mut self, name: &str, lf: PyLazyFrame) {

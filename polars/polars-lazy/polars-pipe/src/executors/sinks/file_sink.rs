@@ -21,7 +21,7 @@ trait SinkWriter {
     fn _finish(&mut self) -> PolarsResult<()>;
 }
 
-#[cfg(any(feature = "parquet", feature = "ipc"))]
+#[cfg(feature = "parquet")]
 impl SinkWriter for polars_io::parquet::BatchedWriter<std::fs::File> {
     fn _write_batch(&mut self, df: &DataFrame) -> PolarsResult<()> {
         self.write_batch(df)

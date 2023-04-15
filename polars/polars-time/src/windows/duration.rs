@@ -17,8 +17,7 @@ use polars_core::utils::arrow::temporal_conversions::NANOSECONDS;
 use serde::{Deserialize, Serialize};
 
 use super::calendar::{
-    is_leap_year, last_day_of_month, NS_DAY, NS_HOUR, NS_MICROSECOND, NS_MILLISECOND, NS_MINUTE,
-    NS_SECOND, NS_WEEK,
+    NS_DAY, NS_HOUR, NS_MICROSECOND, NS_MILLISECOND, NS_MINUTE, NS_SECOND, NS_WEEK,
 };
 #[cfg(feature = "timezones")]
 use crate::utils::{localize_datetime, unlocalize_datetime};
@@ -470,7 +469,9 @@ impl Duration {
                 // recreate a new time from the year and month combination
                 let (year, month) = ((total / 12), ((total % 12) + 1) as u32);
 
-                let dt = new_datetime(year, month, 1, 0, 0, 0, 0);
+                let dt = new_datetime(year, month, 1, 0, 0, 0, 0).ok_or(polars_err!(
+                    ComputeError: format!("date '{}-{}-1' does not exist", year, month)
+                ))?;
                 match tz {
                     #[cfg(feature = "timezones")]
                     Some(tz) => Ok(datetime_to_timestamp(localize_datetime(dt, tz)?)),
@@ -550,7 +551,7 @@ impl Duration {
             };
             let mut year = ts.year();
             let mut month = ts.month() as i32;
-            let mut day = ts.day();
+            let day = ts.day();
             year += (months / 12) as i32;
             month += (months % 12) as i32;
 
@@ -565,23 +566,17 @@ impl Duration {
                 month += 12;
             }
 
-            // Normalize the day if we are past the end of the month.
-            let mut last_day_of_month = last_day_of_month(month);
-            if month == (chrono::Month::February.number_from_month() as i32) && is_leap_year(year) {
-                last_day_of_month += 1;
-            }
-
-            if day > last_day_of_month {
-                day = last_day_of_month
-            }
-
             // Retrieve the original time and construct a data
             // with the new year, month and day
             let hour = ts.hour();
             let minute = ts.minute();
             let sec = ts.second();
             let nsec = ts.nanosecond();
-            let dt = new_datetime(year, month as u32, day, hour, minute, sec, nsec);
+            let dt = new_datetime(year, month as u32, day, hour, minute, sec, nsec).ok_or(
+                polars_err!(
+                    ComputeError: format!("cannot advance '{}' by {} month(s)", ts, d.months)
+                ),
+            )?;
             new_t = match tz {
                 #[cfg(feature = "timezones")]
                 Some(tz) => datetime_to_timestamp(localize_datetime(dt, tz)?),
@@ -686,11 +681,10 @@ fn new_datetime(
     min: u32,
     sec: u32,
     nano: u32,
-) -> NaiveDateTime {
-    let date = NaiveDate::from_ymd_opt(year, month, days).unwrap();
-    let time = NaiveTime::from_hms_nano_opt(hour, min, sec, nano).unwrap();
-
-    NaiveDateTime::new(date, time)
+) -> Option<NaiveDateTime> {
+    let date = NaiveDate::from_ymd_opt(year, month, days)?;
+    let time = NaiveTime::from_hms_nano_opt(hour, min, sec, nano)?;
+    Some(NaiveDateTime::new(date, time))
 }
 
 #[cfg(test)]

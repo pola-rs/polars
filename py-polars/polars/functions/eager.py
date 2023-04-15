@@ -15,6 +15,7 @@ from polars.utils.convert import (
     _tzinfo_to_str,
 )
 from polars.utils.decorators import deprecated_alias
+from polars.utils.various import find_stacklevel
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import concat_df as _concat_df
@@ -79,7 +80,7 @@ def get_dummies(
     ...         "ham": ["a", "b"],
     ...     }
     ... )
-    >>> pl.get_dummies(df.to_dummies(), columns=["foo", "bar"])
+    >>> pl.get_dummies(df.to_dummies(), columns=["foo", "bar"])  # doctest: +SKIP
     shape: (2, 6)
     ┌───────┬───────┬───────┬───────┬───────┬───────┐
     │ foo_1 ┆ foo_2 ┆ bar_3 ┆ bar_4 ┆ ham_a ┆ ham_b │
@@ -94,7 +95,7 @@ def get_dummies(
     warnings.warn(
         "`pl.get_dummies(df)` has been deprecated; use `df.to_dummies()`",
         category=DeprecationWarning,
-        stacklevel=2,
+        stacklevel=find_stacklevel(),
     )
     return df.to_dummies(columns=columns, separator=separator)
 
@@ -465,6 +466,25 @@ def date_range(
         2022-03-01 00:00:00 EST
     ]
 
+    Combine with ``offset_by`` to get the last day of the month:
+
+    >>> (
+    ...     pl.date_range(
+    ...         datetime(2022, 1, 1),
+    ...         datetime(2022, 3, 1),
+    ...         "1mo",
+    ...     )
+    ...     .dt.offset_by("1mo")
+    ...     .dt.offset_by("-1d")
+    ... )
+    shape: (3,)
+    Series: '' [datetime[μs]]
+    [
+        2022-01-31 00:00:00
+        2022-02-28 00:00:00
+        2022-03-31 00:00:00
+    ]
+
     """
     if name is None:
         name = ""
@@ -561,7 +581,7 @@ def cut(
     Examples
     --------
     >>> a = pl.Series("a", [v / 10 for v in range(-30, 30, 5)])
-    >>> pl.cut(a, bins=[-1, 1])
+    >>> pl.cut(a, bins=[-1, 1])  # doctest: +SKIP
     shape: (12, 3)
     ┌──────┬─────────────┬──────────────┐
     │ a    ┆ break_point ┆ category     │
@@ -583,7 +603,7 @@ def cut(
     warnings.warn(
         "`pl.cut(series)` has been deprecated; use `series.cut()`",
         category=DeprecationWarning,
-        stacklevel=2,
+        stacklevel=find_stacklevel(),
     )
     return s.cut(bins, labels, break_point_label, category_label)
 

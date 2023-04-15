@@ -47,7 +47,7 @@ from polars.utils._parse_expr_input import expr_to_lit_or_expr, selection_to_pye
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import deprecated_alias
 from polars.utils.meta import threadpool_size
-from polars.utils.various import sphinx_accessor
+from polars.utils.various import find_stacklevel, sphinx_accessor
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arg_where as py_arg_where
@@ -2709,6 +2709,28 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.n_unique())
 
+    def approx_unique(self) -> Self:
+        """
+        Approx count unique values.
+
+        This is done using the HyperLogLog++ algorithm for cardinality estimation.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 1, 2]})
+        >>> df.select(pl.col("a").approx_unique())
+        shape: (1, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ u32 │
+        ╞═════╡
+        │ 2   │
+        └─────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.approx_unique())
+
     def null_count(self) -> Self:
         """
         Count null values.
@@ -3255,8 +3277,8 @@ class Expr:
             Lambda/ function to apply.
         return_dtype
             Dtype of the output Series.
-            If not set, polars will assume that
-            the dtype remains unchanged.
+            If not set, the dtype will be
+            ``polars.Unknown``.
         skip_nulls
             Don't apply the function over values
             that contain nulls. This is faster.
@@ -3439,7 +3461,7 @@ class Expr:
             " under the list and string namespaces. Use `.arr.explode()` or"
             " `.str.explode()` instead.",
             DeprecationWarning,
-            stacklevel=2,
+            stacklevel=find_stacklevel(),
         )
         return self._from_pyexpr(self._pyexpr.explode())
 
@@ -3465,7 +3487,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.take_every(n))
 
-    def head(self, n: int = 10) -> Self:
+    def head(self, n: int | Expr = 10) -> Self:
         """
         Get the first `n` rows.
 
@@ -3490,9 +3512,9 @@ class Expr:
         └─────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.head(n))
+        return self.slice(0, n)
 
-    def tail(self, n: int = 10) -> Self:
+    def tail(self, n: int | Expr = 10) -> Self:
         """
         Get the last `n` rows.
 
@@ -3517,9 +3539,10 @@ class Expr:
         └─────┘
 
         """
-        return self._from_pyexpr(self._pyexpr.tail(n))
+        offset = -expr_to_lit_or_expr(n, str_to_lit=False)
+        return self.slice(offset, n)
 
-    def limit(self, n: int = 10) -> Self:
+    def limit(self, n: int | Expr = 10) -> Self:
         """
         Get the first `n` rows (alias for :func:`Expr.head`).
 
@@ -6216,7 +6239,7 @@ class Expr:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
-        >>> df.select(pl.col("a").sample(frac=1.0, with_replacement=True, seed=1))
+        >>> df.select(pl.col("a").sample(fraction=1.0, with_replacement=True, seed=1))
         shape: (3, 1)
         ┌─────┐
         │ a   │
@@ -6655,6 +6678,30 @@ class Expr:
 
         """
         return self._from_pyexpr(self._pyexpr.log(base))
+
+    def log1p(self) -> Self:
+        """
+        Compute the natural logarithm of each element plus one.
+
+        This computes `log(1 + x)` but is more numerically stable for `x` close to zero.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select(pl.col("a").log1p())
+        shape: (3, 1)
+        ┌──────────┐
+        │ a        │
+        │ ---      │
+        │ f64      │
+        ╞══════════╡
+        │ 0.693147 │
+        │ 1.098612 │
+        │ 1.386294 │
+        └──────────┘
+
+        """
+        return self._from_pyexpr(self._pyexpr.log1p())
 
     def entropy(self, base: float = math.e, *, normalize: bool = True) -> Self:
         """
