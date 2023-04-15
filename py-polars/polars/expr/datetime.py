@@ -1684,11 +1684,10 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.dt_offset_by(by))
 
-    
     def month_start(self) -> Expr:
         """
         Adjust dates to start of the month.
-        
+
         Returns
         -------
         Date/Datetime expression
@@ -1696,12 +1695,10 @@ class ExprDateTimeNameSpace:
         Examples
         --------
         >>> from datetime import date
-        >>> df = pl.DataFrame({
-        ...     "dates": pl.date_range(date(2000, 1, 15), date(2000, 12, 15), "1mo")
-        ... })
-        >>> df.select(
-        ...     pl.col("dates").month_start()
+        >>> df = pl.DataFrame(
+        ...     {"dates": pl.date_range(date(2000, 1, 15), date(2000, 12, 15), "1mo")}
         ... )
+        >>> df.select(pl.col("dates").month_start())
         shape: (12,)
         Series: '' [date]
         [
@@ -1721,16 +1718,14 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(
             self._pyexpr.dt_truncate(
-                _timedelta_to_pl_duration("1mo"),
-                _timedelta_to_pl_duration("0ns")
+                _timedelta_to_pl_duration("1mo"), _timedelta_to_pl_duration("0ns")
             )
         )
-    
-    
+
     def month_end(self) -> Expr:
         """
         Adjust dates to end of the month.
-        
+
         Returns
         -------
         Date/Datetime expression
@@ -1738,12 +1733,10 @@ class ExprDateTimeNameSpace:
         Examples
         --------
         >>> from datetime import date
-        >>> df = pl.DataFrame({
-        ...     "dates": pl.date_range(date(2000, 1, 1), date(2000, 12, 1), "1mo")
-        ... })
-        >>> df.select(
-        ...     pl.col("dates").month_end()
+        >>> df = pl.DataFrame(
+        ...     {"dates": pl.date_range(date(2000, 1, 1), date(2000, 12, 1), "1mo")}
         ... )
+        >>> df.select(pl.col("dates").month_end())
         shape: (12,)
         Series: '' [date]
         [
@@ -1763,8 +1756,7 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(
             self._pyexpr.dt_truncate(
-                _timedelta_to_pl_duration("1mo"),
-                _timedelta_to_pl_duration("0ns")
+                _timedelta_to_pl_duration("1mo"), _timedelta_to_pl_duration("0ns")
             )
             .dt_offset_by("1mo")
             .dt_offset_by("-1d")

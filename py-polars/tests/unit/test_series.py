@@ -2691,17 +2691,25 @@ def test_symmetry_for_max_in_names() -> None:
     # assert (a - a.max()).name == (a.max() - a).name == a.name
 
 
-def test_month_start()-> None:
-    s = pl.Series([date(2018, 1, 1), date(2000, 12, 31), date(1900, 4, 15), date(2020, 2, 29)])
+def test_month_start() -> None:
+    s = pl.Series(
+        [date(2018, 1, 1), date(2000, 12, 31), date(1900, 4, 15), date(2020, 2, 29)]
+    )
     result = s.dt.month_start()
-    expected = pl.Series([date(2018, 1, 1), date(2000, 12, 1), date(1900, 4, 1), date(2020, 2, 1)])
+    expected = pl.Series(
+        [date(2018, 1, 1), date(2000, 12, 1), date(1900, 4, 1), date(2020, 2, 1)]
+    )
 
     assert_series_equal(result, expected)
 
 
-def test_month_end()-> None:
-    s = pl.Series([date(2018, 2, 1), date(2000, 12, 31), date(1900, 4, 15), date(2020, 2, 29)])
+def test_month_end() -> None:
+    s = pl.Series(
+        [date(2018, 2, 1), date(2000, 12, 31), date(1900, 4, 15), date(2020, 2, 29)]
+    )
     result = s.dt.month_end()
-    expected = pl.Series([date(2018, 2, 28), date(2000, 12, 31), date(1900, 4, 30), date(2020, 2, 29)])
+    expected = pl.Series(
+        [date(2018, 2, 28), date(2000, 12, 31), date(1900, 4, 30), date(2020, 2, 29)]
+    )
 
     assert_series_equal(result, expected)

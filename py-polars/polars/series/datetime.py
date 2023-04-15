@@ -1715,11 +1715,11 @@ class DateTimeNameSpace:
     def month_start(self) -> Series:
         """
         Adjust dates to start of the month.
-        
+
         Returns
         -------
         Datetime Series
-        
+
         Examples
         --------
         >>> from datetime import date
@@ -1742,15 +1742,15 @@ class DateTimeNameSpace:
                 2000-12-01
         ]
         """
-        
+
     def month_end(self) -> Series:
         """
         Adjust dates to end of the month.
-        
+
         Returns
         -------
         Datetime Series
-        
+
         Examples
         --------
         >>> from datetime import date
