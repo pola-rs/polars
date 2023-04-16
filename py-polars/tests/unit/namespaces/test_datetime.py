@@ -336,10 +336,39 @@ def test_date_time_combine(
 
 
 def test_combine_unsupported_types() -> None:
-    with pytest.raises(
-        ComputeError, match="expected Date or Datetime dtype, got: time"
-    ):
+    with pytest.raises(ComputeError, match="expected Date or Datetime, got time"):
         pl.Series([time(1, 2)]).dt.combine(time(3, 4))
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+@pytest.mark.parametrize(
+    ("tzinfo", "expected_time_zone"),
+    [
+        (ZoneInfo("Asia/Kathmandu"), "Asia/Kathmandu"),
+        (None, None),
+    ],
+)
+def test_combine_lazy_schema_datetime(tzinfo, expected_time_zone, time_unit) -> None:
+    df = pl.DataFrame({"ts": pl.Series([datetime(2020, 1, 1, tzinfo=tzinfo)])})
+    result = (
+        df.lazy()
+        .select(pl.col("ts").dt.combine(time(1, 2, 3), time_unit=time_unit))
+        .dtypes
+    )
+    expected = [pl.Datetime(time_unit, expected_time_zone)]
+    assert result == expected
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_combine_lazy_schema_date(time_unit) -> None:
+    df = pl.DataFrame({"ts": pl.Series([date(2020, 1, 1)])})
+    result = (
+        df.lazy()
+        .select(pl.col("ts").dt.combine(time(1, 2, 3), time_unit=time_unit))
+        .dtypes
+    )
+    expected = [pl.Datetime(time_unit, None)]
+    assert result == expected
 
 
 def test_is_leap_year() -> None:
