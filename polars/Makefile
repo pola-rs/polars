@@ -30,7 +30,7 @@ clippy:
 	    -p polars-error \
 	    -p polars-row \
 	    -p polars-time \
-			-p polars-sql
+		-p polars-sql
 
 clippy-default:
 	cargo clippy

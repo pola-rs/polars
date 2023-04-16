@@ -210,8 +210,7 @@ impl Series {
                 use arrow::datatypes::IntegerType;
                 // don't spuriously call this; triggers a read on mmapped data
                 let arr = if chunks.len() > 1 {
-                    let chunks = chunks.iter().map(|arr| &**arr).collect::<Vec<_>>();
-                    arrow::compute::concatenate::concatenate(&chunks)?
+                    concatenate_owned_unchecked(&chunks)?
                 } else {
                     chunks[0].clone()
                 };
