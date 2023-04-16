@@ -72,7 +72,7 @@ pub(super) fn combine(s: &[Series], tu: TimeUnit) -> PolarsResult<Series> {
         Some(tz) => Ok(result_naive
             .datetime()
             .unwrap()
-            .replace_time_zone(Some(tz))?
+            .replace_time_zone(Some(tz), None)?
             .into()),
         _ => Ok(result_naive),
     }
