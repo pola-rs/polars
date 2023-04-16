@@ -86,7 +86,7 @@ def create_temp_sqlite_db(test_db: str) -> None:
             },
             ["2020-01-01", "2021-12-31"],
             marks=pytest.mark.skipif(
-                sys.version_info < (3, 9) or sys.platform == "win32",
+                sys.version_info < (3, 9) or sys.platform.startswith("win"),
                 reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
             ),
         ),
@@ -161,7 +161,7 @@ def test_read_database_exceptions(
             "create",
             id="create",
             marks=pytest.mark.skipif(
-                sys.version_info < (3, 9) or sys.platform == "win32",
+                sys.version_info < (3, 9) or sys.platform.startswith("win"),
                 reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
             ),
         ),
@@ -170,7 +170,7 @@ def test_read_database_exceptions(
             "append",
             id="append",
             marks=pytest.mark.skipif(
-                sys.version_info < (3, 9) or sys.platform == "win32",
+                sys.version_info < (3, 9) or sys.platform.startswith("win"),
                 reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
             ),
         ),

@@ -38,7 +38,7 @@ def test_from_to_buffer(df: pl.DataFrame, compression: IpcCompression) -> None:
         pytest.param(
             "uncompressed",
             marks=pytest.mark.xfail(
-                sys.platform == "win32", reason="Does not work on Windows"
+                sys.platform.startswith("win"), reason="Does not work on Windows"
             ),
         ),
         "lz4",
@@ -60,7 +60,7 @@ def test_from_to_file(
 
 
 @pytest.mark.write_disk()
-@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
+@pytest.mark.xfail(sys.platform.startswith("win"), reason="Does not work on Windows")
 def test_select_columns_from_file(df: pl.DataFrame) -> None:
     with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "small.ipc"
@@ -167,7 +167,7 @@ def test_ipc_column_order() -> None:
 
 
 @pytest.mark.write_disk()
-@pytest.mark.xfail(sys.platform == "win32", reason="Does not work on Windows")
+@pytest.mark.xfail(sys.platform.startswith("win"), reason="Does not work on Windows")
 def test_glob_ipc(df: pl.DataFrame) -> None:
     with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "small.ipc"
