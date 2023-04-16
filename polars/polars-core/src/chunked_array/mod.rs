@@ -45,6 +45,7 @@ use std::mem;
 use std::slice::Iter;
 
 use bitflags::bitflags;
+use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
 use polars_arrow::prelude::*;
 
 use crate::series::IsSorted;
@@ -236,14 +237,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     /// Shrink the capacity of this array to fit its length.
     pub fn shrink_to_fit(&mut self) {
-        self.chunks = vec![arrow::compute::concatenate::concatenate(
-            self.chunks
-                .iter()
-                .map(|a| &**a)
-                .collect::<Vec<_>>()
-                .as_slice(),
-        )
-        .unwrap()];
+        self.chunks = vec![concatenate_owned_unchecked(self.chunks.as_slice()).unwrap()];
     }
 
     /// Unpack a Series to the same physical type.

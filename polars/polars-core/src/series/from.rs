@@ -8,7 +8,7 @@ use arrow::compute::cast::utf8_to_large_utf8;
 ))]
 use arrow::temporal_conversions::*;
 use polars_arrow::compute::cast::cast;
-#[cfg(feature = "dtype-struct")]
+#[cfg(any(feature = "dtype-struct", feature = "dtype-categorical"))]
 use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
 
 use crate::chunked_array::cast::cast_chunks;
@@ -210,8 +210,7 @@ impl Series {
                 use arrow::datatypes::IntegerType;
                 // don't spuriously call this; triggers a read on mmapped data
                 let arr = if chunks.len() > 1 {
-                    let chunks = chunks.iter().map(|arr| &**arr).collect::<Vec<_>>();
-                    arrow::compute::concatenate::concatenate(&chunks)?
+                    concatenate_owned_unchecked(&chunks)?
                 } else {
                     chunks[0].clone()
                 };

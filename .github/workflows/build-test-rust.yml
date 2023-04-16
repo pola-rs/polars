@@ -73,6 +73,7 @@ jobs:
             -p polars-core \
             -p polars-io \
             -p polars-lazy \
+            -p polars-sql \
             -- -D warnings
           cargo clippy -- -D warnings
 
