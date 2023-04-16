@@ -11,7 +11,7 @@ import pytest
 
 import polars as pl
 from polars.datatypes import DATETIME_DTYPES, DTYPE_TEMPORAL_UNITS, TEMPORAL_DTYPES
-from polars.exceptions import ComputeError, PolarsPanicError
+from polars.exceptions import ArrowError, ComputeError, PolarsPanicError
 from polars.testing import (
     assert_frame_equal,
     assert_series_equal,
@@ -2237,6 +2237,37 @@ def test_replace_time_zone_from_naive() -> None:
             datetime(2022, 1, 2, 0, 0, tzinfo=ZoneInfo(key="America/New_York")),
         ]
     }
+
+
+@pytest.mark.parametrize(
+    ("use_earliest", "expected"),
+    [
+        (
+            False,
+            datetime(2018, 10, 28, 2, 30, fold=0, tzinfo=ZoneInfo("Europe/Brussels")),
+        ),
+        (
+            True,
+            datetime(2018, 10, 28, 2, 30, fold=1, tzinfo=ZoneInfo("Europe/Brussels")),
+        ),
+    ],
+)
+def test_replace_time_zone_ambiguous_with_use_earliest(
+    use_earliest: bool, expected: datetime
+) -> None:
+    ts = pl.Series(["2018-10-28 02:30:00"]).str.strptime(pl.Datetime)
+    result = ts.dt.replace_time_zone(
+        "Europe/Brussels", use_earliest=use_earliest
+    ).item()
+    assert result == expected
+
+
+def test_replace_time_zone_ambiguous_raises() -> None:
+    ts = pl.Series(["2018-10-28 02:30:00"]).str.strptime(pl.Datetime)
+    with pytest.raises(
+        ArrowError, match="Please use `use_earliest` to tell how it should be localized"
+    ):
+        ts.dt.replace_time_zone("Europe/Brussels")
 
 
 def test_unlocalize() -> None:

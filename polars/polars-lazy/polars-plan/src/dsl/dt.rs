@@ -244,10 +244,15 @@ impl DateLikeNameSpace {
     }
 
     #[cfg(feature = "timezones")]
-    pub fn replace_time_zone(self, time_zone: Option<TimeZone>) -> Expr {
+    pub fn replace_time_zone(
+        self,
+        time_zone: Option<TimeZone>,
+        use_earliest: Option<bool>,
+    ) -> Expr {
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::CastTimezone(
                 time_zone,
+                use_earliest,
             )))
     }
 

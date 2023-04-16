@@ -465,3 +465,9 @@ def test_nested_logical() -> None:
     assert pl.select(
         pl.lit(pl.Series(["a", "b"], dtype=pl.Categorical)).implode().implode()
     ).to_dict(False) == {"": [[["a", "b"]]]}
+
+
+def test_null_list_construction_and_materialization() -> None:
+    s = pl.Series([None, []])
+    assert s.dtype == pl.List(pl.Null)
+    assert s.to_list() == [None, []]

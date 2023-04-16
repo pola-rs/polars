@@ -50,7 +50,9 @@ impl FunctionExpr {
                     Truncate(..) => mapper.with_same_dtype().unwrap().dtype,
                     Round(..) => mapper.with_same_dtype().unwrap().dtype,
                     #[cfg(feature = "timezones")]
-                    CastTimezone(tz) => return mapper.map_datetime_dtype_timezone(tz.as_ref()),
+                    CastTimezone(tz, _use_earliest) => {
+                        return mapper.map_datetime_dtype_timezone(tz.as_ref())
+                    }
                     #[cfg(feature = "timezones")]
                     TzLocalize(tz) => return mapper.map_datetime_dtype_timezone(Some(tz)),
                     DateRange { .. } => return mapper.map_to_supertype(),
