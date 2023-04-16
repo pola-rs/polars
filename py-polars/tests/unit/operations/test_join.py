@@ -531,3 +531,22 @@ def test_join_concat_projection_pd_case_7071() -> None:
 
     expected = pl.DataFrame({"id": [1, 1, 3]}).lazy()
     assert_frame_equal(result, expected)
+
+
+def test_join_sorted_fast_paths_null() -> None:
+    df1 = pl.DataFrame({"x": [0, 1, 0]}).sort("x")
+    df2 = pl.DataFrame({"x": [0, None], "y": [0, 1]})
+    assert df1.join(df2, on="x", how="inner").to_dict(False) == {
+        "x": [0, 0],
+        "y": [0, 0],
+    }
+    assert df1.join(df2, on="x", how="left").to_dict(False) == {
+        "x": [0, 0, 1],
+        "y": [0, 0, None],
+    }
+    assert df1.join(df2, on="x", how="anti").to_dict(False) == {"x": [1]}
+    assert df1.join(df2, on="x", how="semi").to_dict(False) == {"x": [0, 0]}
+    assert df1.join(df2, on="x", how="outer").to_dict(False) == {
+        "x": [0, 0, 1, None],
+        "y": [0, 0, None, 1],
+    }
