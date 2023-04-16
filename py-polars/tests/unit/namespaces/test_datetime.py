@@ -12,6 +12,16 @@ from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
     from polars.type_aliases import TimeUnit
+import sys
+
+from polars.dependencies import _ZONEINFO_AVAILABLE
+
+if sys.version_info >= (3, 9):
+    from zoneinfo import ZoneInfo
+elif _ZONEINFO_AVAILABLE:
+    # Import from submodule due to typing issue with backports.zoneinfo package:
+    # https://github.com/pganssle/zoneinfo/issues/125
+    from backports.zoneinfo._zoneinfo import ZoneInfo
 
 
 @pytest.fixture()
@@ -266,13 +276,19 @@ def test_epoch_matches_timestamp() -> None:
     )
 
 
-def test_date_time_combine() -> None:
+@pytest.mark.parametrize(
+    ("tzinfo", "expected_time_zone"),
+    [(None, None), (ZoneInfo("Asia/Kathmandu"), "Asia/Kathmandu")],
+)
+def test_date_time_combine(
+    tzinfo: ZoneInfo | None, expected_time_zone: str | None
+) -> None:
     # Define a DataFrame with columns for datetime, date, and time
     df = pl.DataFrame(
         {
             "dtm": [
-                datetime(2022, 12, 31, 10, 30, 45),
-                datetime(2023, 7, 5, 23, 59, 59),
+                datetime(2022, 12, 31, 10, 30, 45, tzinfo=tzinfo),
+                datetime(2023, 7, 5, 23, 59, 59, tzinfo=tzinfo),
             ],
             "dt": [
                 date(2022, 10, 10),
@@ -297,8 +313,8 @@ def test_date_time_combine() -> None:
     # Assert that the new columns have the expected values and datatypes
     expected_dict = {
         "d1": [  # Time component should be overwritten by `tm` values
-            datetime(2022, 12, 31, 1, 2, 3, 456000),
-            datetime(2023, 7, 5, 7, 8, 9, 101000),
+            datetime(2022, 12, 31, 1, 2, 3, 456000, tzinfo=tzinfo),
+            datetime(2023, 7, 5, 7, 8, 9, 101000, tzinfo=tzinfo),
         ],
         "d2": [  # Both date and time components combined "as-is" into new datetime
             datetime(2022, 10, 10, 1, 2, 3, 456000),
@@ -312,11 +328,51 @@ def test_date_time_combine() -> None:
     assert df.to_dict(False) == expected_dict
 
     expected_schema = {
-        "d1": pl.Datetime("us"),
+        "d1": pl.Datetime("us", expected_time_zone),
         "d2": pl.Datetime("us"),
         "d3": pl.Datetime("us"),
     }
     assert df.schema == expected_schema
+
+
+def test_combine_unsupported_types() -> None:
+    with pytest.raises(ComputeError, match="expected Date or Datetime, got time"):
+        pl.Series([time(1, 2)]).dt.combine(time(3, 4))
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+@pytest.mark.parametrize(
+    ("tzinfo", "expected_time_zone"),
+    [
+        (ZoneInfo("Asia/Kathmandu"), "Asia/Kathmandu"),
+        (None, None),
+    ],
+)
+def test_combine_lazy_schema_datetime(
+    tzinfo: ZoneInfo | None,
+    expected_time_zone: str | None,
+    time_unit: TimeUnit,
+) -> None:
+    df = pl.DataFrame({"ts": pl.Series([datetime(2020, 1, 1, tzinfo=tzinfo)])})
+    result = (
+        df.lazy()
+        .select(pl.col("ts").dt.combine(time(1, 2, 3), time_unit=time_unit))
+        .dtypes
+    )
+    expected = [pl.Datetime(time_unit, expected_time_zone)]
+    assert result == expected
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_combine_lazy_schema_date(time_unit: TimeUnit) -> None:
+    df = pl.DataFrame({"ts": pl.Series([date(2020, 1, 1)])})
+    result = (
+        df.lazy()
+        .select(pl.col("ts").dt.combine(time(1, 2, 3), time_unit=time_unit))
+        .dtypes
+    )
+    expected = [pl.Datetime(time_unit, None)]
+    assert result == expected
 
 
 def test_is_leap_year() -> None:
