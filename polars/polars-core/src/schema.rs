@@ -14,8 +14,8 @@ pub struct Schema {
     inner: PlIndexMap<SmartString, DataType>,
 }
 
-// IndexMap keeps track of the underlying order of its entries, so Schemas will only compare equal if they have the same
-// fields in the same order
+// Schemas will only compare equal if they have the same fields in the same order. We can't use `self.inner ==
+// other.inner` because IndexMap ignores order when checking equality, but we don't want to ignore it.
 impl PartialEq for Schema {
     fn eq(&self, other: &Self) -> bool {
         self.len() == other.len() && self.iter().zip(other.iter()).all(|(a, b)| a == b)
@@ -80,7 +80,9 @@ impl Schema {
 
     /// Create a new, empty schema with capacity
     ///
-    /// If you know the number of fields you have ahead of time, using this is more efficient that using [`new`].
+    /// If you know the number of fields you have ahead of time, using this is more efficient than using
+    /// [`new`][Self::new]. Also consider using [`Schema::from_iter`] if you have the collection of fields available
+    /// ahead of time.
     pub fn with_capacity(capacity: usize) -> Self {
         let map: PlIndexMap<_, _> =
             IndexMap::with_capacity_and_hasher(capacity, ahash::RandomState::default());
@@ -117,9 +119,10 @@ impl Schema {
     /// Create a new schema from this one, inserting a field with `name` and `dtype` at the given `index`
     ///
     /// If a field named `name` already exists, it is updated with the new dtype. Regardless, the field named `name` is
-    /// always moved to the given index.
+    /// always moved to the given index. Valid indices range from `0` (front of the schema) to `self.len()` (after the
+    /// end of the schema).
     ///
-    /// Valid indices range from `0` (front of the schema) to `self.len()` (after the end of the schema).
+    /// For a mutating version that doesn't clone, see [`insert_at_index`][Self::insert_at_index].
     ///
     /// Runtime: **O(m * n)** where `m` is the (average) length of the field names and `n` is the number of fields in
     /// the schema. This method clones every field in the schema.
@@ -149,7 +152,46 @@ impl Schema {
         Ok(new)
     }
 
-    /// Get the dtype of the field named `name`, or `None` if the field doesn't exist
+    /// Insert a field with `name` and `dtype` at the given `index` into this schema
+    ///
+    /// If a field named `name` already exists, it is updated with the new dtype. Regardless, the field named `name` is
+    /// always moved to the given index. Valid indices range from `0` (front of the schema) to `self.len()` (after the
+    /// end of the schema).
+    ///
+    /// For a non-mutating version that clones the schema, see [`new_inserting_at_index`][Self::new_inserting_at_index].
+    ///
+    /// Runtime: **O(n)** where `n` is the number of fields in the schema.
+    ///
+    /// Returns:
+    /// - If index is out of bounds, `Err(PolarsError)`
+    /// - Else if `name` was already in the schema, `Ok(Some(old_dtype))`
+    /// - Else `Ok(None)`
+    pub fn insert_at_index(
+        &mut self,
+        mut index: usize,
+        name: SmartString,
+        dtype: DataType,
+    ) -> PolarsResult<Option<DataType>> {
+        polars_ensure!(
+            index <= self.len(),
+            ComputeError:
+                "index {} is out of bounds for schema with length {} (the max index allowed is self.len())",
+                    index,
+                    self.len()
+        );
+
+        let (old_index, old_dtype) = self.inner.insert_full(name, dtype);
+
+        // If we're moving an existing field, one-past-the-end will actually be out of bounds. Also, self.len() won't
+        // have changed after inserting, so `index == self.len()` is the same as it was before inserting.
+        if old_dtype.is_some() && index == self.len() {
+            index -= 1;
+        }
+        self.inner.move_index(old_index, index);
+        Ok(old_dtype)
+    }
+
+    /// Get a reference to the dtype of the field named `name`, or `None` if the field doesn't exist
     pub fn get(&self, name: &str) -> Option<&DataType> {
         self.inner.get(name)
     }
@@ -161,13 +203,41 @@ impl Schema {
         self.inner.get_full(name)
     }
 
+    /// Look up the name in the schema and return an owned [`Field`] by cloning the data
+    ///
+    /// Returns `None` if the field does not exist.
+    ///
+    /// This method constructs the `Field` by cloning the name and dtype. For a version that returns references, see
+    /// [`get`][Self::get] or [`get_full`][Self::get_full].
+    pub fn get_field(&self, name: &str) -> Option<Field> {
+        self.inner
+            .get(name)
+            .map(|dtype| Field::new(name, dtype.clone()))
+    }
+
+    /// Get references to the name and dtype of the field at `index`
+    ///
+    /// If `index` is inbounds, returns `Some((&name, &dtype))`, else `None`. See
+    /// [`get_at_index_mut`][Self::get_at_index_mut] for a mutable version.
+    pub fn get_at_index(&self, index: usize) -> Option<(&SmartString, &DataType)> {
+        self.inner.get_index(index)
+    }
+
+    /// Get mutable references to the name and dtype of the field at `index`
+    ///
+    /// If `index` is inbounds, returns `Some((&mut name, &mut dtype))`, else `None`. See
+    /// [`get_at_index`][Self::get_at_index] for an immutable version.
+    pub fn get_at_index_mut(&mut self, index: usize) -> Option<(&mut SmartString, &mut DataType)> {
+        self.inner.get_index_mut(index)
+    }
+
     /// Swap-remove a field by name and, if the field existed, return its dtype
     ///
     /// If the field does not exist, the schema is not modified and `None` is returned.
     ///
     /// This method does a `swap_remove`, which is O(1) but **changes the order of the schema**: the field named `name`
     /// is replaced by the last field, which takes its position. For a slower, but order-preserving, method, use
-    /// [`shift_remove`].
+    /// [`shift_remove`][Self::shift_remove].
     pub fn remove(&mut self, name: &str) -> Option<DataType> {
         self.inner.swap_remove(name)
     }
@@ -177,37 +247,9 @@ impl Schema {
     /// If the field does not exist, the schema is not modified and `None` is returned.
     ///
     /// This method does a `shift_remove`, which preserves the order of the fields in the schema but **is O(n)**. For a
-    /// faster, but not order-preserving, method, use [`remove`].
-    pub fn swap_remove(&mut self, name: &str) -> Option<DataType> {
+    /// faster, but not order-preserving, method, use [`remove`][Self::remove].
+    pub fn shift_remove(&mut self, name: &str) -> Option<DataType> {
         self.inner.shift_remove(name)
-    }
-
-    /// Look up the name in the schema and return an owned [`Field`] by cloning the data
-    ///
-    /// Returns `None` if the field does not exist.
-    ///
-    /// This method constructs the `Field` by cloning the name and dtype. For a version that returns references, see
-    /// [`get`] or [`get_full`].
-    pub fn get_field(&self, name: &str) -> Option<Field> {
-        self.inner
-            .get(name)
-            .map(|dtype| Field::new(name, dtype.clone()))
-    }
-
-    /// Get references to the name and dtype of the field at `index`
-    ///
-    /// If `index` is inbounds, returns `Some((&name, &dtype))`, else `None`. See [`get_at_index_mut`] for a mutable
-    /// version.
-    pub fn get_at_index(&self, index: usize) -> Option<(&SmartString, &DataType)> {
-        self.inner.get_index(index)
-    }
-
-    /// Get mutable references to the name and dtype of the field at `index`
-    ///
-    /// If `index` is inbounds, returns `Some((&mut name, &mut dtype))`, else `None`. See [`get_at_index`] for an
-    /// immutable version.
-    pub fn get_at_index_mut(&mut self, index: usize) -> Option<(&mut SmartString, &mut DataType)> {
-        self.inner.get_index_mut(index)
     }
 
     /// Whether the schema contains a field named `name`
@@ -217,7 +259,11 @@ impl Schema {
 
     /// Change the field named `name` to the given `dtype` and return the previous dtype
     ///
-    /// If the name exists in the schema, returns `Some(old_dtype)`, else `None`.
+    /// If `name` doesn't already exist in the schema, the schema is not modified and `None` is returned. Otherwise
+    /// returns `Some(old_dtype)`.
+    ///
+    /// This method only ever modifies an existing field and never adds a new field to the schema. To add a new field,
+    /// use [`with_column`][Self::with_column] or [`insert_at_index`][Self::insert_at_index].
     pub fn set_dtype(&mut self, name: &str, dtype: DataType) -> Option<DataType> {
         let old_dtype = self.inner.get_mut(name)?;
         Some(std::mem::replace(old_dtype, dtype))
@@ -225,7 +271,11 @@ impl Schema {
 
     /// Change the field at the given index to the given `dtype` and return the previous dtype
     ///
-    /// If the index is in bounds, returns `Some(old_dtype)`, else `None`.
+    /// If the index is out of bounds, the schema is not modified and `None` is returned. Otherwise returns
+    /// `Some(old_dtype)`.
+    ///
+    /// This method only ever modifies an existing index and never adds a new field to the schema. To add a new field,
+    /// use [`with_column`] or [`insert_at_index`][Self::insert_at_index].
     pub fn set_dtype_at_index(&mut self, index: usize, dtype: DataType) -> Option<DataType> {
         let (_, old_dtype) = self.inner.get_index_mut(index)?;
         Some(std::mem::replace(old_dtype, dtype))
@@ -239,6 +289,8 @@ impl Schema {
     ///
     /// If no equivalent key existed in the map: the new name-dtype pair is
     /// inserted, last in order, and `None` is returned.
+    ///
+    /// To enforce the index of the resulting field, use [`insert_at_index`][Self::insert_at_index].
     ///
     /// Computes in **O(1)** time (amortized average).
     pub fn with_column(&mut self, name: SmartString, dtype: DataType) -> Option<DataType> {
@@ -269,7 +321,7 @@ impl Schema {
     /// Iterates the `Field`s in this schema, constructing them anew by cloning each `(&name, &dtype)` pair
     ///
     /// Note that this clones each name and dtype in order to form an owned `Field`. For a clone-free version, use
-    /// [`iter`], which returns `(&name, &dtype)`.
+    /// [`iter`][Self::iter], which returns `(&name, &dtype)`.
     pub fn iter_fields(&self) -> impl Iterator<Item = Field> + ExactSizeIterator + '_ {
         self.inner
             .iter()
@@ -277,7 +329,7 @@ impl Schema {
     }
 
     /// Iterates over references to the dtypes in this schema
-    pub fn iter_dtypes(&self) -> impl Iterator<Item = &DataType> + ExactSizeIterator + '_ {
+    pub fn iter_dtypes(&self) -> impl Iterator<Item = &DataType> + '_ + ExactSizeIterator {
         self.inner.iter().map(|(_name, dtype)| dtype)
     }
 
@@ -288,7 +340,7 @@ impl Schema {
 
     /// Iterates over the `(&name, &dtype)` pairs in this schema
     ///
-    /// For an owned version, use [`iter_fields`], which clones the data to iterate owned `Field`s
+    /// For an owned version, use [`iter_fields`][Self::iter_fields], which clones the data to iterate owned `Field`s
     pub fn iter(&self) -> impl Iterator<Item = (&SmartString, &DataType)> + '_ {
         self.inner.iter()
     }
