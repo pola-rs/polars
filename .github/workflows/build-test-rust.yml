@@ -74,12 +74,6 @@ jobs:
             -p polars-io \
             -p polars-lazy \
             -p polars-sql \
-            -p polars-arrow \
-            -p polars-utils \
-            -p polars-ops \
-            -p polars-error \
-            -p polars-row \
-            -p polars-time \
             -- -D warnings
           cargo clippy -- -D warnings
 

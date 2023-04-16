@@ -8,7 +8,7 @@ use arrow::compute::cast::utf8_to_large_utf8;
 ))]
 use arrow::temporal_conversions::*;
 use polars_arrow::compute::cast::cast;
-#[cfg(feature = "dtype-struct")]
+#[cfg(any(feature = "dtype-struct", feature = "dtype-categorical"))]
 use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
 
 use crate::chunked_array::cast::cast_chunks;
