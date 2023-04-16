@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import typing
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, time
 
 import pandas as pd
 import pyarrow as pa
@@ -902,3 +902,22 @@ def test_struct_is_in() -> None:
         .to_series()
     )
     assert s1.is_in(s2).to_list() == [True, False, False, True]
+
+
+@typing.no_type_check
+def test_nested_struct_logicals() -> None:
+    # single nested
+    payload = [[{"a": time(10)}], [{"a": time(10)}]]
+    assert pl.Series(payload).to_list() == payload
+    # double nested
+    payload = [[[{"a": time(10)}]], [[{"a": time(10)}]]]
+    assert pl.Series(payload).to_list() == payload
+
+
+def test_struct_list_cat_8235() -> None:
+    df = pl.DataFrame(
+        {"values": [["a", "b", "c"]]}, schema={"values": pl.List(pl.Categorical)}
+    )
+    assert df.select(pl.struct("values")).to_dict(False) == {
+        "values": [{"values": ["a", "b", "c"]}]
+    }

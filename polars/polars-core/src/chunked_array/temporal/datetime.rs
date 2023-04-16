@@ -119,12 +119,18 @@ impl DatetimeChunked {
     }
 
     #[cfg(feature = "timezones")]
-    pub fn replace_time_zone(&self, time_zone: Option<&str>) -> PolarsResult<DatetimeChunked> {
+    pub fn replace_time_zone(
+        &self,
+        time_zone: Option<&str>,
+        use_earliest: Option<bool>,
+    ) -> PolarsResult<DatetimeChunked> {
         match (self.time_zone(), time_zone) {
             (Some(from), Some(to)) => {
                 let chunks = self
                     .downcast_iter()
-                    .map(|arr| replace_timezone(arr, self.time_unit().to_arrow(), to, from))
+                    .map(|arr| {
+                        replace_timezone(arr, self.time_unit().to_arrow(), to, from, use_earliest)
+                    })
                     .collect::<PolarsResult<_>>()?;
                 let out = unsafe { ChunkedArray::from_chunks(self.name(), chunks) };
                 Ok(out.into_datetime(self.time_unit(), Some(to.to_string())))
@@ -132,7 +138,15 @@ impl DatetimeChunked {
             (Some(from), None) => {
                 let chunks = self
                     .downcast_iter()
-                    .map(|arr| replace_timezone(arr, self.time_unit().to_arrow(), "UTC", from))
+                    .map(|arr| {
+                        replace_timezone(
+                            arr,
+                            self.time_unit().to_arrow(),
+                            "UTC",
+                            from,
+                            use_earliest,
+                        )
+                    })
                     .collect::<PolarsResult<_>>()?;
                 let out = unsafe { ChunkedArray::from_chunks(self.name(), chunks) };
                 Ok(out.into_datetime(self.time_unit(), None))
@@ -140,7 +154,9 @@ impl DatetimeChunked {
             (None, Some(to)) => {
                 let chunks = self
                     .downcast_iter()
-                    .map(|arr| replace_timezone(arr, self.time_unit().to_arrow(), to, "UTC"))
+                    .map(|arr| {
+                        replace_timezone(arr, self.time_unit().to_arrow(), to, "UTC", use_earliest)
+                    })
                     .collect::<PolarsResult<_>>()?;
                 let out = unsafe { ChunkedArray::from_chunks(self.name(), chunks) };
                 Ok(out.into_datetime(self.time_unit(), Some(to.to_string())))
@@ -149,8 +165,8 @@ impl DatetimeChunked {
         }
     }
 
-    /// Format Datetime with a `fmt` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
-    pub fn strftime(&self, fmt: &str) -> PolarsResult<Utf8Chunked> {
+    /// Format Datetime with a `format` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+    pub fn strftime(&self, format: &str) -> PolarsResult<Utf8Chunked> {
         #[cfg(feature = "timezones")]
         use chrono::Utc;
         let conversion_f = match self.time_unit() {
@@ -169,13 +185,13 @@ impl DatetimeChunked {
             Some(_) => write!(
                 fmted,
                 "{}",
-                Utc.from_local_datetime(&dt).earliest().unwrap().format(fmt)
+                Utc.from_local_datetime(&dt).earliest().unwrap().format(format)
             )
             .map_err(
-                |_| polars_err!(ComputeError: "cannot format DateTime with format '{}'", fmt),
+                |_| polars_err!(ComputeError: "cannot format DateTime with format '{}'", format),
             )?,
-            _ => write!(fmted, "{}", dt.format(fmt)).map_err(
-                |_| polars_err!(ComputeError: "cannot format NaiveDateTime with format '{}'", fmt),
+            _ => write!(fmted, "{}", dt.format(format)).map_err(
+                |_| polars_err!(ComputeError: "cannot format NaiveDateTime with format '{}'", format),
             )?,
         };
         let fmted = fmted; // discard mut
@@ -184,16 +200,16 @@ impl DatetimeChunked {
             #[cfg(feature = "timezones")]
             Some(time_zone) => match parse_offset(time_zone) {
                 Ok(time_zone) => self.apply_kernel_cast(&|arr| {
-                    format_fixed_offset(time_zone, arr, fmt, &fmted, conversion_f)
+                    format_fixed_offset(time_zone, arr, format, &fmted, conversion_f)
                 }),
                 Err(_) => match time_zone.parse::<Tz>() {
                     Ok(time_zone) => self.apply_kernel_cast(&|arr| {
-                        format_tz(time_zone, arr, fmt, &fmted, conversion_f)
+                        format_tz(time_zone, arr, format, &fmted, conversion_f)
                     }),
                     Err(_) => unreachable!(),
                 },
             },
-            _ => self.apply_kernel_cast(&|arr| format_naive(arr, fmt, &fmted, conversion_f)),
+            _ => self.apply_kernel_cast(&|arr| format_naive(arr, format, &fmted, conversion_f)),
         };
         ca.rename(self.name());
         Ok(ca)

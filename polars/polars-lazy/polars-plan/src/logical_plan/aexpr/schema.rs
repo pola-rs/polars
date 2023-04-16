@@ -117,7 +117,7 @@ impl AExpr {
                         float_type(&mut field);
                         Ok(field)
                     }
-                    List(expr) => {
+                    Implode(expr) => {
                         // default context because `col()` would return a list in aggregation context
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;

@@ -52,10 +52,7 @@ impl PyDataFrame {
         infer_schema_length: Option<usize>,
         schema_overwrite: Option<Schema>,
     ) -> PyResult<Self> {
-        // object builder must be registered.
-        #[cfg(feature = "object")]
-        crate::object::register_object_builder();
-
+        // object builder must be registered. this is done on import
         let schema =
             rows_to_schema_supertypes(&rows, infer_schema_length.map(|n| std::cmp::max(1, n)))
                 .map_err(PyPolarsErr::from)?;

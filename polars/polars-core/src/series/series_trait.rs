@@ -63,9 +63,7 @@ pub(crate) mod private {
 
         fn _dtype(&self) -> &DataType;
 
-        fn compute_len(&mut self) {
-            unimplemented!()
-        }
+        fn compute_len(&mut self);
 
         fn explode_by_offsets(&self, _offsets: &[i64]) -> Series {
             invalid_operation_panic!(explode_by_offsets, self)
@@ -464,10 +462,6 @@ pub trait SeriesTrait:
         _interpol: QuantileInterpolOptions,
     ) -> PolarsResult<Series> {
         Ok(Series::full_null(self.name(), 1, self.dtype()))
-    }
-
-    fn fmt_list(&self) -> String {
-        "fmt implemented".into()
     }
 
     /// Clone inner ChunkedArray and wrap in a new Arc

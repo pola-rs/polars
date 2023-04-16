@@ -366,8 +366,8 @@ impl Expr {
     }
 
     /// Aggregate the group to a Series
-    pub fn list(self) -> Self {
-        AggExpr::List(Box::new(self)).into()
+    pub fn implode(self) -> Self {
+        AggExpr::Implode(Box::new(self)).into()
     }
 
     /// Compute the quantile per group.

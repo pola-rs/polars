@@ -321,7 +321,7 @@ impl Utf8Chunked {
                     if idx.is_empty() {
                         None
                     } else if idx.len() == 1 {
-                        ca_self.get(first as usize)
+                        arr.get_unchecked(first as usize)
                     } else if self.null_count() == 0 {
                         take_agg_utf8_iter_unchecked_no_null(
                             arr,

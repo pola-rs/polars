@@ -3544,6 +3544,7 @@ class DataFrame:
         # always print at most this number of values, mainly used to ensure
         # we do not cast long arrays to strings which would be very slow
         max_num_values = min(10, self.height)
+        max_col_name_trunc = 50
 
         def _parse_column(col_name: str, dtype: PolarsDataType) -> tuple[str, str, str]:
             dtype_str = (
@@ -3553,6 +3554,8 @@ class DataFrame:
             )
             val = self[:max_num_values][col_name].to_list()
             val_str = ", ".join(map(str, val))
+            if len(col_name) > max_col_name_trunc:
+                col_name = col_name[: (max_col_name_trunc - 3)] + "..."
             return col_name, dtype_str, val_str
 
         data = [_parse_column(s, dtype) for s, dtype in self.schema.items()]
@@ -6090,6 +6093,30 @@ class DataFrame:
         │ one ┆ 1   ┆ 2   ┆ 3   │
         │ two ┆ 4   ┆ 5   ┆ 6   │
         └─────┴─────┴─────┴─────┘
+
+        Run an expression as aggregation function
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "col1": ["a", "a", "a", "b", "b", "b"],
+        ...         "col2": ["x", "x", "x", "x", "y", "y"],
+        ...         "col3": [6, 7, 3, 2, 5, 7],
+        ...     }
+        ... )
+        >>> df.pivot(
+        ...     index="col1",
+        ...     columns="col2",
+        ...     values="col3",
+        ...     aggregate_function=pl.element().tanh().mean(),
+        ... )
+        shape: (2, 3)
+        ┌──────┬──────────┬──────────┐
+        │ col1 ┆ x        ┆ y        │
+        │ ---  ┆ ---      ┆ ---      │
+        │ str  ┆ f64      ┆ f64      │
+        ╞══════╪══════════╪══════════╡
+        │ a    ┆ 0.998347 ┆ null     │
+        │ b    ┆ 0.964028 ┆ 0.999954 │
+        └──────┴──────────┴──────────┘
 
         """  # noqa: W505
         if isinstance(values, str):

@@ -10,6 +10,7 @@ description = "More operations on polars data structures"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+argminmax = { version = "0.6.1", default-features = false, features = ["float"] }
 arrow.workspace = true
 base64 = { version = "0.21", optional = true }
 either.workspace = true
@@ -24,6 +25,7 @@ serde_json = { version = "1", optional = true }
 smartstring.workspace = true
 
 [features]
+simd = ["argminmax/nightly_simd"]
 nightly = ["polars-utils/nightly"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-date = ["polars-core/dtype-date", "polars-core/temporal"]

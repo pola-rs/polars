@@ -1128,7 +1128,7 @@ fn test_fill_forward() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .select([col("b").forward_fill(None).list().over([col("a")])])
+        .select([col("b").forward_fill(None).implode().over([col("a")])])
         .collect()?;
     let agg = out.column("b")?.list()?;
 
@@ -1288,7 +1288,7 @@ fn test_filter_after_shift_in_groups() -> PolarsResult<()> {
             col("B")
                 .shift(1)
                 .filter(col("B").shift(1).gt(lit(4)))
-                .list()
+                .implode()
                 .over([col("fruits")])
                 .alias("filtered"),
         ])
@@ -1439,7 +1439,7 @@ fn test_sort_by_suffix() -> PolarsResult<()> {
         .lazy()
         .select([col("*")
             .sort_by([col("A")], [false])
-            .list()
+            .implode()
             .over([col("fruits")])
             .flatten()
             .suffix("_sorted")])
@@ -1465,7 +1465,7 @@ fn test_list_in_select_context() -> PolarsResult<()> {
 
     let df = DataFrame::new(vec![s])?;
 
-    let out = df.lazy().select([col("a").list()]).collect()?;
+    let out = df.lazy().select([col("a").implode()]).collect()?;
 
     let s = out.column("a")?;
     assert!(s.series_equal(&expected));
@@ -1640,7 +1640,7 @@ fn test_single_group_result() -> PolarsResult<()> {
                 nulls_last: false,
                 multithreaded: true,
             })
-            .list()
+            .implode()
             .over([col("a")])
             .flatten()])
         .collect()?;
@@ -1669,7 +1669,7 @@ fn test_single_ranked_group() -> PolarsResult<()> {
                 },
                 None,
             )
-            .list()
+            .implode()
             .over([col("group")])])
         .collect()?;
 

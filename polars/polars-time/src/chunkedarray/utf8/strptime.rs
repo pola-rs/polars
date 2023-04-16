@@ -104,6 +104,9 @@ impl StrpTimeState {
                     }
                     b'm' => {
                         (month, offset) = update_and_parse(2, offset, val)?;
+                        if month > 12 {
+                            return None;
+                        }
                     }
                     b'b' => {
                         (month, offset) = parse_month_abbrev(val, offset)?;

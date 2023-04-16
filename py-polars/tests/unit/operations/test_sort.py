@@ -341,7 +341,7 @@ def test_sort_slice_fast_path_5245() -> None:
 def test_explicit_list_agg_sort_in_groupby() -> None:
     df = pl.DataFrame({"A": ["a", "a", "a", "b", "b", "a"], "B": [1, 2, 3, 4, 5, 6]})
 
-    # this was col().list().sort() before we changed the logic
+    # this was col().implode().sort() before we changed the logic
     result = df.groupby("A").agg(pl.col("B").sort(descending=True)).sort("A")
     expected = df.groupby("A").agg(pl.col("B").sort(descending=True)).sort("A")
     assert_frame_equal(result, expected)
@@ -646,3 +646,19 @@ def test_arg_sort_struct() -> None:
         8,
         9,
     ]
+
+
+def test_sort_top_k_fast_path() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, None],
+            "b": [6.0, 5.0, 4.0],
+            "c": ["a", "c", "b"],
+        }
+    )
+    # this triggers fast path as head is equal to n-rows
+    assert df.lazy().sort("b").head(3).collect().to_dict(False) == {
+        "a": [None, 2, 1],
+        "b": [4.0, 5.0, 6.0],
+        "c": ["b", "c", "a"],
+    }

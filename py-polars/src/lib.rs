@@ -39,6 +39,8 @@ use jemallocator::Jemalloc;
 use lazy::ToExprs;
 #[cfg(any(not(target_os = "linux"), use_mimalloc))]
 use mimalloc::MiMalloc;
+#[cfg(feature = "object")]
+pub use object::register_object_builder;
 use polars_core::datatypes::{TimeUnit, TimeZone};
 use polars_core::prelude::{DataFrame, IntoSeries, IDX_DTYPE};
 use polars_core::POOL;
@@ -720,5 +722,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(coalesce_exprs)).unwrap();
     m.add_wrapped(wrap_pyfunction!(set_float_fmt)).unwrap();
     m.add_wrapped(wrap_pyfunction!(get_float_fmt)).unwrap();
+    #[cfg(feature = "object")]
+    m.add_wrapped(wrap_pyfunction!(register_object_builder))
+        .unwrap();
     Ok(())
 }

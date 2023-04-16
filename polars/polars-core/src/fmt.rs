@@ -860,116 +860,25 @@ fn fmt_struct(f: &mut Formatter<'_>, vals: &[AnyValue]) -> fmt::Result {
     write!(f, "}}")
 }
 
-macro_rules! impl_fmt_list {
-    ($self:ident) => {{
-        match $self.len() {
-            0 => format!("[]"),
-            1 => format!("[{}]", $self.get_any_value(0).unwrap()),
-            2 => format!(
-                "[{}, {}]",
-                $self.get_any_value(0).unwrap(),
-                $self.get_any_value(1).unwrap()
-            ),
+impl Series {
+    pub fn fmt_list(&self) -> String {
+        match self.len() {
+            0 => "[]".to_string(),
+            1 => format!("[{}]", self.get(0).unwrap()),
+            2 => format!("[{}, {}]", self.get(0).unwrap(), self.get(1).unwrap()),
             3 => format!(
                 "[{}, {}, {}]",
-                $self.get_any_value(0).unwrap(),
-                $self.get_any_value(1).unwrap(),
-                $self.get_any_value(2).unwrap()
+                self.get(0).unwrap(),
+                self.get(1).unwrap(),
+                self.get(2).unwrap()
             ),
             _ => format!(
                 "[{}, {}, … {}]",
-                $self.get_any_value(0).unwrap(),
-                $self.get_any_value(1).unwrap(),
-                $self.get_any_value($self.len() - 1).unwrap()
+                self.get(0).unwrap(),
+                self.get(1).unwrap(),
+                self.get(self.len() - 1).unwrap()
             ),
         }
-    }};
-}
-
-pub(crate) trait FmtList {
-    fn fmt_list(&self) -> String;
-}
-
-impl<T> FmtList for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    T::Native: fmt::Display,
-{
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-impl FmtList for BooleanChunked {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-impl FmtList for Utf8Chunked {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-impl FmtList for BinaryChunked {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-impl FmtList for ListChunked {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-#[cfg(feature = "dtype-categorical")]
-impl FmtList for CategoricalChunked {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-#[cfg(feature = "dtype-date")]
-impl FmtList for DateChunked {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-#[cfg(feature = "dtype-datetime")]
-impl FmtList for DatetimeChunked {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-#[cfg(feature = "dtype-duration")]
-impl FmtList for DurationChunked {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-#[cfg(feature = "dtype-time")]
-impl FmtList for TimeChunked {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-#[cfg(feature = "dtype-struct")]
-impl FmtList for StructChunked {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-#[cfg(feature = "object")]
-impl<T: PolarsObject> FmtList for ObjectChunked<T> {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
     }
 }
 

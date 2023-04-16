@@ -17,7 +17,6 @@ use super::{private, IntoSeries, SeriesTrait, SeriesWrap, *};
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::ops::ToBitRepr;
 use crate::chunked_array::AsSinglePtr;
-use crate::fmt::FmtList;
 use crate::frame::groupby::*;
 use crate::frame::hash_join::*;
 use crate::prelude::*;
@@ -418,10 +417,6 @@ macro_rules! impl_dyn_series {
                     .cast(self.dtype())
                     .unwrap()
                     .into())
-            }
-
-            fn fmt_list(&self) -> String {
-                FmtList::fmt_list(&self.0)
             }
 
             fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

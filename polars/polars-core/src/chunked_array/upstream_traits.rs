@@ -7,7 +7,6 @@ use std::sync::Arc;
 
 use arrow::array::{BooleanArray, PrimitiveArray, Utf8Array};
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use polars_arrow::bit_util::{set_bit_raw, unset_bit_raw};
 use polars_utils::sync::SyncPtr;
 use rayon::iter::{FromParallelIterator, IntoParallelIterator};
 use rayon::prelude::*;
@@ -507,94 +506,18 @@ impl FromParallelIterator<Option<bool>> for BooleanChunked {
     fn from_par_iter<I: IntoParallelIterator<Item = Option<bool>>>(iter: I) -> Self {
         // Get linkedlist filled with different vec result from different threads
         let vectors = collect_into_linked_list(iter);
-
         let vectors = vectors.into_iter().collect::<Vec<_>>();
-        let capacity: usize = get_capacity_from_par_results_slice(&vectors);
-        let offsets = get_offsets(&vectors);
 
-        // We initialize the vec, as setting bits only doesn't seem to initialize the memory
-        let mut values_buf: Vec<u8> = vec![0; capacity.saturating_add(7) / 8];
-        let values_buf_ptr = unsafe { SyncPtr::new(values_buf.as_mut_ptr()) };
-
-        let validities = offsets
-            .par_iter()
-            .zip(vectors.par_iter())
-            .map(|(&offset, vector)| {
-                let mut local_validity = None;
-                let local_len = vector.len();
-                let mut latest_validy_written = 0;
-                unsafe {
-                    // don't add the offset here, we set bits, not bytes!
-                    let values_buf_ptr = values_buf_ptr.get();
-
-                    // this may/will race on the leading and trailing bits
-                    // we allow this racing and set the bits to the correct value in a second
-                    // single threaded pass
-                    for (i, opt_v) in vector.iter().enumerate() {
-                        match opt_v {
-                            Some(v) => {
-                                if *v {
-                                    set_bit_raw(values_buf_ptr, i + offset);
-                                };
-                            }
-                            None => {
-                                let validity = match &mut local_validity {
-                                    None => {
-                                        let validity = MutableBitmap::with_capacity(local_len);
-                                        local_validity = Some(validity);
-                                        local_validity.as_mut().unwrap_unchecked()
-                                    }
-                                    Some(validity) => validity,
-                                };
-                                validity.extend_constant(i - latest_validy_written, true);
-                                latest_validy_written = i + 1;
-                                validity.push_unchecked(false);
-                            }
-                        }
-                    }
-                }
-                if let Some(validity) = &mut local_validity {
-                    validity.extend_constant(local_len - latest_validy_written, true);
-                }
-                (local_validity.map(|b| b.into()), local_len)
+        let chunks = vectors
+            .into_par_iter()
+            .map(|vector| {
+                Box::new(unsafe {
+                    BooleanArray::from_trusted_len_iter_unchecked(vector.into_iter())
+                }) as ArrayRef
             })
             .collect::<Vec<_>>();
-        unsafe { values_buf.set_len(capacity.saturating_add(7) / 8) };
 
-        // set the leading and trailing bits
-        // those can be in an invalid state due to racing threads
-        let ptr = values_buf_ptr.get();
-        for (vector, offset) in vectors.into_iter().zip(offsets) {
-            // set leading bits
-            for (i, opt_v) in vector.iter().enumerate().take(8) {
-                unsafe {
-                    if let Some(v) = opt_v {
-                        if *v {
-                            set_bit_raw(ptr, i + offset)
-                        } else {
-                            unset_bit_raw(ptr, i + offset)
-                        }
-                    }
-                }
-            }
-            // set trailing bits
-            for (i, opt_v) in vector.iter().enumerate().rev().take(8) {
-                unsafe {
-                    if let Some(v) = opt_v {
-                        if *v {
-                            set_bit_raw(ptr, i + offset)
-                        } else {
-                            unset_bit_raw(ptr, i + offset)
-                        }
-                    }
-                }
-            }
-        }
-
-        let validity = finish_validities(validities, capacity);
-        let values = Bitmap::from_u8_vec(values_buf, capacity);
-        let arr = BooleanArray::from_data_default(values, validity);
-        unsafe { Self::from_chunks("", vec![Box::new(arr)]) }
+        unsafe { BooleanChunked::from_chunks("", chunks).rechunk() }
     }
 }
 
@@ -702,9 +625,17 @@ where
                 first = false;
             } else {
                 // offset lengths must be updated
-                offsets.extend(local_offsets[1..].iter().map(|v| *v + offsets_so_far))
+                unsafe {
+                    // safety: there is always a single offset
+                    offsets.extend(
+                        local_offsets
+                            .get_unchecked(1..)
+                            .iter()
+                            .map(|v| *v + offsets_so_far),
+                    )
+                }
             }
-            offsets_so_far = *local_offsets.last().unwrap();
+            offsets_so_far = unsafe { *offsets.last().unwrap_unchecked() };
         }
 
         unsafe {

@@ -41,14 +41,13 @@ fn get_extension_from_filename(filename: &str) -> Option<&str> {
 }
 
 fn get_home_dir() -> PathBuf {
-    let home_dir = match env::var("HOME") {
+    match env::var("HOME") {
         Ok(path) => PathBuf::from(path),
         Err(_) => match env::var("USERPROFILE") {
             Ok(path) => PathBuf::from(path),
             Err(_) => panic!("Failed to get home directory"),
         },
-    };
-    home_dir
+    }
 }
 
 fn get_history_path() -> PathBuf {

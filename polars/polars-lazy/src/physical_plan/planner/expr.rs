@@ -400,7 +400,7 @@ pub(crate) fn create_physical_expr(
                         }
                     }
                 }
-                AAggExpr::List(expr) => {
+                AAggExpr::Implode(expr) => {
                     let input = create_physical_expr(expr, ctxt, expr_arena, schema)?;
                     match ctxt {
                         Context::Aggregation => {

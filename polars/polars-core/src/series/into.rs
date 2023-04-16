@@ -20,6 +20,9 @@ impl Series {
     /// 1 on 1 mapping for logical/ categoricals, etc.
     pub fn to_arrow(&self, chunk_idx: usize) -> ArrayRef {
         match self.dtype() {
+            // make sure that we recursively apply all logical types.
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(_) => self.struct_().unwrap().to_arrow(chunk_idx),
             // special list branch to
             // make sure that we recursively apply all logical types.
             DataType::List(inner) => {

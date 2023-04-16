@@ -75,7 +75,7 @@ These functions are available from the polars module root and can be used as exp
    Expr.exclude
    Expr.first
    Expr.head
-   Expr.list
+   Expr.implode
    Expr.map
    Expr.max
    Expr.mean

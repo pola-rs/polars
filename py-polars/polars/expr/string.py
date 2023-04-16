@@ -14,6 +14,7 @@ from polars.datatypes import (
 from polars.utils import no_default
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
 from polars.utils._wrap import wrap_expr
+from polars.utils.decorators import deprecated_alias
 from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
@@ -30,10 +31,11 @@ class ExprStringNameSpace:
     def __init__(self, expr: Expr):
         self._pyexpr = expr._pyexpr
 
+    @deprecated_alias(datatype="dtype", fmt="format")
     def strptime(
         self,
-        datatype: PolarsTemporalType,
-        fmt: str | None = None,
+        dtype: PolarsTemporalType,
+        format: str | None = None,
         *,
         strict: bool = True,
         exact: bool = True,
@@ -46,9 +48,9 @@ class ExprStringNameSpace:
 
         Parameters
         ----------
-        datatype
+        dtype
             Date | Datetime | Time
-        fmt
+        format
             Format to use, refer to the `chrono strftime documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for specification. Example: ``"%y-%m-%d"``.
@@ -120,27 +122,38 @@ class ExprStringNameSpace:
         └────────────┘
 
         """
-        if not is_polars_dtype(datatype):  # pragma: no cover
-            raise ValueError(f"expected: {DataType} got: {datatype}")
+        if not is_polars_dtype(dtype):  # pragma: no cover
+            raise ValueError(f"expected: {DataType} got: {dtype}")
+
+        if format is not None and "%f" in format:
+            raise ValueError(
+                "Directive '%f' is not supported in Python Polars, "
+                "as it differs from the Python standard library.\n"
+                "Instead, please use one of:\n"
+                " - '%.f'\n"
+                " - '%3f'\n"
+                " - '%6f'\n"
+                " - '%9f'"
+            )
 
         if tz_aware is no_default:
             tz_aware = False
         else:
             warnings.warn(
-                "`tz_aware` is now auto-inferred from `fmt` and will be removed "
+                "`tz_aware` is now auto-inferred from `format` and will be removed "
                 "in a future version. You can safely drop this argument.",
                 category=DeprecationWarning,
                 stacklevel=find_stacklevel(),
             )
 
-        if datatype == Date:
-            return wrap_expr(self._pyexpr.str_parse_date(fmt, strict, exact, cache))
-        elif datatype == Datetime:
-            time_unit = datatype.time_unit  # type: ignore[union-attr]
-            time_zone = datatype.time_zone  # type: ignore[union-attr]
+        if dtype == Date:
+            return wrap_expr(self._pyexpr.str_parse_date(format, strict, exact, cache))
+        elif dtype == Datetime:
+            time_unit = dtype.time_unit  # type: ignore[union-attr]
+            time_zone = dtype.time_zone  # type: ignore[union-attr]
             dtcol = wrap_expr(
                 self._pyexpr.str_parse_datetime(
-                    fmt,
+                    format,
                     strict,
                     exact,
                     cache,
@@ -151,8 +164,8 @@ class ExprStringNameSpace:
                 )
             )
             return dtcol if (time_unit is None) else dtcol.dt.cast_time_unit(time_unit)
-        elif datatype == Time:
-            return wrap_expr(self._pyexpr.str_parse_time(fmt, strict, exact, cache))
+        elif dtype == Time:
+            return wrap_expr(self._pyexpr.str_parse_time(format, strict, exact, cache))
         else:  # pragma: no cover
             raise ValueError("dtype should be of type {Date, Datetime, Time}")
 

@@ -544,7 +544,7 @@ impl Series {
         if self.is_empty()
             && (self.dtype().is_numeric() || matches!(self.dtype(), DataType::Boolean))
         {
-            return Series::new("", [0])
+            return Series::new(self.name(), [0])
                 .cast(self.dtype())
                 .unwrap()
                 .sum_as_series();
@@ -617,6 +617,12 @@ impl Series {
                 Float64 => {
                     let ca = self.f64().unwrap();
                     ca.cumsum(reverse).into_series()
+                }
+                #[cfg(feature = "dtype-duration")]
+                Duration(tu) => {
+                    let ca = self.to_physical_repr();
+                    let ca = ca.i64().unwrap();
+                    ca.cumsum(reverse).cast(&Duration(*tu)).unwrap()
                 }
                 dt => panic!("cumsum not supported for dtype: {dt:?}"),
             }
