@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 from datetime import date, datetime, time, timedelta, timezone
-from typing import TYPE_CHECKING, cast, no_type_check
+from typing import TYPE_CHECKING, Any, cast, no_type_check
 
 import numpy as np
 import pandas as pd
@@ -2789,17 +2789,36 @@ def test_series_is_temporal() -> None:
         assert s.is_temporal(excluding=tp) is False
 
 
-def test_misc_precision_any_value_conversion() -> None:
-    # default precision
-    dt = datetime(2514, 5, 30, 1, 53, 4, 986754, tzinfo=timezone.utc)
-    assert pl.Series([dt]).to_list() == [dt]
-    dt = datetime(2514, 5, 30, 1, 53, 4, 986754)
+@pytest.mark.parametrize(
+    "time_zone",
+    [
+        None,
+        timezone.utc,
+        "America/Caracas",
+        "Asia/Kathmandu",
+        "Asia/Taipei",
+        "Europe/Amsterdam",
+        "Europe/Lisbon",
+        "Indian/Maldives",
+        "Pacific/Norfolk",
+        "Pacific/Samoa",
+        "Turkey",
+        "US/Eastern",
+        "UTC",
+        "Zulu",
+    ],
+)
+def test_misc_precision_any_value_conversion(time_zone: Any) -> None:
+    tz = ZoneInfo(time_zone) if isinstance(time_zone, str) else time_zone
+
+    # default precision (μs)
+    dt = datetime(2514, 5, 30, 1, 53, 4, 986754, tzinfo=tz)
     assert pl.Series([dt]).to_list() == [dt]
 
     # ms precision
-    dt = datetime(2243, 1, 1, 0, 0, 0, 1000)
-    assert pl.Series([dt]).cast(pl.Datetime("ms")).to_list() == [dt]
+    dt = datetime(2243, 1, 1, 0, 0, 0, 1000, tzinfo=tz)
+    assert pl.Series([dt]).cast(pl.Datetime("ms", time_zone)).to_list() == [dt]
 
     # ns precision
-    dt = datetime(2256, 1, 1, 0, 0, 0, 1)
-    assert pl.Series([dt]).cast(pl.Datetime("ns")).to_list() == [dt]
+    dt = datetime(2256, 1, 1, 0, 0, 0, 1, tzinfo=tz)
+    assert pl.Series([dt]).cast(pl.Datetime("ns", time_zone)).to_list() == [dt]

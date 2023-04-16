@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+from datetime import timezone
 from inspect import isclass
 from typing import TYPE_CHECKING, Any, Iterator, Mapping, Sequence
 
@@ -195,7 +196,9 @@ class Datetime(TemporalType):
     time_unit: TimeUnit | None = None
     time_zone: str | None = None
 
-    def __init__(self, time_unit: TimeUnit | None = "us", time_zone: str | None = None):
+    def __init__(
+        self, time_unit: TimeUnit | None = "us", time_zone: str | timezone | None = None
+    ):
         """
         Calendar date and time type.
 
@@ -208,6 +211,9 @@ class Datetime(TemporalType):
             ``import zoneinfo; zoneinfo.available_timezones()`` for a full list).
 
         """
+        if isinstance(time_zone, timezone):
+            time_zone = str(time_zone)
+
         self.time_unit = time_unit or "us"
         self.time_zone = time_zone
 

@@ -49,8 +49,8 @@ def between(draw: DrawFn, type_: type, min_: Any, max_: Any) -> Any:
     return draw(strategy_init(min_, max_))
 
 
-# scalar dtype strategies are straightforward, mapping directly onto
-# the associated hypothesis strategy, with dtype-defined limits
+# scalar dtype strategies are largely straightforward, mapping directly
+# onto the associated hypothesis strategy, with dtype-defined limits
 strategy_bool = booleans()
 strategy_f32 = floats(width=32)
 strategy_f64 = floats(width=64)
@@ -69,15 +69,19 @@ strategy_utf8 = text(
     max_size=8,
     alphabet=characters(max_codepoint=1000, blacklist_categories=("Cs", "Cc")),
 )
-
-# TODO: confirm datetime min/max limits with different timeunit
-#  granularity. support datetime/duration time_units (ms, us, ns).
-strategy_datetime = datetimes(min_value=datetime(1970, 1, 1))
+strategy_datetime_ns = datetimes(
+    min_value=datetime(1677, 9, 22, 0, 12, 43, 145225),
+    max_value=datetime(2262, 4, 11, 23, 47, 16, 854775),
+)
+strategy_datetime_us = strategy_datetime_ms = datetimes(
+    min_value=datetime(1, 1, 1),
+    max_value=datetime(9999, 12, 31, 23, 59, 59, 999000),
+)
 strategy_time = times()
 strategy_date = dates()
 strategy_duration = timedeltas(
-    min_value=timedelta(microseconds=-(2**63)),
-    max_value=timedelta(microseconds=(2**63) - 1),
+    min_value=timedelta(microseconds=-(2**46)),
+    max_value=timedelta(microseconds=(2**46) - 1),
 )
 
 scalar_strategies: dict[PolarsDataType, Any] = {
@@ -92,10 +96,16 @@ scalar_strategies: dict[PolarsDataType, Any] = {
     UInt16: strategy_u16,
     UInt32: strategy_u32,
     UInt64: strategy_u64,
-    Categorical: strategy_categorical,
-    Utf8: strategy_utf8,
     Time: strategy_time,
     Date: strategy_date,
+    Datetime("ns"): strategy_datetime_ns,
+    Datetime("us"): strategy_datetime_us,
+    Datetime("ms"): strategy_datetime_ms,
+    Datetime: strategy_datetime_us,
+    Duration("ns"): strategy_duration,
+    Duration("us"): strategy_duration,
+    Duration("ms"): strategy_duration,
     Duration: strategy_duration,
-    Datetime: strategy_datetime,
+    Categorical: strategy_categorical,
+    Utf8: strategy_utf8,
 }

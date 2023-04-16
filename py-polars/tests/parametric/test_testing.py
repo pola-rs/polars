@@ -12,15 +12,13 @@ from hypothesis.errors import InvalidArgument, NonInteractiveExampleWarning
 from hypothesis.strategies import sampled_from
 
 import polars as pl
+from polars.datatypes import TEMPORAL_DTYPES
 from polars.testing.parametric import (
     column,
     columns,
     dataframes,
     series,
 )
-
-# TODO: make dtype categories flexible and available from datatypes module
-TEMPORAL_DTYPES = [pl.Datetime, pl.Date, pl.Time, pl.Duration]
 
 
 @given(df=dataframes(), lf=dataframes(lazy=True), srs=series())
