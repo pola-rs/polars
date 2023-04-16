@@ -348,7 +348,11 @@ def test_combine_unsupported_types() -> None:
         (None, None),
     ],
 )
-def test_combine_lazy_schema_datetime(tzinfo, expected_time_zone, time_unit) -> None:
+def test_combine_lazy_schema_datetime(
+    tzinfo: ZoneInfo | None,
+    expected_time_zone: str | None,
+    time_unit: TimeUnit,
+) -> None:
     df = pl.DataFrame({"ts": pl.Series([datetime(2020, 1, 1, tzinfo=tzinfo)])})
     result = (
         df.lazy()
@@ -360,7 +364,7 @@ def test_combine_lazy_schema_datetime(tzinfo, expected_time_zone, time_unit) -> 
 
 
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
-def test_combine_lazy_schema_date(time_unit) -> None:
+def test_combine_lazy_schema_date(time_unit: TimeUnit) -> None:
     df = pl.DataFrame({"ts": pl.Series([date(2020, 1, 1)])})
     result = (
         df.lazy()
