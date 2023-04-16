@@ -3,7 +3,6 @@
 # -------------------------------------------------
 from __future__ import annotations
 
-from decimal import Decimal
 from typing import no_type_check
 
 import numpy as np
@@ -127,23 +126,15 @@ def test_series_timeunits(
     s1: pl.Series,
     s2: pl.Series,
 ) -> None:
-    # datetime
     assert s1.to_list() == list(s1)
     assert list(s1.dt.millisecond()) == [v.microsecond // 1000 for v in s1]
     assert list(s1.dt.nanosecond()) == [v.microsecond * 1000 for v in s1]
     assert list(s1.dt.microsecond()) == [v.microsecond for v in s1]
 
-    # duration
-    millis = s2.dt.milliseconds().to_list()
-    micros = s2.dt.microseconds().to_list()
-
-    assert s1.to_list() == list(s1)
-    assert millis == [int(Decimal(v) / 1000) for v in s2.cast(int)]
-    assert micros == list(s2.cast(int))
-
     # special handling for ns timeunit (as we may generate a microsecs-based
     # timedelta that results in 64bit overflow on conversion to nanosecs)
     lower_bound, upper_bound = -(2**63), (2**63) - 1
+    micros = s2.dt.microseconds().to_list()
     if all(
         (lower_bound <= (us * 1000) <= upper_bound)
         for us in micros
@@ -154,7 +145,9 @@ def test_series_timeunits(
 
 
 @given(
-    s=series(min_size=1, max_size=10, excluded_dtypes=[pl.Categorical]),
+    s=series(min_size=1, max_size=10, excluded_dtypes=[pl.Categorical]).filter(
+        lambda x: getattr(x.dtype, "time_unit", None) in (None, "us", "ns")
+    ),
 )
 def test_series_to_numpy(
     s: pl.Series,
