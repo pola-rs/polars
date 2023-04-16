@@ -106,9 +106,9 @@ impl<'a> AnonymousBuilder<'a> {
             // if we find it, we will convert the null arrays
             // to empty arrays of this dtype, otherwise the concat kernel fails.
             let mut non_null_dtype = None;
-            if is_null(inner_dtype) {
+            if is_nested_null(inner_dtype) {
                 for arr in &self.arrays {
-                    if !is_null(arr.data_type()) {
+                    if !is_nested_null(arr.data_type()) {
                         non_null_dtype = Some(arr.data_type());
                         break;
                     }
@@ -121,7 +121,7 @@ impl<'a> AnonymousBuilder<'a> {
                     .arrays
                     .iter()
                     .map(|arr| {
-                        if is_null(arr.data_type()) {
+                        if is_nested_null(arr.data_type()) {
                             convert_inner_type(&**arr, dtype)
                         } else {
                             arr.to_boxed()
@@ -146,11 +146,11 @@ impl<'a> AnonymousBuilder<'a> {
     }
 }
 
-fn is_null(data_type: &DataType) -> bool {
+fn is_nested_null(data_type: &DataType) -> bool {
     match data_type {
         DataType::Null => true,
-        DataType::LargeList(field) => is_null(field.data_type()),
-        DataType::Struct(fields) => fields.iter().all(|field| is_null(field.data_type())),
+        DataType::LargeList(field) => is_nested_null(field.data_type()),
+        DataType::Struct(fields) => fields.iter().all(|field| is_nested_null(field.data_type())),
         _ => false,
     }
 }

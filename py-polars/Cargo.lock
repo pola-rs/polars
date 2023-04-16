@@ -87,7 +87,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.17.0"
-source = "git+https://github.com/ritchie46/arrow2?rev=103482541500868c29ece479e6b1784d99b205b4#103482541500868c29ece479e6b1784d99b205b4"
+source = "git+https://github.com/ritchie46/arrow2?rev=11933119612e072a6eefaa65abec8c16241073c6#11933119612e072a6eefaa65abec8c16241073c6"
 dependencies = [
  "ahash",
  "arrow-format",
@@ -1389,9 +1389,8 @@ dependencies = [
 
 [[package]]
 name = "parquet2"
-version = "0.17.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "579fe5745f02cef3d5f236bfed216fd4693e49e4e920a13475c6132233283bce"
+version = "0.17.0"
+source = "git+https://github.com/jorgecarleitao/parquet2?rev=9eee7eb1130aed4cd0d841e59c325cc366fc3798#9eee7eb1130aed4cd0d841e59c325cc366fc3798"
 dependencies = [
  "async-stream",
  "brotli",
