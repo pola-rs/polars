@@ -544,7 +544,7 @@ impl Series {
         if self.is_empty()
             && (self.dtype().is_numeric() || matches!(self.dtype(), DataType::Boolean))
         {
-            return Series::new("", [0])
+            return Series::new(self.name(), [0])
                 .cast(self.dtype())
                 .unwrap()
                 .sum_as_series();
