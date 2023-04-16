@@ -3782,3 +3782,11 @@ def test_window_deadlock() -> None:
             pl.col("random").implode().over("names").alias("random/name"),
         ]
     )
+
+
+def test_sum_empty_column_names() -> None:
+    df = pl.DataFrame({"x": [], "y": []}, schema={"x": pl.Boolean, "y": pl.Boolean})
+    expected = pl.DataFrame(
+        {"x": [0], "y": [0]}, schema={"x": pl.UInt32, "y": pl.UInt32}
+    )
+    assert_frame_equal(df.sum(), expected)
