@@ -1167,6 +1167,37 @@ def test_list_null_constructor() -> None:
     assert s.dtype == pl.List(pl.Null)
     assert s.to_list() == [None, None]
 
+    # nested
+    dtype = pl.List(pl.List(pl.Int8))
+    values = [
+        [],
+        [[], []],
+        [[33, 112]],
+    ]
+    s = pl.Series(
+        name="colx",
+        values=values,
+        dtype=dtype,
+    )
+    assert s.dtype == dtype
+    assert s.to_list() == values
+
+    # nested
+    # small order change has influence
+    dtype = pl.List(pl.List(pl.Int8))
+    values = [
+        [[], []],
+        [],
+        [[33, 112]],
+    ]
+    s = pl.Series(
+        name="colx",
+        values=values,
+        dtype=dtype,
+    )
+    assert s.dtype == dtype
+    assert s.to_list() == values
+
 
 def test_numpy_float_construction_av() -> None:
     np_dict = {"a": np.float64(1)}

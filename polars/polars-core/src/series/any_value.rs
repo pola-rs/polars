@@ -355,8 +355,27 @@ impl Series {
     }
 
     pub fn from_any_values(name: &str, avs: &[AnyValue], strict: bool) -> PolarsResult<Series> {
-        match avs.iter().find(|av| !matches!(av, AnyValue::Null)) {
-            None => Ok(Series::full_null(name, avs.len(), &DataType::Null)),
+        let mut all_flat_null = true;
+        match avs.iter().find(|av| {
+            if !matches!(av, AnyValue::Null) {
+                all_flat_null = false;
+            }
+            !av.is_nested_null()
+        }) {
+            None => {
+                if all_flat_null {
+                    Ok(Series::full_null(name, avs.len(), &DataType::Null))
+                } else {
+                    // second pass and check for the nested null value that toggled `all_flat_null` to false
+                    // e.g. a list<null>
+                    if let Some(av) = avs.iter().find(|av| !matches!(av, AnyValue::Null)) {
+                        let dtype: DataType = av.into();
+                        Series::from_any_values_and_dtype(name, avs, &dtype, strict)
+                    } else {
+                        unreachable!()
+                    }
+                }
+            }
             Some(av) => {
                 #[cfg(feature = "dtype-decimal")]
                 {

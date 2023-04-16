@@ -343,3 +343,11 @@ def test_nested_categorical_aggregation_7848() -> None:
         "c_group": [2, 3],
         "letter": [[["a", "b"], ["f", "g"]], [["c", "d", "e"]]],
     }
+
+
+def test_nested_categorical_cast() -> None:
+    values = [["x"], ["y"], ["x"]]
+    dtype = pl.List(pl.Categorical)
+    s = pl.Series(values).cast(dtype)
+    assert s.dtype == dtype
+    assert s.to_list() == values
