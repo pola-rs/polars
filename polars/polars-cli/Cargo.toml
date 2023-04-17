@@ -6,17 +6,22 @@ license = "MIT"
 repository = "https://github.com/pola-rs/polars"
 description = "CLI interface for running SQL queries via Polars"
 
+[[bin]]
+name = "polars"
+path = "src/main.rs"
+
 [features]
 highlight = ["syntect", "nu-ansi-term"]
-default = ["highlight", "parquet", "json"]
+default = ["highlight", "parquet", "json", "ipc"]
 parquet = ["polars/parquet"]
 json = ["polars/json"]
+ipc = ["polars/ipc"]
 
 [dependencies]
 atty = { version = "0.2" }
 clap = { version = "4.2.2", features = ["derive", "cargo"] }
 nu-ansi-term = { version = "0.47.0", optional = true }
-polars = { version = "0.28.0", path = "../", features = ["lazy", "sql"] }
+polars = { version = "0.28.0", path = "../", features = ["lazy", "sql", "dtype-full"] }
 reedline = { version = "0.18.0" }
 sqlparser = { version = "0.30" }
 syntect = { version = "5.0.0", features = ["dump-load"], optional = true }
