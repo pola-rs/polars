@@ -682,13 +682,19 @@ where
         match groups {
             GroupsProxy::Idx(groups) => {
                 let ca = ca.rechunk();
+                let arr = ca.downcast_iter().next().unwrap();
+                let no_nulls = arr.null_count() == 0;
                 agg_helper_idx_on_all::<T, _>(groups, |idx| {
                     debug_assert!(idx.len() <= ca.len());
                     if idx.is_empty() {
                         return None;
                     }
-                    let take = { ca.take_unchecked(idx.into()) };
-                    take.var(ddof)
+                    let out = if no_nulls {
+                        take_var_no_null_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
+                    } else {
+                        take_var_nulls_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
+                    };
+                    out.map(|flt| NumCast::from(flt).unwrap())
                 })
             }
             GroupsProxy::Slice { groups, .. } => {
@@ -728,14 +734,19 @@ where
         let ca = &self.0.rechunk();
         match groups {
             GroupsProxy::Idx(groups) => {
-                let ca = ca.rechunk();
+                let arr = self.downcast_iter().next().unwrap();
+                let no_nulls = arr.null_count() == 0;
                 agg_helper_idx_on_all::<T, _>(groups, |idx| {
                     debug_assert!(idx.len() <= ca.len());
                     if idx.is_empty() {
                         return None;
                     }
-                    let take = { ca.take_unchecked(idx.into()) };
-                    take.std(ddof)
+                    let out = if no_nulls {
+                        take_var_no_null_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
+                    } else {
+                        take_var_nulls_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
+                    };
+                    out.map(|flt| NumCast::from(flt.sqrt()).unwrap())
                 })
             }
             GroupsProxy::Slice { groups, .. } => {
@@ -888,14 +899,22 @@ where
 
     pub(crate) unsafe fn agg_var(&self, groups: &GroupsProxy, ddof: u8) -> Series {
         match groups {
-            GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<Float64Type, _>(groups, |idx| {
-                debug_assert!(idx.len() <= self.len());
-                if idx.is_empty() {
-                    return None;
-                }
-                let take = { self.take_unchecked(idx.into()) };
-                take.var(ddof)
-            }),
+            GroupsProxy::Idx(groups) => {
+                let ca_self = self.rechunk();
+                let arr = ca_self.downcast_iter().next().unwrap();
+                let no_nulls = arr.null_count() == 0;
+                agg_helper_idx_on_all::<Float64Type, _>(groups, |idx| {
+                    debug_assert!(idx.len() <= arr.len());
+                    if idx.is_empty() {
+                        return None;
+                    }
+                    if no_nulls {
+                        take_var_no_null_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
+                    } else {
+                        take_var_nulls_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
+                    }
+                })
+            }
             GroupsProxy::Slice {
                 groups: groups_slice,
                 ..
@@ -921,14 +940,23 @@ where
     }
     pub(crate) unsafe fn agg_std(&self, groups: &GroupsProxy, ddof: u8) -> Series {
         match groups {
-            GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<Float64Type, _>(groups, |idx| {
-                debug_assert!(idx.len() <= self.len());
-                if idx.is_empty() {
-                    return None;
-                }
-                let take = { self.take_unchecked(idx.into()) };
-                take.std(ddof)
-            }),
+            GroupsProxy::Idx(groups) => {
+                let ca_self = self.rechunk();
+                let arr = ca_self.downcast_iter().next().unwrap();
+                let no_nulls = arr.null_count() == 0;
+                agg_helper_idx_on_all::<Float64Type, _>(groups, |idx| {
+                    debug_assert!(idx.len() <= self.len());
+                    if idx.is_empty() {
+                        return None;
+                    }
+                    let out = if no_nulls {
+                        take_var_no_null_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
+                    } else {
+                        take_var_nulls_primitive_iter_unchecked(arr, idx2usize(idx), ddof)
+                    };
+                    out.map(|v| v.sqrt())
+                })
+            }
             GroupsProxy::Slice {
                 groups: groups_slice,
                 ..
