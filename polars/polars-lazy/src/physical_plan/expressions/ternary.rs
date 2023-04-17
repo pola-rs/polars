@@ -52,9 +52,9 @@ fn finish_as_iters<'a>(
     mut ac_mask: AggregationContext<'a>,
 ) -> PolarsResult<AggregationContext<'a>> {
     let mut ca: ListChunked = ac_truthy
-        .iter_groups()
-        .zip(ac_falsy.iter_groups())
-        .zip(ac_mask.iter_groups())
+        .iter_groups(false)
+        .zip(ac_falsy.iter_groups(false))
+        .zip(ac_mask.iter_groups(false))
         .map(|((truthy, falsy), mask)| {
             match (truthy, falsy, mask) {
                 (Some(truthy), Some(falsy), Some(mask)) => Some(

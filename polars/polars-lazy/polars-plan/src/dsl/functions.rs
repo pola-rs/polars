@@ -1236,6 +1236,7 @@ pub fn as_struct(exprs: &[Expr]) -> Expr {
     .with_function_options(|mut options| {
         options.input_wildcard_expansion = true;
         options.fmt_str = "as_struct";
+        options.pass_name_to_apply = true;
         options
     })
 }
