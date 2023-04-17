@@ -223,7 +223,7 @@ dtype-time = ["polars-core/dtype-time", "polars-io/dtype-time", "polars-time/dty
 dtype-fixed-size-list = [
   "polars-core/dtype-fixed-size-list",
   "polars-lazy/dtype-fixed-size-list",
-  "polars-ops/dtype-fixed-size-list"
+  "polars-ops/dtype-fixed-size-list",
 ]
 dtype-i8 = ["polars-core/dtype-i8", "polars-lazy/dtype-i8", "polars-ops/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16", "polars-lazy/dtype-i16", "polars-ops/dtype-i16"]
