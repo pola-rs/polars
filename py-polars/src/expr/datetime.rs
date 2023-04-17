@@ -6,8 +6,8 @@ use crate::PyExpr;
 
 #[pymethods]
 impl PyExpr {
-    fn dt_strftime(&self, format: &str) -> Self {
-        self.inner.clone().dt().strftime(format).into()
+    fn dt_to_string(&self, format: &str) -> Self {
+        self.inner.clone().dt().to_string(format).into()
     }
 
     fn dt_offset_by(&self, by: &str) -> Self {

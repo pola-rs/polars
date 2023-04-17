@@ -374,7 +374,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴─────────────────────┘
 
         """
-        return wrap_expr(self._pyexpr.dt_strftime(format))
+        return wrap_expr(self._pyexpr.dt_to_string(format))
 
     @deprecated_alias(fmt="format")
     def strftime(self, format: str) -> Expr:
@@ -407,7 +407,7 @@ class ExprDateTimeNameSpace:
         ... )
         >>> df.with_columns(
         ...     pl.col("datetime")
-        ...     .dt.to_string("%Y/%m/%d %H:%M:%S")
+        ...     .dt.strftime("%Y/%m/%d %H:%M:%S")
         ...     .alias("datetime_string")
         ... )
         shape: (3, 2)
