@@ -34,10 +34,13 @@ def series_of_str_dates() -> pl.Series:
     return pl.Series(["2020-01-01 00:00:00.000000000", "2020-02-02 03:20:10.987654321"])
 
 
-def test_dt_strftime(series_of_int_dates: pl.Series) -> None:
+def test_dt_to_string(series_of_int_dates: pl.Series) -> None:
     expected_str_dates = pl.Series(["1997-05-19", "2024-10-04", "2052-02-20"])
 
     assert series_of_int_dates.dtype == pl.Date
+    assert_series_equal(series_of_int_dates.dt.to_string("%F"), expected_str_dates)
+
+    # Check strftime alias as well
     assert_series_equal(series_of_int_dates.dt.strftime("%F"), expected_str_dates)
 
 

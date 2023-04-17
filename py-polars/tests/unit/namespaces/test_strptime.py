@@ -86,7 +86,7 @@ def test_to_datetime_precision_with_time_unit(
     time_unit: TimeUnit, expected: str, format: str
 ) -> None:
     s = pl.Series(["2020-01-01 00:00:00.123456789"])
-    result = s.str.to_datetime(format, time_unit=time_unit).dt.strftime("%f")[0]
+    result = s.str.to_datetime(format, time_unit=time_unit).dt.to_string("%f")[0]
     assert result == expected
 
 
