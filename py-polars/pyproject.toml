@@ -180,7 +180,12 @@ markers = [
   "slow: Tests with a longer than average runtime.",
   "benchmark: Tests that should be run on a Polars release build.",
 ]
-filterwarnings = "error" # Fail on warnings
+filterwarnings = [
+  # Fail on warnings...
+  "error",
+  # ...except where it prevents test debugging in an IPython console
+  "ignore:.*unrecognized arguments.*PyDevIPCompleter:DeprecationWarning",
+]
 xfail_strict = true
 
 [tool.coverage.run]
