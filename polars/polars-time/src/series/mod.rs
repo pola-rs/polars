@@ -310,13 +310,13 @@ pub trait TemporalMethods: AsSeries {
         let s = self.as_series();
         match s.dtype() {
             #[cfg(feature = "dtype-date")]
-            DataType::Date => s.date().map(|ca| ca.strftime(format).into_series()),
+            DataType::Date => s.date().map(|ca| ca.to_string(format).into_series()),
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => s
                 .datetime()
-                .map(|ca| Ok(ca.strftime(format)?.into_series()))?,
+                .map(|ca| Ok(ca.to_string(format)?.into_series()))?,
             #[cfg(feature = "dtype-time")]
-            DataType::Time => s.time().map(|ca| ca.strftime(format).into_series()),
+            DataType::Time => s.time().map(|ca| ca.to_string(format).into_series()),
             dt => polars_bail!(opq = to_string, dt),
         }
     }
