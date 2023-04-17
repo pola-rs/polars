@@ -177,7 +177,7 @@ impl ApplyExpr {
         // then unpack the lists and finally create iterators from this list chunked arrays.
         let mut iters = acs
             .iter_mut()
-            .map(|ac| ac.iter_groups())
+            .map(|ac| ac.iter_groups(self.pass_name_to_apply))
             .collect::<Vec<_>>();
 
         // length of the items to iterate over

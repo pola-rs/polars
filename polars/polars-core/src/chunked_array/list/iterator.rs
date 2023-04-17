@@ -92,6 +92,14 @@ impl ListChunked {
     /// that Series.
     #[cfg(feature = "private")]
     pub fn amortized_iter(&self) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
+        self.amortized_iter_with_name("")
+    }
+
+    #[cfg(feature = "private")]
+    pub fn amortized_iter_with_name(
+        &self,
+        name: &str,
+    ) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
         // we create the series container from the inner array
         // so that the container has the proper dtype.
         let arr = self.downcast_iter().next().unwrap();
@@ -101,7 +109,7 @@ impl ListChunked {
         // inner types logical type fits physical type
         let series_container = unsafe {
             Box::new(Series::from_chunks_and_dtype_unchecked(
-                "",
+                name,
                 vec![inner_values.clone()],
                 &self.inner_dtype(),
             ))

@@ -161,8 +161,8 @@ impl BinaryExpr {
 
         let name = ac_l.series().name().to_string();
         let mut ca: ListChunked = ac_l
-            .iter_groups()
-            .zip(ac_r.iter_groups())
+            .iter_groups(false)
+            .zip(ac_r.iter_groups(false))
             .map(|(l, r)| {
                 match (l, r) {
                     (Some(l), Some(r)) => {

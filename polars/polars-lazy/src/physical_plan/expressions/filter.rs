@@ -49,7 +49,7 @@ impl PhysicalExpr for FilterExpr {
         let (mut ac_s, mut ac_predicate) = (ac_s?, ac_predicate?);
 
         if ac_predicate.is_aggregated() || ac_s.is_aggregated() {
-            let preds = ac_predicate.iter_groups();
+            let preds = ac_predicate.iter_groups(false);
             let s = ac_s.aggregated();
             let ca = s.list()?;
             let mut out = ca

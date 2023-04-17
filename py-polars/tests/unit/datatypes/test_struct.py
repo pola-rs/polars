@@ -921,3 +921,49 @@ def test_struct_list_cat_8235() -> None:
     assert df.select(pl.struct("values")).to_dict(False) == {
         "values": [{"values": ["a", "b", "c"]}]
     }
+
+
+def test_struct_name_passed_in_agg_apply() -> None:
+    struct_expr = pl.struct(
+        [
+            pl.col("A").min(),
+            pl.col("B").search_sorted(pl.Series([3, 4])),
+        ]
+    ).alias("index")
+
+    assert pl.DataFrame({"A": [1, 2, 3], "B": [4, 5, 6], "C": [1, 2, 2]}).groupby(
+        "C"
+    ).agg(struct_expr).sort("C", descending=True).to_dict(False) == {
+        "C": [2, 1],
+        "index": [
+            [{"A": 2, "B": 0}, {"A": 2, "B": 0}],
+            [{"A": 1, "B": 0}, {"A": 1, "B": 0}],
+        ],
+    }
+
+    df = pl.DataFrame({"val": [-3, -2, -1, 0, 1, 2, 3], "k": [0] * 7})
+
+    assert df.groupby("k").agg(
+        pl.struct(
+            [
+                pl.col("val").value_counts(sort=True).struct.field("val").alias("val"),
+                pl.col("val")
+                .value_counts(sort=True)
+                .struct.field("counts")
+                .alias("counts"),
+            ]
+        )
+    ).to_dict(False) == {
+        "k": [0],
+        "val": [
+            [
+                {"val": -3, "counts": 1},
+                {"val": -2, "counts": 1},
+                {"val": -1, "counts": 1},
+                {"val": 0, "counts": 1},
+                {"val": 1, "counts": 1},
+                {"val": 2, "counts": 1},
+                {"val": 3, "counts": 1},
+            ]
+        ],
+    }
