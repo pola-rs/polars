@@ -936,8 +936,8 @@ def test_struct_name_passed_in_agg_apply() -> None:
     ).agg(struct_expr).sort("C", descending=True).to_dict(False) == {
         "C": [2, 1],
         "index": [
-            [{"A": 2, "": 0}, {"A": 2, "": 0}],
-            [{"A": 1, "": 0}, {"A": 1, "": 0}],
+            [{"A": 2, "B": 0}, {"A": 2, "B": 0}],
+            [{"A": 1, "B": 0}, {"A": 1, "B": 0}],
         ],
     }
 
