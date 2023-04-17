@@ -6095,6 +6095,7 @@ class DataFrame:
         └─────┴─────┴─────┴─────┘
 
         Run an expression as aggregation function
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "col1": ["a", "a", "a", "b", "b", "b"],
