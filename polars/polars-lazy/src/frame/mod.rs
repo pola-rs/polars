@@ -546,13 +546,13 @@ impl LazyFrame {
         out
     }
 
-    //// Profile a LazyFrame.
-    ////
-    //// This will run the query and return a tuple
-    //// containing the materialized DataFrame and a DataFrame that contains profiling information
-    //// of each node that is executed.
-    ////
-    //// The units of the timings are microseconds.
+    /// Profile a LazyFrame.
+    ///
+    /// This will run the query and return a tuple
+    /// containing the materialized DataFrame and a DataFrame that contains profiling information
+    /// of each node that is executed.
+    ///
+    /// The units of the timings are microseconds.
     pub fn profile(self) -> PolarsResult<(DataFrame, DataFrame)> {
         let (mut state, mut physical_plan, _) = self.prepare_collect(false)?;
         state.time_nodes();
@@ -561,7 +561,7 @@ impl LazyFrame {
         Ok((out, timer_df))
     }
 
-    //// Stream a query result into a parquet file. This is useful if the final result doesn't fit
+    /// Stream a query result into a parquet file. This is useful if the final result doesn't fit
     /// into memory. This methods will return an error if the query cannot be completely done in a
     /// streaming fashion.
     #[cfg(feature = "parquet")]
@@ -584,7 +584,7 @@ impl LazyFrame {
         Ok(())
     }
 
-    //// Stream a query result into an ipc/arrow file. This is useful if the final result doesn't fit
+    /// Stream a query result into an ipc/arrow file. This is useful if the final result doesn't fit
     /// into memory. This methods will return an error if the query cannot be completely done in a
     /// streaming fashion.
     #[cfg(feature = "ipc")]

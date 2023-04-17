@@ -3161,7 +3161,7 @@ impl DataFrame {
 
     #[cfg(feature = "chunked_ids")]
     #[doc(hidden)]
-    //// Take elements by a slice of [`ChunkId`]s.
+    /// Take elements by a slice of [`ChunkId`]s.
     /// # Safety
     /// Does not do any bound checks.
     /// `sorted` indicates if the chunks are sorted.
@@ -3172,7 +3172,7 @@ impl DataFrame {
         DataFrame::new_no_checks(cols)
     }
     #[cfg(feature = "chunked_ids")]
-    //// Take elements by a slice of optional [`ChunkId`]s.
+    /// Take elements by a slice of optional [`ChunkId`]s.
     /// # Safety
     /// Does not do any bound checks.
     #[doc(hidden)]
