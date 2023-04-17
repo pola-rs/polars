@@ -146,12 +146,21 @@ def test_series_timeunits(
 
 @given(
     s=series(min_size=1, max_size=10, excluded_dtypes=[pl.Categorical]).filter(
-        lambda x: getattr(x.dtype, "time_unit", None) in (None, "us", "ns")
+        lambda x: (
+            getattr(x.dtype, "time_unit", None) in (None, "us", "ns")
+            and (x.dtype != pl.Utf8 or not x.str.contains("\x00").any())
+        )
     ),
 )
+@settings(max_examples=250)
 def test_series_to_numpy(
     s: pl.Series,
 ) -> None:
-    if s.dtype != pl.Utf8 or not s.str.contains("\x00").any():
-        np_array = np.array(s.to_list())
-        assert_array_equal(np_array, s.to_numpy())
+    dtype = {
+        pl.Datetime("ns"): "datetime64[ns]",
+        pl.Datetime("us"): "datetime64[us]",
+        pl.Duration("ns"): "timedelta64[ns]",
+        pl.Duration("us"): "timedelta64[us]",
+    }
+    np_array = np.array(s.to_list(), dtype=dtype.get(s.dtype))  # type: ignore[call-overload]
+    assert_array_equal(np_array, s.to_numpy())
