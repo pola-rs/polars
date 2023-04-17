@@ -44,9 +44,9 @@
   <a href="https://discord.gg/4UfP5cfBE7">Discord</a>
 </p>
 
-## Polars: Blazingly fast DataFrames in Rust, Python & Node.js
+## Polars: Blazingly fast DataFrames in Rust, Python, Node.js, R and SQL
 
-Polars is a blazingly fast DataFrames library implemented in Rust using
+Polars is a DataFrame interface on top of an OLAP Query Engine implemented in Rust using
 [Apache Arrow Columnar Format](https://arrow.apache.org/docs/format/Columnar.html) as the memory model.
 
 - Lazy | eager execution
@@ -58,6 +58,8 @@ Polars is a blazingly fast DataFrames library implemented in Rust using
 - Rust | Python | NodeJS | ...
 
 To learn more, read the [User Guide](https://pola-rs.github.io/polars-book/).
+
+## Python
 
 ```python
 >>> import polars as pl
@@ -94,6 +96,42 @@ shape: (5, 8)
 │ "banana" ┆ "audi"   ┆ "fruits"     ┆ 11  ┆ 2           ┆ 8           ┆ 2           ┆ 2           │
 │ "banana" ┆ "beetle" ┆ "fruits"     ┆ 11  ┆ 4           ┆ 8           ┆ 1           ┆ 1           │
 └──────────┴──────────┴──────────────┴─────┴─────────────┴─────────────┴─────────────┴─────────────┘
+```
+
+## SQL
+
+```python
+>>> # create a sql context
+>>> context = pl.SQLContext()
+>>> # register a table
+>>> table = pl.scan_ipc("file.arrow")
+>>> context.register("my_table", table)
+>>> # the query we want to run
+>>> query = """
+... SELECT sum(v1) as sum_v1, min(v2) as min_v2 FROM my_table
+... WHERE id1 = 'id016'
+... LIMIT 10
+... """
+>>> ## OPTION 1
+>>> # run query to materialization
+>>> context.query(query)
+ shape: (1, 2)
+ ┌────────┬────────┐
+ │ sum_v1 ┆ min_v2 │
+ │ ---    ┆ ---    │
+ │ i64    ┆ i64    │
+ ╞════════╪════════╡
+ │ 298268 ┆ 1      │
+ └────────┴────────┘
+>>> ## OPTION 2
+>>> # Don't materialize the query, but return as LazyFrame
+>>> # and continue in python
+>>> lf = context.execute(query)
+>>> (lf.join(other_table)
+...      .groupby("foo")
+...      .agg(
+...     pl.col("sum_v1").count()
+... ).collect())
 ```
 
 ## Performance 🚀🚀
