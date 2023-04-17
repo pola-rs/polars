@@ -3,21 +3,20 @@ use std::io::Cursor;
 use nu_ansi_term::{Color, Style as AnsiStyle};
 use reedline::{Highlighter, StyledText};
 use syntect::easy::HighlightLines;
-use syntect::highlighting::{Style, Theme, ThemeSet};
-use syntect::parsing::{SyntaxDefinition, SyntaxSet, SyntaxSetBuilder};
-use syntect::util::as_24_bit_terminal_escaped;
+use syntect::highlighting::{Style, ThemeSet};
+use syntect::parsing::{SyntaxDefinition, SyntaxSetBuilder};
 
 pub(crate) struct SQLHighlighter {}
 
-const SQL_SYNTAX: &'static str = include_str!("../assets/SQL.sublime-syntax");
-const THEME: &'static [u8] = include_bytes!("../assets/theme");
+const SQL_SYNTAX: &str = include_str!("../assets/SQL.sublime-syntax");
+const THEME: &[u8] = include_bytes!("../assets/theme");
 
 impl Highlighter for SQLHighlighter {
-    fn highlight(&self, line: &str, cursor: usize) -> reedline::StyledText {
+    fn highlight(&self, line: &str, _cursor: usize) -> reedline::StyledText {
         let syn_def = SyntaxDefinition::load_from_str(SQL_SYNTAX, true, Some("sql")).unwrap();
         let mut ssb = SyntaxSetBuilder::new();
         ssb.add(syn_def);
-        let mut ps = ssb.build();
+        let ps = ssb.build();
         let mut cursor = Cursor::new(THEME);
         let ts = ThemeSet::load_from_reader(&mut cursor).unwrap();
         let syntax = ps.find_syntax_by_extension("sql").unwrap();

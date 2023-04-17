@@ -1,14 +1,10 @@
 [package]
-name = "polars-cli"
+name = "polars-sql"
 version = "0.28.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/pola-rs/polars"
-description = "CLI interface for running SQL queries via Polars"
-
-[[bin]]
-name = "polars"
-path = "src/main.rs"
+description = "SQL transpiler for polars. Converts SQL to polars logical plans"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
@@ -26,4 +22,3 @@ polars-plan = { version = "0.28.0", path = "../polars-lazy/polars-plan", feature
 serde = "1"
 serde_json = { version = "1" }
 sqlparser = { version = "0.30" }
-

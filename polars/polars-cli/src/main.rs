@@ -1,175 +1,71 @@
-#![allow(unused)]
-
-
 #[cfg(feature = "highlight")]
 mod highlighter;
+mod interactive;
 mod prompt;
-#[cfg(feature = "highlight")]
-use highlighter::SQLHighlighter;
+
+#[cfg(target_os = "linux")]
+use jemallocator::Jemalloc;
+
 #[global_allocator]
 #[cfg(target_os = "linux")]
 #[cfg(feature = "cli")]
 static ALLOC: Jemalloc = Jemalloc;
 
-#[cfg(target_os = "linux")]
-use jemallocator::Jemalloc;
-use polars::prelude::PolarsResult;
+use std::io::{self, BufRead};
+
+use clap::Parser;
+use interactive::run_tty;
 use polars::sql::SQLContext;
 
-use std::borrow::Cow;
-use std::env;
-use std::ffi::OsStr;
-use std::io::{self, BufRead, Read, Write};
-use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
-use polars::prelude::*;
-
-
-use reedline::{
-    DefaultPrompt, FileBackedHistory, Prompt, PromptHistorySearchStatus, Reedline, Signal,
-};
-use sqlparser::ast::{Select, SetExpr, Statement, TableFactor, TableWithJoins};
-use sqlparser::dialect::GenericDialect;
-use sqlparser::parser::Parser;
-
-use crate::prompt::SQLPrompt;
-
-
-// Command: /? | help
-fn print_help() {
-    println!("List of all client commands:");
-    for (name, short, desc) in
-        vec![(".help", "?", "Display this help."), (".exit", "q", "Exit")].iter()
-    {
-        println!("{:10}\\{:10} {}", name, short, desc);
-    }
-}
-
-fn get_extension_from_filename(filename: &str) -> Option<&str> {
-    Path::new(filename).extension().and_then(OsStr::to_str)
-}
-
-fn get_home_dir() -> PathBuf {
-    match env::var("HOME") {
-        Ok(path) => PathBuf::from(path),
-        Err(_) => match env::var("USERPROFILE") {
-            Ok(path) => PathBuf::from(path),
-            Err(_) => panic!("Failed to get home directory"),
-        },
-    }
-}
-
-fn get_history_path() -> PathBuf {
-    let mut home_dir = get_home_dir();
-    home_dir.push(".polars");
-    home_dir.push("history.txt");
-    home_dir
-}
-
-fn execute_query(query: &str, ctx: &mut SQLContext) -> PolarsResult<DataFrame> {
-    ctx.execute(query)?.collect()
-}
-
-fn execute_query_tty(query: &str, ctx: &mut SQLContext) -> String {
-    match execute_query(query, ctx) {
-        Ok(df) => format!("{df}"),
-        Err(e) => format!("Error: {}", e),
-    }
-}
-
-pub fn run_tty() -> std::io::Result<()> {
-    let mut context = SQLContext::new();
-    let mut input: Vec<u8> = Vec::with_capacity(1024);
-    let mut stdin = std::io::stdin();
-    let history = Box::new(
-        FileBackedHistory::with_file(20, get_history_path())
-            .expect("Error configuring history with file"),
-    );
-
-    let mut line_editor = Reedline::create().with_history(history);
-
-    #[cfg(feature = "highlight")]
-    {
-        let sql_highlighter = SQLHighlighter {};
-        line_editor = line_editor.with_highlighter(Box::new(sql_highlighter));
-    }
-
-    let mut stdout = io::stdout();
-    let mut context = SQLContext::new();
-    let version = env!("CARGO_PKG_VERSION");
-
-    println!("Polars CLI v{}", version);
-    println!("Welcome to Polars CLI. Commands end with ;");
-    println!("Type .help or \\? for help.");
-
-    let prompt = SQLPrompt {};
-    let mut is_exit_cmd = false;
-    let mut scratch = String::with_capacity(1024);
-
-    loop {
-        let sig = line_editor.read_line(&prompt);
-        match sig {
-            Ok(Signal::Success(buffer)) => {
-                is_exit_cmd = false;
-                match buffer.as_ref() {
-                    ".help" | "\\?" => print_help(),
-                    ".exit" | "\\q" => {
-                        break;
-                    }
-                    _ => {
-                        let mut parts = buffer.splitn(2, ';');
-                        let first = parts.next().unwrap();
-                        scratch.push_str(first);
-
-                        let second = parts.next();
-                        if second.is_some() {
-                            let res = execute_query_tty(&scratch, &mut context);
-                            println!("{res}");
-                            scratch.clear();
-                        } else {
-                            scratch.push(' ');
-                        }
-                    }
-                }
-            }
-            Ok(Signal::CtrlD) | Ok(Signal::CtrlC) => {
-                if is_exit_cmd {
-                    break;
-                } else {
-                    is_exit_cmd = true;
-                }
-            }
-            x => {
-                is_exit_cmd = false;
-                println!("Event: {:?}", x);
-            }
-        }
-    }
+pub(crate) fn execute_query(query: &str, ctx: &mut SQLContext) -> std::io::Result<()> {
+    match ctx.execute(query).and_then(|lf| lf.collect()) {
+        Ok(df) => println!("{}", df),
+        Err(e) => eprintln!("Error: {}", e),
+    };
     Ok(())
 }
 
-pub fn main() -> io::Result<()> {
-    if atty::is(atty::Stream::Stdin) {
-        return run_tty();
-    }
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about)]
+struct Args {
+    /// Execute "COMMAND" and exit
+    #[arg(short = 'c')]
+    command: Option<String>,
+    /// Optional query to operate on. Equivalent of `polars -c "QUERY"`
+    query: Option<String>,
+}
 
+pub fn main() -> io::Result<()> {
+    let args = Args::parse();
+
+    if let Some(query) = args.command {
+        let mut context = SQLContext::new();
+        execute_query(&query, &mut context)
+    } else if let Some(query) = args.query {
+        let mut context = SQLContext::new();
+        execute_query(&query, &mut context)
+    } else if atty::is(atty::Stream::Stdin) {
+        run_tty()
+    } else {
+        run_noninteractive()
+    }
+}
+
+fn run_noninteractive() -> io::Result<()> {
     let mut context = SQLContext::new();
     let mut input: Vec<u8> = Vec::with_capacity(1024);
-    let mut stdin = std::io::stdin();
+    let stdin = std::io::stdin();
 
     loop {
         input.clear();
-        stdin.lock().read_until(b';', &mut input);
+        stdin.lock().read_until(b';', &mut input)?;
 
         let query = std::str::from_utf8(&input).unwrap_or("").trim();
         if query.is_empty() {
             break;
         }
 
-        match execute_query(query, &mut context) {
-            Ok(lf) => println!("{}", lf),
-            Err(e) => eprintln!("{}", e),
-        }
+        execute_query(query, &mut context)?;
     }
 
     Ok(())

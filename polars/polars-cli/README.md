@@ -10,12 +10,16 @@ cargo install --locked
 
 ```bash
 > polars
-v0.28.0
-Type help or \? for help.
->> \?
-List of all client commands:
-.help                \?          Display this help.
-.exit                \q          Exit
+Polars CLI v0.1.0
+Type .help for help.
+>> .help
+┌─────────┬────────────────────┐
+│ command ┆ description        │
+╞═════════╪════════════════════╡
+│ .help   ┆ Display this help │
+│ .exit   ┆ Exit this program  │
+└─────────┴────────────────────┘
+shape: (2, 2)
 
 >> select * FROM read_csv('../../examples/datasets/foods1.csv');
 shape: (27, 4)

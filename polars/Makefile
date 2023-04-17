@@ -10,6 +10,7 @@ fmt:
 
 check:
 	cargo check --all-features \
+		-p polars-cli \
 		-p polars-core \
 		-p polars-io \
 		-p polars-lazy \
@@ -21,6 +22,7 @@ check:
 
 clippy:
 	cargo clippy --all-features \
+			-p polars-cli \
 	    -p polars-core \
 	    -p polars-io \
 	    -p polars-lazy \
@@ -38,6 +40,7 @@ clippy-default:
 test:  ## Run tests
 	POLARS_NO_STREAMING_GROUPBY=1 POLARS_MAX_THREADS=4 cargo t -p polars-core test_4_threads
 	cargo test --all-features \
+		-p polars-cli \
 		-p polars-lazy \
 		-p polars-io \
 		-p polars-core \
