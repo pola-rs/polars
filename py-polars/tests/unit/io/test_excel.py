@@ -26,13 +26,20 @@ def test_read_excel(excel_file_path: Path) -> None:
 
 
 def test_read_excel_all_sheets(excel_file_path: Path) -> None:
-    df = pl.read_excel(excel_file_path, sheet_id=None)
+    df = pl.read_excel(excel_file_path, sheet_id=0)
 
     expected1 = pl.DataFrame({"hello": ["Row 1", "Row 2"]})
     expected2 = pl.DataFrame({"world": ["Row 3", "Row 4"]})
 
     assert_frame_equal(df["Sheet1"], expected1)
     assert_frame_equal(df["Sheet2"], expected2)
+
+
+def test_read_excel_all_sheets_with_sheet_name(excel_file_path: Path) -> None:
+    with pytest.raises(
+        ValueError, match="Cannot specify both `sheet_name` and `sheet_id`"
+    ):
+        pl.read_excel(excel_file_path, sheet_id=1, sheet_name="Sheet1")
 
 
 # the parameters don't change the data, only the formatting, so we expect
