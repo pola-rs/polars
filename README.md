@@ -134,7 +134,7 @@ shape: (5, 8)
 ... ).collect())
 ```
 
-SQL commands can also be ran directly from the command line. 
+SQL commands can also be ran directly from the command line.
 
 ```bash
 > cargo install polars-cli --locked
@@ -149,8 +149,8 @@ Type .help for help.
 > SELECT sum(v1) as sum_v1, min(v2) as min_v2 FROM read_ipc('file.arrow') WHERE id1 = 'id016' LIMIT 10;
 ```
 
+Refer to [polars-cli](./polars/polars-cli/README.md) for more information.
 
-Refer to [polars-cli](./polars/polars-cli/README.md) for more information. 
 ## Performance 🚀🚀
 
 ### Blazingly fast
