@@ -102,9 +102,10 @@ def read_excel(
         By file-like object, we refer to objects with a ``read()`` method, such as a
         file handler (e.g. via builtin ``open`` function) or ``BytesIO``.
     sheet_id
-        Sheet number to convert (``0`` for all sheets).
+        Sheet number to convert (``0`` for all sheets). Defaults to `1` if neither this
+        nor `sheet_name` are specified.
     sheet_name
-        Sheet name to convert.
+        Sheet name to convert. Cannot be used in conjunction with `sheet_id`.
     xlsx2csv_options
         Extra options passed to ``xlsx2csv.Xlsx2csv()``.
         e.g.: ``{"skip_empty_lines": True}``
@@ -163,6 +164,7 @@ def read_excel(
         raise ImportError(
             "xlsx2csv is not installed. Please run `pip install xlsx2csv`."
         ) from None
+
     if isinstance(source, (str, Path)):
         source = normalise_filepath(source)
 
