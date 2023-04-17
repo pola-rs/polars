@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "polars",
+  "polars/polars-cli",
   "polars/polars-core",
   "polars/polars-io",
   "polars/polars-time",

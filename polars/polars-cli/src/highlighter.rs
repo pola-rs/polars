@@ -9,8 +9,8 @@ use syntect::util::as_24_bit_terminal_escaped;
 
 pub(crate) struct SQLHighlighter {}
 
-const SQL_SYNTAX: &str = include_str!("../../assets/SQL.sublime-syntax");
-const THEME: &[u8] = include_bytes!("../../assets/theme");
+const SQL_SYNTAX: &'static str = include_str!("../assets/SQL.sublime-syntax");
+const THEME: &'static [u8] = include_bytes!("../assets/theme");
 
 impl Highlighter for SQLHighlighter {
     fn highlight(&self, line: &str, cursor: usize) -> reedline::StyledText {

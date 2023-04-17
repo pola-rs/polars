@@ -1,30 +1,39 @@
+#![allow(unused)]
+
+
 #[cfg(feature = "highlight")]
 mod highlighter;
 mod prompt;
+#[cfg(feature = "highlight")]
+use highlighter::SQLHighlighter;
+#[global_allocator]
+#[cfg(target_os = "linux")]
+#[cfg(feature = "cli")]
+static ALLOC: Jemalloc = Jemalloc;
+
+#[cfg(target_os = "linux")]
+use jemallocator::Jemalloc;
+use polars::prelude::PolarsResult;
+use polars::sql::SQLContext;
+
 use std::borrow::Cow;
 use std::env;
 use std::ffi::OsStr;
 use std::io::{self, BufRead, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
+use polars::prelude::*;
 
-#[cfg(feature = "highlight")]
-use highlighter::SQLHighlighter;
-use polars_core::prelude::*;
-use polars_lazy::frame::LazyFrame;
-use polars_sql::SQLContext;
+
 use reedline::{
     DefaultPrompt, FileBackedHistory, Prompt, PromptHistorySearchStatus, Reedline, Signal,
 };
 use sqlparser::ast::{Select, SetExpr, Statement, TableFactor, TableWithJoins};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
-use syntect::easy::HighlightLines;
-use syntect::highlighting::{Style, ThemeSet};
-use syntect::parsing::SyntaxSet;
-use syntect::util::{as_24_bit_terminal_escaped, LinesWithEndings};
 
-use crate::cli::prompt::SQLPrompt;
+use crate::prompt::SQLPrompt;
+
 
 // Command: /? | help
 fn print_help() {
@@ -69,8 +78,6 @@ fn execute_query_tty(query: &str, ctx: &mut SQLContext) -> String {
 }
 
 pub fn run_tty() -> std::io::Result<()> {
-    // let ps = SyntaxSet::load_defaults_newlines();
-    // let ts = ThemeSet::load_defaults();
     let mut context = SQLContext::new();
     let mut input: Vec<u8> = Vec::with_capacity(1024);
     let mut stdin = std::io::stdin();
@@ -92,7 +99,7 @@ pub fn run_tty() -> std::io::Result<()> {
     let version = env!("CARGO_PKG_VERSION");
 
     println!("Polars CLI v{}", version);
-    println!("Welcome to Polars CLI. Commands end with ; or \\n");
+    println!("Welcome to Polars CLI. Commands end with ;");
     println!("Type .help or \\? for help.");
 
     let prompt = SQLPrompt {};
@@ -141,7 +148,7 @@ pub fn run_tty() -> std::io::Result<()> {
     Ok(())
 }
 
-pub fn run() -> io::Result<()> {
+pub fn main() -> io::Result<()> {
     if atty::is(atty::Stream::Stdin) {
         return run_tty();
     }
