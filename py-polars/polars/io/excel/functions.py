@@ -55,10 +55,10 @@ def read_excel(
     ...
 
 
-@overload
 # mypy wants the return value for Literal[0] to
 # overlap with the return value for other integers.
-def read_excel(  # type: ignore[misc]
+@overload  # type: ignore[misc]
+def read_excel(
     source: str | BytesIO | Path | BinaryIO | bytes,
     *,
     sheet_id: Literal[0],
