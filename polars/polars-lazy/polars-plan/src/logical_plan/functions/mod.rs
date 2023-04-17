@@ -154,9 +154,7 @@ impl FunctionNode {
                     .iter()
                     .map(|name| {
                         let name = name.as_ref();
-                        input_schema
-                            .get_field(name)
-                            .ok_or_else(|| polars_err!(SchemaFieldNotFound: "{}", name))
+                        input_schema.try_get_field(name)
                     })
                     .collect::<PolarsResult<Schema>>()?;
                 Ok(Cow::Owned(Arc::new(schema)))

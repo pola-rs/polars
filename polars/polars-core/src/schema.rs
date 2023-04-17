@@ -196,11 +196,26 @@ impl Schema {
         self.inner.get(name)
     }
 
+    /// Get a reference to the dtype of the field named `name`, or `Err(PolarsErr)` if the field doesn't exist
+    pub fn try_get(&self, name: &str) -> PolarsResult<&DataType> {
+        self.get(name)
+            .ok_or_else(|| polars_err!(SchemaFieldNotFound: "{}", name))
+    }
+
     /// Return all data about the field named `name`: its index in the schema, its name, and its dtype
     ///
     /// Returns `Some((index, &name, &dtype))` if the field exists, `None` if it doesn't.
     pub fn get_full(&self, name: &str) -> Option<(usize, &SmartString, &DataType)> {
         self.inner.get_full(name)
+    }
+
+    /// Return all data about the field named `name`: its index in the schema, its name, and its dtype
+    ///
+    /// Returns `Ok((index, &name, &dtype))` if the field exists, `Err(PolarsErr)` if it doesn't.
+    pub fn try_get_full(&self, name: &str) -> PolarsResult<(usize, &SmartString, &DataType)> {
+        self.inner
+            .get_full(name)
+            .ok_or_else(|| polars_err!(SchemaFieldNotFound: "{}", name))
     }
 
     /// Look up the name in the schema and return an owned [`Field`] by cloning the data
@@ -212,6 +227,19 @@ impl Schema {
     pub fn get_field(&self, name: &str) -> Option<Field> {
         self.inner
             .get(name)
+            .map(|dtype| Field::new(name, dtype.clone()))
+    }
+
+    /// Look up the name in the schema and return an owned [`Field`] by cloning the data
+    ///
+    /// Returns `Err(PolarsErr)` if the field does not exist.
+    ///
+    /// This method constructs the `Field` by cloning the name and dtype. For a version that returns references, see
+    /// [`get`][Self::get] or [`get_full`][Self::get_full].
+    pub fn try_get_field(&self, name: &str) -> PolarsResult<Field> {
+        self.inner
+            .get(name)
+            .ok_or_else(|| polars_err!(SchemaFieldNotFound: "{}", name))
             .map(|dtype| Field::new(name, dtype.clone()))
     }
 
