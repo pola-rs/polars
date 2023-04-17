@@ -8,37 +8,19 @@ from polars.io.csv.functions import read_csv
 from polars.utils.various import normalise_filepath
 
 if TYPE_CHECKING:
-    import sys
     from io import BytesIO
 
     from polars.dataframe import DataFrame
 
-    if sys.version_info >= (3, 8):
-        from typing import Literal
-    else:
-        from typing_extensions import Literal
-
 
 @overload
 def read_excel(
     source: str | BytesIO | Path | BinaryIO | bytes,
     *,
-    sheet_id: Literal[None],
-    sheet_name: Literal[None],
-    xlsx2csv_options: dict[str, Any] | None,
-    read_csv_options: dict[str, Any] | None,
-) -> dict[str, DataFrame]:
-    ...
-
-
-@overload
-def read_excel(
-    source: str | BytesIO | Path | BinaryIO | bytes,
-    *,
-    sheet_id: Literal[None],
+    sheet_id: int = ...,
     sheet_name: str,
-    xlsx2csv_options: dict[str, Any] | None = None,
-    read_csv_options: dict[str, Any] | None = None,
+    xlsx2csv_options: dict[str, Any] | None = ...,
+    read_csv_options: dict[str, Any] | None = ...,
 ) -> DataFrame:
     ...
 
@@ -47,10 +29,34 @@ def read_excel(
 def read_excel(
     source: str | BytesIO | Path | BinaryIO | bytes,
     *,
-    sheet_id: int,
-    sheet_name: Literal[None],
-    xlsx2csv_options: dict[str, Any] | None = None,
-    read_csv_options: dict[str, Any] | None = None,
+    sheet_id: None,
+    sheet_name: None = ...,
+    xlsx2csv_options: dict[str, Any] | None = ...,
+    read_csv_options: dict[str, Any] | None = ...,
+) -> dict[str, DataFrame]:
+    ...
+
+
+@overload
+def read_excel(
+    source: str | BytesIO | Path | BinaryIO | bytes,
+    *,
+    sheet_id: None,
+    sheet_name: str,
+    xlsx2csv_options: dict[str, Any] | None = ...,
+    read_csv_options: dict[str, Any] | None = ...,
+) -> DataFrame:
+    ...
+
+
+@overload
+def read_excel(
+    source: str | BytesIO | Path | BinaryIO | bytes,
+    *,
+    sheet_id: int = ...,
+    sheet_name: None = ...,
+    xlsx2csv_options: dict[str, Any] | None = ...,
+    read_csv_options: dict[str, Any] | None = ...,
 ) -> DataFrame:
     ...
 
