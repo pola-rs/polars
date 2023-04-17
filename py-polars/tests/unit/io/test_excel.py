@@ -26,13 +26,20 @@ def test_read_excel(excel_file_path: Path) -> None:
 
 
 def test_read_excel_all_sheets(excel_file_path: Path) -> None:
-    df = pl.read_excel(excel_file_path, sheet_id=None)  # type: ignore[call-overload]
+    df = pl.read_excel(excel_file_path, sheet_id=0)
 
     expected1 = pl.DataFrame({"hello": ["Row 1", "Row 2"]})
     expected2 = pl.DataFrame({"world": ["Row 3", "Row 4"]})
 
     assert_frame_equal(df["Sheet1"], expected1)
     assert_frame_equal(df["Sheet2"], expected2)
+
+
+def test_read_excel_all_sheets_with_sheet_name(excel_file_path: Path) -> None:
+    with pytest.raises(
+        ValueError, match="Cannot specify both `sheet_name` and `sheet_id`"
+    ):
+        pl.read_excel(excel_file_path, sheet_id=1, sheet_name="Sheet1")
 
 
 # the parameters don't change the data, only the formatting, so we expect
@@ -154,7 +161,7 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
     _wb = df.write_excel(workbook=xls, worksheet="data", **write_params)
 
     # ...and read it back again:
-    xldf = pl.read_excel(  # type: ignore[call-overload]
+    xldf = pl.read_excel(
         xls,
         sheet_name="data",
         read_csv_options=header_opts,
@@ -173,7 +180,7 @@ def test_excel_compound_types() -> None:
     xls = BytesIO()
     df.write_excel(xls, worksheet="data")
 
-    xldf = pl.read_excel(xls, sheet_name="data")  # type: ignore[call-overload]
+    xldf = pl.read_excel(xls, sheet_name="data")
     assert xldf.rows() == [
         ("[1, 2]", "{'y': 'a', 'z': 9}"),
         ("[3, 4]", "{'y': 'b', 'z': 8}"),
@@ -233,7 +240,7 @@ def test_excel_sparklines() -> None:
     tables = {tbl["name"] for tbl in wb.get_worksheet_by_name("frame_data").tables}
     assert "Frame0" in tables
 
-    xldf = pl.read_excel(xls, sheet_name="frame_data")  # type: ignore[call-overload]
+    xldf = pl.read_excel(xls, sheet_name="frame_data")
     # ┌─────┬──────┬─────┬─────┬─────┬─────┬───────┬─────┬─────┐
     # │ id  ┆ +/-  ┆ q1  ┆ q2  ┆ q3  ┆ q4  ┆ trend ┆ h1  ┆ h2  │
     # │ --- ┆ ---  ┆ --- ┆ --- ┆ --- ┆ --- ┆ ---   ┆ --- ┆ --- │
@@ -289,4 +296,4 @@ def test_excel_write_multiple_tables() -> None:
             tbl["name"] for tbl in wb.get_worksheet_by_name(sheet).tables
         )
     assert table_names == {f"Frame{n}" for n in range(4)}
-    assert pl.read_excel(xls, sheet_name="sheet3").rows() == []  # type: ignore[call-overload]
+    assert pl.read_excel(xls, sheet_name="sheet3").rows() == []
