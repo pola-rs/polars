@@ -1,7 +1,3 @@
-#[cfg(feature = "highlight")]
-use crate::highlighter::SQLHighlighter;
-use crate::OutputMode;
-
 use std::env;
 use std::path::PathBuf;
 
@@ -10,7 +6,10 @@ use polars::df;
 use polars::sql::SQLContext;
 use reedline::{FileBackedHistory, Reedline, Signal};
 
+#[cfg(feature = "highlight")]
+use crate::highlighter::SQLHighlighter;
 use crate::prompt::SQLPrompt;
+use crate::OutputMode;
 
 fn get_home_dir() -> PathBuf {
     match env::var("HOME") {
