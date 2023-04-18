@@ -19,9 +19,17 @@ use reedline::{
 use sqlparser::ast::{Select, SetExpr, Statement, TableFactor, TableWithJoins};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
+
+#[cfg(feature = "highlight")]
 use syntect::easy::HighlightLines;
+
+#[cfg(feature = "highlight")]
 use syntect::highlighting::{Style, ThemeSet};
+
+#[cfg(feature = "highlight")]
 use syntect::parsing::SyntaxSet;
+
+#[cfg(feature = "highlight")]
 use syntect::util::{as_24_bit_terminal_escaped, LinesWithEndings};
 
 use crate::cli::prompt::SQLPrompt;
