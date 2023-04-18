@@ -2789,13 +2789,17 @@ def test_series_is_temporal() -> None:
         assert s.is_temporal(excluding=tp) is False
 
 
-def test_microsecond_precision_any_value_conversion() -> None:
+def test_misc_precision_any_value_conversion() -> None:
+    # default precision
     dt = datetime(2514, 5, 30, 1, 53, 4, 986754, tzinfo=timezone.utc)
     assert pl.Series([dt]).to_list() == [dt]
     dt = datetime(2514, 5, 30, 1, 53, 4, 986754)
     assert pl.Series([dt]).to_list() == [dt]
 
-
-def test_millisecond_precision_any_value_conversion_8311() -> None:
+    # ms precision
     dt = datetime(2243, 1, 1, 0, 0, 0, 1000)
     assert pl.Series([dt]).cast(pl.Datetime("ms")).to_list() == [dt]
+
+    # ns precision
+    dt = datetime(2256, 1, 1, 0, 0, 0, 1)
+    assert pl.Series([dt]).cast(pl.Datetime("ns")).to_list() == [dt]
