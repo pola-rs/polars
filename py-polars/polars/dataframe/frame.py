@@ -3659,7 +3659,7 @@ class DataFrame:
                 else:
                     # for dates, strings, etc, we cast to string so that all
                     # statistics can be shown
-                    columns.append(stat[:, i].cast(str))
+                    columns.append(stat[:, i].cast(str, strict=False))
             return self.__class__(columns)
 
         # Build output rows

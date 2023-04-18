@@ -721,8 +721,15 @@ impl Series {
     pub fn strict_cast(&self, dtype: &DataType) -> PolarsResult<Series> {
         let null_count = self.null_count();
         let len = self.len();
-        if null_count == len {
-            return Ok(Series::full_null(self.name(), len, dtype));
+
+        match self.dtype() {
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(_) => {}
+            _ => {
+                if null_count == len {
+                    return Ok(Series::full_null(self.name(), len, dtype));
+                }
+            }
         }
         let s = self.0.cast(dtype)?;
         if null_count != s.null_count() {

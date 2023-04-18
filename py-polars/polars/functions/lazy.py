@@ -1247,6 +1247,14 @@ def lit(
     >>> pl.lit([[1, 2], [3, 4]])  # doctest: +IGNORE_RESULT
     >>> pl.lit(pl.Series("y", [[1, 2], [3, 4]]))  # doctest: +IGNORE_RESULT
 
+    Expected datatypes
+
+    - ''pl.lit([])'' -> empty  Series Float32
+    - ''pl.lit([1, 2, 3])'' -> Series Int64
+    - ''pl.lit([[]])''-> empty  Series List<Null>
+    - ''pl.lit([[1, 2, 3]])'' -> Series List<i64>
+    - ''pl.lit(None)'' -> Series Null
+
     """
     time_unit: TimeUnit
 
@@ -2976,7 +2984,7 @@ def struct(
 
     expr = wrap_expr(_as_struct(exprs))
     if schema:
-        expr = expr.cast(Struct(schema))
+        expr = expr.cast(Struct(schema), strict=False)
 
     if eager:
         return select(expr).to_series()
