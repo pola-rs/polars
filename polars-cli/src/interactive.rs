@@ -1,9 +1,6 @@
 #[cfg(feature = "highlight")]
 use crate::highlighter::SQLHighlighter;
 use crate::OutputMode;
-#[global_allocator]
-#[cfg(target_os = "linux")]
-static ALLOC: Jemalloc = Jemalloc;
 
 use std::env;
 use std::path::PathBuf;

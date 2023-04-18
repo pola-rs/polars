@@ -9,7 +9,6 @@ use polars::prelude::*;
 
 #[global_allocator]
 #[cfg(target_os = "linux")]
-#[cfg(feature = "cli")]
 static ALLOC: Jemalloc = Jemalloc;
 
 use std::io::{self, BufRead};
