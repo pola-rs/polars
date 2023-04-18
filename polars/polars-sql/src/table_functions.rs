@@ -27,6 +27,12 @@ pub(crate) enum PolarsTableFunctions {
     /// ```
     #[cfg(feature = "ipc")]
     ReadIpc,
+    /// SQL 'read_json' function. *Only ndjson is currently supported.*
+    /// ```sql
+    /// SELECT * FROM read_json('path/to/file.json')
+    /// ```
+    #[cfg(feature = "json")]
+    ReadJson,
 }
 
 impl FromStr for PolarsTableFunctions {
@@ -41,6 +47,8 @@ impl FromStr for PolarsTableFunctions {
             "read_parquet" => PolarsTableFunctions::ReadParquet,
             #[cfg(feature = "ipc")]
             "read_ipc" => PolarsTableFunctions::ReadIpc,
+            #[cfg(feature = "json")]
+            "read_json" => PolarsTableFunctions::ReadJson,
             _ => polars_bail!(ComputeError: "'{}' is not a supported table function", s),
         })
     }
@@ -56,6 +64,8 @@ impl PolarsTableFunctions {
             PolarsTableFunctions::ReadParquet => self.read_parquet(args),
             #[cfg(feature = "ipc")]
             PolarsTableFunctions::ReadIpc => self.read_ipc(args),
+            #[cfg(feature = "json")]
+            PolarsTableFunctions::ReadJson => self.read_ndjson(args),
             _ => unreachable!(),
         }
     }
@@ -79,6 +89,15 @@ impl PolarsTableFunctions {
     fn read_ipc(&self, args: &[FunctionArg]) -> PolarsResult<(String, LazyFrame)> {
         let path = self.get_file_path_from_arg(&args[0])?;
         let lf = LazyFrame::scan_ipc(&path, Default::default())?;
+        Ok((path, lf))
+    }
+    #[cfg(feature = "json")]
+    fn read_ndjson(&self, args: &[FunctionArg]) -> PolarsResult<(String, LazyFrame)> {
+        use polars_lazy::frame::LazyFileListReader;
+        use polars_lazy::prelude::LazyJsonLineReader;
+
+        let path = self.get_file_path_from_arg(&args[0])?;
+        let lf = LazyJsonLineReader::new(path.clone()).finish()?;
         Ok((path, lf))
     }
 

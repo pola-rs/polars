@@ -10,6 +10,11 @@ description = "CLI interface for running SQL queries via Polars"
 name = "polars"
 path = "src/main.rs"
 
+[profile.release]
+strip = true
+lto = true
+panic = "abort"
+
 [features]
 highlight = ["syntect", "nu-ansi-term"]
 default = ["highlight", "parquet", "json", "ipc"]
