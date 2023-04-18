@@ -134,7 +134,7 @@ shape: (5, 8)
 ... ).collect())
 ```
 
-SQL commands can also be ran directly from the command line.
+SQL commands can also be ran directly from your terminal.
 
 ```bash
 > cargo install polars-cli --locked
