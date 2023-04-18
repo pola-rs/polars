@@ -384,28 +384,3 @@ fn test_binary_group_consistency() -> PolarsResult<()> {
 
     Ok(())
 }
-
-#[test]
-fn test_binary_null_prop() -> PolarsResult<()> {
-    let df = df![
-        "a" => [0, 0],
-        "b" => [1, 2]
-    ]?
-    .lazy();
-
-    let expr = col("a").filter(col("a").gt(lit(0)));
-
-    let out = df
-        .groupby([col("b")])
-        .agg([(expr.clone() - expr.mean()).alias("a_mean")])
-        .sort("b", Default::default())
-        .collect()?;
-
-    let a_mean: [Option<f64>; 2] = [None, None];
-    assert!(out.frame_equal_missing(&df![
-        "b" => [1, 2],
-        "a_mean" => a_mean,
-    ]?));
-
-    Ok(())
-}

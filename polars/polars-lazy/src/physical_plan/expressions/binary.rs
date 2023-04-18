@@ -91,49 +91,12 @@ pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResu
 }
 
 impl BinaryExpr {
-    fn null_propagate(&self, ac_l: &mut AggregationContext, ac_r: &AggregationContext) -> bool {
-        // this null prop can exist due to:
-        // assuming 2 rows
-        //
-        // expr = col().filter(false)
-        //
-        // this would null propagate
-        // (expr - expr.mean()) -> [None, None]
-        //
-        // but adding another aggregation is valid:
-        // (expr - expr.mean()).mean()
-        match ac_l.agg_state() {
-            AggState::AggregatedFlat(s) if s.null_count() == s.len() => {
-                let s = s.clone();
-                ac_l.with_update_groups(UpdateGroups::No);
-                ac_l.with_series(s, true, Some(&self.expr)).unwrap();
-                ac_l.null_propagated = true;
-                return true;
-            }
-            _ => {}
-        }
-        match ac_r.agg_state() {
-            AggState::AggregatedFlat(s) if s.null_count() == s.len() => {
-                ac_l.with_update_groups(UpdateGroups::No);
-                ac_l.with_series(s.clone(), true, Some(&self.expr)).unwrap();
-                ac_l.null_propagated = true;
-                return true;
-            }
-            _ => {}
-        }
-        false
-    }
-
     fn apply_elementwise<'a>(
         &self,
         mut ac_l: AggregationContext<'a>,
         ac_r: AggregationContext,
         aggregated: bool,
     ) -> PolarsResult<AggregationContext<'a>> {
-        if self.null_propagate(&mut ac_l, &ac_r) {
-            return Ok(ac_l);
-        }
-
         // we want to be able to mutate in place
         // so we take the lhs to make sure that we drop
         let lhs = ac_l.series().clone();
@@ -155,10 +118,6 @@ impl BinaryExpr {
         mut ac_l: AggregationContext<'a>,
         mut ac_r: AggregationContext<'a>,
     ) -> PolarsResult<AggregationContext<'a>> {
-        if self.null_propagate(&mut ac_l, &ac_r) {
-            return Ok(ac_l);
-        }
-
         let name = ac_l.series().name().to_string();
         let mut ca: ListChunked = ac_l
             .iter_groups(false)

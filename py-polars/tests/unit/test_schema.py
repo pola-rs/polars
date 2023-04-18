@@ -379,3 +379,40 @@ def test_bool_sum_schema() -> None:
     assert pl.LazyFrame({"a": [True, False]}).select(pl.col("a").sum()).schema == {
         "a": pl.UInt32
     }
+
+
+def test_absence_off_null_prop_8224() -> None:
+    # a reminder to self to not do null propagation
+    # it is inconsistent and makes output dtype
+    # dependent of the data, big no!
+
+    def sub_col_min(column: str, min_column: str) -> pl.Expr:
+        return pl.col(column).sub(pl.col(min_column).min())
+
+    df = pl.DataFrame(
+        {
+            "group": [1, 1, 2, 2],
+            "vals_num": [10.0, 11.0, 12.0, 13.0],
+            "vals_partial": [None, None, 12.0, 13.0],
+            "vals_null": [None, None, None, None],
+        }
+    )
+
+    q = (
+        df.lazy()
+        .groupby("group")
+        .agg(
+            [
+                sub_col_min("vals_num", "vals_num").alias("sub_num"),
+                sub_col_min("vals_num", "vals_partial").alias("sub_partial"),
+                sub_col_min("vals_num", "vals_null").alias("sub_null"),
+            ]
+        )
+    )
+
+    assert q.collect().dtypes == [
+        pl.Int64,
+        pl.List(pl.Float64),
+        pl.List(pl.Float64),
+        pl.List(pl.Float64),
+    ]
