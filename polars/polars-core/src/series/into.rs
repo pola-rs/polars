@@ -33,13 +33,18 @@ impl Series {
                 let new_values = if let DataType::Null = &**inner {
                     arr.values().clone()
                 } else {
+                    // we pass physical arrays
+                    // and cast to logical before we convert to arrow
                     let s = unsafe {
                         Series::from_chunks_and_dtype_unchecked(
                             "",
                             vec![arr.values().clone()],
-                            inner,
+                            &inner.to_physical(),
                         )
+                        .cast_unchecked(inner)
+                        .unwrap()
                     };
+
                     s.to_arrow(0)
                 };
 

@@ -2815,10 +2815,6 @@ class Series:
 
         This means that every item is expanded to a new row.
 
-        .. deprecated:: 0.15.16
-            `Series.explode` will be removed in favour of `Series.arr.explode` and
-            `Series.str.explode`.
-
         Returns
         -------
         Exploded Series of same dtype
@@ -5735,6 +5731,9 @@ class Series:
     def get_chunks(self) -> list[Series]:
         """Get the chunks of this Series as a list of Series."""
         return self._s.get_chunks()
+
+    def implode(self) -> Self:
+        """Aggregate values into a list."""
 
     # Below are the namespaces defined. Do not move these up in the definition of
     # Series, as it confuses mypy between the type annotation `str` and the

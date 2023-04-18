@@ -351,3 +351,17 @@ def test_nested_categorical_cast() -> None:
     s = pl.Series(values).cast(dtype)
     assert s.dtype == dtype
     assert s.to_list() == values
+
+
+def test_struct_categorical_nesting() -> None:
+    # this triggers a lot of materialization
+    df = pl.DataFrame(
+        {"cats": ["Value1", "Value2", "Value1"]},
+        schema_overrides={"cats": pl.Categorical},
+    )
+    s = df.select(pl.struct(pl.col("cats")))["cats"].implode()
+    assert s.dtype == pl.List(pl.Struct([pl.Field("cats", pl.Categorical)]))
+    # triggers recursive conversion
+    assert s.to_list() == [[{"cats": "Value1"}, {"cats": "Value2"}, {"cats": "Value1"}]]
+    # triggers different recursive conversion
+    assert len(s.to_arrow()) == 1

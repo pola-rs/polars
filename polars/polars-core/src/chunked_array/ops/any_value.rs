@@ -46,8 +46,15 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         DataType::Float64 => downcast_and_pack!(Float64Array, Float64),
         DataType::List(dt) => {
             let v: ArrayRef = downcast!(LargeListArray);
-            let s = Series::from_chunks_and_dtype_unchecked("", vec![v], dt);
-            AnyValue::List(s)
+            if dt.is_primitive() {
+                let s = Series::from_chunks_and_dtype_unchecked("", vec![v], dt);
+                AnyValue::List(s)
+            } else {
+                let s = Series::from_chunks_and_dtype_unchecked("", vec![v], &dt.to_physical())
+                    .cast_unchecked(dt)
+                    .unwrap();
+                AnyValue::List(s)
+            }
         }
         #[cfg(feature = "dtype-categorical")]
         DataType::Categorical(rev_map) => {
