@@ -14,9 +14,10 @@ concurrency:
 defaults:
   run:
     working-directory: py-polars
-    env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
+
+env:
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
 
 jobs:
   ubuntu:

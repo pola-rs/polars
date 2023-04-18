@@ -2,21 +2,19 @@ name: Benchmark
 
 on:
   pull_request:
-    paths:
-      - polars/**
-      - Cargo.toml
-      - py-polars/tests/benchmark/**
-      - .github/workflows/benchmark.yml
+   paths:
+     - polars/**
+     - Cargo.toml
+     - py-polars/tests/benchmark/**
+     - .github/workflows/benchmark.yml
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-defaults:
-  run:
-    env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
+env:
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
 
 jobs:
   main:
@@ -56,11 +54,6 @@ jobs:
 
       - name: Set up Rust
         run: rustup show
-
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: py-polars
 
       - name: Use sccache
         uses: mozilla-actions/sccache-action@v0.0.3
