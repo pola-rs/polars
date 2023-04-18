@@ -7,6 +7,7 @@ use std::ffi::OsStr;
 use std::io::{self, BufRead, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
+
 #[cfg(feature = "highlight")]
 use highlighter::SQLHighlighter;
 use polars_core::prelude::*;
