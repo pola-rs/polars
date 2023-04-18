@@ -181,7 +181,7 @@ def _to_python_datetime(
                 dt = EPOCH + timedelta(microseconds=value)
             elif time_unit == "ms":
                 # milliseconds to seconds
-                dt = datetime.utcfromtimestamp(value / 1000)
+                dt = EPOCH + timedelta(milliseconds=value)
             else:
                 raise ValueError(
                     f"time_unit must be one of {{'ns', 'us', 'ms'}}, got {time_unit}"
