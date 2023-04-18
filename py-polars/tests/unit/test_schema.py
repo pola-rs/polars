@@ -445,3 +445,11 @@ def test_schemas() -> None:
         schema = df.groupby(pl.lit(1)).agg(arg["expr"]).schema
         for key, dtype in arg["expected_gb"].items():
             assert schema[key] == dtype
+
+
+def test_list_null_constructor_schema() -> None:
+    expected = pl.List(pl.Null)
+    assert pl.Series([[]]).dtype == expected
+    assert pl.Series([[]], dtype=pl.List).dtype == expected
+    assert pl.DataFrame({"a": [[]]}).dtypes[0] == expected
+    assert pl.DataFrame(schema={"a": pl.List}).dtypes[0] == expected
