@@ -760,14 +760,14 @@ mod test {
         "#,
             )?
             .collect()?
-            .sort(&["category"], vec![false])?;
+            .sort(["category"], vec![false])?;
 
         let expected = LazyCsvReader::new("../../examples/datasets/foods1.csv")
             .finish()?
             .groupby(vec![col("category").alias("category")])
             .agg(vec![])
             .collect()?
-            .sort(&["category"], vec![false])?;
+            .sort(["category"], vec![false])?;
 
         assert!(df_sql.frame_equal(&expected));
         Ok(())
@@ -810,7 +810,6 @@ mod test {
                     false,
                 )
                 .limit(2);
-        let lp = expected.clone().describe_optimized_plan()?;
         let expected = expected.collect()?;
         assert!(df_sql.frame_equal(&expected));
         Ok(())

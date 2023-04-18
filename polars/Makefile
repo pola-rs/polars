@@ -21,15 +21,15 @@ check:
 
 clippy:
 	cargo clippy --all-features \
-	    -p polars-core \
-	    -p polars-io \
-	    -p polars-lazy \
-	    -p polars-arrow \
-	    -p polars-utils \
-	    -p polars-ops \
-	    -p polars-error \
-	    -p polars-row \
-	    -p polars-time \
+		-p polars-core \
+		-p polars-io \
+		-p polars-lazy \
+		-p polars-arrow \
+		-p polars-utils \
+		-p polars-ops \
+		-p polars-error \
+		-p polars-row \
+		-p polars-time \
 		-p polars-sql
 
 clippy-default:
