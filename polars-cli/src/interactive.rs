@@ -3,7 +3,6 @@ use crate::highlighter::SQLHighlighter;
 use crate::OutputMode;
 #[global_allocator]
 #[cfg(target_os = "linux")]
-#[cfg(feature = "cli")]
 static ALLOC: Jemalloc = Jemalloc;
 
 use std::env;
