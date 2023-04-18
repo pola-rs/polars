@@ -14,7 +14,7 @@ use polars_core::utils::get_supertype;
 #[cfg(feature = "arg_where")]
 use crate::dsl::function_expr::FunctionExpr;
 use crate::dsl::function_expr::ListFunction;
-#[cfg(feature = "strings")]
+#[cfg(all(feature = "concat_str", feature = "strings"))]
 use crate::dsl::function_expr::StringFunction;
 use crate::dsl::*;
 use crate::prelude::*;

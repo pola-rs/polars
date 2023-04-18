@@ -16,7 +16,7 @@ use crate::chunked_array::cast::cast_chunks;
 use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::EXTENSION_NAME;
-#[cfg(feature = "dtype-decimal")]
+#[cfg(all(feature = "dtype-decimal", feature = "python"))]
 use crate::config::decimal_is_active;
 use crate::config::verbose;
 use crate::prelude::*;

@@ -1,6 +1,6 @@
 use polars_utils::arena::Arena;
 
-#[cfg(feature = "strings")]
+#[cfg(all(feature = "strings", feature = "concat_str"))]
 use crate::dsl::function_expr::StringFunction;
 use crate::logical_plan::optimizer::stack_opt::OptimizationRule;
 use crate::logical_plan::*;
