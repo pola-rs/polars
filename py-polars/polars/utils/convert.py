@@ -166,21 +166,18 @@ def _to_python_datetime(
     time_zone: str | None = None,
 ) -> date | datetime:
     if dtype == Date:
-        # days to seconds
-        # important to create from utc. Not doing this leads
-        # to inconsistencies dependent on the timezone you are in.
+        # days to seconds. important to create from utc; not doing this
+        # leads to inconsistencies dependent on the timezone you are in.
         dt = datetime(1970, 1, 1, tzinfo=timezone.utc)
         dt += timedelta(seconds=value * 3600 * 24)
         return dt.date()
     elif dtype == Datetime:
         if time_zone is None or time_zone == "":
             if time_unit == "ns":
-                # nanoseconds to seconds
-                dt = EPOCH + timedelta(microseconds=value / 1000)
+                dt = EPOCH + timedelta(microseconds=value // 1000)
             elif time_unit == "us":
                 dt = EPOCH + timedelta(microseconds=value)
             elif time_unit == "ms":
-                # milliseconds to seconds
                 dt = EPOCH + timedelta(milliseconds=value)
             else:
                 raise ValueError(
@@ -194,15 +191,13 @@ def _to_python_datetime(
 
             utc = get_zoneinfo("UTC")
             if time_unit == "ns":
-                # nanoseconds to seconds
                 dt = datetime.fromtimestamp(0, tz=utc) + timedelta(
-                    microseconds=value / 1000
+                    microseconds=value // 1000
                 )
             elif time_unit == "us":
                 dt = datetime.fromtimestamp(0, tz=utc) + timedelta(microseconds=value)
             elif time_unit == "ms":
-                # milliseconds to seconds
-                dt = datetime.fromtimestamp(value / 1000, tz=utc)
+                dt = datetime.fromtimestamp(0, tz=utc) + timedelta(milliseconds=value)
             else:
                 raise ValueError(
                     f"time_unit must be one of {{'ns', 'us', 'ms'}}, got {time_unit}"
