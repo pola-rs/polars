@@ -42,7 +42,7 @@ impl OptimizationRule for DelayRechunk {
                             input_node = Some(node);
                             break;
                         }
-                        #[cfg(feature = "csv-file")]
+                        #[cfg(feature = "csv")]
                         CsvScan { .. } => {
                             input_node = Some(node);
                             break;
@@ -62,7 +62,7 @@ impl OptimizationRule for DelayRechunk {
 
                 if let Some(node) = input_node {
                     match lp_arena.get_mut(node) {
-                        #[cfg(feature = "csv-file")]
+                        #[cfg(feature = "csv")]
                         CsvScan { options, .. } => {
                             options.rechunk = false;
                         }

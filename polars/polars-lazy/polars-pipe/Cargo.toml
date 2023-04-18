@@ -25,7 +25,7 @@ smartstring = { version = "1" }
 
 [features]
 compile = []
-csv-file = ["polars-plan/csv-file", "polars-io/csv-file"]
+csv = ["polars-plan/csv", "polars-io/csv"]
 parquet = ["polars-plan/parquet", "polars-io/parquet"]
 ipc = ["polars-plan/ipc", "polars-io/ipc"]
 async = ["polars-plan/async", "polars-io/async"]

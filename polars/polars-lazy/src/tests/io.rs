@@ -286,7 +286,7 @@ fn test_union_and_agg_projections() -> PolarsResult<()> {
 }
 
 #[test]
-#[cfg(all(feature = "ipc", feature = "csv-file"))]
+#[cfg(all(feature = "ipc", feature = "csv"))]
 fn test_slice_filter() -> PolarsResult<()> {
     init_files();
     let _guard = SINGLE_LOCK.lock().unwrap();

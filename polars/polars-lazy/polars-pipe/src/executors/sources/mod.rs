@@ -1,4 +1,4 @@
-#[cfg(feature = "csv-file")]
+#[cfg(feature = "csv")]
 mod csv;
 mod frame;
 mod ipc_one_shot;
@@ -7,7 +7,7 @@ mod parquet;
 mod reproject;
 mod union;
 
-#[cfg(feature = "csv-file")]
+#[cfg(feature = "csv")]
 pub(crate) use csv::CsvSource;
 pub(crate) use frame::*;
 pub(crate) use ipc_one_shot::*;

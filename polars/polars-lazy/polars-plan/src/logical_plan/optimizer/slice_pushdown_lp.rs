@@ -183,7 +183,7 @@ impl SlicePushDown {
 
             }
 
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             (CsvScan {
                 path,
                 file_info,

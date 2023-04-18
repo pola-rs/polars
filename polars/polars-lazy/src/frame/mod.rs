@@ -1,5 +1,5 @@
 //! Lazy variant of a [DataFrame](polars_core::frame::DataFrame).
-#[cfg(feature = "csv-file")]
+#[cfg(feature = "csv")]
 mod csv;
 #[cfg(feature = "ipc")]
 mod ipc;
@@ -21,7 +21,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 pub use anonymous_scan::*;
-#[cfg(feature = "csv-file")]
+#[cfg(feature = "csv")]
 pub use csv::*;
 pub use file_list_reader::*;
 #[cfg(feature = "ipc")]
@@ -37,7 +37,7 @@ use polars_core::prelude::*;
 use polars_io::RowCount;
 pub use polars_plan::frame::{AllowedOptimizations, OptState};
 use polars_plan::global::FETCH_ROWS;
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
 use polars_plan::logical_plan::collect_fingerprints;
 use polars_plan::logical_plan::optimize;
 use polars_plan::utils::expr_to_leaf_column_names;
@@ -493,13 +493,13 @@ impl LazyFrame {
             self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut scratch, false)?;
 
         let finger_prints = if file_caching {
-            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
             {
                 let mut fps = Vec::with_capacity(8);
                 collect_fingerprints(lp_top, &mut fps, &lp_arena, &expr_arena);
                 Some(fps)
             }
-            #[cfg(not(any(feature = "ipc", feature = "parquet", feature = "csv-file")))]
+            #[cfg(not(any(feature = "ipc", feature = "parquet", feature = "csv")))]
             {
                 None
             }
@@ -540,7 +540,7 @@ impl LazyFrame {
         let out = physical_plan.execute(&mut state);
         #[cfg(debug_assertions)]
         {
-            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+            #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
             state.file_cache.assert_empty();
         }
         out
@@ -1138,7 +1138,7 @@ impl LazyFrame {
     pub fn with_row_count(mut self, name: &str, offset: Option<IdxSize>) -> LazyFrame {
         let add_row_count_in_map = match &mut self.logical_plan {
             // Do the row count at scan
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             LogicalPlan::CsvScan { options, .. } => {
                 options.row_count = Some(RowCount {
                     name: name.to_string(),

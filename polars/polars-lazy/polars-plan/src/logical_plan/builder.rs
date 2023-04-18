@@ -1,4 +1,4 @@
-#[cfg(feature = "csv-file")]
+#[cfg(feature = "csv")]
 use std::io::{Read, Seek};
 
 #[cfg(feature = "parquet")]
@@ -12,9 +12,9 @@ use polars_io::ipc::IpcReader;
 use polars_io::parquet::ParquetAsyncReader;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetReader;
-#[cfg(any(feature = "parquet", feature = "parquet_async", feature = "csv-file"))]
+#[cfg(any(feature = "parquet", feature = "parquet_async", feature = "csv"))]
 use polars_io::RowCount;
-#[cfg(feature = "csv-file")]
+#[cfg(feature = "csv")]
 use polars_io::{
     csv::utils::{get_reader_bytes, infer_file_schema, is_compressed},
     csv::CsvEncoding,
@@ -200,7 +200,7 @@ impl LogicalPlanBuilder {
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[cfg(feature = "csv-file")]
+    #[cfg(feature = "csv")]
     pub fn scan_csv<P: Into<std::path::PathBuf>>(
         path: P,
         delimiter: u8,

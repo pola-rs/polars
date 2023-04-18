@@ -17,7 +17,7 @@ futures = { version = "0.3.25", optional = true }
 once_cell.workspace = true
 polars-arrow = { version = "0.28.0", path = "../../polars-arrow" }
 polars-core = { version = "0.28.0", path = "../../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
-polars-io = { version = "0.28.0", path = "../../polars-io", features = ["lazy", "csv-file", "private"], default-features = false }
+polars-io = { version = "0.28.0", path = "../../polars-io", features = ["lazy", "csv", "private"], default-features = false }
 polars-ops = { version = "0.28.0", path = "../../polars-ops", default-features = false }
 polars-time = { version = "0.28.0", path = "../../polars-time", optional = true }
 polars-utils = { version = "0.28.0", path = "../../polars-utils" }
@@ -40,7 +40,7 @@ parquet = ["polars-core/parquet", "polars-io/parquet"]
 async = []
 ipc = ["polars-io/ipc"]
 json = ["polars-io/json"]
-csv-file = ["polars-io/csv-file"]
+csv = ["polars-io/csv"]
 temporal = ["polars-core/temporal", "dtype-date", "dtype-datetime", "dtype-time"]
 # debugging purposes
 fmt = ["polars-core/fmt"]

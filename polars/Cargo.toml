@@ -21,7 +21,7 @@ random = ["polars-core/random", "polars-lazy/random"]
 default = [
   "docs",
   "zip_with",
-  "csv-file",
+  "csv",
   "temporal",
   "fmt",
   "dtype-slim",
@@ -58,7 +58,7 @@ ipc_streaming = ["polars-io", "polars-io/ipc_streaming", "polars-lazy/ipc"]
 avro = ["polars-io", "polars-io/avro"]
 
 # support for arrows csv file parsing
-csv-file = ["polars-io", "polars-io/csv-file", "polars-lazy/csv-file"]
+csv = ["polars-io", "polars-io/csv", "polars-lazy/csv"]
 
 # slower builds
 performant = [
@@ -158,7 +158,7 @@ test = [
   "rolling_window",
   "rank",
   "round_series",
-  "csv-file",
+  "csv",
   "dtype-categorical",
   "cum_agg",
   "fmt",
@@ -238,7 +238,7 @@ dtype-struct = [
 ]
 
 docs-selection = [
-  "csv-file",
+  "csv",
   "json",
   "parquet",
   "ipc",

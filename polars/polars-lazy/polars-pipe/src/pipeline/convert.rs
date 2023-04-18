@@ -62,7 +62,7 @@ where
             }
             Ok(Box::new(sources::DataFrameSource::from_df(df)) as Box<dyn Source>)
         }
-        #[cfg(feature = "csv-file")]
+        #[cfg(feature = "csv")]
         CsvScan {
             path,
             file_info,
@@ -467,7 +467,7 @@ where
                 true,
                 verbose,
             )?,
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             lp @ CsvScan { .. } => get_source(
                 lp.clone(),
                 &mut operator_objects,
