@@ -967,3 +967,19 @@ def test_struct_name_passed_in_agg_apply() -> None:
             ]
         ],
     }
+
+
+def test_struct_lit_cast() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    schema = {"a": pl.Int64, "b": pl.List(pl.Int64)}
+
+    for lit in [pl.lit(None), pl.lit([[]])]:
+        s = df.select(pl.struct([pl.col("a"), lit.alias("b")], schema=schema))["a"]  # type: ignore[arg-type]
+        assert s.dtype == pl.Struct(
+            [pl.Field("a", pl.Int64), pl.Field("b", pl.List(pl.Int64))]
+        )
+        assert s.to_list() == [
+            {"a": 1, "b": None},
+            {"a": 2, "b": None},
+            {"a": 3, "b": None},
+        ]
