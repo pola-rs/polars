@@ -7,7 +7,6 @@ use std::ffi::OsStr;
 use std::io::{self, BufRead, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
-
 #[cfg(feature = "highlight")]
 use highlighter::SQLHighlighter;
 use polars_core::prelude::*;
@@ -19,16 +18,12 @@ use reedline::{
 use sqlparser::ast::{Select, SetExpr, Statement, TableFactor, TableWithJoins};
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
-
 #[cfg(feature = "highlight")]
 use syntect::easy::HighlightLines;
-
 #[cfg(feature = "highlight")]
 use syntect::highlighting::{Style, ThemeSet};
-
 #[cfg(feature = "highlight")]
 use syntect::parsing::SyntaxSet;
-
 #[cfg(feature = "highlight")]
 use syntect::util::{as_24_bit_terminal_escaped, LinesWithEndings};
 
