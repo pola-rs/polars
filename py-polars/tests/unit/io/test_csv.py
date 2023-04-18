@@ -829,7 +829,6 @@ def test_csv_multiple_null_values() -> None:
             "b": ["2022-01-01", "__NA__", "", "NA"],
         }
     )
-
     f = io.BytesIO()
     df.write_csv(f)
     f.seek(0)
@@ -841,7 +840,6 @@ def test_csv_multiple_null_values() -> None:
             "b": ["2022-01-01", None, "", None],
         }
     )
-
     assert_frame_equal(df2, expected)
 
 
@@ -853,6 +851,21 @@ def test_different_eol_char() -> None:
     assert_frame_equal(
         pl.read_csv(csv.encode(), eol_char=";", has_header=False), expected
     )
+
+
+def test_csv_write_escape_headers() -> None:
+    df0 = pl.DataFrame({"col,1": ["data,1"], 'col"2': ['data"2'], "col:3": ["data:3"]})
+    out = io.BytesIO()
+    df0.write_csv(out)
+    assert out.getvalue() == b'"col,1","col""2",col:3\n"data,1","data""2",data:3\n'
+
+    df1 = pl.DataFrame({"c,o,l,u,m,n": [123]})
+    out = io.BytesIO()
+    df1.write_csv(out)
+
+    df2 = pl.read_csv(out)
+    assert_frame_equal(df1, df2)
+    assert df2.schema == {"c,o,l,u,m,n": pl.Int64}
 
 
 def test_csv_write_escape_newlines() -> None:
