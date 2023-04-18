@@ -149,7 +149,7 @@ Type .help for help.
 > SELECT sum(v1) as sum_v1, min(v2) as min_v2 FROM read_ipc('file.arrow') WHERE id1 = 'id016' LIMIT 10;
 ```
 
-Refer to [polars-cli](./polars/polars-cli/README.md) for more information.
+Refer to [polars-cli](./polars-cli/README.md) for more information.
 
 ## Performance 🚀🚀
 
