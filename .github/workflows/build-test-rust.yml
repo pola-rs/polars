@@ -27,6 +27,9 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
 
+      - name: Use sccache
+        uses: mozilla-actions/sccache-action@v0.0.3
+
       - name: Run cargo check
         working-directory: examples
         run: cargo check
@@ -68,6 +71,9 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: polars
+
+      - name: Use sccache
+        uses: mozilla-actions/sccache-action@v0.0.3
 
       - name: Run rustfmt
         run: cargo fmt --all -- --check
