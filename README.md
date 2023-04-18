@@ -19,6 +19,9 @@
   <a href="https://www.npmjs.com/package/nodejs-polars">
     <img src="https://img.shields.io/npm/v/nodejs-polars.svg" alt="NPM Latest Release"/>
   </a>
+  <a href="https://rpolars.r-universe.dev">
+    <img src="https://rpolars.r-universe.dev/badges/polars" alt="R-universe Latest Release"/>
+  </a>
   <a href="https://doi.org/10.5281/zenodo.7697217">
     <img src="https://zenodo.org/badge/DOI/10.5281/zenodo.7697217.svg" alt="DOI Latest Release"/>
   </a>
@@ -31,6 +34,8 @@
   <a href="https://pola-rs.github.io/polars/polars/index.html">Rust</a>
   -
   <a href="https://pola-rs.github.io/nodejs-polars/index.html">Node.js</a>
+  -
+  <a href="https://rpolars.github.io/index.html">R</a>
   |
   <b>StackOverflow</b>:
   <a href="https://stackoverflow.com/questions/tagged/python-polars">Python</a>
@@ -38,6 +43,8 @@
   <a href="https://stackoverflow.com/questions/tagged/rust-polars">Rust</a>
   -
   <a href="https://stackoverflow.com/questions/tagged/nodejs-polars">Node.js</a>
+  -
+  <a href="https://stackoverflow.com/questions/tagged/r-polars">R</a>
   |
   <a href="https://pola-rs.github.io/polars-book/">User Guide</a>
   |
@@ -55,7 +62,7 @@ Polars is a DataFrame interface on top of an OLAP Query Engine implemented in Ru
 - Query optimization
 - Powerful expression API
 - Hybrid Streaming (larger than RAM datasets)
-- Rust | Python | NodeJS | ...
+- Rust | Python | NodeJS | R | ...
 
 To learn more, read the [User Guide](https://pola-rs.github.io/polars-book/).
 
@@ -156,7 +163,7 @@ Refer to [polars-cli](./polars-cli/README.md) for more information.
 ### Blazingly fast
 
 Polars is very fast. In fact, it is one of the best performing solutions available.
-See the results in [h2oai's db-benchmark](https://h2oai.github.io/db-benchmark/).
+See the results in [DuckDB's db-benchmark](https://duckdblabs.github.io/db-benchmark/).
 
 In the [TPCH benchmarks](https://www.pola.rs/benchmarks.html) polars is orders of magnitudes faster than pandas, dask, modin and vaex
 on full queries (including IO).
