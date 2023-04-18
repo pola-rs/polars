@@ -2794,3 +2794,8 @@ def test_microsecond_precision_any_value_conversion() -> None:
     assert pl.Series([dt]).to_list() == [dt]
     dt = datetime(2514, 5, 30, 1, 53, 4, 986754)
     assert pl.Series([dt]).to_list() == [dt]
+
+
+def test_millisecond_precision_any_value_conversion_8311() -> None:
+    dt = datetime(2243, 1, 1, 0, 0, 0, 1000)
+    assert pl.Series([dt]).cast(pl.Datetime("ms")).to_list() == [dt]
