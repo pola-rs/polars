@@ -119,6 +119,9 @@ jobs:
         with:
           workspaces: py-polars
 
+      - name: Use sccache
+        uses: mozilla-actions/sccache-action@v0.0.3
+
       - name: Install Polars
         shell: bash
         env:
