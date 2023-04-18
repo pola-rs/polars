@@ -279,11 +279,6 @@ impl StructChunked {
             None,
         ))
     }
-    /// # Safety
-    /// The set dtype must be correct.
-    pub unsafe fn set_field(&mut self, field: Field) {
-        self.field = field
-    }
 
     unsafe fn cast_impl(&self, dtype: &DataType, unchecked: bool) -> PolarsResult<Series> {
         match dtype {
