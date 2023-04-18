@@ -1,3 +1,5 @@
+import typing
+
 import pytest
 
 import polars as pl
@@ -375,12 +377,6 @@ def test_deep_subexpression_f32_schema_7129() -> None:
     ).dtypes == [pl.Float32]
 
 
-def test_bool_sum_schema() -> None:
-    assert pl.LazyFrame({"a": [True, False]}).select(pl.col("a").sum()).schema == {
-        "a": pl.UInt32
-    }
-
-
 def test_absence_off_null_prop_8224() -> None:
     # a reminder to self to not do null propagation
     # it is inconsistent and makes output dtype
@@ -416,3 +412,36 @@ def test_absence_off_null_prop_8224() -> None:
         pl.List(pl.Float64),
         pl.List(pl.Float64),
     ]
+
+
+@typing.no_type_check
+def test_schemas() -> None:
+    # add all expression output tests here:
+    args = [
+        # coalesce
+        {
+            "data": {"x": ["x"], "y": ["y"]},
+            "expr": pl.coalesce(pl.col("x"), pl.col("y")),
+            "expected_select": {"x": pl.Utf8},
+            "expected_gb": {"x": pl.List(pl.Utf8)},
+        },
+        # boolean sum
+        {
+            "data": {"x": [True]},
+            "expr": pl.col("x").sum(),
+            "expected_select": {"x": pl.UInt32},
+            "expected_gb": {"x": pl.UInt32},
+        },
+    ]
+    for arg in args:
+        df = pl.DataFrame(arg["data"])
+
+        # test selection schema
+        schema = df.select(arg["expr"]).schema
+        for key, dtype in arg["expected_select"].items():
+            assert schema[key] == dtype
+
+        # test groupby schema
+        schema = df.groupby(pl.lit(1)).agg(arg["expr"]).schema
+        for key, dtype in arg["expected_gb"].items():
+            assert schema[key] == dtype
