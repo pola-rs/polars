@@ -1249,11 +1249,11 @@ def lit(
 
     Expected datatypes
 
-    >>> pl.lit([])  # -> empty  Series Float32
-    >>> pl.lit([1, 2, 3])  # ->        Series Int64
-    >>> pl.lit([[]])  # -> empty  Series List<Null>
-    >>> pl.lit([[1, 2, 3]])  # ->        Series List<i64>
-    >>> pl.lit(None)  # ->        Series Null
+    - ''pl.lit([])'' -> empty  Series Float32
+    - ''pl.lit([1, 2, 3])'' -> Series Int64
+    - ''pl.lit([[]])''-> empty  Series List<Null>
+    - ''pl.lit([[1, 2, 3]])'' -> Series List<i64>
+    - ''pl.lit(None)'' -> Series Null
 
     """
     time_unit: TimeUnit
