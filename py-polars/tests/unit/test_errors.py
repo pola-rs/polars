@@ -551,3 +551,10 @@ def test_groupby_dynamic_validation(every: str, match: str) -> None:
 def test_lit_agg_err() -> None:
     with pytest.raises(pl.ComputeError, match=r"cannot aggregate a literal"):
         pl.DataFrame({"y": [1]}).with_columns(pl.lit(1).sum().over("y"))
+
+
+def test_window_size_validation() -> None:
+    df = pl.DataFrame({"x": [1.0]})
+
+    with pytest.raises(ValueError, match=r"'window_size' should be positive"):
+        df.with_columns(trailing_min=pl.col("x").rolling_min(window_size=-3))

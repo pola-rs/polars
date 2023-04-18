@@ -7479,6 +7479,9 @@ def _prepare_rolling_window_args(
     min_periods: int | None = None,
 ) -> tuple[str, int]:
     if isinstance(window_size, int):
+        if window_size < 1:
+            raise ValueError("'window_size' should be positive")
+
         if min_periods is None:
             min_periods = window_size
         window_size = f"{window_size}i"

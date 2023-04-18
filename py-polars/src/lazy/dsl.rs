@@ -1368,6 +1368,7 @@ impl PyExpr {
         by: Option<String>,
         closed: Option<Wrap<ClosedWindow>>,
     ) -> Self {
+        dbg!(window_size);
         let options = RollingOptions {
             window_size: Duration::parse(window_size),
             weights,
