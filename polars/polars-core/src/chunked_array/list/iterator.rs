@@ -33,8 +33,10 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
                         let mut s = Series::from_chunks_and_dtype_unchecked(
                             "",
                             vec![array_ref],
-                            &self.inner_dtype,
-                        );
+                            &self.inner_dtype.to_physical(),
+                        )
+                        .cast_unchecked(&self.inner_dtype)
+                        .unwrap();
                         // swap the new series with the container
                         std::mem::swap(&mut *self.series_container, &mut s);
                         // return a reference to the container
@@ -105,13 +107,23 @@ impl ListChunked {
         let arr = self.downcast_iter().next().unwrap();
         let inner_values = arr.values();
 
+        let inner_dtype = self.inner_dtype();
+        let iter_dtype = match inner_dtype {
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(_) => inner_dtype.to_physical(),
+            // TODO: figure out how to deal with physical/logical distinction
+            // physical primitives like time, date etc. work
+            // physical nested need more
+            _ => inner_dtype.clone(),
+        };
+
         // Safety:
-        // inner types logical type fits physical type
+        // inner type passed as physical type
         let series_container = unsafe {
             Box::new(Series::from_chunks_and_dtype_unchecked(
                 name,
                 vec![inner_values.clone()],
-                &self.inner_dtype(),
+                &iter_dtype,
             ))
         };
 
@@ -123,7 +135,7 @@ impl ListChunked {
             inner: NonNull::new(ptr).unwrap(),
             lifetime: PhantomData,
             iter: self.downcast_iter().flat_map(|arr| arr.iter()),
-            inner_dtype: self.inner_dtype(),
+            inner_dtype,
         }
     }
 

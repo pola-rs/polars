@@ -279,36 +279,13 @@ impl StructChunked {
             None,
         ))
     }
-}
-
-impl LogicalType for StructChunked {
-    fn dtype(&self) -> &DataType {
-        self.field.data_type()
+    /// # Safety
+    /// The set dtype must be correct.
+    pub unsafe fn set_field(&mut self, field: Field) {
+        self.field = field
     }
 
-    /// Gets AnyValue from LogicalType
-    fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
-        polars_ensure!(i < self.len(), oob = i, self.len());
-        unsafe { Ok(self.get_any_value_unchecked(i)) }
-    }
-
-    unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
-        let (chunk_idx, idx) = index_to_chunked_index2(&self.chunks, i);
-        if let DataType::Struct(flds) = self.dtype() {
-            // safety: we already have a single chunk and we are
-            // guarded by the type system.
-            unsafe {
-                let arr = &**self.chunks.get_unchecked(chunk_idx);
-                let arr = &*(arr as *const dyn Array as *const StructArray);
-                AnyValue::Struct(idx, arr, flds)
-            }
-        } else {
-            unreachable!()
-        }
-    }
-
-    // in case of a struct, a cast will coerce the inner types
-    fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
+    unsafe fn cast_impl(&self, dtype: &DataType, unchecked: bool) -> PolarsResult<Series> {
         match dtype {
             DataType::Struct(dtype_fields) => {
                 let map = BTreeMap::from_iter(self.fields().iter().map(|s| (s.name(), s)));
@@ -316,7 +293,13 @@ impl LogicalType for StructChunked {
                 let new_fields = dtype_fields
                     .iter()
                     .map(|new_field| match map.get(new_field.name().as_str()) {
-                        Some(s) => s.cast(&new_field.dtype),
+                        Some(s) => {
+                            if unchecked {
+                                s.cast_unchecked(&new_field.dtype)
+                            } else {
+                                s.cast(&new_field.dtype)
+                            }
+                        }
                         None => Ok(Series::full_null(
                             new_field.name(),
                             struct_len,
@@ -384,11 +367,56 @@ impl LogicalType for StructChunked {
                 let fields = self
                     .fields
                     .iter()
-                    .map(|s| s.cast(dtype))
+                    .map(|s| {
+                        if unchecked {
+                            s.cast_unchecked(dtype)
+                        } else {
+                            s.cast(dtype)
+                        }
+                    })
                     .collect::<PolarsResult<Vec<_>>>()?;
                 Ok(Self::new_unchecked(self.field.name(), &fields).into_series())
             }
         }
+    }
+
+    pub(crate) unsafe fn cast_unchecked(&self, dtype: &DataType) -> PolarsResult<Series> {
+        if dtype == self.dtype() {
+            return Ok(self.clone().into_series());
+        }
+        self.cast_impl(dtype, true)
+    }
+}
+
+impl LogicalType for StructChunked {
+    fn dtype(&self) -> &DataType {
+        self.field.data_type()
+    }
+
+    /// Gets AnyValue from LogicalType
+    fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
+        polars_ensure!(i < self.len(), oob = i, self.len());
+        unsafe { Ok(self.get_any_value_unchecked(i)) }
+    }
+
+    unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
+        let (chunk_idx, idx) = index_to_chunked_index2(&self.chunks, i);
+        if let DataType::Struct(flds) = self.dtype() {
+            // safety: we already have a single chunk and we are
+            // guarded by the type system.
+            unsafe {
+                let arr = &**self.chunks.get_unchecked(chunk_idx);
+                let arr = &*(arr as *const dyn Array as *const StructArray);
+                AnyValue::Struct(idx, arr, flds)
+            }
+        } else {
+            unreachable!()
+        }
+    }
+
+    // in case of a struct, a cast will coerce the inner types
+    fn cast(&self, dtype: &DataType) -> PolarsResult<Series> {
+        unsafe { self.cast_impl(dtype, false) }
     }
 }
 
