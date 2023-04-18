@@ -4,7 +4,7 @@
 
 You can build `polars-sql` with cargo.
 
-`$ cargo run --release --features=cli,parquet,csv,ipc`
+`$ cargo run --release --features=cli,parquet,csv,ipc,highlight`
 
 This will run the CLI loop:
 
@@ -13,13 +13,10 @@ Welcome to Polars CLI. Commands end with ; or \n
 Type help or \? for help.
 >> \?
 List of all client commands:
-dataframes          \dd         Show registered frames.
 help                \?          Display this help.
-register            \rd         Register new dataframe: \rd <name> <source>
 quit                \q          Exit
 
->> register taxis /home/ritchie46/example/csv-benchmark/yellow_tripdata_2010-01.parquet
-Added dataframe "taxis" from file /home/ritchie46/example/csv-benchmark/yellow_tripdata_2010-01.parquet
+>> select * from read_parquet('/home/ritchie46/example/csv-benchmark/yellow_tripdata_2010-01.parquet')
 shape: (14_863_778, 18)
 ┌───────────┬─────────────────────┬─────────────────────┬─────────────────┬─────┬─────────┬────────────┬──────────────┬──────────────┐
 │ vendor_id ┆ pickup_datetime     ┆ dropoff_datetime    ┆ passenger_count ┆ ... ┆ mta_tax ┆ tip_amount ┆ tolls_amount ┆ total_amount │
