@@ -22,6 +22,7 @@ thread_local! {pub(crate) static TABLES: RefCell<Vec<String>> = RefCell::new(vec
 #[derive(Default, Clone)]
 pub struct SQLContext {
     pub(crate) table_map: PlHashMap<String, LazyFrame>,
+    pub(crate) tables: Vec<String>,
     cte_map: RefCell<PlHashMap<String, LazyFrame>>,
 }
 
@@ -30,12 +31,15 @@ impl SQLContext {
     pub fn new() -> Self {
         Self {
             table_map: PlHashMap::new(),
+            tables: vec![],
             cte_map: RefCell::new(PlHashMap::new()),
         }
     }
+
     /// Register a DataFrame as a table in the SQLContext.
     pub fn register(&mut self, name: &str, lf: LazyFrame) {
         self.table_map.insert(name.to_owned(), lf);
+        self.tables.push(name.to_owned());
     }
 
     fn register_cte(&mut self, name: &str, lf: LazyFrame) {
@@ -66,7 +70,6 @@ impl SQLContext {
         let ast = stmt;
         Ok(match ast {
             Statement::Query(query) => self.execute_query(query)?,
-
             stmt @ Statement::ShowTables { .. } => self.execute_show_tables(stmt)?,
             stmt @ Statement::CreateTable { .. } => self.execute_create_table(stmt)?,
             _ => polars_bail!(
@@ -79,6 +82,7 @@ impl SQLContext {
         self.register_ctes(query)?;
         let mut lf = match &query.body.as_ref() {
             SetExpr::Select(select_stmt) => self.execute_select(select_stmt)?,
+            SetExpr::Query(query) => self.execute_query(query)?,
             _ => polars_bail!(ComputeError: "INSERT, UPDATE is not supported"),
         };
 
@@ -100,10 +104,7 @@ impl SQLContext {
     }
 
     fn execute_show_tables(&mut self, _: &Statement) -> PolarsResult<LazyFrame> {
-        let tables = Series::new(
-            "name",
-            self.table_map.clone().into_keys().collect::<Vec<_>>(),
-        );
+        let tables = Series::new("name", self.tables.clone());
         let df = DataFrame::new(vec![tables])?;
         Ok(df.lazy())
     }
@@ -383,5 +384,30 @@ impl Drop for SQLContext {
         TABLES.with(|cell| {
             cell.borrow_mut().clear();
         });
+    }
+}
+
+#[cfg(feature = "private")]
+impl SQLContext {
+    /// get all registered tables. For internal use only.
+    pub fn get_tables(&self) -> Vec<String> {
+        self.tables.clone()
+    }
+    /// get internal table map. For internal use only.
+    #[cfg(feature = "private")]
+    pub fn get_table_map(&self) -> PlHashMap<String, LazyFrame> {
+        self.table_map.clone()
+    }
+    /// Create a new SQLContext from a table map and a list of tables. For internal use only
+    #[cfg(feature = "private")]
+    pub fn new_from_tables_and_map(
+        tables: Vec<String>,
+        table_map: PlHashMap<String, LazyFrame>,
+    ) -> Self {
+        Self {
+            table_map,
+            tables,
+            cte_map: RefCell::new(PlHashMap::new()),
+        }
     }
 }
