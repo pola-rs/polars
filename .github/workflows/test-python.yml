@@ -50,11 +50,6 @@ jobs:
       - name: Set up Rust
         run: rustup show
 
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: py-polars
-
       - name: Use sccache
         uses: mozilla-actions/sccache-action@v0.0.3
 
@@ -113,11 +108,6 @@ jobs:
 
       - name: Set up Rust
         run: rustup show
-
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: py-polars
 
       - name: Use sccache
         uses: mozilla-actions/sccache-action@v0.0.3

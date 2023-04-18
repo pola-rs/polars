@@ -20,9 +20,6 @@ jobs:
       - name: Set up Rust
         run: rustup component add rust-docs
 
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
-
       - name: Build Rust documentation
         env:
           RUSTDOCFLAGS: --cfg docsrs

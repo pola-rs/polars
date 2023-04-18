@@ -51,11 +51,6 @@ jobs:
       - name: Set up Rust
         run: rustup component add rustfmt clippy
 
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: py-polars
-
       - name: Lint Rust
         run: |
           cargo fmt --all -- --check

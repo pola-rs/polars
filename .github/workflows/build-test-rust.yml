@@ -24,9 +24,6 @@ jobs:
       - name: Set up Rust
         run: rustup override set stable
 
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
-
       - name: Use sccache
         uses: mozilla-actions/sccache-action@v0.0.3
 
@@ -41,9 +38,6 @@ jobs:
 
       - name: Set up Rust
         run: rustup show
-
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
 
       - name: Use sccache
         uses: mozilla-actions/sccache-action@v0.0.3
@@ -66,11 +60,6 @@ jobs:
 
       - name: Set up Rust
         run: rustup component add rustfmt clippy miri
-
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: polars
 
       - name: Use sccache
         uses: mozilla-actions/sccache-action@v0.0.3
@@ -110,11 +99,6 @@ jobs:
 
       - name: Set up Rust
         run: rustup show
-
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: polars
 
       - name: Use sccache
         uses: mozilla-actions/sccache-action@v0.0.3
