@@ -558,3 +558,11 @@ def test_window_size_validation() -> None:
 
     with pytest.raises(ValueError, match=r"'window_size' should be positive"):
         df.with_columns(trailing_min=pl.col("x").rolling_min(window_size=-3))
+
+
+@typing.no_type_check
+def test_invalid_getitem_key_err() -> None:
+    df = pl.DataFrame({"x": [1.0], "y": [1.0]})
+
+    with pytest.raises(KeyError, match=r"('x', 'y')"):
+        df["x", "y"]

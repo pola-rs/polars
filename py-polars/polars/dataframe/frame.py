@@ -1519,6 +1519,14 @@ class DataFrame:
         ),
     ) -> DataFrame | Series:
         """Get item. Does quite a lot. Read the comments."""
+        # fail on ['col1', 'col2', ..., 'coln']
+        if (
+            isinstance(item, tuple)
+            and len(item) > 1
+            and all(isinstance(x, str) for x in item)
+        ):
+            raise KeyError(item)
+
         # select rows and columns at once
         # every 2d selection, i.e. tuple is row column order, just like numpy
         if isinstance(item, tuple) and len(item) == 2:
