@@ -232,6 +232,51 @@ pub(crate) enum PolarsSqlFunctions {
     /// ```
     ArrayContains,
 }
+impl PolarsSqlFunctions {
+    pub(crate) fn keywords() -> &'static [&'static str] {
+        &[
+            "abs",
+            "acos",
+            "asin",
+            "atan",
+            "ceil",
+            "ceiling",
+            "exp",
+            "floor",
+            "ln",
+            "log2",
+            "log10",
+            "log",
+            "log1p",
+            "pow",
+            "lower",
+            "upper",
+            "ltrim",
+            "rtrim",
+            "starts_with",
+            "ends_with",
+            "count",
+            "sum",
+            "min",
+            "max",
+            "avg",
+            "stddev",
+            "variance",
+            "first",
+            "last",
+            "array_length",
+            "array_lower",
+            "array_upper",
+            "array_sum",
+            "array_mean",
+            "array_reverse",
+            "array_unique",
+            "unnest",
+            "array_get",
+            "array_contains",
+        ]
+    }
+}
 
 impl TryFrom<&'_ SQLFunction> for PolarsSqlFunctions {
     type Error = PolarsError;
