@@ -279,3 +279,18 @@ def test_explode_invalid_element_count() -> None:
         pl.ShapeError, match=r"exploded columns must have matching element counts"
     ):
         df.explode(["col1", "col2"])
+
+
+def test_logical_explode() -> None:
+    out = (
+        pl.DataFrame(
+            {"cats": ["Value1", "Value2", "Value1"]},
+            schema_overrides={"cats": pl.Categorical},
+        )
+        .groupby(1)
+        .agg(pl.struct("cats"))
+        .explode("cats")
+        .unnest("cats")
+    )
+    assert out["cats"].dtype == pl.Categorical
+    assert out["cats"].to_list() == ["Value1", "Value2", "Value1"]

@@ -176,6 +176,10 @@ impl SeriesTrait for NullChunked {
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         self.append(other)
     }
+
+    fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
+        Arc::new(self.clone())
+    }
 }
 
 unsafe impl IntoSeries for NullChunked {

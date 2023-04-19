@@ -63,10 +63,10 @@ class ExprStringNameSpace:
             Use a cache of unique, converted dates to apply the datetime conversion.
         tz_aware
             Parse timezone aware datetimes. This may be automatically toggled by the
-            `fmt` given.
+            `format` given.
 
             .. deprecated:: 0.16.17
-                This is now auto-inferred from the given `fmt`. You can safely drop
+                This is now auto-inferred from the given `format`. You can safely drop
                 this argument, it will be removed in a future version.
         utc
             Parse timezone aware datetimes as UTC. This may be useful if you have data
@@ -122,7 +122,7 @@ class ExprStringNameSpace:
         └────────────┘
 
         """
-        if not is_polars_dtype(dtype):  # pragma: no cover
+        if not is_polars_dtype(dtype):
             raise ValueError(f"expected: {DataType} got: {dtype}")
 
         if format is not None and "%f" in format:
@@ -147,26 +147,26 @@ class ExprStringNameSpace:
             )
 
         if dtype == Date:
-            return wrap_expr(self._pyexpr.str_parse_date(format, strict, exact, cache))
+            return wrap_expr(self._pyexpr.str_to_date(format, strict, exact, cache))
         elif dtype == Datetime:
             time_unit = dtype.time_unit  # type: ignore[union-attr]
             time_zone = dtype.time_zone  # type: ignore[union-attr]
             dtcol = wrap_expr(
-                self._pyexpr.str_parse_datetime(
+                self._pyexpr.str_to_datetime(
                     format,
+                    time_unit,
+                    time_zone,
                     strict,
                     exact,
                     cache,
                     tz_aware,
                     utc,
-                    time_unit,
-                    time_zone,
                 )
             )
             return dtcol if (time_unit is None) else dtcol.dt.cast_time_unit(time_unit)
         elif dtype == Time:
-            return wrap_expr(self._pyexpr.str_parse_time(format, strict, exact, cache))
-        else:  # pragma: no cover
+            return wrap_expr(self._pyexpr.str_to_time(format, strict, exact, cache))
+        else:
             raise ValueError("dtype should be of type {Date, Datetime, Time}")
 
     def lengths(self) -> Expr:

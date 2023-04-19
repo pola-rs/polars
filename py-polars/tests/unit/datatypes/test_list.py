@@ -471,3 +471,41 @@ def test_null_list_construction_and_materialization() -> None:
     s = pl.Series([None, []])
     assert s.dtype == pl.List(pl.Null)
     assert s.to_list() == [None, []]
+
+
+def test_logical_type_struct_agg_list() -> None:
+    df = pl.DataFrame(
+        {"cats": ["Value1", "Value2", "Value1"]},
+        schema_overrides={"cats": pl.Categorical},
+    )
+    out = df.groupby(1).agg(pl.struct("cats"))
+    assert out.dtypes == [
+        pl.Int32,
+        pl.List(pl.Struct([pl.Field("cats", pl.Categorical)])),
+    ]
+    assert out["cats"].to_list() == [
+        [{"cats": "Value1"}, {"cats": "Value2"}, {"cats": "Value1"}]
+    ]
+
+
+def test_logical_parallel_list_collect() -> None:
+    # this triggers the anonymous builder in par collect
+    out = (
+        pl.DataFrame(
+            {
+                "Group": ["GroupA", "GroupA", "GroupA"],
+                "Values": ["Value1", "Value2", "Value1"],
+            },
+            schema_overrides={"Values": pl.Categorical},
+        )
+        .groupby("Group")
+        .agg(pl.col("Values").value_counts(sort=True))
+        .explode("Values")
+        .unnest("Values")
+    )
+    assert out.dtypes == [pl.Utf8, pl.Categorical, pl.UInt32]
+    assert out.to_dict(False) == {
+        "Group": ["GroupA", "GroupA"],
+        "Values": ["Value1", "Value2"],
+        "counts": [2, 1],
+    }
