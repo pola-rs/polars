@@ -63,14 +63,14 @@ fn print_help() {
     println!("{}", df);
 }
 
-enum PolarsCommand {
+pub(super) enum PolarsCommand {
     Help,
     Exit,
     Save(PathBuf),
     Open(PathBuf),
     Unknown(String),
 }
-
+// fn print_error()
 impl PolarsCommand {
     fn execute_and_print(&self, ctx: &mut SQLContext) {
         match self.execute(ctx) {
@@ -205,4 +205,10 @@ pub(super) fn run_tty(output_mode: OutputMode) -> std::io::Result<()> {
         }
     }
     Ok(())
+}
+
+impl PolarsCommand {
+    pub(super) fn keywords() -> Vec<&'static str> {
+        vec!["exit", "quit", "save", "open", "help"]
+    }
 }
