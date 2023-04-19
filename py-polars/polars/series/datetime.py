@@ -97,7 +97,7 @@ class DateTimeNameSpace:
         s = wrap_s(self._s)
         out = s.median()
         if out is not None:
-            return _to_python_datetime(int(out), s.dtype, s.time_unit)
+            return _to_python_datetime(int(out), s.time_unit)
         return None
 
     def mean(self) -> dt.date | dt.datetime | None:
@@ -123,7 +123,7 @@ class DateTimeNameSpace:
         s = wrap_s(self._s)
         out = s.mean()
         if out is not None:
-            return _to_python_datetime(int(out), s.dtype, s.time_unit)
+            return _to_python_datetime(int(out), s.time_unit)
         return None
 
     @deprecated_alias(fmt="format")
