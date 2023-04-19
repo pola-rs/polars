@@ -1,15 +1,18 @@
 use std::env;
+use std::io::Cursor;
 use std::path::PathBuf;
 
 use clap::crate_version;
+use once_cell::sync::Lazy;
 use polars::df;
+use polars::prelude::{DataFrame, *};
 use polars::sql::SQLContext;
 use reedline::{FileBackedHistory, Reedline, Signal};
 
 #[cfg(feature = "highlight")]
 use crate::highlighter::SQLHighlighter;
 use crate::prompt::SQLPrompt;
-use crate::OutputMode;
+use crate::{OutputMode, SerializableContext};
 
 fn get_home_dir() -> PathBuf {
     match env::var("HOME") {
@@ -28,58 +31,117 @@ fn get_history_path() -> PathBuf {
     home_dir
 }
 
-// Command: help
-fn print_help() {
-    use polars::prelude::*;
-    let df = df! {
+static HELP_DF: Lazy<DataFrame> = Lazy::new(|| {
+    df! {
         "command" => [
-          ".help",
-          ".exit"
+            ".exit",
+            ".quit",
+            ".save FILE",
+            ".open FILE",
+            ".help",
       ],
         "description" => [
-          "Display this help.",
-          "Exit this program",
+            "Exit this program",
+            "Exit this program (alias for .exit)",
+            "Save the current state of the database to FILE",
+            "Open a database from FILE",
+            "Display this help.",
       ]
     }
-    .unwrap();
+    .unwrap()
+});
+
+// Command: help
+fn print_help() {
+    let _tmp_env = (
+        tmp_env::set_var("POLARS_FMT_TABLE_FORMATTING", "NOTHING"),
+        tmp_env::set_var("POLARS_FMT_TABLE_HIDE_COLUMN_DATA_TYPES", "1"),
+        tmp_env::set_var("POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION", "1"),
+        tmp_env::set_var("POLARS_FMT_TABLE_HIDE_COLUMN_NAMES", "1"),
+        tmp_env::set_var("POLARS_FMT_STR_LEN", "80"),
+    );
+    let df: &DataFrame = &HELP_DF;
     println!("{}", df);
 }
 
 enum PolarsCommand {
     Help,
     Exit,
+    Save(PathBuf),
+    Open(PathBuf),
+    Unknown(String),
 }
 
 impl PolarsCommand {
-    fn execute(&self) -> std::io::Result<()> {
+    fn execute_and_print(&self, ctx: &mut SQLContext) {
+        match self.execute(ctx) {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("Error: {}", e);
+            }
+        }
+    }
+    fn execute(&self, ctx: &mut SQLContext) -> std::io::Result<()> {
         match self {
             PolarsCommand::Help => {
                 print_help();
                 Ok(())
             }
             PolarsCommand::Exit => Ok(()),
+            PolarsCommand::Save(buf) => {
+                let serializable_ctx: SerializableContext = ctx.into();
+                let mut w: Vec<u8> = vec![];
+                let db = ciborium::ser::into_writer(&serializable_ctx, &mut w).map_err(|e| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("Serialization error: {}", e),
+                    )
+                })?;
+
+                *ctx = serializable_ctx.into();
+                std::fs::write(buf, w)?;
+                Ok(())
+            }
+            PolarsCommand::Open(buf) => {
+                let db = std::fs::read(buf)?;
+                let cursor = Cursor::new(db);
+                let serializable_ctx: SerializableContext = ciborium::de::from_reader(cursor)
+                    .map_err(|e| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            format!("Deserialization error: {}", e),
+                        )
+                    })?;
+                *ctx = serializable_ctx.into();
+                Ok(())
+            }
+            PolarsCommand::Unknown(cmd) => {
+                println!(r#"Unknown command: "{cmd}".  Enter ".help" for help"#);
+                Ok(())
+            }
         }
     }
 }
+
 impl TryFrom<(&str, &str)> for PolarsCommand {
     type Error = std::io::Error;
 
     fn try_from(value: (&str, &str)) -> Result<Self, Self::Error> {
-        let (cmd, _) = value;
+        let (cmd, arg) = value;
+
         match cmd {
             ".help" | "?" => Ok(PolarsCommand::Help),
-            ".exit" | "q" => Ok(PolarsCommand::Exit),
-            _ => Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "Unknown command",
-            )),
+            ".exit" | ".quit" => Ok(PolarsCommand::Exit),
+            ".save" => Ok(PolarsCommand::Save(arg.trim().into())),
+            ".open" => Ok(PolarsCommand::Open(arg.trim().into())),
+            unknown => Ok(PolarsCommand::Unknown(unknown.to_string())),
         }
     }
 }
 
 pub(super) fn run_tty(output_mode: OutputMode) -> std::io::Result<()> {
     let history = Box::new(
-        FileBackedHistory::with_file(20, get_history_path())
+        FileBackedHistory::with_file(100, get_history_path())
             .expect("Error configuring history with file"),
     );
 
@@ -115,7 +177,7 @@ pub(super) fn run_tty(output_mode: OutputMode) -> std::io::Result<()> {
                             break;
                         };
 
-                        cmd.execute()?
+                        cmd.execute_and_print(&mut context)
                     }
                     _ => {
                         let mut parts = buffer.splitn(2, ';');

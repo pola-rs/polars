@@ -6,6 +6,7 @@ mod prompt;
 #[cfg(target_os = "linux")]
 use jemallocator::Jemalloc;
 use polars::prelude::*;
+use serde::{Deserialize, Serialize};
 
 #[global_allocator]
 #[cfg(target_os = "linux")]
@@ -39,6 +40,8 @@ enum OutputMode {
     Arrow,
     #[default]
     Table,
+    #[value(alias("md"))]
+    Markdown,
 }
 
 impl OutputMode {
@@ -46,18 +49,38 @@ impl OutputMode {
         let mut execute_inner = || {
             let mut df = ctx
                 .execute(query)
-                .and_then(|lf| lf.collect())
+                .and_then(|lf| {
+                    if matches!(self, OutputMode::Table | OutputMode::Markdown) {
+                        let max_rows = std::env::var("POLARS_FMT_MAX_ROWS")
+                            .unwrap_or("20".into())
+                            .parse::<u32>()
+                            .unwrap_or(20);
+                        lf.limit(max_rows).collect()
+                    } else {
+                        lf.collect()
+                    }
+                })
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
             let w = io::stdout();
             let mut w = io::BufWriter::new(w);
-
             match self {
                 OutputMode::Csv => CsvWriter::new(&mut w).finish(&mut df),
                 OutputMode::Json => JsonWriter::new(&mut w).finish(&mut df),
                 OutputMode::Parquet => ParquetWriter::new(&mut w).finish(&mut df).map(|_| ()),
                 OutputMode::Arrow => IpcWriter::new(w).finish(&mut df),
                 OutputMode::Table => {
+                    let _tmp =
+                        tmp_env::set_var("POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION", "1");
+
+                    use std::io::Write;
+                    return write!(&mut w, "{df}");
+                }
+                OutputMode::Markdown => {
+                    let _tmp_env = (
+                        tmp_env::set_var("POLARS_FMT_TABLE_FORMATTING", "ASCII_MARKDOWN"),
+                        tmp_env::set_var("POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION", "1"),
+                    );
                     use std::io::Write;
                     return write!(&mut w, "{df}");
                 }
@@ -86,6 +109,38 @@ impl FromStr for OutputMode {
             "table" => Ok(OutputMode::Table),
             _ => Err(format!("Invalid output mode: {}", s)),
         }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct SerializableContext {
+    table_map: PlIndexMap<String, LogicalPlan>,
+    tables: Vec<String>,
+}
+
+impl From<&'_ mut SQLContext> for SerializableContext {
+    fn from(ctx: &mut SQLContext) -> Self {
+        let table_map = ctx
+            .clone()
+            .get_table_map()
+            .into_iter()
+            .map(|(k, v)| (k, v.logical_plan))
+            .collect::<PlIndexMap<_, _>>();
+        let tables = ctx.get_tables();
+
+        Self { table_map, tables }
+    }
+}
+
+impl From<SerializableContext> for SQLContext {
+    fn from(ctx: SerializableContext) -> Self {
+        SQLContext::new_from_tables_and_map(
+            ctx.tables,
+            ctx.table_map
+                .into_iter()
+                .map(|(k, v)| (k, v.into()))
+                .collect::<PlHashMap<_, _>>(),
+        )
     }
 }
 

@@ -171,7 +171,7 @@ test = [
 ]
 
 # don't use this
-private = ["polars-lazy/private", "polars-core/private", "polars-time/private"]
+private = ["polars-lazy/private", "polars-core/private", "polars-time/private", "polars-sql/private"]
 
 # all opt-in datatypes
 dtype-full = [
