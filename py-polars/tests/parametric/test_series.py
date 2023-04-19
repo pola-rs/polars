@@ -3,7 +3,6 @@
 # -------------------------------------------------
 from __future__ import annotations
 
-from decimal import Decimal
 from typing import no_type_check
 
 import numpy as np
@@ -120,45 +119,67 @@ def test_series_slice(
 
 
 @given(
-    s1=series(min_size=1, max_size=10, dtype=pl.Datetime),
-    s2=series(min_size=1, max_size=10, dtype=pl.Duration),
+    s=series(min_size=1, max_size=10, dtype=pl.Datetime),
 )
-def test_series_timeunits(
-    s1: pl.Series,
-    s2: pl.Series,
+def test_series_datetime_timeunits(
+    s: pl.Series,
 ) -> None:
     # datetime
-    assert s1.to_list() == list(s1)
-    assert list(s1.dt.millisecond()) == [v.microsecond // 1000 for v in s1]
-    assert list(s1.dt.nanosecond()) == [v.microsecond * 1000 for v in s1]
-    assert list(s1.dt.microsecond()) == [v.microsecond for v in s1]
+    assert s.to_list() == list(s)
+    assert list(s.dt.millisecond()) == [v.microsecond // 1000 for v in s]
+    assert list(s.dt.nanosecond()) == [v.microsecond * 1000 for v in s]
+    assert list(s.dt.microsecond()) == [v.microsecond for v in s]
 
-    # duration
-    millis = s2.dt.milliseconds().to_list()
-    micros = s2.dt.microseconds().to_list()
 
-    assert s1.to_list() == list(s1)
-    assert millis == [int(Decimal(v) / 1000) for v in s2.cast(int)]
-    assert micros == list(s2.cast(int))
+@given(
+    s=series(min_size=1, max_size=10, dtype=pl.Duration),
+)
+def test_series_duration_timeunits(
+    s: pl.Series,
+) -> None:
+    nanos = s.dt.nanoseconds().to_list()
+    micros = s.dt.microseconds().to_list()
+    millis = s.dt.milliseconds().to_list()
+
+    scale = {
+        "ns": 1,
+        "us": 1_000,
+        "ms": 1_000_000,
+    }
+    assert nanos == [v * scale[s.dtype.time_unit] for v in s.to_physical()]  # type: ignore[union-attr]
+    assert micros == [int(v / 1_000) for v in nanos]
+    assert millis == [int(v / 1_000) for v in micros]
 
     # special handling for ns timeunit (as we may generate a microsecs-based
     # timedelta that results in 64bit overflow on conversion to nanosecs)
+    micros = s.dt.microseconds().to_list()
     lower_bound, upper_bound = -(2**63), (2**63) - 1
     if all(
         (lower_bound <= (us * 1000) <= upper_bound)
         for us in micros
         if isinstance(us, int)
     ):
-        for ns, us in zip(s2.dt.nanoseconds(), micros):
+        for ns, us in zip(s.dt.nanoseconds(), micros):
             assert ns == (us * 1000)
 
 
 @given(
-    s=series(min_size=1, max_size=10, excluded_dtypes=[pl.Categorical]),
+    s=series(min_size=1, max_size=10, excluded_dtypes=[pl.Categorical]).filter(
+        lambda x: (
+            getattr(x.dtype, "time_unit", None) in (None, "us", "ns")
+            and (x.dtype != pl.Utf8 or not x.str.contains("\x00").any())
+        )
+    ),
 )
+@settings(max_examples=250)
 def test_series_to_numpy(
     s: pl.Series,
 ) -> None:
-    if s.dtype != pl.Utf8 or not s.str.contains("\x00").any():
-        np_array = np.array(s.to_list())
-        assert_array_equal(np_array, s.to_numpy())
+    dtype = {
+        pl.Datetime("ns"): "datetime64[ns]",
+        pl.Datetime("us"): "datetime64[us]",
+        pl.Duration("ns"): "timedelta64[ns]",
+        pl.Duration("us"): "timedelta64[us]",
+    }
+    np_array = np.array(s.to_list(), dtype=dtype.get(s.dtype))  # type: ignore[call-overload]
+    assert_array_equal(np_array, s.to_numpy())

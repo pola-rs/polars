@@ -5,7 +5,7 @@ import warnings
 from dataclasses import dataclass
 from math import isfinite
 from textwrap import dedent
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import TYPE_CHECKING, Any, Collection, Sequence
 
 from hypothesis.errors import InvalidArgument, NonInteractiveExampleWarning
 from hypothesis.strategies import (
@@ -18,8 +18,11 @@ from hypothesis.strategies._internal.utils import defines_strategy
 
 from polars.dataframe import DataFrame
 from polars.datatypes import (
+    DTYPE_TEMPORAL_UNITS,
     FLOAT_DTYPES,
     Categorical,
+    Datetime,
+    Duration,
     is_polars_dtype,
     py_type_to_dtype,
 )
@@ -38,6 +41,9 @@ if TYPE_CHECKING:
     from polars.type_aliases import OneOrMoreDataTypes, PolarsDataType
 
 
+_time_units = list(DTYPE_TEMPORAL_UNITS)
+
+
 def empty_list(value: Any, nested: bool) -> bool:
     """Check if value is an empty list, or a list that contains only empty lists."""
     if isinstance(value, list):
@@ -49,10 +55,10 @@ def empty_list(value: Any, nested: bool) -> bool:
 # Polars 'hypothesis' primitives for Series, DataFrame, and LazyFrame
 # See: https://hypothesis.readthedocs.io/
 # ====================================================================
-MAX_DATA_SIZE = 10  # max generated frame length
+MAX_DATA_SIZE = 10  # max generated frame/series length
 MAX_COLS = 8  # max number of generated cols
 
-strategy_dtypes = list(scalar_strategies)
+strategy_dtypes = list({dtype.base_type() for dtype in scalar_strategies})
 
 
 @dataclass
@@ -239,8 +245,8 @@ def series(
     allow_infinities: bool = True,
     unique: bool = False,
     chunked: bool | None = None,
-    allowed_dtypes: Sequence[PolarsDataType] | None = None,
-    excluded_dtypes: Sequence[PolarsDataType] | None = None,
+    allowed_dtypes: Collection[PolarsDataType] | None = None,
+    excluded_dtypes: Collection[PolarsDataType] | None = None,
 ) -> SearchStrategy[Series]:
     """
     Strategy for producing a polars Series.
@@ -327,7 +333,13 @@ def series(
                 draw(sampled_from(selectable_dtypes)) if dtype is None else dtype
             )
             if strategy is None:
-                dtype_strategy = scalar_strategies[series_dtype]
+                if series_dtype is Datetime or series_dtype is Duration:
+                    series_dtype = series_dtype(random.choice(_time_units))  # type: ignore[operator]
+                dtype_strategy = scalar_strategies[
+                    series_dtype
+                    if series_dtype in scalar_strategies
+                    else series_dtype.base_type()
+                ]
             else:
                 dtype_strategy = strategy
 
@@ -401,8 +413,8 @@ def dataframes(
     include_cols: Sequence[column] | None = None,
     null_probability: float | dict[str, float] = 0.0,
     allow_infinities: bool = True,
-    allowed_dtypes: Sequence[PolarsDataType] | None = None,
-    excluded_dtypes: Sequence[PolarsDataType] | None = None,
+    allowed_dtypes: Collection[PolarsDataType] | None = None,
+    excluded_dtypes: Collection[PolarsDataType] | None = None,
 ) -> SearchStrategy[DataFrame | LazyFrame]:
     """
     Provides a strategy for producing a DataFrame or LazyFrame.
