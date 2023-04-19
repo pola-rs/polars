@@ -27,6 +27,7 @@ DTYPE_TEMPORAL_UNITS: frozenset[TimeUnit] = frozenset(["ns", "us", "ms"])
 DATETIME_DTYPES: frozenset[PolarsDataType] = frozenset(
     [
         # TODO: ideally need a mechanism to wildcard timezones here too
+        Datetime,
         Datetime("ms"),
         Datetime("us"),
         Datetime("ns"),
@@ -34,6 +35,7 @@ DATETIME_DTYPES: frozenset[PolarsDataType] = frozenset(
 )
 DURATION_DTYPES: frozenset[PolarsDataType] = frozenset(
     [
+        Duration,
         Duration("ms"),
         Duration("us"),
         Duration("ns"),

@@ -1,5 +1,6 @@
 use polars_core::prelude::{polars_bail, polars_err, PolarsError, PolarsResult};
-use polars_lazy::dsl::{lit, Expr};
+use polars_lazy::dsl::Expr;
+use polars_plan::dsl::count;
 use sqlparser::ast::{
     Expr as SqlExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr, Value as SqlValue,
     WindowSpec,
@@ -448,7 +449,7 @@ impl SqlFunctionVisitor<'_> {
         let args = extract_args(self.func);
         Ok(match (args.len(), self.func.distinct) {
             // count()
-            (0, false) => lit(1i32).count(),
+            (0, false) => count(),
             // count(distinct)
             (0, true) => return not_supported_error("count", &args),
             (1, false) => match args[0] {
@@ -459,7 +460,7 @@ impl SqlFunctionVisitor<'_> {
                     expr.count()
                 }
                 // count(*)
-                FunctionArgExpr::Wildcard => lit(1i32).count(),
+                FunctionArgExpr::Wildcard => count(),
                 // count(tbl.*) is not supported
                 _ => return not_supported_error("count", &args),
             },

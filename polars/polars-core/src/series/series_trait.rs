@@ -465,9 +465,7 @@ pub trait SeriesTrait:
     }
 
     /// Clone inner ChunkedArray and wrap in a new Arc
-    fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
-        invalid_operation_panic!(clone_inner, self)
-    }
+    fn clone_inner(&self) -> Arc<dyn SeriesTrait>;
 
     #[cfg(feature = "object")]
     /// Get the value at this index as a downcastable Any trait ref.

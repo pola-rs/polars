@@ -41,6 +41,15 @@ def test_apply_unnest() -> None:
     assert_frame_equal(df, expected)
 
 
+def test_struct_hashes() -> None:
+    dtypes = (
+        pl.Struct,
+        pl.Struct([pl.Field("a", pl.Int64)]),
+        pl.Struct([pl.Field("a", pl.Int64), pl.Field("b", pl.List(pl.Int64))]),
+    )
+    assert len({hash(tp) for tp in (dtypes)}) == 3
+
+
 def test_struct_unnesting() -> None:
     df = pl.DataFrame({"a": [1, 2]})
     out = df.select(

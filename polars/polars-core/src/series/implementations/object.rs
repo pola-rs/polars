@@ -167,8 +167,14 @@ where
         ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
     }
 
-    fn cast(&self, _data_type: &DataType) -> PolarsResult<Series> {
-        polars_bail!(opq = cast, self.dtype());
+    fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
+        if matches!(data_type, DataType::Object(_)) {
+            Ok(self.0.clone().into_series())
+        } else {
+            Err(PolarsError::ComputeError(
+                "cannot cast 'Object' type".into(),
+            ))
+        }
     }
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {

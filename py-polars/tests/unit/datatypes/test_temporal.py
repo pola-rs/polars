@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 from datetime import date, datetime, time, timedelta, timezone
-from typing import TYPE_CHECKING, cast, no_type_check
+from typing import TYPE_CHECKING, Any, cast, no_type_check
 
 import numpy as np
 import pandas as pd
@@ -1755,16 +1755,6 @@ def test_sorted_unique() -> None:
     ).to_dict(False) == {"dt": [date(2015, 6, 23), date(2015, 6, 24)]}
 
 
-def test_time_zero_3828() -> None:
-    assert pl.Series(values=[time(0)], dtype=pl.Time).to_list() == [time(0)]
-
-
-def test_time_microseconds_3843() -> None:
-    in_val = [time(0, 9, 11, 558332)]
-    s = pl.Series(in_val)
-    assert s.to_list() == in_val
-
-
 def test_date_to_time_cast_5111() -> None:
     # check date -> time casts (fast-path: always 00:00:00)
     df = pl.DataFrame(
@@ -1859,6 +1849,16 @@ def test_date_timedelta() -> None:
         "date_plus_one": [date(2001, 1, 2), date(2001, 1, 3), date(2001, 1, 4)],
         "date_min_one": [date(2000, 12, 31), date(2001, 1, 1), date(2001, 1, 2)],
     }
+
+
+def test_datetime_hashes() -> None:
+    dtypes = (
+        pl.Datetime,
+        pl.Datetime("us"),
+        pl.Datetime("us", "UTC"),
+        pl.Datetime("us", "Zulu"),
+    )
+    assert len({hash(tp) for tp in (dtypes)}) == 4
 
 
 def test_datetime_string_casts() -> None:
@@ -2789,13 +2789,50 @@ def test_series_is_temporal() -> None:
         assert s.is_temporal(excluding=tp) is False
 
 
-def test_microsecond_precision_any_value_conversion() -> None:
-    dt = datetime(2514, 5, 30, 1, 53, 4, 986754, tzinfo=timezone.utc)
-    assert pl.Series([dt]).to_list() == [dt]
-    dt = datetime(2514, 5, 30, 1, 53, 4, 986754)
+@pytest.mark.parametrize(
+    "time_zone",
+    [
+        None,
+        timezone.utc,
+        "America/Caracas",
+        "Asia/Kathmandu",
+        "Asia/Taipei",
+        "Europe/Amsterdam",
+        "Europe/Lisbon",
+        "Indian/Maldives",
+        "Pacific/Norfolk",
+        "Pacific/Samoa",
+        "Turkey",
+        "US/Eastern",
+        "UTC",
+        "Zulu",
+    ],
+)
+def test_misc_precision_any_value_conversion(time_zone: Any) -> None:
+    tz = ZoneInfo(time_zone) if isinstance(time_zone, str) else time_zone
+
+    # default precision (μs)
+    dt = datetime(2514, 5, 30, 1, 53, 4, 986754, tzinfo=tz)
     assert pl.Series([dt]).to_list() == [dt]
 
+    # ms precision
+    dt = datetime(2243, 1, 1, 0, 0, 0, 1000, tzinfo=tz)
+    assert pl.Series([dt]).cast(pl.Datetime("ms", time_zone)).to_list() == [dt]
 
-def test_millisecond_precision_any_value_conversion_8311() -> None:
-    dt = datetime(2243, 1, 1, 0, 0, 0, 1000)
-    assert pl.Series([dt]).cast(pl.Datetime("ms")).to_list() == [dt]
+    # ns precision
+    dt = datetime(2256, 1, 1, 0, 0, 0, 1, tzinfo=tz)
+    assert pl.Series([dt]).cast(pl.Datetime("ns", time_zone)).to_list() == [dt]
+
+
+@pytest.mark.parametrize(
+    "tm",
+    [
+        time(0, 20, 30, 1),
+        time(8, 40, 15, 8888),
+        time(15, 10, 20, 123456),
+        time(23, 59, 59, 999999),
+    ],
+)
+def test_pytime_conversion(tm: time) -> None:
+    s = pl.Series("tm", [tm])
+    assert s.to_list() == [tm]

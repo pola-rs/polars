@@ -309,6 +309,14 @@ macro_rules! impl_dyn_series {
                         .unwrap()
                         .strftime("%Y-%m-%d")
                         .into_series()),
+                    (DataType::Time, DataType::Utf8) => Ok(self
+                        .0
+                        .clone()
+                        .into_series()
+                        .time()
+                        .unwrap()
+                        .strftime("%T")
+                        .into_series()),
                     #[cfg(feature = "dtype-datetime")]
                     (DataType::Time, DataType::Datetime(_, _)) => {
                         polars_bail!(
