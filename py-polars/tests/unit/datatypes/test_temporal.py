@@ -1755,16 +1755,6 @@ def test_sorted_unique() -> None:
     ).to_dict(False) == {"dt": [date(2015, 6, 23), date(2015, 6, 24)]}
 
 
-def test_time_zero_3828() -> None:
-    assert pl.Series(values=[time(0)], dtype=pl.Time).to_list() == [time(0)]
-
-
-def test_time_microseconds_3843() -> None:
-    in_val = [time(0, 9, 11, 558332)]
-    s = pl.Series(in_val)
-    assert s.to_list() == in_val
-
-
 def test_date_to_time_cast_5111() -> None:
     # check date -> time casts (fast-path: always 00:00:00)
     df = pl.DataFrame(
