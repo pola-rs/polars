@@ -11,7 +11,7 @@ pub struct StrpTimeOptions {
     /// DataType to parse in. One of {Date, Datetime}
     pub date_dtype: DataType,
     /// Formatting string
-    pub fmt: Option<String>,
+    pub format: Option<String>,
     /// If set then polars will return an error if any date parsing fails
     pub strict: bool,
     /// If polars may parse matches that not contain the whole string
@@ -29,7 +29,7 @@ impl Default for StrpTimeOptions {
     fn default() -> Self {
         StrpTimeOptions {
             date_dtype: DataType::Datetime(TimeUnit::Microseconds, None),
-            fmt: None,
+            format: None,
             strict: false,
             exact: false,
             cache: true,
