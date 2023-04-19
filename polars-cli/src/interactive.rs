@@ -1,4 +1,5 @@
 use std::env;
+use std::io::Cursor;
 use std::path::PathBuf;
 
 use clap::crate_version;
@@ -89,8 +90,8 @@ impl PolarsCommand {
             PolarsCommand::Exit => Ok(()),
             PolarsCommand::Save(buf) => {
                 let serializable_ctx: SerializableContext = ctx.into();
-
-                let db = rmp_serde::to_vec_named(&serializable_ctx).map_err(|e| {
+                let mut w: Vec<u8> = vec![];
+                let db = ciborium::ser::into_writer(&serializable_ctx, &mut w).map_err(|e| {
                     std::io::Error::new(
                         std::io::ErrorKind::Other,
                         format!("Serialization error: {}", e),
@@ -98,13 +99,14 @@ impl PolarsCommand {
                 })?;
 
                 *ctx = serializable_ctx.into();
-                std::fs::write(buf, db)?;
+                std::fs::write(buf, w)?;
                 Ok(())
             }
             PolarsCommand::Open(buf) => {
                 let db = std::fs::read(buf)?;
-                let serializable_ctx: SerializableContext =
-                    rmp_serde::from_slice(&db).map_err(|e| {
+                let cursor = Cursor::new(db);
+                let serializable_ctx: SerializableContext = ciborium::de::from_reader(cursor)
+                    .map_err(|e| {
                         std::io::Error::new(
                             std::io::ErrorKind::Other,
                             format!("Deserialization error: {}", e),
