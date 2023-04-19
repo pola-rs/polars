@@ -1,11 +1,3 @@
-use crate::execute_query;
-#[cfg(feature = "highlight")]
-use crate::highlighter::SQLHighlighter;
-#[global_allocator]
-#[cfg(target_os = "linux")]
-#[cfg(feature = "cli")]
-static ALLOC: Jemalloc = Jemalloc;
-
 use std::env;
 use std::path::PathBuf;
 
@@ -14,7 +6,10 @@ use polars::df;
 use polars::sql::SQLContext;
 use reedline::{FileBackedHistory, Reedline, Signal};
 
+#[cfg(feature = "highlight")]
+use crate::highlighter::SQLHighlighter;
 use crate::prompt::SQLPrompt;
+use crate::OutputMode;
 
 fn get_home_dir() -> PathBuf {
     match env::var("HOME") {
@@ -82,7 +77,7 @@ impl TryFrom<(&str, &str)> for PolarsCommand {
     }
 }
 
-pub(super) fn run_tty() -> std::io::Result<()> {
+pub(super) fn run_tty(output_mode: OutputMode) -> std::io::Result<()> {
     let history = Box::new(
         FileBackedHistory::with_file(20, get_history_path())
             .expect("Error configuring history with file"),
@@ -129,7 +124,7 @@ pub(super) fn run_tty() -> std::io::Result<()> {
 
                         let second = parts.next();
                         if second.is_some() {
-                            execute_query(&scratch, &mut context)?;
+                            output_mode.execute_query(&scratch, &mut context);
                             scratch.clear();
                         } else {
                             scratch.push(' ');
