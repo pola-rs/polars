@@ -2812,3 +2812,17 @@ def test_misc_precision_any_value_conversion(time_zone: Any) -> None:
     # ns precision
     dt = datetime(2256, 1, 1, 0, 0, 0, 1, tzinfo=tz)
     assert pl.Series([dt]).cast(pl.Datetime("ns", time_zone)).to_list() == [dt]
+
+
+@pytest.mark.parametrize(
+    "tm",
+    [
+        time(0, 20, 30, 1),
+        time(8, 40, 15, 8888),
+        time(15, 10, 20, 123456),
+        time(23, 59, 59, 999999),
+    ],
+)
+def test_pytime_conversion(tm: time) -> None:
+    s = pl.Series("tm", [tm])
+    assert s.to_list() == [tm]
