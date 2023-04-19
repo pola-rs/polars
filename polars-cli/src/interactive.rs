@@ -70,7 +70,7 @@ pub(super) enum PolarsCommand {
     Open(PathBuf),
     Unknown(String),
 }
-// fn print_error()
+
 impl PolarsCommand {
     fn execute_and_print(&self, ctx: &mut SQLContext) {
         match self.execute(ctx) {
