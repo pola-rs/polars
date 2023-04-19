@@ -1,5 +1,5 @@
 use polars_core::prelude::{polars_bail, polars_err, PolarsError, PolarsResult};
-use polars_lazy::dsl::{lit, Expr};
+use polars_lazy::dsl::{Expr};
 use polars_plan::dsl::count;
 use sqlparser::ast::{
     Expr as SqlExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr, Value as SqlValue,
