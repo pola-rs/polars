@@ -68,9 +68,18 @@ enum PolarsCommand {
     Exit,
     Save(PathBuf),
     Open(PathBuf),
+    Unknown(String),
 }
 
 impl PolarsCommand {
+    fn execute_and_print(&self, ctx: &mut SQLContext) {
+        match self.execute(ctx) {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("Error: {}", e);
+            }
+        }
+    }
     fn execute(&self, ctx: &mut SQLContext) -> std::io::Result<()> {
         match self {
             PolarsCommand::Help => {
@@ -104,6 +113,10 @@ impl PolarsCommand {
                 *ctx = serializable_ctx.into();
                 Ok(())
             }
+            PolarsCommand::Unknown(cmd) => {
+                println!(r#"Unknown command: "{cmd}".  Enter ".help" for help"#);
+                Ok(())
+            }
         }
     }
 }
@@ -119,17 +132,14 @@ impl TryFrom<(&str, &str)> for PolarsCommand {
             ".exit" | ".quit" => Ok(PolarsCommand::Exit),
             ".save" => Ok(PolarsCommand::Save(arg.trim().into())),
             ".open" => Ok(PolarsCommand::Open(arg.trim().into())),
-            _ => Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "Unknown command",
-            )),
+            unknown => Ok(PolarsCommand::Unknown(unknown.to_string())),
         }
     }
 }
 
 pub(super) fn run_tty(output_mode: OutputMode) -> std::io::Result<()> {
     let history = Box::new(
-        FileBackedHistory::with_file(20, get_history_path())
+        FileBackedHistory::with_file(100, get_history_path())
             .expect("Error configuring history with file"),
     );
 
@@ -165,7 +175,7 @@ pub(super) fn run_tty(output_mode: OutputMode) -> std::io::Result<()> {
                             break;
                         };
 
-                        cmd.execute(&mut context)?
+                        cmd.execute_and_print(&mut context)
                     }
                     _ => {
                         let mut parts = buffer.splitn(2, ';');
