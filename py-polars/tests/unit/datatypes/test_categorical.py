@@ -365,3 +365,15 @@ def test_struct_categorical_nesting() -> None:
     assert s.to_list() == [[{"cats": "Value1"}, {"cats": "Value2"}, {"cats": "Value1"}]]
     # triggers different recursive conversion
     assert len(s.to_arrow()) == 1
+
+
+def test_categorical_fill_null_existing_category() -> None:
+    # ensure physical types align
+    assert pl.DataFrame(
+        {"col": ["a", None, "a"]}, schema={"col": pl.Categorical}
+    ).fill_null("a").with_columns(pl.col("col").to_physical().alias("code")).to_dict(
+        False
+    ) == {
+        "col": ["a", "a", "a"],
+        "code": [0, 0, 0],
+    }
