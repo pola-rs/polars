@@ -486,3 +486,26 @@ def test_logical_type_struct_agg_list() -> None:
     assert out["cats"].to_list() == [
         [{"cats": "Value1"}, {"cats": "Value2"}, {"cats": "Value1"}]
     ]
+
+
+def test_logical_parallel_list_collect() -> None:
+    # this triggers the anonymous builder in par collect
+    out = (
+        pl.DataFrame(
+            {
+                "Group": ["GroupA", "GroupA", "GroupA"],
+                "Values": ["Value1", "Value2", "Value1"],
+            },
+            schema_overrides={"Values": pl.Categorical},
+        )
+        .groupby("Group")
+        .agg(pl.col("Values").value_counts(sort=True))
+        .explode("Values")
+        .unnest("Values")
+    )
+    assert out.dtypes == [pl.Utf8, pl.Categorical, pl.UInt32]
+    assert out.to_dict(False) == {
+        "Group": ["GroupA", "GroupA"],
+        "Values": ["Value1", "Value2"],
+        "counts": [2, 1],
+    }

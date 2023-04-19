@@ -445,12 +445,12 @@ impl ListBuilderTrait for LargeListNullBuilder {
 }
 
 pub fn get_list_builder(
-    dt: &DataType,
+    inner_type_logical: &DataType,
     value_capacity: usize,
     list_capacity: usize,
     name: &str,
 ) -> PolarsResult<Box<dyn ListBuilderTrait>> {
-    let physical_type = dt.to_physical();
+    let physical_type = inner_type_logical.to_physical();
 
     match &physical_type {
         #[cfg(feature = "object")]
@@ -459,13 +459,13 @@ pub fn get_list_builder(
         DataType::Struct(_) => Ok(Box::new(AnonymousOwnedListBuilder::new(
             name,
             list_capacity,
-            Some(physical_type),
+            Some(inner_type_logical.clone()),
         ))),
         DataType::Null => Ok(Box::new(LargeListNullBuilder::with_capacity(list_capacity))),
         DataType::List(_) => Ok(Box::new(AnonymousOwnedListBuilder::new(
             name,
             list_capacity,
-            Some(physical_type),
+            Some(inner_type_logical.clone()),
         ))),
         _ => {
             macro_rules! get_primitive_builder {
@@ -474,7 +474,7 @@ pub fn get_list_builder(
                         name,
                         list_capacity,
                         value_capacity,
-                        dt.clone(),
+                        inner_type_logical.clone(),
                     );
                     Box::new(builder)
                 }};
