@@ -19,6 +19,9 @@ from typing import (
     cast,
     overload,
 )
+from typing import (
+    List as TypingList,
+)
 
 from polars.datatypes import (
     Binary,
@@ -175,7 +178,7 @@ def unpack_dtypes(
     Examples
     --------
     >>> from polars.datatypes import unpack_dtypes
-    >>> list_dtype = []  # pl.List(pl.Float64)
+    >>> list_dtype = [pl.List(pl.Float64)]
     >>> struct_dtype = pl.Struct(
     ...     [
     ...         pl.Field("a", pl.Int64),
@@ -185,7 +188,9 @@ def unpack_dtypes(
     ... )
     >>> unpack_dtypes([struct_dtype, list_dtype])  # doctest: +IGNORE_RESULT
     {Float64, Int64, Utf8}
-    >>> unpack_dtypes([struct_dtype, list_dtype], include_compound=True)  # doctest: +IGNORE_RESULT
+    >>> unpack_dtypes(
+    ...     [struct_dtype, list_dtype], include_compound=True
+    ... )  # doctest: +IGNORE_RESULT
     {Float64, Int64, Utf8, List(Float64), Struct([Field('a', Int64), Field('b', Utf8), Field('c', List(Float64))])}
 
     """  # noqa: W505
@@ -195,7 +200,7 @@ def unpack_dtypes(
         dtypes = [dtypes]  # type: ignore[list-item]
 
     unpacked: set[PolarsDataType] = set()
-    for tp in cast(list[PolarsDataType], dtypes):
+    for tp in cast(TypingList[PolarsDataType], dtypes):
         if isinstance(tp, List):
             if include_compound:
                 unpacked.add(tp)
