@@ -16,7 +16,7 @@ lto = true
 panic = "abort"
 
 [features]
-highlight = ["syntect", "nu-ansi-term"]
+highlight = ["nu-ansi-term"]
 default = ["highlight", "parquet", "json", "ipc"]
 parquet = ["polars/parquet"]
 json = ["polars/json"]
@@ -32,7 +32,7 @@ polars = { version = "0.28.0", path = "../polars", features = ["lazy", "sql", "d
 reedline = { version = "0.18.0" }
 serde = { version = "1.0.160", features = ["derive"] }
 sqlparser = { version = "0.30" }
-syntect = { version = "5.0.0", features = ["dump-load"], optional = true }
 tmp_env = "0.1.1"
+
 [target.'cfg(target_os = "linux")'.dependencies]
 jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
