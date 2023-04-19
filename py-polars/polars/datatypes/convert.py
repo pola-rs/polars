@@ -11,11 +11,16 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
+    Collection,
     ForwardRef,
     Optional,
     TypeVar,
     Union,
+    cast,
     overload,
+)
+from typing import (
+    List as TypingList,
 )
 
 from polars.datatypes import (
@@ -28,6 +33,7 @@ from polars.datatypes import (
     Datetime,
     Decimal,
     Duration,
+    Field,
     Float32,
     Float64,
     Int8,
@@ -48,6 +54,7 @@ from polars.datatypes import (
 )
 from polars.dependencies import numpy as np
 from polars.dependencies import pyarrow as pa
+from polars.type_aliases import PolarsDataType
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import dtype_str_repr as _dtype_str_repr
@@ -70,7 +77,7 @@ else:
     UnionType = type(Union[int, float])
 
 if TYPE_CHECKING:
-    from polars.type_aliases import PolarsDataType, PythonDataType, SchemaDict, TimeUnit
+    from polars.type_aliases import PythonDataType, SchemaDict, TimeUnit
 
     if sys.version_info >= (3, 8):
         from typing import Literal
@@ -140,16 +147,73 @@ def map_py_type_to_dtype(python_dtype: PythonDataType | type[object]) -> PolarsD
     raise TypeError("Invalid type")
 
 
-def is_polars_dtype(data_type: Any, include_unknown: bool = False) -> bool:
+def is_polars_dtype(dtype: Any, include_unknown: bool = False) -> bool:
     """Indicate whether the given input is a Polars dtype, or dtype specialisation."""
     try:
-        if data_type == Unknown:
+        if dtype == Unknown:
             # does not represent a realisable dtype, so ignore by default
             return include_unknown
         else:
-            return isinstance(data_type, (DataType, DataTypeClass))
+            return isinstance(dtype, (DataType, DataTypeClass))
     except ValueError:
         return False
+
+
+def unpack_dtypes(
+    dtypes: PolarsDataType | Collection[PolarsDataType] | None,
+    include_compound: bool = False,
+) -> set[PolarsDataType]:
+    """
+    Return a set of unique dtypes found in one or more (potentially compound) dtypes.
+
+    Parameters
+    ----------
+    dtypes : PolarsDataType | Collection[PolarsDataType] | None
+        polars dtype, collection of dtypes, or None.
+
+    include_compound : bool, default True
+        * if True, any parent/compound dtypes (List, Struct) are included in the result.
+        * if False, only the child/scalar dtypes are returned from these types.
+
+    Examples
+    --------
+    >>> from polars.datatypes import unpack_dtypes
+    >>> list_dtype = [pl.List(pl.Float64)]
+    >>> struct_dtype = pl.Struct(
+    ...     [
+    ...         pl.Field("a", pl.Int64),
+    ...         pl.Field("b", pl.Utf8),
+    ...         pl.Field("c", pl.List(pl.Float64)),
+    ...     ]
+    ... )
+    >>> unpack_dtypes([struct_dtype, list_dtype])  # doctest: +IGNORE_RESULT
+    {Float64, Int64, Utf8}
+    >>> unpack_dtypes(
+    ...     [struct_dtype, list_dtype], include_compound=True
+    ... )  # doctest: +IGNORE_RESULT
+    {Float64, Int64, Utf8, List(Float64), Struct([Field('a', Int64), Field('b', Utf8), Field('c', List(Float64))])}
+
+    """  # noqa: W505
+    if not dtypes:
+        return set()
+    elif is_polars_dtype(dtypes):
+        dtypes = [dtypes]  # type: ignore[list-item]
+
+    unpacked: set[PolarsDataType] = set()
+    for tp in cast(TypingList[PolarsDataType], dtypes):
+        if isinstance(tp, List):
+            if include_compound:
+                unpacked.add(tp)
+            unpacked.update(unpack_dtypes(tp.inner, include_compound=include_compound))
+        elif isinstance(tp, Struct):
+            if include_compound:
+                unpacked.add(tp)
+            unpacked.update(unpack_dtypes(tp.fields, include_compound=include_compound))  # type: ignore[arg-type]
+        elif isinstance(tp, Field):
+            unpacked.update(unpack_dtypes(tp.dtype, include_compound=include_compound))
+        elif is_polars_dtype(tp):
+            unpacked.add(tp)
+    return unpacked
 
 
 class _DataTypeMappings:

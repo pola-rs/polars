@@ -509,3 +509,12 @@ def test_logical_parallel_list_collect() -> None:
         "Values": ["Value1", "Value2"],
         "counts": [2, 1],
     }
+
+
+def test_list_recursive_categorical_cast() -> None:
+    # go 3 deep, just to show off
+    dtype = pl.List(pl.List(pl.List(pl.Categorical)))
+    values = [[[["x"], ["y"]]], [[["x"]]]]
+    s = pl.Series(values).cast(dtype)
+    assert s.dtype == dtype
+    assert s.to_list() == values

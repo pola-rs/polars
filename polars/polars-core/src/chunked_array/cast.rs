@@ -271,7 +271,10 @@ impl ChunkCast for ListChunked {
 
                 match (self.inner_dtype(), &**child_type) {
                     #[cfg(feature = "dtype-categorical")]
-                    (Utf8, Categorical(_)) => {
+                    (Utf8, Categorical(_)) |
+                    // ensure the inner logical type bubbles up
+                    (List(_), List(_))
+                    => {
                         let (arr, child_type) = cast_list(self, child_type)?;
                         Ok(unsafe {
                             Series::from_chunks_and_dtype_unchecked(
@@ -280,7 +283,7 @@ impl ChunkCast for ListChunked {
                                 &List(Box::new(child_type)),
                             )
                         })
-                    }
+                    },
                     #[cfg(feature = "dtype-categorical")]
                     (dt, Categorical(None)) => {
                         polars_bail!(ComputeError: "cannot cast list inner type: '{:?}' to Categorical", dt)

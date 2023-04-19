@@ -47,6 +47,7 @@ from polars.datatypes import (
     UInt64,
     Utf8,
     py_type_to_dtype,
+    unpack_dtypes,
 )
 from polars.dependencies import (
     _PYARROW_AVAILABLE,
@@ -8129,7 +8130,8 @@ class DataFrame:
                 and _PYARROW_AVAILABLE
                 # note: 'ns' precision instantiates values as pandas types - avoid
                 and not any(
-                    (getattr(tp, "time_unit", None) == "ns") for tp in self.dtypes
+                    (getattr(tp, "time_unit", None) == "ns")
+                    for tp in unpack_dtypes(self.dtypes)
                 )
             )
             for offset in range(0, self.height, buffer_size):
