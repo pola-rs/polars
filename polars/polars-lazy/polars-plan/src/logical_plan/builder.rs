@@ -335,12 +335,7 @@ impl LogicalPlanBuilder {
         let schema = try_delayed!(self.0.schema(), &self.0, into);
         let exprs = schema
             .iter_names()
-            .map(|name| {
-                when(col(name).is_null())
-                    .then(fill_value.clone())
-                    .otherwise(col(name))
-                    .alias(name)
-            })
+            .map(|name| col(name).fill_null(fill_value.clone()))
             .collect();
         self.project_local(exprs)
     }
