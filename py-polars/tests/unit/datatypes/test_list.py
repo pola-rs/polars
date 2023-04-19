@@ -471,3 +471,18 @@ def test_null_list_construction_and_materialization() -> None:
     s = pl.Series([None, []])
     assert s.dtype == pl.List(pl.Null)
     assert s.to_list() == [None, []]
+
+
+def test_logical_type_struct_agg_list() -> None:
+    df = pl.DataFrame(
+        {"cats": ["Value1", "Value2", "Value1"]},
+        schema_overrides={"cats": pl.Categorical},
+    )
+    out = df.groupby(1).agg(pl.struct("cats"))
+    assert out.dtypes == [
+        pl.Int32,
+        pl.List(pl.Struct([pl.Field("cats", pl.Categorical)])),
+    ]
+    assert out["cats"].to_list() == [
+        [{"cats": "Value1"}, {"cats": "Value2"}, {"cats": "Value1"}]
+    ]
