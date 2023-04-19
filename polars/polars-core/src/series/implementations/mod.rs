@@ -14,6 +14,8 @@ mod datetime;
 mod decimal;
 #[cfg(feature = "dtype-duration")]
 mod duration;
+#[cfg(feature = "dtype-fixed-size-list")]
+mod fixed_size_list;
 mod floats;
 mod list;
 pub(crate) mod null;
@@ -531,6 +533,7 @@ impl<T: PolarsNumericType> private::PrivateSeriesNumeric for SeriesWrap<ChunkedA
 impl private::PrivateSeriesNumeric for SeriesWrap<Utf8Chunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<BinaryChunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<ListChunked> {}
+#[cfg(feature = "dtype-fixed-size-list")]
 impl private::PrivateSeriesNumeric for SeriesWrap<FixedSizeListChunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<BooleanChunked> {
     fn bit_repr_is_large(&self) -> bool {

@@ -144,6 +144,33 @@ impl<T: AsRef<[Series]>> NamedFrom<T, ListType> for Series {
     }
 }
 
+// #[cfg(feature = "dtype-fixed-size-list")]
+// impl<T: AsRef<[Series]>> NamedFrom<T, FixedSizeListType> for Series {
+//     fn new(name: &str, s: T) -> Self {
+//         let series_slice = s.as_ref();
+//         let list_cap = series_slice.len();
+
+//         let dt = series_slice[0].dtype();
+
+//         // inner type is also list so we need the anonymous builder
+//         if let DataType::FixedSizeList(_, _) = dt {
+//             let mut builder = AnonymousListBuilder::new(name, list_cap, Some(dt.clone()));
+//             for s in series_slice {
+//                 builder.append_series(s)
+//             }
+//             builder.finish().into_series()
+//         } else {
+//             let values_cap = series_slice.iter().fold(0, |acc, s| acc + s.len());
+
+//             let mut builder = get_list_builder(dt, values_cap, list_cap, name).unwrap();
+//             for series in series_slice {
+//                 builder.append_series(series)
+//             }
+//             builder.finish().into_series()
+//         }
+//     }
+// }
+
 impl<T: AsRef<[Option<Series>]>> NamedFrom<T, [Option<Series>]> for Series {
     fn new(name: &str, s: T) -> Self {
         let series_slice = s.as_ref();

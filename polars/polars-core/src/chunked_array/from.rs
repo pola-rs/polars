@@ -105,6 +105,7 @@ impl ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-fixed-size-list")]
 impl FixedSizeListChunked {
     pub(crate) unsafe fn from_chunks_and_dtype_unchecked(
         name: &str,

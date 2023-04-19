@@ -443,11 +443,11 @@ fn convert_inner_types(arr: &ArrayRef) -> ArrayRef {
             let out = cast(&**arr, &ArrowDataType::LargeList(field.clone())).unwrap();
             convert_inner_types(&out)
         }
-        ArrowDataType::FixedSizeList(field, size) => {
+        #[cfg(feature = "dtype-fixed-size-list")]
+        ArrowDataType::FixedSizeList(_, size) => {
             let arr = arr.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
             let values = convert_inner_types(arr.values());
-            let dtype =
-                FixedSizeListArray::default_datatype(values.data_type().clone(), arr.size());
+            let dtype = FixedSizeListArray::default_datatype(values.data_type().clone(), *size);
             Box::from(FixedSizeListArray::new(
                 dtype,
                 values,

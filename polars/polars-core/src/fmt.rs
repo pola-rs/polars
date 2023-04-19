@@ -184,12 +184,12 @@ impl Debug for ListChunked {
     }
 }
 
-#[cfg(feature = "dtype-fixed-size-list")]
-impl Debug for FixedSizeListChunked {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        format_array!(f, self, "fixed size list", self.name(), "ChunkedArray")
-    }
-}
+// #[cfg(feature = "dtype-fixed-size-list")]
+// impl Debug for FixedSizeListChunked {
+//     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+//         format_array!(f, self, "fixed size list", self.name(), "ChunkedArray")
+//     }
+// }
 
 #[cfg(feature = "object")]
 impl<T> Debug for ObjectChunked<T>
@@ -800,6 +800,8 @@ impl Display for AnyValue<'_> {
                 let s = self.get_str().unwrap();
                 write!(f, "\"{s}\"")
             }
+            #[cfg(feature = "dtype-fixed-size-list")]
+            AnyValue::FixedSizeList(s, _size) => write!(f, "{}", s.fmt_list()),
             AnyValue::List(s) => write!(f, "{}", s.fmt_list()),
             #[cfg(feature = "object")]
             AnyValue::Object(v) => write!(f, "{v}"),
