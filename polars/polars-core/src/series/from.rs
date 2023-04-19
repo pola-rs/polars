@@ -87,7 +87,23 @@ impl Series {
             #[cfg(feature = "dtype-struct")]
             Struct(_) => Series::try_from_arrow_unchecked(name, chunks, &dtype.to_arrow()).unwrap(),
             #[cfg(feature = "object")]
-            Object(_) => todo!(),
+            Object(_) => {
+                assert_eq!(chunks.len(), 1);
+                let arr = chunks[0]
+                    .as_any()
+                    .downcast_ref::<FixedSizeBinaryArray>()
+                    .unwrap();
+                // Safety:
+                // this is highly unsafe. it will dereference a raw ptr on the heap
+                // make sure the ptr is allocated and from this pid
+                // (the pid is checked before dereference)
+                {
+                    let pe = PolarsExtension::new(arr.clone());
+                    let s = pe.get_series(name);
+                    pe.take_and_forget();
+                    s
+                }
+            }
             Null => new_null(name, &chunks),
             Unknown => panic!("uh oh, somehow we don't know the dtype?"),
             #[allow(unreachable_patterns)]
