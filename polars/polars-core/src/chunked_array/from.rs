@@ -105,6 +105,25 @@ impl ListChunked {
     }
 }
 
+impl FixedSizeListChunked {
+    pub(crate) unsafe fn from_chunks_and_dtype_unchecked(
+        name: &str,
+        chunks: Vec<ArrayRef>,
+        dtype: DataType,
+    ) -> Self {
+        let field = Arc::new(Field::new(name, dtype));
+        let mut out = ChunkedArray {
+            field,
+            chunks,
+            phantom: PhantomData,
+            bit_settings: Default::default(),
+            length: 0,
+        };
+        out.compute_len();
+        out
+    }
+}
+
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,

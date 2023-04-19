@@ -32,9 +32,10 @@ pub enum DataType {
     Duration(TimeUnit),
     /// A 64-bit time representing the elapsed time since midnight in nanoseconds
     Time,
-    /// A nested list with a fixed size
+    /// A nested list with a fixed size in each row
     #[cfg(feature = "dtype-fixed-size-list")]
     FixedSizeList(Box<DataType>, usize),
+    /// A nested list with a variable size in each row
     List(Box<DataType>),
     #[cfg(feature = "object")]
     /// A generic type that can be used in a `Series`

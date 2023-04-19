@@ -71,7 +71,7 @@ pub enum AnyValue<'a> {
     // If syncptr is_null the data is in the rev-map
     // otherwise it is in the array pointer
     Categorical(u32, &'a RevMapping, SyncPtr<Utf8Array<i64>>),
-    /// Nested type, contains arrays that are filled with one of the datetypes.
+    /// Nested type, contains arrays that are filled with one of the datatypes.
     List(Series),
     #[cfg(feature = "object")]
     /// Can be used to fmt and implements Any, so can be downcasted to the proper value type.

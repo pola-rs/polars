@@ -531,6 +531,7 @@ impl<T: PolarsNumericType> private::PrivateSeriesNumeric for SeriesWrap<ChunkedA
 impl private::PrivateSeriesNumeric for SeriesWrap<Utf8Chunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<BinaryChunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<ListChunked> {}
+impl private::PrivateSeriesNumeric for SeriesWrap<FixedSizeListChunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<BooleanChunked> {
     fn bit_repr_is_large(&self) -> bool {
         false

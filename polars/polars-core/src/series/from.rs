@@ -71,6 +71,11 @@ impl Series {
                     scale.unwrap_or_else(|| unreachable!("scale should be set")),
                 )
                 .into_series(),
+            #[cfg(feature = "dtype-fixed-size-list")]
+            FixedSizeList(_, _) => {
+                FixedSizeListChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype.clone())
+                    .into_series()
+            }
             List(_) => ListChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype.clone())
                 .into_series(),
             Utf8 => Utf8Chunked::from_chunks(name, chunks).into_series(),
@@ -119,6 +124,11 @@ impl Series {
             ArrowDataType::List(_) | ArrowDataType::LargeList(_) => {
                 let chunks = chunks.iter().map(convert_inner_types).collect();
                 Ok(ListChunked::from_chunks(name, chunks).into_series())
+            }
+            #[cfg(feature = "dtype-fixed-size-list")]
+            ArrowDataType::FixedSizeList(_, _) => {
+                let chunks = chunks.iter().map(convert_inner_types).collect();
+                Ok(FixedSizeListChunked::from_chunks(name, chunks).into_series())
             }
             ArrowDataType::Boolean => Ok(BooleanChunked::from_chunks(name, chunks).into_series()),
             #[cfg(feature = "dtype-u8")]
@@ -432,6 +442,17 @@ fn convert_inner_types(arr: &ArrayRef) -> ArrayRef {
         ArrowDataType::List(field) => {
             let out = cast(&**arr, &ArrowDataType::LargeList(field.clone())).unwrap();
             convert_inner_types(&out)
+        }
+        ArrowDataType::FixedSizeList(field, size) => {
+            let arr = arr.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
+            let values = convert_inner_types(arr.values());
+            let dtype =
+                FixedSizeListArray::default_datatype(values.data_type().clone(), arr.size());
+            Box::from(FixedSizeListArray::new(
+                dtype,
+                values,
+                arr.validity().cloned(),
+            ))
         }
         ArrowDataType::FixedSizeBinary(_) | ArrowDataType::Binary => {
             let out = cast(&**arr, &ArrowDataType::LargeBinary).unwrap();
