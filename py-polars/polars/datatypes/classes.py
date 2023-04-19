@@ -167,7 +167,7 @@ class Decimal(FractionalType):
             return False
 
     def __hash__(self) -> int:
-        return hash((Decimal, self.precision, self.scale))
+        return hash((self.__class__, self.precision, self.scale))
 
 
 class Boolean(DataType):
@@ -234,7 +234,7 @@ class Datetime(TemporalType):
             return False
 
     def __hash__(self) -> int:
-        return hash((Datetime, self.time_unit))
+        return hash((self.__class__, self.time_unit, self.time_zone))
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
@@ -274,7 +274,7 @@ class Duration(TemporalType):
             return False
 
     def __hash__(self) -> int:
-        return hash((Duration, self.time_unit))
+        return hash((self.__class__, self.time_unit))
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
@@ -334,7 +334,7 @@ class List(NestedType):
             return False
 
     def __hash__(self) -> int:
-        return hash((List, self.inner))
+        return hash((self.__class__, self.inner))
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
@@ -359,6 +359,9 @@ class Field:
 
     def __eq__(self, other: Field) -> bool:  # type: ignore[override]
         return (self.name == other.name) & (self.dtype == other.dtype)
+
+    def __hash__(self) -> int:
+        return hash((self.name, self.dtype))
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
@@ -396,7 +399,7 @@ class Struct(NestedType):
             return False
 
     def __hash__(self) -> int:
-        return hash(Struct)
+        return hash((self.__class__, tuple(self.fields)))
 
     def __iter__(self) -> Iterator[tuple[str, PolarsDataType]]:
         for fld in self.fields or []:

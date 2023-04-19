@@ -1851,6 +1851,16 @@ def test_date_timedelta() -> None:
     }
 
 
+def test_datetime_hashes() -> None:
+    dtypes = (
+        pl.Datetime,
+        pl.Datetime("us"),
+        pl.Datetime("us", "UTC"),
+        pl.Datetime("us", "Zulu"),
+    )
+    assert len({hash(tp) for tp in (dtypes)}) == 4
+
+
 def test_datetime_string_casts() -> None:
     df = pl.DataFrame(
         {
