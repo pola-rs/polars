@@ -157,6 +157,9 @@ def _to_python_timedelta(value: int | float, time_unit: TimeUnit = "ns") -> time
 
 
 EPOCH = datetime(1970, 1, 1).replace(tzinfo=None)
+EPOCH_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+_fromtimestamp = datetime.fromtimestamp
 
 
 def _to_python_datetime(
@@ -165,46 +168,41 @@ def _to_python_datetime(
     time_unit: TimeUnit | None = "ns",
     time_zone: str | None = None,
 ) -> date | datetime:
+    """Converts polars timestamp to Python date/datetime."""
     if dtype == Date:
-        # days to seconds. important to create from utc; not doing this
-        # leads to inconsistencies dependent on the timezone you are in.
-        dt = datetime(1970, 1, 1, tzinfo=timezone.utc)
-        dt += timedelta(seconds=value * 3600 * 24)
-        return dt.date()
+        # important to create from utc; not doing this leads to
+        # inconsistencies dependent on the timezone you are in.
+        return (EPOCH_UTC + timedelta(seconds=value * 86400)).date()
+
     elif dtype == Datetime:
-        if time_zone is None or time_zone == "":
+        if not time_zone:
             if time_unit == "ns":
-                dt = EPOCH + timedelta(microseconds=value // 1000)
+                return EPOCH + timedelta(microseconds=value // 1000)
             elif time_unit == "us":
-                dt = EPOCH + timedelta(microseconds=value)
+                return EPOCH + timedelta(microseconds=value)
             elif time_unit == "ms":
-                dt = EPOCH + timedelta(milliseconds=value)
+                return EPOCH + timedelta(milliseconds=value)
             else:
                 raise ValueError(
-                    f"time_unit must be one of {{'ns', 'us', 'ms'}}, got {time_unit}"
-                )
-        else:
-            if not _ZONEINFO_AVAILABLE:
-                raise ImportError(
-                    "Install polars[timezone] to handle datetimes with timezones."
+                    f"time_unit must be one of {{'ns','us','ms'}}, got {time_unit}"
                 )
 
-            utc = get_zoneinfo("UTC")
+        elif _ZONEINFO_AVAILABLE:
             if time_unit == "ns":
-                dt = datetime.fromtimestamp(0, tz=utc) + timedelta(
-                    microseconds=value // 1000
-                )
+                dt = EPOCH_UTC + timedelta(microseconds=value // 1000)
             elif time_unit == "us":
-                dt = datetime.fromtimestamp(0, tz=utc) + timedelta(microseconds=value)
+                dt = EPOCH_UTC + timedelta(microseconds=value)
             elif time_unit == "ms":
-                dt = datetime.fromtimestamp(0, tz=utc) + timedelta(milliseconds=value)
+                dt = EPOCH_UTC + timedelta(milliseconds=value)
             else:
                 raise ValueError(
-                    f"time_unit must be one of {{'ns', 'us', 'ms'}}, got {time_unit}"
+                    f"time_unit must be one of {{'ns','us','ms'}}, got {time_unit}"
                 )
             return _localize(dt, time_zone)
-
-        return dt
+        else:
+            raise ImportError(
+                "Install polars[timezone] to handle datetimes with timezones."
+            )
     else:
         raise NotImplementedError  # pragma: no cover
 
