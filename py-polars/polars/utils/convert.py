@@ -131,16 +131,16 @@ def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit | None = None)
 
 
 def _to_python_time(value: int) -> time:
+    """Convert polars int64 (ns) timestamp to python time object."""
     if value == 0:
         return time(microsecond=0)
-    value = value // 1_000
-    microsecond = value
-    seconds = (microsecond // 1000_000) % 60
-    minutes = (microsecond // (1000_000 * 60)) % 60
-    hours = (microsecond // (1000_000 * 60 * 60)) % 24
-    microsecond = microsecond - (seconds + minutes * 60 + hours * 3600) * 1000_000
-
-    return time(hour=hours, minute=minutes, second=seconds, microsecond=microsecond)
+    else:
+        seconds, nanoseconds = divmod(value, 1_000_000_000)
+        minutes, seconds = divmod(seconds, 60)
+        hours, minutes = divmod(minutes, 60)
+        return time(
+            hour=hours, minute=minutes, second=seconds, microsecond=nanoseconds // 1000
+        )
 
 
 def _to_python_timedelta(value: int | float, time_unit: TimeUnit = "ns") -> timedelta:
@@ -168,7 +168,7 @@ def _to_python_datetime(
     time_unit: TimeUnit | None = "ns",
     time_zone: str | None = None,
 ) -> date | datetime:
-    """Converts polars timestamp to Python date/datetime."""
+    """Convert polars int64 timestamp to Python date/datetime."""
     if dtype == Date:
         # important to create from utc; not doing this leads to
         # inconsistencies dependent on the timezone you are in.
