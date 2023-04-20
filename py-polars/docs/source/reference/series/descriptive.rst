@@ -18,6 +18,7 @@ Descriptive
     Series.is_float
     Series.is_in
     Series.is_infinite
+    Series.is_integer
     Series.is_nan
     Series.is_not_nan
     Series.is_not_null
