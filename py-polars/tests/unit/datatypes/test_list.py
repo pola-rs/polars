@@ -511,3 +511,12 @@ def test_list_new_from_index_logical() -> None:
     )
     assert s.dtype == pl.List(pl.Struct([pl.Field("a", pl.Date)]))
     assert s.to_list() == [[{"a": date(2001, 1, 1)}]]
+
+
+def test_list_recursive_time_unit_cast() -> None:
+    values = [[datetime(2000, 1, 1, 0, 0, 0)]]
+    dtype = pl.List(pl.Datetime("ns"))
+    s = pl.Series(values)
+    out = s.cast(dtype)
+    assert out.dtype == dtype
+    assert out.to_list() == values
