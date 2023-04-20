@@ -464,7 +464,6 @@ impl<'a> AnyValueBufferTrusted<'a> {
                     }
                     #[cfg(feature = "dtype-struct")]
                     Struct(builders) => {
-                        dbg!(&val);
                         let AnyValue::Struct(idx, arr, fields) = val else { unreachable_unchecked_release!() };
                         let arrays = arr.values();
                         // amortize loop counter
@@ -570,7 +569,11 @@ impl<'a> AnyValueBufferTrusted<'a> {
                     .collect::<Vec<_>>();
                 StructChunked::new("", &v).unwrap().into_series()
             }
-            All(dtype, vals) => Series::from_any_values_and_dtype("", vals, dtype, false).unwrap(),
+            All(dtype, vals) => {
+                let mut swap_vals = Vec::with_capacity(capacity);
+                std::mem::swap(vals, &mut swap_vals);
+                Series::from_any_values_and_dtype("", &swap_vals, dtype, false).unwrap()
+            }
         }
     }
 
