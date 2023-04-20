@@ -3,7 +3,7 @@ use std::hash::{BuildHasher, Hash};
 use hashbrown::hash_map::{Entry, RawEntryMut};
 use hashbrown::HashMap;
 use polars_utils::sync::SyncPtr;
-use polars_utils::{HashSingle};
+use polars_utils::HashSingle;
 use rayon::prelude::*;
 
 use super::GroupsProxy;
