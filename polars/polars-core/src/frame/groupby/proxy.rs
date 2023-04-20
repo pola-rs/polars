@@ -45,51 +45,54 @@ impl From<Vec<IdxItem>> for GroupsIdx {
     }
 }
 
-impl<K, S> From<Vec<hashbrown::HashMap<K, (IdxSize, Vec<IdxSize>), S>>> for GroupsIdx
-where
-    K: Send,
-    S: Send,
-{
-    fn from(v: Vec<hashbrown::HashMap<K, (IdxSize, Vec<IdxSize>), S>>) -> Self {
+impl From<Vec<(Vec<IdxSize>, Vec<Vec<IdxSize>>)>> for GroupsIdx {
+    fn from(v: Vec<(Vec<IdxSize>, Vec<Vec<IdxSize>>)>) -> Self {
         // we have got the hash tables so we can determine the final
-        let cap = v.iter().map(|v| v.len()).sum::<usize>();
+        let cap = v.iter().map(|v| v.0.len()).sum::<usize>();
         let offsets = v
             .iter()
             .scan(0_usize, |acc, v| {
                 let out = *acc;
-                *acc += v.len();
+                *acc += v.0.len();
                 Some(out)
             })
             .collect::<Vec<_>>();
-
-        let mut first = Vec::with_capacity(cap);
-        let first_ptr = unsafe { SyncPtr::new(first.as_mut_ptr()) };
-        let mut all = Vec::with_capacity(cap);
-        let all_ptr = unsafe { SyncPtr::new(all.as_mut_ptr()) };
+        let mut global_first = Vec::with_capacity(cap);
+        let global_first_ptr = unsafe { SyncPtr::new(global_first.as_mut_ptr()) };
+        let mut global_all = Vec::with_capacity(cap);
+        let global_all_ptr = unsafe { SyncPtr::new(global_all.as_mut_ptr()) };
 
         POOL.install(|| {
-            v.into_par_iter()
-                .zip(offsets)
-                .for_each(|(hash_tbl, offset)| unsafe {
-                    let first: *mut IdxSize = first_ptr.get();
-                    let all: *mut Vec<IdxSize> = all_ptr.get();
-                    let first = first.add(offset);
-                    let all = all.add(offset);
+            v.into_par_iter().zip(offsets).for_each(
+                |((local_first_vals, local_all_vals), offset)| unsafe {
+                    let global_first: *mut IdxSize = global_first_ptr.get();
+                    let global_all: *mut Vec<IdxSize> = global_all_ptr.get();
+                    let global_first = global_first.add(offset);
+                    let global_all = global_all.add(offset);
 
-                    for (i, (first_val, all_val)) in hash_tbl.into_values().enumerate() {
-                        std::ptr::write(first.add(i), first_val);
-                        std::ptr::write(all.add(i), all_val);
-                    }
-                });
+                    std::ptr::copy_nonoverlapping(
+                        local_first_vals.as_ptr(),
+                        global_first,
+                        local_first_vals.len(),
+                    );
+                    std::ptr::copy_nonoverlapping(
+                        local_all_vals.as_ptr(),
+                        global_all,
+                        local_all_vals.len(),
+                    );
+                    // ensure the vecs don't get dropped
+                    std::mem::forget(local_all_vals);
+                },
+            );
         });
         unsafe {
-            all.set_len(cap);
-            first.set_len(cap);
+            global_all.set_len(cap);
+            global_first.set_len(cap);
         }
         GroupsIdx {
             sorted: false,
-            first,
-            all,
+            first: global_first,
+            all: global_all,
         }
     }
 }

@@ -16,35 +16,36 @@ use crate::prelude::*;
 use crate::utils::{split_df, CustomIterTools};
 use crate::POOL;
 
-fn finish_group_order<K, S>(
-    hash_tbls: Vec<HashMap<K, (IdxSize, Vec<IdxSize>), S>>,
+fn finish_group_order_vecs(
+    mut vecs: Vec<(Vec<IdxSize>, Vec<Vec<IdxSize>>)>,
     sorted: bool,
-) -> GroupsProxy
-where
-    K: Send,
-    S: Send,
-{
+) -> GroupsProxy {
     if sorted {
+        if vecs.len() == 1 {
+            let (first, all) = vecs.pop().unwrap();
+            return GroupsProxy::Idx(GroupsIdx::new(first, all, true));
+        }
+
         // TODO! write directly to final buffer in parallel
         // we keep the (first, all) tuple because of sorting
-        let mut out = POOL.install(|| {
-            hash_tbls
-                .into_iter()
-                .map(|hash_tbl| {
-                    let mut items = hash_tbl.into_values().collect::<Vec<_>>();
-                    // pre-sort every array
-                    // this will make the final single threaded sort much faster
-                    items.sort_unstable_by_key(|g| g.0);
-                    items
+        let out = POOL.install(|| {
+            vecs.into_iter()
+                .map(|(first, all)| {
+                    // give the compiler some info
+                    // maybe it may elide some loop counters
+                    assert_eq!(first.len(), all.len());
+
+                    // pre-sort every array not needed as items are already sorted
+                    // this is due to using an index hashmap
+                    first
+                        .into_iter()
+                        .zip(all.into_iter())
+                        .collect_trusted::<Vec<_>>()
                 })
                 .collect::<Vec<_>>()
         });
         // sort again
-        let mut out = if out.len() == 1 {
-            out.pop().unwrap()
-        } else {
-            flatten(&out, None)
-        };
+        let mut out = flatten(&out, None);
         out.sort_unstable_by_key(|g| g.0);
 
         let mut idx = GroupsIdx::from_iter(out.into_iter());
@@ -52,7 +53,7 @@ where
         GroupsProxy::Idx(idx)
     } else {
         // this materialization is parallel in the from impl.
-        GroupsProxy::Idx(GroupsIdx::from(hash_tbls))
+        GroupsProxy::Idx(GroupsIdx::from(vecs))
     }
 }
 
@@ -111,12 +112,14 @@ where
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
-    let out = POOL.install(|| {
+    let v = POOL.install(|| {
         (0..n_partitions)
             .into_par_iter()
             .map(|thread_no| {
-                let mut hash_tbl: PlHashMap<T, (IdxSize, Vec<IdxSize>)> =
+                let mut hash_tbl: PlHashMap<T, IdxSize> =
                     PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
+                let mut first_vals = Vec::with_capacity(HASHMAP_INIT_SIZE);
+                let mut all_vals = Vec::with_capacity(HASHMAP_INIT_SIZE);
 
                 let mut offset = 0;
                 for keys in keys {
@@ -126,7 +129,7 @@ where
 
                     let mut cnt = 0;
                     keys.for_each(|k| {
-                        let idx = cnt + offset;
+                        let row_idx = cnt + offset;
                         cnt += 1;
 
                         if this_partition(k.as_u64(), thread_no, n_partitions) {
@@ -135,25 +138,33 @@ where
 
                             match entry {
                                 RawEntryMut::Vacant(entry) => {
-                                    let tuples = vec![idx];
-                                    entry.insert_with_hasher(hash, k, (idx, tuples), |k| {
+                                    let offset_idx = first_vals.len() as IdxSize;
+
+                                    let tuples = vec![row_idx];
+                                    all_vals.push(tuples);
+                                    first_vals.push(row_idx);
+
+                                    entry.insert_with_hasher(hash, k, offset_idx, |k| {
                                         hasher.hash_single(k)
                                     });
                                 }
-                                RawEntryMut::Occupied(mut entry) => {
-                                    let v = entry.get_mut();
-                                    v.1.push(idx);
+                                RawEntryMut::Occupied(entry) => {
+                                    let offset_idx = *entry.get();
+                                    unsafe {
+                                        let buf = all_vals.get_unchecked_mut(offset_idx as usize);
+                                        buf.push(row_idx)
+                                    }
                                 }
                             }
                         }
                     });
                     offset += len;
                 }
-                hash_tbl
+                (first_vals, all_vals)
             })
             .collect::<Vec<_>>()
     });
-    finish_group_order(out, sorted)
+    finish_group_order_vecs(v, sorted)
 }
 
 /// Utility function used as comparison function in the hashmap.
@@ -191,10 +202,10 @@ pub(crate) fn populate_multiple_key_hashmap<V, H, F, G>(
     // value to insert
     vacant_fn: G,
     // function that gets a mutable ref to the occupied value in the hash table
-    occupied_fn: F,
+    mut occupied_fn: F,
 ) where
     G: Fn() -> V,
-    F: Fn(&mut V),
+    F: FnMut(&mut V),
     H: BuildHasher,
 {
     let entry = hash_tbl
@@ -305,14 +316,24 @@ pub(crate) fn groupby_threaded_multiple_keys_flat(
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
-    let groups = POOL.install(|| {
+    let v = POOL.install(|| {
         (0..n_partitions)
             .into_par_iter()
             .map(|thread_no| {
                 let hashes = &hashes;
 
-                let mut hash_tbl: HashMap<IdxHash, (IdxSize, Vec<IdxSize>), IdBuildHasher> =
+                let mut hash_tbl: HashMap<IdxHash, IdxSize, IdBuildHasher> =
                     HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
+                let mut first_vals = Vec::with_capacity(HASHMAP_INIT_SIZE);
+                let mut all_vals = Vec::with_capacity(HASHMAP_INIT_SIZE);
+
+                // put the buffers behind a pointer so we can access them from as the bchk doesn't allow
+                // 2 mutable borrows (this is safe as we don't alias)
+                // even if the vecs reallocate, we have a pointer to the stack vec, and thus always
+                // access the proper data.
+                let all_buf_ptr =
+                    &mut all_vals as *mut Vec<Vec<IdxSize>> as *const Vec<Vec<IdxSize>>;
+                let first_buf_ptr = &mut first_vals as *mut Vec<IdxSize> as *const Vec<IdxSize>;
 
                 let mut offset = 0;
                 for hashes in hashes {
@@ -324,14 +345,30 @@ pub(crate) fn groupby_threaded_multiple_keys_flat(
                             // partition hashes by thread no.
                             // So only a part of the hashes go to this hashmap
                             if this_partition(h, thread_no, n_partitions) {
-                                let idx = idx + offset;
+                                let row_idx = idx + offset;
                                 populate_multiple_key_hashmap2(
                                     &mut hash_tbl,
-                                    idx,
+                                    row_idx,
                                     h,
                                     &keys_cmp,
-                                    || (idx, vec![idx]),
-                                    |v| v.1.push(idx),
+                                    || unsafe {
+                                        let first_vals = &mut *(first_buf_ptr as *mut Vec<IdxSize>);
+                                        let all_vals =
+                                            &mut *(all_buf_ptr as *mut Vec<Vec<IdxSize>>);
+                                        let offset_idx = first_vals.len() as IdxSize;
+
+                                        let tuples = vec![row_idx];
+                                        all_vals.push(tuples);
+                                        first_vals.push(row_idx);
+                                        offset_idx
+                                    },
+                                    |v| unsafe {
+                                        let all_vals =
+                                            &mut *(all_buf_ptr as *mut Vec<Vec<IdxSize>>);
+                                        let offset_idx = *v;
+                                        let buf = all_vals.get_unchecked_mut(offset_idx as usize);
+                                        buf.push(row_idx)
+                                    },
                                 );
                             }
                             idx += 1;
@@ -340,9 +377,9 @@ pub(crate) fn groupby_threaded_multiple_keys_flat(
 
                     offset += len;
                 }
-                hash_tbl
+                (first_vals, all_vals)
             })
             .collect::<Vec<_>>()
     });
-    Ok(finish_group_order(groups, sorted))
+    Ok(finish_group_order_vecs(v, sorted))
 }
