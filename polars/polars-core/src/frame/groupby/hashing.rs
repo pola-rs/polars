@@ -27,7 +27,7 @@ where
     if sorted {
         // TODO! write directly to final buffer in parallel
         // we keep the (first, all) tuple because of sorting
-        let out = POOL.install(|| {
+        let mut out = POOL.install(|| {
             hash_tbls
                 .into_iter()
                 .map(|hash_tbl| {
@@ -40,7 +40,11 @@ where
                 .collect::<Vec<_>>()
         });
         // sort again
-        let mut out = flatten(&out, None);
+        let mut out = if out.len() == 1 {
+            out.pop().unwrap()
+        } else {
+            flatten(&out, None)
+        };
         out.sort_unstable_by_key(|g| g.0);
 
         let mut idx = GroupsIdx::from_iter(out.into_iter());
