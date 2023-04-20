@@ -15,8 +15,8 @@ use crate::POOL;
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct GroupsIdx {
     pub(crate) sorted: bool,
-    pub(crate) first: Vec<IdxSize>,
-    pub(crate) all: Vec<Vec<IdxSize>>,
+    first: Vec<IdxSize>,
+    all: Vec<Vec<IdxSize>>,
 }
 
 pub type IdxItem = (IdxSize, Vec<IdxSize>);
@@ -42,6 +42,58 @@ impl Drop for GroupsIdx {
 impl From<Vec<IdxItem>> for GroupsIdx {
     fn from(v: Vec<IdxItem>) -> Self {
         v.into_iter().collect()
+    }
+}
+
+impl From<Vec<(Vec<IdxSize>, Vec<Vec<IdxSize>>)>> for GroupsIdx {
+    fn from(v: Vec<(Vec<IdxSize>, Vec<Vec<IdxSize>>)>) -> Self {
+        // we have got the hash tables so we can determine the final
+        let cap = v.iter().map(|v| v.0.len()).sum::<usize>();
+        let offsets = v
+            .iter()
+            .scan(0_usize, |acc, v| {
+                let out = *acc;
+                *acc += v.0.len();
+                Some(out)
+            })
+            .collect::<Vec<_>>();
+        let mut global_first = Vec::with_capacity(cap);
+        let global_first_ptr = unsafe { SyncPtr::new(global_first.as_mut_ptr()) };
+        let mut global_all = Vec::with_capacity(cap);
+        let global_all_ptr = unsafe { SyncPtr::new(global_all.as_mut_ptr()) };
+
+        POOL.install(|| {
+            v.into_par_iter().zip(offsets).for_each(
+                |((local_first_vals, local_all_vals), offset)| unsafe {
+                    let global_first: *mut IdxSize = global_first_ptr.get();
+                    let global_all: *mut Vec<IdxSize> = global_all_ptr.get();
+                    let global_first = global_first.add(offset);
+                    let global_all = global_all.add(offset);
+
+                    std::ptr::copy_nonoverlapping(
+                        local_first_vals.as_ptr(),
+                        global_first,
+                        local_first_vals.len(),
+                    );
+                    std::ptr::copy_nonoverlapping(
+                        local_all_vals.as_ptr(),
+                        global_all,
+                        local_all_vals.len(),
+                    );
+                    // ensure the vecs don't get dropped
+                    std::mem::forget(local_all_vals);
+                },
+            );
+        });
+        unsafe {
+            global_all.set_len(cap);
+            global_first.set_len(cap);
+        }
+        GroupsIdx {
+            sorted: false,
+            first: global_first,
+            all: global_all,
+        }
     }
 }
 
