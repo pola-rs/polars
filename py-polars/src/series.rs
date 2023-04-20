@@ -822,6 +822,9 @@ impl PySeries {
 
     pub fn to_arrow(&mut self) -> PyResult<PyObject> {
         self.rechunk(true);
+        if matches!(self.series.dtype(), DataType::Object(_)) {
+            panic!("'to_arrow' not implemented for Object dtype");
+        }
         Python::with_gil(|py| {
             let pyarrow = py.import("pyarrow")?;
 

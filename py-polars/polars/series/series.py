@@ -38,6 +38,7 @@ from polars.datatypes import (
     Int32,
     Int64,
     List,
+    Object,
     Time,
     UInt8,
     UInt16,
@@ -3252,7 +3253,12 @@ class Series:
                 tp = f"datetime64[{self.time_unit}]"
             return arr.astype(tp)
 
-        if use_pyarrow and _PYARROW_AVAILABLE and not self.is_temporal(excluding=Time):
+        if (
+            use_pyarrow
+            and _PYARROW_AVAILABLE
+            and self.dtype != Object
+            and not self.is_temporal(excluding=Time)
+        ):
             return self.to_arrow().to_numpy(
                 *args, zero_copy_only=zero_copy_only, writable=writable
             )
