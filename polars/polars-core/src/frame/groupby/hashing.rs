@@ -1,9 +1,11 @@
 use std::hash::{BuildHasher, Hash};
+use std::time::Instant;
 
 use hashbrown::hash_map::{Entry, RawEntryMut};
 use hashbrown::HashMap;
 use polars_utils::{flatten, HashSingle};
 use rayon::prelude::*;
+use polars_utils::sync::SyncPtr;
 
 use super::GroupsProxy;
 use crate::datatypes::PlHashMap;
@@ -111,12 +113,13 @@ where
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
-    let out = POOL.install(|| {
+    let v = POOL.install(|| {
         (0..n_partitions)
             .into_par_iter()
             .map(|thread_no| {
-                let mut hash_tbl: PlHashMap<T, (IdxSize, Vec<IdxSize>)> =
-                    PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
+                let mut hash_tbl: PlHashMap<T, IdxSize> = PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
+                let mut first_vals = Vec::with_capacity(HASHMAP_INIT_SIZE);
+                let mut all_vals = Vec::with_capacity(HASHMAP_INIT_SIZE);
 
                 let mut offset = 0;
                 for keys in keys {
@@ -126,7 +129,7 @@ where
 
                     let mut cnt = 0;
                     keys.for_each(|k| {
-                        let idx = cnt + offset;
+                        let row_idx = cnt + offset;
                         cnt += 1;
 
                         if this_partition(k.as_u64(), thread_no, n_partitions) {
@@ -135,25 +138,75 @@ where
 
                             match entry {
                                 RawEntryMut::Vacant(entry) => {
-                                    let tuples = vec![idx];
-                                    entry.insert_with_hasher(hash, k, (idx, tuples), |k| {
+                                    let offset_idx = first_vals.len() as IdxSize;
+
+                                    let tuples = vec![row_idx];
+                                    all_vals.push(tuples);
+                                    first_vals.push(row_idx);
+
+                                    entry.insert_with_hasher(hash, k, offset_idx, |k| {
                                         hasher.hash_single(k)
                                     });
                                 }
                                 RawEntryMut::Occupied(mut entry) => {
-                                    let v = entry.get_mut();
-                                    v.1.push(idx);
+                                    let offset_idx = *entry.get();
+                                    unsafe {
+                                        let buf  = all_vals.get_unchecked_mut(offset_idx as usize);
+                                        buf.push(row_idx)
+                                    }
                                 }
                             }
                         }
                     });
                     offset += len;
                 }
-                hash_tbl
+                (first_vals, all_vals)
             })
             .collect::<Vec<_>>()
     });
-    finish_group_order(out, sorted)
+
+    // we have got the hash tables so we can determine the final
+    let cap = v.iter().map(|v| v.0.len()).sum::<usize>();
+    let offsets = v
+        .iter()
+        .scan(0_usize, |acc, v| {
+            let out = *acc;
+            *acc += v.0.len();
+            Some(out)
+        })
+        .collect::<Vec<_>>();
+
+    let mut global_first = Vec::with_capacity(cap);
+    let global_first_ptr = unsafe { SyncPtr::new(global_first.as_mut_ptr()) };
+    let mut global_all = Vec::with_capacity(cap);
+    let global_all_ptr = unsafe { SyncPtr::new(global_all.as_mut_ptr()) };
+
+    POOL.install(|| {
+        v.into_par_iter()
+            .zip(offsets)
+            .for_each(|((local_first_vals, local_all_vals), offset)| unsafe {
+                let global_first: *mut IdxSize = global_first_ptr.get();
+                let global_all: *mut Vec<IdxSize> = global_all_ptr.get();
+                let global_first = global_first.add(offset);
+                let global_all = global_all.add(offset);
+
+                std::ptr::copy_nonoverlapping(local_first_vals.as_ptr(), global_first, local_first_vals.len());
+                std::ptr::copy_nonoverlapping(local_all_vals.as_ptr(), global_all, local_all_vals.len());
+                // ensure the vecs don't get dropped
+                std::mem::forget(local_all_vals);
+            });
+    });
+    unsafe {
+        global_all.set_len(cap);
+        global_first.set_len(cap);
+    }
+    GroupsProxy::Idx(GroupsIdx {
+        sorted: false,
+        first: global_first,
+        all: global_all,
+    })
+
+    // finish_group_order(out, sorted)
 }
 
 /// Utility function used as comparison function in the hashmap.
@@ -191,10 +244,10 @@ pub(crate) fn populate_multiple_key_hashmap<V, H, F, G>(
     // value to insert
     vacant_fn: G,
     // function that gets a mutable ref to the occupied value in the hash table
-    occupied_fn: F,
+    mut occupied_fn: F,
 ) where
     G: Fn() -> V,
-    F: Fn(&mut V),
+    F: FnMut(&mut V),
     H: BuildHasher,
 {
     let entry = hash_tbl
@@ -305,14 +358,18 @@ pub(crate) fn groupby_threaded_multiple_keys_flat(
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
-    let groups = POOL.install(|| {
+    let v = POOL.install(|| {
         (0..n_partitions)
             .into_par_iter()
             .map(|thread_no| {
                 let hashes = &hashes;
 
-                let mut hash_tbl: HashMap<IdxHash, (IdxSize, Vec<IdxSize>), IdBuildHasher> =
+                let mut hash_tbl: HashMap<IdxHash, IdxSize, IdBuildHasher> =
                     HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
+                let mut first_vals = Vec::with_capacity(HASHMAP_INIT_SIZE);
+                let mut all_vals = Vec::with_capacity(HASHMAP_INIT_SIZE);
+                let all_buf_ptr = &mut all_vals as *mut Vec<Vec<IdxSize>> as *const Vec<Vec<IdxSize>>;
+                let first_buf_ptr = &mut first_vals as *mut Vec<IdxSize> as *const Vec<IdxSize>;
 
                 let mut offset = 0;
                 for hashes in hashes {
@@ -324,14 +381,33 @@ pub(crate) fn groupby_threaded_multiple_keys_flat(
                             // partition hashes by thread no.
                             // So only a part of the hashes go to this hashmap
                             if this_partition(h, thread_no, n_partitions) {
-                                let idx = idx + offset;
+                                let row_idx = idx + offset;
                                 populate_multiple_key_hashmap2(
                                     &mut hash_tbl,
-                                    idx,
+                                    row_idx,
                                     h,
                                     &keys_cmp,
-                                    || (idx, vec![idx]),
-                                    |v| v.1.push(idx),
+                                    || {
+                                        unsafe {
+                                            let first_vals = &mut *(first_buf_ptr as *mut Vec<IdxSize>);
+                                            let all_vals = &mut *(all_buf_ptr as *mut Vec<Vec<IdxSize>>);
+                                            let offset_idx = first_vals.len() as IdxSize;
+
+                                            let tuples = vec![row_idx];
+                                            all_vals.push(tuples);
+                                            first_vals.push(row_idx);
+                                            offset_idx
+
+                                        }
+                                    },
+                                    |v| unsafe {
+                                        let all_vals = &mut *(all_buf_ptr as *mut Vec<Vec<IdxSize>>);
+                                        let offset_idx = *v;
+                                        unsafe {
+                                            let buf  = all_vals.get_unchecked_mut(offset_idx as usize);
+                                            buf.push(row_idx)
+                                        }
+                                    },
                                 );
                             }
                             idx += 1;
@@ -340,9 +416,47 @@ pub(crate) fn groupby_threaded_multiple_keys_flat(
 
                     offset += len;
                 }
-                hash_tbl
+                (first_vals, all_vals)
             })
             .collect::<Vec<_>>()
     });
-    Ok(finish_group_order(groups, sorted))
+    // we have got the hash tables so we can determine the final
+    let cap = v.iter().map(|v| v.0.len()).sum::<usize>();
+    let offsets = v
+        .iter()
+        .scan(0_usize, |acc, v| {
+            let out = *acc;
+            *acc += v.0.len();
+            Some(out)
+        })
+        .collect::<Vec<_>>();
+    let mut global_first = Vec::with_capacity(cap);
+    let global_first_ptr = unsafe { SyncPtr::new(global_first.as_mut_ptr()) };
+    let mut global_all = Vec::with_capacity(cap);
+    let global_all_ptr = unsafe { SyncPtr::new(global_all.as_mut_ptr()) };
+
+    POOL.install(|| {
+        v.into_par_iter()
+            .zip(offsets)
+            .for_each(|((local_first_vals, local_all_vals), offset)| unsafe {
+                let global_first: *mut IdxSize = global_first_ptr.get();
+                let global_all: *mut Vec<IdxSize> = global_all_ptr.get();
+                let global_first = global_first.add(offset);
+                let global_all = global_all.add(offset);
+
+                std::ptr::copy_nonoverlapping(local_first_vals.as_ptr(), global_first, local_first_vals.len());
+                std::ptr::copy_nonoverlapping(local_all_vals.as_ptr(), global_all, local_all_vals.len());
+                // ensure the vecs don't get dropped
+                std::mem::forget(local_all_vals);
+            });
+    });
+    unsafe {
+        global_all.set_len(cap);
+        global_first.set_len(cap);
+    }
+    Ok(GroupsProxy::Idx(GroupsIdx {
+        sorted: false,
+        first: global_first,
+        all: global_all,
+    }))
 }

@@ -15,8 +15,8 @@ use crate::POOL;
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct GroupsIdx {
     pub(crate) sorted: bool,
-    first: Vec<IdxSize>,
-    all: Vec<Vec<IdxSize>>,
+    pub(crate) first: Vec<IdxSize>,
+    pub(crate) all: Vec<Vec<IdxSize>>,
 }
 
 pub type IdxItem = (IdxSize, Vec<IdxSize>);
