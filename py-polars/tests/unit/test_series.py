@@ -852,6 +852,19 @@ def test_set_list_and_tuple(idx: list[int] | tuple[int]) -> None:
     assert_series_equal(a, pl.Series("a", [4, 2, 4]))
 
 
+def test_init_nested_tuple() -> None:
+    s1 = pl.Series("s", (1, 2, 3))
+    assert s1.to_list() == [1, 2, 3]
+
+    s2 = pl.Series("s", ((1, 2, 3),), dtype=pl.List(pl.UInt8))
+    assert s2.to_list() == [[1, 2, 3]]
+    assert s2.dtype == pl.List(pl.UInt8)
+
+    s3 = pl.Series("s", ((1, 2, 3), (1, 2, 3)), dtype=pl.List(pl.Int32))
+    assert s3.to_list() == [[1, 2, 3], [1, 2, 3]]
+    assert s3.dtype == pl.List(pl.Int32)
+
+
 def test_fill_null() -> None:
     s = pl.Series("a", [1, 2, None])
     assert_series_equal(s.fill_null(strategy="forward"), pl.Series("a", [1, 2, 2]))

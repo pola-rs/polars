@@ -687,7 +687,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                 vals.push(val)
             }
             Ok(Wrap(AnyValue::StructOwned(Box::new((vals, keys)))))
-        } else if ob.is_instance_of::<PyList>()? {
+        } else if ob.is_instance_of::<PyList>()? || ob.is_instance_of::<PyTuple>()? {
             materialize_list(ob)
         } else if let Ok(value) = ob.extract::<u64>() {
             Ok(AnyValue::UInt64(value).into())

@@ -44,7 +44,7 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
         applyer
             .apply_lambda_with_list_out_type(py, lambda.to_object(py), null_count, &series, dt)
             .map(|ca| ca.into_series().into())
-    } else if out.is_instance_of::<PyList>().unwrap() {
+    } else if out.is_instance_of::<PyList>().unwrap() || out.is_instance_of::<PyTuple>().unwrap() {
         let series = SERIES.call1(py, (out,))?;
         let py_pyseries = series.getattr(py, "_s").unwrap();
         let series = py_pyseries.extract::<PySeries>(py).unwrap().series;
