@@ -26,7 +26,7 @@ impl<T> SyncPtr<T> {
     }
 
     #[inline(always)]
-    pub fn get(self) -> *mut T {
+    pub fn get(&self) -> *mut T {
         self.0
     }
 

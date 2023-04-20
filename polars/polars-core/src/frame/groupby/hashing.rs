@@ -7,7 +7,7 @@ use rayon::prelude::*;
 
 use super::GroupsProxy;
 use crate::datatypes::PlHashMap;
-use crate::frame::groupby::{GroupsIdx, IdxItem};
+use crate::frame::groupby::GroupsIdx;
 use crate::hashing::{
     df_rows_to_hashes_threaded_vertical, this_partition, AsU64, IdBuildHasher, IdxHash,
 };
@@ -16,33 +16,43 @@ use crate::prelude::*;
 use crate::utils::{split_df, CustomIterTools};
 use crate::POOL;
 
-fn finish_group_order(mut out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsProxy {
+fn finish_group_order<K, S>(
+    hash_tbls: Vec<HashMap<K, (IdxSize, Vec<IdxSize>), S>>,
+    sorted: bool,
+) -> GroupsProxy
+where
+    K: Send,
+    S: Send,
+{
     if sorted {
-        // we can just take the first value, no need to flatten
+        // TODO! write directly to final buffer in parallel
+        // we keep the (first, all) tuple because of sorting
+        let mut out = POOL.install(|| {
+            hash_tbls
+                .into_iter()
+                .map(|hash_tbl| {
+                    let mut items = hash_tbl.into_values().collect::<Vec<_>>();
+                    // pre-sort every array
+                    // this will make the final single threaded sort much faster
+                    items.sort_unstable_by_key(|g| g.0);
+                    items
+                })
+                .collect::<Vec<_>>()
+        });
+        // sort again
         let mut out = if out.len() == 1 {
             out.pop().unwrap()
         } else {
-            // pre-sort every array
-            // this will make the final single threaded sort much faster
-            POOL.install(|| {
-                out.par_iter_mut()
-                    .for_each(|g| g.sort_unstable_by_key(|g| g.0))
-            });
-
             flatten(&out, None)
         };
         out.sort_unstable_by_key(|g| g.0);
+
         let mut idx = GroupsIdx::from_iter(out.into_iter());
         idx.sorted = true;
         GroupsProxy::Idx(idx)
     } else {
-        // we can just take the first value, no need to flatten
-        if out.len() == 1 {
-            GroupsProxy::Idx(GroupsIdx::from(out.pop().unwrap()))
-        } else {
-            // flattens
-            GroupsProxy::Idx(GroupsIdx::from(out))
-        }
+        // this materialization is parallel in the from impl.
+        GroupsProxy::Idx(GroupsIdx::from(hash_tbls))
     }
 }
 
@@ -140,9 +150,6 @@ where
                     offset += len;
                 }
                 hash_tbl
-                    .into_iter()
-                    .map(|(_k, v)| v)
-                    .collect_trusted::<Vec<_>>()
             })
             .collect::<Vec<_>>()
     });
@@ -333,7 +340,7 @@ pub(crate) fn groupby_threaded_multiple_keys_flat(
 
                     offset += len;
                 }
-                hash_tbl.into_iter().map(|(_k, v)| v).collect::<Vec<_>>()
+                hash_tbl
             })
             .collect::<Vec<_>>()
     });
