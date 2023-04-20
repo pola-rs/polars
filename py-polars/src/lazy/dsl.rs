@@ -13,7 +13,7 @@ use smartstring::alias::String as SmartString;
 use super::apply::*;
 use crate::conversion::{parse_fill_null_strategy, Wrap};
 use crate::lazy::map_single;
-use crate::lazy::utils::py_exprs_to_exprs;
+use crate::lazy::utils::{check_strptime_format, py_exprs_to_exprs};
 use crate::prelude::ObjectValue;
 use crate::series::PySeries;
 use crate::utils::reinterpret;
@@ -557,8 +557,11 @@ impl PyExpr {
         strict: bool,
         exact: bool,
         cache: bool,
-    ) -> PyExpr {
-        self.inner
+    ) -> PyResult<Self> {
+        check_strptime_format(format.as_deref())?;
+
+        Ok(self
+            .inner
             .clone()
             .str()
             .strptime(StrpTimeOptions {
@@ -570,7 +573,7 @@ impl PyExpr {
                 tz_aware: false,
                 utc: false,
             })
-            .into()
+            .into())
     }
 
     #[pyo3(signature = (format, time_unit, time_zone, strict, exact, cache, tz_aware, utc))]
@@ -585,7 +588,9 @@ impl PyExpr {
         cache: bool,
         tz_aware: bool,
         utc: bool,
-    ) -> PyExpr {
+    ) -> PyResult<Self> {
+        check_strptime_format(format.as_deref())?;
+
         let result_time_unit = match (&format, time_unit) {
             (_, Some(time_unit)) => time_unit.0,
             (Some(format), None) => {
@@ -603,7 +608,8 @@ impl PyExpr {
             }
             (None, None) => TimeUnit::Microseconds,
         };
-        self.inner
+        Ok(self
+            .inner
             .clone()
             .str()
             .strptime(StrpTimeOptions {
@@ -615,7 +621,7 @@ impl PyExpr {
                 tz_aware,
                 utc,
             })
-            .into()
+            .into())
     }
 
     #[pyo3(signature = (format, strict, exact, cache))]
@@ -625,8 +631,11 @@ impl PyExpr {
         strict: bool,
         exact: bool,
         cache: bool,
-    ) -> PyExpr {
-        self.inner
+    ) -> PyResult<Self> {
+        check_strptime_format(format.as_deref())?;
+
+        Ok(self
+            .inner
             .clone()
             .str()
             .strptime(StrpTimeOptions {
@@ -638,7 +647,7 @@ impl PyExpr {
                 tz_aware: false,
                 utc: false,
             })
-            .into()
+            .into())
     }
 
     pub fn str_strip(&self, matches: Option<String>) -> PyExpr {

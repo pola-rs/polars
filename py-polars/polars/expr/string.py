@@ -53,7 +53,7 @@ class ExprStringNameSpace:
         format
             Format to use, refer to the `chrono strftime documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
-            for specification. Example: ``"%y-%m-%d"``.
+            for specification. Example: ``"%Y-%m-%d"``.
         strict
             Raise an error if any conversion fails.
         exact
@@ -124,17 +124,6 @@ class ExprStringNameSpace:
         """
         if not is_polars_dtype(dtype):
             raise ValueError(f"expected: {DataType} got: {dtype}")
-
-        if format is not None and "%f" in format:
-            raise ValueError(
-                "Directive '%f' is not supported in Python Polars, "
-                "as it differs from the Python standard library.\n"
-                "Instead, please use one of:\n"
-                " - '%.f'\n"
-                " - '%3f'\n"
-                " - '%6f'\n"
-                " - '%9f'"
-            )
 
         if tz_aware is no_default:
             tz_aware = False
