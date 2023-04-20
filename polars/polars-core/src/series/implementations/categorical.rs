@@ -107,11 +107,10 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
 
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         // we cannot cast and dispatch as the inner type of the list would be incorrect
-        self.0
-            .logical()
-            .agg_list(groups)
-            .cast(&DataType::List(Box::new(self.dtype().clone())))
-            .unwrap()
+        let list = self.0.logical().agg_list(groups);
+        let mut list = list.list().unwrap().clone();
+        list.to_logical(self.dtype().clone());
+        list.into_series()
     }
 
     fn zip_outer_join_column(
