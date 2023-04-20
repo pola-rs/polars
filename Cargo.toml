@@ -18,6 +18,7 @@ members = [
   "examples/read_parquet_cloud",
   "examples/string_filter",
   "examples/python_rust_compiled_function",
+  "marki",
 ]
 
 [workspace.package]
