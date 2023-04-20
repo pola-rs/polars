@@ -2,7 +2,8 @@ use std::hash::{BuildHasher, Hash};
 
 use hashbrown::hash_map::{Entry, RawEntryMut};
 use hashbrown::HashMap;
-use polars_utils::{flatten, HashSingle};
+use polars_utils::sync::SyncPtr;
+use polars_utils::{HashSingle};
 use rayon::prelude::*;
 
 use super::GroupsProxy;
@@ -26,29 +27,48 @@ fn finish_group_order_vecs(
             return GroupsProxy::Idx(GroupsIdx::new(first, all, true));
         }
 
-        // TODO! write directly to final buffer in parallel
-        // we keep the (first, all) tuple because of sorting
-        let out = POOL.install(|| {
-            vecs.into_iter()
-                .map(|(first, all)| {
-                    // give the compiler some info
-                    // maybe it may elide some loop counters
-                    assert_eq!(first.len(), all.len());
+        let cap = vecs.iter().map(|v| v.0.len()).sum::<usize>();
+        let offsets = vecs
+            .iter()
+            .scan(0_usize, |acc, v| {
+                let out = *acc;
+                *acc += v.0.len();
+                Some(out)
+            })
+            .collect::<Vec<_>>();
 
+        // we write (first, all) tuple because of sorting
+        let mut items = Vec::with_capacity(cap);
+        let items_ptr = unsafe { SyncPtr::new(items.as_mut_ptr()) };
+
+        POOL.install(|| {
+            vecs.into_par_iter()
+                .zip(offsets)
+                .for_each(|((first, all), offset)| {
                     // pre-sort every array not needed as items are already sorted
                     // this is due to using an index hashmap
-                    first
-                        .into_iter()
-                        .zip(all.into_iter())
-                        .collect_trusted::<Vec<_>>()
-                })
-                .collect::<Vec<_>>()
-        });
-        // sort again
-        let mut out = flatten(&out, None);
-        out.sort_unstable_by_key(|g| g.0);
 
-        let mut idx = GroupsIdx::from_iter(out.into_iter());
+                    unsafe {
+                        let mut items_ptr: *mut (IdxSize, Vec<IdxSize>) = items_ptr.get();
+                        items_ptr = items_ptr.add(offset);
+
+                        // give the compiler some info
+                        // maybe it may elide some loop counters
+                        assert_eq!(first.len(), all.len());
+                        for (i, (first, all)) in first.into_iter().zip(all.into_iter()).enumerate()
+                        {
+                            std::ptr::write(items_ptr.add(i), (first, all))
+                        }
+                    }
+                });
+        });
+        unsafe {
+            items.set_len(cap);
+        }
+        // sort again
+        items.sort_unstable_by_key(|g| g.0);
+
+        let mut idx = GroupsIdx::from_iter(items.into_iter());
         idx.sorted = true;
         GroupsProxy::Idx(idx)
     } else {
