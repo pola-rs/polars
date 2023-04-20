@@ -45,7 +45,7 @@ are valid *only* during scope lifetime, and are reset to their initial values
 (whatever they were before entering the new context) on scope exit.
 
 You can take advantage of this by initialising  a``Config`` instance and then
-explicitly calling one or more of the available 'set_' methods on it...
+explicitly calling one or more of the available "set\_" methods on it...
 
 .. code-block:: python
 
@@ -56,7 +56,7 @@ explicitly calling one or more of the available 'set_' methods on it...
     # on scope exit any modified settings are restored to their previous state
 
 ...or by setting the options in the ``Config`` init directly (optionally
-omitting the 'set_' prefix for brevity):
+omitting the "set\_" prefix for brevity):
 
 .. code-block:: python
 
