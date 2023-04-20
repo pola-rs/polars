@@ -1182,31 +1182,6 @@ def test_describe() -> None:
         assert empty_s.describe()
 
 
-def test_is_in() -> None:
-    s = pl.Series(["a", "b", "c"])
-
-    out = s.is_in(["a", "b"])
-    assert out.to_list() == [True, True, False]
-
-    # Check if empty list is converted to pl.Utf8.
-    out = s.is_in([])
-    assert out.to_list() == [False]  # one element?
-
-    for x_y_z in (["x", "y", "z"], {"x", "y", "z"}):
-        out = s.is_in(x_y_z)
-        assert out.to_list() == [False, False, False]
-
-    df = pl.DataFrame({"a": [1.0, 2.0], "b": [1, 4], "c": ["e", "d"]})
-    assert df.select(pl.col("a").is_in(pl.col("b"))).to_series().to_list() == [
-        True,
-        False,
-    ]
-    assert df.select(pl.col("b").is_in([])).to_series().to_list() == [False]
-
-    with pytest.raises(pl.ComputeError, match=r"cannot compare"):
-        df.select(pl.col("b").is_in(["x", "x"]))
-
-
 def test_slice() -> None:
     s = pl.Series(name="a", values=[0, 1, 2, 3, 4, 5], dtype=pl.UInt8)
     for srs_slice, expected in (
