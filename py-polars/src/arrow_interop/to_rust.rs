@@ -16,7 +16,7 @@ pub fn field_to_rust(obj: &PyAny) -> PyResult<Field> {
     // make the conversion through PyArrow's private API
     obj.call_method1("_export_to_c", (schema_ptr as Py_uintptr_t,))?;
     let field = unsafe { ffi::import_field_from_c(schema.as_ref()).map_err(PyPolarsErr::from)? };
-    Ok(field.into())
+    Ok((&field).into())
 }
 
 // PyList<Field> which you get by calling `list(schema)`
