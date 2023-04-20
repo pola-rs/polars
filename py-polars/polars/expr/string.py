@@ -3,14 +3,7 @@ from __future__ import annotations
 import warnings
 from typing import TYPE_CHECKING
 
-from polars.datatypes import (
-    DataType,
-    Date,
-    Datetime,
-    Time,
-    is_polars_dtype,
-    py_type_to_dtype,
-)
+from polars.datatypes import Date, Datetime, Time, py_type_to_dtype
 from polars.utils import no_default
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
 from polars.utils._wrap import wrap_expr
@@ -122,9 +115,6 @@ class ExprStringNameSpace:
         └────────────┘
 
         """
-        if not is_polars_dtype(dtype):
-            raise ValueError(f"expected: {DataType} got: {dtype}")
-
         if tz_aware is no_default:
             tz_aware = False
         else:
