@@ -25,6 +25,7 @@ from polars.datatypes import (
     NUMERIC_DTYPES,
     SIGNED_INTEGER_DTYPES,
     TEMPORAL_DTYPES,
+    UNSIGNED_INTEGER_DTYPES,
     Boolean,
     Categorical,
     Date,
@@ -3075,18 +3076,36 @@ class Series:
         """
         return self.dtype in NUMERIC_DTYPES
 
-    def is_integer(self) -> bool:
+    def is_integer(self, signed: bool | None = None) -> bool:
         """
-        Check if this Series datatype is integer.
+        Check if this Series datatype is an integer (signed or unsigned).
+
+        Parameters
+        ----------
+        signed
+            * if `None`, both signed and unsigned integer dtypes will match.
+            * if `True`, only signed integer dtypes will be considered a match.
+            * if `False`, only unsigned integer dtypes will be considered a match.
 
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s = pl.Series("a", [1, 2, 3], dtype=pl.UInt32)
         >>> s.is_integer()
         True
+        >>> s.is_integer(signed=False)
+        True
+        >>> s.is_integer(signed=True)
+        False
 
         """
-        return self.dtype in INTEGER_DTYPES
+        if signed is None:
+            return self.dtype in INTEGER_DTYPES
+        elif signed is True:
+            return self.dtype in SIGNED_INTEGER_DTYPES
+        elif signed is False:
+            return self.dtype in UNSIGNED_INTEGER_DTYPES
+
+        raise ValueError(f"'signed' must be None, True or False; given {signed!r}")
 
     def is_temporal(self, excluding: OneOrMoreDataTypes | None = None) -> bool:
         """
