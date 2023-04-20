@@ -3090,6 +3090,28 @@ class Series:
             Float64,
         )
 
+    def is_integer(self) -> bool:
+        """
+        Check if this Series datatype is integer.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.is_integer()
+        True
+
+        """
+        return self.dtype in (
+            Int8,
+            Int16,
+            Int32,
+            Int64,
+            UInt8,
+            UInt16,
+            UInt32,
+            UInt64,
+        )
+
     def is_temporal(self, excluding: OneOrMoreDataTypes | None = None) -> bool:
         """
         Check if this Series datatype is temporal.
