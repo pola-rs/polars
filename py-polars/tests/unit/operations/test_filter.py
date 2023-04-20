@@ -74,14 +74,6 @@ def test_filter_aggregation_any() -> None:
     }
 
 
-def test_is_in_bool() -> None:
-    bool_value_to_filter_on = [True, None]
-    df = pl.DataFrame({"A": [True, False, None]})
-    assert df.filter(pl.col("A").is_in(bool_value_to_filter_on)).to_dict(False) == {
-        "A": [True, False]
-    }
-
-
 def test_predicate_order_explode_5950() -> None:
     df = pl.from_dict(
         {

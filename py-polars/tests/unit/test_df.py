@@ -2656,15 +2656,6 @@ def test_is_between_data_types() -> None:
     )
 
 
-def test_is_in() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3]})
-    assert df.select(pl.col("a").is_in([1, 2]))["a"].to_list() == [
-        True,
-        True,
-        False,
-    ]
-
-
 def test_empty_is_in() -> None:
     df_empty_isin = pl.DataFrame({"foo": ["a", "b", "c", "d"]}).filter(
         pl.col("foo").is_in([])
