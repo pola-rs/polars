@@ -125,7 +125,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
     /// [`Schema`] of the file.
     pub fn schema(&mut self) -> PolarsResult<Schema> {
         let metadata = self.get_metadata()?;
-        Ok(Schema::from_iter(read::infer_schema(metadata)?.fields))
+        Ok(Schema::from_iter(&read::infer_schema(metadata)?.fields))
     }
 
     /// Use statistics in the parquet to determine if pages

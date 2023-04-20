@@ -136,7 +136,7 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::Dictionary(_, _, _) => DataType::Categorical(None),
             #[cfg(feature = "dtype-struct")]
             ArrowDataType::Struct(fields) => {
-                DataType::Struct(fields.iter().cloned().map(|fld| fld.into()).collect())
+                DataType::Struct(fields.iter().map(|fld| fld.into()).collect())
             }
             ArrowDataType::Extension(name, _, _) if name == "POLARS_EXTENSION_TYPE" => {
                 #[cfg(feature = "object")]
@@ -155,8 +155,8 @@ impl From<&ArrowDataType> for DataType {
     }
 }
 
-impl From<ArrowField> for Field {
-    fn from(f: ArrowField) -> Self {
-        Field::from_owned(f.name.into(), (&f.data_type).into())
+impl From<&ArrowField> for Field {
+    fn from(f: &ArrowField) -> Self {
+        Field::new(&f.name, f.data_type().into())
     }
 }

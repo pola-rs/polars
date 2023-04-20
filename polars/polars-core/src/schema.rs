@@ -32,15 +32,6 @@ impl Debug for Schema {
     }
 }
 
-impl<'a> FromIterator<&'a arrow::datatypes::Field> for Schema {
-    fn from_iter<T: IntoIterator<Item = &'a arrow::datatypes::Field>>(fields: T) -> Self {
-        fields
-            .into_iter()
-            .map(|fld| Field::new(&fld.name, (&fld.data_type).into()))
-            .collect()
-    }
-}
-
 impl<F> FromIterator<F> for Schema
 where
     F: Into<Field>,

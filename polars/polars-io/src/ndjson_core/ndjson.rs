@@ -159,10 +159,7 @@ impl<'a> CoreJsonReader<'a> {
                 let mut cursor = Cursor::new(bytes);
 
                 let data_type = arrow_ndjson::read::infer(&mut cursor, infer_schema_len)?;
-                let schema = StructArray::get_fields(&data_type)
-                    .iter()
-                    .cloned()
-                    .collect();
+                let schema = StructArray::get_fields(&data_type).iter().collect();
 
                 Cow::Owned(schema)
             }

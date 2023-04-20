@@ -128,7 +128,7 @@ pub(crate) fn collect_statistics(
             Some(rg) => deserialize(fld, &md[rg..rg + 1])?,
         };
         schema.with_column((&fld.name).into(), (&fld.data_type).into());
-        stats.push(ColumnStats(st, fld.clone().into()));
+        stats.push(ColumnStats(st, fld.into()));
     }
 
     Ok(if stats.is_empty() {
