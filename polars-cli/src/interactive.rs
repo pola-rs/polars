@@ -64,7 +64,7 @@ fn print_help() {
     println!("{}", df);
 }
 
-enum PolarsCommand {
+pub(super) enum PolarsCommand {
     Help,
     Exit,
     Save(PathBuf),
@@ -91,7 +91,7 @@ impl PolarsCommand {
             PolarsCommand::Save(buf) => {
                 let serializable_ctx: SerializableContext = ctx.into();
                 let mut w: Vec<u8> = vec![];
-                let db = ciborium::ser::into_writer(&serializable_ctx, &mut w).map_err(|e| {
+                let _ = ciborium::ser::into_writer(&serializable_ctx, &mut w).map_err(|e| {
                     std::io::Error::new(
                         std::io::ErrorKind::Other,
                         format!("Serialization error: {}", e),
@@ -207,4 +207,10 @@ pub(super) fn run_tty(output_mode: OutputMode) -> std::io::Result<()> {
         }
     }
     Ok(())
+}
+
+impl PolarsCommand {
+    pub(super) fn keywords() -> Vec<&'static str> {
+        vec!["exit", "quit", "save", "open", "help"]
+    }
 }

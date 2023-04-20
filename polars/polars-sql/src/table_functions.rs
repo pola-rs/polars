@@ -115,3 +115,19 @@ impl PolarsTableFunctions {
         }
     }
 }
+
+impl PolarsTableFunctions {
+    // list sql names of all table functions
+    pub(crate) fn keywords() -> &'static [&'static str] {
+        &[
+            #[cfg(feature = "csv")]
+            "read_csv",
+            #[cfg(feature = "parquet")]
+            "read_parquet",
+            #[cfg(feature = "ipc")]
+            "read_ipc",
+            #[cfg(feature = "json")]
+            "read_json",
+        ]
+    }
+}
