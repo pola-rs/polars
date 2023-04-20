@@ -20,6 +20,11 @@ from typing import (
 from polars import functions as F
 from polars import internals as pli
 from polars.datatypes import (
+    FLOAT_DTYPES,
+    INTEGER_DTYPES,
+    NUMERIC_DTYPES,
+    SIGNED_INTEGER_DTYPES,
+    TEMPORAL_DTYPES,
     Boolean,
     Categorical,
     Date,
@@ -772,7 +777,7 @@ class Series:
                             raise ValueError(
                                 "Index positions should be bigger than -2^32 + 1."
                             )
-                if idxs.dtype in {Int8, Int16, Int32, Int64}:
+                if idxs.dtype in SIGNED_INTEGER_DTYPES:
                     if idxs.min() < 0:  # type: ignore[operator]
                         if idx_type == UInt32:
                             if idxs.dtype in {Int8, Int16}:
@@ -849,16 +854,7 @@ class Series:
             int | Series | range | slice | np.ndarray[Any, Any] | list[int] | list[bool]
         ),
     ) -> Any:
-        if isinstance(item, Series) and item.dtype in {
-            UInt8,
-            UInt16,
-            UInt32,
-            UInt64,
-            Int8,
-            Int16,
-            Int32,
-            Int64,
-        }:
+        if isinstance(item, Series) and item.dtype in INTEGER_DTYPES:
             # Unsigned or signed Series (ordered from fastest to slowest).
             #   - pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx) Series indexes.
             #   - Other unsigned Series indexes are converted to pl.UInt32 (polars)
@@ -3077,18 +3073,7 @@ class Series:
         True
 
         """
-        return self.dtype in (
-            Int8,
-            Int16,
-            Int32,
-            Int64,
-            UInt8,
-            UInt16,
-            UInt32,
-            UInt64,
-            Float32,
-            Float64,
-        )
+        return self.dtype in NUMERIC_DTYPES
 
     def is_integer(self) -> bool:
         """
@@ -3101,16 +3086,7 @@ class Series:
         True
 
         """
-        return self.dtype in (
-            Int8,
-            Int16,
-            Int32,
-            Int64,
-            UInt8,
-            UInt16,
-            UInt32,
-            UInt64,
-        )
+        return self.dtype in INTEGER_DTYPES
 
     def is_temporal(self, excluding: OneOrMoreDataTypes | None = None) -> bool:
         """
@@ -3137,7 +3113,7 @@ class Series:
             if self.dtype in excluding:
                 return False
 
-        return self.dtype in (Date, Datetime, Duration, Time)
+        return self.dtype in TEMPORAL_DTYPES
 
     def is_float(self) -> bool:
         """
@@ -3150,7 +3126,7 @@ class Series:
         True
 
         """
-        return self.dtype in (Float32, Float64)
+        return self.dtype in FLOAT_DTYPES
 
     def is_boolean(self) -> bool:
         """
