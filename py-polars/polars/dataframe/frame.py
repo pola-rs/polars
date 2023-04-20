@@ -32,6 +32,7 @@ from polars.datatypes import (
     FLOAT_DTYPES,
     INTEGER_DTYPES,
     N_INFER_DEFAULT,
+    SIGNED_INTEGER_DTYPES,
     Boolean,
     Categorical,
     DataTypeClass,
@@ -1426,7 +1427,7 @@ class DataFrame:
                             raise ValueError(
                                 "Index positions should be bigger than -2^32 + 1."
                             )
-                if idxs.dtype in {Int8, Int16, Int32, Int64}:
+                if idxs.dtype in SIGNED_INTEGER_DTYPES:
                     if idxs.min() < 0:  # type: ignore[operator]
                         if idx_type == UInt32:
                             if idxs.dtype in {Int8, Int16}:
@@ -1658,9 +1659,9 @@ class DataFrame:
             dtype = item.dtype
             if dtype == Utf8:
                 return self._from_pydf(self._df.select(item))
-            if dtype == UInt32:
+            elif dtype == UInt32:
                 return self._from_pydf(self._df.take_with_series(item._s))
-            if dtype in {UInt8, UInt16, UInt64, Int8, Int16, Int32, Int64}:
+            elif dtype in INTEGER_DTYPES:
                 return self._from_pydf(
                     self._df.take_with_series(self._pos_idxs(item, dim=0)._s)
                 )
