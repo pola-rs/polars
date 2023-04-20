@@ -566,3 +566,12 @@ def test_invalid_getitem_key_err() -> None:
 
     with pytest.raises(KeyError, match=r"('x', 'y')"):
         df["x", "y"]
+
+
+def test_invalid_groupby_arg() -> None:
+    df = pl.DataFrame({"a": [1]})
+    with pytest.raises(
+        ValueError,
+        match=r"'aggs' argument should be one or multiple expressions, got: '{'a': 'sum'}'",
+    ):
+        df.groupby(1).agg({"a": "sum"})
