@@ -518,3 +518,13 @@ def test_list_recursive_categorical_cast() -> None:
     s = pl.Series(values).cast(dtype)
     assert s.dtype == dtype
     assert s.to_list() == values
+
+
+def test_list_new_from_index_logical() -> None:
+    s = (
+        pl.select(pl.struct(pl.Series("a", [date(2001, 1, 1)])).implode())
+        .to_series()
+        .new_from_index(0, 1)
+    )
+    assert s.dtype == pl.List(pl.Struct([pl.Field("a", pl.Date)]))
+    assert s.to_list() == [[{"a": date(2001, 1, 1)}]]

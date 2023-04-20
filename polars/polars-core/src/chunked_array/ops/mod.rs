@@ -628,7 +628,11 @@ impl ChunkExpandAtIndex<ListType> for ListChunked {
     fn new_from_index(&self, index: usize, length: usize) -> ListChunked {
         let opt_val = self.get(index);
         match opt_val {
-            Some(val) => ListChunked::full(self.name(), &val, length),
+            Some(val) => {
+                let mut ca = ListChunked::full(self.name(), &val, length);
+                ca.to_logical(self.inner_dtype());
+                ca
+            }
             None => ListChunked::full_null_with_dtype(self.name(), length, &self.inner_dtype()),
         }
     }
