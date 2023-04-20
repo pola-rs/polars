@@ -2466,8 +2466,7 @@ def duration(
     │ 2022-01-01 00:00:00 ┆ 1   │
     │ 2022-01-02 00:00:00 ┆ 2   │
     └─────────────────────┴─────┘
-    >>> with pl.Config() as cfg:
-    ...     cfg.set_tbl_width_chars(120)
+    >>> with pl.Config(tbl_width_chars=120):
     ...     df.select(
     ...         (pl.col("dt") + pl.duration(weeks="add")).alias("add_weeks"),
     ...         (pl.col("dt") + pl.duration(days="add")).alias("add_days"),
@@ -2476,7 +2475,6 @@ def duration(
     ...         (pl.col("dt") + pl.duration(hours="add")).alias("add_hours"),
     ...     )
     ...
-    <class 'polars.config.Config'>
     shape: (2, 5)
     ┌─────────────────────┬─────────────────────┬─────────────────────┬─────────────────────────┬─────────────────────┐
     │ add_weeks           ┆ add_days            ┆ add_seconds         ┆ add_millis              ┆ add_hours           │

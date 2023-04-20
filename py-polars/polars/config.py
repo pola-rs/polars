@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from polars.dependencies import json
 
@@ -72,11 +72,54 @@ class Config:
     ...
     >>> # scope exit - no longer in verbose mode
 
+    This can also be written more compactly as:
+
+    >>> with pl.Config(verbose=True):
+    ...     pass
+    ...
+
+    (The compact format is available for all `Config` methods that take a single value).
+
     """
+
+    _original_state: str = ""
+
+    def __init__(self, **options: Any) -> None:
+        """
+        Initialise a Config object instance for context manager usage.
+
+        Any `options` kwargs should correspond to the available named "set_"
+        methods, but can optionally to omit the "set_" prefix for brevity.
+
+        Parameters
+        ----------
+        options
+            keyword args that will set the option; equivalent to calling the
+            named "set_<option>" method with the given value.
+
+        Examples
+        --------
+        >>> with pl.Config(
+        ...     # these options will be set for scope duration
+        ...     tbl_formatting="ASCII_MARKDOWN",
+        ...     tbl_width_chars=180,
+        ... ):
+        ...     pass
+
+        """
+        # save original state _before_ any changes are made
+        self._original_state = self.save()
+
+        for opt, value in options.items():
+            if not hasattr(self, opt) and not opt.startswith("set_"):
+                opt = f"set_{opt}"
+            if not hasattr(self, opt):
+                raise AttributeError(f"Config has no {opt!r} option")
+            getattr(self, opt)(value)
 
     def __enter__(self) -> Config:
         """Support setting temporary Config options that are reset on scope exit."""
-        self._original_state = self.save()
+        self._original_state = self._original_state or self.save()
         return self
 
     def __exit__(
@@ -87,6 +130,7 @@ class Config:
     ) -> None:
         """Reset any Config options that were set within the scope."""
         self.restore_defaults().load(self._original_state)
+        self._original_state = ""
 
     @classmethod
     def load(cls, cfg: str) -> type[Config]:

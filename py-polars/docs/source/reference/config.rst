@@ -44,6 +44,9 @@ Note that ``Config`` supports setting context-scoped options. These options
 are valid *only* during scope lifetime, and are reset to their initial values
 (whatever they were before entering the new context) on scope exit.
 
+You can take advantage of this by initialising  a``Config`` instance and then
+explicitly calling one or more of the available 'set_' methods on it...
+
 .. code-block:: python
 
     with pl.Config() as cfg:
@@ -51,3 +54,11 @@ are valid *only* during scope lifetime, and are reset to their initial values
         do_various_things()
 
     # on scope exit any modified settings are restored to their previous state
+
+...or by setting the options in the ``Config`` init directly (optionally
+omitting the 'set_' prefix for brevity):
+
+.. code-block:: python
+
+    with pl.Config(verbose=True):
+        do_various_things()
