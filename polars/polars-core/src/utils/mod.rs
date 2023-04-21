@@ -1,10 +1,11 @@
+pub mod flatten;
 pub(crate) mod series;
 mod supertype;
-
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
 use arrow::bitmap::Bitmap;
+use flatten::*;
 use num_traits::{One, Zero};
 pub use polars_arrow::utils::{TrustMyLength, *};
 use rayon::prelude::*;
@@ -140,41 +141,6 @@ pub fn _split_offsets(len: usize, n: usize) -> Vec<(usize, usize)> {
 #[doc(hidden)]
 pub fn split_series(s: &Series, n: usize) -> PolarsResult<Vec<Series>> {
     split_array!(s, n, i64)
-}
-
-fn flatten_df(df: &DataFrame) -> impl Iterator<Item = DataFrame> + '_ {
-    df.iter_chunks_physical().flat_map(|chunk| {
-        let df = DataFrame::new_no_checks(
-            df.iter()
-                .zip(chunk.into_arrays())
-                .map(|(s, arr)| {
-                    // Safety:
-                    // datatypes are correct
-                    let mut out = unsafe {
-                        Series::from_chunks_and_dtype_unchecked(s.name(), vec![arr], s.dtype())
-                    };
-                    out.set_sorted_flag(s.is_sorted_flag());
-                    out
-                })
-                .collect(),
-        );
-        if df.height() == 0 {
-            None
-        } else {
-            Some(df)
-        }
-    })
-}
-
-pub fn flatten_series(s: &Series) -> Vec<Series> {
-    let name = s.name();
-    let dtype = s.dtype();
-    unsafe {
-        s.chunks()
-            .iter()
-            .map(|arr| Series::from_chunks_and_dtype_unchecked(name, vec![arr.clone()], dtype))
-            .collect()
-    }
 }
 
 pub fn split_df_as_ref(df: &DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>> {
