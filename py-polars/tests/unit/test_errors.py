@@ -575,3 +575,14 @@ def test_invalid_groupby_arg() -> None:
         match=r"'aggs' argument should be one or multiple expressions, got: '{'a': 'sum'}'",
     ):
         df.groupby(1).agg({"a": "sum"})
+
+
+def test_no_sorted_warning(capfd: typing.Any) -> None:
+    df = pl.DataFrame(
+        {
+            "dt": [datetime(2001, 1, 1), datetime(2001, 1, 2)],
+        }
+    )
+    df.groupby_dynamic("dt", every="1h").agg(pl.all().count().suffix("_foo"))
+    (_, err) = capfd.readouterr()
+    assert "argument is not explicitly sorted" in err
