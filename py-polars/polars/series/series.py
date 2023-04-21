@@ -3257,6 +3257,10 @@ class Series:
                 tp = f"datetime64[{self.time_unit}]"
             return arr.astype(tp)
 
+        def raise_no_zero_copy() -> None:
+            if zero_copy_only:
+                raise ValueError("Cannot return a zero-copy array")
+
         if (
             use_pyarrow
             and _PYARROW_AVAILABLE
@@ -3267,6 +3271,7 @@ class Series:
                 *args, zero_copy_only=zero_copy_only, writable=writable
             )
         elif self.dtype == Time:
+            raise_no_zero_copy()
             # note: there is no native numpy "time" dtype
             return np.array(self.to_list(), dtype="object")
         else:
@@ -3276,14 +3281,17 @@ class Series:
                 elif self.is_numeric():
                     np_array = self.view(ignore_nulls=True)
                 else:
+                    raise_no_zero_copy()
                     np_array = self._s.to_numpy()
 
             elif self.is_temporal():
                 np_array = convert_to_date(self.to_physical()._s.to_numpy())
             else:
+                raise_no_zero_copy()
                 np_array = self._s.to_numpy()
 
             if writable and not np_array.flags.writeable:
+                raise_no_zero_copy()
                 return np_array.copy()
             else:
                 return np_array

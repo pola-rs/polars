@@ -69,6 +69,17 @@ def test_to_numpy(numpy_interop_test_data: Any, use_pyarrow: bool) -> None:
     assert_array_equal(pl_series_to_numpy_array, numpy_array)
 
 
+@pytest.mark.parametrize("use_pyarrow", [True, False])
+@pytest.mark.parametrize("has_null", [True, False])
+@pytest.mark.parametrize("dtype", [pl.Time, pl.Boolean, pl.Utf8])
+@no_type_check
+def test_to_numpy_no_zero_copy(use_pyarrow, has_null, dtype):
+    data = ["a", None] if dtype == pl.Utf8 else [0, None]
+    series = pl.Series(data if has_null else data[:1], dtype=dtype)
+    with pytest.raises(ValueError):
+        series.to_numpy(zero_copy_only=True, use_pyarrow=use_pyarrow)
+
+
 def test_from_pandas() -> None:
     df = pd.DataFrame(
         {
