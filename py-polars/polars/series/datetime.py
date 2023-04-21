@@ -3,9 +3,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from polars import functions as F
+from polars.datatypes import Date
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
-from polars.utils.convert import _to_python_datetime
+from polars.utils.convert import _to_python_date, _to_python_datetime
 from polars.utils.decorators import deprecated_alias
 
 if TYPE_CHECKING:
@@ -97,7 +98,10 @@ class DateTimeNameSpace:
         s = wrap_s(self._s)
         out = s.median()
         if out is not None:
-            return _to_python_datetime(int(out), s.time_unit)
+            if s.dtype == Date:
+                return _to_python_date(int(out))
+            else:
+                return _to_python_datetime(int(out), s.time_unit)
         return None
 
     def mean(self) -> dt.date | dt.datetime | None:
@@ -123,7 +127,10 @@ class DateTimeNameSpace:
         s = wrap_s(self._s)
         out = s.mean()
         if out is not None:
-            return _to_python_datetime(int(out), s.time_unit)
+            if s.dtype == Date:
+                return _to_python_date(int(out))
+            else:
+                return _to_python_datetime(int(out), s.time_unit)
         return None
 
     @deprecated_alias(fmt="format")
