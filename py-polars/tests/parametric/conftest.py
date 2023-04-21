@@ -1,9 +1,10 @@
 import os
+import re
 
 from hypothesis import settings
 
 
-def load_hypothesis_profile(name: str = "polars.default") -> None:
+def load_hypothesis_profile(profile: str = "polars.default") -> None:
     """Conditionally load different hypothesis profiles."""
     common_settings = {"print_blob": True, "deadline": None}
 
@@ -28,9 +29,20 @@ def load_hypothesis_profile(name: str = "polars.default") -> None:
         max_examples=10_000,
         **common_settings,  # type: ignore[arg-type]
     )
+    # Polars 'custom' profile, with 'n' iterations.
+    if profile.isdigit() or re.match(r"polars\.custom\.\d+$", profile):
+        n_iterations = int(profile.replace("polars.custom.", ""))
+        profile = f"polars.custom.{profile}"
+        settings.register_profile(
+            name=profile,
+            max_examples=n_iterations,
+            **common_settings,  # type: ignore[arg-type]
+        )
 
-    name = name.replace("polars.", "")
-    settings.load_profile(f"polars.{name}")
+    profile = profile.replace("polars.", "")
+    settings.load_profile(f"polars.{profile}")
 
 
-load_hypothesis_profile(name=os.environ.get("POLARS_HYPOTHESIS_PROFILE", "default"))
+load_hypothesis_profile(
+    profile=os.environ.get("POLARS_HYPOTHESIS_PROFILE", "default"),
+)
