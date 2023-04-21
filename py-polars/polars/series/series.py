@@ -1032,25 +1032,29 @@ class Series:
         """Format output data in HTML for display in Jupyter Notebooks."""
         return self.to_frame()._repr_html_(from_series=True)
 
-    def item(self) -> Any:
+    def item(self, row: int | None = None) -> Any:
         """
-        Return the series as a scalar.
+        Return the series as a scalar, or return the element at the given row index.
 
-        Equivalent to ``s[0]``, with a check that the shape is (1,).
+        If no row index is provided, this is equivalent to ``s[0]``, with a check
+        that the shape is (1,). With a row index, this is equivalent to ``s[row]``.
 
         Examples
         --------
-        >>> s = pl.Series("a", [1])
-        >>> s.item()
+        >>> s1 = pl.Series("a", [1])
+        >>> s1.item()
         1
+        >>> s2 = pl.Series("a", [9, 8, 7])
+        >>> s2.cumsum().item(-1)
+        24
 
         """
-        if len(self) != 1:
+        if row is None and len(self) != 1:
             raise ValueError(
-                f"Can only call .item() if the series is of length 1, "
-                f"series is of length {len(self)}"
+                f"Can only call '.item()' if the series is of length 1, or an "
+                f"explicit row index is provided (series is of length {len(self)})"
             )
-        return self[0]
+        return self[row or 0]
 
     def estimated_size(self, unit: SizeUnit = "b") -> int | float:
         """
