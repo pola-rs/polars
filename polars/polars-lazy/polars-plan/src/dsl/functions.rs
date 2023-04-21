@@ -378,16 +378,18 @@ pub fn arange(start: Expr, end: Expr, step: i64) -> Expr {
                 .get(0)
                 .ok_or_else(|| polars_err!(NoData: "no data in `end` evaluation"))?;
 
-            let mut ca = if step > 1 {
-                Int64Chunked::from_iter_values("arange", (start..end).step_by(step as usize))
-            } else if step == 1 {
-                Int64Chunked::from_iter_values("arange", start..end)
-            } else {
-                polars_ensure!(start > end, InvalidOperation: "range must be decreasing if 'step' is negative");
-                Int64Chunked::from_iter_values(
-                    "arange",
-                    (end..=start).rev().step_by(step.abs() as usize),
-                )
+            let mut ca = match step {
+                1 => Int64Chunked::from_iter_values("arange", start..end),
+                2.. => {
+                    Int64Chunked::from_iter_values("arange", (start..end).step_by(step as usize))
+                }
+                _ => {
+                    polars_ensure!(start > end, InvalidOperation: "range must be decreasing if 'step' is negative");
+                    Int64Chunked::from_iter_values(
+                        "arange",
+                        (end..=start).rev().step_by(step.unsigned_abs() as usize),
+                    )
+                }
             };
             let is_sorted = if end < start {
                 IsSorted::Descending
@@ -435,18 +437,22 @@ pub fn arange(start: Expr, end: Expr, step: i64) -> Expr {
 
             for (opt_start, opt_end) in start.into_iter().zip(end.into_iter()) {
                 match (opt_start, opt_end) {
-                    (Some(start_v), Some(end_v)) => {
-                        if step > 1 {
-                            builder.append_iter_values((start_v..end_v).step_by(step as usize));
-                        } else if step == 1 {
+                    (Some(start_v), Some(end_v)) => match step {
+                        1 => {
                             builder.append_iter_values(start_v..end_v);
-                        } else {
+                        }
+                        2.. => {
+                            builder.append_iter_values((start_v..end_v).step_by(step as usize));
+                        }
+                        _ => {
                             polars_ensure!(start_v > end_v, InvalidOperation: "range must be decreasing if 'step' is negative");
                             builder.append_iter_values(
-                                (end_v..=start_v).rev().step_by(step.unsigned_abs()),
+                                (end_v..=start_v)
+                                    .rev()
+                                    .step_by(step.unsigned_abs() as usize),
                             )
                         }
-                    }
+                    },
                     _ => builder.append_null(),
                 }
             }
