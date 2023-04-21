@@ -15,83 +15,58 @@ import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
-def test_df_from_numpy() -> None:
-    df = pl.DataFrame(
-        {
-            "int8": np.array([1, 3, 2], dtype=np.int8),
-            "int16": np.array([1, 3, 2], dtype=np.int16),
-            "int32": np.array([1, 3, 2], dtype=np.int32),
-            "int64": np.array([1, 3, 2], dtype=np.int64),
-            "uint8": np.array([1, 3, 2], dtype=np.uint8),
-            "uint16": np.array([1, 3, 2], dtype=np.uint16),
-            "uint32": np.array([1, 3, 2], dtype=np.uint32),
-            "uint64": np.array([1, 3, 2], dtype=np.uint64),
-            "float16": np.array([21.7, 21.8, 21], dtype=np.float16),
-            "float32": np.array([21.7, 21.8, 21], dtype=np.float32),
-            "float64": np.array([21.7, 21.8, 21], dtype=np.float64),
-            "intc": np.array([1, 3, 2], dtype=np.intc),
-            "uintc": np.array([1, 3, 2], dtype=np.uintc),
-            "str": np.array(["string1", "string2", "string3"], dtype=np.str_),
-            "bytes": np.array(
-                ["byte_string1", "byte_string2", "byte_string3"], dtype=np.bytes_
-            ),
-        }
-    )
-    out = [
-        pl.datatypes.Int8,
-        pl.datatypes.Int16,
-        pl.datatypes.Int32,
-        pl.datatypes.Int64,
-        pl.datatypes.UInt8,
-        pl.datatypes.UInt16,
-        pl.datatypes.UInt32,
-        pl.datatypes.UInt64,
-        # np.float16 gets converted to float32 as Rust does not support float16.
-        pl.datatypes.Float32,
-        pl.datatypes.Float32,
-        pl.datatypes.Float64,
-        pl.datatypes.Int32,
-        pl.datatypes.UInt32,
-        pl.datatypes.Utf8,
-        pl.datatypes.Binary,
-    ]
-    assert out == df.dtypes
-
-
-def test_to_numpy() -> None:
-    def test_series_to_numpy(
-        name: str,
-        values: list[object],
-        pl_dtype: type[pl.DataType],
-        np_dtype: (
-            type[np.signedinteger[Any]]
-            | type[np.unsignedinteger[Any]]
-            | type[np.floating[Any]]
-            | type[np.object_]
+@pytest.fixture(
+    params=[
+        ("int8", [1, 3, 2], pl.Int8, np.int8),
+        ("int16", [1, 3, 2], pl.Int16, np.int16),
+        ("int32", [1, 3, 2], pl.Int32, np.int32),
+        ("int64", [1, 3, 2], pl.Int64, np.int64),
+        ("uint8", [1, 3, 2], pl.UInt8, np.uint8),
+        ("uint16", [1, 3, 2], pl.UInt16, np.uint16),
+        ("uint32", [1, 3, 2], pl.UInt32, np.uint32),
+        ("uint64", [1, 3, 2], pl.UInt64, np.uint64),
+        ("float32", [21.7, 21.8, 21], pl.Float32, np.float32),
+        ("float64", [21.7, 21.8, 21], pl.Float64, np.float64),
+        ("bool", [True, False, False], pl.Boolean, np.bool_),
+        ("object", [21.7, "string1", object()], pl.Object, np.object_),
+        ("str", ["string1", "string2", "string3"], pl.Utf8, np.str_),
+        ("intc", [1, 3, 2], pl.Int32, np.intc),
+        ("uintc", [1, 3, 2], pl.UInt32, np.uintc),
+        ("str_fixed", ["string1", "string2", "string3"], pl.Utf8, np.str_),
+        (
+            "bytes",
+            [b"byte_string1", b"byte_string2", b"byte_string3"],
+            pl.Binary,
+            np.bytes_,
         ),
-    ) -> None:
-        pl_series_to_numpy_array = np.array(pl.Series(name, values, pl_dtype))
-        numpy_array = np.array(values, dtype=np_dtype)
-        assert_array_equal(pl_series_to_numpy_array, numpy_array)
+    ]
+)
+@no_type_check
+def numpy_interop_test_data(request):
+    return request.param
 
-    test_series_to_numpy("int8", [1, 3, 2], pl.Int8, np.int8)
-    test_series_to_numpy("int16", [1, 3, 2], pl.Int16, np.int16)
-    test_series_to_numpy("int32", [1, 3, 2], pl.Int32, np.int32)
-    test_series_to_numpy("int64", [1, 3, 2], pl.Int64, np.int64)
 
-    test_series_to_numpy("uint8", [1, 3, 2], pl.UInt8, np.uint8)
-    test_series_to_numpy("uint16", [1, 3, 2], pl.UInt16, np.uint16)
-    test_series_to_numpy("uint32", [1, 3, 2], pl.UInt32, np.uint32)
-    test_series_to_numpy("uint64", [1, 3, 2], pl.UInt64, np.uint64)
+def test_df_from_numpy(numpy_interop_test_data: Any) -> None:
+    name, values, pl_dtype, np_dtype = numpy_interop_test_data
+    df = pl.DataFrame({name: np.array(values, dtype=np_dtype)})
+    assert [pl_dtype] == df.dtypes
 
-    test_series_to_numpy("float32", [21.7, 21.8, 21], pl.Float32, np.float32)
-    test_series_to_numpy("float64", [21.7, 21.8, 21], pl.Float64, np.float64)
 
-    test_series_to_numpy("str", ["string1", "string2", "string3"], pl.Utf8, np.object_)
-    # without pyarrow
-    arr = pl.Series(["a", "b", None]).to_numpy(use_pyarrow=False)
-    assert arr.dtype == np.dtype("O")
-    assert list(arr) == ["a", "b", None]
+def test_asarray(numpy_interop_test_data: Any) -> None:
+    name, values, pl_dtype, np_dtype = numpy_interop_test_data
+    pl_series_to_numpy_array = np.asarray(pl.Series(name, values, pl_dtype))
+    numpy_array = np.asarray(values, dtype=np_dtype)
+    assert_array_equal(pl_series_to_numpy_array, numpy_array)
+
+
+@pytest.mark.parametrize("use_pyarrow", [True, False])
+def test_to_numpy(numpy_interop_test_data: Any, use_pyarrow: bool) -> None:
+    name, values, pl_dtype, np_dtype = numpy_interop_test_data
+    pl_series_to_numpy_array = pl.Series(name, values, pl_dtype).to_numpy(
+        use_pyarrow=use_pyarrow
+    )
+    numpy_array = np.asarray(values, dtype=np_dtype)
+    assert_array_equal(pl_series_to_numpy_array, numpy_array)
 
 
 def test_from_pandas() -> None:
