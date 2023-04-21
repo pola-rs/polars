@@ -728,6 +728,13 @@ impl DurationArgs {
 pub fn duration(args: DurationArgs) -> Expr {
     let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
         assert_eq!(s.len(), 8);
+        if s.iter().any(|s| s.is_empty()) {
+            return Ok(Some(Series::new_empty(
+                s[0].name(),
+                &DataType::Duration(TimeUnit::Nanoseconds),
+            )));
+        }
+
         let days = s[0].cast(&DataType::Int64).unwrap();
         let seconds = s[1].cast(&DataType::Int64).unwrap();
         let mut nanoseconds = s[2].cast(&DataType::Int64).unwrap();
