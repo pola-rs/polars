@@ -10,6 +10,7 @@ if _HYPOTHESIS_AVAILABLE:
         series,
     )
     from polars.testing.parametric.strategies import (
+        create_list_strategy,
         scalar_strategies,
     )
 else:
@@ -25,5 +26,6 @@ __all__ = [
     "columns",
     "dataframes",
     "series",
+    "create_list_strategy",
     "scalar_strategies",
 ]
