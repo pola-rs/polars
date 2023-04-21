@@ -313,14 +313,11 @@ class List(NestedType):
         self.inner = polars.datatypes.py_type_to_dtype(inner)
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
-        # The comparison allows comparing objects to classes
-        # and specific inner types to none specific.
-        # if one of the arguments is not specific about its inner type
-        # we infer it as being equal.
-        # List[i64] == List[i64] == True
-        # List[i64] == List == True
-        # List[i64] == List[None] == True
-        # List[i64] == List[f32] == False
+        # This equality check allows comparison of type classes and type instances.
+        # If a parent type is not specific about its inner type, we infer it as equal:
+        # > list[i64] == list[i64] -> True
+        # > list[i64] == list[f32] -> False
+        # > list[i64] == list      -> True
 
         # allow comparing object instances to class
         if type(other) is DataTypeClass and issubclass(other, List):

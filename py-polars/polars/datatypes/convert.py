@@ -231,6 +231,7 @@ class _DataTypeMappings:
             UInt64: "u64",
             Float32: "f32",
             Float64: "f64",
+            Decimal: "decimal",
             Boolean: "bool",
             Utf8: "str",
             List: "list",

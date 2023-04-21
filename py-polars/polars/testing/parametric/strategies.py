@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime, timedelta
 from random import choice
 from string import ascii_letters, ascii_uppercase, digits, punctuation
@@ -10,6 +11,7 @@ from hypothesis.strategies import (
     characters,
     dates,
     datetimes,
+    decimals,
     floats,
     from_type,
     integers,
@@ -25,6 +27,7 @@ from polars.datatypes import (
     Categorical,
     Date,
     Datetime,
+    Decimal,
     Duration,
     Float32,
     Float64,
@@ -66,6 +69,16 @@ strategy_u8 = integers(min_value=0, max_value=(2**8) - 1)
 strategy_u16 = integers(min_value=0, max_value=(2**16) - 1)
 strategy_u32 = integers(min_value=0, max_value=(2**32) - 1)
 strategy_u64 = integers(min_value=0, max_value=(2**64) - 1)
+
+# TODO: once fixed, re-enable decimal nan/inf values.
+# TODO: vary the number of decimal places.
+strategy_decimal = decimals(
+    allow_nan=False,
+    allow_infinity=False,
+    min_value=-(2**66),
+    max_value=(2**66) - 1,
+    places=18,
+)
 
 strategy_ascii = text(max_size=8, alphabet=ascii_letters + digits + punctuation)
 strategy_categorical = text(max_size=2, alphabet=ascii_uppercase)
@@ -113,6 +126,11 @@ scalar_strategies: dict[PolarsDataType, Any] = {
     Categorical: strategy_categorical,
     Utf8: strategy_utf8,
 }
+
+# note: decimal support is in early development and requires opt-in
+if os.environ.get("POLARS_ACTIVATE_DECIMAL") == "1":
+    scalar_strategies[Decimal] = strategy_decimal
+
 _strategy_dtypes = list(scalar_strategies) + [List]
 
 
