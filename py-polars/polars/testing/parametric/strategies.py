@@ -116,12 +116,19 @@ scalar_strategies: dict[PolarsDataType, Any] = {
 _strategy_dtypes = list(scalar_strategies) + [List]
 
 
+def _hash(elem: Any) -> int:
+    """Hashing that can also handle lists (for 'unique' check)."""
+    if isinstance(elem, list):
+        return hash(tuple(_hash(e) for e in elem))
+    return hash(elem)
+
+
 def create_list_strategy(
     inner_dtype: PolarsDataType | None,
     select_from: Sequence[Any] | None = None,
     size: int | None = None,
-    min_size: int = 0,
-    max_size: int = 3,
+    min_size: int | None = None,
+    max_size: int | None = None,
     unique: bool = False,
 ) -> Any:
     """
@@ -138,9 +145,10 @@ def create_list_strategy(
         if set, generated lists will be of exactly this size (and
         ignore the min_size/max_size params).
     min_size : int, optional
-        set the minimum size of the generated lists.
+        set the minimum size of the generated lists (default: 0 if unset).
     max_size : int, optional
-        set the maximum size of the generated lists
+        set the maximum size of the generated lists (default: 3 if
+        min_size is unset or zero, otherwise 2x min_size).
     unique : bool, optional
         ensure that the generated lists contain unique values.
 
@@ -184,6 +192,10 @@ def create_list_strategy(
         inner_dtype = choice(_strategy_dtypes)
     if size:
         min_size = max_size = size
+    else:
+        min_size = min_size or 0
+        if max_size is None:
+            max_size = 3 if not min_size else (min_size * 2)
 
     if inner_dtype == List:
         st = create_list_strategy(
@@ -201,7 +213,12 @@ def create_list_strategy(
             else scalar_strategies[inner_dtype]
         )
 
-    ls = lists(st, min_size=min_size, max_size=max_size, unique=unique)
+    ls = lists(
+        elements=st,
+        min_size=min_size,
+        max_size=max_size,
+        unique_by=(_hash if unique else None),
+    )
     ls._dtype = List(inner_dtype)  # type: ignore[attr-defined, arg-type]
     return ls
 
