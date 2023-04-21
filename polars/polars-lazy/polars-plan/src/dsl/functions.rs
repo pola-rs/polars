@@ -326,10 +326,10 @@ pub fn concat_lst<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> PolarsResult<
 }
 
 /// Create list entries that are range arrays
-/// - if `low` and `high` are a column, every element will expand into an array in a list column.
-/// - if `low` and `high` are literals the output will be of `Int64`.
+/// - if `start` and `end` are a column, every element will expand into an array in a list column.
+/// - if `start` and `end` are literals the output will be of `Int64`.
 #[cfg(feature = "arange")]
-pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
+pub fn arange(start: Expr, end: Expr, step: i64) -> Expr {
     let has_col_without_agg = |e: &Expr| {
         has_expr(e, |ae| matches!(ae, Expr::Column(_)))
             &&
@@ -360,29 +360,38 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
         (matches!(e, Expr::Literal(_)) && !matches!(e, Expr::Literal(LiteralValue::Series(_))))
     };
 
-    let any_column_no_agg = has_col_without_agg(&low) || has_col_without_agg(&high);
-    let literal_low = has_lit(&low);
-    let literal_high = has_lit(&high);
+    let any_column_no_agg = has_col_without_agg(&start) || has_col_without_agg(&end);
+    let literal_start = has_lit(&start);
+    let literal_end = has_lit(&end);
 
-    if (literal_low || literal_high) && !any_column_no_agg {
+    if (literal_start || literal_end) && !any_column_no_agg {
         let f = move |sa: Series, sb: Series| {
+            polars_ensure!(step != 0, InvalidOperation: "step must not be zero");
             let sa = sa.cast(&DataType::Int64)?;
             let sb = sb.cast(&DataType::Int64)?;
-            let low = sa
+            let start = sa
                 .i64()?
                 .get(0)
-                .ok_or_else(|| polars_err!(NoData: "no data in `low` evaluation"))?;
-            let high = sb
+                .ok_or_else(|| polars_err!(NoData: "no data in `start` evaluation"))?;
+            let end = sb
                 .i64()?
                 .get(0)
-                .ok_or_else(|| polars_err!(NoData: "no data in `high` evaluation"))?;
+                .ok_or_else(|| polars_err!(NoData: "no data in `end` evaluation"))?;
 
-            let mut ca = if step > 1 {
-                Int64Chunked::from_iter_values("arange", (low..high).step_by(step))
-            } else {
-                Int64Chunked::from_iter_values("arange", low..high)
+            let mut ca = match step {
+                1 => Int64Chunked::from_iter_values("arange", start..end),
+                2.. => {
+                    Int64Chunked::from_iter_values("arange", (start..end).step_by(step as usize))
+                }
+                _ => {
+                    polars_ensure!(start > end, InvalidOperation: "range must be decreasing if 'step' is negative");
+                    Int64Chunked::from_iter_values(
+                        "arange",
+                        (end..=start).rev().step_by(step.unsigned_abs() as usize),
+                    )
+                }
             };
-            let is_sorted = if high < low {
+            let is_sorted = if end < start {
                 IsSorted::Descending
             } else {
                 IsSorted::Ascending
@@ -391,13 +400,14 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
             Ok(Some(ca.into_series()))
         };
         apply_binary(
-            low,
-            high,
+            start,
+            end,
             f,
             GetOutput::map_field(|_| Field::new("arange", DataType::Int64)),
         )
     } else {
         let f = move |sa: Series, sb: Series| {
+            polars_ensure!(step != 0, InvalidOperation: "step must not be zero");
             let mut sa = sa.cast(&DataType::Int64)?;
             let mut sb = sb.cast(&DataType::Int64)?;
 
@@ -409,40 +419,49 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
                 } else {
                     polars_bail!(
                         ComputeError:
-                        "lengths of `low`: {} and `high`: {} arguments `\
+                        "lengths of `start`: {} and `end`: {} arguments `\
                         cannot be matched in the `arange` expression",
                         sa.len(), sb.len()
                     );
                 }
             }
 
-            let low = sa.i64()?;
-            let high = sb.i64()?;
+            let start = sa.i64()?;
+            let end = sb.i64()?;
             let mut builder = ListPrimitiveChunkedBuilder::<Int64Type>::new(
                 "arange",
-                low.len(),
-                low.len() * 3,
+                start.len(),
+                start.len() * 3,
                 DataType::Int64,
             );
 
-            low.into_iter()
-                .zip(high.into_iter())
-                .for_each(|(opt_l, opt_h)| match (opt_l, opt_h) {
-                    (Some(l), Some(r)) => {
-                        if step > 1 {
-                            builder.append_iter_values((l..r).step_by(step));
-                        } else {
-                            builder.append_iter_values(l..r);
+            for (opt_start, opt_end) in start.into_iter().zip(end.into_iter()) {
+                match (opt_start, opt_end) {
+                    (Some(start_v), Some(end_v)) => match step {
+                        1 => {
+                            builder.append_iter_values(start_v..end_v);
                         }
-                    }
+                        2.. => {
+                            builder.append_iter_values((start_v..end_v).step_by(step as usize));
+                        }
+                        _ => {
+                            polars_ensure!(start_v > end_v, InvalidOperation: "range must be decreasing if 'step' is negative");
+                            builder.append_iter_values(
+                                (end_v..=start_v)
+                                    .rev()
+                                    .step_by(step.unsigned_abs() as usize),
+                            )
+                        }
+                    },
                     _ => builder.append_null(),
-                });
+                }
+            }
 
             Ok(Some(builder.finish().into_series()))
         };
         apply_binary(
-            low,
-            high,
+            start,
+            end,
             f,
             GetOutput::map_field(|_| Field::new("arange", DataType::List(DataType::Int64.into()))),
         )

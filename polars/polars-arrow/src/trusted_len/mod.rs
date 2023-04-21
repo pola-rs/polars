@@ -64,6 +64,8 @@ unsafe impl<I: TrustedLen + DoubleEndedIterator> TrustedLen for std::iter::Rev<I
 
 unsafe impl<I: Iterator<Item = J>, J> TrustedLen for TrustMyLength<I, J> {}
 unsafe impl<T> TrustedLen for std::ops::Range<T> where std::ops::Range<T>: Iterator {}
+unsafe impl<T> TrustedLen for std::ops::RangeInclusive<T> where std::ops::RangeInclusive<T>: Iterator
+{}
 unsafe impl TrustedLen for arrow::array::Utf8ValuesIter<'_, i64> {}
 unsafe impl TrustedLen for arrow::array::BinaryValueIter<'_, i64> {}
 unsafe impl<T, I: TrustedLen + Iterator<Item = T>, V: TrustedLen + Iterator<Item = bool>> TrustedLen

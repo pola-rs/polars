@@ -910,9 +910,7 @@ pub fn fmt_groupby_column(name: &str, method: GroupByMethod) -> String {
 mod test {
     use num_traits::FloatConst;
 
-    use crate::frame::groupby::groupby;
     use crate::prelude::*;
-    use crate::utils::split_ca;
 
     #[test]
     #[cfg(feature = "dtype-date")]
