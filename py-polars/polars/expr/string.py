@@ -125,17 +125,6 @@ class ExprStringNameSpace:
         if not is_polars_dtype(dtype):
             raise ValueError(f"expected: {DataType} got: {dtype}")
 
-        if format is not None and "%f" in format:
-            raise ValueError(
-                "Directive '%f' is not supported in Python Polars, "
-                "as it differs from the Python standard library.\n"
-                "Instead, please use one of:\n"
-                " - '%.f'\n"
-                " - '%3f'\n"
-                " - '%6f'\n"
-                " - '%9f'"
-            )
-
         if tz_aware is no_default:
             tz_aware = False
         else:
