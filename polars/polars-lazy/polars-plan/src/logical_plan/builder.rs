@@ -733,11 +733,11 @@ impl LogicalPlanBuilder {
 }
 
 pub(crate) fn det_melt_schema(args: &MeltArgs, input_schema: &Schema) -> SchemaRef {
-    let mut new_schema = Schema::from(
-        args.id_vars
-            .iter()
-            .map(|id| Field::new(id, input_schema.get(id).unwrap().clone())),
-    );
+    let mut new_schema = args
+        .id_vars
+        .iter()
+        .map(|id| Field::new(id, input_schema.get(id).unwrap().clone()))
+        .collect::<Schema>();
     let variable_name = args
         .variable_name
         .as_ref()

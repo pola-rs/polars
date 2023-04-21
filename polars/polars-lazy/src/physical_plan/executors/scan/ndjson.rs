@@ -25,7 +25,7 @@ impl AnonymousScan for LazyJsonLineReader {
 
         let data_type =
             arrow_ndjson::read::infer(&mut reader, infer_schema_length).map_err(to_compute_err)?;
-        let schema: Schema = StructArray::get_fields(&data_type).iter().into();
+        let schema = Schema::from_iter(StructArray::get_fields(&data_type));
 
         Ok(schema)
     }

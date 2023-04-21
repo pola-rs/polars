@@ -253,10 +253,10 @@ impl PyLazyFrame {
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
 
         let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {
-            let fields = overwrite_dtype
+            overwrite_dtype
                 .into_iter()
-                .map(|(name, dtype)| Field::new(name, dtype.0));
-            Schema::from(fields)
+                .map(|(name, dtype)| Field::new(name, dtype.0))
+                .collect::<Schema>()
         });
         let mut r = LazyCsvReader::new(path)
             .with_infer_schema_length(infer_schema_length)
@@ -291,11 +291,11 @@ impl PyLazyFrame {
                         .expect("python function should return List[str]");
                     assert_eq!(new_names.len(), schema.len(), "The length of the new names list should be equal to the original column length");
 
-                    let fields = schema
+                    Ok(schema
                         .iter_dtypes()
                         .zip(new_names)
-                        .map(|(dtype, name)| Field::from_owned(name.into(), dtype.clone()));
-                    Ok(Schema::from(fields))
+                        .map(|(dtype, name)| Field::from_owned(name.into(), dtype.clone()))
+                        .collect())
                 })
             };
             r = r.with_schema_modify(f).map_err(PyPolarsErr::from)?
