@@ -592,7 +592,7 @@ def dataframes(
 
             # note: randomly change between column-wise and row-wise frame init
             orient = "col"
-            if draw(booleans()):
+            if draw(booleans()) and not any(c.dtype == List for c in coldefs):
                 data = list(zip(*data.values()))  # type: ignore[assignment]
                 orient = "row"
 
@@ -610,11 +610,19 @@ def dataframes(
 
             except Exception:
                 # print code that will allow any init failure to be reproduced
+                if isinstance(data, dict):
+                    frame_cols = ", ".join(
+                        f"{col!r}: {s.to_init_repr()}" for col, s in data.items()
+                    )
+                    frame_data = f"{{{frame_cols}}}"
+                else:
+                    frame_data = repr(data)
+
                 failed_frame_init = dedent(
                     f"""
                     # failed frame init: reproduce with...
                     pl.DataFrame(
-                        data={data!r},
+                        data={frame_data},
                         schema={repr(schema).replace("', ","', pl.")},
                         orient={orient!r},
                     )
