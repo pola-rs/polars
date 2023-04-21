@@ -411,7 +411,7 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
             \n\
             You might want to try:\n\
             - setting `strict=False`,\n\
-            - explicitly specifying a `fmt`,\n\
+            - explicitly specifying a `format`,\n\
             - setting `utc=True` (if you are parsing datetimes with multiple offsets)."
         );
     }
