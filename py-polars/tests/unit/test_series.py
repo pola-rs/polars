@@ -2464,6 +2464,9 @@ def test_item() -> None:
     with pytest.raises(ValueError):
         s.item()
 
+    assert s.item(0) == 1
+    assert s.item(-1) == 2
+
     s = pl.Series("a", [])
     with pytest.raises(ValueError):
         s.item()

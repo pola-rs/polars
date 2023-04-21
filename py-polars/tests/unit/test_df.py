@@ -3419,9 +3419,15 @@ def test_item() -> None:
     with pytest.raises(ValueError):
         df.item()
 
+    assert df.item(0, 0) == 1
+    assert df.item(1, "a") == 2
+
     df = pl.DataFrame({"a": [1], "b": [2]})
     with pytest.raises(ValueError):
         df.item()
+
+    assert df.item(0, "a") == 1
+    assert df.item(0, "b") == 2
 
     df = pl.DataFrame({})
     with pytest.raises(ValueError):
