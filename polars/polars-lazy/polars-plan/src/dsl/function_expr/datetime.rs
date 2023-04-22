@@ -1,6 +1,7 @@
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
 use chrono::{NaiveDate, NaiveTime, NaiveDateTime, Datelike, Timelike};
+use polars_arrow::time_zone::PolarsTimeZone;
 #[cfg(feature = "timezones")]
 use polars_core::utils::arrow::temporal_conversions::parse_offset;
 use polars_core::utils::arrow::temporal_conversions::{SECONDS_IN_DAY,
@@ -10,6 +11,8 @@ use polars_core::utils::arrow::temporal_conversions::{SECONDS_IN_DAY,
 };
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "timezones")]
+use polars_time::{localize_datetime, unlocalize_datetime};
 
 use super::*;
 
@@ -214,6 +217,25 @@ pub(super) fn truncate(s: &Series, every: &str, offset: &str) -> PolarsResult<Se
     })
 }
 
+fn _month_end(t: i64, tz: PolarsTimeZone) -> i64{
+    let ts = match tz {
+        #[cfg(feature = "timezones")]
+        Some(tz) => unlocalize_datetime(timestamp_to_datetime(t), tz),
+        _ => timestamp_to_datetime(t),
+    };
+    let date = NaiveDate::from_ymd_opt(ts.year(), ts.month(), 1).unwrap();
+    let time = NaiveTime::from_hms_nano_opt(ts.hour(), ts.minute(), ts.second(), ts.timestamp_subsec_nanos()).unwrap();
+    let ndt = NaiveDateTime::new(date, time);
+    let t = match tz{
+        #[cfg(feature = "timezones")]
+        Some(tz) => localize_datetime(datetime_to_timestamp(ndt), tz)?,
+        _ => Ok(datetime_to_timestamp(ndt))
+    };
+    let t= adder(&every_month, t, NO_TIMEZONE)?;
+    let t= adder(&every_day, t, NO_TIMEZONE);
+    t
+}
+
 pub(super) fn month_end(s: &Series) -> PolarsResult<Series> {
     // how to do this...
     // let's take the day, offset by that to get month start
@@ -243,11 +265,19 @@ pub(super) fn month_end(s: &Series) -> PolarsResult<Series> {
             .unwrap();
             let res = res.0.try_apply(
                     |t|{
-                    let ts = timestamp_to_datetime(t);
+                    let ts = match tz {
+                        #[cfg(feature = "timezones")]
+                        Some(tz) => unlocalize_datetime(timestamp_to_datetime(t), tz),
+                        _ => timestamp_to_datetime(t),
+                    };
                     let date = NaiveDate::from_ymd_opt(ts.year(), ts.month(), 1).unwrap();
                     let time = NaiveTime::from_hms_nano_opt(ts.hour(), ts.minute(), ts.second(), ts.timestamp_subsec_nanos()).unwrap();
                     let ndt = NaiveDateTime::new(date, time);
-                    let t = datetime_to_timestamp(ndt);
+                    let t = match tz{
+                        #[cfg(feature = "timezones")]
+                        Some(tz) => localize_datetime(datetime_to_timestamp(ndt), tz)?,
+                        _ => Ok(datetime_to_timestamp(ndt))
+                    };
                     let t= adder(&every_month, t, NO_TIMEZONE)?;
                     let t= adder(&every_day, t, NO_TIMEZONE);
                     t

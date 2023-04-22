@@ -20,3 +20,7 @@ pub use windows::calendar::date_range as date_range_vec;
 pub use windows::duration::Duration;
 pub use windows::groupby::ClosedWindow;
 pub use windows::window::Window;
+#[cfg(feature = "timezones")]
+pub use utils::localize_datetime;
+#[cfg(feature = "timezones")]
+pub use utils::unlocalize_datetime;
