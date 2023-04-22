@@ -1,4 +1,8 @@
 use polars::prelude::*;
+use polars_lazy::{prelude::*, dsl::StrpTimeOptions};
+use polars_time::Duration as PolarsDuration;
+
+use polars::df;
 use chrono::{NaiveDate, Duration};
 
 fn main() {
@@ -21,7 +25,21 @@ fn main() {
     ).unwrap();
 
     //filter one observation out of the dataframe (for upsampling)
-    
+    let date_format = String::from("%Y-%m-%d");
+    let option: StrpTimeOptions = StrpTimeOptions { 
+        date_dtype: DataType::Date, fmt: Some(date_format), ..Default::default()
+    };
+    let date_value = lit("2001-01-03").str().strptime(option);
+
+    let mask = (col("group").eq(lit("a")).and(col("date").eq(date_value))).not();
+    let pl_frame = pl_frame.lazy()
+                .filter(mask).collect().unwrap();
+                    
+    // Set-up upsampling
+    let every_day = PolarsDuration::parse("1d");
+    let no_offset = PolarsDuration::parse("0d");
+
+    let pl_frame = pl_frame.upsample(vec!["group"], "date", every_day, no_offset);
 
     println!("{:#?}", pl_frame);
 }
