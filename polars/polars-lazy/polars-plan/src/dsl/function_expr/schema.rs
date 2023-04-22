@@ -48,6 +48,7 @@ impl FunctionExpr {
                         dtype => polars_bail!(ComputeError: "expected Datetime, got {}", dtype),
                     },
                     Truncate(..) => mapper.with_same_dtype().unwrap().dtype,
+                    MonthStart => mapper.with_same_dtype().unwrap().dtype,
                     MonthEnd => mapper.with_same_dtype().unwrap().dtype,
                     Round(..) => mapper.with_same_dtype().unwrap().dtype,
                     #[cfg(feature = "timezones")]

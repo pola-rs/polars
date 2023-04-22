@@ -40,7 +40,7 @@ pub enum TemporalFunction {
     Nanosecond,
     TimeStamp(TimeUnit),
     Truncate(String, String),
-    // MonthStart,
+    MonthStart,
     MonthEnd,
     Round(String, String),
     #[cfg(feature = "timezones")]
@@ -80,7 +80,7 @@ impl Display for TemporalFunction {
             Nanosecond => "nanosecond",
             TimeStamp(tu) => return write!(f, "dt.timestamp({tu})"),
             Truncate(..) => "truncate",
-            // MonthStart => "month_start",
+            MonthStart => "month_start",
             MonthEnd => "month_end",
             Round(..) => "round",
             #[cfg(feature = "timezones")]
@@ -218,6 +218,27 @@ pub(super) fn truncate(s: &Series, every: &str, offset: &str) -> PolarsResult<Se
     })
 }
 
+fn _month_start<T: PolarsTimeZone>(
+    t: i64,
+    tz: Option<&T>,
+    timestamp_to_datetime: fn(i64) -> NaiveDateTime,
+    datetime_to_timestamp: fn(NaiveDateTime) -> i64,
+) -> PolarsResult<i64>{
+    let ts = match tz {
+        #[cfg(feature = "timezones")]
+        Some(tz) => unlocalize_datetime(timestamp_to_datetime(t), tz),
+        _ => timestamp_to_datetime(t),
+    };
+    let date = NaiveDate::from_ymd_opt(ts.year(), ts.month(), 1).unwrap();
+    let time = NaiveTime::from_hms_nano_opt(ts.hour(), ts.minute(), ts.second(), ts.timestamp_subsec_nanos()).unwrap();
+    let ndt = NaiveDateTime::new(date, time);
+    let t = match tz{
+        #[cfg(feature = "timezones")]
+        Some(tz) => datetime_to_timestamp(localize_datetime(ndt, tz)?),
+        _ => datetime_to_timestamp(ndt)
+    };
+    Ok(t)
+}
 fn _month_end<T: PolarsTimeZone>(
     t: i64,
     tz: Option<&T>,
@@ -245,6 +266,63 @@ fn _month_end<T: PolarsTimeZone>(
     t
 }
 
+pub(super) fn month_start(s: &Series) -> PolarsResult<Series> {
+    let no_offset = Duration::parse("0ns");
+    Ok(match s.dtype() {
+        DataType::Datetime(tu, tz) => {
+            let timestamp_to_datetime = match tu {
+                TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
+                TimeUnit::Microseconds => timestamp_us_to_datetime,
+                TimeUnit::Milliseconds => timestamp_ms_to_datetime,
+            };
+            let datetime_to_timestamp = match tu {
+                TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
+                TimeUnit::Microseconds => datetime_to_timestamp_us,
+                TimeUnit::Milliseconds => datetime_to_timestamp_ms,
+            };
+            let res = s
+            .datetime()
+            .unwrap();
+            match tz {
+                #[cfg(feature = "timezones")]
+                Some(tz) => match tz.parse::<Tz>() {
+                    Ok(parsed_tz) => res.0.try_apply(
+                        |t|
+                        _month_start(
+                            t,
+                            Some(&parsed_tz),
+                            timestamp_to_datetime,
+                            datetime_to_timestamp,
+                        ))?.into_datetime(*tu, Some(tz.to_string())).into_series(),
+                    Err(_) => match parse_offset(tz) {
+                        Ok(parsed_tz) => res.0.try_apply(
+                            |t|
+                            _month_start(
+                                t,
+                                Some(&parsed_tz),
+                                timestamp_to_datetime,
+                                datetime_to_timestamp,
+                            ))?.into_datetime(*tu, Some(tz.to_string())).into_series(),
+                            Err(_) => unreachable!(),
+                        },
+                },
+                _ => res.0.try_apply(
+                    |t|
+                    _month_start(
+                        t,
+                        NO_TIMEZONE,
+                        timestamp_to_datetime,
+                        datetime_to_timestamp,
+                    ))?.into_datetime(*tu, None).into_series(),
+            }
+        },
+        DataType::Date => {
+            let res = s.date().unwrap().truncate(Duration::parse("1mo"), no_offset, NO_TIMEZONE)?;
+            res.into_series()
+        },
+        dt => polars_bail!(opq = month_end, got = dt, expected = "date/datetime"),
+    })
+}
 pub(super) fn month_end(s: &Series) -> PolarsResult<Series> {
     let add_one_month = Duration::parse("1mo");
     let subtract_one_day = Duration::parse("-1d");

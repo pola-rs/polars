@@ -232,6 +232,11 @@ impl DateLikeNameSpace {
     //         .map_private(FunctionExpr::TemporalExpr(TemporalFunction::MonthStart))
     // }
 
+    pub fn month_start(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::MonthStart))
+    }
+
     pub fn month_end(self) -> Expr {
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::MonthEnd))
