@@ -1,19 +1,17 @@
+use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
-use chrono::{NaiveDate, NaiveTime, NaiveDateTime, Datelike, Timelike};
 use polars_arrow::time_zone::PolarsTimeZone;
 #[cfg(feature = "timezones")]
 use polars_core::utils::arrow::temporal_conversions::parse_offset;
-use polars_core::utils::arrow::temporal_conversions::{SECONDS_IN_DAY,
-    MILLISECONDS,
-    timestamp_ms_to_datetime,
-    timestamp_us_to_datetime,
-    timestamp_ns_to_datetime,
+use polars_core::utils::arrow::temporal_conversions::{
+    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
+    SECONDS_IN_DAY,
 };
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 #[cfg(feature = "timezones")]
 use polars_time::{localize_datetime, unlocalize_datetime};
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 use super::*;
 
@@ -223,19 +221,36 @@ fn _roll_backward<T: PolarsTimeZone>(
     tz: Option<&T>,
     timestamp_to_datetime: fn(i64) -> NaiveDateTime,
     datetime_to_timestamp: fn(NaiveDateTime) -> i64,
-) -> PolarsResult<i64>{
+) -> PolarsResult<i64> {
     let ts = match tz {
         #[cfg(feature = "timezones")]
         Some(tz) => unlocalize_datetime(timestamp_to_datetime(t), tz),
         _ => timestamp_to_datetime(t),
     };
-    let date = NaiveDate::from_ymd_opt(ts.year(), ts.month(), 1).unwrap();
-    let time = NaiveTime::from_hms_nano_opt(ts.hour(), ts.minute(), ts.second(), ts.timestamp_subsec_nanos()).unwrap();
+    let date = NaiveDate::from_ymd_opt(ts.year(), ts.month(), 1).ok_or(polars_err!(
+        ComputeError: format!("Could not construct date {}-{}-1", ts.year(), ts.month())
+    ))?;
+    let time = NaiveTime::from_hms_nano_opt(
+        ts.hour(),
+        ts.minute(),
+        ts.second(),
+        ts.timestamp_subsec_nanos(),
+    )
+    .ok_or(polars_err!(
+        ComputeError:
+            format!(
+                "Could not construct time {}:{}:{}.{}",
+                ts.hour(),
+                ts.minute(),
+                ts.second(),
+                ts.timestamp_subsec_nanos()
+            )
+    ))?;
     let ndt = NaiveDateTime::new(date, time);
-    let t = match tz{
+    let t = match tz {
         #[cfg(feature = "timezones")]
         Some(tz) => datetime_to_timestamp(localize_datetime(ndt, tz)?),
-        _ => datetime_to_timestamp(ndt)
+        _ => datetime_to_timestamp(ndt),
     };
     Ok(t)
 }
@@ -254,46 +269,54 @@ pub(super) fn month_start(s: &Series) -> PolarsResult<Series> {
                 TimeUnit::Microseconds => datetime_to_timestamp_us,
                 TimeUnit::Milliseconds => datetime_to_timestamp_ms,
             };
-            let res = s
-            .datetime()
-            .unwrap();
+            let res = s.datetime().unwrap();
             match tz {
                 #[cfg(feature = "timezones")]
                 Some(tz) => match tz.parse::<Tz>() {
-                    Ok(parsed_tz) => res.0.try_apply(
-                        |t|
-                        _roll_backward(
-                            t,
-                            Some(&parsed_tz),
-                            timestamp_to_datetime,
-                            datetime_to_timestamp,
-                        ))?.into_datetime(*tu, Some(tz.to_string())).into_series(),
-                    Err(_) => match parse_offset(tz) {
-                        Ok(parsed_tz) => res.0.try_apply(
-                            |t|
+                    Ok(parsed_tz) => res
+                        .0
+                        .try_apply(|t| {
                             _roll_backward(
                                 t,
                                 Some(&parsed_tz),
                                 timestamp_to_datetime,
                                 datetime_to_timestamp,
-                            ))?.into_datetime(*tu, Some(tz.to_string())).into_series(),
-                            Err(_) => unreachable!(),
-                        },
+                            )
+                        })?
+                        .into_datetime(*tu, Some(tz.to_string()))
+                        .into_series(),
+                    Err(_) => match parse_offset(tz) {
+                        Ok(parsed_tz) => res
+                            .0
+                            .try_apply(|t| {
+                                _roll_backward(
+                                    t,
+                                    Some(&parsed_tz),
+                                    timestamp_to_datetime,
+                                    datetime_to_timestamp,
+                                )
+                            })?
+                            .into_datetime(*tu, Some(tz.to_string()))
+                            .into_series(),
+                        Err(_) => unreachable!(),
+                    },
                 },
-                _ => res.0.try_apply(
-                    |t|
-                    _roll_backward(
-                        t,
-                        NO_TIMEZONE,
-                        timestamp_to_datetime,
-                        datetime_to_timestamp,
-                    ))?.into_datetime(*tu, None).into_series(),
+                _ => res
+                    .0
+                    .try_apply(|t| {
+                        _roll_backward(t, NO_TIMEZONE, timestamp_to_datetime, datetime_to_timestamp)
+                    })?
+                    .into_datetime(*tu, None)
+                    .into_series(),
             }
-        },
+        }
         DataType::Date => {
-            let res = s.date().unwrap().truncate(Duration::parse("1mo"), no_offset, NO_TIMEZONE)?;
+            let res = s
+                .date()
+                .unwrap()
+                .truncate(Duration::parse("1mo"), no_offset, NO_TIMEZONE)?;
             res.into_series()
-        },
+        }
         dt => polars_bail!(opq = month_end, got = dt, expected = "date/datetime"),
     })
 }
@@ -306,11 +329,10 @@ fn _roll_forward<T: PolarsTimeZone>(
     adder: fn(&Duration, i64, Option<&T>) -> PolarsResult<i64>,
     add_one_month: &Duration,
     subtract_one_day: &Duration,
-) -> PolarsResult<i64>{
+) -> PolarsResult<i64> {
     let t = _roll_backward(t, tz, timestamp_to_datetime, datetime_to_timestamp)?;
-    let t= adder(&add_one_month, t, tz)?;
-    let t= adder(&subtract_one_day, t, tz);
-    t
+    let t = adder(add_one_month, t, tz)?;
+    adder(subtract_one_day, t, tz)
 }
 
 pub(super) fn month_end(s: &Series) -> PolarsResult<Series> {
@@ -329,33 +351,22 @@ pub(super) fn month_end(s: &Series) -> PolarsResult<Series> {
                 TimeUnit::Microseconds => datetime_to_timestamp_us,
                 TimeUnit::Milliseconds => datetime_to_timestamp_ms,
             };
-            fn adder<T: PolarsTimeZone>(tu: TimeUnit) -> fn(&Duration, i64, Option<&T>) -> PolarsResult<i64> {
+            fn adder<T: PolarsTimeZone>(
+                tu: TimeUnit,
+            ) -> fn(&Duration, i64, Option<&T>) -> PolarsResult<i64> {
                 match tu {
                     TimeUnit::Nanoseconds => Duration::add_ns,
                     TimeUnit::Microseconds => Duration::add_us,
                     TimeUnit::Milliseconds => Duration::add_ms,
                 }
             }
-            let res = s
-            .datetime()
-            .unwrap();
+            let res = s.datetime().unwrap();
             match tz {
                 #[cfg(feature = "timezones")]
                 Some(tz) => match tz.parse::<Tz>() {
-                    Ok(parsed_tz) => res.0.try_apply(
-                        |t|
-                        _roll_forward(
-                            t,
-                            Some(&parsed_tz),
-                            timestamp_to_datetime,
-                            datetime_to_timestamp,
-                            adder(*tu),
-                            &add_one_month,
-                            &subtract_one_day,
-                        ))?.into_datetime(*tu, Some(tz.to_string())).into_series(),
-                    Err(_) => match parse_offset(tz) {
-                        Ok(parsed_tz) => res.0.try_apply(
-                            |t|
+                    Ok(parsed_tz) => res
+                        .0
+                        .try_apply(|t| {
                             _roll_forward(
                                 t,
                                 Some(&parsed_tz),
@@ -364,36 +375,61 @@ pub(super) fn month_end(s: &Series) -> PolarsResult<Series> {
                                 adder(*tu),
                                 &add_one_month,
                                 &subtract_one_day,
-                            ))?.into_datetime(*tu, Some(tz.to_string())).into_series(),
-                            Err(_) => unreachable!(),
-                        },
+                            )
+                        })?
+                        .into_datetime(*tu, Some(tz.to_string()))
+                        .into_series(),
+                    Err(_) => match parse_offset(tz) {
+                        Ok(parsed_tz) => res
+                            .0
+                            .try_apply(|t| {
+                                _roll_forward(
+                                    t,
+                                    Some(&parsed_tz),
+                                    timestamp_to_datetime,
+                                    datetime_to_timestamp,
+                                    adder(*tu),
+                                    &add_one_month,
+                                    &subtract_one_day,
+                                )
+                            })?
+                            .into_datetime(*tu, Some(tz.to_string()))
+                            .into_series(),
+                        Err(_) => unreachable!(),
+                    },
                 },
-                _ => res.0.try_apply(
-                    |t|
-                    _roll_forward(
-                        t,
-                        NO_TIMEZONE,
-                        timestamp_to_datetime,
-                        datetime_to_timestamp,
-                        adder(*tu),
-                        &add_one_month,
-                        &subtract_one_day,
-                    ))?.into_datetime(*tu, None).into_series(),
+                _ => res
+                    .0
+                    .try_apply(|t| {
+                        _roll_forward(
+                            t,
+                            NO_TIMEZONE,
+                            timestamp_to_datetime,
+                            datetime_to_timestamp,
+                            adder(*tu),
+                            &add_one_month,
+                            &subtract_one_day,
+                        )
+                    })?
+                    .into_datetime(*tu, None)
+                    .into_series(),
             }
-        },
+        }
         DataType::Date => {
-            let res = s.date().unwrap().truncate(Duration::parse("1mo"), no_offset, NO_TIMEZONE)?;
+            let res = s
+                .date()
+                .unwrap()
+                .truncate(Duration::parse("1mo"), no_offset, NO_TIMEZONE)?;
             const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
-            let res = res.0.try_apply(
-                |t|
-                {
-                let t = (Duration::add_ms(&add_one_month, MSECS_IN_DAY * t as i64, NO_TIMEZONE)?/ MSECS_IN_DAY) as i32;
-                let t = (Duration::add_ms(&subtract_one_day, MSECS_IN_DAY * t as i64, NO_TIMEZONE)?/ MSECS_IN_DAY) as i32;
+            let res = res.0.try_apply(|t| {
+                let t = (Duration::add_ms(&add_one_month, MSECS_IN_DAY * t as i64, NO_TIMEZONE)?
+                    / MSECS_IN_DAY) as i32;
+                let t = (Duration::add_ms(&subtract_one_day, MSECS_IN_DAY * t as i64, NO_TIMEZONE)?
+                    / MSECS_IN_DAY) as i32;
                 Ok(t)
-            }
-            )?;
+            })?;
             res.into_date().into_series()
-        },
+        }
         dt => polars_bail!(opq = month_end, got = dt, expected = "date/datetime"),
     })
 }

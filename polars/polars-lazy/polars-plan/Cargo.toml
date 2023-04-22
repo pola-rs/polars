@@ -11,7 +11,7 @@ description = "Lazy query engine for the Polars DataFrame library"
 [dependencies]
 ahash.workspace = true
 arrow.workspace = true
-chrono = { version = "0.4"}
+chrono = { version = "0.4" }
 chrono-tz = { version = "0.8", optional = true }
 futures = { version = "0.3.25", optional = true }
 once_cell.workspace = true
