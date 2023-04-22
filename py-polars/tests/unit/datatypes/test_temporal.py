@@ -1924,32 +1924,6 @@ def test_replace_timezone_from_to(
     assert result == expected
 
 
-@pytest.mark.parametrize(
-    ("format", "expected"),
-    [
-        ("%Y-%m-%dT%H:%M:%S%.f", datetime(2023, 2, 5, 5, 10, 10, 74000)),
-        ("%Y-%m-%dT%H:%M:%S.%f", datetime(2023, 2, 5, 5, 10, 10, 74)),
-    ],
-)
-def test_strptime_subseconds_datetime(format: str, expected: time) -> None:
-    s = pl.Series(["2023-02-05T05:10:10.074000"])
-    result = s.str.strptime(pl.Datetime, format).item()
-    assert result == expected
-
-
-@pytest.mark.parametrize(
-    ("format", "expected"),
-    [
-        ("%H:%M:%S%.f", time(5, 10, 10, 74000)),
-        ("%H:%M:%S.%f", time(5, 10, 10, 74)),
-    ],
-)
-def test_strptime_subseconds_time(format: str, expected: time) -> None:
-    s = pl.Series(["05:10:10.074000"])
-    result = s.str.strptime(pl.Time, format).item()
-    assert result == expected
-
-
 def test_strptime_with_tz() -> None:
     result = (
         pl.Series(["2020-01-01 03:00:00"])

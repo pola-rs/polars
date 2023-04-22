@@ -6,7 +6,7 @@ This method gets its own module due to its complexity.
 from __future__ import annotations
 
 import sys
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING
 
 import pytest
@@ -459,3 +459,38 @@ def test_tz_aware_without_fmt() -> None:
         "in a future version. You can safely drop this argument.",
     ):
         pl.Series(["2020-01-01"]).str.strptime(pl.Datetime, tz_aware=True)
+
+
+@pytest.mark.parametrize(
+    ("data", "format", "expected"),
+    [
+        (
+            "2023-02-05T05:10:10.074000",
+            "%Y-%m-%dT%H:%M:%S%.f",
+            datetime(2023, 2, 5, 5, 10, 10, 74000),
+        ),
+    ],
+)
+def test_strptime_subseconds_datetime(data: str, format: str, expected: time) -> None:
+    s = pl.Series([data])
+    result = s.str.strptime(pl.Datetime, format).item()
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    ("data", "format", "expected"),
+    [
+        ("05:10:10.074000", "%H:%M:%S%.f", time(5, 10, 10, 74000)),
+    ],
+)
+def test_strptime_subseconds_time(data: str, format: str, expected: time) -> None:
+    s = pl.Series([data])
+    result = s.str.strptime(pl.Time, format).item()
+    assert result == expected
+
+
+def test_strptime_format_warning() -> None:
+    s = pl.Series(["05:10:10.074000"])
+    with pytest.warns(pl.ChronoFormatWarning, match=".%f"):
+        result = s.str.strptime(pl.Time, "%H:%M:%S.%f").item()
+    assert result == time(5, 10, 10, 74)
