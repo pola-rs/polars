@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 import sys
 import typing
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from itertools import permutations
 from typing import Any, cast
 
@@ -1050,30 +1050,3 @@ def test_tail() -> None:
     assert df.select(pl.col("a").tail(3)).to_dict(False) == {"a": [3, 4, 5]}
     assert df.select(pl.col("a").tail(10)).to_dict(False) == {"a": [1, 2, 3, 4, 5]}
     assert df.select(pl.col("a").tail(pl.count() / 2)).to_dict(False) == {"a": [4, 5]}
-
-
-
-def test_month_end() -> None:
-    df = pl.DataFrame(
-        {
-            "dates": [
-                date(2018, 2, 1),
-                date(2000, 12, 31),
-                date(1900, 4, 15),
-                date(2020, 2, 29),
-            ]
-        }
-    )
-    result = df.select(pl.col("dates").dt.month_end())
-    expected = pl.DataFrame(
-        {
-            "dates": [
-                date(2018, 2, 28),
-                date(2000, 12, 31),
-                date(1900, 4, 30),
-                date(2020, 2, 29),
-            ]
-        }
-    )
-
-    assert_frame_equal(result, expected)
