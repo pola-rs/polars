@@ -654,15 +654,7 @@ impl PyExpr {
     }
 
     pub fn str_slice(&self, start: i64, length: Option<u64>) -> PyExpr {
-        let function = move |s: Series| {
-            let ca = s.utf8()?;
-            Ok(Some(ca.str_slice(start, length)?.into_series()))
-        };
-        self.clone()
-            .inner
-            .map(function, GetOutput::from_type(DataType::Utf8))
-            .with_fmt("str.slice")
-            .into()
+        self.inner.clone().str().str_slice(start, length).into()
     }
 
     pub fn str_to_uppercase(&self) -> PyExpr {
