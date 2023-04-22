@@ -17,7 +17,6 @@ use polars_core::POOL;
 use polars_time::prelude::*;
 use polars_utils::flatten;
 use rayon::prelude::*;
-use rayon::ThreadPoolBuilder;
 
 use crate::csv::buffer::*;
 use crate::csv::parser::*;
@@ -530,24 +529,6 @@ impl<'a> CoreReader<'a> {
         let projection = self.get_projection();
         let str_columns = self.get_string_columns(&projection)?;
 
-        // If the number of threads given by the user is lower than our global thread pool we create
-        // new one.
-        #[cfg(not(target_family = "wasm"))]
-        let owned_pool;
-        #[cfg(not(target_family = "wasm"))]
-        let pool = if POOL.current_num_threads() != n_threads {
-            owned_pool = Some(
-                ThreadPoolBuilder::new()
-                    .num_threads(n_threads)
-                    .build()
-                    .unwrap(),
-            );
-            owned_pool.as_ref().unwrap()
-        } else {
-            &POOL
-        };
-        #[cfg(target_family = "wasm")] // use a pre-created pool for wasm
-        let pool = &POOL;
         // An empty file with a schema should return an empty DataFrame with that schema
         if bytes.is_empty() {
             // TODO! add DataFrame::new_from_schema
@@ -574,7 +555,7 @@ impl<'a> CoreReader<'a> {
         //      the inner vec has got buffers from all the columns.
         if let Some(predicate) = predicate {
             let str_capacities = self.init_string_size_stats(&str_columns, chunk_size);
-            let dfs = pool.install(|| {
+            let dfs = POOL.install(|| {
                 file_chunks
                     .into_par_iter()
                     .map(|(bytes_offset_thread, stop_at_nbytes)| {
@@ -667,7 +648,7 @@ impl<'a> CoreReader<'a> {
 
             let str_capacities = self.init_string_size_stats(&str_columns, capacity);
 
-            let mut dfs = pool.install(|| {
+            let mut dfs = POOL.install(|| {
                 file_chunks
                     .into_par_iter()
                     .map(|(bytes_offset_thread, stop_at_nbytes)| {
