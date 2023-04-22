@@ -562,7 +562,9 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Nanosecond => map!(datetime::nanosecond),
             TimeStamp(tu) => map!(datetime::timestamp, tu),
             Truncate(every, offset) => map!(datetime::truncate, &every, &offset),
+            #[cfg(feature = "date_offset")]
             MonthStart => map!(datetime::month_start),
+            #[cfg(feature = "date_offset")]
             MonthEnd => map!(datetime::month_end),
             Round(every, offset) => map!(datetime::round, &every, &offset),
             #[cfg(feature = "timezones")]

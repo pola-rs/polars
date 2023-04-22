@@ -39,7 +39,9 @@ pub enum TemporalFunction {
     Nanosecond,
     TimeStamp(TimeUnit),
     Truncate(String, String),
+    #[cfg(feature = "date_offset")]
     MonthStart,
+    #[cfg(feature = "date_offset")]
     MonthEnd,
     Round(String, String),
     #[cfg(feature = "timezones")]
