@@ -163,3 +163,6 @@ RowTotalsDefinition: TypeAlias = Union[
     Collection[str],
     bool,
 ]
+
+# standard/named hypothesis profiles used for parametric testing
+ParametricProfileNames: TypeAlias = Literal["fast", "balanced", "expensive"]

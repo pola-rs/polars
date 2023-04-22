@@ -9,6 +9,7 @@ if _HYPOTHESIS_AVAILABLE:
         dataframes,
         series,
     )
+    from polars.testing.parametric.profiles import load_profile
     from polars.testing.parametric.strategies import (
         create_list_strategy,
         scalar_strategies,
@@ -24,8 +25,9 @@ else:
 __all__ = [
     "column",
     "columns",
-    "dataframes",
-    "series",
     "create_list_strategy",
+    "dataframes",
+    "load_profile",
     "scalar_strategies",
+    "series",
 ]
