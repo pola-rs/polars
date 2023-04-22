@@ -99,6 +99,7 @@ parquet = ["arrow/io_parquet"]
 bigidx = ["polars-arrow/bigidx"]
 python = []
 
+serde = ["dep:serde", "smartstring/serde"]
 serde-lazy = ["serde", "polars-arrow/serde", "indexmap/serde", "smartstring/serde", "chrono/serde"]
 
 docs-selection = [
