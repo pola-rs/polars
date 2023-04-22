@@ -7,7 +7,7 @@ import pytest
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
@@ -191,6 +191,20 @@ def test_month_end_date(dt: date, expected: date) -> None:
     ser = pl.Series([dt])
     result = ser.dt.month_end().item()
     assert result == expected
+
+
+def test_month_start_end_invalid() -> None:
+    ser = pl.Series([time(1, 2, 3)])
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"`month_start` operation not supported for dtype `time` \(expected: date/datetime\)",
+    ):
+        ser.dt.month_start()
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"`month_end` operation not supported for dtype `time` \(expected: date/datetime\)",
+    ):
+        ser.dt.month_end()
 
 
 @pytest.mark.parametrize(

@@ -317,7 +317,7 @@ pub(super) fn month_start(s: &Series) -> PolarsResult<Series> {
                 .truncate(Duration::parse("1mo"), no_offset, NO_TIMEZONE)?;
             res.into_series()
         }
-        dt => polars_bail!(opq = month_end, got = dt, expected = "date/datetime"),
+        dt => polars_bail!(opq = month_start, got = dt, expected = "date/datetime"),
     })
 }
 
