@@ -1733,7 +1733,7 @@ class ExprDateTimeNameSpace:
 
     def month_start(self) -> Expr:
         """
-        Adjust dates to start of the month.
+        Roll backward to the first day of the month.
 
         Returns
         -------
@@ -1746,7 +1746,7 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import date
+        >>> from datetime import datetime
         >>> df = pl.DataFrame(
         ...     {
         ...         "dates": pl.date_range(
@@ -1776,7 +1776,7 @@ class ExprDateTimeNameSpace:
 
     def month_end(self) -> Expr:
         """
-        Adjust dates to end of the month.
+        Roll forward to the last day of the month.
 
         Returns
         -------
@@ -1789,7 +1789,7 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import date
+        >>> from datetime import datetime
         >>> df = pl.DataFrame(
         ...     {
         ...         "dates": pl.date_range(

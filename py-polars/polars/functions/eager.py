@@ -466,16 +466,14 @@ def date_range(
         2022-03-01 00:00:00 EST
     ]
 
-    Combine with ``offset_by`` to get the last day of the month:
+    Combine with ``month_end`` to get the last day of the month:
 
     >>> (
     ...     pl.date_range(
     ...         datetime(2022, 1, 1),
     ...         datetime(2022, 3, 1),
     ...         "1mo",
-    ...     )
-    ...     .dt.offset_by("1mo")
-    ...     .dt.offset_by("-1d")
+    ...     ).dt.month_end()
     ... )
     shape: (3,)
     Series: '' [datetime[μs]]
