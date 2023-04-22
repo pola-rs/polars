@@ -147,13 +147,9 @@ where
             }
             (groups, first)
         } else {
-            let mut groups: Vec<Vec<IdxSize>> = unsafe { aligned_vec(len) };
+            let mut groups = Vec::with_capacity(len);
+            let mut first = vec![IdxSize::MAX; len];
             groups.resize_with(len, || Vec::with_capacity(group_capacity));
-            let mut first: Vec<IdxSize> = unsafe { aligned_vec(len) };
-            first.resize(len, IdxSize::MAX);
-            // let mut groups = Vec::with_capacity(len);
-            // let mut first = vec![IdxSize::MAX; len];
-            // groups.resize_with(len, || Vec::with_capacity(group_capacity));
 
             let mut row_nr = 0 as IdxSize;
             for arr in self.downcast_iter() {
@@ -202,10 +198,12 @@ impl CategoricalChunked {
 
         let mut out = match &**rev_map {
             RevMapping::Local(cached) => {
-                if self.can_fast_unique() && std::env::var("PERFECT").is_ok() {
+                if self.can_fast_unique() {
                     if verbose() {
                         eprintln!("grouping categoricals, run perfect hash function");
                     }
+                    // on relative small tables this isn't much faster than the default strategy
+                    // but on huge tables, this can be > 2x faster
                     cats.group_tuples_perfect(cached.len() - 1, multithreaded, 0)
                 } else {
                     self.logical().group_tuples(multithreaded, sorted).unwrap()
