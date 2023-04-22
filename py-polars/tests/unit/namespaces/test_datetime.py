@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING
 
 import pytest
@@ -135,10 +135,15 @@ def test_dt_datetime_date_time_invalid() -> None:
         (datetime(2022, 3, 1), datetime(2022, 3, 1)),
     ],
 )
-@pytest.mark.parametrize("tzinfo", [None, ZoneInfo("Asia/Kathmandu")])
+@pytest.mark.parametrize(
+    "tzinfo", [None, ZoneInfo("Asia/Kathmandu"), timezone(timedelta(hours=1))]
+)
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_month_start_datetime(
-    dt: datetime, expected: datetime, time_unit: TimeUnit, tzinfo: ZoneInfo | None
+    dt: datetime,
+    expected: datetime,
+    time_unit: TimeUnit,
+    tzinfo: ZoneInfo | timezone | None,
 ) -> None:
     ser = pl.Series([dt.replace(tzinfo=tzinfo)]).dt.cast_time_unit(time_unit)
     result = ser.dt.month_start().item()
@@ -170,10 +175,15 @@ def test_month_start_date(dt: date, expected: date) -> None:
         (datetime(2022, 3, 31), datetime(2022, 3, 31)),
     ],
 )
-@pytest.mark.parametrize("tzinfo", [None, ZoneInfo("Asia/Kathmandu")])
+@pytest.mark.parametrize(
+    "tzinfo", [None, ZoneInfo("Asia/Kathmandu"), timezone(timedelta(hours=1))]
+)
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_month_end_datetime(
-    dt: datetime, expected: datetime, time_unit: TimeUnit, tzinfo: ZoneInfo | None
+    dt: datetime,
+    expected: datetime,
+    time_unit: TimeUnit,
+    tzinfo: ZoneInfo | timezone | None,
 ) -> None:
     ser = pl.Series([dt.replace(tzinfo=tzinfo)]).dt.cast_time_unit(time_unit)
     result = ser.dt.month_end().item()
