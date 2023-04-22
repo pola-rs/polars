@@ -448,9 +448,14 @@ def dtype_short_repr_to_dtype(dtype_string: str | None) -> PolarsDataType | None
     dtype_base, subtype = m.groups()
     dtype = DataTypeMappings.REPR_TO_DTYPE.get(dtype_base)
     if dtype and subtype:
-        # TODO: better-handle nested types (such as List,Struct)
-        subtype = (s.strip("""'" """) for s in subtype.replace("μs", "us").split(","))
+        # TODO: further-improve handling for nested types (such as List,Struct)
         try:
+            if dtype == Decimal:
+                subtype = (None, int(subtype))
+            else:
+                subtype = (
+                    s.strip("'\" ") for s in subtype.replace("μs", "us").split(",")
+                )
             return dtype(*subtype)  # type: ignore[operator]
         except ValueError:
             pass
