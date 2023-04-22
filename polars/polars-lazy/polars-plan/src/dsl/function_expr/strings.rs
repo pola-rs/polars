@@ -62,6 +62,7 @@ pub enum StringFunction {
     LStrip(Option<String>),
     #[cfg(feature = "string_from_radix")]
     FromRadix(u32, bool),
+    Slice(i64, Option<u64>),
 }
 
 impl StringFunction {
@@ -82,7 +83,7 @@ impl StringFunction {
             ConcatVertical(_) | ConcatHorizontal(_) => mapper.with_dtype(DataType::Utf8),
             #[cfg(feature = "regex")]
             Replace { .. } => mapper.with_dtype(DataType::Utf8),
-            Uppercase | Lowercase | Strip(_) | LStrip(_) | RStrip(_) => {
+            Uppercase | Lowercase | Strip(_) | LStrip(_) | RStrip(_) | Slice(_, _) => {
                 mapper.with_dtype(DataType::Utf8)
             }
             #[cfg(feature = "string_from_radix")]
@@ -123,6 +124,7 @@ impl Display for StringFunction {
             StringFunction::RStrip(_) => "rstrip",
             #[cfg(feature = "string_from_radix")]
             StringFunction::FromRadix { .. } => "from_radix",
+            StringFunction::Slice(_, _) => "str_slice",
         };
 
         write!(f, "str.{s}")
@@ -595,4 +597,8 @@ pub(super) fn replace(s: &[Series], literal: bool, n: i64) -> PolarsResult<Serie
 pub(super) fn from_radix(s: &Series, radix: u32, strict: bool) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     ca.parse_int(radix, strict).map(|ok| ok.into_series())
+}
+pub(super) fn str_slice(s: &Series, start: i64, length: Option<u64>) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    ca.str_slice(start, length).map(|ca| ca.into_series())
 }
