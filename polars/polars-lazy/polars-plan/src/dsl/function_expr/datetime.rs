@@ -263,13 +263,21 @@ fn _roll_backward<T: PolarsTimeZone>(
 pub(super) fn month_start(s: &Series) -> PolarsResult<Series> {
     Ok(match s.dtype() {
         DataType::Datetime(tu, tz) => {
-            let (timestamp_to_datetime, datetime_to_timestamp): (
-                fn(i64) -> NaiveDateTime,
-                fn(NaiveDateTime) -> i64,
-            ) = match tu {
-                TimeUnit::Nanoseconds => (timestamp_ns_to_datetime, datetime_to_timestamp_ns),
-                TimeUnit::Microseconds => (timestamp_us_to_datetime, datetime_to_timestamp_us),
-                TimeUnit::Milliseconds => (timestamp_ms_to_datetime, datetime_to_timestamp_ms),
+            let timestamp_to_datetime: fn(i64) -> NaiveDateTime;
+            let datetime_to_timestamp: fn(NaiveDateTime) -> i64;
+            match tu {
+                TimeUnit::Nanoseconds => {
+                    timestamp_to_datetime = timestamp_ns_to_datetime;
+                    datetime_to_timestamp = datetime_to_timestamp_ns;
+                }
+                TimeUnit::Microseconds => {
+                    timestamp_to_datetime = timestamp_us_to_datetime;
+                    datetime_to_timestamp = datetime_to_timestamp_us;
+                }
+                TimeUnit::Milliseconds => {
+                    timestamp_to_datetime = timestamp_ms_to_datetime;
+                    datetime_to_timestamp = datetime_to_timestamp_ms;
+                }
             };
             let ca = s.datetime().unwrap();
             match tz {
@@ -343,13 +351,21 @@ pub(super) fn month_end(s: &Series) -> PolarsResult<Series> {
     let subtract_one_day = Duration::parse("-1d");
     Ok(match s.dtype() {
         DataType::Datetime(tu, tz) => {
-            let (timestamp_to_datetime, datetime_to_timestamp): (
-                fn(i64) -> NaiveDateTime,
-                fn(NaiveDateTime) -> i64,
-            ) = match tu {
-                TimeUnit::Nanoseconds => (timestamp_ns_to_datetime, datetime_to_timestamp_ns),
-                TimeUnit::Microseconds => (timestamp_us_to_datetime, datetime_to_timestamp_us),
-                TimeUnit::Milliseconds => (timestamp_ms_to_datetime, datetime_to_timestamp_ms),
+            let timestamp_to_datetime: fn(i64) -> NaiveDateTime;
+            let datetime_to_timestamp: fn(NaiveDateTime) -> i64;
+            match tu {
+                TimeUnit::Nanoseconds => {
+                    timestamp_to_datetime = timestamp_ns_to_datetime;
+                    datetime_to_timestamp = datetime_to_timestamp_ns;
+                }
+                TimeUnit::Microseconds => {
+                    timestamp_to_datetime = timestamp_us_to_datetime;
+                    datetime_to_timestamp = datetime_to_timestamp_us;
+                }
+                TimeUnit::Milliseconds => {
+                    timestamp_to_datetime = timestamp_ms_to_datetime;
+                    datetime_to_timestamp = datetime_to_timestamp_ms;
+                }
             };
             fn adder<T: PolarsTimeZone>(
                 tu: TimeUnit,
