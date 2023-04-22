@@ -31,6 +31,8 @@ pub enum TemporalFunction {
     Nanosecond,
     TimeStamp(TimeUnit),
     Truncate(String, String),
+    // MonthStart,
+    MonthEnd,
     Round(String, String),
     #[cfg(feature = "timezones")]
     CastTimezone(Option<TimeZone>, Option<bool>),
@@ -69,6 +71,8 @@ impl Display for TemporalFunction {
             Nanosecond => "nanosecond",
             TimeStamp(tu) => return write!(f, "dt.timestamp({tu})"),
             Truncate(..) => "truncate",
+            // MonthStart => "month_start",
+            MonthEnd => "month_end",
             Round(..) => "round",
             #[cfg(feature = "timezones")]
             CastTimezone(_, _) => "replace_timezone",
@@ -201,6 +205,43 @@ pub(super) fn truncate(s: &Series, every: &str, offset: &str) -> PolarsResult<Se
             .unwrap()
             .truncate(every, offset, NO_TIMEZONE)?
             .into_series(),
+        dt => polars_bail!(opq = round, got = dt, expected = "date/datetime"),
+    })
+}
+
+pub(super) fn month_end(s: &Series) -> PolarsResult<Series> {
+    // how to do this...
+    // let's take the day, offset by that to get month start
+    // and then offset again?
+    // yeah. get something working first, and then optimise!
+    let every_day = Duration::parse("-1d");
+    let offset = Duration::parse("0d");
+    Ok(match s.dtype() {
+        DataType::Datetime(tu, tz) => {
+            let day = s.datetime().unwrap().day();
+            let res = s
+            .datetime()
+            .unwrap();
+            let res = res.0.try_apply(
+                    |v|
+                    // copy the truncate by months bit into here?
+                    Duration::add_us(&every_day, v, NO_TIMEZONE))?;
+                // .try_apply(
+                //     |v|
+                //     Duration::add_us(&every_day, v, NO_TIMEZONE))?
+                // .into_datetime(*tu, tz.clone());
+            res.into_series()
+        }
+        // DataType::Date => {
+        //     let res = s
+        //     .date()
+        //     .unwrap()
+        //     .truncate(every_month, offset, NO_TIMEZONE)?;
+        //     let res = res.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
+        //         .unwrap();
+        //     let foo = res.0.try_apply(|v| Duration::add_ms(&offset_month, v, NO_TIMEZONE));
+        //     s.clone()
+        // }
         dt => polars_bail!(opq = round, got = dt, expected = "date/datetime"),
     })
 }

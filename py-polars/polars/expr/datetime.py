@@ -1801,10 +1801,4 @@ class ExprDateTimeNameSpace:
         │ 2000-12-31 │
         └────────────┘
         """
-        return wrap_expr(
-            self._pyexpr.dt_truncate(
-                _timedelta_to_pl_duration("1mo"), _timedelta_to_pl_duration("0ns")
-            )
-            .dt_offset_by("1mo")
-            .dt_offset_by("-1d")
-        )
+        return wrap_expr(self._pyexpr.dt_month_end())

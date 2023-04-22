@@ -227,6 +227,16 @@ impl DateLikeNameSpace {
             )))
     }
 
+    // pub fn month_start<S: AsRef<str>>(self) -> Expr {
+    //     self.0
+    //         .map_private(FunctionExpr::TemporalExpr(TemporalFunction::MonthStart))
+    // }
+
+    pub fn month_end(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::MonthEnd))
+    }
+
     pub fn round<S: AsRef<str>>(self, every: S, offset: S) -> Expr {
         let every = every.as_ref().into();
         let offset = offset.as_ref().into();
