@@ -1,3 +1,4 @@
+#[cfg(feature = "date_offset")]
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
@@ -216,6 +217,7 @@ pub(super) fn truncate(s: &Series, every: &str, offset: &str) -> PolarsResult<Se
     })
 }
 
+#[cfg(feature = "date_offset")]
 fn _roll_backward<T: PolarsTimeZone>(
     t: i64,
     tz: Option<&T>,
@@ -255,6 +257,7 @@ fn _roll_backward<T: PolarsTimeZone>(
     Ok(t)
 }
 
+#[cfg(feature = "date_offset")]
 pub(super) fn month_start(s: &Series) -> PolarsResult<Series> {
     let no_offset = Duration::parse("0ns");
     Ok(match s.dtype() {
@@ -321,6 +324,7 @@ pub(super) fn month_start(s: &Series) -> PolarsResult<Series> {
     })
 }
 
+#[cfg(feature = "date_offset")]
 fn _roll_forward<T: PolarsTimeZone>(
     t: i64,
     tz: Option<&T>,
@@ -335,6 +339,7 @@ fn _roll_forward<T: PolarsTimeZone>(
     adder(subtract_one_day, t, tz)
 }
 
+#[cfg(feature = "date_offset")]
 pub(super) fn month_end(s: &Series) -> PolarsResult<Series> {
     let add_one_month = Duration::parse("1mo");
     let subtract_one_day = Duration::parse("-1d");

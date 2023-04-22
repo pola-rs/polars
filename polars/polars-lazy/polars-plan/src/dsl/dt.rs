@@ -227,11 +227,15 @@ impl DateLikeNameSpace {
             )))
     }
 
+    // roll backward to the first day of the month
+    #[cfg(feature = "date_offset")]
     pub fn month_start(self) -> Expr {
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::MonthStart))
     }
 
+    // roll forward to the last day of the month
+    #[cfg(feature = "date_offset")]
     pub fn month_end(self) -> Expr {
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::MonthEnd))
