@@ -2,12 +2,14 @@
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
+#[cfg(feature = "date_offset")]
 use polars_arrow::time_zone::PolarsTimeZone;
 #[cfg(feature = "timezones")]
 use polars_core::utils::arrow::temporal_conversions::parse_offset;
+use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
+#[cfg(feature = "date_offset")]
 use polars_core::utils::arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
-    SECONDS_IN_DAY,
 };
 #[cfg(feature = "timezones")]
 use polars_time::{localize_datetime, unlocalize_datetime};
@@ -81,7 +83,9 @@ impl Display for TemporalFunction {
             Nanosecond => "nanosecond",
             TimeStamp(tu) => return write!(f, "dt.timestamp({tu})"),
             Truncate(..) => "truncate",
+            #[cfg(feature = "date_offset")]
             MonthStart => "month_start",
+            #[cfg(feature = "date_offset")]
             MonthEnd => "month_end",
             Round(..) => "round",
             #[cfg(feature = "timezones")]
