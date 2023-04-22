@@ -6,7 +6,5 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-polars = {version="*", features=["strings"]}
-polars-time = "*"
+polars = {version="0.28.0", path = "../polars", features=["strings", "lazy"]}
 chrono = "*"
-polars-lazy = {version="*", features=["strings"]}

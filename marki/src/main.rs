@@ -1,6 +1,6 @@
 use polars::prelude::*;
-use polars_lazy::{prelude::*, dsl::StrpTimeOptions};
-use polars_time::Duration as PolarsDuration;
+use polars::lazy::{dsl::StrpTimeOptions};
+use polars::time::Duration as PolarsDuration;
 
 use polars::df;
 use chrono::{NaiveDate, Duration};
@@ -16,11 +16,14 @@ fn main() {
 
     let group_vec = repeat(&vec!["a", "b"], 4 as usize).unwrap();
 
+    let name_vec = repeat(&vec!["katrien", "marc"], 4 as usize).unwrap();
+
     let values = vec![2, 3, 9, 1, 3, 2, 9, 10];
 
     let pl_frame = df!(
         "date" => date_vec, 
         "group" => group_vec,
+        "name" => name_vec,
         "value" => values, 
     ).unwrap();
 
@@ -39,7 +42,14 @@ fn main() {
     let every_day = PolarsDuration::parse("1d");
     let no_offset = PolarsDuration::parse("0d");
 
-    let pl_frame = pl_frame.upsample(vec!["group"], "date", every_day, no_offset);
+    let group_columns = vec!["group", "name"];
+
+    let pl_frame = pl_frame.upsample(&group_columns, "date", every_day, no_offset).unwrap();
+
+    // for column in group_columns {
+    //     let new_group = pl_frame.column(column).unwrap().fill_null(FillNullStrategy::Forward(None)).unwrap();
+    //     pl_frame.with_column(new_group).unwrap();
+    // }
 
     println!("{:#?}", pl_frame);
 }
