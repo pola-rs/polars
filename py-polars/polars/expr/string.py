@@ -4,6 +4,7 @@ import warnings
 from typing import TYPE_CHECKING
 
 from polars.datatypes import Date, Datetime, Time, py_type_to_dtype
+from polars.exceptions import ChronoFormatWarning
 from polars.utils import no_default
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
 from polars.utils._wrap import wrap_expr
@@ -115,6 +116,8 @@ class ExprStringNameSpace:
         └────────────┘
 
         """
+        _validate_format_argument(format)
+
         if tz_aware is no_default:
             tz_aware = False
         else:
@@ -1323,3 +1326,16 @@ class ExprStringNameSpace:
 
         """
         return wrap_expr(self._pyexpr.str_parse_int(radix, strict))
+
+
+def _validate_format_argument(format: str):
+    if ".%f" in format:
+        message = (
+            "Detected the pattern `.%f` in the chrono format string."
+            " This pattern should not be used to parse values after a decimal point."
+            " Use `%.f` instead."
+            " See the full specification: https://docs.rs/chrono/latest/chrono/format/strftime"
+        )
+        warnings.warn(
+            message, category=ChronoFormatWarning, stacklevel=find_stacklevel()
+        )
