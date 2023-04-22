@@ -1328,8 +1328,8 @@ class ExprStringNameSpace:
         return wrap_expr(self._pyexpr.str_parse_int(radix, strict))
 
 
-def _validate_format_argument(format: str):
-    if ".%f" in format:
+def _validate_format_argument(format: str | None) -> None:
+    if format is not None and ".%f" in format:
         message = (
             "Detected the pattern `.%f` in the chrono format string."
             " This pattern should not be used to parse values after a decimal point."
