@@ -481,6 +481,8 @@ def test_strptime_subseconds_datetime(data: str, format: str, expected: time) ->
     ("data", "format", "expected"),
     [
         ("05:10:10.074000", "%H:%M:%S%.f", time(5, 10, 10, 74000)),
+        ("05:10:10.074000", "%T%.6f", time(5, 10, 10, 74000)),
+        ("05:10:10.074000", "%H:%M:%S%.3f", time(5, 10, 10, 74000)),
     ],
 )
 def test_strptime_subseconds_time(data: str, format: str, expected: time) -> None:
