@@ -111,7 +111,7 @@ impl<R: MmapBytesReader> IpcReader<R> {
     /// Get schema of the Ipc File
     pub fn schema(&mut self) -> PolarsResult<Schema> {
         let metadata = self.get_metadata()?;
-        Ok(metadata.schema.fields.iter().into())
+        Ok(Schema::from_iter(&metadata.schema.fields))
     }
 
     /// Get arrow schema of the Ipc File, this is faster than creating a polars schema.

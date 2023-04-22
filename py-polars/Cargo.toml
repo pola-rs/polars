@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.17.2"
+version = "0.17.6"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -51,7 +51,7 @@ meta = ["polars/meta"]
 search_sorted = ["polars/search_sorted"]
 decompress = ["polars/decompress"]
 lazy_regex = ["polars/lazy_regex"]
-csv-file = ["polars/csv-file"]
+csv = ["polars/csv"]
 object = ["polars/object"]
 extract_jsonpath = ["polars/extract_jsonpath"]
 pivot = ["polars/pivot"]
@@ -84,7 +84,7 @@ all = [
   "meta",
   "decompress",
   "lazy_regex",
-  "csv-file",
+  "csv",
   "extract_jsonpath",
   "timezones",
   "object",

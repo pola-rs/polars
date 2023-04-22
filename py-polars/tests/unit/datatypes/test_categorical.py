@@ -343,3 +343,37 @@ def test_nested_categorical_aggregation_7848() -> None:
         "c_group": [2, 3],
         "letter": [[["a", "b"], ["f", "g"]], [["c", "d", "e"]]],
     }
+
+
+def test_nested_categorical_cast() -> None:
+    values = [["x"], ["y"], ["x"]]
+    dtype = pl.List(pl.Categorical)
+    s = pl.Series(values).cast(dtype)
+    assert s.dtype == dtype
+    assert s.to_list() == values
+
+
+def test_struct_categorical_nesting() -> None:
+    # this triggers a lot of materialization
+    df = pl.DataFrame(
+        {"cats": ["Value1", "Value2", "Value1"]},
+        schema_overrides={"cats": pl.Categorical},
+    )
+    s = df.select(pl.struct(pl.col("cats")))["cats"].implode()
+    assert s.dtype == pl.List(pl.Struct([pl.Field("cats", pl.Categorical)]))
+    # triggers recursive conversion
+    assert s.to_list() == [[{"cats": "Value1"}, {"cats": "Value2"}, {"cats": "Value1"}]]
+    # triggers different recursive conversion
+    assert len(s.to_arrow()) == 1
+
+
+def test_categorical_fill_null_existing_category() -> None:
+    # ensure physical types align
+    assert pl.DataFrame(
+        {"col": ["a", None, "a"]}, schema={"col": pl.Categorical}
+    ).fill_null("a").with_columns(pl.col("col").to_physical().alias("code")).to_dict(
+        False
+    ) == {
+        "col": ["a", "a", "a"],
+        "code": [0, 0, 0],
+    }

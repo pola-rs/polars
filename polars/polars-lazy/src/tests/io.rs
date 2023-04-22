@@ -286,7 +286,7 @@ fn test_union_and_agg_projections() -> PolarsResult<()> {
 }
 
 #[test]
-#[cfg(all(feature = "ipc", feature = "csv-file"))]
+#[cfg(all(feature = "ipc", feature = "csv"))]
 fn test_slice_filter() -> PolarsResult<()> {
     init_files();
     let _guard = SINGLE_LOCK.lock().unwrap();
@@ -438,9 +438,10 @@ fn scan_small_dtypes() -> PolarsResult<()> {
     for dt in small_dt {
         let df = LazyCsvReader::new(FOODS_CSV)
             .has_header(true)
-            .with_dtype_overwrite(Some(&Schema::from(
-                vec![Field::new("sugars_g", dt.clone())].into_iter(),
-            )))
+            .with_dtype_overwrite(Some(&Schema::from_iter([Field::new(
+                "sugars_g",
+                dt.clone(),
+            )])))
             .finish()?
             .select(&[col("sugars_g")])
             .collect()?;

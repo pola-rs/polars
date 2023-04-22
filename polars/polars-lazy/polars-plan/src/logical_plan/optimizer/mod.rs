@@ -9,12 +9,7 @@ mod cse;
 mod delay_rechunk;
 mod drop_nulls;
 mod fast_projection;
-#[cfg(any(
-    feature = "ipc",
-    feature = "parquet",
-    feature = "csv-file",
-    feature = "cse"
-))]
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv", feature = "cse"))]
 pub(crate) mod file_caching;
 mod flatten_union;
 mod predicate_pushdown;
@@ -28,7 +23,7 @@ mod type_coercion;
 use delay_rechunk::DelayRechunk;
 use drop_nulls::ReplaceDropNulls;
 use fast_projection::FastProjectionAndCollapse;
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv-file"))]
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv"))]
 use file_caching::{find_column_union_and_fingerprints, FileCacher};
 pub use predicate_pushdown::PredicatePushDown;
 pub use projection_pushdown::ProjectionPushDown;
@@ -143,12 +138,7 @@ pub fn optimize(
     // make sure that we do that once slice pushdown
     // and predicate pushdown are done. At that moment
     // the file fingerprints are finished.
-    #[cfg(any(
-        feature = "cse",
-        feature = "parquet",
-        feature = "ipc",
-        feature = "csv-file"
-    ))]
+    #[cfg(any(feature = "cse", feature = "parquet", feature = "ipc", feature = "csv"))]
     if agg_scan_projection || cse_changed {
         // we do this so that expressions are simplified created by the pushdown optimizations
         // we must clean up the predicates, because the agg_scan_projection

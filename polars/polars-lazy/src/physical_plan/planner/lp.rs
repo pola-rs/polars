@@ -168,7 +168,7 @@ pub fn create_physical_plan(
             let predicate = create_physical_expr(predicate, Context::Default, expr_arena, None)?;
             Ok(Box::new(executors::FilterExec::new(predicate, input)))
         }
-        #[cfg(feature = "csv-file")]
+        #[cfg(feature = "csv")]
         CsvScan {
             path,
             file_info,

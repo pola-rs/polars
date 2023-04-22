@@ -42,6 +42,11 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: '3.7'
+      # needed because we got OOM
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 10
 
       - name: Fix README symlink
         run: |

@@ -494,7 +494,7 @@ impl ProjectionPushDown {
                 };
                 Ok(PythonScan { options, predicate })
             }
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             CsvScan {
                 path,
                 file_info,

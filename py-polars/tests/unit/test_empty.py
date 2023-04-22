@@ -30,3 +30,9 @@ def test_empty_string_replace() -> None:
     assert s.str.replace("a", "b").series_equal(s)
     assert s.str.replace("ab", "b", literal=True).series_equal(s)
     assert s.str.replace("ab", "b").series_equal(s)
+
+
+def test_empty_duration() -> None:
+    s = pl.DataFrame([], {"days": pl.Int32}).select(pl.duration(days="days"))
+    assert s.dtypes == [pl.Duration("ns")]
+    assert s.shape == (0, 1)

@@ -20,6 +20,12 @@ from typing import (
 from polars import functions as F
 from polars import internals as pli
 from polars.datatypes import (
+    FLOAT_DTYPES,
+    INTEGER_DTYPES,
+    NUMERIC_DTYPES,
+    SIGNED_INTEGER_DTYPES,
+    TEMPORAL_DTYPES,
+    UNSIGNED_INTEGER_DTYPES,
     Boolean,
     Categorical,
     Date,
@@ -32,6 +38,7 @@ from polars.datatypes import (
     Int32,
     Int64,
     List,
+    Object,
     Time,
     UInt8,
     UInt16,
@@ -772,7 +779,7 @@ class Series:
                             raise ValueError(
                                 "Index positions should be bigger than -2^32 + 1."
                             )
-                if idxs.dtype in {Int8, Int16, Int32, Int64}:
+                if idxs.dtype in SIGNED_INTEGER_DTYPES:
                     if idxs.min() < 0:  # type: ignore[operator]
                         if idx_type == UInt32:
                             if idxs.dtype in {Int8, Int16}:
@@ -849,16 +856,7 @@ class Series:
             int | Series | range | slice | np.ndarray[Any, Any] | list[int] | list[bool]
         ),
     ) -> Any:
-        if isinstance(item, Series) and item.dtype in {
-            UInt8,
-            UInt16,
-            UInt32,
-            UInt64,
-            Int8,
-            Int16,
-            Int32,
-            Int64,
-        }:
+        if isinstance(item, Series) and item.dtype in INTEGER_DTYPES:
             # Unsigned or signed Series (ordered from fastest to slowest).
             #   - pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx) Series indexes.
             #   - Other unsigned Series indexes are converted to pl.UInt32 (polars)
@@ -1034,25 +1032,29 @@ class Series:
         """Format output data in HTML for display in Jupyter Notebooks."""
         return self.to_frame()._repr_html_(from_series=True)
 
-    def item(self) -> Any:
+    def item(self, row: int | None = None) -> Any:
         """
-        Return the series as a scalar.
+        Return the series as a scalar, or return the element at the given row index.
 
-        Equivalent to ``s[0]``, with a check that the shape is (1,).
+        If no row index is provided, this is equivalent to ``s[0]``, with a check
+        that the shape is (1,). With a row index, this is equivalent to ``s[row]``.
 
         Examples
         --------
-        >>> s = pl.Series("a", [1])
-        >>> s.item()
+        >>> s1 = pl.Series("a", [1])
+        >>> s1.item()
         1
+        >>> s2 = pl.Series("a", [9, 8, 7])
+        >>> s2.cumsum().item(-1)
+        24
 
         """
-        if len(self) != 1:
+        if row is None and len(self) != 1:
             raise ValueError(
-                f"Can only call .item() if the series is of length 1, "
-                f"series is of length {len(self)}"
+                f"Can only call '.item()' if the series is of length 1, or an "
+                f"explicit row index is provided (series is of length {len(self)})"
             )
-        return self[0]
+        return self[row or 0]
 
     def estimated_size(self, unit: SizeUnit = "b") -> int | float:
         """
@@ -2815,10 +2817,6 @@ class Series:
 
         This means that every item is expanded to a new row.
 
-        .. deprecated:: 0.15.16
-            `Series.explode` will be removed in favour of `Series.arr.explode` and
-            `Series.str.explode`.
-
         Returns
         -------
         Exploded Series of same dtype
@@ -3081,18 +3079,38 @@ class Series:
         True
 
         """
-        return self.dtype in (
-            Int8,
-            Int16,
-            Int32,
-            Int64,
-            UInt8,
-            UInt16,
-            UInt32,
-            UInt64,
-            Float32,
-            Float64,
-        )
+        return self.dtype in NUMERIC_DTYPES
+
+    def is_integer(self, signed: bool | None = None) -> bool:
+        """
+        Check if this Series datatype is an integer (signed or unsigned).
+
+        Parameters
+        ----------
+        signed
+            * if `None`, both signed and unsigned integer dtypes will match.
+            * if `True`, only signed integer dtypes will be considered a match.
+            * if `False`, only unsigned integer dtypes will be considered a match.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1, 2, 3], dtype=pl.UInt32)
+        >>> s.is_integer()
+        True
+        >>> s.is_integer(signed=False)
+        True
+        >>> s.is_integer(signed=True)
+        False
+
+        """
+        if signed is None:
+            return self.dtype in INTEGER_DTYPES
+        elif signed is True:
+            return self.dtype in SIGNED_INTEGER_DTYPES
+        elif signed is False:
+            return self.dtype in UNSIGNED_INTEGER_DTYPES
+
+        raise ValueError(f"'signed' must be None, True or False; given {signed!r}")
 
     def is_temporal(self, excluding: OneOrMoreDataTypes | None = None) -> bool:
         """
@@ -3119,7 +3137,7 @@ class Series:
             if self.dtype in excluding:
                 return False
 
-        return self.dtype in (Date, Datetime, Duration, Time)
+        return self.dtype in TEMPORAL_DTYPES
 
     def is_float(self) -> bool:
         """
@@ -3132,7 +3150,7 @@ class Series:
         True
 
         """
-        return self.dtype in (Float32, Float64)
+        return self.dtype in FLOAT_DTYPES
 
     def is_boolean(self) -> bool:
         """
@@ -3239,7 +3257,12 @@ class Series:
                 tp = f"datetime64[{self.time_unit}]"
             return arr.astype(tp)
 
-        if use_pyarrow and _PYARROW_AVAILABLE and not self.is_temporal(excluding=Time):
+        if (
+            use_pyarrow
+            and _PYARROW_AVAILABLE
+            and self.dtype != Object
+            and not self.is_temporal(excluding=Time)
+        ):
             return self.to_arrow().to_numpy(
                 *args, zero_copy_only=zero_copy_only, writable=writable
             )
@@ -5735,6 +5758,9 @@ class Series:
     def get_chunks(self) -> list[Series]:
         """Get the chunks of this Series as a list of Series."""
         return self._s.get_chunks()
+
+    def implode(self) -> Self:
+        """Aggregate values into a list."""
 
     # Below are the namespaces defined. Do not move these up in the definition of
     # Series, as it confuses mypy between the type annotation `str` and the

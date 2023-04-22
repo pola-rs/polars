@@ -8,6 +8,7 @@ use polars_core::export::rayon::prelude::*;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
+use polars_core::utils::ensure_sorted_arg;
 use polars_core::POOL;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -238,6 +239,7 @@ impl Wrap<&DataFrame> {
         if dt.is_empty() {
             return dt.cast(time_type).map(|s| (s, by, GroupsProxy::default()));
         }
+        ensure_sorted_arg(&dt);
 
         let sorted_set = matches!(dt.is_sorted_flag(), IsSorted::Ascending);
         // a requirement for the index
@@ -461,6 +463,7 @@ impl Wrap<&DataFrame> {
         tz: Option<impl PolarsTimeZone>,
         time_type: &DataType,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
+        ensure_sorted_arg(&dt);
         let mut dt = dt.rechunk();
         // a requirement for the index
         // so we can set this such that downstream code has this info

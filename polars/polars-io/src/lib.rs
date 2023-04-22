@@ -6,7 +6,7 @@
 pub mod avro;
 #[cfg(feature = "cloud")]
 mod cloud;
-#[cfg(any(feature = "csv-file", feature = "json"))]
+#[cfg(any(feature = "csv", feature = "json"))]
 pub mod csv;
 #[cfg(feature = "parquet")]
 pub mod export;
@@ -20,7 +20,7 @@ pub mod ndjson_core;
 pub use crate::cloud::glob as async_glob;
 
 #[cfg(any(
-    feature = "csv-file",
+    feature = "csv",
     feature = "parquet",
     feature = "ipc",
     feature = "json"
@@ -34,7 +34,7 @@ pub mod predicates;
 #[cfg(not(feature = "private"))]
 pub(crate) mod predicates;
 pub mod prelude;
-#[cfg(all(test, feature = "csv-file"))]
+#[cfg(all(test, feature = "csv"))]
 mod tests;
 pub(crate) mod utils;
 

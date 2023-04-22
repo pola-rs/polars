@@ -4,29 +4,22 @@ version = "0.28.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/pola-rs/polars"
-description = "Lazy query engine for the Polars DataFrame library"
+description = "SQL transpiler for polars. Converts SQL to polars logical plans"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
-cli = ["csv", "polars-lazy/fmt", "atty", "reedline", "jemallocator"]
-highlight = ["syntect", "nu-ansi-term"]
-csv = ["polars-lazy/csv-file"]
+csv = ["polars-lazy/csv"]
+json = ["polars-lazy/json"]
 default = []
 ipc = ["polars-lazy/ipc"]
 parquet = ["polars-lazy/parquet"]
+private = []
 
 [dependencies]
-atty = { version = "0.2", optional = true }
-nu-ansi-term = { version = "0.47.0", optional = true }
 polars-arrow = { version = "0.28.0", path = "../polars-arrow", features = ["like"] }
 polars-core = { version = "0.28.0", path = "../polars-core", features = [] }
 polars-lazy = { version = "0.28.0", path = "../polars-lazy", features = ["compile", "strings", "cross_join", "trigonometry", "abs", "round_series", "log", "regex", "is_in", "meta"] }
 polars-plan = { version = "0.28.0", path = "../polars-lazy/polars-plan", features = ["compile"] }
-reedline = { version = "0.18.0", optional = true }
 serde = "1"
 serde_json = { version = "1" }
 sqlparser = { version = "0.30" }
-syntect = { version = "5.0.0", features = ["dump-load"], optional = true }
-
-[target.'cfg(target_os = "linux")'.dependencies]
-jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"], optional = true }

@@ -381,7 +381,7 @@ def test_invalid_date_parsing_4898() -> None:
     ).to_list() == [date(2022, 9, 18), None]
 
 
-def test_replace_timezone_invalid_timezone() -> None:
+def test_strptime_invalid_timezone() -> None:
     ts = pl.Series(["2020-01-01 00:00:00+01:00"]).str.strptime(
         pl.Datetime, "%Y-%m-%d %H:%M:%S%z"
     )
@@ -389,7 +389,7 @@ def test_replace_timezone_invalid_timezone() -> None:
         ts.dt.replace_time_zone("foo")
 
 
-def test_replace_time_zone_ambiguous_or_non_existent() -> None:
+def test_strptime_ambiguous_or_non_existent() -> None:
     with pytest.raises(
         ArrowError,
         match="datetime '2021-11-07 01:00:00' is ambiguous in time zone 'US/Central'",
@@ -450,12 +450,12 @@ def test_tz_aware_without_fmt() -> None:
     with pytest.raises(
         ComputeError,
         match=(
-            r"^passing 'tz_aware=True' without 'fmt' is not yet supported, "
-            r"please specify 'fmt'$"
+            r"^passing 'tz_aware=True' without 'format' is not yet supported, "
+            r"please specify 'format'$"
         ),
     ), pytest.warns(
         DeprecationWarning,
-        match="`tz_aware` is now auto-inferred from `fmt` and will be removed "
+        match="`tz_aware` is now auto-inferred from `format` and will be removed "
         "in a future version. You can safely drop this argument.",
     ):
         pl.Series(["2020-01-01"]).str.strptime(pl.Datetime, tz_aware=True)

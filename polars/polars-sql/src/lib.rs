@@ -1,9 +1,12 @@
-//! # Polars SQL
+//! Polars SQL
+//! This crate provides a SQL interface for Polars DataFrames
 #![deny(missing_docs)]
 mod context;
 mod functions;
+pub mod keywords;
 mod sql_expr;
 mod table_functions;
+
 pub use context::SQLContext;
 
 #[cfg(test)]
@@ -760,14 +763,14 @@ mod test {
         "#,
             )?
             .collect()?
-            .sort(&["category"], vec![false])?;
+            .sort(["category"], vec![false])?;
 
         let expected = LazyCsvReader::new("../../examples/datasets/foods1.csv")
             .finish()?
             .groupby(vec![col("category").alias("category")])
             .agg(vec![])
             .collect()?
-            .sort(&["category"], vec![false])?;
+            .sort(["category"], vec![false])?;
 
         assert!(df_sql.frame_equal(&expected));
         Ok(())
@@ -810,7 +813,6 @@ mod test {
                     false,
                 )
                 .limit(2);
-        let lp = expected.clone().describe_optimized_plan()?;
         let expected = expected.collect()?;
         assert!(df_sql.frame_equal(&expected));
         Ok(())
@@ -831,6 +833,26 @@ mod test {
         let sql = r#"select * from foods"#;
         assert!(context.execute(sql).is_err());
 
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "csv")]
+    fn iss_8395() -> PolarsResult<()> {
+        let mut context = SQLContext::new();
+        let sql = r#"
+        with foods as (
+            SELECT *
+            FROM read_csv('../../examples/datasets/foods1.csv')
+        )
+        select * from foods where category IN ('vegetables', 'seafood')"#;
+        let res = context.execute(sql)?;
+        let df = res.collect()?;
+
+        // assert that the df only contains [vegetables, seafood]
+        let s = df.column("category")?.unique()?.sort(false);
+        let expected = Series::new("category", &["seafood", "vegetables"]);
+        assert!(s.series_equal(&expected));
         Ok(())
     }
 }

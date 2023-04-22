@@ -387,7 +387,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     "Float64" => DataType::Float64,
                     #[cfg(feature = "object")]
                     "Object" => DataType::Object(OBJECT_NAME),
-                    "List" => DataType::List(Box::new(DataType::Boolean)),
+                    "List" => DataType::List(Box::new(DataType::Null)),
                     "Null" => DataType::Null,
                     "Unknown" => DataType::Unknown,
                     dt => {
@@ -687,7 +687,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                 vals.push(val)
             }
             Ok(Wrap(AnyValue::StructOwned(Box::new((vals, keys)))))
-        } else if ob.is_instance_of::<PyList>()? {
+        } else if ob.is_instance_of::<PyList>()? || ob.is_instance_of::<PyTuple>()? {
             materialize_list(ob)
         } else if let Ok(value) = ob.extract::<u64>() {
             Ok(AnyValue::UInt64(value).into())
@@ -738,6 +738,11 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                 }
                 "range" => materialize_list(ob),
                 _ => {
+                    // special branch for np.float as this fails isinstance float
+                    if let Ok(value) = ob.extract::<f64>() {
+                        return Ok(AnyValue::Float64(value).into());
+                    }
+
                     // Can't use pyo3::types::PyDateTime with abi3-py37 feature,
                     // so need this workaround instead of `isinstance(ob, datetime)`.
                     let bases = ob.get_type().getattr("__bases__")?.iter()?;

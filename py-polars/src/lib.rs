@@ -15,7 +15,7 @@ mod build {
 
 pub mod apply;
 pub mod arrow_interop;
-#[cfg(feature = "csv-file")]
+#[cfg(feature = "csv")]
 mod batched_csv;
 pub mod conversion;
 pub mod dataframe;
@@ -143,8 +143,8 @@ fn cumreduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
 }
 
 #[pyfunction]
-fn arange(low: PyExpr, high: PyExpr, step: usize) -> PyExpr {
-    polars_rs::lazy::dsl::arange(low.inner, high.inner, step).into()
+fn arange(start: PyExpr, end: PyExpr, step: i64) -> PyExpr {
+    polars_rs::lazy::dsl::arange(start.inner, end.inner, step).into()
 }
 
 #[pyfunction]
@@ -666,7 +666,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyLazyFrame>().unwrap();
     m.add_class::<PyLazyGroupBy>().unwrap();
     m.add_class::<dsl::PyExpr>().unwrap();
-    #[cfg(feature = "csv-file")]
+    #[cfg(feature = "csv")]
     m.add_class::<batched_csv::PyBatchedCsv>().unwrap();
     #[cfg(feature = "sql")]
     m.add_class::<sql::PySQLContext>().unwrap();

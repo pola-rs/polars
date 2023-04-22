@@ -403,13 +403,14 @@ pub(crate) fn create_physical_expr(
                 AAggExpr::Implode(expr) => {
                     let input = create_physical_expr(expr, ctxt, expr_arena, schema)?;
                     match ctxt {
-                        Context::Aggregation => {
-                            Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::List)))
-                        }
+                        Context::Aggregation => Ok(Arc::new(AggregationExpr::new(
+                            input,
+                            GroupByMethod::Implode,
+                        ))),
                         Context::Default => {
                             let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = &s[0];
-                                s.to_list().map(|ca| Some(ca.into_series()))
+                                s.implode().map(|ca| Some(ca.into_series()))
                             })
                                 as Arc<dyn SeriesUdf>);
                             Ok(Arc::new(ApplyExpr::new_minimal(

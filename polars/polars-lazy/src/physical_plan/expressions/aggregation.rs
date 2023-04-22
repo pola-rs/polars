@@ -171,7 +171,7 @@ impl PhysicalExpr for AggregationExpr {
                     let agg_s = ac.flat_naive().into_owned().agg_n_unique(ac.groups());
                     rename_series(agg_s, &keep_name)
                 }
-                GroupByMethod::List => {
+                GroupByMethod::Implode => {
                     if state.unset_finalize_window_as_list() {
                         let agg = ac.aggregated();
                         rename_series(agg, &keep_name)
@@ -315,7 +315,7 @@ impl PartitionedAggregation for AggregationExpr {
                             .into_series())
                     }
                 }
-                GroupByMethod::List => {
+                GroupByMethod::Implode => {
                     let new_name = series.name();
                     let mut agg = series.agg_list(groups);
                     agg.rename(new_name);
@@ -390,7 +390,7 @@ impl PartitionedAggregation for AggregationExpr {
                     )),
                 }
             }
-            GroupByMethod::List => {
+            GroupByMethod::Implode => {
                 // the groups are scattered over multiple groups/sub dataframes.
                 // we now must collect them into a single group
                 let ca = partitioned.list().unwrap();

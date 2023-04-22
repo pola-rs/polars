@@ -5,7 +5,6 @@ import math
 import operator
 import os
 import random
-import warnings
 from datetime import timedelta
 from functools import partial, reduce
 from typing import (
@@ -47,7 +46,7 @@ from polars.utils._parse_expr_input import expr_to_lit_or_expr, selection_to_pye
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import deprecated_alias, redirect
 from polars.utils.meta import threadpool_size
-from polars.utils.various import find_stacklevel, sphinx_accessor
+from polars.utils.various import sphinx_accessor
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arg_where as py_arg_where
@@ -3443,10 +3442,6 @@ class Expr:
 
         This means that every item is expanded to a new row.
 
-        .. deprecated:: 0.15.16
-            `Expr.explode` will be removed in favour of `Expr.arr.explode` and
-            `Expr.str.explode`.
-
         Returns
         -------
         Exploded Series of same dtype
@@ -3457,18 +3452,11 @@ class Expr:
         ExprStringNameSpace.explode : Explode a string column.
 
         """
-        warnings.warn(
-            "`Series/Expr.explode()` is deprecated in favor of the identical method"
-            " under the list and string namespaces. Use `.arr.explode()` or"
-            " `.str.explode()` instead.",
-            DeprecationWarning,
-            stacklevel=find_stacklevel(),
-        )
         return self._from_pyexpr(self._pyexpr.explode())
 
     def implode(self) -> Self:
         """
-        Aggregate all column values into a list.
+        Aggregate values into a list.
 
         Examples
         --------
@@ -7479,6 +7467,9 @@ def _prepare_rolling_window_args(
     min_periods: int | None = None,
 ) -> tuple[str, int]:
     if isinstance(window_size, int):
+        if window_size < 1:
+            raise ValueError("'window_size' should be positive")
+
         if min_periods is None:
             min_periods = window_size
         window_size = f"{window_size}i"

@@ -513,7 +513,7 @@ pub(crate) fn init_buffers<'a>(
     projection
         .iter()
         .map(|&i| {
-            let (name, dtype) = schema.get_index(i).unwrap();
+            let (name, dtype) = schema.get_at_index(i).unwrap();
             let mut str_capacity = 0;
             // determine the needed capacity for this column
             if dtype == &DataType::Utf8 {

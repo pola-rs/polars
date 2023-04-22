@@ -1,10 +1,11 @@
-use arrow::array::{Array, ListArray, NullArray};
+use arrow::array::{new_null_array, Array, ListArray, NullArray, StructArray};
 use arrow::bitmap::MutableBitmap;
 use arrow::compute::concatenate;
 use arrow::datatypes::DataType;
 use arrow::error::Result;
 use arrow::offset::Offsets;
 
+use crate::kernels::concatenate::concatenate_owned_unchecked;
 use crate::prelude::*;
 
 pub struct AnonymousBuilder<'a> {
@@ -100,8 +101,40 @@ impl<'a> AnonymousBuilder<'a> {
             (DataType::Null, values)
         } else {
             let inner_dtype = inner_dtype.unwrap_or_else(|| self.arrays[0].data_type());
-            let values = concatenate::concatenate(&self.arrays)?;
-            (inner_dtype.clone(), values)
+
+            // check if there is a dtype that is not `Null`
+            // if we find it, we will convert the null arrays
+            // to empty arrays of this dtype, otherwise the concat kernel fails.
+            let mut non_null_dtype = None;
+            if is_nested_null(inner_dtype) {
+                for arr in &self.arrays {
+                    if !is_nested_null(arr.data_type()) {
+                        non_null_dtype = Some(arr.data_type());
+                        break;
+                    }
+                }
+            };
+
+            // there are null arrays found, ensure the types are correct.
+            if let Some(dtype) = non_null_dtype {
+                let arrays = self
+                    .arrays
+                    .iter()
+                    .map(|arr| {
+                        if is_nested_null(arr.data_type()) {
+                            convert_inner_type(&**arr, dtype)
+                        } else {
+                            arr.to_boxed()
+                        }
+                    })
+                    .collect::<Vec<_>>();
+
+                let values = concatenate_owned_unchecked(&arrays)?;
+                (dtype.clone(), values)
+            } else {
+                let values = concatenate::concatenate(&self.arrays)?;
+                (inner_dtype.clone(), values)
+            }
         };
         let dtype = ListArray::<i64>::default_datatype(inner_dtype);
         Ok(ListArray::<i64>::new(
@@ -110,5 +143,44 @@ impl<'a> AnonymousBuilder<'a> {
             values,
             self.validity.map(|validity| validity.into()),
         ))
+    }
+}
+
+fn is_nested_null(data_type: &DataType) -> bool {
+    match data_type {
+        DataType::Null => true,
+        DataType::LargeList(field) => is_nested_null(field.data_type()),
+        DataType::Struct(fields) => fields.iter().all(|field| is_nested_null(field.data_type())),
+        _ => false,
+    }
+}
+
+/// Cast null arrays to inner type and ensure that all offsets remain correct
+pub fn convert_inner_type(array: &dyn Array, dtype: &DataType) -> Box<dyn Array> {
+    match dtype {
+        DataType::LargeList(field) => {
+            let array = array.as_any().downcast_ref::<LargeListArray>().unwrap();
+            let inner = array.values();
+            let new_values = convert_inner_type(inner.as_ref(), field.data_type());
+            let dtype = LargeListArray::default_datatype(new_values.data_type().clone());
+            LargeListArray::new(
+                dtype,
+                array.offsets().clone(),
+                new_values,
+                array.validity().cloned(),
+            )
+            .boxed()
+        }
+        DataType::Struct(fields) => {
+            let array = array.as_any().downcast_ref::<StructArray>().unwrap();
+            let inner = array.values();
+            let new_values = inner
+                .iter()
+                .zip(fields)
+                .map(|(arr, field)| convert_inner_type(arr.as_ref(), field.data_type()))
+                .collect::<Vec<_>>();
+            StructArray::new(dtype.clone(), new_values, array.validity().cloned()).boxed()
+        }
+        _ => new_null_array(dtype.clone(), array.len()),
     }
 }

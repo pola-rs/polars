@@ -250,6 +250,17 @@ impl DataType {
             Unknown => unreachable!(),
         }
     }
+
+    pub fn is_nested_null(&self) -> bool {
+        use DataType::*;
+        match self {
+            Null => true,
+            List(field) => field.is_nested_null(),
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields) => fields.iter().all(|fld| fld.dtype.is_nested_null()),
+            _ => false,
+        }
+    }
 }
 
 impl PartialEq<ArrowDataType> for DataType {

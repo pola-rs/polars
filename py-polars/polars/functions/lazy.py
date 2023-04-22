@@ -1247,6 +1247,14 @@ def lit(
     >>> pl.lit([[1, 2], [3, 4]])  # doctest: +IGNORE_RESULT
     >>> pl.lit(pl.Series("y", [[1, 2], [3, 4]]))  # doctest: +IGNORE_RESULT
 
+    Expected datatypes
+
+    - ''pl.lit([])'' -> empty  Series Float32
+    - ''pl.lit([1, 2, 3])'' -> Series Int64
+    - ''pl.lit([[]])''-> empty  Series List<Null>
+    - ''pl.lit([[1, 2, 3]])'' -> Series List<i64>
+    - ''pl.lit(None)'' -> Series Null
+
     """
     time_unit: TimeUnit
 
@@ -2444,33 +2452,38 @@ def duration(
     >>> from datetime import datetime
     >>> df = pl.DataFrame(
     ...     {
-    ...         "datetime": [datetime(2022, 1, 1), datetime(2022, 1, 2)],
+    ...         "dt": [datetime(2022, 1, 1), datetime(2022, 1, 2)],
     ...         "add": [1, 2],
     ...     }
     ... )
-    >>> df.select(
-    ...     [
-    ...         (pl.col("datetime") + pl.duration(weeks="add")).alias("add_weeks"),
-    ...         (pl.col("datetime") + pl.duration(days="add")).alias("add_days"),
-    ...         (pl.col("datetime") + pl.duration(seconds="add")).alias("add_seconds"),
-    ...         (pl.col("datetime") + pl.duration(milliseconds="add")).alias(
-    ...             "add_milliseconds"
-    ...         ),
-    ...         (pl.col("datetime") + pl.duration(hours="add")).alias("add_hours"),
-    ...     ]
-    ... )  # doctest: +IGNORE_RESULT
+    >>> print(df)
+    shape: (2, 2)
+    ┌─────────────────────┬─────┐
+    │ dt                  ┆ add │
+    │ ---                 ┆ --- │
+    │ datetime[μs]        ┆ i64 │
+    ╞═════════════════════╪═════╡
+    │ 2022-01-01 00:00:00 ┆ 1   │
+    │ 2022-01-02 00:00:00 ┆ 2   │
+    └─────────────────────┴─────┘
+    >>> with pl.Config(tbl_width_chars=120):
+    ...     df.select(
+    ...         (pl.col("dt") + pl.duration(weeks="add")).alias("add_weeks"),
+    ...         (pl.col("dt") + pl.duration(days="add")).alias("add_days"),
+    ...         (pl.col("dt") + pl.duration(seconds="add")).alias("add_seconds"),
+    ...         (pl.col("dt") + pl.duration(milliseconds="add")).alias("add_millis"),
+    ...         (pl.col("dt") + pl.duration(hours="add")).alias("add_hours"),
+    ...     )
+    ...
     shape: (2, 5)
-    ┌────────────┬────────────┬─────────────────────┬──────────────┬─────────────────────┐
-    │ add_weeks  ┆ add_days   ┆ add_seconds         ┆ add_millisec ┆ add_hours           │
-    │ ---        ┆ ---        ┆ ---                 ┆ onds         ┆ ---                 │
-    │ datetime[m ┆ datetime[m ┆ datetime[ms]        ┆ ---          ┆ datetime[ms]        │
-    │ s]         ┆ s]         ┆                     ┆ datetime[ms] ┆                     │
-    ╞════════════╪════════════╪═════════════════════╪══════════════╪═════════════════════╡
-    │ 2022-01-08 ┆ 2022-01-02 ┆ 2022-01-01 00:00:01 ┆ 2022-01-01   ┆ 2022-01-01 01:00:00 │
-    │ 00:00:00   ┆ 00:00:00   ┆                     ┆ 00:00:00.001 ┆                     │
-    │ 2022-01-16 ┆ 2022-01-04 ┆ 2022-01-02 00:00:02 ┆ 2022-01-02   ┆ 2022-01-02 02:00:00 │
-    │ 00:00:00   ┆ 00:00:00   ┆                     ┆ 00:00:00.002 ┆                     │
-    └────────────┴────────────┴─────────────────────┴──────────────┴─────────────────────┘
+    ┌─────────────────────┬─────────────────────┬─────────────────────┬─────────────────────────┬─────────────────────┐
+    │ add_weeks           ┆ add_days            ┆ add_seconds         ┆ add_millis              ┆ add_hours           │
+    │ ---                 ┆ ---                 ┆ ---                 ┆ ---                     ┆ ---                 │
+    │ datetime[μs]        ┆ datetime[μs]        ┆ datetime[μs]        ┆ datetime[μs]            ┆ datetime[μs]        │
+    ╞═════════════════════╪═════════════════════╪═════════════════════╪═════════════════════════╪═════════════════════╡
+    │ 2022-01-08 00:00:00 ┆ 2022-01-02 00:00:00 ┆ 2022-01-01 00:00:01 ┆ 2022-01-01 00:00:00.001 ┆ 2022-01-01 01:00:00 │
+    │ 2022-01-16 00:00:00 ┆ 2022-01-04 00:00:00 ┆ 2022-01-02 00:00:02 ┆ 2022-01-02 00:00:00.002 ┆ 2022-01-02 02:00:00 │
+    └─────────────────────┴─────────────────────┴─────────────────────┴─────────────────────────┴─────────────────────┘
 
     """  # noqa: W505
     if hours is not None:
@@ -2976,7 +2989,7 @@ def struct(
 
     expr = wrap_expr(_as_struct(exprs))
     if schema:
-        expr = expr.cast(Struct(schema))
+        expr = expr.cast(Struct(schema), strict=False)
 
     if eager:
         return select(expr).to_series()

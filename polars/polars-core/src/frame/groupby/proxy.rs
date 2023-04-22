@@ -2,6 +2,7 @@ use std::mem::ManuallyDrop;
 use std::ops::Deref;
 
 use polars_arrow::utils::CustomIterTools;
+use polars_utils::sync::SyncPtr;
 use rayon::iter::plumbing::UnindexedConsumer;
 use rayon::prelude::*;
 
@@ -44,52 +45,54 @@ impl From<Vec<IdxItem>> for GroupsIdx {
     }
 }
 
-impl From<Vec<Vec<IdxItem>>> for GroupsIdx {
-    fn from(v: Vec<Vec<IdxItem>>) -> Self {
-        // single threaded flatten: 10% faster than `iter().flatten().collect()
-        // this is the multi-threaded impl of that
-        let cap = v.iter().map(|v| v.len()).sum::<usize>();
+impl From<Vec<(Vec<IdxSize>, Vec<Vec<IdxSize>>)>> for GroupsIdx {
+    fn from(v: Vec<(Vec<IdxSize>, Vec<Vec<IdxSize>>)>) -> Self {
+        // we have got the hash tables so we can determine the final
+        let cap = v.iter().map(|v| v.0.len()).sum::<usize>();
         let offsets = v
             .iter()
             .scan(0_usize, |acc, v| {
                 let out = *acc;
-                *acc += v.len();
+                *acc += v.0.len();
                 Some(out)
             })
             .collect::<Vec<_>>();
-        let mut first = Vec::with_capacity(cap);
-        let first_ptr = first.as_ptr() as usize;
-        let mut all = Vec::with_capacity(cap);
-        let all_ptr = all.as_ptr() as usize;
+        let mut global_first = Vec::with_capacity(cap);
+        let global_first_ptr = unsafe { SyncPtr::new(global_first.as_mut_ptr()) };
+        let mut global_all = Vec::with_capacity(cap);
+        let global_all_ptr = unsafe { SyncPtr::new(global_all.as_mut_ptr()) };
 
         POOL.install(|| {
-            v.into_par_iter()
-                .zip(offsets)
-                .for_each(|(mut inner, offset)| {
-                    unsafe {
-                        let first = (first_ptr as *const IdxSize as *mut IdxSize).add(offset);
-                        let all = (all_ptr as *const Vec<IdxSize> as *mut Vec<IdxSize>).add(offset);
+            v.into_par_iter().zip(offsets).for_each(
+                |((local_first_vals, local_all_vals), offset)| unsafe {
+                    let global_first: *mut IdxSize = global_first_ptr.get();
+                    let global_all: *mut Vec<IdxSize> = global_all_ptr.get();
+                    let global_first = global_first.add(offset);
+                    let global_all = global_all.add(offset);
 
-                        let inner_ptr = inner.as_mut_ptr();
-                        for i in 0..inner.len() {
-                            let (first_val, vals) = std::ptr::read(inner_ptr.add(i));
-                            std::ptr::write(first.add(i), first_val);
-                            std::ptr::write(all.add(i), vals);
-                        }
-                        // set len to 0 so that the contents will not get dropped
-                        // they are moved to `first` and `all`
-                        inner.set_len(0);
-                    }
-                });
+                    std::ptr::copy_nonoverlapping(
+                        local_first_vals.as_ptr(),
+                        global_first,
+                        local_first_vals.len(),
+                    );
+                    std::ptr::copy_nonoverlapping(
+                        local_all_vals.as_ptr(),
+                        global_all,
+                        local_all_vals.len(),
+                    );
+                    // ensure the vecs don't get dropped
+                    std::mem::forget(local_all_vals);
+                },
+            );
         });
         unsafe {
-            all.set_len(cap);
-            first.set_len(cap);
+            global_all.set_len(cap);
+            global_first.set_len(cap);
         }
         GroupsIdx {
             sorted: false,
-            first,
-            all,
+            first: global_first,
+            all: global_all,
         }
     }
 }

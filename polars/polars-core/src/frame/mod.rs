@@ -496,13 +496,13 @@ impl DataFrame {
     ///
     /// let f1: Field = Field::new("Thing", DataType::Utf8);
     /// let f2: Field = Field::new("Diameter (m)", DataType::Float64);
-    /// let sc: Schema = Schema::from(vec![f1, f2].into_iter());
+    /// let sc: Schema = Schema::from_iter(vec![f1, f2]);
     ///
     /// assert_eq!(df.schema(), sc);
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn schema(&self) -> Schema {
-        Schema::from(self.iter().map(|s| s.field().into_owned()))
+        self.iter().map(|s| s.field().into_owned()).collect()
     }
 
     /// Get a reference to the `DataFrame` columns.
@@ -3161,7 +3161,7 @@ impl DataFrame {
 
     #[cfg(feature = "chunked_ids")]
     #[doc(hidden)]
-    //// Take elements by a slice of [`ChunkId`]s.
+    /// Take elements by a slice of [`ChunkId`]s.
     /// # Safety
     /// Does not do any bound checks.
     /// `sorted` indicates if the chunks are sorted.
@@ -3172,7 +3172,7 @@ impl DataFrame {
         DataFrame::new_no_checks(cols)
     }
     #[cfg(feature = "chunked_ids")]
-    //// Take elements by a slice of optional [`ChunkId`]s.
+    /// Take elements by a slice of optional [`ChunkId`]s.
     /// # Safety
     /// Does not do any bound checks.
     #[doc(hidden)]

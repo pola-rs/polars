@@ -84,3 +84,9 @@ def test_pickle_lazyframe() -> None:
 
     s = pickle.dumps(q)
     assert_frame_equal(pickle.loads(s).collect(), pl.DataFrame({"a": [1, 3, 4]}))
+
+
+def test_deser_empty_list() -> None:
+    s = pickle.loads(pickle.dumps(pl.Series([[[42.0]], []])))
+    assert s.dtype == pl.List(pl.List(pl.Float64))
+    assert s.to_list() == [[[42.0]], []]

@@ -21,16 +21,16 @@ check:
 
 clippy:
 	cargo clippy --all-features \
-	    -p polars-core \
-	    -p polars-io \
-	    -p polars-lazy \
-	    -p polars-arrow \
-	    -p polars-utils \
-	    -p polars-ops \
-	    -p polars-error \
-	    -p polars-row \
-	    -p polars-time \
-			-p polars-sql
+		-p polars-core \
+		-p polars-io \
+		-p polars-lazy \
+		-p polars-arrow \
+		-p polars-utils \
+		-p polars-ops \
+		-p polars-error \
+		-p polars-row \
+		-p polars-time \
+		-p polars-sql
 
 clippy-default:
 	cargo clippy
@@ -76,7 +76,7 @@ pre-commit: fmt clippy clippy-default  ## Run autoformatting and linting
 
 
 check-features:
-	cargo hack check --each-feature --no-dev-deps --features private
+	cargo hack check --each-feature --no-dev-deps --features private 
 
 bench-save:
 	cargo bench --features=random --bench $(BENCH) -- --save-baseline $(SAVE)

@@ -2,7 +2,6 @@
 use std::convert::TryFrom;
 
 use arrow::compute::cast::CastOptions;
-use polars_arrow::compute::cast;
 
 #[cfg(feature = "dtype-categorical")]
 use crate::chunked_array::categorical::CategoricalChunkedBuilder;
@@ -250,16 +249,6 @@ impl ChunkCast for BooleanChunked {
     }
 }
 
-fn cast_inner_list_type(list: &ListArray<i64>, child_type: &DataType) -> PolarsResult<ArrayRef> {
-    let child = list.values();
-    let offsets = list.offsets();
-    let child = cast::cast(child.as_ref(), &child_type.to_arrow())?;
-
-    let data_type = ListArray::<i64>::default_datatype(child_type.to_arrow());
-    let list = ListArray::new(data_type, offsets.clone(), child, list.validity().cloned());
-    Ok(Box::new(list) as ArrayRef)
-}
-
 /// We cannot cast anything to or from List/LargeList
 /// So this implementation casts the inner type
 impl ChunkCast for ListChunked {
@@ -267,47 +256,21 @@ impl ChunkCast for ListChunked {
         use DataType::*;
         match data_type {
             List(child_type) => {
-                let phys_child = child_type.to_physical();
-
                 match (self.inner_dtype(), &**child_type) {
                     #[cfg(feature = "dtype-categorical")]
-                    (Utf8, Categorical(_)) => {
-                        let (arr, child_type) = cast_list(self, child_type)?;
-                        Ok(unsafe {
-                            Series::from_chunks_and_dtype_unchecked(
-                                self.name(),
-                                vec![arr],
-                                &List(Box::new(child_type)),
-                            )
-                        })
-                    }
-                    #[cfg(feature = "dtype-categorical")]
-                    (dt, Categorical(None)) => {
+                    (dt, Categorical(None)) if !matches!(dt, Utf8) => {
                         polars_bail!(ComputeError: "cannot cast list inner type: '{:?}' to Categorical", dt)
                     }
-                    _ if phys_child.is_primitive() => {
-                        let mut ca = if child_type.to_physical() != self.inner_dtype().to_physical()
-                        {
-                            let chunks = self
-                                .downcast_iter()
-                                .map(|list| cast_inner_list_type(list, &phys_child))
-                                .collect::<PolarsResult<_>>()?;
-                            unsafe { ListChunked::from_chunks(self.name(), chunks) }
-                        } else {
-                            self.clone()
-                        };
-                        ca.set_inner_dtype(*child_type.clone());
-                        Ok(ca.into_series())
-                    }
                     _ => {
-                        let arr = cast_list(self, child_type)?.0;
+                        // ensure the inner logical type bubbles up
+                        let (arr, child_type) = cast_list(self, child_type)?;
                         // Safety: we just casted so the dtype matches.
                         // we must take this path to correct for physical types.
                         unsafe {
                             Ok(Series::from_chunks_and_dtype_unchecked(
                                 self.name(),
                                 vec![arr],
-                                data_type,
+                                &List(Box::new(child_type)),
                             ))
                         }
                     }
@@ -327,7 +290,10 @@ impl ChunkCast for ListChunked {
 fn cast_list(ca: &ListChunked, child_type: &DataType) -> PolarsResult<(ArrayRef, DataType)> {
     let ca = ca.rechunk();
     let arr = ca.downcast_iter().next().unwrap();
-    let s = Series::try_from(("", arr.values().clone())).unwrap();
+    // safety: inner dtype is passed correctly
+    let s = unsafe {
+        Series::from_chunks_and_dtype_unchecked("", vec![arr.values().clone()], &ca.inner_dtype())
+    };
     let new_inner = s.cast(child_type)?;
 
     let inner_dtype = new_inner.dtype().clone();

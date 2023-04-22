@@ -65,6 +65,7 @@ impl DataFrame {
             .collect::<Vec<_>>();
 
         let sorted = if k >= self.height() {
+            rows.sort_unstable();
             &rows
         } else {
             let (lower, _el, _upper) = rows.select_nth_unstable(k);

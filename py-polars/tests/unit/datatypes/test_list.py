@@ -247,23 +247,6 @@ def test_list_diagonal_concat() -> None:
     }
 
 
-def test_is_in_empty_list_4559() -> None:
-    assert pl.Series(["a"]).is_in([]).to_list() == [False]
-
-
-def test_is_in_empty_list_4639() -> None:
-    df = pl.DataFrame({"a": [1, None]})
-    empty_list: list[int] = []
-
-    assert df.with_columns([pl.col("a").is_in(empty_list).alias("a_in_list")]).to_dict(
-        False
-    ) == {"a": [1, None], "a_in_list": [False, False]}
-    df = pl.DataFrame()
-    assert df.with_columns(
-        [pl.lit(None).cast(pl.Int64).is_in(empty_list).alias("in_empty_list")]
-    ).to_dict(False) == {"in_empty_list": [False]}
-
-
 def test_inner_type_categorical_on_rechunk() -> None:
     df = pl.DataFrame({"cats": ["foo", "bar"]}).select(
         pl.col(pl.Utf8).cast(pl.Categorical).implode()
@@ -471,3 +454,69 @@ def test_null_list_construction_and_materialization() -> None:
     s = pl.Series([None, []])
     assert s.dtype == pl.List(pl.Null)
     assert s.to_list() == [None, []]
+
+
+def test_logical_type_struct_agg_list() -> None:
+    df = pl.DataFrame(
+        {"cats": ["Value1", "Value2", "Value1"]},
+        schema_overrides={"cats": pl.Categorical},
+    )
+    out = df.groupby(1).agg(pl.struct("cats"))
+    assert out.dtypes == [
+        pl.Int32,
+        pl.List(pl.Struct([pl.Field("cats", pl.Categorical)])),
+    ]
+    assert out["cats"].to_list() == [
+        [{"cats": "Value1"}, {"cats": "Value2"}, {"cats": "Value1"}]
+    ]
+
+
+def test_logical_parallel_list_collect() -> None:
+    # this triggers the anonymous builder in par collect
+    out = (
+        pl.DataFrame(
+            {
+                "Group": ["GroupA", "GroupA", "GroupA"],
+                "Values": ["Value1", "Value2", "Value1"],
+            },
+            schema_overrides={"Values": pl.Categorical},
+        )
+        .groupby("Group")
+        .agg(pl.col("Values").value_counts(sort=True))
+        .explode("Values")
+        .unnest("Values")
+    )
+    assert out.dtypes == [pl.Utf8, pl.Categorical, pl.UInt32]
+    assert out.to_dict(False) == {
+        "Group": ["GroupA", "GroupA"],
+        "Values": ["Value1", "Value2"],
+        "counts": [2, 1],
+    }
+
+
+def test_list_recursive_categorical_cast() -> None:
+    # go 3 deep, just to show off
+    dtype = pl.List(pl.List(pl.List(pl.Categorical)))
+    values = [[[["x"], ["y"]]], [[["x"]]]]
+    s = pl.Series(values).cast(dtype)
+    assert s.dtype == dtype
+    assert s.to_list() == values
+
+
+def test_list_new_from_index_logical() -> None:
+    s = (
+        pl.select(pl.struct(pl.Series("a", [date(2001, 1, 1)])).implode())
+        .to_series()
+        .new_from_index(0, 1)
+    )
+    assert s.dtype == pl.List(pl.Struct([pl.Field("a", pl.Date)]))
+    assert s.to_list() == [[{"a": date(2001, 1, 1)}]]
+
+
+def test_list_recursive_time_unit_cast() -> None:
+    values = [[datetime(2000, 1, 1, 0, 0, 0)]]
+    dtype = pl.List(pl.Datetime("ns"))
+    s = pl.Series(values)
+    out = s.cast(dtype)
+    assert out.dtype == dtype
+    assert out.to_list() == values

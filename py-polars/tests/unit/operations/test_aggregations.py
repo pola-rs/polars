@@ -202,3 +202,20 @@ def test_string_par_materialize_8207() -> None:
         "a": ["a", "b", "c", "d", "e"],
         "b": ["P", "L", "T", "R", "a long string"],
     }
+
+
+def test_online_variance() -> None:
+    df = pl.DataFrame(
+        {
+            "id": [1] * 5,
+            "no_nulls": [1, 2, 3, 4, 5],
+            "nulls": [1, None, 3, None, 5],
+        }
+    )
+
+    assert_frame_equal(
+        df.groupby("id")
+        .agg(pl.all().exclude("id").std())
+        .select(["no_nulls", "nulls"]),
+        df.select(pl.all().exclude("id").std()),
+    )

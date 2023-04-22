@@ -78,7 +78,7 @@ fn replace_nth(expr: &mut Expr, schema: &Schema) {
                     *e = Expr::Column(Arc::from(name));
                 }
                 Some(idx) => {
-                    let (name, _dtype) = schema.get_index(idx).unwrap();
+                    let (name, _dtype) = schema.get_at_index(idx).unwrap();
                     *e = Expr::Column(Arc::from(&**name))
                 }
             }

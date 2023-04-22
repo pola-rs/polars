@@ -163,10 +163,12 @@ fn splitted_to_opt_vec<T>(splitted: &[ChunkedArray<T>]) -> Vec<Vec<Option<T::Nat
 where
     T: PolarsNumericType,
 {
-    splitted
-        .iter()
-        .map(|ca| ca.into_iter().collect_trusted::<Vec<_>>())
-        .collect()
+    POOL.install(|| {
+        splitted
+            .par_iter()
+            .map(|ca| ca.into_iter().collect_trusted::<Vec<_>>())
+            .collect()
+    })
 }
 
 // returns the join tuples and whether or not the lhs tuples are sorted

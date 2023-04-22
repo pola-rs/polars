@@ -1,7 +1,12 @@
 //! kernels that combine take and aggregations.
-use arrow::array::{PrimitiveArray, Utf8Array};
+mod boolean;
+mod var;
+
+use arrow::array::{Array, BooleanArray, PrimitiveArray, Utf8Array};
 use arrow::types::NativeType;
+pub use boolean::*;
 use num_traits::{NumCast, ToPrimitive};
+pub use var::*;
 
 use crate::array::PolarsArray;
 use crate::index::IdxSize;
@@ -48,7 +53,7 @@ pub unsafe fn take_agg_primitive_iter_unchecked<
     len: IdxSize,
 ) -> Option<T> {
     let array_values = arr.values().as_slice();
-    let validity = arr.validity().expect("null buffer should be there");
+    let validity = arr.validity().unwrap();
     let mut null_count = 0 as IdxSize;
 
     let out = indices.into_iter().fold(init, |acc, idx| {

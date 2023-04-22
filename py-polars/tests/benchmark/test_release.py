@@ -162,3 +162,26 @@ def test_max_statistic_parquet_writer() -> None:
     result = pl.scan_parquet(f).filter(pl.col("arange") > n - 3).collect()
     expected = pl.DataFrame({"arange": [149998, 149999]})
     assert_frame_equal(result, expected)
+
+
+def test_boolean_min_max_agg() -> None:
+    np.random.seed(0)
+    idx = np.random.randint(0, 500, 1000)
+    c = np.random.randint(0, 500, 1000) > 250
+
+    df = pl.DataFrame({"idx": idx, "c": c})
+    aggs = [pl.col("c").min().alias("c_min"), pl.col("c").max().alias("c_max")]
+    assert df.groupby("idx").agg(aggs).sum().to_dict(False) == {
+        "idx": [107583],
+        "c_min": [120],
+        "c_max": [321],
+    }
+
+    nulls = np.random.randint(0, 500, 1000) < 100
+    assert df.with_columns(
+        c=pl.when(pl.lit(nulls)).then(None).otherwise(pl.col("c"))
+    ).groupby("idx").agg(aggs).sum().to_dict(False) == {
+        "idx": [107583],
+        "c_min": [133],
+        "c_max": [276],
+    }

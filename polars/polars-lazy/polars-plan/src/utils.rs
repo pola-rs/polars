@@ -71,7 +71,7 @@ impl PushNode for [Option<Node>; 1] {
 
 pub(crate) fn is_scan(plan: &ALogicalPlan) -> bool {
     match plan {
-        #[cfg(feature = "csv-file")]
+        #[cfg(feature = "csv")]
         ALogicalPlan::CsvScan { .. } => true,
         ALogicalPlan::DataFrameScan { .. } => true,
         #[cfg(feature = "parquet")]
@@ -314,10 +314,9 @@ pub fn expressions_to_schema(
     ctxt: Context,
 ) -> PolarsResult<Schema> {
     let mut expr_arena = Arena::with_capacity(4 * expr.len());
-    let fields = expr
-        .iter()
-        .map(|expr| expr.to_field_amortized(schema, ctxt, &mut expr_arena));
-    Schema::try_from_fallible(fields)
+    expr.iter()
+        .map(|expr| expr.to_field_amortized(schema, ctxt, &mut expr_arena))
+        .collect()
 }
 
 pub fn aexpr_to_leaf_names_iter(
@@ -357,10 +356,9 @@ pub(crate) fn aexprs_to_schema(
     ctxt: Context,
     arena: &Arena<AExpr>,
 ) -> Schema {
-    let fields = expr
-        .iter()
-        .map(|expr| arena.get(*expr).to_field(schema, ctxt, arena).unwrap());
-    Schema::from(fields)
+    expr.iter()
+        .map(|expr| arena.get(*expr).to_field(schema, ctxt, arena).unwrap())
+        .collect()
 }
 
 pub fn combine_predicates_expr<I>(iter: I) -> Expr
