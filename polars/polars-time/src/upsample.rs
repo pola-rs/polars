@@ -132,7 +132,9 @@ fn upsample_impl(
         })?;
 
         for column in &by {
-            let filled_group = df.column(column)?.fill_null(FillNullStrategy::Forward(None))?;
+            let filled_group = df
+                .column(column)?
+                .fill_null(FillNullStrategy::Forward(None))?;
             df.with_column(filled_group)?;
         }
 
