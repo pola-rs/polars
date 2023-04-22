@@ -79,7 +79,7 @@ def set_profile(profile: ParametricProfileNames | int) -> None:
     if profile_name.replace("_", "").isdigit():
         profile_name = str(int(profile_name))
 
-    if not profile_name.isdigit() and sys.version_info >= (3, 8):
+    elif sys.version_info >= (3, 8):
         from typing import get_args
 
         valid_profile_names = get_args(ParametricProfileNames)
