@@ -1,8 +1,13 @@
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
+use chrono::{NaiveDate, NaiveTime, NaiveDateTime, Datelike, Timelike};
 #[cfg(feature = "timezones")]
 use polars_core::utils::arrow::temporal_conversions::parse_offset;
-use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
+use polars_core::utils::arrow::temporal_conversions::{SECONDS_IN_DAY,
+    timestamp_ms_to_datetime,
+    timestamp_us_to_datetime,
+    timestamp_ns_to_datetime,
+};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -214,34 +219,41 @@ pub(super) fn month_end(s: &Series) -> PolarsResult<Series> {
     // let's take the day, offset by that to get month start
     // and then offset again?
     // yeah. get something working first, and then optimise!
+    let every_month = Duration::parse("1mo");
     let every_day = Duration::parse("-1d");
-    let offset = Duration::parse("0d");
     Ok(match s.dtype() {
         DataType::Datetime(tu, tz) => {
-            let day = s.datetime().unwrap().day();
+            let timestamp_to_datetime = match tu {
+                TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
+                TimeUnit::Microseconds => timestamp_us_to_datetime,
+                TimeUnit::Milliseconds => timestamp_ms_to_datetime,
+            };
+            let datetime_to_timestamp = match tu {
+                TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
+                TimeUnit::Microseconds => datetime_to_timestamp_us,
+                TimeUnit::Milliseconds => datetime_to_timestamp_ms,
+            };
+            let adder = match tu {
+                TimeUnit::Nanoseconds => Duration::add_ns,
+                TimeUnit::Microseconds => Duration::add_us,
+                TimeUnit::Milliseconds => Duration::add_ms,
+            };
             let res = s
             .datetime()
             .unwrap();
             let res = res.0.try_apply(
-                    |v|
-                    // copy the truncate by months bit into here?
-                    Duration::add_us(&every_day, v, NO_TIMEZONE))?;
-                // .try_apply(
-                //     |v|
-                //     Duration::add_us(&every_day, v, NO_TIMEZONE))?
-                // .into_datetime(*tu, tz.clone());
-            res.into_series()
+                    |t|{
+                    let ts = timestamp_to_datetime(t);
+                    let date = NaiveDate::from_ymd_opt(ts.year(), ts.month(), 1).unwrap();
+                    let time = NaiveTime::from_hms_nano_opt(ts.hour(), ts.minute(), ts.second(), ts.timestamp_subsec_nanos()).unwrap();
+                    let ndt = NaiveDateTime::new(date, time);
+                    let t = datetime_to_timestamp(ndt);
+                    let t= adder(&every_month, t, NO_TIMEZONE)?;
+                    let t= adder(&every_day, t, NO_TIMEZONE);
+                    t
+                    })?;
+            res.into_datetime(*tu, tz.clone()).into_series()
         }
-        // DataType::Date => {
-        //     let res = s
-        //     .date()
-        //     .unwrap()
-        //     .truncate(every_month, offset, NO_TIMEZONE)?;
-        //     let res = res.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
-        //         .unwrap();
-        //     let foo = res.0.try_apply(|v| Duration::add_ms(&offset_month, v, NO_TIMEZONE));
-        //     s.clone()
-        // }
         dt => polars_bail!(opq = round, got = dt, expected = "date/datetime"),
     })
 }

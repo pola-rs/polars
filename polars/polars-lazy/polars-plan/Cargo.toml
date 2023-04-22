@@ -11,7 +11,7 @@ description = "Lazy query engine for the Polars DataFrame library"
 [dependencies]
 ahash.workspace = true
 arrow.workspace = true
-chrono = { version = "0.4", optional = true }
+chrono = { version = "0.4"}
 chrono-tz = { version = "0.8", optional = true }
 futures = { version = "0.3.25", optional = true }
 once_cell.workspace = true
@@ -58,7 +58,7 @@ dtype-time = ["polars-core/dtype-time", "polars-time/dtype-time"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-struct = ["polars-core/dtype-struct"]
 object = ["polars-core/object"]
-date_offset = ["polars-time", "chrono"]
+date_offset = ["polars-time"]
 list_take = ["polars-ops/list_take"]
 list_count = ["polars-ops/list_count"]
 trigonometry = []
