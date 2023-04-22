@@ -97,8 +97,16 @@ impl<'a> AnonymousBuilder<'a> {
         let offsets = unsafe { Offsets::new_unchecked(self.offsets) };
         let (inner_dtype, values) = if self.arrays.is_empty() {
             let len = *offsets.last() as usize;
-            let values = NullArray::new(DataType::Null, len).boxed();
-            (DataType::Null, values)
+            match inner_dtype {
+                None => {
+                    let values = NullArray::new(DataType::Null, len).boxed();
+                    (DataType::Null, values)
+                }
+                Some(inner_dtype) => {
+                    let values = new_null_array(inner_dtype.clone(), len);
+                    (inner_dtype.clone(), values)
+                }
+            }
         } else {
             let inner_dtype = inner_dtype.unwrap_or_else(|| self.arrays[0].data_type());
 
