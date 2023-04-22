@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import functools
 import sys
 from datetime import datetime, time, timedelta, timezone
 from decimal import Context
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Callable, Sequence, TypeVar, overload
 
-from polars.datatypes import Date, Datetime
 from polars.dependencies import _ZONEINFO_AVAILABLE, zoneinfo
 
 if TYPE_CHECKING:
@@ -14,7 +13,7 @@ if TYPE_CHECKING:
     from datetime import date, tzinfo
     from decimal import Decimal
 
-    from polars.type_aliases import PolarsDataType, TimeUnit
+    from polars.type_aliases import TimeUnit
 
     if sys.version_info >= (3, 10):
         from typing import ParamSpec
@@ -35,7 +34,6 @@ if TYPE_CHECKING:
         pass
 
 else:
-    from functools import lru_cache
 
     @lru_cache(None)
     def get_zoneinfo(key: str) -> ZoneInfo:
@@ -162,49 +160,45 @@ EPOCH_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
 _fromtimestamp = datetime.fromtimestamp
 
 
+@lru_cache(256)
+def _to_python_date(value: int | float) -> date:
+    """Convert polars int64 timestamp to Python date."""
+    return (EPOCH_UTC + timedelta(seconds=value * 86400)).date()
+
+
 def _to_python_datetime(
     value: int | float,
-    dtype: PolarsDataType,
     time_unit: TimeUnit | None = "ns",
     time_zone: str | None = None,
-) -> date | datetime:
-    """Convert polars int64 timestamp to Python date/datetime."""
-    if dtype == Date:
-        # important to create from utc; not doing this leads to
-        # inconsistencies dependent on the timezone you are in.
-        return (EPOCH_UTC + timedelta(seconds=value * 86400)).date()
-
-    elif dtype == Datetime:
-        if not time_zone:
-            if time_unit == "ns":
-                return EPOCH + timedelta(microseconds=value // 1000)
-            elif time_unit == "us":
-                return EPOCH + timedelta(microseconds=value)
-            elif time_unit == "ms":
-                return EPOCH + timedelta(milliseconds=value)
-            else:
-                raise ValueError(
-                    f"time_unit must be one of {{'ns','us','ms'}}, got {time_unit}"
-                )
-
-        elif _ZONEINFO_AVAILABLE:
-            if time_unit == "ns":
-                dt = EPOCH_UTC + timedelta(microseconds=value // 1000)
-            elif time_unit == "us":
-                dt = EPOCH_UTC + timedelta(microseconds=value)
-            elif time_unit == "ms":
-                dt = EPOCH_UTC + timedelta(milliseconds=value)
-            else:
-                raise ValueError(
-                    f"time_unit must be one of {{'ns','us','ms'}}, got {time_unit}"
-                )
-            return _localize(dt, time_zone)
+) -> datetime:
+    """Convert polars int64 timestamp to Python datetime."""
+    if not time_zone:
+        if time_unit == "us":
+            return EPOCH + timedelta(microseconds=value)
+        elif time_unit == "ns":
+            return EPOCH + timedelta(microseconds=value // 1000)
+        elif time_unit == "ms":
+            return EPOCH + timedelta(milliseconds=value)
         else:
-            raise ImportError(
-                "Install polars[timezone] to handle datetimes with timezones."
+            raise ValueError(
+                f"time_unit must be one of {{'ns','us','ms'}}, got {time_unit}"
             )
+    elif _ZONEINFO_AVAILABLE:
+        if time_unit == "us":
+            dt = EPOCH_UTC + timedelta(microseconds=value)
+        elif time_unit == "ns":
+            dt = EPOCH_UTC + timedelta(microseconds=value // 1000)
+        elif time_unit == "ms":
+            dt = EPOCH_UTC + timedelta(milliseconds=value)
+        else:
+            raise ValueError(
+                f"time_unit must be one of {{'ns','us','ms'}}, got {time_unit}"
+            )
+        return _localize(dt, time_zone)
     else:
-        raise NotImplementedError  # pragma: no cover
+        raise ImportError(
+            "Install polars[timezone] to handle datetimes with timezones."
+        )
 
 
 def _localize(dt: datetime, time_zone: str) -> datetime:
@@ -237,7 +231,7 @@ def _datetime_for_anyvalue_windows(dt: datetime) -> tuple[float, int]:
 
 # cache here as we have a single tz per column
 # and this function will be called on every conversion
-@functools.lru_cache(16)
+@lru_cache(16)
 def _parse_fixed_tz_offset(offset: str) -> tzinfo:
     try:
         # use fromisoformat to parse the offset
@@ -258,7 +252,7 @@ def _to_python_decimal(
     return _create_decimal_with_prec(prec)((sign, digits, scale))
 
 
-@functools.lru_cache(None)
+@lru_cache(None)
 def _create_decimal_with_prec(
     precision: int,
 ) -> Callable[[tuple[int, Sequence[int], int]], Decimal]:
