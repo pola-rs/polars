@@ -1,22 +1,22 @@
 use arrow::array::Array;
-use num_traits::ToPrimitive;
+use num_traits::FromPrimitive;
+use polars_arrow::bit_util::round_upto_multiple_of_64;
 use polars_utils::slice::GetSaferUnchecked;
 use polars_utils::sync::SyncPtr;
-#[cfg(all(feature = "dtype-categorical", feature = "performant"))]
-use polars_utils::unwrap::UnwrapUncheckedRelease;
 use polars_utils::IdxSize;
 use rayon::prelude::*;
 
+#[cfg(feature = "dtype-categorical")]
+use crate::config::verbose;
 use crate::datatypes::*;
-use crate::hashing::{this_partition, AsU64};
-use crate::prelude::{ChunkedArray, GroupsIdx, GroupsProxy};
-use crate::utils::_set_partition_size;
+use crate::hashing::AsU64;
+use crate::prelude::*;
 use crate::POOL;
 
 impl<T> ChunkedArray<T>
 where
     T: PolarsIntegerType,
-    T::Native: AsU64,
+    T::Native: AsU64 + FromPrimitive,
 {
     // Use the indexes as perfect groups
     pub fn group_tuples_perfect(
@@ -25,71 +25,151 @@ where
         multithreaded: bool,
         group_capacity: usize,
     ) -> GroupsProxy {
-        let len = max + 1;
-        let mut groups = Vec::with_capacity(len);
-        let mut first = vec![0 as IdxSize; len];
-        groups.resize_with(len, || Vec::with_capacity(group_capacity));
+        let len = if self.null_count() > 0 {
+            // we add one to store the null sentinel group
+            max + 2
+        } else {
+            max + 1
+        };
 
-        let groups_ptr = unsafe { SyncPtr::new(groups.as_mut_ptr()) };
-        let first_ptr = unsafe { SyncPtr::new(first.as_mut_ptr()) };
+        // the latest index will be used for the null sentinel
+        let null_idx = len.saturating_sub(1);
+        let n_threads = POOL.current_num_threads();
 
-        if multithreaded {
-            let n_parts = _set_partition_size();
+        let chunk_size = len / n_threads;
+
+        let (groups, first) = if multithreaded && chunk_size > 1 {
+            let mut groups: Vec<Vec<IdxSize>> = unsafe { aligned_vec(len) };
+            groups.resize_with(len, || Vec::with_capacity(group_capacity));
+            let mut first: Vec<IdxSize> = unsafe { aligned_vec(len) };
+
+            // ensure we keep aligned to cache lines
+            let chunk_size = round_upto_multiple_of_64(chunk_size);
+
+            let mut cache_line_offsets = Vec::with_capacity(n_threads + 1);
+            cache_line_offsets.push(0);
+            let mut current_offset = chunk_size;
+
+            while current_offset < len {
+                cache_line_offsets.push(current_offset);
+                current_offset += chunk_size;
+            }
+
+            let groups_ptr = unsafe { SyncPtr::new(groups.as_mut_ptr()) };
+            let first_ptr = unsafe { SyncPtr::new(first.as_mut_ptr()) };
+
             POOL.install(|| {
-                (0..n_parts).into_par_iter().for_each(|thread_no| {
-                    let mut row_nr = 0 as IdxSize;
+                (0..cache_line_offsets.len() - 1)
+                    .into_par_iter()
+                    .for_each(|thread_no| {
+                        let mut row_nr = 0 as IdxSize;
+                        let start = cache_line_offsets[thread_no];
+                        let start = T::Native::from_usize(start).unwrap();
+                        let end = cache_line_offsets[thread_no + 1];
+                        let end = T::Native::from_usize(end).unwrap();
 
-                    // safety: we don't alias
-                    let groups =
-                        unsafe { std::slice::from_raw_parts_mut(groups_ptr.clone().get(), len) };
-                    let first = unsafe { std::slice::from_raw_parts_mut(first_ptr.get(), len) };
+                        // safety: we don't alias
+                        let groups = unsafe {
+                            std::slice::from_raw_parts_mut(groups_ptr.clone().get(), len)
+                        };
+                        let first = unsafe { std::slice::from_raw_parts_mut(first_ptr.get(), len) };
 
-                    for arr in self.downcast_iter() {
-                        assert_eq!(arr.null_count(), 0);
-                        let values = arr.values().as_slice();
+                        for arr in self.downcast_iter() {
+                            if arr.null_count() == 0 {
+                                for &cat in arr.values().as_slice() {
+                                    if cat >= start && cat < end {
+                                        let cat = cat.as_u64() as usize;
+                                        let buf = unsafe { groups.get_unchecked_release_mut(cat) };
+                                        buf.push(row_nr);
 
-                        for group_id in values.iter() {
-                            if this_partition(group_id.as_u64(), thread_no as u64, n_parts as u64) {
-                                let group_id = group_id.as_u64() as usize;
+                                        unsafe {
+                                            if buf.len() == 1 {
+                                                // safety: we just  pushed
+                                                let first_value = buf.get_unchecked(0);
+                                                *first.get_unchecked_release_mut(cat) = *first_value
+                                            }
+                                        }
+                                    }
+                                }
+                                row_nr += 1;
+                            } else {
+                                for opt_cat in arr.iter() {
+                                    if let Some(&cat) = opt_cat {
+                                        // cannot factor out due to bchk
+                                        if cat >= start && cat < end {
+                                            let cat = cat.as_u64() as usize;
+                                            let buf =
+                                                unsafe { groups.get_unchecked_release_mut(cat) };
+                                            buf.push(row_nr);
 
-                                let buf = unsafe { groups.get_unchecked_release_mut(group_id) };
-                                buf.push(row_nr);
+                                            unsafe {
+                                                if buf.len() == 1 {
+                                                    // safety: we just  pushed
+                                                    let first_value = buf.get_unchecked(0);
+                                                    *first.get_unchecked_release_mut(cat) =
+                                                        *first_value
+                                                }
+                                            }
+                                        }
+                                    }
+                                    // last thread handles null values
+                                    else if thread_no == n_threads - 1 {
+                                        let buf =
+                                            unsafe { groups.get_unchecked_release_mut(null_idx) };
+                                        buf.push(row_nr);
+                                        unsafe {
+                                            if buf.len() == 1 {
+                                                let first_value = buf.get_unchecked(0);
+                                                *first.get_unchecked_release_mut(null_idx) =
+                                                    *first_value
+                                            }
+                                        }
+                                    }
 
-                                // always write first/ branchless
-                                unsafe {
-                                    // safety: we just  pushed
-                                    let first_value = buf.get_unchecked(0);
-                                    *first.get_unchecked_release_mut(group_id) = *first_value
+                                    row_nr += 1;
                                 }
                             }
-
-                            row_nr += 1;
                         }
-                    }
-                });
-            })
+                    });
+            });
+            unsafe {
+                groups.set_len(len);
+                first.set_len(len);
+            }
+            (groups, first)
         } else {
+            let mut groups = Vec::with_capacity(len);
+            let mut first = vec![IdxSize::MAX; len];
+            groups.resize_with(len, || Vec::with_capacity(group_capacity));
+
             let mut row_nr = 0 as IdxSize;
             for arr in self.downcast_iter() {
-                assert_eq!(arr.null_count(), 0);
-                let values = arr.values().as_slice();
+                for opt_cat in arr.iter() {
+                    if let Some(cat) = opt_cat {
+                        let group_id = cat.as_u64() as usize;
+                        let buf = unsafe { groups.get_unchecked_release_mut(group_id) };
+                        buf.push(row_nr);
 
-                for group_id in values.iter() {
-                    let group_id = group_id.to_usize().unwrap();
-                    let buf = unsafe { groups.get_unchecked_release_mut(group_id) };
-                    buf.push(row_nr);
-
-                    // always write first/ branchless
-                    unsafe {
-                        // safety: we just  pushed
-                        let first_value = buf.get_unchecked(0);
-                        *first.get_unchecked_release_mut(group_id) = *first_value
+                        // always write first/ branchless
+                        unsafe {
+                            // safety: we just  pushed
+                            let first_value = buf.get_unchecked(0);
+                            *first.get_unchecked_release_mut(group_id) = *first_value
+                        }
+                    } else {
+                        let buf = unsafe { groups.get_unchecked_release_mut(null_idx) };
+                        buf.push(row_nr);
+                        unsafe {
+                            let first_value = buf.get_unchecked(0);
+                            *first.get_unchecked_release_mut(null_idx) = *first_value
+                        }
                     }
 
                     row_nr += 1;
                 }
             }
-        }
+            (groups, first)
+        };
 
         GroupsProxy::Idx(GroupsIdx::new(first, groups, false))
     }
@@ -108,30 +188,26 @@ impl CategoricalChunked {
 
         let mut out = match &**rev_map {
             RevMapping::Local(cached) => {
-                let len = if cats.null_count() > 0 {
-                    // we add one to store the null sentinel group
-                    cached.len() + 1
-                } else {
-                    cached.len()
-                };
-                get_groups_categorical(cats, len, multithreaded, |cat| *cat, self.can_fast_unique())
-            }
-            RevMapping::Global(mapping, _cached, _) => {
-                let len = if cats.null_count() > 0 {
-                    // we add one to store the null sentinel group
-                    mapping.len() + 1
-                } else {
-                    mapping.len()
-                };
-                unsafe {
+                if self.can_fast_unique() {
+                    if verbose() {
+                        eprintln!("grouping categoricals, run perfect hash function");
+                    }
                     get_groups_categorical(
                         cats,
-                        len,
+                        cached.len(),
                         multithreaded,
-                        |cat| *mapping.get(cat).unwrap_unchecked_release(),
                         self.can_fast_unique(),
                     )
+                } else {
+                    self.logical().group_tuples(multithreaded, sorted).unwrap()
                 }
+            }
+            RevMapping::Global(_mapping, _cached, _) => {
+                // TODO! see if we can optimize this
+                // the problem is that the global categories are not guaranteed packed together
+                // so we might need to deref them first to local ones, but that might be more
+                // expensive than just hashing (benchmark first)
+                self.logical().group_tuples(multithreaded, sorted).unwrap()
             }
         };
         if sorted {
@@ -141,118 +217,40 @@ impl CategoricalChunked {
     }
 }
 
+#[repr(C, align(64))]
+struct AlignTo64([u8; 64]);
+
+/// There are no guarantees that the Vec<T> will remain aligned if you reallocate the data.
+/// This means that you cannot reallocate so you will need to know how big to allocate up front.
+unsafe fn aligned_vec<T>(n: usize) -> Vec<T> {
+    // Lazy math to ensure we always have enough.
+    let n_units = (n * std::mem::size_of::<T>() / std::mem::size_of::<AlignTo64>()) + 1;
+
+    let mut aligned: Vec<AlignTo64> = Vec::with_capacity(n_units);
+
+    let ptr = aligned.as_mut_ptr();
+    let len_units = aligned.len();
+    let cap_units = aligned.capacity();
+
+    std::mem::forget(aligned);
+
+    Vec::from_raw_parts(
+        ptr as *mut T,
+        len_units * std::mem::size_of::<AlignTo64>(),
+        cap_units * std::mem::size_of::<AlignTo64>(),
+    )
+}
+
 #[cfg(all(feature = "dtype-categorical", feature = "performant"))]
-fn get_groups_categorical<M>(
+fn get_groups_categorical(
     cats: &UInt32Chunked,
     len: usize,
     multithreaded: bool,
-    get_cat: M,
     can_fast_unique: bool,
-) -> GroupsProxy
-where
-    M: Fn(&u32) -> u32 + Send + Sync,
-{
-    // the latest index will be used for the null sentinel
-    let null_idx = len.saturating_sub(1);
-    let mut groups = Vec::with_capacity(len);
-    let mut first = vec![IdxSize::MAX; len];
-    groups.resize_with(len, Vec::new);
-
-    let groups_ptr = unsafe { SyncPtr::new(groups.as_mut_ptr()) };
-    let first_ptr = unsafe { SyncPtr::new(first.as_mut_ptr()) };
-
-    if multithreaded {
-        let n_parts = _set_partition_size();
-        POOL.install(|| {
-            (0..n_parts).into_par_iter().for_each(|thread_no| {
-                let mut row_nr = 0 as IdxSize;
-
-                // safety: we don't alias
-                let groups =
-                    unsafe { std::slice::from_raw_parts_mut(groups_ptr.clone().get(), len) };
-                let first = unsafe { std::slice::from_raw_parts_mut(first_ptr.get(), len) };
-
-                for arr in cats.downcast_iter() {
-                    if arr.null_count() == 0 {
-                        for cat in arr.values().as_slice() {
-                            // cannot factor out due to bchk
-                            if this_partition(*cat as u64, thread_no as u64, n_parts as u64) {
-                                let group_id = get_cat(cat) as usize;
-
-                                let buf = unsafe { groups.get_unchecked_release_mut(group_id) };
-                                buf.push(row_nr);
-
-                                // always write first/ branchless
-                                unsafe {
-                                    // safety: we just  pushed
-                                    let first_value = buf.get_unchecked(0);
-                                    *first.get_unchecked_release_mut(group_id) = *first_value
-                                }
-                            }
-                            row_nr += 1;
-                        }
-                    } else {
-                        for opt_cat in arr.iter() {
-                            if let Some(cat) = opt_cat {
-                                // cannot factor out due to bchk
-                                if this_partition(*cat as u64, thread_no as u64, n_parts as u64) {
-                                    let group_id = get_cat(cat) as usize;
-
-                                    let buf = unsafe { groups.get_unchecked_release_mut(group_id) };
-                                    buf.push(row_nr);
-
-                                    // always write first/ branchless
-                                    unsafe {
-                                        // safety: we just  pushed
-                                        let first_value = buf.get_unchecked(0);
-                                        *first.get_unchecked_release_mut(group_id) = *first_value
-                                    }
-                                }
-                            }
-                            // first thread handles null values
-                            else if thread_no == 0 {
-                                let buf = unsafe { groups.get_unchecked_release_mut(null_idx) };
-                                buf.push(row_nr);
-                                unsafe {
-                                    let first_value = buf.get_unchecked(0);
-                                    *first.get_unchecked_release_mut(null_idx) = *first_value
-                                }
-                            }
-
-                            row_nr += 1;
-                        }
-                    }
-                }
-            });
-        })
-    } else {
-        let mut row_nr = 0 as IdxSize;
-        for arr in cats.downcast_iter() {
-            for opt_cat in arr.iter() {
-                if let Some(cat) = opt_cat {
-                    let group_id = get_cat(cat) as usize;
-                    let buf = unsafe { groups.get_unchecked_release_mut(group_id) };
-                    buf.push(row_nr);
-
-                    // always write first/ branchless
-                    unsafe {
-                        // safety: we just  pushed
-                        let first_value = buf.get_unchecked(0);
-                        *first.get_unchecked_release_mut(group_id) = *first_value
-                    }
-                } else {
-                    let buf = unsafe { groups.get_unchecked_release_mut(null_idx) };
-                    buf.push(row_nr);
-                    unsafe {
-                        let first_value = buf.get_unchecked(0);
-                        *first.get_unchecked_release_mut(null_idx) = *first_value
-                    }
-                }
-
-                row_nr += 1;
-            }
-        }
-    }
+) -> GroupsProxy {
+    let GroupsProxy::Idx(mut groups) = cats.group_tuples_perfect(len - 1, multithreaded, 0) else {unreachable!()};
+    let first = std::mem::take(groups.first_mut());
+    let groups = unsafe { std::mem::take(groups.all_mut()) };
     if can_fast_unique || first.iter().all(|v| *v != IdxSize::MAX) {
         GroupsProxy::Idx(GroupsIdx::new(first, groups, false))
     } else {
