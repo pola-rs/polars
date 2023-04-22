@@ -121,15 +121,22 @@ fn upsample_impl(
         upsample_single_impl(source, index_column, every, offset)
     } else {
         let gb = if stable {
-            source.groupby_stable(by)
+            source.groupby_stable(&by)
         } else {
-            source.groupby(by)
+            source.groupby(&by)
         };
         // don't parallelize this, this may SO on large data.
-        gb?.apply(|df| {
+        let mut df = gb?.apply(|df| {
             let index_column = df.column(index_column)?;
             upsample_single_impl(&df, index_column, every, offset)
-        })
+        })?;
+
+        for column in &by {
+            let filled_group = df.column(column).unwrap().fill_null(FillNullStrategy::Forward(None))?;
+            df.with_column(filled_group)?;
+        }
+
+        Ok(df)
     }
 }
 
