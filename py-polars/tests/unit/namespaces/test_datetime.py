@@ -125,6 +125,62 @@ def test_dt_datetime_date_time_invalid() -> None:
     with pytest.raises(ComputeError, match="expected Datetime, Date, or Time"):
         pl.Series([timedelta(1)]).dt.time()
 
+@pytest.mark.parametrize(
+    ('dt', 'expected'),
+    [
+        (datetime(2022, 3, 15, 3), datetime(2022, 3, 1, 3)),
+        (datetime(2022, 3, 15, 3, 2, 1, 123000), datetime(2022, 3, 1, 3, 2, 1, 123000)),
+        (datetime(2022, 3, 15), datetime(2022, 3, 1)),
+        (datetime(2022, 3, 1), datetime(2022, 3, 1)),
+    ]
+)
+@pytest.mark.parametrize('tzinfo', [None, ZoneInfo('Asia/Kathmandu')])
+@pytest.mark.parametrize('time_unit', ['ms', 'us', 'ns'])
+def test_month_start_datetime(dt: datetime, expected: datetime, time_unit: TimeUnit, tzinfo: ZoneInfo | None) -> None:
+    ser = pl.Series([dt.replace(tzinfo=tzinfo)]).dt.cast_time_unit(time_unit)
+    result = ser.dt.month_start().item()
+    assert result == expected.replace(tzinfo=tzinfo)
+
+@pytest.mark.parametrize(
+    ('dt', 'expected'),
+    [
+        (date(2022, 3, 15), date(2022, 3, 1)),
+        (date(2022, 3, 31), date(2022, 3, 1)),
+    ]
+)
+def test_month_start_date(dt: date, expected: date) -> None:
+    ser = pl.Series([dt])
+    result = ser.dt.month_start().item()
+    assert result == expected
+
+@pytest.mark.parametrize(
+    ('dt', 'expected'),
+    [
+        (datetime(2022, 3, 15, 3), datetime(2022, 3, 31, 3)),
+        (datetime(2022, 3, 15, 3, 2, 1, 123000), datetime(2022, 3, 31, 3, 2, 1, 123000)),
+        (datetime(2022, 3, 15), datetime(2022, 3, 31)),
+        (datetime(2022, 3, 31), datetime(2022, 3, 31)),
+    ]
+)
+@pytest.mark.parametrize('tzinfo', [None, ZoneInfo('Asia/Kathmandu')])
+@pytest.mark.parametrize('time_unit', ['ms', 'us', 'ns'])
+def test_month_end_datetime(dt: datetime, expected: datetime, time_unit: TimeUnit, tzinfo: ZoneInfo | None) -> None:
+    ser = pl.Series([dt.replace(tzinfo=tzinfo)]).dt.cast_time_unit(time_unit)
+    result = ser.dt.month_end().item()
+    assert result == expected.replace(tzinfo=tzinfo)
+
+@pytest.mark.parametrize(
+    ('dt', 'expected'),
+    [
+        (date(2022, 3, 15), date(2022, 3, 31)),
+        (date(2022, 3, 31), date(2022, 3, 31)),
+    ]
+)
+def test_month_end_date(dt: date, expected: date) -> None:
+    ser = pl.Series([dt])
+    result = ser.dt.month_end().item()
+    assert result == expected
+
 
 @pytest.mark.parametrize(
     ("time_unit", "expected"),

@@ -1052,31 +1052,6 @@ def test_tail() -> None:
     assert df.select(pl.col("a").tail(pl.count() / 2)).to_dict(False) == {"a": [4, 5]}
 
 
-def test_month_start() -> None:
-    df = pl.DataFrame(
-        {
-            "dates": [
-                date(2018, 1, 1),
-                date(2000, 12, 31),
-                date(1900, 4, 15),
-                date(2020, 2, 29),
-            ]
-        }
-    )
-    result = df.select(pl.col("dates").dt.month_start())
-    expected = pl.DataFrame(
-        {
-            "dates": [
-                date(2018, 1, 1),
-                date(2000, 12, 1),
-                date(1900, 4, 1),
-                date(2020, 2, 1),
-            ]
-        }
-    )
-
-    assert_frame_equal(result, expected)
-
 
 def test_month_end() -> None:
     df = pl.DataFrame(
