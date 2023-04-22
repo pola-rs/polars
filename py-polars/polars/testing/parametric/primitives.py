@@ -21,6 +21,8 @@ from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
     FLOAT_DTYPES,
     Categorical,
+    DataType,
+    DataTypeClass,
     Datetime,
     Duration,
     List,
@@ -256,8 +258,8 @@ def series(
     allow_infinities: bool = True,
     unique: bool = False,
     chunked: bool | None = None,
-    allowed_dtypes: Collection[PolarsDataType] | None = None,
-    excluded_dtypes: Collection[PolarsDataType] | None = None,
+    allowed_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
+    excluded_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
 ) -> SearchStrategy[Series]:
     """
     Strategy for producing a polars Series.
@@ -325,6 +327,11 @@ def series(
     ]
 
     """
+    if isinstance(allowed_dtypes, (DataType, DataTypeClass)):
+        allowed_dtypes = [allowed_dtypes]
+    if isinstance(excluded_dtypes, (DataType, DataTypeClass)):
+        excluded_dtypes = [excluded_dtypes]
+
     selectable_dtypes = [
         dtype
         for dtype in (allowed_dtypes or strategy_dtypes)
@@ -427,8 +434,8 @@ def dataframes(
     include_cols: Sequence[column] | None = None,
     null_probability: float | dict[str, float] = 0.0,
     allow_infinities: bool = True,
-    allowed_dtypes: Collection[PolarsDataType] | None = None,
-    excluded_dtypes: Collection[PolarsDataType] | None = None,
+    allowed_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
+    excluded_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
 ) -> SearchStrategy[DataFrame | LazyFrame]:
     """
     Provides a strategy for producing a DataFrame or LazyFrame.
@@ -527,6 +534,10 @@ def dataframes(
 
     if isinstance(min_size, int) and min_cols in (0, None):
         min_cols = 1
+    if isinstance(allowed_dtypes, (DataType, DataTypeClass)):
+        allowed_dtypes = [allowed_dtypes]
+    if isinstance(excluded_dtypes, (DataType, DataTypeClass)):
+        excluded_dtypes = [excluded_dtypes]
 
     selectable_dtypes = [
         dtype
