@@ -5,6 +5,7 @@ use polars_arrow::time_zone::PolarsTimeZone;
 #[cfg(feature = "timezones")]
 use polars_core::utils::arrow::temporal_conversions::parse_offset;
 use polars_core::utils::arrow::temporal_conversions::{SECONDS_IN_DAY,
+    MILLISECONDS,
     timestamp_ms_to_datetime,
     timestamp_us_to_datetime,
     timestamp_ns_to_datetime,
@@ -247,6 +248,7 @@ fn _month_end<T: PolarsTimeZone>(
 pub(super) fn month_end(s: &Series) -> PolarsResult<Series> {
     let add_one_month = Duration::parse("1mo");
     let subtract_one_day = Duration::parse("-1d");
+    let no_offset = Duration::parse("0ns");
     Ok(match s.dtype() {
         DataType::Datetime(tu, tz) => {
             let timestamp_to_datetime = match tu {
@@ -312,18 +314,17 @@ pub(super) fn month_end(s: &Series) -> PolarsResult<Series> {
             }
         },
         DataType::Date => {
-            let res = s.datetime().unwrap();
-            res.0.try_apply(
+            let res = s.date().unwrap().truncate(Duration::parse("1mo"), no_offset, NO_TIMEZONE)?;
+            const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
+            let res = res.0.try_apply(
                 |t|
-                _month_end(
-                    t,
-                    NO_TIMEZONE,
-                    timestamp_to_datetime,
-                    datetime_to_timestamp,
-                    Duration::add_ms,
-                    &add_one_month,
-                    &subtract_one_day,
-                ))?.into_date().into_series()
+                {
+                let t = (Duration::add_ms(&add_one_month, MSECS_IN_DAY * t as i64, NO_TIMEZONE)?/ MSECS_IN_DAY) as i32;
+                let t = (Duration::add_ms(&subtract_one_day, MSECS_IN_DAY * t as i64, NO_TIMEZONE)?/ MSECS_IN_DAY) as i32;
+                Ok(t)
+            }
+            )?;
+            res.into_date().into_series()
         },
         dt => polars_bail!(opq = month_end, got = dt, expected = "date/datetime"),
     })
