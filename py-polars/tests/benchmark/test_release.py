@@ -185,3 +185,29 @@ def test_boolean_min_max_agg() -> None:
         "c_min": [133],
         "c_max": [276],
     }
+
+
+def test_categorical_vs_str_groupby() -> None:
+    # this triggers the perfect hash table
+    s = pl.Series("a", np.random.randint(0, 50, 100))
+    s_with_nulls = pl.select(
+        pl.when(s < 3).then(None).otherwise(s).alias("a")
+    ).to_series()
+
+    for s_ in [s, s_with_nulls]:
+        s_ = s_.cast(str)
+        cat_out = (
+            s_.cast(pl.Categorical)
+            .to_frame("a")
+            .groupby("a")
+            .agg(pl.first().alias("first"))
+        )
+
+        str_out = s_.to_frame("a").groupby("a").agg(pl.first().alias("first"))
+        cat_out.with_columns(pl.col("a").cast(str))
+        assert_frame_equal(
+            cat_out.with_columns(
+                pl.col("a").cast(str), pl.col("first").cast(pl.List(str))
+            ).sort("a"),
+            str_out.sort("a"),
+        )
