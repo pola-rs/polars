@@ -146,11 +146,6 @@ impl GroupsIdx {
         &self.all
     }
 
-    #[cfg(feature = "dtype-categorical")]
-    pub(crate) unsafe fn all_mut(&mut self) -> &mut Vec<Vec<IdxSize>> {
-        &mut self.all
-    }
-
     pub fn first(&self) -> &[IdxSize] {
         &self.first
     }
