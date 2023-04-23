@@ -35,14 +35,18 @@ impl Default for ScanArgsParquet {
 }
 
 #[derive(Clone)]
-struct LazyParquetReader {
+pub struct LazyParquetReader {
     args: ScanArgsParquet,
     path: PathBuf,
 }
 
 impl LazyParquetReader {
-    fn new(path: PathBuf, args: ScanArgsParquet) -> Self {
+    fn new_inner(path: PathBuf, args: ScanArgsParquet) -> Self {
         Self { args, path }
+    }
+
+    pub fn new(path: impl AsRef<Path>, args: ScanArgsParquet) -> Self {
+        Self::new_inner(path.as_ref().to_owned(), args)
     }
 }
 

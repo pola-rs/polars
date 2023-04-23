@@ -337,3 +337,16 @@ version_check = "0.9.4"
 features = ["docs-selection"]
 # defines the configuration attribute `docsrs`
 rustdoc-args = ["--cfg", "docsrs"]
+
+# Examples config
+[[example]]
+name = "read_csv"
+required-features = ["lazy", "csv"]
+
+[[example]]
+name = "scan_csv"
+required-features = ["lazy", "csv", "parquet"]
+
+[[example]]
+name = "scan_parquet"
+required-features = ["lazy", "parquet"]

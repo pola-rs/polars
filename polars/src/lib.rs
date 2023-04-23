@@ -392,4 +392,10 @@ pub use polars_time as time;
 
 /// Polars crate version
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+#[cfg(any(
+    feature = "csv",
+    feature = "parquet",
+    feature = "ipc",
+    feature = "json"
+))]
 pub mod io;

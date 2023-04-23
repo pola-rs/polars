@@ -221,7 +221,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
 impl ParquetReader<File> {
     pub fn from_path<P: Into<PathBuf>>(path: P) -> PolarsResult<Self> {
         let path = resolve_homedir(&path.into());
-        let f = std::fs::File::open(&path)?;
+        let f = std::fs::File::open(path)?;
         Ok(Self::new(f))
     }
 }

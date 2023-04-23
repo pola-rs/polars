@@ -1,13 +1,35 @@
 use polars_core::schema::SchemaRef;
 use polars_io::mmap::MmapBytesReader;
-use polars_io::prelude::{CsvEncoding, CsvReader, NullValues};
 pub use polars_io::{RowCount, *};
 
-/// Read a CSV file into a DataFrame.
-#[cfg(feature = "csv-file")]
-pub mod read_csv {
-    use super::*;
+macro_rules! impl_set {
+    ($($field:ident: $arg_type:ty),* $(,)?) => {
+        $(
+            pub fn $field(mut self, value: $arg_type) -> Self {
+                self.$field = value;
+                self
+            }
+        )*
+    };
+}
 
+macro_rules! impl_set_option {
+    ($($field:ident: $arg_type:ty),* $(,)?) => {
+        $(
+            pub fn $field(mut self, value: $arg_type) -> Self {
+                self.$field = Some(value);
+                self
+            }
+        )*
+    };
+}
+
+/// Read a CSV file into a DataFrame.
+#[cfg(feature = "csv")]
+pub mod read_csv {
+    use polars_io::prelude::{CsvEncoding, CsvReader, NullValues};
+
+    use super::*;
     #[macro_export]
     /// Read a CSV file into a DataFrame.
     /// This macro is a convenience macro to read a CSV file into a DataFrame.
@@ -192,108 +214,43 @@ pub mod read_csv {
                 row_count: None,
             }
         }
-
-        pub fn rechunk(mut self, rechunk: bool) -> Self {
-            self.rechunk = rechunk;
-            self
+        impl_set! {
+            rechunk: bool,
+            skip_rows_before_header: usize,
+            has_header: bool,
+            ignore_errors: bool,
+            encoding: CsvEncoding,
+            sample_size: usize,
+            chunk_size: usize,
+            low_memory: bool,
+            eol_char: u8,
+            missing_is_null: bool,
+            skip_rows_after_header: usize,
+            try_parse_dates: bool
         }
 
-        pub fn n_rows(mut self, n_rows: usize) -> Self {
-            self.n_rows = Some(n_rows);
-            self
+        impl_set_option! {
+            n_rows: usize,
+            infer_schema_length: usize,
+            projection: Vec<usize>,
+            columns: Vec<String>,
+            delimiter: u8,
+            schema: SchemaRef,
+            n_threads: usize,
+            schema_overwrite: SchemaRef,
+            comment_char: u8,
+            quote_char: u8,
+            row_count: RowCount
         }
-        pub fn infer_schema_length(mut self, infer_schema_length: usize) -> Self {
-            self.infer_schema_length = Some(infer_schema_length);
-            self
-        }
-        pub fn skip_rows_before_header(mut self, skip_rows_before_header: usize) -> Self {
-            self.skip_rows_before_header = skip_rows_before_header;
-            self
-        }
-        pub fn projection(mut self, projection: Vec<usize>) -> Self {
-            self.projection = Some(projection);
-            self
-        }
-        pub fn columns(mut self, columns: Vec<String>) -> Self {
-            self.columns = Some(columns);
-            self
-        }
-        pub fn delimiter(mut self, delimiter: u8) -> Self {
-            self.delimiter = Some(delimiter);
-            self
-        }
-        pub fn has_header(mut self, has_header: bool) -> Self {
-            self.has_header = has_header;
-            self
-        }
-        pub fn ignore_errors(mut self, ignore_errors: bool) -> Self {
-            self.ignore_errors = ignore_errors;
-            self
-        }
-        pub fn schema(mut self, schema: SchemaRef) -> Self {
-            self.schema = Some(schema);
-            self
-        }
-        pub fn encoding(mut self, encoding: CsvEncoding) -> Self {
-            self.encoding = encoding;
-            self
-        }
-        pub fn n_threads(mut self, n_threads: usize) -> Self {
-            self.n_threads = Some(n_threads);
-            self
-        }
-        pub fn schema_overwrite(mut self, schema_overwrite: SchemaRef) -> Self {
-            self.schema_overwrite = Some(schema_overwrite);
-            self
-        }
-        pub fn sample_size(mut self, sample_size: usize) -> Self {
-            self.sample_size = sample_size;
-            self
-        }
-        pub fn chunk_size(mut self, chunk_size: usize) -> Self {
-            self.chunk_size = chunk_size;
-            self
-        }
-        pub fn low_memory(mut self, low_memory: bool) -> Self {
-            self.low_memory = low_memory;
-            self
-        }
-        pub fn comment_char(mut self, comment_char: u8) -> Self {
-            self.comment_char = Some(comment_char);
-            self
-        }
-        pub fn eol_char(mut self, eol_char: u8) -> Self {
-            self.eol_char = eol_char;
-            self
-        }
-        pub fn null_values(mut self, null_values: NullValues) -> Self {
-            self.null_values = Some(null_values);
-            self
-        }
-        pub fn missing_is_null(mut self, missing_is_null: bool) -> Self {
-            self.missing_is_null = missing_is_null;
-            self
-        }
-        pub fn quote_char(mut self, quote_char: u8) -> Self {
-            self.quote_char = Some(quote_char);
-            self
-        }
-        pub fn skip_rows_after_header(mut self, skip_rows_after_header: usize) -> Self {
-            self.skip_rows_after_header = skip_rows_after_header;
-            self
-        }
-        pub fn try_parse_dates(mut self, try_parse_dates: bool) -> Self {
-            self.try_parse_dates = try_parse_dates;
-            self
-        }
-        pub fn row_count(mut self, row_count: RowCount) -> Self {
-            self.row_count = Some(row_count);
+
+        pub fn null_values<T: Into<NullValues>>(mut self, null_values: T) -> Self {
+            self.null_values = Some(null_values.into());
             self
         }
     }
 }
 
-#[cfg(all(feature = "lazy", feature = "csv-file"))]
+#[cfg(all(feature = "lazy", feature = "csv"))]
 pub mod scan_csv {
     use polars_core::schema::SchemaRef;
     use polars_io::prelude::{CsvEncoding, NullValues};
@@ -375,80 +332,32 @@ pub mod scan_csv {
                 try_parse_dates: false,
             }
         }
-        pub fn delimiter(mut self, delimiter: u8) -> Self {
-            self.delimiter = delimiter;
-            self
+
+        impl_set! {
+            delimiter: u8,
+            has_header: bool,
+            ignore_errors: bool,
+            skip_rows: usize,
+            cache: bool,
+            low_memory: bool,
+            eol_char: u8,
+            missing_is_null: bool,
+            rechunk: bool,
+            skip_rows_after_header: usize,
+            encoding: CsvEncoding,
+            try_parse_dates: bool
         }
-        pub fn has_header(mut self, has_header: bool) -> Self {
-            self.has_header = has_header;
-            self
+        impl_set_option! {
+            n_rows: usize,
+            schema: SchemaRef,
+            comment_char: u8,
+            quote_char: u8,
+            infer_schema_length: usize,
+            row_count: RowCount
         }
-        pub fn ignore_errors(mut self, ignore_errors: bool) -> Self {
-            self.ignore_errors = ignore_errors;
-            self
-        }
-        pub fn skip_rows(mut self, skip_rows: usize) -> Self {
-            self.skip_rows = skip_rows;
-            self
-        }
-        pub fn n_rows(mut self, n_rows: usize) -> Self {
-            self.n_rows = Some(n_rows);
-            self
-        }
-        pub fn cache(mut self, cache: bool) -> Self {
-            self.cache = cache;
-            self
-        }
-        pub fn schema(mut self, schema: SchemaRef) -> Self {
-            self.schema = Some(schema);
-            self
-        }
-        pub fn low_memory(mut self, low_memory: bool) -> Self {
-            self.low_memory = low_memory;
-            self
-        }
-        pub fn comment_char(mut self, comment_char: u8) -> Self {
-            self.comment_char = Some(comment_char);
-            self
-        }
-        pub fn quote_char(mut self, quote_char: u8) -> Self {
-            self.quote_char = Some(quote_char);
-            self
-        }
-        pub fn eol_char(mut self, eol_char: u8) -> Self {
-            self.eol_char = eol_char;
-            self
-        }
+
         pub fn null_values<T: Into<NullValues>>(mut self, null_values: T) -> Self {
             self.null_values = Some(null_values.into());
-            self
-        }
-        pub fn missing_is_null(mut self, missing_is_null: bool) -> Self {
-            self.missing_is_null = missing_is_null;
-            self
-        }
-        pub fn infer_schema_length(mut self, infer_schema_length: usize) -> Self {
-            self.infer_schema_length = Some(infer_schema_length);
-            self
-        }
-        pub fn rechunk(mut self, rechunk: bool) -> Self {
-            self.rechunk = rechunk;
-            self
-        }
-        pub fn skip_rows_after_header(mut self, skip_rows_after_header: usize) -> Self {
-            self.skip_rows_after_header = skip_rows_after_header;
-            self
-        }
-        pub fn encoding(mut self, encoding: CsvEncoding) -> Self {
-            self.encoding = encoding;
-            self
-        }
-        pub fn row_count(mut self, row_count: RowCount) -> Self {
-            self.row_count = Some(row_count);
-            self
-        }
-        pub fn try_parse_dates(mut self, try_parse_dates: bool) -> Self {
-            self.try_parse_dates = try_parse_dates;
             self
         }
     }
@@ -486,7 +395,6 @@ pub mod read_parquet {
     use polars_io::mmap::MmapBytesReader;
     use polars_io::RowCount;
 
-    use super::*;
     use crate::prelude::*;
     #[macro_export]
     macro_rules! read_parquet {
@@ -534,14 +442,14 @@ pub mod read_parquet {
 
     pub struct ParquetReaderOptions {
         rechunk: bool,
+        parallel: ParallelStrategy,
+        low_memory: bool,
+        use_statistics: bool,
         n_rows: Option<usize>,
         columns: Option<Vec<String>>,
         projection: Option<Vec<usize>>,
-        parallel: ParallelStrategy,
         row_count: Option<RowCount>,
-        low_memory: bool,
         metadata: Option<FileMetaData>,
-        use_statistics: bool,
     }
 
     impl Default for ParquetReaderOptions {
@@ -561,15 +469,18 @@ pub mod read_parquet {
     }
 
     impl ParquetReaderOptions {
-        pub fn rechunk(mut self, rechunk: bool) -> Self {
-            self.rechunk = rechunk;
-            self
-        }
-        pub fn n_rows(mut self, n_rows: usize) -> Self {
-            self.n_rows = Some(n_rows);
-            self
+        impl_set! {
+            rechunk: bool,
+            parallel: ParallelStrategy,
+            low_memory: bool,
+            use_statistics: bool,
         }
 
+        impl_set_option! {
+            n_rows: usize,
+            row_count: RowCount,
+            metadata: FileMetaData,
+        }
         pub fn columns<S: Into<String>, T: IntoIterator<Item = S>>(mut self, columns: T) -> Self {
             self.columns = Some(columns.into_iter().map(|s| s.into()).collect());
             self
@@ -578,24 +489,114 @@ pub mod read_parquet {
             self.projection = Some(projection.into());
             self
         }
-        pub fn parallel(mut self, parallel: ParallelStrategy) -> Self {
-            self.parallel = parallel;
+    }
+}
+
+#[cfg(all(feature = "lazy", feature = "parquet"))]
+pub mod scan_parquet {
+    use std::path::PathBuf;
+
+    use polars_core::cloud::CloudOptions;
+    use polars_core::utils::arrow::io::parquet::write::FileMetaData;
+    use polars_io::RowCount;
+
+    use crate::prelude::*;
+    pub struct LazyParquetOptions {
+        rechunk: bool,
+        low_memory: bool,
+        cache: bool,
+        use_statistics: bool,
+        parallel: ParallelStrategy,
+        n_rows: Option<usize>,
+        columns: Option<Vec<String>>,
+        projection: Option<Vec<usize>>,
+        row_count: Option<RowCount>,
+        metadata: Option<FileMetaData>,
+        cloud_options: Option<CloudOptions>,
+    }
+
+    impl Default for LazyParquetOptions {
+        fn default() -> Self {
+            Self {
+                rechunk: false,
+                n_rows: None,
+                columns: None,
+                projection: None,
+                parallel: Default::default(),
+                row_count: None,
+                low_memory: false,
+                metadata: None,
+                use_statistics: true,
+                cloud_options: None,
+                cache: true,
+            }
+        }
+    }
+    #[macro_export]
+    /// Lazily load a parquet file into a LazyFrame
+    /// ```rust no_run
+    /// # use polars::prelude::*;
+    /// # fn main() {
+    /// let df = polars::scan_parquet!("foo.parquet", parallel = true)?
+    ///     .select(&[
+    ///         col("A"),
+    ///         col("B"),
+    ///     ])
+    ///     .filter(col("A").gt(lit(2)))
+    ///     .collect();
+    /// }
+    macro_rules! scan_parquet {
+      ($path:expr) => {
+          $crate::prelude::LazyParquetReader::new($path, Default::default()).finish()
+      };
+      ($path:expr, $($field:ident = $value:expr),* $(,)?) => {{
+
+          let mut options = $crate::io::scan_parquet::LazyParquetOptions::default();
+          $(
+              options = options.$field($value);
+          )*
+          let rdr = $crate::io::scan_parquet::new_reader($path, options);
+
+          rdr.finish()
+        }}
+    }
+
+    pub fn new_reader(path: PathBuf, options: LazyParquetOptions) -> LazyParquetReader {
+        let args = ScanArgsParquet {
+            n_rows: options.n_rows,
+            cache: options.cache,
+            parallel: options.parallel,
+            rechunk: options.rechunk,
+            row_count: options.row_count,
+            low_memory: options.low_memory,
+            cloud_options: options.cloud_options,
+            use_statistics: options.use_statistics,
+        };
+
+        LazyParquetReader::new(path, args)
+    }
+
+    impl LazyParquetOptions {
+        impl_set! {
+            rechunk: bool,
+            low_memory: bool,
+            cache: bool,
+            use_statistics: bool,
+            parallel: ParallelStrategy,
+        }
+
+        impl_set_option! {
+            n_rows: usize,
+            row_count: RowCount,
+            metadata: FileMetaData,
+            cloud_options: CloudOptions
+        }
+        pub fn columns<S: Into<String>, T: IntoIterator<Item = S>>(mut self, columns: T) -> Self {
+            self.columns = Some(columns.into_iter().map(|s| s.into()).collect());
             self
         }
-        pub fn row_count(mut self, row_count: RowCount) -> Self {
-            self.row_count = Some(row_count);
-            self
-        }
-        pub fn low_memory(mut self, low_memory: bool) -> Self {
-            self.low_memory = low_memory;
-            self
-        }
-        pub fn metadata(mut self, metadata: FileMetaData) -> Self {
-            self.metadata = Some(metadata);
-            self
-        }
-        pub fn use_statistics(mut self, use_statistics: bool) -> Self {
-            self.use_statistics = use_statistics;
+        pub fn projection<T: Into<Vec<usize>>>(mut self, projection: T) -> Self {
+            self.projection = Some(projection.into());
             self
         }
     }
