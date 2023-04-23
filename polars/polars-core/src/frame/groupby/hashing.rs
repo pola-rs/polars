@@ -8,14 +8,63 @@ use rayon::prelude::*;
 
 use super::GroupsProxy;
 use crate::datatypes::PlHashMap;
-use crate::frame::groupby::GroupsIdx;
+use crate::frame::groupby::{GroupsIdx, IdxItem};
 use crate::hashing::{
     df_rows_to_hashes_threaded_vertical, this_partition, AsU64, IdBuildHasher, IdxHash,
 };
 use crate::prelude::compare_inner::PartialEqInner;
 use crate::prelude::*;
-use crate::utils::{split_df, CustomIterTools};
+use crate::utils::{flatten, split_df, CustomIterTools};
 use crate::POOL;
+
+fn finish_group_order(mut out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsProxy {
+    if sorted {
+        // we can just take the first value, no need to flatten
+        let mut out = if out.len() == 1 {
+            out.pop().unwrap()
+        } else {
+            let (cap, offsets) = flatten::cap_and_offsets(&out);
+            // we write (first, all) tuple because of sorting
+            let mut items = Vec::with_capacity(cap);
+            let items_ptr = unsafe { SyncPtr::new(items.as_mut_ptr()) };
+
+            POOL.install(|| {
+                out.into_par_iter()
+                    .zip(offsets)
+                    .for_each(|(mut g, offset)| {
+                        // pre-sort every array
+                        // this will make the final single threaded sort much faster
+                        g.sort_unstable_by_key(|g| g.0);
+
+                        unsafe {
+                            let mut items_ptr: *mut (IdxSize, Vec<IdxSize>) = items_ptr.get();
+                            items_ptr = items_ptr.add(offset);
+
+                            for (i, g) in g.into_iter().enumerate() {
+                                std::ptr::write(items_ptr.add(i), g)
+                            }
+                        }
+                    });
+            });
+            unsafe {
+                items.set_len(cap);
+            }
+            items
+        };
+        out.sort_unstable_by_key(|g| g.0);
+        let mut idx = GroupsIdx::from_iter(out.into_iter());
+        idx.sorted = true;
+        GroupsProxy::Idx(idx)
+    } else {
+        // we can just take the first value, no need to flatten
+        if out.len() == 1 {
+            GroupsProxy::Idx(GroupsIdx::from(out.pop().unwrap()))
+        } else {
+            // flattens
+            GroupsProxy::Idx(GroupsIdx::from(out))
+        }
+    }
+}
 
 fn finish_group_order_vecs(
     mut vecs: Vec<(Vec<IdxSize>, Vec<Vec<IdxSize>>)>,
@@ -117,7 +166,72 @@ where
     }
 }
 
-pub(crate) fn groupby_threaded_num2<T, I>(
+// giving the slice info to the compiler is much
+// faster than the using an iterator, that's why we
+// have the code duplication
+pub(crate) fn groupby_threaded_slice<T, IntoSlice>(
+    keys: Vec<IntoSlice>,
+    n_partitions: u64,
+    sorted: bool,
+) -> GroupsProxy
+where
+    T: Send + Hash + Eq + Sync + Copy + AsU64,
+    IntoSlice: AsRef<[T]> + Send + Sync,
+{
+    assert!(n_partitions.is_power_of_two());
+
+    // We will create a hashtable in every thread.
+    // We use the hash to partition the keys to the matching hashtable.
+    // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
+    let out = POOL.install(|| {
+        (0..n_partitions)
+            .into_par_iter()
+            .map(|thread_no| {
+                let mut hash_tbl: PlHashMap<T, (IdxSize, Vec<IdxSize>)> =
+                    PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
+
+                let mut offset = 0;
+                for keys in &keys {
+                    let keys = keys.as_ref();
+                    let len = keys.len() as IdxSize;
+                    let hasher = hash_tbl.hasher().clone();
+
+                    let mut cnt = 0;
+                    keys.iter().for_each(|k| {
+                        let idx = cnt + offset;
+                        cnt += 1;
+
+                        if this_partition(k.as_u64(), thread_no, n_partitions) {
+                            let hash = hasher.hash_single(k);
+                            let entry = hash_tbl.raw_entry_mut().from_key_hashed_nocheck(hash, k);
+
+                            match entry {
+                                RawEntryMut::Vacant(entry) => {
+                                    let tuples = vec![idx];
+                                    entry.insert_with_hasher(hash, *k, (idx, tuples), |k| {
+                                        hasher.hash_single(k)
+                                    });
+                                }
+                                RawEntryMut::Occupied(mut entry) => {
+                                    let v = entry.get_mut();
+                                    v.1.push(idx);
+                                }
+                            }
+                        }
+                    });
+                    offset += len;
+                }
+                hash_tbl
+                    .into_iter()
+                    .map(|(_k, v)| v)
+                    .collect_trusted::<Vec<_>>()
+            })
+            .collect::<Vec<_>>()
+    });
+    finish_group_order(out, sorted)
+}
+
+pub(crate) fn groupby_threaded_iter<T, I>(
     keys: &[I],
     n_partitions: u64,
     sorted: bool,
@@ -132,14 +246,12 @@ where
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
-    let v = POOL.install(|| {
+    let out = POOL.install(|| {
         (0..n_partitions)
             .into_par_iter()
             .map(|thread_no| {
-                let mut hash_tbl: PlHashMap<T, IdxSize> =
+                let mut hash_tbl: PlHashMap<T, (IdxSize, Vec<IdxSize>)> =
                     PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
-                let mut first_vals = Vec::with_capacity(HASHMAP_INIT_SIZE);
-                let mut all_vals = Vec::with_capacity(HASHMAP_INIT_SIZE);
 
                 let mut offset = 0;
                 for keys in keys {
@@ -149,7 +261,7 @@ where
 
                     let mut cnt = 0;
                     keys.for_each(|k| {
-                        let row_idx = cnt + offset;
+                        let idx = cnt + offset;
                         cnt += 1;
 
                         if this_partition(k.as_u64(), thread_no, n_partitions) {
@@ -158,33 +270,37 @@ where
 
                             match entry {
                                 RawEntryMut::Vacant(entry) => {
-                                    let offset_idx = first_vals.len() as IdxSize;
-
-                                    let tuples = vec![row_idx];
-                                    all_vals.push(tuples);
-                                    first_vals.push(row_idx);
-
-                                    entry.insert_with_hasher(hash, k, offset_idx, |k| {
+                                    let tuples = vec![idx];
+                                    entry.insert_with_hasher(hash, k, (idx, tuples), |k| {
                                         hasher.hash_single(k)
                                     });
                                 }
-                                RawEntryMut::Occupied(entry) => {
-                                    let offset_idx = *entry.get();
-                                    unsafe {
-                                        let buf = all_vals.get_unchecked_mut(offset_idx as usize);
-                                        buf.push(row_idx)
-                                    }
+                                RawEntryMut::Occupied(mut entry) => {
+                                    let v = entry.get_mut();
+                                    v.1.push(idx);
                                 }
                             }
                         }
                     });
                     offset += len;
                 }
-                (first_vals, all_vals)
+                // iterating the hash tables locally
+                // was faster than iterating in the materialization phase directly
+                // the proper end vec. I believe this is because the hash-table
+                // currently is local to the thread so in hot cache
+                // So we first collect into a tight vec and then do a second
+                // materialization run
+                // this is also faster than the index-map approach where we
+                // directly locally store to a vec at the cost of an extra
+                // indirection
+                hash_tbl
+                    .into_iter()
+                    .map(|(_k, v)| v)
+                    .collect_trusted::<Vec<_>>()
             })
             .collect::<Vec<_>>()
     });
-    finish_group_order_vecs(v, sorted)
+    finish_group_order(out, sorted)
 }
 
 /// Utility function used as comparison function in the hashmap.

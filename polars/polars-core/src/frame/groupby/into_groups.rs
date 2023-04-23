@@ -38,10 +38,10 @@ where
                 .downcast_iter()
                 .map(|arr| arr.values().as_slice())
                 .collect::<Vec<_>>();
-            groupby_threaded_num2(&keys, n_partitions, sorted)
+            groupby_threaded_slice(keys, n_partitions, sorted)
         } else {
             let keys = ca.downcast_iter().collect::<Vec<_>>();
-            groupby_threaded_num2(&keys, n_partitions, sorted)
+            groupby_threaded_iter(&keys, n_partitions, sorted)
         }
     } else if !ca.has_validity() {
         groupby(ca.into_no_null_iter(), sorted)
@@ -271,7 +271,7 @@ impl IntoGroupsProxy for BinaryChunked {
                     .collect::<Vec<_>>()
             });
             let byte_hashes = byte_hashes.iter().collect::<Vec<_>>();
-            groupby_threaded_num2(&byte_hashes, n_partitions as u64, sorted)
+            groupby_threaded_slice(byte_hashes, n_partitions as u64, sorted)
         } else {
             let byte_hashes = self
                 .into_iter()
@@ -338,8 +338,8 @@ impl IntoGroupsProxy for ListChunked {
                         })
                         .collect::<PolarsResult<Vec<_>>>()?;
                     let bytes_hashes = bytes_hashes.iter().collect::<Vec<_>>();
-                    Ok(groupby_threaded_num2(
-                        &bytes_hashes,
+                    Ok(groupby_threaded_slice(
+                        bytes_hashes,
                         n_partitions as u64,
                         sorted,
                     ))
