@@ -26,6 +26,12 @@ def load_profile(
         If True, also set the environment variable ``POLARS_HYPOTHESIS_PROFILE``
         to the given profile name/value.
 
+    Examples
+    --------
+    >>> # load a custom profile that will run with 1500 iterations
+    >>> from polars.testing.parametric.profiles import load_profile
+    >>> load_profile(1500)
+
     """
     common_settings = {"print_blob": True, "deadline": None}
     profile_name = str(profile)
@@ -73,6 +79,12 @@ def set_profile(profile: ParametricProfileNames | int) -> None:
         Name of the profile to load; one of "fast", "balanced", "expensive", or
         the integer number of iterations to run (which will create and register
         a custom profile with that value).
+
+    Examples
+    --------
+    >>> # prefer the 'balanced' profile for running parametric tests
+    >>> from polars.testing.parametric.profiles import set_profile
+    >>> set_profile("balanced")
 
     """
     profile_name = str(profile).split(".")[-1]
