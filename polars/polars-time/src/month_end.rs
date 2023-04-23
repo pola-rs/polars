@@ -71,43 +71,21 @@ impl PolarsMonthEnd for DatetimeChunked {
                 TimeUnit::Milliseconds => Duration::add_ms,
             }
         }
-        match tz {
-            #[cfg(feature = "timezones")]
-            Some(tz) => {
-                let adder = adder(time_unit);
-                Ok(self
-                    .0
-                    .try_apply(|t| {
-                        roll_forward(
-                            t,
-                            Some(tz),
-                            timestamp_to_datetime,
-                            datetime_to_timestamp,
-                            adder,
-                            &add_one_month,
-                            &subtract_one_day,
-                        )
-                    })?
-                    .into_datetime(time_unit, Some(tz.to_string())))
-            }
-            _ => {
-                let adder = adder(time_unit);
-                Ok(self
-                    .0
-                    .try_apply(|t| {
-                        roll_forward(
-                            t,
-                            NO_TIMEZONE,
-                            timestamp_to_datetime,
-                            datetime_to_timestamp,
-                            adder,
-                            &add_one_month,
-                            &subtract_one_day,
-                        )
-                    })?
-                    .into_datetime(time_unit, None))
-            }
-        }
+        let adder = adder(time_unit);
+        Ok(self
+            .0
+            .try_apply(|t| {
+                roll_forward(
+                    t,
+                    tz,
+                    timestamp_to_datetime,
+                    datetime_to_timestamp,
+                    adder,
+                    &add_one_month,
+                    &subtract_one_day,
+                )
+            })?
+            .into_datetime(time_unit, tz.map(|x| x.to_string())))
     }
 }
 

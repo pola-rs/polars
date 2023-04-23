@@ -85,21 +85,10 @@ impl PolarsMonthStart for DatetimeChunked {
                 datetime_to_timestamp = datetime_to_timestamp_ms;
             }
         };
-        match tz {
-            #[cfg(feature = "timezones")]
-            Some(tz) => Ok(self
-                .0
-                .try_apply(|t| {
-                    roll_backward(t, Some(tz), timestamp_to_datetime, datetime_to_timestamp)
-                })?
-                .into_datetime(time_unit, Some(tz.to_string()))),
-            _ => Ok(self
-                .0
-                .try_apply(|t| {
-                    roll_backward(t, NO_TIMEZONE, timestamp_to_datetime, datetime_to_timestamp)
-                })?
-                .into_datetime(time_unit, None)),
-        }
+        Ok(self
+            .0
+            .try_apply(|t| roll_backward(t, tz, timestamp_to_datetime, datetime_to_timestamp))?
+            .into_datetime(time_unit, tz.map(|x| x.to_string())))
     }
 }
 
