@@ -166,7 +166,74 @@ where
     }
 }
 
-pub(crate) fn groupby_threaded_num2<T, I>(
+// giving the slice info to the compiler is much
+// faster than the using an iterator, that's why we
+// have the code duplication
+pub(crate) fn groupby_threaded_slice<T, IntoSlice>(
+    keys: Vec<IntoSlice>,
+    group_size_hint: usize,
+    n_partitions: u64,
+    sorted: bool,
+) -> GroupsProxy
+where
+    T: Send + Hash + Eq + Sync + Copy + AsU64,
+    IntoSlice: AsRef<[T]> + Send + Sync,
+{
+    assert!(n_partitions.is_power_of_two());
+
+    // We will create a hashtable in every thread.
+    // We use the hash to partition the keys to the matching hashtable.
+    // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
+    let out = POOL.install(|| {
+        (0..n_partitions)
+            .into_par_iter()
+            .map(|thread_no| {
+                let mut hash_tbl: PlHashMap<T, (IdxSize, Vec<IdxSize>)> =
+                    PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
+
+                let mut offset = 0;
+                for keys in &keys {
+                    let keys = keys.as_ref();
+                    let len = keys.len() as IdxSize;
+                    let hasher = hash_tbl.hasher().clone();
+
+                    let mut cnt = 0;
+                    keys.iter().for_each(|k| {
+                        let idx = cnt + offset;
+                        cnt += 1;
+
+                        if this_partition(k.as_u64(), thread_no, n_partitions) {
+                            let hash = hasher.hash_single(k);
+                            let entry = hash_tbl.raw_entry_mut().from_key_hashed_nocheck(hash, k);
+
+                            match entry {
+                                RawEntryMut::Vacant(entry) => {
+                                    let mut tuples = Vec::with_capacity(group_size_hint);
+                                    tuples.push(idx);
+                                    entry.insert_with_hasher(hash, *k, (idx, tuples), |k| {
+                                        hasher.hash_single(k)
+                                    });
+                                }
+                                RawEntryMut::Occupied(mut entry) => {
+                                    let v = entry.get_mut();
+                                    v.1.push(idx);
+                                }
+                            }
+                        }
+                    });
+                    offset += len;
+                }
+                hash_tbl
+                    .into_iter()
+                    .map(|(_k, v)| v)
+                    .collect_trusted::<Vec<_>>()
+            })
+            .collect::<Vec<_>>()
+    });
+    finish_group_order(out, sorted)
+}
+
+pub(crate) fn groupby_threaded_iter<T, I>(
     keys: &[I],
     n_partitions: u64,
     sorted: bool,
