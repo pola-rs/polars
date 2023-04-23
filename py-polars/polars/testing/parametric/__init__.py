@@ -9,7 +9,7 @@ if _HYPOTHESIS_AVAILABLE:
         dataframes,
         series,
     )
-    from polars.testing.parametric.profiles import load_profile
+    from polars.testing.parametric.profiles import load_profile, set_profile
     from polars.testing.parametric.strategies import (
         create_list_strategy,
         scalar_strategies,
@@ -30,4 +30,5 @@ __all__ = [
     "load_profile",
     "scalar_strategies",
     "series",
+    "set_profile",
 ]

@@ -262,7 +262,7 @@ def series(
     excluded_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
 ) -> SearchStrategy[Series]:
     """
-    Strategy for producing a polars Series.
+    Hypothesis strategy for producing a polars Series.
 
     Parameters
     ----------
@@ -438,7 +438,7 @@ def dataframes(
     excluded_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
 ) -> SearchStrategy[DataFrame | LazyFrame]:
     """
-    Provides a strategy for producing a DataFrame or LazyFrame.
+    Hypothesis strategy for producing a polars DataFrame or LazyFrame.
 
     Parameters
     ----------
