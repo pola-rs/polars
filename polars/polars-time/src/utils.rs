@@ -10,7 +10,7 @@ use polars_arrow::time_zone::PolarsTimeZone;
 use polars_core::prelude::{polars_bail, PolarsResult, TimeUnit};
 
 #[cfg(feature = "timezones")]
-pub fn localize_datetime(
+pub(crate) fn localize_datetime(
     ndt: NaiveDateTime,
     tz: &impl PolarsTimeZone,
 ) -> PolarsResult<NaiveDateTime> {
@@ -31,7 +31,7 @@ pub fn localize_datetime(
 }
 
 #[cfg(feature = "timezones")]
-pub fn unlocalize_datetime(ndt: NaiveDateTime, tz: &impl PolarsTimeZone) -> NaiveDateTime {
+pub(crate) fn unlocalize_datetime(ndt: NaiveDateTime, tz: &impl PolarsTimeZone) -> NaiveDateTime {
     // e.g. '2021-01-01 03:00CDT' -> '2021-01-01 03:00'
     tz.from_utc_datetime(&ndt).naive_local()
 }
