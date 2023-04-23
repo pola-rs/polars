@@ -45,6 +45,7 @@ The following methods are available under the `Series.dt` attribute.
     Series.dt.strftime
     Series.dt.time
     Series.dt.timestamp
+    Series.dt.to_string
     Series.dt.truncate
     Series.dt.week
     Series.dt.weekday

@@ -41,6 +41,7 @@ The following methods are available under the `expr.dt` attribute.
     Expr.dt.strftime
     Expr.dt.time
     Expr.dt.timestamp
+    Expr.dt.to_string
     Expr.dt.truncate
     Expr.dt.week
     Expr.dt.weekday
