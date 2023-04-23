@@ -542,7 +542,7 @@ def dataframes(
     selectable_dtypes = [
         dtype
         for dtype in (allowed_dtypes or strategy_dtypes)
-        if dtype not in (excluded_dtypes or ())
+        if dtype in strategy_dtypes and dtype not in (excluded_dtypes or ())
     ]
 
     @composite
