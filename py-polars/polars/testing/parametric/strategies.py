@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Sequence
 from hypothesis.strategies import (
     booleans,
     characters,
+    composite,
     dates,
     datetimes,
     decimals,
@@ -45,6 +46,8 @@ from polars.datatypes import (
 )
 
 if TYPE_CHECKING:
+    from decimal import Decimal as PyDecimal
+
     from hypothesis.strategies import DrawFn
 
     from polars.type_aliases import PolarsDataType
@@ -70,16 +73,6 @@ strategy_u16 = integers(min_value=0, max_value=(2**16) - 1)
 strategy_u32 = integers(min_value=0, max_value=(2**32) - 1)
 strategy_u64 = integers(min_value=0, max_value=(2**64) - 1)
 
-# TODO: once fixed, re-enable decimal nan/inf values.
-# TODO: vary the number of decimal places.
-strategy_decimal = decimals(
-    allow_nan=False,
-    allow_infinity=False,
-    min_value=-(2**66),
-    max_value=(2**66) - 1,
-    places=18,
-)
-
 strategy_ascii = text(max_size=8, alphabet=ascii_letters + digits + punctuation)
 strategy_categorical = text(max_size=2, alphabet=ascii_uppercase)
 strategy_utf8 = text(
@@ -100,6 +93,22 @@ strategy_duration = timedeltas(
     min_value=timedelta(microseconds=-(2**46)),
     max_value=timedelta(microseconds=(2**46) - 1),
 )
+
+
+@composite
+def strategy_decimal(draw: DrawFn) -> PyDecimal:
+    places = draw(integers(min_value=0, max_value=18))
+    return draw(
+        # TODO: once fixed, re-enable decimal nan/inf values.
+        decimals(
+            allow_nan=False,
+            allow_infinity=False,
+            min_value=-(2**66),
+            max_value=(2**66) - 1,
+            places=places,
+        )
+    )
+
 
 scalar_strategies: dict[PolarsDataType, Any] = {
     Boolean: strategy_bool,
@@ -129,15 +138,17 @@ scalar_strategies: dict[PolarsDataType, Any] = {
 
 # note: decimal support is in early development and requires opt-in
 if os.environ.get("POLARS_ACTIVATE_DECIMAL") == "1":
-    scalar_strategies[Decimal] = strategy_decimal
+    scalar_strategies[Decimal] = strategy_decimal()
 
 _strategy_dtypes = list(scalar_strategies) + [List]
 
 
 def _hash(elem: Any) -> int:
-    """Hashing that can also handle lists (for 'unique' check)."""
+    """Hashing that also handles lists/dicts (for 'unique' check)."""
     if isinstance(elem, list):
         return hash(tuple(_hash(e) for e in elem))
+    elif isinstance(elem, dict):
+        return hash((_hash(k), _hash(v)) for k, v in elem.items())
     return hash(elem)
 
 
