@@ -8,6 +8,10 @@ fmt:
 	cargo fmt --all
 	dprint fmt
 
+generate_test_files:
+	cargo run -p polars-cli "select * from read_csv('../examples/datasets/foods1.csv')" -o parquet > ../examples/datasets/foods1.parquet
+	cargo run -p polars-cli "select * from read_csv('../examples/datasets/foods1.csv')" -o arrow > ../examples/datasets/foods1.ipc
+
 check:
 	cargo check --all-features \
 		-p polars-core \
@@ -70,7 +74,8 @@ test-doc:
 	    -p polars-lazy \
 	    -p polars-io \
 	    -p polars-core \
-	    -p polars-arrow
+	    -p polars-arrow \
+			-p polars-sql
 
 pre-commit: fmt clippy clippy-default  ## Run autoformatting and linting
 
@@ -93,6 +98,7 @@ doctest:
 	cargo doc --all-features -p polars-io
 	cargo doc --all-features -p polars-lazy
 	cargo doc --features=docs-selection -p polars
+	cargo doc --all-features -p polars-sql
 
 publish:
 #	cargo publish --allow-dirty -p polars-error

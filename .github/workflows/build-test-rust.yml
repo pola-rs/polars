@@ -103,6 +103,11 @@ jobs:
         with:
           workspaces: polars
 
+      - name: setup test files
+        env:
+          RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
+        run: make generate_test_files
+
       - name: Run tests
         env:
           RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
