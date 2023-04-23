@@ -463,3 +463,10 @@ def test_nested_null_roundtrip() -> None:
     f.seek(0)
     df_read = pl.read_parquet(f)
     assert_frame_equal(df_read, df)
+
+
+def test_nested_file_cache_count(io_files_path: Path) -> None:
+    df = (
+        pl.scan_parquet(io_files_path / "small.parquet").with_columns(pl.lit(1)).cache()
+    )
+    pl.concat([df, df], parallel=True).collect()

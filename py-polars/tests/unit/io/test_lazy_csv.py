@@ -216,3 +216,8 @@ def test_glob_n_rows(io_files_path: Path) -> None:
         "fats_g": [0.5, 6.0],
         "sugars_g": [2, 2],
     }
+
+
+def test_nested_file_cache_count(io_files_path: Path) -> None:
+    df = pl.scan_csv(io_files_path / "small.csv").with_columns(pl.lit(1)).cache()
+    pl.concat([df, df]).collect()
