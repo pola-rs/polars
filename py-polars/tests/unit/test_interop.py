@@ -69,6 +69,17 @@ def test_to_numpy(numpy_interop_test_data: Any, use_pyarrow: bool) -> None:
     assert_array_equal(pl_series_to_numpy_array, numpy_array)
 
 
+@pytest.mark.parametrize("use_pyarrow", [True, False])
+@pytest.mark.parametrize("has_null", [True, False])
+@pytest.mark.parametrize("dtype", [pl.Time, pl.Boolean, pl.Utf8])
+@no_type_check
+def test_to_numpy_no_zero_copy(use_pyarrow, has_null, dtype):
+    data = ["a", None] if dtype == pl.Utf8 else [0, None]
+    series = pl.Series(data if has_null else data[:1], dtype=dtype)
+    with pytest.raises(ValueError):
+        series.to_numpy(zero_copy_only=True, use_pyarrow=use_pyarrow)
+
+
 def test_from_pandas() -> None:
     df = pd.DataFrame(
         {
@@ -741,10 +752,10 @@ def test_from_fixed_size_binary_list() -> None:
     assert s.to_list() == val
 
 
-def test_from_repr() -> None:
+def test_dataframe_from_repr() -> None:
     # round-trip various types
     with pl.StringCache():
-        df = (
+        frame = (
             pl.LazyFrame(
                 {
                     "a": [1, 2, None],
@@ -768,7 +779,7 @@ def test_from_repr() -> None:
             .collect()
         )
 
-        assert df.schema == {
+        assert frame.schema == {
             "a": pl.Int64,
             "b": pl.Float64,
             "c": pl.Categorical,
@@ -778,11 +789,14 @@ def test_from_repr() -> None:
             "g": pl.Time,
             "h": pl.Datetime("ns"),
         }
-        assert_frame_equal(df, pl.from_repr(repr(df)))
+        df = cast(pl.DataFrame, pl.from_repr(repr(frame)))
+        assert_frame_equal(frame, df)
 
     # empty frame; confirm schema is inferred
-    df = pl.from_repr(
-        """
+    df = cast(
+        pl.DataFrame,
+        pl.from_repr(
+            """
         ┌─────┬─────┬─────┬─────┬─────┬───────┐
         │ id  ┆ q1  ┆ q2  ┆ q3  ┆ q4  ┆ total │
         │ --- ┆ --- ┆ --- ┆ --- ┆ --- ┆ ---   │
@@ -790,6 +804,7 @@ def test_from_repr() -> None:
         ╞═════╪═════╪═════╪═════╪═════╪═══════╡
         └─────┴─────┴─────┴─────┴─────┴───────┘
         """
+        ),
     )
     assert df.shape == (0, 6)
     assert df.rows() == []
@@ -802,8 +817,10 @@ def test_from_repr() -> None:
         "total": pl.Float64,
     }
 
-    df = pl.from_repr(
-        """
+    df = cast(
+        pl.DataFrame,
+        pl.from_repr(
+            """
         # >>> Missing cols with old-style ellipsis, nulls, commented out
         # ┌────────────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬──────┐
         # │ dt         ┆ c1  ┆ c2  ┆ c3  ┆ ... ┆ c96 ┆ c97 ┆ c98 ┆ c99  │
@@ -815,6 +832,7 @@ def test_from_repr() -> None:
         # │ null       ┆ 9   ┆ 18  ┆ 27  ┆ ... ┆ 864 ┆ 873 ┆ 882 ┆ 891  │
         # └────────────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴──────┘
         """
+        ),
     )
     assert df.schema == {
         "dt": pl.Date,
@@ -832,8 +850,10 @@ def test_from_repr() -> None:
         (None, 9, 18, 27, 864, 873, 882, 891),
     ]
 
-    df = pl.from_repr(
-        """
+    df = cast(
+        pl.DataFrame,
+        pl.from_repr(
+            """
         In [2]: with pl.Config() as cfg:
            ...:     pl.Config.set_tbl_formatting("UTF8_FULL", rounded_corners=True)
            ...:     print(df)
@@ -853,6 +873,7 @@ def test_from_repr() -> None:
         ╰───────────┴────────────┴───┴───────┴────────────────────────────────╯
         # "Een fluitje van een cent..." :)
         """
+        ),
     )
     assert df.shape == (2, 4)
     assert df.schema == {
@@ -861,6 +882,66 @@ def test_from_repr() -> None:
         "ident": pl.Utf8,
         "timestamp": pl.Datetime("us", "Asia/Tokyo"),
     }
+
+
+def test_series_from_repr() -> None:
+    with pl.StringCache():
+        frame = (
+            pl.LazyFrame(
+                {
+                    "a": [1, 2, None],
+                    "b": [4.5, 5.5, 6.5],
+                    "c": ["x", "y", "z"],
+                    "d": [True, False, True],
+                    "e": [None, "", None],
+                    "f": [date(2022, 7, 5), date(2023, 2, 5), date(2023, 8, 5)],
+                    "g": [time(0, 0, 0, 1), time(12, 30, 45), time(23, 59, 59, 999000)],
+                    "h": [
+                        datetime(2022, 7, 5, 10, 30, 45, 4560),
+                        datetime(2023, 10, 12, 20, 3, 8, 11),
+                        None,
+                    ],
+                },
+            )
+            .with_columns(
+                pl.col("c").cast(pl.Categorical),
+                pl.col("h").cast(pl.Datetime("ns")),
+            )
+            .collect()
+        )
+
+        for col in frame.columns:
+            srs = cast(pl.Series, pl.from_repr(repr(frame[col])))
+            assert_series_equal(srs, frame[col])
+
+    srs = cast(
+        pl.Series,
+        pl.from_repr(
+            """
+            Out[3]:
+            shape: (3,)
+            Series: 's' [str]
+            [
+                "a"
+                 …
+                "c"
+            ]
+            """
+        ),
+    )
+    assert_series_equal(srs, pl.Series("s", ["a", "c"]))
+
+    srs = cast(
+        pl.Series,
+        pl.from_repr(
+            """
+            Series: 'flt' [f32]
+            [
+            ]
+            """
+        ),
+    )
+    assert_series_equal(srs, pl.Series("flt", [], dtype=pl.Float32))
 
 
 def test_to_init_repr() -> None:

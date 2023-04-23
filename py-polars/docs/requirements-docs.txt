@@ -4,7 +4,7 @@ numpy
 pandas
 pyarrow
 
-hypothesis==6.72.0
+hypothesis==6.72.1
 
 autodocsumm==0.2.9
 commonmark==0.9.1

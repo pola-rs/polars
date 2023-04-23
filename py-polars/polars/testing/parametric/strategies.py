@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime, timedelta
 from random import choice
 from string import ascii_letters, ascii_uppercase, digits, punctuation
@@ -8,8 +9,10 @@ from typing import TYPE_CHECKING, Any, Sequence
 from hypothesis.strategies import (
     booleans,
     characters,
+    composite,
     dates,
     datetimes,
+    decimals,
     floats,
     from_type,
     integers,
@@ -25,6 +28,7 @@ from polars.datatypes import (
     Categorical,
     Date,
     Datetime,
+    Decimal,
     Duration,
     Float32,
     Float64,
@@ -42,7 +46,9 @@ from polars.datatypes import (
 )
 
 if TYPE_CHECKING:
-    from hypothesis.strategies import DrawFn
+    from decimal import Decimal as PyDecimal
+
+    from hypothesis.strategies import DrawFn, SearchStrategy
 
     from polars.type_aliases import PolarsDataType
 
@@ -88,7 +94,23 @@ strategy_duration = timedeltas(
     max_value=timedelta(microseconds=(2**46) - 1),
 )
 
-scalar_strategies: dict[PolarsDataType, Any] = {
+
+@composite
+def strategy_decimal(draw: DrawFn) -> PyDecimal:
+    places = draw(integers(min_value=0, max_value=18))
+    return draw(
+        # TODO: once fixed, re-enable decimal nan/inf values.
+        decimals(
+            allow_nan=False,
+            allow_infinity=False,
+            min_value=-(2**66),
+            max_value=(2**66) - 1,
+            places=places,
+        )
+    )
+
+
+scalar_strategies: dict[PolarsDataType, SearchStrategy[Any]] = {
     Boolean: strategy_bool,
     Float32: strategy_f32,
     Float64: strategy_f64,
@@ -113,13 +135,20 @@ scalar_strategies: dict[PolarsDataType, Any] = {
     Categorical: strategy_categorical,
     Utf8: strategy_utf8,
 }
+
+# note: decimal support is in early development and requires opt-in
+if os.environ.get("POLARS_ACTIVATE_DECIMAL") == "1":
+    scalar_strategies[Decimal] = strategy_decimal()
+
 _strategy_dtypes = list(scalar_strategies) + [List]
 
 
 def _hash(elem: Any) -> int:
-    """Hashing that can also handle lists (for 'unique' check)."""
+    """Hashing that also handles lists/dicts (for 'unique' check)."""
     if isinstance(elem, list):
         return hash(tuple(_hash(e) for e in elem))
+    elif isinstance(elem, dict):
+        return hash((_hash(k), _hash(v)) for k, v in elem.items())
     return hash(elem)
 
 
@@ -132,12 +161,12 @@ def create_list_strategy(
     unique: bool = False,
 ) -> Any:
     """
-    Create a List strategy for a given inner dtype.
+    Hypothesis strategy for producing polars List data.
 
     Parameters
     ----------
     inner_dtype : PolarsDataType
-        type of the inner list elements (can be another List).
+        type of the inner list elements (can also be another List).
     select_from : list, optional
         randomly select the innermost values from this list (otherwise
         the default strategy associated with the innermost dtype is used).
@@ -170,7 +199,7 @@ def create_list_strategy(
     [['yy', 'xx'], [], ['zz']]
 
     Create a UInt8 dtype strategy as a hypothesis composite that generates
-     pairs of small int values where the first is always <= the second:
+    pairs of small int values where the first is always <= the second:
 
     >>> from hypothesis.strategies import composite
     >>>

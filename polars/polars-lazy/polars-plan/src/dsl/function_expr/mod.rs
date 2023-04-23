@@ -515,6 +515,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             RStrip(matches) => map!(strings::rstrip, matches.as_deref()),
             #[cfg(feature = "string_from_radix")]
             FromRadix(radix, strict) => map!(strings::from_radix, radix, strict),
+            Slice(start, length) => map!(strings::str_slice, start, length),
         }
     }
 }
