@@ -23,8 +23,8 @@ def load_profile(
         a custom profile with that value).
 
     set_environment : bool, default False
-        If True, set the environment variable "POLARS_HYPOTHESIS_PROFILE" to the
-        given profile name/value.
+        If True, also set the environment variable ``POLARS_HYPOTHESIS_PROFILE``
+        to the given profile name/value.
 
     """
     common_settings = {"print_blob": True, "deadline": None}
@@ -65,7 +65,7 @@ def load_profile(
 
 def set_profile(profile: ParametricProfileNames | int) -> None:
     """
-    Set the env var "POLARS_HYPOTHESIS_PROFILE" to the given profile name/value.
+    Set the env var ``POLARS_HYPOTHESIS_PROFILE`` to the given profile name/value.
 
     Parameters
     ----------

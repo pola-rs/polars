@@ -48,7 +48,7 @@ from polars.datatypes import (
 if TYPE_CHECKING:
     from decimal import Decimal as PyDecimal
 
-    from hypothesis.strategies import DrawFn
+    from hypothesis.strategies import DrawFn, SearchStrategy
 
     from polars.type_aliases import PolarsDataType
 
@@ -110,7 +110,7 @@ def strategy_decimal(draw: DrawFn) -> PyDecimal:
     )
 
 
-scalar_strategies: dict[PolarsDataType, Any] = {
+scalar_strategies: dict[PolarsDataType, SearchStrategy[Any]] = {
     Boolean: strategy_bool,
     Float32: strategy_f32,
     Float64: strategy_f64,
@@ -161,12 +161,12 @@ def create_list_strategy(
     unique: bool = False,
 ) -> Any:
     """
-    Create a List strategy for a given inner dtype.
+    Hypothesis strategy for producing polars List data.
 
     Parameters
     ----------
     inner_dtype : PolarsDataType
-        type of the inner list elements (can be another List).
+        type of the inner list elements (can also be another List).
     select_from : list, optional
         randomly select the innermost values from this list (otherwise
         the default strategy associated with the innermost dtype is used).
@@ -199,7 +199,7 @@ def create_list_strategy(
     [['yy', 'xx'], [], ['zz']]
 
     Create a UInt8 dtype strategy as a hypothesis composite that generates
-     pairs of small int values where the first is always <= the second:
+    pairs of small int values where the first is always <= the second:
 
     >>> from hypothesis.strategies import composite
     >>>
