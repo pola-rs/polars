@@ -111,6 +111,6 @@ impl LazyFileListReader for LazyParquetReader {
 impl LazyFrame {
     /// Create a LazyFrame directly from a parquet scan.
     pub fn scan_parquet(path: impl AsRef<Path>, args: ScanArgsParquet) -> PolarsResult<Self> {
-        LazyParquetReader::new(path.as_ref().to_owned(), args).finish()
+        LazyParquetReader::new_inner(path.as_ref().to_owned(), args).finish()
     }
 }

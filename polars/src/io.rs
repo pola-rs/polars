@@ -185,8 +185,8 @@ pub mod read_csv {
         rdr
     }
 
-    impl CsvReaderOptions {
-        pub fn new() -> Self {
+    impl Default for CsvReaderOptions {
+        fn default() -> Self {
             Self {
                 rechunk: true,
                 n_rows: None,
@@ -214,6 +214,13 @@ pub mod read_csv {
                 row_count: None,
             }
         }
+    }
+
+    impl CsvReaderOptions {
+        pub fn new() -> Self {
+            Self::default()
+        }
+
         impl_set! {
             rechunk: bool,
             skip_rows_before_header: usize,
@@ -378,8 +385,12 @@ pub mod scan_csv {
             .with_missing_is_null(options.missing_is_null)
             .with_cache(options.cache)
             .low_memory(options.low_memory)
-            .with_encoding(options.encoding)
-            .with_try_parse_dates(options.try_parse_dates);
+            .with_encoding(options.encoding);
+
+        #[cfg(feature = "temporal")]
+        {
+            rdr = rdr.with_try_parse_dates(options.try_parse_dates)
+        }
 
         if let Some(schema) = options.schema {
             rdr = rdr.with_schema(schema);
