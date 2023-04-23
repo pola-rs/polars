@@ -120,7 +120,7 @@ impl PolarsMonthEnd for DateChunked {
         let add_one_month = Duration::parse("1mo");
         let subtract_one_day = Duration::parse("-1d");
         let no_offset = Duration::parse("0ns");
-        let ca = PolarsTruncate::truncate(self, Duration::parse("1mo"), no_offset, NO_TIMEZONE)?;
+        let ca = &self.truncate(Duration::parse("1mo"), no_offset, NO_TIMEZONE)?;
         const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
         Ok(ca
             .0
