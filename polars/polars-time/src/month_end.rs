@@ -9,6 +9,7 @@ use polars_core::utils::arrow::temporal_conversions::{
 use crate::month_start::roll_backward;
 use crate::windows::duration::Duration;
 
+// roll forward to the last day of the month
 fn roll_forward<T: PolarsTimeZone>(
     t: i64,
     time_zone: Option<&T>,

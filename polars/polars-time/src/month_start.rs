@@ -9,6 +9,7 @@ use polars_core::utils::arrow::temporal_conversions::{
 #[cfg(feature = "timezones")]
 use crate::utils::{localize_datetime, unlocalize_datetime};
 
+// roll backward to the first day of the month
 pub(crate) fn roll_backward<T: PolarsTimeZone>(
     t: i64,
     tz: Option<&T>,
