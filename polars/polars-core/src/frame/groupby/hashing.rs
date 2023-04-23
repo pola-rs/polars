@@ -219,6 +219,15 @@ where
                     });
                     offset += len;
                 }
+                // iterating the hash tables locally
+                // was faster than iterating in the materialization phase directly
+                // the proper end vec. I believe this is because the hash-table
+                // currently is local to the thread so in hot cache
+                // So we first collect into a tight vec and then do a second
+                // materialization run
+                // this is also faster than the index-map approach where we
+                // directly locally store to a vec at the cost of an extra
+                // indirection
                 hash_tbl
                     .into_iter()
                     .map(|(_k, v)| v)
