@@ -11,39 +11,27 @@ use crate::windows::duration::Duration;
 
 fn roll_forward<T: PolarsTimeZone>(
     t: i64,
-    tz: Option<&T>,
+    time_zone: Option<&T>,
     timestamp_to_datetime: fn(i64) -> NaiveDateTime,
     datetime_to_timestamp: fn(NaiveDateTime) -> i64,
     adder: fn(&Duration, i64, Option<&T>) -> PolarsResult<i64>,
 ) -> PolarsResult<i64> {
-    let t = roll_backward(t, tz, timestamp_to_datetime, datetime_to_timestamp)?;
-    let t = adder(&Duration::parse("1mo"), t, tz)?;
-    adder(&Duration::parse("-1d"), t, tz)
+    let t = roll_backward(t, time_zone, timestamp_to_datetime, datetime_to_timestamp)?;
+    let t = adder(&Duration::parse("1mo"), t, time_zone)?;
+    adder(&Duration::parse("-1d"), t, time_zone)
 }
 
 pub trait PolarsMonthEnd {
-    fn month_end(
-        &self,
-        time_unit: Option<TimeUnit>,
-        time_zone: Option<&impl PolarsTimeZone>,
-    ) -> PolarsResult<Self>
+    fn month_end(&self, time_zone: Option<&impl PolarsTimeZone>) -> PolarsResult<Self>
     where
         Self: Sized;
 }
 
 impl PolarsMonthEnd for DatetimeChunked {
-    fn month_end(
-        &self,
-        time_unit: Option<TimeUnit>,
-        tz: Option<&impl PolarsTimeZone>,
-    ) -> PolarsResult<Self> {
+    fn month_end(&self, time_zone: Option<&impl PolarsTimeZone>) -> PolarsResult<Self> {
         let timestamp_to_datetime: fn(i64) -> NaiveDateTime;
         let datetime_to_timestamp: fn(NaiveDateTime) -> i64;
-        let time_unit = match time_unit {
-            Some(time_unit) => time_unit,
-            None => polars_bail!(ComputeError: "Expected `time_unit`, got None"),
-        };
-        match time_unit {
+        match self.time_unit() {
             TimeUnit::Nanoseconds => {
                 timestamp_to_datetime = timestamp_ns_to_datetime;
                 datetime_to_timestamp = datetime_to_timestamp_ns;
@@ -66,22 +54,24 @@ impl PolarsMonthEnd for DatetimeChunked {
                 TimeUnit::Milliseconds => Duration::add_ms,
             }
         }
-        let adder = adder(time_unit);
+        let adder = adder(self.time_unit());
         Ok(self
             .0
             .try_apply(|t| {
-                roll_forward(t, tz, timestamp_to_datetime, datetime_to_timestamp, adder)
+                roll_forward(
+                    t,
+                    time_zone,
+                    timestamp_to_datetime,
+                    datetime_to_timestamp,
+                    adder,
+                )
             })?
-            .into_datetime(time_unit, tz.map(|x| x.to_string())))
+            .into_datetime(self.time_unit(), self.time_zone().clone()))
     }
 }
 
 impl PolarsMonthEnd for DateChunked {
-    fn month_end(
-        &self,
-        _time_unit: Option<TimeUnit>,
-        _tz: Option<&impl PolarsTimeZone>,
-    ) -> PolarsResult<Self> {
+    fn month_end(&self, _time_zone: Option<&impl PolarsTimeZone>) -> PolarsResult<Self> {
         const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
         Ok(self
             .0

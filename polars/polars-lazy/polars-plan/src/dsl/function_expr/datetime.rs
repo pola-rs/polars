@@ -216,34 +216,22 @@ pub(super) fn truncate(s: &Series, every: &str, offset: &str) -> PolarsResult<Se
 #[cfg(feature = "date_offset")]
 pub(super) fn month_start(s: &Series) -> PolarsResult<Series> {
     Ok(match s.dtype() {
-        DataType::Datetime(tu, tz) => match tz {
+        DataType::Datetime(_, tz) => match tz {
             #[cfg(feature = "timezones")]
             Some(tz) => match tz.parse::<Tz>() {
-                Ok(tz) => s
-                    .datetime()
-                    .unwrap()
-                    .month_start(Some(*tu), Some(&tz))?
-                    .into_series(),
+                Ok(tz) => s.datetime().unwrap().month_start(Some(&tz))?.into_series(),
                 Err(_) => match parse_offset(tz) {
-                    Ok(tz) => s
-                        .datetime()
-                        .unwrap()
-                        .month_start(Some(*tu), Some(&tz))?
-                        .into_series(),
+                    Ok(tz) => s.datetime().unwrap().month_start(Some(&tz))?.into_series(),
                     Err(_) => unreachable!(),
                 },
             },
             _ => s
                 .datetime()
                 .unwrap()
-                .month_start(Some(*tu), NO_TIMEZONE)?
+                .month_start(NO_TIMEZONE)?
                 .into_series(),
         },
-        DataType::Date => s
-            .date()
-            .unwrap()
-            .month_start(None, NO_TIMEZONE)?
-            .into_series(),
+        DataType::Date => s.date().unwrap().month_start(NO_TIMEZONE)?.into_series(),
         dt => polars_bail!(opq = month_start, got = dt, expected = "date/datetime"),
     })
 }
@@ -251,34 +239,18 @@ pub(super) fn month_start(s: &Series) -> PolarsResult<Series> {
 #[cfg(feature = "date_offset")]
 pub(super) fn month_end(s: &Series) -> PolarsResult<Series> {
     Ok(match s.dtype() {
-        DataType::Datetime(tu, tz) => match tz {
+        DataType::Datetime(_, tz) => match tz {
             #[cfg(feature = "timezones")]
             Some(tz) => match tz.parse::<Tz>() {
-                Ok(tz) => s
-                    .datetime()
-                    .unwrap()
-                    .month_end(Some(*tu), Some(&tz))?
-                    .into_series(),
+                Ok(tz) => s.datetime().unwrap().month_end(Some(&tz))?.into_series(),
                 Err(_) => match parse_offset(tz) {
-                    Ok(tz) => s
-                        .datetime()
-                        .unwrap()
-                        .month_end(Some(*tu), Some(&tz))?
-                        .into_series(),
+                    Ok(tz) => s.datetime().unwrap().month_end(Some(&tz))?.into_series(),
                     Err(_) => unreachable!(),
                 },
             },
-            _ => s
-                .datetime()
-                .unwrap()
-                .month_end(Some(*tu), NO_TIMEZONE)?
-                .into_series(),
+            _ => s.datetime().unwrap().month_end(NO_TIMEZONE)?.into_series(),
         },
-        DataType::Date => s
-            .date()
-            .unwrap()
-            .month_end(None, NO_TIMEZONE)?
-            .into_series(),
+        DataType::Date => s.date().unwrap().month_end(NO_TIMEZONE)?.into_series(),
         dt => polars_bail!(opq = month_end, got = dt, expected = "date/datetime"),
     })
 }

@@ -49,28 +49,16 @@ pub(crate) fn roll_backward<T: PolarsTimeZone>(
 }
 
 pub trait PolarsMonthStart {
-    fn month_start(
-        &self,
-        time_unit: Option<TimeUnit>,
-        time_zone: Option<&impl PolarsTimeZone>,
-    ) -> PolarsResult<Self>
+    fn month_start(&self, time_zone: Option<&impl PolarsTimeZone>) -> PolarsResult<Self>
     where
         Self: Sized;
 }
 
 impl PolarsMonthStart for DatetimeChunked {
-    fn month_start(
-        &self,
-        time_unit: Option<TimeUnit>,
-        tz: Option<&impl PolarsTimeZone>,
-    ) -> PolarsResult<Self> {
+    fn month_start(&self, tz: Option<&impl PolarsTimeZone>) -> PolarsResult<Self> {
         let timestamp_to_datetime: fn(i64) -> NaiveDateTime;
         let datetime_to_timestamp: fn(NaiveDateTime) -> i64;
-        let time_unit = match time_unit {
-            Some(time_unit) => time_unit,
-            None => polars_bail!(ComputeError: "Expected `time_unit`, got None"),
-        };
-        match time_unit {
+        match self.time_unit() {
             TimeUnit::Nanoseconds => {
                 timestamp_to_datetime = timestamp_ns_to_datetime;
                 datetime_to_timestamp = datetime_to_timestamp_ns;
@@ -87,16 +75,12 @@ impl PolarsMonthStart for DatetimeChunked {
         Ok(self
             .0
             .try_apply(|t| roll_backward(t, tz, timestamp_to_datetime, datetime_to_timestamp))?
-            .into_datetime(time_unit, tz.map(|x| x.to_string())))
+            .into_datetime(self.time_unit(), self.time_zone().clone()))
     }
 }
 
 impl PolarsMonthStart for DateChunked {
-    fn month_start(
-        &self,
-        _time_unit: Option<TimeUnit>,
-        _tz: Option<&impl PolarsTimeZone>,
-    ) -> PolarsResult<Self> {
+    fn month_start(&self, _tz: Option<&impl PolarsTimeZone>) -> PolarsResult<Self> {
         const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
         Ok(self
             .0
