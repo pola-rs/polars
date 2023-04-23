@@ -38,7 +38,7 @@ where
                 .downcast_iter()
                 .map(|arr| arr.values().as_slice())
                 .collect::<Vec<_>>();
-            groupby_threaded_slice(keys, 0, n_partitions, sorted)
+            groupby_threaded_slice(keys, n_partitions, sorted)
         } else {
             let keys = ca.downcast_iter().collect::<Vec<_>>();
             groupby_threaded_iter(&keys, n_partitions, sorted)
@@ -48,35 +48,6 @@ where
     } else {
         groupby(ca.into_iter(), sorted)
     }
-
-    // if multithreaded && group_multithreaded(ca) {
-    //     let n_partitions = _set_partition_size() as u64;
-    //
-    //     // use the arrays as iterators
-    //     if ca.chunks.len() == 1 {
-    //         if !ca.has_validity() {
-    //             let keys = vec![ca.cont_slice().unwrap()];
-    //             groupby_threaded_num(keys, group_size_hint, n_partitions, sorted)
-    //         } else {
-    //             let keys = ca
-    //                 .downcast_iter()
-    //                 .map(|arr| arr.into_iter().map(|x| x.copied()).collect::<Vec<_>>())
-    //                 .collect::<Vec<_>>();
-    //             groupby_threaded_num(keys, group_size_hint, n_partitions, sorted)
-    //         }
-    //         // use the polars-iterators
-    //     } else if !ca.has_validity() {
-    //         let keys = vec![ca.into_no_null_iter().collect::<Vec<_>>()];
-    //         groupby_threaded_num(keys, group_size_hint, n_partitions, sorted)
-    //     } else {
-    //         let keys = vec![ca.into_iter().collect::<Vec<_>>()];
-    //         groupby_threaded_num(keys, group_size_hint, n_partitions, sorted)
-    //     }
-    // } else if !ca.has_validity() {
-    //     groupby(ca.into_no_null_iter(), sorted)
-    // } else {
-    //     groupby(ca.into_iter(), sorted)
-    // }
 }
 
 impl<T> ChunkedArray<T>
@@ -300,7 +271,7 @@ impl IntoGroupsProxy for BinaryChunked {
                     .collect::<Vec<_>>()
             });
             let byte_hashes = byte_hashes.iter().collect::<Vec<_>>();
-            groupby_threaded_iter(&byte_hashes, n_partitions as u64, sorted)
+            groupby_threaded_slice(byte_hashes, n_partitions as u64, sorted)
         } else {
             let byte_hashes = self
                 .into_iter()
@@ -367,8 +338,8 @@ impl IntoGroupsProxy for ListChunked {
                         })
                         .collect::<PolarsResult<Vec<_>>>()?;
                     let bytes_hashes = bytes_hashes.iter().collect::<Vec<_>>();
-                    Ok(groupby_threaded_iter(
-                        &bytes_hashes,
+                    Ok(groupby_threaded_slice(
+                        bytes_hashes,
                         n_partitions as u64,
                         sorted,
                     ))
