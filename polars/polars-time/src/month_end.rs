@@ -7,7 +7,6 @@ use polars_core::utils::arrow::temporal_conversions::{
 };
 
 use crate::month_start::roll_backward;
-use crate::truncate::PolarsTruncate;
 use crate::windows::duration::Duration;
 
 fn roll_forward<T: PolarsTimeZone>(
@@ -16,12 +15,10 @@ fn roll_forward<T: PolarsTimeZone>(
     timestamp_to_datetime: fn(i64) -> NaiveDateTime,
     datetime_to_timestamp: fn(NaiveDateTime) -> i64,
     adder: fn(&Duration, i64, Option<&T>) -> PolarsResult<i64>,
-    add_one_month: &Duration,
-    subtract_one_day: &Duration,
 ) -> PolarsResult<i64> {
     let t = roll_backward(t, tz, timestamp_to_datetime, datetime_to_timestamp)?;
-    let t = adder(add_one_month, t, tz)?;
-    adder(subtract_one_day, t, tz)
+    let t = adder(&Duration::parse("1mo"), t, tz)?;
+    adder(&Duration::parse("-1d"), t, tz)
 }
 
 pub trait PolarsMonthEnd {
@@ -42,8 +39,6 @@ impl PolarsMonthEnd for DatetimeChunked {
     ) -> PolarsResult<Self> {
         let timestamp_to_datetime: fn(i64) -> NaiveDateTime;
         let datetime_to_timestamp: fn(NaiveDateTime) -> i64;
-        let add_one_month = Duration::parse("1mo");
-        let subtract_one_day = Duration::parse("-1d");
         let time_unit = match time_unit {
             Some(time_unit) => time_unit,
             None => polars_bail!(ComputeError: "Expected `time_unit`, got None"),
@@ -75,15 +70,7 @@ impl PolarsMonthEnd for DatetimeChunked {
         Ok(self
             .0
             .try_apply(|t| {
-                roll_forward(
-                    t,
-                    tz,
-                    timestamp_to_datetime,
-                    datetime_to_timestamp,
-                    adder,
-                    &add_one_month,
-                    &subtract_one_day,
-                )
+                roll_forward(t, tz, timestamp_to_datetime, datetime_to_timestamp, adder)
             })?
             .into_datetime(time_unit, tz.map(|x| x.to_string())))
     }
@@ -95,19 +82,17 @@ impl PolarsMonthEnd for DateChunked {
         _time_unit: Option<TimeUnit>,
         _tz: Option<&impl PolarsTimeZone>,
     ) -> PolarsResult<Self> {
-        let add_one_month = Duration::parse("1mo");
-        let subtract_one_day = Duration::parse("-1d");
-        let no_offset = Duration::parse("0ns");
-        let ca = PolarsTruncate::truncate(self, Duration::parse("1mo"), no_offset, NO_TIMEZONE)?;
         const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
-        Ok(ca
+        Ok(self
             .0
             .try_apply(|t| {
-                let t = (Duration::add_ms(&add_one_month, MSECS_IN_DAY * t as i64, NO_TIMEZONE)?
-                    / MSECS_IN_DAY) as i32;
-                let t = (Duration::add_ms(&subtract_one_day, MSECS_IN_DAY * t as i64, NO_TIMEZONE)?
-                    / MSECS_IN_DAY) as i32;
-                Ok(t)
+                Ok((roll_forward(
+                    MSECS_IN_DAY * t as i64,
+                    NO_TIMEZONE,
+                    timestamp_ms_to_datetime,
+                    datetime_to_timestamp_ms,
+                    Duration::add_ms,
+                )? / MSECS_IN_DAY) as i32)
             })?
             .into_date())
     }

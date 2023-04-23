@@ -2,13 +2,12 @@ use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use polars_arrow::time_zone::{PolarsTimeZone, NO_TIMEZONE};
 use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::{
-    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
+    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
+    SECONDS_IN_DAY,
 };
 
-use crate::truncate::PolarsTruncate;
 #[cfg(feature = "timezones")]
 use crate::utils::{localize_datetime, unlocalize_datetime};
-use crate::windows::duration::Duration;
 
 pub(crate) fn roll_backward<T: PolarsTimeZone>(
     t: i64,
@@ -98,7 +97,17 @@ impl PolarsMonthStart for DateChunked {
         _time_unit: Option<TimeUnit>,
         _tz: Option<&impl PolarsTimeZone>,
     ) -> PolarsResult<Self> {
-        let no_offset = Duration::parse("0ns");
-        PolarsTruncate::truncate(self, Duration::parse("1mo"), no_offset, NO_TIMEZONE)
+        const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
+        Ok(self
+            .0
+            .try_apply(|t| {
+                Ok((roll_backward(
+                    MSECS_IN_DAY * t as i64,
+                    NO_TIMEZONE,
+                    timestamp_ms_to_datetime,
+                    datetime_to_timestamp_ms,
+                )? / MSECS_IN_DAY) as i32)
+            })?
+            .into_date())
     }
 }
