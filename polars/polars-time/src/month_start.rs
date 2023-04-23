@@ -110,6 +110,6 @@ impl PolarsMonthStart for DateChunked {
         _tz: Option<&impl PolarsTimeZone>,
     ) -> PolarsResult<Self> {
         let no_offset = Duration::parse("0ns");
-        self.truncate(Duration::parse("1mo"), no_offset, NO_TIMEZONE)
+        PolarsTruncate::truncate(self, Duration::parse("1mo"), no_offset, NO_TIMEZONE)
     }
 }
