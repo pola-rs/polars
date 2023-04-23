@@ -8,6 +8,7 @@ hypothesis==6.72.1
 
 autodocsumm==0.2.9
 commonmark==0.9.1
+livereload==2.6.3
 numpydoc==1.5.0
 pydata-sphinx-theme==0.13.0
 sphinx-autosummary-accessors==2022.4.0
