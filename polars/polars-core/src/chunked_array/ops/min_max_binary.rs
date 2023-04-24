@@ -1,6 +1,5 @@
 use arrow::array::PrimitiveArray;
 use polars_arrow::prelude::FromData;
-use polars_arrow::utils::combine_validities_or;
 use polars_row::ArrayRef;
 
 use crate::datatypes::PolarsNumericType;
@@ -24,8 +23,7 @@ where
                 .zip(right.values().iter())
                 .map(|(l, r)| op(*l, *r))
                 .collect::<Vec<_>>();
-            let validity = combine_validities_or(left.validity(), right.validity());
-            let arr = PrimitiveArray::from_data_default(values.into(), validity);
+            let arr = PrimitiveArray::from_data_default(values.into(), None);
 
             Box::new(arr) as ArrayRef
         })
@@ -68,8 +66,13 @@ pub(crate) fn min_max_binary_series(
     right: &Series,
     min: bool,
 ) -> PolarsResult<Series> {
-    if left.dtype().to_physical().is_numeric() {
+    if left.dtype().to_physical().is_numeric()
+        && left.null_count() == 0
+        && right.null_count() == 0
+        && left.len() == right.len()
+    {
         let (lhs, rhs) = coerce_lhs_rhs(left, right)?;
+        let logical = lhs.dtype();
         let lhs = lhs.to_physical_repr();
         let rhs = rhs.to_physical_repr();
 
@@ -78,9 +81,9 @@ pub(crate) fn min_max_binary_series(
         let b: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
 
         if min {
-            Ok(min_binary(a, b).into_series())
+            min_binary(a, b).into_series().cast(logical)
         } else {
-            Ok(max_binary(a, b).into_series())
+            max_binary(a, b).into_series().cast(logical)
             }
         })
     } else {
