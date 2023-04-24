@@ -365,7 +365,6 @@ pub mod scan_csv {
         n_rows: Option<usize>,
         /// Set values that will be interpreted as missing/ null. Note that any value you set as null value
         /// will not be escaped, so if quotation marks are part of the null value you should include them.
-        /// example:
         /// ```rust no_run
         /// // NULL will be interpreted as a null value
         /// scan_csv!("data.csv", null_values = "NULL");
@@ -374,20 +373,21 @@ pub mod scan_csv {
         /// // "NULL" or null will be interpreted as a null value
         /// scan_csv!("data.csv", null_values = &["\"NULL\"", "null"]);
         /// ```
-        ///
         #[builder(setter(strip_option, into))]
         null_values: Option<NullValues>,
         /// Set the `char` used as quote char. The default is `b'"'`. If set to `[None]` quoting is disabled.
         quote_char: Option<u8>,
         /// Rechunk the DataFrame to contiguous memory after the CSV is parsed.
         rechunk: bool,
-        /// Add a `row_count` column.
-        /// example:
+        /// Add a `row_count` column with a provided name
+        ///
         /// ```rust no_run
         /// // add a row count column named "id"
         /// polars::scan_csv!("foo.csv", row_count = "id")?;
         /// // add a row count column named "id" with an offset of 100
         /// polars::scan_csv!("foo.csv", row_count = ("id", 100))?;
+        /// // use the RowCount struct
+        /// polars::scan_csv!("foo.csv", row_count = RowCount {name: "id", offset: 100})?;
         /// ```
         #[builder(setter(strip_option, into))]
         row_count: Option<RowCount>,
