@@ -2285,13 +2285,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         - 1d    (1 day)
         - 1w    (1 week)
         - 1mo   (1 calendar month)
-        - 1mo_saturating (same as above, but saturates to the last day of the month
-          if the target date does not exist)
         - 1y    (1 calendar year)
         - 1i    (1 index count)
 
         Or combine them:
         "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+
+        Suffix with `"_saturating"` to indicate that dates too large for
+        their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
+        instead of erroring.
 
         In case of a groupby_rolling on an integer column, the windows are defined by:
 
@@ -2416,13 +2418,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         - 1d    (1 day)
         - 1w    (1 week)
         - 1mo   (1 calendar month)
-        - 1mo_saturating (same as above, but saturates to the last day of the month
-          if the target date does not exist)
         - 1y    (1 calendar year)
         - 1i    (1 index count)
 
         Or combine them:
         "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+
+        Suffix with `"_saturating"` to indicate that dates too large for
+        their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
+        instead of erroring.
 
         In case of a groupby_dynamic on an integer column, the windows are defined by:
 
@@ -2749,13 +2753,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 - 1d    (1 day)
                 - 1w    (1 week)
                 - 1mo   (1 calendar month)
-                - 1mo_saturating (same as above, but saturates to the last day of the
-                  month if the target date does not exist)
                 - 1y    (1 calendar year)
                 - 1i    (1 index count)
 
                 Or combine them:
                 "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+
+                Suffix with `"_saturating"` to indicate that dates too large for
+                their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
+                instead of erroring.
 
         allow_parallel
             Allow the physical plan to optionally evaluate the computation of both
