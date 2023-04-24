@@ -18,14 +18,7 @@ nightly = ["polars-core/nightly", "polars-ops/nightly", "simd", "polars-lazy/nig
 docs = ["polars-core/docs"]
 temporal = ["polars-core/temporal", "polars-lazy/temporal", "polars-io/temporal", "polars-time"]
 random = ["polars-core/random", "polars-lazy/random"]
-default = [
-  "docs",
-  "zip_with",
-  "csv",
-  "temporal",
-  "fmt",
-  "dtype-slim",
-]
+default = ["docs", "zip_with", "csv", "temporal", "fmt", "dtype-slim"]
 ndarray = ["polars-core/ndarray"]
 # serde support for dataframes and series
 serde = ["polars-core/serde"]
@@ -197,11 +190,7 @@ dtype-full = [
 ]
 
 # sensible minimal set of opt-in datatypes
-dtype-slim = [
-  "dtype-date",
-  "dtype-datetime",
-  "dtype-duration",
-]
+dtype-slim = ["dtype-date", "dtype-datetime", "dtype-duration"]
 
 # opt-in datatypes for Series
 dtype-date = [
@@ -307,9 +296,7 @@ docs-selection = [
   "dynamic_groupby",
 ]
 
-bench = [
-  "lazy",
-]
+bench = ["lazy"]
 
 [dependencies]
 polars-algo = { version = "0.31.1", path = "./polars-algo", optional = true }

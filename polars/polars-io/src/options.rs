@@ -8,3 +8,30 @@ pub struct RowCount {
     pub name: String,
     pub offset: IdxSize,
 }
+
+impl RowCount {
+    pub fn new(name: &str, offset: IdxSize) -> Self {
+        Self {
+            name: name.to_string(),
+            offset,
+        }
+    }
+}
+
+impl From<&str> for RowCount {
+    fn from(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            offset: 0,
+        }
+    }
+}
+
+impl From<(&str, IdxSize)> for RowCount {
+    fn from((name, offset): (&str, IdxSize)) -> Self {
+        Self {
+            name: name.to_string(),
+            offset,
+        }
+    }
+}

@@ -27,13 +27,13 @@ impl Default for ScanArgsIpc {
 }
 
 #[derive(Clone)]
-struct LazyIpcReader {
+pub struct LazyIpcReader {
     args: ScanArgsIpc,
     path: PathBuf,
 }
 
 impl LazyIpcReader {
-    fn new(path: PathBuf, args: ScanArgsIpc) -> Self {
+    pub fn new(path: PathBuf, args: ScanArgsIpc) -> Self {
         Self { args, path }
     }
 }

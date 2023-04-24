@@ -1,7 +1,8 @@
 mod csv;
-
 #[cfg(feature = "json")]
 mod json;
+
+mod macros;
 
 #[cfg(feature = "parquet")]
 mod parquet;

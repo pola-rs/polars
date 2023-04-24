@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use super::*;
 use crate::csv::read_impl::{
     to_batched_owned_mmap, to_batched_owned_read, BatchedCsvReaderMmap, BatchedCsvReaderRead,
@@ -12,6 +14,17 @@ pub enum CsvEncoding {
     Utf8,
     /// Utf8 encoding and unknown bytes are replaced with �
     LossyUtf8,
+}
+
+impl FromStr for CsvEncoding {
+    type Err = PolarsError;
+    fn from_str(s: &str) -> PolarsResult<Self> {
+        match s {
+            "utf8" | "utf-8" => Ok(Self::Utf8),
+            "utf8-lossy" => Ok(Self::LossyUtf8),
+            encoding => polars_bail!(ComputeError: "encoding not supported: {}", encoding),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -46,6 +59,46 @@ impl From<&str> for NullValues {
 impl From<&[&str]> for NullValues {
     fn from(v: &[&str]) -> Self {
         Self::AllColumns(v.iter().map(|s| s.to_string()).collect())
+    }
+}
+impl From<&[&str; 1]> for NullValues {
+    fn from(v: &[&str; 1]) -> Self {
+        Self::AllColumnsSingle(v[0].to_string())
+    }
+}
+impl From<&[&str; 2]> for NullValues {
+    fn from(v: &[&str; 2]) -> Self {
+        Self::AllColumns(v.map(|s| s.to_string()).to_vec())
+    }
+}
+
+impl From<&[&str; 3]> for NullValues {
+    fn from(v: &[&str; 3]) -> Self {
+        Self::AllColumns(v.map(|s| s.to_string()).to_vec())
+    }
+}
+
+impl From<&[&str; 4]> for NullValues {
+    fn from(v: &[&str; 4]) -> Self {
+        Self::AllColumns(v.map(|s| s.to_string()).to_vec())
+    }
+}
+
+impl From<(&str,)> for NullValues {
+    fn from(v: (&str,)) -> Self {
+        Self::AllColumnsSingle(v.0.to_string())
+    }
+}
+
+impl From<(&str, &str)> for NullValues {
+    fn from(v: (&str, &str)) -> Self {
+        Self::AllColumns(vec![v.0.to_string(), v.1.to_string()])
+    }
+}
+
+impl From<(&str, &str, &str)> for NullValues {
+    fn from(v: (&str, &str, &str)) -> Self {
+        Self::AllColumns(vec![v.0.to_string(), v.1.to_string(), v.2.to_string()])
     }
 }
 
