@@ -40,7 +40,7 @@ pub struct Duration {
     pub parsed_int: bool,
     // indicates if a '1mo' offset to a non-existent date (e.g. 2022-02-29)
     // should saturate to 2022-02-28 (as opposed to erroring)
-    pub(crate) saturating_months: bool,
+    pub(crate) saturating_months: Option<bool>,
 }
 
 impl PartialOrd<Self> for Duration {
@@ -65,7 +65,7 @@ impl Duration {
             nsecs: fixed_slots.abs(),
             negative: fixed_slots < 0,
             parsed_int: true,
-            saturating_months: false,
+            saturating_months: None,
         }
     }
 
@@ -116,7 +116,7 @@ impl Duration {
         let mut iter = duration.char_indices();
         let negative = duration.starts_with('-');
         let mut start = 0;
-        let mut saturating_months = false;
+        let mut saturating_months: Option<bool> = None;
 
         // skip the '-' char
         if negative {
@@ -163,16 +163,17 @@ impl Duration {
                     "d" => days += n,
                     "w" => weeks += n,
                     "mo" => {
-                        if saturating_months {
+                        if let Some(true) = saturating_months {
                             panic!("cannot use both saturating and non-saturating months")
                         }
+                        saturating_months = Some(false);
                         months += n
                     }
                     "mo_saturating" => {
-                        if !saturating_months {
+                        if let Some(false) = saturating_months {
                             panic!("cannot use both saturating and non-saturating months")
                         }
-                        saturating_months = true;
+                        saturating_months = Some(true);
                         months += n
                     }
                     "y" => months += n * 12,
@@ -260,7 +261,7 @@ impl Duration {
             nsecs,
             negative,
             parsed_int: false,
-            saturating_months: false,
+            saturating_months: None,
         }
     }
 
@@ -274,7 +275,7 @@ impl Duration {
             nsecs: 0,
             negative,
             parsed_int: false,
-            saturating_months: false,
+            saturating_months: None,
         }
     }
 
@@ -288,7 +289,7 @@ impl Duration {
             nsecs: 0,
             negative,
             parsed_int: false,
-            saturating_months: false,
+            saturating_months: None,
         }
     }
 
@@ -302,7 +303,7 @@ impl Duration {
             nsecs: 0,
             negative,
             parsed_int: false,
-            saturating_months: false,
+            saturating_months: None,
         }
     }
 
@@ -562,7 +563,7 @@ impl Duration {
                 month += 12;
             }
 
-            if d.saturating_months {
+            if let Some(true) = d.saturating_months {
                 // Normalize the day if we are past the end of the month.
                 let mut last_day_of_month = last_day_of_month(month);
                 if month == (chrono::Month::February.number_from_month() as i32)

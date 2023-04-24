@@ -28,6 +28,9 @@ pub trait PolarsUpsample {
     /// - 1d    (1 day)
     /// - 1w    (1 week)
     /// - 1mo   (1 calendar month)
+    /// - 1mo_saturating (calendar month, but "saturates" to the last day of the month
+    ///     instead of erroring. For example, 2022-01-29 plus `'1mo_saturating'` goes to
+    ///     2022-02-28)
     /// - 1y    (1 calendar year)
     /// - 1i    (1 index count)
     /// Or combine them:
