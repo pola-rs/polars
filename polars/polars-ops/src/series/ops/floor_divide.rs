@@ -1,7 +1,7 @@
 use arrow::array::{Array, PrimitiveArray};
 use num::NumCast;
 use polars_arrow::prelude::ArrayRef;
-use polars_arrow::utils::combine_validities;
+use polars_arrow::utils::combine_validities_and;
 use polars_core::datatypes::PolarsNumericType;
 use polars_core::export::num;
 use polars_core::prelude::*;
@@ -39,7 +39,7 @@ fn floor_div_array<T: NumericNative>(
             .map(|(a, b)| floor_div_element(a, b))
             .collect::<Vec<_>>();
 
-        let validity = combine_validities(a.validity(), b.validity());
+        let validity = combine_validities_and(a.validity(), b.validity());
 
         PrimitiveArray::new(a.data_type().clone(), values.into(), validity)
     } else {

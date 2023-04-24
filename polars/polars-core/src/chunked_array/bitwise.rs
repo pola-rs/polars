@@ -3,7 +3,7 @@ use std::ops::{BitAnd, BitOr, BitXor, Not};
 use arrow::compute;
 
 use super::*;
-use crate::utils::{align_chunks_binary, combine_validities, CustomIterTools};
+use crate::utils::{align_chunks_binary, combine_validities_and, CustomIterTools};
 
 impl<T> BitAnd for &ChunkedArray<T>
 where
@@ -20,7 +20,7 @@ where
             .map(|(l_arr, r_arr)| {
                 let l_vals = l_arr.values().as_slice();
                 let r_vals = r_arr.values().as_slice();
-                let validity = combine_validities(l_arr.validity(), r_arr.validity());
+                let validity = combine_validities_and(l_arr.validity(), r_arr.validity());
 
                 let av = l_vals
                     .iter()
@@ -53,7 +53,7 @@ where
             .map(|(l_arr, r_arr)| {
                 let l_vals = l_arr.values().as_slice();
                 let r_vals = r_arr.values().as_slice();
-                let validity = combine_validities(l_arr.validity(), r_arr.validity());
+                let validity = combine_validities_and(l_arr.validity(), r_arr.validity());
 
                 let av = l_vals
                     .iter()
@@ -86,7 +86,7 @@ where
             .map(|(l_arr, r_arr)| {
                 let l_vals = l_arr.values().as_slice();
                 let r_vals = r_arr.values().as_slice();
-                let validity = combine_validities(l_arr.validity(), r_arr.validity());
+                let validity = combine_validities_and(l_arr.validity(), r_arr.validity());
 
                 let av = l_vals
                     .iter()
@@ -190,7 +190,7 @@ impl BitXor for &BooleanChunked {
             .downcast_iter()
             .zip(r.downcast_iter())
             .map(|(l_arr, r_arr)| {
-                let validity = combine_validities(l_arr.validity(), r_arr.validity());
+                let validity = combine_validities_and(l_arr.validity(), r_arr.validity());
                 let values = l_arr.values() ^ r_arr.values();
 
                 let arr = BooleanArray::from_data_default(values, validity);
