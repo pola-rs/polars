@@ -33,7 +33,7 @@ pub trait PolarsUpsample {
     /// Or combine them:
     /// "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
     /// Suffix with `"_saturating"` to saturate dates with days too
-    /// large with their month to the last day of the month (e.g. 
+    /// large with their month to the last day of the month (e.g.
     /// 2022-02-29 to 2022-02-28).
     fn upsample<I: IntoVec<String>>(
         &self,

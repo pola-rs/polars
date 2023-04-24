@@ -4585,8 +4585,8 @@ class Expr:
             - 1i    (1 index count)
 
             Suffix with `"_saturating"` to indicate that dates too large for
-            their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-            instead of erroring.
+            their month should saturate at the largest date
+            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
             If a timedelta or the dynamic string language is used, the `by`
             and `closed` arguments must also be set.
@@ -4684,8 +4684,8 @@ class Expr:
             - 1i    (1 index count)
 
             Suffix with `"_saturating"` to indicate that dates too large for
-            their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-            instead of erroring.
+            their month should saturate at the largest date
+            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
             If a timedelta or the dynamic string language is used, the `by`
             and `closed` arguments must also be set.
@@ -4783,8 +4783,8 @@ class Expr:
             - 1i    (1 index count)
 
             Suffix with `"_saturating"` to indicate that dates too large for
-            their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-            instead of erroring.
+            their month should saturate at the largest date
+            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
             If a timedelta or the dynamic string language is used, the `by`
             and `closed` arguments must also be set.
@@ -4882,8 +4882,8 @@ class Expr:
             - 1i    (1 index count)
 
             Suffix with `"_saturating"` to indicate that dates too large for
-            their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-            instead of erroring.
+            their month should saturate at the largest date
+            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
             If a timedelta or the dynamic string language is used, the `by`
             and `closed` arguments must also be set.
@@ -4979,10 +4979,10 @@ class Expr:
             - 1mo   (1 calendar month)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
-        
+
             Suffix with `"_saturating"` to indicate that dates too large for
-            their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-            instead of erroring.
+            their month should saturate at the largest date
+            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
             If a timedelta or the dynamic string language is used, the `by`
             and `closed` arguments must also be set.
@@ -5078,10 +5078,10 @@ class Expr:
             - 1mo   (1 calendar month)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
-        
+
             Suffix with `"_saturating"` to indicate that dates too large for
-            their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-            instead of erroring.
+            their month should saturate at the largest date
+            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
             If a timedelta or the dynamic string language is used, the `by`
             and `closed` arguments must also be set.
@@ -5173,10 +5173,10 @@ class Expr:
             - 1mo   (1 calendar month)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
-        
+
             Suffix with `"_saturating"` to indicate that dates too large for
-            their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-            instead of erroring.
+            their month should saturate at the largest date
+            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
             If a timedelta or the dynamic string language is used, the `by`
             and `closed` arguments must also be set.
@@ -5276,8 +5276,8 @@ class Expr:
             - 1i    (1 index count)
 
             Suffix with `"_saturating"` to indicate that dates too large for
-            their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-            instead of erroring.
+            their month should saturate at the largest date
+            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
             If a timedelta or the dynamic string language is used, the `by`
             and `closed` arguments must also be set.

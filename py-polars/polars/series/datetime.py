@@ -1446,8 +1446,8 @@ class DateTimeNameSpace:
             - 1i    (1 index count)
 
             Suffix with `"_saturating"` to indicate that dates too large for
-            their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
-            instead of erroring.
+            their month should saturate at the largest date
+            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
 
         Returns
         -------

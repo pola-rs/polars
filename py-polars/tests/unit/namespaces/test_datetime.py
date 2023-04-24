@@ -8,7 +8,7 @@ import pytest
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.exceptions import ComputeError, InvalidOperationError
-from polars.testing import assert_series_equal, assert_frame_equal
+from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
     from polars.type_aliases import TimeUnit
@@ -532,16 +532,19 @@ def test_negative_offset_by_err_msg_8464() -> None:
 
 
 @pytest.mark.parametrize(
-    ('duration', 'input_date', 'expected'),
+    ("duration", "input_date", "expected"),
     [
-        ('1mo_saturating', date(2018, 1, 31), date(2018, 2, 28)),
-        ('1y_saturating', date(2024, 2, 29), date(2025, 2, 28)),
-        ('1y1mo_saturating', date(2024, 1, 30), date(2025, 2, 28)),
-    ]
+        ("1mo_saturating", date(2018, 1, 31), date(2018, 2, 28)),
+        ("1y_saturating", date(2024, 2, 29), date(2025, 2, 28)),
+        ("1y1mo_saturating", date(2024, 1, 30), date(2025, 2, 28)),
+    ],
 )
-def test_offset_by_saturating_8217_8474(duration: str, input_date: date, expected: date) -> None:
+def test_offset_by_saturating_8217_8474(
+    duration: str, input_date: date, expected: date
+) -> None:
     result = pl.Series([input_date]).dt.offset_by(duration).item()
     assert result == expected
+
 
 def test_year_empty_df() -> None:
     df = pl.DataFrame(pl.Series(name="date", dtype=pl.Date))

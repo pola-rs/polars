@@ -94,7 +94,7 @@ impl Duration {
     /// * `mo`: calendar month
     /// * `y`:  calendar year
     /// * `i`:  index value (only for {Int32, Int64} dtypes)
-    /// 
+    ///
     /// Suffix with `"_saturating"` to indicate that dates too large for
     /// their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
     /// instead of erroring.
@@ -115,13 +115,12 @@ impl Duration {
         let mut days = 0;
         let mut months = 0;
         let negative = duration.starts_with('-');
-        let (saturating, mut iter) = match duration.ends_with("_saturating"){
-            true => {
-                (true, duration[..duration.len() - "_saturating".len()].char_indices())
-            },
-            false => {
-                (false, duration.char_indices())
-            }
+        let (saturating, mut iter) = match duration.ends_with("_saturating") {
+            true => (
+                true,
+                duration[..duration.len() - "_saturating".len()].char_indices(),
+            ),
+            false => (false, duration.char_indices()),
         };
         let mut start = 0;
 
@@ -257,7 +256,7 @@ impl Duration {
             nsecs,
             negative,
             parsed_int: false,
-            saturating:false,
+            saturating: false,
         }
     }
 
@@ -271,7 +270,7 @@ impl Duration {
             nsecs: 0,
             negative,
             parsed_int: false,
-            saturating:false,
+            saturating: false,
         }
     }
 
@@ -285,7 +284,7 @@ impl Duration {
             nsecs: 0,
             negative,
             parsed_int: false,
-            saturating:false,
+            saturating: false,
         }
     }
 
@@ -299,7 +298,7 @@ impl Duration {
             nsecs: 0,
             negative,
             parsed_int: false,
-            saturating:false,
+            saturating: false,
         }
     }
 
