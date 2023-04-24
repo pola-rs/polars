@@ -16,8 +16,6 @@ use sqlparser::parser::Parser;
 use crate::sql_expr::{parse_sql_expr, process_join_constraint};
 use crate::table_functions::PolarsTableFunctions;
 
-thread_local! {pub(crate) static TABLES: RefCell<Vec<String>> = RefCell::new(vec![])}
-
 /// The SQLContext is the main entry point for executing SQL queries.
 #[derive(Default, Clone)]
 pub struct SQLContext {
@@ -28,6 +26,12 @@ pub struct SQLContext {
 
 impl SQLContext {
     /// Create a new SQLContext
+    /// ```rust
+    /// # use polars_sql::SQLContext;
+    /// # fn main() {
+    /// let ctx = SQLContext::new();
+    /// # }
+    /// ```
     pub fn new() -> Self {
         Self {
             table_map: PlHashMap::new(),
@@ -37,11 +41,55 @@ impl SQLContext {
     }
 
     /// Register a DataFrame as a table in the SQLContext.
+    /// ```rust
+    /// # use polars_sql::SQLContext;
+    /// # use polars_core::prelude::*;
+    /// # use polars_lazy::prelude::*;
+    /// # fn main() {
+    ///
+    /// let mut ctx = SQLContext::new();
+    ///
+    /// let df = df! {
+    ///    "a" =>  [1, 2, 3],
+    /// }.unwrap().lazy();
+    ///
+    /// ctx.register("df", df);
+    /// # }
+    ///```
     pub fn register(&mut self, name: &str, lf: LazyFrame) {
         self.table_map.insert(name.to_owned(), lf);
         self.tables.push(name.to_owned());
     }
 
+    /// Execute a sql query and return the result as a LazyFrame.
+    /// ```rust
+    /// # use polars_sql::SQLContext;
+    /// # use polars_core::prelude::*;
+    /// # use polars_lazy::prelude::*;
+    /// # fn main() {
+    ///
+    /// let mut ctx = SQLContext::new();
+    /// let df = df! {
+    ///    "a" =>  [1, 2, 3],
+    /// }
+    /// .unwrap();
+    ///
+    /// ctx.register("df", df.clone().lazy());
+    /// let sql_df = ctx.execute("SELECT * FROM df").unwrap().collect().unwrap();
+    /// assert!(sql_df.frame_equal(&df));
+    /// # }
+    ///```
+    pub fn execute(&mut self, query: &str) -> PolarsResult<LazyFrame> {
+        let ast = Parser::parse_sql(&GenericDialect::default(), query).map_err(to_compute_err)?;
+        polars_ensure!(ast.len() == 1, ComputeError: "One and only one statement at a time please");
+        let res = self.execute_statement(ast.get(0).unwrap());
+        // every execution should clear the cte map
+        self.cte_map.borrow_mut().clear();
+        res
+    }
+}
+
+impl SQLContext {
     fn register_cte(&mut self, name: &str, lf: LazyFrame) {
         self.cte_map.borrow_mut().insert(name.to_owned(), lf);
     }
@@ -52,18 +100,6 @@ impl SQLContext {
         } else {
             self.cte_map.borrow().get(name).cloned()
         }
-    }
-}
-
-impl SQLContext {
-    /// Execute a sql query and return the result as a LazyFrame.
-    pub fn execute(&mut self, query: &str) -> PolarsResult<LazyFrame> {
-        let ast = Parser::parse_sql(&GenericDialect::default(), query).map_err(to_compute_err)?;
-        polars_ensure!(ast.len() == 1, ComputeError: "One and only one statement at a time please");
-        let res = self.execute_statement(ast.get(0).unwrap());
-        // every execution should clear the cte map
-        self.cte_map.borrow_mut().clear();
-        res
     }
 
     pub(crate) fn execute_statement(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
@@ -375,15 +411,6 @@ impl SQLContext {
             .collect::<Vec<_>>();
 
         Ok(aggregated.select(&final_projection))
-    }
-}
-
-impl Drop for SQLContext {
-    fn drop(&mut self) {
-        // drop old tables
-        TABLES.with(|cell| {
-            cell.borrow_mut().clear();
-        });
     }
 }
 

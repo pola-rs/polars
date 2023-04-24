@@ -345,6 +345,7 @@ impl SqlFunctionVisitor<'_> {
 
         let function_name: PolarsSqlFunctions = function.try_into()?;
         use PolarsSqlFunctions::*;
+
         match function_name {
             // ----
             // Math functions
@@ -389,9 +390,9 @@ impl SqlFunctionVisitor<'_> {
             // Aggregate functions
             // ----
             Count => self.visit_count(),
-            Sum => self.visit_unary(Expr::sum),
-            Min => self.visit_unary(Expr::min),
-            Max => self.visit_unary(Expr::max),
+            Sum => self.visit_unary_with_opt_cumulative(Expr::sum, Expr::cumsum),
+            Min => self.visit_unary_with_opt_cumulative(Expr::min, Expr::cummin),
+            Max => self.visit_unary_with_opt_cumulative(Expr::max, Expr::cummax),
             Avg => self.visit_unary(Expr::mean),
             StdDev => self.visit_unary(|e| e.std(1)),
             Variance => self.visit_unary(|e| e.var(1)),
@@ -414,15 +415,64 @@ impl SqlFunctionVisitor<'_> {
     }
 
     fn visit_unary(&self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
+        self.visit_unary_no_window(f)
+            .and_then(|e| self.apply_window_spec(e, &self.func.over))
+    }
+
+    /// Some functions have cumulative equivalents that can be applied to window specs
+    /// e.g. SUM(a) OVER (ORDER BY b DESC) -> CUMSUM(a, false)
+    /// visit_unary_with_cumulative_window will take in a function & a cumulative function
+    /// if there is a cumulative window spec, it will apply the cumulative function,
+    /// otherwise it will apply the function
+    fn visit_unary_with_opt_cumulative(
+        &self,
+        f: impl Fn(Expr) -> Expr,
+        cumulative_f: impl Fn(Expr, bool) -> Expr,
+    ) -> PolarsResult<Expr> {
+        match self.func.over.as_ref() {
+            Some(spec) => self.apply_cumulative_window(f, cumulative_f, spec),
+            _ => self.visit_unary(f),
+        }
+    }
+    /// Window specs without partition bys are essentially cumulative functions
+    /// e.g. SUM(a) OVER (ORDER BY b DESC) -> CUMSUM(a, false)
+    fn apply_cumulative_window(
+        &self,
+        f: impl Fn(Expr) -> Expr,
+        cumulative_f: impl Fn(Expr, bool) -> Expr,
+        WindowSpec {
+            partition_by,
+            order_by,
+            ..
+        }: &WindowSpec,
+    ) -> PolarsResult<Expr> {
+        if !order_by.is_empty() && partition_by.is_empty() {
+            let (order_by, desc): (Vec<Expr>, Vec<bool>) = order_by
+                .iter()
+                .map(|o| {
+                    let expr = parse_sql_expr(&o.expr, self.ctx)?;
+                    Ok(match o.asc {
+                        Some(b) => (expr, !b),
+                        None => (expr, false),
+                    })
+                })
+                .collect::<PolarsResult<Vec<_>>>()?
+                .into_iter()
+                .unzip();
+            self.visit_unary_no_window(|e| cumulative_f(e.sort_by(&order_by, &desc), false))
+        } else {
+            self.visit_unary(f)
+        }
+    }
+
+    fn visit_unary_no_window(&self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
         let function = self.func;
         let args = extract_args(function);
         if let FunctionArgExpr::Expr(sql_expr) = args[0] {
             // parse the inner sql expr -- e.g. SUM(a) -> a
             let expr = parse_sql_expr(sql_expr, self.ctx)?;
             // apply the function on the inner expr -- e.g. SUM(a) -> SUM
-            let expr = f(expr);
-            // apply the window spec if present
-            self.apply_window_spec(expr, &function.over)
+            Ok(f(expr))
         } else {
             not_supported_error(function.name.0[0].value.as_str(), &args)
         }
@@ -478,6 +528,7 @@ impl SqlFunctionVisitor<'_> {
             _ => return not_supported_error("count", &args),
         })
     }
+
     fn apply_window_spec(
         &self,
         expr: Expr,
@@ -485,13 +536,28 @@ impl SqlFunctionVisitor<'_> {
     ) -> PolarsResult<Expr> {
         Ok(match &window_spec {
             Some(window_spec) => {
-                // Process for simple window specification, partition by first
-                let partition_by = window_spec
-                    .partition_by
-                    .iter()
-                    .map(|p| parse_sql_expr(p, self.ctx))
-                    .collect::<PolarsResult<Vec<_>>>()?;
-                expr.over(partition_by)
+                if window_spec.partition_by.is_empty() {
+                    let exprs = window_spec
+                        .order_by
+                        .iter()
+                        .map(|o| {
+                            let e = parse_sql_expr(&o.expr, self.ctx)?;
+                            match o.asc {
+                                Some(b) => Ok(e.sort(!b)),
+                                None => Ok(e),
+                            }
+                        })
+                        .collect::<PolarsResult<Vec<_>>>()?;
+                    expr.over(exprs)
+                } else {
+                    // Process for simple window specification, partition by first
+                    let partition_by = window_spec
+                        .partition_by
+                        .iter()
+                        .map(|p| parse_sql_expr(p, self.ctx))
+                        .collect::<PolarsResult<Vec<_>>>()?;
+                    expr.over(partition_by)
+                }
                 // Order by and Row range may not be supported at the moment
             }
             None => expr,

@@ -18,7 +18,7 @@ private = []
 [dependencies]
 polars-arrow = { version = "0.28.0", path = "../polars-arrow", features = ["like"] }
 polars-core = { version = "0.28.0", path = "../polars-core", features = [] }
-polars-lazy = { version = "0.28.0", path = "../polars-lazy", features = ["compile", "strings", "cross_join", "trigonometry", "abs", "round_series", "log", "regex", "is_in", "meta"] }
+polars-lazy = { version = "0.28.0", path = "../polars-lazy", features = ["compile", "strings", "cross_join", "trigonometry", "abs", "round_series", "log", "regex", "is_in", "meta", "cum_agg"] }
 polars-plan = { version = "0.28.0", path = "../polars-lazy/polars-plan", features = ["compile"] }
 serde = "1"
 serde_json = { version = "1" }
