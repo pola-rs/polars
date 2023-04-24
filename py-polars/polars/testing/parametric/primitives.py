@@ -33,6 +33,7 @@ from polars.series import Series
 from polars.string_cache import StringCache
 from polars.testing.asserts import is_categorical_dtype
 from polars.testing.parametric.strategies import (
+    _hash,
     between,
     create_list_strategy,
     scalar_strategies,
@@ -391,7 +392,7 @@ def series(
                         dtype_strategy,
                         min_size=series_size,
                         max_size=series_size,
-                        unique=unique,
+                        unique_by=(_hash if unique else None),
                     )
                 )
 
@@ -542,7 +543,7 @@ def dataframes(
     selectable_dtypes = [
         dtype
         for dtype in (allowed_dtypes or strategy_dtypes)
-        if dtype not in (excluded_dtypes or ())
+        if dtype in strategy_dtypes and dtype not in (excluded_dtypes or ())
     ]
 
     @composite

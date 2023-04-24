@@ -106,6 +106,7 @@ impl SqlExprVisitor<'_> {
         );
         Ok(col(&idents[1].value))
     }
+
     fn visit_unary_op(&self, op: &UnaryOperator, expr: &SqlExpr) -> PolarsResult<Expr> {
         let expr = self.visit_expr(expr)?;
         Ok(match op {
@@ -226,6 +227,7 @@ impl SqlExprVisitor<'_> {
             other => polars_bail!(ComputeError: "SQL value {:?} is not yet supported", other),
         })
     }
+
     /// Visit a SQL `BETWEEN` expression
     /// See [sqlparser::ast::Expr::Between] for more details
     fn visit_between(
@@ -245,6 +247,7 @@ impl SqlExprVisitor<'_> {
             Ok(expr.clone().gt(low).and(expr.lt(high)))
         }
     }
+
     /// Visit a SQL 'TRIM' function
     /// See [sqlparser::ast::Expr::Trim] for more details
     fn visit_trim(

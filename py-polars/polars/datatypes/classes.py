@@ -10,7 +10,6 @@ import polars.datatypes
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import dtype_str_repr as _dtype_str_repr
 
-
 if TYPE_CHECKING:
     from polars.type_aliases import PolarsDataType, PythonDataType, SchemaDict, TimeUnit
 
@@ -72,6 +71,25 @@ def _custom_reconstruct(
     else:
         obj = object.__new__(cls)
     return obj
+
+
+class DataTypeGroup(frozenset):  # type: ignore[type-arg]
+    _match_base_type: bool
+
+    def __new__(cls, items: Any, *, match_base_type: bool = True) -> DataTypeGroup:
+        for it in items:
+            if not isinstance(it, (DataType, DataTypeClass)):
+                raise TypeError(
+                    f"DataTypeGroup items must be dtypes; found {type(it).__name__!r}"
+                )
+        dtype_group = super().__new__(cls, items)
+        dtype_group._match_base_type = match_base_type
+        return dtype_group
+
+    def __contains__(self, item: Any) -> bool:
+        if self._match_base_type and isinstance(item, (DataType, DataTypeClass)):
+            item = item.base_type()
+        return super().__contains__(item)
 
 
 class NumericType(DataType):

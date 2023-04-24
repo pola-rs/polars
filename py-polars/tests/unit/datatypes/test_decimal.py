@@ -74,10 +74,13 @@ def test_to_from_pydecimal_and_format() -> None:
 
 
 def test_init_decimal_dtype() -> None:
-    _ = pl.Series("a", [D("-0.01"), D("1.2345678"), D("500")], dtype=pl.Decimal)
-    _ = pl.DataFrame(
+    s = pl.Series("a", [D("-0.01"), D("1.2345678"), D("500")], dtype=pl.Decimal)
+    assert s.is_numeric()
+
+    df = pl.DataFrame(
         {"a": [D("-0.01"), D("1.2345678"), D("500")]}, schema={"a": pl.Decimal}
     )
+    assert df["a"].is_numeric()
 
 
 def test_decimal_cast() -> None:
