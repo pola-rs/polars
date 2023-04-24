@@ -531,6 +531,12 @@ def test_negative_offset_by_err_msg_8464() -> None:
         pl.Series([datetime(2022, 3, 30)]).dt.offset_by("-1mo")
 
 
+def test_offset_by_saturating_8217() -> None:
+    result = pl.Series([date(2018, 1, 31)]).dt.offset_by("1mo_saturating").item()
+    expected = date(2018, 2, 28)
+    assert result == expected
+
+
 def test_year_empty_df() -> None:
     df = pl.DataFrame(pl.Series(name="date", dtype=pl.Date))
     assert df.select(pl.col("date").dt.year()).dtypes == [pl.Int32]
