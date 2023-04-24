@@ -2,11 +2,12 @@
 use polars_arrow::kernels::list_bytes_iter::numeric_list_bytes_iter;
 use polars_arrow::kernels::sort_partition::{create_clean_partitions, partition_to_groups};
 use polars_arrow::prelude::*;
-use polars_utils::{flatten, HashSingle};
+use polars_utils::HashSingle;
 
 use super::*;
 use crate::config::verbose;
 use crate::utils::_split_offsets;
+use crate::utils::flatten::flatten_par;
 
 /// Used to create the tuples for a groupby operation.
 pub trait IntoGroupsProxy {
@@ -119,7 +120,7 @@ where
                     })
                 })
                 .collect::<Vec<_>>();
-            flatten(&groups, None)
+            flatten_par(&groups)
         } else {
             partition_to_groups(values, null_count as IdxSize, nulls_first, 0)
         };

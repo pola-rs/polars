@@ -1,11 +1,11 @@
 #[cfg(feature = "performant")]
 use polars_arrow::kernels::sorted_join;
-#[cfg(feature = "performant")]
-use polars_utils::flatten;
 
 use super::*;
 #[cfg(feature = "performant")]
 use crate::utils::_split_offsets;
+#[cfg(feature = "performant")]
+use crate::utils::flatten::flatten_par;
 
 #[cfg(feature = "performant")]
 fn par_sorted_merge_left_impl<T>(
@@ -33,7 +33,7 @@ where
     let lefts = indexes.iter().map(|t| &t.0).collect::<Vec<_>>();
     let rights = indexes.iter().map(|t| &t.1).collect::<Vec<_>>();
 
-    (flatten(&lefts, None), flatten(&rights, None))
+    (flatten_par(&lefts), flatten_par(&rights))
 }
 
 #[cfg(feature = "performant")]
@@ -106,7 +106,7 @@ where
     let lefts = indexes.iter().map(|t| &t.0).collect::<Vec<_>>();
     let rights = indexes.iter().map(|t| &t.1).collect::<Vec<_>>();
 
-    (flatten(&lefts, None), flatten(&rights, None))
+    (flatten_par(&lefts), flatten_par(&rights))
 }
 
 #[cfg(feature = "performant")]

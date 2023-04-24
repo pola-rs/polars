@@ -17,6 +17,7 @@ use crate::chunked_array::builder::{
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;
 use crate::prelude::*;
+use crate::utils::flatten::flatten_par;
 use crate::utils::{get_iter_capacity, CustomIterTools, NoNull};
 
 impl<T: PolarsDataType> Default for ChunkedArray<T> {
@@ -537,35 +538,6 @@ where
         let arr: LargeStringArray = builder.into();
         unsafe { Self::from_chunks("", vec![Box::new(arr)]) }
     }
-}
-
-pub fn flatten_par<T: Send + Sync + Copy>(bufs: &[&[T]]) -> Vec<T> {
-    let len = bufs.iter().map(|b| b.as_ref().len()).sum();
-    let offsets = bufs
-        .iter()
-        .scan(0usize, |acc, buf| {
-            let out = *acc;
-            *acc += buf.len();
-            Some(out)
-        })
-        .collect::<Vec<_>>();
-
-    let mut out = Vec::with_capacity(len);
-    let out_ptr = unsafe { SyncPtr::new(out.as_mut_ptr()) };
-
-    offsets.into_par_iter().enumerate().for_each(|(i, offset)| {
-        let buf = bufs[i];
-        let ptr: *mut T = out_ptr.get();
-        unsafe {
-            let dst = ptr.add(offset);
-            let src = buf.as_ptr();
-            std::ptr::copy_nonoverlapping(src, dst, buf.len())
-        }
-    });
-    unsafe {
-        out.set_len(len);
-    }
-    out
 }
 
 impl<Ptr> FromParallelIterator<Option<Ptr>> for Utf8Chunked

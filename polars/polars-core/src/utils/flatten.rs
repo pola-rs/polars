@@ -1,3 +1,5 @@
+use polars_utils::sync::SyncPtr;
+
 use super::*;
 
 pub(super) fn flatten_df(df: &DataFrame) -> impl Iterator<Item = DataFrame> + '_ {
@@ -46,4 +48,44 @@ pub(crate) fn cap_and_offsets<I>(v: &[Vec<I>]) -> (usize, Vec<usize>) {
         })
         .collect::<Vec<_>>();
     (cap, offsets)
+}
+
+pub fn flatten_par<T: Send + Sync + Copy, S: AsRef<[T]>>(bufs: &[S]) -> Vec<T> {
+    let mut len = 0;
+    let mut offsets = Vec::with_capacity(bufs.len());
+    let bufs = bufs
+        .iter()
+        .map(|s| {
+            offsets.push(len);
+            let slice = s.as_ref();
+            len += slice.len();
+            slice
+        })
+        .collect::<Vec<_>>();
+    flatten_par_impl(&bufs, len, offsets)
+}
+
+fn flatten_par_impl<T: Send + Sync + Copy>(
+    bufs: &[&[T]],
+    len: usize,
+    offsets: Vec<usize>,
+) -> Vec<T> {
+    let mut out = Vec::with_capacity(len);
+    let out_ptr = unsafe { SyncPtr::new(out.as_mut_ptr()) };
+
+    POOL.install(|| {
+        offsets.into_par_iter().enumerate().for_each(|(i, offset)| {
+            let buf = bufs[i];
+            let ptr: *mut T = out_ptr.get();
+            unsafe {
+                let dst = ptr.add(offset);
+                let src = buf.as_ptr();
+                std::ptr::copy_nonoverlapping(src, dst, buf.len())
+            }
+        })
+    });
+    unsafe {
+        out.set_len(len);
+    }
+    out
 }
