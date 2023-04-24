@@ -32,6 +32,8 @@ The following methods are available under the `Series.dt` attribute.
     Series.dt.minute
     Series.dt.minutes
     Series.dt.month
+    Series.dt.month_start
+    Series.dt.month_end
     Series.dt.nanosecond
     Series.dt.nanoseconds
     Series.dt.offset_by

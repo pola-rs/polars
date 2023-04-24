@@ -1730,3 +1730,89 @@ class ExprDateTimeNameSpace:
         └─────────────────────┘
         """
         return wrap_expr(self._pyexpr.dt_offset_by(by))
+
+    def month_start(self) -> Expr:
+        """
+        Roll backward to the first day of the month.
+
+        Returns
+        -------
+        Date/Datetime expression
+
+        Notes
+        -----
+        If you're coming from pandas, you can think of this as a vectorised version
+        of ``pandas.tseries.offsets.MonthBegin().rollback(datetime)``.
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "dates": pl.date_range(
+        ...             datetime(2000, 1, 15, 2), datetime(2000, 12, 15, 2), "1mo"
+        ...         )
+        ...     }
+        ... )
+        >>> df.select(pl.col("dates").dt.month_start())
+        shape: (12, 1)
+        ┌─────────────────────┐
+        │ dates               │
+        │ ---                 │
+        │ datetime[μs]        │
+        ╞═════════════════════╡
+        │ 2000-01-01 02:00:00 │
+        │ 2000-02-01 02:00:00 │
+        │ 2000-03-01 02:00:00 │
+        │ 2000-04-01 02:00:00 │
+        │ …                   │
+        │ 2000-09-01 02:00:00 │
+        │ 2000-10-01 02:00:00 │
+        │ 2000-11-01 02:00:00 │
+        │ 2000-12-01 02:00:00 │
+        └─────────────────────┘
+        """
+        return wrap_expr(self._pyexpr.dt_month_start())
+
+    def month_end(self) -> Expr:
+        """
+        Roll forward to the last day of the month.
+
+        Returns
+        -------
+        Date/Datetime expression
+
+        Notes
+        -----
+        If you're coming from pandas, you can think of this as a vectorised version
+        of ``pandas.tseries.offsets.MonthEnd().rollforward(datetime)``.
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "dates": pl.date_range(
+        ...             datetime(2000, 1, 1, 2), datetime(2000, 12, 1, 2), "1mo"
+        ...         )
+        ...     }
+        ... )
+        >>> df.select(pl.col("dates").dt.month_end())
+        shape: (12, 1)
+        ┌─────────────────────┐
+        │ dates               │
+        │ ---                 │
+        │ datetime[μs]        │
+        ╞═════════════════════╡
+        │ 2000-01-31 02:00:00 │
+        │ 2000-02-29 02:00:00 │
+        │ 2000-03-31 02:00:00 │
+        │ 2000-04-30 02:00:00 │
+        │ …                   │
+        │ 2000-09-30 02:00:00 │
+        │ 2000-10-31 02:00:00 │
+        │ 2000-11-30 02:00:00 │
+        │ 2000-12-31 02:00:00 │
+        └─────────────────────┘
+        """
+        return wrap_expr(self._pyexpr.dt_month_end())

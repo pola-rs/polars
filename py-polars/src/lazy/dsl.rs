@@ -1117,6 +1117,14 @@ impl PyExpr {
         self.inner.clone().dt().truncate(every, offset).into()
     }
 
+    pub fn dt_month_start(&self) -> PyExpr {
+        self.inner.clone().dt().month_start().into()
+    }
+
+    pub fn dt_month_end(&self) -> PyExpr {
+        self.inner.clone().dt().month_end().into()
+    }
+
     pub fn dt_round(&self, every: &str, offset: &str) -> PyExpr {
         self.inner.clone().dt().round(every, offset).into()
     }
