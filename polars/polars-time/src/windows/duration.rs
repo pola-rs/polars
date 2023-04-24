@@ -39,7 +39,7 @@ pub struct Duration {
     // indicates if an integer string was passed. e.g. "2i"
     pub parsed_int: bool,
     // indicates if a '1mo' offset to a non-existent date (e.g. 2022-02-29)
-    // should error or saturate to 2022-02-28
+    // should saturate to 2022-02-28 (as opposed to erroring)
     pub(crate) saturating_months: bool,
 }
 
@@ -93,7 +93,7 @@ impl Duration {
     /// * `w`:  week
     /// * `mo`: calendar month
     /// * `mo_saturating`: calendar month, but "saturates" to the last day of the month
-    ///     instead of erroring. For example, 2022-03-29 plus `'1mo_saturating'` goes to
+    ///     instead of erroring. For example, 2022-01-29 plus `'1mo_saturating'` goes to
     ///     2022-02-28.
     /// * `y`:  calendar year
     /// * `i`:  index value (only for {Int32, Int64} dtypes)
@@ -166,11 +166,10 @@ impl Duration {
                         if saturating_months {
                             panic!("cannot use both saturating and non-saturating months")
                         }
-                        saturating_months = false;
                         months += n
                     }
                     "mo_saturating" => {
-                        if saturating_months {
+                        if !saturating_months {
                             panic!("cannot use both saturating and non-saturating months")
                         }
                         saturating_months = true;
