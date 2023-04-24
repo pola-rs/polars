@@ -6,7 +6,7 @@ from source.conf import html_static_path, templates_path
 # and a local server will run the docs in your browser, automatically
 # refreshing/reloading the pages you're working on as they are modified.
 # Extremely helpful to see the real output before it gets uploaded, and
-# a much smoother experience that constantly running `make html` yourself.
+# a much smoother experience than constantly running `make html` yourself.
 # -------------------------------------------------------------------------
 
 if __name__ == "__main__":

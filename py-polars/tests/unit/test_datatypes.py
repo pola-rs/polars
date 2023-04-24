@@ -7,6 +7,12 @@ import pytest
 
 import polars as pl
 from polars import datatypes
+from polars.datatypes import (
+    DTYPE_TEMPORAL_UNITS,
+    DataTypeClass,
+    DataTypeGroup,
+    py_type_to_dtype,
+)
 
 
 def test_dtype_init_equivalence() -> None:
@@ -14,7 +20,7 @@ def test_dtype_init_equivalence() -> None:
     all_datatypes = {
         dtype
         for dtype in (getattr(datatypes, attr) for attr in dir(datatypes))
-        if isinstance(dtype, datatypes.DataTypeClass)
+        if isinstance(dtype, DataTypeClass)
     }
     for dtype in all_datatypes:
         assert dtype == dtype()
@@ -22,7 +28,7 @@ def test_dtype_init_equivalence() -> None:
 
 def test_dtype_temporal_units() -> None:
     # check (in)equality behaviour of temporal types that take units
-    for time_unit in datatypes.DTYPE_TEMPORAL_UNITS:
+    for time_unit in DTYPE_TEMPORAL_UNITS:
         assert pl.Datetime == pl.Datetime(time_unit)
         assert pl.Duration == pl.Duration(time_unit)
 
@@ -34,8 +40,8 @@ def test_dtype_temporal_units() -> None:
 
     # check timeunit from pytype
     for inferred_dtype, expected_dtype in (
-        (datatypes.py_type_to_dtype(datetime), pl.Datetime),
-        (datatypes.py_type_to_dtype(timedelta), pl.Duration),
+        (py_type_to_dtype(datetime), pl.Datetime),
+        (py_type_to_dtype(timedelta), pl.Duration),
     ):
         assert inferred_dtype == expected_dtype
         assert inferred_dtype.time_unit == "us"  # type: ignore[union-attr]
@@ -56,6 +62,14 @@ def test_dtype_base_type() -> None:
     )
     for dtype in pl.DATETIME_DTYPES:
         assert dtype.base_type() is pl.Datetime
+
+
+def test_dtype_groups() -> None:
+    grp = DataTypeGroup([pl.Datetime], match_base_type=False)
+    assert pl.Datetime("ms", "Asia/Tokyo") not in grp
+
+    grp = DataTypeGroup([pl.Datetime])
+    assert pl.Datetime("ms", "Asia/Tokyo") in grp
 
 
 def test_get_index_type() -> None:

@@ -470,10 +470,36 @@ def test_various() -> None:
     assert_series_equal(a.arg_unique(), pl.Series("a", [0, 1, 3], dtype=UInt32))
 
     assert_series_equal(a.take([2, 3]), pl.Series("a", [1, 4]))
-    assert a.is_numeric()
 
-    a = pl.Series("bool", [True, False])
-    assert not a.is_numeric()
+
+def test_series_dtype_is() -> None:
+    s = pl.Series("s", [1, 2, 3])
+
+    assert s.is_numeric()
+    assert s.is_integer()
+    assert s.is_integer(signed=True)
+    assert not s.is_integer(signed=False)
+    assert (s * 0.99).is_float()
+
+    s = pl.Series("s", [1, 2, 3], dtype=pl.UInt8)
+    assert s.is_numeric()
+    assert s.is_integer()
+    assert not s.is_integer(signed=True)
+    assert s.is_integer(signed=False)
+
+    s = pl.Series("bool", [True, None, False])
+    assert not s.is_numeric()
+
+    s = pl.Series("s", ["testing..."])
+    assert s.is_utf8()
+
+    s = pl.Series("s", [], dtype=pl.Decimal(20, 15))
+    assert not s.is_float()
+    assert s.is_numeric()
+    assert s.is_empty()
+
+    s = pl.Series("s", [], dtype=pl.Datetime("ms", time_zone="UTC"))
+    assert s.is_temporal()
 
 
 def test_series_head_tail_limit() -> None:

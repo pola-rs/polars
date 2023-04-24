@@ -2758,7 +2758,10 @@ def test_infer_iso8601_date(iso8601_format_date: str) -> None:
 
 
 def test_series_is_temporal() -> None:
-    for tp in TEMPORAL_DTYPES:
+    for tp in TEMPORAL_DTYPES | {
+        pl.Datetime("ms", "UTC"),
+        pl.Datetime("ns", "Europe/Amsterdam"),
+    }:
         s = pl.Series([None], dtype=tp)
         assert s.is_temporal() is True
 

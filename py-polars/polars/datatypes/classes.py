@@ -74,16 +74,20 @@ def _custom_reconstruct(
 
 
 class DataTypeGroup(frozenset):  # type: ignore[type-arg]
-    def __new__(cls, items: Any) -> DataTypeGroup:
+    _match_base_type: bool
+
+    def __new__(cls, items: Any, *, match_base_type: bool = True) -> DataTypeGroup:
         for it in items:
             if not isinstance(it, (DataType, DataTypeClass)):
                 raise TypeError(
-                    f"DataTypeGroup items must be polars dtypes; found {it!r}"
+                    f"DataTypeGroup items must be dtypes; found {type(it).__name__!r}"
                 )
-        return super().__new__(cls, items)
+        dtype_group = super().__new__(cls, items)
+        dtype_group._match_base_type = match_base_type
+        return dtype_group
 
     def __contains__(self, item: Any) -> bool:
-        if isinstance(item, (DataType, DataTypeClass)):
+        if self._match_base_type and isinstance(item, (DataType, DataTypeClass)):
             item = item.base_type()
         return super().__contains__(item)
 
