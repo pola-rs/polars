@@ -163,14 +163,14 @@ impl Duration {
                     "d" => days += n,
                     "w" => weeks += n,
                     "mo" => {
-                        if saturating_months = Some(true) {
+                        if let Some(true) = saturating_months {
                             panic!("cannot use both saturating and non-saturating months")
                         }
                         saturating_months = Some(false);
                         months += n
                     }
                     "mo_saturating" => {
-                        if saturating_months = Some(false) {
+                        if let Some(false) = saturating_months {
                             panic!("cannot use both saturating and non-saturating months")
                         }
                         saturating_months = Some(true);
