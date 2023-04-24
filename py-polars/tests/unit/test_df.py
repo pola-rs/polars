@@ -1299,7 +1299,14 @@ def test_describe() -> None:
             ("median", 1.0, None, None),
         ]
 
-    assert df.describe(percentiles=(0.2, 0.4, 0.6, 0.8)).rows() == [
+    described = df.describe(percentiles=(0.2, 0.4, 0.6, 0.8))
+    assert described.schema == {
+        "describe": pl.Utf8,
+        "numerical": pl.Float64,
+        "struct": pl.Utf8,
+        "list": pl.Utf8,
+    }
+    assert described.rows() == [
         ("count", 4.0, "4", "4"),
         ("null_count", 1.0, "1", "1"),
         ("mean", 1.3333333333333333, None, None),

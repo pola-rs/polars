@@ -1966,7 +1966,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def filter(self, predicate: Expr | str | Series | list[bool]) -> Self:
         """
-        Filter the rows in the DataFrame based on a predicate expression.
+        Filter the rows in the LazyFrame based on a predicate expression.
 
         Parameters
         ----------
@@ -2036,7 +2036,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         **named_exprs: IntoExpr,
     ) -> Self:
         """
-        Select columns from this DataFrame.
+        Select columns from this LazyFrame.
 
         Parameters
         ----------
@@ -2332,15 +2332,19 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     "2020-01-03 19:45:32",
         ...     "2020-01-08 23:16:43",
         ... ]
-        >>> df = pl.DataFrame({"dt": dates, "a": [3, 7, 5, 9, 2, 1]}).with_columns(
+        >>> df = pl.LazyFrame({"dt": dates, "a": [3, 7, 5, 9, 2, 1]}).with_columns(
         ...     pl.col("dt").str.strptime(pl.Datetime)
         ... )
-        >>> out = df.groupby_rolling(index_column="dt", period="2d").agg(
-        ...     [
-        ...         pl.sum("a").alias("sum_a"),
-        ...         pl.min("a").alias("min_a"),
-        ...         pl.max("a").alias("max_a"),
-        ...     ]
+        >>> out = (
+        ...     df.groupby_rolling(index_column="dt", period="2d")
+        ...     .agg(
+        ...         [
+        ...             pl.sum("a").alias("sum_a"),
+        ...             pl.min("a").alias("min_a"),
+        ...             pl.max("a").alias("max_a"),
+        ...         ]
+        ...     )
+        ...     .collect()
         ... )
         >>> assert out["sum_a"].to_list() == [3, 10, 15, 24, 11, 1]
         >>> assert out["max_a"].to_list() == [3, 7, 7, 9, 9, 1]
