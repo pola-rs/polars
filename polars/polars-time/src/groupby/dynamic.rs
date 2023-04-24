@@ -10,6 +10,7 @@ use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::ensure_sorted_arg;
 use polars_core::POOL;
+use polars_utils::flatten;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
@@ -469,7 +470,7 @@ impl Wrap<&DataFrame> {
             let dt = dt.datetime().unwrap();
             let vals = dt.downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
-            GroupsProxy::Slice {
+            PolarsResult::Ok(GroupsProxy::Slice {
                 groups: groupby_values(
                     options.period,
                     options.offset,
@@ -477,9 +478,9 @@ impl Wrap<&DataFrame> {
                     options.closed_window,
                     tu,
                     tz,
-                ),
+                )?,
                 rolling: true,
-            }
+            })
         } else {
             let groups = self
                 .0
@@ -498,7 +499,7 @@ impl Wrap<&DataFrame> {
                 GroupsProxy::Idx(groups) => {
                     let idx = groups
                         .par_iter()
-                        .flat_map(|base_g| {
+                        .map(|base_g| {
                             let dt = unsafe { dt_local.take_unchecked(base_g.1.into()) };
                             let vals = dt.downcast_iter().next().unwrap();
                             let ts = vals.values().as_slice();
@@ -509,17 +510,17 @@ impl Wrap<&DataFrame> {
                                 options.closed_window,
                                 tu,
                                 tz.clone(),
-                            );
-                            update_subgroups_idx(&sub_groups, base_g)
+                            )?;
+                            Ok(update_subgroups_idx(&sub_groups, base_g))
                         })
-                        .collect();
+                        .collect::<PolarsResult<Vec<_>>>()?;
 
-                    GroupsProxy::Idx(idx)
+                    Ok(GroupsProxy::Idx(GroupsIdx::from(idx)))
                 }
                 GroupsProxy::Slice { groups, .. } => {
                     let slice_groups = groups
                         .par_iter()
-                        .flat_map(|base_g| {
+                        .map(|base_g| {
                             let dt = dt_local.slice(base_g[0] as i64, base_g[1] as usize);
                             let vals = dt.downcast_iter().next().unwrap();
                             let ts = vals.values().as_slice();
@@ -530,18 +531,19 @@ impl Wrap<&DataFrame> {
                                 options.closed_window,
                                 tu,
                                 tz.clone(),
-                            );
-                            update_subgroups_slice(&sub_groups, *base_g)
+                            )?;
+                            Ok(update_subgroups_slice(&sub_groups, *base_g))
                         })
-                        .collect();
+                        .collect::<PolarsResult<Vec<_>>>()?;
 
-                    GroupsProxy::Slice {
+                    let slice_groups = flatten(&slice_groups, None);
+                    Ok(GroupsProxy::Slice {
                         groups: slice_groups,
                         rolling: false,
-                    }
+                    })
                 }
             })
-        };
+        }?;
 
         let dt = dt.cast(time_type).unwrap();
 
