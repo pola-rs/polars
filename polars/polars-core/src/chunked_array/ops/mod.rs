@@ -31,6 +31,7 @@ mod interpolate;
 #[cfg(feature = "is_in")]
 mod is_in;
 mod len;
+pub(crate) mod min_max_binary;
 mod nulls;
 mod peaks;
 #[cfg(feature = "repeat_by")]
