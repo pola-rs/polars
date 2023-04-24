@@ -242,6 +242,10 @@ impl Schema {
         self.inner.get_index(index)
     }
 
+    pub fn try_get_at_index(&self, index: usize) -> PolarsResult<(&SmartString, &DataType)> {
+        self.inner.get_index(index).ok_or_else(|| polars_err!(ComputeError: "index {index} out of bounds with 'schema' of len: {}", self.len()))
+    }
+
     /// Get mutable references to the name and dtype of the field at `index`
     ///
     /// If `index` is inbounds, returns `Some((&mut name, &mut dtype))`, else `None`. See
