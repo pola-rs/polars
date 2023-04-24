@@ -1,8 +1,7 @@
-use polars_utils::flatten;
-
 use super::single_keys::create_probe_table;
 use super::*;
 use crate::frame::hash_join::single_keys::probe_to_offsets;
+use crate::utils::flatten::flatten_par;
 
 #[cfg(feature = "chunked_ids")]
 unsafe fn apply_mapping(idx: Vec<IdxSize>, chunk_mapping: &[ChunkId]) -> Vec<ChunkId> {
@@ -58,14 +57,14 @@ pub(super) fn flatten_left_join_ids(result: Vec<LeftJoinIds>) -> LeftJoinIds {
                 .iter()
                 .map(|join_id| join_id.0.as_ref().left().unwrap())
                 .collect::<Vec<_>>();
-            let lefts = flatten(&lefts, None);
+            let lefts = flatten_par(&lefts);
             JoinIds::Left(lefts)
         } else {
             let lefts = result
                 .iter()
                 .map(|join_id| join_id.0.as_ref().right().unwrap())
                 .collect::<Vec<_>>();
-            let lefts = flatten(&lefts, None);
+            let lefts = flatten_par(&lefts);
             JoinIds::Right(lefts)
         };
 
@@ -74,14 +73,14 @@ pub(super) fn flatten_left_join_ids(result: Vec<LeftJoinIds>) -> LeftJoinIds {
                 .iter()
                 .map(|join_id| join_id.1.as_ref().left().unwrap())
                 .collect::<Vec<_>>();
-            let rights = flatten(&rights, None);
+            let rights = flatten_par(&rights);
             JoinOptIds::Left(rights)
         } else {
             let rights = result
                 .iter()
                 .map(|join_id| join_id.1.as_ref().right().unwrap())
                 .collect::<Vec<_>>();
-            let rights = flatten(&rights, None);
+            let rights = flatten_par(&rights);
             JoinOptIds::Right(rights)
         };
 
@@ -91,8 +90,8 @@ pub(super) fn flatten_left_join_ids(result: Vec<LeftJoinIds>) -> LeftJoinIds {
     {
         let lefts = result.iter().map(|join_id| &join_id.0).collect::<Vec<_>>();
         let rights = result.iter().map(|join_id| &join_id.1).collect::<Vec<_>>();
-        let lefts = flatten(&lefts, None);
-        let rights = flatten(&rights, None);
+        let lefts = flatten_par(&lefts);
+        let rights = flatten_par(&rights);
         (lefts, rights)
     }
 }

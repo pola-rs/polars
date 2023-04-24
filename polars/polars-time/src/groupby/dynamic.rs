@@ -9,8 +9,8 @@ use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::ensure_sorted_arg;
+use polars_core::utils::flatten::flatten_par;
 use polars_core::POOL;
-use polars_utils::flatten;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
@@ -536,7 +536,7 @@ impl Wrap<&DataFrame> {
                         })
                         .collect::<PolarsResult<Vec<_>>>()?;
 
-                    let slice_groups = flatten(&slice_groups, None);
+                    let slice_groups = flatten_par(&slice_groups);
                     Ok(GroupsProxy::Slice {
                         groups: slice_groups,
                         rolling: false,
