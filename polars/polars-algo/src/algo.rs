@@ -1,5 +1,6 @@
 use polars_core::error::PolarsResult as Result;
 use polars_core::prelude::*;
+use polars_core::series::IsSorted;
 use polars_lazy::prelude::*;
 use polars_ops::prelude::*;
 
@@ -154,9 +155,14 @@ pub fn cut(
     let bins_len = bins.len();
 
     bins.rename(breakpoint_str);
+
+    let mut s_bins = bins
+        .cast(&DataType::Float64)
+        .map_err(|_| PolarsError::ComputeError("expected numeric bins".into()))?
+        .extend_constant(AnyValue::Float64(f64::INFINITY), 1)?;
+    s_bins.set_sorted_flag(IsSorted::Ascending);
     let cuts_df = df![
-        breakpoint_str => bins.cast(&DataType::Float64).map_err(|_| PolarsError::ComputeError("expected numeric bins".into()))?
-            .extend_constant(AnyValue::Float64(f64::INFINITY), 1)?
+        breakpoint_str => s_bins
     ]?;
 
     let cuts_df = if let Some(labels) = labels {

@@ -106,6 +106,7 @@ impl Wrap<&DataFrame> {
         options: &RollingGroupOptions,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
         let time = self.0.column(&options.index_column)?.clone();
+        ensure_sorted_arg(&time);
         let time_type = time.dtype();
 
         polars_ensure!(time.null_count() == 0, ComputeError: "null values in dynamic groupby not supported, fill nulls.");
@@ -181,6 +182,7 @@ impl Wrap<&DataFrame> {
         }
 
         let time = self.0.column(&options.index_column)?.rechunk();
+        ensure_sorted_arg(&time);
         let time_type = time.dtype();
 
         polars_ensure!(time.null_count() == 0, ComputeError: "null values in dynamic groupby not supported, fill nulls.");
@@ -239,9 +241,7 @@ impl Wrap<&DataFrame> {
         if dt.is_empty() {
             return dt.cast(time_type).map(|s| (s, by, GroupsProxy::default()));
         }
-        ensure_sorted_arg(&dt);
 
-        let sorted_set = matches!(dt.is_sorted_flag(), IsSorted::Ascending);
         // a requirement for the index
         // so we can set this such that downstream code has this info
         dt.set_sorted_flag(IsSorted::Ascending);
@@ -280,9 +280,6 @@ impl Wrap<&DataFrame> {
         let groups = if by.is_empty() {
             let vals = dt.downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
-            if !sorted_set {
-                partially_check_sorted(ts);
-            }
             let (groups, lower, upper) = groupby_windows(
                 w,
                 ts,
@@ -463,7 +460,6 @@ impl Wrap<&DataFrame> {
         tz: Option<impl PolarsTimeZone>,
         time_type: &DataType,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
-        ensure_sorted_arg(&dt);
         let mut dt = dt.rechunk();
         // a requirement for the index
         // so we can set this such that downstream code has this info
