@@ -544,7 +544,9 @@ impl Duration {
             let nsec = ts.nanosecond();
             let dt = new_datetime(year, month as u32, day, hour, minute, sec, nsec).ok_or(
                 polars_err!(
-                    ComputeError: format!("cannot advance '{}' by {} month(s)", ts, d.months)
+                    ComputeError: format!(
+                        "cannot advance '{}' by {} month(s). \
+                         If you were trying to get the last day of each month, you may want to try `.dt.month_end`", ts, d.months)
                 ),
             )?;
             new_t = match tz {
