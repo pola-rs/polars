@@ -498,7 +498,7 @@ where
                             expr_arena,
                             &to_physical,
                             i == 0,
-                            i == 0,
+                            verbose && i == 0,
                         )
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
