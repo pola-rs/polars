@@ -411,7 +411,10 @@ impl Series {
             Datetime(_, _) | Duration(_) | Time => Cow::Owned(self.cast(&Int64).unwrap()),
             #[cfg(feature = "dtype-categorical")]
             Categorical(_) => Cow::Owned(self.cast(&UInt32).unwrap()),
-            List(Categorical(_)) => Cow::Owned(self.cast(&List(Box::new(UInt32))).unwrap()),
+            List(inner) => match &**inner {
+                Categorical(_) => Cow::Owned(self.cast(&List(Box::new(UInt32))).unwrap()),
+                _ => Cow::Borrowed(self),
+            },
             _ => Cow::Borrowed(self),
         }
     }
