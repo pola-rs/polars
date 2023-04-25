@@ -36,3 +36,14 @@ def test_empty_duration() -> None:
     s = pl.DataFrame([], {"days": pl.Int32}).select(pl.duration(days="days"))
     assert s.dtypes == [pl.Duration("ns")]
     assert s.shape == (0, 1)
+
+
+def test_empty_window_function() -> None:
+    expr = (pl.col("VAL") / pl.col("VAL").sum()).over("KEY")
+
+    df = pl.DataFrame(schema={"KEY": pl.Utf8, "VAL": pl.Float64})
+    df.select(expr)  # ComputeError
+
+    lf = pl.DataFrame(schema={"KEY": pl.Utf8, "VAL": pl.Float64}).lazy()
+    expected = pl.DataFrame(schema={"VAL": pl.Float64})
+    assert_frame_equal(lf.select(expr).collect(), expected)
