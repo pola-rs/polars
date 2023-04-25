@@ -2035,6 +2035,16 @@ def test_to_physical() -> None:
     expected = pl.Series("a", [18262] * 3, dtype=Int32)
     assert_series_equal(s.to_physical(), expected)
 
+    # casting a categorical results in a UInt32
+    s = pl.Series(["cat1"]).cast(pl.Categorical)
+    expected = pl.Series([0], dtype=UInt32)
+    assert_series_equal(s.to_physical(), expected)
+
+    # casting a List(Categorical) results in a List(UInt32)
+    s = pl.Series([["cat1"]]).cast(pl.List(pl.Categorical))
+    expected = pl.Series([[0]], dtype=pl.List(UInt32))
+    assert_series_equal(s.to_physical(), expected)
+
 
 def test_is_between_datetime() -> None:
     s = pl.Series("a", [datetime(2020, 1, 1, 10, 0, 0), datetime(2020, 1, 1, 20, 0, 0)])
