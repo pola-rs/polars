@@ -804,7 +804,7 @@ impl<'df> GroupBy<'df> {
             .collect::<PolarsResult<Vec<_>>>()?;
 
         let mut df = accumulate_dataframes_vertical(dfs)?;
-        df.as_single_chunk();
+        df.as_single_chunk_par();
         Ok(df)
     }
 
@@ -826,7 +826,7 @@ impl<'df> GroupBy<'df> {
             .collect::<PolarsResult<Vec<_>>>()?;
 
         let mut df = accumulate_dataframes_vertical(dfs)?;
-        df.as_single_chunk();
+        df.as_single_chunk_par();
         Ok(df)
     }
 }

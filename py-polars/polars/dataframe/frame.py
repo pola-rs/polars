@@ -5032,7 +5032,7 @@ class DataFrame:
         ...         "groups": ["A", "B", "A", "B"],
         ...         "values": [0, 1, 2, 3],
         ...     }
-        ... )
+        ... ).set_sorted("time")
         >>> df.upsample(
         ...     time_column="time", every="1mo", by="groups", maintain_order=True
         ... ).select(pl.all().forward_fill())

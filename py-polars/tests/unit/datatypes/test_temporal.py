@@ -887,7 +887,7 @@ def test_upsample(time_zone: str | None, tzinfo: ZoneInfo | timezone | None) -> 
             "admin": ["Åland", "Netherlands", "Åland", "Netherlands"],
             "test2": [0, 1, 2, 3],
         }
-    ).with_columns(pl.col("time").dt.replace_time_zone(time_zone))
+    ).with_columns(pl.col("time").dt.replace_time_zone(time_zone).set_sorted())
 
     up = df.upsample(
         time_column="time", every="1mo", by="admin", maintain_order=True
