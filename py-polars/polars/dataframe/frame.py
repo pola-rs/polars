@@ -8500,6 +8500,31 @@ class DataFrame:
             ._df
         )
 
+    def set_sorted(
+        self,
+        column: IntoExpr | Iterable[IntoExpr],
+        *more_columns: IntoExpr,
+        descending: bool = False,
+    ) -> Self:
+        """
+        Indicate that one or multiple columns are sorted.
+
+        Parameters
+        ----------
+        column
+            Columns that are sorted
+        more_columns
+            Additional columns that are sorted, specified as positional arguments.
+        descending
+            Whether the columns are sorted in descending order.
+        """
+        return self._from_pydf(
+            self.lazy()
+            .set_sorted(column, *more_columns, descending=descending)
+            .collect(no_optimization=True)
+            ._df
+        )
+
     def update(
         self,
         other: DataFrame,

@@ -678,7 +678,7 @@ impl<'a> CoreReader<'a> {
                             self.quote_char,
                             self.eol_char,
                             self.comment_char,
-                            chunk_size,
+                            capacity,
                             &str_capacities,
                             self.encoding,
                             self.null_values.as_ref(),

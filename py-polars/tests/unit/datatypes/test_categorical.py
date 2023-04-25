@@ -313,7 +313,7 @@ def test_err_on_categorical_asof_join_by_arg() -> None:
         pl.ComputeError,
         match=r"joins/or comparisons on categoricals can only happen if they were created under the same global string cache",
     ):
-        df1.join_asof(df2, on="time", by="cat")
+        df1.join_asof(df2, on=pl.col("time").set_sorted(), by="cat")
 
 
 def test_categorical_list_get_item() -> None:

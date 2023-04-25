@@ -52,7 +52,7 @@ def test_error_on_invalid_by_in_asof_join() -> None:
             "b": [1, 2, 3],
             "c": ["a", "b", "a"],
         }
-    )
+    ).set_sorted("b")
 
     df2 = df1.with_columns(pl.col("a").cast(pl.Categorical))
     with pytest.raises(pl.ComputeError):

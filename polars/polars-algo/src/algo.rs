@@ -10,7 +10,7 @@ pub fn hist(s: &Series, bins: Option<&Series>, bin_count: Option<usize>) -> Resu
 
     // if the bins are provided, then we can just use them
     let bins = if let Some(bins_in) = bins {
-        Series::new(breakpoint_str, bins_in)
+        Series::new(breakpoint_str, bins_in).sort(false)
     } else {
         // data is sorted, so this is O(1)
         let start = s.min::<f64>().unwrap().floor() - 1.0;
@@ -50,9 +50,11 @@ pub fn hist(s: &Series, bins: Option<&Series>, bin_count: Option<usize>) -> Resu
             "cannot take histogram of non-numeric types; consider a groupby and count"
         ),
     };
+    let mut bins = bins.extend_constant(max_value, 1)?;
+    bins.set_sorted_flag(IsSorted::Ascending);
 
     let cuts_df = df![
-        breakpoint_str => bins.extend_constant(max_value, 1)?
+        breakpoint_str => bins
     ]?;
 
     let cuts_df = cuts_df

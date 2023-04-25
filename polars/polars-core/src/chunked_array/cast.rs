@@ -100,6 +100,8 @@ where
                 if ((self.dtype().is_signed() && data_type.is_signed())
                     || (self.dtype().is_unsigned() && data_type.is_unsigned()))
                     && (s.null_count() == self.null_count())
+                    // physical to logicals
+                    || (self.dtype().to_physical() == data_type.to_physical())
                 {
                     let is_sorted = self.is_sorted_flag2();
                     s.set_sorted_flag(is_sorted)

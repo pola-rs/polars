@@ -44,32 +44,40 @@ def test_when_then_implicit_none() -> None:
 
 
 def test_predicate_null_block_asof_join() -> None:
-    left = pl.DataFrame(
-        {
-            "id": [1, 2, 3, 4],
-            "timestamp": [
-                datetime(2022, 1, 1, 10, 0),
-                datetime(2022, 1, 1, 10, 1),
-                datetime(2022, 1, 1, 10, 2),
-                datetime(2022, 1, 1, 10, 3),
-            ],
-        }
-    ).lazy()
+    left = (
+        pl.DataFrame(
+            {
+                "id": [1, 2, 3, 4],
+                "timestamp": [
+                    datetime(2022, 1, 1, 10, 0),
+                    datetime(2022, 1, 1, 10, 1),
+                    datetime(2022, 1, 1, 10, 2),
+                    datetime(2022, 1, 1, 10, 3),
+                ],
+            }
+        )
+        .lazy()
+        .set_sorted("timestamp")
+    )
 
-    right = pl.DataFrame(
-        {
-            "id": [1, 2, 3] * 2,
-            "timestamp": [
-                datetime(2022, 1, 1, 9, 59, 50),
-                datetime(2022, 1, 1, 10, 0, 50),
-                datetime(2022, 1, 1, 10, 1, 50),
-                datetime(2022, 1, 1, 8, 0, 0),
-                datetime(2022, 1, 1, 8, 0, 0),
-                datetime(2022, 1, 1, 8, 0, 0),
-            ],
-            "value": ["a", "b", "c"] * 2,
-        }
-    ).lazy()
+    right = (
+        pl.DataFrame(
+            {
+                "id": [1, 2, 3] * 2,
+                "timestamp": [
+                    datetime(2022, 1, 1, 9, 59, 50),
+                    datetime(2022, 1, 1, 10, 0, 50),
+                    datetime(2022, 1, 1, 10, 1, 50),
+                    datetime(2022, 1, 1, 8, 0, 0),
+                    datetime(2022, 1, 1, 8, 0, 0),
+                    datetime(2022, 1, 1, 8, 0, 0),
+                ],
+                "value": ["a", "b", "c"] * 2,
+            }
+        )
+        .lazy()
+        .set_sorted("timestamp")
+    )
 
     assert left.join_asof(right, by="id", on="timestamp").filter(
         pl.col("value").is_not_null()

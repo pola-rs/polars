@@ -107,7 +107,10 @@ impl Wrap<&DataFrame> {
         options: &RollingGroupOptions,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
         let time = self.0.column(&options.index_column)?.clone();
-        ensure_sorted_arg(&time);
+        if by.is_empty() && !options.period.parsed_int {
+            // if by is given, the column must be sorted in the 'by' arg, which we can not check now
+            ensure_sorted_arg(&time, "groupby_rolling");
+        }
         let time_type = time.dtype();
 
         polars_ensure!(time.null_count() == 0, ComputeError: "null values in dynamic groupby not supported, fill nulls.");
@@ -183,7 +186,10 @@ impl Wrap<&DataFrame> {
         }
 
         let time = self.0.column(&options.index_column)?.rechunk();
-        ensure_sorted_arg(&time);
+        if by.is_empty() && !options.period.parsed_int {
+            // if by is given, the column must be sorted in the 'by' arg, which we can not check now
+            ensure_sorted_arg(&time, "groupby_dynamic");
+        }
         let time_type = time.dtype();
 
         polars_ensure!(time.null_count() == 0, ComputeError: "null values in dynamic groupby not supported, fill nulls.");
