@@ -52,7 +52,7 @@ def test_error_on_invalid_by_in_asof_join() -> None:
             "b": [1, 2, 3],
             "c": ["a", "b", "a"],
         }
-    )
+    ).set_sorted("b")
 
     df2 = df1.with_columns(pl.col("a").cast(pl.Categorical))
     with pytest.raises(pl.ComputeError):
@@ -585,4 +585,4 @@ def test_no_sorted_warning(capfd: typing.Any) -> None:
     )
     df.groupby_dynamic("dt", every="1h").agg(pl.all().count().suffix("_foo"))
     (_, err) = capfd.readouterr()
-    assert "argument is not explicitly sorted" in err
+    assert "argument in operation 'groupby_dynamic' is not explicitly sorted" in err

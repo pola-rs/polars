@@ -34,7 +34,7 @@ def test_asof_join_inline_cast_6438() -> None:
     ).with_columns([pl.col("time").dt.cast_time_unit("ns")])
 
     assert df_trades.join_asof(
-        df_quotes, on=pl.col("time").cast(pl.Datetime("ns")), by="stock"
+        df_quotes, on=pl.col("time").cast(pl.Datetime("ns")).set_sorted(), by="stock"
     ).to_dict(False) == {
         "time": [
             datetime(2020, 1, 1, 9, 1),
@@ -51,7 +51,7 @@ def test_asof_join_inline_cast_6438() -> None:
 def test_asof_join_projection_resolution_4606() -> None:
     a = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy()
     b = pl.DataFrame({"a": [1], "b": [2], "d": [4]}).lazy()
-    joined_tbl = a.join_asof(b, on="a", by="b")
+    joined_tbl = a.join_asof(b, on=pl.col("a").set_sorted(), by="b")
     assert joined_tbl.groupby("a").agg(
         [pl.col("c").sum().alias("c")]
     ).collect().columns == ["a", "c"]
@@ -72,20 +72,28 @@ def test_asof_join_schema_5211() -> None:
 
 
 def test_asof_join_schema_5684() -> None:
-    df_a = pl.DataFrame(
-        {
-            "id": [1],
-            "a": [1],
-            "b": [1],
-        }
-    ).lazy()
+    df_a = (
+        pl.DataFrame(
+            {
+                "id": [1],
+                "a": [1],
+                "b": [1],
+            }
+        )
+        .lazy()
+        .set_sorted("a")
+    )
 
-    df_b = pl.DataFrame(
-        {
-            "id": [1, 1, 2],
-            "b": [3, -3, 6],
-        }
-    ).lazy()
+    df_b = (
+        pl.DataFrame(
+            {
+                "id": [1, 1, 2],
+                "b": [-3, -3, 6],
+            }
+        )
+        .lazy()
+        .set_sorted("b")
+    )
 
     q = (
         df_a.join_asof(df_b, by="id", left_on="a", right_on="b")
@@ -108,7 +116,9 @@ def test_asof_join_schema_5684() -> None:
 def test_join_asof_floats() -> None:
     df1 = pl.DataFrame({"a": [1.0, 2.0, 3.0], "b": ["lrow1", "lrow2", "lrow3"]})
     df2 = pl.DataFrame({"a": [0.59, 1.49, 2.89], "b": ["rrow1", "rrow2", "rrow3"]})
-    assert df1.join_asof(df2, on="a", strategy="backward").to_dict(False) == {
+    assert df1.join_asof(df2, on=pl.col("a").set_sorted(), strategy="backward").to_dict(
+        False
+    ) == {
         "a": [1.0, 2.0, 3.0],
         "b": ["lrow1", "lrow2", "lrow3"],
         "b_right": ["rrow1", "rrow2", "rrow3"],
@@ -125,7 +135,7 @@ def test_join_asof_floats() -> None:
             "c": ["x", "x", "x", "y", "y", "y", "y"],
         }
     ).with_columns(pl.col("val").alias("b"))
-    assert df1.join_asof(df2, on="b", by="c").to_dict(False) == {
+    assert df1.join_asof(df2, on=pl.col("b").set_sorted(), by="c").to_dict(False) == {
         "b": [
             0.0,
             0.8333333333333334,
@@ -152,7 +162,7 @@ def test_join_asof_tolerance() -> None:
             "stock": ["A", "B", "B", "C"],
             "trade": [101, 299, 301, 500],
         }
-    )
+    ).set_sorted("time")
 
     df_quotes = pl.DataFrame(
         {
@@ -165,7 +175,7 @@ def test_join_asof_tolerance() -> None:
             "stock": ["A", "B", "C", "A"],
             "quote": [100, 300, 501, 102],
         }
-    )
+    ).set_sorted("time")
 
     assert df_trades.join_asof(
         df_quotes, on="time", by="stock", tolerance="2s"
@@ -209,7 +219,7 @@ def test_join_asof_tolerance_forward() -> None:
             "stock": ["A", "B", "C", "A", "D"],
             "quote": [100, 300, 501, 102, 10],
         }
-    )
+    ).set_sorted("time")
 
     df_trades = pl.DataFrame(
         {
@@ -223,7 +233,7 @@ def test_join_asof_tolerance_forward() -> None:
             "stock": ["A", "B", "B", "C", "D"],
             "trade": [101, 299, 301, 500, 10],
         }
-    )
+    ).set_sorted("time")
 
     assert df_quotes.join_asof(
         df_trades, on="time", by="stock", tolerance="2s", strategy="forward"
@@ -279,7 +289,7 @@ def test_join_asof_projection() -> None:
             "df1_col1": ["foo", "bar", "foo", "bar", "foo"],
             "key": ["a", "b", "b", "a", "b"],
         }
-    )
+    ).set_sorted("df1_date")
 
     df2 = pl.DataFrame(
         {
@@ -287,7 +297,7 @@ def test_join_asof_projection() -> None:
             "df2_col1": ["1", "2", "3"],
             "key": ["a", "b", "b"],
         }
-    )
+    ).set_sorted("df2_date")
 
     assert (
         (
@@ -314,7 +324,9 @@ def test_asof_join_by_logical_types() -> None:
         .head(9)
     )
     x = pl.DataFrame({"a": dates, "b": map(float, range(9)), "c": ["1", "2", "3"] * 3})
-    assert x.join_asof(x, on="b", by=["c", "a"]).to_dict(False) == {
+    assert x.join_asof(x, on=pl.col("b").set_sorted(), by=["c", "a"]).to_dict(
+        False
+    ) == {
         "a": [
             datetime(2022, 1, 1, 0, 0),
             datetime(2022, 1, 1, 2, 0),
@@ -332,8 +344,8 @@ def test_asof_join_by_logical_types() -> None:
 
 
 def test_join_asof_projection_7481() -> None:
-    ldf1 = pl.DataFrame({"a": [1, 2, 2], "b": "bleft"}).lazy()
-    ldf2 = pl.DataFrame({"a": 2, "b": [1, 2, 2]}).lazy()
+    ldf1 = pl.DataFrame({"a": [1, 2, 2], "b": "bleft"}).lazy().set_sorted("a")
+    ldf2 = pl.DataFrame({"a": 2, "b": [1, 2, 2]}).lazy().set_sorted("b")
 
     assert (
         ldf1.join_asof(ldf2, left_on="a", right_on="b").select("a", "b")

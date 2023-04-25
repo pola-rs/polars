@@ -4649,7 +4649,7 @@ class DataFrame:
         ...     "2020-01-08 23:16:43",
         ... ]
         >>> df = pl.DataFrame({"dt": dates, "a": [3, 7, 5, 9, 2, 1]}).with_columns(
-        ...     pl.col("dt").str.strptime(pl.Datetime)
+        ...     pl.col("dt").str.strptime(pl.Datetime).set_sorted()
         ... )
         >>> out = df.groupby_rolling(index_column="dt", period="2d").agg(
         ...     [
@@ -5166,7 +5166,7 @@ class DataFrame:
         ...         ],  # note record date: Jan 1st (sorted!)
         ...         "gdp": [4164, 4411, 4566, 4696],
         ...     }
-        ... )
+        ... ).set_sorted("date")
         >>> population = pl.DataFrame(
         ...     {
         ...         "date": [
@@ -5177,10 +5177,8 @@ class DataFrame:
         ...         ],  # note record date: May 12th (sorted!)
         ...         "population": [82.19, 82.66, 83.12, 83.52],
         ...     }
-        ... )
-        >>> population.join_asof(
-        ...     gdp, left_on="date", right_on="date", strategy="backward"
-        ... )
+        ... ).set_sorted("date")
+        >>> population.join_asof(gdp, on="date", strategy="backward")
         shape: (4, 3)
         ┌─────────────────────┬────────────┬──────┐
         │ date                ┆ population ┆ gdp  │
@@ -8504,6 +8502,31 @@ class DataFrame:
         return self._from_pydf(
             self.lazy()
             .merge_sorted(other.lazy(), key)
+            .collect(no_optimization=True)
+            ._df
+        )
+
+    def set_sorted(
+        self,
+        column: IntoExpr | Iterable[IntoExpr],
+        *more_columns: IntoExpr,
+        descending: bool = False,
+    ) -> Self:
+        """
+        Indicate that one or multiple columns are sorted.
+
+        Parameters
+        ----------
+        column
+            Columns that are sorted
+        more_columns
+            Additional columns that are sorted, specified as positional arguments.
+        descending
+            Whether the columns are sorted in descending order.
+        """
+        return self._from_pydf(
+            self.lazy()
+            .set_sorted(column, *more_columns, descending=descending)
             .collect(no_optimization=True)
             ._df
         )

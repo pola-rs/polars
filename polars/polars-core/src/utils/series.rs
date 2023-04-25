@@ -31,16 +31,17 @@ where
     f(&mut us)
 }
 
-pub fn ensure_sorted_arg(s: &Series) {
-    if !matches!(s.is_sorted_flag(), IsSorted::Ascending) {
+pub fn ensure_sorted_arg(s: &Series, operation: &str) {
+    if matches!(s.is_sorted_flag(), IsSorted::Not) {
         eprintln!(
-            r#"argument is not explicitly sorted
+            "argument in operation '{}' is not explicitly sorted
 
 - If your data is ALREADY sorted, set the sorted flag with: '.set_sorted()'.
 - If your data is NOT sorted, sort the 'expr/series/column' first.
 
 This might become an error in a future version.
-    "#
+    ",
+            operation
         );
     }
 }

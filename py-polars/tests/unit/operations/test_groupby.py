@@ -200,7 +200,9 @@ def test_groupby_agg_input_types(lazy: bool) -> None:
 
 @pytest.mark.parametrize("lazy", [True, False])
 def test_groupby_rolling_agg_input_types(lazy: bool) -> None:
-    df = pl.DataFrame({"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]})
+    df = pl.DataFrame({"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]}).set_sorted(
+        "index_column"
+    )
     df_or_lazy: pl.DataFrame | pl.LazyFrame = df.lazy() if lazy else df
 
     for bad_param in bad_agg_parameters():
@@ -224,7 +226,9 @@ def test_groupby_rolling_agg_input_types(lazy: bool) -> None:
 
 @pytest.mark.parametrize("lazy", [True, False])
 def test_groupby_dynamic_agg_input_types(lazy: bool) -> None:
-    df = pl.DataFrame({"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]})
+    df = pl.DataFrame({"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]}).set_sorted(
+        "index_column"
+    )
     df_or_lazy: pl.DataFrame | pl.LazyFrame = df.lazy() if lazy else df
 
     for bad_param in bad_agg_parameters():
@@ -424,7 +428,7 @@ def test_unique_order() -> None:
 
 
 def test_groupby_dynamic_flat_agg_4814() -> None:
-    df = pl.DataFrame({"a": [1, 2, 2], "b": [1, 8, 12]})
+    df = pl.DataFrame({"a": [1, 2, 2], "b": [1, 8, 12]}).set_sorted("a")
 
     assert df.groupby_dynamic("a", every="1i", period="2i").agg(
         [
@@ -462,6 +466,7 @@ def test_groupby_dynamic_overlapping_groups_flat_apply_multiple_5038(
             }
         )
         .lazy()
+        .set_sorted("a")
         .groupby_dynamic("a", every=every, period=period)
         .agg([pl.col("b").var().sqrt().alias("corr")])
     ).collect().sum().to_dict(False) == pytest.approx(
@@ -558,7 +563,7 @@ def test_groupby_dynamic_iter(every: str | timedelta, tzinfo: ZoneInfo | None) -
             "a": [1, 2, 2],
             "b": [4, 5, 6],
         }
-    )
+    ).set_sorted("datetime")
 
     # Without 'by' argument
     result1 = [
@@ -657,6 +662,7 @@ def test_groupby_dynamic_elementwise_following_mean_agg_6904(
             }
         )
         .lazy()
+        .set_sorted("a")
         .groupby_dynamic("a", every="10s", period="100s")
         .agg([pl.col("b").mean().sin().alias("c")])
         .collect()

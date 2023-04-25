@@ -619,7 +619,9 @@ fn dispatch_join<T: PolarsNumericType>(
         }
     } else {
         for (lhs, rhs) in left_by.get_columns().iter().zip(right_by.get_columns()) {
-            check_asof_columns(lhs, rhs)?;
+            polars_ensure!(lhs.dtype() == rhs.dtype(),
+                ComputeError: "mismatching dtypes in 'on' parameter of asof-join: `{}` and `{}`", lhs.dtype(), rhs.dtype()
+            );
             #[cfg(feature = "dtype-categorical")]
             _check_categorical_src(lhs.dtype(), rhs.dtype())?;
         }

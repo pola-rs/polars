@@ -49,7 +49,7 @@ from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
 from polars.lazyframe.groupby import LazyGroupBy
 from polars.slice import LazyPolarsSlice
 from polars.utils._parse_expr_input import expr_to_lit_or_expr, selection_to_pyexpr_list
-from polars.utils._wrap import wrap_df
+from polars.utils._wrap import wrap_df, wrap_expr
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.various import (
     _in_notebook,
@@ -2335,7 +2335,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     "2020-01-08 23:16:43",
         ... ]
         >>> df = pl.LazyFrame({"dt": dates, "a": [3, 7, 5, 9, 2, 1]}).with_columns(
-        ...     pl.col("dt").str.strptime(pl.Datetime)
+        ...     pl.col("dt").str.strptime(pl.Datetime).set_sorted()
         ... )
         >>> out = (
         ...     df.groupby_rolling(index_column="dt", period="2d")
@@ -2783,7 +2783,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         ],  # note record date: Jan 1st (sorted!)
         ...         "gdp": [4164, 4411, 4566, 4696],
         ...     }
-        ... )
+        ... ).set_sorted("date")
         >>> population = pl.LazyFrame(
         ...     {
         ...         "date": [
@@ -2794,10 +2794,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         ],  # note record date: May 12th (sorted!)
         ...         "population": [82.19, 82.66, 83.12, 83.52],
         ...     }
-        ... )
-        >>> population.join_asof(
-        ...     gdp, left_on="date", right_on="date", strategy="backward"
-        ... ).collect()
+        ... ).set_sorted("date")
+        >>> population.join_asof(gdp, on="date", strategy="backward").collect()
         shape: (4, 3)
         ┌─────────────────────┬────────────┬──────┐
         │ date                ┆ population ┆ gdp  │
@@ -4684,6 +4682,31 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         """
         return self._from_pyldf(self._ldf.merge_sorted(other._ldf, key))
+
+    def set_sorted(
+        self,
+        column: IntoExpr | Iterable[IntoExpr],
+        *more_columns: IntoExpr,
+        descending: bool = False,
+    ) -> Self:
+        """
+        Indicate that one or multiple columns are sorted.
+
+        Parameters
+        ----------
+        column
+            Columns that are sorted
+        more_columns
+            Additional columns that are sorted, specified as positional arguments.
+        descending
+            Whether the columns are sorted in descending order.
+        """
+        columns = selection_to_pyexpr_list(column)
+        if more_columns:
+            columns.extend(selection_to_pyexpr_list(more_columns))
+        return self.with_columns(
+            [wrap_expr(e).set_sorted(descending=descending) for e in columns]
+        )
 
     def update(
         self,

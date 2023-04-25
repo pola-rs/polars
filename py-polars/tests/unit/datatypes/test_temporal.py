@@ -684,7 +684,7 @@ def test_truncate_negative_offset(tzinfo: ZoneInfo | None) -> None:
             ],
             "adm1_code": [1, 2, 1],
         }
-    )
+    ).set_sorted("event_date")
     out = df.groupby_dynamic(
         index_column="event_date",
         every="1mo",
@@ -715,7 +715,7 @@ def test_truncate_negative_offset(tzinfo: ZoneInfo | None) -> None:
             "admin": ["a", "a", "a"],
             "fatalities": [10, 20, 30],
         }
-    )
+    ).set_sorted("event_date")
 
     out = df.groupby_dynamic(
         index_column="event_date",
@@ -730,12 +730,16 @@ def test_truncate_negative_offset(tzinfo: ZoneInfo | None) -> None:
     ]
 
     for dt in [pl.Int32, pl.Int64]:
-        df = pl.DataFrame(
-            {
-                "idx": np.arange(6),
-                "A": ["A", "A", "B", "B", "B", "C"],
-            }
-        ).with_columns(pl.col("idx").cast(dt))
+        df = (
+            pl.DataFrame(
+                {
+                    "idx": np.arange(6),
+                    "A": ["A", "A", "B", "B", "B", "C"],
+                }
+            )
+            .with_columns(pl.col("idx").cast(dt))
+            .set_sorted("idx")
+        )
 
         out = df.groupby_dynamic(
             "idx", every="2i", period="3i", include_boundaries=True
@@ -797,10 +801,15 @@ def test_groupby_dynamic_when_conversion_crosses_dates_7274() -> None:
             }
         )
         .with_columns(
-            pl.col("timestamp").str.strptime(pl.Datetime, format="%Y-%m-%d %H:%M:%S%:z")
+            pl.col("timestamp")
+            .str.strptime(pl.Datetime, format="%Y-%m-%d %H:%M:%S%:z")
+            .set_sorted()
         )
         .with_columns(
-            pl.col("timestamp").dt.convert_time_zone("UTC").alias("timestamp_utc")
+            pl.col("timestamp")
+            .dt.convert_time_zone("UTC")
+            .alias("timestamp_utc")
+            .set_sorted()
         )
     )
     result = df.groupby_dynamic(
@@ -838,8 +847,10 @@ def test_rolling() -> None:
         "2020-01-08 23:16:43",
     ]
 
-    df = pl.DataFrame({"dt": dates, "a": [3, 7, 5, 9, 2, 1]}).with_columns(
-        pl.col("dt").str.strptime(pl.Datetime)
+    df = (
+        pl.DataFrame({"dt": dates, "a": [3, 7, 5, 9, 2, 1]})
+        .with_columns(pl.col("dt").str.strptime(pl.Datetime))
+        .set_sorted("dt")
     )
 
     period: str | timedelta
@@ -1031,7 +1042,7 @@ def test_default_negative_every_offset_dynamic_groupby(tzinfo: ZoneInfo | None) 
         datetime(2020, 2, 1, tzinfo=tzinfo),
         datetime(2020, 3, 1, tzinfo=tzinfo),
     ]
-    df = pl.DataFrame({"dt": dts, "idx": range(len(dts))})
+    df = pl.DataFrame({"dt": dts, "idx": range(len(dts))}).set_sorted("dt")
     out = df.groupby_dynamic(index_column="dt", every="1mo", closed="right").agg(
         pl.col("idx")
     )
@@ -1115,7 +1126,7 @@ def test_asof_join_tolerance_grouper() -> None:
         }
     )
 
-    out = df1.join_asof(df2, by="by", on="date", tolerance="3d")
+    out = df1.join_asof(df2, by="by", on=pl.col("date").set_sorted(), tolerance="3d")
 
     expected = pl.DataFrame(
         {
@@ -1276,7 +1287,7 @@ def test_groupby_rolling_mean_3020() -> None:
             ],
             "val": range(7),
         }
-    ).with_columns(pl.col("Date").str.strptime(pl.Date))
+    ).with_columns(pl.col("Date").str.strptime(pl.Date).set_sorted())
 
     period: str | timedelta
     for period in ("1w", timedelta(days=7)):  # type: ignore[assignment]
@@ -1328,7 +1339,7 @@ def test_asof_join() -> None:
             "ticker": ticker,
             "bid": [720.5, 51.95, 51.97, 51.99, 720.50, 97.99, 720.50, 52.01],
         }
-    )
+    ).set_sorted("dates")
     dates = [
         "2016-05-25 13:30:00.023",
         "2016-05-25 13:30:00.038",
@@ -1349,7 +1360,7 @@ def test_asof_join() -> None:
             "ticker": ticker,
             "bid": [51.95, 51.95, 720.77, 720.92, 98.0],
         }
-    )
+    ).set_sorted("dates")
     assert trades.schema == {
         "dates": pl.Datetime("ms"),
         "ticker": pl.Utf8,
@@ -1670,7 +1681,7 @@ def test_groupby_rolling_by_ordering() -> None:
             "key": ["A", "A", "B", "B", "A", "B", "A"],
             "val": [1, 1, 1, 1, 1, 1, 1],
         }
-    )
+    ).set_sorted("dt")
 
     assert df.groupby_rolling(
         index_column="dt",
@@ -2442,9 +2453,9 @@ def test_tz_aware_filter_lit() -> None:
 def test_asof_join_by_forward() -> None:
     dfa = pl.DataFrame(
         {"category": ["a", "a", "a", "a", "a"], "value_one": [1, 2, 3, 5, 12]}
-    )
+    ).set_sorted("value_one")
 
-    dfb = pl.DataFrame({"category": ["a"], "value_two": [3]})
+    dfb = pl.DataFrame({"category": ["a"], "value_two": [3]}).set_sorted("value_two")
 
     assert dfa.join_asof(
         dfb,
@@ -2657,13 +2668,17 @@ def test_datetime_cum_agg_schema() -> None:
 
 
 def test_rolling_groupby_empty_groups_by_take_6330() -> None:
-    df = pl.DataFrame({"Event": ["Rain", "Sun"]}).join(
-        pl.DataFrame(
-            {
-                "Date": [1, 2, 3, 4],
-            }
-        ),
-        how="cross",
+    df = (
+        pl.DataFrame({"Event": ["Rain", "Sun"]})
+        .join(
+            pl.DataFrame(
+                {
+                    "Date": [1, 2, 3, 4],
+                }
+            ),
+            how="cross",
+        )
+        .set_sorted("Date")
     )
     assert (
         df.groupby_rolling(

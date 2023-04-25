@@ -39,8 +39,8 @@ fn check_asof_columns(a: &Series, b: &Series) -> PolarsResult<()> {
         a.null_count() == 0 && b.null_count() == 0,
         ComputeError: "asof join must not have null values in 'on' arguments"
     );
-    ensure_sorted_arg(a);
-    ensure_sorted_arg(b);
+    ensure_sorted_arg(a, "asof_join");
+    ensure_sorted_arg(b, "asof_join");
     Ok(())
 }
 

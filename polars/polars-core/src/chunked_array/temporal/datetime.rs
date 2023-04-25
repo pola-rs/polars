@@ -124,7 +124,7 @@ impl DatetimeChunked {
         time_zone: Option<&str>,
         use_earliest: Option<bool>,
     ) -> PolarsResult<DatetimeChunked> {
-        match (self.time_zone(), time_zone) {
+        let out: PolarsResult<_> = match (self.time_zone(), time_zone) {
             (Some(from), Some(to)) => {
                 let chunks = self
                     .downcast_iter()
@@ -162,7 +162,10 @@ impl DatetimeChunked {
                 Ok(out.into_datetime(self.time_unit(), Some(to.to_string())))
             }
             (None, None) => Ok(self.clone()),
-        }
+        };
+        let mut out = out?;
+        out.set_sorted_flag(self.is_sorted_flag2());
+        Ok(out)
     }
 
     /// Format Datetime with a `format` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
