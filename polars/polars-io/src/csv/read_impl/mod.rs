@@ -66,7 +66,10 @@ pub(crate) fn cast_columns(
     } else {
         // cast to the original dtypes in the schema
         for fld in to_cast {
-            df.try_apply(fld.name(), |s| cast_fn(s, fld))?;
+            // field may not be projected
+            if let Some(idx) = df.find_idx_by_name(fld.name()) {
+                df.try_apply_at_idx(idx, |s| cast_fn(s, fld))?;
+            }
         }
     }
     Ok(())
