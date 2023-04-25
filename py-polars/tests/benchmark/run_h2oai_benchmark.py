@@ -183,7 +183,7 @@ out = (
 print(time.time() - t0)
 assert out.shape == (95001, 3)
 assert out["v1_sum"].sum() == 28501451
-assert np.isclose(out["v3_mean"].sum(), 4751358.825104358)
+assert np.isclose(out["v3_mean"].sum(), 4751358.825104358)  # type: ignore[arg-type]
 
 t0 = time.time()
 print("q4")
@@ -200,9 +200,9 @@ out = (
 )
 print(time.time() - t0)
 assert out.shape == (96, 4)
-assert np.isclose(out["v1_mean"].sum(), 288.0192364601018)
-assert np.isclose(out["v2_mean"].sum(), 767.9422306545811)
-assert np.isclose(out["v3_mean"].sum(), 4801.784316931509)
+assert np.isclose(out["v1_mean"].sum(), 288.0192364601018)  # type: ignore[arg-type]
+assert np.isclose(out["v2_mean"].sum(), 767.9422306545811)  # type: ignore[arg-type]
+assert np.isclose(out["v3_mean"].sum(), 4801.784316931509)  # type: ignore[arg-type]
 
 t0 = time.time()
 print("q5")
@@ -233,8 +233,8 @@ out = (
 )
 print(time.time() - t0)
 assert out.shape == (9216, 4)
-assert np.isclose(out["v3_median"].sum(), 460892.5487690001)
-assert np.isclose(out["v3_std"].sum(), 266052.20492321637)
+assert np.isclose(out["v3_median"].sum(), 460892.5487690001)  # type: ignore[arg-type]
+assert np.isclose(out["v3_std"].sum(), 266052.20492321637)  # type: ignore[arg-type]
 
 t0 = time.time()
 print("q7")
@@ -265,14 +265,14 @@ out = (
 )
 print(time.time() - t0)
 assert out.shape == (190002, 2)
-assert np.isclose(out["largest2_v3"].sum(), 18700642.66837202)
+assert np.isclose(out["largest2_v3"].sum(), 18700642.66837202)  # type: ignore[arg-type]
 
 t0 = time.time()
 print("q9")
 out = x.groupby(["id2", "id4"]).agg((pl.corr("v1", "v2") ** 2).alias("r2")).collect()
 print(time.time() - t0)
 assert out.shape == (9216, 3)
-assert np.isclose(out["r2"].sum(), 9.902706276948825)
+assert np.isclose(out["r2"].sum(), 9.902706276948825)  # type: ignore[arg-type]
 
 t0 = time.time()
 print("q10")

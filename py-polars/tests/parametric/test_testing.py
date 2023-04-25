@@ -143,9 +143,9 @@ def test_strategy_null_probability(
     for obj in (s, df1, df2, df3):
         assert len(obj) == 50  # type: ignore[arg-type]
 
-    assert s.null_count() < df1.null_count().fold(sum).sum()
-    assert df1.null_count().fold(sum).sum() < df2.null_count().fold(sum).sum()
-    assert df2.null_count().fold(sum).sum() < df3.null_count().fold(sum).sum()
+    assert s.null_count() < df1.null_count().fold(sum).sum()  # type: ignore[operator]
+    assert df1.null_count().fold(sum).sum() < df2.null_count().fold(sum).sum()  # type: ignore[operator]
+    assert df2.null_count().fold(sum).sum() < df3.null_count().fold(sum).sum()  # type: ignore[operator]
 
     nulls_col0, nulls_col1 = df2.null_count().rows()[0]
     assert nulls_col0 > nulls_col1

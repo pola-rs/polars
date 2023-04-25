@@ -1123,7 +1123,7 @@ def test_lazy_functions() -> None:
     assert np.isclose(pl.min(df["b"]), expected)  # type: ignore[arg-type]
     expected = 6
     assert np.isclose(out.to_series(4), expected)
-    assert np.isclose(pl.sum(df["b"]), expected)
+    assert np.isclose(pl.sum(df["b"]), expected)  # type: ignore[arg-type]
     expected = 2
     assert np.isclose(out.to_series(5), expected)
     assert np.isclose(pl.mean(df["b"]), expected)
@@ -3683,7 +3683,7 @@ def test_rolling_apply() -> None:
         window_size=3, weights=[1.0, 2.1, 3.2], min_periods=2, center=True
     )
 
-    assert (roll_app_sum - roll_sum).abs().sum() < 0.0001
+    assert (roll_app_sum - roll_sum).abs().sum() < 0.0001  # type: ignore[operator]
 
     s = pl.Series("A", list(range(6)), dtype=pl.Float64)
     roll_app_std = s.rolling_apply(
@@ -3698,7 +3698,7 @@ def test_rolling_apply() -> None:
         window_size=4, weights=[1.0, 2.0, 3.0, 0.1], min_periods=3, center=False
     )
 
-    assert (roll_app_std - roll_std).abs().sum() < 0.0001
+    assert (roll_app_std - roll_std).abs().sum() < 0.0001  # type: ignore[operator]
 
 
 def test_ufunc() -> None:
