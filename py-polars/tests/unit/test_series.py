@@ -1966,11 +1966,35 @@ def test_init_categorical() -> None:
             assert_series_equal(a, expected)
 
 
-def test_nested_list_types_preserved() -> None:
-    expected_dtype = pl.UInt32
-    srs1 = pl.Series([pl.Series([3, 4, 5, 6], dtype=expected_dtype) for _ in range(5)])
-    for srs2 in srs1:
-        assert srs2.dtype == expected_dtype
+def test_iter_nested_list() -> None:
+    elems = list(pl.Series("s", [[1, 2], [3, 4]]))
+    assert_series_equal(elems[0], pl.Series([1, 2]))
+    assert_series_equal(elems[1], pl.Series([3, 4]))
+
+
+def test_iter_nested_struct() -> None:
+    # note: this feels inconsistent with the above test for nested list, but
+    # let's ensure the behaviour is codified before potentially modifying...
+    elems = list(pl.Series("s", [{"a": 1, "b": 2}, {"a": 3, "b": 4}]))
+    assert elems[0] == {"a": 1, "b": 2}
+    assert elems[1] == {"a": 3, "b": 4}
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.UInt8,
+        pl.Float32,
+        pl.Int32,
+        pl.Boolean,
+        pl.List(pl.Utf8),
+        pl.Struct([pl.Field("a", pl.Int64), pl.Field("b", pl.Boolean)]),
+    ],
+)
+def test_nested_list_types_preserved(dtype: pl.DataType) -> None:
+    srs = pl.Series([pl.Series([], dtype=dtype) for _ in range(5)])
+    for srs_nested in srs:
+        assert srs_nested.dtype == dtype
 
 
 def test_log_exp() -> None:
