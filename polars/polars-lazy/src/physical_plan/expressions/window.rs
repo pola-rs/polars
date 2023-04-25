@@ -407,6 +407,12 @@ impl PhysicalExpr for WindowExpr {
         //          This can be used to reverse, sort, shuffle etc. the values in a group
 
         // 4. select the final column and return
+
+        if df.height() == 0 {
+            let field = self.phys_function.to_field(&df.schema())?;
+            return Ok(Series::full_null(field.name(), 0, field.data_type()));
+        }
+
         let groupby_columns = self
             .group_by
             .iter()
