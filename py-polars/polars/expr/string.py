@@ -133,7 +133,7 @@ class ExprStringNameSpace:
         elif dtype == Datetime:
             time_unit = dtype.time_unit  # type: ignore[union-attr]
             time_zone = dtype.time_zone  # type: ignore[union-attr]
-            dtcol = wrap_expr(
+            return wrap_expr(
                 self._pyexpr.str_to_datetime(
                     format,
                     time_unit,
@@ -145,7 +145,6 @@ class ExprStringNameSpace:
                     utc,
                 )
             )
-            return dtcol if (time_unit is None) else dtcol.dt.cast_time_unit(time_unit)
         elif dtype == Time:
             return wrap_expr(self._pyexpr.str_to_time(format, strict, exact, cache))
         else:
