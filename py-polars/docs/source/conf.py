@@ -56,6 +56,7 @@ extensions = [
     "sphinx_autosummary_accessors",
     "sphinx_copybutton",
     "sphinx_design",
+    "sphinx_favicon",
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -114,23 +115,24 @@ html_theme_options = {
             "icon": "fa-brands fa-twitter",
         },
     ],
-    "favicons": [
-        {
-            "rel": "icon",
-            "sizes": "32x32",
-            "href": "https://raw.githubusercontent.com/pola-rs/polars-static/master/icons/favicon-32x32.png",
-        },
-        {
-            "rel": "apple-touch-icon",
-            "sizes": "180x180",
-            "href": "https://raw.githubusercontent.com/pola-rs/polars-static/master/icons/touchicon-180x180.png",
-        },
-    ],
     "logo": {
         "image_light": "https://raw.githubusercontent.com/pola-rs/polars-static/master/logos/polars-logo-dark-medium.png",
         "image_dark": "https://raw.githubusercontent.com/pola-rs/polars-static/master/logos/polars-logo-dimmed-medium.png",
     },
 }
+
+favicons = [
+    {
+        "rel": "icon",
+        "sizes": "32x32",
+        "href": "https://raw.githubusercontent.com/pola-rs/polars-static/master/icons/favicon-32x32.png",
+    },
+    {
+        "rel": "apple-touch-icon",
+        "sizes": "180x180",
+        "href": "https://raw.githubusercontent.com/pola-rs/polars-static/master/icons/touchicon-180x180.png",
+    },
+]
 
 intersphinx_mapping = {
     "numpy": ("https://numpy.org/doc/stable/", None),
