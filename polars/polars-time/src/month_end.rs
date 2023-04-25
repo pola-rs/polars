@@ -15,47 +15,41 @@ fn roll_forward<T: PolarsTimeZone>(
     time_zone: Option<&T>,
     timestamp_to_datetime: fn(i64) -> NaiveDateTime,
     datetime_to_timestamp: fn(NaiveDateTime) -> i64,
-    adder: fn(&Duration, i64, Option<&T>) -> PolarsResult<i64>,
+    offset_fn: fn(&Duration, i64, Option<&T>) -> PolarsResult<i64>,
 ) -> PolarsResult<i64> {
     let t = roll_backward(t, time_zone, timestamp_to_datetime, datetime_to_timestamp)?;
-    let t = adder(&Duration::parse("1mo"), t, time_zone)?;
-    adder(&Duration::parse("-1d"), t, time_zone)
+    let t = offset_fn(&Duration::parse("1mo"), t, time_zone)?;
+    offset_fn(&Duration::parse("-1d"), t, time_zone)
 }
 
 pub trait PolarsMonthEnd {
-    fn month_end(&self, time_zone: Option<&impl PolarsTimeZone>) -> PolarsResult<Self>
+    fn month_end<T: PolarsTimeZone>(&self, time_zone: Option<&T>) -> PolarsResult<Self>
     where
         Self: Sized;
 }
 
 impl PolarsMonthEnd for DatetimeChunked {
-    fn month_end(&self, time_zone: Option<&impl PolarsTimeZone>) -> PolarsResult<Self> {
+    fn month_end<T: PolarsTimeZone>(&self, time_zone: Option<&T>) -> PolarsResult<Self> {
         let timestamp_to_datetime: fn(i64) -> NaiveDateTime;
         let datetime_to_timestamp: fn(NaiveDateTime) -> i64;
+        let offset_fn: fn(&Duration, i64, Option<&T>) -> PolarsResult<i64>;
         match self.time_unit() {
             TimeUnit::Nanoseconds => {
                 timestamp_to_datetime = timestamp_ns_to_datetime;
                 datetime_to_timestamp = datetime_to_timestamp_ns;
+                offset_fn = Duration::add_ns;
             }
             TimeUnit::Microseconds => {
                 timestamp_to_datetime = timestamp_us_to_datetime;
                 datetime_to_timestamp = datetime_to_timestamp_us;
+                offset_fn = Duration::add_us;
             }
             TimeUnit::Milliseconds => {
                 timestamp_to_datetime = timestamp_ms_to_datetime;
                 datetime_to_timestamp = datetime_to_timestamp_ms;
+                offset_fn = Duration::add_ms;
             }
         };
-        fn adder<T: PolarsTimeZone>(
-            time_unit: TimeUnit,
-        ) -> fn(&Duration, i64, Option<&T>) -> PolarsResult<i64> {
-            match time_unit {
-                TimeUnit::Nanoseconds => Duration::add_ns,
-                TimeUnit::Microseconds => Duration::add_us,
-                TimeUnit::Milliseconds => Duration::add_ms,
-            }
-        }
-        let adder = adder(self.time_unit());
         Ok(self
             .0
             .try_apply(|t| {
@@ -64,7 +58,7 @@ impl PolarsMonthEnd for DatetimeChunked {
                     time_zone,
                     timestamp_to_datetime,
                     datetime_to_timestamp,
-                    adder,
+                    offset_fn,
                 )
             })?
             .into_datetime(self.time_unit(), self.time_zone().clone()))
@@ -72,7 +66,7 @@ impl PolarsMonthEnd for DatetimeChunked {
 }
 
 impl PolarsMonthEnd for DateChunked {
-    fn month_end(&self, _time_zone: Option<&impl PolarsTimeZone>) -> PolarsResult<Self> {
+    fn month_end<T: PolarsTimeZone>(&self, _time_zone: Option<&T>) -> PolarsResult<Self> {
         const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
         Ok(self
             .0

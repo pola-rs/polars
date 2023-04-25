@@ -21,7 +21,7 @@ pub(super) fn date_offset(s: Series, offset: Duration) -> PolarsResult<Series> {
         DataType::Datetime(tu, tz) => {
             let ca = s.datetime().unwrap();
 
-            fn adder<T: PolarsTimeZone>(
+            fn offset_fn<T: PolarsTimeZone>(
                 tu: TimeUnit,
             ) -> fn(&Duration, i64, Option<&T>) -> PolarsResult<i64> {
                 match tu {
@@ -35,20 +35,20 @@ pub(super) fn date_offset(s: Series, offset: Duration) -> PolarsResult<Series> {
                 #[cfg(feature = "timezones")]
                 Some(ref tz) => match tz.parse::<Tz>() {
                     Ok(tz) => {
-                        let adder = adder(tu);
-                        ca.0.try_apply(|v| adder(&offset, v, Some(&tz)))
+                        let offset_fn = offset_fn(tu);
+                        ca.0.try_apply(|v| offset_fn(&offset, v, Some(&tz)))
                     }
                     Err(_) => match parse_offset(tz) {
                         Ok(tz) => {
-                            let adder = adder(tu);
-                            ca.0.try_apply(|v| adder(&offset, v, Some(&tz)))
+                            let offset_fn = offset_fn(tu);
+                            ca.0.try_apply(|v| offset_fn(&offset, v, Some(&tz)))
                         }
                         Err(_) => unreachable!(),
                     },
                 },
                 _ => {
-                    let adder = adder(tu);
-                    ca.0.try_apply(|v| adder(&offset, v, NO_TIMEZONE))
+                    let offset_fn = offset_fn(tu);
+                    ca.0.try_apply(|v| offset_fn(&offset, v, NO_TIMEZONE))
                 }
             }?;
             out.cast(&DataType::Datetime(tu, tz))
