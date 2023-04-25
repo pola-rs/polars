@@ -3666,7 +3666,7 @@ class DataFrame:
             metrics.append(f"{p:.0%}")
 
         # execute metrics in parallel
-        res = self.select(
+        df_metrics = self.select(
             F.all().count().prefix("count:"),
             F.all().null_count().prefix("null_count:"),
             F.all().mean().prefix("mean:"),
@@ -3680,7 +3680,7 @@ class DataFrame:
         # reshape/cast wide result
         n_cols = len(self.columns)
         described = [
-            res[(n * n_cols) : (n + 1) * n_cols] for n in range(0, len(metrics))
+            df_metrics[(n * n_cols) : (n + 1) * n_cols] for n in range(0, len(metrics))
         ]
         summary = dict(zip(self.columns, list(zip(*described))))
         num_or_bool = NUMERIC_DTYPES | {Boolean}
