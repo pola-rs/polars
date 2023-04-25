@@ -531,9 +531,18 @@ def test_negative_offset_by_err_msg_8464() -> None:
         pl.Series([datetime(2022, 3, 30)]).dt.offset_by("-1mo")
 
 
-def test_offset_by_saturating_8217() -> None:
-    result = pl.Series([date(2018, 1, 31)]).dt.offset_by("1mo_saturating").item()
-    expected = date(2018, 2, 28)
+@pytest.mark.parametrize(
+    ("duration", "input_date", "expected"),
+    [
+        ("1mo_saturating", date(2018, 1, 31), date(2018, 2, 28)),
+        ("1y_saturating", date(2024, 2, 29), date(2025, 2, 28)),
+        ("1y1mo_saturating", date(2024, 1, 30), date(2025, 2, 28)),
+    ],
+)
+def test_offset_by_saturating_8217_8474(
+    duration: str, input_date: date, expected: date
+) -> None:
+    result = pl.Series([input_date]).dt.offset_by(duration).item()
     assert result == expected
 
 
