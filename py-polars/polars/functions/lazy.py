@@ -501,7 +501,7 @@ def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | A
     If a single string is passed, this is an alias for ``pl.col(name).max()``.
     If a single Series is passed, this is an alias for ``Series.max()``.
 
-    Otherwise, this function computes the the maximum value of each row (horizontal).
+    Otherwise, this function computes the maximum value of each row (horizontal).
 
     Parameters
     ----------
@@ -600,7 +600,7 @@ def min(
     If a single string is passed, this is an alias for ``pl.col(name).min()``.
     If a single Series is passed, this is an alias for ``Series.min()``.
 
-    Otherwise, this function computes the the minimum value of each row (horizontal).
+    Otherwise, this function computes the minimum value of each row (horizontal).
 
     Parameters
     ----------
