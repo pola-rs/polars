@@ -90,6 +90,7 @@ class column:
     --------
     >>> from hypothesis.strategies import sampled_from
     >>> from polars.testing.parametric import column
+    >>>
     >>> column(name="unique_small_ints", dtype=pl.UInt8, unique=True)
     column(name='unique_small_ints', dtype=UInt8, strategy=None, null_probability=None, unique=True)
     >>> column(name="ccy", strategy=sampled_from(["GBP", "EUR", "JPY"]))
@@ -203,21 +204,23 @@ def columns(
 
     Examples
     --------
-    >>> from polars.testing.parametric import columns
-    >>> from string import punctuation
-    >>>
-    >>> def test_special_char_colname_init() -> None:
-    ...     schema = [(c.name, c.dtype) for c in columns(punctuation)]
-    ...     df = pl.DataFrame(schema=schema)
-    ...     assert len(cols) == len(df.columns)
-    ...     assert 0 == len(df.rows())
-    ...
-    >>> from polars.testing.parametric import columns
+    >>> from polars.testing.parametric import columns, dataframes
     >>> from hypothesis import given
     >>>
     >>> @given(dataframes(columns(["x", "y", "z"], unique=True)))
     ... def test_unique_xyz(df: pl.DataFrame) -> None:
     ...     assert_something(df)
+
+    Note, as 'columns' creates a list of native polars column definitions it can
+    also be used independently of parametric/hypothesis tests:
+
+    >>> from string import punctuation
+    >>>
+    >>> def test_special_char_colname_init() -> None:
+    ...     df = pl.DataFrame(schema=[(c.name, c.dtype) for c in columns(punctuation)])
+    ...     assert len(cols) == len(df.columns)
+    ...     assert 0 == len(df.rows())
+    ...
 
     """
     # create/assign named columns
@@ -263,7 +266,7 @@ def series(
     excluded_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
 ) -> SearchStrategy[Series]:
     """
-    Hypothesis strategy for producing a polars Series.
+    Hypothesis strategy for producing polars Series.
 
     Parameters
     ----------
@@ -311,20 +314,32 @@ def series(
     --------
     >>> from polars.testing.parametric import series
     >>> from hypothesis import given
-    >>>
-    >>> @given(df=series())
-    ... def test_repr(s: pl.Series) -> None:
+
+    In normal usage, as a simple unit test:
+
+    >>> @given(s=series(null_probability=0.1))
+    ... def test_repr_is_valid_string(s: pl.Series) -> None:
     ...     assert isinstance(repr(s), str)
-    >>>
-    >>> s = series(dtype=pl.Int32, max_size=5)
+
+    Experimenting locally with a custom List dtype strategy:
+
+    >>> from polars.testing.parametric import create_list_strategy
+    >>> s = series(
+    ...     strategy=create_list_strategy(
+    ...         inner_dtype=pl.Utf8,
+    ...         select_from=["xx", "yy", "zz"],
+    ...     ),
+    ...     min_size=2,
+    ...     max_size=4,
+    ... )
     >>> s.example()  # doctest: +SKIP
     shape: (4,)
-    Series: '' [i64]
+    Series: '' [list[str]]
     [
-        54666
-        -35
-        6414
-        -63290
+        []
+        ["yy", "yy", "zz"]
+        ["zz", "yy", "zz"]
+        ["xx"]
     ]
 
     """
@@ -439,7 +454,7 @@ def dataframes(
     excluded_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
 ) -> SearchStrategy[DataFrame | LazyFrame]:
     """
-    Hypothesis strategy for producing a polars DataFrame or LazyFrame.
+    Hypothesis strategy for producing polars DataFrames or LazyFrames.
 
     Parameters
     ----------
@@ -498,29 +513,44 @@ def dataframes(
 
     >>> from polars.testing.parametric import column, columns, dataframes
     >>> from hypothesis import given
-    >>>
-    >>> # generate arbitrary DataFrames
+
+    Generate arbitrary DataFrames (as part of a unit test):
+
     >>> @given(df=dataframes())
     ... def test_repr(df: pl.DataFrame) -> None:
     ...     assert isinstance(repr(df), str)
-    >>>
-    >>> # generate LazyFrames with at least 1 column, random dtypes, and specific size:
-    >>> df = dataframes(min_cols=1, lazy=True, max_size=5)
-    >>> df.example()  # doctest: +SKIP
-    >>>
-    >>> # generate DataFrames with known colnames, random dtypes (per test, not per-frame):
-    >>> df_strategy = dataframes(columns(["x", "y", "z"]))
-    >>> df.example()  # doctest: +SKIP
-    >>>
-    >>> # generate frames with explicitly named/typed columns and a fixed size:
-    >>> df_strategy = dataframes(
+
+    Generate LazyFrames with at least 1 column, random dtypes, and specific size:
+
+    >>> dfs = dataframes(min_cols=1, max_size=5, lazy=True)
+    >>> dfs.example()  # doctest: +SKIP
+    <polars.LazyFrame object at 0x11F561580>
+
+    Generate DataFrames with known colnames, random dtypes (per test, not per-frame):
+
+    >>> dfs = dataframes(columns(["x", "y", "z"]))
+    >>> dfs.example()  # doctest: +SKIP
+    shape: (3, 3)
+    ┌────────────┬───────┬────────────────────────────┐
+    │ x          ┆ y     ┆ z                          │
+    │ ---        ┆ ---   ┆ ---                        │
+    │ date       ┆ u16   ┆ datetime[μs]               │
+    ╞════════════╪═══════╪════════════════════════════╡
+    │ 0565-08-12 ┆ 34715 ┆ 5844-09-20 00:33:31.076854 │
+    │ 3382-10-17 ┆ 48662 ┆ 7540-01-29 11:20:14.836271 │
+    │ 4063-06-17 ┆ 39092 ┆ 1889-05-05 13:25:41.874455 │
+    └────────────┴───────┴────────────────────────────┘
+
+    Generate frames with explicitly named/typed columns and a fixed size:
+
+    >>> dfs = dataframes(
     ...     [
     ...         column("x", dtype=pl.Int32),
     ...         column("y", dtype=pl.Float64),
     ...     ],
     ...     size=2,
     ... )
-    >>> df_strategy.example()  # doctest: +SKIP
+    >>> dfs.example()  # doctest: +SKIP
     shape: (2, 2)
     ┌───────────┬────────────┐
     │ x         ┆ y          │
@@ -530,7 +560,8 @@ def dataframes(
     │ -15836    ┆ 1.1755e-38 │
     │ 575050513 ┆ NaN        │
     └───────────┴────────────┘
-    """  # noqa: 501
+
+    """
     _failed_frame_init_msgs_.clear()
 
     if isinstance(min_size, int) and min_cols in (0, None):
