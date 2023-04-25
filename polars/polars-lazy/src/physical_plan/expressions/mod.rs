@@ -348,7 +348,9 @@ impl<'a> AggregationContext<'a> {
                     // retrieve the length before grouping, so it stays  in this state.
                     AggState::AggregatedFlat(_) => AggState::AggregatedFlat(series),
                     // applying a function on a literal, keeps the literal state
-                    AggState::Literal(_) if series.len() == 1 => AggState::Literal(series),
+                    AggState::Literal(_) if series.len() == 1 && self.groups.len() > 1 => {
+                        AggState::Literal(series)
+                    }
                     _ => AggState::NotAggregated(series),
                 }
             }
