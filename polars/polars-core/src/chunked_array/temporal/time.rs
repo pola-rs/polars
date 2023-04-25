@@ -49,6 +49,14 @@ impl TimeChunked {
         ca
     }
 
+    /// Convert from Time to Utf8 with the given format.
+    /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+    ///
+    /// Alias for `to_string`.
+    pub fn strftime(&self, format: &str) -> Utf8Chunked {
+        self.to_string(format)
+    }
+
     pub fn as_time_iter(&self) -> impl Iterator<Item = Option<NaiveTime>> + TrustedLen + '_ {
         // we know the iterators len
         unsafe {

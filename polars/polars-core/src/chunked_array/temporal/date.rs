@@ -60,6 +60,14 @@ impl DateChunked {
         ca
     }
 
+    /// Convert from Date to Utf8 with the given format.
+    /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+    ///
+    /// Alias for `to_string`.
+    pub fn strftime(&self, format: &str) -> Utf8Chunked {
+        self.to_string(format)
+    }
+
     /// Construct a new [`DateChunked`] from an iterator over optional [`NaiveDate`].
     pub fn from_naive_date_options<I: IntoIterator<Item = Option<NaiveDate>>>(
         name: &str,
