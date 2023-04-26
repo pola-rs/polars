@@ -972,3 +972,11 @@ def test_to_init_repr() -> None:
         )
 
         assert_frame_equal(eval(df.to_init_repr().replace("datetime.", "")), df)
+
+
+def test_untrusted_categorical_input() -> None:
+    df = pd.DataFrame({"x": pd.Categorical(["x"], ["x", "y"])})
+    assert pl.from_pandas(df).groupby("x").count().to_dict(False) == {
+        "x": ["x"],
+        "count": [1],
+    }
