@@ -31,6 +31,7 @@ from polars.datatypes import (
     Categorical,
     Date,
     Datetime,
+    Decimal,
     Duration,
     Float32,
     Float64,
@@ -614,7 +615,7 @@ class Series:
             raise ValueError("first cast to integer before dividing datelike dtypes")
 
         # this branch is exactly the floordiv function without rounding the floats
-        if self.is_float():
+        if self.is_float() or self.dtype == Decimal:
             return self._arithmetic(other, "div", "div_<>")
 
         return self.cast(Float64) / other
