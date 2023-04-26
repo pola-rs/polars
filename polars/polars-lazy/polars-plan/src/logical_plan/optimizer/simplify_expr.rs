@@ -625,6 +625,12 @@ impl OptimizationRule for SimplifyExprRule {
             AExpr::Cast {
                 expr, data_type, ..
             } => {
+                if let DataType::Unknown = data_type {
+                    polars_bail!(InvalidOperation: "polars could not finish query because the dtype is unknown\n\
+                    \n\
+                    If you used a custom function you must set the return dtype.")
+                }
+
                 let input = expr_arena.get(*expr);
                 // faster casts (we only do strict casts)
                 inline_cast(input, data_type)
