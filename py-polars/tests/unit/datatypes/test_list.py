@@ -36,6 +36,7 @@ def test_dtype() -> None:
         "dt": pl.List(pl.Date),
         "dtm": pl.List(pl.Datetime),
     }
+    assert all(tp.is_nested for tp in df.dtypes)
     assert df.schema["i"].inner == pl.Int8  # type: ignore[union-attr]
     assert df.rows() == [
         (
@@ -71,6 +72,7 @@ def test_categorical() -> None:
     )
 
     assert out.inner_dtype == pl.Categorical
+    assert not out.inner_dtype.is_nested
 
 
 def test_list_concat_rolling_window() -> None:
