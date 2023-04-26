@@ -136,7 +136,7 @@ pub fn has_null(current_expr: &Expr) -> bool {
 }
 
 /// output name of expr
-pub(crate) fn expr_output_name(expr: &Expr) -> PolarsResult<Arc<str>> {
+pub fn expr_output_name(expr: &Expr) -> PolarsResult<Arc<str>> {
     for e in expr {
         match e {
             // don't follow the partition by branch

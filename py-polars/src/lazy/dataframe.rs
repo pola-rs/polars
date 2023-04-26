@@ -587,7 +587,7 @@ impl PyLazyFrame {
 
     pub fn groupby_rolling(
         &mut self,
-        index_column: &str,
+        index_column: PyExpr,
         period: &str,
         offset: &str,
         closed: Wrap<ClosedWindow>,
@@ -600,9 +600,10 @@ impl PyLazyFrame {
             .map(|pyexpr| pyexpr.inner)
             .collect::<Vec<_>>();
         let lazy_gb = ldf.groupby_rolling(
+            index_column.inner,
             by,
             RollingGroupOptions {
-                index_column: index_column.into(),
+                index_column: "".into(),
                 period: Duration::parse(period),
                 offset: Duration::parse(offset),
                 closed_window,
@@ -615,7 +616,7 @@ impl PyLazyFrame {
     #[allow(clippy::too_many_arguments)]
     pub fn groupby_dynamic(
         &mut self,
-        index_column: &str,
+        index_column: PyExpr,
         every: &str,
         period: &str,
         offset: &str,
@@ -632,9 +633,9 @@ impl PyLazyFrame {
             .collect::<Vec<_>>();
         let ldf = self.ldf.clone();
         let lazy_gb = ldf.groupby_dynamic(
+            index_column.inner,
             by,
             DynamicGroupOptions {
-                index_column: index_column.into(),
                 every: Duration::parse(every),
                 period: Duration::parse(period),
                 offset: Duration::parse(offset),
@@ -642,6 +643,7 @@ impl PyLazyFrame {
                 include_boundaries,
                 closed_window,
                 start_by: start_by.0,
+                ..Default::default()
             },
         );
 

@@ -729,9 +729,18 @@ impl LazyFrame {
     #[cfg(feature = "dynamic_groupby")]
     pub fn groupby_rolling<E: AsRef<[Expr]>>(
         self,
+        index_column: Expr,
         by: E,
-        options: RollingGroupOptions,
+        mut options: RollingGroupOptions,
     ) -> LazyGroupBy {
+        if let Expr::Column(name) = index_column {
+            options.index_column = name.as_ref().into();
+        } else {
+            let name = expr_output_name(&index_column).unwrap();
+            return self
+                .with_column(index_column)
+                .groupby_rolling(Expr::Column(name), by, options);
+        }
         let opt_state = self.get_opt_state();
         LazyGroupBy {
             logical_plan: self.logical_plan,
@@ -761,9 +770,18 @@ impl LazyFrame {
     #[cfg(feature = "dynamic_groupby")]
     pub fn groupby_dynamic<E: AsRef<[Expr]>>(
         self,
+        index_column: Expr,
         by: E,
-        options: DynamicGroupOptions,
+        mut options: DynamicGroupOptions,
     ) -> LazyGroupBy {
+        if let Expr::Column(name) = index_column {
+            options.index_column = name.as_ref().into();
+        } else {
+            let name = expr_output_name(&index_column).unwrap();
+            return self
+                .with_column(index_column)
+                .groupby_dynamic(Expr::Column(name), by, options);
+        }
         let opt_state = self.get_opt_state();
         LazyGroupBy {
             logical_plan: self.logical_plan,

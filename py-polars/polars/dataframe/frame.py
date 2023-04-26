@@ -4573,7 +4573,7 @@ class DataFrame:
 
     def groupby_rolling(
         self,
-        index_column: str,
+        index_column: IntoExpr,
         *,
         period: str | timedelta,
         offset: str | timedelta | None = None,
@@ -4683,7 +4683,7 @@ class DataFrame:
 
     def groupby_dynamic(
         self,
-        index_column: str,
+        index_column: IntoExpr,
         *,
         every: str | timedelta,
         period: str | timedelta | None = None,

@@ -65,6 +65,17 @@ pub struct RollingGroupOptions {
     pub closed_window: ClosedWindow,
 }
 
+impl Default for RollingGroupOptions {
+    fn default() -> Self {
+        Self {
+            index_column: "".into(),
+            period: Duration::new(1),
+            offset: Duration::new(1),
+            closed_window: ClosedWindow::Left,
+        }
+    }
+}
+
 const LB_NAME: &str = "_lower_boundary";
 const UP_NAME: &str = "_upper_boundary";
 
