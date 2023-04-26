@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 from datetime import timezone
 from inspect import isclass
-from typing import TYPE_CHECKING, Any, Iterator, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Iterator, Mapping, Sequence
 
 import polars.datatypes
 
@@ -12,6 +12,20 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     from polars.type_aliases import PolarsDataType, PythonDataType, SchemaDict, TimeUnit
+
+
+class classproperty:
+    """Equivalent to @property, but works on a class (doesn't require an instance)."""
+
+    def __init__(self, method: Callable[..., Any] | None = None) -> None:
+        self.fget = method
+
+    def __get__(self, instance: Any, cls: type | None = None) -> Any:
+        return self.fget(cls)  # type: ignore[misc]
+
+    def getter(self, method: Callable[..., Any]) -> Any:
+        self.fget = method
+        return self
 
 
 class DataTypeClass(type):
@@ -25,6 +39,10 @@ class DataTypeClass(type):
 
     def base_type(cls) -> PolarsDataType:
         return cls
+
+    @classproperty
+    def is_nested(self) -> bool:
+        return False
 
 
 class DataType(metaclass=DataTypeClass):
@@ -58,6 +76,10 @@ class DataType(metaclass=DataTypeClass):
         Struct
         """
         return cls
+
+    @classproperty
+    def is_nested(self) -> bool:
+        return False
 
 
 def _custom_reconstruct(
@@ -114,6 +136,10 @@ class TemporalType(DataType):
 
 class NestedType(DataType):
     """Base class for nested data types."""
+
+    @classproperty
+    def is_nested(self) -> bool:
+        return True
 
 
 class Int8(IntegralType):
