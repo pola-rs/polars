@@ -498,8 +498,10 @@ def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | A
     """
     Get the maximum value.
 
-    If a single column is passed, get the maximum value of that column (vertical).
-    If multiple columns are passed, get the maximum value of each row (horizontal).
+    If a single string is passed, this is an alias for ``pl.col(name).max()``.
+    If a single Series is passed, this is an alias for ``Series.max()``.
+
+    Otherwise, this function computes the maximum value of each row (horizontal).
 
     Parameters
     ----------
@@ -511,22 +513,16 @@ def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | A
 
     Examples
     --------
-    Get the maximum value by columns with a string column name.
+    Get the maximum value by row by passing multiple columns/expressions.
 
-    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
-    >>> df.select(pl.max("a"))
-    shape: (1, 1)
-    ┌─────┐
-    │ a   │
-    │ --- │
-    │ i64 │
-    ╞═════╡
-    │ 8   │
-    └─────┘
-
-    Get the maximum value by row with a list of columns/expressions.
-
-    >>> df.select(pl.max(["a", "b"]))
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [1, 8, 3],
+    ...         "b": [4, 5, 2],
+    ...         "c": ["foo", "bar", "foo"],
+    ...     }
+    ... )
+    >>> df.select(pl.max("a", "b"))
     shape: (3, 1)
     ┌─────┐
     │ max │
@@ -538,10 +534,22 @@ def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | A
     │ 3   │
     └─────┘
 
-    To aggregate maximums for more than one column/expression use ``pl.col(list).max()``
-    or a regular expression selector like ``pl.sum(regex)``:
+    Get the maximum value of a column by passing a single column name.
 
-    >>> df.select(pl.col(["a", "b"]).max())
+    >>> df.select(pl.max("a"))
+    shape: (1, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 8   │
+    └─────┘
+
+    Get column-wise maximums for multiple columns by passing a regular expression,
+    or call ``.max()`` on a multi-column expression instead.
+
+    >>> df.select(pl.max("^a|b$"))
     shape: (1, 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
@@ -550,8 +558,7 @@ def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | A
     ╞═════╪═════╡
     │ 8   ┆ 5   │
     └─────┴─────┘
-
-    >>> df.select(pl.max("^.*[ab]$"))
+    >>> df.select(pl.col("a", "b").max())
     shape: (1, 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
@@ -567,8 +574,6 @@ def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | A
             return exprs.max()
         elif isinstance(exprs, str):
             return col(exprs).max()
-        elif not isinstance(exprs, Iterable):
-            return lit(exprs).max()
 
     exprs = selection_to_pyexpr_list(exprs)
     if more_exprs:
@@ -592,8 +597,10 @@ def min(
     """
     Get the minimum value.
 
-    If a single column is passed, get the minimum value of that column (vertical).
-    If multiple columns are passed, get the minimum value of each row (horizontal).
+    If a single string is passed, this is an alias for ``pl.col(name).min()``.
+    If a single Series is passed, this is an alias for ``Series.min()``.
+
+    Otherwise, this function computes the minimum value of each row (horizontal).
 
     Parameters
     ----------
@@ -605,7 +612,7 @@ def min(
 
     Examples
     --------
-    Get the minimum value by columns with a string column name.
+    Get the minimum value by row by passing multiple columns/expressions.
 
     >>> df = pl.DataFrame(
     ...     {
@@ -614,19 +621,7 @@ def min(
     ...         "c": ["foo", "bar", "foo"],
     ...     }
     ... )
-    >>> df.select(pl.min("a"))
-    shape: (1, 1)
-    ┌─────┐
-    │ a   │
-    │ --- │
-    │ i64 │
-    ╞═════╡
-    │ 1   │
-    └─────┘
-
-    Get the minimum value by row with a list of columns/expressions.
-
-    >>> df.select(pl.min(["a", "b"]))
+    >>> df.select(pl.min("a", "b"))
     shape: (3, 1)
     ┌─────┐
     │ min │
@@ -638,10 +633,22 @@ def min(
     │ 2   │
     └─────┘
 
-    To aggregate minimums for more than one column/expression use ``pl.col(list).min()``
-    or a regular expression selector like ``pl.sum(regex)``:
+    Get the minimum value of a column by passing a single column name.
 
-    >>> df.select(pl.col(["a", "b"]).min())
+    >>> df.select(pl.min("a"))
+    shape: (1, 1)
+    ┌─────┐
+    │ a   │
+    │ --- │
+    │ i64 │
+    ╞═════╡
+    │ 1   │
+    └─────┘
+
+    Get column-wise minimums for multiple columns by passing a regular expression,
+    or call ``.min()`` on a multi-column expression instead.
+
+    >>> df.select(pl.min("^a|b$"))
     shape: (1, 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
@@ -650,8 +657,7 @@ def min(
     ╞═════╪═════╡
     │ 1   ┆ 2   │
     └─────┴─────┘
-
-    >>> df.select(pl.min("^.*[ab]$"))
+    >>> df.select(pl.col("a", "b").min())
     shape: (1, 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
@@ -667,8 +673,6 @@ def min(
             return exprs.min()
         elif isinstance(exprs, str):
             return col(exprs).min()
-        elif not isinstance(exprs, Iterable):
-            return lit(exprs).min()
 
     exprs = selection_to_pyexpr_list(exprs)
     if more_exprs:

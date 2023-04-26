@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import typing
 from datetime import timedelta
+from typing import Any
 
 import numpy as np
 import pytest
@@ -332,32 +333,98 @@ def test_repeat() -> None:
     assert s.len() == 0
 
 
-def test_min() -> None:
+def test_min_alias_for_series_min() -> None:
     s = pl.Series([1, 2, 3])
-    assert pl.min(s) == 1
+    assert pl.min(s) == s.min()
 
+
+@pytest.mark.parametrize("input", ["a", "^a|b$"])
+def test_min_alias_for_col_min(input: str) -> None:
     df = pl.DataFrame({"a": [1, 4], "b": [3, 2]})
-    assert df.select(pl.min("a")).item() == 1
-
-    result = df.select(pl.min(["a", "b"]))
-    assert_frame_equal(result, pl.DataFrame({"min": [1, 2]}))
-
-    result = df.select(pl.min("a", 3))
-    assert_frame_equal(result, pl.DataFrame({"min": [1, 3]}))
+    expr = pl.col(input).min()
+    expr_alias = pl.min(input)
+    assert_frame_equal(df.select(expr), df.select(expr_alias))
 
 
-def test_max() -> None:
+@pytest.mark.parametrize(
+    ("input", "expected_data"),
+    [
+        (pl.col("^a|b$"), [1, 2]),
+        (pl.col("a", "b"), [1, 2]),
+        (pl.col("a"), [1, 4]),
+        (pl.lit(5, dtype=pl.Int64), [5]),
+        (5.0, [5.0]),
+    ],
+)
+def test_min_column_wise_single_input(input: Any, expected_data: list[Any]) -> None:
+    df = pl.DataFrame({"a": [1, 4], "b": [3, 2]})
+    result = df.select(pl.min(input))
+    expected = pl.DataFrame({"min": expected_data})
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("inputs", "expected_data"),
+    [
+        ((["a", "b"]), [1, 2]),
+        (("a", "b"), [1, 2]),
+        (("a", 3), [1, 3]),
+    ],
+)
+def test_min_column_wise_multi_input(
+    inputs: tuple[Any, ...], expected_data: list[Any]
+) -> None:
+    df = pl.DataFrame({"a": [1, 4], "b": [3, 2]})
+    result = df.select(pl.min(*inputs))
+    expected = pl.DataFrame({"min": expected_data})
+    assert_frame_equal(result, expected)
+
+
+def test_max_alias_for_series_max() -> None:
     s = pl.Series([1, 2, 3])
-    assert pl.max(s) == 3
+    assert pl.max(s) == s.max()
 
+
+@pytest.mark.parametrize("input", ["a", "^a|b$"])
+def test_max_alias_for_col_max(input: str) -> None:
     df = pl.DataFrame({"a": [1, 4], "b": [3, 2]})
-    assert df.select(pl.max("a")).item() == 4
+    expr = pl.col(input).max()
+    expr_alias = pl.max(input)
+    assert_frame_equal(df.select(expr), df.select(expr_alias))
 
-    result = df.select(pl.max(["a", "b"]))
-    assert_frame_equal(result, pl.DataFrame({"max": [3, 4]}))
 
-    result = df.select(pl.max("a", 3))
-    assert_frame_equal(result, pl.DataFrame({"max": [3, 4]}))
+@pytest.mark.parametrize(
+    ("input", "expected_data"),
+    [
+        (pl.col("^a|b$"), [3, 4]),
+        (pl.col("a", "b"), [3, 4]),
+        (pl.col("a"), [1, 4]),
+        (pl.lit(5, dtype=pl.Int64), [5]),
+        (5.0, [5.0]),
+    ],
+)
+def test_max_column_wise_single_input(input: Any, expected_data: list[Any]) -> None:
+    df = pl.DataFrame({"a": [1, 4], "b": [3, 2]})
+    result = df.select(pl.max(input))
+    expected = pl.DataFrame({"max": expected_data})
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("inputs", "expected_data"),
+    [
+        ((["a", "b"]), [3, 4]),
+        (("a", "b"), [3, 4]),
+        (("a", 3), [3, 4]),
+    ],
+)
+def test_max_column_wise_multi_input(
+    inputs: tuple[Any, ...], expected_data: list[Any]
+) -> None:
+    df = pl.DataFrame({"a": [1, 4], "b": [3, 2]})
+    result = df.select(pl.max(*inputs))
+    expected = pl.DataFrame({"max": expected_data})
+    assert_frame_equal(result, expected)
 
 
 def test_abs_logical_type() -> None:
