@@ -78,8 +78,12 @@ impl Series {
             #[cfg(feature = "dtype-categorical")]
             Categorical(rev_map) => {
                 let cats = UInt32Chunked::from_chunks(name, chunks);
-                CategoricalChunked::from_cats_and_rev_map_unchecked(cats, rev_map.clone().unwrap())
-                    .into_series()
+                let mut ca = CategoricalChunked::from_cats_and_rev_map_unchecked(
+                    cats,
+                    rev_map.clone().unwrap(),
+                );
+                ca.set_fast_unique(false);
+                ca.into_series()
             }
             Boolean => BooleanChunked::from_chunks(name, chunks).into_series(),
             Float32 => Float32Chunked::from_chunks(name, chunks).into_series(),
@@ -282,7 +286,9 @@ impl Series {
 
                 // Safety
                 // the invariants of an Arrow Dictionary guarantee the keys are in bounds
-                Ok(CategoricalChunked::from_keys_and_values(name, keys, values).into_series())
+                let mut ca = CategoricalChunked::from_keys_and_values(name, keys, values);
+                ca.set_fast_unique(false);
+                Ok(ca.into_series())
             }
             #[cfg(feature = "object")]
             ArrowDataType::Extension(s, _, Some(_)) if s == EXTENSION_NAME => {
