@@ -337,9 +337,9 @@ def test_overlapping_groups_4628() -> None:
             "index": [1, 2, 3, 4, 5, 6],
             "val": [10, 20, 40, 70, 110, 160],
         }
-    ).set_sorted("index")
+    )
     assert (
-        df.groupby_rolling(index_column="index", period="3i").agg(
+        df.groupby_rolling(index_column=pl.col("index").set_sorted(), period="3i").agg(
             [
                 pl.col("val").diff(n=1).alias("val.diff"),
                 (pl.col("val") - pl.col("val").shift(1)).alias("val - val.shift"),

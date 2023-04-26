@@ -2257,7 +2257,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def groupby_rolling(
         self,
-        index_column: str,
+        index_column: IntoExpr,
         *,
         period: str | timedelta,
         offset: str | timedelta | None = None,
@@ -2367,6 +2367,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────────────────────┴───────┴───────┴───────┘
 
         """
+        index_column = expr_to_lit_or_expr(index_column, str_to_lit=False)
         if offset is None:
             offset = f"-{_timedelta_to_pl_duration(period)}"
 
@@ -2375,13 +2376,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         offset = _timedelta_to_pl_duration(offset)
 
         lgb = self._ldf.groupby_rolling(
-            index_column, period, offset, closed, pyexprs_by
+            index_column._pyexpr, period, offset, closed, pyexprs_by
         )
         return LazyGroupBy(lgb, lazyframe_class=self.__class__)
 
     def groupby_dynamic(
         self,
-        index_column: str,
+        index_column: IntoExpr,
         *,
         every: str | timedelta,
         period: str | timedelta | None = None,
@@ -2659,6 +2660,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────────────────┴─────────────────┴─────┴─────────────────┘
 
         """  # noqa: W505
+        index_column = expr_to_lit_or_expr(index_column, str_to_lit=False)
         if offset is None:
             offset = f"-{_timedelta_to_pl_duration(every)}" if period is None else "0ns"
 
@@ -2671,7 +2673,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         pyexprs_by = [] if by is None else selection_to_pyexpr_list(by)
         lgb = self._ldf.groupby_dynamic(
-            index_column,
+            index_column._pyexpr,
             every,
             period,
             offset,
