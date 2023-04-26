@@ -538,7 +538,7 @@ impl ToPyObject for Wrap<&DecimalChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let utils = UTILS.as_ref(py);
         let convert = utils.getattr("_to_python_decimal").unwrap();
-        let py_scale = self.0.scale().to_object(py);
+        let py_scale = (-(self.0.scale() as i32)).to_object(py);
         // if we don't know precision, the only safe bet is to set it to 39
         let py_precision = self.0.precision().unwrap_or(39).to_object(py);
         let iter = self.0.into_iter().map(|opt_v| {

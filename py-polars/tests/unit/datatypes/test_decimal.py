@@ -31,6 +31,7 @@ def test_series_from_pydecimal_and_ints() -> None:
         assert s.null_count() == 1
         for i, d in enumerate(data):
             assert s[i] == d
+        assert s.to_list() == [D(x) if x is not None else None for x in data]
 
 
 def test_frame_from_pydecimal_and_ints(monkeypatch: Any) -> None:
