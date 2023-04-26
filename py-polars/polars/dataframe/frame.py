@@ -3677,11 +3677,13 @@ class DataFrame:
             *percentile_exprs,
         ).row(0)
 
-        # reshape/cast wide result
+        # reshape wide result
         n_cols = len(self.columns)
         described = [
             df_metrics[(n * n_cols) : (n + 1) * n_cols] for n in range(0, len(metrics))
         ]
+
+        # cast by column type (numeric/bool -> float), (other -> string)
         summary = dict(zip(self.columns, list(zip(*described))))
         num_or_bool = NUMERIC_DTYPES | {Boolean}
         for c, tp in self.schema.items():
@@ -3692,7 +3694,7 @@ class DataFrame:
                 for v in summary[c]
             ]
 
-        # return as frame
+        # return results as a frame
         df_summary = self.__class__(summary)
         df_summary.insert_at_idx(0, pli.Series("describe", metrics))
         return df_summary

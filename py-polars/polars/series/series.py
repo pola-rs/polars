@@ -10,6 +10,7 @@ from typing import (
     Any,
     Callable,
     Collection,
+    Generator,
     Iterable,
     NoReturn,
     Sequence,
@@ -749,8 +750,18 @@ class Series:
     def __deepcopy__(self, memo: None = None) -> Self:
         return self.clone()
 
-    def __iter__(self) -> SeriesIter:
-        return SeriesIter(self.len(), self)
+    def __iter__(self) -> Generator[Any, None, None]:
+        if self.dtype == List:
+            # TODO: either make a change and return py-native list data here, or find
+            #  a faster way to return nested/List series; sequential 'get_idx' calls
+            #  make this path a lot slower (~10x) than it needs to be.
+            get_idx = self._s.get_idx
+            for idx in range(0, self.len()):
+                yield get_idx(idx)
+        else:
+            buffer_size = 25_000
+            for offset in range(0, self.len(), buffer_size):
+                yield from self.slice(offset, buffer_size).to_list()
 
     def _pos_idxs(self, idxs: np.ndarray[Any, Any] | Series) -> Series:
         # pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx).
@@ -5802,26 +5813,6 @@ class Series:
     def struct(self) -> StructNameSpace:
         """Create an object namespace of all struct related methods."""
         return StructNameSpace(self)
-
-
-class SeriesIter:
-    """Utility class that allows slow iteration over a `Series`."""
-
-    def __init__(self, length: int, s: Series):
-        self.len = length
-        self.i = 0
-        self.s = s
-
-    def __iter__(self) -> SeriesIter:
-        return self
-
-    def __next__(self) -> Any:
-        if self.i < self.len:
-            i = self.i
-            self.i += 1
-            return self.s[i]
-        else:
-            raise StopIteration
 
 
 def _resolve_datetime_dtype(
