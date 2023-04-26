@@ -662,3 +662,16 @@ def test_sort_top_k_fast_path() -> None:
         "b": [4.0, 5.0, 6.0],
         "c": ["b", "c", "a"],
     }
+
+
+def test_sorted_flag_groupby_dynamic() -> None:
+    df = pl.DataFrame({"ts": [date(2020, 1, 1), date(2020, 1, 2)], "val": [1, 2]})
+    assert (
+        (
+            df.with_columns(ts=pl.col("ts").set_sorted())
+            .groupby_dynamic("ts", every="1d")
+            .agg(pl.col("val").sum())
+        )
+        .to_series()
+        .flags["SORTED_ASC"]
+    )

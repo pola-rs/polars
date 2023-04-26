@@ -352,7 +352,7 @@ where
         let ca: &ChunkedArray<K> = s.as_ref().as_ref();
 
         // sorted fast path
-        if matches!(ca.is_sorted_flag2(), IsSorted::Ascending) && ca.null_count() == 0 {
+        if matches!(ca.is_sorted_flag(), IsSorted::Ascending) && ca.null_count() == 0 {
             return self.sink_sorted(ca, chunk);
         }
 

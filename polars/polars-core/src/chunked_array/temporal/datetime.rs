@@ -164,7 +164,7 @@ impl DatetimeChunked {
             (None, None) => Ok(self.clone()),
         };
         let mut out = out?;
-        out.set_sorted_flag(self.is_sorted_flag2());
+        out.set_sorted_flag(self.is_sorted_flag());
         Ok(out)
     }
 

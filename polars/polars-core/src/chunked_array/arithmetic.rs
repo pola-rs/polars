@@ -398,7 +398,9 @@ where
 
     fn add(self, rhs: N) -> Self::Output {
         let adder: T::Native = NumCast::from(rhs).unwrap();
-        self.apply(|val| val + adder)
+        let mut out = self.apply(|val| val + adder);
+        out.set_sorted_flag(self.is_sorted_flag());
+        out
     }
 }
 
@@ -411,7 +413,9 @@ where
 
     fn sub(self, rhs: N) -> Self::Output {
         let subber: T::Native = NumCast::from(rhs).unwrap();
-        self.apply(|val| val - subber)
+        let mut out = self.apply(|val| val - subber);
+        out.set_sorted_flag(self.is_sorted_flag());
+        out
     }
 }
 
@@ -424,7 +428,10 @@ where
 
     fn div(self, rhs: N) -> Self::Output {
         let rhs: T::Native = NumCast::from(rhs).expect("could not cast");
-        self.apply_kernel(&|arr| Box::new(<T::Native as ArrayArithmetics>::div_scalar(arr, &rhs)))
+        let mut out = self
+            .apply_kernel(&|arr| Box::new(<T::Native as ArrayArithmetics>::div_scalar(arr, &rhs)));
+        out.set_sorted_flag(self.is_sorted_flag());
+        out
     }
 }
 
@@ -436,6 +443,7 @@ where
     type Output = ChunkedArray<T>;
 
     fn mul(self, rhs: N) -> Self::Output {
+        // don't set sorted flag as probability of overflow is higher
         let multiplier: T::Native = NumCast::from(rhs).unwrap();
         self.apply(|val| val * multiplier)
     }
@@ -461,14 +469,8 @@ where
 {
     type Output = ChunkedArray<T>;
 
-    fn add(mut self, rhs: N) -> Self::Output {
-        if std::env::var("ASSIGN").is_ok() {
-            let adder: T::Native = NumCast::from(rhs).unwrap();
-            self.apply_mut(|val| val + adder);
-            self
-        } else {
-            (&self).add(rhs)
-        }
+    fn add(self, rhs: N) -> Self::Output {
+        (&self).add(rhs)
     }
 }
 
@@ -479,14 +481,8 @@ where
 {
     type Output = ChunkedArray<T>;
 
-    fn sub(mut self, rhs: N) -> Self::Output {
-        if std::env::var("ASSIGN").is_ok() {
-            let subber: T::Native = NumCast::from(rhs).unwrap();
-            self.apply_mut(|val| val - subber);
-            self
-        } else {
-            (&self).sub(rhs)
-        }
+    fn sub(self, rhs: N) -> Self::Output {
+        (&self).sub(rhs)
     }
 }
 

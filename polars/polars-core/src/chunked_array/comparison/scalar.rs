@@ -84,7 +84,7 @@ where
     }
 
     fn gt(&self, rhs: Rhs) -> BooleanChunked {
-        match (self.is_sorted_flag2(), self.null_count()) {
+        match (self.is_sorted_flag(), self.null_count()) {
             (IsSorted::Ascending, 0) => {
                 let rhs: T::Native = NumCast::from(rhs).unwrap();
 
@@ -101,7 +101,7 @@ where
     }
 
     fn gt_eq(&self, rhs: Rhs) -> BooleanChunked {
-        match (self.is_sorted_flag2(), self.null_count()) {
+        match (self.is_sorted_flag(), self.null_count()) {
             (IsSorted::Ascending, 0) => {
                 let rhs: T::Native = NumCast::from(rhs).unwrap();
 
@@ -118,7 +118,7 @@ where
     }
 
     fn lt(&self, rhs: Rhs) -> BooleanChunked {
-        match (self.is_sorted_flag2(), self.null_count()) {
+        match (self.is_sorted_flag(), self.null_count()) {
             (IsSorted::Ascending, 0) => {
                 let rhs: T::Native = NumCast::from(rhs).unwrap();
 
@@ -135,7 +135,7 @@ where
     }
 
     fn lt_eq(&self, rhs: Rhs) -> BooleanChunked {
-        match (self.is_sorted_flag2(), self.null_count()) {
+        match (self.is_sorted_flag(), self.null_count()) {
             (IsSorted::Ascending, 0) => {
                 let rhs: T::Native = NumCast::from(rhs).unwrap();
 

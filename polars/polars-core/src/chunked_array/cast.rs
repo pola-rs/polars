@@ -103,7 +103,7 @@ where
                     // physical to logicals
                     || (self.dtype().to_physical() == data_type.to_physical())
                 {
-                    let is_sorted = self.is_sorted_flag2();
+                    let is_sorted = self.is_sorted_flag();
                     s.set_sorted_flag(is_sorted)
                 }
                 s

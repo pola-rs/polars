@@ -336,6 +336,13 @@ impl GroupsProxy {
         }
     }
 
+    pub(crate) fn is_sorted_flag(&self) -> bool {
+        match self {
+            GroupsProxy::Idx(groups) => groups.is_sorted_flag(),
+            GroupsProxy::Slice { .. } => true,
+        }
+    }
+
     pub fn group_lengths(&self, name: &str) -> IdxCa {
         let ca: NoNull<IdxCa> = match self {
             GroupsProxy::Idx(groups) => groups

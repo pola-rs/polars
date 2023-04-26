@@ -309,7 +309,7 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         if self.0.is_sorted_ascending_flag()
             && (idx.is_sorted_ascending_flag() || idx.is_sorted_descending_flag())
         {
-            out.set_sorted_flag(idx.is_sorted_flag2())
+            out.set_sorted_flag(idx.is_sorted_flag())
         }
 
         Ok(out.into_duration(self.0.time_unit()).into_series())
