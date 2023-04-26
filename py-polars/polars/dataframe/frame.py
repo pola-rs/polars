@@ -8510,8 +8510,8 @@ class DataFrame:
 
     def set_sorted(
         self,
-        column: IntoExpr | Iterable[IntoExpr],
-        *more_columns: IntoExpr,
+        column: str | Iterable[str],
+        *more_columns: str,
         descending: bool = False,
     ) -> Self:
         """
