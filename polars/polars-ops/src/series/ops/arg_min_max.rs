@@ -34,7 +34,7 @@ impl ArgAgg for Series {
                     if ca.is_empty() { // because argminmax assumes not empty
                         None
                     } else if let Ok(vals) = ca.cont_slice() {
-                        arg_min_numeric_slice(vals, ca.is_sorted_flag2())
+                        arg_min_numeric_slice(vals, ca.is_sorted_flag())
                     } else {
                         arg_min_numeric(ca)
                     }
@@ -62,7 +62,7 @@ impl ArgAgg for Series {
                     if ca.is_empty() { // because argminmax assumes not empty
                         None
                     } else if let Ok(vals) = ca.cont_slice() {
-                        arg_max_numeric_slice(vals, ca.is_sorted_flag2())
+                        arg_max_numeric_slice(vals, ca.is_sorted_flag())
                     } else {
                         arg_max_numeric(ca)
                     }
@@ -195,7 +195,7 @@ fn first_unset_bit(mask: &Bitmap) -> usize {
 }
 
 fn arg_min_str(ca: &Utf8Chunked) -> Option<usize> {
-    match ca.is_sorted_flag2() {
+    match ca.is_sorted_flag() {
         IsSorted::Ascending => Some(0),
         IsSorted::Descending => Some(ca.len() - 1),
         IsSorted::Not => ca
@@ -207,7 +207,7 @@ fn arg_min_str(ca: &Utf8Chunked) -> Option<usize> {
 }
 
 fn arg_max_str(ca: &Utf8Chunked) -> Option<usize> {
-    match ca.is_sorted_flag2() {
+    match ca.is_sorted_flag() {
         IsSorted::Ascending => Some(ca.len() - 1),
         IsSorted::Descending => Some(0),
         IsSorted::Not => ca
@@ -223,7 +223,7 @@ where
     T: PolarsNumericType,
     for<'b> &'b [T::Native]: ArgMinMax,
 {
-    match ca.is_sorted_flag2() {
+    match ca.is_sorted_flag() {
         IsSorted::Ascending => Some(0),
         IsSorted::Descending => Some(ca.len() - 1),
         IsSorted::Not => {
@@ -278,7 +278,7 @@ where
     T: PolarsNumericType,
     for<'b> &'b [T::Native]: ArgMinMax,
 {
-    match ca.is_sorted_flag2() {
+    match ca.is_sorted_flag() {
         IsSorted::Ascending => Some(ca.len() - 1),
         IsSorted::Descending => Some(0),
         IsSorted::Not => {

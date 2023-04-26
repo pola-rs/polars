@@ -251,7 +251,7 @@ macro_rules! impl_dyn_series {
                 if self.0.is_sorted_ascending_flag()
                     && (idx.is_sorted_ascending_flag() || idx.is_sorted_descending_flag())
                 {
-                    out.set_sorted_flag(idx.is_sorted_flag2())
+                    out.set_sorted_flag(idx.is_sorted_flag())
                 }
 
                 Ok(out.into_series())

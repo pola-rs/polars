@@ -427,6 +427,8 @@ impl Wrap<&DataFrame> {
                 })
             }
         };
+        // note that if 'by' is empty we can be sure that the index column, the lower column and the
+        // upper column remain/are sorted
 
         let dt = unsafe { dt.clone().into_series().agg_first(&groups) };
         let mut dt = dt.datetime().unwrap().as_ref().clone();
@@ -438,17 +440,26 @@ impl Wrap<&DataFrame> {
 
         if options.truncate {
             let mut lower = lower.clone().unwrap();
+            if by.is_empty() {
+                lower.set_sorted_flag(IsSorted::Ascending)
+            }
             lower.rename(dt.name());
             dt = lower;
         }
 
-        if let (true, Some(lower), Some(higher)) = (options.include_boundaries, lower, upper_bound)
+        if let (true, Some(mut lower), Some(upper)) =
+            (options.include_boundaries, lower, upper_bound)
         {
-            by.push(lower.into_datetime(tu, tz.clone()).into_series());
-            let s = Int64Chunked::new_vec(UP_NAME, higher)
+            let mut upper = Int64Chunked::new_vec(UP_NAME, upper)
                 .into_datetime(tu, tz.clone())
                 .into_series();
-            by.push(s);
+
+            if by.is_empty() {
+                lower.set_sorted_flag(IsSorted::Ascending);
+                upper.set_sorted_flag(IsSorted::Ascending);
+            }
+            by.push(lower.into_datetime(tu, tz.clone()).into_series());
+            by.push(upper);
         }
 
         dt.into_datetime(tu, None)

@@ -172,7 +172,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.bit_settings.remove(Settings::FAST_EXPLODE_LIST)
     }
 
-    pub fn is_sorted_flag2(&self) -> IsSorted {
+    pub fn is_sorted_flag(&self) -> IsSorted {
         if self.is_sorted_ascending_flag() {
             IsSorted::Ascending
         } else if self.is_sorted_descending_flag() {
