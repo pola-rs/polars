@@ -565,9 +565,7 @@ def test_date_range_lazy_with_literals() -> None:
             date(2023, 8, 31),
             interval="987d",
             eager=False,
-        )
-        .implode()
-        .alias("dts")
+        ).alias("dts")
     )
     assert df.rows() == [
         (
@@ -600,11 +598,7 @@ def test_date_range_lazy_with_expressions(
 ) -> None:
     ldf = (
         pl.DataFrame({"start": [date(2015, 6, 30)], "stop": [date(2022, 12, 31)]})
-        .with_columns(
-            pl.date_range(low, high, interval="678d", eager=False)
-            .implode()
-            .alias("dts")
-        )
+        .with_columns(pl.date_range(low, high, interval="678d", eager=False).alias("dts"))
         .lazy()
     )
 
@@ -667,6 +661,33 @@ def test_date_range_lazy_with_expressions(
             [datetime(2022, 6, 1, 0, 0), datetime(2022, 6, 2, 0, 0)],
         ],
     }
+
+
+def test_date_range_single_row_lazy_7110() -> None:
+    df = pl.DataFrame(
+        {
+            "name": ["A"],
+            "from": [date(2020, 1, 1)],
+            "to": [date(2020, 1, 2)],
+        }
+    )
+    result = df.with_columns(
+        pl.date_range(
+            start=pl.col("from"),
+            end=pl.col("to"),
+            interval="1d",
+            lazy=True,
+        ).alias("date_range")
+    )
+    expected = pl.DataFrame(
+        {
+            "name": ["A"],
+            "from": [date(2020, 1, 1)],
+            "to": [date(2020, 1, 2)],
+            "date_range": [[date(2020, 1, 1), date(2020, 1, 2)]],
+        }
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_date_range_invalid_time_zone() -> None:
