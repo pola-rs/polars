@@ -2324,7 +2324,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         -------
         LazyGroupBy
             Object you can call ``.agg`` on to aggregate by groups, the result
-            of which will be sorted by `index_column`.
+            of which will be sorted by `index_column` (as well as by the
+            `by` columns, if passed).
 
         See Also
         --------
@@ -2482,7 +2483,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         -------
         LazyGroupBy
             Object you can call ``.agg`` on to aggregate by groups, the result
-            of which will be sorted by `index_column`.
+            of which will be sorted by `index_column` (as well as by the
+            `by` columns, if passed).
 
         See Also
         --------
