@@ -501,7 +501,8 @@ def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | A
     If a single string is passed, this is an alias for ``pl.col(name).max()``.
     If a single Series is passed, this is an alias for ``Series.max()``.
 
-    Otherwise, this function computes the maximum value of each row (horizontal).
+    Otherwise, this function computes the maximum value horizontally across multiple
+    columns.
 
     Parameters
     ----------
@@ -600,7 +601,8 @@ def min(
     If a single string is passed, this is an alias for ``pl.col(name).min()``.
     If a single Series is passed, this is an alias for ``Series.min()``.
 
-    Otherwise, this function computes the minimum value of each row (horizontal).
+    Otherwise, this function computes the minimum value horizontally across multiple
+    columns.
 
     Parameters
     ----------
@@ -695,26 +697,20 @@ def sum(
     exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr
 ) -> Expr | int | float:
     """
-    Sum values in a column/Series, or horizontally across list of columns/expressions.
+    Sum all values.
 
-    ``pl.sum(str)`` is syntactic sugar for:
+    If a single string is passed, this is an alias for ``pl.col(name).sum()``.
+    If a single Series is passed, this is an alias for ``Series.sum()``.
 
-    >>> pl.col(str).sum()  # doctest: +SKIP
-
-    ``pl.sum(list)`` is syntactic sugar for:
-
-    >>> pl.fold(pl.lit(0), lambda x, y: x + y, list).alias("sum")  # doctest: +SKIP
+    Otherwise, this function computes the sum horizontally across multiple columns.
 
     Parameters
     ----------
     exprs
-        Column(s) to be used in aggregation.
-        This can be:
-
-        - a column name, or Series -> aggregate the sum value of that column/Series.
-        - a List[Expr] -> aggregate the sum value horizontally across the Expr result.
+        Column(s) to use in the aggregation. Accepts expression input. Strings are
+        parsed as column names, other non-expression inputs are parsed as literals.
     *more_exprs
-        ...
+        Additional columns to use in the aggregation, specified as positional arguments.
 
     Examples
     --------
@@ -750,7 +746,7 @@ def sum(
 
     Sum a list of columns/expressions horizontally:
 
-    >>> df.with_columns(pl.sum(["a", "c"]))
+    >>> df.with_columns(pl.sum("a", "c"))
     shape: (2, 4)
     ┌─────┬─────┬─────┬─────┐
     │ a   ┆ b   ┆ c   ┆ sum │
@@ -769,7 +765,7 @@ def sum(
     To aggregate the sums for more than one column/expression use ``pl.col(list).sum()``
     or a regular expression selector like ``pl.sum(regex)``:
 
-    >>> df.select(pl.col(["a", "c"]).sum())
+    >>> df.select(pl.col("a", "c").sum())
     shape: (1, 2)
     ┌─────┬─────┐
     │ a   ┆ c   │
@@ -1350,28 +1346,21 @@ def cumsum(
     exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr
 ) -> Expr | Series:
     """
-    Cumulatively sum values in a column/Series, or horizontally across list of columns/expressions.
+    Cumulatively sum all values.
 
-    ``pl.cumsum(str)`` is syntactic sugar for:
+    If a single string is passed, this is an alias for ``pl.col(name).cumsum()``.
+    If a single Series is passed, this is an alias for ``Series.cumsum()``.
 
-    >>> pl.col(str).cumsum()  # doctest: +SKIP
-
-    ``pl.cumsum(list)`` is syntactic sugar for:
-
-    >>> pl.cumfold(pl.lit(0), lambda x, y: x + y, list).alias(
-    ...     "cumsum"
-    ... )  # doctest: +SKIP
+    Otherwise, this function computes the cumulative sum horizontally across multiple
+    columns.
 
     Parameters
     ----------
     exprs
-        Column(s) to be used in aggregation.
-        This can be:
-
-        - a column name, or Series -> aggregate the sum value of that column/Series.
-        - a List[Expr] -> aggregate the sum value horizontally across the Expr result.
-    more_exprs
-        ...
+        Column(s) to use in the aggregation. Accepts expression input. Strings are
+        parsed as column names, other non-expression inputs are parsed as literals.
+    *more_exprs
+        Additional columns to use in the aggregation, specified as positional arguments.
 
     Examples
     --------
@@ -1408,7 +1397,7 @@ def cumsum(
 
     Cumulatively sum a list of columns/expressions horizontally:
 
-    >>> df.with_columns(pl.cumsum(["a", "c"]))
+    >>> df.with_columns(pl.cumsum("a", "c"))
     shape: (2, 4)
     ┌─────┬─────┬─────┬───────────┐
     │ a   ┆ b   ┆ c   ┆ cumsum    │
@@ -1419,7 +1408,7 @@ def cumsum(
     │ 2   ┆ 4   ┆ 6   ┆ {2,8}     │
     └─────┴─────┴─────┴───────────┘
 
-    """  # noqa: W505
+    """
     if not more_exprs:
         if isinstance(exprs, pli.Series):
             return exprs.cumsum()
@@ -2112,14 +2101,21 @@ def any(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
 @deprecated_alias(columns="exprs")
 def any(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | bool:
     """
-    Evaluate columnwise or elementwise with a bitwise OR operation.
+    Evaluate a bitwise OR operation.
+
+    If a single string is passed, this is an alias for ``pl.col(name).any()``.
+    If a single Series is passed, this is an alias for ``Series.any()``.
+
+    Otherwise, this function computes the bitwise OR horizontally across multiple
+    columns.
 
     Parameters
     ----------
     exprs
-        If given this function will apply a bitwise or on the columns.
+        Column(s) to use in the aggregation. Accepts expression input. Strings are
+        parsed as column names, other non-expression inputs are parsed as literals.
     *more_exprs
-        ...
+        Additional columns to use in the aggregation, specified as positional arguments.
 
     Examples
     --------
@@ -2155,6 +2151,20 @@ def any(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | b
     │ true ┆ false ┆ true │
     └──────┴───────┴──────┘
 
+    Across multiple columns:
+
+    >>> df.select(pl.any("a", "b"))
+    shape: (3, 1)
+    ┌───────┐
+    │ any   │
+    │ ---   │
+    │ bool  │
+    ╞═══════╡
+    │ true  │
+    │ false │
+    │ true  │
+    └───────┘
+
     """
     if not more_exprs:
         if isinstance(exprs, pli.Series):
@@ -2189,21 +2199,26 @@ def all(
     exprs: IntoExpr | Iterable[IntoExpr] | None = None, *more_exprs: IntoExpr
 ) -> Expr | bool:
     """
-    Do one of two things.
+    Either return an expression representing all columns, or evaluate a bitwise AND operation.
 
-    * function can do a columnwise or elementwise AND operation
-    * a wildcard column selection
+    If no arguments are passed, this is an alias for ``pl.col("*")``.
+    If a single string is passed, this is an alias for ``pl.col(name).any()``.
+    If a single Series is passed, this is an alias for ``Series.any()``.
+
+    Otherwise, this function computes the bitwise AND horizontally across multiple
+    columns.
 
     Parameters
     ----------
     exprs
-        If given this function will apply a bitwise & on the columns.
+        Column(s) to use in the aggregation. Accepts expression input. Strings are
+        parsed as column names, other non-expression inputs are parsed as literals.
     *more_exprs
-        ...
+        Additional columns to use in the aggregation, specified as positional arguments.
 
     Examples
     --------
-    Sum all columns
+    Selecting all columns and calculating the sum:
 
     >>> df = pl.DataFrame(
     ...     {"a": [1, 2, 3], "b": ["hello", "foo", "bar"], "c": [1, 1, 1]}
@@ -2218,7 +2233,28 @@ def all(
     │ 6   ┆ null ┆ 3   │
     └─────┴──────┴─────┘
 
-    """
+    Bitwise AND across multiple columns:
+
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "a": [True, False, True],
+    ...         "b": [True, False, False],
+    ...         "c": [False, True, False],
+    ...     }
+    ... )
+    >>> df.select(pl.all("a", "b"))
+    shape: (3, 1)
+    ┌───────┐
+    │ all   │
+    │ ---   │
+    │ bool  │
+    ╞═══════╡
+    │ true  │
+    │ false │
+    │ false │
+    └───────┘
+
+    """  # noqa: W505
     if not more_exprs:
         if exprs is None:
             return col("*")
