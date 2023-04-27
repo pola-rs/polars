@@ -980,3 +980,28 @@ def test_untrusted_categorical_input() -> None:
         "x": ["x"],
         "count": [1],
     }
+
+
+def test_sliced_struct_from_arrow() -> None:
+    # Create a dataset with 3 rows
+    tbl = pa.Table.from_arrays(
+        arrays=[
+            pa.StructArray.from_arrays(
+                arrays=[
+                    pa.array([1, 2, 3], pa.int32()),
+                    pa.array(["foo", "bar", "baz"], pa.utf8()),
+                ],
+                names=["a", "b"],
+            )
+        ],
+        names=["struct_col"],
+    )
+
+    # slice the table
+    # check if FFI correctly reads sliced
+    assert pl.from_arrow(tbl.slice(1, 2)).to_dict(False) == {
+        "struct_col": [{"a": 2, "b": "bar"}, {"a": 3, "b": "baz"}]
+    }
+    assert pl.from_arrow(tbl.slice(1, 1)).to_dict(False) == {
+        "struct_col": [{"a": 2, "b": "bar"}]
+    }
