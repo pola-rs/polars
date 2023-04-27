@@ -4640,8 +4640,8 @@ class DataFrame:
         -------
         RollingGroupBy
             Object you can call ``.agg`` on to aggregate by groups, the result
-            of which will be sorted by `index_column` (as well as by the
-            `by` columns, if passed).
+            of which will be sorted by `index_column` (but note that if `by` columns are
+            passed, it will only be sorted within each `by` group).
 
         See Also
         --------
@@ -4784,8 +4784,8 @@ class DataFrame:
         -------
         DynamicGroupBy
             Object you can call ``.agg`` on to aggregate by groups, the result
-            of which will be sorted by `index_column` (as well as by the
-            `by` columns, if passed).
+            of which will be sorted by `index_column` (but note that if `by` columns are
+            passed, it will only be sorted within each `by` group).
 
         Examples
         --------
