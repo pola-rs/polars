@@ -2169,7 +2169,21 @@ def any(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | b
     ).alias("any")
 
 
-def all(columns: str | Sequence[Expr] | Expr | None = None) -> Expr:
+@overload
+def all(exprs: Series) -> bool:  # type: ignore[misc]
+    ...
+
+
+@overload
+def all(
+    exprs: IntoExpr | Iterable[IntoExpr] | None = ..., *more_exprs: IntoExpr
+) -> Expr:
+    ...
+
+
+def all(
+    exprs: IntoExpr | Iterable[IntoExpr] | None = None, *more_exprs: IntoExpr
+) -> Expr | bool:
     """
     Do one of two things.
 
@@ -2178,8 +2192,10 @@ def all(columns: str | Sequence[Expr] | Expr | None = None) -> Expr:
 
     Parameters
     ----------
-    columns
+    exprs
         If given this function will apply a bitwise & on the columns.
+    *more_exprs
+        ...
 
     Examples
     --------
@@ -2199,14 +2215,22 @@ def all(columns: str | Sequence[Expr] | Expr | None = None) -> Expr:
     └─────┴──────┴─────┘
 
     """
-    if columns is None:
-        return col("*")
-    elif isinstance(columns, str):
-        return col(columns).all()
-    else:
-        return fold(lit(True), lambda a, b: a.cast(bool) & b.cast(bool), columns).alias(
-            "all"
-        )
+    if not more_exprs:
+        if exprs is None:
+            return col("*")
+        elif isinstance(exprs, pli.Series):
+            return exprs.all()
+        elif isinstance(exprs, str):
+            return col(exprs).all()
+
+    exprs = selection_to_pyexpr_list(exprs)
+    if more_exprs:
+        exprs.extend(selection_to_pyexpr_list(more_exprs))
+
+    exprs_wrapped = [wrap_expr(e) for e in exprs]
+    return fold(
+        lit(True), lambda a, b: a.cast(bool) & b.cast(bool), exprs_wrapped
+    ).alias("all")
 
 
 def exclude(
