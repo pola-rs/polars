@@ -317,3 +317,14 @@ def test_apply_binary() -> None:
             "aaaaaaaaaaaaaaaaaaaaaaaa",
         ]
     }
+
+
+def test_apply_no_dtype_set_8531() -> None:
+    assert (
+        pl.DataFrame({"a": [1]})
+        .with_columns(
+            pl.col("a").map(lambda x: x * 2).shift_and_fill(fill_value=0, periods=0)
+        )
+        .item()
+        == 2
+    )

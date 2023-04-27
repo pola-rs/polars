@@ -586,13 +586,3 @@ def test_no_sorted_warning(capfd: typing.Any) -> None:
     df.groupby_dynamic("dt", every="1h").agg(pl.all().count().suffix("_foo"))
     (_, err) = capfd.readouterr()
     assert "argument in operation 'groupby_dynamic' is not explicitly sorted" in err
-
-
-def test_dtype_not_set() -> None:
-    df = pl.DataFrame({"a": [1]})
-    with pytest.raises(
-        pl.InvalidOperationError,
-    ):
-        df.with_columns(
-            pl.col("a").map(lambda x: x * 2).shift_and_fill(fill_value=0, periods=0)
-        )
