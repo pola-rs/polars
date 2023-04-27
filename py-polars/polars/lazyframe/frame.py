@@ -83,8 +83,6 @@ if TYPE_CHECKING:
         Orientation,
         ParallelStrategy,
         PolarsDataType,
-        PolarsExprType,
-        PythonLiteral,
         RollingInterpolationMethod,
         SchemaDefinition,
         SchemaDict,
@@ -3010,16 +3008,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def with_columns(
         self,
-        exprs: (
-            str
-            | PolarsExprType
-            | PythonLiteral
-            | Series
-            | Iterable[str | PolarsExprType | PythonLiteral | Series | None]
-            | None
-        ) = None,
-        *more_exprs: str | PolarsExprType | PythonLiteral | Series | None,
-        **named_exprs: str | PolarsExprType | PythonLiteral | Series | None,
+        exprs: IntoExpr | Iterable[IntoExpr] | None = None,
+        *more_exprs: IntoExpr,
+        **named_exprs: IntoExpr,
     ) -> Self:
         """
         Add columns to this DataFrame.
