@@ -1335,18 +1335,18 @@ def lit(
 
 
 @overload
-def cumsum(column: str | Sequence[Expr | str] | Expr) -> Expr:
+def cumsum(exprs: Series) -> Series:  # type: ignore[misc]
     ...
 
 
 @overload
-def cumsum(column: Series) -> int | float:
+def cumsum(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
     ...
 
 
 def cumsum(
-    column: str | Sequence[Expr | str] | Series | Expr,
-) -> Expr | Any:
+    exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr
+) -> Expr | Series:
     """
     Cumulatively sum values in a column/Series, or horizontally across list of columns/expressions.
 
@@ -1362,12 +1362,14 @@ def cumsum(
 
     Parameters
     ----------
-    column
+    exprs
         Column(s) to be used in aggregation.
         This can be:
 
         - a column name, or Series -> aggregate the sum value of that column/Series.
         - a List[Expr] -> aggregate the sum value horizontally across the Expr result.
+    more_exprs
+        ...
 
     Examples
     --------
@@ -1416,12 +1418,21 @@ def cumsum(
     └─────┴─────┴─────┴───────────┘
 
     """  # noqa: W505
-    if isinstance(column, pli.Series):
-        return column.cumsum()
-    elif isinstance(column, str):
-        return col(column).cumsum()
+    if not more_exprs:
+        if isinstance(exprs, pli.Series):
+            return exprs.cumsum()
+        elif isinstance(exprs, str):
+            return col(exprs).cumsum()
+
+    exprs = selection_to_pyexpr_list(exprs)
+    if more_exprs:
+        exprs.extend(selection_to_pyexpr_list(more_exprs))
+
     # (Expr): use u32 as that will not cast to float as eagerly
-    return cumfold(lit(0).cast(UInt32), lambda a, b: a + b, column).alias("cumsum")
+    exprs_wrapped = [wrap_expr(e) for e in exprs]
+    return cumfold(lit(0).cast(UInt32), lambda a, b: a + b, exprs_wrapped).alias(
+        "cumsum"
+    )
 
 
 def spearman_rank_corr(
