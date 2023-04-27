@@ -41,6 +41,31 @@ def test_apply_unnest() -> None:
     assert_frame_equal(df, expected)
 
 
+def test_struct_equality() -> None:
+    # equal struct dimensions, equal values
+    s1 = pl.Series("misc", [{"x": "a", "y": 0}, {"x": "b", "y": 0}])
+    s2 = pl.Series("misc", [{"x": "a", "y": 0}, {"x": "b", "y": 0}])
+    assert (s1 == s2).all()
+    assert (~(s1 != s2)).all()
+
+    # equal struct dimensions, unequal values
+    s3 = pl.Series("misc", [{"x": "a", "y": 0}, {"x": "c", "y": 2}])
+    s4 = pl.Series("misc", [{"x": "b", "y": 1}, {"x": "d", "y": 3}])
+    assert (s3 != s4).all()
+    assert (~(s3 == s4)).all()
+
+    # unequal struct dimensions, equal values (where fields overlap)
+    s5 = pl.Series("misc", [{"x": "a", "y": 0}, {"x": "b", "y": 0}])
+    s6 = pl.Series("misc", [{"x": "a", "y": 0, "z": 0}, {"x": "b", "y": 0, "z": 0}])
+    assert (s5 != s6).all()
+    assert (~(s5 == s6)).all()
+
+    s7 = pl.Series("misc", [{"x": "a", "y": 0}, {"x": "b", "y": 0}])
+    s8 = pl.Series("misc", [{"x": "a", "y": 0}, {"x": "b", "y": 0}, {"x": "c", "y": 0}])
+    assert (s7 != s8).all()
+    assert (~(s7 == s8)).all()
+
+
 def test_struct_hashes() -> None:
     dtypes = (
         pl.Struct,
