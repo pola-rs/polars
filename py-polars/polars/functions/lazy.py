@@ -681,18 +681,18 @@ def min(
 
 
 @overload
-def sum(column: str | Sequence[Expr | str] | Expr) -> Expr:
+def sum(exprs: Series) -> int | float:  # type: ignore[misc]
     ...
 
 
 @overload
-def sum(column: Series) -> int | float:
+def sum(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
     ...
 
 
 def sum(
-    column: str | Sequence[Expr | str] | Series | Expr,
-) -> Expr | Any:
+    exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr
+) -> Expr | int | float:
     """
     Sum values in a column/Series, or horizontally across list of columns/expressions.
 
@@ -706,12 +706,14 @@ def sum(
 
     Parameters
     ----------
-    column
+    exprs
         Column(s) to be used in aggregation.
         This can be:
 
         - a column name, or Series -> aggregate the sum value of that column/Series.
         - a List[Expr] -> aggregate the sum value horizontally across the Expr result.
+    *more_exprs
+        ...
 
     Examples
     --------
@@ -787,16 +789,16 @@ def sum(
     └─────┴─────┘
 
     """
-    if isinstance(column, pli.Series):
-        return column.sum()
-    elif isinstance(column, str):
-        return col(column).sum()
-    elif isinstance(column, Sequence):
-        exprs = selection_to_pyexpr_list(column)
-        return wrap_expr(_sum_exprs(exprs))
-    else:
-        # (Expr): use u32 as that will not cast to float as eagerly
-        return fold(lit(0).cast(UInt32), lambda a, b: a + b, column).alias("sum")
+    if not more_exprs:
+        if isinstance(exprs, pli.Series):
+            return exprs.sum()
+        elif isinstance(exprs, str):
+            return col(exprs).sum()
+
+    exprs = selection_to_pyexpr_list(exprs)
+    if more_exprs:
+        exprs.extend(selection_to_pyexpr_list(more_exprs))
+    return wrap_expr(_sum_exprs(exprs))
 
 
 @overload
