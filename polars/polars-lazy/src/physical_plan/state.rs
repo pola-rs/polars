@@ -32,6 +32,8 @@ bitflags! {
         /// So a `sort().list()` in a groupby returns: list[list[i32]]
         /// whereas in a window function would return: list[i32]
         const FINALIZE_WINDOW_AS_LIST = 0x04;
+        /// Indicates the expression has a window function
+        const HAS_WINDOW = 0x08;
     }
 }
 
@@ -224,6 +226,12 @@ impl ExecutionState {
         flags.contains(StateFlags::CACHE_WINDOW_EXPR)
     }
 
+    /// Indicates that window expression's [`GroupTuples`] may be cached.
+    pub(super) fn has_window(&self) -> bool {
+        let flags: StateFlags = self.flags.load(Ordering::Relaxed).into();
+        flags.contains(StateFlags::HAS_WINDOW)
+    }
+
     /// More verbose logging
     pub(super) fn verbose(&self) -> bool {
         let flags: StateFlags = self.flags.load(Ordering::Relaxed).into();
@@ -255,6 +263,12 @@ impl ExecutionState {
     pub(super) fn insert_cache_window_flag(&mut self) {
         self.set_flags(&|mut flags| {
             flags.insert(StateFlags::CACHE_WINDOW_EXPR);
+            flags
+        });
+    }
+    pub(super) fn insert_has_window_function_flag(&mut self) {
+        self.set_flags(&|mut flags| {
+            flags.insert(StateFlags::HAS_WINDOW);
             flags
         });
     }

@@ -162,15 +162,22 @@ impl PhysicalExpr for BinaryExpr {
     }
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
-        let mut state = state.split();
-        // don't cache window functions as they run in parallel
-        state.remove_cache_window_flag();
-        let (lhs, rhs) = POOL.install(|| {
-            rayon::join(
-                || self.left.evaluate(df, &state),
-                || self.right.evaluate(df, &state),
+        // window functions may set a global state that determine their output
+        // state, so we don't let them run in parallel as they race
+        // they also saturate the thread pool by themselves, so that's fine
+        let (lhs, rhs) = if state.has_window() {
+            (
+                self.left.evaluate(df, state),
+                self.right.evaluate(df, state),
             )
-        });
+        } else {
+            POOL.install(|| {
+                rayon::join(
+                    || self.left.evaluate(df, state),
+                    || self.right.evaluate(df, state),
+                )
+            })
+        };
         let lhs = lhs?;
         let rhs = rhs?;
         polars_ensure!(
