@@ -497,22 +497,82 @@ class Series:
 
         return self._from_pyseries(f(other))
 
-    def __eq__(self, other: Any) -> Self:  # type: ignore[override]
+    @overload
+    def __eq__(self, other: Expr) -> Expr:  # type: ignore[misc]
+        ...
+
+    @overload
+    def __eq__(self, other: Any) -> Self:
+        ...
+
+    def __eq__(self, other: Any) -> Self | Expr:
+        if isinstance(other, pli.Expr):
+            return F.lit(self).__eq__(other)
         return self._comp(other, "eq")
 
-    def __ne__(self, other: Any) -> Self:  # type: ignore[override]
+    @overload
+    def __ne__(self, other: Expr) -> Expr:  # type: ignore[misc]
+        ...
+
+    @overload
+    def __ne__(self, other: Any) -> Self:
+        ...
+
+    def __ne__(self, other: Any) -> Self | Expr:
+        if isinstance(other, pli.Expr):
+            return F.lit(self).__ne__(other)
         return self._comp(other, "neq")
 
+    @overload
+    def __gt__(self, other: Expr) -> Expr:  # type: ignore[misc]
+        ...
+
+    @overload
     def __gt__(self, other: Any) -> Self:
+        ...
+
+    def __gt__(self, other: Any) -> Self | Expr:
+        if isinstance(other, pli.Expr):
+            return F.lit(self).__gt__(other)
         return self._comp(other, "gt")
 
+    @overload
+    def __lt__(self, other: Expr) -> Expr:  # type: ignore[misc]
+        ...
+
+    @overload
     def __lt__(self, other: Any) -> Self:
+        ...
+
+    def __lt__(self, other: Any) -> Self | Expr:
+        if isinstance(other, pli.Expr):
+            return F.lit(self).__lt__(other)
         return self._comp(other, "lt")
 
+    @overload
+    def __ge__(self, other: Expr) -> Expr:  # type: ignore[misc]
+        ...
+
+    @overload
     def __ge__(self, other: Any) -> Self:
+        ...
+
+    def __ge__(self, other: Any) -> Self | Expr:
+        if isinstance(other, pli.Expr):
+            return F.lit(self).__ge__(other)
         return self._comp(other, "gt_eq")
 
+    @overload
+    def __le__(self, other: Expr) -> Expr:  # type: ignore[misc]
+        ...
+
+    @overload
     def __le__(self, other: Any) -> Self:
+        ...
+
+    def __le__(self, other: Any) -> Self | Expr:
+        if isinstance(other, pli.Expr):
+            return F.lit(self).__le__(other)
         return self._comp(other, "lt_eq")
 
     def le(self, other: Any) -> Self:
