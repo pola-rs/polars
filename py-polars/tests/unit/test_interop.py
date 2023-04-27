@@ -982,6 +982,7 @@ def test_untrusted_categorical_input() -> None:
     }
 
 
+@typing.no_type_check
 def test_sliced_struct_from_arrow() -> None:
     # Create a dataset with 3 rows
     tbl = pa.Table.from_arrays(
