@@ -690,6 +690,7 @@ def sum(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
     ...
 
 
+@deprecated_alias(column="exprs")
 def sum(
     exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr
 ) -> Expr | int | float:
@@ -1344,6 +1345,7 @@ def cumsum(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
     ...
 
 
+@deprecated_alias(column="exprs")
 def cumsum(
     exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr
 ) -> Expr | Series:
@@ -2107,6 +2109,7 @@ def any(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
     ...
 
 
+@deprecated_alias(columns="exprs")
 def any(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | bool:
     """
     Evaluate columnwise or elementwise with a bitwise OR operation.
@@ -2181,6 +2184,7 @@ def all(
     ...
 
 
+@deprecated_alias(columns="exprs")
 def all(
     exprs: IntoExpr | Iterable[IntoExpr] | None = None, *more_exprs: IntoExpr
 ) -> Expr | bool:
