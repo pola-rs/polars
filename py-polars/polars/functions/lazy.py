@@ -2097,14 +2097,26 @@ def cumreduce(
     return wrap_expr(pycumreduce(function, exprs))
 
 
-def any(columns: str | Sequence[str] | Sequence[Expr] | Expr) -> Expr:
+@overload
+def any(exprs: Series) -> bool:  # type: ignore[misc]
+    ...
+
+
+@overload
+def any(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
+    ...
+
+
+def any(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | bool:
     """
     Evaluate columnwise or elementwise with a bitwise OR operation.
 
     Parameters
     ----------
-    columns
+    exprs
         If given this function will apply a bitwise or on the columns.
+    *more_exprs
+        ...
 
     Examples
     --------
@@ -2141,12 +2153,20 @@ def any(columns: str | Sequence[str] | Sequence[Expr] | Expr) -> Expr:
     └──────┴───────┴──────┘
 
     """
-    if isinstance(columns, str):
-        return col(columns).any()
-    else:
-        return fold(
-            lit(False), lambda a, b: a.cast(bool) | b.cast(bool), columns
-        ).alias("any")
+    if not more_exprs:
+        if isinstance(exprs, pli.Series):
+            return exprs.any()
+        elif isinstance(exprs, str):
+            return col(exprs).any()
+
+    exprs = selection_to_pyexpr_list(exprs)
+    if more_exprs:
+        exprs.extend(selection_to_pyexpr_list(more_exprs))
+
+    exprs_wrapped = [wrap_expr(e) for e in exprs]
+    return fold(
+        lit(False), lambda a, b: a.cast(bool) | b.cast(bool), exprs_wrapped
+    ).alias("any")
 
 
 def all(columns: str | Sequence[Expr] | Expr | None = None) -> Expr:
