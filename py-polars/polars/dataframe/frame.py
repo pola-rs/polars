@@ -6889,7 +6889,7 @@ class DataFrame:
 
     def with_columns(
         self,
-        exprs: IntoExpr | Iterable[IntoExpr] = None,
+        exprs: IntoExpr | Iterable[IntoExpr] | None = None,
         *more_exprs: IntoExpr,
         **named_exprs: IntoExpr,
     ) -> Self:
