@@ -3761,7 +3761,7 @@ class Series:
 
         """
 
-    def round(self, decimals: int) -> Series:
+    def round(self, decimals: int = 0) -> Series:
         """
         Round underlying floating point data by `decimals` digits.
 

@@ -1572,7 +1572,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.ceil())
 
-    def round(self, decimals: int) -> Self:
+    def round(self, decimals: int = 0) -> Self:
         """
         Round underlying floating point data by `decimals` digits.
 
