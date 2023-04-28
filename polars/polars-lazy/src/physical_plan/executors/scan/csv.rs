@@ -1,7 +1,5 @@
 use std::path::PathBuf;
 
-use polars_io::predicates::PhysicalIoExpr;
-
 use super::*;
 
 pub struct CsvExec {
@@ -24,10 +22,7 @@ impl CsvExec {
             with_columns = None;
         }
         let n_rows = _set_n_rows_for_scan(self.options.n_rows);
-        let predicate = self
-            .predicate
-            .clone()
-            .map(|expr| Arc::new(PhysicalIoHelper { expr }) as Arc<dyn PhysicalIoExpr>);
+        let predicate = self.predicate.clone().map(phys_expr_to_io_expr);
 
         CsvReader::from_path(&self.path)
             .unwrap()

@@ -21,8 +21,8 @@ from typing import (
     cast,
 )
 
+import polars._reexport as pl
 from polars import functions as F
-from polars import internals as pli
 from polars.datatypes import (
     FLOAT_DTYPES,
     INTEGER_DTYPES,
@@ -1572,7 +1572,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.ceil())
 
-    def round(self, decimals: int) -> Self:
+    def round(self, decimals: int = 0) -> Self:
         """
         Round underlying floating point data by `decimals` digits.
 
@@ -2183,7 +2183,7 @@ class Expr:
             _check_for_numpy(indices) and isinstance(indices, np.ndarray)
         ):
             indices = cast("np.ndarray[Any, Any]", indices)
-            indices_lit = F.lit(pli.Series("", indices, dtype=UInt32))
+            indices_lit = F.lit(pl.Series("", indices, dtype=UInt32))
         else:
             indices_lit = expr_to_lit_or_expr(indices, str_to_lit=False)
         return self._from_pyexpr(self._pyexpr.take(indices_lit._pyexpr))
@@ -4222,7 +4222,7 @@ class Expr:
         if isinstance(other, Collection) and not isinstance(other, str):
             if isinstance(other, (Set, FrozenSet)):
                 other = sorted(other)
-            other = F.lit(None) if len(other) == 0 else F.lit(pli.Series(other))
+            other = F.lit(None) if len(other) == 0 else F.lit(pl.Series(other))
         else:
             other = expr_to_lit_or_expr(other, str_to_lit=False)
         return self._from_pyexpr(self._pyexpr.is_in(other._pyexpr))
@@ -7110,7 +7110,7 @@ class Expr:
                     # If no dtype was set, which should only happen when:
                     #     values = remapping.values()
                     # create a Series from those values and infer the dtype.
-                    s = pli.Series(
+                    s = pl.Series(
                         name,
                         values,
                         dtype=None,
@@ -7131,7 +7131,7 @@ class Expr:
                             # that we can assume that the user wants the values Series
                             # of the same dtype as the key Series.
                             dtype = dtype_keys
-                            s = pli.Series(
+                            s = pl.Series(
                                 name,
                                 values,
                                 dtype=dtype_keys,
@@ -7147,7 +7147,7 @@ class Expr:
                     #     values = remapping.keys()
                     # and in cases where the user set the output dtype when:
                     #     values = remapping.values()
-                    s = pli.Series(
+                    s = pl.Series(
                         name,
                         values,
                         dtype=dtype,
@@ -7228,7 +7228,7 @@ class Expr:
 
             if return_dtype_:
                 # Create remap value Series with specified output dtype.
-                remap_value_s = pli.Series(
+                remap_value_s = pl.Series(
                     remap_value_column,
                     remapping.values(),
                     dtype=return_dtype_,
@@ -7251,7 +7251,7 @@ class Expr:
                 (
                     df.lazy()
                     .join(
-                        pli.DataFrame(
+                        pl.DataFrame(
                             [
                                 remap_key_s,
                                 remap_value_s,
@@ -7292,7 +7292,7 @@ class Expr:
 
             if return_dtype:
                 # Create remap value Series with specified output dtype.
-                remap_value_s = pli.Series(
+                remap_value_s = pl.Series(
                     remap_value_column,
                     remapping.values(),
                     dtype=return_dtype,
@@ -7316,7 +7316,7 @@ class Expr:
                     s.to_frame()
                     .lazy()
                     .join(
-                        pli.DataFrame(
+                        pl.DataFrame(
                             [
                                 remap_key_s,
                                 remap_value_s,

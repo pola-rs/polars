@@ -23,6 +23,7 @@ use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::logical_plan::FileFingerPrint;
 
 use super::*;
+use crate::physical_plan::expressions::phys_expr_to_io_expr;
 use crate::prelude::*;
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]
@@ -53,9 +54,7 @@ fn prepare_scan_args(
     });
 
     let n_rows = _set_n_rows_for_scan(n_rows);
-    let predicate = predicate
-        .clone()
-        .map(|expr| Arc::new(PhysicalIoHelper { expr }) as Arc<dyn PhysicalIoExpr>);
+    let predicate = predicate.clone().map(phys_expr_to_io_expr);
 
     (file, projection, n_rows, predicate)
 }
@@ -65,6 +64,7 @@ pub struct DataFrameExec {
     pub(crate) df: Arc<DataFrame>,
     pub(crate) selection: Option<Arc<dyn PhysicalExpr>>,
     pub(crate) projection: Option<Arc<Vec<String>>>,
+    pub(crate) predicate_has_windows: bool,
 }
 
 impl Executor for DataFrameExec {
@@ -79,6 +79,9 @@ impl Executor for DataFrameExec {
         }
 
         if let Some(selection) = &self.selection {
+            if self.predicate_has_windows {
+                state.insert_has_window_function_flag()
+            }
             let s = selection.evaluate(&df, state)?;
             let mask = s.bool().map_err(
                 |_| polars_err!(ComputeError: "filter predicate was not of type boolean"),

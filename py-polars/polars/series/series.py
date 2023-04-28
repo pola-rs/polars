@@ -18,8 +18,8 @@ from typing import (
     overload,
 )
 
+import polars._reexport as pl
 from polars import functions as F
-from polars import internals as pli
 from polars.datatypes import (
     FLOAT_DTYPES,
     INTEGER_DTYPES,
@@ -600,7 +600,7 @@ class Series:
         return self.__gt__(other)
 
     def _arithmetic(self, other: Any, op_s: str, op_ffi: str) -> Self:
-        if isinstance(other, pli.Expr):
+        if isinstance(other, pl.Expr):
             # expand pl.lit, pl.datetime, pl.duration Exprs to compatible Series
             other = self.to_frame().select(other).to_series()
         if isinstance(other, Series):
@@ -641,9 +641,9 @@ class Series:
     def __add__(self, other: Any) -> Self | DataFrame | Expr:
         if isinstance(other, str):
             other = Series("", [other])
-        elif isinstance(other, pli.DataFrame):
+        elif isinstance(other, pl.DataFrame):
             return other + self
-        elif isinstance(other, pli.Expr):
+        elif isinstance(other, pl.Expr):
             return F.lit(self) + other
         return self._arithmetic(other, "add", "add_<>")
 
@@ -656,7 +656,7 @@ class Series:
         ...
 
     def __sub__(self, other: Any) -> Self | Expr:
-        if isinstance(other, pli.Expr):
+        if isinstance(other, pl.Expr):
             return F.lit(self) - other
         return self._arithmetic(other, "sub", "sub_<>")
 
@@ -669,7 +669,7 @@ class Series:
         ...
 
     def __truediv__(self, other: Any) -> Series | Expr:
-        if isinstance(other, pli.Expr):
+        if isinstance(other, pl.Expr):
             return F.lit(self) / other
         if self.is_temporal():
             raise ValueError("first cast to integer before dividing datelike dtypes")
@@ -683,11 +683,11 @@ class Series:
     # python 3.7 is not happy. Remove this when we finally ditch that
     @typing.no_type_check
     def __floordiv__(self, other: Any) -> Series:
-        if isinstance(other, pli.Expr):
+        if isinstance(other, pl.Expr):
             return F.lit(self).__floordiv__(other)
         if self.is_temporal():
             raise ValueError("first cast to integer before dividing datelike dtypes")
-        if not isinstance(other, pli.Expr):
+        if not isinstance(other, pl.Expr):
             other = F.lit(other)
         return self.to_frame().select(F.col(self.name) // other).to_series()
 
@@ -709,11 +709,11 @@ class Series:
         ...
 
     def __mul__(self, other: Any) -> Series | DataFrame | Expr:
-        if isinstance(other, pli.Expr):
+        if isinstance(other, pl.Expr):
             return F.lit(self) * other
         if self.is_temporal():
             raise ValueError("first cast to integer before multiplying datelike dtypes")
-        elif isinstance(other, pli.DataFrame):
+        elif isinstance(other, pl.DataFrame):
             return other * self
         else:
             return self._arithmetic(other, "mul", "mul_<>")
@@ -727,7 +727,7 @@ class Series:
         ...
 
     def __mod__(self, other: Any) -> Series | Expr:
-        if isinstance(other, pli.Expr):
+        if isinstance(other, pl.Expr):
             return F.lit(self).__mod__(other)
         if self.is_temporal():
             raise ValueError(
@@ -785,7 +785,7 @@ class Series:
             _check_for_numpy(other) and isinstance(other, np.ndarray)
         ):
             other = Series(other)
-        # elif isinstance(other, pli.DataFrame):
+        # elif isinstance(other, pl.DataFrame):
         #     return other.__rmatmul__(self)  # type: ignore[return-value]
         return self.dot(other)
 
@@ -1366,7 +1366,7 @@ class Series:
         else:
             raise TypeError("This type is not supported")
 
-        return pli.DataFrame({"statistic": stats.keys(), "value": stats.values()})
+        return pl.DataFrame({"statistic": stats.keys(), "value": stats.values()})
 
     def sum(self) -> int | float:
         """
@@ -3821,7 +3821,7 @@ class Series:
 
         """
 
-    def round(self, decimals: int) -> Series:
+    def round(self, decimals: int = 0) -> Series:
         """
         Round underlying floating point data by `decimals` digits.
 
@@ -4239,7 +4239,7 @@ class Series:
 
     def shift_and_fill(
         self,
-        fill_value: int | pli.Expr,
+        fill_value: int | Expr,
         *,
         periods: int = 1,
     ) -> Series:

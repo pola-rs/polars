@@ -108,6 +108,8 @@ fn execute_projection_cached_window_fns(
     for mut partition in windows {
         // clear the cache for every partitioned group
         let mut state = state.split();
+        // inform the expression it has window functions.
+        state.insert_has_window_function_flag();
 
         // don't bother caching if we only have a single window function in this partition
         if partition.1.len() == 1 {
