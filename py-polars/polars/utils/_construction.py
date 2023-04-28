@@ -18,8 +18,8 @@ from typing import (
     get_type_hints,
 )
 
+import polars._reexport as pl
 from polars import functions as F
-from polars import internals as pli
 from polars.datatypes import (
     N_INFER_DEFAULT,
     Boolean,
@@ -159,7 +159,7 @@ def arrow_to_pyseries(name: str, values: pa.Array, rechunk: bool = True) -> PySe
             pa.large_utf8(),
         )
     ):
-        pys = pli.Series(name, [], dtype=Categorical)._s
+        pys = pl.Series(name, [], dtype=Categorical)._s
 
     elif not hasattr(array, "num_chunks"):
         pys = PySeries.from_arrow(name, array)
@@ -254,7 +254,7 @@ def iterable_to_pyseries(
         values = iter(values)
 
     def to_series_chunk(values: list[Any], dtype: PolarsDataType | None) -> Series:
-        return pli.Series(
+        return pl.Series(
             name=name,
             values=values,
             dtype=dtype,
@@ -355,7 +355,7 @@ def sequence_to_pyseries(
             or is_pydantic_model(value)
             or is_namedtuple(value.__class__, annotated=True)
         ):
-            return pli.DataFrame(values).to_struct(name)._s
+            return pl.DataFrame(values).to_struct(name)._s
         elif isinstance(value, range):
             values = [range_to_series("", v) for v in values]
         else:
@@ -455,7 +455,7 @@ def sequence_to_pyseries(
                 )
             return sequence_from_anyvalue_or_object(name, values)
 
-        elif python_dtype == pli.Series:
+        elif python_dtype == pl.Series:
             return PySeries.new_series_list(name, [v._s for v in values], strict)
 
         elif python_dtype == PySeries:
@@ -539,7 +539,7 @@ def _handle_columns_arg(
         return data
     else:
         if not data:
-            return [pli.Series(c, None)._s for c in columns]
+            return [pl.Series(c, None)._s for c in columns]
         elif len(data) == len(columns):
             if from_dict:
                 series_map = {s.name(): s for s in data}
@@ -651,32 +651,30 @@ def _expand_dict_scalars(
             for name, val in data.items():
                 dtype = dtypes.get(name)
                 if isinstance(val, dict) and dtype != Struct:
-                    updated_data[name] = pli.DataFrame(val).to_struct(name)
+                    updated_data[name] = pl.DataFrame(val).to_struct(name)
 
                 elif arrlen(val) is not None or _is_generator(val):
-                    updated_data[name] = pli.Series(
+                    updated_data[name] = pl.Series(
                         name=name, values=val, dtype=dtype, nan_to_null=nan_to_null
                     )
                 elif val is None or isinstance(  # type: ignore[redundant-expr]
                     val, (int, float, str, bool, date, datetime, time, timedelta)
                 ):
-                    updated_data[name] = pli.Series(
+                    updated_data[name] = pl.Series(
                         name=name, values=[val], dtype=dtype
                     ).extend_constant(val, array_len - 1)
                 else:
-                    updated_data[name] = pli.Series(
+                    updated_data[name] = pl.Series(
                         name=name, values=[val] * array_len, dtype=dtype
                     )
 
         elif all((arrlen(val) == 0) for val in data.values()):
             for name, val in data.items():
-                updated_data[name] = pli.Series(
-                    name, values=val, dtype=dtypes.get(name)
-                )
+                updated_data[name] = pl.Series(name, values=val, dtype=dtypes.get(name))
 
         elif all((arrlen(val) is None) for val in data.values()):
             for name, val in data.items():
-                updated_data[name] = pli.Series(
+                updated_data[name] = pl.Series(
                     name,
                     values=(val if _is_generator(val) else [val]),
                     dtype=dtypes.get(name),
@@ -729,7 +727,7 @@ def dict_to_pydf(
                     zip(
                         column_names,
                         pool.map(
-                            lambda t: pli.Series(t[0], t[1])
+                            lambda t: pl.Series(t[0], t[1])
                             if isinstance(t[1], np.ndarray)
                             else t[1],
                             [(k, v) for k, v in data.items()],
@@ -739,7 +737,7 @@ def dict_to_pydf(
 
     if not data and schema_overrides:
         data_series = [
-            pli.Series(
+            pl.Series(
                 name, [], dtype=schema_overrides.get(name), nan_to_null=nan_to_null
             )._s
             for name in column_names
@@ -834,7 +832,7 @@ def _sequence_to_pydf_dispatcher(
         first_element = data[0]
         register_with_singledispatch = False
 
-    elif isinstance(first_element, pli.Series):
+    elif isinstance(first_element, pl.Series):
         to_pydf = _sequence_of_series_to_pydf
 
     elif _check_for_numpy(first_element) and isinstance(first_element, np.ndarray):
@@ -922,7 +920,7 @@ def _sequence_of_sequence_to_pydf(
             schema, schema_overrides=schema_overrides, n_expected=len(data)
         )
         data_series: list[PySeries] = [
-            pli.Series(
+            pl.Series(
                 column_names[i], element, schema_overrides.get(column_names[i])
             )._s
             for i, element in enumerate(data)
@@ -1008,7 +1006,7 @@ def _sequence_of_elements_to_pydf(
         schema, schema_overrides=schema_overrides, n_expected=1
     )
     data_series: list[PySeries] = [
-        pli.Series(column_names[0], data, schema_overrides.get(column_names[0]))._s
+        pl.Series(column_names[0], data, schema_overrides.get(column_names[0]))._s
     ]
     data_series = _handle_columns_arg(data_series, columns=column_names)
     return PyDataFrame(data_series)
@@ -1173,7 +1171,7 @@ def numpy_to_pydf(
 
     elif len(shape) == 1:
         data_series = [
-            pli.Series(
+            pl.Series(
                 name=column_names[0],
                 values=data,
                 dtype=schema_overrides.get(column_names[0]),
@@ -1183,7 +1181,7 @@ def numpy_to_pydf(
     else:
         if orient == "row":
             data_series = [
-                pli.Series(
+                pl.Series(
                     name=column_names[i],
                     values=data[:, i],
                     dtype=schema_overrides.get(column_names[i]),
@@ -1193,7 +1191,7 @@ def numpy_to_pydf(
             ]
         else:
             data_series = [
-                pli.Series(
+                pl.Series(
                     name=column_names[i],
                     values=data[i],
                     dtype=schema_overrides.get(column_names[i]),
@@ -1250,16 +1248,13 @@ def arrow_to_pydf(
 
         # path for table without rows that keeps datatype
         if tbl.shape[0] == 0:
-            pydf = pli.DataFrame(
-                [
-                    pli.Series(name, c)
-                    for (name, c) in zip(tbl.column_names, tbl.columns)
-                ]
+            pydf = pl.DataFrame(
+                [pl.Series(name, c) for (name, c) in zip(tbl.column_names, tbl.columns)]
             )._df
         else:
             pydf = PyDataFrame.from_arrow_record_batches(tbl.to_batches())
     else:
-        pydf = pli.DataFrame([])._df
+        pydf = pl.DataFrame([])._df
     if rechunk:
         pydf = pydf.rechunk()
 
@@ -1343,9 +1338,9 @@ def iterable_to_pydf(
                 for idx, col in enumerate(column_names)
             }
 
-        return pli.DataFrame(
+        return pl.DataFrame(
             {
-                (column_names[idx] if column_names else f"column_{idx}"): pli.Series(
+                (column_names[idx] if column_names else f"column_{idx}"): pl.Series(
                     coldata, dtype=dtypes_by_idx.get(idx)
                 )
                 for idx, coldata in enumerate(data)
@@ -1353,7 +1348,7 @@ def iterable_to_pydf(
         )._df
 
     def to_frame_chunk(values: list[Any], schema: SchemaDefinition | None) -> DataFrame:
-        return pli.DataFrame(
+        return pl.DataFrame(
             data=values,
             schema=schema,
             orient="row",

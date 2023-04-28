@@ -3,8 +3,8 @@ from __future__ import annotations
 import copy
 from typing import TYPE_CHECKING, Any, Callable
 
+import polars._reexport as pl
 from polars import functions as F
-from polars import internals as pli
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
 from polars.utils._wrap import wrap_expr
 
@@ -253,9 +253,9 @@ class ExprListNameSpace:
 
         """
         if isinstance(other, list) and (
-            not isinstance(other[0], (pli.Expr, str, pli.Series))
+            not isinstance(other[0], (pl.Expr, str, pl.Series))
         ):
-            return self.concat(pli.Series([other]))
+            return self.concat(pl.Series([other]))
 
         other_list: list[Expr | str | Series]
         other_list = [other] if not isinstance(other, list) else copy.copy(other)  # type: ignore[arg-type]
@@ -319,7 +319,7 @@ class ExprListNameSpace:
 
         """
         if isinstance(index, list):
-            index = pli.Series(index)
+            index = pl.Series(index)
         index = expr_to_lit_or_expr(index, str_to_lit=False)._pyexpr
         return wrap_expr(self._pyexpr.lst_take(index, null_on_oob))
 

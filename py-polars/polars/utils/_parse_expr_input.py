@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Iterable
 
+import polars._reexport as pl
 from polars import functions as F
-from polars import internals as pli
 
 if TYPE_CHECKING:
     from polars.expr import Expr
@@ -20,7 +20,7 @@ def selection_to_pyexpr_list(
         return []
 
     if isinstance(
-        exprs, (str, pli.Expr, pli.Series, F.whenthen.WhenThen, F.whenthen.WhenThenThen)
+        exprs, (str, pl.Expr, pl.Series, F.whenthen.WhenThen, F.whenthen.WhenThenThen)
     ) or not isinstance(exprs, Iterable):
         return [
             expr_to_lit_or_expr(exprs, str_to_lit=False, structify=structify)._pyexpr,
@@ -59,18 +59,18 @@ def expr_to_lit_or_expr(
     Expr
 
     """
-    if isinstance(expr, pli.Expr):
+    if isinstance(expr, pl.Expr):
         pass
     elif isinstance(expr, str) and not str_to_lit:
         expr = F.col(expr)
     elif (
-        isinstance(expr, (int, float, str, pli.Series, datetime, date, time, timedelta))
+        isinstance(expr, (int, float, str, pl.Series, datetime, date, time, timedelta))
         or expr is None
     ):
         expr = F.lit(expr)
         structify = False
     elif isinstance(expr, list):
-        expr = F.lit(pli.Series("", [expr]))
+        expr = F.lit(pl.Series("", [expr]))
         structify = False
     elif isinstance(expr, (F.whenthen.WhenThen, F.whenthen.WhenThenThen)):
         expr = expr.otherwise(None)  # implicitly add the null branch.

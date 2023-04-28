@@ -4,7 +4,7 @@ import contextlib
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO
 
-from polars import internals as pli
+import polars._reexport as pl
 from polars.convert import from_arrow
 from polars.dependencies import _PYARROW_AVAILABLE
 from polars.io._utils import _prepare_file_arg
@@ -121,7 +121,7 @@ def read_parquet(
                 )
             )
 
-        return pli.DataFrame._read_parquet(
+        return pl.DataFrame._read_parquet(
             source_prep,
             columns=columns,
             n_rows=n_rows,
@@ -208,7 +208,7 @@ def scan_parquet(
     if isinstance(source, (str, Path)):
         source = normalise_filepath(source)
 
-    return pli.LazyFrame._scan_parquet(
+    return pl.LazyFrame._scan_parquet(
         source,
         n_rows=n_rows,
         cache=cache,

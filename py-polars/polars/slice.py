@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Union
 
-from polars import internals as pli
+import polars._reexport as pl
 
 if TYPE_CHECKING:
     from polars.dataframe import DataFrame
@@ -34,12 +34,12 @@ class PolarsSlice:
     def _as_original(lazy: LazyFrame, original: FrameOrSeries) -> FrameOrSeries:
         """Return lazy variant back to its original type."""
         frame = lazy.collect()
-        return frame if isinstance(original, pli.DataFrame) else frame.to_series()
+        return frame if isinstance(original, pl.DataFrame) else frame.to_series()
 
     @staticmethod
     def _lazify(obj: FrameOrSeries) -> LazyFrame:
         """Make lazy to ensure efficient/consistent handling."""
-        return obj.to_frame().lazy() if isinstance(obj, pli.Series) else obj.lazy()
+        return obj.to_frame().lazy() if isinstance(obj, pl.Series) else obj.lazy()
 
     def _slice_positive(self, obj: LazyFrame) -> LazyFrame:
         """Logic for slices with positive stride."""

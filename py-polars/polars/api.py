@@ -5,7 +5,7 @@ from operator import or_
 from typing import TYPE_CHECKING, Callable, TypeVar
 from warnings import warn
 
-from polars import internals as pli
+import polars._reexport as pl
 from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
@@ -26,7 +26,7 @@ _reserved_namespaces: set[str] = reduce(
     or_,
     (
         cls._accessors  # type: ignore[attr-defined]
-        for cls in (pli.DataFrame, pli.Expr, pli.LazyFrame, pli.Series)
+        for cls in (pl.DataFrame, pl.Expr, pl.LazyFrame, pl.Series)
     ),
 )
 
@@ -126,7 +126,7 @@ def register_expr_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     register_series_namespace: Register functionality on a Series.
 
     """
-    return _create_namespace(name, pli.Expr)
+    return _create_namespace(name, pl.Expr)
 
 
 def register_dataframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
@@ -226,7 +226,7 @@ def register_dataframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     register_series_namespace: Register functionality on a Series.
 
     """
-    return _create_namespace(name, pli.DataFrame)
+    return _create_namespace(name, pl.DataFrame)
 
 
 def register_lazyframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
@@ -331,7 +331,7 @@ def register_lazyframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     register_series_namespace: Register functionality on a Series.
 
     """
-    return _create_namespace(name, pli.LazyFrame)
+    return _create_namespace(name, pl.LazyFrame)
 
 
 def register_series_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
@@ -386,4 +386,4 @@ def register_series_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     register_lazyframe_namespace: Register functionality on a LazyFrame.
 
     """
-    return _create_namespace(name, pli.Series)
+    return _create_namespace(name, pl.Series)
