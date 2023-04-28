@@ -450,9 +450,8 @@ def sequence_to_pyseries(
             if isinstance(dtype, Object):
                 return PySeries.new_object(name, values, strict)
             if dtype:
-                return sequence_from_anyvalue_or_object(name, values).cast(
-                    dtype, strict=False
-                )
+                srs = sequence_from_anyvalue_or_object(name, values)
+                return srs.cast(dtype, strict=False)
             return sequence_from_anyvalue_or_object(name, values)
 
         elif python_dtype == pli.Series:

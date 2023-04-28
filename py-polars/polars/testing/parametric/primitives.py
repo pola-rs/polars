@@ -33,7 +33,8 @@ from polars.series import Series
 from polars.string_cache import StringCache
 from polars.testing.asserts import is_categorical_dtype
 from polars.testing.parametric.strategies import (
-    _hash,
+    _flexhash,
+    all_strategies,
     between,
     create_list_strategy,
     scalar_strategies,
@@ -63,7 +64,7 @@ def empty_list(value: Any, nested: bool) -> bool:
 MAX_DATA_SIZE = 10  # max generated frame/series length
 MAX_COLS = 8  # max number of generated cols
 
-strategy_dtypes = list({dtype.base_type() for dtype in scalar_strategies})
+strategy_dtypes = list({dtype.base_type() for dtype in all_strategies})
 
 
 @dataclass
@@ -100,7 +101,7 @@ class column:
 
     name: str
     dtype: PolarsDataType | None = None
-    strategy: SearchStrategy[Series | int] | None = None
+    strategy: SearchStrategy[Any] | None = None
     null_probability: float | None = None
     unique: bool = False
 
@@ -126,7 +127,10 @@ class column:
                 self.dtype = getattr(self.strategy, "_dtype", self.dtype)
             else:
                 self.strategy = create_list_strategy(getattr(self.dtype, "inner", None))
-                self.dtype = self.strategy._dtype  # type: ignore[union-attr]
+                self.dtype = self.strategy._dtype  # type: ignore[attr-defined]
+
+        # elif self.dtype == Struct:
+        #     ...
 
         elif self.dtype not in scalar_strategies:
             if self.dtype is not None:
@@ -353,7 +357,7 @@ def series(
         for dtype in (allowed_dtypes or strategy_dtypes)
         if dtype not in (excluded_dtypes or ())
     ]
-    if null_probability and (null_probability < 0 or null_probability > 1):
+    if null_probability and not (0 <= null_probability <= 1):
         raise InvalidArgument(
             "null_probability should be between 0.0 and 1.0; found"
             f" {null_probability}"
@@ -364,18 +368,18 @@ def series(
     def draw_series(draw: DrawFn) -> Series:
         with StringCache():
             # create/assign series dtype and retrieve matching strategy
-            series_dtype = (
-                draw(sampled_from(selectable_dtypes))
+            series_dtype: PolarsDataType = (
+                draw(sampled_from(selectable_dtypes))  # type: ignore[assignment]
                 if dtype is None and strategy is None
                 else dtype
             )
             if strategy is None:
                 if series_dtype is Datetime or series_dtype is Duration:
                     series_dtype = series_dtype(random.choice(_time_units))  # type: ignore[operator]
-                dtype_strategy = scalar_strategies[
+                dtype_strategy = all_strategies[
                     series_dtype
-                    if series_dtype in scalar_strategies
-                    else series_dtype.base_type()  # type: ignore[union-attr]
+                    if series_dtype in all_strategies
+                    else series_dtype.base_type()
                 ]
             else:
                 dtype_strategy = strategy
@@ -407,7 +411,7 @@ def series(
                         dtype_strategy,
                         min_size=series_size,
                         max_size=series_size,
-                        unique_by=(_hash if unique else None),
+                        unique_by=(_flexhash if unique else None),
                     )
                 )
 
