@@ -89,6 +89,10 @@ impl RevMapping {
         matches!(self, Self::Global(_, _, _))
     }
 
+    pub fn is_local(&self) -> bool {
+        !self.is_global()
+    }
+
     /// Get the length of the [`RevMapping`]
     pub fn len(&self) -> usize {
         match self {
