@@ -1,6 +1,7 @@
 use std::cell::UnsafeCell;
 
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
+use polars_plan::utils::expr_to_leaf_column_name;
 
 use super::*;
 use crate::executors::sinks::groupby::generic::global::GlobalTable;
@@ -21,6 +22,7 @@ impl GenericGroupby2 {
         key_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         agg_constructors: Arc<[AggregateFunction]>,
+        input_schema: SchemaRef,
         output_schema: SchemaRef,
         slice: Option<(i64, usize)>,
     ) -> Self {
@@ -29,6 +31,16 @@ impl GenericGroupby2 {
                 .iter_dtypes()
                 .take(key_columns.len())
                 .cloned()
+                .collect::<Vec<_>>(),
+        );
+
+        let agg_dtypes: Arc<[DataType]> = Arc::from(
+            aggregation_columns
+                .iter()
+                .map(|e| {
+                    let name = expr_to_leaf_column_name(&e.expression()).unwrap();
+                    input_schema.get(name.as_ref()).unwrap().clone()
+                })
                 .collect::<Vec<_>>(),
         );
 
@@ -42,6 +54,7 @@ impl GenericGroupby2 {
             thread_local_table: UnsafeCell::new(ThreadLocalTable::new(
                 agg_constructors,
                 key_dtypes,
+                agg_dtypes,
                 output_schema,
             )),
             global_table: Arc::new(global_map),

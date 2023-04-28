@@ -236,14 +236,9 @@ impl ThreadLocalTable {
     pub(super) fn new(
         agg_constructors: Arc<[AggregateFunction]>,
         key_dtypes: Arc<[DataType]>,
+        agg_dtypes: Arc<[DataType]>,
         output_schema: SchemaRef,
     ) -> Self {
-        let agg_dtypes: Arc<[DataType]> = Arc::from(
-            agg_constructors
-                .iter()
-                .map(|agg| agg.dtype())
-                .collect::<Vec<_>>(),
-        );
         let spill_partitions = SpillPartitions::new(key_dtypes.clone(), agg_dtypes);
 
         Self {

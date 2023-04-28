@@ -296,6 +296,7 @@ where
                 key_columns,
                 aggregation_columns,
                 Arc::from(agg_fns),
+                input_schema.clone(),
                 output_schema,
                 options.slice,
             ));
@@ -334,6 +335,7 @@ where
                     key_columns,
                     aggregation_columns,
                     Arc::from(agg_fns),
+                    input_schema,
                     output_schema.clone(),
                     options.slice,
                 ))
@@ -366,6 +368,7 @@ where
                         key_columns,
                         aggregation_columns,
                         Arc::from(agg_fns),
+                        input_schema,
                         output_schema.clone(),
                         options.slice,
                     )),
