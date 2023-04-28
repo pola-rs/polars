@@ -131,10 +131,19 @@ def test_unary_plus() -> None:
 
 
 def test_series_expr_arithm() -> None:
-    s = pl.Series([1, 2, 3])
     assert (s + pl.col("a")).meta == pl.lit(s) + pl.col("a")
     assert (s - pl.col("a")).meta == pl.lit(s) - pl.col("a")
     assert (s / pl.col("a")).meta == pl.lit(s) / pl.col("a")
     assert (s // pl.col("a")).meta == pl.lit(s) // pl.col("a")
     assert (s * pl.col("a")).meta == pl.lit(s) * pl.col("a")
     assert (s % pl.col("a")).meta == pl.lit(s) % pl.col("a")
+
+
+# TODO: move to a better place for this? and figure how to test it
+def test_series_expr_comp() -> None:
+    assert pl.Series([1]) == pl.col("a")
+    assert pl.Series([1]) != pl.col("a")
+    assert pl.Series([1]) < pl.col("a")
+    assert pl.Series([1]) > pl.col("a")
+    assert pl.Series([1]) <= pl.col("a")
+    assert pl.Series([1]) >= pl.col("a")

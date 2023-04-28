@@ -497,45 +497,105 @@ class Series:
 
         return self._from_pyseries(f(other))
 
-    def __eq__(self, other: Any) -> Self:  # type: ignore[override]
+    @overload  # type: ignore[override]
+    def __eq__(self, other: Expr) -> Expr:  # type: ignore[misc]
+        ...
+
+    @overload
+    def __eq__(self, other: Any) -> Self:
+        ...
+
+    def __eq__(self, other: Any) -> Self | Expr:
+        if isinstance(other, pl.Expr):
+            return F.lit(self) == other
         return self._comp(other, "eq")
 
-    def __ne__(self, other: Any) -> Self:  # type: ignore[override]
+    @overload  # type: ignore[override]
+    def __ne__(self, other: Expr) -> Expr:  # type: ignore[misc]
+        ...
+
+    @overload
+    def __ne__(self, other: Any) -> Self:
+        ...
+
+    def __ne__(self, other: Any) -> Self | Expr:
+        if isinstance(other, pl.Expr):
+            return F.lit(self) != other
         return self._comp(other, "neq")
 
+    @overload
+    def __gt__(self, other: Expr) -> Expr:  # type: ignore[misc]
+        ...
+
+    @overload
     def __gt__(self, other: Any) -> Self:
+        ...
+
+    def __gt__(self, other: Any) -> Self | Expr:
+        if isinstance(other, pl.Expr):
+            return F.lit(self) > other
         return self._comp(other, "gt")
 
+    @overload
+    def __lt__(self, other: Expr) -> Expr:  # type: ignore[misc]
+        ...
+
+    @overload
     def __lt__(self, other: Any) -> Self:
+        ...
+
+    def __lt__(self, other: Any) -> Self | Expr:
+        if isinstance(other, pl.Expr):
+            return F.lit(self) < other
         return self._comp(other, "lt")
 
+    @overload
+    def __ge__(self, other: Expr) -> Expr:  # type: ignore[misc]
+        ...
+
+    @overload
     def __ge__(self, other: Any) -> Self:
+        ...
+
+    def __ge__(self, other: Any) -> Self | Expr:
+        if isinstance(other, pl.Expr):
+            return F.lit(self) >= other
         return self._comp(other, "gt_eq")
 
+    @overload
+    def __le__(self, other: Expr) -> Expr:  # type: ignore[misc]
+        ...
+
+    @overload
     def __le__(self, other: Any) -> Self:
+        ...
+
+    def __le__(self, other: Any) -> Self | Expr:
+        if isinstance(other, pl.Expr):
+            return F.lit(self) <= other
         return self._comp(other, "lt_eq")
 
-    def le(self, other: Any) -> Self:
+    def le(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression ``series <= other``."""
         return self.__le__(other)
 
-    def lt(self, other: Any) -> Self:
+    def lt(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression ``series < other``."""
         return self.__lt__(other)
 
-    def eq(self, other: Any) -> Self:
+    def eq(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression ``series == other``."""
         return self.__eq__(other)
 
-    def ne(self, other: Any) -> Self:
+    def ne(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression ``series != other``."""
         return self.__ne__(other)
 
-    def ge(self, other: Any) -> Self:
+    def ge(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression ``series >= other``."""
         return self.__ge__(other)
 
-    def gt(self, other: Any) -> Self:
+    def gt(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression ``series > other``."""
         return self.__gt__(other)
 
