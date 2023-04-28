@@ -287,6 +287,44 @@ impl ChunkCast for ListChunked {
     }
 }
 
+/// We cannot cast anything to or from List/LargeList
+/// So this implementation casts the inner type
+#[cfg(feature = "dtype-fixed-size-list")]
+impl ChunkCast for FixedSizeListChunked {
+    fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
+        todo!();
+        // use DataType::*;
+        // match data_type {
+        //     List(child_type) => {
+        //         match (self.inner_dtype(), &**child_type) {
+        //             #[cfg(feature = "dtype-categorical")]
+        //             (dt, Categorical(None)) if !matches!(dt, Utf8) => {
+        //                 polars_bail!(ComputeError: "cannot cast list inner type: '{:?}' to Categorical", dt)
+        //             }
+        //             _ => {
+        //                 // ensure the inner logical type bubbles up
+        //                 let (arr, child_type) = cast_list(self, child_type)?;
+        //                 // Safety: we just casted so the dtype matches.
+        //                 // we must take this path to correct for physical types.
+        //                 unsafe {
+        //                     Ok(Series::from_chunks_and_dtype_unchecked(
+        //                         self.name(),
+        //                         vec![arr],
+        //                         &List(Box::new(child_type)),
+        //                     ))
+        //                 }
+        //             }
+        //         }
+        //     }
+        //     _ => polars_bail!(ComputeError: "cannot cast list type"),
+        // }
+    }
+
+    unsafe fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series> {
+        self.cast(data_type)
+    }
+}
+
 // Returns inner data type. This is needed because a cast can instantiate the dtype inner
 // values for instance with categoricals
 fn cast_list(ca: &ListChunked, child_type: &DataType) -> PolarsResult<(ArrayRef, DataType)> {

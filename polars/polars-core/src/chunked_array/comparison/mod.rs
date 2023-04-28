@@ -837,6 +837,54 @@ impl ChunkCompare<&ListChunked> for ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-fixed-size-list")]
+impl ChunkCompare<&FixedSizeListChunked> for FixedSizeListChunked {
+    type Item = BooleanChunked;
+    fn equal(&self, rhs: &FixedSizeListChunked) -> BooleanChunked {
+        todo!();
+        // self.amortized_iter()
+        //     .zip(rhs.amortized_iter())
+        //     .map(|(left, right)| match (left, right) {
+        //         (None, None) => true,
+        //         (Some(l), Some(r)) => l.as_ref().series_equal_missing(r.as_ref()),
+        //         _ => false,
+        //     })
+        //     .collect_trusted()
+    }
+
+    fn not_equal(&self, rhs: &FixedSizeListChunked) -> BooleanChunked {
+        todo!();
+        // self.amortized_iter()
+        //     .zip(rhs.amortized_iter())
+        //     .map(|(left, right)| {
+        //         let out = match (left, right) {
+        //             (None, None) => true,
+        //             (Some(l), Some(r)) => l.as_ref().series_equal_missing(r.as_ref()),
+        //             _ => false,
+        //         };
+        //         !out
+        //     })
+        //     .collect_trusted()
+    }
+
+    // following are not implemented because gt, lt comparison of series don't make sense
+    fn gt(&self, _rhs: &FixedSizeListChunked) -> BooleanChunked {
+        unimplemented!()
+    }
+
+    fn gt_eq(&self, _rhs: &FixedSizeListChunked) -> BooleanChunked {
+        unimplemented!()
+    }
+
+    fn lt(&self, _rhs: &FixedSizeListChunked) -> BooleanChunked {
+        unimplemented!()
+    }
+
+    fn lt_eq(&self, _rhs: &FixedSizeListChunked) -> BooleanChunked {
+        unimplemented!()
+    }
+}
+
 impl Not for &BooleanChunked {
     type Output = BooleanChunked;
 

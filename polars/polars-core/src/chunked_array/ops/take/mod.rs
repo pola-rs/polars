@@ -433,6 +433,87 @@ impl ChunkTake for ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-fixed-size-list")]
+impl ChunkTake for FixedSizeListChunked {
+    unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
+    where
+        Self: std::marker::Sized,
+        I: TakeIterator,
+        INulls: TakeIteratorNulls,
+    {
+        todo!();
+
+        // let ca_self = if self.is_nested() {
+        //     Cow::Owned(self.rechunk())
+        // } else {
+        //     Cow::Borrowed(self)
+        // };
+        // let mut chunks = ca_self.downcast_iter();
+        // match indices {
+        //     TakeIdx::Array(array) => {
+        //         if array.null_count() == array.len() {
+        //             return Self::full_null_with_dtype(
+        //                 self.name(),
+        //                 array.len(),
+        //                 &self.inner_dtype(),
+        //             );
+        //         }
+        //         let array = match ca_self.chunks.len() {
+        //             1 => Box::new(take_list_unchecked(chunks.next().unwrap(), array)) as ArrayRef,
+        //             _ => {
+        //                 if !array.has_validity() {
+        //                     let iter = array.values().iter().map(|i| *i as usize);
+        //                     let mut ca: ListChunked =
+        //                         take_iter_n_chunks_unchecked!(ca_self.as_ref(), iter);
+        //                     ca.chunks.pop().unwrap()
+        //                 } else {
+        //                     let iter = array
+        //                         .into_iter()
+        //                         .map(|opt_idx| opt_idx.map(|idx| *idx as usize));
+        //                     let mut ca: ListChunked =
+        //                         take_opt_iter_n_chunks_unchecked!(ca_self.as_ref(), iter);
+        //                     ca.chunks.pop().unwrap()
+        //                 }
+        //             }
+        //         };
+        //         self.finish_from_array(array)
+        //     }
+        //     // todo! fast path for single chunk
+        //     TakeIdx::Iter(iter) => {
+        //         if ca_self.chunks.len() == 1 {
+        //             let idx: NoNull<IdxCa> = iter.map(|v| v as IdxSize).collect();
+        //             ca_self.take_unchecked((&idx.into_inner()).into())
+        //         } else {
+        //             let mut ca: ListChunked = take_iter_n_chunks_unchecked!(ca_self.as_ref(), iter);
+        //             self.finish_from_array(ca.chunks.pop().unwrap())
+        //         }
+        //     }
+        //     TakeIdx::IterNulls(iter) => {
+        //         if ca_self.chunks.len() == 1 {
+        //             let idx: IdxCa = iter.map(|v| v.map(|v| v as IdxSize)).collect();
+        //             ca_self.take_unchecked((&idx).into())
+        //         } else {
+        //             let mut ca: ListChunked =
+        //                 take_opt_iter_n_chunks_unchecked!(ca_self.as_ref(), iter);
+        //             self.finish_from_array(ca.chunks.pop().unwrap())
+        //         }
+        //     }
+        // }
+    }
+
+    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> PolarsResult<Self>
+    where
+        Self: std::marker::Sized,
+        I: TakeIterator,
+        INulls: TakeIteratorNulls,
+    {
+        indices.check_bounds(self.len())?;
+        // Safety:
+        // just checked bounds
+        Ok(unsafe { self.take_unchecked(indices) })
+    }
+}
+
 #[cfg(feature = "object")]
 impl<T: PolarsObject> ChunkTake for ObjectChunked<T> {
     unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self

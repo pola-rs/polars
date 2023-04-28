@@ -90,6 +90,8 @@ impl ChunkVar<f64> for Float64Chunked {
 
 impl ChunkVar<String> for Utf8Chunked {}
 impl ChunkVar<Series> for ListChunked {}
+#[cfg(feature = "dtype-fixed-size-list")]
+impl ChunkVar<Series> for FixedSizeListChunked {}
 #[cfg(feature = "object")]
 impl<T: PolarsObject> ChunkVar<Series> for ObjectChunked<T> {}
 impl ChunkVar<bool> for BooleanChunked {}

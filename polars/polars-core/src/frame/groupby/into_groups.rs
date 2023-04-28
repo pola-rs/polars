@@ -358,6 +358,75 @@ impl IntoGroupsProxy for ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-fixed-size-list")]
+impl IntoGroupsProxy for FixedSizeListChunked {
+    #[allow(clippy::needless_lifetimes)]
+    #[allow(unused_variables)]
+    fn group_tuples<'a>(&'a self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
+        #[cfg(feature = "groupby_list")]
+        {
+            polars_ensure!(
+                self.inner_dtype().to_physical().is_numeric(),
+                ComputeError: "grouping on list type is only allowed if the inner type is numeric"
+            );
+
+            let hb = RandomState::default();
+            let null_h = get_null_hash_value(hb.clone());
+
+            let arr_to_hashes = |ca: &FixedSizeListChunked| {
+                let mut out = Vec::with_capacity(ca.len());
+
+                for arr in ca.downcast_iter() {
+                    out.extend(numeric_list_bytes_iter(arr)?.map(|opt_bytes| {
+                        let hash = match opt_bytes {
+                            Some(s) => hb.hash_single(s),
+                            None => null_h,
+                        };
+
+                        // Safety:
+                        // the underlying data is tied to self
+                        unsafe {
+                            std::mem::transmute::<BytesHash<'_>, BytesHash<'a>>(BytesHash::new(
+                                opt_bytes, hash,
+                            ))
+                        }
+                    }))
+                }
+                Ok(out)
+            };
+
+            if multithreaded {
+                let n_partitions = _set_partition_size();
+                let split = _split_offsets(self.len(), n_partitions);
+
+                let groups: PolarsResult<_> = POOL.install(|| {
+                    let bytes_hashes = split
+                        .into_par_iter()
+                        .map(|(offset, len)| {
+                            let ca = self.slice(offset as i64, len);
+                            arr_to_hashes(&ca)
+                        })
+                        .collect::<PolarsResult<Vec<_>>>()?;
+                    let bytes_hashes = bytes_hashes.iter().collect::<Vec<_>>();
+                    Ok(groupby_threaded_slice(
+                        bytes_hashes,
+                        n_partitions as u64,
+                        sorted,
+                    ))
+                });
+                groups
+            } else {
+                let hashes = arr_to_hashes(self)?;
+                Ok(groupby(hashes.iter(), sorted))
+            }
+        }
+        #[cfg(not(feature = "groupby_list"))]
+        {
+            panic!("activate 'groupby_list' feature")
+        }
+    }
+}
+
 #[cfg(feature = "object")]
 impl<T> IntoGroupsProxy for ObjectChunked<T>
 where

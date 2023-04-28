@@ -101,6 +101,44 @@ impl ChunkFullNull for ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-fixed-size-list")]
+impl FixedSizeListChunked {
+    pub fn full_null_with_dtype(
+        name: &str,
+        length: usize,
+        inner_dtype: &DataType,
+    ) -> FixedSizeListChunked {
+        let arr = new_null_array(
+            ArrowDataType::LargeList(Box::new(ArrowField::new(
+                "item",
+                inner_dtype.to_arrow(),
+                true,
+            ))),
+            length,
+        );
+        unsafe { FixedSizeListChunked::from_chunks(name, vec![arr]) }
+    }
+}
+
+#[cfg(feature = "dtype-fixed-size-list")]
+impl ChunkFull<&Series> for FixedSizeListChunked {
+    fn full(name: &str, value: &Series, length: usize) -> FixedSizeListChunked {
+        let mut builder =
+            get_list_builder(value.dtype(), value.len() * length, length, name).unwrap();
+        for _ in 0..length {
+            builder.append_series(value)
+        }
+        builder.finish()
+    }
+}
+
+#[cfg(feature = "dtype-fixed-size-list")]
+impl ChunkFullNull for FixedSizeListChunked {
+    fn full_null(name: &str, length: usize) -> FixedSizeListChunked {
+        FixedSizeListChunked::full_null_with_dtype(name, length, &DataType::Null)
+    }
+}
+
 impl ListChunked {
     pub fn full_null_with_dtype(name: &str, length: usize, inner_dtype: &DataType) -> ListChunked {
         let arr = new_null_array(

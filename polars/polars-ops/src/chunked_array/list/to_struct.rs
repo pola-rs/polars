@@ -82,3 +82,5 @@ pub trait ToStruct: AsList {
 }
 
 impl ToStruct for ListChunked {}
+#[cfg(feature = "dtype-fixed-size-list")]
+impl ToStruct for FixedSizeListChunked {}

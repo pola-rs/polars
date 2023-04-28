@@ -29,21 +29,18 @@ impl private::PrivateSeries for SeriesWrap<FixedSizeListChunked> {
         self.0.equal_element(idx_self, idx_other, other)
     }
 
-    // #[cfg(feature = "zip_with")]
-    // fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
-    //     todo!();
-    //     // ChunkZip::zip_with(&self.0, mask, other.as_ref().as_ref()).map(|ca| ca.into_series())
-    // }
+    #[cfg(feature = "zip_with")]
+    fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
+        ChunkZip::zip_with(&self.0, mask, other.as_ref().as_ref()).map(|ca| ca.into_series())
+    }
 
-    // unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
-    //     todo!();
-    //     // self.0.agg_list(groups)
-    // }
+    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+        self.0.agg_list(groups)
+    }
 
-    // fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
-    //     todo!();
-    //     // IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
-    // }
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
+        IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
+    }
 }
 
 impl SeriesTrait for SeriesWrap<FixedSizeListChunked> {
@@ -76,25 +73,21 @@ impl SeriesTrait for SeriesWrap<FixedSizeListChunked> {
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), extend);
-        todo!();
-        // self.0.extend(other.as_ref().as_ref())
+        self.0.extend(other.as_ref().as_ref())
     }
 
     fn filter(&self, filter: &BooleanChunked) -> PolarsResult<Series> {
-        todo!();
-        // ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
+        ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
     }
 
     #[cfg(feature = "chunked_ids")]
     unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Series {
-        todo!();
-        // self.0.take_chunked_unchecked(by, sorted).into_series()
+        self.0.take_chunked_unchecked(by, sorted).into_series()
     }
 
     #[cfg(feature = "chunked_ids")]
     unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
-        todo!();
-        // self.0.take_opt_chunked_unchecked(by).into_series()
+        self.0.take_opt_chunked_unchecked(by).into_series()
     }
 
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
@@ -103,23 +96,19 @@ impl SeriesTrait for SeriesWrap<FixedSizeListChunked> {
         } else {
             Cow::Borrowed(indices)
         };
-        todo!();
-        // Ok(ChunkTake::take(&self.0, (&*indices).into())?.into_series())
+        Ok(ChunkTake::take(&self.0, (&*indices).into())?.into_series())
     }
 
     fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
-        todo!();
-        // Ok(ChunkTake::take(&self.0, iter.into())?.into_series())
+        Ok(ChunkTake::take(&self.0, iter.into())?.into_series())
     }
 
     fn take_every(&self, n: usize) -> Series {
-        todo!();
-        // self.0.take_every(n).into_series()
+        self.0.take_every(n).into_series()
     }
 
     unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
-        todo!();
-        // ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
+        ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
     }
 
     unsafe fn take_unchecked(&self, idx: &IdxCa) -> PolarsResult<Series> {
@@ -128,13 +117,11 @@ impl SeriesTrait for SeriesWrap<FixedSizeListChunked> {
         } else {
             Cow::Borrowed(idx)
         };
-        todo!();
-        // Ok(ChunkTake::take_unchecked(&self.0, (&*idx).into()).into_series())
+        Ok(ChunkTake::take_unchecked(&self.0, (&*idx).into()).into_series())
     }
 
     unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
-        todo!();
-        // ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
+        ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
     }
 
     #[cfg(feature = "take_opt_iter")]
@@ -151,25 +138,21 @@ impl SeriesTrait for SeriesWrap<FixedSizeListChunked> {
     }
 
     fn new_from_index(&self, index: usize, length: usize) -> Series {
-        todo!();
-        // ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
+        ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
     }
 
     fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
-        todo!();
-        // self.0.cast(data_type)
+        self.0.cast(data_type)
     }
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {
-        todo!();
-        // self.0.get_any_value(index)
+        self.0.get_any_value(index)
     }
 
     #[inline]
     #[cfg(feature = "private")]
     unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
-        todo!();
-        // self.0.get_any_value_unchecked(index)
+        self.0.get_any_value_unchecked(index)
     }
 
     fn null_count(&self) -> usize {
@@ -189,31 +172,26 @@ impl SeriesTrait for SeriesWrap<FixedSizeListChunked> {
     }
 
     fn reverse(&self) -> Series {
-        todo!();
-        // ChunkReverse::reverse(&self.0).into_series()
+        ChunkReverse::reverse(&self.0).into_series()
     }
 
-    // fn as_single_ptr(&mut self) -> PolarsResult<usize> {
-    //     self.0.as_single_ptr()
-    // }
+    fn as_single_ptr(&mut self) -> PolarsResult<usize> {
+        self.0.as_single_ptr()
+    }
 
     fn shift(&self, periods: i64) -> Series {
-        todo!();
-        // ChunkShift::shift(&self.0, periods).into_series()
+        ChunkShift::shift(&self.0, periods).into_series()
     }
 
-    // fn _sum_as_series(&self) -> Series {
-    //     ChunkAggSeries::sum_as_series(&self.0)
-    // }
-    // fn max_as_series(&self) -> Series {
-    //     ChunkAggSeries::max_as_series(&self.0)
-    // }
-    // fn min_as_series(&self) -> Series {
-    //     ChunkAggSeries::min_as_series(&self.0)
-    // }
-    // fn fmt_list(&self) -> String {
-    //     FmtList::fmt_list(&self.0)
-    // }
+    fn _sum_as_series(&self) -> Series {
+        ChunkAggSeries::sum_as_series(&self.0)
+    }
+    fn max_as_series(&self) -> Series {
+        ChunkAggSeries::max_as_series(&self.0)
+    }
+    fn min_as_series(&self) -> Series {
+        ChunkAggSeries::min_as_series(&self.0)
+    }
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }

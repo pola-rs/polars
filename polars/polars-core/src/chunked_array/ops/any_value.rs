@@ -240,6 +240,18 @@ impl ChunkAnyValue for ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-fixed-size-list")]
+impl ChunkAnyValue for FixedSizeListChunked {
+    #[inline]
+    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
+        get_any_value_unchecked!(self, index)
+    }
+
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
+        get_any_value!(self, index)
+    }
+}
+
 #[cfg(feature = "object")]
 impl<T: PolarsObject> ChunkAnyValue for ObjectChunked<T> {
     #[inline]

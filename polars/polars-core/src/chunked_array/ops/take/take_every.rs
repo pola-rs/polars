@@ -59,6 +59,19 @@ impl ChunkTakeEvery<ListType> for ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-fixed-size-list")]
+impl ChunkTakeEvery<FixedSizeListType> for FixedSizeListChunked {
+    fn take_every(&self, n: usize) -> FixedSizeListChunked {
+        let mut ca: Self = if !self.has_validity() {
+            self.into_no_null_iter().step_by(n).collect()
+        } else {
+            self.into_iter().step_by(n).collect()
+        };
+        ca.rename(self.name());
+        ca
+    }
+}
+
 #[cfg(feature = "object")]
 impl<T: PolarsObject> ChunkTakeEvery<ObjectType<T>> for ObjectChunked<T> {
     fn take_every(&self, _n: usize) -> ObjectChunked<T> {

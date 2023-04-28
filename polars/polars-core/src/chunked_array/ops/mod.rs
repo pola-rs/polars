@@ -639,6 +639,23 @@ impl ChunkExpandAtIndex<ListType> for ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-fixed-size-list")]
+impl ChunkExpandAtIndex<FixedSizeListType> for FixedSizeListChunked {
+    fn new_from_index(&self, index: usize, length: usize) -> FixedSizeListChunked {
+        let opt_val = self.get(index);
+        match opt_val {
+            Some(val) => {
+                let mut ca = FixedSizeListChunked::full(self.name(), &val, length);
+                ca.to_logical(self.inner_dtype());
+                ca
+            }
+            None => {
+                FixedSizeListChunked::full_null_with_dtype(self.name(), length, &self.inner_dtype())
+            }
+        }
+    }
+}
+
 #[cfg(feature = "object")]
 impl<T: PolarsObject> ChunkExpandAtIndex<ObjectType<T>> for ObjectChunked<T> {
     fn new_from_index(&self, index: usize, length: usize) -> ObjectChunked<T> {
