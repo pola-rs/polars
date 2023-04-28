@@ -551,17 +551,35 @@ impl Display for &dyn PhysicalExpr {
 /// This is used to filter rows during the scan of file.
 pub struct PhysicalIoHelper {
     pub expr: Arc<dyn PhysicalExpr>,
+    pub has_window_function: bool,
 }
 
 impl PhysicalIoExpr for PhysicalIoHelper {
     fn evaluate(&self, df: &DataFrame) -> PolarsResult<Series> {
-        self.expr.evaluate(df, &Default::default())
+        let mut state: ExecutionState = Default::default();
+        if self.has_window_function {
+            state.insert_has_window_function_flag();
+        }
+        self.expr.evaluate(df, &state)
     }
 
     #[cfg(feature = "parquet")]
     fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
         self.expr.as_stats_evaluator()
     }
+}
+
+pub(super) fn phys_expr_to_io_expr(expr: Arc<dyn PhysicalExpr>) -> Arc<dyn PhysicalIoExpr> {
+    let has_window_function = if let Some(expr) = expr.as_expression() {
+        expr.into_iter()
+            .any(|expr| matches!(expr, Expr::Window { .. }))
+    } else {
+        false
+    };
+    Arc::new(PhysicalIoHelper {
+        expr,
+        has_window_function,
+    }) as Arc<dyn PhysicalIoExpr>
 }
 
 pub trait PartitionedAggregation: Send + Sync + PhysicalExpr {
