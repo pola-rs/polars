@@ -12,15 +12,13 @@ from polars.testing.parametric import column, dataframes
 
 
 @given(df=dataframes())
-@settings(max_examples=50)
 def test_repr(df: pl.DataFrame) -> None:
     assert isinstance(repr(df), str)
 
 
 @given(df=dataframes())
-@settings(max_examples=50)
 def test_equal(df: pl.DataFrame) -> None:
-    assert_frame_equal(df, df, check_exact=True)
+    assert_frame_equal(df, df.clone(), check_exact=True)
 
 
 @given(

@@ -451,7 +451,7 @@ def dataframes(
     min_size: int | None = 0,
     max_size: int | None = MAX_DATA_SIZE,
     chunked: bool | None = None,
-    include_cols: Sequence[column] | None = None,
+    include_cols: Sequence[column] | column | None = None,
     null_probability: float | dict[str, float] = 0.0,
     allow_infinities: bool = True,
     allowed_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
@@ -574,6 +574,8 @@ def dataframes(
         allowed_dtypes = [allowed_dtypes]
     if isinstance(excluded_dtypes, (DataType, DataTypeClass)):
         excluded_dtypes = [excluded_dtypes]
+    if isinstance(include_cols, column):
+        include_cols = [include_cols]
 
     selectable_dtypes = [
         dtype
@@ -598,7 +600,7 @@ def dataframes(
                 coldefs = list(cols)
 
             # append any explicitly provided cols
-            coldefs.extend(include_cols or ())
+            coldefs.extend(include_cols or ())  # type: ignore[arg-type]
 
             # assign dataframe/series size
             series_size = (
