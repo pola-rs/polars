@@ -4,6 +4,10 @@ use super::super::executors::{self, Executor};
 use super::*;
 use crate::utils::*;
 
+fn has_windows(expr: &[Node], expr_arena: &Arena<AExpr>) -> bool {
+    expr.iter().any(|node| has_aexpr_window(*node, expr_arena))
+}
+
 fn partitionable_gb(
     keys: &[Node],
     aggs: &[Node],
@@ -165,8 +169,13 @@ pub fn create_physical_plan(
         }
         Selection { input, predicate } => {
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
+            let has_windows = has_windows(&[predicate], expr_arena);
             let predicate = create_physical_expr(predicate, Context::Default, expr_arena, None)?;
-            Ok(Box::new(executors::FilterExec::new(predicate, input)))
+            Ok(Box::new(executors::FilterExec::new(
+                predicate,
+                input,
+                has_windows,
+            )))
         }
         #[cfg(feature = "csv")]
         CsvScan {
@@ -239,7 +248,7 @@ pub fn create_physical_plan(
             ..
         } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
-            let has_windows = expr.iter().any(|node| has_aexpr_window(*node, expr_arena));
+            let has_windows = has_windows(&expr, expr_arena);
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
             let phys_expr = create_physical_expressions(
                 &expr,
@@ -264,7 +273,7 @@ pub fn create_physical_plan(
         } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
 
-            let has_windows = expr.iter().any(|node| has_aexpr_window(*node, expr_arena));
+            let has_windows = has_windows(&expr, expr_arena);
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
             let phys_expr = create_physical_expressions(
                 &expr,
@@ -284,17 +293,21 @@ pub fn create_physical_plan(
         DataFrameScan {
             df,
             projection,
-            selection,
+            selection: predicate,
             schema,
             ..
         } => {
-            let selection = selection
+            let predicate_has_windows = predicate
+                .map(|node| has_windows(&[node], expr_arena))
+                .unwrap_or(false);
+            let selection = predicate
                 .map(|pred| create_physical_expr(pred, Context::Default, expr_arena, Some(&schema)))
-                .map_or(Ok(None), |v| v.map(Some))?;
+                .transpose()?;
             Ok(Box::new(executors::DataFrameExec {
                 df,
                 projection,
                 selection,
+                predicate_has_windows,
             }))
         }
         AnonymousScan {
@@ -478,7 +491,7 @@ pub fn create_physical_plan(
         }
         HStack { input, exprs, .. } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
-            let has_windows = exprs.iter().any(|node| has_aexpr_window(*node, expr_arena));
+            let has_windows = has_windows(&exprs, expr_arena);
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
             let phys_expr = create_physical_expressions(
                 &exprs,

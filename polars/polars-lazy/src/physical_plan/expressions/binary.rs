@@ -166,9 +166,11 @@ impl PhysicalExpr for BinaryExpr {
         // state, so we don't let them run in parallel as they race
         // they also saturate the thread pool by themselves, so that's fine
         let (lhs, rhs) = if state.has_window() {
+            let mut state = state.split();
+            state.remove_cache_window_flag();
             (
-                self.left.evaluate(df, state),
-                self.right.evaluate(df, state),
+                self.left.evaluate(df, &state),
+                self.right.evaluate(df, &state),
             )
         } else {
             POOL.install(|| {

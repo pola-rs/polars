@@ -266,6 +266,7 @@ impl ExecutionState {
             flags
         });
     }
+    // this will trigger some conservative
     pub(super) fn insert_has_window_function_flag(&mut self) {
         self.set_flags(&|mut flags| {
             flags.insert(StateFlags::HAS_WINDOW);
