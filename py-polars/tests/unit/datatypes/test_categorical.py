@@ -380,6 +380,18 @@ def test_categorical_fill_null_existing_category() -> None:
     }
 
 
+def test_categorical_fill_null_stringcache() -> None:
+    with pl.StringCache():
+        df = pl.LazyFrame(
+            {"index": [1, 2, 3], "cat": ["a", "b", None]},
+            schema={"index": pl.Int64(), "cat": pl.Categorical()},
+        )
+        a = df.select(pl.col("cat").fill_null("hi")).collect()
+
+    assert a.to_dict(False) == {"cat": ["a", "b", "hi"]}
+    assert a.dtypes == [pl.Categorical]
+
+
 @typing.no_type_check
 def test_fast_unique_flag_from_arrow() -> None:
     df = pl.DataFrame(
