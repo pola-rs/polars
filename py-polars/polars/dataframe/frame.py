@@ -8172,7 +8172,7 @@ class DataFrame:
                 # note: 'ns' precision instantiates values as pandas types - avoid
                 and not any(
                     (getattr(tp, "time_unit", None) == "ns")
-                    for tp in unpack_dtypes(self.dtypes)
+                    for tp in unpack_dtypes(*self.dtypes)
                 )
             )
             for offset in range(0, self.height, buffer_size):
