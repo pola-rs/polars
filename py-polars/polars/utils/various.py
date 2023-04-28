@@ -28,7 +28,7 @@ from polars.datatypes import (
 )
 
 if TYPE_CHECKING:
-    from polars._reexport import DataFrame
+    from polars.dataframe import DataFrame
     from polars.series import Series
 
 

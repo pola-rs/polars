@@ -4179,7 +4179,7 @@ class Series:
 
     def shift_and_fill(
         self,
-        fill_value: int | pl.Expr,
+        fill_value: int | Expr,
         *,
         periods: int = 1,
     ) -> Series:
