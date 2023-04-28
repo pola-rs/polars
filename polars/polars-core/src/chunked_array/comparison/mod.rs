@@ -947,7 +947,7 @@ impl ChunkCompare<&StructChunked> for StructChunked {
     fn not_equal(&self, rhs: &StructChunked) -> BooleanChunked {
         use std::ops::BitOr;
         if self.len() != rhs.len() || self.fields().len() != rhs.fields().len() {
-            BooleanChunked::full("", false, self.len())
+            BooleanChunked::full("", true, self.len())
         } else {
             self.fields()
                 .iter()

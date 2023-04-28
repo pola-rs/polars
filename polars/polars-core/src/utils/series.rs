@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use crate::series::unstable::UnstableSeries;
+use crate::series::IsSorted;
 
 /// Transform to physical type and coerce floating point and similar sized integer to a bit representation
 /// to reduce compiler bloat
@@ -28,4 +29,19 @@ where
     let mut us = UnstableSeries::new(&mut container);
 
     f(&mut us)
+}
+
+pub fn ensure_sorted_arg(s: &Series, operation: &str) {
+    if matches!(s.is_sorted_flag(), IsSorted::Not) {
+        eprintln!(
+            "argument in operation '{}' is not explicitly sorted
+
+- If your data is ALREADY sorted, set the sorted flag with: '.set_sorted()'.
+- If your data is NOT sorted, sort the 'expr/series/column' first.
+
+This might become an error in a future version.
+    ",
+            operation
+        );
+    }
 }

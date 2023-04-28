@@ -4,7 +4,10 @@ use super::*;
 
 /// Characterizes the name and the [`DataType`] of a column.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    any(feature = "serde", feature = "serde-lazy"),
+    derive(Serialize, Deserialize)
+)]
 pub struct Field {
     pub name: SmartString,
     pub dtype: DataType,
@@ -126,8 +129,7 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::Float64 => DataType::Float64,
             #[cfg(feature = "dtype-fixed-size-list")]
             ArrowDataType::FixedSizeList(f, size) => DataType::FixedSizeList(Box::new(f.data_type().into()), *size),
-            ArrowDataType::LargeList(f) => DataType::List(Box::new(f.data_type().into())),
-            ArrowDataType::List(f) => DataType::List(Box::new(f.data_type().into())),
+            ArrowDataType::LargeList(f) | ArrowDataType::List(f) => DataType::List(Box::new(f.data_type().into())),
             ArrowDataType::Date32 => DataType::Date,
             ArrowDataType::Timestamp(tu, tz) => DataType::Datetime(tu.into(), tz.clone()),
             ArrowDataType::Duration(tu) => DataType::Duration(tu.into()),
@@ -139,8 +141,7 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::Dictionary(_, _, _) => DataType::Categorical(None),
             #[cfg(feature = "dtype-struct")]
             ArrowDataType::Struct(fields) => {
-                let fields: Vec<Field> = fields.iter().map(|fld| fld.into()).collect();
-                DataType::Struct(fields)
+                DataType::Struct(fields.iter().map(|fld| fld.into()).collect())
             }
             ArrowDataType::Extension(name, _, _) if name == "POLARS_EXTENSION_TYPE" => {
                 #[cfg(feature = "object")]

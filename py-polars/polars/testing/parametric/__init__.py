@@ -3,12 +3,16 @@ from typing import Any
 from polars.dependencies import _HYPOTHESIS_AVAILABLE
 
 if _HYPOTHESIS_AVAILABLE:
-    from polars.testing._parametric import (
+    from polars.testing.parametric.primitives import (
         column,
         columns,
         dataframes,
         series,
-        strategy_dtypes,
+    )
+    from polars.testing.parametric.profiles import load_profile, set_profile
+    from polars.testing.parametric.strategies import (
+        create_list_strategy,
+        scalar_strategies,
     )
 else:
 
@@ -21,7 +25,10 @@ else:
 __all__ = [
     "column",
     "columns",
+    "create_list_strategy",
     "dataframes",
+    "load_profile",
+    "scalar_strategies",
     "series",
-    "strategy_dtypes",
+    "set_profile",
 ]

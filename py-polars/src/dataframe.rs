@@ -68,11 +68,11 @@ impl PyDataFrame {
             }
             _ => fld,
         });
-        let mut schema = Schema::from(fields);
+        let mut schema = Schema::from_iter(fields);
 
         if let Some(schema_overwrite) = schema_overwrite {
             for (i, (name, dtype)) in schema_overwrite.into_iter().enumerate() {
-                if let Some((name_, dtype_)) = schema.get_index_mut(i) {
+                if let Some((name_, dtype_)) = schema.get_at_index_mut(i) {
                     *name_ = name;
 
                     // if user sets dtype unknown, we use the inferred datatype
@@ -133,7 +133,7 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[allow(clippy::too_many_arguments)]
-    #[cfg(feature = "csv-file")]
+    #[cfg(feature = "csv")]
     #[pyo3(signature = (
         py_f, infer_schema_length, chunk_size, has_header, ignore_errors, n_rows,
         skip_rows, projection, separator, rechunk, columns, encoding, n_threads, path,
@@ -184,11 +184,13 @@ impl PyDataFrame {
         };
 
         let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {
-            let fields = overwrite_dtype.iter().map(|(name, dtype)| {
-                let dtype = dtype.0.clone();
-                Field::new(name, dtype)
-            });
-            Schema::from(fields)
+            overwrite_dtype
+                .iter()
+                .map(|(name, dtype)| {
+                    let dtype = dtype.0.clone();
+                    Field::new(name, dtype)
+                })
+                .collect::<Schema>()
         });
 
         let overwrite_dtype_slice = overwrite_dtype_slice.map(|overwrite_dtype| {

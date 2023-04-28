@@ -1,3 +1,5 @@
+import typing
+
 import pytest
 
 import polars as pl
@@ -142,7 +144,7 @@ def test_lazy_map_schema() -> None:
 def test_join_as_of_by_schema() -> None:
     a = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy()
     b = pl.DataFrame({"a": [1], "b": [2], "d": [4]}).lazy()
-    q = a.join_asof(b, on="a", by="b")
+    q = a.join_asof(b, on=pl.col("a").set_sorted(), by="b")
     assert q.collect().columns == q.columns
 
 
@@ -375,7 +377,79 @@ def test_deep_subexpression_f32_schema_7129() -> None:
     ).dtypes == [pl.Float32]
 
 
-def test_bool_sum_schema() -> None:
-    assert pl.LazyFrame({"a": [True, False]}).select(pl.col("a").sum()).schema == {
-        "a": pl.UInt32
-    }
+def test_absence_off_null_prop_8224() -> None:
+    # a reminder to self to not do null propagation
+    # it is inconsistent and makes output dtype
+    # dependent of the data, big no!
+
+    def sub_col_min(column: str, min_column: str) -> pl.Expr:
+        return pl.col(column).sub(pl.col(min_column).min())
+
+    df = pl.DataFrame(
+        {
+            "group": [1, 1, 2, 2],
+            "vals_num": [10.0, 11.0, 12.0, 13.0],
+            "vals_partial": [None, None, 12.0, 13.0],
+            "vals_null": [None, None, None, None],
+        }
+    )
+
+    q = (
+        df.lazy()
+        .groupby("group")
+        .agg(
+            [
+                sub_col_min("vals_num", "vals_num").alias("sub_num"),
+                sub_col_min("vals_num", "vals_partial").alias("sub_partial"),
+                sub_col_min("vals_num", "vals_null").alias("sub_null"),
+            ]
+        )
+    )
+
+    assert q.collect().dtypes == [
+        pl.Int64,
+        pl.List(pl.Float64),
+        pl.List(pl.Float64),
+        pl.List(pl.Float64),
+    ]
+
+
+@typing.no_type_check
+def test_schemas() -> None:
+    # add all expression output tests here:
+    args = [
+        # coalesce
+        {
+            "data": {"x": ["x"], "y": ["y"]},
+            "expr": pl.coalesce(pl.col("x"), pl.col("y")),
+            "expected_select": {"x": pl.Utf8},
+            "expected_gb": {"x": pl.List(pl.Utf8)},
+        },
+        # boolean sum
+        {
+            "data": {"x": [True]},
+            "expr": pl.col("x").sum(),
+            "expected_select": {"x": pl.UInt32},
+            "expected_gb": {"x": pl.UInt32},
+        },
+    ]
+    for arg in args:
+        df = pl.DataFrame(arg["data"])
+
+        # test selection schema
+        schema = df.select(arg["expr"]).schema
+        for key, dtype in arg["expected_select"].items():
+            assert schema[key] == dtype
+
+        # test groupby schema
+        schema = df.groupby(pl.lit(1)).agg(arg["expr"]).schema
+        for key, dtype in arg["expected_gb"].items():
+            assert schema[key] == dtype
+
+
+def test_list_null_constructor_schema() -> None:
+    expected = pl.List(pl.Null)
+    assert pl.Series([[]]).dtype == expected
+    assert pl.Series([[]], dtype=pl.List).dtype == expected
+    assert pl.DataFrame({"a": [[]]}).dtypes[0] == expected
+    assert pl.DataFrame(schema={"a": pl.List}).dtypes[0] == expected

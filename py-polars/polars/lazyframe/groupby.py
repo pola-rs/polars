@@ -119,6 +119,10 @@ class LazyGroupBy(Generic[LDF]):
         └─────┴───────┴────────────────┘
 
         """
+        if isinstance(aggs, dict):
+            raise ValueError(
+                f"'aggs' argument should be one or multiple expressions, got: '{aggs}'."
+            )
         if aggs is None and not named_aggs:
             raise ValueError("Expected at least one of 'aggs' or '**named_aggs'")
 

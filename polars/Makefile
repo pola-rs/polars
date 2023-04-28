@@ -8,6 +8,10 @@ fmt:
 	cargo fmt --all
 	dprint fmt
 
+generate_test_files:
+	cargo run -p polars-cli "select * from read_csv('../examples/datasets/foods1.csv')" -o parquet > ../examples/datasets/foods1.parquet
+	cargo run -p polars-cli "select * from read_csv('../examples/datasets/foods1.csv')" -o arrow > ../examples/datasets/foods1.ipc
+
 check:
 	cargo check --all-features \
 		-p polars-core \
@@ -21,16 +25,16 @@ check:
 
 clippy:
 	cargo clippy --all-features \
-	    -p polars-core \
-	    -p polars-io \
-	    -p polars-lazy \
-	    -p polars-arrow \
-	    -p polars-utils \
-	    -p polars-ops \
-	    -p polars-error \
-	    -p polars-row \
-	    -p polars-time \
-			-p polars-sql
+		-p polars-core \
+		-p polars-io \
+		-p polars-lazy \
+		-p polars-arrow \
+		-p polars-utils \
+		-p polars-ops \
+		-p polars-error \
+		-p polars-row \
+		-p polars-time \
+		-p polars-sql
 
 clippy-default:
 	cargo clippy
@@ -70,13 +74,14 @@ test-doc:
 	    -p polars-lazy \
 	    -p polars-io \
 	    -p polars-core \
-	    -p polars-arrow
+	    -p polars-arrow \
+			-p polars-sql
 
 pre-commit: fmt clippy clippy-default  ## Run autoformatting and linting
 
 
 check-features:
-	cargo hack check --each-feature --no-dev-deps --features private
+	cargo hack check --each-feature --no-dev-deps --features private 
 
 bench-save:
 	cargo bench --features=random --bench $(BENCH) -- --save-baseline $(SAVE)
@@ -93,6 +98,7 @@ doctest:
 	cargo doc --all-features -p polars-io
 	cargo doc --all-features -p polars-lazy
 	cargo doc --features=docs-selection -p polars
+	cargo doc --all-features -p polars-sql
 
 publish:
 #	cargo publish --allow-dirty -p polars-error

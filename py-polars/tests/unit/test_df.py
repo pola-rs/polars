@@ -1299,7 +1299,14 @@ def test_describe() -> None:
             ("median", 1.0, None, None),
         ]
 
-    assert df.describe(percentiles=(0.2, 0.4, 0.6, 0.8)).rows() == [
+    described = df.describe(percentiles=(0.2, 0.4, 0.6, 0.8))
+    assert described.schema == {
+        "describe": pl.Utf8,
+        "numerical": pl.Float64,
+        "struct": pl.Utf8,
+        "list": pl.Utf8,
+    }
+    assert described.rows() == [
         ("count", 4.0, "4", "4"),
         ("null_count", 1.0, "1", "1"),
         ("mean", 1.3333333333333333, None, None),
@@ -1710,8 +1717,12 @@ def test_join_dates() -> None:
 
 
 def test_asof_cross_join() -> None:
-    left = pl.DataFrame({"a": [-10, 5, 10], "left_val": ["a", "b", "c"]})
-    right = pl.DataFrame({"a": [1, 2, 3, 6, 7], "right_val": [1, 2, 3, 6, 7]})
+    left = pl.DataFrame({"a": [-10, 5, 10], "left_val": ["a", "b", "c"]}).with_columns(
+        pl.col("a").set_sorted()
+    )
+    right = pl.DataFrame(
+        {"a": [1, 2, 3, 6, 7], "right_val": [1, 2, 3, 6, 7]}
+    ).with_columns(pl.col("a").set_sorted())
 
     # only test dispatch of asof join
     out = left.join_asof(right, on="a")
@@ -2656,15 +2667,6 @@ def test_is_between_data_types() -> None:
     )
 
 
-def test_is_in() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3]})
-    assert df.select(pl.col("a").is_in([1, 2]))["a"].to_list() == [
-        True,
-        True,
-        False,
-    ]
-
-
 def test_empty_is_in() -> None:
     df_empty_isin = pl.DataFrame({"foo": ["a", "b", "c", "d"]}).filter(
         pl.col("foo").is_in([])
@@ -2698,7 +2700,7 @@ def test_join_suffixes() -> None:
         # no need for an assert, we error if wrong
         df_a.join(df_b, on="A", suffix="_y", how=how)["B_y"]
 
-    df_a.join_asof(df_b, on="A", suffix="_y")["B_y"]
+    df_a.join_asof(df_b, on=pl.col("A").set_sorted(), suffix="_y")["B_y"]
 
 
 def test_preservation_of_subclasses_after_groupby_statements() -> None:
@@ -2753,9 +2755,9 @@ def test_asof_by_multiple_keys() -> None:
         }
     )
 
-    result = lhs.join_asof(rhs, on="a", by=["by", "by2"], strategy="backward").select(
-        ["a", "by"]
-    )
+    result = lhs.join_asof(
+        rhs, on=pl.col("a").set_sorted(), by=["by", "by2"], strategy="backward"
+    ).select(["a", "by"])
     expected = pl.DataFrame({"a": [-20, -19, 8, 12, 14], "by": [1, 1, 2, 2, 2]})
     assert_frame_equal(result, expected)
 
@@ -3407,6 +3409,18 @@ def test_glimpse(capsys: Any) -> None:
     # remove the last newline on the capsys
     assert capsys.readouterr().out[:-1] == expected
 
+    colc = "a" * 96
+    df = pl.DataFrame({colc: [11, 22, 33]})
+    result = df.glimpse(return_as_string=True)
+    expected = textwrap.dedent(
+        """\
+        Rows: 3
+        Columns: 1
+        $ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa... <i64> 11, 22, 33
+        """
+    )
+    assert result == expected
+
 
 def test_item() -> None:
     df = pl.DataFrame({"a": [1]})
@@ -3416,9 +3430,15 @@ def test_item() -> None:
     with pytest.raises(ValueError):
         df.item()
 
+    assert df.item(0, 0) == 1
+    assert df.item(1, "a") == 2
+
     df = pl.DataFrame({"a": [1], "b": [2]})
     with pytest.raises(ValueError):
         df.item()
+
+    assert df.item(0, "a") == 1
+    assert df.item(0, "b") == 2
 
     df = pl.DataFrame({})
     with pytest.raises(ValueError):
@@ -3782,3 +3802,11 @@ def test_window_deadlock() -> None:
             pl.col("random").implode().over("names").alias("random/name"),
         ]
     )
+
+
+def test_sum_empty_column_names() -> None:
+    df = pl.DataFrame({"x": [], "y": []}, schema={"x": pl.Boolean, "y": pl.Boolean})
+    expected = pl.DataFrame(
+        {"x": [0], "y": [0]}, schema={"x": pl.UInt32, "y": pl.UInt32}
+    )
+    assert_frame_equal(df.sum(), expected)

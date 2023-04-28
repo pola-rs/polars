@@ -329,17 +329,28 @@ pub(crate) fn write<W: Write>(
 
         n_rows_finished += total_rows_per_pool_iter;
     }
-
     Ok(())
 }
+
 /// Writes a CSV header to `writer`
 pub(crate) fn write_header<W: Write>(
     writer: &mut W,
     names: &[&str],
     options: &SerializeOptions,
 ) -> PolarsResult<()> {
+    let mut escaped_names: Vec<String> = Vec::with_capacity(names.len());
+    let mut nm: Vec<u8> = vec![];
+
+    for name in names {
+        fmt_and_escape_str(&mut nm, name, options)?;
+        unsafe {
+            // Safety: we know headers will be valid utf8 at this point
+            escaped_names.push(std::str::from_utf8_unchecked(&nm).to_string());
+        }
+        nm.clear();
+    }
     writer.write_all(
-        names
+        escaped_names
             .join(std::str::from_utf8(&[options.delimiter]).unwrap())
             .as_bytes(),
     )?;

@@ -445,12 +445,12 @@ impl ListBuilderTrait for LargeListNullBuilder {
 }
 
 pub fn get_list_builder(
-    dt: &DataType,
+    inner_type_logical: &DataType,
     value_capacity: usize,
     list_capacity: usize,
     name: &str,
 ) -> PolarsResult<Box<dyn ListBuilderTrait>> {
-    let physical_type = dt.to_physical();
+    let physical_type = inner_type_logical.to_physical();
 
     match &physical_type {
         #[cfg(feature = "object")]
@@ -459,13 +459,13 @@ pub fn get_list_builder(
         DataType::Struct(_) => Ok(Box::new(AnonymousOwnedListBuilder::new(
             name,
             list_capacity,
-            Some(physical_type),
+            Some(inner_type_logical.clone()),
         ))),
         DataType::Null => Ok(Box::new(LargeListNullBuilder::with_capacity(list_capacity))),
         DataType::List(_) => Ok(Box::new(AnonymousOwnedListBuilder::new(
             name,
             list_capacity,
-            Some(physical_type),
+            Some(inner_type_logical.clone()),
         ))),
         _ => {
             macro_rules! get_primitive_builder {
@@ -474,7 +474,7 @@ pub fn get_list_builder(
                         name,
                         list_capacity,
                         value_capacity,
-                        dt.clone(),
+                        inner_type_logical.clone(),
                     );
                     Box::new(builder)
                 }};
@@ -515,7 +515,7 @@ pub struct AnonymousListBuilder<'a> {
     name: String,
     builder: AnonymousBuilder<'a>,
     fast_explode: bool,
-    pub dtype: Option<DataType>,
+    inner_dtype: Option<DataType>,
 }
 
 impl Default for AnonymousListBuilder<'_> {
@@ -530,7 +530,7 @@ impl<'a> AnonymousListBuilder<'a> {
             name: name.into(),
             builder: AnonymousBuilder::new(capacity),
             fast_explode: true,
-            dtype: inner_dtype,
+            inner_dtype,
         }
     }
 
@@ -591,18 +591,29 @@ impl<'a> AnonymousListBuilder<'a> {
         // don't use self from here on one
         let slf = std::mem::take(self);
         if slf.builder.is_empty() {
-            ListChunked::full_null_with_dtype(&slf.name, 0, &slf.dtype.unwrap_or(DataType::Null))
+            ListChunked::full_null_with_dtype(
+                &slf.name,
+                0,
+                &slf.inner_dtype.unwrap_or(DataType::Null),
+            )
         } else {
-            let dtype = slf.dtype.map(|dt| dt.to_physical().to_arrow());
-            let arr = slf.builder.finish(dtype.as_ref()).unwrap();
-            let dtype = DataType::from(arr.data_type());
+            let inner_dtype_physical = slf
+                .inner_dtype
+                .as_ref()
+                .map(|dt| dt.to_physical().to_arrow());
+            let arr = slf.builder.finish(inner_dtype_physical.as_ref()).unwrap();
+
+            let list_dtype_logical = match slf.inner_dtype {
+                None => DataType::from(arr.data_type()),
+                Some(dt) => DataType::List(Box::new(dt)),
+            };
             let mut ca = unsafe { ListChunked::from_chunks("", vec![Box::new(arr)]) };
 
             if slf.fast_explode {
                 ca.set_fast_explode();
             }
 
-            ca.field = Arc::new(Field::new(&slf.name, dtype));
+            ca.field = Arc::new(Field::new(&slf.name, list_dtype_logical));
             ca
         }
     }
@@ -657,37 +668,25 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
     fn finish(&mut self) -> ListChunked {
         // don't use self from here on one
         let slf = std::mem::take(self);
-        if slf.builder.is_empty() {
-            // not really empty, there were empty null list added probably e.g. []
-            let real_length = slf.builder.offsets().len() - 1;
-            if real_length > 0 {
-                let dtype = slf.inner_dtype.unwrap_or(NULL_DTYPE).to_arrow();
-                let array = new_null_array(dtype.clone(), real_length);
-                let dtype = ListArray::<i64>::default_datatype(dtype);
-                let array = ListArray::new(dtype, slf.builder.take_offsets().into(), array, None);
-                // safety: same type
-                unsafe { ListChunked::from_chunks(&slf.name, vec![Box::new(array)]) }
-            } else {
-                ListChunked::full_null_with_dtype(
-                    &slf.name,
-                    0,
-                    &slf.inner_dtype.unwrap_or(DataType::Null),
-                )
-            }
-        } else {
-            let inner_dtype = slf.inner_dtype.map(|dt| dt.to_physical().to_arrow());
-            let arr = slf.builder.finish(inner_dtype.as_ref()).unwrap();
-            let dtype = DataType::from(arr.data_type());
-            // safety: same type
-            let mut ca = unsafe { ListChunked::from_chunks("", vec![Box::new(arr)]) };
+        let inner_dtype_physical = slf
+            .inner_dtype
+            .as_ref()
+            .map(|dt| dt.to_physical().to_arrow());
+        let arr = slf.builder.finish(inner_dtype_physical.as_ref()).unwrap();
 
-            if slf.fast_explode {
-                ca.set_fast_explode();
-            }
+        let list_dtype_logical = match slf.inner_dtype {
+            None => DataType::from(arr.data_type()),
+            Some(dt) => DataType::List(Box::new(dt)),
+        };
+        // safety: same type
+        let mut ca = unsafe { ListChunked::from_chunks("", vec![Box::new(arr)]) };
 
-            ca.field = Arc::new(Field::new(&slf.name, dtype));
-            ca
+        if slf.fast_explode {
+            ca.set_fast_explode();
         }
+
+        ca.field = Arc::new(Field::new(&slf.name, list_dtype_logical));
+        ca
     }
 }
 

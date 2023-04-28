@@ -21,7 +21,7 @@ random = ["polars-core/random", "polars-lazy/random"]
 default = [
   "docs",
   "zip_with",
-  "csv-file",
+  "csv",
   "temporal",
   "fmt",
   "dtype-slim",
@@ -30,7 +30,7 @@ ndarray = ["polars-core/ndarray"]
 # serde support for dataframes and series
 serde = ["polars-core/serde"]
 serde-lazy = ["polars-core/serde-lazy", "polars-lazy/serde", "polars-time/serde", "polars-io/serde", "polars-ops/serde"]
-parquet = ["polars-io", "polars-core/parquet", "polars-lazy/parquet", "polars-io/parquet"]
+parquet = ["polars-io", "polars-core/parquet", "polars-lazy/parquet", "polars-io/parquet", "polars-sql/parquet"]
 async = ["polars-lazy/async"]
 aws = ["async", "polars-io/aws"]
 azure = ["async", "polars-io/azure"]
@@ -46,10 +46,10 @@ strings = ["polars-core/strings", "polars-lazy/strings", "polars-ops/strings"]
 object = ["polars-core/object", "polars-lazy/object"]
 
 # support for arrows json parsing
-json = ["polars-io", "polars-io/json", "polars-lazy/json"]
+json = ["polars-io", "polars-io/json", "polars-lazy/json", "polars-sql/json"]
 
 # support for arrows ipc file parsing
-ipc = ["polars-io", "polars-io/ipc", "polars-lazy/ipc"]
+ipc = ["polars-io", "polars-io/ipc", "polars-lazy/ipc", "polars-sql/ipc"]
 
 # support for arrows streaming ipc file parsing
 ipc_streaming = ["polars-io", "polars-io/ipc_streaming", "polars-lazy/ipc"]
@@ -58,7 +58,7 @@ ipc_streaming = ["polars-io", "polars-io/ipc_streaming", "polars-lazy/ipc"]
 avro = ["polars-io", "polars-io/avro"]
 
 # support for arrows csv file parsing
-csv-file = ["polars-io", "polars-io/csv-file", "polars-lazy/csv-file"]
+csv = ["polars-io", "polars-io/csv", "polars-lazy/csv", "polars-sql/csv"]
 
 # slower builds
 performant = [
@@ -158,7 +158,7 @@ test = [
   "rolling_window",
   "rank",
   "round_series",
-  "csv-file",
+  "csv",
   "dtype-categorical",
   "cum_agg",
   "fmt",
@@ -171,7 +171,7 @@ test = [
 ]
 
 # don't use this
-private = ["polars-lazy/private", "polars-core/private", "polars-time/private"]
+private = ["polars-lazy/private", "polars-core/private", "polars-time/private", "polars-sql/private"]
 
 # all opt-in datatypes
 dtype-full = [
@@ -244,7 +244,7 @@ dtype-struct = [
 ]
 
 docs-selection = [
-  "csv-file",
+  "csv",
   "json",
   "parquet",
   "ipc",

@@ -198,7 +198,6 @@ fn decimal_to_digits(v: i128, buf: &mut [u128; 3]) -> usize {
 
 impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
     fn into_py(self, py: Python) -> PyObject {
-        let pl = POLARS.as_ref(py);
         let utils = UTILS.as_ref(py);
         match self.0 {
             AnyValue::UInt8(v) => v.into_py(py),
@@ -224,21 +223,14 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                 s.into_py(py)
             }
             AnyValue::Date(v) => {
-                let convert = utils.getattr("_to_python_datetime").unwrap();
-                let py_date_dtype = pl.getattr("Date").unwrap();
-                convert.call1((v, py_date_dtype)).unwrap().into_py(py)
+                let convert = utils.getattr("_to_python_date").unwrap();
+                convert.call1((v,)).unwrap().into_py(py)
             }
             AnyValue::Datetime(v, time_unit, time_zone) => {
                 let convert = utils.getattr("_to_python_datetime").unwrap();
-                let py_datetime_dtype = pl.getattr("Datetime").unwrap();
                 let time_unit = time_unit.to_ascii();
                 convert
-                    .call1((
-                        v,
-                        py_datetime_dtype,
-                        time_unit,
-                        time_zone.as_ref().map(|s| s.as_str()),
-                    ))
+                    .call1((v, time_unit, time_zone.as_ref().map(|s| s.as_str())))
                     .unwrap()
                     .into_py(py)
             }
@@ -393,7 +385,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     "Float64" => DataType::Float64,
                     #[cfg(feature = "object")]
                     "Object" => DataType::Object(OBJECT_NAME),
-                    "List" => DataType::List(Box::new(DataType::Boolean)),
+                    "List" => DataType::List(Box::new(DataType::Null)),
                     "Null" => DataType::Null,
                     "Unknown" => DataType::Unknown,
                     dt => {
@@ -512,18 +504,14 @@ impl ToPyObject for Wrap<&DurationChunked> {
 
 impl ToPyObject for Wrap<&DatetimeChunked> {
     fn to_object(&self, py: Python) -> PyObject {
-        let (pl, utils) = (POLARS.as_ref(py), UTILS.as_ref(py));
+        let utils = UTILS.as_ref(py);
         let convert = utils.getattr("_to_python_datetime").unwrap();
-        let py_date_dtype = pl.getattr("Datetime").unwrap();
         let time_unit = Wrap(self.0.time_unit()).to_object(py);
         let time_zone = self.0.time_zone().to_object(py);
-        let iter = self.0.into_iter().map(|opt_v| {
-            opt_v.map(|v| {
-                convert
-                    .call1((v, py_date_dtype, &time_unit, &time_zone))
-                    .unwrap()
-            })
-        });
+        let iter = self
+            .0
+            .into_iter()
+            .map(|opt_v| opt_v.map(|v| convert.call1((v, &time_unit, &time_zone)).unwrap()));
         PyList::new(py, iter).into_py(py)
     }
 }
@@ -542,13 +530,12 @@ impl ToPyObject for Wrap<&TimeChunked> {
 
 impl ToPyObject for Wrap<&DateChunked> {
     fn to_object(&self, py: Python) -> PyObject {
-        let (pl, utils) = (POLARS.as_ref(py), UTILS.as_ref(py));
-        let convert = utils.getattr("_to_python_datetime").unwrap();
-        let py_date_dtype = pl.getattr("Date").unwrap();
+        let utils = UTILS.as_ref(py);
+        let convert = utils.getattr("_to_python_date").unwrap();
         let iter = self
             .0
             .into_iter()
-            .map(|opt_v| opt_v.map(|v| convert.call1((v, py_date_dtype)).unwrap()));
+            .map(|opt_v| opt_v.map(|v| convert.call1((v,)).unwrap()));
         PyList::new(py, iter).into_py(py)
     }
 }
@@ -557,7 +544,7 @@ impl ToPyObject for Wrap<&DecimalChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let utils = UTILS.as_ref(py);
         let convert = utils.getattr("_to_python_decimal").unwrap();
-        let py_scale = self.0.scale().to_object(py);
+        let py_scale = (-(self.0.scale() as i32)).to_object(py);
         // if we don't know precision, the only safe bet is to set it to 39
         let py_precision = self.0.precision().unwrap_or(39).to_object(py);
         let iter = self.0.into_iter().map(|opt_v| {
@@ -693,7 +680,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                 vals.push(val)
             }
             Ok(Wrap(AnyValue::StructOwned(Box::new((vals, keys)))))
-        } else if ob.is_instance_of::<PyList>()? {
+        } else if ob.is_instance_of::<PyList>()? || ob.is_instance_of::<PyTuple>()? {
             materialize_list(ob)
         } else if let Ok(value) = ob.extract::<u64>() {
             Ok(AnyValue::UInt64(value).into())
@@ -744,6 +731,11 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                 }
                 "range" => materialize_list(ob),
                 _ => {
+                    // special branch for np.float as this fails isinstance float
+                    if let Ok(value) = ob.extract::<f64>() {
+                        return Ok(AnyValue::Float64(value).into());
+                    }
+
                     // Can't use pyo3::types::PyDateTime with abi3-py37 feature,
                     // so need this workaround instead of `isinstance(ob, datetime)`.
                     let bases = ob.get_type().getattr("__bases__")?.iter()?;

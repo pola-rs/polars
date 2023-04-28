@@ -47,7 +47,7 @@ impl Series {
 
     #[doc(hidden)]
     pub unsafe fn agg_first(&self, groups: &GroupsProxy) -> Series {
-        let out = match groups {
+        let mut out = match groups {
             GroupsProxy::Idx(groups) => {
                 let mut iter = groups.iter().map(|(first, idx)| {
                     if idx.is_empty() {
@@ -76,6 +76,9 @@ impl Series {
                 self.take_opt_iter_unchecked(&mut iter)
             }
         };
+        if groups.is_sorted_flag() {
+            out.set_sorted_flag(self.is_sorted_flag())
+        }
         self.restore_logical(out)
     }
 

@@ -6,7 +6,7 @@ This method gets its own module due to its complexity.
 from __future__ import annotations
 
 import sys
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING
 
 import pytest
@@ -381,7 +381,7 @@ def test_invalid_date_parsing_4898() -> None:
     ).to_list() == [date(2022, 9, 18), None]
 
 
-def test_replace_timezone_invalid_timezone() -> None:
+def test_strptime_invalid_timezone() -> None:
     ts = pl.Series(["2020-01-01 00:00:00+01:00"]).str.strptime(
         pl.Datetime, "%Y-%m-%d %H:%M:%S%z"
     )
@@ -389,7 +389,7 @@ def test_replace_timezone_invalid_timezone() -> None:
         ts.dt.replace_time_zone("foo")
 
 
-def test_replace_time_zone_ambiguous_or_non_existent() -> None:
+def test_strptime_ambiguous_or_non_existent() -> None:
     with pytest.raises(
         ArrowError,
         match="datetime '2021-11-07 01:00:00' is ambiguous in time zone 'US/Central'",
@@ -405,6 +405,7 @@ def test_replace_time_zone_ambiguous_or_non_existent() -> None:
 @pytest.mark.parametrize(
     ("ts", "fmt", "expected"),
     [
+        ("2020-01-01T00:00:00Z", None, datetime(2020, 1, 1, tzinfo=timezone.utc)),
         ("2020-01-01T00:00:00Z", "%+", datetime(2020, 1, 1, tzinfo=timezone.utc)),
         (
             "2020-01-01T00:00:00+01:00",
@@ -449,12 +450,49 @@ def test_tz_aware_without_fmt() -> None:
     with pytest.raises(
         ComputeError,
         match=(
-            r"^passing 'tz_aware=True' without 'fmt' is not yet supported, "
-            r"please specify 'fmt'$"
+            r"^passing 'tz_aware=True' without 'format' is not yet supported, "
+            r"please specify 'format'$"
         ),
     ), pytest.warns(
         DeprecationWarning,
-        match="`tz_aware` is now auto-inferred from `fmt` and will be removed "
+        match="`tz_aware` is now auto-inferred from `format` and will be removed "
         "in a future version. You can safely drop this argument.",
     ):
         pl.Series(["2020-01-01"]).str.strptime(pl.Datetime, tz_aware=True)
+
+
+@pytest.mark.parametrize(
+    ("data", "format", "expected"),
+    [
+        (
+            "2023-02-05T05:10:10.074000",
+            "%Y-%m-%dT%H:%M:%S%.f",
+            datetime(2023, 2, 5, 5, 10, 10, 74000),
+        ),
+    ],
+)
+def test_strptime_subseconds_datetime(data: str, format: str, expected: time) -> None:
+    s = pl.Series([data])
+    result = s.str.strptime(pl.Datetime, format).item()
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    ("data", "format", "expected"),
+    [
+        ("05:10:10.074000", "%H:%M:%S%.f", time(5, 10, 10, 74000)),
+        ("05:10:10.074000", "%T%.6f", time(5, 10, 10, 74000)),
+        ("05:10:10.074000", "%H:%M:%S%.3f", time(5, 10, 10, 74000)),
+    ],
+)
+def test_strptime_subseconds_time(data: str, format: str, expected: time) -> None:
+    s = pl.Series([data])
+    result = s.str.strptime(pl.Time, format).item()
+    assert result == expected
+
+
+def test_strptime_format_warning() -> None:
+    s = pl.Series(["05:10:10.074000"])
+    with pytest.warns(pl.ChronoFormatWarning, match=".%f"):
+        result = s.str.strptime(pl.Time, "%H:%M:%S.%f").item()
+    assert result == time(5, 10, 10, 74)

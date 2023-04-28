@@ -54,13 +54,17 @@ def test_rolling_kernels_and_groupby_rolling(
             pl.col("values").rolling_std(period, by="dt", closed=closed).alias("std"),
         ]
     )
-    out2 = example_df.groupby_rolling("dt", period=period, closed=closed).agg(
-        [
-            pl.col("values").sum().alias("sum"),
-            pl.col("values").var().alias("var"),
-            pl.col("values").mean().alias("mean"),
-            pl.col("values").std().alias("std"),
-        ]
+    out2 = (
+        example_df.set_sorted("dt")
+        .groupby_rolling("dt", period=period, closed=closed)
+        .agg(
+            [
+                pl.col("values").sum().alias("sum"),
+                pl.col("values").var().alias("var"),
+                pl.col("values").mean().alias("mean"),
+                pl.col("values").std().alias("std"),
+            ]
+        )
     )
     assert_frame_equal(out1, out2)
 
@@ -167,95 +171,82 @@ def test_rolling_extrema() -> None:
 
 def test_rolling_groupby_extrema() -> None:
     # ensure we hit different branches so create
-    # two dfs, but ensure that one does not have a sorted flag
 
-    # descending order
-    not_sorted_flag = pl.DataFrame({"col1": [6, 5, 4, 3, 2, 1, 0]}).with_columns(
-        pl.col("col1").reverse().alias("row_nr")
-    )
-    assert not not_sorted_flag["col1"].flags["SORTED_DESC"]
-
-    sorted_flag = pl.DataFrame(
+    df = pl.DataFrame(
         {
             "col1": pl.arange(0, 7, eager=True).reverse(),
         }
     ).with_columns(pl.col("col1").reverse().alias("row_nr"))
 
-    for df in [sorted_flag, not_sorted_flag]:
-        assert (
-            df.groupby_rolling(
-                index_column="row_nr",
-                period="3i",
-            )
-            .agg(
-                [
-                    pl.col("col1").suffix("_list"),
-                    pl.col("col1").min().suffix("_min"),
-                    pl.col("col1").max().suffix("_max"),
-                    pl.col("col1").first().alias("col1_first"),
-                    pl.col("col1").last().alias("col1_last"),
-                ]
-            )
-            .select(["col1_list", "col1_min", "col1_max", "col1_first", "col1_last"])
-        ).to_dict(False) == {
-            "col1_list": [
-                [6],
-                [6, 5],
-                [6, 5, 4],
-                [5, 4, 3],
-                [4, 3, 2],
-                [3, 2, 1],
-                [2, 1, 0],
-            ],
-            "col1_min": [6, 5, 4, 3, 2, 1, 0],
-            "col1_max": [6, 6, 6, 5, 4, 3, 2],
-            "col1_first": [6, 6, 6, 5, 4, 3, 2],
-            "col1_last": [6, 5, 4, 3, 2, 1, 0],
-        }
+    assert (
+        df.groupby_rolling(
+            index_column="row_nr",
+            period="3i",
+        )
+        .agg(
+            [
+                pl.col("col1").suffix("_list"),
+                pl.col("col1").min().suffix("_min"),
+                pl.col("col1").max().suffix("_max"),
+                pl.col("col1").first().alias("col1_first"),
+                pl.col("col1").last().alias("col1_last"),
+            ]
+        )
+        .select(["col1_list", "col1_min", "col1_max", "col1_first", "col1_last"])
+    ).to_dict(False) == {
+        "col1_list": [
+            [6],
+            [6, 5],
+            [6, 5, 4],
+            [5, 4, 3],
+            [4, 3, 2],
+            [3, 2, 1],
+            [2, 1, 0],
+        ],
+        "col1_min": [6, 5, 4, 3, 2, 1, 0],
+        "col1_max": [6, 6, 6, 5, 4, 3, 2],
+        "col1_first": [6, 6, 6, 5, 4, 3, 2],
+        "col1_last": [6, 5, 4, 3, 2, 1, 0],
+    }
 
     # ascending order
 
-    sorted_df = pl.DataFrame(
+    df = pl.DataFrame(
         {
             "col1": pl.arange(0, 7, eager=True),
         }
     ).with_columns(pl.col("col1").alias("row_nr"))
 
-    not_sorted_df = pl.DataFrame({"col1": [0, 1, 2, 3, 4, 5, 6]}).with_columns(
-        pl.col("col1").alias("row_nr")
-    )
-
-    for df in [sorted_df, not_sorted_df]:
-        assert (
-            df.groupby_rolling(
-                index_column="row_nr",
-                period="3i",
-            )
-            .agg(
-                [
-                    pl.col("col1").suffix("_list"),
-                    pl.col("col1").min().suffix("_min"),
-                    pl.col("col1").max().suffix("_max"),
-                    pl.col("col1").first().alias("col1_first"),
-                    pl.col("col1").last().alias("col1_last"),
-                ]
-            )
-            .select(["col1_list", "col1_min", "col1_max", "col1_first", "col1_last"])
-        ).to_dict(False) == {
-            "col1_list": [
-                [0],
-                [0, 1],
-                [0, 1, 2],
-                [1, 2, 3],
-                [2, 3, 4],
-                [3, 4, 5],
-                [4, 5, 6],
-            ],
-            "col1_min": [0, 0, 0, 1, 2, 3, 4],
-            "col1_max": [0, 1, 2, 3, 4, 5, 6],
-            "col1_first": [0, 0, 0, 1, 2, 3, 4],
-            "col1_last": [0, 1, 2, 3, 4, 5, 6],
-        }
+    assert (
+        df.groupby_rolling(
+            index_column="row_nr",
+            period="3i",
+        )
+        .agg(
+            [
+                pl.col("col1").suffix("_list"),
+                pl.col("col1").min().suffix("_min"),
+                pl.col("col1").max().suffix("_max"),
+                pl.col("col1").first().alias("col1_first"),
+                pl.col("col1").last().alias("col1_last"),
+            ]
+        )
+        .select(["col1_list", "col1_min", "col1_max", "col1_first", "col1_last"])
+    ).to_dict(False) == {
+        "col1_list": [
+            [0],
+            [0, 1],
+            [0, 1, 2],
+            [1, 2, 3],
+            [2, 3, 4],
+            [3, 4, 5],
+            [4, 5, 6],
+        ],
+        "col1_min": [0, 0, 0, 1, 2, 3, 4],
+        "col1_max": [0, 1, 2, 3, 4, 5, 6],
+        "col1_first": [0, 0, 0, 1, 2, 3, 4],
+        "col1_last": [0, 1, 2, 3, 4, 5, 6],
+    }
 
     # shuffled data.
     df = pl.DataFrame(
@@ -348,7 +339,7 @@ def test_overlapping_groups_4628() -> None:
         }
     )
     assert (
-        df.groupby_rolling(index_column="index", period="3i").agg(
+        df.groupby_rolling(index_column=pl.col("index").set_sorted(), period="3i").agg(
             [
                 pl.col("val").diff(n=1).alias("val.diff"),
                 (pl.col("val") - pl.col("val").shift(1)).alias("val - val.shift"),
@@ -531,7 +522,7 @@ def test_groupby_dynamic_by_monday_and_offset_5444() -> None:
             "label": ["a", "b", "a", "a", "b", "a", "b"],
             "value": [1, 2, 3, 4, 5, 6, 7],
         }
-    ).with_columns(pl.col("date").str.strptime(pl.Date, "%Y-%m-%d"))
+    ).with_columns(pl.col("date").str.strptime(pl.Date, "%Y-%m-%d").set_sorted())
 
     result = df.groupby_dynamic(
         "date", every="1w", offset="1d", by="label", start_by="monday"
@@ -564,7 +555,7 @@ def test_groupby_rolling_iter() -> None:
             "a": [1, 2, 2],
             "b": [4, 5, 6],
         }
-    )
+    ).set_sorted("date")
 
     # Without 'by' argument
     result1 = [

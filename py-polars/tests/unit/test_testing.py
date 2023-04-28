@@ -81,6 +81,12 @@ def test_compare_series_nans_assert_equal() -> None:
         assert_series_equal(srs5, srs6, check_dtype=False)
     assert_series_not_equal(srs5, srs6, check_dtype=True)
 
+    # nested
+    for float_type in (pl.Float32, pl.Float64):
+        srs = pl.Series([[0.0, nan]], dtype=pl.List(float_type))
+        assert srs.dtype == pl.List(float_type)
+        assert_series_equal(srs, srs)
+
 
 def test_compare_series_nulls() -> None:
     srs1 = pl.Series([1, 2, None])

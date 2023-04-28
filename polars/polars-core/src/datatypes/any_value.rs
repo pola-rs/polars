@@ -699,6 +699,16 @@ impl<'a> AnyValue<'a> {
             _ => None,
         }
     }
+
+    pub fn is_nested_null(&self) -> bool {
+        match self {
+            AnyValue::Null => true,
+            AnyValue::List(s) => s.dtype().is_nested_null(),
+            #[cfg(feature = "dtype-struct")]
+            AnyValue::Struct(_, _, _) => self._iter_struct_av().all(|av| av.is_nested_null()),
+            _ => false,
+        }
+    }
 }
 
 impl<'a> From<AnyValue<'a>> for Option<i64> {

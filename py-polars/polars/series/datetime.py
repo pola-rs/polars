@@ -3,9 +3,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from polars import functions as F
+from polars.datatypes import Date
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
-from polars.utils.convert import _to_python_datetime
+from polars.utils.convert import _to_python_date, _to_python_datetime
 from polars.utils.decorators import deprecated_alias
 
 if TYPE_CHECKING:
@@ -97,7 +98,10 @@ class DateTimeNameSpace:
         s = wrap_s(self._s)
         out = s.median()
         if out is not None:
-            return _to_python_datetime(int(out), s.dtype, s.time_unit)
+            if s.dtype == Date:
+                return _to_python_date(int(out))
+            else:
+                return _to_python_datetime(int(out), s.time_unit)
         return None
 
     def mean(self) -> dt.date | dt.datetime | None:
@@ -123,7 +127,10 @@ class DateTimeNameSpace:
         s = wrap_s(self._s)
         out = s.mean()
         if out is not None:
-            return _to_python_datetime(int(out), s.dtype, s.time_unit)
+            if s.dtype == Date:
+                return _to_python_date(int(out))
+            else:
+                return _to_python_datetime(int(out), s.time_unit)
         return None
 
     @deprecated_alias(fmt="format")
@@ -1085,7 +1092,9 @@ class DateTimeNameSpace:
         ]
         """
 
-    def replace_time_zone(self, time_zone: str | None) -> Series:
+    def replace_time_zone(
+        self, time_zone: str | None, *, use_earliest: bool | None = None
+    ) -> Series:
         """
         Replace time zone for a Series of type Datetime.
 
@@ -1096,65 +1105,85 @@ class DateTimeNameSpace:
         ----------
         time_zone
             Time zone for the `Datetime` Series. Pass `None` to unset time zone.
+        use_earliest
+            If localizing an ambiguous datetime (say, due to daylight saving time),
+            determine whether to localize to the earliest datetime or not.
+            If None (the default), then ambiguous datetimes will raise.
 
         Examples
         --------
         >>> from datetime import datetime
-        >>> start = datetime(2020, 3, 1)
-        >>> stop = datetime(2020, 5, 1)
-        >>> date = pl.date_range(start, stop, "1mo", time_zone="UTC")
-        >>> date
-        shape: (3,)
-        Series: '' [datetime[μs, UTC]]
-        [
-                2020-03-01 00:00:00 UTC
-                2020-04-01 00:00:00 UTC
-                2020-05-01 00:00:00 UTC
-        ]
-        >>> date.dt.epoch("s")
-        shape: (3,)
-        Series: '' [i64]
-        [
-                1583020800
-                1585699200
-                1588291200
-        ]
-        >>> date = date.dt.convert_time_zone(time_zone="Europe/London").alias("London")
-        >>> date
-        shape: (3,)
-        Series: 'London' [datetime[μs, Europe/London]]
-        [
-            2020-03-01 00:00:00 GMT
-            2020-04-01 01:00:00 BST
-            2020-05-01 01:00:00 BST
-        ]
-        >>> # Timestamps have not changed after convert_time_zone
-        >>> date.dt.epoch(time_unit="s")
-        shape: (3,)
-        Series: 'London' [i64]
-        [
-                1583020800
-                1585699200
-                1588291200
-        ]
-        >>> date = date.dt.replace_time_zone(time_zone="America/New_York").alias("NYC")
-        >>> date
-        shape: (3,)
-        Series: 'NYC' [datetime[μs, America/New_York]]
-        [
-            2020-03-01 00:00:00 EST
-            2020-04-01 01:00:00 EDT
-            2020-05-01 01:00:00 EDT
-        ]
-        >>> # Timestamps have changed after replace_time_zone
-        >>> date.dt.epoch(time_unit="s")
-        shape: (3,)
-        Series: 'NYC' [i64]
-        [
-            1583038800
-            1585717200
-            1588309200
-        ]
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "london_timezone": pl.date_range(
+        ...             datetime(2020, 3, 1),
+        ...             datetime(2020, 7, 1),
+        ...             "1mo",
+        ...             time_zone="UTC",
+        ...         ).dt.convert_time_zone(time_zone="Europe/London"),
+        ...     }
+        ... )
+        >>> df.select(
+        ...     [
+        ...         pl.col("london_timezone"),
+        ...         pl.col("london_timezone")
+        ...         .dt.replace_time_zone(time_zone="Europe/Amsterdam")
+        ...         .alias("London_to_Amsterdam"),
+        ...     ]
+        ... )
+        shape: (5, 2)
+        ┌─────────────────────────────┬────────────────────────────────┐
+        │ london_timezone             ┆ London_to_Amsterdam            │
+        │ ---                         ┆ ---                            │
+        │ datetime[μs, Europe/London] ┆ datetime[μs, Europe/Amsterdam] │
+        ╞═════════════════════════════╪════════════════════════════════╡
+        │ 2020-03-01 00:00:00 GMT     ┆ 2020-03-01 00:00:00 CET        │
+        │ 2020-04-01 01:00:00 BST     ┆ 2020-04-01 01:00:00 CEST       │
+        │ 2020-05-01 01:00:00 BST     ┆ 2020-05-01 01:00:00 CEST       │
+        │ 2020-06-01 01:00:00 BST     ┆ 2020-06-01 01:00:00 CEST       │
+        │ 2020-07-01 01:00:00 BST     ┆ 2020-07-01 01:00:00 CEST       │
+        └─────────────────────────────┴────────────────────────────────┘
+
+        You can use `use_earliest` to deal with ambiguous datetimes:
+
+        >>> dates = [
+        ...     "2018-10-28 01:30",
+        ...     "2018-10-28 02:00",
+        ...     "2018-10-28 02:30",
+        ...     "2018-10-28 02:00",
+        ...     "2018-10-28 02:30",
+        ... ]
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "ts": pl.Series(dates).str.strptime(pl.Datetime),
+        ...         "DST": [True, True, True, False, False],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     ts_localized=pl.when(pl.col("DST"))
+        ...     .then(
+        ...         pl.col("ts").dt.replace_time_zone(
+        ...             "Europe/Brussels", use_earliest=True
+        ...         )
+        ...     )
+        ...     .otherwise(
+        ...         pl.col("ts").dt.replace_time_zone(
+        ...             "Europe/Brussels", use_earliest=False
+        ...         )
+        ...     )
+        ... )
+        shape: (5, 3)
+        ┌─────────────────────┬───────┬───────────────────────────────┐
+        │ ts                  ┆ DST   ┆ ts_localized                  │
+        │ ---                 ┆ ---   ┆ ---                           │
+        │ datetime[μs]        ┆ bool  ┆ datetime[μs, Europe/Brussels] │
+        ╞═════════════════════╪═══════╪═══════════════════════════════╡
+        │ 2018-10-28 01:30:00 ┆ true  ┆ 2018-10-28 01:30:00 CEST      │
+        │ 2018-10-28 02:00:00 ┆ true  ┆ 2018-10-28 02:00:00 CEST      │
+        │ 2018-10-28 02:30:00 ┆ true  ┆ 2018-10-28 02:30:00 CEST      │
+        │ 2018-10-28 02:00:00 ┆ false ┆ 2018-10-28 02:00:00 CET       │
+        │ 2018-10-28 02:30:00 ┆ false ┆ 2018-10-28 02:30:00 CET       │
+        └─────────────────────┴───────┴───────────────────────────────┘
 
         """
 
@@ -1416,6 +1445,10 @@ class DateTimeNameSpace:
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 
+            Suffix with `"_saturating"` to indicate that dates too large for
+            their month should saturate at the largest date
+            (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
+
         Returns
         -------
         Date/Datetime expression
@@ -1458,6 +1491,19 @@ class DateTimeNameSpace:
                 2003-11-01 00:00:00
         ]
 
+        To get to the end of each month, combine with `truncate`:
+
+        >>> dates.dt.truncate("1mo").dt.offset_by("1mo").dt.offset_by("-1d")
+        shape: (6,)
+        Series: '' [datetime[μs]]
+        [
+                2000-01-31 00:00:00
+                2001-01-31 00:00:00
+                2002-01-31 00:00:00
+                2003-01-31 00:00:00
+                2004-01-31 00:00:00
+                2005-01-31 00:00:00
+        ]
         """
 
     def truncate(
@@ -1496,6 +1542,10 @@ class DateTimeNameSpace:
         These strings can be combined:
 
         - 3d12h4m25s # 3 days, 12 hours, 4 minutes, and 25 seconds
+
+        Suffix with `"_saturating"` to indicate that dates too large for
+        their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
+        instead of erroring.
 
         Returns
         -------
@@ -1597,6 +1647,10 @@ class DateTimeNameSpace:
 
         3d12h4m25s # 3 days, 12 hours, 4 minutes, and 25 seconds
 
+        Suffix with `"_saturating"` to indicate that dates too large for
+        their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
+        instead of erroring.
+
         Parameters
         ----------
         every
@@ -1697,4 +1751,60 @@ class DateTimeNameSpace:
             2023-07-05 01:02:03.456
         ]
 
+        """
+
+    def month_start(self) -> Series:
+        """
+        Roll backward to the first day of the month.
+
+        Returns
+        -------
+        Date/Datetime expression
+
+        Notes
+        -----
+        If you're coming from pandas, you can think of this as a vectorised version
+        of ``pandas.tseries.offsets.MonthBegin().rollback(datetime)``.
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> s = pl.date_range(datetime(2000, 1, 2, 2), datetime(2000, 4, 2, 2), "1mo")
+        >>> s.dt.month_start()
+        shape: (4,)
+        Series: '' [datetime[μs]]
+        [
+                2000-01-01 02:00:00
+                2000-02-01 02:00:00
+                2000-03-01 02:00:00
+                2000-04-01 02:00:00
+        ]
+        """
+
+    def month_end(self) -> Series:
+        """
+        Roll forward to the last day of the month.
+
+        Returns
+        -------
+        Date/Datetime expression
+
+        Notes
+        -----
+        If you're coming from pandas, you can think of this as a vectorised version
+        of ``pandas.tseries.offsets.MonthEnd().rollforward(datetime)``.
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> s = pl.date_range(datetime(2000, 1, 2, 2), datetime(2000, 4, 2, 2), "1mo")
+        >>> s.dt.month_end()
+        shape: (4,)
+        Series: '' [datetime[μs]]
+        [
+                2000-01-31 02:00:00
+                2000-02-29 02:00:00
+                2000-03-31 02:00:00
+                2000-04-30 02:00:00
+        ]
         """

@@ -21,7 +21,7 @@ pub(super) fn date_offset(s: Series, offset: Duration) -> PolarsResult<Series> {
         DataType::Datetime(tu, tz) => {
             let ca = s.datetime().unwrap();
 
-            fn adder<T: PolarsTimeZone>(
+            fn offset_fn<T: PolarsTimeZone>(
                 tu: TimeUnit,
             ) -> fn(&Duration, i64, Option<&T>) -> PolarsResult<i64> {
                 match tu {
@@ -34,13 +34,22 @@ pub(super) fn date_offset(s: Series, offset: Duration) -> PolarsResult<Series> {
             let out = match tz {
                 #[cfg(feature = "timezones")]
                 Some(ref tz) => match tz.parse::<Tz>() {
-                    Ok(tz) => ca.0.try_apply(|v| adder(tu)(&offset, v, Some(&tz))),
+                    Ok(tz) => {
+                        let offset_fn = offset_fn(tu);
+                        ca.0.try_apply(|v| offset_fn(&offset, v, Some(&tz)))
+                    }
                     Err(_) => match parse_offset(tz) {
-                        Ok(tz) => ca.0.try_apply(|v| adder(tu)(&offset, v, Some(&tz))),
+                        Ok(tz) => {
+                            let offset_fn = offset_fn(tu);
+                            ca.0.try_apply(|v| offset_fn(&offset, v, Some(&tz)))
+                        }
                         Err(_) => unreachable!(),
                     },
                 },
-                _ => ca.0.try_apply(|v| adder(tu)(&offset, v, NO_TIMEZONE)),
+                _ => {
+                    let offset_fn = offset_fn(tu);
+                    ca.0.try_apply(|v| offset_fn(&offset, v, NO_TIMEZONE))
+                }
             }?;
             out.cast(&DataType::Datetime(tu, tz))
         }
@@ -54,9 +63,26 @@ pub(super) fn combine(s: &[Series], tu: TimeUnit) -> PolarsResult<Series> {
     let date = &s[0];
     let time = &s[1];
 
+    let tz = match date.dtype() {
+        DataType::Date => None,
+        DataType::Datetime(_, tz) => tz.as_ref(),
+        _dtype => {
+            polars_bail!(ComputeError: format!("expected Date or Datetime, got {}", _dtype))
+        }
+    };
+
     let date = date.cast(&DataType::Date)?;
     let datetime = date.cast(&DataType::Datetime(tu, None)).unwrap();
 
     let duration = time.cast(&DataType::Duration(tu))?;
-    Ok(datetime + duration)
+    let result_naive = datetime + duration;
+    match tz {
+        #[cfg(feature = "timezones")]
+        Some(tz) => Ok(result_naive
+            .datetime()
+            .unwrap()
+            .replace_time_zone(Some(tz), None)?
+            .into()),
+        _ => Ok(result_naive),
+    }
 }

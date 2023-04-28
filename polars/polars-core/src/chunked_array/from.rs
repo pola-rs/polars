@@ -15,7 +15,6 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
         // change the list-value array to the keys and store the dictionary values in the datatype.
         // if a global string cache is set, we also must modify the keys.
         DataType::List(inner) if *inner == DataType::Categorical(None) => {
-            use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
             let array = concatenate_owned_unchecked(chunks).unwrap();
             let list_arr = array.as_any().downcast_ref::<ListArray<i64>>().unwrap();
             let values_arr = list_arr.values();

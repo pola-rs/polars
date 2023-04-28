@@ -133,7 +133,8 @@ fn any_values_to_list(
 ) -> PolarsResult<ListChunked> {
     // this is handled downstream. The builder will choose the first non null type
     let mut valid = true;
-    let out = if inner_type == &DataType::Null {
+    #[allow(unused_mut)]
+    let mut out: ListChunked = if inner_type == &DataType::Null {
         avs.iter()
             .map(|av| match av {
                 AnyValue::List(b) => Some(b.clone()),
@@ -167,6 +168,15 @@ fn any_values_to_list(
             })
             .collect_trusted()
     };
+    #[cfg(feature = "dtype-struct")]
+    if !matches!(inner_type, DataType::Null)
+        && matches!(out.inner_dtype(), DataType::Struct(_) | DataType::List(_))
+    {
+        // ensure the logical type is correct
+        unsafe {
+            out.set_dtype(DataType::List(Box::new(inner_type.clone())));
+        };
+    }
     if valid || !strict {
         Ok(out)
     } else {
@@ -345,8 +355,27 @@ impl Series {
     }
 
     pub fn from_any_values(name: &str, avs: &[AnyValue], strict: bool) -> PolarsResult<Series> {
-        match avs.iter().find(|av| !matches!(av, AnyValue::Null)) {
-            None => Ok(Series::full_null(name, avs.len(), &DataType::Null)),
+        let mut all_flat_null = true;
+        match avs.iter().find(|av| {
+            if !matches!(av, AnyValue::Null) {
+                all_flat_null = false;
+            }
+            !av.is_nested_null()
+        }) {
+            None => {
+                if all_flat_null {
+                    Ok(Series::full_null(name, avs.len(), &DataType::Null))
+                } else {
+                    // second pass and check for the nested null value that toggled `all_flat_null` to false
+                    // e.g. a list<null>
+                    if let Some(av) = avs.iter().find(|av| !matches!(av, AnyValue::Null)) {
+                        let dtype: DataType = av.into();
+                        Series::from_any_values_and_dtype(name, avs, &dtype, strict)
+                    } else {
+                        unreachable!()
+                    }
+                }
+            }
             Some(av) => {
                 #[cfg(feature = "dtype-decimal")]
                 {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import typing
 from typing import Any
 
 import pytest
@@ -313,7 +314,7 @@ def test_err_on_categorical_asof_join_by_arg() -> None:
         pl.ComputeError,
         match=r"joins/or comparisons on categoricals can only happen if they were created under the same global string cache",
     ):
-        df1.join_asof(df2, on="time", by="cat")
+        df1.join_asof(df2, on=pl.col("time").set_sorted(), by="cat")
 
 
 def test_categorical_list_get_item() -> None:
@@ -343,3 +344,49 @@ def test_nested_categorical_aggregation_7848() -> None:
         "c_group": [2, 3],
         "letter": [[["a", "b"], ["f", "g"]], [["c", "d", "e"]]],
     }
+
+
+def test_nested_categorical_cast() -> None:
+    values = [["x"], ["y"], ["x"]]
+    dtype = pl.List(pl.Categorical)
+    s = pl.Series(values).cast(dtype)
+    assert s.dtype == dtype
+    assert s.to_list() == values
+
+
+def test_struct_categorical_nesting() -> None:
+    # this triggers a lot of materialization
+    df = pl.DataFrame(
+        {"cats": ["Value1", "Value2", "Value1"]},
+        schema_overrides={"cats": pl.Categorical},
+    )
+    s = df.select(pl.struct(pl.col("cats")))["cats"].implode()
+    assert s.dtype == pl.List(pl.Struct([pl.Field("cats", pl.Categorical)]))
+    # triggers recursive conversion
+    assert s.to_list() == [[{"cats": "Value1"}, {"cats": "Value2"}, {"cats": "Value1"}]]
+    # triggers different recursive conversion
+    assert len(s.to_arrow()) == 1
+
+
+def test_categorical_fill_null_existing_category() -> None:
+    # ensure physical types align
+    assert pl.DataFrame(
+        {"col": ["a", None, "a"]}, schema={"col": pl.Categorical}
+    ).fill_null("a").with_columns(pl.col("col").to_physical().alias("code")).to_dict(
+        False
+    ) == {
+        "col": ["a", "a", "a"],
+        "code": [0, 0, 0],
+    }
+
+
+@typing.no_type_check
+def test_fast_unique_flag_from_arrow() -> None:
+    df = pl.DataFrame(
+        {
+            "colB": ["1", "2", "3", "4", "5", "5", "5", "5"],
+        }
+    ).with_columns([pl.col("colB").cast(pl.Categorical)])
+
+    filtered = df.to_arrow().filter([True, False, True, True, False, True, True, True])
+    assert pl.from_arrow(filtered).select(pl.col("colB").n_unique()).item() == 4

@@ -47,6 +47,7 @@ Manipulation/selection
     DataFrame.rows
     DataFrame.sample
     DataFrame.select
+    DataFrame.set_sorted
     DataFrame.shift
     DataFrame.shift_and_fill
     DataFrame.shrink_to_fit

@@ -79,6 +79,11 @@ impl SqlExprVisitor<'_> {
             SqlExpr::AllOp(_) => Ok(self.visit_expr(expr)?.all()),
             SqlExpr::Nested(expr) => self.visit_expr(expr),
             SqlExpr::UnaryOp { op, expr } => self.visit_unary_op(op, expr),
+            SqlExpr::InList {
+                expr,
+                list,
+                negated,
+            } => self.visit_is_in(expr, list, *negated),
             other => polars_bail!(ComputeError: "SQL expression {:?} is not yet supported", other),
         }
     }
@@ -101,6 +106,7 @@ impl SqlExprVisitor<'_> {
         );
         Ok(col(&idents[1].value))
     }
+
     fn visit_unary_op(&self, op: &UnaryOperator, expr: &SqlExpr) -> PolarsResult<Expr> {
         let expr = self.visit_expr(expr)?;
         Ok(match op {
@@ -199,6 +205,29 @@ impl SqlExprVisitor<'_> {
             other => polars_bail!(ComputeError: "SQL value {:?} is not yet supported", other),
         })
     }
+
+    // similar to visit_literal, but returns an AnyValue instead of Expr
+    fn visit_anyvalue(&self, value: &SqlValue) -> PolarsResult<AnyValue> {
+        Ok(match value {
+            SqlValue::Number(s, _) => {
+                // Check for existence of decimal separator dot
+                if s.contains('.') {
+                    s.parse::<f64>().map(AnyValue::Float64).map_err(|_| ())
+                } else {
+                    s.parse::<i64>().map(AnyValue::Int64).map_err(|_| ())
+                }
+                .map_err(|_| polars_err!(ComputeError: "cannot parse literal: {:?}"))?
+            }
+            SqlValue::SingleQuotedString(s)
+            | SqlValue::NationalStringLiteral(s)
+            | SqlValue::HexStringLiteral(s)
+            | SqlValue::DoubleQuotedString(s) => AnyValue::Utf8Owned(s.into()),
+            SqlValue::Boolean(b) => AnyValue::Boolean(*b),
+            SqlValue::Null => AnyValue::Null,
+            other => polars_bail!(ComputeError: "SQL value {:?} is not yet supported", other),
+        })
+    }
+
     /// Visit a SQL `BETWEEN` expression
     /// See [sqlparser::ast::Expr::Between] for more details
     fn visit_between(
@@ -218,6 +247,7 @@ impl SqlExprVisitor<'_> {
             Ok(expr.clone().gt(low).and(expr.lt(high)))
         }
     }
+
     /// Visit a SQL 'TRIM' function
     /// See [sqlparser::ast::Expr::Trim] for more details
     fn visit_trim(
@@ -273,6 +303,29 @@ impl SqlExprVisitor<'_> {
             ComputeError: "ARRAY_AGG WITHIN GROUP is not yet supported"
         );
         Ok(base.implode())
+    }
+
+    /// Visit a SQL `IN` expression
+    fn visit_is_in(&self, expr: &SqlExpr, list: &[SqlExpr], negated: bool) -> PolarsResult<Expr> {
+        let expr = self.visit_expr(expr)?;
+        let list = list
+            .iter()
+            .map(|e| {
+                if let SqlExpr::Value(v) = e {
+                    let av = self.visit_anyvalue(v)?;
+                    Ok(av)
+                } else {
+                    Err(polars_err!(ComputeError: "SQL expression {:?} is not yet supported", e))
+                }
+            })
+            .collect::<PolarsResult<Vec<_>>>()?;
+        let s = Series::from_any_values("", &list, true)?;
+
+        if negated {
+            Ok(expr.is_in(lit(s)).not())
+        } else {
+            Ok(expr.is_in(lit(s)))
+        }
     }
 
     fn visit_order_by(&self, order_by: &OrderByExpr) -> PolarsResult<(Expr, bool)> {

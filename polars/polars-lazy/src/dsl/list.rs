@@ -97,16 +97,16 @@ fn run_per_sublist(
             })
             .collect_trusted()
     };
+    if let Some(err) = err {
+        return Err(err);
+    }
 
     ca.rename(s.name());
 
     if ca.dtype() != output_field.data_type() {
         ca.cast(output_field.data_type()).map(Some)
     } else {
-        match err {
-            None => Ok(Some(ca.into_series())),
-            Some(e) => Err(e),
-        }
+        Ok(Some(ca.into_series()))
     }
 }
 

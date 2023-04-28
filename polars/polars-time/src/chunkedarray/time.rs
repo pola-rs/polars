@@ -1,8 +1,5 @@
-use std::fmt::Write;
-
 use chrono::Timelike;
-use polars_arrow::export::arrow::array::{MutableArray, MutableUtf8Array, Utf8Array};
-use polars_arrow::export::arrow::temporal_conversions::{time64ns_to_time, NANOSECONDS};
+use polars_arrow::export::arrow::temporal_conversions::NANOSECONDS;
 
 use super::*;
 
@@ -18,9 +15,6 @@ pub(crate) fn time_to_time64ns(time: &NaiveTime) -> i64 {
 }
 
 pub trait TimeMethods {
-    /// Format Date with a `format` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
-    fn strftime(&self, format: &str) -> Utf8Chunked;
-
     /// Extract hour from underlying NaiveDateTime representation.
     /// Returns the hour number from 0 to 23.
     fn hour(&self) -> UInt32Chunked;
@@ -42,36 +36,6 @@ pub trait TimeMethods {
 }
 
 impl TimeMethods for TimeChunked {
-    /// Format Date with a `format` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
-    fn strftime(&self, format: &str) -> Utf8Chunked {
-        let time = NaiveTime::from_hms_opt(0, 0, 0).unwrap();
-        let fmted = format!("{}", time.format(format));
-
-        let mut ca: Utf8Chunked = self.apply_kernel_cast(&|arr| {
-            let mut buf = String::new();
-            let mut mutarr =
-                MutableUtf8Array::with_capacities(arr.len(), arr.len() * fmted.len() + 1);
-
-            for opt in arr.into_iter() {
-                match opt {
-                    None => mutarr.push_null(),
-                    Some(v) => {
-                        buf.clear();
-                        let timefmt = time64ns_to_time(*v).format(format);
-                        write!(buf, "{timefmt}").unwrap();
-                        mutarr.push(Some(&buf))
-                    }
-                }
-            }
-
-            let arr: Utf8Array<i64> = mutarr.into();
-            Box::new(arr)
-        });
-
-        ca.rename(self.name());
-        ca
-    }
-
     /// Extract hour from underlying NaiveDateTime representation.
     /// Returns the hour number from 0 to 23.
     fn hour(&self) -> UInt32Chunked {

@@ -20,6 +20,9 @@ impl Series {
     /// 1 on 1 mapping for logical/ categoricals, etc.
     pub fn to_arrow(&self, chunk_idx: usize) -> ArrayRef {
         match self.dtype() {
+            // make sure that we recursively apply all logical types.
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(_) => self.struct_().unwrap().to_arrow(chunk_idx),
             // special list branch to
             // make sure that we recursively apply all logical types.
             DataType::List(inner) => {
@@ -30,13 +33,18 @@ impl Series {
                 let new_values = if let DataType::Null = &**inner {
                     arr.values().clone()
                 } else {
+                    // we pass physical arrays
+                    // and cast to logical before we convert to arrow
                     let s = unsafe {
                         Series::from_chunks_and_dtype_unchecked(
                             "",
                             vec![arr.values().clone()],
-                            inner,
+                            &inner.to_physical(),
                         )
+                        .cast_unchecked(inner)
+                        .unwrap()
                     };
+
                     s.to_arrow(0)
                 };
 

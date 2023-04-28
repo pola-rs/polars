@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from polars.datatypes import (
+    DataTypeGroup,
     Date,
     Datetime,
     Decimal,
@@ -21,28 +22,31 @@ from polars.datatypes import (
 )
 
 if TYPE_CHECKING:
-    from polars.type_aliases import PolarsDataType, TimeUnit
+    from polars.datatypes import PolarsDataType
+    from polars.type_aliases import TimeUnit
+
 
 DTYPE_TEMPORAL_UNITS: frozenset[TimeUnit] = frozenset(["ns", "us", "ms"])
-DATETIME_DTYPES: frozenset[PolarsDataType] = frozenset(
+DATETIME_DTYPES: frozenset[PolarsDataType] = DataTypeGroup(
     [
-        # TODO: ideally need a mechanism to wildcard timezones here too
+        Datetime,
         Datetime("ms"),
         Datetime("us"),
         Datetime("ns"),
     ]
 )
-DURATION_DTYPES: frozenset[PolarsDataType] = frozenset(
+DURATION_DTYPES: frozenset[PolarsDataType] = DataTypeGroup(
     [
+        Duration,
         Duration("ms"),
         Duration("us"),
         Duration("ns"),
     ]
 )
-TEMPORAL_DTYPES: frozenset[PolarsDataType] = (
+TEMPORAL_DTYPES: frozenset[PolarsDataType] = DataTypeGroup(
     frozenset([Date, Time]) | DATETIME_DTYPES | DURATION_DTYPES
 )
-SIGNED_INTEGER_DTYPES: frozenset[PolarsDataType] = frozenset(
+SIGNED_INTEGER_DTYPES: frozenset[PolarsDataType] = DataTypeGroup(
     [
         Int8,
         Int16,
@@ -50,7 +54,7 @@ SIGNED_INTEGER_DTYPES: frozenset[PolarsDataType] = frozenset(
         Int64,
     ]
 )
-UNSIGNED_INTEGER_DTYPES: frozenset[PolarsDataType] = frozenset(
+UNSIGNED_INTEGER_DTYPES: frozenset[PolarsDataType] = DataTypeGroup(
     [
         UInt8,
         UInt16,
@@ -61,8 +65,8 @@ UNSIGNED_INTEGER_DTYPES: frozenset[PolarsDataType] = frozenset(
 INTEGER_DTYPES: frozenset[PolarsDataType] = (
     SIGNED_INTEGER_DTYPES | UNSIGNED_INTEGER_DTYPES
 )
-FLOAT_DTYPES: frozenset[PolarsDataType] = frozenset([Float32, Float64])
-NUMERIC_DTYPES: frozenset[PolarsDataType] = (
+FLOAT_DTYPES: frozenset[PolarsDataType] = DataTypeGroup([Float32, Float64])
+NUMERIC_DTYPES: frozenset[PolarsDataType] = DataTypeGroup(
     FLOAT_DTYPES | INTEGER_DTYPES | frozenset([Decimal])
 )
 

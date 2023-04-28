@@ -177,13 +177,10 @@ impl<T: AsRef<[Option<Series>]>> NamedFrom<T, [Option<Series>]> for Series {
         let values_cap = series_slice.iter().fold(0, |acc, opt_s| {
             acc + opt_s.as_ref().map(|s| s.len()).unwrap_or(0)
         });
-
-        let dt = series_slice
-            .iter()
-            .filter_map(|opt| opt.as_ref())
-            .next()
-            .expect("cannot create List Series from a slice of nulls")
-            .dtype();
+        let dt = match series_slice.iter().filter_map(|opt| opt.as_ref()).next() {
+            Some(series) => series.dtype(),
+            None => &DataType::Null,
+        };
 
         let mut builder = get_list_builder(dt, values_cap, series_slice.len(), name).unwrap();
         for series in series_slice {

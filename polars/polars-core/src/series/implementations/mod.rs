@@ -41,7 +41,6 @@ use crate::chunked_array::ops::compare_inner::{
 };
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
-use crate::fmt::FmtList;
 use crate::frame::groupby::*;
 use crate::frame::hash_join::ZipOuterJoinColumn;
 use crate::prelude::*;
@@ -345,7 +344,7 @@ macro_rules! impl_dyn_series {
                 if self.0.is_sorted_ascending_flag()
                     && (idx.is_sorted_ascending_flag() || idx.is_sorted_descending_flag())
                 {
-                    out.set_sorted_flag(idx.is_sorted_flag2())
+                    out.set_sorted_flag(idx.is_sorted_flag())
                 }
                 Ok(out.into_series())
             }
@@ -459,9 +458,6 @@ macro_rules! impl_dyn_series {
                 QuantileAggSeries::quantile_as_series(&self.0, quantile, interpol)
             }
 
-            fn fmt_list(&self) -> String {
-                FmtList::fmt_list(&self.0)
-            }
             fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
                 Arc::new(SeriesWrap(Clone::clone(&self.0)))
             }

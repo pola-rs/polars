@@ -37,6 +37,7 @@ use smartstring::alias::String as SmartString;
 use crate::frame::groupby::GroupsIndicator;
 #[cfg(feature = "row_hash")]
 use crate::hashing::df_rows_to_hashes_threaded_vertical;
+use crate::prelude::min_max_binary::min_max_binary_series;
 use crate::prelude::sort::{argsort_multiple_row_fmt, prepare_arg_sort};
 use crate::series::IsSorted;
 use crate::POOL;
@@ -496,13 +497,13 @@ impl DataFrame {
     ///
     /// let f1: Field = Field::new("Thing", DataType::Utf8);
     /// let f2: Field = Field::new("Diameter (m)", DataType::Float64);
-    /// let sc: Schema = Schema::from(vec![f1, f2].into_iter());
+    /// let sc: Schema = Schema::from_iter(vec![f1, f2]);
     ///
     /// assert_eq!(df.schema(), sc);
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn schema(&self) -> Schema {
-        Schema::from(self.iter().map(|s| s.field().into_owned()))
+        self.iter().map(|s| s.field().into_owned()).collect()
     }
 
     /// Get a reference to the `DataFrame` columns.
@@ -2784,10 +2785,7 @@ impl DataFrame {
     /// Aggregate the column horizontally to their min values.
     #[cfg(feature = "zip_with")]
     pub fn hmin(&self) -> PolarsResult<Option<Series>> {
-        let min_fn = |acc: &Series, s: &Series| {
-            let mask = acc.lt(s)? & acc.is_not_null() | s.is_null();
-            acc.zip_with(&mask, s)
-        };
+        let min_fn = |acc: &Series, s: &Series| min_max_binary_series(acc, s, true);
 
         match self.columns.len() {
             0 => Ok(None),
@@ -2813,10 +2811,7 @@ impl DataFrame {
     /// Aggregate the column horizontally to their max values.
     #[cfg(feature = "zip_with")]
     pub fn hmax(&self) -> PolarsResult<Option<Series>> {
-        let max_fn = |acc: &Series, s: &Series| {
-            let mask = acc.gt(s)? & acc.is_not_null() | s.is_null();
-            acc.zip_with(&mask, s)
-        };
+        let max_fn = |acc: &Series, s: &Series| min_max_binary_series(acc, s, false);
 
         match self.columns.len() {
             0 => Ok(None),
@@ -3161,7 +3156,7 @@ impl DataFrame {
 
     #[cfg(feature = "chunked_ids")]
     #[doc(hidden)]
-    //// Take elements by a slice of [`ChunkId`]s.
+    /// Take elements by a slice of [`ChunkId`]s.
     /// # Safety
     /// Does not do any bound checks.
     /// `sorted` indicates if the chunks are sorted.
@@ -3172,7 +3167,7 @@ impl DataFrame {
         DataFrame::new_no_checks(cols)
     }
     #[cfg(feature = "chunked_ids")]
-    //// Take elements by a slice of optional [`ChunkId`]s.
+    /// Take elements by a slice of optional [`ChunkId`]s.
     /// # Safety
     /// Does not do any bound checks.
     #[doc(hidden)]

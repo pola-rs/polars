@@ -162,15 +162,19 @@ def test_double_projection_union() -> None:
 
 @typing.no_type_check
 def test_asof_join_projection_() -> None:
-    lf1 = pl.DataFrame(
-        {
-            "m": np.linspace(0, 5, 7),
-            "a": np.linspace(0, 5, 7),
-            "b": np.linspace(0, 5, 7),
-            "c": pl.Series(np.linspace(0, 5, 7)).cast(str),
-            "d": np.linspace(0, 5, 7),
-        }
-    ).lazy()
+    lf1 = (
+        pl.DataFrame(
+            {
+                "m": np.linspace(0, 5, 7),
+                "a": np.linspace(0, 5, 7),
+                "b": np.linspace(0, 5, 7),
+                "c": pl.Series(np.linspace(0, 5, 7)).cast(str),
+                "d": np.linspace(0, 5, 7),
+            }
+        )
+        .lazy()
+        .set_sorted("b")
+    )
     lf2 = (
         pl.DataFrame(
             {
@@ -181,6 +185,7 @@ def test_asof_join_projection_() -> None:
         )
         .with_columns(pl.col("val").alias("b"))
         .lazy()
+        .set_sorted("b")
     )
 
     joined = lf1.join_asof(

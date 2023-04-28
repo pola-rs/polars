@@ -21,8 +21,7 @@ def test_ascii_tables() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
 
     # note: expect to render ascii only within the given scope
-    with pl.Config() as cfg:
-        cfg.set_ascii_tables(True)
+    with pl.Config(set_ascii_tables=True):
         assert (
             str(df) == "shape: (3, 3)\n"
             "+-----+-----+-----+\n"
@@ -278,8 +277,7 @@ def test_set_tbl_formats() -> None:
     )
 
     pl.Config().set_tbl_formatting("ASCII_BORDERS_ONLY_CONDENSED")
-    with pl.Config() as cfg:
-        cfg.set_tbl_hide_dtype_separator(True)
+    with pl.Config(tbl_hide_dtype_separator=True):
         assert str(df) == (
             "shape: (3, 3)\n"
             "+-----------------+\n"
@@ -293,8 +291,10 @@ def test_set_tbl_formats() -> None:
         )
 
     # temporarily scope "nothing" style, with no data types
-    with pl.Config() as cfg:
-        cfg.set_tbl_formatting("NOTHING").set_tbl_hide_column_data_types(True)
+    with pl.Config(
+        tbl_formatting="NOTHING",
+        tbl_hide_column_data_types=True,
+    ):
         assert str(df) == (
             "shape: (3, 3)\n"
             " foo  bar  ham \n"

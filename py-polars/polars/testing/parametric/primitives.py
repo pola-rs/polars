@@ -1,58 +1,43 @@
 from __future__ import annotations
 
-import os
 import random
 import warnings
 from dataclasses import dataclass
-from datetime import datetime, timedelta
 from math import isfinite
 from textwrap import dedent
-from typing import TYPE_CHECKING, Any, Sequence, cast
+from typing import TYPE_CHECKING, Any, Collection, Sequence
 
-from hypothesis import settings
 from hypothesis.errors import InvalidArgument, NonInteractiveExampleWarning
 from hypothesis.strategies import (
     booleans,
     composite,
-    dates,
-    datetimes,
-    floats,
-    from_type,
-    integers,
     lists,
     sampled_from,
-    text,
-    timedeltas,
-    times,
 )
 from hypothesis.strategies._internal.utils import defines_strategy
 
 from polars.dataframe import DataFrame
 from polars.datatypes import (
-    Boolean,
+    DTYPE_TEMPORAL_UNITS,
+    FLOAT_DTYPES,
     Categorical,
-    Date,
+    DataType,
+    DataTypeClass,
     Datetime,
     Duration,
-    Float32,
-    Float64,
-    Int8,
-    Int16,
-    Int32,
-    Int64,
-    Time,
-    UInt8,
-    UInt16,
-    UInt32,
-    UInt64,
-    Utf8,
+    List,
     is_polars_dtype,
     py_type_to_dtype,
 )
 from polars.series import Series
 from polars.string_cache import StringCache
 from polars.testing.asserts import is_categorical_dtype
-from polars.type_aliases import Orientation
+from polars.testing.parametric.strategies import (
+    _hash,
+    between,
+    create_list_strategy,
+    scalar_strategies,
+)
 
 if TYPE_CHECKING:
     from hypothesis.strategies import DrawFn, SearchStrategy
@@ -60,81 +45,25 @@ if TYPE_CHECKING:
     from polars.lazyframe import LazyFrame
     from polars.type_aliases import OneOrMoreDataTypes, PolarsDataType
 
-# Default profile (eg: running locally)
-common_settings = {"print_blob": True, "deadline": None}
-settings.register_profile(
-    name="polars.default",
-    max_examples=100,
-    **common_settings,  # type: ignore[arg-type]
-)
-# CI 'max' profile (10x the number of iterations).
-# this is expensive, and not actually enabled in
-# our usual CI pipeline; requires explicit opt-in.
-settings.register_profile(
-    name="polars.ci",
-    max_examples=1000,
-    **common_settings,  # type: ignore[arg-type]
-)
-if os.getenv("CI_MAX"):
-    settings.load_profile("polars.ci")
-else:
-    settings.load_profile("polars.default")
+
+_time_units = list(DTYPE_TEMPORAL_UNITS)
 
 
-MAX_DATA_SIZE = 10
-MAX_COLS = 8
+def empty_list(value: Any, nested: bool) -> bool:
+    """Check if value is an empty list, or a list that contains only empty lists."""
+    if isinstance(value, list):
+        return True if value and not nested else all(empty_list(v, True) for v in value)
+    return False
 
-# =====================================================================
-# Polars-specific 'hypothesis' strategies and helper functions
+
+# ====================================================================
+# Polars 'hypothesis' primitives for Series, DataFrame, and LazyFrame
 # See: https://hypothesis.readthedocs.io/
-# =====================================================================
+# ====================================================================
+MAX_DATA_SIZE = 10  # max generated frame/series length
+MAX_COLS = 8  # max number of generated cols
 
-dtype_strategy_mapping: dict[PolarsDataType, Any] = {
-    Boolean: booleans(),
-    Float32: floats(width=32),
-    Float64: floats(width=64),
-    Int8: integers(min_value=-(2**7), max_value=(2**7) - 1),
-    Int16: integers(min_value=-(2**15), max_value=(2**15) - 1),
-    Int32: integers(min_value=-(2**31), max_value=(2**31) - 1),
-    Int64: integers(min_value=-(2**63), max_value=(2**63) - 1),
-    UInt8: integers(min_value=0, max_value=(2**8) - 1),
-    UInt16: integers(min_value=0, max_value=(2**16) - 1),
-    UInt32: integers(min_value=0, max_value=(2**32) - 1),
-    UInt64: integers(min_value=0, max_value=(2**64) - 1),
-    # TODO: when generating text for categorical, ensure there are repeats -
-    #  don't want all to be unique.
-    Categorical: text(max_size=10),
-    Utf8: text(max_size=10),
-    # TODO: generate arrow temporal types with different resolution (32/64) to
-    #  validate compatibility.
-    Time: times(),
-    Date: dates(),
-    Duration: timedeltas(
-        min_value=timedelta(microseconds=-(2**63)),
-        max_value=timedelta(microseconds=(2**63) - 1),
-    ),
-    # TODO: confirm datetime min/max limits with different timeunit granularity.
-    # TODO: specific strategies for temporal dtypes with timeunits.
-    Datetime: datetimes(min_value=datetime(1970, 1, 1)),
-    # Datetime("ms")
-    # Datetime("us")
-    # Datetime("ns")
-    # Duration("ms")
-    # Duration("us")
-    # Duration("ns")
-    # TODO: strategies for non-scalar/structured dtypes.
-    # List
-    # Struct
-    # Object
-}
-
-strategy_dtypes = list(dtype_strategy_mapping)
-
-
-def between(draw: DrawFn, type_: type, min_: Any, max_: Any) -> Any:
-    """Draw a value in a given range from a type-inferred strategy."""
-    strategy_init = from_type(type_).function  # type: ignore[attr-defined]
-    return draw(strategy_init(min_, max_))
+strategy_dtypes = list({dtype.base_type() for dtype in scalar_strategies})
 
 
 @dataclass
@@ -146,14 +75,14 @@ class column:
     ----------
     name : str
         string column name.
-    dtype : dtype
+    dtype : PolarsDataType
         a recognised polars dtype.
     strategy : strategy, optional
         supports overriding the default strategy for the given dtype.
     null_probability : float, optional
-        percentage chance (expressed between 0.0 => 1.0) that a generated value
-        is None. this is applied in addition to any None values output by the
-        given/inferred strategy for the column.
+        percentage chance (expressed between 0.0 => 1.0) that a generated value is
+        None. this is applied independently of any None values generated by the
+        underlying strategy.
     unique : bool, optional
         flag indicating that all values generated for the column should be unique.
 
@@ -161,6 +90,7 @@ class column:
     --------
     >>> from hypothesis.strategies import sampled_from
     >>> from polars.testing.parametric import column
+    >>>
     >>> column(name="unique_small_ints", dtype=pl.UInt8, unique=True)
     column(name='unique_small_ints', dtype=UInt8, strategy=None, null_probability=None, unique=True)
     >>> column(name="ccy", strategy=sampled_from(["GBP", "EUR", "JPY"]))
@@ -182,9 +112,23 @@ class column:
                 "null_probability should be between 0.0 and 1.0, or None; found"
                 f" {self.null_probability}"
             )
+
+        if self.dtype is None:
+            tp = getattr(self.strategy, "_dtype", None)
+            if is_polars_dtype(tp):
+                self.dtype = tp
+
         if self.dtype is None and self.strategy is None:
             self.dtype = random.choice(strategy_dtypes)
-        elif self.dtype not in dtype_strategy_mapping:
+
+        elif self.dtype == List:
+            if self.strategy is not None:
+                self.dtype = getattr(self.strategy, "_dtype", self.dtype)
+            else:
+                self.strategy = create_list_strategy(getattr(self.dtype, "inner", None))
+                self.dtype = self.strategy._dtype  # type: ignore[union-attr]
+
+        elif self.dtype not in scalar_strategies:
             if self.dtype is not None:
                 raise InvalidArgument(
                     f"No strategy (currently) available for {self.dtype} type"
@@ -203,14 +147,20 @@ class column:
                     )
                     try:
                         sample_value_type = type(
-                            next(e for e in sample_value_iter if e is not None)
+                            next(
+                                e
+                                for e in sample_value_iter
+                                if e is not None and not empty_list(e, nested=True)
+                            )
                         )
                     except StopIteration:
                         raise InvalidArgument(
                             "Unable to determine dtype for strategy"
                         ) from None
                 if sample_value_type is not None:
-                    self.dtype = py_type_to_dtype(sample_value_type)
+                    value_dtype = py_type_to_dtype(sample_value_type)
+                    if value_dtype is not List:
+                        self.dtype = value_dtype
 
 
 def columns(
@@ -240,7 +190,7 @@ def columns(
         integer number of cols to create, or explicit list of column names. if
         omitted a random number of columns (between mincol and max_cols) are
         created.
-    dtype : dtype, optional
+    dtype : PolarsDataType, optional
         a single dtype for all cols, or list of dtypes (the same length as `cols`).
         if omitted, each generated column is assigned a random dtype.
     min_cols : int, optional
@@ -254,21 +204,23 @@ def columns(
 
     Examples
     --------
-    >>> from polars.testing.parametric import columns
-    >>> from string import punctuation
-    >>>
-    >>> def test_special_char_colname_init() -> None:
-    ...     schema = [(c.name, c.dtype) for c in columns(punctuation)]
-    ...     df = pl.DataFrame(schema=schema)
-    ...     assert len(cols) == len(df.columns)
-    ...     assert 0 == len(df.rows())
-    ...
-    >>> from polars.testing.parametric import columns
+    >>> from polars.testing.parametric import columns, dataframes
     >>> from hypothesis import given
     >>>
     >>> @given(dataframes(columns(["x", "y", "z"], unique=True)))
     ... def test_unique_xyz(df: pl.DataFrame) -> None:
     ...     assert_something(df)
+
+    Note, as 'columns' creates a list of native polars column definitions it can
+    also be used independently of parametric/hypothesis tests:
+
+    >>> from string import punctuation
+    >>>
+    >>> def test_special_char_colname_init() -> None:
+    ...     df = pl.DataFrame(schema=[(c.name, c.dtype) for c in columns(punctuation)])
+    ...     assert len(cols) == len(df.columns)
+    ...     assert 0 == len(df.rows())
+    ...
 
     """
     # create/assign named columns
@@ -310,21 +262,22 @@ def series(
     allow_infinities: bool = True,
     unique: bool = False,
     chunked: bool | None = None,
-    allowed_dtypes: Sequence[PolarsDataType] | None = None,
-    excluded_dtypes: Sequence[PolarsDataType] | None = None,
+    allowed_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
+    excluded_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
 ) -> SearchStrategy[Series]:
     """
-    Strategy for producing a polars Series.
+    Hypothesis strategy for producing polars Series.
 
     Parameters
     ----------
     name : {str, strategy}, optional
         literal string or a strategy for strings (or None), passed to the Series
         constructor name-param.
-    dtype : dtype, optional
+    dtype : PolarsDataType, optional
         a valid polars DataType for the resulting series.
     size : int, optional
-        if set, creates a Series of exactly this size (ignoring min/max params).
+        if set, creates a Series of exactly this size (ignoring min_size/max_size
+        params).
     min_size : int, optional
         if not passing an exact size, can set a minimum here (defaults to 0).
         no-op if `size` is set.
@@ -361,23 +314,40 @@ def series(
     --------
     >>> from polars.testing.parametric import series
     >>> from hypothesis import given
-    >>>
-    >>> @given(df=series())
-    ... def test_repr(s: pl.Series) -> None:
+
+    In normal usage, as a simple unit test:
+
+    >>> @given(s=series(null_probability=0.1))
+    ... def test_repr_is_valid_string(s: pl.Series) -> None:
     ...     assert isinstance(repr(s), str)
-    >>>
-    >>> s = series(dtype=pl.Int32, max_size=5)
+
+    Experimenting locally with a custom List dtype strategy:
+
+    >>> from polars.testing.parametric import create_list_strategy
+    >>> s = series(
+    ...     strategy=create_list_strategy(
+    ...         inner_dtype=pl.Utf8,
+    ...         select_from=["xx", "yy", "zz"],
+    ...     ),
+    ...     min_size=2,
+    ...     max_size=4,
+    ... )
     >>> s.example()  # doctest: +SKIP
     shape: (4,)
-    Series: '' [i64]
+    Series: '' [list[str]]
     [
-        54666
-        -35
-        6414
-        -63290
+        []
+        ["yy", "yy", "zz"]
+        ["zz", "yy", "zz"]
+        ["xx"]
     ]
 
     """
+    if isinstance(allowed_dtypes, (DataType, DataTypeClass)):
+        allowed_dtypes = [allowed_dtypes]
+    if isinstance(excluded_dtypes, (DataType, DataTypeClass)):
+        excluded_dtypes = [excluded_dtypes]
+
     selectable_dtypes = [
         dtype
         for dtype in (allowed_dtypes or strategy_dtypes)
@@ -395,14 +365,22 @@ def series(
         with StringCache():
             # create/assign series dtype and retrieve matching strategy
             series_dtype = (
-                draw(sampled_from(selectable_dtypes)) if dtype is None else dtype
+                draw(sampled_from(selectable_dtypes))
+                if dtype is None and strategy is None
+                else dtype
             )
             if strategy is None:
-                dtype_strategy = dtype_strategy_mapping[series_dtype]
+                if series_dtype is Datetime or series_dtype is Duration:
+                    series_dtype = series_dtype(random.choice(_time_units))  # type: ignore[operator]
+                dtype_strategy = scalar_strategies[
+                    series_dtype
+                    if series_dtype in scalar_strategies
+                    else series_dtype.base_type()  # type: ignore[union-attr]
+                ]
             else:
                 dtype_strategy = strategy
 
-            if series_dtype in (Float32, Float64) and not allow_infinities:
+            if series_dtype in FLOAT_DTYPES and not allow_infinities:
                 dtype_strategy = dtype_strategy.filter(
                     lambda x: not isinstance(x, float) or isfinite(x)
                 )
@@ -429,7 +407,7 @@ def series(
                         dtype_strategy,
                         min_size=series_size,
                         max_size=series_size,
-                        unique=unique,
+                        unique_by=(_hash if unique else None),
                     )
                 )
 
@@ -472,11 +450,11 @@ def dataframes(
     include_cols: Sequence[column] | None = None,
     null_probability: float | dict[str, float] = 0.0,
     allow_infinities: bool = True,
-    allowed_dtypes: Sequence[PolarsDataType] | None = None,
-    excluded_dtypes: Sequence[PolarsDataType] | None = None,
+    allowed_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
+    excluded_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
 ) -> SearchStrategy[DataFrame | LazyFrame]:
     """
-    Provides a strategy for producing a DataFrame or LazyFrame.
+    Hypothesis strategy for producing polars DataFrames or LazyFrames.
 
     Parameters
     ----------
@@ -491,8 +469,8 @@ def dataframes(
         if not passing an exact size, can set a maximum value here (defaults to
         MAX_COLS).
     size : int, optional
-        if set, will create a DataFrame of exactly this size (and ignore min/max len
-        params).
+        if set, will create a DataFrame of exactly this size (and ignore
+        the min_size/max_size len params).
     min_size : int, optional
         if not passing an exact size, set the minimum number of rows in the
         DataFrame.
@@ -535,29 +513,44 @@ def dataframes(
 
     >>> from polars.testing.parametric import column, columns, dataframes
     >>> from hypothesis import given
-    >>>
-    >>> # generate arbitrary DataFrames
+
+    Generate arbitrary DataFrames (as part of a unit test):
+
     >>> @given(df=dataframes())
     ... def test_repr(df: pl.DataFrame) -> None:
     ...     assert isinstance(repr(df), str)
-    >>>
-    >>> # generate LazyFrames with at least 1 column, random dtypes, and specific size:
-    >>> df = dataframes(min_cols=1, lazy=True, max_size=5)
-    >>> df.example()  # doctest: +SKIP
-    >>>
-    >>> # generate DataFrames with known colnames, random dtypes (per test, not per-frame):
-    >>> df_strategy = dataframes(columns(["x", "y", "z"]))
-    >>> df.example()  # doctest: +SKIP
-    >>>
-    >>> # generate frames with explicitly named/typed columns and a fixed size:
-    >>> df_strategy = dataframes(
+
+    Generate LazyFrames with at least 1 column, random dtypes, and specific size:
+
+    >>> dfs = dataframes(min_cols=1, max_size=5, lazy=True)
+    >>> dfs.example()  # doctest: +SKIP
+    <polars.LazyFrame object at 0x11F561580>
+
+    Generate DataFrames with known colnames, random dtypes (per test, not per-frame):
+
+    >>> dfs = dataframes(columns(["x", "y", "z"]))
+    >>> dfs.example()  # doctest: +SKIP
+    shape: (3, 3)
+    ┌────────────┬───────┬────────────────────────────┐
+    │ x          ┆ y     ┆ z                          │
+    │ ---        ┆ ---   ┆ ---                        │
+    │ date       ┆ u16   ┆ datetime[μs]               │
+    ╞════════════╪═══════╪════════════════════════════╡
+    │ 0565-08-12 ┆ 34715 ┆ 5844-09-20 00:33:31.076854 │
+    │ 3382-10-17 ┆ 48662 ┆ 7540-01-29 11:20:14.836271 │
+    │ 4063-06-17 ┆ 39092 ┆ 1889-05-05 13:25:41.874455 │
+    └────────────┴───────┴────────────────────────────┘
+
+    Generate frames with explicitly named/typed columns and a fixed size:
+
+    >>> dfs = dataframes(
     ...     [
     ...         column("x", dtype=pl.Int32),
     ...         column("y", dtype=pl.Float64),
     ...     ],
     ...     size=2,
     ... )
-    >>> df_strategy.example()  # doctest: +SKIP
+    >>> dfs.example()  # doctest: +SKIP
     shape: (2, 2)
     ┌───────────┬────────────┐
     │ x         ┆ y          │
@@ -567,16 +560,21 @@ def dataframes(
     │ -15836    ┆ 1.1755e-38 │
     │ 575050513 ┆ NaN        │
     └───────────┴────────────┘
-    """  # noqa: 501
+
+    """
     _failed_frame_init_msgs_.clear()
 
     if isinstance(min_size, int) and min_cols in (0, None):
         min_cols = 1
+    if isinstance(allowed_dtypes, (DataType, DataTypeClass)):
+        allowed_dtypes = [allowed_dtypes]
+    if isinstance(excluded_dtypes, (DataType, DataTypeClass)):
+        excluded_dtypes = [excluded_dtypes]
 
     selectable_dtypes = [
         dtype
         for dtype in (allowed_dtypes or strategy_dtypes)
-        if dtype not in (excluded_dtypes or ())
+        if dtype in strategy_dtypes and dtype not in (excluded_dtypes or ())
     ]
 
     @composite
@@ -635,12 +633,15 @@ def dataframes(
                 for c in coldefs
             }
 
-            # note: randomly change between row-wise and column-wise frame init
-            orient = cast(Orientation, "row" if draw(booleans()) else "col")
-            data = list(zip(*data.values())) if orient == "row" else data  # type: ignore[assignment]
+            # note: randomly change between column-wise and row-wise frame init
+            orient = "col"
+            if draw(booleans()) and not any(c.dtype == List for c in coldefs):
+                data = list(zip(*data.values()))  # type: ignore[assignment]
+                orient = "row"
+
             schema = [(c.name, c.dtype) for c in coldefs]
             try:
-                df = DataFrame(data=data, schema=schema, orient=orient)
+                df = DataFrame(data=data, schema=schema, orient=orient)  # type: ignore[arg-type]
 
                 # optionally generate chunked frames
                 if series_size > 1 and chunked is True:
@@ -652,11 +653,19 @@ def dataframes(
 
             except Exception:
                 # print code that will allow any init failure to be reproduced
+                if isinstance(data, dict):
+                    frame_cols = ", ".join(
+                        f"{col!r}: {s.to_init_repr()}" for col, s in data.items()
+                    )
+                    frame_data = f"{{{frame_cols}}}"
+                else:
+                    frame_data = repr(data)
+
                 failed_frame_init = dedent(
                     f"""
                     # failed frame init: reproduce with...
                     pl.DataFrame(
-                        data={data!r},
+                        data={frame_data},
                         schema={repr(schema).replace("', ","', pl.")},
                         orient={orient!r},
                     )

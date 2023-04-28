@@ -53,7 +53,7 @@ static FOODS_CSV: &str = "../../examples/datasets/foods1.csv";
 static FOODS_IPC: &str = "../../examples/datasets/foods1.ipc";
 static FOODS_PARQUET: &str = "../../examples/datasets/foods1.parquet";
 
-#[cfg(feature = "csv-file")]
+#[cfg(feature = "csv")]
 fn scan_foods_csv() -> LazyFrame {
     LazyCsvReader::new(FOODS_CSV).finish().unwrap()
 }

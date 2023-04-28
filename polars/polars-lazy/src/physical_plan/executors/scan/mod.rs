@@ -1,4 +1,4 @@
-#[cfg(feature = "csv-file")]
+#[cfg(feature = "csv")]
 mod csv;
 #[cfg(feature = "ipc")]
 mod ipc;
@@ -9,7 +9,7 @@ mod parquet;
 
 use std::mem;
 
-#[cfg(feature = "csv-file")]
+#[cfg(feature = "csv")]
 pub(crate) use csv::CsvExec;
 #[cfg(feature = "ipc")]
 pub(crate) use ipc::IpcExec;
@@ -19,12 +19,7 @@ pub(crate) use parquet::ParquetExec;
 use polars_io::predicates::PhysicalIoExpr;
 use polars_io::prelude::*;
 use polars_plan::global::_set_n_rows_for_scan;
-#[cfg(any(
-    feature = "parquet",
-    feature = "csv-file",
-    feature = "ipc",
-    feature = "cse"
-))]
+#[cfg(any(feature = "parquet", feature = "csv", feature = "ipc", feature = "cse"))]
 use polars_plan::logical_plan::FileFingerPrint;
 
 use super::*;

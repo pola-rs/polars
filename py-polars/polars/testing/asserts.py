@@ -6,12 +6,14 @@ from typing import Any
 from polars import functions as F
 from polars.dataframe import DataFrame
 from polars.datatypes import (
+    FLOAT_DTYPES,
     UNSIGNED_INTEGER_DTYPES,
     Categorical,
     DataTypeClass,
-    Float32,
-    Float64,
+    List,
+    Struct,
     dtype_to_py_type,
+    unpack_dtypes,
 )
 from polars.exceptions import ComputeError, InvalidAssert
 from polars.lazyframe import LazyFrame
@@ -325,15 +327,42 @@ def _assert_series_inner(
         raise_assert_detail("Series", "Dtype mismatch", left.dtype, right.dtype)
 
     # confirm that we can call 'is_nan' on both sides
-    left_is_float = left.dtype in (Float32, Float64)
-    right_is_float = right.dtype in (Float32, Float64)
-    comparing_float_dtypes = left_is_float and right_is_float
+    comparing_float_dtypes = left.dtype in FLOAT_DTYPES and right.dtype in FLOAT_DTYPES
 
     # create mask of which (if any) values are unequal
     unequal = left != right
-    if unequal.any() and nans_compare_equal and comparing_float_dtypes:
+    if unequal.any() and nans_compare_equal:
         # handle NaN values (which compare unequal to themselves)
-        unequal = unequal & ~((left.is_nan() & right.is_nan()).fill_null(F.lit(False)))
+        if comparing_float_dtypes:
+            unequal = unequal & ~(
+                (left.is_nan() & right.is_nan()).fill_null(F.lit(False))
+            )
+
+        # for nested lists that contain float elements, we compare left/right inner
+        # series values using the same _assert_series_inner call; this handles NaN
+        # value comparison at any level of nesting...
+        elif left.dtype == right.dtype == List:
+            left_right_dtypes = (left.dtype, right.dtype)
+            if any(tp in FLOAT_DTYPES for tp in unpack_dtypes(left_right_dtypes)):
+                for s1, s2 in zip(left.filter(unequal), right.filter(unequal)):
+                    if len(s1) != len(s2):
+                        raise_assert_detail(
+                            "Series", "Element length mismatch", len(s1), len(s2)
+                        )
+                    _assert_series_inner(
+                        s1,
+                        s2,
+                        check_dtype=check_dtype,
+                        check_exact=check_exact,
+                        nans_compare_equal=nans_compare_equal,
+                        atol=atol,
+                        rtol=rtol,
+                    )
+                unequal = Series("unequal", [False])
+
+        # TODO: handle NaN values nested inside arbitrary Structs
+        elif left.dtype == right.dtype == Struct:
+            ...
 
     # assert exact, or with tolerance
     if unequal.any():

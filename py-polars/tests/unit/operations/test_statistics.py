@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 import numpy as np
 
 import polars as pl
@@ -91,3 +93,13 @@ def test_cut_null_values() -> None:
         str(s.qcut([0.2, 0.3], maintain_order=False).to_dict(False))
         == "{'': [-1.0, 1.0, 2.0, 4.0, 8.0, None, None], 'break_point': [0.5999999999999996, 1.2000000000000002, inf, inf, inf, None, None], 'category': ['(-inf, 0.5999999999999996]', '(0.5999999999999996, 1.2000000000000002]', '(1.2000000000000002, inf]', '(1.2000000000000002, inf]', '(1.2000000000000002, inf]', None, None]}"
     )
+
+
+def test_median_quantile_duration() -> None:
+    df = pl.DataFrame({"A": [timedelta(days=0), timedelta(days=1)]})
+    assert df.select(pl.col("A").median()).to_dict(False) == {
+        "A": [timedelta(seconds=43200)]
+    }
+    assert df.select(pl.col("A").quantile(0.5, interpolation="linear")).to_dict(
+        False
+    ) == {"A": [timedelta(seconds=43200)]}

@@ -8,35 +8,44 @@ use polars_core::export::num;
 use super::*;
 
 // Use an aggregation window that maintains the state
-pub(crate) fn rolling_apply_agg_window<'a, Agg, T, O>(values: &'a [T], offsets: O) -> ArrayRef
+pub(crate) fn rolling_apply_agg_window<'a, Agg, T, O>(
+    values: &'a [T],
+    offsets: O,
+) -> PolarsResult<ArrayRef>
 where
     // items (offset, len) -> so offsets are offset, offset + len
     Agg: RollingAggWindowNoNulls<'a, T>,
-    O: Iterator<Item = (IdxSize, IdxSize)> + TrustedLen,
+    O: Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen,
     T: Debug + IsFloat + NativeType,
 {
     if values.is_empty() {
         let out: Vec<T> = vec![];
-        return Box::new(PrimitiveArray::new(T::PRIMITIVE.into(), out.into(), None));
+        return Ok(Box::new(PrimitiveArray::new(
+            T::PRIMITIVE.into(),
+            out.into(),
+            None,
+        )));
     }
     // start with a dummy index, will be overwritten on first iteration.
     let mut agg_window = Agg::new(values, 0, 0);
 
     let out = offsets
-        .map(|(start, len)| {
-            let end = start + len;
+        .map(|result| {
+            result.map(|(start, len)| {
+                let end = start + len;
 
-            if start == end {
-                None
-            } else {
-                // safety:
-                // we are in bounds
-                Some(unsafe { agg_window.update(start as usize, end as usize) })
-            }
+                if start == end {
+                    None
+                } else {
+                    // safety:
+                    // we are in bounds
+                    Some(unsafe { agg_window.update(start as usize, end as usize) })
+                }
+            })
         })
-        .collect::<PrimitiveArray<T>>();
+        .collect::<PolarsResult<PrimitiveArray<T>>>()?;
 
-    Box::new(out)
+    Ok(Box::new(out))
 }
 
 pub(crate) fn rolling_min<T>(
@@ -47,7 +56,7 @@ pub(crate) fn rolling_min<T>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-) -> ArrayRef
+) -> PolarsResult<ArrayRef>
 where
     T: NativeType + PartialOrd + IsFloat + Bounded + NumCast + Mul<Output = T>,
 {
@@ -80,7 +89,7 @@ pub(crate) fn rolling_max<T>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-) -> ArrayRef
+) -> PolarsResult<ArrayRef>
 where
     T: NativeType + PartialOrd + IsFloat + Bounded + NumCast + Mul<Output = T>,
 {
@@ -113,7 +122,7 @@ pub(crate) fn rolling_sum<T>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-) -> ArrayRef
+) -> PolarsResult<ArrayRef>
 where
     T: NativeType + std::iter::Sum + NumCast + Mul<Output = T> + AddAssign + SubAssign + IsFloat,
 {
@@ -146,7 +155,7 @@ pub(crate) fn rolling_mean<T>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-) -> ArrayRef
+) -> PolarsResult<ArrayRef>
 where
     T: NativeType + Float + std::iter::Sum<T> + SubAssign + AddAssign + IsFloat,
 {
@@ -179,7 +188,7 @@ pub(crate) fn rolling_var<T>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-) -> ArrayRef
+) -> PolarsResult<ArrayRef>
 where
     T: NativeType + Float + std::iter::Sum<T> + SubAssign + AddAssign + IsFloat,
 {
@@ -212,7 +221,7 @@ pub(crate) fn rolling_std<T>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-) -> ArrayRef
+) -> PolarsResult<ArrayRef>
 where
     T: NativeType
         + Float

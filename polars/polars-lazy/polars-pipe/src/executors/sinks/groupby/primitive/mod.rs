@@ -174,7 +174,7 @@ where
                         let agg_fns =
                             unsafe { std::slice::from_raw_parts_mut(ptr, aggregators_len) };
                         let mut key_builder = PrimitiveChunkedBuilder::<K>::new(
-                            self.output_schema.get_index(0).unwrap().0,
+                            self.output_schema.get_at_index(0).unwrap().0,
                             agg_map.len(),
                         );
                         let dtypes = agg_fns
@@ -352,7 +352,7 @@ where
         let ca: &ChunkedArray<K> = s.as_ref().as_ref();
 
         // sorted fast path
-        if matches!(ca.is_sorted_flag2(), IsSorted::Ascending) && ca.null_count() == 0 {
+        if matches!(ca.is_sorted_flag(), IsSorted::Ascending) && ca.null_count() == 0 {
             return self.sink_sorted(ca, chunk);
         }
 

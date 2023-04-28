@@ -62,6 +62,7 @@ pub enum StringFunction {
     LStrip(Option<String>),
     #[cfg(feature = "string_from_radix")]
     FromRadix(u32, bool),
+    Slice(i64, Option<u64>),
 }
 
 impl StringFunction {
@@ -82,7 +83,7 @@ impl StringFunction {
             ConcatVertical(_) | ConcatHorizontal(_) => mapper.with_dtype(DataType::Utf8),
             #[cfg(feature = "regex")]
             Replace { .. } => mapper.with_dtype(DataType::Utf8),
-            Uppercase | Lowercase | Strip(_) | LStrip(_) | RStrip(_) => {
+            Uppercase | Lowercase | Strip(_) | LStrip(_) | RStrip(_) | Slice(_, _) => {
                 mapper.with_dtype(DataType::Utf8)
             }
             #[cfg(feature = "string_from_radix")]
@@ -123,6 +124,7 @@ impl Display for StringFunction {
             StringFunction::RStrip(_) => "rstrip",
             #[cfg(feature = "string_from_radix")]
             StringFunction::FromRadix { .. } => "from_radix",
+            StringFunction::Slice(_, _) => "str_slice",
         };
 
         write!(f, "str.{s}")
@@ -343,14 +345,14 @@ pub(super) fn count_match(s: &Series, pat: &str) -> PolarsResult<Series> {
 
 #[cfg(feature = "temporal")]
 pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Series> {
-    let tz_aware = match (options.tz_aware, &options.fmt) {
+    let tz_aware = match (options.tz_aware, &options.format) {
         (true, Some(_)) => true,
         (true, None) => polars_bail!(
             ComputeError:
-            "passing 'tz_aware=True' without 'fmt' is not yet supported, please specify 'fmt'"
+            "passing 'tz_aware=True' without 'format' is not yet supported, please specify 'format'"
         ),
         #[cfg(feature = "timezones")]
-        (false, Some(fmt)) => TZ_AWARE_RE.is_match(fmt),
+        (false, Some(format)) => TZ_AWARE_RE.is_match(format),
         (false, _) => false,
     };
     let ca = s.utf8()?;
@@ -358,10 +360,11 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
     let out = match &options.date_dtype {
         DataType::Date => {
             if options.exact {
-                ca.as_date(options.fmt.as_deref(), options.cache)?
+                ca.as_date(options.format.as_deref(), options.cache)?
                     .into_series()
             } else {
-                ca.as_date_not_exact(options.fmt.as_deref())?.into_series()
+                ca.as_date_not_exact(options.format.as_deref())?
+                    .into_series()
             }
         }
         DataType::Datetime(tu, tz) => {
@@ -380,7 +383,7 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
             };
             if options.exact {
                 ca.as_datetime(
-                    options.fmt.as_deref(),
+                    options.format.as_deref(),
                     *tu,
                     options.cache,
                     tz_aware,
@@ -389,7 +392,7 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
                 )?
                 .into_series()
             } else {
-                ca.as_datetime_not_exact(options.fmt.as_deref(), *tu, tz.as_ref())?
+                ca.as_datetime_not_exact(options.format.as_deref(), *tu, tz.as_ref())?
                     .into_series()
             }
         }
@@ -397,7 +400,7 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
             polars_ensure!(
                 options.exact, ComputeError: "non-exact not implemented for datatype {}", dt,
             );
-            ca.as_time(options.fmt.as_deref(), options.cache)?
+            ca.as_time(options.format.as_deref(), options.cache)?
                 .into_series()
         }
         dt => polars_bail!(ComputeError: "not implemented for dtype {}", dt),
@@ -410,8 +413,8 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
             \n\
             You might want to try:\n\
             - setting `strict=False`,\n\
-            - explicitly specifying a `fmt`,\n\
-            - setting `utf=True` (if you are parsing datetimes with multiple offsets)."
+            - explicitly specifying a `format`,\n\
+            - setting `utc=True` (if you are parsing datetimes with multiple offsets)."
         );
     }
     Ok(out.into_series())
@@ -594,4 +597,8 @@ pub(super) fn replace(s: &[Series], literal: bool, n: i64) -> PolarsResult<Serie
 pub(super) fn from_radix(s: &Series, radix: u32, strict: bool) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     ca.parse_int(radix, strict).map(|ok| ok.into_series())
+}
+pub(super) fn str_slice(s: &Series, start: i64, length: Option<u64>) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    ca.str_slice(start, length).map(|ca| ca.into_series())
 }

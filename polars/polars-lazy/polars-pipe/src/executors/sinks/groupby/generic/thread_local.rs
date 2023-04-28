@@ -45,11 +45,11 @@ impl SpillPartitions {
             .map(|_| {
                 let mut buf = Vec::with_capacity(n_columns);
                 for dtype in self.keys_dtypes.as_ref() {
-                    let builder = AnyValueBufferTrusted::new(dtype, OB_SIZE);
+                    let builder = AnyValueBufferTrusted::new(&dtype.to_physical(), OB_SIZE);
                     buf.push(builder);
                 }
                 for dtype in self.agg_dtypes.as_ref() {
-                    let builder = AnyValueBufferTrusted::new(dtype, OB_SIZE);
+                    let builder = AnyValueBufferTrusted::new(&dtype.to_physical(), OB_SIZE);
                     buf.push(builder);
                 }
                 buf
@@ -81,11 +81,11 @@ impl SpillPartitions {
                 .map(|_| {
                     let mut buf = Vec::with_capacity(n_columns);
                     for dtype in self.keys_dtypes.as_ref() {
-                        let builder = AnyValueBufferTrusted::new(dtype, OB_SIZE);
+                        let builder = AnyValueBufferTrusted::new(&dtype.to_physical(), OB_SIZE);
                         buf.push(builder);
                     }
                     for dtype in self.agg_dtypes.as_ref() {
-                        let builder = AnyValueBufferTrusted::new(dtype, OB_SIZE);
+                        let builder = AnyValueBufferTrusted::new(&dtype.to_physical(), OB_SIZE);
                         buf.push(builder);
                     }
                     buf
