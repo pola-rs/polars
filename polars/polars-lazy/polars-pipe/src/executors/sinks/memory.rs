@@ -40,7 +40,14 @@ impl MemTracker {
     pub(super) fn get_available(&self) -> usize {
         // once in every n passes we fetch mem usage.
         let fetch_count = self.fetch_count.fetch_add(1, Ordering::Relaxed);
-        if fetch_count % (64 * self.thread_count) == 0 {
+
+        // this triggers paths easier during debugging
+        #[cfg(not(debug_assertions))]
+        let refresh_interval = 64;
+        #[cfg(debug_assertions)]
+        let refresh_interval = 1;
+
+        if fetch_count % (refresh_interval * self.thread_count) == 0 {
             self.refresh_memory()
         }
         self.available_mem.load(Ordering::Relaxed)

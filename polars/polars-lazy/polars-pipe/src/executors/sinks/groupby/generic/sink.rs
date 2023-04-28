@@ -5,6 +5,7 @@ use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use super::*;
 use crate::executors::sinks::groupby::generic::global::GlobalTable;
 use crate::executors::sinks::groupby::generic::ooc_state::{OocState, SpillAction};
+use crate::executors::sinks::groupby::generic::source::GroupBySource;
 use crate::executors::sources::DataFrameSource;
 use crate::expressions::PhysicalPipedExpr;
 
@@ -77,7 +78,6 @@ impl Sink for GenericGroupby2 {
                 if let Some((partition, spill_payload)) =
                     table.insert(*hash, &mut keys, &mut aggs, chunk_idx)
                 {
-                    // append payload to global spills
                     self.global_table.spill(partition, spill_payload)
                 }
             }
@@ -161,7 +161,7 @@ impl Sink for GenericGroupby2 {
             }
             // create an ooc source
             else {
-                todo!()
+                Ok(FinalizedSink::Source(Box::new(GroupBySource::new(&self.ooc_state.io_thread, self.slice, self.global_table.clone())?)))
             }
         }
     }

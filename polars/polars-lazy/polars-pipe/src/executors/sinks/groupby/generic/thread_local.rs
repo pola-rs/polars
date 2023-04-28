@@ -24,7 +24,7 @@ impl SpillPartitions {
         let hash_partitioned = vec![];
         let chunk_index_partitioned = vec![];
 
-        // construct via split so that preallocation succeeds
+        // construct via split so that pre-allocation succeeds
         Self {
             keys_aggs_partitioned: vec![],
             hash_partitioned,

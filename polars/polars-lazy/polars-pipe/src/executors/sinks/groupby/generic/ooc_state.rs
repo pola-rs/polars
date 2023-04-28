@@ -16,7 +16,7 @@ pub(super) struct OocState {
     // sort in-memory or out-of-core
     pub(super) ooc: bool,
     // when ooc, we write to disk using an IO thread
-    pub(super) io_thread: Arc<Mutex<Option<IOThread>>>,
+    pub(super) io_thread: IOThreadRef,
     count: u16,
 }
 
@@ -36,7 +36,7 @@ impl Default for OocState {
 const EARLY_MERGE_THRESHOLD: f64 = 0.5;
 // If this is reached we spill to disk and
 // aggregate in a second run
-const TO_DISK_THRESHOLD: f64 = 0.3;
+const TO_DISK_THRESHOLD: f64 = 1.0;
 
 pub(super) enum SpillAction {
     EarlyMerge,
@@ -45,7 +45,7 @@ pub(super) enum SpillAction {
 }
 
 impl OocState {
-    fn init_ooc(&mut self, spill_schema: &dyn Fn() -> Option<Schema>) -> PolarsResult<()> {
+    fn init_ooc(&mut self, spill_schema: Schema) -> PolarsResult<()> {
         if verbose() {
             eprintln!("OOC groupby started");
         }
@@ -54,9 +54,7 @@ impl OocState {
         // start IO thread
         let mut iot = self.io_thread.lock().unwrap();
         if iot.is_none() {
-            if let Some(schema) = spill_schema() {
-                *iot = Some(IOThread::try_new(Arc::new(schema), "groupby")?)
-            }
+            *iot = Some(IOThread::try_new(Arc::new(spill_schema), "groupby").unwrap());
         }
         Ok(())
     }
@@ -69,11 +67,16 @@ impl OocState {
             return Ok(SpillAction::Dump);
         }
         let free_frac = self.mem_track.free_memory_fraction_since_start();
+        dbg!(free_frac, TO_DISK_THRESHOLD);
         self.count += 1;
 
         if free_frac < TO_DISK_THRESHOLD {
-            self.init_ooc(spill_schema)?;
-            Ok(SpillAction::Dump)
+            if let Some(schema) = spill_schema() {
+                self.init_ooc(schema)?;
+                Ok(SpillAction::Dump)
+            } else {
+                Ok(SpillAction::None)
+            }
         } else if free_frac < EARLY_MERGE_THRESHOLD
         // clean up some spills
          || (self.count % 512) == 0

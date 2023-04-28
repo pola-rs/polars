@@ -1,0 +1,75 @@
+use polars_io::ipc::IpcReader;
+use polars_io::SerReader;
+use super::*;
+use crate::executors::sinks::groupby::generic::global::GlobalTable;
+use crate::executors::sinks::io::{block_thread_until_io_thread_done, IOThread};
+use crate::operators::{Source, SourceResult};
+
+pub(super) struct GroupBySource {
+    // holding this keeps the lockfile in place
+    _io_thread: IOThread,
+    partitions: std::fs::ReadDir,
+    global_table: Arc<GlobalTable>,
+    slice: Option<(usize, usize)>,
+    chunk_idx: IdxSize
+}
+
+impl GroupBySource {
+    pub(super) fn new(
+        io_thread: &IOThreadRef,
+        slice: Option<(i64, usize)>,
+        global_table: Arc<GlobalTable>,
+    ) -> PolarsResult<Self> {
+        let mut io_thread = io_thread.lock().unwrap();
+        let io_thread = io_thread.take().unwrap();
+
+        if let Some(slice) = slice {
+            polars_ensure!(slice.0 >= 0, ComputeError: "negative slice not supported with out-of-core groupby")
+        }
+
+        block_thread_until_io_thread_done(&io_thread);
+        let partitions = std::fs::read_dir(&io_thread.dir)?;
+        Ok(Self {
+            _io_thread: io_thread,
+            partitions,
+            slice: slice.map(|slice| (slice.0 as usize, slice.1)),
+            global_table,
+            chunk_idx: 0
+        })
+    }
+
+
+}
+
+impl Source for GroupBySource {
+    fn get_batches(&mut self, _context: &PExecutionContext) -> PolarsResult<SourceResult> {
+        if self.slice == Some((0, 0)) {
+            return Ok(SourceResult::Finished);
+        }
+
+        let paritition_dir = if let Some(part) = self.partitions.next() {
+            part?.path()
+        } else {
+            return Ok(SourceResult::Finished)
+        };
+
+        let partition_name = paritition_dir.file_name().unwrap().to_str().unwrap();
+        let partition_no = partition_name.parse::<usize>().unwrap();
+
+        // we unwrap as
+        for file in std::fs::read_dir(paritition_dir).expect("should be there") {
+            let spilled = file.unwrap().path();
+            let file = std::fs::File::open(spilled)?;
+            let reader = IpcReader::new(file);
+            let spilled= reader.finish().unwrap();
+            self.global_table.process_partition_from_dumped(partition_no, &spilled)
+        }
+        let df = self.global_table.finalize_partition(partition_no);
+        let chunk_idx = self.chunk_idx;
+        self.chunk_idx += 1;
+        Ok(SourceResult::GotMoreData(vec![DataChunk::new(chunk_idx, df)]))
+    }
+    fn fmt(&self) -> &str {
+        "generic-groupby-source"
+    }
+}
