@@ -326,49 +326,38 @@ def _assert_series_inner(
     if check_dtype and left.dtype != right.dtype:
         raise_assert_detail("Series", "Dtype mismatch", left.dtype, right.dtype)
 
-    # confirm that we can call 'is_nan' on both sides
-    comparing_float_dtypes = left.dtype in FLOAT_DTYPES and right.dtype in FLOAT_DTYPES
-
     # create mask of which (if any) values are unequal
     unequal = left != right
+
+    # handle NaN values (which compare unequal to themselves)
+    comparing_float_dtypes = left.dtype in FLOAT_DTYPES and right.dtype in FLOAT_DTYPES
     if unequal.any() and nans_compare_equal:
-        # handle NaN values (which compare unequal to themselves)
+        # when both dtypes are scalar floats
         if comparing_float_dtypes:
             unequal = unequal & ~(
                 (left.is_nan() & right.is_nan()).fill_null(F.lit(False))
             )
 
-        # for nested lists that contain float elements, we compare left/right inner
-        # series values using the same _assert_series_inner call; this handles NaN
-        # value comparison at any level of nesting...
-        elif left.dtype == right.dtype == List:
-            left_right_dtypes = (left.dtype, right.dtype)
-            if any(tp in FLOAT_DTYPES for tp in unpack_dtypes(left_right_dtypes)):
-                for s1, s2 in zip(left.filter(unequal), right.filter(unequal)):
-                    if len(s1) != len(s2):
-                        raise_assert_detail(
-                            "Series", "Element length mismatch", len(s1), len(s2)
-                        )
-                    _assert_series_inner(
-                        s1,
-                        s2,
-                        check_dtype=check_dtype,
-                        check_exact=check_exact,
-                        nans_compare_equal=nans_compare_equal,
-                        atol=atol,
-                        rtol=rtol,
-                    )
-                unequal = Series("unequal", [False])
-
-        # TODO: handle NaN values nested inside arbitrary Structs
-        elif left.dtype == right.dtype == Struct:
-            ...
+        # account for float values in nested dtypes
+        elif left.dtype.is_nested or right.dtype.is_nested:
+            if _assert_series_nested_nans_equal(
+                left=left.filter(unequal),
+                right=right.filter(unequal),
+                check_dtype=check_dtype,
+                check_exact=check_exact,
+                atol=atol,
+                rtol=rtol,
+            ):
+                return
 
     # assert exact, or with tolerance
     if unequal.any():
         if check_exact:
             raise_assert_detail(
-                "Series", "Exact value mismatch", left=list(left), right=list(right)
+                "Series",
+                "Exact value mismatch",
+                left=list(left),
+                right=list(right),
             )
         else:
             # apply check with tolerance (to the known-unequal matches).
@@ -401,6 +390,71 @@ def _assert_series_inner(
                     left=list(left),
                     right=list(right),
                 )
+
+
+def _assert_series_nested_nans_equal(
+    left: Series,
+    right: Series,
+    check_dtype: bool,
+    check_exact: bool,
+    atol: float,
+    rtol: float,
+) -> bool:
+    # check that float values exist at _some_ level of nesting
+    if not any(tp in FLOAT_DTYPES for tp in unpack_dtypes(left.dtype, right.dtype)):
+        return False
+
+    # compare nested lists element-wise
+    elif left.dtype == List == right.dtype:
+        for s1, s2 in zip(left, right):
+            if s1 is None and s2 is None:
+                continue
+            elif (s1 is None and s2 is not None) or (s2 is None and s1 is not None):
+                raise_assert_detail("Series", "Nested value mismatch", s1, s2)
+            elif len(s1) != len(s2):
+                raise_assert_detail(
+                    "Series", "Nested list length mismatch", len(s1), len(s2)
+                )
+            _assert_series_inner(
+                s1,
+                s2,
+                check_dtype=check_dtype,
+                check_exact=check_exact,
+                nans_compare_equal=True,
+                atol=atol,
+                rtol=rtol,
+            )
+        return True
+
+    # unnest structs as series and compare
+    elif left.dtype == Struct == right.dtype:
+        ls, rs = left.struct.unnest(), right.struct.unnest()
+        if len(ls.columns) != len(rs.columns):
+            raise_assert_detail(
+                "Series",
+                "Nested struct fields mismatch",
+                len(ls.columns),
+                len(rs.columns),
+            )
+        elif len(ls) != len(rs):
+            raise_assert_detail(
+                "Series", "Nested struct length mismatch", len(ls), len(rs)
+            )
+        for s1, s2 in zip(ls, rs):
+            _assert_series_inner(
+                s1,
+                s2,
+                check_dtype=check_dtype,
+                check_exact=check_exact,
+                nans_compare_equal=True,
+                atol=atol,
+                rtol=rtol,
+            )
+        return True
+    else:
+        # fall-back to outer codepath (if mismatched dtypes we would expect
+        # the equality check to fail - unless ALL series values are null)
+        return False
 
 
 def raise_assert_detail(

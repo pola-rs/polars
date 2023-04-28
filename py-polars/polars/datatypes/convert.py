@@ -16,11 +16,7 @@ from typing import (
     Optional,
     TypeVar,
     Union,
-    cast,
     overload,
-)
-from typing import (
-    List as TypingList,
 )
 
 from polars.datatypes import (
@@ -54,7 +50,6 @@ from polars.datatypes import (
 )
 from polars.dependencies import numpy as np
 from polars.dependencies import pyarrow as pa
-from polars.type_aliases import PolarsDataType
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import dtype_str_repr as _dtype_str_repr
@@ -77,7 +72,7 @@ else:
     UnionType = type(Union[int, float])
 
 if TYPE_CHECKING:
-    from polars.type_aliases import PythonDataType, SchemaDict, TimeUnit
+    from polars.type_aliases import PolarsDataType, PythonDataType, SchemaDict, TimeUnit
 
     if sys.version_info >= (3, 8):
         from typing import Literal
@@ -160,7 +155,7 @@ def is_polars_dtype(dtype: Any, include_unknown: bool = False) -> bool:
 
 
 def unpack_dtypes(
-    dtypes: PolarsDataType | Collection[PolarsDataType] | None,
+    *dtypes: PolarsDataType | None,
     include_compound: bool = False,
 ) -> set[PolarsDataType]:
     """
@@ -168,8 +163,8 @@ def unpack_dtypes(
 
     Parameters
     ----------
-    dtypes : PolarsDataType | Collection[PolarsDataType] | None
-        polars dtype, collection of dtypes, or None.
+    *dtypes : PolarsDataType | Collection[PolarsDataType] | None
+        one or more polars dtypes.
 
     include_compound : bool, default True
         * if True, any parent/compound dtypes (List, Struct) are included in the result.
@@ -196,11 +191,11 @@ def unpack_dtypes(
     """  # noqa: W505
     if not dtypes:
         return set()
-    elif is_polars_dtype(dtypes):
-        dtypes = [dtypes]  # type: ignore[list-item]
+    elif len(dtypes) == 1 and isinstance(dtypes[0], Collection):
+        dtypes = dtypes[0]
 
     unpacked: set[PolarsDataType] = set()
-    for tp in cast(TypingList[PolarsDataType], dtypes):
+    for tp in dtypes:
         if isinstance(tp, List):
             if include_compound:
                 unpacked.add(tp)
@@ -211,7 +206,7 @@ def unpack_dtypes(
             unpacked.update(unpack_dtypes(tp.fields, include_compound=include_compound))  # type: ignore[arg-type]
         elif isinstance(tp, Field):
             unpacked.update(unpack_dtypes(tp.dtype, include_compound=include_compound))
-        elif is_polars_dtype(tp):
+        elif tp is not None and is_polars_dtype(tp):
             unpacked.add(tp)
     return unpacked
 
