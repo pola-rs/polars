@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta
-from random import choice
+from itertools import chain
+from random import choice, shuffle
 from string import ascii_letters, ascii_uppercase, digits, punctuation
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Iterator, MutableMapping, Sequence
 
 from hypothesis.strategies import (
+    SearchStrategy,
     booleans,
     characters,
     composite,
@@ -43,20 +45,20 @@ from polars.datatypes import (
     UInt32,
     UInt64,
     Utf8,
+    is_polars_dtype,
 )
+from polars.type_aliases import PolarsDataType
 
 if TYPE_CHECKING:
+    import sys
     from decimal import Decimal as PyDecimal
 
-    from hypothesis.strategies import DrawFn, SearchStrategy
+    from hypothesis.strategies import DrawFn
 
-    from polars.type_aliases import PolarsDataType
-
-
-def between(draw: DrawFn, type_: type, min_: Any, max_: Any) -> Any:
-    """Draw a value in a given range from a type-inferred strategy."""
-    strategy_init = from_type(type_).function  # type: ignore[attr-defined]
-    return draw(strategy_init(min_, max_))
+    if sys.version_info >= (3, 11):
+        from typing import Self
+    else:
+        from typing_extensions import Self
 
 
 # scalar dtype strategies are largely straightforward, mapping directly
@@ -95,6 +97,12 @@ strategy_duration = timedeltas(
 )
 
 
+def between(draw: DrawFn, type_: type, min_: Any, max_: Any) -> Any:
+    """Draw a value in a given range from a type-inferred strategy."""
+    strategy_init = from_type(type_).function  # type: ignore[attr-defined]
+    return draw(strategy_init(min_, max_))
+
+
 @composite
 def strategy_decimal(draw: DrawFn) -> PyDecimal:
     places = draw(integers(min_value=0, max_value=18))
@@ -110,45 +118,116 @@ def strategy_decimal(draw: DrawFn) -> PyDecimal:
     )
 
 
-scalar_strategies: dict[PolarsDataType, SearchStrategy[Any]] = {
-    Boolean: strategy_bool,
-    Float32: strategy_f32,
-    Float64: strategy_f64,
-    Int8: strategy_i8,
-    Int16: strategy_i16,
-    Int32: strategy_i32,
-    Int64: strategy_i64,
-    UInt8: strategy_u8,
-    UInt16: strategy_u16,
-    UInt32: strategy_u32,
-    UInt64: strategy_u64,
-    Time: strategy_time,
-    Date: strategy_date,
-    Datetime("ns"): strategy_datetime_ns,
-    Datetime("us"): strategy_datetime_us,
-    Datetime("ms"): strategy_datetime_ms,
-    Datetime: strategy_datetime_us,
-    Duration("ns"): strategy_duration,
-    Duration("us"): strategy_duration,
-    Duration("ms"): strategy_duration,
-    Duration: strategy_duration,
-    Categorical: strategy_categorical,
-    Utf8: strategy_utf8,
-}
+class StrategyLookup(MutableMapping[PolarsDataType, SearchStrategy[Any]]):
+    """
+    Mapping from polars DataTypes to hypothesis Strategies.
 
-# note: decimal support is in early development and requires opt-in
+    We customise this so that retrieval of nested strategies respects the inner dtype
+    of List/Struct types; nested strategies are stored as callables that create the
+    given strategy on demand (there are infinitely many possible nested dtypes).
+
+    """
+
+    _items: dict[
+        PolarsDataType, SearchStrategy[Any] | Callable[..., SearchStrategy[Any]]
+    ]
+
+    def __init__(
+        self,
+        items: (
+            dict[
+                PolarsDataType, SearchStrategy[Any] | Callable[..., SearchStrategy[Any]]
+            ]
+            | None
+        ) = None,
+    ):
+        self._items = {}
+        if items is not None:
+            self._items.update(items)
+
+    def __setitem__(
+        self,
+        item: PolarsDataType,
+        value: SearchStrategy[Any] | Callable[..., SearchStrategy[Any]],
+    ) -> None:
+        self._items[item] = value
+
+    def __delitem__(self, item: PolarsDataType) -> None:
+        del self._items[item]
+
+    def __getitem__(self, item: PolarsDataType) -> SearchStrategy[Any]:
+        strat = self._items[item]
+        if isinstance(strat, SearchStrategy):
+            return strat
+        return strat(inner_dtype=getattr(item, "inner", None))
+
+    def __len__(self) -> int:
+        return len(self._items)
+
+    def __iter__(self) -> Iterator[PolarsDataType]:
+        yield from self._items
+
+    def __or__(self, other: StrategyLookup) -> StrategyLookup:
+        return StrategyLookup().update(self).update(other)
+
+    def update(self, items: StrategyLookup) -> Self:  # type: ignore[override]
+        self._items.update(items)
+        return self
+
+
+scalar_strategies: StrategyLookup = StrategyLookup(
+    {
+        Boolean: strategy_bool,
+        Float32: strategy_f32,
+        Float64: strategy_f64,
+        Int8: strategy_i8,
+        Int16: strategy_i16,
+        Int32: strategy_i32,
+        Int64: strategy_i64,
+        UInt8: strategy_u8,
+        UInt16: strategy_u16,
+        UInt32: strategy_u32,
+        UInt64: strategy_u64,
+        Time: strategy_time,
+        Date: strategy_date,
+        Datetime("ns"): strategy_datetime_ns,
+        Datetime("us"): strategy_datetime_us,
+        Datetime("ms"): strategy_datetime_ms,
+        Datetime: strategy_datetime_us,
+        Duration("ns"): strategy_duration,
+        Duration("us"): strategy_duration,
+        Duration("ms"): strategy_duration,
+        Duration: strategy_duration,
+        Categorical: strategy_categorical,
+        Utf8: strategy_utf8,
+    }
+)
+nested_strategies: StrategyLookup = StrategyLookup()
+
+# note: decimal support is in early development and requires activation
 if os.environ.get("POLARS_ACTIVATE_DECIMAL") == "1":
     scalar_strategies[Decimal] = strategy_decimal()
 
-_strategy_dtypes = list(scalar_strategies) + [List]
+
+def _get_strategy_dtypes(
+    base_type: bool = False,
+    excluding: tuple[PolarsDataType] | PolarsDataType | None = None,
+) -> list[PolarsDataType]:
+    excluding = (excluding,) if is_polars_dtype(excluding) else (excluding or ())  # type: ignore[assignment]
+    strategy_dtypes = list(chain(scalar_strategies.keys(), nested_strategies.keys()))
+    return [
+        (tp.base_type() if base_type else tp)
+        for tp in strategy_dtypes
+        if tp not in excluding  # type: ignore[operator]
+    ]
 
 
-def _hash(elem: Any) -> int:
+def _flexhash(elem: Any) -> int:
     """Hashing that also handles lists/dicts (for 'unique' check)."""
     if isinstance(elem, list):
-        return hash(tuple(_hash(e) for e in elem))
+        return hash(tuple(_flexhash(e) for e in elem))
     elif isinstance(elem, dict):
-        return hash((_hash(k), _hash(v)) for k, v in elem.items())
+        return hash((_flexhash(k), _flexhash(v)) for k, v in elem.items())
     return hash(elem)
 
 
@@ -159,7 +238,7 @@ def create_list_strategy(
     min_size: int | None = None,
     max_size: int | None = None,
     unique: bool = False,
-) -> Any:
+) -> SearchStrategy[list[Any]]:
     """
     Hypothesis strategy for producing polars List data.
 
@@ -218,7 +297,16 @@ def create_list_strategy(
         raise ValueError("If specifying 'select_from', must also specify 'inner_dtype'")
 
     if inner_dtype is None:
-        inner_dtype = choice(_strategy_dtypes)
+        strats = list(
+            # note: remove the restriction on nested Categoricals after
+            # https://github.com/pola-rs/polars/issues/8563 is fixed
+            _get_strategy_dtypes(
+                base_type=True,
+                excluding=Categorical,
+            )
+        )
+        shuffle(strats)
+        inner_dtype = choice(strats)
     if size:
         min_size = max_size = size
     else:
@@ -233,7 +321,7 @@ def create_list_strategy(
             min_size=min_size,
             max_size=max_size,
         )
-        if inner_dtype.inner is None:  # type: ignore[union-attr]
+        if inner_dtype.inner is None and hasattr(st, "_dtype"):  # type: ignore[union-attr]
             inner_dtype = st._dtype
     else:
         st = (
@@ -246,7 +334,7 @@ def create_list_strategy(
         elements=st,
         min_size=min_size,
         max_size=max_size,
-        unique_by=(_hash if unique else None),
+        unique_by=(_flexhash if unique else None),
     )
     ls._dtype = List(inner_dtype)  # type: ignore[attr-defined, arg-type]
     return ls
@@ -254,3 +342,9 @@ def create_list_strategy(
 
 # TODO: strategy for Struct dtype.
 # def create_struct_strategy(
+
+
+nested_strategies[List] = create_list_strategy
+# nested_strategies[Struct] = create_struct_strategy(inner_dtype=None)
+
+all_strategies = scalar_strategies | nested_strategies
