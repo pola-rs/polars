@@ -926,6 +926,8 @@ impl ChunkEqualElement for BinaryChunked {
 }
 
 impl ChunkEqualElement for ListChunked {}
+#[cfg(feature = "dtype-fixed-size-list")]
+impl ChunkEqualElement for FixedSizeListChunked {}
 
 #[cfg(feature = "dtype-struct")]
 impl ChunkCompare<&StructChunked> for StructChunked {

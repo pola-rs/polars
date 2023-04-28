@@ -5,7 +5,6 @@ use super::{private, IntoSeries, SeriesTrait};
 use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
-use crate::fmt::FmtList;
 use crate::frame::groupby::*;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
@@ -27,8 +26,7 @@ impl private::PrivateSeries for SeriesWrap<FixedSizeListChunked> {
     }
 
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
-        todo!();
-        // self.0.equal_element(idx_self, idx_other, other)
+        self.0.equal_element(idx_self, idx_other, other)
     }
 
     // #[cfg(feature = "zip_with")]
@@ -73,8 +71,7 @@ impl SeriesTrait for SeriesWrap<FixedSizeListChunked> {
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
-        todo!();
-        // self.0.append(other.as_ref().as_ref())
+        self.0.append(other.as_ref().as_ref())
     }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {

@@ -70,6 +70,25 @@ impl ListChunked {
         Ok(())
     }
 }
+
+#[cfg(feature = "dtype-fixed-size-list")]
+#[doc(hidden)]
+impl FixedSizeListChunked {
+    pub fn append(&mut self, other: &Self) -> PolarsResult<()> {
+        let dtype = merge_dtypes(self.dtype(), other.dtype())?;
+        self.field = Arc::new(Field::new(self.name(), dtype));
+
+        let len = self.len();
+        self.length += other.length;
+        new_chunks(&mut self.chunks, &other.chunks, len);
+        self.set_sorted_flag(IsSorted::Not);
+        if !other._can_fast_explode() {
+            self.unset_fast_explode()
+        }
+        Ok(())
+    }
+}
+
 #[cfg(feature = "object")]
 #[doc(hidden)]
 impl<T: PolarsObject> ObjectChunked<T> {

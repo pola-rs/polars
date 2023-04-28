@@ -26,6 +26,8 @@ mod bitwise;
 mod drop;
 mod from;
 pub(crate) mod list;
+#[cfg(feature = "dtype-fixed-size-list")]
+pub(crate) mod fixed_size_list;
 pub(crate) mod logical;
 #[cfg(feature = "object")]
 pub mod object;
