@@ -8,7 +8,7 @@ use arrow::compute::arithmetics::basic;
 use arrow::compute::arithmetics::decimal;
 use arrow::compute::arity_assign;
 use arrow::types::NativeType;
-use num_traits::{Num, NumCast, ToPrimitive};
+use num_traits::{Num, NumCast, ToPrimitive, Zero};
 
 use crate::prelude::*;
 use crate::series::IsSorted;
@@ -430,7 +430,12 @@ where
         let rhs: T::Native = NumCast::from(rhs).expect("could not cast");
         let mut out = self
             .apply_kernel(&|arr| Box::new(<T::Native as ArrayArithmetics>::div_scalar(arr, &rhs)));
-        out.set_sorted_flag(self.is_sorted_flag());
+
+        if rhs < T::Native::zero() {
+            out.set_sorted_flag(self.is_sorted_flag().reverse());
+        } else {
+            out.set_sorted_flag(self.is_sorted_flag());
+        }
         out
     }
 }
