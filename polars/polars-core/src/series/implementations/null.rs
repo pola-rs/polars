@@ -42,6 +42,9 @@ impl NullChunked {
 impl PrivateSeriesNumeric for NullChunked {}
 
 impl PrivateSeries for NullChunked {
+    fn compute_len(&mut self) {
+        // no-op
+    }
     fn _field(&self) -> Cow<Field> {
         Cow::Owned(Field::new(self.name(), DataType::Null))
     }
@@ -172,6 +175,10 @@ impl SeriesTrait for NullChunked {
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         self.append(other)
+    }
+
+    fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
+        Arc::new(self.clone())
     }
 }
 

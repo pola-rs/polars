@@ -8,7 +8,6 @@ use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::compare_inner::{IntoPartialOrdInner, PartialOrdInner};
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
-use crate::fmt::FmtList;
 use crate::frame::groupby::*;
 use crate::frame::hash_join::ZipOuterJoinColumn;
 #[cfg(feature = "is_in")]
@@ -108,11 +107,10 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
 
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         // we cannot cast and dispatch as the inner type of the list would be incorrect
-        self.0
-            .logical()
-            .agg_list(groups)
-            .cast(&DataType::List(Box::new(self.dtype().clone())))
-            .unwrap()
+        let list = self.0.logical().agg_list(groups);
+        let mut list = list.list().unwrap().clone();
+        list.to_logical(self.dtype().clone());
+        list.into_series()
     }
 
     fn zip_outer_join_column(
@@ -370,9 +368,6 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         Ok(CategoricalChunked::full_null(self.0.logical().name(), 1).into_series())
     }
 
-    fn fmt_list(&self) -> String {
-        FmtList::fmt_list(&self.0)
-    }
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }

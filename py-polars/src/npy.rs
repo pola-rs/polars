@@ -11,6 +11,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 
 use crate::error::PyPolarsErr;
+use crate::prelude::ObjectValue;
 use crate::raise_err;
 use crate::series::PySeries;
 
@@ -159,26 +160,18 @@ impl PySeries {
     }
 
     /// For numeric types, this should only be called for Series with null types.
-    /// This will cast to floats so that `None = np.nan`
+    /// Non-nullable types are handled with `view()`.
+    /// This will cast to floats so that `None = np.nan`.
     pub fn to_numpy(&self, py: Python) -> PyResult<PyObject> {
         let s = &self.series;
         match s.dtype() {
-            DataType::Utf8 => {
-                let ca = s.utf8().unwrap();
-
-                let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|s| s.into_py(py)));
-                Ok(np_arr.into_py(py))
-            }
             dt if dt.is_numeric() => {
                 if s.bit_repr_is_large() {
                     let s = s.cast(&DataType::Float64).unwrap();
                     let ca = s.f64().unwrap();
                     let np_arr = PyArray1::from_iter(
                         py,
-                        ca.into_iter().map(|opt_v| match opt_v {
-                            Some(v) => v,
-                            None => f64::NAN,
-                        }),
+                        ca.into_iter().map(|opt_v| opt_v.unwrap_or(f64::NAN)),
                     );
                     Ok(np_arr.into_py(py))
                 } else {
@@ -186,13 +179,35 @@ impl PySeries {
                     let ca = s.f32().unwrap();
                     let np_arr = PyArray1::from_iter(
                         py,
-                        ca.into_iter().map(|opt_v| match opt_v {
-                            Some(v) => v,
-                            None => f32::NAN,
-                        }),
+                        ca.into_iter().map(|opt_v| opt_v.unwrap_or(f32::NAN)),
                     );
                     Ok(np_arr.into_py(py))
                 }
+            }
+            DataType::Utf8 => {
+                let ca = s.utf8().unwrap();
+                let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|s| s.into_py(py)));
+                Ok(np_arr.into_py(py))
+            }
+            DataType::Binary => {
+                let ca = s.binary().unwrap();
+                let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|s| s.into_py(py)));
+                Ok(np_arr.into_py(py))
+            }
+            DataType::Boolean => {
+                let ca = s.bool().unwrap();
+                let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|s| s.into_py(py)));
+                Ok(np_arr.into_py(py))
+            }
+            #[cfg(feature = "object")]
+            DataType::Object(_) => {
+                let ca = s
+                    .as_any()
+                    .downcast_ref::<ObjectChunked<ObjectValue>>()
+                    .unwrap();
+                let np_arr =
+                    PyArray1::from_iter(py, ca.into_iter().map(|opt_v| opt_v.to_object(py)));
+                Ok(np_arr.into_py(py))
             }
             dt => {
                 raise_err!(

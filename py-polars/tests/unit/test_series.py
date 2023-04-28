@@ -470,10 +470,36 @@ def test_various() -> None:
     assert_series_equal(a.arg_unique(), pl.Series("a", [0, 1, 3], dtype=UInt32))
 
     assert_series_equal(a.take([2, 3]), pl.Series("a", [1, 4]))
-    assert a.is_numeric()
 
-    a = pl.Series("bool", [True, False])
-    assert not a.is_numeric()
+
+def test_series_dtype_is() -> None:
+    s = pl.Series("s", [1, 2, 3])
+
+    assert s.is_numeric()
+    assert s.is_integer()
+    assert s.is_integer(signed=True)
+    assert not s.is_integer(signed=False)
+    assert (s * 0.99).is_float()
+
+    s = pl.Series("s", [1, 2, 3], dtype=pl.UInt8)
+    assert s.is_numeric()
+    assert s.is_integer()
+    assert not s.is_integer(signed=True)
+    assert s.is_integer(signed=False)
+
+    s = pl.Series("bool", [True, None, False])
+    assert not s.is_numeric()
+
+    s = pl.Series("s", ["testing..."])
+    assert s.is_utf8()
+
+    s = pl.Series("s", [], dtype=pl.Decimal(20, 15))
+    assert not s.is_float()
+    assert s.is_numeric()
+    assert s.is_empty()
+
+    s = pl.Series("s", [], dtype=pl.Datetime("ms", time_zone="UTC"))
+    assert s.is_temporal()
 
 
 def test_series_head_tail_limit() -> None:
@@ -852,6 +878,19 @@ def test_set_list_and_tuple(idx: list[int] | tuple[int]) -> None:
     assert_series_equal(a, pl.Series("a", [4, 2, 4]))
 
 
+def test_init_nested_tuple() -> None:
+    s1 = pl.Series("s", (1, 2, 3))
+    assert s1.to_list() == [1, 2, 3]
+
+    s2 = pl.Series("s", ((1, 2, 3),), dtype=pl.List(pl.UInt8))
+    assert s2.to_list() == [[1, 2, 3]]
+    assert s2.dtype == pl.List(pl.UInt8)
+
+    s3 = pl.Series("s", ((1, 2, 3), (1, 2, 3)), dtype=pl.List(pl.Int32))
+    assert s3.to_list() == [[1, 2, 3], [1, 2, 3]]
+    assert s3.dtype == pl.List(pl.Int32)
+
+
 def test_fill_null() -> None:
     s = pl.Series("a", [1, 2, None])
     assert_series_equal(s.fill_null(strategy="forward"), pl.Series("a", [1, 2, 2]))
@@ -1180,31 +1219,6 @@ def test_describe() -> None:
 
     with pytest.raises(ValueError):
         assert empty_s.describe()
-
-
-def test_is_in() -> None:
-    s = pl.Series(["a", "b", "c"])
-
-    out = s.is_in(["a", "b"])
-    assert out.to_list() == [True, True, False]
-
-    # Check if empty list is converted to pl.Utf8.
-    out = s.is_in([])
-    assert out.to_list() == [False]  # one element?
-
-    for x_y_z in (["x", "y", "z"], {"x", "y", "z"}):
-        out = s.is_in(x_y_z)
-        assert out.to_list() == [False, False, False]
-
-    df = pl.DataFrame({"a": [1.0, 2.0], "b": [1, 4], "c": ["e", "d"]})
-    assert df.select(pl.col("a").is_in(pl.col("b"))).to_series().to_list() == [
-        True,
-        False,
-    ]
-    assert df.select(pl.col("b").is_in([])).to_series().to_list() == [False]
-
-    with pytest.raises(pl.ComputeError, match=r"cannot compare"):
-        df.select(pl.col("b").is_in(["x", "x"]))
 
 
 def test_slice() -> None:
@@ -1952,11 +1966,35 @@ def test_init_categorical() -> None:
             assert_series_equal(a, expected)
 
 
-def test_nested_list_types_preserved() -> None:
-    expected_dtype = pl.UInt32
-    srs1 = pl.Series([pl.Series([3, 4, 5, 6], dtype=expected_dtype) for _ in range(5)])
-    for srs2 in srs1:
-        assert srs2.dtype == expected_dtype
+def test_iter_nested_list() -> None:
+    elems = list(pl.Series("s", [[1, 2], [3, 4]]))
+    assert_series_equal(elems[0], pl.Series([1, 2]))
+    assert_series_equal(elems[1], pl.Series([3, 4]))
+
+
+def test_iter_nested_struct() -> None:
+    # note: this feels inconsistent with the above test for nested list, but
+    # let's ensure the behaviour is codified before potentially modifying...
+    elems = list(pl.Series("s", [{"a": 1, "b": 2}, {"a": 3, "b": 4}]))
+    assert elems[0] == {"a": 1, "b": 2}
+    assert elems[1] == {"a": 3, "b": 4}
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.UInt8,
+        pl.Float32,
+        pl.Int32,
+        pl.Boolean,
+        pl.List(pl.Utf8),
+        pl.Struct([pl.Field("a", pl.Int64), pl.Field("b", pl.Boolean)]),
+    ],
+)
+def test_nested_list_types_preserved(dtype: pl.DataType) -> None:
+    srs = pl.Series([pl.Series([], dtype=dtype) for _ in range(5)])
+    for srs_nested in srs:
+        assert srs_nested.dtype == dtype
 
 
 def test_log_exp() -> None:
@@ -2475,6 +2513,9 @@ def test_item() -> None:
     s = pl.Series("a", [1, 2])
     with pytest.raises(ValueError):
         s.item()
+
+    assert s.item(0) == 1
+    assert s.item(-1) == 2
 
     s = pl.Series("a", [])
     with pytest.raises(ValueError):

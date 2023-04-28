@@ -21,6 +21,7 @@ use super::calendar::{
 };
 #[cfg(feature = "timezones")]
 use crate::utils::{localize_datetime, unlocalize_datetime};
+use crate::windows::calendar::{is_leap_year, last_day_of_month};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -37,6 +38,9 @@ pub struct Duration {
     pub(crate) negative: bool,
     // indicates if an integer string was passed. e.g. "2i"
     pub parsed_int: bool,
+    // indicates if an offset to a non-existent date (e.g. 2022-02-29)
+    // should saturate (to 2022-02-28) as opposed to erroring
+    pub(crate) saturating: bool,
 }
 
 impl PartialOrd<Self> for Duration {
@@ -61,6 +65,7 @@ impl Duration {
             nsecs: fixed_slots.abs(),
             negative: fixed_slots < 0,
             parsed_int: true,
+            saturating: false,
         }
     }
 
@@ -90,6 +95,10 @@ impl Duration {
     /// * `y`:  calendar year
     /// * `i`:  index value (only for {Int32, Int64} dtypes)
     ///
+    /// Suffix with `"_saturating"` to indicate that dates too large for
+    /// their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
+    /// instead of erroring.
+    ///
     /// # Panics
     /// If the given str is invalid for any reason.
     pub fn parse(duration: &str) -> Self {
@@ -105,8 +114,14 @@ impl Duration {
         let mut weeks = 0;
         let mut days = 0;
         let mut months = 0;
-        let mut iter = duration.char_indices();
         let negative = duration.starts_with('-');
+        let (saturating, mut iter) = match duration.ends_with("_saturating") {
+            true => (
+                true,
+                duration[..duration.len() - "_saturating".len()].char_indices(),
+            ),
+            false => (false, duration.char_indices()),
+        };
         let mut start = 0;
 
         // skip the '-' char
@@ -153,7 +168,9 @@ impl Duration {
                     "h" => nsecs += n * NS_HOUR,
                     "d" => days += n,
                     "w" => weeks += n,
-                    "mo" => months += n,
+                    "mo" => {
+                        months += n
+                    }
                     "y" => months += n * 12,
                     // we will read indexes as nanoseconds
                     "i" => {
@@ -172,6 +189,7 @@ impl Duration {
             months: months.abs(),
             negative,
             parsed_int,
+            saturating,
         }
     }
 
@@ -238,6 +256,7 @@ impl Duration {
             nsecs,
             negative,
             parsed_int: false,
+            saturating: false,
         }
     }
 
@@ -251,6 +270,7 @@ impl Duration {
             nsecs: 0,
             negative,
             parsed_int: false,
+            saturating: false,
         }
     }
 
@@ -264,6 +284,7 @@ impl Duration {
             nsecs: 0,
             negative,
             parsed_int: false,
+            saturating: false,
         }
     }
 
@@ -277,6 +298,7 @@ impl Duration {
             nsecs: 0,
             negative,
             parsed_int: false,
+            saturating: false,
         }
     }
 
@@ -521,7 +543,7 @@ impl Duration {
             };
             let mut year = ts.year();
             let mut month = ts.month() as i32;
-            let day = ts.day();
+            let mut day = ts.day();
             year += (months / 12) as i32;
             month += (months % 12) as i32;
 
@@ -536,6 +558,20 @@ impl Duration {
                 month += 12;
             }
 
+            if d.saturating {
+                // Normalize the day if we are past the end of the month.
+                let mut last_day_of_month = last_day_of_month(month);
+                if month == (chrono::Month::February.number_from_month() as i32)
+                    && is_leap_year(year)
+                {
+                    last_day_of_month += 1;
+                }
+
+                if day > last_day_of_month {
+                    day = last_day_of_month
+                }
+            }
+
             // Retrieve the original time and construct a data
             // with the new year, month and day
             let hour = ts.hour();
@@ -544,7 +580,9 @@ impl Duration {
             let nsec = ts.nanosecond();
             let dt = new_datetime(year, month as u32, day, hour, minute, sec, nsec).ok_or(
                 polars_err!(
-                    ComputeError: format!("cannot advance '{}' by {} month(s)", ts, d.months)
+                    ComputeError: format!(
+                        "cannot advance '{}' by {} month(s). \
+                         If you were trying to get the last day of each month, you may want to try `.dt.month_end`", ts, if d.negative {-d.months} else {d.months})
                 ),
             )?;
             new_t = match tz {

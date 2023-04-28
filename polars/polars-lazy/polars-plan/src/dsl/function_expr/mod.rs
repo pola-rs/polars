@@ -515,6 +515,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             RStrip(matches) => map!(strings::rstrip, matches.as_deref()),
             #[cfg(feature = "string_from_radix")]
             FromRadix(radix, strict) => map!(strings::from_radix, radix, strict),
+            Slice(start, length) => map!(strings::str_slice, start, length),
         }
     }
 }
@@ -562,9 +563,15 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             Nanosecond => map!(datetime::nanosecond),
             TimeStamp(tu) => map!(datetime::timestamp, tu),
             Truncate(every, offset) => map!(datetime::truncate, &every, &offset),
+            #[cfg(feature = "date_offset")]
+            MonthStart => map!(datetime::month_start),
+            #[cfg(feature = "date_offset")]
+            MonthEnd => map!(datetime::month_end),
             Round(every, offset) => map!(datetime::round, &every, &offset),
             #[cfg(feature = "timezones")]
-            CastTimezone(tz) => map!(datetime::replace_timezone, tz.as_deref()),
+            CastTimezone(tz, use_earliest) => {
+                map!(datetime::replace_timezone, tz.as_deref(), use_earliest)
+            }
             #[cfg(feature = "timezones")]
             TzLocalize(tz) => map!(datetime::tz_localize, &tz),
             Combine(tu) => map_as_slice!(temporal::combine, tu),

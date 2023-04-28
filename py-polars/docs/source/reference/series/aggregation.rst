@@ -8,6 +8,7 @@ Aggregation
 
     Series.arg_max
     Series.arg_min
+    Series.implode
     Series.max
     Series.mean
     Series.median

@@ -444,3 +444,22 @@ def test_parquet_chunks_545(case: int) -> None:
     # read it with polars
     polars_df = pl.read_parquet(f)
     assert_frame_equal(pl.DataFrame(df), polars_df)
+
+
+def test_nested_null_roundtrip() -> None:
+    f = io.BytesIO()
+    df = pl.DataFrame(
+        {
+            "experiences": [
+                [
+                    {"company": "Google", "years": None},
+                    {"company": "Facebook", "years": None},
+                ],
+            ]
+        }
+    )
+
+    df.write_parquet(f)
+    f.seek(0)
+    df_read = pl.read_parquet(f)
+    assert_frame_equal(df_read, df)

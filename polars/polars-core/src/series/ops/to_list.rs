@@ -30,7 +30,7 @@ impl Series {
     /// Convert the values of this Series to a ListChunked with a length of 1,
     /// So a Series of:
     /// `[1, 2, 3]` becomes `[[1, 2, 3]]`
-    pub fn to_list(&self) -> PolarsResult<ListChunked> {
+    pub fn implode(&self) -> PolarsResult<ListChunked> {
         let s = self.rechunk();
         let values = s.array_ref(0);
 
@@ -144,7 +144,7 @@ mod test {
         builder.append_series(&s);
         let expected = builder.finish();
 
-        let out = s.to_list()?;
+        let out = s.implode()?;
         assert!(expected.into_series().series_equal(&out.into_series()));
 
         Ok(())

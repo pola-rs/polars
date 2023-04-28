@@ -62,7 +62,7 @@ where
             }
             Ok(Box::new(sources::DataFrameSource::from_df(df)) as Box<dyn Source>)
         }
-        #[cfg(feature = "csv-file")]
+        #[cfg(feature = "csv")]
         CsvScan {
             path,
             file_info,
@@ -339,7 +339,7 @@ where
                 ))
             } else {
                 match (
-                    output_schema.get_index(0).unwrap().1.to_physical(),
+                    output_schema.get_at_index(0).unwrap().1.to_physical(),
                     keys.len(),
                 ) {
                     (dt, 1) if dt.is_integer() => {
@@ -467,7 +467,7 @@ where
                 true,
                 verbose,
             )?,
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             lp @ CsvScan { .. } => get_source(
                 lp.clone(),
                 &mut operator_objects,
@@ -498,7 +498,7 @@ where
                             expr_arena,
                             &to_physical,
                             i == 0,
-                            i == 0,
+                            verbose && i == 0,
                         )
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;

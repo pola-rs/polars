@@ -28,6 +28,8 @@ The following methods are available under the `expr.dt` attribute.
     Expr.dt.minute
     Expr.dt.minutes
     Expr.dt.month
+    Expr.dt.month_start
+    Expr.dt.month_end
     Expr.dt.nanosecond
     Expr.dt.nanoseconds
     Expr.dt.offset_by

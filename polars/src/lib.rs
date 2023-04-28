@@ -195,7 +195,7 @@
 //!     - `parquet` - Read Apache Parquet format
 //!     - `json` - JSON serialization
 //!     - `ipc` - Arrow's IPC format serialization
-//!     - `decompress` - Automatically infer compression of csv-files and decompress them.
+//!     - `decompress` - Automatically infer compression of csvs and decompress them.
 //!                      Supported compressions:
 //!                         * zip
 //!                         * gzip

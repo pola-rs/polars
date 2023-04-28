@@ -111,7 +111,7 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         if self.0.is_sorted_ascending_flag()
             && (idx.is_sorted_ascending_flag() || idx.is_sorted_descending_flag())
         {
-            out.set_sorted_flag(idx.is_sorted_flag2())
+            out.set_sorted_flag(idx.is_sorted_flag())
         }
 
         Ok(out
@@ -192,5 +192,9 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
 
     fn shift(&self, periods: i64) -> Series {
         self.apply_logical(|ca| ca.shift(periods))
+    }
+
+    fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
+        Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
 }

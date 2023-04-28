@@ -1,6 +1,6 @@
 use polars_utils::arena::Arena;
 
-#[cfg(feature = "strings")]
+#[cfg(all(feature = "strings", feature = "concat_str"))]
 use crate::dsl::function_expr::StringFunction;
 use crate::logical_plan::optimizer::stack_opt::OptimizationRule;
 use crate::logical_plan::*;
@@ -668,7 +668,7 @@ impl OptimizationRule for SimplifyExprRule {
 fn inline_cast(input: &AExpr, dtype: &DataType) -> Option<AExpr> {
     match (input, dtype) {
         #[cfg(feature = "dtype-duration")]
-        (AExpr::Literal(lv), _) => {
+        (AExpr::Literal(lv), _) if !matches!(dtype, DataType::Unknown) => {
             let av = lv.to_anyvalue()?;
             let out = av.cast(dtype).ok()?;
             let lv: LiteralValue = out.try_into().ok()?;

@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use polars_core::prelude::*;
-#[cfg(feature = "csv-file")]
+#[cfg(feature = "csv")]
 use polars_io::csv::{CsvEncoding, NullValues};
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcCompression;
@@ -17,7 +17,7 @@ use crate::prelude::Expr;
 
 pub type FileCount = u32;
 
-#[cfg(feature = "csv-file")]
+#[cfg(feature = "csv")]
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CsvParserOptions {

@@ -4,6 +4,7 @@ from polars.datatypes.classes import (
     Categorical,
     DataType,
     DataTypeClass,
+    DataTypeGroup,
     Date,
     Datetime,
     Decimal,
@@ -59,6 +60,7 @@ from polars.datatypes.convert import (
     py_type_to_arrow_type,
     py_type_to_dtype,
     supported_numpy_char_code,
+    unpack_dtypes,
 )
 from polars.type_aliases import (
     OneOrMoreDataTypes,
@@ -76,6 +78,7 @@ __all__ = [
     "Categorical",
     "DataType",
     "DataTypeClass",
+    "DataTypeGroup",
     "Date",
     "Datetime",
     "Decimal",
@@ -128,6 +131,7 @@ __all__ = [
     "py_type_to_arrow_type",
     "py_type_to_dtype",
     "supported_numpy_char_code",
+    "unpack_dtypes",
     # type_aliases
     "OneOrMoreDataTypes",
     "PolarsDataType",

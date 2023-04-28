@@ -1,4 +1,4 @@
-#[cfg(feature = "csv-file")]
+#[cfg(feature = "csv")]
 use std::io::{Read, Seek};
 
 #[cfg(feature = "parquet")]
@@ -12,9 +12,9 @@ use polars_io::ipc::IpcReader;
 use polars_io::parquet::ParquetAsyncReader;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetReader;
-#[cfg(any(feature = "parquet", feature = "parquet_async", feature = "csv-file"))]
+#[cfg(any(feature = "parquet", feature = "parquet_async", feature = "csv"))]
 use polars_io::RowCount;
-#[cfg(feature = "csv-file")]
+#[cfg(feature = "csv")]
 use polars_io::{
     csv::utils::{get_reader_bytes, infer_file_schema, is_compressed},
     csv::CsvEncoding,
@@ -200,7 +200,7 @@ impl LogicalPlanBuilder {
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[cfg(feature = "csv-file")]
+    #[cfg(feature = "csv")]
     pub fn scan_csv<P: Into<std::path::PathBuf>>(
         path: P,
         delimiter: u8,
@@ -335,12 +335,7 @@ impl LogicalPlanBuilder {
         let schema = try_delayed!(self.0.schema(), &self.0, into);
         let exprs = schema
             .iter_names()
-            .map(|name| {
-                when(col(name).is_null())
-                    .then(fill_value.clone())
-                    .otherwise(col(name))
-                    .alias(name)
-            })
+            .map(|name| col(name).fill_null(fill_value.clone()))
             .collect();
         self.project_local(exprs)
     }
@@ -738,11 +733,11 @@ impl LogicalPlanBuilder {
 }
 
 pub(crate) fn det_melt_schema(args: &MeltArgs, input_schema: &Schema) -> SchemaRef {
-    let mut new_schema = Schema::from(
-        args.id_vars
-            .iter()
-            .map(|id| Field::new(id, input_schema.get(id).unwrap().clone())),
-    );
+    let mut new_schema = args
+        .id_vars
+        .iter()
+        .map(|id| Field::new(id, input_schema.get(id).unwrap().clone()))
+        .collect::<Schema>();
     let variable_name = args
         .variable_name
         .as_ref()

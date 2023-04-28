@@ -506,7 +506,7 @@ fn test_with_column_prune() -> PolarsResult<()> {
     }));
     assert_eq!(
         q.schema().unwrap().as_ref(),
-        &Schema::from([Field::new("c1", DataType::Int32)].into_iter())
+        &Schema::from_iter([Field::new("c1", DataType::Int32)])
     );
     Ok(())
 }

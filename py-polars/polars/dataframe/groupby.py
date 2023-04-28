@@ -754,7 +754,7 @@ class RollingGroupBy(Generic[DF]):
     def __init__(
         self,
         df: DF,
-        index_column: str,
+        index_column: IntoExpr,
         period: str | timedelta,
         offset: str | timedelta | None,
         closed: ClosedInterval,
@@ -843,7 +843,7 @@ class DynamicGroupBy(Generic[DF]):
     def __init__(
         self,
         df: DF,
-        index_column: str,
+        index_column: IntoExpr,
         every: str | timedelta,
         period: str | timedelta | None,
         offset: str | timedelta | None,

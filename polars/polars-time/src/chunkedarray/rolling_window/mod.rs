@@ -236,7 +236,7 @@ fn rolling_agg<T>(
             ClosedWindow,
             TimeUnit,
             Option<&TimeZone>,
-        ) -> ArrayRef,
+        ) -> PolarsResult<ArrayRef>,
     >,
 ) -> PolarsResult<Series>
 where
@@ -253,7 +253,7 @@ where
         let options: RollingOptionsFixedWindow = options.into();
         check_input(options.window_size, options.min_periods)?;
 
-        match ca.null_count() {
+        Ok(match ca.null_count() {
             0 => rolling_agg_fn(
                 arr.values().as_slice(),
                 options.window_size,
@@ -268,7 +268,7 @@ where
                 options.center,
                 options.weights.as_deref(),
             ),
-        }
+        })
     } else {
         if arr.null_count() > 0 {
             panic!("'rolling by' not yet supported for series with null values, consider using 'groupby_rolling'")
@@ -285,6 +285,6 @@ where
         );
 
         func(values, duration, offset, by, closed_window, tu, options.tz)
-    };
+    }?;
     Series::try_from((ca.name(), arr))
 }

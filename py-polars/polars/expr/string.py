@@ -3,14 +3,8 @@ from __future__ import annotations
 import warnings
 from typing import TYPE_CHECKING
 
-from polars.datatypes import (
-    DataType,
-    Date,
-    Datetime,
-    Time,
-    is_polars_dtype,
-    py_type_to_dtype,
-)
+from polars.datatypes import Date, Datetime, Time, py_type_to_dtype
+from polars.exceptions import ChronoFormatWarning
 from polars.utils import no_default
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
 from polars.utils._wrap import wrap_expr
@@ -63,10 +57,10 @@ class ExprStringNameSpace:
             Use a cache of unique, converted dates to apply the datetime conversion.
         tz_aware
             Parse timezone aware datetimes. This may be automatically toggled by the
-            `fmt` given.
+            `format` given.
 
             .. deprecated:: 0.16.17
-                This is now auto-inferred from the given `fmt`. You can safely drop
+                This is now auto-inferred from the given `format`. You can safely drop
                 this argument, it will be removed in a future version.
         utc
             Parse timezone aware datetimes as UTC. This may be useful if you have data
@@ -122,19 +116,7 @@ class ExprStringNameSpace:
         └────────────┘
 
         """
-        if not is_polars_dtype(dtype):  # pragma: no cover
-            raise ValueError(f"expected: {DataType} got: {dtype}")
-
-        if format is not None and "%f" in format:
-            raise ValueError(
-                "Directive '%f' is not supported in Python Polars, "
-                "as it differs from the Python standard library.\n"
-                "Instead, please use one of:\n"
-                " - '%.f'\n"
-                " - '%3f'\n"
-                " - '%6f'\n"
-                " - '%9f'"
-            )
+        _validate_format_argument(format)
 
         if tz_aware is no_default:
             tz_aware = False
@@ -147,26 +129,25 @@ class ExprStringNameSpace:
             )
 
         if dtype == Date:
-            return wrap_expr(self._pyexpr.str_parse_date(format, strict, exact, cache))
+            return wrap_expr(self._pyexpr.str_to_date(format, strict, exact, cache))
         elif dtype == Datetime:
             time_unit = dtype.time_unit  # type: ignore[union-attr]
             time_zone = dtype.time_zone  # type: ignore[union-attr]
-            dtcol = wrap_expr(
-                self._pyexpr.str_parse_datetime(
+            return wrap_expr(
+                self._pyexpr.str_to_datetime(
                     format,
+                    time_unit,
+                    time_zone,
                     strict,
                     exact,
                     cache,
                     tz_aware,
                     utc,
-                    time_unit,
-                    time_zone,
                 )
             )
-            return dtcol if (time_unit is None) else dtcol.dt.cast_time_unit(time_unit)
         elif dtype == Time:
-            return wrap_expr(self._pyexpr.str_parse_time(format, strict, exact, cache))
-        else:  # pragma: no cover
+            return wrap_expr(self._pyexpr.str_to_time(format, strict, exact, cache))
+        else:
             raise ValueError("dtype should be of type {Date, Datetime, Time}")
 
     def lengths(self) -> Expr:
@@ -1344,3 +1325,16 @@ class ExprStringNameSpace:
 
         """
         return wrap_expr(self._pyexpr.str_parse_int(radix, strict))
+
+
+def _validate_format_argument(format: str | None) -> None:
+    if format is not None and ".%f" in format:
+        message = (
+            "Detected the pattern `.%f` in the chrono format string."
+            " This pattern should not be used to parse values after a decimal point."
+            " Use `%.f` instead."
+            " See the full specification: https://docs.rs/chrono/latest/chrono/format/strftime"
+        )
+        warnings.warn(
+            message, category=ChronoFormatWarning, stacklevel=find_stacklevel()
+        )

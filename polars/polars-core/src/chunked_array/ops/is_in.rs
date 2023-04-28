@@ -319,6 +319,7 @@ impl IsIn for StructChunked {
                 Ok(ca)
             }
             _ => {
+                let other = other.cast(&other.dtype().to_physical()).unwrap();
                 let other = other.struct_()?;
 
                 polars_ensure!(
@@ -340,9 +341,15 @@ impl IsIn for StructChunked {
                 for key in anyvalues.chunks_exact(other.fields().len()) {
                     set.insert(key);
                 }
+                // physical self
+                let self_ca = self.cast(&self.dtype().to_physical()).unwrap();
+                let self_ca = self_ca.struct_().unwrap();
+
                 // and then we check for membership
-                let mut ca: BooleanChunked =
-                    self.into_iter().map(|vals| set.contains(&vals)).collect();
+                let mut ca: BooleanChunked = self_ca
+                    .into_iter()
+                    .map(|vals| set.contains(&vals))
+                    .collect();
                 ca.rename(self.name());
                 Ok(ca)
             }

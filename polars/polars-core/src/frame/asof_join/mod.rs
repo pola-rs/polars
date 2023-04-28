@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
 
 use crate::prelude::*;
-use crate::utils::slice_slice;
+use crate::utils::{ensure_sorted_arg, slice_slice};
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -39,6 +39,8 @@ fn check_asof_columns(a: &Series, b: &Series) -> PolarsResult<()> {
         a.null_count() == 0 && b.null_count() == 0,
         ComputeError: "asof join must not have null values in 'on' arguments"
     );
+    ensure_sorted_arg(a, "asof_join");
+    ensure_sorted_arg(b, "asof_join");
     Ok(())
 }
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from io import StringIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, BinaryIO, overload
+from typing import TYPE_CHECKING, Any, BinaryIO, NoReturn, overload
 
 from polars.io.csv.functions import read_csv
 from polars.utils.various import normalise_filepath
@@ -23,11 +23,11 @@ if TYPE_CHECKING:
 def read_excel(
     source: str | BytesIO | Path | BinaryIO | bytes,
     *,
-    sheet_id: Literal[None],
-    sheet_name: Literal[None],
-    xlsx2csv_options: dict[str, Any] | None,
-    read_csv_options: dict[str, Any] | None,
-) -> dict[str, DataFrame]:
+    sheet_id: None = ...,
+    sheet_name: str,
+    xlsx2csv_options: dict[str, Any] | None = ...,
+    read_csv_options: dict[str, Any] | None = ...,
+) -> DataFrame:
     ...
 
 
@@ -35,10 +35,10 @@ def read_excel(
 def read_excel(
     source: str | BytesIO | Path | BinaryIO | bytes,
     *,
-    sheet_id: Literal[None],
-    sheet_name: str,
-    xlsx2csv_options: dict[str, Any] | None = None,
-    read_csv_options: dict[str, Any] | None = None,
+    sheet_id: None = ...,
+    sheet_name: None = ...,
+    xlsx2csv_options: dict[str, Any] | None = ...,
+    read_csv_options: dict[str, Any] | None = ...,
 ) -> DataFrame:
     ...
 
@@ -48,9 +48,35 @@ def read_excel(
     source: str | BytesIO | Path | BinaryIO | bytes,
     *,
     sheet_id: int,
-    sheet_name: Literal[None],
-    xlsx2csv_options: dict[str, Any] | None = None,
-    read_csv_options: dict[str, Any] | None = None,
+    sheet_name: str,
+    xlsx2csv_options: dict[str, Any] | None = ...,
+    read_csv_options: dict[str, Any] | None = ...,
+) -> NoReturn:
+    ...
+
+
+# mypy wants the return value for Literal[0] to
+# overlap with the return value for other integers.
+@overload  # type: ignore[misc]
+def read_excel(
+    source: str | BytesIO | Path | BinaryIO | bytes,
+    *,
+    sheet_id: Literal[0],
+    sheet_name: None = ...,
+    xlsx2csv_options: dict[str, Any] | None = ...,
+    read_csv_options: dict[str, Any] | None = ...,
+) -> dict[str, DataFrame]:
+    ...
+
+
+@overload
+def read_excel(
+    source: str | BytesIO | Path | BinaryIO | bytes,
+    *,
+    sheet_id: int,
+    sheet_name: None = ...,
+    xlsx2csv_options: dict[str, Any] | None = ...,
+    read_csv_options: dict[str, Any] | None = ...,
 ) -> DataFrame:
     ...
 
@@ -58,7 +84,7 @@ def read_excel(
 def read_excel(
     source: str | BytesIO | Path | BinaryIO | bytes,
     *,
-    sheet_id: int | None = 1,
+    sheet_id: int | None = None,
     sheet_name: str | None = None,
     xlsx2csv_options: dict[str, Any] | None = None,
     read_csv_options: dict[str, Any] | None = None,
@@ -76,9 +102,10 @@ def read_excel(
         By file-like object, we refer to objects with a ``read()`` method, such as a
         file handler (e.g. via builtin ``open`` function) or ``BytesIO``.
     sheet_id
-        Sheet number to convert (0 for all sheets).
+        Sheet number to convert (``0`` for all sheets). Defaults to `1` if neither this
+        nor `sheet_name` are specified.
     sheet_name
-        Sheet name to convert.
+        Sheet name to convert. Cannot be used in conjunction with `sheet_id`.
     xlsx2csv_options
         Extra options passed to ``xlsx2csv.Xlsx2csv()``.
         e.g.: ``{"skip_empty_lines": True}``
@@ -150,15 +177,21 @@ def read_excel(
     # Convert sheets from XSLX document to CSV.
     parser = xlsx2csv.Xlsx2csv(source, **xlsx2csv_options)
 
-    if (sheet_name is not None) or ((sheet_id is not None) and (sheet_id > 0)):
-        return _read_excel_sheet(parser, sheet_id, sheet_name, read_csv_options)
-    else:
+    if sheet_name is None and sheet_id is None:
+        return _read_excel_sheet(parser, 1, None, read_csv_options)
+    elif sheet_name is None and ((sheet_id is not None) and (sheet_id > 0)):
+        return _read_excel_sheet(parser, sheet_id, None, read_csv_options)
+    elif sheet_name is None and ((sheet_id is not None) and (sheet_id == 0)):
         return {
             sheet["name"]: _read_excel_sheet(
                 parser, sheet["index"], None, read_csv_options
             )
             for sheet in parser.workbook.sheets
         }
+    elif sheet_name is not None and sheet_id is None:
+        return _read_excel_sheet(parser, None, sheet_name, read_csv_options)
+    else:
+        raise ValueError("Cannot specify both `sheet_name` and `sheet_id`")
 
 
 def _read_excel_sheet(

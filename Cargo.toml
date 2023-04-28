@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "polars",
+  "polars-cli",
   "polars/polars-core",
   "polars/polars-io",
   "polars/polars-time",
@@ -41,9 +42,9 @@ either = "1.8"
 package = "arrow2"
 # git = "https://github.com/jorgecarleitao/arrow2"
 git = "https://github.com/ritchie46/arrow2"
-rev = "11933119612e072a6eefaa65abec8c16241073c6"
+# rev = "1491c6e8f4fd100f53c358e4f3ef1536d9e75090"
 # path = "../arrow2"
-# branch = "polars_2023-04-05"
+branch = "polars_2023-04-27"
 version = "0.17"
 default-features = false
 features = [

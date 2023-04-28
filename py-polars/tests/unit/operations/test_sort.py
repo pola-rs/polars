@@ -646,3 +646,32 @@ def test_arg_sort_struct() -> None:
         8,
         9,
     ]
+
+
+def test_sort_top_k_fast_path() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, None],
+            "b": [6.0, 5.0, 4.0],
+            "c": ["a", "c", "b"],
+        }
+    )
+    # this triggers fast path as head is equal to n-rows
+    assert df.lazy().sort("b").head(3).collect().to_dict(False) == {
+        "a": [None, 2, 1],
+        "b": [4.0, 5.0, 6.0],
+        "c": ["b", "c", "a"],
+    }
+
+
+def test_sorted_flag_groupby_dynamic() -> None:
+    df = pl.DataFrame({"ts": [date(2020, 1, 1), date(2020, 1, 2)], "val": [1, 2]})
+    assert (
+        (
+            df.groupby_dynamic(pl.col("ts").set_sorted(), every="1d").agg(
+                pl.col("val").sum()
+            )
+        )
+        .to_series()
+        .flags["SORTED_ASC"]
+    )

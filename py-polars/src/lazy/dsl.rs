@@ -550,10 +550,10 @@ impl PyExpr {
         self.inner.clone().shrink_dtype().into()
     }
 
-    #[pyo3(signature = (fmt, strict, exact, cache))]
-    pub fn str_parse_date(
+    #[pyo3(signature = (format, strict, exact, cache))]
+    pub fn str_to_date(
         &self,
-        fmt: Option<String>,
+        format: Option<String>,
         strict: bool,
         exact: bool,
         cache: bool,
@@ -563,7 +563,7 @@ impl PyExpr {
             .str()
             .strptime(StrpTimeOptions {
                 date_dtype: DataType::Date,
-                fmt,
+                format,
                 strict,
                 exact,
                 cache,
@@ -573,29 +573,29 @@ impl PyExpr {
             .into()
     }
 
-    #[pyo3(signature = (fmt, strict, exact, cache, tz_aware, utc, time_unit, time_zone))]
+    #[pyo3(signature = (format, time_unit, time_zone, strict, exact, cache, tz_aware, utc))]
     #[allow(clippy::too_many_arguments)]
-    pub fn str_parse_datetime(
+    pub fn str_to_datetime(
         &self,
-        fmt: Option<String>,
+        format: Option<String>,
+        time_unit: Option<Wrap<TimeUnit>>,
+        time_zone: Option<TimeZone>,
         strict: bool,
         exact: bool,
         cache: bool,
         tz_aware: bool,
         utc: bool,
-        time_unit: Option<Wrap<TimeUnit>>,
-        time_zone: Option<TimeZone>,
     ) -> PyExpr {
-        let result_time_unit = match (&fmt, time_unit) {
+        let result_time_unit = match (&format, time_unit) {
             (_, Some(time_unit)) => time_unit.0,
-            (Some(fmt), None) => {
-                if fmt.contains("%.9f")
-                    || fmt.contains("%9f")
-                    || fmt.contains("%f")
-                    || fmt.contains("%.f")
+            (Some(format), None) => {
+                if format.contains("%.9f")
+                    || format.contains("%9f")
+                    || format.contains("%f")
+                    || format.contains("%.f")
                 {
                     TimeUnit::Nanoseconds
-                } else if fmt.contains("%.3f") || fmt.contains("%3f") {
+                } else if format.contains("%.3f") || format.contains("%3f") {
                     TimeUnit::Milliseconds
                 } else {
                     TimeUnit::Microseconds
@@ -608,7 +608,7 @@ impl PyExpr {
             .str()
             .strptime(StrpTimeOptions {
                 date_dtype: DataType::Datetime(result_time_unit, time_zone),
-                fmt,
+                format,
                 strict,
                 exact,
                 cache,
@@ -618,10 +618,10 @@ impl PyExpr {
             .into()
     }
 
-    #[pyo3(signature = (fmt, strict, exact, cache))]
-    pub fn str_parse_time(
+    #[pyo3(signature = (format, strict, exact, cache))]
+    pub fn str_to_time(
         &self,
-        fmt: Option<String>,
+        format: Option<String>,
         strict: bool,
         exact: bool,
         cache: bool,
@@ -631,7 +631,7 @@ impl PyExpr {
             .str()
             .strptime(StrpTimeOptions {
                 date_dtype: DataType::Time,
-                fmt,
+                format,
                 strict,
                 exact,
                 cache,
@@ -654,15 +654,7 @@ impl PyExpr {
     }
 
     pub fn str_slice(&self, start: i64, length: Option<u64>) -> PyExpr {
-        let function = move |s: Series| {
-            let ca = s.utf8()?;
-            Ok(Some(ca.str_slice(start, length)?.into_series()))
-        };
-        self.clone()
-            .inner
-            .map(function, GetOutput::from_type(DataType::Utf8))
-            .with_fmt("str.slice")
-            .into()
+        self.inner.clone().str().str_slice(start, length).into()
     }
 
     pub fn str_to_uppercase(&self) -> PyExpr {
@@ -1103,8 +1095,16 @@ impl PyExpr {
     }
 
     #[cfg(feature = "timezones")]
-    pub fn dt_replace_time_zone(&self, time_zone: Option<String>) -> PyExpr {
-        self.inner.clone().dt().replace_time_zone(time_zone).into()
+    pub fn dt_replace_time_zone(
+        &self,
+        time_zone: Option<String>,
+        use_earliest: Option<bool>,
+    ) -> PyExpr {
+        self.inner
+            .clone()
+            .dt()
+            .replace_time_zone(time_zone, use_earliest)
+            .into()
     }
 
     #[cfg(feature = "timezones")]
@@ -1115,6 +1115,14 @@ impl PyExpr {
 
     pub fn dt_truncate(&self, every: &str, offset: &str) -> PyExpr {
         self.inner.clone().dt().truncate(every, offset).into()
+    }
+
+    pub fn dt_month_start(&self) -> PyExpr {
+        self.inner.clone().dt().month_start().into()
+    }
+
+    pub fn dt_month_end(&self) -> PyExpr {
+        self.inner.clone().dt().month_end().into()
     }
 
     pub fn dt_round(&self, every: &str, offset: &str) -> PyExpr {

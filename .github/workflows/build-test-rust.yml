@@ -43,8 +43,7 @@ jobs:
 
       - name: Run cargo hack
         working-directory: polars
-        run: cargo hack check --each-feature --no-dev-deps --features private
-
+        run: cargo hack check --each-feature --no-dev-deps --features private 
   lint:
     runs-on: ubuntu-latest
     defaults:
@@ -73,6 +72,7 @@ jobs:
             -p polars-core \
             -p polars-io \
             -p polars-lazy \
+            -p polars-sql \
             -- -D warnings
           cargo clippy -- -D warnings
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 from datetime import date, datetime, time, timedelta, timezone
-from typing import TYPE_CHECKING, cast, no_type_check
+from typing import TYPE_CHECKING, Any, cast, no_type_check
 
 import numpy as np
 import pandas as pd
@@ -11,7 +11,7 @@ import pytest
 
 import polars as pl
 from polars.datatypes import DATETIME_DTYPES, DTYPE_TEMPORAL_UNITS, TEMPORAL_DTYPES
-from polars.exceptions import ComputeError, PolarsPanicError
+from polars.exceptions import ArrowError, ComputeError, PolarsPanicError
 from polars.testing import (
     assert_frame_equal,
     assert_series_equal,
@@ -684,7 +684,7 @@ def test_truncate_negative_offset(tzinfo: ZoneInfo | None) -> None:
             ],
             "adm1_code": [1, 2, 1],
         }
-    )
+    ).set_sorted("event_date")
     out = df.groupby_dynamic(
         index_column="event_date",
         every="1mo",
@@ -715,7 +715,7 @@ def test_truncate_negative_offset(tzinfo: ZoneInfo | None) -> None:
             "admin": ["a", "a", "a"],
             "fatalities": [10, 20, 30],
         }
-    )
+    ).set_sorted("event_date")
 
     out = df.groupby_dynamic(
         index_column="event_date",
@@ -730,12 +730,16 @@ def test_truncate_negative_offset(tzinfo: ZoneInfo | None) -> None:
     ]
 
     for dt in [pl.Int32, pl.Int64]:
-        df = pl.DataFrame(
-            {
-                "idx": np.arange(6),
-                "A": ["A", "A", "B", "B", "B", "C"],
-            }
-        ).with_columns(pl.col("idx").cast(dt))
+        df = (
+            pl.DataFrame(
+                {
+                    "idx": np.arange(6),
+                    "A": ["A", "A", "B", "B", "B", "C"],
+                }
+            )
+            .with_columns(pl.col("idx").cast(dt))
+            .set_sorted("idx")
+        )
 
         out = df.groupby_dynamic(
             "idx", every="2i", period="3i", include_boundaries=True
@@ -797,10 +801,15 @@ def test_groupby_dynamic_when_conversion_crosses_dates_7274() -> None:
             }
         )
         .with_columns(
-            pl.col("timestamp").str.strptime(pl.Datetime, format="%Y-%m-%d %H:%M:%S%:z")
+            pl.col("timestamp")
+            .str.strptime(pl.Datetime, format="%Y-%m-%d %H:%M:%S%:z")
+            .set_sorted()
         )
         .with_columns(
-            pl.col("timestamp").dt.convert_time_zone("UTC").alias("timestamp_utc")
+            pl.col("timestamp")
+            .dt.convert_time_zone("UTC")
+            .alias("timestamp_utc")
+            .set_sorted()
         )
     )
     result = df.groupby_dynamic(
@@ -838,8 +847,10 @@ def test_rolling() -> None:
         "2020-01-08 23:16:43",
     ]
 
-    df = pl.DataFrame({"dt": dates, "a": [3, 7, 5, 9, 2, 1]}).with_columns(
-        pl.col("dt").str.strptime(pl.Datetime)
+    df = (
+        pl.DataFrame({"dt": dates, "a": [3, 7, 5, 9, 2, 1]})
+        .with_columns(pl.col("dt").str.strptime(pl.Datetime))
+        .set_sorted("dt")
     )
 
     period: str | timedelta
@@ -876,7 +887,7 @@ def test_upsample(time_zone: str | None, tzinfo: ZoneInfo | timezone | None) -> 
             "admin": ["Åland", "Netherlands", "Åland", "Netherlands"],
             "test2": [0, 1, 2, 3],
         }
-    ).with_columns(pl.col("time").dt.replace_time_zone(time_zone))
+    ).with_columns(pl.col("time").dt.replace_time_zone(time_zone).set_sorted())
 
     up = df.upsample(
         time_column="time", every="1mo", by="admin", maintain_order=True
@@ -1031,7 +1042,7 @@ def test_default_negative_every_offset_dynamic_groupby(tzinfo: ZoneInfo | None) 
         datetime(2020, 2, 1, tzinfo=tzinfo),
         datetime(2020, 3, 1, tzinfo=tzinfo),
     ]
-    df = pl.DataFrame({"dt": dts, "idx": range(len(dts))})
+    df = pl.DataFrame({"dt": dts, "idx": range(len(dts))}).set_sorted("dt")
     out = df.groupby_dynamic(index_column="dt", every="1mo", closed="right").agg(
         pl.col("idx")
     )
@@ -1115,7 +1126,7 @@ def test_asof_join_tolerance_grouper() -> None:
         }
     )
 
-    out = df1.join_asof(df2, by="by", on="date", tolerance="3d")
+    out = df1.join_asof(df2, by="by", on=pl.col("date").set_sorted(), tolerance="3d")
 
     expected = pl.DataFrame(
         {
@@ -1276,7 +1287,7 @@ def test_groupby_rolling_mean_3020() -> None:
             ],
             "val": range(7),
         }
-    ).with_columns(pl.col("Date").str.strptime(pl.Date))
+    ).with_columns(pl.col("Date").str.strptime(pl.Date).set_sorted())
 
     period: str | timedelta
     for period in ("1w", timedelta(days=7)):  # type: ignore[assignment]
@@ -1328,7 +1339,7 @@ def test_asof_join() -> None:
             "ticker": ticker,
             "bid": [720.5, 51.95, 51.97, 51.99, 720.50, 97.99, 720.50, 52.01],
         }
-    )
+    ).set_sorted("dates")
     dates = [
         "2016-05-25 13:30:00.023",
         "2016-05-25 13:30:00.038",
@@ -1349,7 +1360,7 @@ def test_asof_join() -> None:
             "ticker": ticker,
             "bid": [51.95, 51.95, 720.77, 720.92, 98.0],
         }
-    )
+    ).set_sorted("dates")
     assert trades.schema == {
         "dates": pl.Datetime("ms"),
         "ticker": pl.Utf8,
@@ -1670,7 +1681,7 @@ def test_groupby_rolling_by_ordering() -> None:
             "key": ["A", "A", "B", "B", "A", "B", "A"],
             "val": [1, 1, 1, 1, 1, 1, 1],
         }
-    )
+    ).set_sorted("dt")
 
     assert df.groupby_rolling(
         index_column="dt",
@@ -1753,16 +1764,6 @@ def test_sorted_unique() -> None:
         .sort("dt")
         .unique()
     ).to_dict(False) == {"dt": [date(2015, 6, 23), date(2015, 6, 24)]}
-
-
-def test_time_zero_3828() -> None:
-    assert pl.Series(values=[time(0)], dtype=pl.Time).to_list() == [time(0)]
-
-
-def test_time_microseconds_3843() -> None:
-    in_val = [time(0, 9, 11, 558332)]
-    s = pl.Series(in_val)
-    assert s.to_list() == in_val
 
 
 def test_date_to_time_cast_5111() -> None:
@@ -1861,6 +1862,16 @@ def test_date_timedelta() -> None:
     }
 
 
+def test_datetime_hashes() -> None:
+    dtypes = (
+        pl.Datetime,
+        pl.Datetime("us"),
+        pl.Datetime("us", "UTC"),
+        pl.Datetime("us", "Zulu"),
+    )
+    assert len({hash(tp) for tp in (dtypes)}) == 4
+
+
 def test_datetime_string_casts() -> None:
     df = pl.DataFrame(
         {
@@ -1921,28 +1932,6 @@ def test_replace_timezone_from_to(
     ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime(time_unit))
     result = ts.dt.replace_time_zone(from_tz).dt.replace_time_zone(to_tz).item()
     expected = datetime(2020, 1, 1, 0, 0, tzinfo=tzinfo)
-    assert result == expected
-
-
-def test_strptime_subseconds_datetime() -> None:
-    with pytest.raises(ValueError, match="not supported"):
-        pl.Series(["2023-02-05T05:10:10.074000"]).str.strptime(
-            pl.Datetime, "%Y-%m-%dT%H:%M:%S.%f"
-        )
-    result = (
-        pl.Series(["2023-02-05T05:10:10.074000"])
-        .str.strptime(pl.Datetime, "%Y-%m-%dT%H:%M:%S%.f")
-        .item()
-    )
-    expected = datetime(2023, 2, 5, 5, 10, 10, 74000)
-    assert result == expected
-
-
-def test_strptime_subseconds_time() -> None:
-    with pytest.raises(ValueError, match="not supported"):
-        pl.Series(["05:10:10.074000"]).str.strptime(pl.Time, "%H:%M:%S.%f")
-    result = pl.Series(["05:10:10.074000"]).str.strptime(pl.Time, "%H:%M:%S%.f").item()
-    expected = time(5, 10, 10, 74000)
     assert result == expected
 
 
@@ -2239,6 +2228,37 @@ def test_replace_time_zone_from_naive() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("use_earliest", "expected"),
+    [
+        (
+            False,
+            datetime(2018, 10, 28, 2, 30, fold=0, tzinfo=ZoneInfo("Europe/Brussels")),
+        ),
+        (
+            True,
+            datetime(2018, 10, 28, 2, 30, fold=1, tzinfo=ZoneInfo("Europe/Brussels")),
+        ),
+    ],
+)
+def test_replace_time_zone_ambiguous_with_use_earliest(
+    use_earliest: bool, expected: datetime
+) -> None:
+    ts = pl.Series(["2018-10-28 02:30:00"]).str.strptime(pl.Datetime)
+    result = ts.dt.replace_time_zone(
+        "Europe/Brussels", use_earliest=use_earliest
+    ).item()
+    assert result == expected
+
+
+def test_replace_time_zone_ambiguous_raises() -> None:
+    ts = pl.Series(["2018-10-28 02:30:00"]).str.strptime(pl.Datetime)
+    with pytest.raises(
+        ArrowError, match="Please use `use_earliest` to tell how it should be localized"
+    ):
+        ts.dt.replace_time_zone("Europe/Brussels")
+
+
 def test_unlocalize() -> None:
     tz_naive = pl.Series(["2020-01-01 03:00:00"]).str.strptime(pl.Datetime)
     tz_aware = tz_naive.dt.replace_time_zone("UTC").dt.convert_time_zone(
@@ -2433,9 +2453,9 @@ def test_tz_aware_filter_lit() -> None:
 def test_asof_join_by_forward() -> None:
     dfa = pl.DataFrame(
         {"category": ["a", "a", "a", "a", "a"], "value_one": [1, 2, 3, 5, 12]}
-    )
+    ).set_sorted("value_one")
 
-    dfb = pl.DataFrame({"category": ["a"], "value_two": [3]})
+    dfb = pl.DataFrame({"category": ["a"], "value_two": [3]}).set_sorted("value_two")
 
     assert dfa.join_asof(
         dfb,
@@ -2648,13 +2668,17 @@ def test_datetime_cum_agg_schema() -> None:
 
 
 def test_rolling_groupby_empty_groups_by_take_6330() -> None:
-    df = pl.DataFrame({"Event": ["Rain", "Sun"]}).join(
-        pl.DataFrame(
-            {
-                "Date": [1, 2, 3, 4],
-            }
-        ),
-        how="cross",
+    df = (
+        pl.DataFrame({"Event": ["Rain", "Sun"]})
+        .join(
+            pl.DataFrame(
+                {
+                    "Date": [1, 2, 3, 4],
+                }
+            ),
+            how="cross",
+        )
+        .set_sorted("Date")
     )
     assert (
         df.groupby_rolling(
@@ -2749,7 +2773,10 @@ def test_infer_iso8601_date(iso8601_format_date: str) -> None:
 
 
 def test_series_is_temporal() -> None:
-    for tp in TEMPORAL_DTYPES:
+    for tp in TEMPORAL_DTYPES | {
+        pl.Datetime("ms", "UTC"),
+        pl.Datetime("ns", "Europe/Amsterdam"),
+    }:
         s = pl.Series([None], dtype=tp)
         assert s.is_temporal() is True
 
@@ -2758,8 +2785,50 @@ def test_series_is_temporal() -> None:
         assert s.is_temporal(excluding=tp) is False
 
 
-def test_microsecond_precision_any_value_conversion() -> None:
-    dt = datetime(2514, 5, 30, 1, 53, 4, 986754, tzinfo=timezone.utc)
+@pytest.mark.parametrize(
+    "time_zone",
+    [
+        None,
+        timezone.utc,
+        "America/Caracas",
+        "Asia/Kathmandu",
+        "Asia/Taipei",
+        "Europe/Amsterdam",
+        "Europe/Lisbon",
+        "Indian/Maldives",
+        "Pacific/Norfolk",
+        "Pacific/Samoa",
+        "Turkey",
+        "US/Eastern",
+        "UTC",
+        "Zulu",
+    ],
+)
+def test_misc_precision_any_value_conversion(time_zone: Any) -> None:
+    tz = ZoneInfo(time_zone) if isinstance(time_zone, str) else time_zone
+
+    # default precision (μs)
+    dt = datetime(2514, 5, 30, 1, 53, 4, 986754, tzinfo=tz)
     assert pl.Series([dt]).to_list() == [dt]
-    dt = datetime(2514, 5, 30, 1, 53, 4, 986754)
-    assert pl.Series([dt]).to_list() == [dt]
+
+    # ms precision
+    dt = datetime(2243, 1, 1, 0, 0, 0, 1000, tzinfo=tz)
+    assert pl.Series([dt]).cast(pl.Datetime("ms", time_zone)).to_list() == [dt]
+
+    # ns precision
+    dt = datetime(2256, 1, 1, 0, 0, 0, 1, tzinfo=tz)
+    assert pl.Series([dt]).cast(pl.Datetime("ns", time_zone)).to_list() == [dt]
+
+
+@pytest.mark.parametrize(
+    "tm",
+    [
+        time(0, 20, 30, 1),
+        time(8, 40, 15, 8888),
+        time(15, 10, 20, 123456),
+        time(23, 59, 59, 999999),
+    ],
+)
+def test_pytime_conversion(tm: time) -> None:
+    s = pl.Series("tm", [tm])
+    assert s.to_list() == [tm]

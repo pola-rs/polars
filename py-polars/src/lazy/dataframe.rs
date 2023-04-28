@@ -4,7 +4,7 @@ use std::io::BufWriter;
 use std::path::PathBuf;
 
 use polars::io::RowCount;
-#[cfg(feature = "csv-file")]
+#[cfg(feature = "csv")]
 use polars::lazy::frame::LazyCsvReader;
 #[cfg(feature = "json")]
 use polars::lazy::frame::LazyJsonLineReader;
@@ -215,7 +215,7 @@ impl PyLazyFrame {
 
     #[staticmethod]
     #[allow(clippy::too_many_arguments)]
-    #[cfg(feature = "csv-file")]
+    #[cfg(feature = "csv")]
     #[pyo3(signature = (path, separator, has_header, ignore_errors, skip_rows, n_rows, cache, overwrite_dtype,
         low_memory, comment_char, quote_char, null_values, missing_utf8_is_empty_string,
         infer_schema_length, with_schema_modify, rechunk, skip_rows_after_header,
@@ -253,10 +253,10 @@ impl PyLazyFrame {
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
 
         let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {
-            let fields = overwrite_dtype
+            overwrite_dtype
                 .into_iter()
-                .map(|(name, dtype)| Field::new(name, dtype.0));
-            Schema::from(fields)
+                .map(|(name, dtype)| Field::new(name, dtype.0))
+                .collect::<Schema>()
         });
         let mut r = LazyCsvReader::new(path)
             .with_infer_schema_length(infer_schema_length)
@@ -291,11 +291,11 @@ impl PyLazyFrame {
                         .expect("python function should return List[str]");
                     assert_eq!(new_names.len(), schema.len(), "The length of the new names list should be equal to the original column length");
 
-                    let fields = schema
+                    Ok(schema
                         .iter_dtypes()
                         .zip(new_names)
-                        .map(|(dtype, name)| Field::from_owned(name.into(), dtype.clone()));
-                    Ok(Schema::from(fields))
+                        .map(|(dtype, name)| Field::from_owned(name.into(), dtype.clone()))
+                        .collect())
                 })
             };
             r = r.with_schema_modify(f).map_err(PyPolarsErr::from)?
@@ -587,7 +587,7 @@ impl PyLazyFrame {
 
     pub fn groupby_rolling(
         &mut self,
-        index_column: &str,
+        index_column: PyExpr,
         period: &str,
         offset: &str,
         closed: Wrap<ClosedWindow>,
@@ -600,9 +600,10 @@ impl PyLazyFrame {
             .map(|pyexpr| pyexpr.inner)
             .collect::<Vec<_>>();
         let lazy_gb = ldf.groupby_rolling(
+            index_column.inner,
             by,
             RollingGroupOptions {
-                index_column: index_column.into(),
+                index_column: "".into(),
                 period: Duration::parse(period),
                 offset: Duration::parse(offset),
                 closed_window,
@@ -615,7 +616,7 @@ impl PyLazyFrame {
     #[allow(clippy::too_many_arguments)]
     pub fn groupby_dynamic(
         &mut self,
-        index_column: &str,
+        index_column: PyExpr,
         every: &str,
         period: &str,
         offset: &str,
@@ -632,9 +633,9 @@ impl PyLazyFrame {
             .collect::<Vec<_>>();
         let ldf = self.ldf.clone();
         let lazy_gb = ldf.groupby_dynamic(
+            index_column.inner,
             by,
             DynamicGroupOptions {
-                index_column: index_column.into(),
                 every: Duration::parse(every),
                 period: Duration::parse(period),
                 offset: Duration::parse(offset),
@@ -642,6 +643,7 @@ impl PyLazyFrame {
                 include_boundaries,
                 closed_window,
                 start_by: start_by.0,
+                ..Default::default()
             },
         );
 

@@ -122,7 +122,9 @@ pub fn apply_lambda_unknown<'a>(
                 .into_py(py),
                 true,
             ));
-        } else if out.is_instance_of::<PyList>().unwrap() {
+        } else if out.is_instance_of::<PyList>().unwrap()
+            || out.is_instance_of::<PyTuple>().unwrap()
+        {
             return Err(PyPolarsErr::Other(
                 "A list output type is invalid. Do you mean to create polars List Series?\
 Then return a Series object."

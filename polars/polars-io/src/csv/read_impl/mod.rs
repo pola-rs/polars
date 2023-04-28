@@ -66,7 +66,10 @@ pub(crate) fn cast_columns(
     } else {
         // cast to the original dtypes in the schema
         for fld in to_cast {
-            df.try_apply(fld.name(), |s| cast_fn(s, fld))?;
+            // field may not be projected
+            if let Some(idx) = df.find_idx_by_name(fld.name()) {
+                df.try_apply_at_idx(idx, |s| cast_fn(s, fld))?;
+            }
         }
     }
     Ok(())
@@ -241,7 +244,7 @@ impl<'a> CoreReader<'a> {
         if let Some(dtypes) = dtype_overwrite {
             let s = Arc::make_mut(&mut schema);
             for (index, dt) in dtypes.iter().enumerate() {
-                s.coerce_by_index(index, dt.clone()).unwrap();
+                s.set_dtype_at_index(index, dt.clone()).unwrap();
             }
         }
 
@@ -485,7 +488,7 @@ impl<'a> CoreReader<'a> {
         let mut new_projection = Vec::with_capacity(projection.len());
 
         for i in projection {
-            let (_, dtype) = self.schema.get_index(*i).ok_or_else(|| {
+            let (_, dtype) = self.schema.get_at_index(*i).ok_or_else(|| {
                 polars_err!(
                     ComputeError:
                     "projection index {} is out of bounds for CSV schema with {} columns",
@@ -678,7 +681,7 @@ impl<'a> CoreReader<'a> {
                             self.quote_char,
                             self.eol_char,
                             self.comment_char,
-                            chunk_size,
+                            capacity,
                             &str_capacities,
                             self.encoding,
                             self.null_values.as_ref(),
@@ -879,7 +882,7 @@ impl StringColumns {
 
     fn iter(&self) -> impl Iterator<Item = &str> {
         self.fields.iter().map(|schema_i| {
-            let (name, _) = self.schema.get_index(*schema_i).unwrap();
+            let (name, _) = self.schema.get_at_index(*schema_i).unwrap();
             name.as_str()
         })
     }

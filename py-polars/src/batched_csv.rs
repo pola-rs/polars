@@ -75,11 +75,13 @@ impl PyBatchedCsv {
         };
 
         let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {
-            let fields = overwrite_dtype.iter().map(|(name, dtype)| {
-                let dtype = dtype.0.clone();
-                Field::new(name, dtype)
-            });
-            Schema::from(fields)
+            overwrite_dtype
+                .iter()
+                .map(|(name, dtype)| {
+                    let dtype = dtype.0.clone();
+                    Field::new(name, dtype)
+                })
+                .collect::<Schema>()
         });
 
         let overwrite_dtype_slice = overwrite_dtype_slice.map(|overwrite_dtype| {

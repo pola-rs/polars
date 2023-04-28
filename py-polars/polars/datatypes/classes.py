@@ -1,17 +1,31 @@
 from __future__ import annotations
 
 import contextlib
+from datetime import timezone
 from inspect import isclass
-from typing import TYPE_CHECKING, Any, Iterator, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Iterator, Mapping, Sequence
 
 import polars.datatypes
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import dtype_str_repr as _dtype_str_repr
 
-
 if TYPE_CHECKING:
     from polars.type_aliases import PolarsDataType, PythonDataType, SchemaDict, TimeUnit
+
+
+class classproperty:
+    """Equivalent to @property, but works on a class (doesn't require an instance)."""
+
+    def __init__(self, method: Callable[..., Any] | None = None) -> None:
+        self.fget = method
+
+    def __get__(self, instance: Any, cls: type | None = None) -> Any:
+        return self.fget(cls)  # type: ignore[misc]
+
+    def getter(self, method: Callable[..., Any]) -> Any:
+        self.fget = method
+        return self
 
 
 class DataTypeClass(type):
@@ -25,6 +39,10 @@ class DataTypeClass(type):
 
     def base_type(cls) -> PolarsDataType:
         return cls
+
+    @classproperty
+    def is_nested(self) -> bool:
+        return False
 
 
 class DataType(metaclass=DataTypeClass):
@@ -59,6 +77,10 @@ class DataType(metaclass=DataTypeClass):
         """
         return cls
 
+    @classproperty
+    def is_nested(self) -> bool:
+        return False
+
 
 def _custom_reconstruct(
     cls: type[Any], base: type[Any], state: Any
@@ -71,6 +93,25 @@ def _custom_reconstruct(
     else:
         obj = object.__new__(cls)
     return obj
+
+
+class DataTypeGroup(frozenset):  # type: ignore[type-arg]
+    _match_base_type: bool
+
+    def __new__(cls, items: Any, *, match_base_type: bool = True) -> DataTypeGroup:
+        for it in items:
+            if not isinstance(it, (DataType, DataTypeClass)):
+                raise TypeError(
+                    f"DataTypeGroup items must be dtypes; found {type(it).__name__!r}"
+                )
+        dtype_group = super().__new__(cls, items)
+        dtype_group._match_base_type = match_base_type
+        return dtype_group
+
+    def __contains__(self, item: Any) -> bool:
+        if self._match_base_type and isinstance(item, (DataType, DataTypeClass)):
+            item = item.base_type()
+        return super().__contains__(item)
 
 
 class NumericType(DataType):
@@ -95,6 +136,10 @@ class TemporalType(DataType):
 
 class NestedType(DataType):
     """Base class for nested data types."""
+
+    @classproperty
+    def is_nested(self) -> bool:
+        return True
 
 
 class Int8(IntegralType):
@@ -166,7 +211,7 @@ class Decimal(FractionalType):
             return False
 
     def __hash__(self) -> int:
-        return hash((Decimal, self.precision, self.scale))
+        return hash((self.__class__, self.precision, self.scale))
 
 
 class Boolean(DataType):
@@ -195,7 +240,9 @@ class Datetime(TemporalType):
     time_unit: TimeUnit | None = None
     time_zone: str | None = None
 
-    def __init__(self, time_unit: TimeUnit | None = "us", time_zone: str | None = None):
+    def __init__(
+        self, time_unit: TimeUnit | None = "us", time_zone: str | timezone | None = None
+    ):
         """
         Calendar date and time type.
 
@@ -208,6 +255,9 @@ class Datetime(TemporalType):
             ``import zoneinfo; zoneinfo.available_timezones()`` for a full list).
 
         """
+        if isinstance(time_zone, timezone):
+            time_zone = str(time_zone)
+
         self.time_unit = time_unit or "us"
         self.time_zone = time_zone
 
@@ -228,7 +278,7 @@ class Datetime(TemporalType):
             return False
 
     def __hash__(self) -> int:
-        return hash((Datetime, self.time_unit))
+        return hash((self.__class__, self.time_unit, self.time_zone))
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
@@ -268,7 +318,7 @@ class Duration(TemporalType):
             return False
 
     def __hash__(self) -> int:
-        return hash((Duration, self.time_unit))
+        return hash((self.__class__, self.time_unit))
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
@@ -307,14 +357,11 @@ class List(NestedType):
         self.inner = polars.datatypes.py_type_to_dtype(inner)
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
-        # The comparison allows comparing objects to classes
-        # and specific inner types to none specific.
-        # if one of the arguments is not specific about its inner type
-        # we infer it as being equal.
-        # List[i64] == List[i64] == True
-        # List[i64] == List == True
-        # List[i64] == List[None] == True
-        # List[i64] == List[f32] == False
+        # This equality check allows comparison of type classes and type instances.
+        # If a parent type is not specific about its inner type, we infer it as equal:
+        # > list[i64] == list[i64] -> True
+        # > list[i64] == list[f32] -> False
+        # > list[i64] == list      -> True
 
         # allow comparing object instances to class
         if type(other) is DataTypeClass and issubclass(other, List):
@@ -328,7 +375,7 @@ class List(NestedType):
             return False
 
     def __hash__(self) -> int:
-        return hash((List, self.inner))
+        return hash((self.__class__, self.inner))
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
@@ -353,6 +400,9 @@ class Field:
 
     def __eq__(self, other: Field) -> bool:  # type: ignore[override]
         return (self.name == other.name) & (self.dtype == other.dtype)
+
+    def __hash__(self) -> int:
+        return hash((self.name, self.dtype))
 
     def __repr__(self) -> str:
         class_name = self.__class__.__name__
@@ -390,7 +440,7 @@ class Struct(NestedType):
             return False
 
     def __hash__(self) -> int:
-        return hash(Struct)
+        return hash((self.__class__, tuple(self.fields)))
 
     def __iter__(self) -> Iterator[tuple[str, PolarsDataType]]:
         for fld in self.fields or []:
