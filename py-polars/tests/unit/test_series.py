@@ -1279,6 +1279,9 @@ def test_round() -> None:
     b = a.round(2)
     assert b.to_list() == [1.00, 2.00]
 
+    b = a.round()
+    assert b.to_list() == [1.0, 2.0]
+
 
 def test_apply_list_out() -> None:
     s = pl.Series("count", [3, 2, 2])
