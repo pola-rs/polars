@@ -37,11 +37,11 @@ where
     }
 }
 
-pub struct ListPrimitiveChunkedBuilder<T>
+pub struct FixedSizeListPrimitiveChunkedBuilder<T>
 where
     T: PolarsNumericType,
 {
-    pub builder: LargePrimitiveBuilder<T::Native>,
+    pub builder: FixedSizePrimitiveBuilder<T::Native>,
     field: Field,
     fast_explode: bool,
 }
@@ -64,7 +64,7 @@ macro_rules! finish_list_builder {
     }};
 }
 
-impl<T> ListPrimitiveChunkedBuilder<T>
+impl<T> FixedSizeListPrimitiveChunkedBuilder<T>
 where
     T: PolarsNumericType,
 {
@@ -75,7 +75,7 @@ where
         logical_type: DataType,
     ) -> Self {
         let values = MutablePrimitiveArray::<T::Native>::with_capacity(values_capacity);
-        let builder = LargePrimitiveBuilder::<T::Native>::new_with_capacity(values, capacity);
+        let builder = FixedSizePrimitiveBuilder::<T::Native>::new_with_capacity(values, capacity);
         let field = Field::new(name, DataType::List(Box::new(logical_type)));
 
         Self {
@@ -134,7 +134,7 @@ where
     }
 }
 
-impl<T> FixedSizeListBuilderTrait for ListPrimitiveChunkedBuilder<T>
+impl<T> FixedSizeListBuilderTrait for FixedSizeListPrimitiveChunkedBuilder<T>
 where
     T: PolarsNumericType,
 {
@@ -181,25 +181,25 @@ where
     }
 }
 
-type LargePrimitiveBuilder<T> = MutableListArray<i64, MutablePrimitiveArray<T>>;
-type LargeListUtf8Builder = MutableListArray<i64, MutableUtf8Array<i64>>;
-type LargeListBinaryBuilder = MutableListArray<i64, MutableBinaryArray<i64>>;
-type LargeListBooleanBuilder = MutableListArray<i64, MutableBooleanArray>;
-type LargeListNullBuilder = MutableListArray<i64, MutableNullArray>;
+type FixedSizePrimitiveBuilder<T> = MutableFixedSizeListArray<MutablePrimitiveArray<T>>;
+type FixedSizeListUtf8Builder = MutableFixedSizeListArray<MutableUtf8Array<i64>>;
+type FixedSizeListBinaryBuilder = MutableFixedSizeListArray<MutableBinaryArray<i64>>;
+type FixedSizeListBooleanBuilder = MutableFixedSizeListArray<MutableBooleanArray>;
+type FixedSizeListNullBuilder = MutableFixedSizeListArray<MutableNullArray>;
 
-pub struct ListUtf8ChunkedBuilder {
-    builder: LargeListUtf8Builder,
+pub struct FixedSizeListUtf8ChunkedBuilder {
+    builder: FixedSizeListUtf8Builder,
     field: Field,
     fast_explode: bool,
 }
 
-impl ListUtf8ChunkedBuilder {
+impl FixedSizeListUtf8ChunkedBuilder {
     pub fn new(name: &str, capacity: usize, values_capacity: usize) -> Self {
         let values = MutableUtf8Array::<i64>::with_capacity(values_capacity);
-        let builder = LargeListUtf8Builder::new_with_capacity(values, capacity);
+        let builder = FixedSizeListUtf8Builder::new_with_capacity(values, capacity);
         let field = Field::new(name, DataType::List(Box::new(DataType::Utf8)));
 
-        ListUtf8ChunkedBuilder {
+        FixedSizeListUtf8ChunkedBuilder {
             builder,
             field,
             fast_explode: true,
@@ -241,7 +241,7 @@ impl ListUtf8ChunkedBuilder {
     }
 }
 
-impl FixedSizeListBuilderTrait for ListUtf8ChunkedBuilder {
+impl FixedSizeListBuilderTrait for FixedSizeListUtf8ChunkedBuilder {
     #[inline]
     fn append_opt_series(&mut self, opt_s: Option<&Series>) {
         match opt_s {
@@ -272,19 +272,19 @@ impl FixedSizeListBuilderTrait for ListUtf8ChunkedBuilder {
     }
 }
 
-pub struct ListBinaryChunkedBuilder {
-    builder: LargeListBinaryBuilder,
+pub struct FixedSizeListBinaryChunkedBuilder {
+    builder: FixedSizeListBinaryBuilder,
     field: Field,
     fast_explode: bool,
 }
 
-impl ListBinaryChunkedBuilder {
+impl FixedSizeListBinaryChunkedBuilder {
     pub fn new(name: &str, capacity: usize, values_capacity: usize) -> Self {
         let values = MutableBinaryArray::<i64>::with_capacity(values_capacity);
-        let builder = LargeListBinaryBuilder::new_with_capacity(values, capacity);
+        let builder = FixedSizeListBinaryBuilder::new_with_capacity(values, capacity);
         let field = Field::new(name, DataType::List(Box::new(DataType::Binary)));
 
-        ListBinaryChunkedBuilder {
+        FixedSizeListBinaryChunkedBuilder {
             builder,
             field,
             fast_explode: true,
@@ -323,7 +323,7 @@ impl ListBinaryChunkedBuilder {
     }
 }
 
-impl FixedSizeListBuilderTrait for ListBinaryChunkedBuilder {
+impl FixedSizeListBuilderTrait for FixedSizeListBinaryChunkedBuilder {
     fn append_opt_series(&mut self, opt_s: Option<&Series>) {
         match opt_s {
             Some(s) => self.append_series(s),
@@ -352,16 +352,16 @@ impl FixedSizeListBuilderTrait for ListBinaryChunkedBuilder {
     }
 }
 
-pub struct ListBooleanChunkedBuilder {
-    builder: LargeListBooleanBuilder,
+pub struct FixedSizeListBooleanChunkedBuilder {
+    builder: FixedSizeListBooleanBuilder,
     field: Field,
     fast_explode: bool,
 }
 
-impl ListBooleanChunkedBuilder {
+impl FixedSizeListBooleanChunkedBuilder {
     pub fn new(name: &str, capacity: usize, values_capacity: usize) -> Self {
         let values = MutableBooleanArray::with_capacity(values_capacity);
-        let builder = LargeListBooleanBuilder::new_with_capacity(values, capacity);
+        let builder = FixedSizeListBooleanBuilder::new_with_capacity(values, capacity);
         let field = Field::new(name, DataType::List(Box::new(DataType::Boolean)));
 
         Self {
@@ -395,7 +395,7 @@ impl ListBooleanChunkedBuilder {
     }
 }
 
-impl FixedSizeListBuilderTrait for ListBooleanChunkedBuilder {
+impl FixedSizeListBuilderTrait for FixedSizeListBooleanChunkedBuilder {
     fn append_opt_series(&mut self, opt_s: Option<&Series>) {
         match opt_s {
             Some(s) => self.append_series(s),
@@ -422,7 +422,7 @@ impl FixedSizeListBuilderTrait for ListBooleanChunkedBuilder {
     }
 }
 
-impl FixedSizeListBuilderTrait for LargeListNullBuilder {
+impl FixedSizeListBuilderTrait for FixedSizeListNullBuilder {
     #[inline]
     fn append_series(&mut self, _s: &Series) {
         self.push_null()
@@ -456,13 +456,15 @@ pub fn get_fixed_size_list_builder(
         #[cfg(feature = "object")]
         DataType::Object(_) => polars_bail!(opq = list_builder, &physical_type),
         #[cfg(feature = "dtype-struct")]
-        DataType::Struct(_) => Ok(Box::new(AnonymousOwnedListBuilder::new(
+        DataType::Struct(_) => Ok(Box::new(AnonymousOwnedFixedSizeListBuilder::new(
             name,
             list_capacity,
             Some(inner_type_logical.clone()),
         ))),
-        DataType::Null => Ok(Box::new(LargeListNullBuilder::with_capacity(list_capacity))),
-        DataType::List(_) => Ok(Box::new(AnonymousOwnedListBuilder::new(
+        DataType::Null => Ok(Box::new(FixedSizeListNullBuilder::with_capacity(
+            list_capacity,
+        ))),
+        DataType::List(_) => Ok(Box::new(AnonymousOwnedFixedSizeListBuilder::new(
             name,
             list_capacity,
             Some(inner_type_logical.clone()),
@@ -470,7 +472,7 @@ pub fn get_fixed_size_list_builder(
         _ => {
             macro_rules! get_primitive_builder {
                 ($type:ty) => {{
-                    let builder = ListPrimitiveChunkedBuilder::<$type>::new(
+                    let builder = FixedSizeListPrimitiveChunkedBuilder::<$type>::new(
                         name,
                         list_capacity,
                         value_capacity,
@@ -481,22 +483,31 @@ pub fn get_fixed_size_list_builder(
             }
             macro_rules! get_bool_builder {
                 () => {{
-                    let builder =
-                        ListBooleanChunkedBuilder::new(&name, list_capacity, value_capacity);
+                    let builder = FixedSizeListBooleanChunkedBuilder::new(
+                        &name,
+                        list_capacity,
+                        value_capacity,
+                    );
                     Box::new(builder)
                 }};
             }
             macro_rules! get_utf8_builder {
                 () => {{
-                    let builder =
-                        ListUtf8ChunkedBuilder::new(&name, list_capacity, 5 * value_capacity);
+                    let builder = FixedSizeListUtf8ChunkedBuilder::new(
+                        &name,
+                        list_capacity,
+                        5 * value_capacity,
+                    );
                     Box::new(builder)
                 }};
             }
             macro_rules! get_binary_builder {
                 () => {{
-                    let builder =
-                        ListBinaryChunkedBuilder::new(&name, list_capacity, 5 * value_capacity);
+                    let builder = FixedSizeListBinaryChunkedBuilder::new(
+                        &name,
+                        list_capacity,
+                        5 * value_capacity,
+                    );
                     Box::new(builder)
                 }};
             }
@@ -619,7 +630,7 @@ impl<'a> AnonymousFixedSizeListBuilder<'a> {
     }
 }
 
-pub struct AnonymousOwnedListBuilder {
+pub struct AnonymousOwnedFixedSizeListBuilder {
     name: String,
     builder: AnonymousBuilder<'static>,
     owned: Vec<Series>,
@@ -627,13 +638,13 @@ pub struct AnonymousOwnedListBuilder {
     fast_explode: bool,
 }
 
-impl Default for AnonymousOwnedListBuilder {
+impl Default for AnonymousOwnedFixedSizeListBuilder {
     fn default() -> Self {
         Self::new("", 0, None)
     }
 }
 
-impl FixedSizeListBuilderTrait for AnonymousOwnedListBuilder {
+impl FixedSizeListBuilderTrait for AnonymousOwnedFixedSizeListBuilder {
     fn append_series(&mut self, s: &Series) {
         if s.is_empty() {
             self.append_empty();
@@ -690,7 +701,7 @@ impl FixedSizeListBuilderTrait for AnonymousOwnedListBuilder {
     }
 }
 
-impl AnonymousOwnedListBuilder {
+impl AnonymousOwnedFixedSizeListBuilder {
     pub fn new(name: &str, capacity: usize, inner_dtype: Option<DataType>) -> Self {
         Self {
             name: name.into(),
