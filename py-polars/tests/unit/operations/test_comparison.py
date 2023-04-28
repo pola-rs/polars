@@ -30,9 +30,9 @@ def test_comparison_series_expr() -> None:
         df.select(
             (df["a"] == pl.col("b")).alias("eq"),  # False, False, True
             (df["a"] != pl.col("b")).alias("ne"),  # True, True, False
-            (df["a"] < pl.col("b")).alias("lt"),   # True, False, False
+            (df["a"] < pl.col("b")).alias("lt"),  # True, False, False
             (df["a"] <= pl.col("b")).alias("le"),  # True, False, True
-            (df["a"] > pl.col("b")).alias("gt"),   # False, True, False
+            (df["a"] > pl.col("b")).alias("gt"),  # False, True, False
             (df["a"] >= pl.col("b")).alias("ge"),  # False, True, True
         ),
         pl.DataFrame(
@@ -55,9 +55,9 @@ def test_comparison_expr_expr() -> None:
         df.select(
             (pl.col("a") == pl.col("b")).alias("eq"),  # False, False, True
             (pl.col("a") != pl.col("b")).alias("ne"),  # True, True, False
-            (pl.col("a") < pl.col("b")).alias("lt"),   # True, False, False
+            (pl.col("a") < pl.col("b")).alias("lt"),  # True, False, False
             (pl.col("a") <= pl.col("b")).alias("le"),  # True, False, True
-            (pl.col("a") > pl.col("b")).alias("gt"),   # False, True, False
+            (pl.col("a") > pl.col("b")).alias("gt"),  # False, True, False
             (pl.col("a") >= pl.col("b")).alias("ge"),  # False, True, True
         ),
         pl.DataFrame(
@@ -80,9 +80,9 @@ def test_comparison_expr_series() -> None:
         df.select(
             (pl.col("a") == df["b"]).alias("eq"),  # False, False, True
             (pl.col("a") != df["b"]).alias("ne"),  # True, True, False
-            (pl.col("a") < df["b"]).alias("lt"),   # True, False, False
+            (pl.col("a") < df["b"]).alias("lt"),  # True, False, False
             (pl.col("a") <= df["b"]).alias("le"),  # True, False, True
-            (pl.col("a") > df["b"]).alias("gt"),   # False, True, False
+            (pl.col("a") > df["b"]).alias("gt"),  # False, True, False
             (pl.col("a") >= df["b"]).alias("ge"),  # False, True, True
         ),
         pl.DataFrame(

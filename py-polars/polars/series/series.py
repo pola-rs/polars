@@ -497,7 +497,7 @@ class Series:
 
         return self._from_pyseries(f(other))
 
-    @overload
+    @overload  # type: ignore[override]
     def __eq__(self, other: Expr) -> Expr:  # type: ignore[misc]
         ...
 
@@ -510,7 +510,7 @@ class Series:
             return F.lit(self).__eq__(other)
         return self._comp(other, "eq")
 
-    @overload
+    @overload  # type: ignore[override]
     def __ne__(self, other: Expr) -> Expr:  # type: ignore[misc]
         ...
 
@@ -575,27 +575,27 @@ class Series:
             return F.lit(self).__le__(other)
         return self._comp(other, "lt_eq")
 
-    def le(self, other: Any) -> Self:
+    def le(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression ``series <= other``."""
         return self.__le__(other)
 
-    def lt(self, other: Any) -> Self:
+    def lt(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression ``series < other``."""
         return self.__lt__(other)
 
-    def eq(self, other: Any) -> Self:
+    def eq(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression ``series == other``."""
         return self.__eq__(other)
 
-    def ne(self, other: Any) -> Self:
+    def ne(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression ``series != other``."""
         return self.__ne__(other)
 
-    def ge(self, other: Any) -> Self:
+    def ge(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression ``series >= other``."""
         return self.__ge__(other)
 
-    def gt(self, other: Any) -> Self:
+    def gt(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression ``series > other``."""
         return self.__gt__(other)
 
