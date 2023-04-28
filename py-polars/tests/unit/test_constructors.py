@@ -254,6 +254,34 @@ def test_init_structured_objects(monkeypatch: Any) -> None:
         assert type_hints(obj=type(None)) == {}
 
 
+def test_init_structured_objects_unhashable() -> None:
+    # cover an edge-case with namedtuple fields that aren't hashable
+
+    class Test(NamedTuple):
+        dt: datetime
+        info: dict[str, int]
+
+    test_data = [
+        Test(datetime(2017, 1, 1), {"a": 1, "b": 2}),
+        Test(datetime(2017, 1, 2), {"a": 2, "b": 2}),
+    ]
+    df = pl.DataFrame(test_data)
+    # shape: (2, 2)
+    # ┌─────────────────────┬───────────┐
+    # │ dt                  ┆ info      │
+    # │ ---                 ┆ ---       │
+    # │ datetime[μs]        ┆ struct[2] │
+    # ╞═════════════════════╪═══════════╡
+    # │ 2017-01-01 00:00:00 ┆ {1,2}     │
+    # │ 2017-01-02 00:00:00 ┆ {2,2}     │
+    # └─────────────────────┴───────────┘
+    assert df.schema == {
+        "dt": pl.Datetime(time_unit="us", time_zone=None),
+        "info": pl.Struct([pl.Field("a", pl.Int64), pl.Field("b", pl.Int64)]),
+    }
+    assert df.rows() == test_data
+
+
 def test_init_structured_objects_nested() -> None:
     for Foo, Bar, Baz in (
         (_TestFooDC, _TestBarDC, _TestBazDC),
