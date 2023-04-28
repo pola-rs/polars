@@ -17,6 +17,17 @@ pub enum IsSorted {
     Not,
 }
 
+impl IsSorted {
+    pub(crate) fn reverse(self) -> Self {
+        use IsSorted::*;
+        match self {
+            Ascending => Descending,
+            Descending => Ascending,
+            Not => Not,
+        }
+    }
+}
+
 macro_rules! invalid_operation_panic {
     ($op:ident, $s:expr) => {
         panic!(
