@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from polars import _reexport as pli
+import polars._reexport as pl
 from polars.datatypes import N_INFER_DEFAULT
 from polars.utils.various import normalise_filepath
 
@@ -24,7 +24,7 @@ def read_ndjson(source: str | Path | IOBase) -> DataFrame:
         Path to a file or a file-like object.
 
     """
-    return pli.DataFrame._read_ndjson(source)
+    return pl.DataFrame._read_ndjson(source)
 
 
 def scan_ndjson(
@@ -68,7 +68,7 @@ def scan_ndjson(
     if isinstance(source, (str, Path)):
         source = normalise_filepath(source)
 
-    return pli.LazyFrame._scan_ndjson(
+    return pl.LazyFrame._scan_ndjson(
         source,
         infer_schema_length=infer_schema_length,
         batch_size=batch_size,

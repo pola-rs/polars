@@ -24,7 +24,7 @@ from typing import (
     overload,
 )
 
-from polars import _reexport as pli
+import polars._reexport as pl
 from polars import functions as F
 from polars.dataframe._html import NotebookFormatter
 from polars.dataframe.groupby import DynamicGroupBy, GroupBy, RollingGroupBy
@@ -368,7 +368,7 @@ class DataFrame:
                 orient=orient,
                 infer_schema_length=infer_schema_length,
             )
-        elif isinstance(data, pli.Series):
+        elif isinstance(data, pl.Series):
             self._df = series_to_pydf(
                 data, schema=schema, schema_overrides=schema_overrides
             )
@@ -1280,7 +1280,7 @@ class DataFrame:
             raise ValueError(f"got unexpected comparison operator: {op}")
 
     def _div(self, other: Any, floordiv: bool) -> Self:
-        if isinstance(other, pli.Series):
+        if isinstance(other, pl.Series):
             if floordiv:
                 return self.select(F.all() // lit(other))
             return self.select(F.all() / lit(other))
@@ -1405,7 +1405,7 @@ class DataFrame:
         # pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx).
         idx_type = get_index_type()
 
-        if isinstance(idxs, pli.Series):
+        if isinstance(idxs, pl.Series):
             if idxs.dtype == idx_type:
                 return idxs
             if idxs.dtype in {
@@ -1469,7 +1469,7 @@ class DataFrame:
                     # Update negative indexes to absolute indexes.
                     idxs = np.where(idxs < 0, self.shape[dim] + idxs, idxs)
 
-                return pli.Series("", idxs, dtype=idx_type)
+                return pl.Series("", idxs, dtype=idx_type)
 
         raise NotImplementedError("Unsupported idxs datatype.")
 
@@ -1550,7 +1550,7 @@ class DataFrame:
 
                 # df[:, [True, False]]
                 if is_bool_sequence(col_selection) or (
-                    isinstance(col_selection, pli.Series)
+                    isinstance(col_selection, pl.Series)
                     and col_selection.dtype == Boolean
                 ):
                     if len(col_selection) != self.width:
@@ -1644,9 +1644,9 @@ class DataFrame:
             # df[["foo", "bar"]]
             return self._from_pydf(self._df.select(item))
         elif is_int_sequence(item):
-            item = pli.Series("", item)  # fall through to next if isinstance
+            item = pl.Series("", item)  # fall through to next if isinstance
 
-        if isinstance(item, pli.Series):
+        if isinstance(item, pl.Series):
             dtype = item.dtype
             if dtype == Utf8:
                 return self._from_pydf(self._df.select(item))
@@ -1690,7 +1690,7 @@ class DataFrame:
             # todo! we can parallelize this by calling from_numpy
             columns = []
             for i, name in enumerate(key):
-                columns.append(pli.Series(name, value[:, i]))
+                columns.append(pl.Series(name, value[:, i]))
             self._df = self.with_columns(columns)._df
 
         # df[a, b]
@@ -1698,7 +1698,7 @@ class DataFrame:
             row_selection, col_selection = key
 
             if (
-                isinstance(row_selection, pli.Series) and row_selection.dtype == Boolean
+                isinstance(row_selection, pl.Series) and row_selection.dtype == Boolean
             ) or is_bool_sequence(row_selection):
                 raise ValueError(
                     "Not allowed to set 'DataFrame' by boolean mask in the "
@@ -3499,7 +3499,7 @@ class DataFrame:
 
         """
         if _check_for_numpy(predicate) and isinstance(predicate, np.ndarray):
-            predicate = pli.Series(predicate)
+            predicate = pl.Series(predicate)
 
         return self._from_pydf(
             self.lazy()
@@ -3696,7 +3696,7 @@ class DataFrame:
 
         # return results as a frame
         df_summary = self.__class__(summary)
-        df_summary.insert_at_idx(0, pli.Series("describe", metrics))
+        df_summary.insert_at_idx(0, pl.Series("describe", metrics))
         return df_summary
 
     def find_idx_by_name(self, name: str) -> int:
@@ -5747,7 +5747,7 @@ class DataFrame:
         if n > 0 or len(self) > 0:
             return self.__class__(
                 {
-                    nm: pli.Series(name=nm, dtype=tp).extend_constant(None, n)
+                    nm: pl.Series(name=nm, dtype=tp).extend_constant(None, n)
                     for nm, tp in self.schema.items()
                 }
             )
@@ -7696,7 +7696,7 @@ class DataFrame:
         """
         if isinstance(subset, str):
             subset = [F.col(subset)]
-        elif isinstance(subset, pli.Expr):
+        elif isinstance(subset, pl.Expr):
             subset = [subset]
 
         if isinstance(subset, Sequence) and len(subset) == 1:
@@ -7998,7 +7998,7 @@ class DataFrame:
             raise ValueError(
                 "Cannot set both 'index' and 'by_predicate'; mutually exclusive"
             )
-        elif isinstance(index, pli.Expr):
+        elif isinstance(index, pl.Expr):
             raise TypeError("Expressions should be passed to the 'by_predicate' param")
 
         if index is not None:
@@ -8009,7 +8009,7 @@ class DataFrame:
                 return row
 
         elif by_predicate is not None:
-            if not isinstance(by_predicate, pli.Expr):
+            if not isinstance(by_predicate, pl.Expr):
                 raise TypeError(
                     f"Expected 'by_predicate to be an expression; "
                     f"found {type(by_predicate)}"
@@ -8635,12 +8635,12 @@ class DataFrame:
 def _prepare_other_arg(other: Any, length: int | None = None) -> Series:
     # if not a series create singleton series such that it will broadcast
     value = other
-    if not isinstance(other, pli.Series):
+    if not isinstance(other, pl.Series):
         if isinstance(other, str):
             pass
         elif isinstance(other, Sequence):
             raise ValueError("Operation not supported.")
-        other = pli.Series("", [other])
+        other = pl.Series("", [other])
 
     if length and length > 1:
         other = other.extend_constant(value=value, n=length - 1)

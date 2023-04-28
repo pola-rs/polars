@@ -5,7 +5,7 @@ import warnings
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Iterable, Sequence, overload
 
-from polars import _reexport as pli
+import polars._reexport as pl
 from polars.datatypes import Date
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
 from polars.utils._wrap import wrap_df, wrap_expr, wrap_ldf, wrap_s
@@ -258,7 +258,7 @@ def concat(
 
     out: Series | DataFrame | LazyFrame | Expr
     first = elems[0]
-    if isinstance(first, pli.DataFrame):
+    if isinstance(first, pl.DataFrame):
         if how == "vertical":
             out = wrap_df(_concat_df(elems))
         elif how == "diagonal":
@@ -270,7 +270,7 @@ def concat(
                 f"how must be one of {{'vertical', 'diagonal', 'horizontal'}}, "
                 f"got {how}"
             )
-    elif isinstance(first, pli.LazyFrame):
+    elif isinstance(first, pl.LazyFrame):
         if how == "vertical":
             return wrap_ldf(_concat_lf(elems, rechunk, parallel))
         if how == "diagonal":
@@ -279,12 +279,12 @@ def concat(
             raise ValueError(
                 "'LazyFrame' only allows {{'vertical', 'diagonal'}} concat strategy."
             )
-    elif isinstance(first, pli.Series):
+    elif isinstance(first, pl.Series):
         if how == "vertical":
             out = wrap_s(_concat_series(elems))
         else:
             raise ValueError("'Series' only allows {{'vertical'}} concat strategy.")
-    elif isinstance(first, pli.Expr):
+    elif isinstance(first, pl.Expr):
         out = first
         for e in elems[1:]:
             out = out.append(e)  # type: ignore[arg-type]
@@ -491,7 +491,7 @@ def date_range(
     elif " " in interval:
         interval = interval.replace(" ", "")
 
-    if isinstance(start, (str, pli.Expr)) or isinstance(end, (str, pli.Expr)) or lazy:
+    if isinstance(start, (str, pl.Expr)) or isinstance(end, (str, pl.Expr)) or lazy:
         start = expr_to_lit_or_expr(start, str_to_lit=False)._pyexpr
         end = expr_to_lit_or_expr(end, str_to_lit=False)._pyexpr
         return wrap_expr(
@@ -766,7 +766,7 @@ def align_frames(
         )
 
     # establish the superset of all "on" column values, sort, and cache
-    eager = isinstance(frames[0], pli.DataFrame)
+    eager = isinstance(frames[0], pl.DataFrame)
     alignment_frame = (
         concat([df.lazy().select(on) for df in frames])
         .unique(maintain_order=False)
@@ -820,7 +820,7 @@ def ones(n: int, dtype: PolarsDataType | None = None) -> Series:
     ]
 
     """
-    s = pli.Series([1.0])
+    s = pl.Series([1.0])
     if dtype:
         s = s.cast(dtype)
     return s.new_from_index(0, n)
@@ -856,7 +856,7 @@ def zeros(n: int, dtype: PolarsDataType | None = None) -> Series:
     ]
 
     """
-    s = pli.Series([0.0])
+    s = pl.Series([0.0])
     if dtype:
         s = s.cast(dtype)
     return s.new_from_index(0, n)

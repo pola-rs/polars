@@ -18,7 +18,7 @@ from typing import (
     overload,
 )
 
-from polars import _reexport as pli
+import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
@@ -1936,7 +1936,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └──────┴──────┴──────┘
 
         """
-        return self._from_pyldf(pli.DataFrame(schema=self.schema).clear(n).lazy()._ldf)
+        return self._from_pyldf(pl.DataFrame(schema=self.schema).clear(n).lazy()._ldf)
 
     def clone(self) -> Self:
         """
@@ -2021,7 +2021,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         """
         if isinstance(predicate, list):
-            predicate = pli.Series(predicate)
+            predicate = pl.Series(predicate)
 
         return self._from_pyldf(
             self._ldf.filter(expr_to_lit_or_expr(predicate, str_to_lit=False)._pyexpr)
@@ -2828,7 +2828,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 f"Expected 'other' join table to be a LazyFrame, not a {type(other).__name__}"
             )
 
-        if isinstance(on, (str, pli.Expr)):
+        if isinstance(on, (str, pl.Expr)):
             left_on = on
             right_on = on
 
@@ -2839,7 +2839,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         by_left_ = [by_left] if isinstance(by_left, str) else by_left
 
         by_right_: Sequence[str] | None
-        by_right_ = [by_right] if isinstance(by_right, (str, pli.Expr)) else by_right
+        by_right_ = [by_right] if isinstance(by_right, (str, pl.Expr)) else by_right
 
         if isinstance(by, str):
             by_left_ = [by]
@@ -2855,9 +2855,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         else:
             tolerance_num = tolerance
 
-        if not isinstance(left_on, pli.Expr):
+        if not isinstance(left_on, pl.Expr):
             left_on = F.col(left_on)
-        if not isinstance(right_on, pli.Expr):
+        if not isinstance(right_on, pl.Expr):
             right_on = F.col(right_on)
 
         return self._from_pyldf(
@@ -3474,7 +3474,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┘
 
         """
-        if not isinstance(fill_value, pli.Expr):
+        if not isinstance(fill_value, pl.Expr):
             fill_value = F.lit(fill_value)
         return self._from_pyldf(self._ldf.shift_and_fill(periods, fill_value._pyexpr))
 
@@ -3895,7 +3895,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             def infer_dtype(value: Any) -> PolarsDataType:
                 return next(iter(self.select(value).schema.values()))
 
-            if isinstance(value, pli.Expr):
+            if isinstance(value, pl.Expr):
                 dtypes = [infer_dtype(value)]
             elif isinstance(value, bool):
                 dtypes = [Boolean]
@@ -3970,7 +3970,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └──────┴──────┘
 
         """
-        if not isinstance(value, pli.Expr):
+        if not isinstance(value, pl.Expr):
             value = F.lit(value)
         return self._from_pyldf(self._ldf.fill_nan(value._pyexpr))
 

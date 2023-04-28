@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, BinaryIO
 
-from polars import _reexport as pli
+import polars._reexport as pl
 
 if TYPE_CHECKING:
     from io import BytesIO
@@ -35,4 +35,4 @@ def read_avro(
     DataFrame
 
     """
-    return pli.DataFrame._read_avro(source, n_rows=n_rows, columns=columns)
+    return pl.DataFrame._read_avro(source, n_rows=n_rows, columns=columns)

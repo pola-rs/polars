@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars import _reexport as pli
+import polars._reexport as pl
 
 if TYPE_CHECKING:
     from polars.dataframe import DataFrame
@@ -13,16 +13,16 @@ if TYPE_CHECKING:
 
 
 def wrap_df(df: PyDataFrame) -> DataFrame:
-    return pli.DataFrame._from_pydf(df)
+    return pl.DataFrame._from_pydf(df)
 
 
 def wrap_ldf(ldf: PyLazyFrame) -> LazyFrame:
-    return pli.LazyFrame._from_pyldf(ldf)
+    return pl.LazyFrame._from_pyldf(ldf)
 
 
 def wrap_s(s: PySeries) -> Series:
-    return pli.Series._from_pyseries(s)
+    return pl.Series._from_pyseries(s)
 
 
 def wrap_expr(pyexpr: PyExpr) -> Expr:
-    return pli.Expr._from_pyexpr(pyexpr)
+    return pl.Expr._from_pyexpr(pyexpr)

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Callable, Generic, Iterable, Iterator, TypeVar
 
-from polars import _reexport as pli
+import polars._reexport as pl
 from polars import functions as F
 from polars.functions.whenthen import WhenThen, WhenThenThen
 from polars.utils.convert import _timedelta_to_pl_duration
@@ -107,7 +107,7 @@ class GroupBy(Generic[DF]):
         # When grouping by multiple columns, group name is a tuple of values
         self._group_names: Iterator[object] | Iterator[tuple[object, ...]]
         if (
-            isinstance(self.by, (str, pli.Expr, WhenThen, WhenThenThen))
+            isinstance(self.by, (str, pl.Expr, WhenThen, WhenThenThen))
             and not self.more_by
         ):
             self._group_names = iter(group_names.to_series())

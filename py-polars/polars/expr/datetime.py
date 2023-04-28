@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime as dt
 from typing import TYPE_CHECKING
 
-from polars import _reexport as pli
+import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
@@ -324,7 +324,7 @@ class ExprDateTimeNameSpace:
         │ 2023-07-05 07:08:09.101 ┆ 2022-07-05 07:08:09.101 ┆ 2022-07-05 04:05:06 │
         └─────────────────────────┴─────────────────────────┴─────────────────────┘
         """
-        if not isinstance(time, (dt.time, pli.Expr)):
+        if not isinstance(time, (dt.time, pl.Expr)):
             raise TypeError(
                 f"expected 'time' to be a python time or polars expression, found {time!r}"
             )

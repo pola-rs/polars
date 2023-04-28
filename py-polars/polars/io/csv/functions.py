@@ -11,7 +11,7 @@ from typing import (
     TextIO,
 )
 
-from polars import _reexport as pli
+import polars._reexport as pl
 from polars.datatypes import N_INFER_DEFAULT, Utf8
 from polars.io._utils import _prepare_file_arg
 from polars.io.csv._utils import _check_arg_is_1byte, _update_columns
@@ -256,7 +256,7 @@ def read_csv(
                 [f"column_{int(column[1:]) + 1}" for column in tbl.column_names]
             )
 
-        df = pli.DataFrame._from_arrow(tbl, rechunk=rechunk)
+        df = pl.DataFrame._from_arrow(tbl, rechunk=rechunk)
         if new_columns:
             return _update_columns(df, new_columns)
         return df
@@ -352,7 +352,7 @@ def read_csv(
     with _prepare_file_arg(
         source, encoding=encoding, use_pyarrow=False, **storage_options
     ) as data:
-        df = pli.DataFrame._read_csv(
+        df = pl.DataFrame._read_csv(
             data,
             has_header=has_header,
             columns=columns if columns else projection,
@@ -873,7 +873,7 @@ def scan_csv(
     if isinstance(source, (str, Path)):
         source = normalise_filepath(source)
 
-    return pli.LazyFrame._scan_csv(
+    return pl.LazyFrame._scan_csv(
         source,
         has_header=has_header,
         separator=separator,

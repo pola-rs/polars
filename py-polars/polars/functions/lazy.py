@@ -5,7 +5,7 @@ import warnings
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
 
-from polars import _reexport as pli
+import polars._reexport as pl
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
     Date,
@@ -357,7 +357,7 @@ def count(column: str | Series | None = None) -> Expr | int:
     if column is None:
         return wrap_expr(_count())
 
-    if isinstance(column, pli.Series):
+    if isinstance(column, pl.Series):
         return column.len()
     return col(column).count()
 
@@ -435,7 +435,7 @@ def std(column: str | Series, ddof: int = 1) -> Expr | float | None:
     3.605551275463989
 
     """
-    if isinstance(column, pli.Series):
+    if isinstance(column, pl.Series):
         return column.std(ddof)
     return col(column).std(ddof)
 
@@ -479,7 +479,7 @@ def var(column: str | Series, ddof: int = 1) -> Expr | float | None:
     13.0
 
     """
-    if isinstance(column, pli.Series):
+    if isinstance(column, pl.Series):
         return column.var(ddof)
     return col(column).var(ddof)
 
@@ -571,7 +571,7 @@ def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | A
 
     """
     if not more_exprs:
-        if isinstance(exprs, pli.Series):
+        if isinstance(exprs, pl.Series):
             return exprs.max()
         elif isinstance(exprs, str):
             return col(exprs).max()
@@ -671,7 +671,7 @@ def min(
 
     """
     if not more_exprs:
-        if isinstance(exprs, pli.Series):
+        if isinstance(exprs, pl.Series):
             return exprs.min()
         elif isinstance(exprs, str):
             return col(exprs).min()
@@ -787,7 +787,7 @@ def sum(
 
     """
     if not more_exprs:
-        if isinstance(exprs, pli.Series):
+        if isinstance(exprs, pl.Series):
             return exprs.sum()
         elif isinstance(exprs, str):
             return col(exprs).sum()
@@ -828,7 +828,7 @@ def mean(column: str | Series) -> Expr | float | None:
     4.0
 
     """
-    if isinstance(column, pli.Series):
+    if isinstance(column, pl.Series):
         return column.mean()
     return col(column).mean()
 
@@ -896,7 +896,7 @@ def median(column: str | Series) -> Expr | float | int | None:
     3.0
 
     """
-    if isinstance(column, pli.Series):
+    if isinstance(column, pl.Series):
         return column.median()
     return col(column).median()
 
@@ -931,7 +931,7 @@ def n_unique(column: str | Series) -> Expr | int:
     2
 
     """
-    if isinstance(column, pli.Series):
+    if isinstance(column, pl.Series):
         return column.n_unique()
     return col(column).n_unique()
 
@@ -961,7 +961,7 @@ def approx_unique(column: str | Expr) -> Expr:
     └─────┘
 
     """
-    if isinstance(column, pli.Expr):
+    if isinstance(column, pl.Expr):
         return column.approx_unique()
     return col(column).approx_unique()
 
@@ -1023,7 +1023,7 @@ def first(column: str | Series | None = None) -> Expr | Any:
     if column is None:
         return wrap_expr(_first())
 
-    if isinstance(column, pli.Series):
+    if isinstance(column, pl.Series):
         if column.len() > 0:
             return column[0]
         else:
@@ -1086,7 +1086,7 @@ def last(column: str | Series | None = None) -> Expr:
     if column is None:
         return wrap_expr(_last())
 
-    if isinstance(column, pli.Series):
+    if isinstance(column, pl.Series):
         if column.len() > 0:
             return column[-1]
         else:
@@ -1148,7 +1148,7 @@ def head(column: str | Series, n: int = 10) -> Expr | Series:
     ]
 
     """
-    if isinstance(column, pli.Series):
+    if isinstance(column, pl.Series):
         return column.head(n)
     return col(column).head(n)
 
@@ -1207,7 +1207,7 @@ def tail(column: str | Series, n: int = 10) -> Expr | Series:
     ]
 
     """
-    if isinstance(column, pli.Series):
+    if isinstance(column, pl.Series):
         return column.tail(n)
     return col(column).tail(n)
 
@@ -1291,7 +1291,7 @@ def lit(
     elif isinstance(value, date):
         return lit(datetime(value.year, value.month, value.day)).cast(Date)
 
-    elif isinstance(value, pli.Series):
+    elif isinstance(value, pl.Series):
         name = value.name
         value = value._s
         e = wrap_expr(pylit(value, allow_object))
@@ -1302,7 +1302,7 @@ def lit(
     elif (_check_for_numpy(value) and isinstance(value, np.ndarray)) or isinstance(
         value, (list, tuple)
     ):
-        return lit(pli.Series("", value))
+        return lit(pl.Series("", value))
 
     elif dtype:
         return wrap_expr(pylit(value, allow_object)).cast(dtype)
@@ -1410,7 +1410,7 @@ def cumsum(
 
     """
     if not more_exprs:
-        if isinstance(exprs, pli.Series):
+        if isinstance(exprs, pl.Series):
             return exprs.cumsum()
         elif isinstance(exprs, str):
             return col(exprs).cumsum()
@@ -1878,7 +1878,7 @@ def fold(
     """
     # in case of pl.col("*")
     acc = expr_to_lit_or_expr(acc, str_to_lit=True)
-    if isinstance(exprs, pli.Expr):
+    if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
     exprs = selection_to_pyexpr_list(exprs)
@@ -1942,7 +1942,7 @@ def reduce(
 
     """
     # in case of pl.col("*")
-    if isinstance(exprs, pli.Expr):
+    if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
     exprs = selection_to_pyexpr_list(exprs)
@@ -2019,7 +2019,7 @@ def cumfold(
     """  # noqa: W505
     # in case of pl.col("*")
     acc = expr_to_lit_or_expr(acc, str_to_lit=True)
-    if isinstance(exprs, pli.Expr):
+    if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
     exprs = selection_to_pyexpr_list(exprs)
@@ -2081,7 +2081,7 @@ def cumreduce(
     └───────────┘
     """  # noqa: W505
     # in case of pl.col("*")
-    if isinstance(exprs, pli.Expr):
+    if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
     exprs = selection_to_pyexpr_list(exprs)
@@ -2167,7 +2167,7 @@ def any(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | b
 
     """
     if not more_exprs:
-        if isinstance(exprs, pli.Series):
+        if isinstance(exprs, pl.Series):
             return exprs.any()
         elif isinstance(exprs, str):
             return col(exprs).any()
@@ -2258,7 +2258,7 @@ def all(
     if not more_exprs:
         if exprs is None:
             return col("*")
-        elif isinstance(exprs, pli.Series):
+        elif isinstance(exprs, pl.Series):
             return exprs.all()
         elif isinstance(exprs, str):
             return col(exprs).all()
@@ -2451,7 +2451,7 @@ def arange(
         return range_expr
     else:
         return (
-            pli.DataFrame()
+            pl.DataFrame()
             .select(range_expr)
             .to_series()
             .rename("arange", in_place=True)
@@ -2973,7 +2973,7 @@ def select(
     └─────┘
 
     """
-    return pli.DataFrame().select(exprs, *more_exprs, **named_exprs)
+    return pl.DataFrame().select(exprs, *more_exprs, **named_exprs)
 
 
 @overload
@@ -3164,7 +3164,7 @@ def repeat(
             and -(2**31) <= value <= 2**31 - 1
         ):
             dtype = Int32
-        s = pli.Series._repeat(name, value, n, dtype)  # type: ignore[arg-type]
+        s = pl.Series._repeat(name, value, n, dtype)  # type: ignore[arg-type]
         return s
     else:
         if isinstance(n, int):
@@ -3220,7 +3220,7 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
 
     """
     if eager:
-        if not isinstance(condition, pli.Series):
+        if not isinstance(condition, pl.Series):
             raise ValueError(
                 "expected 'Series' in 'arg_where' if 'eager=True', got"
                 f" {type(condition)}"
@@ -3344,8 +3344,8 @@ def from_epoch(
     """
     if isinstance(column, str):
         column = col(column)
-    elif not isinstance(column, (pli.Series, pli.Expr)):
-        column = pli.Series(column)  # Sequence input handled by Series constructor
+    elif not isinstance(column, (pl.Series, pl.Expr)):
+        column = pl.Series(column)  # Sequence input handled by Series constructor
 
     if time_unit == "d":
         return column.cast(Date)

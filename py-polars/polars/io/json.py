@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars import _reexport as pli
+import polars._reexport as pl
 
 if TYPE_CHECKING:
     from io import IOBase
@@ -25,4 +25,4 @@ def read_json(source: str | Path | IOBase) -> DataFrame:
     read_ndjson
 
     """
-    return pli.DataFrame._read_json(source)
+    return pl.DataFrame._read_json(source)
