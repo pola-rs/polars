@@ -11,7 +11,7 @@ from typing import (
     TextIO,
 )
 
-from polars import internals as pli
+from polars import _reexport as pli
 from polars.datatypes import N_INFER_DEFAULT, Utf8
 from polars.io._utils import _prepare_file_arg
 from polars.io.csv._utils import _check_arg_is_1byte, _update_columns

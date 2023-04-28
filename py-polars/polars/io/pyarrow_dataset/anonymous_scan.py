@@ -4,7 +4,7 @@ from functools import partial
 from typing import TYPE_CHECKING
 
 import polars as pl
-from polars import internals as pli
+from polars import _reexport as pli
 from polars.dependencies import pickle
 from polars.dependencies import pyarrow as pa  # noqa: TCH001
 

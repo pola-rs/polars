@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Iterable
 
+from polars import _reexport as pli
 from polars import functions as F
-from polars import internals as pli
 
 if TYPE_CHECKING:
     from polars.expr import Expr

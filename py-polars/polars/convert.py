@@ -4,7 +4,7 @@ import re
 from itertools import zip_longest
 from typing import TYPE_CHECKING, Any, Mapping, Sequence, overload
 
-from polars import internals as pli
+from polars import _reexport as pli
 from polars.datatypes import (
     N_INFER_DEFAULT,
     Categorical,

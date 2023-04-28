@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, BinaryIO
 
-from polars import internals as pli
+from polars import _reexport as pli
 
 if TYPE_CHECKING:
     from io import BytesIO

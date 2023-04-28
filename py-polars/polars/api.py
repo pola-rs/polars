@@ -5,7 +5,7 @@ from operator import or_
 from typing import TYPE_CHECKING, Callable, TypeVar
 from warnings import warn
 
-from polars import internals as pli
+from polars import _reexport as pli
 from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:

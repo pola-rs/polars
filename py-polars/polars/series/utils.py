@@ -5,8 +5,8 @@ import sys
 from functools import wraps
 from typing import TYPE_CHECKING, Any, Callable, TypeVar
 
+from polars import _reexport as pli
 from polars import functions as F
-from polars import internals as pli
 from polars.datatypes import dtype_to_ffiname
 from polars.utils._wrap import wrap_s
 

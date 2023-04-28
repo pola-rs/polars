@@ -5,7 +5,7 @@ import warnings
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Iterable, Sequence, overload
 
-from polars import internals as pli
+from polars import _reexport as pli
 from polars.datatypes import Date
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
 from polars.utils._wrap import wrap_df, wrap_expr, wrap_ldf, wrap_s

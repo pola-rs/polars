@@ -4,7 +4,7 @@ import contextlib
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO
 
-from polars import internals as pli
+from polars import _reexport as pli
 from polars.convert import from_arrow
 from polars.dependencies import _PYARROW_AVAILABLE
 from polars.io._utils import _prepare_file_arg

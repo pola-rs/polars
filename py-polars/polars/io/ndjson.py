@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from polars import internals as pli
+from polars import _reexport as pli
 from polars.datatypes import N_INFER_DEFAULT
 from polars.utils.various import normalise_filepath
 

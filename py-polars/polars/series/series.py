@@ -18,8 +18,8 @@ from typing import (
     overload,
 )
 
+from polars import _reexport as pli
 from polars import functions as F
-from polars import internals as pli
 from polars.datatypes import (
     FLOAT_DTYPES,
     INTEGER_DTYPES,

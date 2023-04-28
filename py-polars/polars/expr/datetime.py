@@ -3,8 +3,8 @@ from __future__ import annotations
 import datetime as dt
 from typing import TYPE_CHECKING
 
+from polars import _reexport as pli
 from polars import functions as F
-from polars import internals as pli
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
 from polars.utils._wrap import wrap_expr

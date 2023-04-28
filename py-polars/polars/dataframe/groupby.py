@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Callable, Generic, Iterable, Iterator, TypeVar
 
+from polars import _reexport as pli
 from polars import functions as F
-from polars import internals as pli
 from polars.functions.whenthen import WhenThen, WhenThenThen
 from polars.utils.convert import _timedelta_to_pl_duration
 

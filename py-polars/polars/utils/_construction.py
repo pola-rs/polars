@@ -18,8 +18,8 @@ from typing import (
     get_type_hints,
 )
 
+from polars import _reexport as pli
 from polars import functions as F
-from polars import internals as pli
 from polars.datatypes import (
     N_INFER_DEFAULT,
     Boolean,

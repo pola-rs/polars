@@ -24,8 +24,8 @@ from typing import (
     overload,
 )
 
+from polars import _reexport as pli
 from polars import functions as F
-from polars import internals as pli
 from polars.dataframe._html import NotebookFormatter
 from polars.dataframe.groupby import DynamicGroupBy, GroupBy, RollingGroupBy
 from polars.datatypes import (
