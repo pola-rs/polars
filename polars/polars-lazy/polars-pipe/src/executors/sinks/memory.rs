@@ -42,9 +42,9 @@ impl MemTracker {
         let fetch_count = self.fetch_count.fetch_add(1, Ordering::Relaxed);
 
         // this triggers paths easier during debugging
-        #[cfg(not(debug_assertions))]
+        #[cfg(not(feature = "trigger_ooc"))]
         let refresh_interval = 64;
-        #[cfg(debug_assertions)]
+        #[cfg(feature = "trigger_ooc")]
         let refresh_interval = 1;
 
         if fetch_count % (refresh_interval * self.thread_count) == 0 {

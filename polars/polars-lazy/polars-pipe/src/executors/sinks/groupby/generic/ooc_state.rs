@@ -1,5 +1,3 @@
-use std::sync::Mutex;
-
 use polars_core::config::verbose;
 
 use super::*;
@@ -36,7 +34,10 @@ impl Default for OocState {
 const EARLY_MERGE_THRESHOLD: f64 = 0.5;
 // If this is reached we spill to disk and
 // aggregate in a second run
+#[cfg(feature = "trigger_ooc")]
 const TO_DISK_THRESHOLD: f64 = 1.0;
+#[cfg(not(feature = "trigger_ooc"))]
+const TO_DISK_THRESHOLD: f64 = 0.3;
 
 pub(super) enum SpillAction {
     EarlyMerge,
@@ -67,7 +68,6 @@ impl OocState {
             return Ok(SpillAction::Dump);
         }
         let free_frac = self.mem_track.free_memory_fraction_since_start();
-        dbg!(free_frac, TO_DISK_THRESHOLD);
         self.count += 1;
 
         if free_frac < TO_DISK_THRESHOLD {

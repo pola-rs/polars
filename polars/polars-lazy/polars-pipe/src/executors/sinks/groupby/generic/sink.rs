@@ -161,7 +161,11 @@ impl Sink for GenericGroupby2 {
             }
             // create an ooc source
             else {
-                Ok(FinalizedSink::Source(Box::new(GroupBySource::new(&self.ooc_state.io_thread, self.slice, self.global_table.clone())?)))
+                Ok(FinalizedSink::Source(Box::new(GroupBySource::new(
+                    &self.ooc_state.io_thread,
+                    self.slice,
+                    self.global_table.clone(),
+                )?)))
             }
         }
     }

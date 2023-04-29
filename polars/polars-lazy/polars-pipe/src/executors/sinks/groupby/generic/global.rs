@@ -106,9 +106,9 @@ impl GlobalTable {
         let partition =
             self.early_merge_counter.fetch_add(1, Ordering::Relaxed) as usize % PARTITION_SIZE;
 
-        #[cfg(debug_assertions)]
+        #[cfg(feature = "trigger_ooc")]
         let min_size = 1;
-        #[cfg(not(debug_assertions))]
+        #[cfg(not(feature = "trigger_ooc"))]
         let min_size = 64;
 
         // IO is expensive so we only spill if we have `N` payloads to dump.
@@ -179,6 +179,8 @@ impl GlobalTable {
     }
 
     pub(super) fn finalize_partition(&self, partition: usize) -> DataFrame {
+        // ensure all spilled partitions are processed
+        self.process_partition(partition);
         let mut hash_map = self.inner_maps[partition].lock().unwrap();
         hash_map.finalize(&mut None)
     }

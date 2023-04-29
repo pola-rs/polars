@@ -1,5 +1,7 @@
+use polars_core::utils::flatten::flatten_df_iter;
 use polars_io::ipc::IpcReader;
 use polars_io::SerReader;
+
 use super::*;
 use crate::executors::sinks::groupby::generic::global::GlobalTable;
 use crate::executors::sinks::io::{block_thread_until_io_thread_done, IOThread};
@@ -11,7 +13,7 @@ pub(super) struct GroupBySource {
     partitions: std::fs::ReadDir,
     global_table: Arc<GlobalTable>,
     slice: Option<(usize, usize)>,
-    chunk_idx: IdxSize
+    chunk_idx: IdxSize,
 }
 
 impl GroupBySource {
@@ -34,11 +36,9 @@ impl GroupBySource {
             partitions,
             slice: slice.map(|slice| (slice.0 as usize, slice.1)),
             global_table,
-            chunk_idx: 0
+            chunk_idx: 0,
         })
     }
-
-
 }
 
 impl Source for GroupBySource {
@@ -50,24 +50,36 @@ impl Source for GroupBySource {
         let paritition_dir = if let Some(part) = self.partitions.next() {
             part?.path()
         } else {
-            return Ok(SourceResult::Finished)
+            return Ok(SourceResult::Finished);
         };
+        if paritition_dir.ends_with(".lock") {
+            return self.get_batches(_context);
+        }
 
         let partition_name = paritition_dir.file_name().unwrap().to_str().unwrap();
         let partition_no = partition_name.parse::<usize>().unwrap();
 
-        // we unwrap as
         for file in std::fs::read_dir(paritition_dir).expect("should be there") {
             let spilled = file.unwrap().path();
             let file = std::fs::File::open(spilled)?;
             let reader = IpcReader::new(file);
-            let spilled= reader.finish().unwrap();
-            self.global_table.process_partition_from_dumped(partition_no, &spilled)
+            let spilled = reader.finish().unwrap();
+            if spilled.n_chunks() > 1 {
+                for spilled in flatten_df_iter(&spilled) {
+                    self.global_table
+                        .process_partition_from_dumped(partition_no, &spilled)
+                }
+            } else {
+                self.global_table
+                    .process_partition_from_dumped(partition_no, &spilled)
+            }
         }
         let df = self.global_table.finalize_partition(partition_no);
         let chunk_idx = self.chunk_idx;
         self.chunk_idx += 1;
-        Ok(SourceResult::GotMoreData(vec![DataChunk::new(chunk_idx, df)]))
+        Ok(SourceResult::GotMoreData(vec![DataChunk::new(
+            chunk_idx, df,
+        )]))
     }
     fn fmt(&self) -> &str {
         "generic-groupby-source"

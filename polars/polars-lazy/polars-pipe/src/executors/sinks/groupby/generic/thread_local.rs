@@ -17,10 +17,11 @@ struct SpillPartitions {
     finished_payloads: PartitionVec<Vec<SpillPayload>>,
     keys_dtypes: Arc<[DataType]>,
     agg_dtypes: Arc<[DataType]>,
+    output_schema: SchemaRef,
 }
 
 impl SpillPartitions {
-    fn new(keys: Arc<[DataType]>, aggs: Arc<[DataType]>) -> Self {
+    fn new(keys: Arc<[DataType]>, aggs: Arc<[DataType]>, output_schema: SchemaRef) -> Self {
         let hash_partitioned = vec![];
         let chunk_index_partitioned = vec![];
 
@@ -34,6 +35,7 @@ impl SpillPartitions {
             finished_payloads: vec![],
             keys_dtypes: keys,
             agg_dtypes: aggs,
+            output_schema,
         }
         .split()
     }
@@ -68,6 +70,7 @@ impl SpillPartitions {
             finished_payloads: vec![],
             keys_dtypes: self.keys_dtypes.clone(),
             agg_dtypes: self.agg_dtypes.clone(),
+            output_schema: self.output_schema.clone(),
         }
     }
 }
@@ -145,7 +148,15 @@ impl SpillPartitions {
                     SpillPayload {
                         hashes: new_hashes,
                         chunk_idx: new_chunk_indexes,
-                        keys_and_aggs: keys_aggs.iter_mut().map(|b| b.reset(OB_SIZE)).collect(),
+                        keys_and_aggs: keys_aggs
+                            .iter_mut()
+                            .zip(self.output_schema.iter_names())
+                            .map(|(b, name)| {
+                                let mut s = b.reset(OB_SIZE);
+                                s.rename(name);
+                                s
+                            })
+                            .collect(),
                         num_keys: self.num_keys,
                     },
                 ))
@@ -239,7 +250,8 @@ impl ThreadLocalTable {
         agg_dtypes: Arc<[DataType]>,
         output_schema: SchemaRef,
     ) -> Self {
-        let spill_partitions = SpillPartitions::new(key_dtypes.clone(), agg_dtypes);
+        let spill_partitions =
+            SpillPartitions::new(key_dtypes.clone(), agg_dtypes, output_schema.clone());
 
         Self {
             inner_map: AggHashTable::new(
