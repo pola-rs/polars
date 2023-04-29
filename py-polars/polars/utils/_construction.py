@@ -126,7 +126,7 @@ def nt_unpack(obj: Any) -> Any:
         return {key: nt_unpack(value) for key, value in obj.items()}
     elif isinstance(obj, list):
         return [nt_unpack(value) for value in obj]
-    elif is_namedtuple(obj):
+    elif is_namedtuple(obj.__class__):
         return {key: nt_unpack(value) for key, value in obj._asdict().items()}
     elif isinstance(obj, tuple):
         return tuple(nt_unpack(value) for value in obj)
@@ -896,7 +896,7 @@ def _sequence_of_sequence_to_pydf(
                 local_schema_override[col] = Utf8
             elif not unpack_nested and (tp.base_type() in (Unknown, Struct)):
                 unpack_nested = contains_nested(
-                    getattr(first_element, col, None), is_namedtuple
+                    getattr(first_element, col, None).__class__, is_namedtuple
                 )
 
         if unpack_nested:
