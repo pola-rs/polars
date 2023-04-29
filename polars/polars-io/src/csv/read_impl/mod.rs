@@ -296,6 +296,7 @@ impl<'a> CoreReader<'a> {
     fn find_starting_point<'b>(
         &self,
         mut bytes: &'b [u8],
+        quote_char: Option<u8>,
         eol_char: u8,
     ) -> PolarsResult<(&'b [u8], Option<usize>)> {
         let starting_point_offset = bytes.as_ptr() as usize;
@@ -310,7 +311,7 @@ impl<'a> CoreReader<'a> {
 
         // If there is a header we skip it.
         if self.has_header {
-            bytes = skip_header(bytes, eol_char).0;
+            bytes = skip_header(bytes, quote_char, eol_char);
         }
 
         if self.skip_rows_before_header > 0 {
@@ -424,7 +425,8 @@ impl<'a> CoreReader<'a> {
         Option<&'a [u8]>,
     )> {
         // Make the variable mutable so that we can reassign the sliced file to this variable.
-        let (bytes, starting_point_offset) = self.find_starting_point(bytes, self.eol_char)?;
+        let (bytes, starting_point_offset) =
+            self.find_starting_point(bytes, self.quote_char, self.eol_char)?;
 
         let (bytes, total_rows, remaining_bytes) =
             self.estimate_rows_and_set_upper_bound(bytes, logging, true);

@@ -149,17 +149,8 @@ where
 ///     'field_1,field_2'
 /// and not with
 ///     '\nfield_1,field_1'
-pub(crate) fn skip_header(input: &[u8], eol_char: u8) -> (&[u8], usize) {
-    match next_line_position_naive(input, eol_char) {
-        Some(mut pos) => {
-            if input[pos] == eol_char {
-                pos += 1;
-            }
-            (&input[pos..], pos)
-        }
-        // no lines in the file, so skipping the header is skipping all.
-        None => (&[], input.len()),
-    }
+pub(crate) fn skip_header(input: &[u8], quote: Option<u8>, eol_char: u8) -> &[u8] {
+    skip_this_line(input, quote, eol_char)
 }
 
 /// Remove whitespace from the start of buffer.
