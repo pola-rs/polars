@@ -28,7 +28,6 @@ use crate::executors::sinks::utils::load_vec;
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
-use crate::pipeline::FORCE_OOC;
 
 // hash + value
 #[derive(Eq, Copy, Clone)]
@@ -92,7 +91,7 @@ where
         output_schema: SchemaRef,
         slice: Option<(i64, usize)>,
     ) -> Self {
-        let ooc = std::env::var(FORCE_OOC).is_ok();
+        // this ooc is broken fix later
         Self::new_inner(
             key,
             aggregation_columns,
@@ -101,7 +100,7 @@ where
             output_schema,
             slice,
             None,
-            ooc,
+            false,
         )
     }
 

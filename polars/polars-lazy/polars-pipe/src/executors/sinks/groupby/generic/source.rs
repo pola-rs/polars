@@ -12,7 +12,7 @@ pub(super) struct GroupBySource {
     // holding this keeps the lockfile in place
     _io_thread: IOThread,
     global_table: Arc<GlobalTable>,
-    slice: Option<(usize, usize)>,
+    slice: Option<(i64, usize)>,
     partition_processed: usize,
 }
 
@@ -32,7 +32,7 @@ impl GroupBySource {
         block_thread_until_io_thread_done(&io_thread);
         Ok(Self {
             _io_thread: io_thread,
-            slice: slice.map(|slice| (slice.0 as usize, slice.1)),
+            slice,
             global_table,
             partition_processed: 0,
         })
@@ -79,7 +79,10 @@ impl Source for GroupBySource {
             }
         }
 
-        let df = self.global_table.finalize_partition(partition);
+        let df = self
+            .global_table
+            .finalize_partition(partition, &mut self.slice);
+
         let chunk_idx = self.partition_processed as IdxSize;
         Ok(SourceResult::GotMoreData(vec![DataChunk::new(
             chunk_idx, df,

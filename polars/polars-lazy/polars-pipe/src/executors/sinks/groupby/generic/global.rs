@@ -185,11 +185,15 @@ impl GlobalTable {
         }
     }
 
-    pub(super) fn finalize_partition(&self, partition: usize) -> DataFrame {
+    pub(super) fn finalize_partition(
+        &self,
+        partition: usize,
+        slice: &mut Option<(i64, usize)>,
+    ) -> DataFrame {
         // ensure all spilled partitions are processed
         self.process_partition(partition);
         let mut hash_map = self.inner_maps[partition].lock().unwrap();
-        hash_map.finalize(&mut None)
+        hash_map.finalize(slice)
     }
 
     // only should be called if all state is in-memory
