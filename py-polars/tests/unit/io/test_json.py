@@ -126,3 +126,12 @@ def test_json_supertype_infer() -> None:
     python_infer = pl.from_records(json.loads(json_string))
     polars_infer = pl.read_json(io.StringIO(json_string))
     assert_frame_equal(python_infer, polars_infer)
+
+
+def test_json_sliced_list_serialization() -> None:
+    data = {"col1": [0, 2], "col2": [[3, 4, 5], [6, 7, 8]]}
+    df = pl.DataFrame(data)
+    f = io.BytesIO()
+    sliced_df = df[1, :]
+    sliced_df.write_ndjson(f)
+    assert f.getvalue() == b'{"col1":2,"col2":[6,7,8]}\n'
