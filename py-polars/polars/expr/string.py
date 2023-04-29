@@ -13,7 +13,12 @@ from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
     from polars.expr.expr import Expr
-    from polars.type_aliases import PolarsDataType, PolarsTemporalType, TransferEncoding
+    from polars.type_aliases import (
+        PolarsDataType,
+        PolarsTemporalType,
+        TimeUnit,
+        TransferEncoding,
+    )
     from polars.utils import NoDefault
 
 
@@ -25,6 +30,152 @@ class ExprStringNameSpace:
     def __init__(self, expr: Expr):
         self._pyexpr = expr._pyexpr
 
+    def to_date(
+        self,
+        format: str | None = None,
+        *,
+        strict: bool = True,
+        exact: bool = True,
+        cache: bool = True,
+    ) -> Expr:
+        """
+        Convert a Utf8 column into a Date column.
+
+        Parameters
+        ----------
+        format
+            Format to use for conversion. Refer to the `chrono crate documentation
+            <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            for the full specification. Example: ``"%Y-%m-%d"``.
+            If set to None (default), the format is inferred from the data.
+        strict
+            Raise an error if any conversion fails.
+        exact
+            Require an exact format match. If False, allow the format to match anywhere
+            in the target string.
+        cache
+            Use a cache of unique, converted dates to apply the conversion.
+
+        Examples
+        --------
+        >>> s = pl.Series(["2020/01/01", "2020/02/01", "2020/03/01"])
+        >>> s.str.to_date()
+        shape: (3,)
+        Series: '' [date]
+        [
+                2020-01-01
+                2020-02-01
+                2020-03-01
+        ]
+
+        """
+        _validate_format_argument(format)
+        return wrap_expr(self._pyexpr.str_to_date(format, strict, exact, cache))
+
+    def to_datetime(
+        self,
+        format: str | None = None,
+        *,
+        time_unit: TimeUnit | None = None,
+        time_zone: str | None = None,
+        strict: bool = True,
+        exact: bool = True,
+        cache: bool = True,
+        utc: bool = False,
+        _tz_aware: bool = False,
+    ) -> Expr:
+        """
+        Convert a Utf8 column into a Datetime column.
+
+        Parameters
+        ----------
+        format
+            Format to use for conversion. Refer to the `chrono crate documentation
+            <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            for the full specification. Example: ``"%Y-%m-%d %H:%M:%S"``.
+            If set to None (default), the format is inferred from the data.
+        time_unit : {None, 'us', 'ns', 'ms'}
+            Unit of time for the resulting Datetime column. If set to None (default),
+            the time unit is inferred from the format string if given, eg:
+            ``"%F %T%.3f"`` => ``Datetime("ms")``. If no fractional second component is
+            found, the default is ``"us"``.
+        time_zone
+            Time zone for the resulting Datetime column.
+        strict
+            Raise an error if any conversion fails.
+        exact
+            Require an exact format match. If False, allow the format to match anywhere
+            in the target string.
+        cache
+            Use a cache of unique, converted datetimes to apply the conversion.
+        utc
+            Parse time zone aware datetimes as UTC. This may be useful if you have data
+            with mixed offsets.
+
+        Examples
+        --------
+        >>> s = pl.Series(["2020-01-01 01:00Z", "2020-01-01 02:00Z"])
+        >>> s.str.to_datetime("%Y-%m-%d %H:%M%#z")
+        shape: (2,)
+        Series: '' [datetime[μs, +00:00]]
+        [
+                2020-01-01 01:00:00 +00:00
+                2020-01-01 02:00:00 +00:00
+        ]
+
+        """
+        _validate_format_argument(format)
+        return wrap_expr(
+            self._pyexpr.str_to_datetime(
+                format,
+                time_unit,
+                time_zone,
+                strict,
+                exact,
+                cache,
+                utc,
+                _tz_aware,
+            )
+        )
+
+    def to_time(
+        self,
+        format: str | None = None,
+        *,
+        strict: bool = True,
+        cache: bool = True,
+    ) -> Expr:
+        """
+        Convert a Utf8 column into a Time column.
+
+        Parameters
+        ----------
+        format
+            Format to use for conversion. Refer to the `chrono crate documentation
+            <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            for the full specification. Example: ``"%H:%M:%S"``.
+            If set to None (default), the format is inferred from the data.
+        strict
+            Raise an error if any conversion fails.
+        cache
+            Use a cache of unique, converted times to apply the conversion.
+
+        Examples
+        --------
+        >>> s = pl.Series(["01:00", "02:00", "03:00"])
+        >>> s.str.to_time("%H:%M")
+        shape: (3,)
+        Series: '' [time]
+        [
+                01:00:00
+                02:00:00
+                03:00:00
+        ]
+
+        """
+        _validate_format_argument(format)
+        return wrap_expr(self._pyexpr.str_to_time(format, strict, cache))
+
     @deprecated_alias(datatype="dtype", fmt="format")
     def strptime(
         self,
@@ -34,50 +185,51 @@ class ExprStringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        tz_aware: bool | NoDefault = no_default,
         utc: bool = False,
+        tz_aware: bool | NoDefault = no_default,
     ) -> Expr:
         """
-        Parse a Utf8 expression to a Date/Datetime/Time type.
+        Convert a Utf8 column into a Date/Datetime/Time column.
 
         Parameters
         ----------
         dtype
-            Date | Datetime | Time
+            The data type to convert into. Can be either Date, Datetime, or Time.
         format
-            Format to use, refer to the `chrono strftime documentation
+            Format to use for conversion. Refer to the `chrono crate documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
-            for specification. Example: ``"%y-%m-%d"``.
+            for the full specification. Example: ``"%Y-%m-%d %H:%M:%S"``.
+            If set to None (default), the format is inferred from the data.
         strict
             Raise an error if any conversion fails.
         exact
-            - If True, require an exact format match.
-            - If False, allow the format to match anywhere in the target string.
+            Require an exact format match. If False, allow the format to match anywhere
+            in the target string. Conversion to the Time type is always exact.
         cache
             Use a cache of unique, converted dates to apply the datetime conversion.
+        utc
+            Parse time zone aware datetimes as UTC. This may be useful if you have data
+            with mixed offsets.
         tz_aware
-            Parse timezone aware datetimes. This may be automatically toggled by the
+            Parse time zone aware datetimes. This may be automatically toggled by the
             `format` given.
 
             .. deprecated:: 0.16.17
                 This is now auto-inferred from the given `format`. You can safely drop
                 this argument, it will be removed in a future version.
-        utc
-            Parse timezone aware datetimes as UTC. This may be useful if you have data
-            with mixed offsets.
 
         Notes
         -----
-        When parsing a Datetime the column precision will be inferred from
-        the format string, if given, eg: "%F %T%.3f" => Datetime("ms"). If
-        no fractional second component is found then the default is "us".
+        When converting to a Datetime type, the time unit is inferred from the format
+        string if given, eg: ``"%F %T%.3f"`` => ``Datetime("ms")``. If no fractional
+        second component is found, the default is ``"us"``.
 
         Examples
         --------
         Dealing with a consistent format:
 
-        >>> ts = ["2020-01-01 01:00Z", "2020-01-01 02:00Z"]
-        >>> pl.Series(ts).str.strptime(pl.Datetime, "%Y-%m-%d %H:%M%#z")
+        >>> s = pl.Series(["2020-01-01 01:00Z", "2020-01-01 02:00Z"])
+        >>> s.str.strptime(pl.Datetime, "%Y-%m-%d %H:%M%#z")
         shape: (2,)
         Series: '' [datetime[μs, +00:00]]
         [
@@ -96,24 +248,22 @@ class ExprStringNameSpace:
         ...         "Sun Jul  8 00:34:60 2001",
         ...     ],
         ... )
-        >>> s.to_frame().with_columns(
-        ...     pl.col("date")
-        ...     .str.strptime(pl.Date, "%F", strict=False)
-        ...     .fill_null(pl.col("date").str.strptime(pl.Date, "%F %T", strict=False))
-        ...     .fill_null(pl.col("date").str.strptime(pl.Date, "%D", strict=False))
-        ...     .fill_null(pl.col("date").str.strptime(pl.Date, "%c", strict=False))
-        ... )
-        shape: (4, 1)
-        ┌────────────┐
-        │ date       │
-        │ ---        │
-        │ date       │
-        ╞════════════╡
-        │ 2021-04-22 │
-        │ 2022-01-04 │
-        │ 2022-01-31 │
-        │ 2001-07-08 │
-        └────────────┘
+        >>> s.to_frame().select(
+        ...     pl.coalesce(
+        ...         pl.col("date").str.strptime(pl.Date, "%F", strict=False),
+        ...         pl.col("date").str.strptime(pl.Date, "%F %T", strict=False),
+        ...         pl.col("date").str.strptime(pl.Date, "%D", strict=False),
+        ...         pl.col("date").str.strptime(pl.Date, "%c", strict=False),
+        ...     )
+        ... ).to_series()
+        shape: (4,)
+        Series: 'date' [date]
+        [
+                2021-04-22
+                2022-01-04
+                2022-01-31
+                2001-07-08
+        ]
 
         """
         _validate_format_argument(format)
@@ -129,24 +279,22 @@ class ExprStringNameSpace:
             )
 
         if dtype == Date:
-            return wrap_expr(self._pyexpr.str_to_date(format, strict, exact, cache))
+            return self.to_date(format, strict=strict, exact=exact, cache=cache)
         elif dtype == Datetime:
             time_unit = dtype.time_unit  # type: ignore[union-attr]
             time_zone = dtype.time_zone  # type: ignore[union-attr]
-            return wrap_expr(
-                self._pyexpr.str_to_datetime(
-                    format,
-                    time_unit,
-                    time_zone,
-                    strict,
-                    exact,
-                    cache,
-                    tz_aware,
-                    utc,
-                )
+            return self.to_datetime(
+                format,
+                time_unit=time_unit,
+                time_zone=time_zone,
+                strict=strict,
+                exact=exact,
+                cache=cache,
+                utc=utc,
+                _tz_aware=tz_aware,
             )
         elif dtype == Time:
-            return wrap_expr(self._pyexpr.str_to_time(format, strict, exact, cache))
+            return self.to_time(format, strict=strict, cache=cache)
         else:
             raise ValueError("dtype should be of type {Date, Datetime, Time}")
 

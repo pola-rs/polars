@@ -43,7 +43,7 @@ pub enum StringFunction {
     ExtractAll,
     CountMatch(String),
     #[cfg(feature = "temporal")]
-    Strptime(StrpTimeOptions),
+    Strptime(DataType, StrptimeOptions),
     #[cfg(feature = "concat_str")]
     ConcatVertical(String),
     #[cfg(feature = "concat_str")]
@@ -78,7 +78,7 @@ impl StringFunction {
             #[cfg(feature = "string_justify")]
             Zfill { .. } | LJust { .. } | RJust { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "temporal")]
-            Strptime(options) => mapper.with_dtype(options.date_dtype.clone()),
+            Strptime(dtype, _) => mapper.with_dtype(dtype.clone()),
             #[cfg(feature = "concat_str")]
             ConcatVertical(_) | ConcatHorizontal(_) => mapper.with_dtype(DataType::Utf8),
             #[cfg(feature = "regex")]
@@ -110,7 +110,7 @@ impl Display for StringFunction {
             StringFunction::ExtractAll => "extract_all",
             StringFunction::CountMatch(_) => "count_match",
             #[cfg(feature = "temporal")]
-            StringFunction::Strptime(_) => "strptime",
+            StringFunction::Strptime(_, _) => "strptime",
             #[cfg(feature = "concat_str")]
             StringFunction::ConcatVertical(_) => "concat_vertical",
             #[cfg(feature = "concat_str")]
@@ -344,7 +344,55 @@ pub(super) fn count_match(s: &Series, pat: &str) -> PolarsResult<Series> {
 }
 
 #[cfg(feature = "temporal")]
-pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Series> {
+pub(super) fn strptime(
+    s: &Series,
+    dtype: DataType,
+    options: &StrptimeOptions,
+) -> PolarsResult<Series> {
+    match dtype {
+        DataType::Date => to_date(s, options),
+        DataType::Datetime(time_unit, time_zone) => {
+            to_datetime(s, &time_unit, time_zone.as_ref(), options)
+        }
+        DataType::Time => to_time(s, options),
+        dt => polars_bail!(ComputeError: "not implemented for dtype {}", dt),
+    }
+}
+
+#[cfg(feature = "dtype-date")]
+fn to_date(s: &Series, options: &StrptimeOptions) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    let out = {
+        if options.exact {
+            ca.as_date(options.format.as_deref(), options.cache)?
+                .into_series()
+        } else {
+            ca.as_date_not_exact(options.format.as_deref())?
+                .into_series()
+        }
+    };
+
+    if options.strict {
+        polars_ensure!(
+            out.null_count() == ca.null_count(),
+            ComputeError:
+            "strict conversion to dates failed.\n\
+            \n\
+            You might want to try:\n\
+            - setting `strict=False`\n\
+            - explicitly specifying a `format`"
+        );
+    }
+    Ok(out.into_series())
+}
+
+#[cfg(feature = "dtype-datetime")]
+fn to_datetime(
+    s: &Series,
+    time_unit: &TimeUnit,
+    time_zone: Option<&TimeZone>,
+    options: &StrptimeOptions,
+) -> PolarsResult<Series> {
     let tz_aware = match (options.tz_aware, &options.format) {
         (true, Some(_)) => true,
         (true, None) => polars_bail!(
@@ -355,66 +403,71 @@ pub(super) fn strptime(s: &Series, options: &StrpTimeOptions) -> PolarsResult<Se
         (false, Some(format)) => TZ_AWARE_RE.is_match(format),
         (false, _) => false,
     };
-    let ca = s.utf8()?;
-
-    let out = match &options.date_dtype {
-        DataType::Date => {
-            if options.exact {
-                ca.as_date(options.format.as_deref(), options.cache)?
-                    .into_series()
-            } else {
-                ca.as_date_not_exact(options.format.as_deref())?
-                    .into_series()
-            }
-        }
-        DataType::Datetime(tu, tz) => {
-            match (tz, tz_aware, options.utc) {
-                (Some(_), true, _) => polars_bail!(
-                    ComputeError:
-                    "cannot use strptime with both a tz-aware format and a tz-aware dtype, \
-                    please drop time zone from the dtype"
-                ),
-                (Some(_), _, true) => polars_bail!(
-                    ComputeError:
-                    "cannot use strptime with both 'utc=True' and tz-aware dtype, \
-                    please drop time zone from the dtype"
-                ),
-                _ => (),
-            };
-            if options.exact {
-                ca.as_datetime(
-                    options.format.as_deref(),
-                    *tu,
-                    options.cache,
-                    tz_aware,
-                    options.utc,
-                    tz.as_ref(),
-                )?
-                .into_series()
-            } else {
-                ca.as_datetime_not_exact(options.format.as_deref(), *tu, tz.as_ref())?
-                    .into_series()
-            }
-        }
-        dt @ DataType::Time => {
-            polars_ensure!(
-                options.exact, ComputeError: "non-exact not implemented for datatype {}", dt,
-            );
-            ca.as_time(options.format.as_deref(), options.cache)?
-                .into_series()
-        }
-        dt => polars_bail!(ComputeError: "not implemented for dtype {}", dt),
+    match (time_zone, tz_aware, options.utc) {
+        (Some(_), true, _) => polars_bail!(
+            ComputeError:
+            "cannot use strptime with both a tz-aware format and a tz-aware dtype, \
+            please drop time zone from the dtype"
+        ),
+        (Some(_), _, true) => polars_bail!(
+            ComputeError:
+            "cannot use strptime with both 'utc=True' and tz-aware dtype, \
+            please drop time zone from the dtype"
+        ),
+        _ => (),
     };
+
+    let ca = s.utf8()?;
+    let out = if options.exact {
+        ca.as_datetime(
+            options.format.as_deref(),
+            *time_unit,
+            options.cache,
+            tz_aware,
+            options.utc,
+            time_zone,
+        )?
+        .into_series()
+    } else {
+        ca.as_datetime_not_exact(options.format.as_deref(), *time_unit, time_zone)?
+            .into_series()
+    };
+
     if options.strict {
         polars_ensure!(
             out.null_count() == ca.null_count(),
             ComputeError:
-            "strict conversion to date(time)s failed.\n\
+            "strict conversion to datetimes failed.\n\
             \n\
             You might want to try:\n\
-            - setting `strict=False`,\n\
-            - explicitly specifying a `format`,\n\
-            - setting `utc=True` (if you are parsing datetimes with multiple offsets)."
+            - setting `strict=False`\n\
+            - explicitly specifying a `format`\n\
+            - setting `utc=True` (if you are parsing datetimes with multiple offsets)"
+        );
+    }
+    Ok(out.into_series())
+}
+
+#[cfg(feature = "dtype-time")]
+fn to_time(s: &Series, options: &StrptimeOptions) -> PolarsResult<Series> {
+    polars_ensure!(
+        options.exact, ComputeError: "non-exact not implemented for Time data type"
+    );
+
+    let ca = s.utf8()?;
+    let out = ca
+        .as_time(options.format.as_deref(), options.cache)?
+        .into_series();
+
+    if options.strict {
+        polars_ensure!(
+            out.null_count() == ca.null_count(),
+            ComputeError:
+            "strict conversion to times failed.\n\
+            \n\
+            You might want to try:\n\
+            - setting `strict=False`\n\
+            - explicitly specifying a `format`"
         );
     }
     Ok(out.into_series())
