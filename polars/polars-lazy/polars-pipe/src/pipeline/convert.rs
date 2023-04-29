@@ -283,12 +283,14 @@ where
 
             let mut aggregation_columns = Vec::with_capacity(aggs.len());
             let mut agg_fns = Vec::with_capacity(aggs.len());
+            let mut input_agg_dtypes = Vec::with_capacity(aggs.len());
 
             for node in &aggs {
-                let (index, agg_fn) =
+                let (input_dtype, index, agg_fn) =
                     convert_to_hash_agg(*node, expr_arena, &input_schema, &to_physical);
                 aggregation_columns.push(index);
-                agg_fns.push(agg_fn)
+                agg_fns.push(agg_fn);
+                input_agg_dtypes.push(input_dtype);
             }
             let aggregation_columns = Arc::new(aggregation_columns);
 
@@ -296,8 +298,8 @@ where
                 key_columns,
                 aggregation_columns,
                 Arc::from(agg_fns),
-                input_schema.clone(),
                 output_schema,
+                input_agg_dtypes,
                 options.slice,
             ));
 
@@ -321,12 +323,14 @@ where
 
             let mut aggregation_columns = Vec::with_capacity(aggs.len());
             let mut agg_fns = Vec::with_capacity(aggs.len());
+            let mut input_agg_dtypes = Vec::with_capacity(aggs.len());
 
             for node in aggs {
-                let (index, agg_fn) =
+                let (input_dtype, index, agg_fn) =
                     convert_to_hash_agg(*node, expr_arena, &input_schema, &to_physical);
                 aggregation_columns.push(index);
-                agg_fns.push(agg_fn)
+                agg_fns.push(agg_fn);
+                input_agg_dtypes.push(input_dtype);
             }
             let aggregation_columns = Arc::new(aggregation_columns);
 
@@ -335,8 +339,8 @@ where
                     key_columns,
                     aggregation_columns,
                     Arc::from(agg_fns),
-                    input_schema,
                     output_schema.clone(),
+                    input_agg_dtypes,
                     options.slice,
                 ))
             } else {
@@ -368,8 +372,8 @@ where
                         key_columns,
                         aggregation_columns,
                         Arc::from(agg_fns),
-                        input_schema,
                         output_schema.clone(),
+                        input_agg_dtypes,
                         options.slice,
                     )),
                 }

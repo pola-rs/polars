@@ -128,7 +128,11 @@ def test_streaming_non_streaming_gb() -> None:
     q = q.groupby("a").agg(pl.count()).sort("a")
     assert_frame_equal(q.collect(streaming=True), q.collect())
     q = df.lazy().with_columns(pl.col("a").alias("b"))
-    q = q.groupby(["a", "b"]).agg(pl.count()).sort("a")
+    q = (
+        q.groupby(["a", "b"])
+        .agg(pl.count(), pl.col("a").sum().alias("sum_a"))
+        .sort("a")
+    )
     assert_frame_equal(q.collect(streaming=True), q.collect())
 
 
