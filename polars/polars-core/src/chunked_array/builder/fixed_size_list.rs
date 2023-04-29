@@ -522,6 +522,7 @@ pub struct AnonymousFixedSizeListBuilder<'a> {
     builder: AnonymousBuilder<'a>,
     fast_explode: bool,
     inner_dtype: Option<DataType>,
+    inner_size: usize,
 }
 
 impl Default for AnonymousFixedSizeListBuilder<'_> {
@@ -542,6 +543,7 @@ impl<'a> AnonymousFixedSizeListBuilder<'a> {
             builder: AnonymousBuilder::new(capacity, inner_size),
             fast_explode: true,
             inner_dtype,
+            inner_size,
         }
     }
 
@@ -599,6 +601,7 @@ impl<'a> AnonymousFixedSizeListBuilder<'a> {
     }
 
     pub fn finish(&mut self) -> FixedSizeListChunked {
+        let inner_size = self.inner_size;
         // don't use self from here on one
         let slf = std::mem::take(self);
         if slf.builder.is_empty() {
@@ -606,6 +609,7 @@ impl<'a> AnonymousFixedSizeListBuilder<'a> {
                 &slf.name,
                 0,
                 &slf.inner_dtype.unwrap_or(DataType::Null),
+                inner_size
             )
         } else {
             let inner_dtype_physical = slf

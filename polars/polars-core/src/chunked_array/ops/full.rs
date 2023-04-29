@@ -109,13 +109,13 @@ impl FixedSizeListChunked {
         name: &str,
         length: usize,
         inner_dtype: &DataType,
+        inner_size: usize,
     ) -> FixedSizeListChunked {
         let arr = new_null_array(
-            ArrowDataType::LargeList(Box::new(ArrowField::new(
-                "item",
-                inner_dtype.to_arrow(),
-                true,
-            ))),
+            ArrowDataType::FixedSizeList(
+                Box::new(ArrowField::new("item", inner_dtype.to_arrow(), true)),
+                inner_size,
+            ),
             length,
         );
         unsafe { FixedSizeListChunked::from_chunks(name, vec![arr]) }
@@ -137,7 +137,7 @@ impl ChunkFull<&Series> for FixedSizeListChunked {
 #[cfg(feature = "dtype-fixed-size-list")]
 impl ChunkFullNull for FixedSizeListChunked {
     fn full_null(name: &str, length: usize) -> FixedSizeListChunked {
-        FixedSizeListChunked::full_null_with_dtype(name, length, &DataType::Null)
+        FixedSizeListChunked::full_null_with_dtype(name, length, &DataType::Null, 0)
     }
 }
 

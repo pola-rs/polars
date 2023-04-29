@@ -516,16 +516,31 @@ impl ChunkAggSeries for ListChunked {
 #[cfg(feature = "dtype-fixed-size-list")]
 impl ChunkAggSeries for FixedSizeListChunked {
     fn sum_as_series(&self) -> Series {
-        FixedSizeListChunked::full_null_with_dtype(self.name(), 1, &self.inner_dtype())
-            .into_series()
+        FixedSizeListChunked::full_null_with_dtype(
+            self.name(),
+            1,
+            &self.inner_dtype(),
+            self.inner_size(),
+        )
+        .into_series()
     }
     fn max_as_series(&self) -> Series {
-        FixedSizeListChunked::full_null_with_dtype(self.name(), 1, &self.inner_dtype())
-            .into_series()
+        FixedSizeListChunked::full_null_with_dtype(
+            self.name(),
+            1,
+            &self.inner_dtype(),
+            self.inner_size(),
+        )
+        .into_series()
     }
     fn min_as_series(&self) -> Series {
-        FixedSizeListChunked::full_null_with_dtype(self.name(), 1, &self.inner_dtype())
-            .into_series()
+        FixedSizeListChunked::full_null_with_dtype(
+            self.name(),
+            1,
+            &self.inner_dtype(),
+            self.inner_size(),
+        )
+        .into_series()
     }
 }
 
