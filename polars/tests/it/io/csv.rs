@@ -343,12 +343,16 @@ fn test_new_line_escape() {
 #[test]
 fn test_new_line_escape_on_header() {
     let s = r#""length","header with
- new line character", "width"
- 5.1,3.5,1.4
- "#;
-    println!("{}", "ok");
+new line character","width"
+5.1,3.5,1.4
+"#;
     let file: Cursor<&str> = Cursor::new(s);
-    let _df: DataFrame = CsvReader::new(file).has_header(true).finish().unwrap();
+    let df: DataFrame = CsvReader::new(file).has_header(true).finish().unwrap();
+    assert_eq!(df.shape(), (1, 3));
+    assert_eq!(
+        df.get_column_names(),
+        &["length", "header with\nnew line character", "width"]
+    );
 }
 
 #[test]
