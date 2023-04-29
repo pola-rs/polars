@@ -341,6 +341,17 @@ fn test_new_line_escape() {
 }
 
 #[test]
+fn test_new_line_escape_on_header() {
+    let s = r#""length","header with
+ new line character", "width"
+ 5.1,3.5,1.4
+ "#;
+    println!("{}", "ok");
+    let file: Cursor<&str> = Cursor::new(s);
+    let _df: DataFrame = CsvReader::new(file).has_header(true).finish().unwrap();
+}
+
+#[test]
 fn test_quoted_numeric() {
     // CSV fields may be quoted
     let s = r#""foo","bar"
