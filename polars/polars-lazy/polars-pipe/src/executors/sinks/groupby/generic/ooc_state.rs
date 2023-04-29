@@ -3,7 +3,7 @@ use polars_core::config::verbose;
 use super::*;
 use crate::executors::sinks::io::IOThread;
 use crate::executors::sinks::memory::MemTracker;
-use crate::pipeline::morsels_per_sink;
+use crate::pipeline::{morsels_per_sink, FORCE_OOC};
 
 #[derive(Clone)]
 pub(super) struct OocState {
@@ -16,15 +16,23 @@ pub(super) struct OocState {
     // when ooc, we write to disk using an IO thread
     pub(super) io_thread: IOThreadRef,
     count: u16,
+    to_disk_threshold: f64,
 }
 
 impl Default for OocState {
     fn default() -> Self {
+        let to_disk_threshold = if std::env::var(FORCE_OOC).is_ok() {
+            1.0
+        } else {
+            TO_DISK_THRESHOLD
+        };
+
         Self {
             mem_track: MemTracker::new(morsels_per_sink()),
             ooc: false,
             io_thread: Default::default(),
             count: 0,
+            to_disk_threshold,
         }
     }
 }
@@ -34,9 +42,6 @@ impl Default for OocState {
 const EARLY_MERGE_THRESHOLD: f64 = 0.5;
 // If this is reached we spill to disk and
 // aggregate in a second run
-#[cfg(feature = "trigger_ooc")]
-const TO_DISK_THRESHOLD: f64 = 1.0;
-#[cfg(not(feature = "trigger_ooc"))]
 const TO_DISK_THRESHOLD: f64 = 0.3;
 
 pub(super) enum SpillAction {
@@ -70,7 +75,7 @@ impl OocState {
         let free_frac = self.mem_track.free_memory_fraction_since_start();
         self.count += 1;
 
-        if free_frac < TO_DISK_THRESHOLD {
+        if free_frac < self.to_disk_threshold {
             if let Some(schema) = spill_schema() {
                 self.init_ooc(schema)?;
                 Ok(SpillAction::Dump)

@@ -7,7 +7,7 @@ use polars_core::POOL;
 use rayon::prelude::*;
 
 use super::*;
-use crate::pipeline::PARTITION_SIZE;
+use crate::pipeline::{FORCE_OOC, PARTITION_SIZE};
 
 struct SpillPartitions {
     // outer vec: partitions (factor of 2)
@@ -59,6 +59,8 @@ pub(super) struct GlobalTable {
     inner_maps: PartitionVec<Mutex<AggHashTable<false>>>,
     spill_partitions: SpillPartitions,
     early_merge_counter: Arc<AtomicU16>,
+    // IO is expensive so we only spill if we have `N` payloads to dump.
+    spill_partition_ob_size: usize,
 }
 
 impl GlobalTable {
@@ -68,6 +70,13 @@ impl GlobalTable {
         output_schema: SchemaRef,
     ) -> Self {
         let spill_partitions = SpillPartitions::new();
+
+        let spill_partition_ob_size = if std::env::var(FORCE_OOC).is_ok() {
+            1
+        } else {
+            64
+        };
+
         let mut inner_maps = Vec::with_capacity(PARTITION_SIZE);
         inner_maps.resize_with(PARTITION_SIZE, || {
             Mutex::new(AggHashTable::new(
@@ -82,6 +91,7 @@ impl GlobalTable {
             inner_maps,
             spill_partitions,
             early_merge_counter: Default::default(),
+            spill_partition_ob_size,
         }
     }
 
@@ -106,13 +116,10 @@ impl GlobalTable {
         let partition =
             self.early_merge_counter.fetch_add(1, Ordering::Relaxed) as usize % PARTITION_SIZE;
 
-        #[cfg(feature = "trigger_ooc")]
-        let min_size = 1;
-        #[cfg(not(feature = "trigger_ooc"))]
-        let min_size = 64;
-
         // IO is expensive so we only spill if we have `N` payloads to dump.
-        let bucket = self.spill_partitions.drain_partition(partition, min_size)?;
+        let bucket = self
+            .spill_partitions
+            .drain_partition(partition, self.spill_partition_ob_size)?;
         Some((
             partition,
             accumulate_dataframes_vertical_unchecked(bucket.into_iter().map(|pl| pl.into_df())),

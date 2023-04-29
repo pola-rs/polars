@@ -25,7 +25,7 @@ use crate::executors::sinks::utils::load_vec;
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
-use crate::pipeline::FORCE_OOC_GROUPBY;
+use crate::pipeline::FORCE_OOC;
 
 // we store a hashmap per partition (partitioned by hash)
 // the hashmap contains indexes as keys and as values
@@ -72,7 +72,7 @@ impl Utf8GroupbySink {
         output_schema: SchemaRef,
         slice: Option<(i64, usize)>,
     ) -> Self {
-        let ooc = std::env::var(FORCE_OOC_GROUPBY).is_ok();
+        let ooc = std::env::var(FORCE_OOC).is_ok();
         Self::new_inner(
             key_column,
             aggregation_columns,

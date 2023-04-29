@@ -3,6 +3,8 @@ use std::sync::Arc;
 
 use polars_utils::sys::MEMINFO;
 
+use crate::pipeline::FORCE_OOC;
+
 const TO_MB: usize = 2 << 19;
 
 #[derive(Clone)]
@@ -13,16 +15,24 @@ pub(super) struct MemTracker {
     fetch_count: Arc<AtomicUsize>,
     thread_count: usize,
     available_at_start: usize,
+    refresh_interval: usize,
 }
 
 impl MemTracker {
     pub(super) fn new(thread_count: usize) -> Self {
+        let refresh_interval = if std::env::var(FORCE_OOC).is_ok() {
+            1
+        } else {
+            64
+        };
+
         let mut out = Self {
             available_mem: Default::default(),
             used_by_node: Default::default(),
             fetch_count: Arc::new(AtomicUsize::new(1)),
             thread_count,
             available_at_start: 0,
+            refresh_interval,
         };
         let available = MEMINFO.free() as usize;
         out.available_mem.store(available, Ordering::Relaxed);
@@ -41,13 +51,7 @@ impl MemTracker {
         // once in every n passes we fetch mem usage.
         let fetch_count = self.fetch_count.fetch_add(1, Ordering::Relaxed);
 
-        // this triggers paths easier during debugging
-        #[cfg(not(feature = "trigger_ooc"))]
-        let refresh_interval = 64;
-        #[cfg(feature = "trigger_ooc")]
-        let refresh_interval = 1;
-
-        if fetch_count % (refresh_interval * self.thread_count) == 0 {
+        if fetch_count % (self.refresh_interval * self.thread_count) == 0 {
             self.refresh_memory()
         }
         self.available_mem.load(Ordering::Relaxed)

@@ -520,7 +520,7 @@ def test_sort_row_fmt() -> None:
 
 @pytest.mark.slow()
 def test_streaming_sort_multiple_columns(monkeypatch: Any, capfd: Any) -> None:
-    monkeypatch.setenv("POLARS_FORCE_OOC_SORT", "1")
+    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     df = get_str_ints_df(1000)
 

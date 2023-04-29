@@ -235,7 +235,7 @@ def test_cross_join_stack() -> None:
 
 @pytest.mark.slow()
 def test_ooc_sort(monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_FORCE_OOC_SORT", "1")
+    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
 
     s = pl.arange(0, 100_000, eager=True).rename("idx")
 
@@ -348,7 +348,7 @@ def test_streaming_unique(monkeypatch: Any, capfd: Any) -> None:
 @pytest.mark.write_disk()
 def test_streaming_sort(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
-    monkeypatch.setenv("POLARS_FORCE_OOC_SORT", "1")
+    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
     # this creates a lot of duplicate partitions and triggers: #7568
     assert (
         pl.Series(np.random.randint(0, 100, 100))
@@ -367,7 +367,7 @@ def test_streaming_groupby_ooc(monkeypatch: Any) -> None:
     np.random.seed(1)
     s = pl.Series("a", np.random.randint(0, 10, 100))
 
-    for env in ["POLARS_FORCE_OOC_SORT", "_NO_OP"]:
+    for env in ["POLARS_FORCE_OOC", "_NO_OP"]:
         monkeypatch.setenv(env, "1")
         q = (
             s.to_frame()

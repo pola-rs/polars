@@ -18,8 +18,7 @@ pub(crate) fn morsels_per_sink() -> usize {
 pub(crate) const PARTITION_SIZE: usize = 64;
 
 // env vars
-pub(crate) static FORCE_OOC_GROUPBY: &str = "POLARS_FORCE_OOC_GROUPBY";
-pub(crate) static FORCE_OOC_SORT: &str = "POLARS_FORCE_OOC_SORT";
+pub(crate) static FORCE_OOC: &str = "POLARS_FORCE_OOC";
 
 /// ideal chunk size we strive to have
 /// scale the chunk size depending on the number of

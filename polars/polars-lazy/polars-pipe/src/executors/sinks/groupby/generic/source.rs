@@ -42,24 +42,30 @@ impl GroupBySource {
 }
 
 impl Source for GroupBySource {
-    fn get_batches(&mut self, _context: &PExecutionContext) -> PolarsResult<SourceResult> {
+    fn get_batches(&mut self, context: &PExecutionContext) -> PolarsResult<SourceResult> {
         if self.slice == Some((0, 0)) {
             return Ok(SourceResult::Finished);
         }
 
-        let paritition_dir = if let Some(part) = self.partitions.next() {
+        let partition_dir = if let Some(part) = self.partitions.next() {
             part?.path()
         } else {
+            // otherwise no files have been processed
+            assert!(self.chunk_idx > 0);
             return Ok(SourceResult::Finished);
         };
-        if paritition_dir.ends_with(".lock") {
-            return self.get_batches(_context);
+        if partition_dir.ends_with(".lock") {
+            return self.get_batches(context);
         }
 
-        let partition_name = paritition_dir.file_name().unwrap().to_str().unwrap();
+        let partition_name = partition_dir.file_name().unwrap().to_str().unwrap();
         let partition_no = partition_name.parse::<usize>().unwrap();
 
-        for file in std::fs::read_dir(paritition_dir).expect("should be there") {
+        if context.verbose {
+            eprintln!("process {partition_no} during {}", self.fmt())
+        }
+
+        for file in std::fs::read_dir(partition_dir).expect("should be there") {
             let spilled = file.unwrap().path();
             let file = std::fs::File::open(spilled)?;
             let reader = IpcReader::new(file);
