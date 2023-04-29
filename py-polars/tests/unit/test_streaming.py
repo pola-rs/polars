@@ -128,7 +128,11 @@ def test_streaming_non_streaming_gb() -> None:
     q = q.groupby("a").agg(pl.count()).sort("a")
     assert_frame_equal(q.collect(streaming=True), q.collect())
     q = df.lazy().with_columns(pl.col("a").alias("b"))
-    q = q.groupby(["a", "b"]).agg(pl.count()).sort("a")
+    q = (
+        q.groupby(["a", "b"])
+        .agg(pl.count(), pl.col("a").sum().alias("sum_a"))
+        .sort("a")
+    )
     assert_frame_equal(q.collect(streaming=True), q.collect())
 
 
@@ -427,3 +431,31 @@ def test_streaming_groupby_struct_key() -> None:
         "count": [1, 1, 2],
         "B": ["apple", "google", "ms"],
     }
+
+
+@pytest.mark.slow()
+def test_streaming_groupby_all_numeric_types_stability_8570() -> None:
+    m = 1000
+    n = 1000
+
+    rng = np.random.default_rng(seed=0)
+    dfa = pl.DataFrame({"x": pl.arange(start=0, end=n, eager=True)})
+    dfb = pl.DataFrame(
+        {
+            "y": rng.integers(low=0, high=10, size=m),
+            "z": rng.integers(low=0, high=2, size=m),
+        }
+    )
+    dfc = dfa.join(dfb, how="cross")
+
+    for keys in [["x", "y"], "z"]:
+        for dtype in [pl.Boolean, *pl.INTEGER_DTYPES]:
+            # the alias checks if the schema is correctly handled
+            dfd = (
+                dfc.lazy()
+                .with_columns(pl.col("z").cast(dtype))
+                .groupby(keys)
+                .agg(pl.col("z").sum().alias("z_sum"))
+                .collect(streaming=True)
+            )
+            assert dfd["z_sum"].sum() == dfc["z"].sum()

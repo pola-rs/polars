@@ -22,6 +22,7 @@ impl GenericGroupby2 {
         aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         agg_constructors: Arc<[AggregateFunction]>,
         output_schema: SchemaRef,
+        agg_input_dtypes: Vec<DataType>,
         slice: Option<(i64, usize)>,
     ) -> Self {
         let key_dtypes: Arc<[DataType]> = Arc::from(
@@ -31,6 +32,8 @@ impl GenericGroupby2 {
                 .cloned()
                 .collect::<Vec<_>>(),
         );
+
+        let agg_dtypes: Arc<[DataType]> = Arc::from(agg_input_dtypes);
 
         let global_map = GlobalTable::new(
             agg_constructors.clone(),
@@ -42,6 +45,7 @@ impl GenericGroupby2 {
             thread_local_table: UnsafeCell::new(ThreadLocalTable::new(
                 agg_constructors,
                 key_dtypes,
+                agg_dtypes,
                 output_schema,
             )),
             global_table: Arc::new(global_map),
