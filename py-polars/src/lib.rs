@@ -41,8 +41,7 @@ use jemallocator::Jemalloc;
 use mimalloc::MiMalloc;
 #[cfg(feature = "object")]
 pub use object::register_object_builder;
-use polars_core::datatypes::{TimeUnit, TimeZone};
-use polars_core::prelude::{DataFrame, IntoSeries, IDX_DTYPE};
+use polars_core::prelude::{DataFrame, IDX_DTYPE};
 use polars_core::POOL;
 use pyo3::exceptions::PyValueError;
 use pyo3::panic::PanicException;
@@ -60,7 +59,7 @@ use crate::file::{get_either_file, EitherRustPythonFile};
 use crate::lazy::dataframe::{PyLazyFrame, PyLazyGroupBy};
 use crate::lazy::dsl;
 use crate::lazy::dsl::PyExpr;
-use crate::prelude::{ClosedWindow, DataType, Duration};
+use crate::prelude::DataType;
 use crate::series::PySeries;
 
 #[global_allocator]
@@ -254,44 +253,6 @@ fn parquet_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
 }
 
 #[pyfunction]
-fn date_range(
-    start: i64,
-    stop: i64,
-    every: &str,
-    closed: Wrap<ClosedWindow>,
-    name: &str,
-    time_unit: Wrap<TimeUnit>,
-    time_zone: Option<TimeZone>,
-) -> PyResult<PySeries> {
-    let date_range = polars_rs::time::date_range_impl(
-        name,
-        start,
-        stop,
-        Duration::parse(every),
-        closed.0,
-        time_unit.0,
-        time_zone.as_ref(),
-    )
-    .map_err(PyPolarsErr::from)?;
-    Ok(date_range.into_series().into())
-}
-
-#[pyfunction]
-fn date_range_lazy(
-    start: PyExpr,
-    end: PyExpr,
-    every: &str,
-    closed: Wrap<ClosedWindow>,
-    name: String,
-    time_zone: Option<TimeZone>,
-) -> PyExpr {
-    let start = start.inner;
-    let end = end.inner;
-    let every = Duration::parse(every);
-    polars_rs::lazy::dsl::functions::date_range(name, start, end, every, closed.0, time_zone).into()
-}
-
-#[pyfunction]
 fn get_index_type(py: Python) -> PyObject {
     Wrap(IDX_DTYPE).to_object(py)
 }
@@ -344,8 +305,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(concat_df)).unwrap();
     m.add_wrapped(wrap_pyfunction!(concat_lf)).unwrap();
     m.add_wrapped(wrap_pyfunction!(concat_series)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(date_range)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(date_range_lazy)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::eager::date_range))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(diag_concat_df)).unwrap();
     m.add_wrapped(wrap_pyfunction!(diag_concat_lf)).unwrap();
     m.add_wrapped(wrap_pyfunction!(hor_concat_df)).unwrap();
@@ -378,6 +339,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::lazy::cumfold))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::cumreduce))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::date_range_lazy))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::datetime))
         .unwrap();

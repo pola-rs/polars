@@ -1,13 +1,16 @@
 use polars::lazy::dsl;
 use polars::lazy::dsl::Expr;
 use polars::prelude::*;
+use polars_core::datatypes::TimeZone;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
 
 use crate::conversion::Wrap;
 use crate::lazy::{apply, ToExprs};
-use crate::prelude::{vec_extract_wrapped, DataType, DatetimeArgs, DurationArgs, ObjectValue};
+use crate::prelude::{
+    vec_extract_wrapped, ClosedWindow, DataType, DatetimeArgs, Duration, DurationArgs, ObjectValue,
+};
 use crate::{PyDataFrame, PyExpr, PyLazyFrame, PyPolarsErr, PySeries};
 
 macro_rules! set_unwrapped_or_0 {
@@ -110,6 +113,21 @@ pub fn cumreduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
 
     let func = move |a: Series, b: Series| apply::binary_lambda(&lambda, a, b);
     dsl::cumreduce_exprs(func, exprs).into()
+}
+
+#[pyfunction]
+pub fn date_range_lazy(
+    start: PyExpr,
+    end: PyExpr,
+    every: &str,
+    closed: Wrap<ClosedWindow>,
+    name: String,
+    time_zone: Option<TimeZone>,
+) -> PyExpr {
+    let start = start.inner;
+    let end = end.inner;
+    let every = Duration::parse(every);
+    dsl::functions::date_range(name, start, end, every, closed.0, time_zone).into()
 }
 
 #[pyfunction]
