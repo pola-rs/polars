@@ -11,7 +11,7 @@ from polars.io._utils import _prepare_file_arg
 from polars.utils.various import normalise_filepath
 
 with contextlib.suppress(ImportError):
-    from polars.polars import parquet_schema as _parquet_schema
+    from polars.polars import read_parquet_schema as _read_parquet_schema
 
 if TYPE_CHECKING:
     from io import BytesIO
@@ -153,7 +153,7 @@ def read_parquet_schema(
     if isinstance(source, (str, Path)):
         source = normalise_filepath(source)
 
-    return _parquet_schema(source)
+    return _read_parquet_schema(source)
 
 
 def scan_parquet(
