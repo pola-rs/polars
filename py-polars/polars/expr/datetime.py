@@ -79,7 +79,7 @@ class ExprDateTimeNameSpace:
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
         >>> df = pl.date_range(
-        ...     start, stop, timedelta(minutes=225), name="dates"
+        ...     start, stop, timedelta(minutes=225), name="dates", eager=True
         ... ).to_frame()
         >>> df
         shape: (7, 1)
@@ -118,7 +118,7 @@ class ExprDateTimeNameSpace:
 
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 1, 1)
-        >>> df = pl.date_range(start, stop, "10m", name="dates").to_frame()
+        >>> df = pl.date_range(start, stop, "10m", name="dates", eager=True).to_frame()
         >>> df.select(["dates", pl.col("dates").dt.truncate("30m").alias("truncate")])
         shape: (7, 2)
         ┌─────────────────────┬─────────────────────┐
@@ -203,7 +203,7 @@ class ExprDateTimeNameSpace:
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
         >>> df = pl.date_range(
-        ...     start, stop, timedelta(minutes=225), name="dates"
+        ...     start, stop, timedelta(minutes=225), name="dates", eager=True
         ... ).to_frame()
         >>> df
         shape: (7, 1)
@@ -242,7 +242,7 @@ class ExprDateTimeNameSpace:
 
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 1, 1)
-        >>> df = pl.date_range(start, stop, "10m", name="dates").to_frame()
+        >>> df = pl.date_range(start, stop, "10m", name="dates", eager=True).to_frame()
         >>> df.select(["dates", pl.col("dates").dt.round("30m").alias("round")])
         shape: (7, 2)
         ┌─────────────────────┬─────────────────────┐
@@ -349,7 +349,7 @@ class ExprDateTimeNameSpace:
         >>> df = pl.DataFrame(
         ...     {
         ...         "date": pl.date_range(
-        ...             datetime(2020, 3, 1), datetime(2020, 5, 1), "1mo"
+        ...             datetime(2020, 3, 1), datetime(2020, 5, 1), "1mo", eager=True
         ...         ),
         ...     }
         ... )
@@ -392,7 +392,9 @@ class ExprDateTimeNameSpace:
         >>> from datetime import timedelta, datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2002, 7, 1)
-        >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=180))})
+        >>> df = pl.DataFrame(
+        ...     {"date": pl.date_range(start, stop, timedelta(days=180), eager=True)}
+        ... )
         >>> df
         shape: (4, 1)
         ┌─────────────────────┐
@@ -436,7 +438,9 @@ class ExprDateTimeNameSpace:
         >>> from datetime import datetime
         >>> start = datetime(2000, 1, 1)
         >>> stop = datetime(2002, 1, 1)
-        >>> df = pl.DataFrame({"date": pl.date_range(start, stop, interval="1y")})
+        >>> df = pl.DataFrame(
+        ...     {"date": pl.date_range(start, stop, interval="1y", eager=True)}
+        ... )
         >>> df
         shape: (3, 1)
         ┌─────────────────────┐
@@ -481,7 +485,9 @@ class ExprDateTimeNameSpace:
         >>> from datetime import timedelta, datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2006, 1, 1)
-        >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=180))})
+        >>> df = pl.DataFrame(
+        ...     {"date": pl.date_range(start, stop, timedelta(days=180), eager=True)}
+        ... )
         >>> df.select(
         ...     [
         ...         pl.col("date"),
@@ -525,7 +531,9 @@ class ExprDateTimeNameSpace:
         >>> from datetime import timedelta, datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2002, 6, 1)
-        >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=180))})
+        >>> df = pl.DataFrame(
+        ...     {"date": pl.date_range(start, stop, timedelta(days=180), eager=True)}
+        ... )
         >>> df
         shape: (3, 1)
         ┌─────────────────────┐
@@ -570,7 +578,9 @@ class ExprDateTimeNameSpace:
         >>> from datetime import timedelta, datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 4, 1)
-        >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=31))})
+        >>> df = pl.DataFrame(
+        ...     {"date": pl.date_range(start, stop, timedelta(days=31), eager=True)}
+        ... )
         >>> df
         shape: (3, 1)
         ┌─────────────────────┐
@@ -615,7 +625,9 @@ class ExprDateTimeNameSpace:
         >>> from datetime import timedelta, datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 4, 1)
-        >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=31))})
+        >>> df = pl.DataFrame(
+        ...     {"date": pl.date_range(start, stop, timedelta(days=31), eager=True)}
+        ... )
         >>> df
         shape: (3, 1)
         ┌─────────────────────┐
@@ -659,7 +671,9 @@ class ExprDateTimeNameSpace:
         >>> from datetime import timedelta, datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 9)
-        >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=3))})
+        >>> df = pl.DataFrame(
+        ...     {"date": pl.date_range(start, stop, timedelta(days=3), eager=True)}
+        ... )
         >>> df
         shape: (3, 1)
         ┌─────────────────────┐
@@ -710,7 +724,9 @@ class ExprDateTimeNameSpace:
         >>> from datetime import timedelta, datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 9)
-        >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=3))})
+        >>> df = pl.DataFrame(
+        ...     {"date": pl.date_range(start, stop, timedelta(days=3), eager=True)}
+        ... )
         >>> df
         shape: (3, 1)
         ┌─────────────────────┐
@@ -761,7 +777,9 @@ class ExprDateTimeNameSpace:
         >>> from datetime import timedelta, datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 9)
-        >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=3))})
+        >>> df = pl.DataFrame(
+        ...     {"date": pl.date_range(start, stop, timedelta(days=3), eager=True)}
+        ... )
         >>> df
         shape: (3, 1)
         ┌─────────────────────┐
@@ -820,7 +838,9 @@ class ExprDateTimeNameSpace:
         >>> from datetime import timedelta, datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
-        >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(hours=12))})
+        >>> df = pl.DataFrame(
+        ...     {"date": pl.date_range(start, stop, timedelta(hours=12), eager=True)}
+        ... )
         >>> df
         shape: (3, 1)
         ┌─────────────────────┐
@@ -865,7 +885,7 @@ class ExprDateTimeNameSpace:
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 1, 0, 4, 0)
         >>> df = pl.DataFrame(
-        ...     {"date": pl.date_range(start, stop, timedelta(minutes=2))}
+        ...     {"date": pl.date_range(start, stop, timedelta(minutes=2), eager=True)}
         ... )
         >>> df
         shape: (3, 1)
@@ -921,6 +941,7 @@ class ExprDateTimeNameSpace:
         ...             start=datetime(2001, 1, 1, 0, 0, 0, 456789),
         ...             end=datetime(2001, 1, 1, 0, 0, 6),
         ...             interval=timedelta(seconds=2, microseconds=654321),
+        ...             eager=True,
         ...         )
         ...     }
         ... )
@@ -963,7 +984,7 @@ class ExprDateTimeNameSpace:
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 1, 0, 0, 4)
         >>> df = pl.DataFrame(
-        ...     {"date": pl.date_range(start, stop, timedelta(seconds=2))}
+        ...     {"date": pl.date_range(start, stop, timedelta(seconds=2), eager=True)}
         ... )
         >>> df
         shape: (3, 1)
@@ -1025,7 +1046,10 @@ class ExprDateTimeNameSpace:
         >>> df = pl.DataFrame(
         ...     {
         ...         "date": pl.date_range(
-        ...             datetime(2020, 1, 1), datetime(2020, 1, 1, 0, 0, 1, 0), "1ms"
+        ...             datetime(2020, 1, 1),
+        ...             datetime(2020, 1, 1, 0, 0, 1, 0),
+        ...             "1ms",
+        ...             eager=True,
         ...         ),
         ...     }
         ... )
@@ -1082,7 +1106,9 @@ class ExprDateTimeNameSpace:
         >>> from datetime import timedelta, datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 3)
-        >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=1))})
+        >>> df = pl.DataFrame(
+        ...     {"date": pl.date_range(start, stop, timedelta(days=1), eager=True)}
+        ... )
         >>> df.select(
         ...     [
         ...         pl.col("date"),
@@ -1127,7 +1153,9 @@ class ExprDateTimeNameSpace:
         >>> from datetime import timedelta, datetime
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 3)
-        >>> df = pl.DataFrame({"date": pl.date_range(start, stop, timedelta(days=1))})
+        >>> df = pl.DataFrame(
+        ...     {"date": pl.date_range(start, stop, timedelta(days=1), eager=True)}
+        ... )
         >>> df.select(
         ...     [
         ...         pl.col("date"),
@@ -1167,7 +1195,11 @@ class ExprDateTimeNameSpace:
         >>> df = pl.DataFrame(
         ...     {
         ...         "date": pl.date_range(
-        ...             datetime(2001, 1, 1), datetime(2001, 1, 3), "1d", time_unit="ns"
+        ...             datetime(2001, 1, 1),
+        ...             datetime(2001, 1, 3),
+        ...             "1d",
+        ...             time_unit="ns",
+        ...             eager=True,
         ...         )
         ...     }
         ... )
@@ -1206,7 +1238,7 @@ class ExprDateTimeNameSpace:
         >>> df = pl.DataFrame(
         ...     {
         ...         "date": pl.date_range(
-        ...             datetime(2001, 1, 1), datetime(2001, 1, 3), "1d"
+        ...             datetime(2001, 1, 1), datetime(2001, 1, 3), "1d", eager=True
         ...         )
         ...     }
         ... )
@@ -1250,6 +1282,7 @@ class ExprDateTimeNameSpace:
         ...             datetime(2020, 5, 1),
         ...             "1mo",
         ...             time_zone="UTC",
+        ...             eager=True,
         ...         ),
         ...     }
         ... )
@@ -1302,6 +1335,7 @@ class ExprDateTimeNameSpace:
         ...             datetime(2020, 7, 1),
         ...             "1mo",
         ...             time_zone="UTC",
+        ...             eager=True,
         ...         ).dt.convert_time_zone(time_zone="Europe/London"),
         ...     }
         ... )
@@ -1384,7 +1418,7 @@ class ExprDateTimeNameSpace:
         >>> df = pl.DataFrame(
         ...     {
         ...         "date": pl.date_range(
-        ...             datetime(2020, 3, 1), datetime(2020, 5, 1), "1mo"
+        ...             datetime(2020, 3, 1), datetime(2020, 5, 1), "1mo", eager=True
         ...         ),
         ...     }
         ... )
@@ -1422,7 +1456,7 @@ class ExprDateTimeNameSpace:
         >>> df = pl.DataFrame(
         ...     {
         ...         "date": pl.date_range(
-        ...             datetime(2020, 1, 1), datetime(2020, 1, 4), "1d"
+        ...             datetime(2020, 1, 1), datetime(2020, 1, 4), "1d", eager=True
         ...         ),
         ...     }
         ... )
@@ -1461,7 +1495,7 @@ class ExprDateTimeNameSpace:
         >>> df = pl.DataFrame(
         ...     {
         ...         "date": pl.date_range(
-        ...             datetime(2020, 1, 1), datetime(2020, 1, 4), "1d"
+        ...             datetime(2020, 1, 1), datetime(2020, 1, 4), "1d", eager=True
         ...         ),
         ...     }
         ... )
@@ -1500,7 +1534,10 @@ class ExprDateTimeNameSpace:
         >>> df = pl.DataFrame(
         ...     {
         ...         "date": pl.date_range(
-        ...             datetime(2020, 1, 1), datetime(2020, 1, 1, 0, 4, 0), "1m"
+        ...             datetime(2020, 1, 1),
+        ...             datetime(2020, 1, 1, 0, 4, 0),
+        ...             "1m",
+        ...             eager=True,
         ...         ),
         ...     }
         ... )
@@ -1540,7 +1577,10 @@ class ExprDateTimeNameSpace:
         >>> df = pl.DataFrame(
         ...     {
         ...         "date": pl.date_range(
-        ...             datetime(2020, 1, 1), datetime(2020, 1, 1, 0, 0, 1, 0), "1ms"
+        ...             datetime(2020, 1, 1),
+        ...             datetime(2020, 1, 1, 0, 0, 1, 0),
+        ...             "1ms",
+        ...             eager=True,
         ...         ),
         ...     }
         ... )
@@ -1584,7 +1624,10 @@ class ExprDateTimeNameSpace:
         >>> df = pl.DataFrame(
         ...     {
         ...         "date": pl.date_range(
-        ...             datetime(2020, 1, 1), datetime(2020, 1, 1, 0, 0, 1, 0), "1ms"
+        ...             datetime(2020, 1, 1),
+        ...             datetime(2020, 1, 1, 0, 0, 1, 0),
+        ...             "1ms",
+        ...             eager=True,
         ...         ),
         ...     }
         ... )
@@ -1628,7 +1671,10 @@ class ExprDateTimeNameSpace:
         >>> df = pl.DataFrame(
         ...     {
         ...         "date": pl.date_range(
-        ...             datetime(2020, 1, 1), datetime(2020, 1, 1, 0, 0, 1, 0), "1ms"
+        ...             datetime(2020, 1, 1),
+        ...             datetime(2020, 1, 1, 0, 0, 1, 0),
+        ...             "1ms",
+        ...             eager=True,
         ...         ),
         ...     }
         ... )
@@ -1697,7 +1743,7 @@ class ExprDateTimeNameSpace:
         >>> df = pl.DataFrame(
         ...     {
         ...         "dates": pl.date_range(
-        ...             datetime(2000, 1, 1), datetime(2005, 1, 1), "1y"
+        ...             datetime(2000, 1, 1), datetime(2005, 1, 1), "1y", eager=True
         ...         )
         ...     }
         ... )
@@ -1764,7 +1810,10 @@ class ExprDateTimeNameSpace:
         >>> df = pl.DataFrame(
         ...     {
         ...         "dates": pl.date_range(
-        ...             datetime(2000, 1, 15, 2), datetime(2000, 12, 15, 2), "1mo"
+        ...             datetime(2000, 1, 15, 2),
+        ...             datetime(2000, 12, 15, 2),
+        ...             "1mo",
+        ...             eager=True,
         ...         )
         ...     }
         ... )
@@ -1807,7 +1856,10 @@ class ExprDateTimeNameSpace:
         >>> df = pl.DataFrame(
         ...     {
         ...         "dates": pl.date_range(
-        ...             datetime(2000, 1, 1, 2), datetime(2000, 12, 1, 2), "1mo"
+        ...             datetime(2000, 1, 1, 2),
+        ...             datetime(2000, 12, 1, 2),
+        ...             "1mo",
+        ...             eager=True,
         ...         )
         ...     }
         ... )

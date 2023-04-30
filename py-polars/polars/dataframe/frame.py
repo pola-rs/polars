@@ -4797,6 +4797,7 @@ class DataFrame:
         ...             start=datetime(2021, 12, 16),
         ...             end=datetime(2021, 12, 16, 3),
         ...             interval="30m",
+        ...             eager=True,
         ...         ),
         ...         "n": range(7),
         ...     }
@@ -4901,6 +4902,7 @@ class DataFrame:
         ...             start=datetime(2021, 12, 16),
         ...             end=datetime(2021, 12, 16, 3),
         ...             interval="30m",
+        ...             eager=True,
         ...         ),
         ...         "groups": ["a", "a", "a", "b", "b", "a", "a"],
         ...     }
