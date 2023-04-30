@@ -499,8 +499,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map!(strings::rjust, width, fillchar)
             }
             #[cfg(feature = "temporal")]
-            Strptime(options) => {
-                map!(strings::strptime, &options)
+            Strptime(dtype, options) => {
+                map!(strings::strptime, dtype.clone(), &options)
             }
             #[cfg(feature = "concat_str")]
             ConcatVertical(delimiter) => map!(strings::concat, &delimiter),

@@ -12,8 +12,7 @@ fn test_duration() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .with_columns(&[col("date").str().strptime(StrpTimeOptions {
-            date_dtype: DataType::Date,
+        .with_columns(&[col("date").str().to_date(StrptimeOptions {
             ..Default::default()
         })])
         .with_column(

@@ -557,23 +557,18 @@ impl PyExpr {
         strict: bool,
         exact: bool,
         cache: bool,
-    ) -> PyExpr {
-        self.inner
-            .clone()
-            .str()
-            .strptime(StrpTimeOptions {
-                date_dtype: DataType::Date,
-                format,
-                strict,
-                exact,
-                cache,
-                tz_aware: false,
-                utc: false,
-            })
-            .into()
+    ) -> Self {
+        let options = StrptimeOptions {
+            format,
+            strict,
+            exact,
+            cache,
+            ..Default::default()
+        };
+        self.inner.clone().str().to_date(options).into()
     }
 
-    #[pyo3(signature = (format, time_unit, time_zone, strict, exact, cache, tz_aware, utc))]
+    #[pyo3(signature = (format, time_unit, time_zone, strict, exact, cache, utc, tz_aware))]
     #[allow(clippy::too_many_arguments)]
     pub fn str_to_datetime(
         &self,
@@ -583,62 +578,34 @@ impl PyExpr {
         strict: bool,
         exact: bool,
         cache: bool,
-        tz_aware: bool,
         utc: bool,
-    ) -> PyExpr {
-        let result_time_unit = match (&format, time_unit) {
-            (_, Some(time_unit)) => time_unit.0,
-            (Some(format), None) => {
-                if format.contains("%.9f")
-                    || format.contains("%9f")
-                    || format.contains("%f")
-                    || format.contains("%.f")
-                {
-                    TimeUnit::Nanoseconds
-                } else if format.contains("%.3f") || format.contains("%3f") {
-                    TimeUnit::Milliseconds
-                } else {
-                    TimeUnit::Microseconds
-                }
-            }
-            (None, None) => TimeUnit::Microseconds,
+        tz_aware: bool,
+    ) -> Self {
+        let options = StrptimeOptions {
+            format,
+            strict,
+            exact,
+            cache,
+            tz_aware,
+            utc,
         };
         self.inner
             .clone()
             .str()
-            .strptime(StrpTimeOptions {
-                date_dtype: DataType::Datetime(result_time_unit, time_zone),
-                format,
-                strict,
-                exact,
-                cache,
-                tz_aware,
-                utc,
-            })
+            .to_datetime(time_unit.map(|tu| tu.0), time_zone, options)
             .into()
     }
 
-    #[pyo3(signature = (format, strict, exact, cache))]
-    pub fn str_to_time(
-        &self,
-        format: Option<String>,
-        strict: bool,
-        exact: bool,
-        cache: bool,
-    ) -> PyExpr {
-        self.inner
-            .clone()
-            .str()
-            .strptime(StrpTimeOptions {
-                date_dtype: DataType::Time,
-                format,
-                strict,
-                exact,
-                cache,
-                tz_aware: false,
-                utc: false,
-            })
-            .into()
+    #[pyo3(signature = (format, strict, cache))]
+    pub fn str_to_time(&self, format: Option<String>, strict: bool, cache: bool) -> Self {
+        let options = StrptimeOptions {
+            format,
+            strict,
+            exact: true,
+            cache,
+            ..Default::default()
+        };
+        self.inner.clone().str().to_time(options).into()
     }
 
     pub fn str_strip(&self, matches: Option<String>) -> PyExpr {
