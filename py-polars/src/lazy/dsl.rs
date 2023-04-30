@@ -1,3 +1,5 @@
+mod binary;
+mod categorical;
 #[cfg(feature = "meta")]
 mod meta;
 
@@ -706,18 +708,6 @@ impl PyExpr {
         self.inner.clone().str().starts_with(sub.inner).into()
     }
 
-    pub fn binary_contains(&self, lit: Vec<u8>) -> PyExpr {
-        self.inner.clone().binary().contains_literal(lit).into()
-    }
-
-    pub fn binary_ends_with(&self, sub: Vec<u8>) -> PyExpr {
-        self.inner.clone().binary().ends_with(sub).into()
-    }
-
-    pub fn binary_starts_with(&self, sub: Vec<u8>) -> PyExpr {
-        self.inner.clone().binary().starts_with(sub).into()
-    }
-
     pub fn str_hex_encode(&self) -> PyExpr {
         self.clone()
             .inner
@@ -772,61 +762,6 @@ impl PyExpr {
             .str()
             .from_radix(radix, strict)
             .with_fmt("str.parse_int")
-            .into()
-    }
-
-    #[cfg(feature = "binary_encoding")]
-    pub fn binary_hex_encode(&self) -> PyExpr {
-        self.clone()
-            .inner
-            .map(
-                move |s| s.binary().map(|s| Some(s.hex_encode().into_series())),
-                GetOutput::from_type(DataType::Utf8),
-            )
-            .with_fmt("binary.hex_encode")
-            .into()
-    }
-    #[cfg(feature = "binary_encoding")]
-    pub fn binary_hex_decode(&self, strict: bool) -> PyExpr {
-        self.clone()
-            .inner
-            .map(
-                move |s| {
-                    s.binary()?
-                        .hex_decode(strict)
-                        .map(|s| Some(s.into_series()))
-                },
-                GetOutput::same_type(),
-            )
-            .with_fmt("binary.hex_decode")
-            .into()
-    }
-
-    #[cfg(feature = "binary_encoding")]
-    pub fn binary_base64_encode(&self) -> PyExpr {
-        self.clone()
-            .inner
-            .map(
-                move |s| s.binary().map(|s| Some(s.base64_encode().into_series())),
-                GetOutput::from_type(DataType::Utf8),
-            )
-            .with_fmt("binary.base64_encode")
-            .into()
-    }
-
-    #[cfg(feature = "binary_encoding")]
-    pub fn binary_base64_decode(&self, strict: bool) -> PyExpr {
-        self.clone()
-            .inner
-            .map(
-                move |s| {
-                    s.binary()?
-                        .base64_decode(strict)
-                        .map(|s| Some(s.into_series()))
-                },
-                GetOutput::same_type(),
-            )
-            .with_fmt("binary.base64_decode")
             .into()
     }
 
@@ -1646,10 +1581,6 @@ impl PyExpr {
     }
     fn str_concat(&self, delimiter: &str) -> Self {
         self.inner.clone().str().concat(delimiter).into()
-    }
-
-    fn cat_set_ordering(&self, ordering: Wrap<CategoricalOrdering>) -> Self {
-        self.inner.clone().cat().set_ordering(ordering.0).into()
     }
 
     pub fn reshape(&self, dims: Vec<i64>) -> Self {
