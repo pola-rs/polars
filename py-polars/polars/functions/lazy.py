@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import contextlib
 import warnings
 from datetime import date, datetime, time, timedelta
@@ -87,7 +88,7 @@ if TYPE_CHECKING:
 
 
 def col(
-    name: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType],
+    name: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType] | Iterable[str | PolarsDataType],
     *more_names: str | PolarsDataType,
 ) -> Expr:
     """
@@ -217,6 +218,17 @@ def col(
     │ 2   ┆ 22        ┆ 2   │
     │ 3   ┆ 33        ┆ 1   │
     └─────┴───────────┴─────┘
+    >>> df.select(pl.col(["hamburger", pl.Utf8]))
+    shape: (3, 2)
+    ┌───────────┬─────┐
+    │ hamburger ┆ bar │
+    │ ---       ┆ --- │
+    │ i64       ┆ str │
+    ╞═══════════╪═════╡
+    │ 11        ┆ a   │
+    │ 22        ┆ b   │
+    │ 33        ┆ c   │
+    └───────────┴─────┘
 
     """
     if more_names:
@@ -242,15 +254,17 @@ def col(
         if not names:
             return wrap_expr(pycols(names))
 
-        item = names[0]
-        if isinstance(item, str):
+        if builtins.all(isinstance(item, str) for item in names):
             return wrap_expr(pycols(names))
-        elif is_polars_dtype(item):
+        elif builtins.all(is_polars_dtype(item) for item in names):
             return wrap_expr(_dtype_cols(names))
+        elif builtins.all(isinstance(item, str) or is_polars_dtype(item) for item in names):
+            return [wrap_expr(pycol(item)) if isinstance(item, str) else wrap_expr(_dtype_cols([item])) for item in names]
         else:
+            first_invalid_item = builtins.next(item for item in names if not isinstance(item, str) and not is_polars_dtype(item))
             raise TypeError(
                 "Invalid input for `col`. Expected iterable of type `str` or `DataType`,"
-                f" got iterable of type {type(item)!r}"
+                f" got iterable of type {type(first_invalid_item)!r}"
             )
     else:
         raise TypeError(
