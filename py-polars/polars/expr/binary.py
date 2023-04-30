@@ -31,7 +31,7 @@ class ExprBinaryNameSpace:
         Boolean mask
 
         """
-        return wrap_expr(self._pyexpr.binary_contains(literal))
+        return wrap_expr(self._pyexpr.bin_contains(literal))
 
     def ends_with(self, suffix: bytes) -> Expr:
         """
@@ -43,7 +43,7 @@ class ExprBinaryNameSpace:
             Suffix substring.
 
         """
-        return wrap_expr(self._pyexpr.binary_ends_with(suffix))
+        return wrap_expr(self._pyexpr.bin_ends_with(suffix))
 
     def starts_with(self, prefix: bytes) -> Expr:
         """
@@ -55,7 +55,7 @@ class ExprBinaryNameSpace:
             Prefix substring.
 
         """
-        return wrap_expr(self._pyexpr.binary_starts_with(prefix))
+        return wrap_expr(self._pyexpr.bin_starts_with(prefix))
 
     def decode(self, encoding: TransferEncoding, *, strict: bool = True) -> Expr:
         """
@@ -71,9 +71,9 @@ class ExprBinaryNameSpace:
 
         """
         if encoding == "hex":
-            return wrap_expr(self._pyexpr.binary_hex_decode(strict))
+            return wrap_expr(self._pyexpr.bin_hex_decode(strict))
         elif encoding == "base64":
-            return wrap_expr(self._pyexpr.binary_base64_decode(strict))
+            return wrap_expr(self._pyexpr.bin_base64_decode(strict))
         else:
             raise ValueError(
                 f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"
@@ -94,9 +94,9 @@ class ExprBinaryNameSpace:
 
         """
         if encoding == "hex":
-            return wrap_expr(self._pyexpr.binary_hex_encode())
+            return wrap_expr(self._pyexpr.bin_hex_encode())
         elif encoding == "base64":
-            return wrap_expr(self._pyexpr.binary_base64_encode())
+            return wrap_expr(self._pyexpr.bin_base64_encode())
         else:
             raise ValueError(
                 f"encoding must be one of {{'hex', 'base64'}}, got {encoding}"

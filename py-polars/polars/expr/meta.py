@@ -37,7 +37,7 @@ class ExprMetaNameSpace:
 
     def root_names(self) -> list[str]:
         """Get a list with the root column name."""
-        return self._pyexpr.meta_roots()
+        return self._pyexpr.meta_root_names()
 
     def output_name(self) -> str:
         """

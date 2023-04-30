@@ -373,7 +373,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴─────────────────────┘
 
         """
-        return wrap_expr(self._pyexpr.strftime(format))
+        return wrap_expr(self._pyexpr.dt_strftime(format))
 
     def year(self) -> Expr:
         """
@@ -421,7 +421,7 @@ class ExprDateTimeNameSpace:
         └──────┘
 
         """
-        return wrap_expr(self._pyexpr.year())
+        return wrap_expr(self._pyexpr.dt_year())
 
     def is_leap_year(self) -> Expr:
         """
@@ -465,7 +465,7 @@ class ExprDateTimeNameSpace:
         └───────┘
 
         """
-        return wrap_expr(self._pyexpr.is_leap_year())
+        return wrap_expr(self._pyexpr.dt_is_leap_year())
 
     def iso_year(self) -> Expr:
         """
@@ -512,7 +512,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴──────────┘
 
         """
-        return wrap_expr(self._pyexpr.iso_year())
+        return wrap_expr(self._pyexpr.dt_iso_year())
 
     def quarter(self) -> Expr:
         """
@@ -558,7 +558,7 @@ class ExprDateTimeNameSpace:
         └──────┘
 
         """
-        return wrap_expr(self._pyexpr.quarter())
+        return wrap_expr(self._pyexpr.dt_quarter())
 
     def month(self) -> Expr:
         """
@@ -605,7 +605,7 @@ class ExprDateTimeNameSpace:
         └──────┘
 
         """
-        return wrap_expr(self._pyexpr.month())
+        return wrap_expr(self._pyexpr.dt_month())
 
     def week(self) -> Expr:
         """
@@ -652,7 +652,7 @@ class ExprDateTimeNameSpace:
         └──────┘
 
         """
-        return wrap_expr(self._pyexpr.week())
+        return wrap_expr(self._pyexpr.dt_week())
 
     def weekday(self) -> Expr:
         """
@@ -704,7 +704,7 @@ class ExprDateTimeNameSpace:
         └─────────┴──────────────┴─────────────┘
 
         """
-        return wrap_expr(self._pyexpr.weekday())
+        return wrap_expr(self._pyexpr.dt_weekday())
 
     def day(self) -> Expr:
         """
@@ -757,7 +757,7 @@ class ExprDateTimeNameSpace:
         └─────────┴──────────────┴─────────────┘
 
         """
-        return wrap_expr(self._pyexpr.day())
+        return wrap_expr(self._pyexpr.dt_day())
 
     def ordinal_day(self) -> Expr:
         """
@@ -810,16 +810,16 @@ class ExprDateTimeNameSpace:
         └─────────┴──────────────┴─────────────┘
 
         """
-        return wrap_expr(self._pyexpr.ordinal_day())
+        return wrap_expr(self._pyexpr.dt_ordinal_day())
 
     def time(self) -> Expr:
-        return wrap_expr(self._pyexpr.time())
+        return wrap_expr(self._pyexpr.dt_time())
 
     def date(self) -> Expr:
-        return wrap_expr(self._pyexpr.date())
+        return wrap_expr(self._pyexpr.dt_date())
 
     def datetime(self) -> Expr:
-        return wrap_expr(self._pyexpr.datetime())
+        return wrap_expr(self._pyexpr.dt_datetime())
 
     def hour(self) -> Expr:
         """
@@ -865,7 +865,7 @@ class ExprDateTimeNameSpace:
         └──────┘
 
         """
-        return wrap_expr(self._pyexpr.hour())
+        return wrap_expr(self._pyexpr.dt_hour())
 
     def minute(self) -> Expr:
         """
@@ -911,7 +911,7 @@ class ExprDateTimeNameSpace:
         └──────┘
 
         """
-        return wrap_expr(self._pyexpr.minute())
+        return wrap_expr(self._pyexpr.dt_minute())
 
     def second(self, *, fractional: bool = False) -> Expr:
         """
@@ -1010,9 +1010,9 @@ class ExprDateTimeNameSpace:
         └──────┘
 
         """
-        sec = wrap_expr(self._pyexpr.second())
+        sec = wrap_expr(self._pyexpr.dt_second())
         return (
-            sec + (wrap_expr(self._pyexpr.nanosecond()) / F.lit(1_000_000_000.0))
+            sec + (wrap_expr(self._pyexpr.dt_nanosecond()) / F.lit(1_000_000_000.0))
             if fractional
             else sec
         )
@@ -1028,7 +1028,7 @@ class ExprDateTimeNameSpace:
         Milliseconds as UInt32
 
         """
-        return wrap_expr(self._pyexpr.millisecond())
+        return wrap_expr(self._pyexpr.dt_millisecond())
 
     def microsecond(self) -> Expr:
         """
@@ -1077,7 +1077,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────────┴──────────────┘
 
         """
-        return wrap_expr(self._pyexpr.microsecond())
+        return wrap_expr(self._pyexpr.dt_microsecond())
 
     def nanosecond(self) -> Expr:
         """
@@ -1090,7 +1090,7 @@ class ExprDateTimeNameSpace:
         Nanoseconds as UInt32
 
         """
-        return wrap_expr(self._pyexpr.nanosecond())
+        return wrap_expr(self._pyexpr.dt_nanosecond())
 
     def epoch(self, time_unit: EpochTimeUnit = "us") -> Expr:
         """
@@ -1175,7 +1175,7 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴─────────────────┴──────────────┘
 
         """
-        return wrap_expr(self._pyexpr.timestamp(time_unit))
+        return wrap_expr(self._pyexpr.dt_timestamp(time_unit))
 
     def with_time_unit(self, time_unit: TimeUnit) -> Expr:
         """

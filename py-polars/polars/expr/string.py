@@ -1078,7 +1078,7 @@ class ExprStringNameSpace:
         └──────────────┘
 
         """
-        return wrap_expr(self._pyexpr.count_match(pattern))
+        return wrap_expr(self._pyexpr.str_count_match(pattern))
 
     def split(self, by: str, *, inclusive: bool = False) -> Expr:
         """

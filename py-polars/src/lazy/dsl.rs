@@ -1,3 +1,12 @@
+mod binary;
+mod categorical;
+mod datetime;
+mod list;
+#[cfg(feature = "meta")]
+mod meta;
+mod string;
+mod r#struct;
+
 use polars::lazy::dsl;
 use polars::lazy::dsl::Operator;
 use polars::prelude::*;
@@ -8,7 +17,6 @@ use pyo3::class::basic::CompareOp;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
-use smartstring::alias::String as SmartString;
 
 use super::apply::*;
 use crate::conversion::{parse_fill_null_strategy, Wrap};
@@ -27,7 +35,7 @@ pub struct PyExpr {
 
 #[pymethods]
 impl PyExpr {
-    fn __richcmp__(&self, other: Self, op: CompareOp) -> PyExpr {
+    fn __richcmp__(&self, other: Self, op: CompareOp) -> Self {
         match op {
             CompareOp::Eq => self.eq(other),
             CompareOp::Ne => self.neq(other),
@@ -38,48 +46,48 @@ impl PyExpr {
         }
     }
 
-    fn __add__(&self, rhs: Self) -> PyResult<PyExpr> {
+    fn __add__(&self, rhs: Self) -> PyResult<Self> {
         Ok(dsl::binary_expr(self.inner.clone(), Operator::Plus, rhs.inner).into())
     }
-    fn __sub__(&self, rhs: Self) -> PyResult<PyExpr> {
+    fn __sub__(&self, rhs: Self) -> PyResult<Self> {
         Ok(dsl::binary_expr(self.inner.clone(), Operator::Minus, rhs.inner).into())
     }
-    fn __mul__(&self, rhs: Self) -> PyResult<PyExpr> {
+    fn __mul__(&self, rhs: Self) -> PyResult<Self> {
         Ok(dsl::binary_expr(self.inner.clone(), Operator::Multiply, rhs.inner).into())
     }
-    fn __truediv__(&self, rhs: Self) -> PyResult<PyExpr> {
+    fn __truediv__(&self, rhs: Self) -> PyResult<Self> {
         Ok(dsl::binary_expr(self.inner.clone(), Operator::TrueDivide, rhs.inner).into())
     }
-    fn __mod__(&self, rhs: Self) -> PyResult<PyExpr> {
+    fn __mod__(&self, rhs: Self) -> PyResult<Self> {
         Ok(dsl::binary_expr(self.inner.clone(), Operator::Modulus, rhs.inner).into())
     }
-    fn __floordiv__(&self, rhs: Self) -> PyResult<PyExpr> {
+    fn __floordiv__(&self, rhs: Self) -> PyResult<Self> {
         Ok(dsl::binary_expr(self.inner.clone(), Operator::FloorDivide, rhs.inner).into())
     }
 
-    pub fn to_str(&self) -> String {
+    fn to_str(&self) -> String {
         format!("{:?}", self.inner)
     }
-    pub fn eq(&self, other: PyExpr) -> PyExpr {
+    fn eq(&self, other: Self) -> Self {
         self.clone().inner.eq(other.inner).into()
     }
-    pub fn neq(&self, other: PyExpr) -> PyExpr {
+    fn neq(&self, other: Self) -> Self {
         self.clone().inner.neq(other.inner).into()
     }
-    pub fn gt(&self, other: PyExpr) -> PyExpr {
+    fn gt(&self, other: Self) -> Self {
         self.clone().inner.gt(other.inner).into()
     }
-    pub fn gt_eq(&self, other: PyExpr) -> PyExpr {
+    fn gt_eq(&self, other: Self) -> Self {
         self.clone().inner.gt_eq(other.inner).into()
     }
-    pub fn lt_eq(&self, other: PyExpr) -> PyExpr {
+    fn lt_eq(&self, other: Self) -> Self {
         self.clone().inner.lt_eq(other.inner).into()
     }
-    pub fn lt(&self, other: PyExpr) -> PyExpr {
+    fn lt(&self, other: Self) -> Self {
         self.clone().inner.lt(other.inner).into()
     }
 
-    pub fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         // Used in pickle/pickling
         #[cfg(feature = "json")]
         {
@@ -92,7 +100,7 @@ impl PyExpr {
         }
     }
 
-    pub fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
         // Used in pickle/pickling
         #[cfg(feature = "json")]
         match state.extract::<&PyBytes>(py) {
@@ -117,108 +125,104 @@ impl PyExpr {
         }
     }
 
-    pub fn alias(&self, name: &str) -> PyExpr {
+    fn alias(&self, name: &str) -> Self {
         self.clone().inner.alias(name).into()
     }
-    pub fn is_not(&self) -> PyExpr {
+    fn is_not(&self) -> Self {
         self.clone().inner.not().into()
     }
-    pub fn is_null(&self) -> PyExpr {
+    fn is_null(&self) -> Self {
         self.clone().inner.is_null().into()
     }
-    pub fn is_not_null(&self) -> PyExpr {
+    fn is_not_null(&self) -> Self {
         self.clone().inner.is_not_null().into()
     }
 
-    pub fn is_infinite(&self) -> PyExpr {
+    fn is_infinite(&self) -> Self {
         self.clone().inner.is_infinite().into()
     }
 
-    pub fn is_finite(&self) -> PyExpr {
+    fn is_finite(&self) -> Self {
         self.clone().inner.is_finite().into()
     }
 
-    pub fn is_nan(&self) -> PyExpr {
+    fn is_nan(&self) -> Self {
         self.clone().inner.is_nan().into()
     }
 
-    pub fn is_not_nan(&self) -> PyExpr {
+    fn is_not_nan(&self) -> Self {
         self.clone().inner.is_not_nan().into()
     }
 
-    pub fn min(&self) -> PyExpr {
+    fn min(&self) -> Self {
         self.clone().inner.min().into()
     }
-    pub fn max(&self) -> PyExpr {
+    fn max(&self) -> Self {
         self.clone().inner.max().into()
     }
     #[cfg(feature = "propagate_nans")]
-    pub fn nan_max(&self) -> PyExpr {
+    fn nan_max(&self) -> Self {
         self.clone().inner.nan_max().into()
     }
     #[cfg(feature = "propagate_nans")]
-    pub fn nan_min(&self) -> PyExpr {
+    fn nan_min(&self) -> Self {
         self.clone().inner.nan_min().into()
     }
-    pub fn mean(&self) -> PyExpr {
+    fn mean(&self) -> Self {
         self.clone().inner.mean().into()
     }
-    pub fn median(&self) -> PyExpr {
+    fn median(&self) -> Self {
         self.clone().inner.median().into()
     }
-    pub fn sum(&self) -> PyExpr {
+    fn sum(&self) -> Self {
         self.clone().inner.sum().into()
     }
-    pub fn n_unique(&self) -> PyExpr {
+    fn n_unique(&self) -> Self {
         self.clone().inner.n_unique().into()
     }
-    pub fn arg_unique(&self) -> PyExpr {
+    fn arg_unique(&self) -> Self {
         self.clone().inner.arg_unique().into()
     }
-    pub fn unique(&self) -> PyExpr {
+    fn unique(&self) -> Self {
         self.clone().inner.unique().into()
     }
-    pub fn unique_stable(&self) -> PyExpr {
+    fn unique_stable(&self) -> Self {
         self.clone().inner.unique_stable().into()
     }
-    pub fn first(&self) -> PyExpr {
+    fn first(&self) -> Self {
         self.clone().inner.first().into()
     }
-    pub fn last(&self) -> PyExpr {
+    fn last(&self) -> Self {
         self.clone().inner.last().into()
     }
-    pub fn implode(&self) -> PyExpr {
+    fn implode(&self) -> Self {
         self.clone().inner.implode().into()
     }
-    pub fn quantile(
-        &self,
-        quantile: PyExpr,
-        interpolation: Wrap<QuantileInterpolOptions>,
-    ) -> PyExpr {
+    fn quantile(&self, quantile: Self, interpolation: Wrap<QuantileInterpolOptions>) -> Self {
         self.clone()
             .inner
             .quantile(quantile.inner, interpolation.0)
             .into()
     }
-    pub fn agg_groups(&self) -> PyExpr {
+    fn agg_groups(&self) -> Self {
         self.clone().inner.agg_groups().into()
     }
-    pub fn count(&self) -> PyExpr {
+    fn count(&self) -> Self {
         self.clone().inner.count().into()
     }
-    pub fn value_counts(&self, multithreaded: bool, sorted: bool) -> PyExpr {
+    fn value_counts(&self, multithreaded: bool, sorted: bool) -> Self {
         self.inner
             .clone()
             .value_counts(multithreaded, sorted)
             .into()
     }
-    pub fn unique_counts(&self) -> PyExpr {
+    fn unique_counts(&self) -> Self {
         self.inner.clone().unique_counts().into()
     }
-    pub fn null_count(&self) -> PyExpr {
+    fn null_count(&self) -> Self {
         self.inner.clone().null_count().into()
     }
-    pub fn cast(&self, data_type: Wrap<DataType>, strict: bool) -> PyExpr {
+    fn cast(&self, data_type: Wrap<DataType>, strict: bool) -> Self {
         let dt = data_type.0;
         let expr = if strict {
             self.inner.clone().strict_cast(dt)
@@ -227,7 +231,7 @@ impl PyExpr {
         };
         expr.into()
     }
-    pub fn sort_with(&self, descending: bool, nulls_last: bool) -> PyExpr {
+    fn sort_with(&self, descending: bool, nulls_last: bool) -> Self {
         self.clone()
             .inner
             .sort_with(SortOptions {
@@ -238,7 +242,7 @@ impl PyExpr {
             .into()
     }
 
-    pub fn arg_sort(&self, descending: bool, nulls_last: bool) -> PyExpr {
+    fn arg_sort(&self, descending: bool, nulls_last: bool) -> Self {
         self.clone()
             .inner
             .arg_sort(SortOptions {
@@ -250,65 +254,61 @@ impl PyExpr {
     }
 
     #[cfg(feature = "top_k")]
-    pub fn top_k(&self, k: usize) -> PyExpr {
+    fn top_k(&self, k: usize) -> Self {
         self.inner.clone().top_k(k).into()
     }
 
     #[cfg(feature = "top_k")]
-    pub fn bottom_k(&self, k: usize) -> PyExpr {
+    fn bottom_k(&self, k: usize) -> Self {
         self.inner.clone().bottom_k(k).into()
     }
 
-    pub fn arg_max(&self) -> PyExpr {
+    fn arg_max(&self) -> Self {
         self.clone().inner.arg_max().into()
     }
-    pub fn arg_min(&self) -> PyExpr {
+    fn arg_min(&self) -> Self {
         self.clone().inner.arg_min().into()
     }
 
     #[cfg(feature = "search_sorted")]
-    pub fn search_sorted(&self, element: PyExpr, side: Wrap<SearchSortedSide>) -> PyExpr {
+    fn search_sorted(&self, element: Self, side: Wrap<SearchSortedSide>) -> Self {
         self.inner
             .clone()
             .search_sorted(element.inner, side.0)
             .into()
     }
-    pub fn take(&self, idx: PyExpr) -> PyExpr {
+    fn take(&self, idx: Self) -> Self {
         self.clone().inner.take(idx.inner).into()
     }
 
-    pub fn sort_by(&self, by: Vec<PyExpr>, descending: Vec<bool>) -> PyExpr {
+    fn sort_by(&self, by: Vec<Self>, descending: Vec<bool>) -> Self {
         let by = by.into_iter().map(|e| e.inner).collect::<Vec<_>>();
         self.clone().inner.sort_by(by, descending).into()
     }
 
-    pub fn backward_fill(&self, limit: FillNullLimit) -> PyExpr {
+    fn backward_fill(&self, limit: FillNullLimit) -> Self {
         self.clone().inner.backward_fill(limit).into()
     }
 
-    pub fn forward_fill(&self, limit: FillNullLimit) -> PyExpr {
+    fn forward_fill(&self, limit: FillNullLimit) -> Self {
         self.clone().inner.forward_fill(limit).into()
     }
 
-    pub fn shift(&self, periods: i64) -> PyExpr {
+    fn shift(&self, periods: i64) -> Self {
         self.clone().inner.shift(periods).into()
     }
-    pub fn shift_and_fill(&self, periods: i64, fill_value: PyExpr) -> PyExpr {
+    fn shift_and_fill(&self, periods: i64, fill_value: Self) -> Self {
         self.clone()
             .inner
             .shift_and_fill(periods, fill_value.inner)
             .into()
     }
 
-    pub fn fill_null(&self, expr: PyExpr) -> PyExpr {
+    fn fill_null(&self, expr: Self) -> Self {
         self.clone().inner.fill_null(expr.inner).into()
     }
 
-    pub fn fill_null_with_strategy(
-        &self,
-        strategy: &str,
-        limit: FillNullLimit,
-    ) -> PyResult<PyExpr> {
+    fn fill_null_with_strategy(&self, strategy: &str, limit: FillNullLimit) -> PyResult<Self> {
         let strat = parse_fill_null_strategy(strategy, limit)?;
         Ok(self
             .inner
@@ -321,47 +321,47 @@ impl PyExpr {
             .into())
     }
 
-    pub fn fill_nan(&self, expr: PyExpr) -> PyExpr {
+    fn fill_nan(&self, expr: Self) -> Self {
         self.inner.clone().fill_nan(expr.inner).into()
     }
 
-    pub fn drop_nulls(&self) -> PyExpr {
+    fn drop_nulls(&self) -> Self {
         self.inner.clone().drop_nulls().into()
     }
 
-    pub fn drop_nans(&self) -> PyExpr {
+    fn drop_nans(&self) -> Self {
         self.inner.clone().drop_nans().into()
     }
 
-    pub fn filter(&self, predicate: PyExpr) -> PyExpr {
+    fn filter(&self, predicate: Self) -> Self {
         self.clone().inner.filter(predicate.inner).into()
     }
-    pub fn reverse(&self) -> PyExpr {
+    fn reverse(&self) -> Self {
         self.clone().inner.reverse().into()
     }
-    pub fn std(&self, ddof: u8) -> PyExpr {
+    fn std(&self, ddof: u8) -> Self {
         self.clone().inner.std(ddof).into()
     }
-    pub fn var(&self, ddof: u8) -> PyExpr {
+    fn var(&self, ddof: u8) -> Self {
         self.clone().inner.var(ddof).into()
     }
-    pub fn is_unique(&self) -> PyExpr {
+    fn is_unique(&self) -> Self {
         self.clone().inner.is_unique().into()
     }
 
-    pub fn approx_unique(&self) -> PyExpr {
+    fn approx_unique(&self) -> Self {
         self.clone().inner.approx_unique().into()
     }
 
-    pub fn is_first(&self) -> PyExpr {
+    fn is_first(&self) -> Self {
         self.clone().inner.is_first().into()
     }
 
-    pub fn explode(&self) -> PyExpr {
+    fn explode(&self) -> Self {
         self.clone().inner.explode().into()
     }
 
-    pub fn take_every(&self, n: usize) -> PyExpr {
+    fn take_every(&self, n: usize) -> Self {
         self.clone()
             .inner
             .map(
@@ -371,131 +371,131 @@ impl PyExpr {
             .with_fmt("take_every")
             .into()
     }
-    pub fn tail(&self, n: usize) -> PyExpr {
+    fn tail(&self, n: usize) -> Self {
         self.clone().inner.tail(Some(n)).into()
     }
 
-    pub fn head(&self, n: usize) -> PyExpr {
+    fn head(&self, n: usize) -> Self {
         self.clone().inner.head(Some(n)).into()
     }
 
-    pub fn slice(&self, offset: PyExpr, length: PyExpr) -> PyExpr {
+    fn slice(&self, offset: Self, length: Self) -> Self {
         self.inner.clone().slice(offset.inner, length.inner).into()
     }
 
-    pub fn append(&self, other: PyExpr, upcast: bool) -> PyExpr {
+    fn append(&self, other: Self, upcast: bool) -> Self {
         self.inner.clone().append(other.inner, upcast).into()
     }
 
-    pub fn rechunk(&self) -> PyExpr {
+    fn rechunk(&self) -> Self {
         self.inner
             .clone()
             .map(|s| Ok(Some(s.rechunk())), GetOutput::same_type())
             .into()
     }
 
-    pub fn round(&self, decimals: u32) -> PyExpr {
+    fn round(&self, decimals: u32) -> Self {
         self.clone().inner.round(decimals).into()
     }
 
-    pub fn floor(&self) -> PyExpr {
+    fn floor(&self) -> Self {
         self.clone().inner.floor().into()
     }
 
-    pub fn ceil(&self) -> PyExpr {
+    fn ceil(&self) -> Self {
         self.clone().inner.ceil().into()
     }
 
-    pub fn clip(&self, py: Python, min: PyObject, max: PyObject) -> PyExpr {
+    fn clip(&self, py: Python, min: PyObject, max: PyObject) -> Self {
         let min = min.extract::<Wrap<AnyValue>>(py).unwrap().0;
         let max = max.extract::<Wrap<AnyValue>>(py).unwrap().0;
         self.clone().inner.clip(min, max).into()
     }
 
-    pub fn clip_min(&self, py: Python, min: PyObject) -> PyExpr {
+    fn clip_min(&self, py: Python, min: PyObject) -> Self {
         let min = min.extract::<Wrap<AnyValue>>(py).unwrap().0;
         self.clone().inner.clip_min(min).into()
     }
 
-    pub fn clip_max(&self, py: Python, max: PyObject) -> PyExpr {
+    fn clip_max(&self, py: Python, max: PyObject) -> Self {
         let max = max.extract::<Wrap<AnyValue>>(py).unwrap().0;
         self.clone().inner.clip_max(max).into()
     }
 
-    pub fn abs(&self) -> PyExpr {
+    fn abs(&self) -> Self {
         self.clone().inner.abs().into()
     }
 
     #[cfg(feature = "trigonometry")]
-    pub fn sin(&self) -> PyExpr {
+    fn sin(&self) -> Self {
         self.clone().inner.sin().into()
     }
 
     #[cfg(feature = "trigonometry")]
-    pub fn cos(&self) -> PyExpr {
+    fn cos(&self) -> Self {
         self.clone().inner.cos().into()
     }
 
     #[cfg(feature = "trigonometry")]
-    pub fn tan(&self) -> PyExpr {
+    fn tan(&self) -> Self {
         self.clone().inner.tan().into()
     }
 
     #[cfg(feature = "trigonometry")]
-    pub fn arcsin(&self) -> PyExpr {
+    fn arcsin(&self) -> Self {
         self.clone().inner.arcsin().into()
     }
 
     #[cfg(feature = "trigonometry")]
-    pub fn arccos(&self) -> PyExpr {
+    fn arccos(&self) -> Self {
         self.clone().inner.arccos().into()
     }
 
     #[cfg(feature = "trigonometry")]
-    pub fn arctan(&self) -> PyExpr {
+    fn arctan(&self) -> Self {
         self.clone().inner.arctan().into()
     }
 
     #[cfg(feature = "trigonometry")]
-    pub fn sinh(&self) -> PyExpr {
+    fn sinh(&self) -> Self {
         self.clone().inner.sinh().into()
     }
 
     #[cfg(feature = "trigonometry")]
-    pub fn cosh(&self) -> PyExpr {
+    fn cosh(&self) -> Self {
         self.clone().inner.cosh().into()
     }
 
     #[cfg(feature = "trigonometry")]
-    pub fn tanh(&self) -> PyExpr {
+    fn tanh(&self) -> Self {
         self.clone().inner.tanh().into()
     }
 
     #[cfg(feature = "trigonometry")]
-    pub fn arcsinh(&self) -> PyExpr {
+    fn arcsinh(&self) -> Self {
         self.clone().inner.arcsinh().into()
     }
 
     #[cfg(feature = "trigonometry")]
-    pub fn arccosh(&self) -> PyExpr {
+    fn arccosh(&self) -> Self {
         self.clone().inner.arccosh().into()
     }
 
     #[cfg(feature = "trigonometry")]
-    pub fn arctanh(&self) -> PyExpr {
+    fn arctanh(&self) -> Self {
         self.clone().inner.arctanh().into()
     }
 
     #[cfg(feature = "sign")]
-    pub fn sign(&self) -> PyExpr {
+    fn sign(&self) -> Self {
         self.clone().inner.sign().into()
     }
 
-    pub fn is_duplicated(&self) -> PyExpr {
+    fn is_duplicated(&self) -> Self {
         self.clone().inner.is_duplicated().into()
     }
 
-    pub fn over(&self, partition_by: Vec<PyExpr>) -> PyExpr {
+    fn over(&self, partition_by: Vec<Self>) -> Self {
         let partition_by = partition_by
             .into_iter()
             .map(|e| e.inner)
@@ -503,609 +503,55 @@ impl PyExpr {
         self.clone().inner.over(partition_by).into()
     }
 
-    pub fn _and(&self, expr: PyExpr) -> PyExpr {
+    fn _and(&self, expr: Self) -> Self {
         self.clone().inner.and(expr.inner).into()
     }
 
-    pub fn _xor(&self, expr: PyExpr) -> PyExpr {
+    fn _xor(&self, expr: Self) -> Self {
         self.clone().inner.xor(expr.inner).into()
     }
 
-    pub fn _or(&self, expr: PyExpr) -> PyExpr {
+    fn _or(&self, expr: Self) -> Self {
         self.clone().inner.or(expr.inner).into()
     }
     #[cfg(feature = "is_in")]
-    pub fn is_in(&self, expr: PyExpr) -> PyExpr {
+    fn is_in(&self, expr: Self) -> Self {
         self.clone().inner.is_in(expr.inner).into()
     }
 
     #[cfg(feature = "repeat_by")]
-    pub fn repeat_by(&self, by: PyExpr) -> PyExpr {
+    fn repeat_by(&self, by: Self) -> Self {
         self.clone().inner.repeat_by(by.inner).into()
     }
 
-    pub fn pow(&self, exponent: PyExpr) -> PyExpr {
+    fn pow(&self, exponent: Self) -> Self {
         self.clone().inner.pow(exponent.inner).into()
     }
 
-    pub fn cumsum(&self, reverse: bool) -> PyExpr {
+    fn cumsum(&self, reverse: bool) -> Self {
         self.clone().inner.cumsum(reverse).into()
     }
-    pub fn cummax(&self, reverse: bool) -> PyExpr {
+    fn cummax(&self, reverse: bool) -> Self {
         self.clone().inner.cummax(reverse).into()
     }
-    pub fn cummin(&self, reverse: bool) -> PyExpr {
+    fn cummin(&self, reverse: bool) -> Self {
         self.clone().inner.cummin(reverse).into()
     }
 
-    pub fn cumprod(&self, reverse: bool) -> PyExpr {
+    fn cumprod(&self, reverse: bool) -> Self {
         self.clone().inner.cumprod(reverse).into()
     }
 
-    pub fn product(&self) -> PyExpr {
+    fn product(&self) -> Self {
         self.clone().inner.product().into()
     }
 
-    pub fn shrink_dtype(&self) -> PyExpr {
+    fn shrink_dtype(&self) -> Self {
         self.inner.clone().shrink_dtype().into()
     }
 
-    #[pyo3(signature = (format, strict, exact, cache))]
-    pub fn str_to_date(
-        &self,
-        format: Option<String>,
-        strict: bool,
-        exact: bool,
-        cache: bool,
-    ) -> Self {
-        let options = StrptimeOptions {
-            format,
-            strict,
-            exact,
-            cache,
-            ..Default::default()
-        };
-        self.inner.clone().str().to_date(options).into()
-    }
-
-    #[pyo3(signature = (format, time_unit, time_zone, strict, exact, cache, utc, tz_aware))]
-    #[allow(clippy::too_many_arguments)]
-    pub fn str_to_datetime(
-        &self,
-        format: Option<String>,
-        time_unit: Option<Wrap<TimeUnit>>,
-        time_zone: Option<TimeZone>,
-        strict: bool,
-        exact: bool,
-        cache: bool,
-        utc: bool,
-        tz_aware: bool,
-    ) -> Self {
-        let options = StrptimeOptions {
-            format,
-            strict,
-            exact,
-            cache,
-            tz_aware,
-            utc,
-        };
-        self.inner
-            .clone()
-            .str()
-            .to_datetime(time_unit.map(|tu| tu.0), time_zone, options)
-            .into()
-    }
-
-    #[pyo3(signature = (format, strict, cache))]
-    pub fn str_to_time(&self, format: Option<String>, strict: bool, cache: bool) -> Self {
-        let options = StrptimeOptions {
-            format,
-            strict,
-            exact: true,
-            cache,
-            ..Default::default()
-        };
-        self.inner.clone().str().to_time(options).into()
-    }
-
-    pub fn str_strip(&self, matches: Option<String>) -> PyExpr {
-        self.inner.clone().str().strip(matches).into()
-    }
-
-    pub fn str_rstrip(&self, matches: Option<String>) -> PyExpr {
-        self.inner.clone().str().rstrip(matches).into()
-    }
-
-    pub fn str_lstrip(&self, matches: Option<String>) -> PyExpr {
-        self.inner.clone().str().lstrip(matches).into()
-    }
-
-    pub fn str_slice(&self, start: i64, length: Option<u64>) -> PyExpr {
-        self.inner.clone().str().str_slice(start, length).into()
-    }
-
-    pub fn str_to_uppercase(&self) -> PyExpr {
-        self.inner.clone().str().to_uppercase().into()
-    }
-
-    pub fn str_to_lowercase(&self) -> PyExpr {
-        self.inner.clone().str().to_lowercase().into()
-    }
-
-    pub fn str_lengths(&self) -> PyExpr {
-        let function = |s: Series| {
-            let ca = s.utf8()?;
-            Ok(Some(ca.str_lengths().into_series()))
-        };
-        self.clone()
-            .inner
-            .map(function, GetOutput::from_type(DataType::UInt32))
-            .with_fmt("str.lengths")
-            .into()
-    }
-
-    pub fn str_n_chars(&self) -> PyExpr {
-        let function = |s: Series| {
-            let ca = s.utf8()?;
-            Ok(Some(ca.str_n_chars().into_series()))
-        };
-        self.clone()
-            .inner
-            .map(function, GetOutput::from_type(DataType::UInt32))
-            .with_fmt("str.n_chars")
-            .into()
-    }
-
-    #[cfg(feature = "lazy_regex")]
-    pub fn str_replace_n(&self, pat: PyExpr, val: PyExpr, literal: bool, n: i64) -> PyExpr {
-        self.inner
-            .clone()
-            .str()
-            .replace_n(pat.inner, val.inner, literal, n)
-            .into()
-    }
-
-    #[cfg(feature = "lazy_regex")]
-    pub fn str_replace_all(&self, pat: PyExpr, val: PyExpr, literal: bool) -> PyExpr {
-        self.inner
-            .clone()
-            .str()
-            .replace_all(pat.inner, val.inner, literal)
-            .into()
-    }
-
-    pub fn str_zfill(&self, alignment: usize) -> PyExpr {
-        self.clone().inner.str().zfill(alignment).into()
-    }
-
-    pub fn str_ljust(&self, width: usize, fillchar: char) -> PyExpr {
-        self.clone().inner.str().ljust(width, fillchar).into()
-    }
-
-    pub fn str_rjust(&self, width: usize, fillchar: char) -> PyExpr {
-        self.clone().inner.str().rjust(width, fillchar).into()
-    }
-
-    #[pyo3(signature = (pat, literal, strict))]
-    #[cfg(feature = "lazy_regex")]
-    pub fn str_contains(&self, pat: PyExpr, literal: Option<bool>, strict: bool) -> PyExpr {
-        match literal {
-            Some(true) => self.inner.clone().str().contains_literal(pat.inner).into(),
-            _ => self.inner.clone().str().contains(pat.inner, strict).into(),
-        }
-    }
-
-    pub fn str_ends_with(&self, sub: PyExpr) -> PyExpr {
-        self.inner.clone().str().ends_with(sub.inner).into()
-    }
-
-    pub fn str_starts_with(&self, sub: PyExpr) -> PyExpr {
-        self.inner.clone().str().starts_with(sub.inner).into()
-    }
-
-    pub fn binary_contains(&self, lit: Vec<u8>) -> PyExpr {
-        self.inner.clone().binary().contains_literal(lit).into()
-    }
-
-    pub fn binary_ends_with(&self, sub: Vec<u8>) -> PyExpr {
-        self.inner.clone().binary().ends_with(sub).into()
-    }
-
-    pub fn binary_starts_with(&self, sub: Vec<u8>) -> PyExpr {
-        self.inner.clone().binary().starts_with(sub).into()
-    }
-
-    pub fn str_hex_encode(&self) -> PyExpr {
-        self.clone()
-            .inner
-            .map(
-                move |s| s.utf8().map(|s| Some(s.hex_encode().into_series())),
-                GetOutput::same_type(),
-            )
-            .with_fmt("str.hex_encode")
-            .into()
-    }
-    #[cfg(feature = "binary_encoding")]
-    pub fn str_hex_decode(&self, strict: bool) -> PyExpr {
-        self.clone()
-            .inner
-            .map(
-                move |s| s.utf8()?.hex_decode(strict).map(|s| Some(s.into_series())),
-                GetOutput::from_type(DataType::Binary),
-            )
-            .with_fmt("str.hex_decode")
-            .into()
-    }
-    pub fn str_base64_encode(&self) -> PyExpr {
-        self.clone()
-            .inner
-            .map(
-                move |s| s.utf8().map(|s| Some(s.base64_encode().into_series())),
-                GetOutput::same_type(),
-            )
-            .with_fmt("str.base64_encode")
-            .into()
-    }
-
-    #[cfg(feature = "binary_encoding")]
-    pub fn str_base64_decode(&self, strict: bool) -> PyExpr {
-        self.clone()
-            .inner
-            .map(
-                move |s| {
-                    s.utf8()?
-                        .base64_decode(strict)
-                        .map(|s| Some(s.into_series()))
-                },
-                GetOutput::from_type(DataType::Binary),
-            )
-            .with_fmt("str.base64_decode")
-            .into()
-    }
-
-    pub fn str_parse_int(&self, radix: u32, strict: bool) -> PyExpr {
-        self.inner
-            .clone()
-            .str()
-            .from_radix(radix, strict)
-            .with_fmt("str.parse_int")
-            .into()
-    }
-
-    #[cfg(feature = "binary_encoding")]
-    pub fn binary_hex_encode(&self) -> PyExpr {
-        self.clone()
-            .inner
-            .map(
-                move |s| s.binary().map(|s| Some(s.hex_encode().into_series())),
-                GetOutput::from_type(DataType::Utf8),
-            )
-            .with_fmt("binary.hex_encode")
-            .into()
-    }
-    #[cfg(feature = "binary_encoding")]
-    pub fn binary_hex_decode(&self, strict: bool) -> PyExpr {
-        self.clone()
-            .inner
-            .map(
-                move |s| {
-                    s.binary()?
-                        .hex_decode(strict)
-                        .map(|s| Some(s.into_series()))
-                },
-                GetOutput::same_type(),
-            )
-            .with_fmt("binary.hex_decode")
-            .into()
-    }
-
-    #[cfg(feature = "binary_encoding")]
-    pub fn binary_base64_encode(&self) -> PyExpr {
-        self.clone()
-            .inner
-            .map(
-                move |s| s.binary().map(|s| Some(s.base64_encode().into_series())),
-                GetOutput::from_type(DataType::Utf8),
-            )
-            .with_fmt("binary.base64_encode")
-            .into()
-    }
-
-    #[cfg(feature = "binary_encoding")]
-    pub fn binary_base64_decode(&self, strict: bool) -> PyExpr {
-        self.clone()
-            .inner
-            .map(
-                move |s| {
-                    s.binary()?
-                        .base64_decode(strict)
-                        .map(|s| Some(s.into_series()))
-                },
-                GetOutput::same_type(),
-            )
-            .with_fmt("binary.base64_decode")
-            .into()
-    }
-
-    #[cfg(feature = "extract_jsonpath")]
-    pub fn str_json_extract(&self, dtype: Option<Wrap<DataType>>) -> PyExpr {
-        let dtype = dtype.map(|wrap| wrap.0);
-
-        let output_type = match dtype.clone() {
-            Some(dtype) => GetOutput::from_type(dtype),
-            None => GetOutput::from_type(DataType::Unknown),
-        };
-
-        let function = move |s: Series| {
-            let ca = s.utf8()?;
-            match ca.json_extract(dtype.clone()) {
-                Ok(ca) => Ok(Some(ca.into_series())),
-                Err(e) => Err(PolarsError::ComputeError(format!("{e:?}").into())),
-            }
-        };
-
-        self.clone()
-            .inner
-            .map(function, output_type)
-            .with_fmt("str.json_extract")
-            .into()
-    }
-
-    #[cfg(feature = "extract_jsonpath")]
-    pub fn str_json_path_match(&self, pat: String) -> PyExpr {
-        let function = move |s: Series| {
-            let ca = s.utf8()?;
-            match ca.json_path_match(&pat) {
-                Ok(ca) => Ok(Some(ca.into_series())),
-                Err(e) => Err(PolarsError::ComputeError(format!("{e:?}").into())),
-            }
-        };
-        self.clone()
-            .inner
-            .map(function, GetOutput::from_type(DataType::Utf8))
-            .with_fmt("str.json_path_match")
-            .into()
-    }
-
-    pub fn str_extract(&self, pat: &str, group_index: usize) -> PyExpr {
-        self.inner.clone().str().extract(pat, group_index).into()
-    }
-
-    pub fn str_extract_all(&self, pat: PyExpr) -> PyExpr {
-        self.inner.clone().str().extract_all(pat.inner).into()
-    }
-
-    pub fn count_match(&self, pat: &str) -> PyExpr {
-        self.inner.clone().str().count_match(pat).into()
-    }
-
-    pub fn strftime(&self, format: &str) -> PyExpr {
-        self.inner.clone().dt().strftime(format).into()
-    }
-    pub fn str_split(&self, by: &str) -> PyExpr {
-        self.inner.clone().str().split(by).into()
-    }
-    pub fn str_split_inclusive(&self, by: &str) -> PyExpr {
-        self.inner.clone().str().split_inclusive(by).into()
-    }
-
-    pub fn str_split_exact(&self, by: &str, n: usize) -> PyExpr {
-        self.inner.clone().str().split_exact(by, n).into()
-    }
-    pub fn str_split_exact_inclusive(&self, by: &str, n: usize) -> PyExpr {
-        self.inner.clone().str().split_exact_inclusive(by, n).into()
-    }
-
-    pub fn str_splitn(&self, by: &str, n: usize) -> PyExpr {
-        self.inner.clone().str().splitn(by, n).into()
-    }
-
-    pub fn arr_lengths(&self) -> PyExpr {
-        self.inner.clone().arr().lengths().into()
-    }
-
-    #[cfg(feature = "is_in")]
-    pub fn arr_contains(&self, other: PyExpr) -> PyExpr {
-        self.inner.clone().arr().contains(other.inner).into()
-    }
-
-    pub fn year(&self) -> PyExpr {
-        self.clone().inner.dt().year().into()
-    }
-    pub fn is_leap_year(&self) -> PyExpr {
-        self.clone().inner.dt().is_leap_year().into()
-    }
-    pub fn iso_year(&self) -> PyExpr {
-        self.clone().inner.dt().iso_year().into()
-    }
-    pub fn quarter(&self) -> PyExpr {
-        self.clone().inner.dt().quarter().into()
-    }
-    pub fn month(&self) -> PyExpr {
-        self.clone().inner.dt().month().into()
-    }
-    pub fn week(&self) -> PyExpr {
-        self.clone().inner.dt().week().into()
-    }
-    pub fn weekday(&self) -> PyExpr {
-        self.clone().inner.dt().weekday().into()
-    }
-    pub fn day(&self) -> PyExpr {
-        self.clone().inner.dt().day().into()
-    }
-    pub fn ordinal_day(&self) -> PyExpr {
-        self.clone().inner.dt().ordinal_day().into()
-    }
-    pub fn time(&self) -> PyExpr {
-        self.clone().inner.dt().time().into()
-    }
-    pub fn date(&self) -> PyExpr {
-        self.clone().inner.dt().date().into()
-    }
-    pub fn datetime(&self) -> PyExpr {
-        self.clone().inner.dt().datetime().into()
-    }
-    pub fn hour(&self) -> PyExpr {
-        self.clone().inner.dt().hour().into()
-    }
-    pub fn minute(&self) -> PyExpr {
-        self.clone().inner.dt().minute().into()
-    }
-    pub fn second(&self) -> PyExpr {
-        self.clone().inner.dt().second().into()
-    }
-    pub fn millisecond(&self) -> PyExpr {
-        self.clone().inner.dt().millisecond().into()
-    }
-    pub fn microsecond(&self) -> PyExpr {
-        self.clone().inner.dt().microsecond().into()
-    }
-    pub fn nanosecond(&self) -> PyExpr {
-        self.clone().inner.dt().nanosecond().into()
-    }
-    pub fn duration_days(&self) -> PyExpr {
-        self.inner
-            .clone()
-            .map(
-                |s| Ok(Some(s.duration()?.days().into_series())),
-                GetOutput::from_type(DataType::Int64),
-            )
-            .into()
-    }
-    pub fn duration_hours(&self) -> PyExpr {
-        self.inner
-            .clone()
-            .map(
-                |s| Ok(Some(s.duration()?.hours().into_series())),
-                GetOutput::from_type(DataType::Int64),
-            )
-            .into()
-    }
-    pub fn duration_minutes(&self) -> PyExpr {
-        self.inner
-            .clone()
-            .map(
-                |s| Ok(Some(s.duration()?.minutes().into_series())),
-                GetOutput::from_type(DataType::Int64),
-            )
-            .into()
-    }
-    pub fn duration_seconds(&self) -> PyExpr {
-        self.inner
-            .clone()
-            .map(
-                |s| Ok(Some(s.duration()?.seconds().into_series())),
-                GetOutput::from_type(DataType::Int64),
-            )
-            .into()
-    }
-    pub fn duration_nanoseconds(&self) -> PyExpr {
-        self.inner
-            .clone()
-            .map(
-                |s| Ok(Some(s.duration()?.nanoseconds().into_series())),
-                GetOutput::from_type(DataType::Int64),
-            )
-            .into()
-    }
-    pub fn duration_microseconds(&self) -> PyExpr {
-        self.inner
-            .clone()
-            .map(
-                |s| Ok(Some(s.duration()?.microseconds().into_series())),
-                GetOutput::from_type(DataType::Int64),
-            )
-            .into()
-    }
-    pub fn duration_milliseconds(&self) -> PyExpr {
-        self.inner
-            .clone()
-            .map(
-                |s| Ok(Some(s.duration()?.milliseconds().into_series())),
-                GetOutput::from_type(DataType::Int64),
-            )
-            .into()
-    }
-    pub fn timestamp(&self, time_unit: Wrap<TimeUnit>) -> PyExpr {
-        self.inner.clone().dt().timestamp(time_unit.0).into()
-    }
-
-    pub fn dt_offset_by(&self, by: &str) -> PyExpr {
-        let by = Duration::parse(by);
-        self.inner.clone().dt().offset_by(by).into()
-    }
-
-    pub fn dt_epoch_seconds(&self) -> PyExpr {
-        self.clone()
-            .inner
-            .map(
-                |s| {
-                    s.timestamp(TimeUnit::Milliseconds)
-                        .map(|ca| Some((ca / 1000).into_series()))
-                },
-                GetOutput::from_type(DataType::Int64),
-            )
-            .into()
-    }
-
-    pub fn dt_with_time_unit(&self, time_unit: Wrap<TimeUnit>) -> PyExpr {
-        self.inner.clone().dt().with_time_unit(time_unit.0).into()
-    }
-
-    #[cfg(feature = "timezones")]
-    pub fn dt_convert_time_zone(&self, time_zone: TimeZone) -> PyExpr {
-        self.inner.clone().dt().convert_time_zone(time_zone).into()
-    }
-
-    pub fn dt_cast_time_unit(&self, time_unit: Wrap<TimeUnit>) -> PyExpr {
-        self.inner.clone().dt().cast_time_unit(time_unit.0).into()
-    }
-
-    #[cfg(feature = "timezones")]
-    pub fn dt_replace_time_zone(
-        &self,
-        time_zone: Option<String>,
-        use_earliest: Option<bool>,
-    ) -> PyExpr {
-        self.inner
-            .clone()
-            .dt()
-            .replace_time_zone(time_zone, use_earliest)
-            .into()
-    }
-
-    #[cfg(feature = "timezones")]
-    #[allow(deprecated)]
-    pub fn dt_tz_localize(&self, time_zone: String) -> PyExpr {
-        self.inner.clone().dt().tz_localize(time_zone).into()
-    }
-
-    pub fn dt_truncate(&self, every: &str, offset: &str) -> PyExpr {
-        self.inner.clone().dt().truncate(every, offset).into()
-    }
-
-    pub fn dt_month_start(&self) -> PyExpr {
-        self.inner.clone().dt().month_start().into()
-    }
-
-    pub fn dt_month_end(&self) -> PyExpr {
-        self.inner.clone().dt().month_end().into()
-    }
-
-    pub fn dt_round(&self, every: &str, offset: &str) -> PyExpr {
-        self.inner.clone().dt().round(every, offset).into()
-    }
-
-    pub fn dt_combine(&self, time: PyExpr, time_unit: Wrap<TimeUnit>) -> PyExpr {
-        self.inner
-            .clone()
-            .dt()
-            .combine(time.inner, time_unit.0)
-            .into()
-    }
-
     #[pyo3(signature = (lambda, window_size, weights, min_periods, center))]
-    pub fn rolling_apply(
+    fn rolling_apply(
         &self,
         py: Python,
         lambda: PyObject,
@@ -1113,7 +559,7 @@ impl PyExpr {
         weights: Option<Vec<f64>>,
         min_periods: usize,
         center: bool,
-    ) -> PyExpr {
+    ) -> Self {
         let options = RollingOptionsFixedWindow {
             window_size,
             weights,
@@ -1240,20 +686,15 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (lambda, output_type, agg_list))]
-    pub fn map(
-        &self,
-        lambda: PyObject,
-        output_type: Option<Wrap<DataType>>,
-        agg_list: bool,
-    ) -> PyExpr {
+    fn map(&self, lambda: PyObject, output_type: Option<Wrap<DataType>>, agg_list: bool) -> Self {
         map_single(self, lambda, output_type, agg_list)
     }
 
-    pub fn dot(&self, other: PyExpr) -> PyExpr {
+    fn dot(&self, other: Self) -> Self {
         self.inner.clone().dot(other.inner).into()
     }
 
-    pub fn reinterpret(&self, signed: bool) -> PyExpr {
+    fn reinterpret(&self, signed: bool) -> Self {
         let function = move |s: Series| reinterpret(&s, signed).map(Some);
         let dt = if signed {
             DataType::Int64
@@ -1265,19 +706,19 @@ impl PyExpr {
             .map(function, GetOutput::from_type(dt))
             .into()
     }
-    pub fn mode(&self) -> PyExpr {
+    fn mode(&self) -> Self {
         self.inner.clone().mode().into()
     }
-    pub fn keep_name(&self) -> PyExpr {
+    fn keep_name(&self) -> Self {
         self.inner.clone().keep_name().into()
     }
-    pub fn prefix(&self, prefix: &str) -> PyExpr {
+    fn prefix(&self, prefix: &str) -> Self {
         self.inner.clone().prefix(prefix).into()
     }
-    pub fn suffix(&self, suffix: &str) -> PyExpr {
+    fn suffix(&self, suffix: &str) -> Self {
         self.inner.clone().suffix(suffix).into()
     }
-    pub fn map_alias(&self, lambda: PyObject) -> PyExpr {
+    fn map_alias(&self, lambda: PyObject) -> Self {
         self.inner
             .clone()
             .map_alias(move |name| {
@@ -1291,21 +732,21 @@ impl PyExpr {
             })
             .into()
     }
-    pub fn exclude(&self, columns: Vec<String>) -> PyExpr {
+    fn exclude(&self, columns: Vec<String>) -> Self {
         self.inner.clone().exclude(columns).into()
     }
-    pub fn exclude_dtype(&self, dtypes: Vec<Wrap<DataType>>) -> PyExpr {
+    fn exclude_dtype(&self, dtypes: Vec<Wrap<DataType>>) -> Self {
         // Safety:
         // Wrap is transparent.
         let dtypes: Vec<DataType> = unsafe { std::mem::transmute(dtypes) };
         self.inner.clone().exclude_dtype(&dtypes).into()
     }
-    pub fn interpolate(&self, method: Wrap<InterpolationMethod>) -> PyExpr {
+    fn interpolate(&self, method: Wrap<InterpolationMethod>) -> Self {
         self.inner.clone().interpolate(method.0).into()
     }
 
     #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
-    pub fn rolling_sum(
+    fn rolling_sum(
         &self,
         window_size: &str,
         weights: Option<Vec<f64>>,
@@ -1313,7 +754,7 @@ impl PyExpr {
         center: bool,
         by: Option<String>,
         closed: Option<Wrap<ClosedWindow>>,
-    ) -> PyExpr {
+    ) -> Self {
         let options = RollingOptions {
             window_size: Duration::parse(window_size),
             weights,
@@ -1326,7 +767,7 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
-    pub fn rolling_min(
+    fn rolling_min(
         &self,
         window_size: &str,
         weights: Option<Vec<f64>>,
@@ -1347,7 +788,7 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
-    pub fn rolling_max(
+    fn rolling_max(
         &self,
         window_size: &str,
         weights: Option<Vec<f64>>,
@@ -1368,7 +809,7 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
-    pub fn rolling_mean(
+    fn rolling_mean(
         &self,
         window_size: &str,
         weights: Option<Vec<f64>>,
@@ -1390,7 +831,7 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
-    pub fn rolling_std(
+    fn rolling_std(
         &self,
         window_size: &str,
         weights: Option<Vec<f64>>,
@@ -1412,7 +853,7 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
-    pub fn rolling_var(
+    fn rolling_var(
         &self,
         window_size: &str,
         weights: Option<Vec<f64>>,
@@ -1434,7 +875,7 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
-    pub fn rolling_median(
+    fn rolling_median(
         &self,
         window_size: &str,
         weights: Option<Vec<f64>>,
@@ -1456,7 +897,7 @@ impl PyExpr {
 
     #[pyo3(signature = (quantile, interpolation, window_size, weights, min_periods, center, by, closed))]
     #[allow(clippy::too_many_arguments)]
-    pub fn rolling_quantile(
+    fn rolling_quantile(
         &self,
         quantile: f64,
         interpolation: Wrap<QuantileInterpolOptions>,
@@ -1482,140 +923,23 @@ impl PyExpr {
             .into()
     }
 
-    pub fn rolling_skew(&self, window_size: usize, bias: bool) -> Self {
+    fn rolling_skew(&self, window_size: usize, bias: bool) -> Self {
         self.inner.clone().rolling_skew(window_size, bias).into()
     }
 
-    pub fn lower_bound(&self) -> Self {
+    fn lower_bound(&self) -> Self {
         self.inner.clone().lower_bound().into()
     }
 
-    pub fn upper_bound(&self) -> Self {
+    fn upper_bound(&self) -> Self {
         self.inner.clone().upper_bound().into()
     }
 
-    fn lst_max(&self) -> Self {
-        self.inner.clone().arr().max().into()
-    }
-
-    fn lst_min(&self) -> Self {
-        self.inner.clone().arr().min().into()
-    }
-
-    fn lst_sum(&self) -> Self {
-        self.inner.clone().arr().sum().with_fmt("arr.sum").into()
-    }
-
-    fn lst_mean(&self) -> Self {
-        self.inner.clone().arr().mean().with_fmt("arr.mean").into()
-    }
-
-    fn lst_sort(&self, descending: bool) -> Self {
-        self.inner
-            .clone()
-            .arr()
-            .sort(SortOptions {
-                descending,
-                ..Default::default()
-            })
-            .with_fmt("arr.sort")
-            .into()
-    }
-
-    fn lst_reverse(&self) -> Self {
-        self.inner.clone().arr().reverse().into()
-    }
-
-    fn lst_unique(&self, maintain_order: bool) -> Self {
-        let e = self.inner.clone();
-
-        if maintain_order {
-            e.arr().unique_stable().into()
-        } else {
-            e.arr().unique().into()
-        }
-    }
-
-    fn lst_get(&self, index: PyExpr) -> Self {
-        self.inner.clone().arr().get(index.inner).into()
-    }
-
-    #[cfg(feature = "list_take")]
-    fn lst_take(&self, index: PyExpr, null_on_oob: bool) -> Self {
-        self.inner
-            .clone()
-            .arr()
-            .take(index.inner, null_on_oob)
-            .into()
-    }
-
-    fn lst_join(&self, separator: &str) -> Self {
-        self.inner.clone().arr().join(separator).into()
-    }
-
-    fn lst_arg_min(&self) -> Self {
-        self.inner.clone().arr().arg_min().into()
-    }
-
-    fn lst_arg_max(&self) -> Self {
-        self.inner.clone().arr().arg_max().into()
-    }
-
-    fn lst_diff(&self, n: i64, null_behavior: Wrap<NullBehavior>) -> PyResult<Self> {
-        Ok(self.inner.clone().arr().diff(n, null_behavior.0).into())
-    }
-
-    fn lst_shift(&self, periods: i64) -> Self {
-        self.inner.clone().arr().shift(periods).into()
-    }
-
-    fn lst_slice(&self, offset: PyExpr, length: Option<PyExpr>) -> Self {
-        let length = match length {
-            Some(i) => i.inner,
-            None => dsl::lit(i64::MAX),
-        };
-        self.inner.clone().arr().slice(offset.inner, length).into()
-    }
-
-    fn lst_eval(&self, expr: PyExpr, parallel: bool) -> Self {
-        self.inner.clone().arr().eval(expr.inner, parallel).into()
-    }
-
-    #[cfg(feature = "list_count")]
-    fn lst_count_match(&self, expr: PyExpr) -> Self {
-        self.inner.clone().arr().count_match(expr.inner).into()
-    }
-
-    fn cumulative_eval(&self, expr: PyExpr, min_periods: usize, parallel: bool) -> Self {
+    fn cumulative_eval(&self, expr: Self, min_periods: usize, parallel: bool) -> Self {
         self.inner
             .clone()
             .cumulative_eval(expr.inner, min_periods, parallel)
             .into()
-    }
-
-    #[pyo3(signature = (width_strat, name_gen, upper_bound))]
-    fn lst_to_struct(
-        &self,
-        width_strat: Wrap<ListToStructWidthStrategy>,
-        name_gen: Option<PyObject>,
-        upper_bound: usize,
-    ) -> PyResult<Self> {
-        let name_gen = name_gen.map(|lambda| {
-            Arc::new(move |idx: usize| {
-                Python::with_gil(|py| {
-                    let out = lambda.call1(py, (idx,)).unwrap();
-                    let out: SmartString = out.extract::<&str>(py).unwrap().into();
-                    out
-                })
-            }) as NameGenerator
-        });
-
-        Ok(self
-            .inner
-            .clone()
-            .arr()
-            .to_struct(width_strat.0, name_gen, upper_bound)
-            .into())
     }
 
     fn rank(&self, method: Wrap<RankMethod>, descending: bool, seed: Option<u64>) -> Self {
@@ -1641,23 +965,16 @@ impl PyExpr {
     fn kurtosis(&self, fisher: bool, bias: bool) -> Self {
         self.inner.clone().kurtosis(fisher, bias).into()
     }
-    fn str_concat(&self, delimiter: &str) -> Self {
-        self.inner.clone().str().concat(delimiter).into()
-    }
 
-    fn cat_set_ordering(&self, ordering: Wrap<CategoricalOrdering>) -> Self {
-        self.inner.clone().cat().set_ordering(ordering.0).into()
-    }
-
-    pub fn reshape(&self, dims: Vec<i64>) -> Self {
+    fn reshape(&self, dims: Vec<i64>) -> Self {
         self.inner.clone().reshape(&dims).into()
     }
 
-    pub fn cumcount(&self, reverse: bool) -> Self {
+    fn cumcount(&self, reverse: bool) -> Self {
         self.inner.clone().cumcount(reverse).into()
     }
 
-    pub fn to_physical(&self) -> Self {
+    fn to_physical(&self) -> Self {
         self.inner
             .clone()
             .map(
@@ -1668,24 +985,18 @@ impl PyExpr {
             .into()
     }
 
-    pub fn shuffle(&self, seed: Option<u64>) -> Self {
+    fn shuffle(&self, seed: Option<u64>) -> Self {
         self.inner.clone().shuffle(seed).into()
     }
 
-    pub fn sample_n(
-        &self,
-        n: usize,
-        with_replacement: bool,
-        shuffle: bool,
-        seed: Option<u64>,
-    ) -> Self {
+    fn sample_n(&self, n: usize, with_replacement: bool, shuffle: bool, seed: Option<u64>) -> Self {
         self.inner
             .clone()
             .sample_n(n, with_replacement, shuffle, seed)
             .into()
     }
 
-    pub fn sample_frac(
+    fn sample_frac(
         &self,
         frac: f64,
         with_replacement: bool,
@@ -1698,13 +1009,7 @@ impl PyExpr {
             .into()
     }
 
-    pub fn ewm_mean(
-        &self,
-        alpha: f64,
-        adjust: bool,
-        min_periods: usize,
-        ignore_nulls: bool,
-    ) -> Self {
+    fn ewm_mean(&self, alpha: f64, adjust: bool, min_periods: usize, ignore_nulls: bool) -> Self {
         let options = EWMOptions {
             alpha,
             adjust,
@@ -1714,7 +1019,7 @@ impl PyExpr {
         };
         self.inner.clone().ewm_mean(options).into()
     }
-    pub fn ewm_std(
+    fn ewm_std(
         &self,
         alpha: f64,
         adjust: bool,
@@ -1731,7 +1036,7 @@ impl PyExpr {
         };
         self.inner.clone().ewm_std(options).into()
     }
-    pub fn ewm_var(
+    fn ewm_var(
         &self,
         alpha: f64,
         adjust: bool,
@@ -1748,7 +1053,7 @@ impl PyExpr {
         };
         self.inner.clone().ewm_var(options).into()
     }
-    pub fn extend_constant(&self, py: Python, value: Wrap<AnyValue>, n: usize) -> Self {
+    fn extend_constant(&self, py: Python, value: Wrap<AnyValue>, n: usize) -> Self {
         let value = value.into_py(py);
         self.inner
             .clone()
@@ -1764,45 +1069,33 @@ impl PyExpr {
             .with_fmt("extend")
             .into()
     }
-    pub fn any(&self) -> Self {
+    fn any(&self) -> Self {
         self.inner.clone().any().into()
     }
 
-    pub fn all(&self) -> Self {
+    fn all(&self) -> Self {
         self.inner.clone().all().into()
     }
 
-    pub fn struct_field_by_name(&self, name: &str) -> PyExpr {
-        self.inner.clone().struct_().field_by_name(name).into()
-    }
-
-    pub fn struct_field_by_index(&self, index: i64) -> PyExpr {
-        self.inner.clone().struct_().field_by_index(index).into()
-    }
-
-    pub fn struct_rename_fields(&self, names: Vec<String>) -> PyExpr {
-        self.inner.clone().struct_().rename_fields(names).into()
-    }
-
-    pub fn log(&self, base: f64) -> Self {
+    fn log(&self, base: f64) -> Self {
         self.inner.clone().log(base).into()
     }
 
-    pub fn log1p(&self) -> Self {
+    fn log1p(&self) -> Self {
         self.inner.clone().log1p().into()
     }
 
-    pub fn exp(&self) -> Self {
+    fn exp(&self) -> Self {
         self.inner.clone().exp().into()
     }
 
-    pub fn entropy(&self, base: f64, normalize: bool) -> Self {
+    fn entropy(&self, base: f64, normalize: bool) -> Self {
         self.inner.clone().entropy(base, normalize).into()
     }
-    pub fn hash(&self, seed: u64, seed_1: u64, seed_2: u64, seed_3: u64) -> Self {
+    fn hash(&self, seed: u64, seed_1: u64, seed_2: u64, seed_3: u64) -> Self {
         self.inner.clone().hash(seed, seed_1, seed_2, seed_3).into()
     }
-    pub fn set_sorted_flag(&self, descending: bool) -> Self {
+    fn set_sorted_flag(&self, descending: bool) -> Self {
         let is_sorted = if descending {
             IsSorted::Descending
         } else {

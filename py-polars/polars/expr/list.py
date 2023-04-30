@@ -24,6 +24,9 @@ class ExprListNameSpace:
     def __init__(self, expr: Expr):
         self._pyexpr = expr._pyexpr
 
+    def __getitem__(self, item: int) -> Expr:
+        return self.get(item)
+
     def lengths(self) -> Expr:
         """
         Get the length of the arrays as UInt32.
@@ -43,7 +46,7 @@ class ExprListNameSpace:
         └─────┘
 
         """
-        return wrap_expr(self._pyexpr.arr_lengths())
+        return wrap_expr(self._pyexpr.list_lengths())
 
     def sum(self) -> Expr:
         """
@@ -64,7 +67,7 @@ class ExprListNameSpace:
         └────────┘
 
         """
-        return wrap_expr(self._pyexpr.lst_sum())
+        return wrap_expr(self._pyexpr.list_sum())
 
     def max(self) -> Expr:
         """
@@ -85,7 +88,7 @@ class ExprListNameSpace:
         └────────┘
 
         """
-        return wrap_expr(self._pyexpr.lst_max())
+        return wrap_expr(self._pyexpr.list_max())
 
     def min(self) -> Expr:
         """
@@ -106,7 +109,7 @@ class ExprListNameSpace:
         └────────┘
 
         """
-        return wrap_expr(self._pyexpr.lst_min())
+        return wrap_expr(self._pyexpr.list_min())
 
     def mean(self) -> Expr:
         """
@@ -127,7 +130,7 @@ class ExprListNameSpace:
         └────────┘
 
         """
-        return wrap_expr(self._pyexpr.lst_mean())
+        return wrap_expr(self._pyexpr.list_mean())
 
     def sort(self, *, descending: bool = False) -> Expr:
         """
@@ -167,7 +170,7 @@ class ExprListNameSpace:
         └───────────┘
 
         """
-        return wrap_expr(self._pyexpr.lst_sort(descending))
+        return wrap_expr(self._pyexpr.list_sort(descending))
 
     def reverse(self) -> Expr:
         """
@@ -192,7 +195,7 @@ class ExprListNameSpace:
         └───────────┘
 
         """
-        return wrap_expr(self._pyexpr.lst_reverse())
+        return wrap_expr(self._pyexpr.list_reverse())
 
     def unique(self, *, maintain_order: bool = False) -> Expr:
         """
@@ -221,7 +224,7 @@ class ExprListNameSpace:
         └───────────┘
 
         """
-        return wrap_expr(self._pyexpr.lst_unique(maintain_order))
+        return wrap_expr(self._pyexpr.list_unique(maintain_order))
 
     def concat(self, other: list[Expr | str] | Expr | str | Series | list[Any]) -> Expr:
         """
@@ -293,7 +296,7 @@ class ExprListNameSpace:
 
         """
         index = expr_to_lit_or_expr(index, str_to_lit=False)._pyexpr
-        return wrap_expr(self._pyexpr.lst_get(index))
+        return wrap_expr(self._pyexpr.list_get(index))
 
     def take(
         self,
@@ -321,10 +324,7 @@ class ExprListNameSpace:
         if isinstance(index, list):
             index = pl.Series(index)
         index = expr_to_lit_or_expr(index, str_to_lit=False)._pyexpr
-        return wrap_expr(self._pyexpr.lst_take(index, null_on_oob))
-
-    def __getitem__(self, item: int) -> Expr:
-        return self.get(item)
+        return wrap_expr(self._pyexpr.list_take(index, null_on_oob))
 
     def first(self) -> Expr:
         """
@@ -401,7 +401,7 @@ class ExprListNameSpace:
         └───────┘
 
         """
-        return wrap_expr(self._pyexpr.arr_contains(expr_to_lit_or_expr(item)._pyexpr))
+        return wrap_expr(self._pyexpr.list_contains(expr_to_lit_or_expr(item)._pyexpr))
 
     def join(self, separator: str) -> Expr:
         """
@@ -433,7 +433,7 @@ class ExprListNameSpace:
         └───────┘
 
         """
-        return wrap_expr(self._pyexpr.lst_join(separator))
+        return wrap_expr(self._pyexpr.list_join(separator))
 
     def arg_min(self) -> Expr:
         """
@@ -462,7 +462,7 @@ class ExprListNameSpace:
         └─────┘
 
         """
-        return wrap_expr(self._pyexpr.lst_arg_min())
+        return wrap_expr(self._pyexpr.list_arg_min())
 
     def arg_max(self) -> Expr:
         """
@@ -491,7 +491,7 @@ class ExprListNameSpace:
         └─────┘
 
         """
-        return wrap_expr(self._pyexpr.lst_arg_max())
+        return wrap_expr(self._pyexpr.list_arg_max())
 
     def diff(self, n: int = 1, null_behavior: NullBehavior = "ignore") -> Expr:
         """
@@ -541,7 +541,7 @@ class ExprListNameSpace:
         └───────────┘
 
         """
-        return wrap_expr(self._pyexpr.lst_diff(n, null_behavior))
+        return wrap_expr(self._pyexpr.list_diff(n, null_behavior))
 
     def shift(self, periods: int = 1) -> Expr:
         """
@@ -564,7 +564,7 @@ class ExprListNameSpace:
         ]
 
         """
-        return wrap_expr(self._pyexpr.lst_shift(periods))
+        return wrap_expr(self._pyexpr.list_shift(periods))
 
     def slice(
         self, offset: int | str | Expr, length: int | str | Expr | None = None
@@ -594,7 +594,7 @@ class ExprListNameSpace:
         """
         offset = expr_to_lit_or_expr(offset, str_to_lit=False)._pyexpr
         length = expr_to_lit_or_expr(length, str_to_lit=False)._pyexpr
-        return wrap_expr(self._pyexpr.lst_slice(offset, length))
+        return wrap_expr(self._pyexpr.list_slice(offset, length))
 
     def head(self, n: int | str | Expr = 5) -> Expr:
         """
@@ -706,7 +706,7 @@ class ExprListNameSpace:
 
         """
         return wrap_expr(
-            self._pyexpr.lst_count_match(expr_to_lit_or_expr(element)._pyexpr)
+            self._pyexpr.list_count_match(expr_to_lit_or_expr(element)._pyexpr)
         )
 
     def to_struct(
@@ -759,7 +759,7 @@ class ExprListNameSpace:
 
         """
         return wrap_expr(
-            self._pyexpr.lst_to_struct(n_field_strategy, name_generator, upper_bound)
+            self._pyexpr.list_to_struct(n_field_strategy, name_generator, upper_bound)
         )
 
     def eval(self, expr: Expr, *, parallel: bool = False) -> Expr:
@@ -796,4 +796,4 @@ class ExprListNameSpace:
         └─────┴─────┴────────────┘
 
         """
-        return wrap_expr(self._pyexpr.lst_eval(expr._pyexpr, parallel))
+        return wrap_expr(self._pyexpr.list_eval(expr._pyexpr, parallel))
