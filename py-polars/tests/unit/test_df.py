@@ -1697,6 +1697,7 @@ def test_join_dates() -> None:
         datetime(2021, 6, 24, 10, 0, 0),
         interval=timedelta(hours=1),
         closed="left",
+        eager=True,
     )
     dts = (
         dts_in.cast(int)
@@ -3370,13 +3371,25 @@ def test_glimpse(capsys: Any) -> None:
             "d": [None, "b", "c"],
             "e": ["usd", "eur", None],
             "f": pl.date_range(
-                datetime(2023, 1, 1), datetime(2023, 1, 3), "1d", time_unit="us"
+                datetime(2023, 1, 1),
+                datetime(2023, 1, 3),
+                "1d",
+                time_unit="us",
+                eager=True,
             ),
             "g": pl.date_range(
-                datetime(2023, 1, 1), datetime(2023, 1, 3), "1d", time_unit="ms"
+                datetime(2023, 1, 1),
+                datetime(2023, 1, 3),
+                "1d",
+                time_unit="ms",
+                eager=True,
             ),
             "h": pl.date_range(
-                datetime(2023, 1, 1), datetime(2023, 1, 3), "1d", time_unit="ns"
+                datetime(2023, 1, 1),
+                datetime(2023, 1, 3),
+                "1d",
+                time_unit="ns",
+                eager=True,
             ),
             "i": [[5, 6], [3, 4], [9, 8]],
             "j": [[5.0, 6.0], [3.0, 4.0], [9.0, 8.0]],

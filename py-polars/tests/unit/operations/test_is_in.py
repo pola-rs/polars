@@ -10,13 +10,13 @@ import polars as pl
 def test_struct_logical_is_in() -> None:
     df1 = pl.DataFrame(
         {
-            "x": pl.date_range(date(2022, 1, 1), date(2022, 1, 7)),
+            "x": pl.date_range(date(2022, 1, 1), date(2022, 1, 7), eager=True),
             "y": [0, 4, 6, 2, 3, 4, 5],
         }
     )
     df2 = pl.DataFrame(
         {
-            "x": pl.date_range(date(2022, 1, 3), date(2022, 1, 9)),
+            "x": pl.date_range(date(2022, 1, 3), date(2022, 1, 9), eager=True),
             "y": [6, 2, 3, 4, 5, 0, 1],
         }
     )

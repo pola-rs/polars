@@ -308,7 +308,9 @@ def test_apply_after_take_in_groupby_3869() -> None:
 def test_groupby_rolling_negative_offset_3914() -> None:
     df = pl.DataFrame(
         {
-            "datetime": pl.date_range(datetime(2020, 1, 1), datetime(2020, 1, 5), "1d"),
+            "datetime": pl.date_range(
+                datetime(2020, 1, 1), datetime(2020, 1, 5), "1d", eager=True
+            ),
         }
     )
     assert df.groupby_rolling(index_column="datetime", period="2d", offset="-4d").agg(
@@ -352,7 +354,11 @@ def test_groupby_rolling_negative_offset_crossing_dst(time_zone: str | None) -> 
     df = pl.DataFrame(
         {
             "datetime": pl.date_range(
-                datetime(2021, 11, 6), datetime(2021, 11, 9), "1d", time_zone=time_zone
+                datetime(2021, 11, 6),
+                datetime(2021, 11, 9),
+                "1d",
+                time_zone=time_zone,
+                eager=True,
             ),
             "value": [1, 4, 9, 155],
         }
@@ -363,7 +369,11 @@ def test_groupby_rolling_negative_offset_crossing_dst(time_zone: str | None) -> 
     expected = pl.DataFrame(
         {
             "datetime": pl.date_range(
-                datetime(2021, 11, 6), datetime(2021, 11, 9), "1d", time_zone=time_zone
+                datetime(2021, 11, 6),
+                datetime(2021, 11, 9),
+                "1d",
+                time_zone=time_zone,
+                eager=True,
             ),
             "value": [[1, 4], [4, 9], [9, 155], [155]],
         }
@@ -600,6 +610,7 @@ def test_groupby_dynamic_lazy(every: str | timedelta, tzinfo: ZoneInfo | None) -
                 start=datetime(2021, 12, 16, tzinfo=tzinfo),
                 end=datetime(2021, 12, 16, 2, tzinfo=tzinfo),
                 interval="30m",
+                eager=True,
             ),
             "n": range(5),
         }

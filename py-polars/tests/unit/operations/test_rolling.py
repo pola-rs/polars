@@ -112,7 +112,7 @@ def test_rolling_crossing_dst(
     time_zone: str | None, rolling_fn: str, expected_values: list[int | None | float]
 ) -> None:
     ts = pl.date_range(
-        datetime(2021, 11, 5), datetime(2021, 11, 10), "1d", time_zone="UTC"
+        datetime(2021, 11, 5), datetime(2021, 11, 10), "1d", time_zone="UTC", eager=True
     ).dt.replace_time_zone(time_zone)
     df = pl.DataFrame({"ts": ts, "value": [1, 2, 3, 4, 5, 6]})
     result = df.with_columns(getattr(pl.col("value"), rolling_fn)("1d", by="ts"))
@@ -415,6 +415,7 @@ def test_dynamic_groupby_timezone_awareness() -> None:
                 timedelta(days=1),
                 time_unit="ns",
                 name="datetime",
+                eager=True,
             ).dt.replace_time_zone("UTC"),
             pl.Series("value", pl.arange(1, 11, eager=True)),
         )
@@ -438,7 +439,7 @@ def test_groupby_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
     # start by datapoint
     start = datetime(2022, 12, 16, tzinfo=tzinfo)
     stop = datetime(2022, 12, 16, hour=3, tzinfo=tzinfo)
-    df = pl.DataFrame({"date": pl.date_range(start, stop, "30m")})
+    df = pl.DataFrame({"date": pl.date_range(start, stop, "30m", eager=True)})
 
     assert df.groupby_dynamic(
         "date",
@@ -478,9 +479,9 @@ def test_groupby_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
     start = datetime(2022, 1, 1, tzinfo=tzinfo)
     stop = datetime(2022, 1, 12, 7, tzinfo=tzinfo)
 
-    df = pl.DataFrame({"date": pl.date_range(start, stop, "12h")}).with_columns(
-        pl.col("date").dt.weekday().alias("day")
-    )
+    df = pl.DataFrame(
+        {"date": pl.date_range(start, stop, "12h", eager=True)}
+    ).with_columns(pl.col("date").dt.weekday().alias("day"))
 
     assert df.groupby_dynamic(
         "date",

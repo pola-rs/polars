@@ -288,6 +288,7 @@ def test_truncate(
         timedelta(minutes=30),
         name=f"dates[{time_unit}]",
         time_unit=time_unit,
+        eager=True,
     )
 
     # can pass strings and time-deltas
@@ -322,6 +323,7 @@ def test_round(
         timedelta(minutes=30),
         name=f"dates[{time_unit}]",
         time_unit=time_unit,
+        eager=True,
     )
 
     # can pass strings and time-deltas
@@ -468,7 +470,7 @@ def test_combine_lazy_schema_date(time_unit: TimeUnit) -> None:
 
 def test_is_leap_year() -> None:
     assert pl.date_range(
-        datetime(1990, 1, 1), datetime(2004, 1, 1), "1y"
+        datetime(1990, 1, 1), datetime(2004, 1, 1), "1y", eager=True
     ).dt.is_leap_year().to_list() == [
         False,
         False,
@@ -490,13 +492,17 @@ def test_is_leap_year() -> None:
 
 def test_quarter() -> None:
     assert pl.date_range(
-        datetime(2022, 1, 1), datetime(2022, 12, 1), "1mo"
+        datetime(2022, 1, 1), datetime(2022, 12, 1), "1mo", eager=True
     ).dt.quarter().to_list() == [1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4]
 
 
 def test_date_offset() -> None:
     df = pl.DataFrame(
-        {"dates": pl.date_range(datetime(2000, 1, 1), datetime(2020, 1, 1), "1y")}
+        {
+            "dates": pl.date_range(
+                datetime(2000, 1, 1), datetime(2020, 1, 1), "1y", eager=True
+            )
+        }
     )
 
     # Add two new columns to the DataFrame using the offset_by() method

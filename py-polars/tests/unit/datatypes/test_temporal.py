@@ -436,7 +436,11 @@ def test_series_to_numpy() -> None:
         "datetime", [datetime(2021, 1, 2, 3, 4, 5), datetime(2021, 2, 3, 4, 5, 6)]
     )
     s2 = pl.date_range(
-        datetime(2021, 1, 1, 0), datetime(2021, 1, 1, 1), interval="1h", time_unit="ms"
+        datetime(2021, 1, 1, 0),
+        datetime(2021, 1, 1, 1),
+        interval="1h",
+        time_unit="ms",
+        eager=True,
     )
     assert str(s0.to_numpy()) == "['2308-04-02' '2746-02-20' '1973-05-28']"
     assert (
@@ -458,7 +462,7 @@ def test_series_to_numpy() -> None:
 
 def test_date_range() -> None:
     result = pl.date_range(
-        date(1985, 1, 1), date(2015, 7, 1), timedelta(days=1, hours=12)
+        date(1985, 1, 1), date(2015, 7, 1), timedelta(days=1, hours=12), eager=True
     )
     assert len(result) == 7426
     assert result.dt[0] == datetime(1985, 1, 1)
@@ -468,7 +472,11 @@ def test_date_range() -> None:
 
     for time_unit in DTYPE_TEMPORAL_UNITS:
         rng = pl.date_range(
-            datetime(2020, 1, 1), date(2020, 1, 2), "2h", time_unit=time_unit
+            datetime(2020, 1, 1),
+            date(2020, 1, 2),
+            "2h",
+            time_unit=time_unit,
+            eager=True,
         )
         assert rng.time_unit == time_unit
         assert rng.shape == (13,)
@@ -476,11 +484,13 @@ def test_date_range() -> None:
         assert rng.dt[-1] == datetime(2020, 1, 2)
 
     # if low/high are both date, range is also be date _iif_ the granularity is >= 1d
-    result = pl.date_range(date(2022, 1, 1), date(2022, 3, 1), "1mo", name="drange")
+    result = pl.date_range(
+        date(2022, 1, 1), date(2022, 3, 1), "1mo", name="drange", eager=True
+    )
     assert result.to_list() == [date(2022, 1, 1), date(2022, 2, 1), date(2022, 3, 1)]
     assert result.name == "drange"
 
-    result = pl.date_range(date(2022, 1, 1), date(2022, 1, 2), "1h30m")
+    result = pl.date_range(date(2022, 1, 1), date(2022, 1, 2), "1h30m", eager=True)
     assert list(result) == [
         datetime(2022, 1, 1, 0, 0),
         datetime(2022, 1, 1, 1, 30),
@@ -502,7 +512,7 @@ def test_date_range() -> None:
     ]
 
     result = pl.date_range(
-        datetime(2022, 1, 1), datetime(2022, 1, 1, 0, 1), "987456321ns"
+        datetime(2022, 1, 1), datetime(2022, 1, 1, 0, 1), "987456321ns", eager=True
     )
     assert len(result) == 61
     assert result.dtype.time_unit == "ns"  # type: ignore[union-attr]
@@ -523,7 +533,7 @@ def test_date_range_precision(time_unit: TimeUnit | None, expected_micros: int) 
     micros = 986759
     start = datetime(2000, 5, 30, 1, 53, 4, micros)
     stop = datetime(2000, 5, 31, 1, 53, 4, micros)
-    result = pl.date_range(start, stop, time_unit=time_unit)
+    result = pl.date_range(start, stop, time_unit=time_unit, eager=True)
     expected_start = start.replace(microsecond=expected_micros)
     expected_stop = stop.replace(microsecond=expected_micros)
     assert result[0] == expected_start
@@ -533,7 +543,10 @@ def test_date_range_precision(time_unit: TimeUnit | None, expected_micros: int) 
 def test_range_invalid_unit() -> None:
     with pytest.raises(PolarsPanicError, match="'D' not supported"):
         pl.date_range(
-            start=datetime(2021, 12, 16), end=datetime(2021, 12, 16, 3), interval="1D"
+            start=datetime(2021, 12, 16),
+            end=datetime(2021, 12, 16, 3),
+            interval="1D",
+            eager=True,
         )
 
 
@@ -543,7 +556,7 @@ def test_date_range_lazy_with_literals() -> None:
             date(2000, 1, 1),
             date(2023, 8, 31),
             interval="987d",
-            lazy=True,
+            eager=False,
         )
         .implode()
         .alias("dts")
@@ -580,7 +593,9 @@ def test_date_range_lazy_with_expressions(
     ldf = (
         pl.DataFrame({"start": [date(2015, 6, 30)], "stop": [date(2022, 12, 31)]})
         .with_columns(
-            pl.date_range(low, high, interval="678d", lazy=True).implode().alias("dts")
+            pl.date_range(low, high, interval="678d", eager=False)
+            .implode()
+            .alias("dts")
         )
         .lazy()
     )
@@ -609,6 +624,7 @@ def test_date_range_lazy_with_expressions(
             low,
             high,
             interval="1d",
+            eager=True,
         ).alias("dts")
     ).to_dict(
         False
@@ -631,6 +647,7 @@ def test_date_range_lazy_with_expressions(
             low,
             high,
             interval="1d",
+            eager=True,
         ).alias("dts")
     ).to_dict(
         False
@@ -647,7 +664,11 @@ def test_date_range_lazy_with_expressions(
 def test_date_range_invalid_time_zone() -> None:
     with pytest.raises(ComputeError, match="unable to parse time zone: 'foo'"):
         pl.date_range(
-            datetime(2001, 1, 1), datetime(2001, 1, 3), interval="1d", time_zone="foo"
+            datetime(2001, 1, 1),
+            datetime(2001, 1, 3),
+            interval="1d",
+            time_zone="foo",
+            eager=True,
         )
 
 
@@ -944,7 +965,10 @@ def test_upsample_crossing_dst(
     df = pl.DataFrame(
         {
             "time": pl.date_range(
-                datetime(2021, 11, 6), datetime(2021, 11, 8), time_zone=time_zone
+                datetime(2021, 11, 6),
+                datetime(2021, 11, 8),
+                time_zone=time_zone,
+                eager=True,
             ),
             "values": [1, 2, 3],
         }
@@ -976,6 +1000,7 @@ def test_upsample_time_zones(
                 start=datetime(2021, 12, 16),
                 end=datetime(2021, 12, 16, 3),
                 interval="30m",
+                eager=True,
             ),
             "groups": ["a", "a", "a", "b", "b", "a", "a"],
             "values": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
@@ -1071,7 +1096,9 @@ def test_default_negative_every_offset_dynamic_groupby(tzinfo: ZoneInfo | None) 
 def test_groupby_dynamic_crossing_dst(rule: str, offset: timedelta) -> None:
     start_dt = datetime(2021, 11, 7)
     end_dt = start_dt + offset
-    date_range = pl.date_range(start_dt, end_dt, rule, time_zone="US/Central")
+    date_range = pl.date_range(
+        start_dt, end_dt, rule, time_zone="US/Central", eager=True
+    )
     df = pl.DataFrame({"time": date_range, "value": range(len(date_range))})
     result = df.groupby_dynamic("time", every=rule).agg(pl.col("value").mean())
     expected = pl.DataFrame(
@@ -1084,7 +1111,9 @@ def test_groupby_dynamic_crossing_dst(rule: str, offset: timedelta) -> None:
 def test_groupby_dynamic_startby_monday_crossing_dst() -> None:
     start_dt = datetime(2021, 11, 7)
     end_dt = datetime(2021, 11, 14)
-    date_range = pl.date_range(start_dt, end_dt, "1d", time_zone="US/Central")
+    date_range = pl.date_range(
+        start_dt, end_dt, "1d", time_zone="US/Central", eager=True
+    )
     df = pl.DataFrame({"time": date_range, "value": range(len(date_range))})
     result = df.groupby_dynamic("time", every="1w", start_by="monday").agg(
         pl.col("value").mean()
@@ -1104,7 +1133,9 @@ def test_groupby_dynamic_startby_monday_crossing_dst() -> None:
 def test_groupby_dynamic_monthly_crossing_dst() -> None:
     start_dt = datetime(2021, 11, 1)
     end_dt = datetime(2021, 12, 1)
-    date_range = pl.date_range(start_dt, end_dt, "1mo", time_zone="US/Central")
+    date_range = pl.date_range(
+        start_dt, end_dt, "1mo", time_zone="US/Central", eager=True
+    )
     df = pl.DataFrame({"time": date_range, "value": range(len(date_range))})
     result = df.groupby_dynamic("time", every="1mo").agg(pl.col("value").mean())
     expected = pl.DataFrame(
@@ -1598,13 +1629,25 @@ def test_datetime_units() -> None:
     df = pl.DataFrame(
         {
             "ns": pl.date_range(
-                datetime(2020, 1, 1), datetime(2020, 5, 1), "1mo", time_unit="ns"
+                datetime(2020, 1, 1),
+                datetime(2020, 5, 1),
+                "1mo",
+                time_unit="ns",
+                eager=True,
             ),
             "us": pl.date_range(
-                datetime(2020, 1, 1), datetime(2020, 5, 1), "1mo", time_unit="us"
+                datetime(2020, 1, 1),
+                datetime(2020, 5, 1),
+                "1mo",
+                time_unit="us",
+                eager=True,
             ),
             "ms": pl.date_range(
-                datetime(2020, 1, 1), datetime(2020, 5, 1), "1mo", time_unit="ms"
+                datetime(2020, 1, 1),
+                datetime(2020, 5, 1),
+                "1mo",
+                time_unit="ms",
+                eager=True,
             ),
         }
     )
@@ -1644,7 +1687,9 @@ def test_datetime_instance_selection() -> None:
 def test_unique_counts_on_dates() -> None:
     assert pl.DataFrame(
         {
-            "dt_ns": pl.date_range(datetime(2020, 1, 1), datetime(2020, 3, 1), "1mo"),
+            "dt_ns": pl.date_range(
+                datetime(2020, 1, 1), datetime(2020, 3, 1), "1mo", eager=True
+            ),
         }
     ).with_columns(
         [
@@ -1715,7 +1760,7 @@ def test_groupby_rolling_by_() -> None:
         pl.DataFrame(
             {
                 "datetime": pl.date_range(
-                    datetime(2020, 1, 1), datetime(2020, 1, 5), "1d"
+                    datetime(2020, 1, 1), datetime(2020, 1, 5), "1d", eager=True
                 ),
             }
         ),
@@ -1802,7 +1847,9 @@ def test_sum_duration() -> None:
 def test_supertype_timezones_4174() -> None:
     df = pl.DataFrame(
         {
-            "dt": pl.date_range(datetime(2020, 3, 1), datetime(2020, 5, 1), "1mo"),
+            "dt": pl.date_range(
+                datetime(2020, 3, 1), datetime(2020, 5, 1), "1mo", eager=True
+            ),
         }
     ).with_columns(pl.col("dt").dt.replace_time_zone("Europe/London").suffix("_London"))
 
@@ -1849,7 +1896,9 @@ def test_date_arr_concat() -> None:
 
 
 def test_date_timedelta() -> None:
-    df = pl.DataFrame({"date": pl.date_range(date(2001, 1, 1), date(2001, 1, 3), "1d")})
+    df = pl.DataFrame(
+        {"date": pl.date_range(date(2001, 1, 1), date(2001, 1, 3), "1d", eager=True)}
+    )
     assert df.with_columns(
         [
             (pl.col("date") + timedelta(days=1)).alias("date_plus_one"),
@@ -2059,7 +2108,9 @@ def test_timezone_aware_date_range() -> None:
     low = datetime(2022, 10, 17, 10, tzinfo=ZoneInfo("Asia/Shanghai"))
     high = datetime(2022, 11, 17, 10, tzinfo=ZoneInfo("Asia/Shanghai"))
 
-    assert pl.date_range(low, high, interval=timedelta(days=5)).to_list() == [
+    assert pl.date_range(
+        low, high, interval=timedelta(days=5), eager=True
+    ).to_list() == [
         datetime(2022, 10, 17, 10, 0, tzinfo=ZoneInfo(key="Asia/Shanghai")),
         datetime(2022, 10, 22, 10, 0, tzinfo=ZoneInfo(key="Asia/Shanghai")),
         datetime(2022, 10, 27, 10, 0, tzinfo=ZoneInfo(key="Asia/Shanghai")),
@@ -2075,7 +2126,11 @@ def test_timezone_aware_date_range() -> None:
         "Got: 'Asia/Shanghai' and 'None'",
     ):
         pl.date_range(
-            low, high.replace(tzinfo=None), interval=timedelta(days=5), time_zone="UTC"
+            low,
+            high.replace(tzinfo=None),
+            interval=timedelta(days=5),
+            time_zone="UTC",
+            eager=True,
         )
 
     with pytest.raises(
@@ -2083,12 +2138,18 @@ def test_timezone_aware_date_range() -> None:
         match="Given time_zone is different from that of timezone aware datetimes. "
         "Given: 'UTC', got: 'Asia/Shanghai'.",
     ):
-        pl.date_range(low, high, interval=timedelta(days=5), time_zone="UTC")
+        pl.date_range(
+            low, high, interval=timedelta(days=5), time_zone="UTC", eager=True
+        )
 
 
 def test_tzaware_date_range_crossing_dst_hourly() -> None:
     result = pl.date_range(
-        datetime(2021, 11, 7), datetime(2021, 11, 7, 2), "1h", time_zone="US/Central"
+        datetime(2021, 11, 7),
+        datetime(2021, 11, 7, 2),
+        "1h",
+        time_zone="US/Central",
+        eager=True,
     )
     assert result.to_list() == [
         datetime(2021, 11, 7, 0, 0, tzinfo=ZoneInfo("US/Central")),
@@ -2100,7 +2161,11 @@ def test_tzaware_date_range_crossing_dst_hourly() -> None:
 
 def test_tzaware_date_range_crossing_dst_daily() -> None:
     result = pl.date_range(
-        datetime(2021, 11, 7), datetime(2021, 11, 11), "2d", time_zone="US/Central"
+        datetime(2021, 11, 7),
+        datetime(2021, 11, 11),
+        "2d",
+        time_zone="US/Central",
+        eager=True,
     )
     assert result.to_list() == [
         datetime(2021, 11, 7, 0, 0, tzinfo=ZoneInfo("US/Central")),
@@ -2111,7 +2176,11 @@ def test_tzaware_date_range_crossing_dst_daily() -> None:
 
 def test_tzaware_date_range_crossing_dst_weekly() -> None:
     result = pl.date_range(
-        datetime(2021, 11, 7), datetime(2021, 11, 20), "1w", time_zone="US/Central"
+        datetime(2021, 11, 7),
+        datetime(2021, 11, 20),
+        "1w",
+        time_zone="US/Central",
+        eager=True,
     )
     assert result.to_list() == [
         datetime(2021, 11, 7, 0, 0, tzinfo=ZoneInfo("US/Central")),
@@ -2121,7 +2190,11 @@ def test_tzaware_date_range_crossing_dst_weekly() -> None:
 
 def test_tzaware_date_range_crossing_dst_monthly() -> None:
     result = pl.date_range(
-        datetime(2021, 11, 7), datetime(2021, 12, 20), "1mo", time_zone="US/Central"
+        datetime(2021, 11, 7),
+        datetime(2021, 12, 20),
+        "1mo",
+        time_zone="US/Central",
+        eager=True,
     )
     assert result.to_list() == [
         datetime(2021, 11, 7, 0, 0, tzinfo=ZoneInfo("US/Central")),
@@ -2131,7 +2204,11 @@ def test_tzaware_date_range_crossing_dst_monthly() -> None:
 
 def test_tzaware_date_range_with_fixed_offset() -> None:
     result = pl.date_range(
-        datetime(2021, 11, 7), datetime(2021, 11, 7, 2), "1h", time_zone="+01:00"
+        datetime(2021, 11, 7),
+        datetime(2021, 11, 7, 2),
+        "1h",
+        time_zone="+01:00",
+        eager=True,
     )
     assert result.to_list() == [
         datetime(2021, 11, 7, 0, 0, tzinfo=timezone(timedelta(hours=1))),
@@ -2150,6 +2227,7 @@ def test_date_range_with_unsupported_datetimes() -> None:
             datetime(2021, 11, 7, 2),
             "1h",
             time_zone="US/Central",
+            eager=True,
         )
     with pytest.raises(
         ComputeError,
@@ -2160,14 +2238,19 @@ def test_date_range_with_unsupported_datetimes() -> None:
             datetime(2021, 3, 28, 4),
             "1h",
             time_zone="Europe/Vienna",
+            eager=True,
         )
 
 
 def test_date_range_descending() -> None:
     with pytest.raises(ComputeError, match="'start' cannot be greater than 'stop'"):
-        pl.date_range(datetime(2000, 3, 20), datetime(2000, 3, 5), interval="1h")
+        pl.date_range(
+            datetime(2000, 3, 20), datetime(2000, 3, 5), interval="1h", eager=True
+        )
     with pytest.raises(ComputeError, match="'interval' cannot be negative"):
-        pl.date_range(datetime(2000, 3, 20), datetime(2000, 3, 21), interval="-1h")
+        pl.date_range(
+            datetime(2000, 3, 20), datetime(2000, 3, 21), interval="-1h", eager=True
+        )
 
 
 def test_date_range_end_of_month_5441() -> None:
@@ -2176,7 +2259,31 @@ def test_date_range_end_of_month_5441() -> None:
     with pytest.raises(
         ComputeError, match=r"cannot advance '2020-01-31 00:00:00' by 1 month\(s\)"
     ):
-        pl.date_range(start, stop, interval="1mo")
+        pl.date_range(start, stop, interval="1mo", eager=True)
+
+
+def test_date_range_lazy_to_eager_deprecation() -> None:
+    start, stop = date(2020, 1, 1), date(2020, 1, 2)
+    expected = pl.Series([start, stop])
+    # user passed nothing
+    with pytest.warns(
+        FutureWarning,
+        match="the default will change from `lazy=False` to `eager=False`",
+    ):
+        result = pl.date_range(start, stop)
+    assert_series_equal(result, expected)
+    # user passed lazy
+    with pytest.warns(
+        FutureWarning,
+        match="the default will change from `lazy=False` to `eager=False`",
+    ):
+        # `lazy` is deprecated anyway, so the date_range overloads are only written
+        # for `eager`
+        result = pl.date_range(start, stop, lazy=False)  # type: ignore[call-overload]
+    assert_series_equal(result, expected)
+    # user passed both lazy and eager
+    with pytest.raises(TypeError, match="cannot pass both `eager` and `lazy`"):
+        result = pl.date_range(start, stop, lazy=False, eager=True)  # type: ignore[call-overload]
 
 
 def test_logical_nested_take() -> None:
@@ -2272,7 +2379,10 @@ def test_tz_aware_truncate() -> None:
     test = pl.DataFrame(
         {
             "dt": pl.date_range(
-                start=datetime(2022, 11, 1), end=datetime(2022, 11, 4), interval="12h"
+                start=datetime(2022, 11, 1),
+                end=datetime(2022, 11, 4),
+                interval="12h",
+                eager=True,
             ).dt.replace_time_zone("America/New_York")
         }
     )
@@ -2306,6 +2416,7 @@ def test_tz_aware_truncate() -> None:
                 start=datetime(2021, 12, 31, 23),
                 end=datetime(2022, 1, 1, 6),
                 interval="1h",
+                eager=True,
             )
         }
     ).lazy()
@@ -2370,7 +2481,10 @@ def test_tz_aware_strftime() -> None:
     df = pl.DataFrame(
         {
             "dt": pl.date_range(
-                start=datetime(2022, 11, 1), end=datetime(2022, 11, 4), interval="24h"
+                start=datetime(2022, 11, 1),
+                end=datetime(2022, 11, 4),
+                interval="24h",
+                eager=True,
             ).dt.replace_time_zone("America/New_York")
         }
     )
@@ -2425,7 +2539,7 @@ def test_tz_aware_filter_lit() -> None:
     dt = datetime(1970, 1, 1, 6, tzinfo=ZoneInfo("America/New_York"))
 
     assert (
-        pl.DataFrame({"date": pl.date_range(start, stop, "1h")})
+        pl.DataFrame({"date": pl.date_range(start, stop, "1h", eager=True)})
         .with_columns(
             pl.col("date").dt.replace_time_zone("America/New_York").alias("nyc")
         )
@@ -2476,7 +2590,7 @@ def test_truncate_by_calendar_weeks() -> None:
     end = datetime(2022, 11, 20, 0, 0, 0)
 
     assert (
-        pl.date_range(start, end, timedelta(days=1), name="date")
+        pl.date_range(start, end, timedelta(days=1), name="date", eager=True)
         .to_frame()
         .select([pl.col("date").dt.truncate("1w")])
     ).to_dict(False) == {
@@ -2583,7 +2697,11 @@ def test_tz_aware_day_weekday() -> None:
     start = datetime(2001, 1, 1)
     stop = datetime(2001, 1, 9)
     df = pl.DataFrame(
-        {"date": pl.date_range(start, stop, timedelta(days=3), time_zone="UTC")}
+        {
+            "date": pl.date_range(
+                start, stop, timedelta(days=3), time_zone="UTC", eager=True
+            )
+        }
     )
 
     df = df.with_columns(
