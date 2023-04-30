@@ -1,12 +1,14 @@
 use polars::lazy::dsl;
 use polars::lazy::dsl::Expr;
 use polars::prelude::*;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
 
 use crate::conversion::Wrap;
 use crate::lazy::{binary_lambda, ToExprs};
-use crate::prelude::{vec_extract_wrapped, DataType, DatetimeArgs, DurationArgs};
-use crate::{PyDataFrame, PyExpr, PyLazyFrame, PyPolarsErr};
+use crate::prelude::{vec_extract_wrapped, DataType, DatetimeArgs, DurationArgs, ObjectValue};
+use crate::{PyDataFrame, PyExpr, PyLazyFrame, PyPolarsErr, PySeries};
 macro_rules! set_unwrapped_or_0 {
     ($($var:ident),+ $(,)?) => {
         $(let $var = $var.map(|e| e.inner).unwrap_or(dsl::lit(0));)+
@@ -184,6 +186,88 @@ pub fn first() -> PyExpr {
 }
 
 #[pyfunction]
+pub fn fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
+    let exprs = exprs.to_exprs();
+
+    let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
+    dsl::fold_exprs(acc.inner, func, exprs).into()
+}
+
+#[pyfunction]
 pub fn last() -> PyExpr {
     dsl::last().into()
+}
+
+#[pyfunction]
+pub fn lit(value: &PyAny, allow_object: bool) -> PyResult<PyExpr> {
+    if let Ok(true) = value.is_instance_of::<PyBool>() {
+        let val = value.extract::<bool>().unwrap();
+        Ok(dsl::lit(val).into())
+    } else if let Ok(int) = value.downcast::<PyInt>() {
+        match int.extract::<i64>() {
+            Ok(val) => {
+                if val >= 0 && val < i32::MAX as i64 || val <= 0 && val > i32::MIN as i64 {
+                    Ok(dsl::lit(val as i32).into())
+                } else {
+                    Ok(dsl::lit(val).into())
+                }
+            }
+            _ => {
+                let val = int.extract::<u64>().unwrap();
+                Ok(dsl::lit(val).into())
+            }
+        }
+    } else if let Ok(float) = value.downcast::<PyFloat>() {
+        let val = float.extract::<f64>().unwrap();
+        Ok(dsl::lit(val).into())
+    } else if let Ok(pystr) = value.downcast::<PyString>() {
+        Ok(dsl::lit(
+            pystr
+                .to_str()
+                .expect("could not transform Python string to Rust Unicode"),
+        )
+        .into())
+    } else if let Ok(series) = value.extract::<PySeries>() {
+        Ok(dsl::lit(series.series).into())
+    } else if value.is_none() {
+        Ok(dsl::lit(Null {}).into())
+    } else if let Ok(value) = value.downcast::<PyBytes>() {
+        Ok(dsl::lit(value.as_bytes()).into())
+    } else if allow_object {
+        let s = Python::with_gil(|py| {
+            PySeries::new_object("", vec![ObjectValue::from(value.into_py(py))], false).series
+        });
+        Ok(dsl::lit(s).into())
+    } else {
+        Err(PyValueError::new_err(format!(
+            "could not convert value {:?} as a Literal",
+            value.str()?
+        )))
+    }
+}
+
+#[pyfunction]
+pub fn max_exprs(exprs: Vec<PyExpr>) -> PyExpr {
+    let exprs = exprs.to_exprs();
+    dsl::max_exprs(exprs).into()
+}
+
+#[pyfunction]
+pub fn min_exprs(exprs: Vec<PyExpr>) -> PyExpr {
+    let exprs = exprs.to_exprs();
+    dsl::min_exprs(exprs).into()
+}
+
+#[pyfunction]
+pub fn reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
+    let exprs = exprs.to_exprs();
+
+    let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
+    dsl::reduce_exprs(func, exprs).into()
+}
+
+#[pyfunction]
+pub fn sum_exprs(exprs: Vec<PyExpr>) -> PyExpr {
+    let exprs = exprs.to_exprs();
+    dsl::sum_exprs(exprs).into()
 }

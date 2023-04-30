@@ -11,15 +11,9 @@ mod r#struct;
 use polars::lazy::dsl;
 use polars::lazy::dsl::Operator;
 use polars::prelude::*;
-use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
 
-use super::apply::*;
 use crate::conversion::Wrap;
-use crate::lazy::utils::py_exprs_to_exprs;
-use crate::prelude::ObjectValue;
-use crate::series::PySeries;
 
 #[pyclass]
 #[repr(transparent)]
@@ -56,67 +50,6 @@ pub fn binary_expr(l: PyExpr, op: u8, r: PyExpr) -> PyExpr {
     };
 
     dsl::binary_expr(left, op, right).into()
-}
-
-pub fn fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
-    let exprs = py_exprs_to_exprs(exprs);
-
-    let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
-    polars::lazy::dsl::fold_exprs(acc.inner, func, exprs).into()
-}
-
-pub fn reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
-    let exprs = py_exprs_to_exprs(exprs);
-
-    let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
-    polars::lazy::dsl::reduce_exprs(func, exprs).into()
-}
-
-pub fn lit(value: &PyAny, allow_object: bool) -> PyResult<PyExpr> {
-    if let Ok(true) = value.is_instance_of::<PyBool>() {
-        let val = value.extract::<bool>().unwrap();
-        Ok(dsl::lit(val).into())
-    } else if let Ok(int) = value.downcast::<PyInt>() {
-        match int.extract::<i64>() {
-            Ok(val) => {
-                if val >= 0 && val < i32::MAX as i64 || val <= 0 && val > i32::MIN as i64 {
-                    Ok(dsl::lit(val as i32).into())
-                } else {
-                    Ok(dsl::lit(val).into())
-                }
-            }
-            _ => {
-                let val = int.extract::<u64>().unwrap();
-                Ok(dsl::lit(val).into())
-            }
-        }
-    } else if let Ok(float) = value.downcast::<PyFloat>() {
-        let val = float.extract::<f64>().unwrap();
-        Ok(dsl::lit(val).into())
-    } else if let Ok(pystr) = value.downcast::<PyString>() {
-        Ok(dsl::lit(
-            pystr
-                .to_str()
-                .expect("could not transform Python string to Rust Unicode"),
-        )
-        .into())
-    } else if let Ok(series) = value.extract::<PySeries>() {
-        Ok(dsl::lit(series.series).into())
-    } else if value.is_none() {
-        Ok(dsl::lit(Null {}).into())
-    } else if let Ok(value) = value.downcast::<PyBytes>() {
-        Ok(dsl::lit(value.as_bytes()).into())
-    } else if allow_object {
-        let s = Python::with_gil(|py| {
-            PySeries::new_object("", vec![ObjectValue::from(value.into_py(py))], false).series
-        });
-        Ok(dsl::lit(s).into())
-    } else {
-        Err(PyValueError::new_err(format!(
-            "could not convert value {:?} as a Literal",
-            value.str()?
-        )))
-    }
 }
 
 pub fn range(low: i64, high: i64, dtype: Wrap<DataType>) -> PyExpr {

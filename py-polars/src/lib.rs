@@ -37,7 +37,6 @@ pub mod utils;
 
 #[cfg(all(target_os = "linux", not(use_mimalloc)))]
 use jemallocator::Jemalloc;
-use lazy::ToExprs;
 #[cfg(any(not(target_os = "linux"), use_mimalloc))]
 use mimalloc::MiMalloc;
 #[cfg(feature = "object")]
@@ -81,23 +80,8 @@ fn dtype_str_repr(dtype: Wrap<DataType>) -> PyResult<String> {
 }
 
 #[pyfunction]
-fn lit(value: &PyAny, allow_object: bool) -> PyResult<dsl::PyExpr> {
-    dsl::lit(value, allow_object)
-}
-
-#[pyfunction]
 fn binary_expr(l: dsl::PyExpr, op: u8, r: dsl::PyExpr) -> dsl::PyExpr {
     dsl::binary_expr(l, op, r)
-}
-
-#[pyfunction]
-fn fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
-    dsl::fold(acc, lambda, exprs)
-}
-
-#[pyfunction]
-fn reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
-    dsl::reduce(lambda, exprs)
 }
 
 #[pyfunction]
@@ -383,24 +367,6 @@ fn py_date_range_lazy(
 }
 
 #[pyfunction]
-fn min_exprs(exprs: Vec<PyExpr>) -> PyExpr {
-    let exprs = exprs.to_exprs();
-    polars_rs::lazy::dsl::min_exprs(exprs).into()
-}
-
-#[pyfunction]
-fn max_exprs(exprs: Vec<PyExpr>) -> PyExpr {
-    let exprs = exprs.to_exprs();
-    polars_rs::lazy::dsl::max_exprs(exprs).into()
-}
-
-#[pyfunction]
-fn sum_exprs(exprs: Vec<PyExpr>) -> PyExpr {
-    let exprs = exprs.to_exprs();
-    polars_rs::lazy::dsl::sum_exprs(exprs).into()
-}
-
-#[pyfunction]
 fn get_index_type(py: Python) -> PyObject {
     Wrap(IDX_DTYPE).to_object(py)
 }
@@ -486,18 +452,24 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::first))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(fold)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::fold))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::last))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(lit)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::lit))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(map_mul)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(max_exprs)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(min_exprs)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::max_exprs))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::min_exprs))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(pearson_corr)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(reduce)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::reduce))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(repeat)).unwrap();
     m.add_wrapped(wrap_pyfunction!(spearman_rank_corr)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(sum_exprs)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::sum_exprs))
+        .unwrap();
 
     // Exceptions
     m.add("ArrowError", py.get_type::<ArrowErrorException>())
