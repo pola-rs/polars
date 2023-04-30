@@ -6,9 +6,10 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
 
 use crate::conversion::Wrap;
-use crate::lazy::{binary_lambda, ToExprs};
+use crate::lazy::{apply, ToExprs};
 use crate::prelude::{vec_extract_wrapped, DataType, DatetimeArgs, DurationArgs, ObjectValue};
 use crate::{PyDataFrame, PyExpr, PyLazyFrame, PyPolarsErr, PySeries};
+
 macro_rules! set_unwrapped_or_0 {
     ($($var:ident),+ $(,)?) => {
         $(let $var = $var.map(|e| e.inner).unwrap_or(dsl::lit(0));)+
@@ -99,7 +100,7 @@ pub fn cov(a: PyExpr, b: PyExpr) -> PyExpr {
 pub fn cumfold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>, include_init: bool) -> PyExpr {
     let exprs = exprs.to_exprs();
 
-    let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
+    let func = move |a: Series, b: Series| apply::binary_lambda(&lambda, a, b);
     dsl::cumfold_exprs(acc.inner, func, exprs, include_init).into()
 }
 
@@ -107,7 +108,7 @@ pub fn cumfold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>, include_init: 
 pub fn cumreduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = exprs.to_exprs();
 
-    let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
+    let func = move |a: Series, b: Series| apply::binary_lambda(&lambda, a, b);
     dsl::cumreduce_exprs(func, exprs).into()
 }
 
@@ -189,7 +190,7 @@ pub fn first() -> PyExpr {
 pub fn fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = exprs.to_exprs();
 
-    let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
+    let func = move |a: Series, b: Series| apply::binary_lambda(&lambda, a, b);
     dsl::fold_exprs(acc.inner, func, exprs).into()
 }
 
@@ -247,6 +248,26 @@ pub fn lit(value: &PyAny, allow_object: bool) -> PyResult<PyExpr> {
 }
 
 #[pyfunction]
+#[pyo3(signature = (pyexpr, lambda, output_type, apply_groups, returns_scalar))]
+pub fn map_mul(
+    py: Python,
+    pyexpr: Vec<PyExpr>,
+    lambda: PyObject,
+    output_type: Option<Wrap<DataType>>,
+    apply_groups: bool,
+    returns_scalar: bool,
+) -> PyExpr {
+    apply::map_mul(
+        &pyexpr,
+        py,
+        lambda,
+        output_type,
+        apply_groups,
+        returns_scalar,
+    )
+}
+
+#[pyfunction]
 pub fn max_exprs(exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = exprs.to_exprs();
     dsl::max_exprs(exprs).into()
@@ -259,11 +280,59 @@ pub fn min_exprs(exprs: Vec<PyExpr>) -> PyExpr {
 }
 
 #[pyfunction]
+pub fn pearson_corr(a: PyExpr, b: PyExpr, ddof: u8) -> PyExpr {
+    dsl::pearson_corr(a.inner, b.inner, ddof).into()
+}
+
+#[pyfunction]
 pub fn reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = exprs.to_exprs();
 
-    let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
+    let func = move |a: Series, b: Series| apply::binary_lambda(&lambda, a, b);
     dsl::reduce_exprs(func, exprs).into()
+}
+
+#[pyfunction]
+pub fn repeat(value: &PyAny, n_times: PyExpr) -> PyResult<PyExpr> {
+    if let Ok(true) = value.is_instance_of::<PyBool>() {
+        let val = value.extract::<bool>().unwrap();
+        Ok(dsl::repeat(val, n_times.inner).into())
+    } else if let Ok(int) = value.downcast::<PyInt>() {
+        let val = int.extract::<i64>().unwrap();
+
+        if val >= i32::MIN as i64 && val <= i32::MAX as i64 {
+            Ok(dsl::repeat(val as i32, n_times.inner).into())
+        } else {
+            Ok(dsl::repeat(val, n_times.inner).into())
+        }
+    } else if let Ok(float) = value.downcast::<PyFloat>() {
+        let val = float.extract::<f64>().unwrap();
+        Ok(dsl::repeat(val, n_times.inner).into())
+    } else if let Ok(pystr) = value.downcast::<PyString>() {
+        let val = pystr
+            .to_str()
+            .expect("could not transform Python string to Rust Unicode");
+        Ok(dsl::repeat(val, n_times.inner).into())
+    } else if value.is_none() {
+        Ok(dsl::repeat(Null {}, n_times.inner).into())
+    } else {
+        Err(PyValueError::new_err(format!(
+            "could not convert value {:?} as a Literal",
+            value.str()?
+        )))
+    }
+}
+
+#[pyfunction]
+pub fn spearman_rank_corr(a: PyExpr, b: PyExpr, ddof: u8, propagate_nans: bool) -> PyExpr {
+    #[cfg(feature = "propagate_nans")]
+    {
+        dsl::spearman_rank_corr(a.inner, b.inner, ddof, propagate_nans).into()
+    }
+    #[cfg(not(feature = "propagate_nans"))]
+    {
+        panic!("activate 'propagate_nans'")
+    }
 }
 
 #[pyfunction]

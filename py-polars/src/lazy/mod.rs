@@ -1,4 +1,4 @@
-mod apply;
+pub mod apply;
 pub mod dataframe;
 pub mod dsl;
 

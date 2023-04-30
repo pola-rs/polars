@@ -45,11 +45,10 @@ use polars_core::datatypes::{TimeUnit, TimeZone};
 use polars_core::prelude::{DataFrame, IntoSeries, IDX_DTYPE};
 use polars_core::POOL;
 use polars_rs::functions::{diag_concat_df, hor_concat_df};
-use polars_rs::prelude::Null;
 use pyo3::exceptions::PyValueError;
 use pyo3::panic::PanicException;
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyString};
+use pyo3::types::PyDict;
 use pyo3::wrap_pyfunction;
 
 use crate::conversion::{get_df, get_lf, get_series, Wrap};
@@ -82,59 +81,6 @@ fn dtype_str_repr(dtype: Wrap<DataType>) -> PyResult<String> {
 #[pyfunction]
 fn binary_expr(l: dsl::PyExpr, op: u8, r: dsl::PyExpr) -> dsl::PyExpr {
     dsl::binary_expr(l, op, r)
-}
-
-#[pyfunction]
-fn repeat(value: &PyAny, n_times: PyExpr) -> PyResult<PyExpr> {
-    if let Ok(true) = value.is_instance_of::<PyBool>() {
-        let val = value.extract::<bool>().unwrap();
-        Ok(polars_rs::lazy::dsl::repeat(val, n_times.inner).into())
-    } else if let Ok(int) = value.downcast::<PyInt>() {
-        let val = int.extract::<i64>().unwrap();
-
-        if val >= i32::MIN as i64 && val <= i32::MAX as i64 {
-            Ok(polars_rs::lazy::dsl::repeat(val as i32, n_times.inner).into())
-        } else {
-            Ok(polars_rs::lazy::dsl::repeat(val, n_times.inner).into())
-        }
-    } else if let Ok(float) = value.downcast::<PyFloat>() {
-        let val = float.extract::<f64>().unwrap();
-        Ok(polars_rs::lazy::dsl::repeat(val, n_times.inner).into())
-    } else if let Ok(pystr) = value.downcast::<PyString>() {
-        let val = pystr
-            .to_str()
-            .expect("could not transform Python string to Rust Unicode");
-        Ok(polars_rs::lazy::dsl::repeat(val, n_times.inner).into())
-    } else if value.is_none() {
-        Ok(polars_rs::lazy::dsl::repeat(Null {}, n_times.inner).into())
-    } else {
-        Err(PyValueError::new_err(format!(
-            "could not convert value {:?} as a Literal",
-            value.str()?
-        )))
-    }
-}
-
-#[pyfunction]
-fn pearson_corr(a: dsl::PyExpr, b: dsl::PyExpr, ddof: u8) -> dsl::PyExpr {
-    polars_rs::lazy::dsl::pearson_corr(a.inner, b.inner, ddof).into()
-}
-
-#[pyfunction]
-fn spearman_rank_corr(
-    a: dsl::PyExpr,
-    b: dsl::PyExpr,
-    ddof: u8,
-    propagate_nans: bool,
-) -> dsl::PyExpr {
-    #[cfg(feature = "propagate_nans")]
-    {
-        polars_rs::lazy::dsl::spearman_rank_corr(a.inner, b.inner, ddof, propagate_nans).into()
-    }
-    #[cfg(not(feature = "propagate_nans"))]
-    {
-        panic!("activate 'popagate_nans'")
-    }
 }
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -309,26 +255,6 @@ fn parquet_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
 }
 
 #[pyfunction]
-#[pyo3(signature = (pyexpr, lambda, output_type, apply_groups, returns_scalar))]
-pub fn map_mul(
-    py: Python,
-    pyexpr: Vec<PyExpr>,
-    lambda: PyObject,
-    output_type: Option<Wrap<DataType>>,
-    apply_groups: bool,
-    returns_scalar: bool,
-) -> PyExpr {
-    lazy::map_mul(
-        &pyexpr,
-        py,
-        lambda,
-        output_type,
-        apply_groups,
-        returns_scalar,
-    )
-}
-
-#[pyfunction]
 fn py_date_range(
     start: i64,
     stop: i64,
@@ -415,7 +341,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     #[cfg(feature = "sql")]
     m.add_class::<sql::PySQLContext>().unwrap();
 
-    // Lazy functions
+    // Functions - lazy
     m.add_wrapped(wrap_pyfunction!(functions::lazy::arange))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::arg_sort_by))
@@ -458,17 +384,25 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::lit))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(map_mul)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::map_mul))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::max_exprs))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::min_exprs))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(pearson_corr)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::pearson_corr))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::reduce))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(repeat)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(spearman_rank_corr)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::repeat))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::spearman_rank_corr))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::sum_exprs))
+        .unwrap();
+
+    // Functions - whenthen
+    m.add_wrapped(wrap_pyfunction!(functions::whenthen::when))
         .unwrap();
 
     // Exceptions
@@ -505,8 +439,6 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     // Other
     m.add_wrapped(wrap_pyfunction!(dtype_str_repr)).unwrap();
     m.add_wrapped(wrap_pyfunction!(binary_expr)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::whenthen::when))
-        .unwrap();
     m.add_wrapped(wrap_pyfunction!(get_polars_version)).unwrap();
     m.add_wrapped(wrap_pyfunction!(enable_string_cache))
         .unwrap();
