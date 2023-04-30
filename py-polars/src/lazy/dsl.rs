@@ -65,29 +65,29 @@ impl PyExpr {
         Ok(dsl::binary_expr(self.inner.clone(), Operator::FloorDivide, rhs.inner).into())
     }
 
-    pub fn to_str(&self) -> String {
+    fn to_str(&self) -> String {
         format!("{:?}", self.inner)
     }
-    pub fn eq(&self, other: Self) -> Self {
+    fn eq(&self, other: Self) -> Self {
         self.clone().inner.eq(other.inner).into()
     }
-    pub fn neq(&self, other: Self) -> Self {
+    fn neq(&self, other: Self) -> Self {
         self.clone().inner.neq(other.inner).into()
     }
-    pub fn gt(&self, other: Self) -> Self {
+    fn gt(&self, other: Self) -> Self {
         self.clone().inner.gt(other.inner).into()
     }
-    pub fn gt_eq(&self, other: Self) -> Self {
+    fn gt_eq(&self, other: Self) -> Self {
         self.clone().inner.gt_eq(other.inner).into()
     }
-    pub fn lt_eq(&self, other: Self) -> Self {
+    fn lt_eq(&self, other: Self) -> Self {
         self.clone().inner.lt_eq(other.inner).into()
     }
-    pub fn lt(&self, other: Self) -> Self {
+    fn lt(&self, other: Self) -> Self {
         self.clone().inner.lt(other.inner).into()
     }
 
-    pub fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         // Used in pickle/pickling
         #[cfg(feature = "json")]
         {
@@ -100,7 +100,7 @@ impl PyExpr {
         }
     }
 
-    pub fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
         // Used in pickle/pickling
         #[cfg(feature = "json")]
         match state.extract::<&PyBytes>(py) {
@@ -125,104 +125,104 @@ impl PyExpr {
         }
     }
 
-    pub fn alias(&self, name: &str) -> Self {
+    fn alias(&self, name: &str) -> Self {
         self.clone().inner.alias(name).into()
     }
-    pub fn is_not(&self) -> Self {
+    fn is_not(&self) -> Self {
         self.clone().inner.not().into()
     }
-    pub fn is_null(&self) -> Self {
+    fn is_null(&self) -> Self {
         self.clone().inner.is_null().into()
     }
-    pub fn is_not_null(&self) -> Self {
+    fn is_not_null(&self) -> Self {
         self.clone().inner.is_not_null().into()
     }
 
-    pub fn is_infinite(&self) -> Self {
+    fn is_infinite(&self) -> Self {
         self.clone().inner.is_infinite().into()
     }
 
-    pub fn is_finite(&self) -> Self {
+    fn is_finite(&self) -> Self {
         self.clone().inner.is_finite().into()
     }
 
-    pub fn is_nan(&self) -> Self {
+    fn is_nan(&self) -> Self {
         self.clone().inner.is_nan().into()
     }
 
-    pub fn is_not_nan(&self) -> Self {
+    fn is_not_nan(&self) -> Self {
         self.clone().inner.is_not_nan().into()
     }
 
-    pub fn min(&self) -> Self {
+    fn min(&self) -> Self {
         self.clone().inner.min().into()
     }
-    pub fn max(&self) -> Self {
+    fn max(&self) -> Self {
         self.clone().inner.max().into()
     }
     #[cfg(feature = "propagate_nans")]
-    pub fn nan_max(&self) -> Self {
+    fn nan_max(&self) -> Self {
         self.clone().inner.nan_max().into()
     }
     #[cfg(feature = "propagate_nans")]
-    pub fn nan_min(&self) -> Self {
+    fn nan_min(&self) -> Self {
         self.clone().inner.nan_min().into()
     }
-    pub fn mean(&self) -> Self {
+    fn mean(&self) -> Self {
         self.clone().inner.mean().into()
     }
-    pub fn median(&self) -> Self {
+    fn median(&self) -> Self {
         self.clone().inner.median().into()
     }
-    pub fn sum(&self) -> Self {
+    fn sum(&self) -> Self {
         self.clone().inner.sum().into()
     }
-    pub fn n_unique(&self) -> Self {
+    fn n_unique(&self) -> Self {
         self.clone().inner.n_unique().into()
     }
-    pub fn arg_unique(&self) -> Self {
+    fn arg_unique(&self) -> Self {
         self.clone().inner.arg_unique().into()
     }
-    pub fn unique(&self) -> Self {
+    fn unique(&self) -> Self {
         self.clone().inner.unique().into()
     }
-    pub fn unique_stable(&self) -> Self {
+    fn unique_stable(&self) -> Self {
         self.clone().inner.unique_stable().into()
     }
-    pub fn first(&self) -> Self {
+    fn first(&self) -> Self {
         self.clone().inner.first().into()
     }
-    pub fn last(&self) -> Self {
+    fn last(&self) -> Self {
         self.clone().inner.last().into()
     }
-    pub fn implode(&self) -> Self {
+    fn implode(&self) -> Self {
         self.clone().inner.implode().into()
     }
-    pub fn quantile(&self, quantile: Self, interpolation: Wrap<QuantileInterpolOptions>) -> Self {
+    fn quantile(&self, quantile: Self, interpolation: Wrap<QuantileInterpolOptions>) -> Self {
         self.clone()
             .inner
             .quantile(quantile.inner, interpolation.0)
             .into()
     }
-    pub fn agg_groups(&self) -> Self {
+    fn agg_groups(&self) -> Self {
         self.clone().inner.agg_groups().into()
     }
-    pub fn count(&self) -> Self {
+    fn count(&self) -> Self {
         self.clone().inner.count().into()
     }
-    pub fn value_counts(&self, multithreaded: bool, sorted: bool) -> Self {
+    fn value_counts(&self, multithreaded: bool, sorted: bool) -> Self {
         self.inner
             .clone()
             .value_counts(multithreaded, sorted)
             .into()
     }
-    pub fn unique_counts(&self) -> Self {
+    fn unique_counts(&self) -> Self {
         self.inner.clone().unique_counts().into()
     }
-    pub fn null_count(&self) -> Self {
+    fn null_count(&self) -> Self {
         self.inner.clone().null_count().into()
     }
-    pub fn cast(&self, data_type: Wrap<DataType>, strict: bool) -> Self {
+    fn cast(&self, data_type: Wrap<DataType>, strict: bool) -> Self {
         let dt = data_type.0;
         let expr = if strict {
             self.inner.clone().strict_cast(dt)
@@ -231,7 +231,7 @@ impl PyExpr {
         };
         expr.into()
     }
-    pub fn sort_with(&self, descending: bool, nulls_last: bool) -> Self {
+    fn sort_with(&self, descending: bool, nulls_last: bool) -> Self {
         self.clone()
             .inner
             .sort_with(SortOptions {
@@ -242,7 +242,7 @@ impl PyExpr {
             .into()
     }
 
-    pub fn arg_sort(&self, descending: bool, nulls_last: bool) -> Self {
+    fn arg_sort(&self, descending: bool, nulls_last: bool) -> Self {
         self.clone()
             .inner
             .arg_sort(SortOptions {
@@ -254,61 +254,61 @@ impl PyExpr {
     }
 
     #[cfg(feature = "top_k")]
-    pub fn top_k(&self, k: usize) -> Self {
+    fn top_k(&self, k: usize) -> Self {
         self.inner.clone().top_k(k).into()
     }
 
     #[cfg(feature = "top_k")]
-    pub fn bottom_k(&self, k: usize) -> Self {
+    fn bottom_k(&self, k: usize) -> Self {
         self.inner.clone().bottom_k(k).into()
     }
 
-    pub fn arg_max(&self) -> Self {
+    fn arg_max(&self) -> Self {
         self.clone().inner.arg_max().into()
     }
-    pub fn arg_min(&self) -> Self {
+    fn arg_min(&self) -> Self {
         self.clone().inner.arg_min().into()
     }
 
     #[cfg(feature = "search_sorted")]
-    pub fn search_sorted(&self, element: Self, side: Wrap<SearchSortedSide>) -> Self {
+    fn search_sorted(&self, element: Self, side: Wrap<SearchSortedSide>) -> Self {
         self.inner
             .clone()
             .search_sorted(element.inner, side.0)
             .into()
     }
-    pub fn take(&self, idx: Self) -> Self {
+    fn take(&self, idx: Self) -> Self {
         self.clone().inner.take(idx.inner).into()
     }
 
-    pub fn sort_by(&self, by: Vec<Self>, descending: Vec<bool>) -> Self {
+    fn sort_by(&self, by: Vec<Self>, descending: Vec<bool>) -> Self {
         let by = by.into_iter().map(|e| e.inner).collect::<Vec<_>>();
         self.clone().inner.sort_by(by, descending).into()
     }
 
-    pub fn backward_fill(&self, limit: FillNullLimit) -> Self {
+    fn backward_fill(&self, limit: FillNullLimit) -> Self {
         self.clone().inner.backward_fill(limit).into()
     }
 
-    pub fn forward_fill(&self, limit: FillNullLimit) -> Self {
+    fn forward_fill(&self, limit: FillNullLimit) -> Self {
         self.clone().inner.forward_fill(limit).into()
     }
 
-    pub fn shift(&self, periods: i64) -> Self {
+    fn shift(&self, periods: i64) -> Self {
         self.clone().inner.shift(periods).into()
     }
-    pub fn shift_and_fill(&self, periods: i64, fill_value: Self) -> Self {
+    fn shift_and_fill(&self, periods: i64, fill_value: Self) -> Self {
         self.clone()
             .inner
             .shift_and_fill(periods, fill_value.inner)
             .into()
     }
 
-    pub fn fill_null(&self, expr: Self) -> Self {
+    fn fill_null(&self, expr: Self) -> Self {
         self.clone().inner.fill_null(expr.inner).into()
     }
 
-    pub fn fill_null_with_strategy(&self, strategy: &str, limit: FillNullLimit) -> PyResult<Self> {
+    fn fill_null_with_strategy(&self, strategy: &str, limit: FillNullLimit) -> PyResult<Self> {
         let strat = parse_fill_null_strategy(strategy, limit)?;
         Ok(self
             .inner
@@ -321,47 +321,47 @@ impl PyExpr {
             .into())
     }
 
-    pub fn fill_nan(&self, expr: Self) -> Self {
+    fn fill_nan(&self, expr: Self) -> Self {
         self.inner.clone().fill_nan(expr.inner).into()
     }
 
-    pub fn drop_nulls(&self) -> Self {
+    fn drop_nulls(&self) -> Self {
         self.inner.clone().drop_nulls().into()
     }
 
-    pub fn drop_nans(&self) -> Self {
+    fn drop_nans(&self) -> Self {
         self.inner.clone().drop_nans().into()
     }
 
-    pub fn filter(&self, predicate: Self) -> Self {
+    fn filter(&self, predicate: Self) -> Self {
         self.clone().inner.filter(predicate.inner).into()
     }
-    pub fn reverse(&self) -> Self {
+    fn reverse(&self) -> Self {
         self.clone().inner.reverse().into()
     }
-    pub fn std(&self, ddof: u8) -> Self {
+    fn std(&self, ddof: u8) -> Self {
         self.clone().inner.std(ddof).into()
     }
-    pub fn var(&self, ddof: u8) -> Self {
+    fn var(&self, ddof: u8) -> Self {
         self.clone().inner.var(ddof).into()
     }
-    pub fn is_unique(&self) -> Self {
+    fn is_unique(&self) -> Self {
         self.clone().inner.is_unique().into()
     }
 
-    pub fn approx_unique(&self) -> Self {
+    fn approx_unique(&self) -> Self {
         self.clone().inner.approx_unique().into()
     }
 
-    pub fn is_first(&self) -> Self {
+    fn is_first(&self) -> Self {
         self.clone().inner.is_first().into()
     }
 
-    pub fn explode(&self) -> Self {
+    fn explode(&self) -> Self {
         self.clone().inner.explode().into()
     }
 
-    pub fn take_every(&self, n: usize) -> Self {
+    fn take_every(&self, n: usize) -> Self {
         self.clone()
             .inner
             .map(
@@ -371,131 +371,131 @@ impl PyExpr {
             .with_fmt("take_every")
             .into()
     }
-    pub fn tail(&self, n: usize) -> Self {
+    fn tail(&self, n: usize) -> Self {
         self.clone().inner.tail(Some(n)).into()
     }
 
-    pub fn head(&self, n: usize) -> Self {
+    fn head(&self, n: usize) -> Self {
         self.clone().inner.head(Some(n)).into()
     }
 
-    pub fn slice(&self, offset: Self, length: Self) -> Self {
+    fn slice(&self, offset: Self, length: Self) -> Self {
         self.inner.clone().slice(offset.inner, length.inner).into()
     }
 
-    pub fn append(&self, other: Self, upcast: bool) -> Self {
+    fn append(&self, other: Self, upcast: bool) -> Self {
         self.inner.clone().append(other.inner, upcast).into()
     }
 
-    pub fn rechunk(&self) -> Self {
+    fn rechunk(&self) -> Self {
         self.inner
             .clone()
             .map(|s| Ok(Some(s.rechunk())), GetOutput::same_type())
             .into()
     }
 
-    pub fn round(&self, decimals: u32) -> Self {
+    fn round(&self, decimals: u32) -> Self {
         self.clone().inner.round(decimals).into()
     }
 
-    pub fn floor(&self) -> Self {
+    fn floor(&self) -> Self {
         self.clone().inner.floor().into()
     }
 
-    pub fn ceil(&self) -> Self {
+    fn ceil(&self) -> Self {
         self.clone().inner.ceil().into()
     }
 
-    pub fn clip(&self, py: Python, min: PyObject, max: PyObject) -> Self {
+    fn clip(&self, py: Python, min: PyObject, max: PyObject) -> Self {
         let min = min.extract::<Wrap<AnyValue>>(py).unwrap().0;
         let max = max.extract::<Wrap<AnyValue>>(py).unwrap().0;
         self.clone().inner.clip(min, max).into()
     }
 
-    pub fn clip_min(&self, py: Python, min: PyObject) -> Self {
+    fn clip_min(&self, py: Python, min: PyObject) -> Self {
         let min = min.extract::<Wrap<AnyValue>>(py).unwrap().0;
         self.clone().inner.clip_min(min).into()
     }
 
-    pub fn clip_max(&self, py: Python, max: PyObject) -> Self {
+    fn clip_max(&self, py: Python, max: PyObject) -> Self {
         let max = max.extract::<Wrap<AnyValue>>(py).unwrap().0;
         self.clone().inner.clip_max(max).into()
     }
 
-    pub fn abs(&self) -> Self {
+    fn abs(&self) -> Self {
         self.clone().inner.abs().into()
     }
 
     #[cfg(feature = "trigonometry")]
-    pub fn sin(&self) -> Self {
+    fn sin(&self) -> Self {
         self.clone().inner.sin().into()
     }
 
     #[cfg(feature = "trigonometry")]
-    pub fn cos(&self) -> Self {
+    fn cos(&self) -> Self {
         self.clone().inner.cos().into()
     }
 
     #[cfg(feature = "trigonometry")]
-    pub fn tan(&self) -> Self {
+    fn tan(&self) -> Self {
         self.clone().inner.tan().into()
     }
 
     #[cfg(feature = "trigonometry")]
-    pub fn arcsin(&self) -> Self {
+    fn arcsin(&self) -> Self {
         self.clone().inner.arcsin().into()
     }
 
     #[cfg(feature = "trigonometry")]
-    pub fn arccos(&self) -> Self {
+    fn arccos(&self) -> Self {
         self.clone().inner.arccos().into()
     }
 
     #[cfg(feature = "trigonometry")]
-    pub fn arctan(&self) -> Self {
+    fn arctan(&self) -> Self {
         self.clone().inner.arctan().into()
     }
 
     #[cfg(feature = "trigonometry")]
-    pub fn sinh(&self) -> Self {
+    fn sinh(&self) -> Self {
         self.clone().inner.sinh().into()
     }
 
     #[cfg(feature = "trigonometry")]
-    pub fn cosh(&self) -> Self {
+    fn cosh(&self) -> Self {
         self.clone().inner.cosh().into()
     }
 
     #[cfg(feature = "trigonometry")]
-    pub fn tanh(&self) -> Self {
+    fn tanh(&self) -> Self {
         self.clone().inner.tanh().into()
     }
 
     #[cfg(feature = "trigonometry")]
-    pub fn arcsinh(&self) -> Self {
+    fn arcsinh(&self) -> Self {
         self.clone().inner.arcsinh().into()
     }
 
     #[cfg(feature = "trigonometry")]
-    pub fn arccosh(&self) -> Self {
+    fn arccosh(&self) -> Self {
         self.clone().inner.arccosh().into()
     }
 
     #[cfg(feature = "trigonometry")]
-    pub fn arctanh(&self) -> Self {
+    fn arctanh(&self) -> Self {
         self.clone().inner.arctanh().into()
     }
 
     #[cfg(feature = "sign")]
-    pub fn sign(&self) -> Self {
+    fn sign(&self) -> Self {
         self.clone().inner.sign().into()
     }
 
-    pub fn is_duplicated(&self) -> Self {
+    fn is_duplicated(&self) -> Self {
         self.clone().inner.is_duplicated().into()
     }
 
-    pub fn over(&self, partition_by: Vec<Self>) -> Self {
+    fn over(&self, partition_by: Vec<Self>) -> Self {
         let partition_by = partition_by
             .into_iter()
             .map(|e| e.inner)
@@ -503,55 +503,55 @@ impl PyExpr {
         self.clone().inner.over(partition_by).into()
     }
 
-    pub fn _and(&self, expr: Self) -> Self {
+    fn _and(&self, expr: Self) -> Self {
         self.clone().inner.and(expr.inner).into()
     }
 
-    pub fn _xor(&self, expr: Self) -> Self {
+    fn _xor(&self, expr: Self) -> Self {
         self.clone().inner.xor(expr.inner).into()
     }
 
-    pub fn _or(&self, expr: Self) -> Self {
+    fn _or(&self, expr: Self) -> Self {
         self.clone().inner.or(expr.inner).into()
     }
     #[cfg(feature = "is_in")]
-    pub fn is_in(&self, expr: Self) -> Self {
+    fn is_in(&self, expr: Self) -> Self {
         self.clone().inner.is_in(expr.inner).into()
     }
 
     #[cfg(feature = "repeat_by")]
-    pub fn repeat_by(&self, by: Self) -> Self {
+    fn repeat_by(&self, by: Self) -> Self {
         self.clone().inner.repeat_by(by.inner).into()
     }
 
-    pub fn pow(&self, exponent: Self) -> Self {
+    fn pow(&self, exponent: Self) -> Self {
         self.clone().inner.pow(exponent.inner).into()
     }
 
-    pub fn cumsum(&self, reverse: bool) -> Self {
+    fn cumsum(&self, reverse: bool) -> Self {
         self.clone().inner.cumsum(reverse).into()
     }
-    pub fn cummax(&self, reverse: bool) -> Self {
+    fn cummax(&self, reverse: bool) -> Self {
         self.clone().inner.cummax(reverse).into()
     }
-    pub fn cummin(&self, reverse: bool) -> Self {
+    fn cummin(&self, reverse: bool) -> Self {
         self.clone().inner.cummin(reverse).into()
     }
 
-    pub fn cumprod(&self, reverse: bool) -> Self {
+    fn cumprod(&self, reverse: bool) -> Self {
         self.clone().inner.cumprod(reverse).into()
     }
 
-    pub fn product(&self) -> Self {
+    fn product(&self) -> Self {
         self.clone().inner.product().into()
     }
 
-    pub fn shrink_dtype(&self) -> Self {
+    fn shrink_dtype(&self) -> Self {
         self.inner.clone().shrink_dtype().into()
     }
 
     #[pyo3(signature = (lambda, window_size, weights, min_periods, center))]
-    pub fn rolling_apply(
+    fn rolling_apply(
         &self,
         py: Python,
         lambda: PyObject,
@@ -686,20 +686,15 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (lambda, output_type, agg_list))]
-    pub fn map(
-        &self,
-        lambda: PyObject,
-        output_type: Option<Wrap<DataType>>,
-        agg_list: bool,
-    ) -> Self {
+    fn map(&self, lambda: PyObject, output_type: Option<Wrap<DataType>>, agg_list: bool) -> Self {
         map_single(self, lambda, output_type, agg_list)
     }
 
-    pub fn dot(&self, other: Self) -> Self {
+    fn dot(&self, other: Self) -> Self {
         self.inner.clone().dot(other.inner).into()
     }
 
-    pub fn reinterpret(&self, signed: bool) -> Self {
+    fn reinterpret(&self, signed: bool) -> Self {
         let function = move |s: Series| reinterpret(&s, signed).map(Some);
         let dt = if signed {
             DataType::Int64
@@ -711,19 +706,19 @@ impl PyExpr {
             .map(function, GetOutput::from_type(dt))
             .into()
     }
-    pub fn mode(&self) -> Self {
+    fn mode(&self) -> Self {
         self.inner.clone().mode().into()
     }
-    pub fn keep_name(&self) -> Self {
+    fn keep_name(&self) -> Self {
         self.inner.clone().keep_name().into()
     }
-    pub fn prefix(&self, prefix: &str) -> Self {
+    fn prefix(&self, prefix: &str) -> Self {
         self.inner.clone().prefix(prefix).into()
     }
-    pub fn suffix(&self, suffix: &str) -> Self {
+    fn suffix(&self, suffix: &str) -> Self {
         self.inner.clone().suffix(suffix).into()
     }
-    pub fn map_alias(&self, lambda: PyObject) -> Self {
+    fn map_alias(&self, lambda: PyObject) -> Self {
         self.inner
             .clone()
             .map_alias(move |name| {
@@ -737,21 +732,21 @@ impl PyExpr {
             })
             .into()
     }
-    pub fn exclude(&self, columns: Vec<String>) -> Self {
+    fn exclude(&self, columns: Vec<String>) -> Self {
         self.inner.clone().exclude(columns).into()
     }
-    pub fn exclude_dtype(&self, dtypes: Vec<Wrap<DataType>>) -> Self {
+    fn exclude_dtype(&self, dtypes: Vec<Wrap<DataType>>) -> Self {
         // Safety:
         // Wrap is transparent.
         let dtypes: Vec<DataType> = unsafe { std::mem::transmute(dtypes) };
         self.inner.clone().exclude_dtype(&dtypes).into()
     }
-    pub fn interpolate(&self, method: Wrap<InterpolationMethod>) -> Self {
+    fn interpolate(&self, method: Wrap<InterpolationMethod>) -> Self {
         self.inner.clone().interpolate(method.0).into()
     }
 
     #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
-    pub fn rolling_sum(
+    fn rolling_sum(
         &self,
         window_size: &str,
         weights: Option<Vec<f64>>,
@@ -772,7 +767,7 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
-    pub fn rolling_min(
+    fn rolling_min(
         &self,
         window_size: &str,
         weights: Option<Vec<f64>>,
@@ -793,7 +788,7 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
-    pub fn rolling_max(
+    fn rolling_max(
         &self,
         window_size: &str,
         weights: Option<Vec<f64>>,
@@ -814,7 +809,7 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
-    pub fn rolling_mean(
+    fn rolling_mean(
         &self,
         window_size: &str,
         weights: Option<Vec<f64>>,
@@ -836,7 +831,7 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
-    pub fn rolling_std(
+    fn rolling_std(
         &self,
         window_size: &str,
         weights: Option<Vec<f64>>,
@@ -858,7 +853,7 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
-    pub fn rolling_var(
+    fn rolling_var(
         &self,
         window_size: &str,
         weights: Option<Vec<f64>>,
@@ -880,7 +875,7 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
-    pub fn rolling_median(
+    fn rolling_median(
         &self,
         window_size: &str,
         weights: Option<Vec<f64>>,
@@ -902,7 +897,7 @@ impl PyExpr {
 
     #[pyo3(signature = (quantile, interpolation, window_size, weights, min_periods, center, by, closed))]
     #[allow(clippy::too_many_arguments)]
-    pub fn rolling_quantile(
+    fn rolling_quantile(
         &self,
         quantile: f64,
         interpolation: Wrap<QuantileInterpolOptions>,
@@ -928,15 +923,15 @@ impl PyExpr {
             .into()
     }
 
-    pub fn rolling_skew(&self, window_size: usize, bias: bool) -> Self {
+    fn rolling_skew(&self, window_size: usize, bias: bool) -> Self {
         self.inner.clone().rolling_skew(window_size, bias).into()
     }
 
-    pub fn lower_bound(&self) -> Self {
+    fn lower_bound(&self) -> Self {
         self.inner.clone().lower_bound().into()
     }
 
-    pub fn upper_bound(&self) -> Self {
+    fn upper_bound(&self) -> Self {
         self.inner.clone().upper_bound().into()
     }
 
@@ -971,15 +966,15 @@ impl PyExpr {
         self.inner.clone().kurtosis(fisher, bias).into()
     }
 
-    pub fn reshape(&self, dims: Vec<i64>) -> Self {
+    fn reshape(&self, dims: Vec<i64>) -> Self {
         self.inner.clone().reshape(&dims).into()
     }
 
-    pub fn cumcount(&self, reverse: bool) -> Self {
+    fn cumcount(&self, reverse: bool) -> Self {
         self.inner.clone().cumcount(reverse).into()
     }
 
-    pub fn to_physical(&self) -> Self {
+    fn to_physical(&self) -> Self {
         self.inner
             .clone()
             .map(
@@ -990,24 +985,18 @@ impl PyExpr {
             .into()
     }
 
-    pub fn shuffle(&self, seed: Option<u64>) -> Self {
+    fn shuffle(&self, seed: Option<u64>) -> Self {
         self.inner.clone().shuffle(seed).into()
     }
 
-    pub fn sample_n(
-        &self,
-        n: usize,
-        with_replacement: bool,
-        shuffle: bool,
-        seed: Option<u64>,
-    ) -> Self {
+    fn sample_n(&self, n: usize, with_replacement: bool, shuffle: bool, seed: Option<u64>) -> Self {
         self.inner
             .clone()
             .sample_n(n, with_replacement, shuffle, seed)
             .into()
     }
 
-    pub fn sample_frac(
+    fn sample_frac(
         &self,
         frac: f64,
         with_replacement: bool,
@@ -1020,13 +1009,7 @@ impl PyExpr {
             .into()
     }
 
-    pub fn ewm_mean(
-        &self,
-        alpha: f64,
-        adjust: bool,
-        min_periods: usize,
-        ignore_nulls: bool,
-    ) -> Self {
+    fn ewm_mean(&self, alpha: f64, adjust: bool, min_periods: usize, ignore_nulls: bool) -> Self {
         let options = EWMOptions {
             alpha,
             adjust,
@@ -1036,7 +1019,7 @@ impl PyExpr {
         };
         self.inner.clone().ewm_mean(options).into()
     }
-    pub fn ewm_std(
+    fn ewm_std(
         &self,
         alpha: f64,
         adjust: bool,
@@ -1053,7 +1036,7 @@ impl PyExpr {
         };
         self.inner.clone().ewm_std(options).into()
     }
-    pub fn ewm_var(
+    fn ewm_var(
         &self,
         alpha: f64,
         adjust: bool,
@@ -1070,7 +1053,7 @@ impl PyExpr {
         };
         self.inner.clone().ewm_var(options).into()
     }
-    pub fn extend_constant(&self, py: Python, value: Wrap<AnyValue>, n: usize) -> Self {
+    fn extend_constant(&self, py: Python, value: Wrap<AnyValue>, n: usize) -> Self {
         let value = value.into_py(py);
         self.inner
             .clone()
@@ -1086,33 +1069,33 @@ impl PyExpr {
             .with_fmt("extend")
             .into()
     }
-    pub fn any(&self) -> Self {
+    fn any(&self) -> Self {
         self.inner.clone().any().into()
     }
 
-    pub fn all(&self) -> Self {
+    fn all(&self) -> Self {
         self.inner.clone().all().into()
     }
 
-    pub fn log(&self, base: f64) -> Self {
+    fn log(&self, base: f64) -> Self {
         self.inner.clone().log(base).into()
     }
 
-    pub fn log1p(&self) -> Self {
+    fn log1p(&self) -> Self {
         self.inner.clone().log1p().into()
     }
 
-    pub fn exp(&self) -> Self {
+    fn exp(&self) -> Self {
         self.inner.clone().exp().into()
     }
 
-    pub fn entropy(&self, base: f64, normalize: bool) -> Self {
+    fn entropy(&self, base: f64, normalize: bool) -> Self {
         self.inner.clone().entropy(base, normalize).into()
     }
-    pub fn hash(&self, seed: u64, seed_1: u64, seed_2: u64, seed_3: u64) -> Self {
+    fn hash(&self, seed: u64, seed_1: u64, seed_2: u64, seed_3: u64) -> Self {
         self.inner.clone().hash(seed, seed_1, seed_2, seed_3).into()
     }
-    pub fn set_sorted_flag(&self, descending: bool) -> Self {
+    fn set_sorted_flag(&self, descending: bool) -> Self {
         let is_sorted = if descending {
             IsSorted::Descending
         } else {
