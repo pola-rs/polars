@@ -5,20 +5,20 @@ use crate::PyExpr;
 
 #[pymethods]
 impl PyExpr {
-    pub fn bin_contains(&self, lit: Vec<u8>) -> Self {
+    fn bin_contains(&self, lit: Vec<u8>) -> Self {
         self.inner.clone().binary().contains_literal(lit).into()
     }
 
-    pub fn bin_ends_with(&self, sub: Vec<u8>) -> Self {
+    fn bin_ends_with(&self, sub: Vec<u8>) -> Self {
         self.inner.clone().binary().ends_with(sub).into()
     }
 
-    pub fn bin_starts_with(&self, sub: Vec<u8>) -> Self {
+    fn bin_starts_with(&self, sub: Vec<u8>) -> Self {
         self.inner.clone().binary().starts_with(sub).into()
     }
 
     #[cfg(feature = "binary_encoding")]
-    pub fn bin_hex_decode(&self, strict: bool) -> Self {
+    fn bin_hex_decode(&self, strict: bool) -> Self {
         self.clone()
             .inner
             .map(
@@ -34,7 +34,7 @@ impl PyExpr {
     }
 
     #[cfg(feature = "binary_encoding")]
-    pub fn bin_base64_decode(&self, strict: bool) -> Self {
+    fn bin_base64_decode(&self, strict: bool) -> Self {
         self.clone()
             .inner
             .map(
@@ -50,7 +50,7 @@ impl PyExpr {
     }
 
     #[cfg(feature = "binary_encoding")]
-    pub fn bin_hex_encode(&self) -> Self {
+    fn bin_hex_encode(&self) -> Self {
         self.clone()
             .inner
             .map(
@@ -62,7 +62,7 @@ impl PyExpr {
     }
 
     #[cfg(feature = "binary_encoding")]
-    pub fn bin_base64_encode(&self) -> Self {
+    fn bin_base64_encode(&self) -> Self {
         self.clone()
             .inner
             .map(

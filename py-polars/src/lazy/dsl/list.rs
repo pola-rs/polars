@@ -18,7 +18,7 @@ impl PyExpr {
     }
 
     #[cfg(feature = "is_in")]
-    pub fn list_contains(&self, other: PyExpr) -> Self {
+    fn list_contains(&self, other: PyExpr) -> Self {
         self.inner.clone().arr().contains(other.inner).into()
     }
 
@@ -43,7 +43,7 @@ impl PyExpr {
         self.inner.clone().arr().join(separator).into()
     }
 
-    pub fn list_lengths(&self) -> Self {
+    fn list_lengths(&self) -> Self {
         self.inner.clone().arr().lengths().into()
     }
 

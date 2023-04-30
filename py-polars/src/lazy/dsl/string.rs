@@ -11,13 +11,7 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (format, strict, exact, cache))]
-    pub fn str_to_date(
-        &self,
-        format: Option<String>,
-        strict: bool,
-        exact: bool,
-        cache: bool,
-    ) -> Self {
+    fn str_to_date(&self, format: Option<String>, strict: bool, exact: bool, cache: bool) -> Self {
         let options = StrptimeOptions {
             format,
             strict,
@@ -30,7 +24,7 @@ impl PyExpr {
 
     #[pyo3(signature = (format, time_unit, time_zone, strict, exact, cache, utc, tz_aware))]
     #[allow(clippy::too_many_arguments)]
-    pub fn str_to_datetime(
+    fn str_to_datetime(
         &self,
         format: Option<String>,
         time_unit: Option<Wrap<TimeUnit>>,
@@ -57,7 +51,7 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (format, strict, cache))]
-    pub fn str_to_time(&self, format: Option<String>, strict: bool, cache: bool) -> Self {
+    fn str_to_time(&self, format: Option<String>, strict: bool, cache: bool) -> Self {
         let options = StrptimeOptions {
             format,
             strict,
@@ -68,31 +62,31 @@ impl PyExpr {
         self.inner.clone().str().to_time(options).into()
     }
 
-    pub fn str_strip(&self, matches: Option<String>) -> Self {
+    fn str_strip(&self, matches: Option<String>) -> Self {
         self.inner.clone().str().strip(matches).into()
     }
 
-    pub fn str_rstrip(&self, matches: Option<String>) -> Self {
+    fn str_rstrip(&self, matches: Option<String>) -> Self {
         self.inner.clone().str().rstrip(matches).into()
     }
 
-    pub fn str_lstrip(&self, matches: Option<String>) -> Self {
+    fn str_lstrip(&self, matches: Option<String>) -> Self {
         self.inner.clone().str().lstrip(matches).into()
     }
 
-    pub fn str_slice(&self, start: i64, length: Option<u64>) -> Self {
+    fn str_slice(&self, start: i64, length: Option<u64>) -> Self {
         self.inner.clone().str().str_slice(start, length).into()
     }
 
-    pub fn str_to_uppercase(&self) -> Self {
+    fn str_to_uppercase(&self) -> Self {
         self.inner.clone().str().to_uppercase().into()
     }
 
-    pub fn str_to_lowercase(&self) -> Self {
+    fn str_to_lowercase(&self) -> Self {
         self.inner.clone().str().to_lowercase().into()
     }
 
-    pub fn str_lengths(&self) -> Self {
+    fn str_lengths(&self) -> Self {
         let function = |s: Series| {
             let ca = s.utf8()?;
             Ok(Some(ca.str_lengths().into_series()))
@@ -104,7 +98,7 @@ impl PyExpr {
             .into()
     }
 
-    pub fn str_n_chars(&self) -> Self {
+    fn str_n_chars(&self) -> Self {
         let function = |s: Series| {
             let ca = s.utf8()?;
             Ok(Some(ca.str_n_chars().into_series()))
@@ -117,7 +111,7 @@ impl PyExpr {
     }
 
     #[cfg(feature = "lazy_regex")]
-    pub fn str_replace_n(&self, pat: Self, val: Self, literal: bool, n: i64) -> Self {
+    fn str_replace_n(&self, pat: Self, val: Self, literal: bool, n: i64) -> Self {
         self.inner
             .clone()
             .str()
@@ -126,7 +120,7 @@ impl PyExpr {
     }
 
     #[cfg(feature = "lazy_regex")]
-    pub fn str_replace_all(&self, pat: Self, val: Self, literal: bool) -> Self {
+    fn str_replace_all(&self, pat: Self, val: Self, literal: bool) -> Self {
         self.inner
             .clone()
             .str()
@@ -134,36 +128,36 @@ impl PyExpr {
             .into()
     }
 
-    pub fn str_zfill(&self, alignment: usize) -> Self {
+    fn str_zfill(&self, alignment: usize) -> Self {
         self.clone().inner.str().zfill(alignment).into()
     }
 
-    pub fn str_ljust(&self, width: usize, fillchar: char) -> Self {
+    fn str_ljust(&self, width: usize, fillchar: char) -> Self {
         self.clone().inner.str().ljust(width, fillchar).into()
     }
 
-    pub fn str_rjust(&self, width: usize, fillchar: char) -> Self {
+    fn str_rjust(&self, width: usize, fillchar: char) -> Self {
         self.clone().inner.str().rjust(width, fillchar).into()
     }
 
     #[pyo3(signature = (pat, literal, strict))]
     #[cfg(feature = "lazy_regex")]
-    pub fn str_contains(&self, pat: Self, literal: Option<bool>, strict: bool) -> Self {
+    fn str_contains(&self, pat: Self, literal: Option<bool>, strict: bool) -> Self {
         match literal {
             Some(true) => self.inner.clone().str().contains_literal(pat.inner).into(),
             _ => self.inner.clone().str().contains(pat.inner, strict).into(),
         }
     }
 
-    pub fn str_ends_with(&self, sub: Self) -> Self {
+    fn str_ends_with(&self, sub: Self) -> Self {
         self.inner.clone().str().ends_with(sub.inner).into()
     }
 
-    pub fn str_starts_with(&self, sub: Self) -> Self {
+    fn str_starts_with(&self, sub: Self) -> Self {
         self.inner.clone().str().starts_with(sub.inner).into()
     }
 
-    pub fn str_hex_encode(&self) -> Self {
+    fn str_hex_encode(&self) -> Self {
         self.clone()
             .inner
             .map(
@@ -175,7 +169,7 @@ impl PyExpr {
     }
 
     #[cfg(feature = "binary_encoding")]
-    pub fn str_hex_decode(&self, strict: bool) -> Self {
+    fn str_hex_decode(&self, strict: bool) -> Self {
         self.clone()
             .inner
             .map(
@@ -186,7 +180,7 @@ impl PyExpr {
             .into()
     }
 
-    pub fn str_base64_encode(&self) -> Self {
+    fn str_base64_encode(&self) -> Self {
         self.clone()
             .inner
             .map(
@@ -198,7 +192,7 @@ impl PyExpr {
     }
 
     #[cfg(feature = "binary_encoding")]
-    pub fn str_base64_decode(&self, strict: bool) -> Self {
+    fn str_base64_decode(&self, strict: bool) -> Self {
         self.clone()
             .inner
             .map(
@@ -213,7 +207,7 @@ impl PyExpr {
             .into()
     }
 
-    pub fn str_parse_int(&self, radix: u32, strict: bool) -> Self {
+    fn str_parse_int(&self, radix: u32, strict: bool) -> Self {
         self.inner
             .clone()
             .str()
@@ -223,7 +217,7 @@ impl PyExpr {
     }
 
     #[cfg(feature = "extract_jsonpath")]
-    pub fn str_json_extract(&self, dtype: Option<Wrap<DataType>>) -> Self {
+    fn str_json_extract(&self, dtype: Option<Wrap<DataType>>) -> Self {
         let dtype = dtype.map(|wrap| wrap.0);
 
         let output_type = match dtype.clone() {
@@ -247,7 +241,7 @@ impl PyExpr {
     }
 
     #[cfg(feature = "extract_jsonpath")]
-    pub fn str_json_path_match(&self, pat: String) -> Self {
+    fn str_json_path_match(&self, pat: String) -> Self {
         let function = move |s: Series| {
             let ca = s.utf8()?;
             match ca.json_path_match(&pat) {
@@ -262,35 +256,35 @@ impl PyExpr {
             .into()
     }
 
-    pub fn str_extract(&self, pat: &str, group_index: usize) -> Self {
+    fn str_extract(&self, pat: &str, group_index: usize) -> Self {
         self.inner.clone().str().extract(pat, group_index).into()
     }
 
-    pub fn str_extract_all(&self, pat: Self) -> Self {
+    fn str_extract_all(&self, pat: Self) -> Self {
         self.inner.clone().str().extract_all(pat.inner).into()
     }
 
-    pub fn str_count_match(&self, pat: &str) -> Self {
+    fn str_count_match(&self, pat: &str) -> Self {
         self.inner.clone().str().count_match(pat).into()
     }
 
-    pub fn str_split(&self, by: &str) -> Self {
+    fn str_split(&self, by: &str) -> Self {
         self.inner.clone().str().split(by).into()
     }
 
-    pub fn str_split_inclusive(&self, by: &str) -> Self {
+    fn str_split_inclusive(&self, by: &str) -> Self {
         self.inner.clone().str().split_inclusive(by).into()
     }
 
-    pub fn str_split_exact(&self, by: &str, n: usize) -> Self {
+    fn str_split_exact(&self, by: &str, n: usize) -> Self {
         self.inner.clone().str().split_exact(by, n).into()
     }
 
-    pub fn str_split_exact_inclusive(&self, by: &str, n: usize) -> Self {
+    fn str_split_exact_inclusive(&self, by: &str, n: usize) -> Self {
         self.inner.clone().str().split_exact_inclusive(by, n).into()
     }
 
-    pub fn str_splitn(&self, by: &str, n: usize) -> Self {
+    fn str_splitn(&self, by: &str, n: usize) -> Self {
         self.inner.clone().str().splitn(by, n).into()
     }
 }
