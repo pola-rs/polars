@@ -1,12 +1,15 @@
 use std::sync::Mutex;
 
-use polars_arrow::export::arrow::bitmap::utils::set_bit_unchecked;
 use polars_core::config::verbose;
 use polars_core::prelude::*;
 
 use crate::executors::sinks::io::IOThread;
 use crate::executors::sinks::memory::MemTracker;
 use crate::pipeline::morsels_per_sink;
+
+/// THIS CODE DOESN'T MAKE SENSE
+/// it is a remnant of OOC, but will be rewritten to use the generic OOC
+/// Table
 
 pub(super) struct OocState {
     // OOC
@@ -15,9 +18,6 @@ pub(super) struct OocState {
     _mem_track: MemTracker,
     // sort in-memory or out-of-core
     pub(super) ooc: bool,
-    // bitmap that indicates the rows that are processed ooc
-    // will be mmap converted to `BooleanArray`.
-    pub(super) ooc_filter: Vec<u8>,
     // when ooc, we write to disk using an IO thread
     pub(super) io_thread: Arc<Mutex<Option<IOThread>>>,
 }
@@ -27,7 +27,6 @@ impl OocState {
         Self {
             _mem_track: MemTracker::new(morsels_per_sink()),
             ooc,
-            ooc_filter: vec![],
             io_thread: io_thread.unwrap_or_default(),
         }
     }
@@ -46,22 +45,18 @@ impl OocState {
         Ok(())
     }
 
-    pub(super) fn reset_ooc_filter_rows(&mut self, len: usize) {
-        // todo! single pass
-        self.ooc_filter.fill(0);
-        self.ooc_filter.resize_with(len / 8 + 1, || 0)
+    pub(super) fn reset_ooc_filter_rows(&mut self, _len: usize) {
+        // no-op
     }
 
     pub(super) fn check_memory_usage(&mut self, _schema: &SchemaRef) -> PolarsResult<()> {
         // ooc is broken we will rewrite to generic table
-        todo!()
+        // n-op
+        Ok(())
     }
 
     #[inline]
-    pub(super) unsafe fn set_row_as_ooc(&mut self, idx: usize) {
-        // safety: should set the length in `reset_in_memory_rows`
-        set_bit_unchecked(&mut self.ooc_filter, idx, true)
-    }
+    pub(super) unsafe fn set_row_as_ooc(&mut self, _idx: usize) {}
 
     pub(super) fn dump(&self, _data: DataFrame, _hashes: &mut [u64]) {
         // ooc is broken we will rewrite to generic table
