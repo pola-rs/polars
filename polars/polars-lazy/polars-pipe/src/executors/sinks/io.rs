@@ -24,6 +24,7 @@ pub(crate) struct IOThread {
     pub(in crate::executors::sinks) sent: Arc<AtomicUsize>,
     pub(in crate::executors::sinks) total: Arc<AtomicUsize>,
     pub(in crate::executors::sinks) thread_local_count: Arc<AtomicUsize>,
+    schema: SchemaRef,
 }
 
 fn get_lockfile_path(dir: &Path) -> PathBuf {
@@ -104,7 +105,9 @@ impl IOThread {
         let dir2 = dir.clone();
         let total2 = total.clone();
         let lockfile2 = lockfile.clone();
+        let schema2 = schema.clone();
         std::thread::spawn(move || {
+            let schema = schema2;
             // this moves the lockfile in the thread
             // we keep one in the thread and one in the `IoThread` struct
             let _keep_hold_on_lockfile = lockfile2;
@@ -136,7 +139,7 @@ impl IOThread {
                     let mut path = dir2.clone();
                     path.push(format!("{count}.ipc"));
 
-                    let file = std::fs::File::create(path).unwrap();
+                    let file = File::create(path).unwrap();
                     let writer = IpcWriter::new(file);
                     let mut writer = writer.batched(&schema).unwrap();
 
@@ -158,6 +161,7 @@ impl IOThread {
             total,
             _lockfile: lockfile,
             thread_local_count,
+            schema,
         })
     }
 
@@ -171,7 +175,7 @@ impl IOThread {
             // duplicates
             path.push(format!("_{count}.ipc"));
 
-            let file = std::fs::File::create(path).unwrap();
+            let file = File::create(path).unwrap();
             let mut writer = IpcWriter::new(file);
             writer.finish(&mut df).unwrap();
         } else {
@@ -184,6 +188,29 @@ impl IOThread {
         let partition = Some(IdxCa::from_vec("", vec![partition_no]));
         let iter = Box::new(std::iter::once(df));
         self.dump_iter(partition, iter)
+    }
+
+    pub(in crate::executors::sinks) fn dump_partitioned_thread_local(
+        &self,
+        partitions: IdxCa,
+        iter: DfIter,
+    ) {
+        for (part, df) in partitions.into_no_null_iter().zip(iter) {
+            let count = self.thread_local_count.fetch_add(1, Ordering::Relaxed);
+            let mut path = self.dir.clone();
+            path.push(format!("{part}"));
+
+            let _ = std::fs::create_dir(&path);
+            // thread local name we start with an underscore to ensure we don't get
+            // duplicates
+            path.push(format!("_{count}.ipc"));
+
+            let file = File::create(path).unwrap();
+            let writer = IpcWriter::new(file);
+            let mut writer = writer.batched(&self.schema).unwrap();
+            writer.write_batch(&df).unwrap();
+            writer.finish().unwrap();
+        }
     }
 
     pub(in crate::executors::sinks) fn dump_iter(&self, partition: Option<IdxCa>, iter: DfIter) {
