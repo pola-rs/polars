@@ -810,7 +810,7 @@ def test_init_only_columns() -> None:
         assert df.shape == (0, 4)
         assert_frame_equal(df, expected)
         assert df.dtypes == [pl.Date, pl.UInt64, pl.Int8, pl.List]
-        assert df.schema["d"].inner == pl.UInt8  # type: ignore[union-attr]
+        assert pl.List(pl.UInt8).is_(df.schema["d"])
 
         dfe = df.clear()
         assert len(dfe) == 0

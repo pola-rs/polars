@@ -14,6 +14,14 @@ if TYPE_CHECKING:
     from polars.type_aliases import PolarsDataType, PythonDataType, SchemaDict, TimeUnit
 
 
+class classinstmethod(classmethod):  # type: ignore[type-arg]
+    """Decorator that allows a method to be called from the class OR instance."""
+
+    def __get__(self, instance: Any, type_: type) -> Any:  # type: ignore[override]
+        get = super().__get__ if instance is None else self.__func__.__get__
+        return get(instance, type_)
+
+
 class classproperty:
     """Equivalent to @property, but works on a class (doesn't require an instance)."""
 
@@ -43,6 +51,14 @@ class DataTypeClass(type):
     @classproperty
     def is_nested(self) -> bool:
         return False
+
+    @classmethod
+    def is_(cls, other: PolarsDataType) -> bool:
+        return cls == other and hash(cls) == hash(other)
+
+    @classmethod
+    def is_not(cls, other: PolarsDataType) -> bool:
+        return not cls.is_(other)
 
 
 class DataType(metaclass=DataTypeClass):
@@ -80,6 +96,52 @@ class DataType(metaclass=DataTypeClass):
     @classproperty
     def is_nested(self) -> bool:
         return False
+
+    @classinstmethod  # type: ignore[arg-type]
+    def is_(self, other: PolarsDataType) -> bool:
+        """
+        Check if this DataType is the same as another DataType.
+
+        This is a stricter check than ``self == other``, as it enforces an exact
+        match of all dtype attributes for nested and/or uninitialised dtypes.
+
+        Parameters
+        ----------
+        other
+            the other polars dtype to compare with.
+
+        Examples
+        --------
+        >>> pl.List == pl.List(pl.Int32)
+        True
+        >>> pl.List.is_(pl.List(pl.Int32))
+        False
+
+        """
+        return self == other and hash(self) == hash(other)
+
+    @classinstmethod  # type: ignore[arg-type]
+    def is_not(self, other: PolarsDataType) -> bool:
+        """
+        Check if this DataType is NOT the same as another DataType.
+
+        This is a stricter check than ``self != other``, as it enforces an exact
+        match of all dtype attributes for nested and/or uninitialised dtypes.
+
+        Parameters
+        ----------
+        other
+            the other polars dtype to compare with.
+
+        Examples
+        --------
+        >>> pl.List != pl.List(pl.Int32)
+        False
+        >>> pl.List.is_not(pl.List(pl.Int32))
+        True
+
+        """
+        return not self.is_(other)
 
 
 def _custom_reconstruct(
