@@ -21,11 +21,11 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import concat_df as _concat_df
     from polars.polars import concat_lf as _concat_lf
     from polars.polars import concat_series as _concat_series
-    from polars.polars import py_date_range as _py_date_range
-    from polars.polars import py_date_range_lazy as _py_date_range_lazy
-    from polars.polars import py_diag_concat_df as _diag_concat_df
-    from polars.polars import py_diag_concat_lf as _diag_concat_lf
-    from polars.polars import py_hor_concat_df as _hor_concat_df
+    from polars.polars import date_range as _date_range
+    from polars.polars import date_range_lazy as _date_range_lazy
+    from polars.polars import diag_concat_df as _diag_concat_df
+    from polars.polars import diag_concat_lf as _diag_concat_lf
+    from polars.polars import hor_concat_df as _hor_concat_df
 
 
 if TYPE_CHECKING:
@@ -539,7 +539,7 @@ def date_range(
         start = expr_to_lit_or_expr(start, str_to_lit=False)._pyexpr
         end = expr_to_lit_or_expr(end, str_to_lit=False)._pyexpr
         return wrap_expr(
-            _py_date_range_lazy(start, end, interval, closed, name, time_zone)
+            _date_range_lazy(start, end, interval, closed, name, time_zone)
         )
 
     start, start_is_date = _ensure_datetime(start)
@@ -572,7 +572,7 @@ def date_range(
     start_pl = _datetime_to_pl_timestamp(start, time_unit_)
     end_pl = _datetime_to_pl_timestamp(end, time_unit_)
     dt_range = wrap_s(
-        _py_date_range(start_pl, end_pl, interval, closed, name, time_unit_, time_zone)
+        _date_range(start_pl, end_pl, interval, closed, name, time_unit_, time_zone)
     )
     if (
         start_is_date
