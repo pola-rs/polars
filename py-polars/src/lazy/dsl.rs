@@ -1,3 +1,6 @@
+#[cfg(feature = "meta")]
+mod meta;
+
 use polars::lazy::dsl;
 use polars::lazy::dsl::Operator;
 use polars::prelude::*;
