@@ -2,6 +2,7 @@ mod binary;
 mod categorical;
 #[cfg(feature = "meta")]
 mod meta;
+mod r#struct;
 
 use polars::lazy::dsl;
 use polars::lazy::dsl::Operator;
@@ -1704,18 +1705,6 @@ impl PyExpr {
 
     pub fn all(&self) -> Self {
         self.inner.clone().all().into()
-    }
-
-    pub fn struct_field_by_name(&self, name: &str) -> PyExpr {
-        self.inner.clone().struct_().field_by_name(name).into()
-    }
-
-    pub fn struct_field_by_index(&self, index: i64) -> PyExpr {
-        self.inner.clone().struct_().field_by_index(index).into()
-    }
-
-    pub fn struct_rename_fields(&self, names: Vec<String>) -> PyExpr {
-        self.inner.clone().struct_().rename_fields(names).into()
     }
 
     pub fn log(&self, base: f64) -> Self {
