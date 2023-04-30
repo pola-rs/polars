@@ -63,6 +63,9 @@ def test_col_select() -> None:
         "hamburger",
         "foo",
     ]
+    # str and Dtype mixture
+    assert df.select(pl.col(["hamburger", pl.Utf8])).columns == ["hamburger", "bar"]
+    assert df.select(pl.col(["^ham.*$", pl.Float64])).columns == ["ham", "hamburger"]
 
 
 def test_horizontal_agg(fruits_cars: pl.DataFrame) -> None:
