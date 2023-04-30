@@ -75,11 +75,6 @@ static ALLOC: Jemalloc = Jemalloc;
 static ALLOC: MiMalloc = MiMalloc;
 
 #[pyfunction]
-fn count() -> dsl::PyExpr {
-    dsl::count()
-}
-
-#[pyfunction]
 fn first() -> dsl::PyExpr {
     dsl::first()
 }
@@ -176,11 +171,6 @@ fn spearman_rank_corr(
     {
         panic!("activate 'popagate_nans'")
     }
-}
-
-#[pyfunction]
-fn cov(a: dsl::PyExpr, b: dsl::PyExpr) -> dsl::PyExpr {
-    polars_rs::lazy::dsl::cov(a.inner, b.inner).into()
 }
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -540,6 +530,62 @@ fn get_float_fmt() -> PyResult<String> {
 
 #[pymodule]
 fn polars(py: Python, m: &PyModule) -> PyResult<()> {
+    // Classes
+    m.add_class::<PySeries>().unwrap();
+    m.add_class::<PyDataFrame>().unwrap();
+    m.add_class::<PyLazyFrame>().unwrap();
+    m.add_class::<PyLazyGroupBy>().unwrap();
+    m.add_class::<dsl::PyExpr>().unwrap();
+    #[cfg(feature = "csv")]
+    m.add_class::<batched_csv::PyBatchedCsv>().unwrap();
+    #[cfg(feature = "sql")]
+    m.add_class::<sql::PySQLContext>().unwrap();
+
+    // Lazy functions
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::arange))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::arg_sort_by))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::arg_where))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::as_struct))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::coalesce))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::col))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::collect_all))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::cols))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::concat_list))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::concat_str))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::count))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::cov))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(cumfold)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(cumreduce)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(datetime)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::dtype_cols))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(duration)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(first)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(fold)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(last)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(lit)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(map_mul)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(max_exprs)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(min_exprs)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(pearson_corr)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(reduce)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(repeat)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(spearman_rank_corr)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(sum_exprs)).unwrap();
+
+    // Exceptions
     m.add("ArrowError", py.get_type::<ArrowErrorException>())
         .unwrap();
     m.add("ColumnNotFoundError", py.get_type::<ColumnNotFoundError>())
@@ -570,53 +616,15 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     )
     .unwrap();
 
-    #[cfg(feature = "build_info")]
-    m.add(
-        "_build_info_",
-        pyo3_built!(py, build, "build", "time", "deps", "features", "host", "target", "git"),
-    )?;
-
-    m.add_class::<PySeries>().unwrap();
-    m.add_class::<PyDataFrame>().unwrap();
-    m.add_class::<PyLazyFrame>().unwrap();
-    m.add_class::<PyLazyGroupBy>().unwrap();
-    m.add_class::<dsl::PyExpr>().unwrap();
-    #[cfg(feature = "csv")]
-    m.add_class::<batched_csv::PyBatchedCsv>().unwrap();
-    #[cfg(feature = "sql")]
-    m.add_class::<sql::PySQLContext>().unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::col))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(count)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(first)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(last)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::cols))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::dtype_cols))
-        .unwrap();
+    // Other
     m.add_wrapped(wrap_pyfunction!(dtype_str_repr)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(lit)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(fold)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(cumfold)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(reduce)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(cumreduce)).unwrap();
     m.add_wrapped(wrap_pyfunction!(binary_expr)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::arange))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(pearson_corr)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(cov)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::arg_sort_by))
-        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::whenthen::when))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(get_polars_version)).unwrap();
     m.add_wrapped(wrap_pyfunction!(enable_string_cache))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(using_string_cache)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::concat_str))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::concat_list))
-        .unwrap();
     m.add_wrapped(wrap_pyfunction!(concat_df)).unwrap();
     m.add_wrapped(wrap_pyfunction!(concat_lf)).unwrap();
     m.add_wrapped(wrap_pyfunction!(concat_series)).unwrap();
@@ -624,33 +632,23 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(ipc_schema)).unwrap();
     #[cfg(feature = "parquet")]
     m.add_wrapped(wrap_pyfunction!(parquet_schema)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::collect_all))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(spearman_rank_corr)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(map_mul)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_diag_concat_df)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_diag_concat_lf)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_hor_concat_df)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(datetime)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(duration)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_date_range)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_date_range_lazy)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(sum_exprs)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(min_exprs)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(max_exprs)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::as_struct))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(repeat)).unwrap();
     m.add_wrapped(wrap_pyfunction!(threadpool_size)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::arg_where))
-        .unwrap();
     m.add_wrapped(wrap_pyfunction!(get_index_type)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::coalesce))
-        .unwrap();
     m.add_wrapped(wrap_pyfunction!(set_float_fmt)).unwrap();
     m.add_wrapped(wrap_pyfunction!(get_float_fmt)).unwrap();
     #[cfg(feature = "object")]
     m.add_wrapped(wrap_pyfunction!(register_object_builder))
         .unwrap();
+    #[cfg(feature = "build_info")]
+    m.add(
+        "_build_info_",
+        pyo3_built!(py, build, "build", "time", "deps", "features", "host", "target", "git"),
+    )?;
+
     Ok(())
 }

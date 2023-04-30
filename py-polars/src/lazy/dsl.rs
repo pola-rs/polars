@@ -34,10 +34,6 @@ impl From<dsl::Expr> for PyExpr {
     }
 }
 
-pub fn count() -> PyExpr {
-    dsl::count().into()
-}
-
 pub fn first() -> PyExpr {
     dsl::first().into()
 }
