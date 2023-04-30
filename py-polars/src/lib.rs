@@ -228,18 +228,18 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::io::read_parquet_schema))
         .unwrap();
 
-    // Functions - utility
+    // Functions - meta
     m.add_wrapped(wrap_pyfunction!(get_polars_version)).unwrap();
     m.add_wrapped(wrap_pyfunction!(get_index_type)).unwrap();
     m.add_wrapped(wrap_pyfunction!(threadpool_size)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(using_string_cache)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(enable_string_cache))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(set_float_fmt)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(get_float_fmt)).unwrap();
 
     // Functions - other
     m.add_wrapped(wrap_pyfunction!(dtype_str_repr)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(enable_string_cache))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(using_string_cache)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(set_float_fmt)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(get_float_fmt)).unwrap();
     #[cfg(feature = "object")]
     m.add_wrapped(wrap_pyfunction!(register_object_builder))
         .unwrap();
