@@ -22,6 +22,7 @@ pub mod dataframe;
 pub mod datatypes;
 pub mod error;
 pub mod file;
+mod functions;
 pub mod lazy;
 pub mod npy;
 #[cfg(feature = "object")]
@@ -59,6 +60,7 @@ use crate::error::{
     NoDataError, PyPolarsErr, SchemaError, SchemaFieldNotFoundError, StructFieldNotFoundError,
 };
 use crate::file::{get_either_file, EitherRustPythonFile};
+use crate::functions::whenthen;
 use crate::lazy::dataframe::{PyLazyFrame, PyLazyGroupBy};
 use crate::lazy::dsl;
 use crate::lazy::dsl::PyExpr;
@@ -212,11 +214,6 @@ fn arg_sort_by(by: Vec<dsl::PyExpr>, descending: Vec<bool>) -> dsl::PyExpr {
         .map(|e| e.inner)
         .collect::<Vec<polars_rs::lazy::dsl::Expr>>();
     polars_rs::lazy::dsl::arg_sort_by(by, &descending).into()
-}
-
-#[pyfunction]
-fn when(predicate: PyExpr) -> dsl::When {
-    dsl::when(predicate)
 }
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -687,7 +684,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(pearson_corr)).unwrap();
     m.add_wrapped(wrap_pyfunction!(cov)).unwrap();
     m.add_wrapped(wrap_pyfunction!(arg_sort_by)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(when)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(whenthen::when)).unwrap();
     m.add_wrapped(wrap_pyfunction!(get_polars_version)).unwrap();
     m.add_wrapped(wrap_pyfunction!(enable_string_cache))
         .unwrap();
