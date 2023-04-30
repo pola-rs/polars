@@ -308,7 +308,7 @@ pub fn format_str<E: AsRef<[Expr]>>(format: &str, args: E) -> PolarsResult<Expr>
 }
 
 /// Concat lists entries.
-pub fn concat_lst<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> PolarsResult<Expr> {
+pub fn concat_list<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> PolarsResult<Expr> {
     let s: Vec<_> = s.as_ref().iter().map(|e| e.clone().into()).collect();
 
     polars_ensure!(!s.is_empty(), ComputeError: "`concat_list` needs one or more expressions");

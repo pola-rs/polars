@@ -254,7 +254,7 @@
 //!         "b" => [3.0, 5.1, 0.3]
 //!     ]?
 //!     .lazy()
-//!     .select([concat_lst(["col_a", "col_b"]).map(
+//!     .select([concat_list(["col_a", "col_b"]).map(
 //!         |s| {
 //!             let ca = s.struct_()?;
 //!

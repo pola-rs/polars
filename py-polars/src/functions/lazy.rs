@@ -94,7 +94,7 @@ pub fn concat_lf(seq: &PyAny, rechunk: bool, parallel: bool) -> PyResult<PyLazyF
 #[pyfunction]
 pub fn concat_list(s: Vec<PyExpr>) -> PyResult<PyExpr> {
     let s = s.into_iter().map(|e| e.inner).collect::<Vec<_>>();
-    let expr = dsl::concat_lst(s).map_err(PyPolarsErr::from)?;
+    let expr = dsl::concat_list(s).map_err(PyPolarsErr::from)?;
     Ok(expr.into())
 }
 
