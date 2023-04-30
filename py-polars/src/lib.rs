@@ -63,7 +63,7 @@ use crate::file::{get_either_file, EitherRustPythonFile};
 use crate::lazy::dataframe::{PyLazyFrame, PyLazyGroupBy};
 use crate::lazy::dsl;
 use crate::lazy::dsl::PyExpr;
-use crate::prelude::{ClosedWindow, DataType, DatetimeArgs, Duration, DurationArgs};
+use crate::prelude::{ClosedWindow, DataType, Duration};
 use crate::series::PySeries;
 
 #[global_allocator]
@@ -108,16 +108,6 @@ fn fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
 #[pyfunction]
 fn reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
     dsl::reduce(lambda, exprs)
-}
-
-#[pyfunction]
-fn cumfold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>, include_init: bool) -> PyExpr {
-    dsl::cumfold(acc, lambda, exprs, include_init)
-}
-
-#[pyfunction]
-fn cumreduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
-    dsl::cumreduce(lambda, exprs)
 }
 
 #[pyfunction]
@@ -187,78 +177,6 @@ fn enable_string_cache(toggle: bool) {
 #[pyfunction]
 fn using_string_cache() -> bool {
     polars_rs::using_string_cache()
-}
-
-macro_rules! set_unwrapped_or_0 {
-    ($($var:ident),+ $(,)?) => {
-        $(let $var = $var.map(|e| e.inner).unwrap_or(polars_rs::lazy::dsl::lit(0));)+
-    };
-}
-
-#[pyfunction]
-fn datetime(
-    year: dsl::PyExpr,
-    month: dsl::PyExpr,
-    day: dsl::PyExpr,
-    hour: Option<dsl::PyExpr>,
-    minute: Option<dsl::PyExpr>,
-    second: Option<dsl::PyExpr>,
-    microsecond: Option<dsl::PyExpr>,
-) -> dsl::PyExpr {
-    let year = year.inner;
-    let month = month.inner;
-    let day = day.inner;
-
-    set_unwrapped_or_0!(hour, minute, second, microsecond);
-
-    let args = DatetimeArgs {
-        year,
-        month,
-        day,
-        hour,
-        minute,
-        second,
-        microsecond,
-    };
-
-    polars_rs::lazy::dsl::datetime(args).into()
-}
-
-#[allow(clippy::too_many_arguments)]
-#[pyfunction]
-fn duration(
-    days: Option<PyExpr>,
-    seconds: Option<PyExpr>,
-    nanoseconds: Option<PyExpr>,
-    microseconds: Option<PyExpr>,
-    milliseconds: Option<PyExpr>,
-    minutes: Option<PyExpr>,
-    hours: Option<PyExpr>,
-    weeks: Option<PyExpr>,
-) -> dsl::PyExpr {
-    set_unwrapped_or_0!(
-        days,
-        seconds,
-        nanoseconds,
-        microseconds,
-        milliseconds,
-        minutes,
-        hours,
-        weeks,
-    );
-
-    let args = DurationArgs {
-        days,
-        seconds,
-        nanoseconds,
-        microseconds,
-        milliseconds,
-        minutes,
-        hours,
-        weeks,
-    };
-
-    polars_rs::lazy::dsl::duration(args).into()
 }
 
 #[pyfunction]
@@ -566,12 +484,16 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::cov))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(cumfold)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(cumreduce)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(datetime)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::cumfold))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::cumreduce))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::datetime))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::dtype_cols))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(duration)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::duration))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(first)).unwrap();
     m.add_wrapped(wrap_pyfunction!(fold)).unwrap();
     m.add_wrapped(wrap_pyfunction!(last)).unwrap();
