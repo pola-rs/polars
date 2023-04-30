@@ -304,7 +304,7 @@ pub trait TemporalMethods: AsSeries {
         }
     }
 
-    /// Convert Time to Utf8 with the given format.
+    /// Convert Time into Utf8 with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     fn to_string(&self, format: &str) -> PolarsResult<Series> {
         let s = self.as_series();
@@ -321,7 +321,7 @@ pub trait TemporalMethods: AsSeries {
         }
     }
 
-    /// Convert from Time to Utf8 with the given format.
+    /// Convert from Time into Utf8 with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     ///
     /// Alias for `to_string`.

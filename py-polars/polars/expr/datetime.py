@@ -333,7 +333,7 @@ class ExprDateTimeNameSpace:
 
     def to_string(self, format: str) -> Expr:
         """
-        Convert a Date/Time/Datetime column to a Utf8 column with the given format.
+        Convert a Date/Time/Datetime column into a Utf8 column with the given format.
 
         Similar to ``cast(pl.Utf8)``, but this method allows you to customize the
         formatting of the resulting string.
@@ -379,7 +379,7 @@ class ExprDateTimeNameSpace:
     @deprecated_alias(fmt="format")
     def strftime(self, format: str) -> Expr:
         """
-        Convert a Date/Time/Datetime column to a Utf8 column with the given format.
+        Convert a Date/Time/Datetime column into a Utf8 column with the given format.
 
         Similar to ``cast(pl.Utf8)``, but this method allows you to customize the
         formatting of the resulting string.
