@@ -88,7 +88,11 @@ if TYPE_CHECKING:
 
 
 def col(
-    name: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType] | Iterable[str | PolarsDataType],
+    name: str
+    | PolarsDataType
+    | Iterable[str]
+    | Iterable[PolarsDataType]
+    | Iterable[str | PolarsDataType],
     *more_names: str | PolarsDataType,
 ) -> Expr:
     """
@@ -258,10 +262,21 @@ def col(
             return wrap_expr(pycols(names))
         elif builtins.all(is_polars_dtype(item) for item in names):
             return wrap_expr(_dtype_cols(names))
-        elif builtins.all(isinstance(item, str) or is_polars_dtype(item) for item in names):
-            return [wrap_expr(pycol(item)) if isinstance(item, str) else wrap_expr(_dtype_cols([item])) for item in names]
+        elif builtins.all(
+            isinstance(item, str) or is_polars_dtype(item) for item in names
+        ):
+            return [
+                wrap_expr(pycol(item))
+                if isinstance(item, str)
+                else wrap_expr(_dtype_cols([item]))
+                for item in names
+            ]
         else:
-            first_invalid_item = builtins.next(item for item in names if not isinstance(item, str) and not is_polars_dtype(item))
+            first_invalid_item = builtins.next(
+                item
+                for item in names
+                if not isinstance(item, str) and not is_polars_dtype(item)
+            )
             raise TypeError(
                 "Invalid input for `col`. Expected iterable of type `str` or `DataType`,"
                 f" got iterable of type {type(first_invalid_item)!r}"
