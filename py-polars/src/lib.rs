@@ -199,19 +199,6 @@ fn using_string_cache() -> bool {
     polars_rs::using_string_cache()
 }
 
-#[pyfunction]
-fn concat_str(s: Vec<dsl::PyExpr>, separator: &str) -> dsl::PyExpr {
-    let s = s.into_iter().map(|e| e.inner).collect::<Vec<_>>();
-    polars_rs::lazy::dsl::concat_str(s, separator).into()
-}
-
-#[pyfunction]
-fn concat_lst(s: Vec<dsl::PyExpr>) -> PyResult<dsl::PyExpr> {
-    let s = s.into_iter().map(|e| e.inner).collect::<Vec<_>>();
-    let expr = polars_rs::lazy::dsl::concat_lst(s).map_err(PyPolarsErr::from)?;
-    Ok(expr.into())
-}
-
 macro_rules! set_unwrapped_or_0 {
     ($($var:ident),+ $(,)?) => {
         $(let $var = $var.map(|e| e.inner).unwrap_or(polars_rs::lazy::dsl::lit(0));)+
@@ -626,8 +613,10 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(enable_string_cache))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(using_string_cache)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(concat_str)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(concat_lst)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::concat_str))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::concat_list))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(concat_df)).unwrap();
     m.add_wrapped(wrap_pyfunction!(concat_lf)).unwrap();
     m.add_wrapped(wrap_pyfunction!(concat_series)).unwrap();

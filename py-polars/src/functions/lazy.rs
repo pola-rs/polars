@@ -69,3 +69,16 @@ pub fn dtype_cols(dtypes: Vec<Wrap<DataType>>) -> PyResult<PyExpr> {
     let dtypes = vec_extract_wrapped(dtypes);
     Ok(dsl::dtype_cols(dtypes).into())
 }
+
+#[pyfunction]
+pub fn concat_list(s: Vec<PyExpr>) -> PyResult<PyExpr> {
+    let s = s.into_iter().map(|e| e.inner).collect::<Vec<_>>();
+    let expr = dsl::concat_lst(s).map_err(PyPolarsErr::from)?;
+    Ok(expr.into())
+}
+
+#[pyfunction]
+pub fn concat_str(s: Vec<PyExpr>, separator: &str) -> PyExpr {
+    let s = s.into_iter().map(|e| e.inner).collect::<Vec<_>>();
+    dsl::concat_str(s, separator).into()
+}

@@ -40,7 +40,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import col as _col
     from polars.polars import collect_all as _collect_all
     from polars.polars import cols as _cols
-    from polars.polars import concat_lst as _concat_lst
+    from polars.polars import concat_list as _concat_list
     from polars.polars import concat_str as _concat_str
     from polars.polars import count as _count
     from polars.polars import cov as pycov
@@ -2858,7 +2858,7 @@ def concat_list(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> 
     exprs = selection_to_pyexpr_list(exprs)
     if more_exprs:
         exprs.extend(selection_to_pyexpr_list(more_exprs))
-    return wrap_expr(_concat_lst(exprs))
+    return wrap_expr(_concat_list(exprs))
 
 
 def collect_all(
