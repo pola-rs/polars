@@ -3,6 +3,7 @@ mod categorical;
 mod list;
 #[cfg(feature = "meta")]
 mod meta;
+mod string;
 mod r#struct;
 
 use polars::lazy::dsl;
@@ -556,289 +557,6 @@ impl PyExpr {
         self.inner.clone().shrink_dtype().into()
     }
 
-    #[pyo3(signature = (format, strict, exact, cache))]
-    pub fn str_to_date(
-        &self,
-        format: Option<String>,
-        strict: bool,
-        exact: bool,
-        cache: bool,
-    ) -> Self {
-        let options = StrptimeOptions {
-            format,
-            strict,
-            exact,
-            cache,
-            ..Default::default()
-        };
-        self.inner.clone().str().to_date(options).into()
-    }
-
-    #[pyo3(signature = (format, time_unit, time_zone, strict, exact, cache, utc, tz_aware))]
-    #[allow(clippy::too_many_arguments)]
-    pub fn str_to_datetime(
-        &self,
-        format: Option<String>,
-        time_unit: Option<Wrap<TimeUnit>>,
-        time_zone: Option<TimeZone>,
-        strict: bool,
-        exact: bool,
-        cache: bool,
-        utc: bool,
-        tz_aware: bool,
-    ) -> Self {
-        let options = StrptimeOptions {
-            format,
-            strict,
-            exact,
-            cache,
-            tz_aware,
-            utc,
-        };
-        self.inner
-            .clone()
-            .str()
-            .to_datetime(time_unit.map(|tu| tu.0), time_zone, options)
-            .into()
-    }
-
-    #[pyo3(signature = (format, strict, cache))]
-    pub fn str_to_time(&self, format: Option<String>, strict: bool, cache: bool) -> Self {
-        let options = StrptimeOptions {
-            format,
-            strict,
-            exact: true,
-            cache,
-            ..Default::default()
-        };
-        self.inner.clone().str().to_time(options).into()
-    }
-
-    pub fn str_strip(&self, matches: Option<String>) -> PyExpr {
-        self.inner.clone().str().strip(matches).into()
-    }
-
-    pub fn str_rstrip(&self, matches: Option<String>) -> PyExpr {
-        self.inner.clone().str().rstrip(matches).into()
-    }
-
-    pub fn str_lstrip(&self, matches: Option<String>) -> PyExpr {
-        self.inner.clone().str().lstrip(matches).into()
-    }
-
-    pub fn str_slice(&self, start: i64, length: Option<u64>) -> PyExpr {
-        self.inner.clone().str().str_slice(start, length).into()
-    }
-
-    pub fn str_to_uppercase(&self) -> PyExpr {
-        self.inner.clone().str().to_uppercase().into()
-    }
-
-    pub fn str_to_lowercase(&self) -> PyExpr {
-        self.inner.clone().str().to_lowercase().into()
-    }
-
-    pub fn str_lengths(&self) -> PyExpr {
-        let function = |s: Series| {
-            let ca = s.utf8()?;
-            Ok(Some(ca.str_lengths().into_series()))
-        };
-        self.clone()
-            .inner
-            .map(function, GetOutput::from_type(DataType::UInt32))
-            .with_fmt("str.lengths")
-            .into()
-    }
-
-    pub fn str_n_chars(&self) -> PyExpr {
-        let function = |s: Series| {
-            let ca = s.utf8()?;
-            Ok(Some(ca.str_n_chars().into_series()))
-        };
-        self.clone()
-            .inner
-            .map(function, GetOutput::from_type(DataType::UInt32))
-            .with_fmt("str.n_chars")
-            .into()
-    }
-
-    #[cfg(feature = "lazy_regex")]
-    pub fn str_replace_n(&self, pat: PyExpr, val: PyExpr, literal: bool, n: i64) -> PyExpr {
-        self.inner
-            .clone()
-            .str()
-            .replace_n(pat.inner, val.inner, literal, n)
-            .into()
-    }
-
-    #[cfg(feature = "lazy_regex")]
-    pub fn str_replace_all(&self, pat: PyExpr, val: PyExpr, literal: bool) -> PyExpr {
-        self.inner
-            .clone()
-            .str()
-            .replace_all(pat.inner, val.inner, literal)
-            .into()
-    }
-
-    pub fn str_zfill(&self, alignment: usize) -> PyExpr {
-        self.clone().inner.str().zfill(alignment).into()
-    }
-
-    pub fn str_ljust(&self, width: usize, fillchar: char) -> PyExpr {
-        self.clone().inner.str().ljust(width, fillchar).into()
-    }
-
-    pub fn str_rjust(&self, width: usize, fillchar: char) -> PyExpr {
-        self.clone().inner.str().rjust(width, fillchar).into()
-    }
-
-    #[pyo3(signature = (pat, literal, strict))]
-    #[cfg(feature = "lazy_regex")]
-    pub fn str_contains(&self, pat: PyExpr, literal: Option<bool>, strict: bool) -> PyExpr {
-        match literal {
-            Some(true) => self.inner.clone().str().contains_literal(pat.inner).into(),
-            _ => self.inner.clone().str().contains(pat.inner, strict).into(),
-        }
-    }
-
-    pub fn str_ends_with(&self, sub: PyExpr) -> PyExpr {
-        self.inner.clone().str().ends_with(sub.inner).into()
-    }
-
-    pub fn str_starts_with(&self, sub: PyExpr) -> PyExpr {
-        self.inner.clone().str().starts_with(sub.inner).into()
-    }
-
-    pub fn str_hex_encode(&self) -> PyExpr {
-        self.clone()
-            .inner
-            .map(
-                move |s| s.utf8().map(|s| Some(s.hex_encode().into_series())),
-                GetOutput::same_type(),
-            )
-            .with_fmt("str.hex_encode")
-            .into()
-    }
-    #[cfg(feature = "binary_encoding")]
-    pub fn str_hex_decode(&self, strict: bool) -> PyExpr {
-        self.clone()
-            .inner
-            .map(
-                move |s| s.utf8()?.hex_decode(strict).map(|s| Some(s.into_series())),
-                GetOutput::from_type(DataType::Binary),
-            )
-            .with_fmt("str.hex_decode")
-            .into()
-    }
-    pub fn str_base64_encode(&self) -> PyExpr {
-        self.clone()
-            .inner
-            .map(
-                move |s| s.utf8().map(|s| Some(s.base64_encode().into_series())),
-                GetOutput::same_type(),
-            )
-            .with_fmt("str.base64_encode")
-            .into()
-    }
-
-    #[cfg(feature = "binary_encoding")]
-    pub fn str_base64_decode(&self, strict: bool) -> PyExpr {
-        self.clone()
-            .inner
-            .map(
-                move |s| {
-                    s.utf8()?
-                        .base64_decode(strict)
-                        .map(|s| Some(s.into_series()))
-                },
-                GetOutput::from_type(DataType::Binary),
-            )
-            .with_fmt("str.base64_decode")
-            .into()
-    }
-
-    pub fn str_parse_int(&self, radix: u32, strict: bool) -> PyExpr {
-        self.inner
-            .clone()
-            .str()
-            .from_radix(radix, strict)
-            .with_fmt("str.parse_int")
-            .into()
-    }
-
-    #[cfg(feature = "extract_jsonpath")]
-    pub fn str_json_extract(&self, dtype: Option<Wrap<DataType>>) -> PyExpr {
-        let dtype = dtype.map(|wrap| wrap.0);
-
-        let output_type = match dtype.clone() {
-            Some(dtype) => GetOutput::from_type(dtype),
-            None => GetOutput::from_type(DataType::Unknown),
-        };
-
-        let function = move |s: Series| {
-            let ca = s.utf8()?;
-            match ca.json_extract(dtype.clone()) {
-                Ok(ca) => Ok(Some(ca.into_series())),
-                Err(e) => Err(PolarsError::ComputeError(format!("{e:?}").into())),
-            }
-        };
-
-        self.clone()
-            .inner
-            .map(function, output_type)
-            .with_fmt("str.json_extract")
-            .into()
-    }
-
-    #[cfg(feature = "extract_jsonpath")]
-    pub fn str_json_path_match(&self, pat: String) -> PyExpr {
-        let function = move |s: Series| {
-            let ca = s.utf8()?;
-            match ca.json_path_match(&pat) {
-                Ok(ca) => Ok(Some(ca.into_series())),
-                Err(e) => Err(PolarsError::ComputeError(format!("{e:?}").into())),
-            }
-        };
-        self.clone()
-            .inner
-            .map(function, GetOutput::from_type(DataType::Utf8))
-            .with_fmt("str.json_path_match")
-            .into()
-    }
-
-    pub fn str_extract(&self, pat: &str, group_index: usize) -> PyExpr {
-        self.inner.clone().str().extract(pat, group_index).into()
-    }
-
-    pub fn str_extract_all(&self, pat: PyExpr) -> PyExpr {
-        self.inner.clone().str().extract_all(pat.inner).into()
-    }
-
-    pub fn count_match(&self, pat: &str) -> PyExpr {
-        self.inner.clone().str().count_match(pat).into()
-    }
-
-    pub fn strftime(&self, format: &str) -> PyExpr {
-        self.inner.clone().dt().strftime(format).into()
-    }
-    pub fn str_split(&self, by: &str) -> PyExpr {
-        self.inner.clone().str().split(by).into()
-    }
-    pub fn str_split_inclusive(&self, by: &str) -> PyExpr {
-        self.inner.clone().str().split_inclusive(by).into()
-    }
-
-    pub fn str_split_exact(&self, by: &str, n: usize) -> PyExpr {
-        self.inner.clone().str().split_exact(by, n).into()
-    }
-    pub fn str_split_exact_inclusive(&self, by: &str, n: usize) -> PyExpr {
-        self.inner.clone().str().split_exact_inclusive(by, n).into()
-    }
-
-    pub fn str_splitn(&self, by: &str, n: usize) -> PyExpr {
-        self.inner.clone().str().splitn(by, n).into()
-    }
-
     pub fn year(&self) -> PyExpr {
         self.clone().inner.dt().year().into()
     }
@@ -958,6 +676,10 @@ impl PyExpr {
     }
     pub fn timestamp(&self, time_unit: Wrap<TimeUnit>) -> PyExpr {
         self.inner.clone().dt().timestamp(time_unit.0).into()
+    }
+
+    pub fn strftime(&self, format: &str) -> Self {
+        self.inner.clone().dt().strftime(format).into()
     }
 
     pub fn dt_offset_by(&self, by: &str) -> PyExpr {
@@ -1453,9 +1175,6 @@ impl PyExpr {
     }
     fn kurtosis(&self, fisher: bool, bias: bool) -> Self {
         self.inner.clone().kurtosis(fisher, bias).into()
-    }
-    fn str_concat(&self, delimiter: &str) -> Self {
-        self.inner.clone().str().concat(delimiter).into()
     }
 
     pub fn reshape(&self, dims: Vec<i64>) -> Self {
