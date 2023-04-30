@@ -23,6 +23,7 @@ pub(super) fn sort_ooc(
     idx: usize,
     descending: bool,
     slice: Option<(i64, usize)>,
+    verbose: bool,
 ) -> PolarsResult<FinalizedSink> {
     let partitions = partitions.to_physical_repr().into_owned();
 
@@ -31,6 +32,10 @@ pub(super) fn sort_ooc(
     // We don't want to merge files we just written to disk
     let dir = &io_thread.dir;
     let files = std::fs::read_dir(dir)?.collect::<std::io::Result<Vec<_>>>()?;
+
+    if verbose {
+        eprintln!("processing {} files", files.len());
+    }
 
     let offsets = _split_offsets(files.len(), POOL.current_num_threads());
     POOL.install(|| {
