@@ -58,7 +58,6 @@ use crate::error::{
 use crate::expr::PyExpr;
 use crate::lazyframe::PyLazyFrame;
 use crate::lazygroupby::PyLazyGroupBy;
-use crate::prelude::DataType;
 use crate::series::PySeries;
 
 #[global_allocator]
@@ -68,12 +67,6 @@ static ALLOC: Jemalloc = Jemalloc;
 #[global_allocator]
 #[cfg(any(not(target_os = "linux"), use_mimalloc))]
 static ALLOC: MiMalloc = MiMalloc;
-
-#[pyfunction]
-fn dtype_str_repr(dtype: Wrap<DataType>) -> PyResult<String> {
-    let dtype = dtype.0;
-    Ok(dtype.to_string())
-}
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[pyfunction]
@@ -238,8 +231,9 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(set_float_fmt)).unwrap();
     m.add_wrapped(wrap_pyfunction!(get_float_fmt)).unwrap();
 
-    // Functions - other
-    m.add_wrapped(wrap_pyfunction!(dtype_str_repr)).unwrap();
+    // Functions - misc
+    m.add_wrapped(wrap_pyfunction!(functions::misc::dtype_str_repr))
+        .unwrap();
     #[cfg(feature = "object")]
     m.add_wrapped(wrap_pyfunction!(register_object_builder))
         .unwrap();
