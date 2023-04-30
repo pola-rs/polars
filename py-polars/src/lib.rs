@@ -75,16 +75,6 @@ static ALLOC: Jemalloc = Jemalloc;
 static ALLOC: MiMalloc = MiMalloc;
 
 #[pyfunction]
-fn first() -> dsl::PyExpr {
-    dsl::first()
-}
-
-#[pyfunction]
-fn last() -> dsl::PyExpr {
-    dsl::last()
-}
-
-#[pyfunction]
 fn dtype_str_repr(dtype: Wrap<DataType>) -> PyResult<String> {
     let dtype = dtype.0;
     Ok(dtype.to_string())
@@ -494,9 +484,11 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::duration))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(first)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::first))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(fold)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(last)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::last))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(lit)).unwrap();
     m.add_wrapped(wrap_pyfunction!(map_mul)).unwrap();
     m.add_wrapped(wrap_pyfunction!(max_exprs)).unwrap();

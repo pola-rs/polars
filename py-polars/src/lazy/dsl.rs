@@ -34,14 +34,6 @@ impl From<dsl::Expr> for PyExpr {
     }
 }
 
-pub fn first() -> PyExpr {
-    dsl::first().into()
-}
-
-pub fn last() -> PyExpr {
-    dsl::last().into()
-}
-
 pub fn binary_expr(l: PyExpr, op: u8, r: PyExpr) -> PyExpr {
     let left = l.inner;
     let right = r.inner;

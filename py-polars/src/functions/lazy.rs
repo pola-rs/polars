@@ -177,3 +177,13 @@ pub fn duration(
     };
     dsl::duration(args).into()
 }
+
+#[pyfunction]
+pub fn first() -> PyExpr {
+    dsl::first().into()
+}
+
+#[pyfunction]
+pub fn last() -> PyExpr {
+    dsl::last().into()
+}
