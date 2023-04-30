@@ -155,7 +155,7 @@ pub fn split_df_as_ref(df: &DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>>
             .chunk_lengths()
             .all(|len| len.abs_diff(chunk_size) < 100)
     {
-        return Ok(flatten_df(df).collect());
+        return Ok(flatten_df_iter(df).collect());
     }
 
     let mut out = Vec::with_capacity(n);
@@ -171,7 +171,7 @@ pub fn split_df_as_ref(df: &DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>>
         if df.n_chunks() > 1 {
             // we add every chunk as separate dataframe. This make sure that every partition
             // deals with it.
-            out.extend(flatten_df(&df))
+            out.extend(flatten_df_iter(&df))
         } else {
             out.push(df)
         }

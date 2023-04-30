@@ -13,8 +13,6 @@ use polars_core::using_string_cache;
 pub(crate) use primitive::*;
 pub(crate) use string::*;
 
-const MEMORY_FRACTION_THRESHOLD: f64 = 0.3;
-
 pub(super) fn physical_agg_to_logical(cols: &mut [Series], output_schema: &Schema) {
     for (s, (name, dtype)) in cols.iter_mut().zip(output_schema.iter()) {
         if s.name() != name {

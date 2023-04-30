@@ -2,7 +2,7 @@ use polars_utils::sync::SyncPtr;
 
 use super::*;
 
-pub(super) fn flatten_df(df: &DataFrame) -> impl Iterator<Item = DataFrame> + '_ {
+pub fn flatten_df_iter(df: &DataFrame) -> impl Iterator<Item = DataFrame> + '_ {
     df.iter_chunks_physical().flat_map(|chunk| {
         let df = DataFrame::new_no_checks(
             df.iter()

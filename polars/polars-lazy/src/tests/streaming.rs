@@ -101,6 +101,19 @@ fn test_streaming_first_sum() -> PolarsResult<()> {
 }
 
 #[test]
+fn test_streaming_unique() -> PolarsResult<()> {
+    let q = get_csv_file();
+
+    let q = q
+        .select([col("sugars_g"), col("calories")])
+        .unique(None, Default::default())
+        .sort_by_exprs([cols(["sugars_g", "calories"])], [false], false);
+
+    assert_streaming_with_default(q);
+    Ok(())
+}
+
+#[test]
 fn test_streaming_aggregate_slice() -> PolarsResult<()> {
     let q = get_parquet_file();
 

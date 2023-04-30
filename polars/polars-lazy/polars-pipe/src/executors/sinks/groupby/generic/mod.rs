@@ -3,10 +3,12 @@ mod global;
 mod hash_table;
 mod ooc_state;
 mod sink;
+mod source;
 mod thread_local;
 
 use std::any::Any;
 use std::hash::{Hash, Hasher};
+use std::sync::Mutex;
 
 use eval::Eval;
 use hash_table::AggHashTable;
@@ -22,9 +24,11 @@ use thread_local::ThreadLocalTable;
 
 use super::*;
 use crate::executors::sinks::groupby::aggregates::{AggregateFn, AggregateFunction};
+use crate::executors::sinks::io::IOThread;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
 
 type PartitionVec<T> = Vec<T>;
+type IOThreadRef = Arc<Mutex<Option<IOThread>>>;
 
 #[derive(Clone)]
 struct SpillPayload {
@@ -66,7 +70,7 @@ impl SpillPayload {
 
     fn into_df(self) -> DataFrame {
         debug_assert_eq!(self.hashes.len(), self.chunk_idx.len());
-        debug_assert_eq!(self.hashes.len(), self.keys_and_aggs.len());
+        debug_assert_eq!(self.hashes.len(), self.keys_and_aggs[0].len());
 
         let hashes = UInt64Chunked::from_vec(HASH_COL, self.hashes).into_series();
         let chunk_idx = IdxCa::from_vec(INDEX_COL, self.chunk_idx).into_series();
@@ -75,6 +79,16 @@ impl SpillPayload {
         cols.push(chunk_idx);
         cols.extend(self.keys_and_aggs);
         DataFrame::new_no_checks(cols)
+    }
+
+    fn spilled_to_columns(spilled: &DataFrame) -> (&[u64], &[IdxSize], &[Series]) {
+        let cols = spilled.get_columns();
+        let hashes = cols[0].u64().unwrap();
+        let hashes = hashes.cont_slice().unwrap();
+        let chunk_indexes = cols[1].idx().unwrap();
+        let chunk_indexes = chunk_indexes.cont_slice().unwrap();
+        let keys_and_aggs = &cols[2..];
+        (hashes, chunk_indexes, keys_and_aggs)
     }
 }
 
