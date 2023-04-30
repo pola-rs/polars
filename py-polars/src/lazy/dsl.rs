@@ -1,5 +1,6 @@
 mod binary;
 mod categorical;
+mod list;
 #[cfg(feature = "meta")]
 mod meta;
 mod r#struct;
@@ -14,7 +15,6 @@ use pyo3::class::basic::CompareOp;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
-use smartstring::alias::String as SmartString;
 
 use super::apply::*;
 use crate::conversion::{parse_fill_null_strategy, Wrap};
@@ -839,15 +839,6 @@ impl PyExpr {
         self.inner.clone().str().splitn(by, n).into()
     }
 
-    pub fn arr_lengths(&self) -> PyExpr {
-        self.inner.clone().arr().lengths().into()
-    }
-
-    #[cfg(feature = "is_in")]
-    pub fn arr_contains(&self, other: PyExpr) -> PyExpr {
-        self.inner.clone().arr().contains(other.inner).into()
-    }
-
     pub fn year(&self) -> PyExpr {
         self.clone().inner.dt().year().into()
     }
@@ -1433,128 +1424,11 @@ impl PyExpr {
         self.inner.clone().upper_bound().into()
     }
 
-    fn lst_max(&self) -> Self {
-        self.inner.clone().arr().max().into()
-    }
-
-    fn lst_min(&self) -> Self {
-        self.inner.clone().arr().min().into()
-    }
-
-    fn lst_sum(&self) -> Self {
-        self.inner.clone().arr().sum().with_fmt("arr.sum").into()
-    }
-
-    fn lst_mean(&self) -> Self {
-        self.inner.clone().arr().mean().with_fmt("arr.mean").into()
-    }
-
-    fn lst_sort(&self, descending: bool) -> Self {
-        self.inner
-            .clone()
-            .arr()
-            .sort(SortOptions {
-                descending,
-                ..Default::default()
-            })
-            .with_fmt("arr.sort")
-            .into()
-    }
-
-    fn lst_reverse(&self) -> Self {
-        self.inner.clone().arr().reverse().into()
-    }
-
-    fn lst_unique(&self, maintain_order: bool) -> Self {
-        let e = self.inner.clone();
-
-        if maintain_order {
-            e.arr().unique_stable().into()
-        } else {
-            e.arr().unique().into()
-        }
-    }
-
-    fn lst_get(&self, index: PyExpr) -> Self {
-        self.inner.clone().arr().get(index.inner).into()
-    }
-
-    #[cfg(feature = "list_take")]
-    fn lst_take(&self, index: PyExpr, null_on_oob: bool) -> Self {
-        self.inner
-            .clone()
-            .arr()
-            .take(index.inner, null_on_oob)
-            .into()
-    }
-
-    fn lst_join(&self, separator: &str) -> Self {
-        self.inner.clone().arr().join(separator).into()
-    }
-
-    fn lst_arg_min(&self) -> Self {
-        self.inner.clone().arr().arg_min().into()
-    }
-
-    fn lst_arg_max(&self) -> Self {
-        self.inner.clone().arr().arg_max().into()
-    }
-
-    fn lst_diff(&self, n: i64, null_behavior: Wrap<NullBehavior>) -> PyResult<Self> {
-        Ok(self.inner.clone().arr().diff(n, null_behavior.0).into())
-    }
-
-    fn lst_shift(&self, periods: i64) -> Self {
-        self.inner.clone().arr().shift(periods).into()
-    }
-
-    fn lst_slice(&self, offset: PyExpr, length: Option<PyExpr>) -> Self {
-        let length = match length {
-            Some(i) => i.inner,
-            None => dsl::lit(i64::MAX),
-        };
-        self.inner.clone().arr().slice(offset.inner, length).into()
-    }
-
-    fn lst_eval(&self, expr: PyExpr, parallel: bool) -> Self {
-        self.inner.clone().arr().eval(expr.inner, parallel).into()
-    }
-
-    #[cfg(feature = "list_count")]
-    fn lst_count_match(&self, expr: PyExpr) -> Self {
-        self.inner.clone().arr().count_match(expr.inner).into()
-    }
-
     fn cumulative_eval(&self, expr: PyExpr, min_periods: usize, parallel: bool) -> Self {
         self.inner
             .clone()
             .cumulative_eval(expr.inner, min_periods, parallel)
             .into()
-    }
-
-    #[pyo3(signature = (width_strat, name_gen, upper_bound))]
-    fn lst_to_struct(
-        &self,
-        width_strat: Wrap<ListToStructWidthStrategy>,
-        name_gen: Option<PyObject>,
-        upper_bound: usize,
-    ) -> PyResult<Self> {
-        let name_gen = name_gen.map(|lambda| {
-            Arc::new(move |idx: usize| {
-                Python::with_gil(|py| {
-                    let out = lambda.call1(py, (idx,)).unwrap();
-                    let out: SmartString = out.extract::<&str>(py).unwrap().into();
-                    out
-                })
-            }) as NameGenerator
-        });
-
-        Ok(self
-            .inner
-            .clone()
-            .arr()
-            .to_struct(width_strat.0, name_gen, upper_bound)
-            .into())
     }
 
     fn rank(&self, method: Wrap<RankMethod>, descending: bool, seed: Option<u64>) -> Self {
