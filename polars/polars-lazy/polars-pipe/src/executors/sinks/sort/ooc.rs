@@ -8,7 +8,7 @@ use polars_io::SerReader;
 use polars_ops::prelude::*;
 use rayon::prelude::*;
 
-use crate::executors::sinks::io::{block_thread_until_io_thread_done, DfIter, IOThread};
+use crate::executors::sinks::io::{DfIter, IOThread};
 use crate::executors::sinks::sort::source::SortSource;
 use crate::operators::FinalizedSink;
 
@@ -37,7 +37,13 @@ pub(super) fn sort_ooc(
         eprintln!("processing {} files", files.len());
     }
 
-    let offsets = _split_offsets(files.len(), POOL.current_num_threads());
+    // here it will split every file into `N` partitions.
+    // So this will create approximately M * N files of size M / N
+    // this heavily influences performance
+    // TODO!
+    // check if we can batch the output files per partition before we write them.
+    // this way we can write large files and amortize IO cost
+    let offsets = _split_offsets(files.len(), POOL.current_num_threads() * 2);
     POOL.install(|| {
         offsets.par_iter().try_for_each(|(offset, len)| {
             let files = &files[*offset..*offset + *len];
@@ -56,13 +62,14 @@ pub(super) fn sort_ooc(
 
                 // partition the dataframe into proper buckets
                 let (iter, unique_assigned_parts) = partition_df(df, &assigned_parts)?;
-                io_thread.dump_iter(Some(unique_assigned_parts), iter);
+                io_thread.dump_partitioned_thread_local(unique_assigned_parts, iter);
             }
             PolarsResult::Ok(())
         })
     })?;
-
-    block_thread_until_io_thread_done(io_thread);
+    if verbose {
+        eprintln!("finished partitioning sort files");
+    }
 
     let files = std::fs::read_dir(dir)?
         .flat_map(|entry| {
@@ -81,7 +88,7 @@ pub(super) fn sort_ooc(
         })
         .collect::<std::io::Result<Vec<_>>>()?;
 
-    let source = SortSource::new(files, idx, descending, slice);
+    let source = SortSource::new(files, idx, descending, slice, verbose);
     Ok(FinalizedSink::Source(Box::new(source)))
 }
 

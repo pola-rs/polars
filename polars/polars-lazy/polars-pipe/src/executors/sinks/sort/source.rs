@@ -25,7 +25,12 @@ impl SortSource {
         sort_idx: usize,
         descending: bool,
         slice: Option<(i64, usize)>,
+        verbose: bool,
     ) -> Self {
+        if verbose {
+            eprintln!("started sort source phase");
+        }
+
         files.sort_unstable_by_key(|entry| entry.0);
 
         let n_threads = POOL.current_num_threads();
