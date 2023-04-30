@@ -26,8 +26,8 @@ impl Default for StrptimeOptions {
     fn default() -> Self {
         StrptimeOptions {
             format: None,
-            strict: false,
-            exact: false,
+            strict: true,
+            exact: true,
             cache: true,
             tz_aware: false,
             utc: false,
