@@ -41,7 +41,7 @@ use jemallocator::Jemalloc;
 use mimalloc::MiMalloc;
 #[cfg(feature = "object")]
 pub use object::register_object_builder;
-use polars_core::prelude::{DataFrame, IDX_DTYPE};
+use polars_core::prelude::IDX_DTYPE;
 use polars_core::POOL;
 use pyo3::exceptions::PyValueError;
 use pyo3::panic::PanicException;
@@ -49,7 +49,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use pyo3::wrap_pyfunction;
 
-use crate::conversion::{get_df, get_series, Wrap};
+use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
 use crate::error::{
     ArrowErrorException, ColumnNotFoundError, ComputeError, DuplicateError, InvalidOperationError,
@@ -95,92 +95,6 @@ fn enable_string_cache(toggle: bool) {
 #[pyfunction]
 fn using_string_cache() -> bool {
     polars_rs::using_string_cache()
-}
-
-#[pyfunction]
-fn concat_df(dfs: &PyAny, py: Python) -> PyResult<PyDataFrame> {
-    use polars_core::error::PolarsResult;
-    use polars_core::utils::rayon::prelude::*;
-
-    let mut iter = dfs.iter()?;
-    let first = iter.next().unwrap()?;
-
-    let first_rdf = get_df(first)?;
-    let identity_df = first_rdf.clear();
-
-    let mut rdfs: Vec<PolarsResult<DataFrame>> = vec![Ok(first_rdf)];
-
-    for item in iter {
-        let rdf = get_df(item?)?;
-        rdfs.push(Ok(rdf));
-    }
-
-    let identity = || Ok(identity_df.clone());
-
-    let df = py
-        .allow_threads(|| {
-            polars_core::POOL.install(|| {
-                rdfs.into_par_iter()
-                    .fold(identity, |acc: PolarsResult<DataFrame>, df| {
-                        let mut acc = acc?;
-                        acc.vstack_mut(&df?)?;
-                        Ok(acc)
-                    })
-                    .reduce(identity, |acc, df| {
-                        let mut acc = acc?;
-                        acc.vstack_mut(&df?)?;
-                        Ok(acc)
-                    })
-            })
-        })
-        .map_err(PyPolarsErr::from)?;
-
-    Ok(df.into())
-}
-
-#[pyfunction]
-fn diag_concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
-    let iter = dfs.iter()?;
-
-    let dfs = iter
-        .map(|item| {
-            let item = item?;
-            get_df(item)
-        })
-        .collect::<PyResult<Vec<_>>>()?;
-
-    let df = polars_rs::functions::diag_concat_df(&dfs).map_err(PyPolarsErr::from)?;
-    Ok(df.into())
-}
-
-#[pyfunction]
-fn hor_concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
-    let iter = dfs.iter()?;
-
-    let dfs = iter
-        .map(|item| {
-            let item = item?;
-            get_df(item)
-        })
-        .collect::<PyResult<Vec<_>>>()?;
-
-    let df = polars_rs::functions::hor_concat_df(&dfs).map_err(PyPolarsErr::from)?;
-    Ok(df.into())
-}
-
-#[pyfunction]
-fn concat_series(series: &PyAny) -> PyResult<PySeries> {
-    let mut iter = series.iter()?;
-    let first = iter.next().unwrap()?;
-
-    let mut s = get_series(first)?;
-
-    for res in iter {
-        let item = res?;
-        let item = get_series(item)?;
-        s.append(&item).map_err(PyPolarsErr::from)?;
-    }
-    Ok(s.into())
 }
 
 #[cfg(feature = "ipc")]
@@ -271,12 +185,16 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<sql::PySQLContext>().unwrap();
 
     // Functions - eager
-    m.add_wrapped(wrap_pyfunction!(concat_df)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(concat_series)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::eager::concat_df))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::eager::concat_series))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::eager::date_range))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(diag_concat_df)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(hor_concat_df)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::eager::diag_concat_df))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::eager::hor_concat_df))
+        .unwrap();
 
     // Functions - lazy
     m.add_wrapped(wrap_pyfunction!(functions::lazy::arange))
@@ -343,8 +261,6 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::sum_exprs))
         .unwrap();
-
-    // Functions - whenthen
     m.add_wrapped(wrap_pyfunction!(functions::whenthen::when))
         .unwrap();
 
