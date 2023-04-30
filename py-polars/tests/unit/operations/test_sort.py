@@ -402,13 +402,13 @@ def test_sort_by_in_over_5499() -> None:
 
 def test_merge_sorted() -> None:
     df_a = (
-        pl.date_range(datetime(2022, 1, 1), datetime(2022, 12, 1), "1mo")
+        pl.date_range(datetime(2022, 1, 1), datetime(2022, 12, 1), "1mo", eager=True)
         .to_frame("range")
         .with_row_count()
     )
 
     df_b = (
-        pl.date_range(datetime(2022, 1, 1), datetime(2022, 12, 1), "2mo")
+        pl.date_range(datetime(2022, 1, 1), datetime(2022, 12, 1), "2mo", eager=True)
         .to_frame("range")
         .with_row_count()
         .with_columns(pl.col("row_nr") * 10)

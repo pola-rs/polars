@@ -319,7 +319,9 @@ def test_join_asof_projection() -> None:
 
 def test_asof_join_by_logical_types() -> None:
     dates = (
-        pl.date_range(datetime(2022, 1, 1), datetime(2022, 1, 2), interval="2h")
+        pl.date_range(
+            datetime(2022, 1, 1), datetime(2022, 1, 2), interval="2h", eager=True
+        )
         .cast(pl.Datetime("ns"))
         .head(9)
     )

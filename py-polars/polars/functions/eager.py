@@ -15,7 +15,7 @@ from polars.utils.convert import (
     _tzinfo_to_str,
 )
 from polars.utils.decorators import deprecated_alias
-from polars.utils.various import find_stacklevel
+from polars.utils.various import find_stacklevel, no_default
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import concat_df as _concat_df
@@ -42,6 +42,7 @@ if TYPE_CHECKING:
         PolarsDataType,
         TimeUnit,
     )
+    from polars.utils.various import NoDefault
 
     if sys.version_info >= (3, 8):
         from typing import Literal
@@ -314,7 +315,7 @@ def date_range(
     end: date | datetime | Expr | str,
     interval: str | timedelta = ...,
     *,
-    lazy: Literal[False] = ...,
+    eager: Literal[True] = ...,
     closed: ClosedInterval = ...,
     name: str | None = ...,
     time_unit: TimeUnit | None = ...,
@@ -329,7 +330,7 @@ def date_range(
     end: Expr,
     interval: str | timedelta = ...,
     *,
-    lazy: Literal[False] = ...,
+    eager: Literal[True] = ...,
     closed: ClosedInterval = ...,
     name: str | None = ...,
     time_unit: TimeUnit | None = ...,
@@ -344,7 +345,7 @@ def date_range(
     end: date | datetime | str,
     interval: str | timedelta = ...,
     *,
-    lazy: Literal[False] = ...,
+    eager: Literal[True] = ...,
     closed: ClosedInterval = ...,
     name: str | None = ...,
     time_unit: TimeUnit | None = ...,
@@ -359,7 +360,7 @@ def date_range(
     end: date | datetime | Expr | str,
     interval: str | timedelta = ...,
     *,
-    lazy: Literal[True],
+    eager: Literal[False],
     closed: ClosedInterval = ...,
     name: str | None = None,
     time_unit: TimeUnit | None = ...,
@@ -374,7 +375,8 @@ def date_range(
     end: date | datetime | Expr | str,
     interval: str | timedelta = "1d",
     *,
-    lazy: bool = False,
+    lazy: bool | NoDefault = no_default,
+    eager: bool | NoDefault = no_default,
     closed: ClosedInterval = "both",
     name: str | None = None,
     time_unit: TimeUnit | None = None,
@@ -395,6 +397,11 @@ def date_range(
         representing 3 days, 12 hours, 4 minutes, and 25 seconds.
     lazy:
         Return an expression.
+
+            .. deprecated:: 0.17.10
+    eager:
+        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
+        return an expression instead.
     closed : {'both', 'left', 'right', 'none'}
         Define whether the temporal window interval is closed or not.
     name
@@ -420,7 +427,9 @@ def date_range(
     Using polars duration string to specify the interval:
 
     >>> from datetime import date
-    >>> pl.date_range(date(2022, 1, 1), date(2022, 3, 1), "1mo", name="dtrange")
+    >>> pl.date_range(
+    ...     date(2022, 1, 1), date(2022, 3, 1), "1mo", name="dtrange", eager=True
+    ... )
     shape: (3,)
     Series: 'dtrange' [date]
     [
@@ -437,6 +446,7 @@ def date_range(
     ...     datetime(1985, 1, 10),
     ...     timedelta(days=1, hours=12),
     ...     time_unit="ms",
+    ...     eager=True,
     ... )
     shape: (7,)
     Series: '' [datetime[ms]]
@@ -457,6 +467,7 @@ def date_range(
     ...     datetime(2022, 3, 1),
     ...     "1mo",
     ...     time_zone="America/New_York",
+    ...     eager=True,
     ... )
     shape: (3,)
     Series: '' [datetime[μs, America/New_York]]
@@ -470,9 +481,7 @@ def date_range(
 
     >>> (
     ...     pl.date_range(
-    ...         datetime(2022, 1, 1),
-    ...         datetime(2022, 3, 1),
-    ...         "1mo",
+    ...         datetime(2022, 1, 1), datetime(2022, 3, 1), "1mo", eager=True
     ...     ).dt.month_end()
     ... )
     shape: (3,)
@@ -484,6 +493,37 @@ def date_range(
     ]
 
     """
+    if eager is no_default and lazy is no_default:
+        # user passed nothing
+        warnings.warn(
+            "In a future version of polars, the default will change from `lazy=False` to `eager=False`. "
+            "To silence this warning, please:\n"
+            "- set `eager=False` to opt in to the new default behaviour, or\n"
+            "- set `eager=True` to retain the old one.",
+            FutureWarning,
+            stacklevel=find_stacklevel(),
+        )
+        eager = True
+    elif eager is no_default and lazy is not no_default:
+        # user only passed lazy
+        warnings.warn(
+            "In a future version of polars, the default will change from `lazy=False` to `eager=False`. "
+            "To silence this warning, please remove `lazy` and then:\n"
+            "- set `eager=False` to opt in to the new default behaviour, or\n"
+            "- set `eager=True` to retain the old one.",
+            FutureWarning,
+            stacklevel=find_stacklevel(),
+        )
+        eager = not lazy
+    elif eager is not no_default and lazy is not no_default:
+        # user passed both
+        raise TypeError(
+            "cannot pass both `eager` and `lazy`. Please only pass `eager`, as `lazy` will be removed "
+            "in a future version."
+        )
+    else:
+        # user only passed eager. Nothing to warn about :)
+        pass
     if name is None:
         name = ""
     if isinstance(interval, timedelta):
@@ -491,7 +531,11 @@ def date_range(
     elif " " in interval:
         interval = interval.replace(" ", "")
 
-    if isinstance(start, (str, pl.Expr)) or isinstance(end, (str, pl.Expr)) or lazy:
+    if (
+        isinstance(start, (str, pl.Expr))
+        or isinstance(end, (str, pl.Expr))
+        or not eager
+    ):
         start = expr_to_lit_or_expr(start, str_to_lit=False)._pyexpr
         end = expr_to_lit_or_expr(end, str_to_lit=False)._pyexpr
         return wrap_expr(
