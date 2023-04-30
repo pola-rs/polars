@@ -44,7 +44,6 @@ pub use object::register_object_builder;
 use polars_core::datatypes::{TimeUnit, TimeZone};
 use polars_core::prelude::{DataFrame, IntoSeries, IDX_DTYPE};
 use polars_core::POOL;
-use polars_rs::functions::{diag_concat_df, hor_concat_df};
 use pyo3::exceptions::PyValueError;
 use pyo3::panic::PanicException;
 use pyo3::prelude::*;
@@ -156,7 +155,7 @@ fn concat_lf(seq: &PyAny, rechunk: bool, parallel: bool) -> PyResult<PyLazyFrame
 }
 
 #[pyfunction]
-fn py_diag_concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
+fn diag_concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
     let iter = dfs.iter()?;
 
     let dfs = iter
@@ -166,12 +165,12 @@ fn py_diag_concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
         })
         .collect::<PyResult<Vec<_>>>()?;
 
-    let df = diag_concat_df(&dfs).map_err(PyPolarsErr::from)?;
+    let df = polars_rs::functions::diag_concat_df(&dfs).map_err(PyPolarsErr::from)?;
     Ok(df.into())
 }
 
 #[pyfunction]
-fn py_diag_concat_lf(lfs: &PyAny, rechunk: bool, parallel: bool) -> PyResult<PyLazyFrame> {
+fn diag_concat_lf(lfs: &PyAny, rechunk: bool, parallel: bool) -> PyResult<PyLazyFrame> {
     let iter = lfs.iter()?;
 
     let lfs = iter
@@ -187,7 +186,7 @@ fn py_diag_concat_lf(lfs: &PyAny, rechunk: bool, parallel: bool) -> PyResult<PyL
 }
 
 #[pyfunction]
-fn py_hor_concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
+fn hor_concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
     let iter = dfs.iter()?;
 
     let dfs = iter
@@ -197,7 +196,7 @@ fn py_hor_concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
         })
         .collect::<PyResult<Vec<_>>>()?;
 
-    let df = hor_concat_df(&dfs).map_err(PyPolarsErr::from)?;
+    let df = polars_rs::functions::hor_concat_df(&dfs).map_err(PyPolarsErr::from)?;
     Ok(df.into())
 }
 
@@ -255,7 +254,7 @@ fn parquet_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
 }
 
 #[pyfunction]
-fn py_date_range(
+fn date_range(
     start: i64,
     stop: i64,
     every: &str,
@@ -278,7 +277,7 @@ fn py_date_range(
 }
 
 #[pyfunction]
-fn py_date_range_lazy(
+fn date_range_lazy(
     start: PyExpr,
     end: PyExpr,
     every: &str,
@@ -340,6 +339,16 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<batched_csv::PyBatchedCsv>().unwrap();
     #[cfg(feature = "sql")]
     m.add_class::<sql::PySQLContext>().unwrap();
+
+    // Functions - eager
+    m.add_wrapped(wrap_pyfunction!(concat_df)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(concat_lf)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(concat_series)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(date_range)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(date_range_lazy)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(diag_concat_df)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(diag_concat_lf)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(hor_concat_df)).unwrap();
 
     // Functions - lazy
     m.add_wrapped(wrap_pyfunction!(functions::lazy::arange))
@@ -443,18 +452,10 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(enable_string_cache))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(using_string_cache)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(concat_df)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(concat_lf)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(concat_series)).unwrap();
     #[cfg(feature = "ipc")]
     m.add_wrapped(wrap_pyfunction!(ipc_schema)).unwrap();
     #[cfg(feature = "parquet")]
     m.add_wrapped(wrap_pyfunction!(parquet_schema)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(py_diag_concat_df)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(py_diag_concat_lf)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(py_hor_concat_df)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(py_date_range)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(py_date_range_lazy)).unwrap();
     m.add_wrapped(wrap_pyfunction!(threadpool_size)).unwrap();
     m.add_wrapped(wrap_pyfunction!(get_index_type)).unwrap();
     m.add_wrapped(wrap_pyfunction!(set_float_fmt)).unwrap();
