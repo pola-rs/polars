@@ -34,10 +34,6 @@ impl From<dsl::Expr> for PyExpr {
     }
 }
 
-pub fn col(name: &str) -> PyExpr {
-    dsl::col(name).into()
-}
-
 pub fn count() -> PyExpr {
     dsl::count().into()
 }
@@ -48,14 +44,6 @@ pub fn first() -> PyExpr {
 
 pub fn last() -> PyExpr {
     dsl::last().into()
-}
-
-pub fn cols(names: Vec<String>) -> PyExpr {
-    dsl::cols(names).into()
-}
-
-pub fn dtype_cols(dtypes: Vec<DataType>) -> PyExpr {
-    dsl::dtype_cols(dtypes).into()
 }
 
 pub fn binary_expr(l: PyExpr, op: u8, r: PyExpr) -> PyExpr {

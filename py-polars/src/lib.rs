@@ -60,13 +60,10 @@ use crate::error::{
     NoDataError, PyPolarsErr, SchemaError, SchemaFieldNotFoundError, StructFieldNotFoundError,
 };
 use crate::file::{get_either_file, EitherRustPythonFile};
-use crate::functions::whenthen;
 use crate::lazy::dataframe::{PyLazyFrame, PyLazyGroupBy};
 use crate::lazy::dsl;
 use crate::lazy::dsl::PyExpr;
-use crate::prelude::{
-    vec_extract_wrapped, ClosedWindow, DataType, DatetimeArgs, Duration, DurationArgs,
-};
+use crate::prelude::{ClosedWindow, DataType, DatetimeArgs, Duration, DurationArgs};
 use crate::series::PySeries;
 
 #[global_allocator]
@@ -76,11 +73,6 @@ static ALLOC: Jemalloc = Jemalloc;
 #[global_allocator]
 #[cfg(any(not(target_os = "linux"), use_mimalloc))]
 static ALLOC: MiMalloc = MiMalloc;
-
-#[pyfunction]
-fn col(name: &str) -> dsl::PyExpr {
-    dsl::col(name)
-}
 
 #[pyfunction]
 fn count() -> dsl::PyExpr {
@@ -95,17 +87,6 @@ fn first() -> dsl::PyExpr {
 #[pyfunction]
 fn last() -> dsl::PyExpr {
     dsl::last()
-}
-
-#[pyfunction]
-fn cols(names: Vec<String>) -> dsl::PyExpr {
-    dsl::cols(names)
-}
-
-#[pyfunction]
-fn dtype_cols(dtypes: Vec<Wrap<DataType>>) -> PyResult<dsl::PyExpr> {
-    let dtypes = vec_extract_wrapped(dtypes);
-    Ok(dsl::dtype_cols(dtypes))
 }
 
 #[pyfunction]
@@ -142,11 +123,6 @@ fn cumfold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>, include_init: bool
 #[pyfunction]
 fn cumreduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
     dsl::cumreduce(lambda, exprs)
-}
-
-#[pyfunction]
-fn arange(start: PyExpr, end: PyExpr, step: i64) -> PyExpr {
-    polars_rs::lazy::dsl::arange(start.inner, end.inner, step).into()
 }
 
 #[pyfunction]
@@ -205,15 +181,6 @@ fn spearman_rank_corr(
 #[pyfunction]
 fn cov(a: dsl::PyExpr, b: dsl::PyExpr) -> dsl::PyExpr {
     polars_rs::lazy::dsl::cov(a.inner, b.inner).into()
-}
-
-#[pyfunction]
-fn arg_sort_by(by: Vec<dsl::PyExpr>, descending: Vec<bool>) -> dsl::PyExpr {
-    let by = by
-        .into_iter()
-        .map(|e| e.inner)
-        .collect::<Vec<polars_rs::lazy::dsl::Expr>>();
-    polars_rs::lazy::dsl::arg_sort_by(by, &descending).into()
 }
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -473,25 +440,6 @@ fn parquet_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
 }
 
 #[pyfunction]
-fn collect_all(lfs: Vec<PyLazyFrame>, py: Python) -> PyResult<Vec<PyDataFrame>> {
-    use polars_core::utils::rayon::prelude::*;
-
-    let out = py.allow_threads(|| {
-        polars_core::POOL.install(|| {
-            lfs.par_iter()
-                .map(|lf| {
-                    let df = lf.ldf.clone().collect()?;
-                    Ok(PyDataFrame::new(df))
-                })
-                .collect::<polars_core::error::PolarsResult<Vec<_>>>()
-                .map_err(PyPolarsErr::from)
-        })
-    });
-
-    Ok(out?)
-}
-
-#[pyfunction]
 #[pyo3(signature = (pyexpr, lambda, output_type, apply_groups, returns_scalar))]
 pub fn map_mul(
     py: Python,
@@ -562,26 +510,9 @@ fn max_exprs(exprs: Vec<PyExpr>) -> PyExpr {
 }
 
 #[pyfunction]
-fn coalesce_exprs(exprs: Vec<PyExpr>) -> PyExpr {
-    let exprs = exprs.to_exprs();
-    polars_rs::lazy::dsl::coalesce(&exprs).into()
-}
-
-#[pyfunction]
 fn sum_exprs(exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = exprs.to_exprs();
     polars_rs::lazy::dsl::sum_exprs(exprs).into()
-}
-
-#[pyfunction]
-fn as_struct(exprs: Vec<PyExpr>) -> PyExpr {
-    let exprs = exprs.to_exprs();
-    polars_rs::lazy::dsl::as_struct(&exprs).into()
-}
-
-#[pyfunction]
-fn arg_where(condition: PyExpr) -> PyExpr {
-    polars_rs::lazy::dsl::arg_where(condition.inner).into()
 }
 
 #[pyfunction]
@@ -667,12 +598,15 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<batched_csv::PyBatchedCsv>().unwrap();
     #[cfg(feature = "sql")]
     m.add_class::<sql::PySQLContext>().unwrap();
-    m.add_wrapped(wrap_pyfunction!(col)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::col))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(count)).unwrap();
     m.add_wrapped(wrap_pyfunction!(first)).unwrap();
     m.add_wrapped(wrap_pyfunction!(last)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(cols)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(dtype_cols)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::cols))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::dtype_cols))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(dtype_str_repr)).unwrap();
     m.add_wrapped(wrap_pyfunction!(lit)).unwrap();
     m.add_wrapped(wrap_pyfunction!(fold)).unwrap();
@@ -680,11 +614,14 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(reduce)).unwrap();
     m.add_wrapped(wrap_pyfunction!(cumreduce)).unwrap();
     m.add_wrapped(wrap_pyfunction!(binary_expr)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(arange)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::arange))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(pearson_corr)).unwrap();
     m.add_wrapped(wrap_pyfunction!(cov)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(arg_sort_by)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(whenthen::when)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::arg_sort_by))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::whenthen::when))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(get_polars_version)).unwrap();
     m.add_wrapped(wrap_pyfunction!(enable_string_cache))
         .unwrap();
@@ -698,7 +635,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(ipc_schema)).unwrap();
     #[cfg(feature = "parquet")]
     m.add_wrapped(wrap_pyfunction!(parquet_schema)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(collect_all)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::collect_all))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(spearman_rank_corr)).unwrap();
     m.add_wrapped(wrap_pyfunction!(map_mul)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_diag_concat_df)).unwrap();
@@ -711,12 +649,15 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(sum_exprs)).unwrap();
     m.add_wrapped(wrap_pyfunction!(min_exprs)).unwrap();
     m.add_wrapped(wrap_pyfunction!(max_exprs)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(as_struct)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::as_struct))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(repeat)).unwrap();
     m.add_wrapped(wrap_pyfunction!(threadpool_size)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(arg_where)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::arg_where))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(get_index_type)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(coalesce_exprs)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::coalesce))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(set_float_fmt)).unwrap();
     m.add_wrapped(wrap_pyfunction!(get_float_fmt)).unwrap();
     #[cfg(feature = "object")]

@@ -32,14 +32,14 @@ from polars.utils.decorators import deprecated_alias
 from polars.utils.various import find_stacklevel
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import arange as pyarange
-    from polars.polars import arg_sort_by as py_arg_sort_by
-    from polars.polars import arg_where as py_arg_where
+    from polars.polars import arange as _arange
+    from polars.polars import arg_sort_by as _arg_sort_by
+    from polars.polars import arg_where as _arg_where
     from polars.polars import as_struct as _as_struct
-    from polars.polars import coalesce_exprs as _coalesce_exprs
-    from polars.polars import col as pycol
+    from polars.polars import coalesce as _coalesce
+    from polars.polars import col as _col
     from polars.polars import collect_all as _collect_all
-    from polars.polars import cols as pycols
+    from polars.polars import cols as _cols
     from polars.polars import concat_lst as _concat_lst
     from polars.polars import concat_str as _concat_str
     from polars.polars import count as _count
@@ -223,7 +223,7 @@ def col(
         if isinstance(name, str):
             names_str = [name]
             names_str.extend(more_names)  # type: ignore[arg-type]
-            return wrap_expr(pycols(names_str))
+            return wrap_expr(_cols(names_str))
         elif is_polars_dtype(name):
             dtypes = [name]
             dtypes.extend(more_names)
@@ -234,17 +234,17 @@ def col(
             )
 
     if isinstance(name, str):
-        return wrap_expr(pycol(name))
+        return wrap_expr(_col(name))
     elif is_polars_dtype(name):
         return wrap_expr(_dtype_cols([name]))
     elif isinstance(name, Iterable):
         names = list(name)
         if not names:
-            return wrap_expr(pycols(names))
+            return wrap_expr(_cols(names))
 
         item = names[0]
         if isinstance(item, str):
-            return wrap_expr(pycols(names))
+            return wrap_expr(_cols(names))
         elif is_polars_dtype(item):
             return wrap_expr(_dtype_cols(names))
         else:
@@ -2443,7 +2443,7 @@ def arange(
     """
     start = expr_to_lit_or_expr(start, str_to_lit=False)
     end = expr_to_lit_or_expr(end, str_to_lit=False)
-    range_expr = wrap_expr(pyarange(start._pyexpr, end._pyexpr, step))
+    range_expr = wrap_expr(_arange(start._pyexpr, end._pyexpr, step))
 
     if dtype is not None and dtype != Int64:
         range_expr = range_expr.cast(dtype)
@@ -2527,7 +2527,7 @@ def arg_sort_by(
         raise ValueError(
             f"the length of `descending` ({len(descending)}) does not match the length of `exprs` ({len(exprs)})"
         )
-    return wrap_expr(py_arg_sort_by(exprs, descending))
+    return wrap_expr(_arg_sort_by(exprs, descending))
 
 
 def duration(
@@ -3228,7 +3228,7 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
         return condition.to_frame().select(arg_where(col(condition.name))).to_series()
     else:
         condition = expr_to_lit_or_expr(condition, str_to_lit=True)
-        return wrap_expr(py_arg_where(condition._pyexpr))
+        return wrap_expr(_arg_where(condition._pyexpr))
 
 
 def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
@@ -3281,7 +3281,7 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
     exprs = selection_to_pyexpr_list(exprs)
     if more_exprs:
         exprs.extend(selection_to_pyexpr_list(more_exprs))
-    return wrap_expr(_coalesce_exprs(exprs))
+    return wrap_expr(_coalesce(exprs))
 
 
 @overload
