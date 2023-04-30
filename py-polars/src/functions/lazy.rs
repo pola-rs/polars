@@ -6,7 +6,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
 
-use crate::conversion::Wrap;
+use crate::conversion::{get_lf, Wrap};
 use crate::lazy::{apply, ToExprs};
 use crate::prelude::{
     vec_extract_wrapped, ClosedWindow, DataType, DatetimeArgs, Duration, DurationArgs, ObjectValue,
@@ -74,6 +74,21 @@ pub fn collect_all(lfs: Vec<PyLazyFrame>, py: Python) -> PyResult<Vec<PyDataFram
 #[pyfunction]
 pub fn cols(names: Vec<String>) -> PyExpr {
     dsl::cols(names).into()
+}
+
+#[pyfunction]
+pub fn concat_lf(seq: &PyAny, rechunk: bool, parallel: bool) -> PyResult<PyLazyFrame> {
+    let len = seq.len()?;
+    let mut lfs = Vec::with_capacity(len);
+
+    for res in seq.iter()? {
+        let item = res?;
+        let lf = get_lf(item)?;
+        lfs.push(lf);
+    }
+
+    let lf = dsl::concat(lfs, rechunk, parallel).map_err(PyPolarsErr::from)?;
+    Ok(lf.into())
 }
 
 #[pyfunction]
@@ -156,6 +171,21 @@ pub fn datetime(
         microsecond,
     };
     dsl::datetime(args).into()
+}
+
+#[pyfunction]
+pub fn diag_concat_lf(lfs: &PyAny, rechunk: bool, parallel: bool) -> PyResult<PyLazyFrame> {
+    let iter = lfs.iter()?;
+
+    let lfs = iter
+        .map(|item| {
+            let item = item?;
+            get_lf(item)
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+
+    let lf = dsl::functions::diag_concat_lf(lfs, rechunk, parallel).map_err(PyPolarsErr::from)?;
+    Ok(lf.into())
 }
 
 #[pyfunction]

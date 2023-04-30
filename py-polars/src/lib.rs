@@ -49,7 +49,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use pyo3::wrap_pyfunction;
 
-use crate::conversion::{get_df, get_lf, get_series, Wrap};
+use crate::conversion::{get_df, get_series, Wrap};
 use crate::dataframe::PyDataFrame;
 use crate::error::{
     ArrowErrorException, ColumnNotFoundError, ComputeError, DuplicateError, InvalidOperationError,
@@ -139,21 +139,6 @@ fn concat_df(dfs: &PyAny, py: Python) -> PyResult<PyDataFrame> {
 }
 
 #[pyfunction]
-fn concat_lf(seq: &PyAny, rechunk: bool, parallel: bool) -> PyResult<PyLazyFrame> {
-    let len = seq.len()?;
-    let mut lfs = Vec::with_capacity(len);
-
-    for res in seq.iter()? {
-        let item = res?;
-        let lf = get_lf(item)?;
-        lfs.push(lf);
-    }
-
-    let lf = polars_rs::lazy::dsl::concat(lfs, rechunk, parallel).map_err(PyPolarsErr::from)?;
-    Ok(lf.into())
-}
-
-#[pyfunction]
 fn diag_concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
     let iter = dfs.iter()?;
 
@@ -166,22 +151,6 @@ fn diag_concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
 
     let df = polars_rs::functions::diag_concat_df(&dfs).map_err(PyPolarsErr::from)?;
     Ok(df.into())
-}
-
-#[pyfunction]
-fn diag_concat_lf(lfs: &PyAny, rechunk: bool, parallel: bool) -> PyResult<PyLazyFrame> {
-    let iter = lfs.iter()?;
-
-    let lfs = iter
-        .map(|item| {
-            let item = item?;
-            get_lf(item)
-        })
-        .collect::<PyResult<Vec<_>>>()?;
-
-    let lf = polars_rs::lazy::dsl::functions::diag_concat_lf(lfs, rechunk, parallel)
-        .map_err(PyPolarsErr::from)?;
-    Ok(lf.into())
 }
 
 #[pyfunction]
@@ -303,12 +272,10 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
 
     // Functions - eager
     m.add_wrapped(wrap_pyfunction!(concat_df)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(concat_lf)).unwrap();
     m.add_wrapped(wrap_pyfunction!(concat_series)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::eager::date_range))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(diag_concat_df)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(diag_concat_lf)).unwrap();
     m.add_wrapped(wrap_pyfunction!(hor_concat_df)).unwrap();
 
     // Functions - lazy
@@ -328,6 +295,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::cols))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::concat_lf))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::concat_list))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::concat_str))
@@ -343,6 +312,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::lazy::date_range_lazy))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::datetime))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::diag_concat_lf))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::dtype_cols))
         .unwrap();
