@@ -43,22 +43,23 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import concat_list as _concat_list
     from polars.polars import concat_str as _concat_str
     from polars.polars import count as _count
-    from polars.polars import cov as pycov
-    from polars.polars import cumfold as pycumfold
-    from polars.polars import cumreduce as pycumreduce
+    from polars.polars import cov as _cov
+    from polars.polars import cumfold as _cumfold
+    from polars.polars import cumreduce as _cumreduce
+    from polars.polars import datetime as _datetime
     from polars.polars import dtype_cols as _dtype_cols
+    from polars.polars import duration as _duration
     from polars.polars import first as _first
-    from polars.polars import fold as pyfold
+    from polars.polars import fold as _fold
     from polars.polars import last as _last
-    from polars.polars import lit as pylit
+    from polars.polars import lit as _lit
     from polars.polars import map_mul as _map_mul
     from polars.polars import max_exprs as _max_exprs
     from polars.polars import min_exprs as _min_exprs
-    from polars.polars import pearson_corr as pypearson_corr
-    from polars.polars import py_datetime, py_duration
-    from polars.polars import reduce as pyreduce
+    from polars.polars import pearson_corr as _pearson_corr
+    from polars.polars import reduce as _reduce
     from polars.polars import repeat as _repeat
-    from polars.polars import spearman_rank_corr as pyspearman_rank_corr
+    from polars.polars import spearman_rank_corr as _spearman_rank_corr
     from polars.polars import sum_exprs as _sum_exprs
 
 
@@ -1294,7 +1295,7 @@ def lit(
     elif isinstance(value, pl.Series):
         name = value.name
         value = value._s
-        e = wrap_expr(pylit(value, allow_object))
+        e = wrap_expr(_lit(value, allow_object))
         if name == "":
             return e
         return e.alias(name)
@@ -1305,7 +1306,7 @@ def lit(
         return lit(pl.Series("", value))
 
     elif dtype:
-        return wrap_expr(pylit(value, allow_object)).cast(dtype)
+        return wrap_expr(_lit(value, allow_object)).cast(dtype)
 
     try:
         # numpy literals like np.float32(0) have item/dtype
@@ -1328,7 +1329,7 @@ def lit(
 
     except AttributeError:
         item = value
-    return wrap_expr(pylit(item, allow_object))
+    return wrap_expr(_lit(item, allow_object))
 
 
 @overload
@@ -1479,7 +1480,7 @@ def spearman_rank_corr(
         a = col(a)
     if isinstance(b, str):
         b = col(b)
-    return wrap_expr(pyspearman_rank_corr(a._pyexpr, b._pyexpr, ddof, propagate_nans))
+    return wrap_expr(_spearman_rank_corr(a._pyexpr, b._pyexpr, ddof, propagate_nans))
 
 
 def pearson_corr(a: str | Expr, b: str | Expr, ddof: int = 1) -> Expr:
@@ -1526,7 +1527,7 @@ def pearson_corr(a: str | Expr, b: str | Expr, ddof: int = 1) -> Expr:
         a = col(a)
     if isinstance(b, str):
         b = col(b)
-    return wrap_expr(pypearson_corr(a._pyexpr, b._pyexpr, ddof))
+    return wrap_expr(_pearson_corr(a._pyexpr, b._pyexpr, ddof))
 
 
 def corr(
@@ -1591,10 +1592,10 @@ def corr(
         b = col(b)
 
     if method == "pearson":
-        return wrap_expr(pypearson_corr(a._pyexpr, b._pyexpr, ddof))
+        return wrap_expr(_pearson_corr(a._pyexpr, b._pyexpr, ddof))
     elif method == "spearman":
         return wrap_expr(
-            pyspearman_rank_corr(a._pyexpr, b._pyexpr, ddof, propagate_nans)
+            _spearman_rank_corr(a._pyexpr, b._pyexpr, ddof, propagate_nans)
         )
     else:
         raise ValueError(
@@ -1631,7 +1632,7 @@ def cov(a: str | Expr, b: str | Expr) -> Expr:
         a = col(a)
     if isinstance(b, str):
         b = col(b)
-    return wrap_expr(pycov(a._pyexpr, b._pyexpr))
+    return wrap_expr(_cov(a._pyexpr, b._pyexpr))
 
 
 def map(
@@ -1882,7 +1883,7 @@ def fold(
         exprs = [exprs]
 
     exprs = selection_to_pyexpr_list(exprs)
-    return wrap_expr(pyfold(acc._pyexpr, function, exprs))
+    return wrap_expr(_fold(acc._pyexpr, function, exprs))
 
 
 def reduce(
@@ -1946,7 +1947,7 @@ def reduce(
         exprs = [exprs]
 
     exprs = selection_to_pyexpr_list(exprs)
-    return wrap_expr(pyreduce(function, exprs))
+    return wrap_expr(_reduce(function, exprs))
 
 
 def cumfold(
@@ -2023,7 +2024,7 @@ def cumfold(
         exprs = [exprs]
 
     exprs = selection_to_pyexpr_list(exprs)
-    return wrap_expr(pycumfold(acc._pyexpr, function, exprs, include_init))
+    return wrap_expr(_cumfold(acc._pyexpr, function, exprs, include_init))
 
 
 def cumreduce(
@@ -2085,7 +2086,7 @@ def cumreduce(
         exprs = [exprs]
 
     exprs = selection_to_pyexpr_list(exprs)
-    return wrap_expr(pycumreduce(function, exprs))
+    return wrap_expr(_cumreduce(function, exprs))
 
 
 @overload
@@ -2605,7 +2606,7 @@ def duration(
         weeks = expr_to_lit_or_expr(weeks, str_to_lit=False)._pyexpr
 
     return wrap_expr(
-        py_duration(
+        _duration(
             days,
             seconds,
             nanoseconds,
@@ -2666,7 +2667,7 @@ def datetime_(
         microsecond = expr_to_lit_or_expr(microsecond, str_to_lit=False)._pyexpr
 
     return wrap_expr(
-        py_datetime(
+        _datetime(
             year_expr._pyexpr,
             month_expr._pyexpr,
             day_expr._pyexpr,

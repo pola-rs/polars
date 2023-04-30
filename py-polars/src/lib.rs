@@ -206,7 +206,7 @@ macro_rules! set_unwrapped_or_0 {
 }
 
 #[pyfunction]
-fn py_datetime(
+fn datetime(
     year: dsl::PyExpr,
     month: dsl::PyExpr,
     day: dsl::PyExpr,
@@ -236,7 +236,7 @@ fn py_datetime(
 
 #[allow(clippy::too_many_arguments)]
 #[pyfunction]
-fn py_duration(
+fn duration(
     days: Option<PyExpr>,
     seconds: Option<PyExpr>,
     nanoseconds: Option<PyExpr>,
@@ -631,8 +631,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(py_diag_concat_df)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_diag_concat_lf)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_hor_concat_df)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(py_datetime)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(py_duration)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(datetime)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(duration)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_date_range)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_date_range_lazy)).unwrap();
     m.add_wrapped(wrap_pyfunction!(sum_exprs)).unwrap();
