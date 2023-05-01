@@ -192,27 +192,24 @@ impl IOThread {
         self.dump_iter(partition, iter)
     }
 
-    pub(in crate::executors::sinks) fn dump_partitioned_thread_local(
+    pub(in crate::executors::sinks) fn dump_partition_local(
         &self,
-        partitions: IdxCa,
-        iter: DfIter,
+        partition_no: IdxSize,
+        df: DataFrame,
     ) {
-        for (part, df) in partitions.into_no_null_iter().zip(iter) {
-            let count = self.thread_local_count.fetch_add(1, Ordering::Relaxed);
-            let mut path = self.dir.clone();
-            path.push(format!("{part}"));
+        let count = self.thread_local_count.fetch_add(1, Ordering::Relaxed);
+        let mut path = self.dir.clone();
+        path.push(format!("{partition_no}"));
 
-            let _ = std::fs::create_dir(&path);
-            // thread local name we start with an underscore to ensure we don't get
-            // duplicates
-            path.push(format!("_{count}.ipc"));
-
-            let file = File::create(path).unwrap();
-            let writer = IpcWriter::new(file);
-            let mut writer = writer.batched(&self.schema).unwrap();
-            writer.write_batch(&df).unwrap();
-            writer.finish().unwrap();
-        }
+        let _ = std::fs::create_dir(&path);
+        // thread local name we start with an underscore to ensure we don't get
+        // duplicates
+        path.push(format!("_{count}.ipc"));
+        let file = File::create(path).unwrap();
+        let writer = IpcWriter::new(file);
+        let mut writer = writer.batched(&self.schema).unwrap();
+        writer.write_batch(&df).unwrap();
+        writer.finish().unwrap();
     }
 
     pub(in crate::executors::sinks) fn dump_iter(&self, partition: Option<IdxCa>, iter: DfIter) {
