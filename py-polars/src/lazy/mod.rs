@@ -1,7 +1,5 @@
-pub mod apply;
 pub mod dsl;
 
-pub use apply::*;
 use dsl::*;
 use polars_lazy::prelude::*;
 
