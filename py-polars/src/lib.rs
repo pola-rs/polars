@@ -12,7 +12,6 @@ extern crate pyo3_built;
 mod build {
     include!(concat!(env!("OUT_DIR"), "/built.rs"));
 }
-
 pub mod apply;
 pub mod arrow_interop;
 #[cfg(feature = "csv")]
@@ -22,8 +21,10 @@ pub mod dataframe;
 pub mod datatypes;
 pub mod error;
 pub mod file;
-mod functions;
+pub mod functions;
 pub mod lazy;
+pub mod lazyframe;
+pub mod lazygroupby;
 pub mod npy;
 #[cfg(feature = "object")]
 mod object;
@@ -56,9 +57,10 @@ use crate::error::{
     NoDataError, PyPolarsErr, SchemaError, SchemaFieldNotFoundError, StructFieldNotFoundError,
 };
 use crate::file::{get_either_file, EitherRustPythonFile};
-use crate::lazy::dataframe::{PyLazyFrame, PyLazyGroupBy};
 use crate::lazy::dsl;
 use crate::lazy::dsl::PyExpr;
+use crate::lazyframe::PyLazyFrame;
+use crate::lazygroupby::PyLazyGroupBy;
 use crate::prelude::DataType;
 use crate::series::PySeries;
 
@@ -77,7 +79,7 @@ fn dtype_str_repr(dtype: Wrap<DataType>) -> PyResult<String> {
 }
 
 #[pyfunction]
-fn binary_expr(l: dsl::PyExpr, op: u8, r: dsl::PyExpr) -> dsl::PyExpr {
+fn binary_expr(l: PyExpr, op: u8, r: PyExpr) -> PyExpr {
     dsl::binary_expr(l, op, r)
 }
 
@@ -178,7 +180,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyDataFrame>().unwrap();
     m.add_class::<PyLazyFrame>().unwrap();
     m.add_class::<PyLazyGroupBy>().unwrap();
-    m.add_class::<dsl::PyExpr>().unwrap();
+    m.add_class::<PyExpr>().unwrap();
     #[cfg(feature = "csv")]
     m.add_class::<batched_csv::PyBatchedCsv>().unwrap();
     #[cfg(feature = "sql")]

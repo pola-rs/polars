@@ -22,14 +22,13 @@ use pyo3::types::{PyBool, PyBytes, PyDict, PyFloat, PyList, PySequence, PyString
 use pyo3::{PyAny, PyResult};
 use smartstring::alias::String as SmartString;
 
-use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
-use crate::lazy::dataframe::PyLazyFrame;
 #[cfg(feature = "object")]
 use crate::object::OBJECT_NAME;
 use crate::prelude::*;
 use crate::py_modules::{POLARS, UTILS};
 use crate::series::PySeries;
+use crate::{PyDataFrame, PyLazyFrame};
 
 pub(crate) fn slice_to_wrapped<T>(slice: &[T]) -> &[Wrap<T>] {
     // Safety:
