@@ -39,8 +39,7 @@ def show_versions() -> None:
     # determine key length for alignment
     keylen = (
         max(
-            len(x)
-            for x in [*deps.keys(), "Polars", "Index type", "Platform", "Python"]
+            len(x) for x in [*deps.keys(), "Polars", "Index type", "Platform", "Python"]
         )
         + 1
     )
