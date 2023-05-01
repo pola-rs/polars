@@ -42,12 +42,8 @@ use jemallocator::Jemalloc;
 use mimalloc::MiMalloc;
 #[cfg(feature = "object")]
 pub use object::register_object_builder;
-use polars_core::prelude::IDX_DTYPE;
-use polars_core::POOL;
-use pyo3::exceptions::PyValueError;
 use pyo3::panic::PanicException;
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
 use pyo3::wrap_pyfunction;
 
 use crate::conversion::Wrap;
@@ -57,10 +53,8 @@ use crate::error::{
     NoDataError, PyPolarsErr, SchemaError, SchemaFieldNotFoundError, StructFieldNotFoundError,
 };
 use crate::expr::PyExpr;
-use crate::file::{get_either_file, EitherRustPythonFile};
 use crate::lazyframe::PyLazyFrame;
 use crate::lazygroupby::PyLazyGroupBy;
-use crate::prelude::DataType;
 use crate::series::PySeries;
 
 #[global_allocator]
@@ -70,102 +64,6 @@ static ALLOC: Jemalloc = Jemalloc;
 #[global_allocator]
 #[cfg(any(not(target_os = "linux"), use_mimalloc))]
 static ALLOC: MiMalloc = MiMalloc;
-
-#[pyfunction]
-fn dtype_str_repr(dtype: Wrap<DataType>) -> PyResult<String> {
-    let dtype = dtype.0;
-    Ok(dtype.to_string())
-}
-
-const VERSION: &str = env!("CARGO_PKG_VERSION");
-#[pyfunction]
-fn get_polars_version() -> &'static str {
-    VERSION
-}
-
-#[pyfunction]
-fn enable_string_cache(toggle: bool) {
-    polars_rs::enable_string_cache(toggle)
-}
-
-#[pyfunction]
-fn using_string_cache() -> bool {
-    polars_rs::using_string_cache()
-}
-
-#[cfg(feature = "ipc")]
-#[pyfunction]
-fn ipc_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
-    use polars_core::export::arrow::io::ipc::read::read_file_metadata;
-    let metadata = match get_either_file(py_f, false)? {
-        EitherRustPythonFile::Rust(mut r) => {
-            read_file_metadata(&mut r).map_err(PyPolarsErr::from)?
-        }
-        EitherRustPythonFile::Py(mut r) => read_file_metadata(&mut r).map_err(PyPolarsErr::from)?,
-    };
-
-    let dict = PyDict::new(py);
-    for field in metadata.schema.fields {
-        let dt: Wrap<DataType> = Wrap((&field.data_type).into());
-        dict.set_item(field.name, dt.to_object(py))?;
-    }
-    Ok(dict.to_object(py))
-}
-
-#[cfg(feature = "parquet")]
-#[pyfunction]
-fn parquet_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
-    use polars_core::export::arrow::io::parquet::read::{infer_schema, read_metadata};
-
-    let metadata = match get_either_file(py_f, false)? {
-        EitherRustPythonFile::Rust(mut r) => read_metadata(&mut r).map_err(PyPolarsErr::from)?,
-        EitherRustPythonFile::Py(mut r) => read_metadata(&mut r).map_err(PyPolarsErr::from)?,
-    };
-    let arrow_schema = infer_schema(&metadata).map_err(PyPolarsErr::from)?;
-
-    let dict = PyDict::new(py);
-    for field in arrow_schema.fields {
-        let dt: Wrap<DataType> = Wrap((&field.data_type).into());
-        dict.set_item(field.name, dt.to_object(py))?;
-    }
-    Ok(dict.to_object(py))
-}
-
-#[pyfunction]
-fn get_index_type(py: Python) -> PyObject {
-    Wrap(IDX_DTYPE).to_object(py)
-}
-
-#[pyfunction]
-fn threadpool_size() -> usize {
-    POOL.current_num_threads()
-}
-
-#[pyfunction]
-fn set_float_fmt(fmt: &str) -> PyResult<()> {
-    use polars_core::fmt::{set_float_fmt, FloatFmt};
-    let fmt = match fmt {
-        "full" => FloatFmt::Full,
-        "mixed" => FloatFmt::Mixed,
-        e => {
-            return Err(PyValueError::new_err(format!(
-                "fmt must be one of {{'full', 'mixed'}}, got {e}",
-            )))
-        }
-    };
-    set_float_fmt(fmt);
-    Ok(())
-}
-
-#[pyfunction]
-fn get_float_fmt() -> PyResult<String> {
-    use polars_core::fmt::{get_float_fmt, FloatFmt};
-    let strfmt = match get_float_fmt() {
-        FloatFmt::Full => "full",
-        FloatFmt::Mixed => "mixed",
-    };
-    Ok(strfmt.to_string())
-}
 
 #[pymodule]
 fn polars(py: Python, m: &PyModule) -> PyResult<()> {
@@ -260,6 +158,37 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::whenthen::when))
         .unwrap();
 
+    // Functions - I/O
+    #[cfg(feature = "ipc")]
+    m.add_wrapped(wrap_pyfunction!(functions::io::read_ipc_schema))
+        .unwrap();
+    #[cfg(feature = "parquet")]
+    m.add_wrapped(wrap_pyfunction!(functions::io::read_parquet_schema))
+        .unwrap();
+
+    // Functions - meta
+    m.add_wrapped(wrap_pyfunction!(functions::meta::get_polars_version))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::meta::get_index_type))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::meta::threadpool_size))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::meta::enable_string_cache))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::meta::using_string_cache))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::meta::set_float_fmt))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::meta::get_float_fmt))
+        .unwrap();
+
+    // Functions - misc
+    m.add_wrapped(wrap_pyfunction!(functions::misc::dtype_str_repr))
+        .unwrap();
+    #[cfg(feature = "object")]
+    m.add_wrapped(wrap_pyfunction!(register_object_builder))
+        .unwrap();
+
     // Exceptions
     m.add("ArrowError", py.get_type::<ArrowErrorException>())
         .unwrap();
@@ -291,23 +220,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     )
     .unwrap();
 
-    // Other
-    m.add_wrapped(wrap_pyfunction!(dtype_str_repr)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(get_polars_version)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(enable_string_cache))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(using_string_cache)).unwrap();
-    #[cfg(feature = "ipc")]
-    m.add_wrapped(wrap_pyfunction!(ipc_schema)).unwrap();
-    #[cfg(feature = "parquet")]
-    m.add_wrapped(wrap_pyfunction!(parquet_schema)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(threadpool_size)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(get_index_type)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(set_float_fmt)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(get_float_fmt)).unwrap();
-    #[cfg(feature = "object")]
-    m.add_wrapped(wrap_pyfunction!(register_object_builder))
-        .unwrap();
+    // Build info
     #[cfg(feature = "build_info")]
     m.add(
         "_build_info_",
