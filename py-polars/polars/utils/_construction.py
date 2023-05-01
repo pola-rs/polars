@@ -1120,54 +1120,77 @@ def numpy_to_pydf(
     orient: Orientation | None = None,
     nan_to_null: bool = False,
 ) -> PyDataFrame:
-    """Construct a PyDataFrame from a numpy ndarray."""
+    """Construct a PyDataFrame from a numpy ndarray (including structured ndarrays)."""
     shape = data.shape
 
-    # Unpack columns
-    if shape == (0,):
-        n_columns = 0
+    if data.dtype.names is not None:
+        structured_array, orient = True, "col"
+        record_names = list(data.dtype.names)
+        n_columns = len(record_names)
+        for nm in record_names:
+            shape = data[nm].shape
+            if len(data[nm].shape) > 2:
+                raise ValueError(
+                    f"Cannot create DataFrame from structured array with elements > 2D; shape[{nm!r}] = {shape}"
+                )
+        if not schema:
+            schema = record_names
+    else:
+        # Unpack columns
+        structured_array, record_names = False, []
+        if shape == (0,):
+            n_columns = 0
 
-    elif len(shape) == 1:
-        n_columns = 1
+        elif len(shape) == 1:
+            n_columns = 1
 
-    elif len(shape) == 2:
-        # default convention
-        # first axis is rows, second axis is columns
-        if orient is None and schema is None:
-            n_columns = shape[1]
-            orient = "row"
+        elif len(shape) == 2:
+            if orient is None and schema is None:
+                # default convention; first axis is rows, second axis is columns
+                n_columns = shape[1]
+                orient = "row"
 
-        # Infer orientation if columns argument is given
-        elif orient is None and schema is not None:
-            if len(schema) == shape[0]:
-                orient = "col"
+            elif orient is None and schema is not None:
+                # infer orientation from 'schema' param
+                if len(schema) == shape[0]:
+                    orient = "col"
+                    n_columns = shape[0]
+                else:
+                    orient = "row"
+                    n_columns = shape[1]
+
+            elif orient == "row":
+                n_columns = shape[1]
+            elif orient == "col":
                 n_columns = shape[0]
             else:
-                orient = "row"
-                n_columns = shape[1]
-
-        elif orient == "row":
-            n_columns = shape[1]
-        elif orient == "col":
-            n_columns = shape[0]
+                raise ValueError(
+                    f"orient must be one of {{'col', 'row', None}}; found {orient!r} instead."
+                )
         else:
             raise ValueError(
-                f"orient must be one of {{'col', 'row', None}}, got {orient} instead."
+                f"Cannot create DataFrame from array with more than two dimensions; shape = {shape}"
             )
-    else:
-        raise ValueError(
-            "Cannot create DataFrame from numpy array with more than two dimensions."
-        )
 
     if schema is not None and len(schema) != n_columns:
-        raise ValueError("Dimensions of columns arg must match data dimensions.")
+        raise ValueError("Dimensions of 'schema' arg must match data dimensions.")
 
     column_names, schema_overrides = _unpack_schema(
         schema, schema_overrides=schema_overrides, n_expected=n_columns
     )
 
     # Convert data to series
-    if shape == (0,):
+    if structured_array:
+        data_series = [
+            pl.Series(
+                name=series_name,
+                values=data[record_name],
+                dtype=schema_overrides.get(record_name),
+                nan_to_null=nan_to_null,
+            )._s
+            for series_name, record_name in zip(column_names, record_names)
+        ]
+    elif shape == (0,):
         data_series = []
 
     elif len(shape) == 1:
