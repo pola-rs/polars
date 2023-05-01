@@ -78,11 +78,6 @@ fn dtype_str_repr(dtype: Wrap<DataType>) -> PyResult<String> {
     Ok(dtype.to_string())
 }
 
-#[pyfunction]
-fn binary_expr(l: PyExpr, op: u8, r: PyExpr) -> PyExpr {
-    lazy::binary_expr(l, op, r)
-}
-
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[pyfunction]
 fn get_polars_version() -> &'static str {
@@ -299,7 +294,6 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
 
     // Other
     m.add_wrapped(wrap_pyfunction!(dtype_str_repr)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(binary_expr)).unwrap();
     m.add_wrapped(wrap_pyfunction!(get_polars_version)).unwrap();
     m.add_wrapped(wrap_pyfunction!(enable_string_cache))
         .unwrap();
