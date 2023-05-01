@@ -11,7 +11,7 @@ commonmark==0.9.1
 livereload==2.6.3
 numpydoc==1.5.0
 pydata-sphinx-theme==0.13.3
-sphinx==6.2.1
+sphinx==7.0.0
 sphinx-autosummary-accessors==2023.4.0
 sphinx-copybutton==0.5.1
 sphinx-design==0.4.1
