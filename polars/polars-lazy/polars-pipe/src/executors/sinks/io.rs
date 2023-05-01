@@ -37,7 +37,8 @@ fn get_lockfile_path(dir: &Path) -> PathBuf {
 /// have a lockfile (opened with 'w' permissions).
 fn gc_thread(operation_name: &'static str) {
     let _ = std::thread::spawn(move || {
-        let dir = resolve_homedir(Path::new(&format!("~/.polars/{operation_name}/")));
+        let mut dir = std::env::temp_dir();
+        dir.push(&format!("polars/{operation_name}"));
 
         // if the directory does not exist, there is nothing to clean
         let rd = match std::fs::read_dir(&dir) {
@@ -84,7 +85,8 @@ impl IOThread {
             .unwrap()
             .as_nanos();
 
-        let dir = resolve_homedir(Path::new(&format!("~/.polars/{operation_name}/{uuid}")));
+        let mut dir = std::env::temp_dir();
+        dir.push(&format!("polars/{operation_name}/{uuid}"));
         std::fs::create_dir_all(&dir)?;
 
         // make sure we create lockfile before we GC
@@ -128,7 +130,7 @@ impl IOThread {
                         let _ = std::fs::create_dir(&path);
                         path.push(format!("{count}.ipc"));
 
-                        let file = std::fs::File::create(path).unwrap();
+                        let file = File::create(path).unwrap();
                         let writer = IpcWriter::new(file);
                         let mut writer = writer.batched(&schema).unwrap();
                         writer.write_batch(&df).unwrap();
