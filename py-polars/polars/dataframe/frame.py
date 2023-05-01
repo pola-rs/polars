@@ -5034,6 +5034,12 @@ class DataFrame:
         their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
         instead of erroring.
 
+        Returns
+        -------
+        DataFrame
+            Result will be sorted by `time_column` (but note that if `by` columns are
+            passed, it will only be sorted within each `by` group).
+
         Examples
         --------
         Upsample a DataFrame by a certain interval.
