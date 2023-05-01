@@ -66,6 +66,27 @@ def test_struct_equality() -> None:
     assert (~(s7 == s8)).all()
 
 
+def test_struct_equality_strict() -> None:
+    s1 = pl.Struct(
+        [
+            pl.Field("a", pl.Int64),
+            pl.Field("b", pl.Boolean),
+            pl.Field("c", pl.List(pl.Int32)),
+        ]
+    )
+    s2 = pl.Struct(
+        [pl.Field("a", pl.Int64), pl.Field("b", pl.Boolean), pl.Field("c", pl.List)]
+    )
+
+    # strict
+    assert not (s1.is_(s2))
+    assert s1.is_not(s2)
+
+    # permissive (default)
+    assert s1 == s2
+    assert s1 == s2
+
+
 def test_struct_hashes() -> None:
     dtypes = (
         pl.Struct,
@@ -212,7 +233,6 @@ def test_struct_to_pandas() -> None:
     pl_df = pl.from_pandas(df)
 
     assert isinstance(pl_df.dtypes[0], pl.datatypes.Struct)
-
     assert pl_df.to_pandas().equals(df)
 
 

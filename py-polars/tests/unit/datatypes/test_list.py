@@ -14,6 +14,7 @@ def test_dtype() -> None:
     assert a.dtype == pl.List
     assert a.inner_dtype == pl.Int64
     assert a.dtype.inner == pl.Int64  # type: ignore[union-attr]
+    assert a.dtype.is_(pl.List(pl.Int64))
 
     # explicit
     df = pl.DataFrame(
