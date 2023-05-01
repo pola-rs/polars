@@ -20,6 +20,7 @@ pub mod conversion;
 pub mod dataframe;
 pub mod datatypes;
 pub mod error;
+pub mod expr;
 pub mod file;
 pub mod functions;
 pub mod lazy;
@@ -56,9 +57,8 @@ use crate::error::{
     ArrowErrorException, ColumnNotFoundError, ComputeError, DuplicateError, InvalidOperationError,
     NoDataError, PyPolarsErr, SchemaError, SchemaFieldNotFoundError, StructFieldNotFoundError,
 };
+use crate::expr::PyExpr;
 use crate::file::{get_either_file, EitherRustPythonFile};
-use crate::lazy::dsl;
-use crate::lazy::dsl::PyExpr;
 use crate::lazyframe::PyLazyFrame;
 use crate::lazygroupby::PyLazyGroupBy;
 use crate::prelude::DataType;
@@ -80,7 +80,7 @@ fn dtype_str_repr(dtype: Wrap<DataType>) -> PyResult<String> {
 
 #[pyfunction]
 fn binary_expr(l: PyExpr, op: u8, r: PyExpr) -> PyExpr {
-    dsl::binary_expr(l, op, r)
+    lazy::binary_expr(l, op, r)
 }
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");

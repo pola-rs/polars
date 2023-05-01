@@ -2,10 +2,9 @@ use polars::prelude::*;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
-use crate::lazy::dsl::PyExpr;
 use crate::py_modules::POLARS;
 use crate::series::PySeries;
-use crate::Wrap;
+use crate::{PyExpr, Wrap};
 
 trait ToSeries {
     fn to_series(&self, py: Python, py_polars_module: &PyObject, name: &str) -> Series;
