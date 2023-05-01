@@ -7,9 +7,8 @@ use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyFloat};
 
+use crate::apply::lazy::{call_lambda_with_series, map_single};
 use crate::conversion::{parse_fill_null_strategy, Wrap};
-use crate::lazy::apply::call_lambda_with_series;
-use crate::lazy::map_single;
 use crate::series::PySeries;
 use crate::utils::reinterpret;
 use crate::PyExpr;

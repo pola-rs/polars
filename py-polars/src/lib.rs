@@ -12,7 +12,6 @@ extern crate pyo3_built;
 mod build {
     include!(concat!(env!("OUT_DIR"), "/built.rs"));
 }
-
 pub mod apply;
 pub mod arrow_interop;
 #[cfg(feature = "csv")]
@@ -21,9 +20,11 @@ pub mod conversion;
 pub mod dataframe;
 pub mod datatypes;
 pub mod error;
+pub mod expr;
 pub mod file;
-mod functions;
-pub mod lazy;
+pub mod functions;
+pub mod lazyframe;
+pub mod lazygroupby;
 pub mod npy;
 #[cfg(feature = "object")]
 mod object;
@@ -55,10 +56,10 @@ use crate::error::{
     ArrowErrorException, ColumnNotFoundError, ComputeError, DuplicateError, InvalidOperationError,
     NoDataError, PyPolarsErr, SchemaError, SchemaFieldNotFoundError, StructFieldNotFoundError,
 };
+use crate::expr::PyExpr;
 use crate::file::{get_either_file, EitherRustPythonFile};
-use crate::lazy::dataframe::{PyLazyFrame, PyLazyGroupBy};
-use crate::lazy::dsl;
-use crate::lazy::dsl::PyExpr;
+use crate::lazyframe::PyLazyFrame;
+use crate::lazygroupby::PyLazyGroupBy;
 use crate::prelude::DataType;
 use crate::series::PySeries;
 
@@ -74,11 +75,6 @@ static ALLOC: MiMalloc = MiMalloc;
 fn dtype_str_repr(dtype: Wrap<DataType>) -> PyResult<String> {
     let dtype = dtype.0;
     Ok(dtype.to_string())
-}
-
-#[pyfunction]
-fn binary_expr(l: dsl::PyExpr, op: u8, r: dsl::PyExpr) -> dsl::PyExpr {
-    dsl::binary_expr(l, op, r)
 }
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -178,7 +174,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyDataFrame>().unwrap();
     m.add_class::<PyLazyFrame>().unwrap();
     m.add_class::<PyLazyGroupBy>().unwrap();
-    m.add_class::<dsl::PyExpr>().unwrap();
+    m.add_class::<PyExpr>().unwrap();
     #[cfg(feature = "csv")]
     m.add_class::<batched_csv::PyBatchedCsv>().unwrap();
     #[cfg(feature = "sql")]
@@ -297,7 +293,6 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
 
     // Other
     m.add_wrapped(wrap_pyfunction!(dtype_str_repr)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(binary_expr)).unwrap();
     m.add_wrapped(wrap_pyfunction!(get_polars_version)).unwrap();
     m.add_wrapped(wrap_pyfunction!(enable_string_cache))
         .unwrap();

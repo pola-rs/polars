@@ -30,10 +30,9 @@ use crate::conversion::parse_parquet_compression;
 use crate::conversion::{ObjectValue, Wrap};
 use crate::error::PyPolarsErr;
 use crate::file::{get_either_file, get_file_like, get_mmap_bytes_reader, EitherRustPythonFile};
-use crate::lazy::dataframe::PyLazyFrame;
 use crate::prelude::{dicts_to_rows, strings_to_smartstrings};
 use crate::series::{to_pyseries_collection, to_series_collection, PySeries};
-use crate::{arrow_interop, py_modules, PyExpr};
+use crate::{arrow_interop, py_modules, PyExpr, PyLazyFrame};
 
 #[pyclass]
 #[repr(transparent)]

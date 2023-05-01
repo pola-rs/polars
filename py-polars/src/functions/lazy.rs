@@ -6,12 +6,12 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
 
-use crate::conversion::{get_lf, Wrap};
-use crate::lazy::{apply, ToExprs};
+use crate::apply::lazy::binary_lambda;
+use crate::conversion::{get_lf, ToExprs, Wrap};
 use crate::prelude::{
     vec_extract_wrapped, ClosedWindow, DataType, DatetimeArgs, Duration, DurationArgs, ObjectValue,
 };
-use crate::{PyDataFrame, PyExpr, PyLazyFrame, PyPolarsErr, PySeries};
+use crate::{apply, PyDataFrame, PyExpr, PyLazyFrame, PyPolarsErr, PySeries};
 
 macro_rules! set_unwrapped_or_0 {
     ($($var:ident),+ $(,)?) => {
@@ -118,7 +118,7 @@ pub fn cov(a: PyExpr, b: PyExpr) -> PyExpr {
 pub fn cumfold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>, include_init: bool) -> PyExpr {
     let exprs = exprs.to_exprs();
 
-    let func = move |a: Series, b: Series| apply::binary_lambda(&lambda, a, b);
+    let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
     dsl::cumfold_exprs(acc.inner, func, exprs, include_init).into()
 }
 
@@ -126,7 +126,7 @@ pub fn cumfold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>, include_init: 
 pub fn cumreduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = exprs.to_exprs();
 
-    let func = move |a: Series, b: Series| apply::binary_lambda(&lambda, a, b);
+    let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
     dsl::cumreduce_exprs(func, exprs).into()
 }
 
@@ -238,7 +238,7 @@ pub fn first() -> PyExpr {
 pub fn fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = exprs.to_exprs();
 
-    let func = move |a: Series, b: Series| apply::binary_lambda(&lambda, a, b);
+    let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
     dsl::fold_exprs(acc.inner, func, exprs).into()
 }
 
@@ -305,7 +305,7 @@ pub fn map_mul(
     apply_groups: bool,
     returns_scalar: bool,
 ) -> PyExpr {
-    apply::map_mul(
+    apply::lazy::map_mul(
         &pyexpr,
         py,
         lambda,
@@ -336,7 +336,7 @@ pub fn pearson_corr(a: PyExpr, b: PyExpr, ddof: u8) -> PyExpr {
 pub fn reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = exprs.to_exprs();
 
-    let func = move |a: Series, b: Series| apply::binary_lambda(&lambda, a, b);
+    let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
     dsl::reduce_exprs(func, exprs).into()
 }
 
