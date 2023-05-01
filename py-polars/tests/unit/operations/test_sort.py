@@ -209,6 +209,12 @@ def test_sorted_flag() -> None:
     assert s.flags["SORTED_ASC"]
     assert s.reverse().flags["SORTED_DESC"]
     assert pl.Series([b"a"]).set_sorted().flags["SORTED_ASC"]
+    assert (
+        pl.Series([date(2020, 1, 1), date(2020, 1, 2)])
+        .set_sorted()
+        .cast(pl.Datetime)
+        .flags["SORTED_ASC"]
+    )
 
     # ensure we don't panic for these types
     # struct
