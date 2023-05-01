@@ -42,9 +42,6 @@ use jemallocator::Jemalloc;
 use mimalloc::MiMalloc;
 #[cfg(feature = "object")]
 pub use object::register_object_builder;
-use polars_core::prelude::IDX_DTYPE;
-use polars_core::POOL;
-use pyo3::exceptions::PyValueError;
 use pyo3::panic::PanicException;
 use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
@@ -67,58 +64,6 @@ static ALLOC: Jemalloc = Jemalloc;
 #[global_allocator]
 #[cfg(any(not(target_os = "linux"), use_mimalloc))]
 static ALLOC: MiMalloc = MiMalloc;
-
-const VERSION: &str = env!("CARGO_PKG_VERSION");
-#[pyfunction]
-fn get_polars_version() -> &'static str {
-    VERSION
-}
-
-#[pyfunction]
-fn enable_string_cache(toggle: bool) {
-    polars_rs::enable_string_cache(toggle)
-}
-
-#[pyfunction]
-fn using_string_cache() -> bool {
-    polars_rs::using_string_cache()
-}
-
-#[pyfunction]
-fn get_index_type(py: Python) -> PyObject {
-    Wrap(IDX_DTYPE).to_object(py)
-}
-
-#[pyfunction]
-fn threadpool_size() -> usize {
-    POOL.current_num_threads()
-}
-
-#[pyfunction]
-fn set_float_fmt(fmt: &str) -> PyResult<()> {
-    use polars_core::fmt::{set_float_fmt, FloatFmt};
-    let fmt = match fmt {
-        "full" => FloatFmt::Full,
-        "mixed" => FloatFmt::Mixed,
-        e => {
-            return Err(PyValueError::new_err(format!(
-                "fmt must be one of {{'full', 'mixed'}}, got {e}",
-            )))
-        }
-    };
-    set_float_fmt(fmt);
-    Ok(())
-}
-
-#[pyfunction]
-fn get_float_fmt() -> PyResult<String> {
-    use polars_core::fmt::{get_float_fmt, FloatFmt};
-    let strfmt = match get_float_fmt() {
-        FloatFmt::Full => "full",
-        FloatFmt::Mixed => "mixed",
-    };
-    Ok(strfmt.to_string())
-}
 
 #[pymodule]
 fn polars(py: Python, m: &PyModule) -> PyResult<()> {
@@ -222,14 +167,20 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
 
     // Functions - meta
-    m.add_wrapped(wrap_pyfunction!(get_polars_version)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(get_index_type)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(threadpool_size)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(using_string_cache)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(enable_string_cache))
+    m.add_wrapped(wrap_pyfunction!(functions::meta::get_polars_version))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(set_float_fmt)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(get_float_fmt)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::meta::get_index_type))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::meta::threadpool_size))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::meta::enable_string_cache))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::meta::using_string_cache))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::meta::set_float_fmt))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::meta::get_float_fmt))
+        .unwrap();
 
     // Functions - misc
     m.add_wrapped(wrap_pyfunction!(functions::misc::dtype_str_repr))
