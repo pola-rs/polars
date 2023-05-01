@@ -318,6 +318,12 @@ macro_rules! impl_dyn_series {
                             "cannot cast `Time` to `Datetime`; consider using 'dt.combine'"
                         );
                     }
+                    #[cfg(feature = "dtype-datetime")]
+                    (DataType::Date, DataType::Datetime(_, _)) => {
+                        let mut out = self.0.cast(data_type)?;
+                        out.set_sorted_flag(self.0.is_sorted_flag());
+                        Ok(out)
+                    }
                     _ => self.0.cast(data_type),
                 }
             }
