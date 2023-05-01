@@ -12,7 +12,7 @@ authors = [
 license = { file = "LICENSE" }
 requires-python = ">=3.7"
 dependencies = [
-  "typing_extensions >= 4.0.1; python_version < '3.11'",
+  "typing_extensions >= 4.0.1; python_version < '3.8'",
 ]
 keywords = ["dataframe", "arrow", "out-of-core"]
 classifiers = [
