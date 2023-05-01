@@ -86,8 +86,8 @@ impl SortSink {
             // so we keep 3x the sort data size before we go out of core
             if used * 3 > free {
                 self.init_ooc()?;
+                self.dump(true)?;
             }
-            self.dump(true)?;
         };
         self.current_chunks_size += chunk_bytes;
         self.current_chunk_rows += chunk.data.height();
