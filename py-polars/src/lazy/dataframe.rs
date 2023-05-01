@@ -26,7 +26,7 @@ use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::file::get_file_like;
 use crate::lazy::dsl::PyExpr;
-use crate::lazy::utils::py_exprs_to_exprs;
+use crate::lazy::ToExprs;
 use crate::prelude::*;
 use crate::py_modules::POLARS;
 
@@ -50,7 +50,7 @@ fn extract_cloud_options(url: &str, py_object: PyObject) -> PyResult<cloud::Clou
 impl PyLazyGroupBy {
     pub fn agg(&mut self, aggs: Vec<PyExpr>) -> PyLazyFrame {
         let lgb = self.lgb.take().unwrap();
-        let aggs = py_exprs_to_exprs(aggs);
+        let aggs = aggs.to_exprs();
         lgb.agg(aggs).into()
     }
 
@@ -446,7 +446,7 @@ impl PyLazyFrame {
         nulls_last: bool,
     ) -> PyLazyFrame {
         let ldf = self.ldf.clone();
-        let exprs = py_exprs_to_exprs(by);
+        let exprs = by.to_exprs();
         ldf.sort_by_exprs(exprs, descending, nulls_last).into()
     }
 
@@ -458,7 +458,7 @@ impl PyLazyFrame {
         nulls_last: bool,
     ) -> PyLazyFrame {
         let ldf = self.ldf.clone();
-        let exprs = py_exprs_to_exprs(by);
+        let exprs = by.to_exprs();
         ldf.top_k(k, exprs, descending, nulls_last).into()
     }
 
@@ -470,7 +470,7 @@ impl PyLazyFrame {
         nulls_last: bool,
     ) -> PyLazyFrame {
         let ldf = self.ldf.clone();
-        let exprs = py_exprs_to_exprs(by);
+        let exprs = by.to_exprs();
         ldf.bottom_k(k, exprs, descending, nulls_last).into()
     }
 
@@ -569,13 +569,13 @@ impl PyLazyFrame {
 
     pub fn select(&mut self, exprs: Vec<PyExpr>) -> PyLazyFrame {
         let ldf = self.ldf.clone();
-        let exprs = py_exprs_to_exprs(exprs);
+        let exprs = exprs.to_exprs();
         ldf.select(exprs).into()
     }
 
     pub fn groupby(&mut self, by: Vec<PyExpr>, maintain_order: bool) -> PyLazyGroupBy {
         let ldf = self.ldf.clone();
-        let by = py_exprs_to_exprs(by);
+        let by = by.to_exprs();
         let lazy_gb = if maintain_order {
             ldf.groupby_stable(by)
         } else {
@@ -737,7 +737,7 @@ impl PyLazyFrame {
 
     pub fn with_columns(&mut self, exprs: Vec<PyExpr>) -> PyLazyFrame {
         let ldf = self.ldf.clone();
-        ldf.with_columns(py_exprs_to_exprs(exprs)).into()
+        ldf.with_columns(exprs.to_exprs()).into()
     }
 
     pub fn rename(&mut self, existing: Vec<String>, new: Vec<String>) -> PyLazyFrame {
@@ -807,7 +807,7 @@ impl PyLazyFrame {
 
     pub fn explode(&self, column: Vec<PyExpr>) -> Self {
         let ldf = self.ldf.clone();
-        let column = py_exprs_to_exprs(column);
+        let column = column.to_exprs();
         ldf.explode(column).into()
     }
 
