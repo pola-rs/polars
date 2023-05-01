@@ -18,14 +18,7 @@ from polars.utils.decorators import deprecated_alias
 from polars.utils.various import find_stacklevel, no_default
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import concat_df as _concat_df
-    from polars.polars import concat_lf as _concat_lf
-    from polars.polars import concat_series as _concat_series
-    from polars.polars import date_range as _date_range
-    from polars.polars import date_range_lazy as _date_range_lazy
-    from polars.polars import diag_concat_df as _diag_concat_df
-    from polars.polars import diag_concat_lf as _diag_concat_lf
-    from polars.polars import hor_concat_df as _hor_concat_df
+    import polars.polars as plr
 
 
 if TYPE_CHECKING:
@@ -261,11 +254,11 @@ def concat(
     first = elems[0]
     if isinstance(first, pl.DataFrame):
         if how == "vertical":
-            out = wrap_df(_concat_df(elems))
+            out = wrap_df(plr.concat_df(elems))
         elif how == "diagonal":
-            out = wrap_df(_diag_concat_df(elems))
+            out = wrap_df(plr.diag_concat_df(elems))
         elif how == "horizontal":
-            out = wrap_df(_hor_concat_df(elems))
+            out = wrap_df(plr.hor_concat_df(elems))
         else:
             raise ValueError(
                 f"how must be one of {{'vertical', 'diagonal', 'horizontal'}}, "
@@ -273,16 +266,16 @@ def concat(
             )
     elif isinstance(first, pl.LazyFrame):
         if how == "vertical":
-            return wrap_ldf(_concat_lf(elems, rechunk, parallel))
+            return wrap_ldf(plr.concat_lf(elems, rechunk, parallel))
         if how == "diagonal":
-            return wrap_ldf(_diag_concat_lf(elems, rechunk, parallel))
+            return wrap_ldf(plr.diag_concat_lf(elems, rechunk, parallel))
         else:
             raise ValueError(
                 "'LazyFrame' only allows {{'vertical', 'diagonal'}} concat strategy."
             )
     elif isinstance(first, pl.Series):
         if how == "vertical":
-            out = wrap_s(_concat_series(elems))
+            out = wrap_s(plr.concat_series(elems))
         else:
             raise ValueError("'Series' only allows {{'vertical'}} concat strategy.")
     elif isinstance(first, pl.Expr):
@@ -539,7 +532,7 @@ def date_range(
         start = expr_to_lit_or_expr(start, str_to_lit=False)._pyexpr
         end = expr_to_lit_or_expr(end, str_to_lit=False)._pyexpr
         return wrap_expr(
-            _date_range_lazy(start, end, interval, closed, name, time_zone)
+            plr.date_range_lazy(start, end, interval, closed, name, time_zone)
         )
 
     start, start_is_date = _ensure_datetime(start)
@@ -572,7 +565,7 @@ def date_range(
     start_pl = _datetime_to_pl_timestamp(start, time_unit_)
     end_pl = _datetime_to_pl_timestamp(end, time_unit_)
     dt_range = wrap_s(
-        _date_range(start_pl, end_pl, interval, closed, name, time_unit_, time_zone)
+        plr.date_range(start_pl, end_pl, interval, closed, name, time_unit_, time_zone)
     )
     if (
         start_is_date
