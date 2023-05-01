@@ -216,6 +216,23 @@ def test_sorted_flag() -> None:
         .flags["SORTED_ASC"]
     )
 
+    # empty
+    q = pl.LazyFrame(
+        schema={
+            "store_id": pl.UInt16,
+            "item_id": pl.UInt32,
+            "timestamp": pl.Datetime,
+        }
+    ).sort("timestamp")
+
+    assert q.collect()["timestamp"].flags["SORTED_ASC"]
+    assert q.collect(streaming=True)["timestamp"].flags["SORTED_ASC"]
+
+    # top-k/bottom-k
+    df = pl.DataFrame({"foo": [56, 2, 3]})
+    assert df.top_k(2, by="foo")["foo"].flags["SORTED_DESC"]
+    assert df.bottom_k(2, by="foo")["foo"].flags["SORTED_ASC"]
+
     # ensure we don't panic for these types
     # struct
     pl.Series([{"a": 1}]).set_sorted(descending=True)
