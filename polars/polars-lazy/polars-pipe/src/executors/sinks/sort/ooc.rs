@@ -1,9 +1,9 @@
 use std::path::Path;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use crossbeam_queue::SegQueue;
 use polars_core::prelude::*;
-use polars_core::utils::{_split_offsets, accumulate_dataframes_vertical_unchecked};
+use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_core::POOL;
 use polars_io::ipc::IpcReader;
 use polars_io::SerReader;
@@ -28,19 +28,27 @@ struct PartitionSpillBuf {
     // keep track of the length
     // that's cheaper than iterating the linked list
     len: AtomicU32,
+    size: AtomicU64,
     chunks: SegQueue<DataFrame>,
 }
 
 impl PartitionSpillBuf {
     fn push(&self, df: DataFrame) -> Option<DataFrame> {
+        debug_assert!(df.height() > 0);
         let acc = self
             .row_count
             .fetch_add(df.height() as u32, Ordering::Relaxed);
+        let size = self
+            .size
+            .fetch_add(df.estimated_size() as u64, Ordering::Relaxed);
+        let larger_than_32_mb = size > 1 << 25;
         let len = self.len.fetch_add(1, Ordering::Relaxed);
         self.chunks.push(df);
-        if acc < 50_000 {
+        if acc > 50_000 || larger_than_32_mb {
+            // reset all statistics
             self.row_count.store(0, Ordering::Relaxed);
             self.len.store(0, Ordering::Relaxed);
+            self.size.store(0, Ordering::Relaxed);
             // other threads can be pushing while we drain
             // so we pop no more than the current size.
             let pop_max = len;
@@ -68,7 +76,7 @@ struct PartitionSpiller {
 impl PartitionSpiller {
     fn new(n_parts: usize) -> Self {
         let mut partitions = vec![];
-        partitions.resize_with(n_parts, PartitionSpillBuf::default);
+        partitions.resize_with(n_parts + 1, PartitionSpillBuf::default);
         Self { partitions }
     }
 
@@ -116,35 +124,23 @@ pub(super) fn sort_ooc(
 
     let partitions_spiller = PartitionSpiller::new(samples.len());
 
-    // here it will split every file into `N` partitions.
-    // So this will create approximately M * N files of size M / N
-    // this heavily influences performance
-    // TODO!
-    // check if we can batch the output files per partition before we write them.
-    // this way we can write large files and amortize IO cost
-    let offsets = _split_offsets(files.len(), POOL.current_num_threads() * 2);
     POOL.install(|| {
-        offsets.par_iter().try_for_each(|(offset, len)| {
-            let files = &files[*offset..*offset + *len];
+        files.par_iter().try_for_each(|entry| {
+            let path = entry.path();
+            // don't read the lock file
+            if path.ends_with(".lock") {
+                return PolarsResult::Ok(());
+            }
+            let df = read_df(&path)?;
 
-            for entry in files {
-                let path = entry.path();
+            let sort_col = &df.get_columns()[idx];
+            let assigned_parts = det_partitions(sort_col, &samples, descending);
 
-                // don't read the lock file
-                if path.ends_with(".lock") {
-                    continue;
-                }
-                let df = read_df(&path)?;
-
-                let sort_col = &df.get_columns()[idx];
-                let assigned_parts = det_partitions(sort_col, &samples, descending);
-
-                // partition the dataframe into proper buckets
-                let (iter, unique_assigned_parts) = partition_df(df, &assigned_parts)?;
-                for (part, df) in unique_assigned_parts.into_no_null_iter().zip(iter) {
-                    if let Some(df) = partitions_spiller.push(part as usize, df) {
-                        io_thread.dump_partition_local(part, df)
-                    }
+            // partition the dataframe into proper buckets
+            let (iter, unique_assigned_parts) = partition_df(df, &assigned_parts)?;
+            for (part, df) in unique_assigned_parts.into_no_null_iter().zip(iter) {
+                if let Some(df) = partitions_spiller.push(part as usize, df) {
+                    io_thread.dump_partition_local(part, df)
                 }
             }
             PolarsResult::Ok(())
