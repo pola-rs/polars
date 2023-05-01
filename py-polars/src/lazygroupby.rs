@@ -4,9 +4,8 @@ use polars::lazy::frame::{LazyFrame, LazyGroupBy};
 use polars::prelude::{DataFrame, PolarsError, Schema};
 use pyo3::prelude::*;
 
-use crate::conversion::Wrap;
+use crate::conversion::{ToExprs, Wrap};
 use crate::error::PyPolarsErr;
-use crate::lazy::ToExprs;
 use crate::{PyDataFrame, PyExpr, PyLazyFrame};
 
 #[pyclass]

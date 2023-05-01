@@ -21,10 +21,9 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList};
 
 use crate::arrow_interop::to_rust::pyarrow_schema_to_rust;
-use crate::conversion::Wrap;
+use crate::conversion::{ToExprs, Wrap};
 use crate::error::PyPolarsErr;
 use crate::file::get_file_like;
-use crate::lazy::ToExprs;
 use crate::prelude::*;
 use crate::py_modules::POLARS;
 use crate::{PyDataFrame, PyExpr, PyLazyGroupBy};

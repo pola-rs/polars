@@ -23,7 +23,6 @@ pub mod error;
 pub mod expr;
 pub mod file;
 pub mod functions;
-pub mod lazy;
 pub mod lazyframe;
 pub mod lazygroupby;
 pub mod npy;

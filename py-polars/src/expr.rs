@@ -8,18 +8,18 @@ mod meta;
 mod string;
 mod r#struct;
 
-use polars::lazy::dsl;
+use polars::lazy::dsl::Expr;
 use pyo3::prelude::*;
 
 #[pyclass]
 #[repr(transparent)]
 #[derive(Clone)]
 pub struct PyExpr {
-    pub inner: dsl::Expr,
+    pub inner: Expr,
 }
 
-impl From<dsl::Expr> for PyExpr {
-    fn from(expr: dsl::Expr) -> Self {
+impl From<Expr> for PyExpr {
+    fn from(expr: Expr) -> Self {
         PyExpr { inner: expr }
     }
 }

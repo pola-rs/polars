@@ -7,8 +7,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
 
 use crate::apply::lazy::binary_lambda;
-use crate::conversion::{get_lf, Wrap};
-use crate::lazy::ToExprs;
+use crate::conversion::{get_lf, ToExprs, Wrap};
 use crate::prelude::{
     vec_extract_wrapped, ClosedWindow, DataType, DatetimeArgs, Duration, DurationArgs, ObjectValue,
 };
