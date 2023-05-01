@@ -69,37 +69,37 @@ binary_encoding = ["polars/binary_encoding"]
 
 all = [
   "json",
-  "parquet",
-  "ipc",
-  "avro",
-  "is_in",
-  "repeat_by",
-  "trigonometry",
-  "sign",
-  "asof_join",
-  "cross_join",
-  "pct_change",
-  "search_sorted",
-  "merge_sorted",
+  # "parquet",
+  # "ipc",
+  # "avro",
+  # "is_in",
+  # "repeat_by",
+  # "trigonometry",
+  # "sign",
+  # "asof_join",
+  # "cross_join",
+  # "pct_change",
+  # "search_sorted",
+  # "merge_sorted",
   "meta",
-  "decompress",
-  "lazy_regex",
-  "csv",
-  "extract_jsonpath",
-  "timezones",
+  # "decompress",
+  # "lazy_regex",
+  # "csv",
+  # "extract_jsonpath",
+  # "timezones",
   "object",
-  "pivot",
-  "top_k",
+  # "pivot",
+  # "top_k",
   "build_info",
-  "cse",
+  # "cse",
   "propagate_nans",
-  "polars/groupby_list",
-  "sql",
-  "binary_encoding",
-  "streaming",
-  "performant",
-  "list_take",
-  "list_count",
+  # "polars/groupby_list",
+  # "sql",
+  # "binary_encoding",
+  # "streaming",
+  # "performant",
+  # "list_take",
+  # "list_count",
 ]
 
 # we cannot conditionally activate simd
@@ -171,9 +171,9 @@ features = [
 name = "polars"
 crate-type = ["cdylib"]
 
-[profile.release]
-codegen-units = 1
-lto = "fat"
+# [profile.release]
+# codegen-units = 1
+# lto = "fat"
 
 # This is ignored here; would be set in .cargo/config.toml.
 # Should not be used when packaging
