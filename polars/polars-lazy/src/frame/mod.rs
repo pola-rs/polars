@@ -1416,7 +1416,7 @@ impl JoinBuilder {
 
     /// Force parallel table evaluation.
     pub fn force_parallel(mut self, force: bool) -> Self {
-        self.force_parallel = force
+        self.force_parallel = force;
         self
     }
 
