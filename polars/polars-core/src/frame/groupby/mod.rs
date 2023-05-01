@@ -87,7 +87,11 @@ impl DataFrame {
                 }
             }
             let keys_df = prepare_dataframe_unsorted(&by);
-            groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
+            if multithreaded {
+                groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
+            } else {
+                groupby_multiple_keys(keys_df, sorted)
+            }
         };
         Ok(GroupBy::new(self, by, groups?, None))
     }
