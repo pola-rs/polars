@@ -1,4 +1,5 @@
 import time
+import typing
 from datetime import date
 from typing import Any
 
@@ -459,3 +460,43 @@ def test_streaming_groupby_all_numeric_types_stability_8570() -> None:
                 .collect(streaming=True)
             )
             assert dfd["z_sum"].sum() == dfc["z"].sum()
+
+
+@typing.no_type_check
+def test_streaming_groupby_categorical_aggregate() -> None:
+    with pl.StringCache():
+        out = (
+            pl.LazyFrame(
+                {
+                    "a": pl.Series(
+                        ["a", "a", "b", "b", "c", "c", None, None], dtype=pl.Categorical
+                    ),
+                    "b": pl.Series(
+                        pl.date_range(
+                            date(2023, 4, 28),
+                            date(2023, 5, 5),
+                            eager=True,
+                        ).to_list(),
+                        dtype=pl.Date,
+                    ),
+                }
+            )
+            .groupby(["a", "b"])
+            .agg([pl.col("a").first().alias("sum")])
+            .collect(streaming=True)
+        )
+
+    assert out.sort("b").to_dict(False) == {
+        "a": ["a", "a", "b", "b", "c", "c", None, None],
+        "b": [
+            date(2023, 4, 28),
+            date(2023, 4, 29),
+            date(2023, 4, 30),
+            date(2023, 5, 1),
+            date(2023, 5, 2),
+            date(2023, 5, 3),
+            date(2023, 5, 4),
+            date(2023, 5, 5),
+        ],
+        "sum": ["a", "a", "b", "b", "c", "c", None, None],
+    }
