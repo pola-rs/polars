@@ -1964,11 +1964,17 @@ class DataFrame:
         """
         return list(self.iter_rows(named=True))
 
-    def to_numpy(self) -> np.ndarray[Any, Any]:
+    def to_numpy(self, structured: bool = False) -> np.ndarray[Any, Any]:
         """
         Convert DataFrame to a 2D NumPy array.
 
         This operation clones data.
+
+        Parameters
+        ----------
+        structured
+            Optionally return a structured array, with field names and
+            dtypes that correspond to the DataFrame schema.
 
         Notes
         -----
@@ -1978,20 +1984,61 @@ class DataFrame:
         Examples
         --------
         >>> df = pl.DataFrame(
-        ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6.5, 7.0, 8.5],
+        ...         "ham": ["a", "b", "c"],
+        ...     },
+        ...     schema_overrides={"foo": pl.UInt8, "bar": pl.Float32},
         ... )
-        >>> numpy_array = df.to_numpy()
-        >>> type(numpy_array)
-        <class 'numpy.ndarray'>
+
+        Export to a standard 2D numpy array.
+
+        >>> df.to_numpy()
+        array([[1, 6.5, 'a'],
+               [2, 7.0, 'b'],
+               [3, 8.5, 'c']], dtype=object)
+
+        Export to a structured array, which can better-preserve individual
+        column data, such as name and dtype...
+
+        >>> df.to_numpy(structured=True)
+        array([(1, 6.5, 'a'), (2, 7. , 'b'), (3, 8.5, 'c')],
+              dtype=[('foo', 'u1'), ('bar', '<f4'), ('ham', '<U1')])
+
+        ...optionally zero-copying as a record array view:
+
+        >>> import numpy as np
+        >>> df.to_numpy(True).view(np.recarray)
+        rec.array([(1, 6.5, 'a'), (2, 7. , 'b'), (3, 8.5, 'c')],
+                  dtype=[('foo', 'u1'), ('bar', '<f4'), ('ham', '<U1')])
 
         """
-        out = self._df.to_numpy()
-        if out is None:
-            return np.vstack(
-                [self.to_series(i).to_numpy() for i in range(self.width)]
-            ).T
+        if structured:
+            # see: https://numpy.org/doc/stable/user/basics.rec.html
+            arrays = []
+            for c, tp in self.schema.items():
+                s = self[c]
+                a = s.to_numpy()
+                arrays.append(
+                    a.astype(str, copy=False)
+                    if tp == Utf8 and not s.has_validity()
+                    else a
+                )
+
+            out = np.empty(
+                len(self), dtype=list(zip(self.columns, (a.dtype for a in arrays)))
+            )
+            for idx, c in enumerate(self.columns):
+                out[c] = arrays[idx]
         else:
-            return out
+            out = self._df.to_numpy()
+            if out is None:
+                return np.vstack(
+                    [self.to_series(i).to_numpy() for i in range(self.width)]
+                ).T
+
+        return out
 
     def to_pandas(  # noqa: D417
         self,
