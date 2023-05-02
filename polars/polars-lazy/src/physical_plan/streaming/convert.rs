@@ -117,7 +117,7 @@ fn streamable_join(join_type: &JoinType) -> bool {
 }
 
 // The index of the pipeline tree we are building at this moment
-// if we have a node we cannot do streaming, we have finished that pipeline tree
+// if we have a node that we cannot do streaming then we have finished that pipeline tree
 // and start a new one.
 type CurrentIdx = usize;
 
@@ -285,6 +285,7 @@ pub(crate) fn insert_streaming_nodes(
 
                 // rhs is second, so that is first on the stack
                 let mut state_right = state;
+                // reset this count as we continue counting on the other branch
                 state_right.join_count = 0;
                 state_right
                     .operators_sinks
@@ -302,6 +303,24 @@ pub(crate) fn insert_streaming_nodes(
                     .operators_sinks
                     .push((IS_SINK, !IS_RHS_JOIN, root));
                 stack.push((input_left, state_left, current_idx));
+            }
+            #[cfg(all(feature = "csv", feature = "parquet"))]
+            Union { inputs, .. } if state.streamable => {
+                for (i, input) in inputs.iter().enumerate() {
+                    let join_count = if i == 0 {
+                        state.join_count
+                    } else {
+                        1
+                    };
+
+                    let mut state = Branch {
+                        streamable: true,
+                        join_count,
+                        ..Default::default()
+                    };
+                    state.operators_sinks.push((IS_SINK, !IS_RHS_JOIN, root));
+                    stack.push((*input, state, current_idx));
+                }
             }
             // add globbing patterns
             #[cfg(all(feature = "csv", feature = "parquet"))]
@@ -398,6 +417,7 @@ pub(crate) fn insert_streaming_nodes(
     }
     let mut inserted = false;
     for tree in pipeline_trees {
+        dbg!(&tree);
         if is_valid_tree(&tree) {
             let mut pipelines = VecDeque::with_capacity(tree.len());
 
@@ -512,6 +532,7 @@ pub(crate) fn insert_streaming_nodes(
             };
         }
     }
+    dbg!(inserted);
 
     Ok(inserted)
 }

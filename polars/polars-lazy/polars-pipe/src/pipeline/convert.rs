@@ -378,6 +378,9 @@ where
                     )),
                 }
             }
+        },
+        Union {inputs, options } => {
+            todo!()
         }
         lp => {
             panic!("{lp:?} not implemented")
