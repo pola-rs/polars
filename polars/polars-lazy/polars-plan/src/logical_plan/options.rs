@@ -121,9 +121,7 @@ impl From<IpcScanOptions> for IpcScanOptionsInner {
 #[derive(Clone, Debug, Copy, Default, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct UnionOptions {
-    pub slice: bool,
-    pub slice_offset: i64,
-    pub slice_len: IdxSize,
+    pub slice: Option<(i64, usize)>,
     pub parallel: bool,
     // known row_output, estimated row output
     pub rows: (Option<usize>, usize),
