@@ -530,3 +530,10 @@ def test_list_recursive_time_unit_cast() -> None:
     out = s.cast(dtype)
     assert out.dtype == dtype
     assert out.to_list() == values
+
+
+def test_list_null_list_categorical_cast() -> None:
+    expected = pl.List(pl.Categorical)
+    s = pl.Series([[]], dtype=pl.List(pl.Null)).cast(expected)
+    assert s.dtype == expected
+    assert s.to_list() == [[]]

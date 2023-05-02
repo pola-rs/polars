@@ -260,7 +260,7 @@ impl ChunkCast for ListChunked {
             List(child_type) => {
                 match (self.inner_dtype(), &**child_type) {
                     #[cfg(feature = "dtype-categorical")]
-                    (dt, Categorical(None)) if !matches!(dt, Utf8) => {
+                    (dt, Categorical(None)) if !matches!(dt, Utf8 | Null) => {
                         polars_bail!(ComputeError: "cannot cast List inner type: '{:?}' to Categorical", dt)
                     }
                     _ => {
