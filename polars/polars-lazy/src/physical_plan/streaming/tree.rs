@@ -15,7 +15,7 @@ pub(super) struct Branch {
     // joins seen in whole branch (we count a union as joins with multiple counts)
     pub(super) join_count: IdxSize,
     // node is operator/sink
-    pub(super) operators_sinks: Vec<(IsSink, IsRhsJoin, Node)>,
+    pub(super) operators_sinks: Vec<(IsSink, SplitType, Node)>,
 }
 
 /// Represents a subquery tree of pipelines.
@@ -33,16 +33,16 @@ pub(super) fn is_valid_tree(tree: Tree) -> bool {
     // rhs joins will initially be placeholders
     let mut left_joins = BTreeSet::new();
     for branch in tree {
-        for (_sink, is_rhs_join, node) in &branch.operators_sinks {
-            if !*is_rhs_join {
+        for (_sink, split_type, node) in &branch.operators_sinks {
+            if matches!(split_type, SplitType::None) {
                 left_joins.insert(node.0);
             }
         }
     }
     for branch in tree {
-        for (_sink, is_rhs_join, node) in &branch.operators_sinks {
+        for (_sink, split_type, node) in &branch.operators_sinks {
             // check if every rhs join has a lhs join node
-            if *is_rhs_join && !left_joins.contains(&node.0) {
+            if matches!(split_type, SplitType::JoinRhs) && !left_joins.contains(&node.0) {
                 return false;
             }
         }
@@ -58,7 +58,7 @@ pub(super) fn dbg_branch(b: &Branch, lp_arena: &Arena<ALogicalPlan>) {
     // // joins seen in whole branch (we count a union as joins with multiple counts)
     // join_count: IdxSize,
     // // node is operator/sink
-    // operators_sinks: Vec<(IsSink, IsRhsJoin, Node)>,
+    // operators_sinks: Vec<(IsSink, SplitType, Node)>,
 
     if b.streamable {
         print!("streamable: ")
@@ -71,12 +71,12 @@ pub(super) fn dbg_branch(b: &Branch, lp_arena: &Arena<ALogicalPlan>) {
     }
     print!("=> ");
 
-    for (_, rhs_join, node) in &b.operators_sinks {
+    for (_, split_type, node) in &b.operators_sinks {
         let lp = lp_arena.get(*node);
-        if *rhs_join {
-            print!("rhs_join_placeholder -> ");
-        } else {
-            print!("{} -> ", lp.name());
+        match split_type {
+            SplitType::None => print!("{} -> ", lp.name()),
+            SplitType::JoinRhs => print!("rhs_join_placeholder -> "),
+            SplitType::Union => println!("union -> ")
         }
     }
     println!();

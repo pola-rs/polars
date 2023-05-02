@@ -380,7 +380,9 @@ where
             }
         },
         Union {inputs, options } => {
-            todo!()
+            let (offset, len) = options.slice.unwrap_or((0, usize::MAX));
+            let slice = SliceSink::new(offset as u64, len);
+            Box::new(slice) as Box<dyn Sink>
         }
         lp => {
             panic!("{lp:?} not implemented")

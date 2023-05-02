@@ -181,22 +181,22 @@ pub(crate) fn insert_streaming_nodes(
                 if is_streamable(*predicate, expr_arena, Context::Default) =>
             {
                 state.streamable = true;
-                state.operators_sinks.push((!IS_SINK, !IS_RHS_JOIN, root));
+                state.operators_sinks.push((!IS_SINK, SplitType::None, root));
                 stack.push((*input, state, current_idx))
             }
             HStack { input, exprs, .. } if all_streamable(exprs, expr_arena, Context::Default) => {
                 state.streamable = true;
-                state.operators_sinks.push((!IS_SINK, !IS_RHS_JOIN, root));
+                state.operators_sinks.push((!IS_SINK, SplitType::None, root));
                 stack.push((*input, state, current_idx))
             }
             Slice { input, offset, .. } if *offset >= 0 => {
                 state.streamable = true;
-                state.operators_sinks.push((IS_SINK, !IS_RHS_JOIN, root));
+                state.operators_sinks.push((IS_SINK, SplitType::None, root));
                 stack.push((*input, state, current_idx))
             }
             FileSink { input, .. } => {
                 state.streamable = true;
-                state.operators_sinks.push((true, false, root));
+                state.operators_sinks.push((IS_SINK, SplitType::None, root));
                 stack.push((*input, state, current_idx))
             }
             Sort {
@@ -205,14 +205,14 @@ pub(crate) fn insert_streaming_nodes(
                 args,
             } if is_streamable_sort(args) && all_column(by_column, expr_arena) => {
                 state.streamable = true;
-                state.operators_sinks.push((IS_SINK, !IS_RHS_JOIN, root));
+                state.operators_sinks.push((IS_SINK, SplitType::None, root));
                 stack.push((*input, state, current_idx))
             }
             Projection { input, expr, .. }
                 if all_streamable(expr, expr_arena, Context::Default) =>
             {
                 state.streamable = true;
-                state.operators_sinks.push((!IS_SINK, !IS_RHS_JOIN, root));
+                state.operators_sinks.push((!IS_SINK, SplitType::None, root));
                 stack.push((*input, state, current_idx))
             }
             // Rechunks are ignored
@@ -227,7 +227,7 @@ pub(crate) fn insert_streaming_nodes(
             lp @ MapFunction { input, function } => {
                 if function.is_streamable() {
                     state.streamable = true;
-                    state.operators_sinks.push((!IS_SINK, !IS_RHS_JOIN, root));
+                    state.operators_sinks.push((!IS_SINK, SplitType::None, root));
                     stack.push((*input, state, current_idx))
                 } else {
                     process_non_streamable_node(
@@ -289,7 +289,7 @@ pub(crate) fn insert_streaming_nodes(
                 state_right.join_count = 0;
                 state_right
                     .operators_sinks
-                    .push((IS_SINK, IS_RHS_JOIN, root));
+                    .push((IS_SINK, SplitType::JoinRhs, root));
                 stack.push((input_right, state_right, current_idx));
 
                 // we want to traverse lhs first, so push it latest on the stack
@@ -301,7 +301,7 @@ pub(crate) fn insert_streaming_nodes(
                 };
                 state_left
                     .operators_sinks
-                    .push((IS_SINK, !IS_RHS_JOIN, root));
+                    .push((IS_SINK, SplitType::None, root));
                 stack.push((input_left, state_left, current_idx));
             }
             #[cfg(all(feature = "csv", feature = "parquet"))]
@@ -318,7 +318,8 @@ pub(crate) fn insert_streaming_nodes(
                         join_count,
                         ..Default::default()
                     };
-                    state.operators_sinks.push((IS_SINK, !IS_RHS_JOIN, root));
+                    //
+                    state.operators_sinks.push((!IS_SINK, SplitType::Union, root));
                     stack.push((*input, state, current_idx));
                 }
             }
@@ -347,7 +348,7 @@ pub(crate) fn insert_streaming_nodes(
                     && !matches!(options.keep_strategy, UniqueKeepStrategy::None) =>
             {
                 state.streamable = true;
-                state.operators_sinks.push((IS_SINK, !IS_RHS_JOIN, root));
+                state.operators_sinks.push((IS_SINK, SplitType::None, root));
                 stack.push((*input, state, current_idx))
             }
             #[allow(unused_variables)]
@@ -399,7 +400,7 @@ pub(crate) fn insert_streaming_nodes(
                         .all(|dt| allowed_dtype(dt, string_cache))
                 {
                     state.streamable = true;
-                    state.operators_sinks.push((IS_SINK, !IS_RHS_JOIN, root));
+                    state.operators_sinks.push((IS_SINK, SplitType::None, root));
                     stack.push((*input, state, current_idx))
                 } else {
                     stack.push((*input, Branch::default(), current_idx))
@@ -451,27 +452,22 @@ pub(crate) fn insert_streaming_nodes(
                 // iterate from leaves upwards
                 let mut iter = branch.operators_sinks.into_iter().rev();
 
-                for (is_sink, is_rhs_join, node) in &mut iter {
+                for (is_sink, split_type, node) in &mut iter {
                     latest = Some(node);
                     let operator_offset = operators.len();
-                    if is_sink && !is_rhs_join {
-                        sink_nodes.push((operator_offset, node))
-                    } else {
-                        operator_nodes.push(node);
 
-                        // rhs join we create a dummy operator. This operator will
-                        // be replaced by the dispatcher for the real rhs join.
-                        let op = if is_rhs_join {
+                    match split_type {
+                        SplitType::JoinRhs => {
                             // if the join has a slice, we add a new slice node
                             // note that we take the offset + 1, because we want to
                             // slice AFTER the join has happened and the join will be an
                             // operator
                             if let Join {
                                 options:
-                                    JoinOptions {
-                                        slice: Some((offset, len)),
-                                        ..
-                                    },
+                                JoinOptions {
+                                    slice: Some((offset, len)),
+                                    ..
+                                },
                                 ..
                             } = lp_arena.get(node)
                             {
@@ -482,11 +478,22 @@ pub(crate) fn insert_streaming_nodes(
                                 });
                                 sink_nodes.push((operator_offset + 1, slice_node));
                             }
-                            get_dummy_operator()
-                        } else {
-                            get_operator(node, lp_arena, expr_arena, &to_physical_piped_expr)?
-                        };
-                        operators.push(op)
+                            let op = get_dummy_operator();
+                            operators.push(op);
+                            operator_nodes.push(node);
+                        }
+                        SplitType::None => {
+                            if is_sink {
+                                sink_nodes.push((operator_offset, node))
+                            } else {
+                                let op = get_operator(node, lp_arena, expr_arena, &to_physical_piped_expr)?;
+                                operators.push(op);
+                                operator_nodes.push(node);
+                            }
+                        },
+                        SplitType::Union => {
+                            // ignore operator
+                        }
                     }
                 }
 
