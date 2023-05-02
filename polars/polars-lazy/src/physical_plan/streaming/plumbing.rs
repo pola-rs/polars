@@ -76,7 +76,7 @@ pub(super) fn dbg_branch(b: &Branch, lp_arena: &Arena<ALogicalPlan>) {
         match split_type {
             SplitType::None => print!("{} -> ", lp.name()),
             SplitType::JoinRhs => print!("rhs_join_placeholder -> "),
-            SplitType::Union => println!("union -> ")
+            SplitType::Union => println!("union -> "),
         }
     }
     println!();

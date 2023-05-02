@@ -18,7 +18,7 @@ use polars_plan::prelude::*;
 use super::*;
 use crate::physical_plan::planner::create_physical_expr;
 use crate::physical_plan::state::ExecutionState;
-use crate::physical_plan::streaming::tree::*;
+use crate::physical_plan::streaming::plumbing::*;
 use crate::physical_plan::PhysicalExpr;
 
 pub struct Wrap(Arc<dyn PhysicalExpr>);
@@ -181,12 +181,16 @@ pub(crate) fn insert_streaming_nodes(
                 if is_streamable(*predicate, expr_arena, Context::Default) =>
             {
                 state.streamable = true;
-                state.operators_sinks.push((!IS_SINK, SplitType::None, root));
+                state
+                    .operators_sinks
+                    .push((!IS_SINK, SplitType::None, root));
                 stack.push((*input, state, current_idx))
             }
             HStack { input, exprs, .. } if all_streamable(exprs, expr_arena, Context::Default) => {
                 state.streamable = true;
-                state.operators_sinks.push((!IS_SINK, SplitType::None, root));
+                state
+                    .operators_sinks
+                    .push((!IS_SINK, SplitType::None, root));
                 stack.push((*input, state, current_idx))
             }
             Slice { input, offset, .. } if *offset >= 0 => {
@@ -212,7 +216,9 @@ pub(crate) fn insert_streaming_nodes(
                 if all_streamable(expr, expr_arena, Context::Default) =>
             {
                 state.streamable = true;
-                state.operators_sinks.push((!IS_SINK, SplitType::None, root));
+                state
+                    .operators_sinks
+                    .push((!IS_SINK, SplitType::None, root));
                 stack.push((*input, state, current_idx))
             }
             // Rechunks are ignored
@@ -227,7 +233,9 @@ pub(crate) fn insert_streaming_nodes(
             lp @ MapFunction { input, function } => {
                 if function.is_streamable() {
                     state.streamable = true;
-                    state.operators_sinks.push((!IS_SINK, SplitType::None, root));
+                    state
+                        .operators_sinks
+                        .push((!IS_SINK, SplitType::None, root));
                     stack.push((*input, state, current_idx))
                 } else {
                     process_non_streamable_node(
@@ -307,11 +315,7 @@ pub(crate) fn insert_streaming_nodes(
             #[cfg(all(feature = "csv", feature = "parquet"))]
             Union { inputs, .. } if state.streamable => {
                 for (i, input) in inputs.iter().enumerate() {
-                    let join_count = if i == 0 {
-                        state.join_count
-                    } else {
-                        1
-                    };
+                    let join_count = if i == 0 { state.join_count } else { 1 };
 
                     let mut state = Branch {
                         streamable: true,
@@ -319,7 +323,9 @@ pub(crate) fn insert_streaming_nodes(
                         ..Default::default()
                     };
                     //
-                    state.operators_sinks.push((!IS_SINK, SplitType::Union, root));
+                    state
+                        .operators_sinks
+                        .push((!IS_SINK, SplitType::Union, root));
                     stack.push((*input, state, current_idx));
                 }
             }
@@ -464,10 +470,10 @@ pub(crate) fn insert_streaming_nodes(
                             // operator
                             if let Join {
                                 options:
-                                JoinOptions {
-                                    slice: Some((offset, len)),
-                                    ..
-                                },
+                                    JoinOptions {
+                                        slice: Some((offset, len)),
+                                        ..
+                                    },
                                 ..
                             } = lp_arena.get(node)
                             {
@@ -486,11 +492,16 @@ pub(crate) fn insert_streaming_nodes(
                             if is_sink {
                                 sink_nodes.push((operator_offset, node))
                             } else {
-                                let op = get_operator(node, lp_arena, expr_arena, &to_physical_piped_expr)?;
+                                let op = get_operator(
+                                    node,
+                                    lp_arena,
+                                    expr_arena,
+                                    &to_physical_piped_expr,
+                                )?;
                                 operators.push(op);
                                 operator_nodes.push(node);
                             }
-                        },
+                        }
                         SplitType::Union => {
                             // ignore operator
                         }

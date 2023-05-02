@@ -62,11 +62,6 @@ fn test_streaming_glob() -> PolarsResult<()> {
         .agg([col("calories").sum() * lit(10)])
         .sort("sugars_g", Default::default());
 
-    // let plan = q.clone().with_streaming(true).describe_optimized_plan().unwrap();
-    // println!("{}", plan);
-
-    let dot = q.clone().with_streaming(true).to_dot(true).unwrap();
-    println!("{}", dot);
     assert_streaming_with_default(q);
     Ok(())
 }
