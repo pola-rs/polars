@@ -294,10 +294,9 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
             .collect::<Vec<_>>();
 
         let mut agg_builders = self
-            .output_schema
-            .iter_dtypes()
-            .skip(self.num_keys)
-            .map(|dtype| AnyValueBufferTrusted::new(dtype, take_len))
+            .agg_constructors
+            .iter()
+            .map(|ac| AnyValueBufferTrusted::new(&ac.dtype(), take_len))
             .collect::<Vec<_>>();
         let num_aggs = self.agg_constructors.len();
 
