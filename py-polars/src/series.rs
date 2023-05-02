@@ -1,16 +1,15 @@
-use numpy::PyArray1;
+mod constructors;
+
 use polars_algo::{cut, hist, qcut};
 use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_series;
-use polars_core::utils::CustomIterTools;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList};
 use pyo3::Python;
 
 use crate::apply::series::{call_lambda_and_extract, ApplyLambda};
-use crate::arrow_interop::to_rust::array_to_rust;
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::prelude::*;
@@ -25,82 +24,43 @@ pub struct PySeries {
     pub series: Series,
 }
 
+impl From<Series> for PySeries {
+    fn from(s: Series) -> Self {
+        PySeries::new(s)
+    }
+}
+
 impl PySeries {
     pub(crate) fn new(series: Series) -> Self {
         PySeries { series }
     }
 }
 
-// Init with numpy arrays
-macro_rules! init_method {
-    ($name:ident, $type:ty) => {
-        #[pymethods]
-        impl PySeries {
-            #[staticmethod]
-            pub fn $name(
-                py: Python,
-                name: &str,
-                array: &PyArray1<$type>,
-                _strict: bool,
-            ) -> PySeries {
-                let array = array.readonly();
-                let vals = array.as_slice().unwrap();
-                py.allow_threads(|| PySeries {
-                    series: Series::new(name, vals),
-                })
-            }
-        }
-    };
+pub(crate) fn to_series_collection(ps: Vec<PySeries>) -> Vec<Series> {
+    // prevent destruction of ps
+    let mut ps = std::mem::ManuallyDrop::new(ps);
+
+    // get mutable pointer and reinterpret as Series
+    let p = ps.as_mut_ptr() as *mut Series;
+    let len = ps.len();
+    let cap = ps.capacity();
+
+    // The pointer ownership will be transferred to Vec and this will be responsible for dealloc
+    unsafe { Vec::from_raw_parts(p, len, cap) }
 }
 
-init_method!(new_i8, i8);
-init_method!(new_i16, i16);
-init_method!(new_i32, i32);
-init_method!(new_i64, i64);
-init_method!(new_bool, bool);
-init_method!(new_u8, u8);
-init_method!(new_u16, u16);
-init_method!(new_u32, u32);
-init_method!(new_u64, u64);
+pub(crate) fn to_pyseries_collection(s: Vec<Series>) -> Vec<PySeries> {
+    let mut s = std::mem::ManuallyDrop::new(s);
+
+    let p = s.as_mut_ptr() as *mut PySeries;
+    let len = s.len();
+    let cap = s.capacity();
+
+    unsafe { Vec::from_raw_parts(p, len, cap) }
+}
 
 #[pymethods]
 impl PySeries {
-    #[staticmethod]
-    pub fn new_f32(py: Python, name: &str, array: &PyArray1<f32>, nan_is_null: bool) -> PySeries {
-        let array = array.readonly();
-        let vals = array.as_slice().unwrap();
-        py.allow_threads(|| {
-            if nan_is_null {
-                let mut ca: Float32Chunked = vals
-                    .iter()
-                    .map(|&val| if f32::is_nan(val) { None } else { Some(val) })
-                    .collect_trusted();
-                ca.rename(name);
-                ca.into_series().into()
-            } else {
-                Series::new(name, vals).into()
-            }
-        })
-    }
-
-    #[staticmethod]
-    pub fn new_f64(py: Python, name: &str, array: &PyArray1<f64>, nan_is_null: bool) -> PySeries {
-        let array = array.readonly();
-        let vals = array.as_slice().unwrap();
-        py.allow_threads(|| {
-            if nan_is_null {
-                let mut ca: Float64Chunked = vals
-                    .iter()
-                    .map(|&val| if f64::is_nan(val) { None } else { Some(val) })
-                    .collect_trusted();
-                ca.rename(name);
-                ca.into_series().into()
-            } else {
-                Series::new(name, vals).into()
-            }
-        })
-    }
-
     pub fn struct_unnest(&self) -> PyResult<PyDataFrame> {
         let ca = self.series.struct_().map_err(PyPolarsErr::from)?;
         let df: DataFrame = ca.clone().into();
@@ -111,258 +71,19 @@ impl PySeries {
         let ca = self.series.struct_().map_err(PyPolarsErr::from)?;
         Ok(ca.fields().iter().map(|s| s.name()).collect())
     }
-}
 
-#[pymethods]
-impl PySeries {
     pub fn is_sorted_ascending_flag(&self) -> bool {
         matches!(self.series.is_sorted_flag(), IsSorted::Ascending)
     }
+
     pub fn is_sorted_descending_flag(&self) -> bool {
         matches!(self.series.is_sorted_flag(), IsSorted::Descending)
     }
+
     pub fn can_fast_explode_flag(&self) -> bool {
         match self.series.list() {
             Err(_) => false,
             Ok(list) => list._can_fast_explode(),
-        }
-    }
-
-    #[staticmethod]
-    pub fn new_opt_bool(name: &str, obj: &PyAny, strict: bool) -> PyResult<PySeries> {
-        let len = obj.len()?;
-        let mut builder = BooleanChunkedBuilder::new(name, len);
-
-        for res in obj.iter()? {
-            let item = res?;
-            if item.is_none() {
-                builder.append_null()
-            } else {
-                match item.extract::<bool>() {
-                    Ok(val) => builder.append_value(val),
-                    Err(e) => {
-                        if strict {
-                            return Err(e);
-                        }
-                        builder.append_null()
-                    }
-                }
-            }
-        }
-        let ca = builder.finish();
-
-        let s = ca.into_series();
-        Ok(PySeries { series: s })
-    }
-}
-
-fn new_primitive<'a, T>(name: &str, obj: &'a PyAny, strict: bool) -> PyResult<PySeries>
-where
-    T: PolarsNumericType,
-    ChunkedArray<T>: IntoSeries,
-    T::Native: FromPyObject<'a>,
-{
-    let len = obj.len()?;
-    let mut builder = PrimitiveChunkedBuilder::<T>::new(name, len);
-
-    for res in obj.iter()? {
-        let item = res?;
-
-        if item.is_none() {
-            builder.append_null()
-        } else {
-            match item.extract::<T::Native>() {
-                Ok(val) => builder.append_value(val),
-                Err(e) => {
-                    if strict {
-                        return Err(e);
-                    }
-                    builder.append_null()
-                }
-            }
-        }
-    }
-    let ca = builder.finish();
-
-    let s = ca.into_series();
-    Ok(PySeries { series: s })
-}
-
-// Init with lists that can contain Nones
-macro_rules! init_method_opt {
-    ($name:ident, $type:ty, $native: ty) => {
-        #[pymethods]
-        impl PySeries {
-            #[staticmethod]
-            pub fn $name(name: &str, obj: &PyAny, strict: bool) -> PyResult<PySeries> {
-                new_primitive::<$type>(name, obj, strict)
-            }
-        }
-    };
-}
-
-init_method_opt!(new_opt_u8, UInt8Type, u8);
-init_method_opt!(new_opt_u16, UInt16Type, u16);
-init_method_opt!(new_opt_u32, UInt32Type, u32);
-init_method_opt!(new_opt_u64, UInt64Type, u64);
-init_method_opt!(new_opt_i8, Int8Type, i8);
-init_method_opt!(new_opt_i16, Int16Type, i16);
-init_method_opt!(new_opt_i32, Int32Type, i32);
-init_method_opt!(new_opt_i64, Int64Type, i64);
-init_method_opt!(new_opt_f32, Float32Type, f32);
-init_method_opt!(new_opt_f64, Float64Type, f64);
-
-impl From<Series> for PySeries {
-    fn from(s: Series) -> Self {
-        PySeries::new(s)
-    }
-}
-
-#[pymethods]
-#[allow(
-    clippy::wrong_self_convention,
-    clippy::should_implement_trait,
-    clippy::len_without_is_empty
-)]
-impl PySeries {
-    #[staticmethod]
-    pub fn new_from_anyvalues(
-        name: &str,
-        val: Vec<Wrap<AnyValue<'_>>>,
-        strict: bool,
-    ) -> PyResult<PySeries> {
-        let avs = slice_extract_wrapped(&val);
-        // from anyvalues is fallible
-        let s = Series::from_any_values(name, avs, strict).map_err(PyPolarsErr::from)?;
-        Ok(s.into())
-    }
-
-    #[staticmethod]
-    pub fn new_str(name: &str, val: Wrap<Utf8Chunked>, _strict: bool) -> Self {
-        let mut s = val.0.into_series();
-        s.rename(name);
-        PySeries::new(s)
-    }
-
-    #[staticmethod]
-    pub fn new_binary(name: &str, val: Wrap<BinaryChunked>, _strict: bool) -> Self {
-        let mut s = val.0.into_series();
-        s.rename(name);
-        PySeries::new(s)
-    }
-
-    #[staticmethod]
-    pub fn new_null(name: &str, val: &PyAny, _strict: bool) -> PyResult<Self> {
-        let s = Series::new_null(name, val.len()?);
-        Ok(PySeries::new(s))
-    }
-
-    #[staticmethod]
-    pub fn new_object(name: &str, val: Vec<ObjectValue>, _strict: bool) -> Self {
-        #[cfg(feature = "object")]
-        {
-            // object builder must be registered. this is done on import
-            let s = ObjectChunked::<ObjectValue>::new_from_vec(name, val).into_series();
-            s.into()
-        }
-        #[cfg(not(feature = "object"))]
-        {
-            todo!()
-        }
-    }
-
-    #[staticmethod]
-    pub fn new_series_list(name: &str, val: Vec<Self>, _strict: bool) -> Self {
-        let series_vec = to_series_collection(val);
-        Series::new(name, &series_vec).into()
-    }
-
-    #[staticmethod]
-    pub fn new_decimal(
-        name: &str,
-        val: Vec<Wrap<AnyValue<'_>>>,
-        strict: bool,
-    ) -> PyResult<PySeries> {
-        // TODO: do we have to respect 'strict' here? it's possible if we want to
-        let avs = slice_extract_wrapped(&val);
-        // create a fake dtype with a placeholder "none" scale, to be inferred later
-        let dtype = DataType::Decimal(None, None);
-        let s = Series::from_any_values_and_dtype(name, avs, &dtype, strict)
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.into())
-    }
-
-    #[staticmethod]
-    pub fn repeat(name: &str, val: &PyAny, n: usize, dtype: Wrap<DataType>) -> Self {
-        match dtype.0 {
-            DataType::Utf8 => {
-                let val = val.extract::<&str>().unwrap();
-                let mut ca: Utf8Chunked = (0..n).map(|_| val).collect_trusted();
-                ca.rename(name);
-                ca.into_series().into()
-            }
-            DataType::Int64 => {
-                let val = val.extract::<i64>().unwrap();
-                let mut ca: NoNull<Int64Chunked> = (0..n).map(|_| val).collect_trusted();
-                ca.rename(name);
-                ca.into_inner().into_series().into()
-            }
-            DataType::Int32 => {
-                let val = val.extract::<i32>().unwrap();
-                let mut ca: NoNull<Int32Chunked> = (0..n).map(|_| val).collect_trusted();
-                ca.rename(name);
-                ca.into_inner().into_series().into()
-            }
-            DataType::Float64 => {
-                let val = val.extract::<f64>().unwrap();
-                let mut ca: NoNull<Float64Chunked> = (0..n).map(|_| val).collect_trusted();
-                ca.rename(name);
-                ca.into_inner().into_series().into()
-            }
-            DataType::Boolean => {
-                let val = val.extract::<bool>().unwrap();
-                let mut ca: BooleanChunked = (0..n).map(|_| val).collect_trusted();
-                ca.rename(name);
-                ca.into_series().into()
-            }
-            DataType::Null => {
-                let s = Series::new_null(name, n);
-                PySeries::new(s)
-            }
-            dt => {
-                panic!("cannot create repeat with dtype: {dt:?}");
-            }
-        }
-    }
-
-    #[staticmethod]
-    pub fn from_arrow(name: &str, array: &PyAny) -> PyResult<Self> {
-        let arr = array_to_rust(array)?;
-
-        match arr.data_type() {
-            ArrowDataType::LargeList(_) => {
-                let array = arr.as_any().downcast_ref::<LargeListArray>().unwrap();
-
-                let mut previous = 0;
-                let mut fast_explode = true;
-                for &o in array.offsets().as_slice()[1..].iter() {
-                    if o == previous {
-                        fast_explode = false;
-                        break;
-                    }
-                    previous = o;
-                }
-                let mut out = unsafe { ListChunked::from_chunks(name, vec![arr]) };
-                if fast_explode {
-                    out.set_fast_explode()
-                }
-                Ok(out.into_series().into())
-            }
-            _ => {
-                let series: Series =
-                    std::convert::TryFrom::try_from((name, arr)).map_err(PyPolarsErr::from)?;
-                Ok(series.into())
-            }
         }
     }
 
@@ -1625,29 +1346,6 @@ impl_lt_eq_num!(lt_eq_i64, i64);
 impl_lt_eq_num!(lt_eq_f32, f32);
 impl_lt_eq_num!(lt_eq_f64, f64);
 impl_lt_eq_num!(lt_eq_str, &str);
-
-pub(crate) fn to_series_collection(ps: Vec<PySeries>) -> Vec<Series> {
-    // prevent destruction of ps
-    let mut ps = std::mem::ManuallyDrop::new(ps);
-
-    // get mutable pointer and reinterpret as Series
-    let p = ps.as_mut_ptr() as *mut Series;
-    let len = ps.len();
-    let cap = ps.capacity();
-
-    // The pointer ownership will be transferred to Vec and this will be responsible for dealloc
-    unsafe { Vec::from_raw_parts(p, len, cap) }
-}
-
-pub(crate) fn to_pyseries_collection(s: Vec<Series>) -> Vec<PySeries> {
-    let mut s = std::mem::ManuallyDrop::new(s);
-
-    let p = s.as_mut_ptr() as *mut PySeries;
-    let len = s.len();
-    let cap = s.capacity();
-
-    unsafe { Vec::from_raw_parts(p, len, cap) }
-}
 
 #[cfg(test)]
 mod test {
