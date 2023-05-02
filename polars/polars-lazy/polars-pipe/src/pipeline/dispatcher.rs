@@ -15,23 +15,62 @@ use crate::operators::{
 };
 use crate::pipeline::morsels_per_sink;
 
+/// A pipeline consists of:
+///
+/// - 1. One or more sources.
+///         Sources get pulled and their data is pushed into operators.
+/// - 2. Zero or more operators.
+///         The operators simply pass through data, modifying it as they need.
+///         Operators can work on batches and don't need all data in scope to
+///         succeed.
+///         Think for example on multiply a few columns, or applying a predicate.
+///         Operators can shrink the batches: filter
+///         Grow the batches: explode/ melt
+///         Keep them the same size: element-wise operations
+///         The probe side of join operations is also an operator.
+///
+///
+/// - 3. One or more sinks
+///         A sink needs all data in scope to finalize a pipeline branch.
+///         Think of sorts, preparing a build phase of a join, groupby + aggregations.
+///
+/// This struct will have the SOS (source, operators, sinks) of its own pipeline branch, but also
+/// the SOS of other branches. The SOS are stored data oriented and the sinks have an offset that
+/// indicates the last operator node before that specific sink. We only store the `end offset` and
+/// keep track of the starting operator during execution.
+///
+/// Pipelines branches are shared with other pipeline branches at the join/union nodes.
+/// # JOIN
+/// Consider this tree:
+///         out
+///       /
+///     /\
+///    1  2
+///
+/// And let's consider that branch 2 runs first. It will run until the join node where it will sink
+/// into a build table. Once that is done it will replace the build-phase placeholder operator in
+/// branch 1. Branch one can then run completely until out.
 pub struct PipeLine {
+    /// All the sources of this pipeline
     sources: Vec<Box<dyn Source>>,
+    /// All the operators of this pipeline. Some may be placeholders that will be replaced during
+    /// execution
     operators: Vec<Vec<Box<dyn Operator>>>,
+    /// The nodes of operators. These are used to identify operators between pipelines
     operator_nodes: Vec<Node>,
-    // - offset in the operators vec
-    //   at that point the sink should be called.
-    //   the pipeline will first call the operators on that point and then
-    //   push the result in the sink.
-    // - node of the sink
+    /// - offset in the operators vec
+    ///   at that point the sink should be called.
+    ///   the pipeline will first call the operators on that point and then
+    ///   push the result in the sink.
+    /// - node of the sink
     sinks: Vec<(usize, Vec<Box<dyn Sink>>)>,
-    // are used to identify the sink shared with other pipeline branches
+    /// are used to identify the sink shared with other pipeline branches
     sink_nodes: Vec<Node>,
     rh_sides: Vec<PipeLine>,
-
-    // this is a correction as there may be more `operators` than nodes
-    // as during construction, source may have inserted operators
+    /// this is a correction as there may be more `operators` than nodes
+    /// as during construction, source may have inserted operators
     operator_offset: usize,
+    /// Log runtime info to stderr
     verbose: bool,
 }
 
@@ -112,6 +151,10 @@ impl PipeLine {
         }
     }
 
+    /// Take data chunks from the sources and pushes them into the operators + sink. Every operator
+    /// works thread local.
+    /// The caller passes an `operator_start`/`operator_end` to indicate which part of the pipeline
+    /// branch should be executed.
     fn par_process_chunks(
         &mut self,
         chunks: Vec<DataChunk>,
@@ -150,6 +193,10 @@ impl PipeLine {
         out
     }
 
+    /// This thread local logic that pushed a data chunk into the operators + sink
+    /// It can be that a single operator needs to be called multiple times, this is for instance the
+    /// case with joins that produce many tuples, that's why we keep a stack of `in_process`
+    /// operators.
     fn push_operators(
         &self,
         chunk: DataChunk,
@@ -193,16 +240,23 @@ impl PipeLine {
         Ok(SinkResult::CanHaveMoreInput)
     }
 
+    /// Replace the current sources with a [`DataFrameSource`].
     fn set_df_as_sources(&mut self, df: DataFrame) {
         let src = Box::new(DataFrameSource::from_df(df)) as Box<dyn Source>;
         self.set_sources(src)
     }
 
+    /// Replace the current sources.
     fn set_sources(&mut self, src: Box<dyn Source>) {
         self.sources.clear();
         self.sources.push(src);
     }
 
+    /// Run a single pipeline branch.
+    /// This pulls data from the sources and pushes it into the operators which run on a different
+    /// thread and finalize in a sink.
+    ///
+    /// The sink can be finished, but can also become a new source and then rinse and repeat.
     pub fn run_pipeline(&mut self, ec: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         let mut out = None;
         let mut operator_start = 0;
@@ -228,6 +282,8 @@ impl PipeLine {
                 }
             }
 
+            // The sinks have taken all chunks thread locally, now we reduce them into a single
+            // result sink.
             let mut reduced_sink = POOL
                 .install(|| {
                     sink.into_par_iter().reduce_with(|mut a, mut b| {
@@ -281,6 +337,8 @@ impl PipeLine {
         }
     }
 
+    /// Executes all branches and replaces operators and sinks during execution to ensure
+    /// we materialize.
     pub fn execute(&mut self, state: Box<dyn SExecutionContext>) -> PolarsResult<DataFrame> {
         let ec = PExecutionContext::new(state, self.verbose);
 
@@ -352,6 +410,7 @@ impl PipeLine {
     }
 }
 
+/// Take a source and materialize it into a [`DataFrame`].
 fn consume_source(src: &mut dyn Source, context: &PExecutionContext) -> PolarsResult<DataFrame> {
     let mut frames = Vec::with_capacity(32);
 
