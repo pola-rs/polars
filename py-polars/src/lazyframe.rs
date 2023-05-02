@@ -499,7 +499,7 @@ impl PyLazyFrame {
             ldf.groupby(by)
         };
 
-        PyLazyGroupBy { lgb: Some(lazy_gb) }
+        PyLazyGroupBy { lgb: lazy_gb }
     }
 
     fn groupby_rolling(
@@ -527,7 +527,7 @@ impl PyLazyFrame {
             },
         );
 
-        PyLazyGroupBy { lgb: Some(lazy_gb) }
+        PyLazyGroupBy { lgb: lazy_gb }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -564,7 +564,7 @@ impl PyLazyFrame {
             },
         );
 
-        PyLazyGroupBy { lgb: Some(lazy_gb) }
+        PyLazyGroupBy { lgb: lazy_gb }
     }
 
     fn with_context(&self, contexts: Vec<Self>) -> Self {

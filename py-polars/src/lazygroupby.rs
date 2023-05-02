@@ -11,30 +11,26 @@ use crate::{PyDataFrame, PyExpr, PyLazyFrame};
 #[pyclass]
 #[repr(transparent)]
 pub struct PyLazyGroupBy {
-    // option because we cannot get a self by value in pyo3
-    pub lgb: Option<LazyGroupBy>,
+    pub lgb: LazyGroupBy,
 }
 
 #[pymethods]
 impl PyLazyGroupBy {
     fn agg(&mut self, aggs: Vec<PyExpr>) -> PyLazyFrame {
-        let lgb = self.lgb.take().unwrap();
         let aggs = aggs.to_exprs();
-        lgb.agg(aggs).into()
+        self.lgb.clone().agg(aggs).into()
     }
 
     fn head(&mut self, n: usize) -> PyLazyFrame {
-        let lgb = self.lgb.take().unwrap();
-        lgb.head(Some(n)).into()
+        self.lgb.clone().head(Some(n)).into()
     }
 
     fn tail(&mut self, n: usize) -> PyLazyFrame {
-        let lgb = self.lgb.take().unwrap();
-        lgb.tail(Some(n)).into()
+        self.lgb.clone().tail(Some(n)).into()
     }
 
     fn apply(&mut self, lambda: PyObject, schema: Option<Wrap<Schema>>) -> PyResult<PyLazyFrame> {
-        let lgb = self.lgb.take().unwrap();
+        let lgb = self.lgb.clone();
         let schema = match schema {
             Some(schema) => Arc::new(schema.0),
             None => LazyFrame::from(lgb.logical_plan.clone())

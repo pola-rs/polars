@@ -17,7 +17,6 @@ enum BatchedReader {
 #[pyclass]
 #[repr(transparent)]
 pub struct PyBatchedCsv {
-    // option because we cannot get a self by value in pyo3
     reader: BatchedReader,
 }
 
