@@ -195,7 +195,7 @@ fn test_ipc_globbing() -> PolarsResult<()> {
 fn slice_at_union(lp_arena: &Arena<ALogicalPlan>, lp: Node) -> bool {
     (&lp_arena).iter(lp).all(|(_, lp)| {
         if let ALogicalPlan::Union { options, .. } = lp {
-            options.slice
+            options.slice.is_some()
         } else {
             true
         }

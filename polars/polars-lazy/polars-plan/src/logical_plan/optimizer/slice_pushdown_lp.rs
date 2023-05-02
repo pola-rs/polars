@@ -205,9 +205,7 @@ impl SlicePushDown {
             }
 
             (Union {inputs, mut options }, Some(state)) => {
-                options.slice = true;
-                options.slice_offset = state.offset;
-                options.slice_len = state.len;
+                options.slice = Some((state.offset, state.len as usize));
                 Ok(Union {inputs, options})
             },
             (Join {
