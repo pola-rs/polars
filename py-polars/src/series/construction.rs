@@ -190,20 +190,20 @@ impl PySeries {
     pub fn new_str(name: &str, val: Wrap<Utf8Chunked>, _strict: bool) -> Self {
         let mut s = val.0.into_series();
         s.rename(name);
-        PySeries::new(s)
+        s.into()
     }
 
     #[staticmethod]
     pub fn new_binary(name: &str, val: Wrap<BinaryChunked>, _strict: bool) -> Self {
         let mut s = val.0.into_series();
         s.rename(name);
-        PySeries::new(s)
+        s.into()
     }
 
     #[staticmethod]
     pub fn new_null(name: &str, val: &PyAny, _strict: bool) -> PyResult<Self> {
         let s = Series::new_null(name, val.len()?);
-        Ok(PySeries::new(s))
+        Ok(s.into())
     }
 
     #[staticmethod]

@@ -27,8 +27,8 @@ pub struct PySeries {
 }
 
 impl From<Series> for PySeries {
-    fn from(s: Series) -> Self {
-        PySeries::new(s)
+    fn from(series: Series) -> Self {
+        PySeries { series }
     }
 }
 
@@ -327,7 +327,7 @@ impl PySeries {
     }
     pub fn eq(&self, rhs: &PySeries) -> PyResult<Self> {
         let s = self.series.equal(&rhs.series).map_err(PyPolarsErr::from)?;
-        Ok(Self::new(s.into_series()))
+        Ok(s.into_series().into())
     }
 
     pub fn neq(&self, rhs: &PySeries) -> PyResult<Self> {
@@ -335,27 +335,27 @@ impl PySeries {
             .series
             .not_equal(&rhs.series)
             .map_err(PyPolarsErr::from)?;
-        Ok(Self::new(s.into_series()))
+        Ok(s.into_series().into())
     }
 
     pub fn gt(&self, rhs: &PySeries) -> PyResult<Self> {
         let s = self.series.gt(&rhs.series).map_err(PyPolarsErr::from)?;
-        Ok(Self::new(s.into_series()))
+        Ok(s.into_series().into())
     }
 
     pub fn gt_eq(&self, rhs: &PySeries) -> PyResult<Self> {
         let s = self.series.gt_eq(&rhs.series).map_err(PyPolarsErr::from)?;
-        Ok(Self::new(s.into_series()))
+        Ok(s.into_series().into())
     }
 
     pub fn lt(&self, rhs: &PySeries) -> PyResult<Self> {
         let s = self.series.lt(&rhs.series).map_err(PyPolarsErr::from)?;
-        Ok(Self::new(s.into_series()))
+        Ok(s.into_series().into())
     }
 
     pub fn lt_eq(&self, rhs: &PySeries) -> PyResult<Self> {
         let s = self.series.lt_eq(&rhs.series).map_err(PyPolarsErr::from)?;
-        Ok(Self::new(s.into_series()))
+        Ok(s.into_series().into())
     }
 
     pub fn _not(&self) -> PyResult<Self> {
