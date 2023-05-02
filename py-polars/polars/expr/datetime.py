@@ -331,10 +331,12 @@ class ExprDateTimeNameSpace:
         time = expr_to_lit_or_expr(time)
         return wrap_expr(self._pyexpr.dt_combine(time._pyexpr, time_unit))
 
-    @deprecated_alias(fmt="format")
-    def strftime(self, format: str) -> Expr:
+    def to_string(self, format: str) -> Expr:
         """
-        Format Date/Datetime with a formatting rule.
+        Convert a Date/Time/Datetime column into a Utf8 column with the given format.
+
+        Similar to ``cast(pl.Utf8)``, but this method allows you to customize the
+        formatting of the resulting string.
 
         Parameters
         ----------
@@ -345,25 +347,24 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import timedelta, datetime
+        >>> from datetime import datetime
         >>> df = pl.DataFrame(
         ...     {
-        ...         "date": pl.date_range(
-        ...             datetime(2020, 3, 1), datetime(2020, 5, 1), "1mo", eager=True
-        ...         ),
+        ...         "datetime": [
+        ...             datetime(2020, 3, 1),
+        ...             datetime(2020, 4, 1),
+        ...             datetime(2020, 5, 1),
+        ...         ]
         ...     }
         ... )
-        >>> df.select(
-        ...     [
-        ...         pl.col("date"),
-        ...         pl.col("date")
-        ...         .dt.strftime("%Y/%m/%d %H:%M:%S")
-        ...         .alias("date_formatted"),
-        ...     ]
+        >>> df.with_columns(
+        ...     pl.col("datetime")
+        ...     .dt.to_string("%Y/%m/%d %H:%M:%S")
+        ...     .alias("datetime_string")
         ... )
         shape: (3, 2)
         ┌─────────────────────┬─────────────────────┐
-        │ date                ┆ date_formatted      │
+        │ datetime            ┆ datetime_string     │
         │ ---                 ┆ ---                 │
         │ datetime[μs]        ┆ str                 │
         ╞═════════════════════╪═════════════════════╡
@@ -373,7 +374,59 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴─────────────────────┘
 
         """
-        return wrap_expr(self._pyexpr.dt_strftime(format))
+        return wrap_expr(self._pyexpr.dt_to_string(format))
+
+    @deprecated_alias(fmt="format")
+    def strftime(self, format: str) -> Expr:
+        """
+        Convert a Date/Time/Datetime column into a Utf8 column with the given format.
+
+        Similar to ``cast(pl.Utf8)``, but this method allows you to customize the
+        formatting of the resulting string.
+
+        Alias for :func:`to_string`.
+
+        Parameters
+        ----------
+        format
+            Format to use, refer to the `chrono strftime documentation
+            <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            for specification. Example: ``"%y-%m-%d"``.
+
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "datetime": [
+        ...             datetime(2020, 3, 1),
+        ...             datetime(2020, 4, 1),
+        ...             datetime(2020, 5, 1),
+        ...         ]
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("datetime")
+        ...     .dt.strftime("%Y/%m/%d %H:%M:%S")
+        ...     .alias("datetime_string")
+        ... )
+        shape: (3, 2)
+        ┌─────────────────────┬─────────────────────┐
+        │ datetime            ┆ datetime_string     │
+        │ ---                 ┆ ---                 │
+        │ datetime[μs]        ┆ str                 │
+        ╞═════════════════════╪═════════════════════╡
+        │ 2020-03-01 00:00:00 ┆ 2020/03/01 00:00:00 │
+        │ 2020-04-01 00:00:00 ┆ 2020/04/01 00:00:00 │
+        │ 2020-05-01 00:00:00 ┆ 2020/05/01 00:00:00 │
+        └─────────────────────┴─────────────────────┘
+
+        See Also
+        --------
+        to_string : The identical expression for which ``strftime`` is an alias.
+
+        """
+        return self.to_string(format)
 
     def year(self) -> Expr:
         """

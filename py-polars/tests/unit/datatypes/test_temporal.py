@@ -1935,7 +1935,7 @@ def test_datetime_string_casts() -> None:
         ],
     )
     assert df.select(
-        [pl.col("x").dt.strftime("%F %T").alias("w")]
+        [pl.col("x").dt.to_string("%F %T").alias("w")]
         + [pl.col(d).cast(str) for d in df.columns]
     ).rows() == [
         (
@@ -2467,17 +2467,17 @@ def test_tz_aware_truncate() -> None:
     }
 
 
-def test_strftime_invalid_format() -> None:
+def test_to_string_invalid_format() -> None:
     tz_naive = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
     with pytest.raises(
         ComputeError, match="cannot format NaiveDateTime with format '%z'"
     ):
-        tz_naive.dt.strftime("%z")
+        tz_naive.dt.to_string("%z")
     with pytest.raises(ComputeError, match="cannot format DateTime with format '%q'"):
-        tz_naive.dt.replace_time_zone("UTC").dt.strftime("%q")
+        tz_naive.dt.replace_time_zone("UTC").dt.to_string("%q")
 
 
-def test_tz_aware_strftime() -> None:
+def test_tz_aware_to_string() -> None:
     df = pl.DataFrame(
         {
             "dt": pl.date_range(
@@ -2488,7 +2488,7 @@ def test_tz_aware_strftime() -> None:
             ).dt.replace_time_zone("America/New_York")
         }
     )
-    assert df.with_columns(pl.col("dt").dt.strftime("%c").alias("fmt")).to_dict(
+    assert df.with_columns(pl.col("dt").dt.to_string("%c").alias("fmt")).to_dict(
         False
     ) == {
         "dt": [
@@ -2520,7 +2520,7 @@ def test_tz_aware_with_timezone_directive(
 ) -> None:
     tz_naive = pl.Series(["2020-01-01 03:00:00"]).str.strptime(pl.Datetime)
     tz_aware = tz_naive.dt.replace_time_zone(time_zone)
-    result = tz_aware.dt.strftime(directive).item()
+    result = tz_aware.dt.to_string(directive).item()
     assert result == expected
 
 

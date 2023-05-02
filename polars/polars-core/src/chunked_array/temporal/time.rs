@@ -18,8 +18,9 @@ pub(crate) fn time_to_time64ns(time: &NaiveTime) -> i64 {
 }
 
 impl TimeChunked {
-    /// Format Time with a `format` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
-    pub fn strftime(&self, format: &str) -> Utf8Chunked {
+    /// Convert from Time into Utf8 with the given format.
+    /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+    pub fn to_string(&self, format: &str) -> Utf8Chunked {
         let time = NaiveTime::from_hms_opt(0, 0, 0).unwrap();
         let fmted = format!("{}", time.format(format));
 
@@ -46,6 +47,14 @@ impl TimeChunked {
 
         ca.rename(self.name());
         ca
+    }
+
+    /// Convert from Time into Utf8 with the given format.
+    /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+    ///
+    /// Alias for `to_string`.
+    pub fn strftime(&self, format: &str) -> Utf8Chunked {
+        self.to_string(format)
     }
 
     pub fn as_time_iter(&self) -> impl Iterator<Item = Option<NaiveTime>> + TrustedLen + '_ {

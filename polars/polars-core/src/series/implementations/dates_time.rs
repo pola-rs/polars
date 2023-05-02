@@ -301,7 +301,7 @@ macro_rules! impl_dyn_series {
                         .into_series()
                         .date()
                         .unwrap()
-                        .strftime("%Y-%m-%d")
+                        .to_string("%Y-%m-%d")
                         .into_series()),
                     (DataType::Time, DataType::Utf8) => Ok(self
                         .0
@@ -309,7 +309,7 @@ macro_rules! impl_dyn_series {
                         .into_series()
                         .time()
                         .unwrap()
-                        .strftime("%T")
+                        .to_string("%T")
                         .into_series()),
                     #[cfg(feature = "dtype-datetime")]
                     (DataType::Time, DataType::Datetime(_, _)) => {

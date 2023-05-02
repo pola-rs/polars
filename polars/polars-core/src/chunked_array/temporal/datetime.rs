@@ -168,8 +168,9 @@ impl DatetimeChunked {
         Ok(out)
     }
 
-    /// Format Datetime with a `format` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
-    pub fn strftime(&self, format: &str) -> PolarsResult<Utf8Chunked> {
+    /// Convert from Datetime into Utf8 with the given format.
+    /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+    pub fn to_string(&self, format: &str) -> PolarsResult<Utf8Chunked> {
         #[cfg(feature = "timezones")]
         use chrono::Utc;
         let conversion_f = match self.time_unit() {
@@ -216,6 +217,14 @@ impl DatetimeChunked {
         };
         ca.rename(self.name());
         Ok(ca)
+    }
+
+    /// Convert from Datetime into Utf8 with the given format.
+    /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+    ///
+    /// Alias for `to_string`.
+    pub fn strftime(&self, format: &str) -> PolarsResult<Utf8Chunked> {
+        self.to_string(format)
     }
 
     /// Construct a new [`DatetimeChunked`] from an iterator over [`NaiveDateTime`].

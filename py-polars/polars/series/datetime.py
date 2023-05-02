@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars import functions as F
 from polars.datatypes import Date
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
@@ -141,10 +140,12 @@ class DateTimeNameSpace:
                 return _to_python_datetime(int(out), s.time_unit)
         return None
 
-    @deprecated_alias(fmt="format")
-    def strftime(self, format: str) -> Series:
+    def to_string(self, format: str) -> Series:
         """
-        Format Date/datetime with a formatting rule.
+        Convert a Date/Time/Datetime column into a Utf8 column with the given format.
+
+        Similar to ``cast(pl.Utf8)``, but this method allows you to customize the
+        formatting of the resulting string.
 
         Parameters
         ----------
@@ -153,38 +154,63 @@ class DateTimeNameSpace:
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for specification. Example: ``"%y-%m-%d"``.
 
-        Returns
-        -------
-        Utf8 Series
+        Examples
+        --------
+        >>> from datetime import datetime
+        >>> s = pl.Series(
+        ...     "datetime",
+        ...     [datetime(2020, 3, 1), datetime(2020, 4, 1), datetime(2020, 5, 1)],
+        ... )
+        >>> s.dt.to_string("%Y/%m/%d")
+        shape: (3,)
+        Series: 'datetime' [str]
+        [
+                "2020/03/01"
+                "2020/04/01"
+                "2020/05/01"
+        ]
+
+        """
+
+    @deprecated_alias(fmt="format")
+    def strftime(self, format: str) -> Series:
+        """
+        Convert a Date/Time/Datetime column into a Utf8 column with the given format.
+
+        Similar to ``cast(pl.Utf8)``, but this method allows you to customize the
+        formatting of the resulting string.
+
+        Alias for :func:`to_string`.
+
+        Parameters
+        ----------
+        format
+            Format to use, refer to the `chrono strftime documentation
+            <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            for specification. Example: ``"%y-%m-%d"``.
 
         Examples
         --------
         >>> from datetime import datetime
-        >>> start = datetime(2001, 1, 1)
-        >>> stop = datetime(2001, 1, 4)
-        >>> date = pl.date_range(start, stop, interval="1d", eager=True)
-        >>> date
-        shape: (4,)
-        Series: '' [datetime[μs]]
+        >>> s = pl.Series(
+        ...     "datetime",
+        ...     [datetime(2020, 3, 1), datetime(2020, 4, 1), datetime(2020, 5, 1)],
+        ... )
+        >>> s.dt.strftime("%Y/%m/%d")
+        shape: (3,)
+        Series: 'datetime' [str]
         [
-                2001-01-01 00:00:00
-                2001-01-02 00:00:00
-                2001-01-03 00:00:00
-                2001-01-04 00:00:00
-        ]
-        >>> date.dt.strftime(format="%Y-%m-%d")
-        shape: (4,)
-        Series: '' [str]
-        [
-                "2001-01-01"
-                "2001-01-02"
-                "2001-01-03"
-                "2001-01-04"
+                "2020/03/01"
+                "2020/04/01"
+                "2020/05/01"
         ]
 
+        See Also
+        --------
+        to_string : The identical Series method for which ``strftime`` is an alias.
+
         """
-        s = wrap_s(self._s)
-        return s.to_frame().select(F.col(s.name).dt.strftime(format)).to_series()
+        return self.to_string(format)
 
     def year(self) -> Series:
         """
