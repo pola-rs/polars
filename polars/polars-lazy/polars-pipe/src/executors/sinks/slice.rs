@@ -96,7 +96,6 @@ impl Sink for SliceSink {
             self.offset.manual_drop();
             self.current_len.manual_drop();
         }
-        dbg!(&df);
 
         Ok(FinalizedSink::Finished(df.slice(offset, self.len)))
     }
