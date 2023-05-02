@@ -276,7 +276,7 @@ impl PySeries {
             }
             DataType::Null => {
                 let s = Series::new_null(name, n);
-                PySeries::new(s)
+                s.into()
             }
             dt => {
                 panic!("cannot create repeat with dtype: {dt:?}");

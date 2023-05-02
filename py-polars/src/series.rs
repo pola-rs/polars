@@ -305,7 +305,7 @@ impl PySeries {
     }
 
     pub fn sort(&mut self, descending: bool) -> Self {
-        PySeries::new(self.series.sort(descending))
+        self.series.sort(descending).into()
     }
 
     pub fn value_counts(&self, sorted: bool) -> PyResult<PyDataFrame> {
@@ -327,7 +327,7 @@ impl PySeries {
     pub fn take_with_series(&self, indices: &PySeries) -> PyResult<Self> {
         let idx = indices.series.idx().map_err(PyPolarsErr::from)?;
         let take = self.series.take(idx).map_err(PyPolarsErr::from)?;
-        Ok(PySeries::new(take))
+        Ok(take.into())
     }
 
     pub fn null_count(&self) -> PyResult<usize> {
@@ -552,7 +552,7 @@ impl PySeries {
     }
 
     pub fn clone(&self) -> Self {
-        PySeries::new(self.series.clone())
+        self.series.clone().into()
     }
 
     #[pyo3(signature = (lambda, output_type, skip_nulls))]
@@ -795,7 +795,7 @@ impl PySeries {
                 _ => return dispatch_apply!(series, apply_lambda_unknown, py, lambda),
             };
 
-            Ok(PySeries::new(out))
+            Ok(out.into())
         })
     }
 
@@ -805,7 +805,7 @@ impl PySeries {
             .series
             .zip_with(mask, &other.series)
             .map_err(PyPolarsErr::from)?;
-        Ok(PySeries::new(s))
+        Ok(s.into())
     }
 
     pub fn to_dummies(&self, separator: Option<&str>) -> PyResult<PyDataFrame> {
@@ -1077,8 +1077,8 @@ macro_rules! impl_arithmetic {
     ($name:ident, $type:ty, $operand:tt) => {
         #[pymethods]
         impl PySeries {
-            pub fn $name(&self, other: $type) -> PyResult<PySeries> {
-                Ok(PySeries::new(&self.series $operand other))
+            pub fn $name(&self, other: $type) -> PyResult<Self> {
+                Ok((&self.series $operand other).into())
             }
         }
     };
@@ -1143,8 +1143,8 @@ macro_rules! impl_rhs_arithmetic {
     ($name:ident, $type:ty, $operand:ident) => {
         #[pymethods]
         impl PySeries {
-            pub fn $name(&self, other: $type) -> PyResult<PySeries> {
-                Ok(PySeries::new(other.$operand(&self.series)))
+            pub fn $name(&self, other: $type) -> PyResult<Self> {
+                Ok(other.$operand(&self.series).into())
             }
         }
     };
@@ -1205,9 +1205,9 @@ macro_rules! impl_eq_num {
     ($name:ident, $type:ty) => {
         #[pymethods]
         impl PySeries {
-            pub fn $name(&self, rhs: $type) -> PyResult<PySeries> {
+            pub fn $name(&self, rhs: $type) -> PyResult<Self> {
                 let s = self.series.equal(rhs).map_err(PyPolarsErr::from)?;
-                Ok(PySeries::new(s.into_series()))
+                Ok(s.into_series().into())
             }
         }
     };
@@ -1230,9 +1230,9 @@ macro_rules! impl_neq_num {
         #[allow(clippy::nonstandard_macro_braces)]
         #[pymethods]
         impl PySeries {
-            pub fn $name(&self, rhs: $type) -> PyResult<PySeries> {
+            pub fn $name(&self, rhs: $type) -> PyResult<Self> {
                 let s = self.series.not_equal(rhs).map_err(PyPolarsErr::from)?;
-                Ok(PySeries::new(s.into_series()))
+                Ok(s.into_series().into())
             }
         }
     };
@@ -1254,9 +1254,9 @@ macro_rules! impl_gt_num {
     ($name:ident, $type:ty) => {
         #[pymethods]
         impl PySeries {
-            pub fn $name(&self, rhs: $type) -> PyResult<PySeries> {
+            pub fn $name(&self, rhs: $type) -> PyResult<Self> {
                 let s = self.series.gt(rhs).map_err(PyPolarsErr::from)?;
-                Ok(PySeries::new(s.into_series()))
+                Ok(s.into_series().into())
             }
         }
     };
@@ -1278,9 +1278,9 @@ macro_rules! impl_gt_eq_num {
     ($name:ident, $type:ty) => {
         #[pymethods]
         impl PySeries {
-            pub fn $name(&self, rhs: $type) -> PyResult<PySeries> {
+            pub fn $name(&self, rhs: $type) -> PyResult<Self> {
                 let s = self.series.gt_eq(rhs).map_err(PyPolarsErr::from)?;
-                Ok(PySeries::new(s.into_series()))
+                Ok(s.into_series().into())
             }
         }
     };
@@ -1303,9 +1303,9 @@ macro_rules! impl_lt_num {
         #[allow(clippy::nonstandard_macro_braces)]
         #[pymethods]
         impl PySeries {
-            pub fn $name(&self, rhs: $type) -> PyResult<PySeries> {
+            pub fn $name(&self, rhs: $type) -> PyResult<Self> {
                 let s = self.series.lt(rhs).map_err(PyPolarsErr::from)?;
-                Ok(PySeries::new(s.into_series()))
+                Ok(s.into_series().into())
             }
         }
     };
@@ -1327,9 +1327,9 @@ macro_rules! impl_lt_eq_num {
     ($name:ident, $type:ty) => {
         #[pymethods]
         impl PySeries {
-            pub fn $name(&self, rhs: $type) -> PyResult<PySeries> {
+            pub fn $name(&self, rhs: $type) -> PyResult<Self> {
                 let s = self.series.lt_eq(rhs).map_err(PyPolarsErr::from)?;
-                Ok(PySeries::new(s.into_series()))
+                Ok(s.into_series().into())
             }
         }
     };
