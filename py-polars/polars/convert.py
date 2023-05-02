@@ -373,9 +373,10 @@ def from_repr(tbl: str) -> DataFrame | Series:
     -----
     This function handles the default UTF8_FULL and UTF8_FULL_CONDENSED DataFrame
     tables (with or without rounded corners). Truncated columns/rows are omitted,
-    wrapped headers are accounted for, and dtypes identified.
+    wrapped headers are accounted for, and dtypes automatically identified.
 
-    Currently compound/nested types such as List and Struct are not supported.
+    Currently compound/nested dtypes such as List and Struct are not supported;
+    neither are Object dtypes.
 
     See Also
     --------
@@ -384,6 +385,8 @@ def from_repr(tbl: str) -> DataFrame | Series:
 
     Examples
     --------
+    From DataFrame table repr:
+
     >>> df = pl.from_repr(
     ...     '''
     ...     Out[3]:
@@ -416,14 +419,21 @@ def from_repr(tbl: str) -> DataFrame | Series:
      'ident': Utf8,
      'timestamp': Datetime(time_unit='us', time_zone='Asia/Tokyo')}
 
-    srs = pl.from_repr'''
-    ... shape: (3,)
-    ... Series: 'a' [bool]
-    ... [
-    ...     true
-    ...     false
-    ...     true
-    ... ]
+    From Series repr:
+
+    >>> srs = pl.from_repr(
+    ...     '''
+    ...     shape: (3,)
+    ...     Series: 's' [bool]
+    ...     [
+    ...        true
+    ...        false
+    ...        true
+    ...     ]
+    ...     '''
+    ... )
+    >>> srs.to_list()
+    [True, False, True]
 
     """
     # find DataFrame table...
