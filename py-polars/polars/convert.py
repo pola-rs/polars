@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import io
 import re
 from itertools import zip_longest
 from typing import TYPE_CHECKING, Any, Mapping, Sequence, overload
 
 import polars._reexport as pl
+from polars import functions as F
 from polars.datatypes import (
     N_INFER_DEFAULT,
     Categorical,
@@ -17,6 +19,7 @@ from polars.dependencies import _PYARROW_AVAILABLE
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoDataError
+from polars.io import read_csv
 from polars.utils.various import _cast_repr_strings_with_schema, parse_version
 
 if TYPE_CHECKING:
@@ -271,8 +274,15 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
 
     # handle headers with wrapped column names and determine headers/dtypes
     header_block = ["".join(h).split("---") for h in zip(*rows[:table_body_start])]
-    headers, dtypes = (list(h) for h in zip_longest(*header_block))
+    dtypes: list[str | None]
+    if all(len(h) == 1 for h in header_block):
+        headers = [h[0] for h in header_block]
+        dtypes = [None] * len(headers)
+    else:
+        headers, dtypes = (list(h) for h in zip_longest(*header_block))
+
     body = rows[table_body_start + 1 :]
+    no_dtypes = all(d is None for d in dtypes)
 
     # transpose rows into columns, detect/omit truncated columns
     coldata = list(zip(*(row for row in body if not all((e == "…") for e in row))))
@@ -280,7 +290,7 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
         if el in headers:
             idx = headers.index(el)
             for table_elem in (headers, dtypes):
-                table_elem.pop(idx)
+                table_elem.pop(idx)  # type: ignore[attr-defined]
             if coldata:
                 coldata.pop(idx)
 
@@ -295,7 +305,19 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
 
     # construct DataFrame from string series and cast from repr to native dtype
     df = pl.DataFrame(data=data, orient="col", schema=list(schema))
-    return _cast_repr_strings_with_schema(df, schema)
+    if no_dtypes:
+        if df.is_empty():
+            # if no dtypes *and* empty, default to string
+            return df.with_columns(F.all().cast(Utf8))
+        else:
+            # otherwise, take a trip through our CSV inference logic
+            if all(tp == Utf8 for tp in df.schema.values()):
+                buf = io.BytesIO()
+                df.write_csv(file=buf)
+                df = read_csv(buf, new_columns=df.columns, try_parse_dates=True)
+            return df
+    else:
+        return _cast_repr_strings_with_schema(df, schema)
 
 
 def _from_series_repr(m: re.Match[str]) -> Series:

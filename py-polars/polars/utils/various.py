@@ -215,7 +215,7 @@ def scale_bytes(sz: int, unit: SizeUnit) -> int | float:
 
 
 def _cast_repr_strings_with_schema(
-    df: DataFrame, schema: dict[str, PolarsDataType]
+    df: DataFrame, schema: dict[str, PolarsDataType | None]
 ) -> DataFrame:
     """
     Utility function to cast table repr/string values into frame-native types.
@@ -233,6 +233,7 @@ def _cast_repr_strings_with_schema(
     special handling; as this function is only used for reprs, parsing is flexible.
 
     """
+    tp: PolarsDataType | None
     if not df.is_empty():
         for tp in df.schema.values():
             if tp != Utf8:

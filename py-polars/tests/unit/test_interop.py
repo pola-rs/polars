@@ -867,6 +867,21 @@ def test_dataframe_from_repr() -> None:
         "total": pl.Float64,
     }
 
+    # empty frame with no dtypes
+    df = cast(
+        pl.DataFrame,
+        pl.from_repr(
+            """
+        ┌──────┬───────┐
+        │ misc ┆ other │
+        ╞══════╪═══════╡
+        └──────┴───────┘
+        """
+        ),
+    )
+    assert df.rows() == []
+    assert df.schema == {"misc": pl.Utf8, "other": pl.Utf8}
+
     df = cast(
         pl.DataFrame,
         pl.from_repr(
@@ -898,6 +913,28 @@ def test_dataframe_from_repr() -> None:
         (date(2023, 3, 25), 1, 2, 3, 96, 97, 98, 99),
         (date(1999, 12, 31), 3, 6, 9, 288, 291, 294, None),
         (None, 9, 18, 27, 864, 873, 882, 891),
+    ]
+
+    df = cast(
+        pl.DataFrame,
+        pl.from_repr(
+            """
+        # >>> no dtypes:
+        # ┌────────────┬──────┐
+        # │ dt         ┆ c99  │
+        # ╞════════════╪══════╡
+        # │ 2023-03-25 ┆ 99   │
+        # │ 1999-12-31 ┆ null │
+        # │ null       ┆ 891  │
+        # └────────────┴──────┘
+        """
+        ),
+    )
+    assert df.schema == {"dt": pl.Date, "c99": pl.Int64}
+    assert df.rows() == [
+        (date(2023, 3, 25), 99),
+        (date(1999, 12, 31), None),
+        (None, 891),
     ]
 
     df = cast(
