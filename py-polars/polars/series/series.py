@@ -976,6 +976,8 @@ class Series:
 
         # Sequence of integers (slow to check if sequence contains all integers).
         elif is_int_sequence(item):
+            if len(item) == 0:
+                return self[:0]
             return self._from_pyseries(
                 self._s.take_with_series(self._pos_idxs(Series("", item))._s)
             )
