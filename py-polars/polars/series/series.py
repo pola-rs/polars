@@ -894,7 +894,9 @@ class Series:
                 if idx_type == UInt32:
                     idxs = self.cast(Int32) if self.dtype in {Int8, Int16} else self
                 else:
-                    idxs = self.cast(Int64) if self.dtype in {Int8, Int16, Int32} else self
+                    idxs = (
+                        self.cast(Int64) if self.dtype in {Int8, Int16, Int32} else self
+                    )
 
                 # Update negative indexes to absolute indexes.
                 return (
