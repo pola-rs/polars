@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::cell::RefCell;
 use std::sync::Arc;
 
 use polars_core::config::verbose;
@@ -69,7 +70,25 @@ pub(super) fn construct(
     let mut final_sink = None;
 
     let is_verbose = verbose();
+
+    // first traverse the branches and nodes to determine how often a sink is
+    // shared
     let mut sink_share_count = PlHashMap::new();
+    let n_branches = tree.len();
+    if n_branches > 1 {
+        for branch in &tree {
+            for sinks in &branch.shared_sinks {
+                for sink in sinks.as_ref() {
+                    let count = sink_share_count.entry(sink.0).or_insert(RefCell::new(0u32));
+                    *count.get_mut() += 1;
+                }
+            }
+            for sink in branch.iter_sinks() {
+                let count = sink_share_count.entry(sink.0).or_insert(RefCell::new(0u32));
+                *count.get_mut() += 1;
+            }
+        }
+    }
 
     for branch in tree {
         if branch.execution_id == 0 {
@@ -85,12 +104,6 @@ pub(super) fn construct(
         let mut operators = Vec::with_capacity(branch.operators_sinks.len());
         let mut operator_nodes = Vec::with_capacity(branch.operators_sinks.len());
 
-        for sinks in &branch.shared_sinks {
-            for sink in sinks.as_ref() {
-                let count = sink_share_count.entry(sink.0).or_insert(0u32);
-                *count += 1;
-            }
-        }
 
         // iterate from leaves upwards
         let mut iter = branch.operators_sinks.into_iter().rev();
@@ -99,9 +112,13 @@ pub(super) fn construct(
             let operator_offset = operators.len();
             match pipeline_node {
                 PipelineNode::Sink(node) => {
-                    let count = sink_share_count.entry(node.0).or_insert(0u32);
-                    *count += 1;
-                    sink_nodes.push((operator_offset, node))
+                    let shared_count = if n_branches > 1{
+                        // should be here
+                        sink_share_count.get(&node.0).unwrap().clone()
+                    } else {
+                        RefCell::new(1)
+                    };
+                    sink_nodes.push((operator_offset, node, shared_count))
                 }
                 PipelineNode::Operator(node) => {
                     operator_nodes.push(node);
@@ -128,7 +145,7 @@ pub(super) fn construct(
                             offset: *offset,
                             len: *len as IdxSize,
                         });
-                        sink_nodes.push((operator_offset + 1, slice_node));
+                        sink_nodes.push((operator_offset + 1, slice_node, RefCell::new(1)));
                     }
                     let op = get_dummy_operator();
                     operators.push(op)

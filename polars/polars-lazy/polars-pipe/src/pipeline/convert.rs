@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::sync::Arc;
 
 use polars_core::prelude::*;
@@ -454,7 +455,7 @@ pub fn create_pipeline<F>(
     sources: &[Node],
     operators: Vec<Box<dyn Operator>>,
     operator_nodes: Vec<Node>,
-    sink_nodes: Vec<(usize, Node)>,
+    sink_nodes: Vec<(usize, Node, RefCell<u32>)>,
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
     to_physical: F,
@@ -528,11 +529,12 @@ where
 
     let mut sink_nodes = sink_nodes
         .into_iter()
-        .map(|(offset, node)| {
+        .map(|(offset, node, shared_count)| {
             Ok((
                 offset + operator_offset,
                 node,
                 get_sink(node, lp_arena, expr_arena, &to_physical)?,
+                shared_count
             ))
         })
         .collect::<PolarsResult<Vec<_>>>()?;
@@ -547,6 +549,7 @@ where
             operator_objects.len(),
             Node::default(),
             Box::new(OrderedSink::new()),
+            RefCell::new(1)
         ));
     }
 

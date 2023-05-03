@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::VecDeque;
 
 use polars_core::error::PolarsResult;
@@ -62,8 +63,10 @@ pub struct PipeLine {
     ///   at that point the sink should be called.
     ///   the pipeline will first call the operators on that point and then
     ///   push the result in the sink.
+    /// - shared_count
+    ///     when that hits 0, the sink will finalize
     /// - node of the sink
-    sinks: Vec<(usize, Vec<Box<dyn Sink>>)>,
+    sinks: Vec<(usize, RefCell<u32>, Vec<Box<dyn Sink>>)>,
     /// are used to identify the sink shared with other pipeline branches
     sink_nodes: Vec<Node>,
     /// Other branch of the pipeline/tree that must be executed
@@ -82,8 +85,8 @@ impl PipeLine {
         sources: Vec<Box<dyn Source>>,
         operators: Vec<Box<dyn Operator>>,
         operator_nodes: Vec<Node>,
-        // (offset, node (for identification), sink)
-        sink_and_nodes: Vec<(usize, Node, Box<dyn Sink>)>,
+        // (offset, node (for identification), sink, shared_counter)
+        sink_and_nodes: Vec<(usize, Node, Box<dyn Sink>, RefCell<u32>)>,
         operator_offset: usize,
         verbose: bool,
     ) -> PipeLine {
@@ -93,10 +96,10 @@ impl PipeLine {
         let n_threads = morsels_per_sink();
 
         // We split so that every thread gets an operator
-        let sink_nodes = sink_and_nodes.iter().map(|(_, node, _)| *node).collect();
+        let sink_nodes = sink_and_nodes.iter().map(|(_, node, _, _)| *node).collect();
         let sinks = sink_and_nodes
             .into_iter()
-            .map(|(offset, _, sink)| (offset, (0..n_threads).map(|i| sink.split(i)).collect()))
+            .map(|(offset, _, sink, shared_count)| (offset, shared_count, (0..n_threads).map(|i| sink.split(i)).collect()))
             .collect();
 
         // every index maps to a chain of operators than can be pushed as a pipeline for one thread
@@ -128,7 +131,7 @@ impl PipeLine {
             sources,
             operators,
             vec![],
-            vec![(operators_len, Node::default(), sink)],
+            vec![(operators_len, Node::default(), sink, RefCell::new(1))],
             0,
             verbose,
         )
@@ -264,7 +267,7 @@ impl PipeLine {
         let mut out = None;
         let mut operator_start = 0;
         let last_i = self.sinks.len() - 1;
-        for (i, (operator_end, mut sink)) in std::mem::take(&mut self.sinks).into_iter().enumerate()
+        for (i, (operator_end, shared_count, mut sink)) in std::mem::take(&mut self.sinks).into_iter().enumerate()
         {
             for src in &mut std::mem::take(&mut self.sources) {
                 while let SourceResult::GotMoreData(chunks) = src.get_batches(ec)? {
@@ -321,7 +324,7 @@ impl PipeLine {
         let mut fmt = String::new();
         let mut start = 0usize;
         fmt.push_str(self.sources[0].fmt());
-        for (offset_end, sink) in &self.sinks {
+        for (offset_end, _, sink) in &self.sinks {
             fmt.push_str(" -> ");
             // take operators of a single thread
             let ops = &self.operators[0];
@@ -422,3 +425,6 @@ fn consume_source(src: &mut dyn Source, context: &PExecutionContext) -> PolarsRe
     }
     Ok(accumulate_dataframes_vertical_unchecked(frames))
 }
+
+unsafe impl Send for PipeLine {}
+unsafe impl Sync for PipeLine {}
