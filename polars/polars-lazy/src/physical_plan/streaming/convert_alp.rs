@@ -161,7 +161,6 @@ pub(crate) fn insert_streaming_nodes(
                 state.streamable = true;
                 state.join_count += 1;
 
-                let join_count = state.join_count;
                 // We swap so that the build phase contains the smallest table
                 // and then we stream the larger table
                 // *except* for a left join. In a left join we use the right
@@ -188,23 +187,24 @@ pub(crate) fn insert_streaming_nodes(
                 stack.push((input_left, state_left, current_idx));
             }
             // add globbing patterns
-            #[cfg(all(feature = "csv", feature = "parquet"))]
-            Union { inputs, .. } if state.streamable
-                    && inputs.iter().all(|node| match lp_arena.get(*node) {
-                        ParquetScan { .. } => true,
-                        CsvScan { .. } => true,
-                        MapFunction {
-                            input,
-                            function: FunctionNode::Rechunk,
-                        } => {
-                            matches!(lp_arena.get(*input), ParquetScan { .. } | CsvScan { .. })
-                        }
-                        _ => false,
-                    }) => {
-                {
-                    state.sources.push(root);
-                    pipeline_trees[current_idx].push(state);
-                }
+            #[cfg(any(feature = "csv", feature = "parquet"))]
+            Union { inputs, .. }
+                if inputs.iter().all(|node| match lp_arena.get(*node) {
+                    #[cfg(feature = "parquet")]
+                    ParquetScan { .. } => true,
+                    #[cfg(feature = "csv")]
+                    CsvScan { .. } => true,
+                    MapFunction {
+                        input,
+                        function: FunctionNode::Rechunk,
+                    } => {
+                        matches!(lp_arena.get(*input), ParquetScan { .. } | CsvScan { .. })
+                    }
+                    _ => false,
+                }) =>
+            {
+                state.sources.push(root);
+                pipeline_trees[current_idx].push(state);
             }
             // Union { inputs, .. } => {
             //     {

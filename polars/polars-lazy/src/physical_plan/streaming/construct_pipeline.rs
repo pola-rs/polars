@@ -1,5 +1,5 @@
 use std::any::Any;
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::VecDeque;
 use std::sync::Arc;
 
 use polars_core::config::verbose;
@@ -97,7 +97,7 @@ pub(super) fn construct(
                     let count = sink_share_count.entry(node.0).or_insert(0u32);
                     *count += 1;
                     sink_nodes.push((operator_offset, node))
-                },
+                }
                 PipelineNode::Operator(node) => {
                     operator_nodes.push(node);
                     let op = get_operator(node, lp_arena, expr_arena, &to_physical_piped_expr)?;
@@ -146,7 +146,6 @@ pub(super) fn construct(
 
     let mut counts = sink_share_count.into_iter().collect::<Vec<_>>();
     counts.sort_by_key(|tpl| tpl.1);
-
 
     // some queries only have source/sources and don't have any
     // operators/sink so no latest

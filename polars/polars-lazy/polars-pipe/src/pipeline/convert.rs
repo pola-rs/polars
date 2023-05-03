@@ -436,8 +436,8 @@ where
         MapFunction { function, .. } => {
             let op = operators::FunctionOperator::new(function.clone());
             Box::new(op) as Box<dyn Operator>
-        },
-        Union {..} => {
+        }
+        Union { .. } => {
             let op = operators::Pass::default();
             Box::new(op) as Box<dyn Operator>
         }

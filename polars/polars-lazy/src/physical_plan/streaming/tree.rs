@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::collections::{BTreeSet, LinkedList};
 use std::fmt::Debug;
 use std::rc::Rc;
@@ -38,10 +37,13 @@ pub(super) struct Branch {
 
 impl Branch {
     fn get_sinks(&self) -> Vec<Node> {
-        self.operators_sinks.iter().flat_map(|pl_node| match pl_node {
-            PipelineNode::Sink(node) => Some(*node),
-            _ => None
-        }).collect()
+        self.operators_sinks
+            .iter()
+            .flat_map(|pl_node| match pl_node {
+                PipelineNode::Sink(node) => Some(*node),
+                _ => None,
+            })
+            .collect()
     }
 
     pub(super) fn split(&self) -> Self {

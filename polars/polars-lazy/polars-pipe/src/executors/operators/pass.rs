@@ -10,7 +10,7 @@ impl Operator for Pass {
     fn execute(
         &mut self,
         _context: &PExecutionContext,
-       chunk: &DataChunk,
+        chunk: &DataChunk,
     ) -> PolarsResult<OperatorResult> {
         Ok(OperatorResult::Finished(chunk.clone()))
     }
