@@ -820,6 +820,7 @@ def test_get() -> None:
     assert a[range(0, 4, 2)].to_list() == [1, 3]
     assert a[:0].to_list() == []
     assert a[empty_ints].to_list() == []
+    assert a[neg_and_pos_idxs.to_list()].to_list() == [2, 2, 1, 3, 3, 1]
     for dtype in (
         pl.UInt8,
         pl.UInt16,

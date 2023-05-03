@@ -979,7 +979,7 @@ class Series:
         elif is_int_sequence(item):
             return self._from_pyseries(
                 self._s.take_with_series(
-                    Series("", item, dtype=UInt32)._pos_idxs(self.len())._s
+                    Series("", item, dtype=Int64)._pos_idxs(self.len())._s
                 )
             )
 
