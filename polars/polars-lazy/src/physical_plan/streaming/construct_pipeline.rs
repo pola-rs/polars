@@ -56,8 +56,15 @@ pub(super) fn construct(
     //    /\2
     //      /\3
     //
-    // we are iterating from 3 to 1.
-
+    //
+    // or join/union is
+    //
+    //   1
+    //  /\__
+    //    | |
+    //    2 3
+    // we are iterating from 3 to 1 as the branches are accumulated from left to right
+    //
     // the most far right branch will be the latest that sets this
     // variable and thus will point to root
     let mut latest = None;
