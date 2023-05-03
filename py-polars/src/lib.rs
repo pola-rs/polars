@@ -25,13 +25,11 @@ pub mod file;
 pub mod functions;
 pub mod lazyframe;
 pub mod lazygroupby;
-pub mod npy;
 #[cfg(feature = "object")]
 mod object;
 pub mod prelude;
 pub(crate) mod py_modules;
 pub mod series;
-mod set;
 #[cfg(feature = "sql")]
 mod sql;
 pub mod utils;

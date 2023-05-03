@@ -1,7 +1,27 @@
 use polars::export::arrow::array::Array;
 use polars::prelude::*;
+use pyo3::prelude::*;
 
-pub(crate) fn set_at_idx(mut s: Series, idx: &Series, values: &Series) -> PolarsResult<Series> {
+use crate::error::PyPolarsErr;
+use crate::PySeries;
+
+#[pymethods]
+impl PySeries {
+    fn set_at_idx(&mut self, idx: PySeries, values: PySeries) -> PyResult<()> {
+        // we take the value because we want a ref count
+        // of 1 so that we can have mutable access
+        let s = std::mem::take(&mut self.series);
+        match set_at_idx(s, &idx.series, &values.series) {
+            Ok(out) => {
+                self.series = out;
+                Ok(())
+            }
+            Err(e) => Err(PyErr::from(PyPolarsErr::from(e))),
+        }
+    }
+}
+
+fn set_at_idx(mut s: Series, idx: &Series, values: &Series) -> PolarsResult<Series> {
     let logical_dtype = s.dtype().clone();
     let idx = idx.cast(&IDX_DTYPE)?;
     let idx = idx.rechunk();

@@ -29,33 +29,7 @@ use crate::object::OBJECT_NAME;
 use crate::prelude::*;
 use crate::py_modules::{POLARS, UTILS};
 use crate::series::PySeries;
-use crate::{PyDataFrame, PyExpr, PyLazyFrame};
-
-pub(crate) trait ToExprs {
-    fn to_exprs(self) -> Vec<Expr>;
-}
-
-impl ToExprs for Vec<PyExpr> {
-    fn to_exprs(self) -> Vec<Expr> {
-        // Safety
-        // repr is transparent
-        // and has only got one inner field`
-        unsafe { std::mem::transmute(self) }
-    }
-}
-
-pub(crate) trait ToPyExprs {
-    fn to_pyexprs(self) -> Vec<PyExpr>;
-}
-
-impl ToPyExprs for Vec<Expr> {
-    fn to_pyexprs(self) -> Vec<PyExpr> {
-        // Safety
-        // repr is transparent
-        // and has only got one inner field`
-        unsafe { std::mem::transmute(self) }
-    }
-}
+use crate::{PyDataFrame, PyLazyFrame};
 
 pub(crate) fn slice_to_wrapped<T>(slice: &[T]) -> &[Wrap<T>] {
     // Safety:

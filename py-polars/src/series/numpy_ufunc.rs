@@ -6,13 +6,9 @@ use numpy::npyffi::{self, flags};
 use numpy::{Element, PyArray1, ToNpyDims, PY_ARRAY_API};
 use polars_core::prelude::*;
 use polars_core::utils::arrow::types::NativeType;
-use polars_core::with_match_physical_numeric_polars_type;
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 
-use crate::error::PyPolarsErr;
-use crate::prelude::ObjectValue;
-use crate::raise_err;
 use crate::series::PySeries;
 
 /// Create an empty numpy array arrows 64 byte alignment
@@ -21,7 +17,7 @@ use crate::series::PySeries;
 /// All elements in the array are non initialized
 ///
 /// The array is also writable from Python.
-pub unsafe fn aligned_array<T: Element + NativeType>(
+unsafe fn aligned_array<T: Element + NativeType>(
     py: Python<'_>,
     size: usize,
 ) -> (&PyArray1<T>, Vec<T>) {
@@ -53,7 +49,7 @@ pub unsafe fn aligned_array<T: Element + NativeType>(
 /// Get reference counter for numpy arrays.
 ///   - For CPython: Get reference counter.
 ///   - For PyPy: Reference counters for a live PyPy object = refcnt + 2 << 60.
-pub fn get_refcnt<T>(pyarray: &PyArray1<T>) -> isize {
+fn get_refcnt<T>(pyarray: &PyArray1<T>) -> isize {
     let refcnt = pyarray.get_refcnt();
     if refcnt >= (2 << 60) {
         refcnt - (2 << 60)
@@ -70,7 +66,7 @@ macro_rules! impl_ufuncs {
             // the out array is allocated in this method, send to Python and once the ufunc is applied
             // ownership is taken by Rust again to prevent memory leak.
             // if the ufunc fails, we first must take ownership back.
-            pub fn $name(&self, lambda: &PyAny) -> PyResult<PySeries> {
+            fn $name(&self, lambda: &PyAny) -> PyResult<PySeries> {
                 // numpy array object, and a *mut ptr
                 Python::with_gil(|py| {
                     let size = self.len();
@@ -109,6 +105,7 @@ macro_rules! impl_ufuncs {
         }
     };
 }
+
 impl_ufuncs!(apply_ufunc_f32, Float32Type, unsafe_from_ptr_f32);
 impl_ufuncs!(apply_ufunc_f64, Float64Type, unsafe_from_ptr_f64);
 impl_ufuncs!(apply_ufunc_u8, UInt8Type, unsafe_from_ptr_u8);
@@ -119,102 +116,3 @@ impl_ufuncs!(apply_ufunc_i8, Int8Type, unsafe_from_ptr_i8);
 impl_ufuncs!(apply_ufunc_i16, Int16Type, unsafe_from_ptr_i16);
 impl_ufuncs!(apply_ufunc_i32, Int32Type, unsafe_from_ptr_i32);
 impl_ufuncs!(apply_ufunc_i64, Int64Type, unsafe_from_ptr_i64);
-
-fn get_ptr<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> usize {
-    let arr = ca.downcast_iter().next().unwrap();
-    arr.values().as_ptr() as usize
-}
-
-#[pymethods]
-impl PySeries {
-    pub fn get_ptr(&self) -> PyResult<usize> {
-        let s = self.series.to_physical_repr();
-        let arrays = s.chunks();
-        if arrays.len() != 1 {
-            let msg = "Only can take pointer, if the 'series' contains a single chunk";
-            raise_err!(msg, ComputeError);
-        }
-        match s.dtype() {
-            DataType::Boolean => {
-                let ca = s.bool().unwrap();
-                let arr = ca.downcast_iter().next().unwrap();
-                // this one is quite useless as you need to know the offset
-                // into the first byte.
-                let (slice, start, _len) = arr.values().as_slice();
-                if start == 0 {
-                    Ok(slice.as_ptr() as usize)
-                } else {
-                    let msg = "Cannot take pointer boolean buffer as it is not perfectly aligned.";
-                    raise_err!(msg, ComputeError);
-                }
-            }
-            dt if dt.is_numeric() => Ok(with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
-                let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-                get_ptr(ca)
-            })),
-            _ => {
-                let msg = "Cannot take pointer of nested type";
-                raise_err!(msg, ComputeError);
-            }
-        }
-    }
-
-    /// For numeric types, this should only be called for Series with null types.
-    /// Non-nullable types are handled with `view()`.
-    /// This will cast to floats so that `None = np.nan`.
-    pub fn to_numpy(&self, py: Python) -> PyResult<PyObject> {
-        let s = &self.series;
-        match s.dtype() {
-            dt if dt.is_numeric() => {
-                if s.bit_repr_is_large() {
-                    let s = s.cast(&DataType::Float64).unwrap();
-                    let ca = s.f64().unwrap();
-                    let np_arr = PyArray1::from_iter(
-                        py,
-                        ca.into_iter().map(|opt_v| opt_v.unwrap_or(f64::NAN)),
-                    );
-                    Ok(np_arr.into_py(py))
-                } else {
-                    let s = s.cast(&DataType::Float32).unwrap();
-                    let ca = s.f32().unwrap();
-                    let np_arr = PyArray1::from_iter(
-                        py,
-                        ca.into_iter().map(|opt_v| opt_v.unwrap_or(f32::NAN)),
-                    );
-                    Ok(np_arr.into_py(py))
-                }
-            }
-            DataType::Utf8 => {
-                let ca = s.utf8().unwrap();
-                let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|s| s.into_py(py)));
-                Ok(np_arr.into_py(py))
-            }
-            DataType::Binary => {
-                let ca = s.binary().unwrap();
-                let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|s| s.into_py(py)));
-                Ok(np_arr.into_py(py))
-            }
-            DataType::Boolean => {
-                let ca = s.bool().unwrap();
-                let np_arr = PyArray1::from_iter(py, ca.into_iter().map(|s| s.into_py(py)));
-                Ok(np_arr.into_py(py))
-            }
-            #[cfg(feature = "object")]
-            DataType::Object(_) => {
-                let ca = s
-                    .as_any()
-                    .downcast_ref::<ObjectChunked<ObjectValue>>()
-                    .unwrap();
-                let np_arr =
-                    PyArray1::from_iter(py, ca.into_iter().map(|opt_v| opt_v.to_object(py)));
-                Ok(np_arr.into_py(py))
-            }
-            dt => {
-                raise_err!(
-                    format!("'to_numpy' not supported for dtype: {dt:?}"),
-                    ComputeError
-                );
-            }
-        }
-    }
-}
