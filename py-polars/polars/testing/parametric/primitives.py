@@ -43,7 +43,7 @@ from polars.testing.parametric.strategies import (
 if TYPE_CHECKING:
     from hypothesis.strategies import DrawFn, SearchStrategy
 
-    from polars.lazyframe import LazyFrame
+    from polars import LazyFrame
     from polars.type_aliases import OneOrMoreDataTypes, PolarsDataType
 
 

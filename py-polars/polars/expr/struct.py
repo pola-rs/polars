@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Sequence
 from polars.utils._wrap import wrap_expr
 
 if TYPE_CHECKING:
-    from polars.expr.expr import Expr
+    from polars import Expr
 
 
 class ExprStructNameSpace:

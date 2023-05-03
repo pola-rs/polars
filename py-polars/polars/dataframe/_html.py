@@ -10,7 +10,7 @@ from polars.dependencies import html
 if TYPE_CHECKING:
     from types import TracebackType
 
-    from polars.dataframe import DataFrame
+    from polars import DataFrame
 
 
 class Tag:

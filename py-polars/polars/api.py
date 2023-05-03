@@ -9,10 +9,7 @@ import polars._reexport as pl
 from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
-    from polars.dataframe import DataFrame
-    from polars.expr import Expr
-    from polars.lazyframe import LazyFrame
-    from polars.series import Series
+    from polars import DataFrame, Expr, LazyFrame, Series
 
 __all__ = [
     "register_expr_namespace",

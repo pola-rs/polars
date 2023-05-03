@@ -10,7 +10,7 @@ from polars.utils.convert import _timedelta_to_pl_duration
 if TYPE_CHECKING:
     from datetime import timedelta
 
-    from polars.dataframe import DataFrame
+    from polars import DataFrame
     from polars.type_aliases import (
         ClosedInterval,
         IntoExpr,

@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     from io import IOBase
     from pathlib import Path
 
-    from polars.dataframe import DataFrame
+    from polars import DataFrame
 
 
 def read_json(source: str | Path | IOBase) -> DataFrame:

@@ -9,8 +9,7 @@ from polars.dependencies import pickle
 from polars.io._utils import _prepare_file_arg
 
 if TYPE_CHECKING:
-    from polars.dataframe import DataFrame
-    from polars.lazyframe import LazyFrame
+    from polars import DataFrame, LazyFrame
 
 
 def _scan_parquet_fsspec(

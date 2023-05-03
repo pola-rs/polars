@@ -5,8 +5,8 @@ from typing import TYPE_CHECKING
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
+    from polars import Series
     from polars.polars import PySeries
-    from polars.series import Series
     from polars.type_aliases import CategoricalOrdering
 
 

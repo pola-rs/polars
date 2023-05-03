@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING
 
@@ -7,14 +8,9 @@ import pytest
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
+from polars.dependencies import _ZONEINFO_AVAILABLE
 from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_series_equal
-
-if TYPE_CHECKING:
-    from polars.type_aliases import TimeUnit
-import sys
-
-from polars.dependencies import _ZONEINFO_AVAILABLE
 
 if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo
@@ -22,6 +18,9 @@ elif _ZONEINFO_AVAILABLE:
     # Import from submodule due to typing issue with backports.zoneinfo package:
     # https://github.com/pganssle/zoneinfo/issues/125
     from backports.zoneinfo._zoneinfo import ZoneInfo
+
+if TYPE_CHECKING:
+    from polars.type_aliases import TimeUnit
 
 
 @pytest.fixture()

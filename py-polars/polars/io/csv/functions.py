@@ -21,8 +21,7 @@ from polars.utils.various import handle_projection_columns, normalise_filepath
 if TYPE_CHECKING:
     from io import BytesIO
 
-    from polars.dataframe import DataFrame
-    from polars.lazyframe import LazyFrame
+    from polars import DataFrame, LazyFrame
     from polars.type_aliases import CsvEncoding, PolarsDataType, SchemaDict
 
 

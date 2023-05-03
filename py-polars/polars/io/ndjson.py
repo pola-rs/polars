@@ -10,8 +10,7 @@ from polars.utils.various import normalise_filepath
 if TYPE_CHECKING:
     from io import IOBase
 
-    from polars.dataframe import DataFrame
-    from polars.lazyframe import LazyFrame
+    from polars import DataFrame, LazyFrame
 
 
 def read_ndjson(source: str | Path | IOBase) -> DataFrame:

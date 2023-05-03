@@ -7,7 +7,7 @@ from polars.convert import from_arrow
 from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
-    from polars.dataframe import DataFrame
+    from polars import DataFrame
     from polars.type_aliases import DbReadEngine
 
 

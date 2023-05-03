@@ -9,12 +9,6 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, Generator, Iterable, Sequence, TypeVar
 
 import polars as pl
-
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
-
 from polars import functions as F
 from polars.datatypes import (
     Boolean,
@@ -27,20 +21,16 @@ from polars.datatypes import (
     is_polars_dtype,
 )
 
-if TYPE_CHECKING:
-    from polars.dataframe import DataFrame
-    from polars.series import Series
-
-
-# note: reversed views don't match as instances of MappingView
-if sys.version_info >= (3, 11):
-    _views: list[Reversible[Any]] = [{}.keys(), {}.values(), {}.items()]
-    _reverse_mapping_views = tuple(type(reversed(view)) for view in _views)
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal
 
 if TYPE_CHECKING:
     from collections.abc import Reversible
     from pathlib import Path
 
+    from polars import DataFrame, Series
     from polars.type_aliases import PolarsDataType, SizeUnit
 
     if sys.version_info >= (3, 10):
@@ -50,6 +40,11 @@ if TYPE_CHECKING:
 
     P = ParamSpec("P")
     T = TypeVar("T")
+
+# note: reversed views don't match as instances of MappingView
+if sys.version_info >= (3, 11):
+    _views: list[Reversible[Any]] = [{}.keys(), {}.values(), {}.items()]
+    _reverse_mapping_views = tuple(type(reversed(view)) for view in _views)
 
 
 def _process_null_values(

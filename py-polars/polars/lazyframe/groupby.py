@@ -6,8 +6,7 @@ from polars import functions as F
 from polars.utils._parse_expr_input import expr_to_lit_or_expr, selection_to_pyexpr_list
 
 if TYPE_CHECKING:
-    from polars.dataframe import DataFrame
-    from polars.lazyframe import LazyFrame
+    from polars import DataFrame, LazyFrame
     from polars.polars import PyLazyGroupBy
     from polars.type_aliases import IntoExpr, RollingInterpolationMethod, SchemaDict
 
