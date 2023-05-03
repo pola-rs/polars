@@ -790,12 +790,13 @@ def test_get() -> None:
         "neg_and_pos_idxs", [-2, 1, 0, -1, 2, -3], dtype=pl.Int8
     )
     empty_idxs = pl.Series("idxs", [], dtype=pl.Int8)
+    empty_ints: list[int] = []
     assert a[0] == 1
     assert a[:2].to_list() == [1, 2]
     assert a[range(1)].to_list() == [1]
     assert a[range(0, 4, 2)].to_list() == [1, 3]
     assert a[:0].to_list() == []
-    assert a[[]].to_list() == []
+    assert a[empty_ints].to_list() == []
     for dtype in (
         pl.UInt8,
         pl.UInt16,
