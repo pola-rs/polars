@@ -100,12 +100,10 @@ def register_expr_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     >>>
     >>> df = pl.DataFrame([1.4, 24.3, 55.0, 64.001], schema=["n"])
     >>> df.select(
-    ...     [
-    ...         pl.col("n"),
-    ...         pl.col("n").pow_n.next(p=2).alias("next_pow2"),
-    ...         pl.col("n").pow_n.previous(p=2).alias("prev_pow2"),
-    ...         pl.col("n").pow_n.nearest(p=2).alias("nearest_pow2"),
-    ...     ]
+    ...     pl.col("n"),
+    ...     pl.col("n").pow_n.next(p=2).alias("next_pow2"),
+    ...     pl.col("n").pow_n.previous(p=2).alias("prev_pow2"),
+    ...     pl.col("n").pow_n.nearest(p=2).alias("nearest_pow2"),
     ... )
     shape: (4, 4)
     ┌────────┬───────────┬───────────┬──────────────┐

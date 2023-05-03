@@ -460,10 +460,8 @@ class Expr:
         │ 3   ┆ null │
         └─────┴──────┘
         >>> df.select(
-        ...     [
-        ...         pl.col("a").alias("bar"),
-        ...         pl.col("b").alias("foo"),
-        ...     ]
+        ...     pl.col("a").alias("bar"),
+        ...     pl.col("b").alias("foo"),
         ... )
         shape: (3, 2)
         ┌─────┬──────┐
@@ -630,7 +628,7 @@ class Expr:
         "DuplicateError: Column with name: 'literal' has more than one occurrences"
         errors.
 
-        >>> df.select([(pl.lit(10) / pl.all()).keep_name()])
+        >>> df.select((pl.lit(10) / pl.all()).keep_name())
         shape: (2, 2)
         ┌──────┬──────────┐
         │ a    ┆ b        │
@@ -665,21 +663,30 @@ class Expr:
 
         Examples
         --------
-        >>> def extract_number(expr):
+        >>> # extract the digits from a string
+        >>> def extract_number(expr: pl.Expr) -> pl.Expr:
         ...     return expr.str.extract(r"\d+", 0).cast(pl.Int64)
-        ...
-        >>> df = pl.DataFrame({"a": ["a: 1", "b: 2", "c: 3"]})
-        >>> df.with_columns(pl.col("a").pipe(extract_number))
-        shape: (3, 1)
-        ┌─────┐
-        │ a   │
-        │ --- │
-        │ i64 │
-        ╞═════╡
-        │ 1   │
-        │ 2   │
-        │ 3   │
-        └─────┘
+        >>>
+        >>> # set even numbers negative and scale by a user-supplied value
+        >>> def scale_negative_even(expr: pl.Expr, *, n: int = 1) -> pl.Expr:
+        ...     expr = pl.when(expr % 2 == 0).then(-expr).otherwise(expr)
+        ...     return expr * n
+        >>>
+        >>> df = pl.DataFrame({"val": ["a: 1", "b: 2", "c: 3", "d: 4"]})
+        >>> df.with_columns(
+        ...     udfs=pl.col("val").pipe(extract_number).pipe(scale_negative_even, n=5)
+        ... )
+        shape: (4, 2)
+        ┌──────┬──────┐
+        │ val  ┆ udfs │
+        │ ---  ┆ ---  │
+        │ str  ┆ i64  │
+        ╞══════╪══════╡
+        │ a: 1 ┆ 5    │
+        │ b: 2 ┆ -10  │
+        │ c: 3 ┆ 15   │
+        │ d: 4 ┆ -20  │
+        └──────┴──────┘
 
         """
         return function(self, *args, **kwargs)
@@ -712,10 +719,8 @@ class Expr:
         │ 5   ┆ banana ┆ 1   ┆ beetle │
         └─────┴────────┴─────┴────────┘
         >>> df.select(
-        ...     [
-        ...         pl.all(),
-        ...         pl.all().reverse().prefix("reverse_"),
-        ...     ]
+        ...     pl.all(),
+        ...     pl.all().reverse().prefix("reverse_"),
         ... )
         shape: (5, 8)
         ┌─────┬────────┬─────┬────────┬───────────┬────────────────┬───────────┬──────────────┐
@@ -761,10 +766,8 @@ class Expr:
         │ 5   ┆ banana ┆ 1   ┆ beetle │
         └─────┴────────┴─────┴────────┘
         >>> df.select(
-        ...     [
-        ...         pl.all(),
-        ...         pl.all().reverse().suffix("_reverse"),
-        ...     ]
+        ...     pl.all(),
+        ...     pl.all().reverse().suffix("_reverse"),
         ... )
         shape: (5, 8)
         ┌─────┬────────┬─────┬────────┬───────────┬────────────────┬───────────┬──────────────┐

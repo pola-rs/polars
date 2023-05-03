@@ -5485,7 +5485,10 @@ class DataFrame:
 
         It is better to implement this with an expression:
 
-        >>> df.select([pl.col("foo") * 2, pl.col("bar") * 3])  # doctest: +IGNORE_RESULT
+        >>> df.select(
+        ...     pl.col("foo") * 2,
+        ...     pl.col("bar") * 3,
+        ... )  # doctest: +IGNORE_RESULT
 
         Return a Series by mapping each row to a scalar:
 
