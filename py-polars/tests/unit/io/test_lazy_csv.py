@@ -21,6 +21,11 @@ def test_scan_csv(io_files_path: Path) -> None:
     assert df.collect().shape == (4, 3)
 
 
+def test_scan_csv_no_cse_deadlock(io_files_path: Path) -> None:
+    dfs = [pl.scan_csv(io_files_path / "small.csv")] * (pl.threadpool_size() + 1)
+    pl.concat(dfs, parallel=True).collect(common_subplan_elimination=False)
+
+
 def test_scan_empty_csv(io_files_path: Path) -> None:
     with pytest.raises(Exception) as excinfo:
         pl.scan_csv(io_files_path / "empty.csv").collect()
