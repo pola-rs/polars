@@ -309,9 +309,7 @@ impl Series {
                     };
                     series_fields.push(s)
                 }
-                return Ok(StructChunked::new(name, &series_fields)
-                    .unwrap()
-                    .into_series());
+                return StructChunked::new(name, &series_fields).map(|ca| ca.into_series());
             }
             #[cfg(feature = "object")]
             DataType::Object(_) => {
@@ -333,7 +331,7 @@ impl Series {
             DataType::Categorical(_) => {
                 let ca = if let Some(single_av) = av.first() {
                     match single_av {
-                        AnyValue::Utf8(_) | AnyValue::Utf8Owned(_) => {
+                        AnyValue::Utf8(_) | AnyValue::Utf8Owned(_) | AnyValue::Null => {
                             any_values_to_utf8(av, strict)?
                         }
                         _ => polars_bail!(
@@ -412,6 +410,8 @@ impl<'a> From<&AnyValue<'a>> for DataType {
             Datetime(_, tu, tz) => DataType::Datetime(*tu, (*tz).clone()),
             #[cfg(feature = "dtype-time")]
             Time(_) => DataType::Time,
+            #[cfg(feature = "dtype-array")]
+            Array(s, size) => DataType::Array(Box::new(s.dtype().clone()), *size),
             List(s) => DataType::List(Box::new(s.dtype().clone())),
             #[cfg(feature = "dtype-struct")]
             StructOwned(payload) => DataType::Struct(payload.1.to_vec()),

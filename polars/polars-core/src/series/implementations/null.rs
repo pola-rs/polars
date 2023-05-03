@@ -113,16 +113,12 @@ impl SeriesTrait for NullChunked {
         self.length as usize
     }
 
-    fn take_every(&self, n: usize) -> Series {
-        NullChunked::new(self.name.clone(), self.len() / n).into_series()
-    }
-
     fn has_validity(&self) -> bool {
         true
     }
 
     fn rechunk(&self) -> Series {
-        self.clone().into_series()
+        NullChunked::new(self.name.clone(), self.len()).into_series()
     }
 
     fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
@@ -169,12 +165,16 @@ impl SeriesTrait for NullChunked {
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
-        *self = NullChunked::new(self.name.clone(), self.len() + other.len());
+        polars_ensure!(other.dtype() == &DataType::Null, ComputeError: "expected null dtype");
+        // we don't create a new null array to keep probability of aligned chunks higher
+        self.chunks.extend(other.chunks().iter().cloned());
+        self.length += other.len() as IdxSize;
         Ok(())
     }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
-        self.append(other)
+        *self = NullChunked::new(self.name.clone(), self.len() + other.len());
+        Ok(())
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

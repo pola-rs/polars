@@ -9,6 +9,7 @@ use crate::frame::groupby::{GroupsProxy, IntoGroupsProxy};
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
+#[cfg(feature = "chunked_ids")]
 use crate::series::IsSorted;
 
 impl<T: PolarsObject> PrivateSeriesNumeric for SeriesWrap<ObjectChunked<T>> {}
@@ -157,10 +158,6 @@ where
     fn rechunk(&self) -> Series {
         // do not call normal rechunk
         self.rechunk_object().into_series()
-    }
-
-    fn take_every(&self, n: usize) -> Series {
-        self.0.take_every(n).into_series()
     }
 
     fn new_from_index(&self, index: usize, length: usize) -> Series {

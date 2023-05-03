@@ -9,10 +9,7 @@ import polars._reexport as pl
 from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
-    from polars.dataframe import DataFrame
-    from polars.expr import Expr
-    from polars.lazyframe import LazyFrame
-    from polars.series import Series
+    from polars import DataFrame, Expr, LazyFrame, Series
 
 __all__ = [
     "register_expr_namespace",
@@ -100,12 +97,10 @@ def register_expr_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     >>>
     >>> df = pl.DataFrame([1.4, 24.3, 55.0, 64.001], schema=["n"])
     >>> df.select(
-    ...     [
-    ...         pl.col("n"),
-    ...         pl.col("n").pow_n.next(p=2).alias("next_pow2"),
-    ...         pl.col("n").pow_n.previous(p=2).alias("prev_pow2"),
-    ...         pl.col("n").pow_n.nearest(p=2).alias("nearest_pow2"),
-    ...     ]
+    ...     pl.col("n"),
+    ...     pl.col("n").pow_n.next(p=2).alias("next_pow2"),
+    ...     pl.col("n").pow_n.previous(p=2).alias("prev_pow2"),
+    ...     pl.col("n").pow_n.nearest(p=2).alias("nearest_pow2"),
     ... )
     shape: (4, 4)
     ┌────────┬───────────┬───────────┬──────────────┐
@@ -301,7 +296,7 @@ def register_lazyframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     │ yy  ┆ 5   ┆ 6   ┆ 7   │
     │ yz  ┆ 6   ┆ 7   ┆ 8   │
     └─────┴─────┴─────┴─────┘
-    >>> [ldf.collect() for ldf in ldf.types.split_by_column_dtypes()]
+    >>> pl.collect_all(ldf.types.split_by_column_dtypes())
     [shape: (4, 1)
     ┌─────┐
     │ a1  │

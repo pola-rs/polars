@@ -127,6 +127,7 @@ pub struct UnionOptions {
     pub rows: (Option<usize>, usize),
     pub from_partitioned_ds: bool,
     pub flattened_by_opt: bool,
+    pub rechunk: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
@@ -156,7 +157,7 @@ pub struct DistinctOptions {
     pub slice: Option<(i64, usize)>,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum ApplyOptions {
     /// Collect groups to a list and apply the function over the groups.
@@ -171,15 +172,17 @@ pub enum ApplyOptions {
     ApplyFlat,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+// a boolean that can only be set to `false` safely
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct WindowOptions {
-    /// Explode the aggregated list and just do a hstack instead of a join
-    /// this requires the groups to be sorted to make any sense
-    pub explode: bool,
+pub struct UnsafeBool(bool);
+impl Default for UnsafeBool {
+    fn default() -> Self {
+        UnsafeBool(true)
+    }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FunctionOptions {
     /// Collect groups to a list and apply the function over the groups.
@@ -223,6 +226,11 @@ pub struct FunctionOptions {
     // if set, then the `Series` passed to the function in the groupby operation
     // will ensure the name is set. This is an extra heap allocation per group.
     pub pass_name_to_apply: bool,
+    // For example a `unique` or a `slice`
+    pub changes_length: bool,
+    // Validate the output of a `map`.
+    // this should always be true or we could OOB
+    pub check_lengths: UnsafeBool,
 }
 
 impl FunctionOptions {
@@ -232,6 +240,14 @@ impl FunctionOptions {
     /// - Counts
     pub fn is_groups_sensitive(&self) -> bool {
         matches!(self.collect_groups, ApplyOptions::ApplyGroups)
+    }
+
+    #[cfg(feature = "fused")]
+    pub(crate) unsafe fn no_check_lengths(&mut self) {
+        self.check_lengths = UnsafeBool(false);
+    }
+    pub fn check_lengths(&self) -> bool {
+        self.check_lengths.0
     }
 }
 
@@ -245,6 +261,8 @@ impl Default for FunctionOptions {
             cast_to_supertypes: false,
             allow_rename: false,
             pass_name_to_apply: false,
+            changes_length: false,
+            check_lengths: UnsafeBool(true),
         }
     }
 }
@@ -303,7 +321,6 @@ pub struct FileSinkOptions {
     pub file_type: FileType,
 }
 
-#[cfg(any(feature = "parquet", feature = "ipc"))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub enum FileType {
@@ -311,7 +328,5 @@ pub enum FileType {
     Parquet(ParquetWriteOptions),
     #[cfg(feature = "ipc")]
     Ipc(IpcWriterOptions),
+    Memory,
 }
-
-#[cfg(not(any(feature = "parquet", feature = "ipc")))]
-pub type FileType = ();

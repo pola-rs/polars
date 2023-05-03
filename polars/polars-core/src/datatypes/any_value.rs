@@ -71,8 +71,10 @@ pub enum AnyValue<'a> {
     // If syncptr is_null the data is in the rev-map
     // otherwise it is in the array pointer
     Categorical(u32, &'a RevMapping, SyncPtr<Utf8Array<i64>>),
-    /// Nested type, contains arrays that are filled with one of the datetypes.
+    /// Nested type, contains arrays that are filled with one of the datatypes.
     List(Series),
+    #[cfg(feature = "dtype-array")]
+    Array(Series, usize),
     #[cfg(feature = "object")]
     /// Can be used to fmt and implements Any, so can be downcasted to the proper value type.
     #[cfg(feature = "object")]
@@ -373,7 +375,6 @@ impl<'a> AnyValue<'a> {
     }
     /// Extract a numerical value from the AnyValue
     #[doc(hidden)]
-    #[cfg(feature = "private")]
     #[inline]
     pub fn extract<T: NumCast>(&self) -> Option<T> {
         use AnyValue::*;
@@ -726,31 +727,37 @@ impl PartialEq for AnyValue<'_> {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         use AnyValue::*;
-        match (self.as_borrowed(), other.as_borrowed()) {
-            (UInt8(l), UInt8(r)) => l == r,
-            (UInt16(l), UInt16(r)) => l == r,
-            (UInt32(l), UInt32(r)) => l == r,
-            (UInt64(l), UInt64(r)) => l == r,
-            (Int8(l), Int8(r)) => l == r,
-            (Int16(l), Int16(r)) => l == r,
-            (Int32(l), Int32(r)) => l == r,
-            (Int64(l), Int64(r)) => l == r,
-            (Float32(l), Float32(r)) => l == r,
-            (Float64(l), Float64(r)) => l == r,
-            #[cfg(feature = "dtype-time")]
-            (Time(l), Time(r)) => l == r,
-            #[cfg(all(feature = "dtype-datetime", feature = "dtype-date"))]
-            (Date(l), Date(r)) => l == r,
-            #[cfg(all(feature = "dtype-datetime", feature = "dtype-date"))]
-            (Datetime(l, tul, tzl), Datetime(r, tur, tzr)) => l == r && tul == tur && tzl == tzr,
-            (Boolean(l), Boolean(r)) => l == r,
-            (List(l), List(r)) => l == r,
-            (Binary(l), Binary(r)) => l == r,
+        match (self, other) {
+            (UInt8(l), UInt8(r)) => *l == *r,
+            (UInt16(l), UInt16(r)) => *l == *r,
+            (UInt32(l), UInt32(r)) => *l == *r,
+            (UInt64(l), UInt64(r)) => *l == *r,
+            (Int8(l), Int8(r)) => *l == *r,
+            (Int16(l), Int16(r)) => *l == *r,
+            (Int32(l), Int32(r)) => *l == *r,
+            (Int64(l), Int64(r)) => *l == *r,
+            (Float32(l), Float32(r)) => *l == *r,
+            (Float64(l), Float64(r)) => *l == *r,
             (Utf8(l), Utf8(r)) => l == r,
-            #[cfg(feature = "object")]
-            (Object(_), Object(_)) => panic!("eq between object not supported"),
+            (Utf8(l), Utf8Owned(r)) => l == r,
+            (Utf8Owned(l), Utf8(r)) => l == r,
+            (Utf8Owned(l), Utf8Owned(r)) => l == r,
+            (Boolean(l), Boolean(r)) => *l == *r,
+            (Binary(l), Binary(r)) => l == r,
+            (BinaryOwned(l), BinaryOwned(r)) => l == r,
+            (Binary(l), BinaryOwned(r)) => l == r,
+            (BinaryOwned(l), Binary(r)) => l == r,
             // should it?
             (Null, Null) => true,
+            #[cfg(feature = "dtype-time")]
+            (Time(l), Time(r)) => *l == *r,
+            #[cfg(all(feature = "dtype-datetime", feature = "dtype-date"))]
+            (Date(l), Date(r)) => *l == *r,
+            #[cfg(all(feature = "dtype-datetime", feature = "dtype-date"))]
+            (Datetime(l, tul, tzl), Datetime(r, tur, tzr)) => {
+                *l == *r && *tul == *tur && tzl == tzr
+            }
+            (List(l), List(r)) => l == r,
             #[cfg(feature = "dtype-categorical")]
             (Categorical(idx_l, rev_l, _), Categorical(idx_r, rev_r, _)) => match (rev_l, rev_r) {
                 (RevMapping::Global(_, _, id_l), RevMapping::Global(_, _, id_r)) => {
@@ -773,16 +780,15 @@ impl PartialEq for AnyValue<'_> {
             #[cfg(feature = "dtype-struct")]
             (StructOwned(l), Struct(idx, arr, fields)) => {
                 let fields_left = &*l.0;
-                let avs = struct_to_avs_static(idx, arr, fields);
+                let avs = struct_to_avs_static(*idx, arr, fields);
                 fields_left == avs
             }
             #[cfg(feature = "dtype-struct")]
             (Struct(idx, arr, fields), StructOwned(r)) => {
                 let fields_right = &*r.0;
-                let avs = struct_to_avs_static(idx, arr, fields);
+                let avs = struct_to_avs_static(*idx, arr, fields);
                 fields_right == avs
             }
-
             _ => false,
         }
     }

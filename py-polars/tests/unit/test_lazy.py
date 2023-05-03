@@ -12,7 +12,7 @@ import pytest
 
 import polars as pl
 from polars import lit, when
-from polars.datatypes import NUMERIC_DTYPES
+from polars.datatypes import FLOAT_DTYPES, NUMERIC_DTYPES
 from polars.testing import assert_frame_equal
 from polars.testing.asserts import assert_series_equal
 
@@ -268,13 +268,6 @@ def test_shift_and_fill() -> None:
     assert out["a"].null_count() == 0
 
 
-def test_arange() -> None:
-    ldf = pl.LazyFrame({"a": [1, 1, 1]})
-    result = ldf.filter(pl.col("a") >= pl.arange(0, 3)).collect()
-    expected = pl.DataFrame({"a": [1, 1]})
-    assert_frame_equal(result, expected)
-
-
 def test_arg_unique() -> None:
     ldf = pl.LazyFrame({"a": [4, 1, 4]})
     col_a_unique = ldf.select(pl.col("a").arg_unique()).collect()["a"]
@@ -367,20 +360,6 @@ def test_inspect(capsys: CaptureFixture[str]) -> None:
 def test_fetch(fruits_cars: pl.DataFrame) -> None:
     res = fruits_cars.lazy().select("*").fetch(2)
     assert_frame_equal(res, res[:2])
-
-
-def test_concat_str() -> None:
-    ldf = pl.LazyFrame({"a": ["a", "b", "c"], "b": [1, 2, 3]})
-
-    out = ldf.select([pl.concat_str(["a", "b"], separator="-")])
-    assert out.collect()["a"].to_list() == ["a-1", "b-2", "c-3"]
-
-    out = ldf.select([pl.format("foo_{}_bar_{}", pl.col("a"), "b").alias("fmt")])
-    assert out.collect()["fmt"].to_list() == [
-        "foo_a_bar_1",
-        "foo_b_bar_2",
-        "foo_c_bar_3",
-    ]
 
 
 def test_fold_filter() -> None:
@@ -532,9 +511,33 @@ def test_floor() -> None:
     assert_series_equal(ldf.collect()["a"], pl.Series("a", [1, 1, 3]).cast(pl.Float64))
 
 
-def test_round() -> None:
-    ldf = pl.LazyFrame({"a": [1.8, 1.2, 3.0]}).select(pl.col("a").round(decimals=0))
-    assert_series_equal(ldf.collect()["a"], pl.Series("a", [2, 1, 3]).cast(pl.Float64))
+@pytest.mark.parametrize(
+    ("n", "ndigits", "expected"),
+    [
+        (1.005, 2, 1.0),
+        (1234.00000254495, 10, 1234.000002545),
+        (1835.665, 2, 1835.67),
+        (-1835.665, 2, -1835.67),
+        (1.27499, 2, 1.27),
+        (123.45678, 2, 123.46),
+        (1254, 2, 1254.0),
+        (1254, 0, 1254.0),
+        (123.55, 0, 124.0),
+        (123.55, 1, 123.6),
+        (-1.23456789, 6, -1.234568),
+        (-1835.665, 2, -1835.67),
+        (1.0e-5, 5, 0.00001),
+        (1.0e-20, 20, 1e-20),
+        (1.0e20, 2, 100000000000000000000.0),
+    ],
+)
+def test_round(n: float, ndigits: int, expected: float) -> None:
+    for float_dtype in FLOAT_DTYPES:
+        ldf = pl.LazyFrame({"value": [n]}, schema_overrides={"value": float_dtype})
+        assert_series_equal(
+            ldf.select(pl.col("value").round(decimals=ndigits)).collect().to_series(),
+            pl.Series("value", [expected], dtype=float_dtype),
+        )
 
 
 def test_dot() -> None:
@@ -661,84 +664,6 @@ def test_backward_fill() -> None:
     assert_series_equal(col_a_backward_fill, pl.Series("a", [1, 3, 3]).cast(pl.Float64))
 
 
-def test_take(fruits_cars: pl.DataFrame) -> None:
-    ldf = fruits_cars.lazy()
-
-    # out of bounds error
-    with pytest.raises(pl.ComputeError):
-        (
-            ldf.sort("fruits")
-            .select(
-                [pl.col("B").reverse().take([1, 2]).implode().over("fruits"), "fruits"]
-            )
-            .collect()
-        )
-
-    for index in [[0, 1], pl.Series([0, 1]), np.array([0, 1])]:
-        out = (
-            ldf.sort("fruits")
-            .select(
-                [
-                    pl.col("B")
-                    .reverse()
-                    .take(index)  # type: ignore[arg-type]
-                    .implode()
-                    .over("fruits"),
-                    "fruits",
-                ]
-            )
-            .collect()
-        )
-
-        assert out[0, "B"].to_list() == [2, 3]
-        assert out[4, "B"].to_list() == [1, 4]
-
-    out = (
-        ldf.sort("fruits")
-        .select(
-            [pl.col("B").reverse().take(pl.lit(1)).implode().over("fruits"), "fruits"]
-        )
-        .collect()
-    )
-    assert out[0, "B"] == 3
-    assert out[4, "B"] == 4
-
-
-def test_select_by_col_list(fruits_cars: pl.DataFrame) -> None:
-    ldf = fruits_cars.lazy()
-    result = ldf.select(pl.col(["A", "B"]).sum())
-    expected = pl.LazyFrame({"A": 15, "B": 15})
-    assert_frame_equal(result, expected)
-
-
-def test_select_args_kwargs() -> None:
-    ldf = pl.LazyFrame({"foo": [1, 2], "bar": [3, 4], "ham": ["a", "b"]})
-
-    # Single column name
-    result = ldf.select("foo")
-    expected = pl.LazyFrame({"foo": [1, 2]})
-    assert_frame_equal(result, expected)
-
-    # Column names as list
-    result = ldf.select(["foo", "bar"])
-    expected = pl.LazyFrame({"foo": [1, 2], "bar": [3, 4]})
-    assert_frame_equal(result, expected)
-
-    # Column names as positional arguments
-    result, expected = ldf.select("foo", "bar", "ham"), ldf
-    assert_frame_equal(result, expected)
-
-    # Keyword arguments
-    result = ldf.select(oof="foo")
-    expected = pl.LazyFrame({"oof": [1, 2]})
-    assert_frame_equal(result, expected)
-
-    # Mixed
-    result = ldf.select(["bar"], "foo", oof="foo")
-    expected = pl.LazyFrame({"bar": [3, 4], "foo": [1, 2], "oof": [1, 2]})
-    assert_frame_equal(result, expected)
-
-
 def test_rolling(fruits_cars: pl.DataFrame) -> None:
     ldf = fruits_cars.lazy()
     out = ldf.select(
@@ -791,14 +716,38 @@ def test_arr_namespace(fruits_cars: pl.DataFrame) -> None:
     out = ldf.select(
         [
             "fruits",
-            pl.col("B").implode().over("fruits").arr.min().alias("B_by_fruits_min1"),
-            pl.col("B").min().implode().over("fruits").alias("B_by_fruits_min2"),
-            pl.col("B").implode().over("fruits").arr.max().alias("B_by_fruits_max1"),
-            pl.col("B").max().implode().over("fruits").alias("B_by_fruits_max2"),
-            pl.col("B").implode().over("fruits").arr.sum().alias("B_by_fruits_sum1"),
-            pl.col("B").sum().implode().over("fruits").alias("B_by_fruits_sum2"),
-            pl.col("B").implode().over("fruits").arr.mean().alias("B_by_fruits_mean1"),
-            pl.col("B").mean().implode().over("fruits").alias("B_by_fruits_mean2"),
+            pl.col("B")
+            .over("fruits", mapping_strategy="join")
+            .list.min()
+            .alias("B_by_fruits_min1"),
+            pl.col("B")
+            .min()
+            .over("fruits", mapping_strategy="join")
+            .alias("B_by_fruits_min2"),
+            pl.col("B")
+            .over("fruits", mapping_strategy="join")
+            .list.max()
+            .alias("B_by_fruits_max1"),
+            pl.col("B")
+            .max()
+            .over("fruits", mapping_strategy="join")
+            .alias("B_by_fruits_max2"),
+            pl.col("B")
+            .over("fruits", mapping_strategy="join")
+            .list.sum()
+            .alias("B_by_fruits_sum1"),
+            pl.col("B")
+            .sum()
+            .over("fruits", mapping_strategy="join")
+            .alias("B_by_fruits_sum2"),
+            pl.col("B")
+            .over("fruits", mapping_strategy="join")
+            .list.mean()
+            .alias("B_by_fruits_mean1"),
+            pl.col("B")
+            .mean()
+            .over("fruits", mapping_strategy="join")
+            .alias("B_by_fruits_mean2"),
         ]
     )
     expected = pl.DataFrame(
@@ -941,14 +890,6 @@ def test_rename() -> None:
 def test_with_column_renamed(fruits_cars: pl.DataFrame) -> None:
     res = fruits_cars.lazy().rename({"A": "C"}).collect()
     assert res.columns[0] == "C"
-
-
-def test_with_columns_single_series() -> None:
-    ldf = pl.LazyFrame({"a": [1, 2]})
-    result = ldf.with_columns(pl.Series("b", [3, 4]))
-
-    expected = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
-    assert_frame_equal(result.collect(), expected)
 
 
 def test_reverse() -> None:
@@ -1115,6 +1056,11 @@ def test_quantile(fruits_cars: pl.DataFrame) -> None:
     assert fruits_cars.select(pl.col("A").quantile(0.24, "linear"))["A"][0] == 1.96
 
 
+def test_null_count() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, None, 2], "b": [None, 3, None, 3]})
+    assert lf.null_count().collect().rows() == [(1, 2)]
+
+
 def test_unique() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 2], "b": [3, 3, 3]})
 
@@ -1152,7 +1098,7 @@ def test_self_join() -> None:
     out = (
         ldf.join(other=ldf, left_on="manager_id", right_on="employee_id", how="left")
         .select(
-            exprs=[
+            [
                 pl.col("employee_id"),
                 pl.col("employee_name"),
                 pl.col("employee_name_right").alias("manager_name"),

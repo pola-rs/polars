@@ -11,19 +11,19 @@ description = "IO related logic for the Polars DataFrame library"
 
 [features]
 # support for arrows json parsing
-json = ["arrow/io_json", "simd-json", "memmap", "lexical", "lexical-core", "serde_json"]
+json = ["arrow/io_json_write", "polars-json", "simd-json", "memmap", "lexical", "lexical-core", "serde_json"]
 # support for arrows ipc file parsing
 ipc = ["arrow/io_ipc", "arrow/io_ipc_compression", "memmap"]
 # support for arrows streaming ipc file parsing
 ipc_streaming = ["arrow/io_ipc", "arrow/io_ipc_compression"]
 # support for arrow avro parsing
 avro = ["arrow/io_avro", "arrow/io_avro_compression"]
-# ipc = []
 csv = ["memmap", "lexical", "polars-core/rows", "lexical-core", "fast-float", "simdutf8"]
 decompress = ["flate2/miniz_oxide"]
 decompress-fast = ["flate2/zlib-ng"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-date = ["polars-core/dtype-date", "polars-time/dtype-date"]
+object = []
 dtype-datetime = [
   "polars-core/dtype-datetime",
   "polars-core/temporal",
@@ -36,6 +36,7 @@ timezones = [
 ]
 dtype-time = ["polars-core/dtype-time", "polars-core/temporal", "polars-time/dtype-time"]
 dtype-struct = ["polars-core/dtype-struct"]
+dtype-decimal = ["polars-core/dtype-decimal"]
 fmt = ["polars-core/fmt"]
 lazy = []
 parquet = ["polars-core/parquet", "arrow/io_parquet", "arrow/io_parquet_compression", "memmap"]
@@ -46,8 +47,6 @@ azure = ["object_store/azure", "cloud", "polars-core/azure"]
 gcp = ["object_store/gcp", "cloud", "polars-core/gcp"]
 partition = ["polars-core/partition_by"]
 temporal = ["dtype-datetime", "dtype-date", "dtype-time"]
-# don't use this
-private = ["polars-time/private"]
 simd = []
 
 [dependencies]
@@ -66,18 +65,19 @@ lexical-core = { version = "0.8", optional = true }
 memchr.workspace = true
 memmap = { package = "memmap2", version = "0.5.2", optional = true }
 num-traits.workspace = true
-object_store = { version = "0.5.3", default-features = false, optional = true }
+object_store = { version = "0.6.0", default-features = false, optional = true }
 once_cell = "1"
-polars-arrow = { version = "0.28.0", path = "../polars-arrow" }
-polars-core = { version = "0.28.0", path = "../polars-core", features = ["private"], default-features = false }
-polars-error = { version = "0.28.0", path = "../polars-error", default-features = false }
-polars-time = { version = "0.28.0", path = "../polars-time", features = ["private"], default-features = false, optional = true }
-polars-utils = { version = "0.28.0", path = "../polars-utils" }
+polars-arrow = { version = "0.30.0", path = "../polars-arrow" }
+polars-core = { version = "0.30.0", path = "../polars-core", features = [], default-features = false }
+polars-error = { version = "0.30.0", path = "../polars-error", default-features = false }
+polars-json = { version = "0.30.0", optional = true, path = "../polars-json" }
+polars-time = { version = "0.30.0", path = "../polars-time", features = [], default-features = false, optional = true }
+polars-utils = { version = "0.30.0", path = "../polars-utils" }
 rayon.workspace = true
 regex = "1.6"
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true, default-features = false, features = ["alloc", "raw_value"] }
-simd-json = { version = "0.7.0", optional = true, features = ["allow-non-simd", "known-key"] }
+simd-json = { version = "0.10", optional = true, features = ["allow-non-simd", "known-key"] }
 simdutf8 = { version = "0.1", optional = true }
 tokio = { version = "1.26.0", features = ["net"], optional = true }
 url = { version = "2.3.1", optional = true }

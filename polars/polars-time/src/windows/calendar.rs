@@ -1,4 +1,4 @@
-use polars_arrow::time_zone::PolarsTimeZone;
+use polars_arrow::time_zone::Tz;
 use polars_core::prelude::*;
 
 use crate::prelude::*;
@@ -35,16 +35,17 @@ pub const NS_HOUR: i64 = 60 * NS_MINUTE;
 pub const NS_DAY: i64 = 24 * NS_HOUR;
 pub const NS_WEEK: i64 = 7 * NS_DAY;
 
-pub fn date_range<T: PolarsTimeZone>(
+/// vector of i64 representing temporal values
+pub fn temporal_range(
     start: i64,
     stop: i64,
     every: Duration,
     closed: ClosedWindow,
     tu: TimeUnit,
-    tz: Option<&T>,
+    tz: Option<&Tz>,
 ) -> PolarsResult<Vec<i64>> {
     let size: usize;
-    let offset_fn: fn(&Duration, i64, Option<&T>) -> PolarsResult<i64>;
+    let offset_fn: fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64>;
 
     match tu {
         TimeUnit::Nanoseconds => {

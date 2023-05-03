@@ -433,7 +433,7 @@ impl PredicatePushDown {
                         // join might create null values.
                         || has_aexpr(predicate, expr_arena, checks_nulls)
                         // only these join types produce null values
-                        && join_produces_null(&options.how) {
+                        && join_produces_null(&options.args.how) {
                         local_predicates.push(predicate);
                         continue;
                     }
@@ -466,7 +466,7 @@ impl PredicatePushDown {
                             filter_right = true;
                         }
                     }
-                    match (filter_left, filter_right, &options.how) {
+                    match (filter_left, filter_right, &options.args.how) {
                         // if not pushed down on one of the tables we have to do it locally.
                         (false, false, _) |
                         // if left join and predicate only available in right table,
@@ -578,8 +578,22 @@ impl PredicatePushDown {
                 let lp = self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)?;
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
+            lp @ Sort{..} => {
+                let mut local_predicates = vec![];
+                acc_predicates.retain(|_, predicate| {
+                    if predicate_is_sort_boundary(*predicate, expr_arena) {
+                        local_predicates.push(*predicate);
+                        false
+                    } else {
+                        true
+                    }
+                });
+                let lp = self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)?;
+                Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
+
+            }
             // Pushed down passed these nodes
-            lp @ Sort { .. } |lp @ FileSink {..} => {
+            lp@ FileSink {..} => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             }
             lp @ HStack {..} | lp @ Projection {..} | lp @ ExtContext {..} => {
@@ -607,7 +621,7 @@ impl PredicatePushDown {
                         let lp_top = stack_opt.optimize_loop(&mut [Box::new(SimplifyExprRule{})], expr_arena, lp_arena, lp_top).unwrap();
                         let PythonScan {options: _, predicate: Some(predicate)} = lp_arena.take(lp_top) else {unreachable!()};
 
-                        match super::super::pyarrow::predicate_to_pa(predicate, expr_arena) {
+                        match super::super::pyarrow::predicate_to_pa(predicate, expr_arena, Default::default()) {
                             // we we able to create a pyarrow string, mutate the options
                             Some(eval_str) => {
                                 options.predicate = Some(eval_str)

@@ -126,8 +126,10 @@ impl<'a> AnyValueBuffer<'a> {
     pub(crate) fn add_fallible(&mut self, val: &AnyValue<'a>) -> PolarsResult<()> {
         self.add(val.clone()).ok_or_else(|| {
             polars_err!(
-                ComputeError: "could not append {:?} to the builder; make sure that all rows \
-                have the same schema or consider increasing `schema_inference_length`"
+                ComputeError: "could not append value: {} of type: {} to the builder; make sure that all rows \
+                have the same schema or consider increasing `schema_inference_length`\n\
+                \n\
+                it might also be that a value overflows the data-type's capacity", val, val.dtype()
             )
         })
     }
@@ -291,7 +293,7 @@ impl From<(&DataType, usize)> for AnyValueBuffer<'_> {
     }
 }
 
-/// An `AnyValyeBuffer` that should be used when we trust the builder
+/// An `AnyValueBuffer` that should be used when we trust the builder
 #[derive(Clone)]
 pub enum AnyValueBufferTrusted<'a> {
     Boolean(BooleanChunkedBuilder),

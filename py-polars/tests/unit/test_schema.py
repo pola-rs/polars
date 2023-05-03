@@ -302,7 +302,7 @@ def test_all_null_cast_5826() -> None:
 def test_empty_list_eval_schema_5734() -> None:
     df = pl.DataFrame({"a": [[{"b": 1, "c": 2}]]})
     assert df.filter(False).select(
-        pl.col("a").arr.eval(pl.element().struct.field("b"))
+        pl.col("a").list.eval(pl.element().struct.field("b"))
     ).schema == {"a": pl.List(pl.Int64)}
 
 
@@ -453,3 +453,9 @@ def test_list_null_constructor_schema() -> None:
     assert pl.Series([[]], dtype=pl.List).dtype == expected
     assert pl.DataFrame({"a": [[]]}).dtypes[0] == expected
     assert pl.DataFrame(schema={"a": pl.List}).dtypes[0] == expected
+
+
+def test_schema_ne_missing_9256() -> None:
+    df = pl.DataFrame({"a": [0, 1, None], "b": [True, False, True]})
+
+    assert df.select(pl.col("a").ne_missing(0).or_(pl.col("b")))["a"].all()

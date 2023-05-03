@@ -33,24 +33,10 @@ impl BinaryExpr {
 /// Can partially do operations in place.
 fn apply_operator_owned(left: Series, right: Series, op: Operator) -> PolarsResult<Series> {
     match op {
-        Operator::Gt => ChunkCompare::<&Series>::gt(&left, &right).map(|ca| ca.into_series()),
-        Operator::GtEq => ChunkCompare::<&Series>::gt_eq(&left, &right).map(|ca| ca.into_series()),
-        Operator::Lt => ChunkCompare::<&Series>::lt(&left, &right).map(|ca| ca.into_series()),
-        Operator::LtEq => ChunkCompare::<&Series>::lt_eq(&left, &right).map(|ca| ca.into_series()),
-        Operator::Eq => ChunkCompare::<&Series>::equal(&left, &right).map(|ca| ca.into_series()),
-        Operator::NotEq => {
-            ChunkCompare::<&Series>::not_equal(&left, &right).map(|ca| ca.into_series())
-        }
         Operator::Plus => Ok(left + right),
         Operator::Minus => Ok(left - right),
         Operator::Multiply => Ok(left * right),
-        Operator::Divide => Ok(&left / &right),
-        Operator::TrueDivide => apply_operator(&left, &right, op),
-        Operator::FloorDivide => apply_operator(&left, &right, op),
-        Operator::And => left.bitand(&right),
-        Operator::Or => left.bitor(&right),
-        Operator::Xor => left.bitxor(&right),
-        Operator::Modulus => Ok(&left % &right),
+        _ => apply_operator(&left, &right, op),
     }
 }
 
@@ -70,6 +56,8 @@ pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResu
         Operator::Multiply => Ok(left * right),
         Operator::Divide => Ok(left / right),
         Operator::TrueDivide => match left.dtype() {
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(_, _) => Ok(left / right),
             Date | Datetime(_, _) | Float32 | Float64 => Ok(left / right),
             _ => Ok(&left.cast(&Float64)? / &right.cast(&Float64)?),
         },
@@ -87,6 +75,8 @@ pub fn apply_operator(left: &Series, right: &Series, op: Operator) -> PolarsResu
         Operator::Or => left.bitor(right),
         Operator::Xor => left.bitxor(right),
         Operator::Modulus => Ok(left % right),
+        Operator::EqValidity => left.equal_missing(right).map(|ca| ca.into_series()),
+        Operator::NotEqValidity => left.not_equal_missing(right).map(|ca| ca.into_series()),
     }
 }
 

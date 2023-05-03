@@ -458,7 +458,7 @@ impl OptimizationRule for SimplifyExprRule {
                 // lit(left) + lit(right) => lit(left + right)
                 #[allow(clippy::manual_map)]
                 let out = match op {
-                    Operator::Plus => {
+                    Plus => {
                         match eval_binary_same_type!(left_aexpr, +, right_aexpr) {
                             Some(new) => Some(new),
                             None => {
@@ -482,10 +482,10 @@ impl OptimizationRule for SimplifyExprRule {
                             }
                         }
                     }
-                    Operator::Minus => eval_binary_same_type!(left_aexpr, -, right_aexpr),
-                    Operator::Multiply => eval_binary_same_type!(left_aexpr, *, right_aexpr),
-                    Operator::Divide => eval_binary_same_type!(left_aexpr, /, right_aexpr),
-                    Operator::TrueDivide => {
+                    Minus => eval_binary_same_type!(left_aexpr, -, right_aexpr),
+                    Multiply => eval_binary_same_type!(left_aexpr, *, right_aexpr),
+                    Divide => eval_binary_same_type!(left_aexpr, /, right_aexpr),
+                    TrueDivide => {
                         if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) =
                             (left_aexpr, right_aexpr)
                         {
@@ -530,17 +530,17 @@ impl OptimizationRule for SimplifyExprRule {
                             None
                         }
                     }
-                    Operator::FloorDivide => None,
-                    Operator::Modulus => eval_binary_same_type!(left_aexpr, %, right_aexpr),
-                    Operator::Lt => eval_binary_bool_type!(left_aexpr, <, right_aexpr),
-                    Operator::Gt => eval_binary_bool_type!(left_aexpr, >, right_aexpr),
-                    Operator::Eq => eval_binary_bool_type!(left_aexpr, ==, right_aexpr),
-                    Operator::NotEq => eval_binary_bool_type!(left_aexpr, !=, right_aexpr),
-                    Operator::GtEq => eval_binary_bool_type!(left_aexpr, >=, right_aexpr),
-                    Operator::LtEq => eval_binary_bool_type!(left_aexpr, <=, right_aexpr),
-                    Operator::And => eval_bitwise(left_aexpr, right_aexpr, |l, r| l & r),
-                    Operator::Or => eval_bitwise(left_aexpr, right_aexpr, |l, r| l | r),
-                    Operator::Xor => eval_bitwise(left_aexpr, right_aexpr, |l, r| l ^ r),
+                    Modulus => eval_binary_same_type!(left_aexpr, %, right_aexpr),
+                    Lt => eval_binary_bool_type!(left_aexpr, <, right_aexpr),
+                    Gt => eval_binary_bool_type!(left_aexpr, >, right_aexpr),
+                    Eq | EqValidity => eval_binary_bool_type!(left_aexpr, ==, right_aexpr),
+                    NotEq | NotEqValidity => eval_binary_bool_type!(left_aexpr, !=, right_aexpr),
+                    GtEq => eval_binary_bool_type!(left_aexpr, >=, right_aexpr),
+                    LtEq => eval_binary_bool_type!(left_aexpr, <=, right_aexpr),
+                    And => eval_bitwise(left_aexpr, right_aexpr, |l, r| l & r),
+                    Or => eval_bitwise(left_aexpr, right_aexpr, |l, r| l | r),
+                    Xor => eval_bitwise(left_aexpr, right_aexpr, |l, r| l ^ r),
+                    FloorDivide => None,
                 };
                 if out.is_some() {
                     return Ok(out);

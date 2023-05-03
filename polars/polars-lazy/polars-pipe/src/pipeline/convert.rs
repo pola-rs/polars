@@ -1,5 +1,8 @@
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::Arc;
 
+use hashbrown::hash_map::Entry;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_integer_polars_type;
 use polars_plan::prelude::*;
@@ -102,7 +105,7 @@ where
                 path,
                 options,
                 cloud_options,
-                &file_info.schema,
+                file_info.schema,
                 verbose,
             )?;
             Ok(Box::new(src) as Box<dyn Source>)
@@ -122,7 +125,6 @@ where
 {
     use ALogicalPlan::*;
     let out = match lp_arena.get(node) {
-        #[cfg(any(feature = "parquet", feature = "ipc"))]
         FileSink { input, payload } => {
             let path = payload.path.as_ref().as_path();
             let input_schema = lp_arena.get(*input).schema(lp_arena);
@@ -136,6 +138,7 @@ where
                 FileType::Ipc(options) => {
                     Box::new(IpcSink::new(path, *options, input_schema.as_ref())?) as Box<dyn Sink>
                 }
+                FileType::Memory => Box::new(OrderedSink::new()),
             }
         }
         Join {
@@ -147,12 +150,12 @@ where
             ..
         } => {
             // slice pushdown optimization should not set this one in a streaming query.
-            assert!(options.slice.is_none());
+            assert!(options.args.slice.is_none());
 
-            match &options.how {
+            match &options.args.how {
                 #[cfg(feature = "cross_join")]
                 JoinType::Cross => {
-                    Box::new(CrossJoin::new(options.suffix.clone())) as Box<dyn Sink>
+                    Box::new(CrossJoin::new(options.args.suffix().into())) as Box<dyn Sink>
                 }
                 join_type @ JoinType::Inner | join_type @ JoinType::Left => {
                     let input_schema_left = lp_arena.get(*input_left).schema(lp_arena);
@@ -179,12 +182,12 @@ where
                     };
 
                     Box::new(GenericBuild::new(
-                        Arc::from(options.suffix.as_ref()),
+                        Arc::from(options.args.suffix()),
                         join_type.clone(),
                         swapped,
                         join_columns_left,
                         join_columns_right,
-                    ))
+                    )) as Box<dyn Sink>
                 }
                 _ => unimplemented!(),
             }
@@ -424,17 +427,19 @@ where
         }
         MapFunction {
             function: FunctionNode::FastProjection { columns },
-            ..
+            input,
         } => {
-            // TODO! pass schema to FastProjection so that
-            // projection can be based on already known schema.
-            let op = operators::FastProjectionOperator {
-                columns: columns.clone(),
-            };
+            let input_schema = lp_arena.get(*input).schema(lp_arena);
+            let op =
+                operators::FastProjectionOperator::new(columns.clone(), input_schema.into_owned());
             Box::new(op) as Box<dyn Operator>
         }
         MapFunction { function, .. } => {
             let op = operators::FunctionOperator::new(function.clone());
+            Box::new(op) as Box<dyn Operator>
+        }
+        Union { .. } => {
+            let op = operators::Pass::new("union");
             Box::new(op) as Box<dyn Operator>
         }
 
@@ -450,11 +455,12 @@ pub fn create_pipeline<F>(
     sources: &[Node],
     operators: Vec<Box<dyn Operator>>,
     operator_nodes: Vec<Node>,
-    sink_nodes: Vec<(usize, Node)>,
+    sink_nodes: Vec<(usize, Node, Rc<RefCell<u32>>)>,
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
     to_physical: F,
     verbose: bool,
+    sink_cache: &mut PlHashMap<usize, Box<dyn Sink>>,
 ) -> PolarsResult<PipeLine>
 where
     F: Fn(Node, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
@@ -522,29 +528,27 @@ where
     let operator_offset = operator_objects.len();
     operator_objects.extend(operators);
 
-    let mut sink_nodes = sink_nodes
+    let sink_nodes = sink_nodes
         .into_iter()
-        .map(|(offset, node)| {
-            Ok((
-                offset + operator_offset,
-                node,
-                get_sink(node, lp_arena, expr_arena, &to_physical)?,
-            ))
+        .map(|(offset, node, shared_count)| {
+            // ensure that shared sinks are really shared
+            // to achieve this we store/fetch them in a cache
+            let sink = if *shared_count.borrow() == 1 {
+                get_sink(node, lp_arena, expr_arena, &to_physical)?
+            } else {
+                match sink_cache.entry(node.0) {
+                    Entry::Vacant(entry) => {
+                        let sink = get_sink(node, lp_arena, expr_arena, &to_physical)?;
+                        entry.insert(sink.split(0));
+                        sink
+                    }
+                    Entry::Occupied(entry) => entry.get().split(0),
+                }
+            };
+
+            Ok((offset + operator_offset, node, sink, shared_count))
         })
         .collect::<PolarsResult<Vec<_>>>()?;
-
-    if sink_nodes.is_empty() ||
-        // if this evaluates true
-        // then there are still operators after the last sink
-        // so we add a final sink to make sure the latest operators run
-        sink_nodes[sink_nodes.len() - 1].0 < operator_nodes.len()
-    {
-        sink_nodes.push((
-            operator_objects.len(),
-            Node::default(),
-            Box::new(OrderedSink::new()),
-        ));
-    }
 
     Ok(PipeLine::new(
         source_objects,
@@ -557,7 +561,7 @@ where
 }
 
 pub fn swap_join_order(options: &JoinOptions) -> bool {
-    matches!(options.how, JoinType::Left)
+    matches!(options.args.how, JoinType::Left)
         || match (options.rows_left, options.rows_right) {
             ((Some(left), _), (Some(right), _)) => left > right,
             ((_, left), (_, right)) => left > right,

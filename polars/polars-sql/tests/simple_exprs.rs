@@ -500,3 +500,36 @@ fn test_groupby_2() -> PolarsResult<()> {
     assert!(df_sql.frame_equal(&expected));
     Ok(())
 }
+
+#[test]
+fn test_case_expr() {
+    let df = create_sample_df().unwrap().head(Some(10));
+    let mut context = SQLContext::new();
+    context.register("df", df.clone().lazy());
+    let sql = r#"
+        SELECT
+            CASE
+                WHEN (a > 5 AND a < 8) THEN 'gt_5 and lt_8'
+                WHEN a <= 5 THEN 'lteq_5'
+                ELSE 'no match'
+            END AS sign
+        FROM df"#;
+    let df_sql = context.execute(sql).unwrap().collect().unwrap();
+    let case_expr = when(col("a").gt(lit(5)).and(col("a").lt(lit(8))))
+        .then(lit("gt_5 and lt_8"))
+        .when(col("a").lt_eq(lit(5)))
+        .then(lit("lteq_5"))
+        .otherwise(lit("no match"))
+        .alias("sign");
+    let df_pl = df.lazy().select(&[case_expr]).collect().unwrap();
+    assert!(df_sql.frame_equal(&df_pl));
+}
+
+#[test]
+fn test_sql_expr() {
+    let df = create_sample_df().unwrap();
+    let expr = sql_expr("MIN(a)").unwrap();
+    let actual = df.clone().lazy().select(&[expr]).collect().unwrap();
+    let expected = df.lazy().select(&[col("a").min()]).collect().unwrap();
+    assert!(actual.frame_equal(&expected));
+}

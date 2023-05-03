@@ -32,7 +32,7 @@ pub use ndjson::*;
 pub use parquet::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::frame::explode::MeltArgs;
-use polars_core::frame::hash_join::JoinType;
+use polars_core::frame::hash_join::{JoinType, JoinValidation};
 use polars_core::prelude::*;
 use polars_io::RowCount;
 pub use polars_plan::frame::{AllowedOptimizations, OptState};
@@ -173,12 +173,12 @@ impl LazyFrame {
         self
     }
 
-    /// Describe the logical plan.
+    /// Explain the naive logical plan.
     pub fn describe_plan(&self) -> String {
         self.logical_plan.describe()
     }
 
-    /// Describe the optimized logical plan.
+    /// Explain the optimized logical plan.
     pub fn describe_optimized_plan(&self) -> PolarsResult<String> {
         let mut expr_arena = Arena::with_capacity(64);
         let mut lp_arena = Arena::with_capacity(64);
@@ -190,6 +190,15 @@ impl LazyFrame {
         )?;
         let logical_plan = node_to_lp(lp_top, &expr_arena, &mut lp_arena);
         Ok(logical_plan.describe())
+    }
+
+    /// Explain the logical plan.
+    pub fn explain(&self, optimized: bool) -> PolarsResult<String> {
+        if optimized {
+            self.describe_optimized_plan()
+        } else {
+            Ok(self.describe_plan())
+        }
     }
 
     /// Add a sort operation to the logical plan.
@@ -723,7 +732,7 @@ impl LazyFrame {
     ///
     /// Also works for index values of type Int32 or Int64.
     ///
-    /// Different from a [`dynamic_groupby`] the windows are now determined by the
+    /// Different from a [`groupby_dynamic`][`Self::groupby_dynamic`], the windows are now determined by the
     /// individual values and are not of constant intervals. For constant intervals use
     /// *groupby_dynamic*
     #[cfg(feature = "dynamic_groupby")]
@@ -793,7 +802,7 @@ impl LazyFrame {
         }
     }
 
-    /// Similar to [`groupby`], but order of the DataFrame is maintained.
+    /// Similar to [`groupby`][`Self::groupby`], but order of the DataFrame is maintained.
     pub fn groupby_stable<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, by: E) -> LazyGroupBy {
         let keys = by
             .as_ref()
@@ -838,7 +847,12 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn left_join<E: Into<Expr>>(self, other: LazyFrame, left_on: E, right_on: E) -> LazyFrame {
-        self.join(other, [left_on.into()], [right_on.into()], JoinType::Left)
+        self.join(
+            other,
+            [left_on.into()],
+            [right_on.into()],
+            JoinArgs::new(JoinType::Left),
+        )
     }
 
     /// Join query with other lazy query.
@@ -854,7 +868,12 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn outer_join<E: Into<Expr>>(self, other: LazyFrame, left_on: E, right_on: E) -> LazyFrame {
-        self.join(other, [left_on.into()], [right_on.into()], JoinType::Outer)
+        self.join(
+            other,
+            [left_on.into()],
+            [right_on.into()],
+            JoinArgs::new(JoinType::Outer),
+        )
     }
 
     /// Join query with other lazy query.
@@ -870,13 +889,18 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn inner_join<E: Into<Expr>>(self, other: LazyFrame, left_on: E, right_on: E) -> LazyFrame {
-        self.join(other, [left_on.into()], [right_on.into()], JoinType::Inner)
+        self.join(
+            other,
+            [left_on.into()],
+            [right_on.into()],
+            JoinArgs::new(JoinType::Inner),
+        )
     }
 
     /// Creates the cartesian product from both frames, preserves the order of the left keys.
     #[cfg(feature = "cross_join")]
     pub fn cross_join(self, other: LazyFrame) -> LazyFrame {
-        self.join(other, vec![], vec![], JoinType::Cross)
+        self.join(other, vec![], vec![], JoinArgs::new(JoinType::Cross))
     }
 
     /// Generic join function that can join on multiple columns.
@@ -889,7 +913,7 @@ impl LazyFrame {
     ///
     /// fn example(ldf: LazyFrame, other: LazyFrame) -> LazyFrame {
     ///         ldf
-    ///         .join(other, [col("foo"), col("bar")], [col("foo"), col("bar")], JoinType::Inner)
+    ///         .join(other, [col("foo"), col("bar")], [col("foo"), col("bar")], JoinArgs::new(JoinType::Inner))
     /// }
     /// ```
     pub fn join<E: AsRef<[Expr]>>(
@@ -897,7 +921,7 @@ impl LazyFrame {
         other: LazyFrame,
         left_on: E,
         right_on: E,
-        how: JoinType,
+        args: JoinArgs,
     ) -> LazyFrame {
         // if any of the nodes reads from files we must activate this this plan as well.
         self.opt_state.file_caching |= other.opt_state.file_caching;
@@ -908,7 +932,7 @@ impl LazyFrame {
             .with(other)
             .left_on(left_on)
             .right_on(right_on)
-            .how(how)
+            .how(args.how)
             .finish()
     }
 
@@ -1022,6 +1046,11 @@ impl LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().explode(columns).build();
         Self::from_logical_plan(lp, opt_state)
+    }
+
+    /// Aggregate all the columns as the sum of their null value count.
+    pub fn null_count(self) -> LazyFrame {
+        self.select_local(vec![col("*").null_count()])
     }
 
     /// Keep unique rows and maintain order
@@ -1331,8 +1360,8 @@ impl LazyGroupBy {
     {
         #[cfg(feature = "dynamic_groupby")]
         let options = GroupbyOptions {
-            dynamic: None,
-            rolling: None,
+            dynamic: self.dynamic_options,
+            rolling: self.rolling_options,
             slice: None,
         };
 
@@ -1362,6 +1391,7 @@ pub struct JoinBuilder {
     allow_parallel: bool,
     force_parallel: bool,
     suffix: Option<String>,
+    validation: JoinValidation,
 }
 impl JoinBuilder {
     pub fn new(lf: LazyFrame) -> Self {
@@ -1374,6 +1404,7 @@ impl JoinBuilder {
             allow_parallel: true,
             force_parallel: false,
             suffix: None,
+            validation: Default::default(),
         }
     }
 
@@ -1386,6 +1417,11 @@ impl JoinBuilder {
     /// Select the join type.
     pub fn how(mut self, how: JoinType) -> Self {
         self.how = how;
+        self
+    }
+
+    pub fn validate(mut self, validation: JoinValidation) -> Self {
+        self.validation = validation;
         self
     }
 
@@ -1415,8 +1451,8 @@ impl JoinBuilder {
     }
 
     /// Force parallel table evaluation.
-    pub fn force_parallel(mut self, allow: bool) -> Self {
-        self.allow_parallel = allow;
+    pub fn force_parallel(mut self, force: bool) -> Self {
+        self.force_parallel = force;
         self
     }
 
@@ -1435,9 +1471,11 @@ impl JoinBuilder {
         // if any of the nodes reads from files we must activate this this plan as well.
         opt_state.file_caching |= other.opt_state.file_caching;
 
-        let suffix = match self.suffix {
-            None => Cow::Borrowed("_right"),
-            Some(suffix) => Cow::Owned(suffix),
+        let args = JoinArgs {
+            how: self.how,
+            validation: self.validation,
+            suffix: self.suffix,
+            slice: None,
         };
 
         let lp = self
@@ -1450,8 +1488,7 @@ impl JoinBuilder {
                 JoinOptions {
                     allow_parallel: self.allow_parallel,
                     force_parallel: self.force_parallel,
-                    how: self.how,
-                    suffix,
+                    args,
                     ..Default::default()
                 },
             )

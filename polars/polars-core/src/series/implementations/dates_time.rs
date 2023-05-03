@@ -154,8 +154,8 @@ macro_rules! impl_dyn_series {
                 self.0.group_tuples(multithreaded, sorted)
             }
 
-            fn arg_sort_multiple(&self, by: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {
-                self.0.deref().arg_sort_multiple(by, descending)
+            fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
+                self.0.deref().arg_sort_multiple(options)
             }
         }
 
@@ -244,10 +244,6 @@ macro_rules! impl_dyn_series {
                     .map(|ca| ca.$into_logical().into_series())
             }
 
-            fn take_every(&self, n: usize) -> Series {
-                self.0.take_every(n).$into_logical().into_series()
-            }
-
             unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
                 ChunkTake::take_unchecked(self.0.deref(), iter.into())
                     .$into_logical()
@@ -333,7 +329,6 @@ macro_rules! impl_dyn_series {
             }
 
             #[inline]
-            #[cfg(feature = "private")]
             unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
                 self.0.get_any_value_unchecked(index)
             }
@@ -443,24 +438,24 @@ macro_rules! impl_dyn_series {
                 self.0.is_in(other)
             }
             #[cfg(feature = "repeat_by")]
-            fn repeat_by(&self, by: &IdxCa) -> ListChunked {
+            fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {
                 match self.0.dtype() {
-                    DataType::Date => self
+                    DataType::Date => Ok(self
                         .0
-                        .repeat_by(by)
+                        .repeat_by(by)?
                         .cast(&DataType::List(Box::new(DataType::Date)))
                         .unwrap()
                         .list()
                         .unwrap()
-                        .clone(),
-                    DataType::Time => self
+                        .clone()),
+                    DataType::Time => Ok(self
                         .0
-                        .repeat_by(by)
+                        .repeat_by(by)?
                         .cast(&DataType::List(Box::new(DataType::Time)))
                         .unwrap()
                         .list()
                         .unwrap()
-                        .clone(),
+                        .clone()),
                     _ => unreachable!(),
                 }
             }

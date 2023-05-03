@@ -62,3 +62,13 @@ shape: (27, 1)
 │ fruit      │
 └────────────┘
 ```
+
+## Features
+
+| Feature   | Description                                               |
+| --------- | --------------------------------------------------------- |
+| default   | The default feature set that includes all other features. |
+| highlight | Provides syntax highlighting                              |
+| parquet   | Enables reading and writing of Apache Parquet files.      |
+| json      | Enables reading and writing of JSON files.                |
+| ipc       | Enables reading and writing of IPC/Apache Arrow files     |

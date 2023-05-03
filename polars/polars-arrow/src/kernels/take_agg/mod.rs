@@ -8,12 +8,11 @@ pub use boolean::*;
 use num_traits::{NumCast, ToPrimitive};
 pub use var::*;
 
-use crate::array::PolarsArray;
 use crate::index::IdxSize;
 
 /// Take kernel for single chunk without nulls and an iterator as index.
 /// # Safety
-/// caller must enure iterators indexes are in bounds
+/// caller must ensure iterators indexes are in bounds
 #[inline]
 pub unsafe fn take_agg_no_null_primitive_iter_unchecked<
     T: NativeType + ToPrimitive,
@@ -26,7 +25,7 @@ pub unsafe fn take_agg_no_null_primitive_iter_unchecked<
     f: F,
     init: TOut,
 ) -> TOut {
-    debug_assert!(!arr.has_validity());
+    debug_assert!(arr.null_count() == 0);
     let array_values = arr.values().as_slice();
 
     indices.into_iter().fold(init, |acc, idx| {

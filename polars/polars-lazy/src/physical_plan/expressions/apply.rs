@@ -24,6 +24,8 @@ pub struct ApplyExpr {
     pub allow_rename: bool,
     pub pass_name_to_apply: bool,
     pub input_schema: Option<SchemaRef>,
+    pub allow_threading: bool,
+    pub check_lengths: bool,
 }
 
 impl ApplyExpr {
@@ -42,6 +44,8 @@ impl ApplyExpr {
             allow_rename: false,
             pass_name_to_apply: false,
             input_schema: None,
+            allow_threading: true,
+            check_lengths: true,
         }
     }
 
@@ -52,12 +56,12 @@ impl ApplyExpr {
         groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> PolarsResult<Vec<AggregationContext<'a>>> {
-        POOL.install(|| {
-            self.inputs
-                .par_iter()
-                .map(|e| e.evaluate_on_groups(df, groups, state))
-                .collect()
-        })
+        let f = |e: &Arc<dyn PhysicalExpr>| e.evaluate_on_groups(df, groups, state);
+        if self.allow_threading {
+            POOL.install(|| self.inputs.par_iter().map(f).collect())
+        } else {
+            self.inputs.iter().map(f).collect()
+        }
     }
 
     fn finish_apply_groups<'a>(
@@ -121,22 +125,32 @@ impl ApplyExpr {
             return self.finish_apply_groups(ac, ca);
         }
 
-        let mut ca: ListChunked = POOL.install(|| {
+        let f = |opt_s: Option<Series>| match opt_s {
+            None => Ok(None),
+            Some(mut s) => {
+                if self.pass_name_to_apply {
+                    s.rename(&name);
+                }
+                let mut container = [s];
+                self.function.call_udf(&mut container)
+            }
+        };
+
+        let mut ca: ListChunked = if self.allow_threading {
+            POOL.install(|| {
+                agg.list()
+                    .unwrap()
+                    .par_iter()
+                    .map(f)
+                    .collect::<PolarsResult<_>>()
+            })?
+        } else {
             agg.list()
                 .unwrap()
-                .par_iter()
-                .map(|opt_s| match opt_s {
-                    None => Ok(None),
-                    Some(mut s) => {
-                        if self.pass_name_to_apply {
-                            s.rename(&name);
-                        }
-                        let mut container = [s];
-                        self.function.call_udf(&mut container)
-                    }
-                })
-                .collect::<PolarsResult<_>>()
-        })?;
+                .into_iter()
+                .map(f)
+                .collect::<PolarsResult<_>>()?
+        };
 
         ca.rename(&name);
         self.finish_apply_groups(ac, ca)
@@ -161,7 +175,7 @@ impl ApplyExpr {
             }
         };
 
-        ac.with_series(s, aggregated, Some(&self.expr))?;
+        ac.with_series_and_args(s, aggregated, Some(&self.expr), true)?;
         Ok(ac)
     }
     fn apply_multiple_group_aware<'a>(
@@ -225,8 +239,8 @@ fn all_unit_length(ca: &ListChunked) -> bool {
 fn check_map_output_len(input_len: usize, output_len: usize, expr: &Expr) -> PolarsResult<()> {
     polars_ensure!(
         input_len == output_len, expr = expr, InvalidOperation:
-        "output length of `map` must be equal to that of the input length; \
-        consider using `apply` instead"
+        "output length of `map` ({}) must be equal to the input length ({}); \
+        consider using `apply` instead", input_len, output_len
     );
     Ok(())
 }
@@ -237,12 +251,17 @@ impl PhysicalExpr for ApplyExpr {
     }
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
-        let mut inputs = POOL.install(|| {
-            self.inputs
-                .par_iter()
-                .map(|e| e.evaluate(df, state))
-                .collect::<PolarsResult<Vec<_>>>()
-        })?;
+        let f = |e: &Arc<dyn PhysicalExpr>| e.evaluate(df, state);
+        let mut inputs = if self.allow_threading {
+            POOL.install(|| {
+                self.inputs
+                    .par_iter()
+                    .map(f)
+                    .collect::<PolarsResult<Vec<_>>>()
+            })
+        } else {
+            self.inputs.iter().map(f).collect::<PolarsResult<Vec<_>>>()
+        }?;
 
         if self.allow_rename {
             return self.eval_and_flatten(&mut inputs);
@@ -294,7 +313,12 @@ impl PhysicalExpr for ApplyExpr {
                     {
                         self.apply_multiple_group_aware(acs, df)
                     } else {
-                        apply_multiple_elementwise(acs, self.function.as_ref(), &self.expr)
+                        apply_multiple_elementwise(
+                            acs,
+                            self.function.as_ref(),
+                            &self.expr,
+                            self.check_lengths,
+                        )
                     }
                 }
             }
@@ -333,6 +357,7 @@ fn apply_multiple_elementwise<'a>(
     mut acs: Vec<AggregationContext<'a>>,
     function: &dyn SeriesUdf,
     expr: &Expr,
+    check_lengths: bool,
 ) -> PolarsResult<AggregationContext<'a>> {
     match acs.first().unwrap().agg_state() {
         // a fast path that doesn't drop groups of the first arg
@@ -373,11 +398,13 @@ fn apply_multiple_elementwise<'a>(
 
             let input_len = s[0].len();
             let s = function.call_udf(&mut s)?.unwrap();
-            check_map_output_len(input_len, s.len(), expr)?;
+            if check_lengths {
+                check_map_output_len(input_len, s.len(), expr)?;
+            }
 
             // take the first aggregation context that as that is the input series
             let mut ac = acs.swap_remove(0);
-            ac.with_series(s, false, None)?;
+            ac.with_series_and_args(s, false, None, true)?;
             Ok(ac)
         }
     }

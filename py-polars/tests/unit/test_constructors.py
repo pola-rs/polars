@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import sys
-import typing
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from random import shuffle
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple, no_type_check
 
 import numpy as np
 import pandas as pd
@@ -14,11 +13,17 @@ import pytest
 
 import polars as pl
 from polars.dependencies import _ZONEINFO_AVAILABLE, dataclasses, pydantic
+from polars.exceptions import TimeZoneAwareConstructorWarning
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils._construction import type_hints
 
 if TYPE_CHECKING:
     from polars.datatypes import PolarsDataType
+
+    if sys.version_info >= (3, 8):
+        from typing import Literal
+    else:
+        from typing_extensions import Literal
 
 if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo
@@ -215,7 +220,7 @@ def test_init_structured_objects(monkeypatch: Any) -> None:
             assert df.schema == {
                 "timestamp": pl.Datetime("us"),
                 "ticker": pl.Utf8,
-                "price": pl.Decimal(None, 1),
+                "price": pl.Decimal(1),
                 "size": pl.Int64,
             }
             assert df.rows() == raw_data
@@ -228,7 +233,7 @@ def test_init_structured_objects(monkeypatch: Any) -> None:
             assert df.schema == {
                 "timestamp": pl.Datetime("ms"),
                 "ticker": pl.Utf8,
-                "price": pl.Decimal(None, 1),
+                "price": pl.Decimal(1),
                 "size": pl.Int32,
             }
 
@@ -238,20 +243,57 @@ def test_init_structured_objects(monkeypatch: Any) -> None:
             schema=[
                 ("ts", pl.Datetime("ms")),
                 ("tk", pl.Categorical),
-                ("pc", pl.Decimal(None, 1)),
+                ("pc", pl.Decimal(1)),
                 ("sz", pl.UInt16),
             ],
         )
         assert df.schema == {
             "ts": pl.Datetime("ms"),
             "tk": pl.Categorical,
-            "pc": pl.Decimal(None, 1),
+            "pc": pl.Decimal(1),
             "sz": pl.UInt16,
         }
         assert df.rows() == raw_data
 
         # cover a miscellaneous edge-case when detecting the annotations
         assert type_hints(obj=type(None)) == {}
+
+
+@pytest.mark.skipif(pydantic.__version__ < "2.0", reason="requires pydantic 2.x")
+@no_type_check
+def test_init_pydantic_2x() -> None:
+    from pydantic import BaseModel, Field
+
+    class PageView(BaseModel):
+        user_id: str
+        ts: datetime = Field(alias=["ts", "$date"])  # type: ignore[literal-required]
+        path: str = Field("?", alias=["url", "path"])  # type: ignore[literal-required]
+        referer: str = Field("?", alias="referer")
+        event: Literal["leave", "enter"] = Field("enter")
+        time_on_page: int = Field(0, serialization_alias="top")
+
+    if sys.version_info > (3, 7):
+        data_json = """
+        [{
+            "user_id": "x",
+            "ts": {"$date": "2021-01-01T00:00:00.000Z"},
+            "url": "/latest/foobar",
+            "referer": "https://google.com",
+            "event": "enter",
+            "top": 123
+        }]
+        """
+        at = pydantic.TypeAdapter(list[PageView])
+        models = at.validate_json(data_json)
+
+        assert pl.DataFrame(models).to_dict(False) == {
+            "user_id": ["x"],
+            "ts": [datetime(2021, 1, 1, 0, 0)],
+            "path": ["?"],
+            "referer": ["https://google.com"],
+            "event": ["enter"],
+            "time_on_page": [0],
+        }
 
 
 def test_init_structured_objects_unhashable() -> None:
@@ -393,6 +435,21 @@ def test_init_structured_objects_nested() -> None:
                 -10.5,
                 "world",
             )
+
+
+def test_dataclasses_initvar_typing() -> None:
+    @dataclasses.dataclass
+    class ABC:
+        x: date
+        y: float
+        z: dataclasses.InitVar[list[str]] = None
+
+    # should be able to parse the initvar typing...
+    abc = ABC(x=date(1999, 12, 31), y=100.0)
+    df = pl.DataFrame([abc])
+
+    # ...but should not load the initvar field into the DataFrame
+    assert dataclasses.asdict(abc) == df.rows(named=True)[0]
 
 
 def test_init_ndarray(monkeypatch: Any) -> None:
@@ -659,16 +716,22 @@ def test_init_1d_sequence() -> None:
         [datetime(2020, 1, 1, tzinfo=timezone.utc)], schema={"ts": pl.Datetime("ms")}
     )
     assert df.schema == {"ts": pl.Datetime("ms", "UTC")}
-    df = pl.DataFrame(
-        [datetime(2020, 1, 1, tzinfo=timezone(timedelta(hours=1)))],
-        schema={"ts": pl.Datetime("ms")},
-    )
-    assert df.schema == {"ts": pl.Datetime("ms", "+01:00")}
-    df = pl.DataFrame(
-        [datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu"))],
-        schema={"ts": pl.Datetime("ms")},
-    )
-    assert df.schema == {"ts": pl.Datetime("ms", "Asia/Kathmandu")}
+    with pytest.warns(
+        TimeZoneAwareConstructorWarning, match="Series with UTC time zone"
+    ):
+        df = pl.DataFrame(
+            [datetime(2020, 1, 1, tzinfo=timezone(timedelta(hours=1)))],
+            schema={"ts": pl.Datetime("ms")},
+        )
+    assert df.schema == {"ts": pl.Datetime("ms", "UTC")}
+    with pytest.warns(
+        TimeZoneAwareConstructorWarning, match="Series with UTC time zone"
+    ):
+        df = pl.DataFrame(
+            [datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu"))],
+            schema={"ts": pl.Datetime("ms")},
+        )
+    assert df.schema == {"ts": pl.Datetime("ms", "UTC")}
 
 
 def test_init_pandas(monkeypatch: Any) -> None:
@@ -881,7 +944,7 @@ def test_from_dicts_missing_columns() -> None:
     assert pl.from_dicts(data).to_dict(False) == {"a": [1, None], "b": [None, 2]}
 
 
-@typing.no_type_check
+@no_type_check
 def test_from_rows_dtype() -> None:
     # 50 is the default inference length
     # 5182
@@ -1011,7 +1074,7 @@ def test_nested_read_dict_4143() -> None:
     }
 
 
-@typing.no_type_check
+@no_type_check
 def test_from_records_nullable_structs() -> None:
     records = [
         {"id": 1, "items": [{"item_id": 100, "description": None}]},

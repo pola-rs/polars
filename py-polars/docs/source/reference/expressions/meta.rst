@@ -17,3 +17,4 @@ The following methods are available under the `expr.meta` attribute.
     Expr.meta.pop
     Expr.meta.root_names
     Expr.meta.undo_aliases
+    Expr.meta.write_json

@@ -109,7 +109,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         // we cannot cast and dispatch as the inner type of the list would be incorrect
         let list = self.0.logical().agg_list(groups);
         let mut list = list.list().unwrap().clone();
-        list.to_logical(self.dtype().clone());
+        list.to_physical(self.dtype().clone());
         list.into_series()
     }
 
@@ -148,8 +148,8 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         }
     }
 
-    fn arg_sort_multiple(&self, by: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {
-        self.0.arg_sort_multiple(by, descending)
+    fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
+        self.0.arg_sort_multiple(options)
     }
 }
 
@@ -235,11 +235,6 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         Ok(self.finish_with_state(false, cats).into_series())
     }
 
-    fn take_every(&self, n: usize) -> Series {
-        self.with_state(true, |cats| cats.take_every(n))
-            .into_series()
-    }
-
     unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
         let cats = self.0.logical().take_unchecked(iter.into());
         self.finish_with_state(false, cats).into_series()
@@ -289,7 +284,6 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     #[inline]
-    #[cfg(feature = "private")]
     unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
         self.0.get_any_value_unchecked(index)
     }
@@ -378,12 +372,12 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.0.logical().is_in(&other.to_physical_repr())
     }
     #[cfg(feature = "repeat_by")]
-    fn repeat_by(&self, by: &IdxCa) -> ListChunked {
-        let out = self.0.logical().repeat_by(by);
+    fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {
+        let out = self.0.logical().repeat_by(by)?;
         let casted = out
             .cast(&DataType::List(Box::new(self.dtype().clone())))
             .unwrap();
-        casted.list().unwrap().clone()
+        Ok(casted.list().unwrap().clone())
     }
 
     #[cfg(feature = "mode")]

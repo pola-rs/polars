@@ -12,32 +12,33 @@ from polars.testing import assert_frame_equal
 
 @pytest.fixture(autouse=True)
 def _environ() -> Iterator[None]:
-    """Fixture to restore the environment variables/state after the test."""
-    with pl.StringCache(), pl.Config():
+    """Fixture to restore the environment after/during tests."""
+    with pl.StringCache(), pl.Config(restore_defaults=True):
         yield
 
 
 def test_ascii_tables() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
 
+    ascii_table_repr = (
+        "shape: (3, 3)\n"
+        "+-----+-----+-----+\n"
+        "| a   | b   | c   |\n"
+        "| --- | --- | --- |\n"
+        "| i64 | i64 | i64 |\n"
+        "+=================+\n"
+        "| 1   | 4   | 7   |\n"
+        "| 2   | 5   | 8   |\n"
+        "| 3   | 6   | 9   |\n"
+        "+-----+-----+-----+"
+    )
     # note: expect to render ascii only within the given scope
     with pl.Config(set_ascii_tables=True):
-        assert (
-            str(df) == "shape: (3, 3)\n"
-            "+-----+-----+-----+\n"
-            "| a   | b   | c   |\n"
-            "| --- | --- | --- |\n"
-            "| i64 | i64 | i64 |\n"
-            "+=================+\n"
-            "| 1   | 4   | 7   |\n"
-            "| 2   | 5   | 8   |\n"
-            "| 3   | 6   | 9   |\n"
-            "+-----+-----+-----+"
-        )
+        assert repr(df) == ascii_table_repr
 
     # confirm back to utf8 default after scope-exit
     assert (
-        str(df) == "shape: (3, 3)\n"
+        repr(df) == "shape: (3, 3)\n"
         "┌─────┬─────┬─────┐\n"
         "│ a   ┆ b   ┆ c   │\n"
         "│ --- ┆ --- ┆ --- │\n"
@@ -48,6 +49,12 @@ def test_ascii_tables() -> None:
         "│ 3   ┆ 6   ┆ 9   │\n"
         "└─────┴─────┴─────┘"
     )
+
+    @pl.Config(set_ascii_tables=True)
+    def ascii_table() -> str:
+        return repr(df)
+
+    assert ascii_table() == ascii_table_repr
 
 
 def test_hide_header_elements() -> None:

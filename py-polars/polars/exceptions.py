@@ -66,6 +66,10 @@ class TooManyRowsReturnedError(RowsError):
     """Exception raised when more rows than expected are returned."""
 
 
+class TimeZoneAwareConstructorWarning(Warning):
+    """Warning raised when constructing Series from non-UTC time-zone-aware inputs."""
+
+
 class ChronoFormatWarning(Warning):
     """
     Warning raised when a chrono format string contains dubious patterns.

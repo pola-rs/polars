@@ -150,6 +150,13 @@ impl StringNameSpace {
         self.strptime(DataType::Time, options)
     }
 
+    /// Convert a Utf8 column into a Decimal column.
+    #[cfg(feature = "dtype-decimal")]
+    pub fn to_decimal(self, infer_length: usize) -> Expr {
+        self.0
+            .map_private(StringFunction::ToDecimal(infer_length).into())
+    }
+
     /// Concat the values into a string array.
     /// # Arguments
     ///
@@ -456,5 +463,10 @@ impl StringNameSpace {
             .map_private(FunctionExpr::StringExpr(StringFunction::Slice(
                 start, length,
             )))
+    }
+
+    pub fn explode(self) -> Expr {
+        self.0
+            .apply_private(FunctionExpr::StringExpr(StringFunction::Explode))
     }
 }

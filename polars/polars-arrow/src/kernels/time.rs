@@ -3,19 +3,21 @@ use arrow::compute::arity::try_unary;
 use arrow::datatypes::{DataType as ArrowDataType, TimeUnit};
 use arrow::error::{Error as ArrowError, Result};
 use arrow::temporal_conversions::{
-    parse_offset, timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
+    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
 #[cfg(feature = "timezones")]
 use chrono::{LocalResult, NaiveDateTime, TimeZone};
+#[cfg(feature = "timezones")]
+use chrono_tz::Tz;
 use polars_error::polars_bail;
 
 use crate::error::PolarsResult;
 use crate::prelude::ArrayRef;
 
 #[cfg(feature = "timezones")]
-fn convert_to_naive_local<T1: TimeZone + std::fmt::Debug + std::fmt::Display, T2: TimeZone>(
-    from_tz: &T1,
-    to_tz: &T2,
+fn convert_to_naive_local(
+    from_tz: &Tz,
+    to_tz: &Tz,
     ndt: NaiveDateTime,
     use_earliest: Option<bool>,
 ) -> Result<NaiveDateTime> {
@@ -39,9 +41,9 @@ fn convert_to_naive_local<T1: TimeZone + std::fmt::Debug + std::fmt::Display, T2
 }
 
 #[cfg(feature = "timezones")]
-fn convert_to_timestamp<T1: TimeZone + std::fmt::Debug + std::fmt::Display, T2: TimeZone>(
-    from_tz: T1,
-    to_tz: T2,
+fn convert_to_timestamp(
+    from_tz: Tz,
+    to_tz: Tz,
     arr: &PrimitiveArray<i64>,
     tu: TimeUnit,
     use_earliest: Option<bool>,
@@ -98,20 +100,8 @@ pub fn replace_timezone(
     Ok(match from.parse::<chrono_tz::Tz>() {
         Ok(from_tz) => match to.parse::<chrono_tz::Tz>() {
             Ok(to_tz) => convert_to_timestamp(from_tz, to_tz, arr, tu, use_earliest)?,
-            Err(_) => match parse_offset(to) {
-                Ok(to_tz) => convert_to_timestamp(from_tz, to_tz, arr, tu, use_earliest)?,
-                Err(_) => polars_bail!(ComputeError: "unable to parse time zone: '{}'", to),
-            },
+            Err(_) => polars_bail!(ComputeError: "unable to parse time zone: '{}'", to),
         },
-        Err(_) => match parse_offset(from) {
-            Ok(from_tz) => match to.parse::<chrono_tz::Tz>() {
-                Ok(to_tz) => convert_to_timestamp(from_tz, to_tz, arr, tu, use_earliest)?,
-                Err(_) => match parse_offset(to) {
-                    Ok(to_tz) => convert_to_timestamp(from_tz, to_tz, arr, tu, use_earliest)?,
-                    Err(_) => polars_bail!(ComputeError: "unable to parse time zone: '{}'", to),
-                },
-            },
-            Err(_) => polars_bail!(ComputeError: "unable to parse time zone: '{}'", from),
-        },
+        Err(_) => polars_bail!(ComputeError: "unable to parse time zone: '{}'", from),
     })
 }

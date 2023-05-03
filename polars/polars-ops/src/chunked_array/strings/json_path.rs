@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 
-use arrow::io::ndjson;
 use jsonpath_lib::PathCompiled;
 use serde_json::Value;
 
@@ -59,7 +58,7 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
             .map(|x| x.unwrap_or("null"))
             .take(number_of_rows.unwrap_or(ca.len()));
 
-        ndjson::read::infer_iter(values_iter)
+        polars_json::ndjson::infer_iter(values_iter)
             .map(|d| DataType::from(&d))
             .map_err(|e| polars_err!(ComputeError: "error inferring JSON: {}", e))
     }
@@ -72,9 +71,16 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
             None => ca.json_infer(None)?,
         };
 
+        let buf_size = ca.get_values_size() + ca.null_count() * "null".len();
         let iter = ca.into_iter().map(|x| x.unwrap_or("null"));
-        let array = ndjson::read::deserialize_iter(iter, dtype.to_arrow())
-            .map_err(|e| polars_err!(ComputeError: "error deserializing JSON: {}", e))?;
+
+        let array = polars_json::ndjson::deserialize::deserialize_iter(
+            iter,
+            dtype.to_arrow(),
+            buf_size,
+            ca.len(),
+        )
+        .map_err(|e| polars_err!(ComputeError: "error deserializing JSON: {}", e))?;
         Series::try_from(("", array))
     }
 

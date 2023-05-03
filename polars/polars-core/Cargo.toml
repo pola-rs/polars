@@ -16,7 +16,7 @@ avx512 = []
 docs = []
 temporal = ["regex", "chrono", "polars-error/regex"]
 random = ["rand", "rand_distr"]
-default = ["docs", "temporal", "private"]
+default = ["docs", "temporal"]
 lazy = []
 
 # ~40% faster collect, needed until trustedlength iter stabilizes
@@ -37,8 +37,6 @@ sort_multiple = []
 # create from row values
 # and include pivot operation
 rows = []
-# dont use this
-private = []
 
 # operations
 is_in = []
@@ -85,9 +83,10 @@ dtype-date = ["temporal"]
 dtype-datetime = ["temporal"]
 dtype-duration = ["temporal"]
 dtype-time = ["temporal"]
+dtype-array = ["polars-arrow/dtype-array"]
 dtype-i8 = []
 dtype-i16 = []
-dtype-decimal = ["dep:itoap"]
+dtype-decimal = ["dep:itoap", "polars-arrow/dtype-decimal"]
 dtype-u8 = []
 dtype-u16 = []
 dtype-categorical = []
@@ -157,16 +156,16 @@ chrono-tz = { version = "0.8", optional = true }
 comfy-table = { version = "6.1.4", optional = true, default_features = false }
 either.workspace = true
 hashbrown.workspace = true
-indexmap = { version = "1", features = ["std"] }
-itoap = { version = "1", optional = true }
+indexmap.workspace = true
+itoap = { version = "1", optional = true, features = ["simd"] }
 ndarray = { version = "0.15", optional = true, default_features = false }
 num-traits.workspace = true
-object_store = { version = "0.5.3", default-features = false, optional = true }
+object_store = { version = "0.6.0", default-features = false, optional = true }
 once_cell.workspace = true
-polars-arrow = { version = "0.28.0", path = "../polars-arrow", features = ["compute"] }
-polars-error = { version = "0.28.0", path = "../polars-error" }
-polars-row = { version = "0.28.0", path = "../polars-row" }
-polars-utils = { version = "0.28.0", path = "../polars-utils" }
+polars-arrow = { version = "0.30.0", path = "../polars-arrow", features = ["compute"] }
+polars-error = { version = "0.30.0", path = "../polars-error" }
+polars-row = { version = "0.30.0", path = "../polars-row" }
+polars-utils = { version = "0.30.0", path = "../polars-utils" }
 rand = { version = "0.8", optional = true, features = ["small_rng", "std"] }
 rand_distr = { version = "0.4", optional = true }
 rayon.workspace = true

@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
+from numpy import nan
 
 if sys.version_info >= (3, 9):
     from zoneinfo import ZoneInfo
@@ -96,7 +97,7 @@ def test_rolling_skew() -> None:
     )
 
 
-@pytest.mark.parametrize("time_zone", [None, "US/Central", "+01:00"])
+@pytest.mark.parametrize("time_zone", [None, "US/Central"])
 @pytest.mark.parametrize(
     ("rolling_fn", "expected_values"),
     [
@@ -390,19 +391,19 @@ def test_rolling_skew_lagging_null_5179() -> None:
 
 def test_rolling_var_numerical_stability_5197() -> None:
     s = pl.Series([*[1.2] * 4, *[3.3] * 7])
-    assert s.to_frame("a").with_columns(pl.col("a").rolling_var(5))[:, 0].to_list() == [
-        None,
-        None,
-        None,
-        None,
-        0.882,
-        1.3229999999999997,
-        1.3229999999999997,
-        0.8819999999999983,
-        0.0,
-        0.0,
-        0.0,
-    ]
+    res = s.to_frame("a").with_columns(pl.col("a").rolling_var(5))[:, 0].to_list()
+    assert res[4:] == pytest.approx(
+        [
+            0.882,
+            1.3229999999999997,
+            1.3229999999999997,
+            0.8819999999999983,
+            0.0,
+            0.0,
+            0.0,
+        ]
+    )
+    assert res[:4] == [None] * 4
 
 
 @typing.no_type_check
@@ -414,10 +415,11 @@ def test_dynamic_groupby_timezone_awareness() -> None:
                 datetime(2020, 1, 10),
                 timedelta(days=1),
                 time_unit="ns",
-                name="datetime",
                 eager=True,
-            ).dt.replace_time_zone("UTC"),
-            pl.Series("value", pl.arange(1, 11, eager=True)),
+            )
+            .alias("datetime")
+            .dt.replace_time_zone("UTC"),
+            pl.arange(1, 11, eager=True).alias("value"),
         )
     )
 
@@ -475,7 +477,7 @@ def test_groupby_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
         "count": [2, 1, 1, 1, 1, 1],
     }
 
-    # start by week
+    # start by monday
     start = datetime(2022, 1, 1, tzinfo=tzinfo)
     stop = datetime(2022, 1, 12, 7, tzinfo=tzinfo)
 
@@ -483,14 +485,15 @@ def test_groupby_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
         {"date": pl.date_range(start, stop, "12h", eager=True)}
     ).with_columns(pl.col("date").dt.weekday().alias("day"))
 
-    assert df.groupby_dynamic(
+    result = df.groupby_dynamic(
         "date",
         every="1w",
         period="3d",
         include_boundaries=True,
         start_by="monday",
         truncate=False,
-    ).agg([pl.count(), pl.col("day").first().alias("data_day")]).to_dict(False) == {
+    ).agg([pl.count(), pl.col("day").first().alias("data_day")])
+    assert result.to_dict(False) == {
         "_lower_boundary": [
             datetime(2022, 1, 3, 0, 0, tzinfo=tzinfo),
             datetime(2022, 1, 10, 0, 0, tzinfo=tzinfo),
@@ -505,6 +508,31 @@ def test_groupby_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
         ],
         "count": [6, 5],
         "data_day": [1, 1],
+    }
+    # start by saturday
+    result = df.groupby_dynamic(
+        "date",
+        every="1w",
+        period="3d",
+        include_boundaries=True,
+        start_by="saturday",
+        truncate=False,
+    ).agg([pl.count(), pl.col("day").first().alias("data_day")])
+    assert result.to_dict(False) == {
+        "_lower_boundary": [
+            datetime(2022, 1, 1, 0, 0, tzinfo=tzinfo),
+            datetime(2022, 1, 8, 0, 0, tzinfo=tzinfo),
+        ],
+        "_upper_boundary": [
+            datetime(2022, 1, 4, 0, 0, tzinfo=tzinfo),
+            datetime(2022, 1, 11, 0, 0, tzinfo=tzinfo),
+        ],
+        "date": [
+            datetime(2022, 1, 1, 0, 0, tzinfo=tzinfo),
+            datetime(2022, 1, 8, 0, 0, tzinfo=tzinfo),
+        ],
+        "count": [6, 6],
+        "data_day": [6, 6],
     }
 
 
@@ -606,3 +634,27 @@ def test_rolling_kernels_groupby_dynamic_7548() -> None:
         "max_value": [2, 3, 3, 3],
         "sum_value": [3, 6, 5, 3],
     }
+
+
+def test_rolling_cov_corr() -> None:
+    df = pl.DataFrame({"x": [3, 3, 3, 5, 8], "y": [3, 4, 4, 4, 8]})
+
+    res = df.select(
+        [
+            pl.rolling_cov("x", "y", window_size=3).alias("cov"),
+            pl.rolling_corr("x", "y", window_size=3).alias("corr"),
+        ]
+    ).to_dict(False)
+    assert res["cov"][2:] == pytest.approx([0.0, 0.0, 5.333333333333336])
+    assert res["corr"][2:] == pytest.approx([nan, nan, 0.9176629354822473], nan_ok=True)
+    assert res["cov"][:2] == [None] * 2
+    assert res["corr"][:2] == [None] * 2
+
+
+def test_rolling_window_size_9160() -> None:
+    assert pl.Series([1, 5]).rolling_apply(
+        lambda x: sum(x), window_size=2, min_periods=1
+    ).to_list() == [1, 6]
+    assert pl.Series([1]).rolling_apply(
+        lambda x: sum(x), window_size=2, min_periods=1
+    ).to_list() == [1]

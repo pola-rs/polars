@@ -17,12 +17,11 @@ impl PyExpr {
             strict,
             exact,
             cache,
-            ..Default::default()
         };
         self.inner.clone().str().to_date(options).into()
     }
 
-    #[pyo3(signature = (format, time_unit, time_zone, strict, exact, cache, utc, tz_aware))]
+    #[pyo3(signature = (format, time_unit, time_zone, strict, exact, cache))]
     #[allow(clippy::too_many_arguments)]
     fn str_to_datetime(
         &self,
@@ -32,16 +31,12 @@ impl PyExpr {
         strict: bool,
         exact: bool,
         cache: bool,
-        utc: bool,
-        tz_aware: bool,
     ) -> Self {
         let options = StrptimeOptions {
             format,
             strict,
             exact,
             cache,
-            tz_aware,
-            utc,
         };
         self.inner
             .clone()
@@ -57,7 +52,6 @@ impl PyExpr {
             strict,
             cache,
             exact: true,
-            ..Default::default()
         };
         self.inner.clone().str().to_time(options).into()
     }
@@ -76,6 +70,10 @@ impl PyExpr {
 
     fn str_slice(&self, start: i64, length: Option<u64>) -> Self {
         self.inner.clone().str().str_slice(start, length).into()
+    }
+
+    fn str_explode(&self) -> Self {
+        self.inner.clone().str().explode().into()
     }
 
     fn str_to_uppercase(&self) -> Self {
@@ -286,5 +284,9 @@ impl PyExpr {
 
     fn str_splitn(&self, by: &str, n: usize) -> Self {
         self.inner.clone().str().splitn(by, n).into()
+    }
+
+    fn str_to_decimal(&self, infer_len: usize) -> Self {
+        self.inner.clone().str().to_decimal(infer_len).into()
     }
 }

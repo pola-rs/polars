@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import io
 import typing
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -13,11 +12,17 @@ import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal, assert_frame_equal_local_categoricals
-from polars.testing._tempdir import TemporaryDirectory
+from polars.testing import (
+    assert_frame_equal,
+    assert_frame_equal_local_categoricals,
+    assert_series_equal,
+)
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from polars.type_aliases import ParquetCompression
+
 
 COMPRESSIONS = [
     "lz4",
@@ -69,32 +74,36 @@ def test_to_from_buffer_lzo(df: pl.DataFrame) -> None:
 
 @pytest.mark.write_disk()
 @pytest.mark.parametrize("compression", COMPRESSIONS)
-def test_to_from_file(df: pl.DataFrame, compression: ParquetCompression) -> None:
-    with TemporaryDirectory() as temp_dir:
-        file_path = Path(temp_dir) / "small.avro"
-        df.write_parquet(file_path, compression=compression)
-        read_df = pl.read_parquet(file_path)
-        assert_frame_equal_local_categoricals(df, read_df)
+def test_to_from_file(
+    df: pl.DataFrame, compression: ParquetCompression, tmp_path: Path
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    file_path = tmp_path / "small.avro"
+    df.write_parquet(file_path, compression=compression)
+    read_df = pl.read_parquet(file_path)
+    assert_frame_equal_local_categoricals(df, read_df)
 
 
 @pytest.mark.write_disk()
-def test_to_from_file_lzo(df: pl.DataFrame) -> None:
-    with TemporaryDirectory() as temp_dir:
-        file_path = Path(temp_dir) / "small.avro"
+def test_to_from_file_lzo(df: pl.DataFrame, tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
 
-        # Writing lzo compressed parquet files is not supported for now.
-        with pytest.raises(pl.ArrowError):
-            df.write_parquet(file_path, compression="lzo", use_pyarrow=False)
-        # Invalid parquet file as writing failed.
-        with pytest.raises(pl.ArrowError):
-            _ = pl.read_parquet(file_path)
+    file_path = tmp_path / "small.avro"
 
-        # Writing lzo compressed parquet files is not supported for now.
-        with pytest.raises(OSError):
-            df.write_parquet(file_path, compression="lzo", use_pyarrow=True)
-        # Invalid parquet file as writing failed.
-        with pytest.raises(FileNotFoundError):
-            _ = pl.read_parquet(file_path)
+    # Writing lzo compressed parquet files is not supported for now.
+    with pytest.raises(pl.ArrowError):
+        df.write_parquet(file_path, compression="lzo", use_pyarrow=False)
+    # Invalid parquet file as writing failed.
+    with pytest.raises(pl.ArrowError):
+        _ = pl.read_parquet(file_path)
+
+    # Writing lzo compressed parquet files is not supported for now.
+    with pytest.raises(OSError):
+        df.write_parquet(file_path, compression="lzo", use_pyarrow=True)
+    # Invalid parquet file as writing failed.
+    with pytest.raises(FileNotFoundError):
+        _ = pl.read_parquet(file_path)
 
 
 def test_select_columns() -> None:
@@ -133,8 +142,8 @@ def test_parquet_datetime(compression: ParquetCompression, use_pyarrow: bool) ->
             1618354620000,
             1618354560000,
         ],
-        "laf_max": [73.1999969482, 71.0999984741, 74.5, 69.5999984741, 69.6999969482],
-        "laf_eq": [59.5999984741, 61.0, 62.2999992371, 56.9000015259, 60.0],
+        "value1": [73.1999969482, 71.0999984741, 74.5, 69.5999984741, 69.6999969482],
+        "value2": [59.5999984741, 61.0, 62.2999992371, 56.9000015259, 60.0],
     }
     df = pl.DataFrame(data)
     df = df.with_columns(df["datetime"].cast(pl.Datetime))
@@ -161,27 +170,25 @@ def test_nested_parquet() -> None:
 
 
 @pytest.mark.write_disk()
-def test_glob_parquet(df: pl.DataFrame) -> None:
-    with TemporaryDirectory() as temp_dir:
-        file_path = Path(temp_dir) / "small.parquet"
-        df.write_parquet(file_path)
+def test_glob_parquet(df: pl.DataFrame, tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "small.parquet"
+    df.write_parquet(file_path)
 
-        path_glob = Path(temp_dir) / "small*.parquet"
-        assert pl.read_parquet(path_glob).shape == (3, 16)
-        assert pl.scan_parquet(path_glob).collect().shape == (3, 16)
+    path_glob = tmp_path / "small*.parquet"
+    assert pl.read_parquet(path_glob).shape == (3, 16)
+    assert pl.scan_parquet(path_glob).collect().shape == (3, 16)
 
 
 @pytest.mark.write_disk()
-def test_streaming_parquet_glob_5900(df: pl.DataFrame) -> None:
-    with TemporaryDirectory() as temp_dir:
-        file_path = Path(temp_dir) / "small.parquet"
-        df.write_parquet(file_path)
+def test_streaming_parquet_glob_5900(df: pl.DataFrame, tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "small.parquet"
+    df.write_parquet(file_path)
 
-        path_glob = Path(temp_dir) / "small*.parquet"
-        result = (
-            pl.scan_parquet(path_glob).select(pl.all().first()).collect(streaming=True)
-        )
-        assert result.shape == (1, 16)
+    path_glob = tmp_path / "small*.parquet"
+    result = pl.scan_parquet(path_glob).select(pl.all().first()).collect(streaming=True)
+    assert result.shape == (1, 16)
 
 
 def test_chunked_round_trip() -> None:
@@ -207,15 +214,16 @@ def test_chunked_round_trip() -> None:
 
 
 @pytest.mark.write_disk()
-def test_lazy_self_join_file_cache_prop_3979(df: pl.DataFrame) -> None:
-    with TemporaryDirectory() as temp_dir:
-        file_path = Path(temp_dir) / "small.parquet"
-        df.write_parquet(file_path)
+def test_lazy_self_join_file_cache_prop_3979(df: pl.DataFrame, tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
 
-        a = pl.scan_parquet(file_path)
-        b = pl.DataFrame({"a": [1]}).lazy()
-        assert a.join(b, how="cross").collect().shape == (3, 17)
-        assert b.join(a, how="cross").collect().shape == (3, 17)
+    file_path = tmp_path / "small.parquet"
+    df.write_parquet(file_path)
+
+    a = pl.scan_parquet(file_path)
+    b = pl.DataFrame({"a": [1]}).lazy()
+    assert a.join(b, how="cross").collect().shape == (3, 17)
+    assert b.join(a, how="cross").collect().shape == (3, 17)
 
 
 def test_recursive_logical_type() -> None:
@@ -356,52 +364,55 @@ def test_parquet_nested_dictionaries_6217() -> None:
 
 
 @pytest.mark.write_disk()
-def test_sink_parquet(io_files_path: Path) -> None:
+def test_sink_parquet(io_files_path: Path, tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
     file = io_files_path / "small.parquet"
 
-    with TemporaryDirectory() as temp_dir:
-        file_path = Path(temp_dir) / "sink.parquet"
+    file_path = tmp_path / "sink.parquet"
 
-        df_scanned = pl.scan_parquet(file)
-        df_scanned.sink_parquet(file_path)
+    df_scanned = pl.scan_parquet(file)
+    df_scanned.sink_parquet(file_path)
 
-        with pl.StringCache():
-            result = pl.read_parquet(file_path)
-            df_read = pl.read_parquet(file)
-            assert_frame_equal(result, df_read)
+    with pl.StringCache():
+        result = pl.read_parquet(file_path)
+        df_read = pl.read_parquet(file)
+        assert_frame_equal(result, df_read)
 
 
 @pytest.mark.write_disk()
-def test_sink_ipc(io_files_path: Path) -> None:
+def test_sink_ipc(io_files_path: Path, tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
     file = io_files_path / "small.parquet"
 
-    with TemporaryDirectory() as temp_dir:
-        file_path = Path(temp_dir) / "sink.ipc"
+    file_path = tmp_path / "sink.ipc"
 
-        df_scanned = pl.scan_parquet(file)
-        df_scanned.sink_ipc(file_path)
+    df_scanned = pl.scan_parquet(file)
+    df_scanned.sink_ipc(file_path)
 
-        with pl.StringCache():
-            result = pl.read_ipc(file_path)
-            df_read = pl.read_parquet(file)
-            assert_frame_equal(result, df_read)
+    with pl.StringCache():
+        result = pl.read_ipc(file_path)
+        df_read = pl.read_parquet(file)
+        assert_frame_equal(result, df_read)
 
 
 @pytest.mark.write_disk()
-def test_fetch_union() -> None:
+def test_fetch_union(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
     df1 = pl.DataFrame({"a": [0, 1, 2], "b": [1, 2, 3]})
     df2 = pl.DataFrame({"a": [3, 4, 5], "b": [4, 5, 6]})
 
-    with TemporaryDirectory() as temp_dir:
-        file_path_1 = Path(temp_dir) / "df_fetch_1.parquet"
-        file_path_2 = Path(temp_dir) / "df_fetch_2.parquet"
-        file_path_glob = Path(temp_dir) / "df_fetch_*.parquet"
+    file_path_1 = tmp_path / "df_fetch_1.parquet"
+    file_path_2 = tmp_path / "df_fetch_2.parquet"
+    file_path_glob = tmp_path / "df_fetch_*.parquet"
 
-        df1.write_parquet(file_path_1)
-        df2.write_parquet(file_path_2)
+    df1.write_parquet(file_path_1)
+    df2.write_parquet(file_path_2)
 
-        result_one = pl.scan_parquet(file_path_1).fetch(1)
-        result_glob = pl.scan_parquet(file_path_glob).fetch(1)
+    result_one = pl.scan_parquet(file_path_1).fetch(1)
+    result_glob = pl.scan_parquet(file_path_glob).fetch(1)
 
     expected = pl.DataFrame({"a": [0], "b": [1]})
     assert_frame_equal(result_one, expected)
@@ -412,17 +423,16 @@ def test_fetch_union() -> None:
 
 @pytest.mark.slow()
 @typing.no_type_check
-def test_struct_pyarrow_dataset_5796() -> None:
+def test_struct_pyarrow_dataset_5796(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
     num_rows = 2**17 + 1
 
-    df = pl.from_records(
-        [dict(id=i, nested=dict(a=i)) for i in range(num_rows)]  # noqa: C408
-    )
-    with TemporaryDirectory() as temp_dir:
-        file_path = Path(temp_dir) / "out.parquet"
-        df.write_parquet(file_path, use_pyarrow=True)
-        tbl = ds.dataset(file_path).to_table()
-        result = pl.from_arrow(tbl)
+    df = pl.from_records([{"id": i, "nested": {"a": i}} for i in range(num_rows)])
+    file_path = tmp_path / "out.parquet"
+    df.write_parquet(file_path, use_pyarrow=True)
+    tbl = ds.dataset(file_path).to_table()
+    result = pl.from_arrow(tbl)
 
     assert_frame_equal(result, df)
 
@@ -463,3 +473,30 @@ def test_nested_null_roundtrip() -> None:
     f.seek(0)
     df_read = pl.read_parquet(f)
     assert_frame_equal(df_read, df)
+
+
+@typing.no_type_check
+def test_parquet_nested_list_pandas() -> None:
+    # pandas/pyarrow writes as nested null dict
+    df = pd.DataFrame({"listcol": [[] * 10]})
+    f = io.BytesIO()
+    df.to_parquet(f)
+    f.seek(0)
+    df = pl.read_parquet(f)
+    assert df.dtypes == [pl.List(pl.Null)]
+    assert df.to_dict(False) == {"listcol": [[]]}
+
+
+def test_parquet_string_cache() -> None:
+    f = io.BytesIO()
+
+    df = pl.DataFrame({"a": ["a", "b", "c", "d"]}).with_columns(
+        pl.col("a").cast(pl.Categorical)
+    )
+
+    df.write_parquet(f, row_group_size=2)
+
+    # this file has 2 row groups and a categorical column
+    # so polars should automatically set string cache
+    f.seek(0)
+    assert_series_equal(pl.read_parquet(f)["a"].cast(str), df["a"].cast(str))

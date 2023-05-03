@@ -25,13 +25,11 @@ pub mod file;
 pub mod functions;
 pub mod lazyframe;
 pub mod lazygroupby;
-pub mod npy;
 #[cfg(feature = "object")]
 mod object;
 pub mod prelude;
 pub(crate) mod py_modules;
 pub mod series;
-mod set;
 #[cfg(feature = "sql")]
 mod sql;
 pub mod utils;
@@ -83,11 +81,13 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::eager::concat_series))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::eager::date_range))
+    m.add_wrapped(wrap_pyfunction!(functions::eager::date_range_eager))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::eager::diag_concat_df))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::eager::hor_concat_df))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::eager::time_range_eager))
         .unwrap();
 
     // Functions - lazy
@@ -127,6 +127,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::diag_concat_lf))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::concat_expr))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::dtype_cols))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::duration))
@@ -147,6 +149,10 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::pearson_corr))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::rolling_corr))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::rolling_cov))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::reduce))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::repeat))
@@ -155,7 +161,13 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::sum_exprs))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::time_range_lazy))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::whenthen::when))
+        .unwrap();
+
+    #[cfg(feature = "sql")]
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::sql_expr))
         .unwrap();
 
     // Functions - I/O

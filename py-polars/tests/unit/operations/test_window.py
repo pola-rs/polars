@@ -93,19 +93,14 @@ def test_window_function_cache() -> None:
     ).with_columns(
         [
             pl.col("values")
-            .implode()
-            .over("groups")
+            .over("groups", mapping_strategy="join")
             .alias("values_list"),  # aggregation to list + join
             pl.col("values")
-            .implode()
-            .over("groups")
-            .flatten()
+            .over("groups", mapping_strategy="explode")
             .alias("values_flat"),  # aggregation to list + explode and concat back
             pl.col("values")
             .reverse()
-            .implode()
-            .over("groups")
-            .flatten()
+            .over("groups", mapping_strategy="explode")
             .alias("values_rev"),  # use flatten to reverse within a group
         ]
     )
@@ -123,7 +118,7 @@ def test_window_function_cache() -> None:
 
 def test_arange_no_rows() -> None:
     df = pl.DataFrame({"x": [5, 5, 4, 4, 2, 2]})
-    expr = pl.arange(0, pl.count()).over("x")  # type: ignore[union-attr]
+    expr = pl.arange(0, pl.count()).over("x")
     out = df.with_columns(expr)
     assert_frame_equal(
         out, pl.DataFrame({"x": [5, 5, 4, 4, 2, 2], "arange": [0, 1, 0, 1, 0, 1]})
@@ -131,6 +126,7 @@ def test_arange_no_rows() -> None:
 
     df = pl.DataFrame({"x": []})
     out = df.with_columns(expr)
+    print(out)
     expected = pl.DataFrame(
         {"x": [], "arange": []}, schema={"x": pl.Float32, "arange": pl.Int64}
     )
@@ -250,9 +246,7 @@ def test_window_functions_list_types() -> None:
     # that's why we don't add it to the allowed types.
     assert (
         df.select(
-            pl.col("col_list")
-            .shift_and_fill(None, periods=1)  # type: ignore[arg-type]
-            .alias("list_shifted")
+            pl.col("col_list").shift_and_fill(None, periods=1).alias("list_shifted")
         )
     )["list_shifted"].to_list() == [None, [1], [1], [2]]
 
@@ -350,8 +344,12 @@ def test_window_function_implode_contention_8536() -> None:
 
     assert df.select(
         [
-            (pl.lit("LE").is_in(pl.col("memo").implode().over("policy")))
-            | (pl.lit("RM").is_in(pl.col("memo").implode().over("policy")))
+            (pl.lit("LE").is_in(pl.col("memo").over("policy", mapping_strategy="join")))
+            | (
+                pl.lit("RM").is_in(
+                    pl.col("memo").over("policy", mapping_strategy="join")
+                )
+            )
         ]
     ).to_series().to_list() == [
         True,
@@ -365,3 +363,45 @@ def test_window_function_implode_contention_8536() -> None:
         True,
         True,
     ]
+
+
+def test_cached_windows_sync_8803() -> None:
+    assert (
+        pl.DataFrame(
+            [
+                pl.Series("id", [4, 5, 4, 6, 4, 5], dtype=pl.Int64),
+                pl.Series(
+                    "is_valid",
+                    [True, False, False, False, False, False],
+                    dtype=pl.Boolean,
+                ),
+            ]
+        )
+        .with_columns(
+            a=pl.lit(True).is_in(pl.col("is_valid")).over("id"),
+            b=pl.col("is_valid").sum().gt(0).over("id"),
+        )
+        .sum()
+    ).to_dict(False) == {"id": [28], "is_valid": [1], "a": [3], "b": [3]}
+
+
+def test_window_filtered_aggregation() -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["A", "A", "B", "B"],
+            "field1": [2, 4, 6, 8],
+            "flag": [1, 0, 1, 1],
+        }
+    )
+    out = df.with_columns(
+        pl.col("field1").filter(pl.col("flag") == 1).mean().over("group").alias("mean")
+    )
+    expected = pl.DataFrame(
+        {
+            "group": ["A", "A", "B", "B"],
+            "field1": [2, 4, 6, 8],
+            "flag": [1, 0, 1, 1],
+            "mean": [2.0, 2.0, 7.0, 7.0],
+        }
+    )
+    assert_frame_equal(out, expected)

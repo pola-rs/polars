@@ -1,11 +1,12 @@
 use std::marker::PhantomData;
 use std::ptr::NonNull;
 
+use polars_utils::unwrap::UnwrapUncheckedRelease;
+
 use crate::prelude::*;
 
 /// A wrapper type that should make it a bit more clear that we should not clone Series
 #[derive(Copy, Clone)]
-#[cfg(feature = "private")]
 pub struct UnstableSeries<'a> {
     lifetime: PhantomData<&'a Series>,
     // A series containing a single chunk ArrayRef
@@ -46,11 +47,13 @@ impl<'a> UnstableSeries<'a> {
     /// Creates a new `[UnsafeSeries]`
     /// # Safety
     /// Inner chunks must be from `Series` otherwise the dtype may be incorrect and lead to UB.
+    #[inline]
     pub(crate) unsafe fn new_with_chunk(series: &'a mut Series, inner_chunk: &ArrayRef) -> Self {
         UnstableSeries {
             lifetime: PhantomData,
             container: series,
-            inner: NonNull::new(inner_chunk as *const ArrayRef as *mut ArrayRef).unwrap(),
+            inner: NonNull::new(inner_chunk as *const ArrayRef as *mut ArrayRef)
+                .unwrap_unchecked_release(),
         }
     }
 

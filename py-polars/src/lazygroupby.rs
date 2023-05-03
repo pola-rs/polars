@@ -4,8 +4,9 @@ use polars::lazy::frame::{LazyFrame, LazyGroupBy};
 use polars::prelude::{DataFrame, PolarsError, Schema};
 use pyo3::prelude::*;
 
-use crate::conversion::{ToExprs, Wrap};
+use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
+use crate::expr::ToExprs;
 use crate::{PyDataFrame, PyExpr, PyLazyFrame};
 
 #[pyclass]
@@ -62,7 +63,7 @@ impl PyLazyGroupBy {
                 })?;
                 // unpack the wrapper in a PyDataFrame
                 let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
-                "Could net get DataFrame attribute '_df'. Make sure that you return a DataFrame object.",
+                "Could not get DataFrame attribute '_df'. Make sure that you return a DataFrame object.",
             );
                 // Downcast to Rust
                 let pydf = py_pydf.extract::<PyDataFrame>(py).unwrap();

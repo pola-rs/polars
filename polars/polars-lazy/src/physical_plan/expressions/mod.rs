@@ -2,6 +2,7 @@ mod aggregation;
 mod alias;
 mod apply;
 mod binary;
+mod cache;
 mod cast;
 mod column;
 mod count;
@@ -22,6 +23,7 @@ pub(crate) use aggregation::*;
 pub(crate) use alias::*;
 pub(crate) use apply::*;
 pub(crate) use binary::*;
+pub(crate) use cache::*;
 pub(crate) use cast::*;
 pub(crate) use column::*;
 pub(crate) use count::*;
@@ -324,6 +326,18 @@ impl<'a> AggregationContext<'a> {
         aggregated: bool,
         expr: Option<&Expr>,
     ) -> PolarsResult<&mut Self> {
+        self.with_series_and_args(series, aggregated, expr, false)
+    }
+
+    pub(crate) fn with_series_and_args(
+        &mut self,
+        series: Series,
+        aggregated: bool,
+        expr: Option<&Expr>,
+        // if the applied function was a `map` instead of an `apply`
+        // this will keep functions applied over literals as literals: F(lit) = lit
+        mapped: bool,
+    ) -> PolarsResult<&mut Self> {
         self.state = match (aggregated, series.dtype()) {
             (true, &DataType::List(_)) => {
                 if series.len() != self.groups.len() {
@@ -348,7 +362,7 @@ impl<'a> AggregationContext<'a> {
                     // retrieve the length before grouping, so it stays  in this state.
                     AggState::AggregatedFlat(_) => AggState::AggregatedFlat(series),
                     // applying a function on a literal, keeps the literal state
-                    AggState::Literal(_) if series.len() == 1 && self.groups.len() > 1 => {
+                    AggState::Literal(_) if series.len() == 1 && mapped => {
                         AggState::Literal(series)
                     }
                     _ => AggState::NotAggregated(series),
@@ -434,6 +448,46 @@ impl<'a> AggregationContext<'a> {
             Literal(s) => s.len() == 1,
             AggregatedFlat(_) => true,
             _ => false,
+        }
+    }
+
+    pub(crate) fn get_final_aggregation(mut self) -> (Series, Cow<'a, GroupsProxy>) {
+        let _ = self.groups();
+        let groups = self.groups;
+        match self.state {
+            AggState::NotAggregated(s) => (s, groups),
+            AggState::AggregatedFlat(s) => (s, groups),
+            AggState::Literal(s) => (s, groups),
+            AggState::AggregatedList(s) => {
+                let flattened = s.explode().unwrap();
+                let groups = groups.into_owned();
+                // unroll the possible flattened state
+                // say we have groups with overlapping windows:
+                //
+                // offset, len
+                // 0, 1
+                // 0, 2
+                // 0, 4
+                //
+                // gets aggregation
+                //
+                // [0]
+                // [0, 1],
+                // [0, 1, 2, 3]
+                //
+                // before aggregation the column was
+                // [0, 1, 2, 3]
+                // but explode on this list yields
+                // [0, 0, 1, 0, 1, 2, 3]
+                //
+                // so we unroll the groups as
+                //
+                // [0, 1]
+                // [1, 2]
+                // [3, 4]
+                let groups = groups.unroll();
+                (flattened, Cow::Owned(groups))
+            }
         }
     }
 

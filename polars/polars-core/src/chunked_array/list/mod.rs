@@ -1,11 +1,23 @@
 //! Special list utility methods
-mod iterator;
+pub(super) mod iterator;
 
 use crate::chunked_array::Settings;
 use crate::prelude::*;
 
 impl ListChunked {
-    #[cfg(feature = "private")]
+    /// Get the inner data type of the list.
+    pub fn inner_dtype(&self) -> DataType {
+        match self.dtype() {
+            DataType::List(dt) => *dt.clone(),
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn set_inner_dtype(&mut self, dtype: DataType) {
+        assert_eq!(dtype.to_physical(), self.inner_dtype().to_physical());
+        let field = Arc::make_mut(&mut self.field);
+        field.coerce(DataType::List(Box::new(dtype)));
+    }
     pub fn set_fast_explode(&mut self) {
         self.bit_settings.insert(Settings::FAST_EXPLODE_LIST)
     }
@@ -24,7 +36,7 @@ impl ListChunked {
         }
     }
 
-    pub fn to_logical(&mut self, inner_dtype: DataType) {
+    pub fn to_physical(&mut self, inner_dtype: DataType) {
         debug_assert_eq!(inner_dtype.to_physical(), self.inner_dtype());
         let fld = Arc::make_mut(&mut self.field);
         fld.coerce(DataType::List(Box::new(inner_dtype)))

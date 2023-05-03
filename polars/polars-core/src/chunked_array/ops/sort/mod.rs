@@ -84,7 +84,6 @@ fn sort_branch<T, Fd, Fr>(
     }
 }
 
-#[cfg(feature = "private")]
 pub fn arg_sort_no_nulls<Idx, T>(slice: &mut [(Idx, T)], descending: bool, parallel: bool)
 where
     T: PartialOrd + Send + IsFloat,
@@ -289,21 +288,34 @@ where
 
 fn arg_sort_multiple_numeric<T: PolarsNumericType>(
     ca: &ChunkedArray<T>,
-    other: &[Series],
-    descending: &[bool],
+    options: &SortMultipleOptions,
 ) -> PolarsResult<IdxCa> {
-    args_validate(ca, other, descending)?;
+    args_validate(ca, &options.other, &options.descending)?;
     let mut count: IdxSize = 0;
-    let vals: Vec<_> = ca
-        .into_iter()
-        .map(|v| {
-            let i = count;
-            count += 1;
-            (i, v)
-        })
-        .collect_trusted();
 
-    arg_sort_multiple_impl(vals, other, descending)
+    let no_nulls = ca.null_count() == 0;
+
+    if no_nulls {
+        let mut vals = Vec::with_capacity(ca.len());
+        for arr in ca.downcast_iter() {
+            vals.extend_trusted_len(arr.values().as_slice().iter().map(|v| {
+                let i = count;
+                count += 1;
+                (i, *v)
+            }))
+        }
+        arg_sort_multiple_impl(vals, options)
+    } else {
+        let mut vals = Vec::with_capacity(ca.len());
+        for arr in ca.downcast_iter() {
+            vals.extend_trusted_len(arr.into_iter().map(|v| {
+                let i = count;
+                count += 1;
+                (i, v.copied())
+            }));
+        }
+        arg_sort_multiple_impl(vals, options)
+    }
 }
 
 impl<T> ChunkSort<T> for ChunkedArray<T>
@@ -330,8 +342,8 @@ where
     ///
     /// This function is very opinionated.
     /// We assume that all numeric `Series` are of the same type, if not it will panic
-    fn arg_sort_multiple(&self, other: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {
-        arg_sort_multiple_numeric(self, other, descending)
+    fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
+        arg_sort_multiple_numeric(self, options)
     }
 }
 
@@ -355,8 +367,8 @@ impl ChunkSort<Float32Type> for Float32Chunked {
     ///
     /// This function is very opinionated.
     /// We assume that all numeric `Series` are of the same type, if not it will panic
-    fn arg_sort_multiple(&self, other: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {
-        arg_sort_multiple_numeric(self, other, descending)
+    fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
+        arg_sort_multiple_numeric(self, options)
     }
 }
 
@@ -380,8 +392,8 @@ impl ChunkSort<Float64Type> for Float64Chunked {
     ///
     /// This function is very opinionated.
     /// We assume that all numeric `Series` are of the same type, if not it will panic
-    fn arg_sort_multiple(&self, other: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {
-        arg_sort_multiple_numeric(self, other, descending)
+    fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
+        arg_sort_multiple_numeric(self, options)
     }
 }
 
@@ -519,8 +531,8 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
     /// In this case we assume that all numeric `Series` are `f64` types. The caller needs to
     /// uphold this contract. If not, it will panic.
     ///
-    fn arg_sort_multiple(&self, other: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {
-        self.as_binary().arg_sort_multiple(other, descending)
+    fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
+        self.as_binary().arg_sort_multiple(options)
     }
 }
 
@@ -644,8 +656,8 @@ impl ChunkSort<BinaryType> for BinaryChunked {
     /// In this case we assume that all numeric `Series` are `f64` types. The caller needs to
     /// uphold this contract. If not, it will panic.
     ///
-    fn arg_sort_multiple(&self, other: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {
-        args_validate(self, other, descending)?;
+    fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
+        args_validate(self, &options.other, &options.descending)?;
 
         let mut count: IdxSize = 0;
         let vals: Vec<_> = self
@@ -656,7 +668,7 @@ impl ChunkSort<BinaryType> for BinaryChunked {
                 (i, v)
             })
             .collect_trusted();
-        arg_sort_multiple_impl(vals, other, descending)
+        arg_sort_multiple_impl(vals, options)
     }
 }
 

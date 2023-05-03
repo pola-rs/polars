@@ -9,7 +9,17 @@ use crate::operators::{DataChunk, Operator, OperatorResult, PExecutionContext};
 
 #[derive(Clone)]
 pub(crate) struct FastProjectionOperator {
-    pub(crate) columns: Arc<[Arc<str>]>,
+    columns: Arc<[Arc<str>]>,
+    input_schema: SchemaRef,
+}
+
+impl FastProjectionOperator {
+    pub(crate) fn new(columns: Arc<[Arc<str>]>, input_schema: SchemaRef) -> Self {
+        Self {
+            columns,
+            input_schema,
+        }
+    }
 }
 
 impl Operator for FastProjectionOperator {
@@ -18,14 +28,18 @@ impl Operator for FastProjectionOperator {
         _context: &PExecutionContext,
         chunk: &DataChunk,
     ) -> PolarsResult<OperatorResult> {
-        let chunk = chunk.with_data(chunk.data.select(self.columns.as_ref())?);
+        let chunk = chunk.with_data(
+            chunk
+                .data
+                .select_with_schema_unchecked(self.columns.as_ref(), &self.input_schema)?,
+        );
         Ok(OperatorResult::Finished(chunk))
     }
     fn split(&self, _thread_no: usize) -> Box<dyn Operator> {
         Box::new(self.clone())
     }
     fn fmt(&self) -> &str {
-        "fast_join_projection"
+        "fast_projection"
     }
 }
 

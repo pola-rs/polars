@@ -53,7 +53,7 @@ impl OutputMode {
                     if matches!(self, OutputMode::Table | OutputMode::Markdown) {
                         let max_rows = std::env::var("POLARS_FMT_MAX_ROWS")
                             .unwrap_or("20".into())
-                            .parse::<u32>()
+                            .parse::<IdxSize>()
                             .unwrap_or(20);
                         lf.limit(max_rows).collect()
                     } else {
@@ -134,8 +134,7 @@ impl From<&'_ mut SQLContext> for SerializableContext {
 
 impl From<SerializableContext> for SQLContext {
     fn from(ctx: SerializableContext) -> Self {
-        SQLContext::new_from_tables_and_map(
-            ctx.tables,
+        SQLContext::new_from_table_map(
             ctx.table_map
                 .into_iter()
                 .map(|(k, v)| (k, v.into()))

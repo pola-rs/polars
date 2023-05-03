@@ -15,10 +15,10 @@ chrono = { version = "0.4", default-features = false, features = ["std"] }
 chrono-tz = { version = "0.8", optional = true }
 now = "0.1"
 once_cell.workspace = true
-polars-arrow = { version = "0.28.0", path = "../polars-arrow", features = ["compute", "temporal"] }
-polars-core = { version = "0.28.0", path = "../polars-core", default-features = false, features = ["private", "dtype-datetime", "dtype-duration", "dtype-time", "dtype-date"] }
-polars-ops = { version = "0.28.0", path = "../polars-ops" }
-polars-utils = { version = "0.28.0", path = "../polars-utils" }
+polars-arrow = { version = "0.30.0", path = "../polars-arrow", features = ["compute", "temporal"] }
+polars-core = { version = "0.30.0", path = "../polars-core", default-features = false, features = ["dtype-datetime", "dtype-duration", "dtype-time", "dtype-date"] }
+polars-ops = { version = "0.30.0", path = "../polars-ops" }
+polars-utils = { version = "0.30.0", path = "../polars-utils" }
 regex = "1.7.1"
 serde = { version = "1", features = ["derive"], optional = true }
 smartstring.workspace = true
@@ -29,10 +29,9 @@ dtype-datetime = ["polars-core/dtype-date", "polars-core/temporal"]
 dtype-time = ["polars-core/dtype-time", "polars-core/temporal"]
 dtype-duration = ["polars-core/dtype-duration", "polars-core/temporal"]
 rolling_window = ["polars-core/rolling_window", "dtype-duration"]
-private = []
 fmt = ["polars-core/fmt"]
 timezones = ["chrono-tz", "dtype-datetime", "polars-core/timezones", "polars-arrow/timezones"]
 
 test = ["dtype-date", "dtype-datetime", "polars-core/fmt"]
 
-default = ["private"]
+default = []

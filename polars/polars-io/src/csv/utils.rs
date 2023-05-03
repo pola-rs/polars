@@ -7,7 +7,6 @@ use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
 #[cfg(feature = "polars-time")]
 use polars_time::chunkedarray::utf8::infer as date_infer;
-use polars_time::chunkedarray::utf8::PatternWithOffset;
 #[cfg(feature = "polars-time")]
 use polars_time::prelude::utf8::Pattern;
 use regex::{Regex, RegexBuilder};
@@ -112,19 +111,13 @@ fn infer_field_schema(string: &str, try_parse_dates: bool) -> DataType {
             {
                 match date_infer::infer_pattern_single(&string[1..string.len() - 1]) {
                     Some(pattern_with_offset) => match pattern_with_offset {
-                        PatternWithOffset {
-                            pattern: Pattern::DatetimeYMD | Pattern::DatetimeDMY,
-                            offset: _,
-                        } => DataType::Datetime(TimeUnit::Microseconds, None),
-                        PatternWithOffset {
-                            pattern: Pattern::DateYMD | Pattern::DateDMY,
-                            offset: _,
-                        } => DataType::Date,
-                        PatternWithOffset {
-                            pattern: Pattern::DatetimeYMDZ,
-                            offset: _,
-                        } => DataType::Utf8, // TODO: support tz-aware,
-                                             // need to keep track of offset
+                        Pattern::DatetimeYMD | Pattern::DatetimeDMY => {
+                            DataType::Datetime(TimeUnit::Microseconds, None)
+                        }
+                        Pattern::DateYMD | Pattern::DateDMY => DataType::Date,
+                        Pattern::DatetimeYMDZ => {
+                            DataType::Datetime(TimeUnit::Microseconds, Some("UTC".to_string()))
+                        }
                     },
                     None => DataType::Utf8,
                 }
@@ -149,19 +142,13 @@ fn infer_field_schema(string: &str, try_parse_dates: bool) -> DataType {
         {
             match date_infer::infer_pattern_single(string) {
                 Some(pattern_with_offset) => match pattern_with_offset {
-                    PatternWithOffset {
-                        pattern: Pattern::DatetimeYMD | Pattern::DatetimeDMY,
-                        offset: _,
-                    } => DataType::Datetime(TimeUnit::Microseconds, None),
-                    PatternWithOffset {
-                        pattern: Pattern::DateYMD | Pattern::DateDMY,
-                        offset: _,
-                    } => DataType::Date,
-                    PatternWithOffset {
-                        pattern: Pattern::DatetimeYMDZ,
-                        offset: _,
-                    } => DataType::Utf8, // TODO: support tz-aware,
-                                         // need to keep track of offset
+                    Pattern::DatetimeYMD | Pattern::DatetimeDMY => {
+                        DataType::Datetime(TimeUnit::Microseconds, None)
+                    }
+                    Pattern::DateYMD | Pattern::DateDMY => DataType::Date,
+                    Pattern::DatetimeYMDZ => {
+                        DataType::Datetime(TimeUnit::Microseconds, Some("UTC".to_string()))
+                    }
                 },
                 None => DataType::Utf8,
             }

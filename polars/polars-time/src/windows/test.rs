@@ -15,13 +15,13 @@ fn test_date_range() {
         .unwrap()
         .and_hms_opt(0, 0, 0)
         .unwrap();
-    let dates = date_range_vec(
+    let dates = temporal_range_vec(
         start.timestamp_nanos(),
         end.timestamp_nanos(),
         Duration::parse("1mo"),
         ClosedWindow::Both,
         TimeUnit::Nanoseconds,
-        NO_TIMEZONE,
+        None,
     )
     .unwrap(); // unwrapping as we pass None as the time zone
     let expected = [
@@ -46,13 +46,13 @@ fn test_feb_date_range() {
         .unwrap()
         .and_hms_opt(0, 0, 0)
         .unwrap();
-    let dates = date_range_vec(
+    let dates = temporal_range_vec(
         start.timestamp_nanos(),
         end.timestamp_nanos(),
         Duration::parse("1mo"),
         ClosedWindow::Both,
         TimeUnit::Nanoseconds,
-        NO_TIMEZONE,
+        None,
     )
     .unwrap(); // unwrapping as we pass None as the time zone
     let expected = [
@@ -147,7 +147,7 @@ fn test_offset() {
         Duration::parse("-2m"),
     );
 
-    let b = w.get_earliest_bounds_ns(t, NO_TIMEZONE).unwrap();
+    let b = w.get_earliest_bounds_ns(t, None).unwrap();
     let start = NaiveDate::from_ymd_opt(2020, 1, 1)
         .unwrap()
         .and_hms_opt(23, 58, 0)
@@ -167,13 +167,13 @@ fn test_boundaries() {
         .and_hms_opt(3, 0, 0)
         .unwrap();
 
-    let ts = date_range_vec(
+    let ts = temporal_range_vec(
         start.timestamp_nanos(),
         stop.timestamp_nanos(),
         Duration::parse("30m"),
         ClosedWindow::Both,
         TimeUnit::Nanoseconds,
-        NO_TIMEZONE,
+        None,
     )
     .unwrap(); // unwrapping as we pass None as the time zone
 
@@ -187,7 +187,7 @@ fn test_boundaries() {
     );
 
     // earliest bound is first datapoint: 2021-12-16 00:00:00
-    let b = w.get_earliest_bounds_ns(ts[0], NO_TIMEZONE).unwrap();
+    let b = w.get_earliest_bounds_ns(ts[0], None).unwrap();
     assert_eq!(b.start, start.timestamp_nanos());
 
     // test closed: "both" (includes both ends of the interval)
@@ -343,13 +343,13 @@ fn test_boundaries_2() {
         .and_hms_opt(4, 0, 0)
         .unwrap();
 
-    let ts = date_range_vec(
+    let ts = temporal_range_vec(
         start.timestamp_nanos(),
         stop.timestamp_nanos(),
         Duration::parse("30m"),
         ClosedWindow::Both,
         TimeUnit::Nanoseconds,
-        NO_TIMEZONE,
+        None,
     )
     .unwrap(); // unwrapping as we pass None as the time zone
 
@@ -363,7 +363,7 @@ fn test_boundaries_2() {
     let w = Window::new(Duration::parse("2h"), Duration::parse("1h"), offset);
 
     // earliest bound is first datapoint: 2021-12-16 00:00:00 + 30m offset: 2021-12-16 00:30:00
-    let b = w.get_earliest_bounds_ns(ts[0], NO_TIMEZONE).unwrap();
+    let b = w.get_earliest_bounds_ns(ts[0], None).unwrap();
 
     assert_eq!(b.start, start.timestamp_nanos() + offset.duration_ns());
 
@@ -451,13 +451,13 @@ fn test_boundaries_ms() {
         .and_hms_opt(3, 0, 0)
         .unwrap();
 
-    let ts = date_range_vec(
+    let ts = temporal_range_vec(
         start.timestamp_millis(),
         stop.timestamp_millis(),
         Duration::parse("30m"),
         ClosedWindow::Both,
         TimeUnit::Milliseconds,
-        NO_TIMEZONE,
+        None,
     )
     .unwrap(); // unwrapping as we pass None as the time zone
 
@@ -471,7 +471,7 @@ fn test_boundaries_ms() {
     );
 
     // earliest bound is first datapoint: 2021-12-16 00:00:00
-    let b = w.get_earliest_bounds_ms(ts[0], NO_TIMEZONE).unwrap();
+    let b = w.get_earliest_bounds_ms(ts[0], None).unwrap();
     assert_eq!(b.start, start.timestamp_millis());
 
     // test closed: "both" (includes both ends of the interval)
@@ -627,13 +627,13 @@ fn test_rolling_lookback() {
         .unwrap()
         .and_hms_opt(4, 0, 0)
         .unwrap();
-    let dates = date_range_vec(
+    let dates = temporal_range_vec(
         start.timestamp_millis(),
         end.timestamp_millis(),
         Duration::parse("30m"),
         ClosedWindow::Both,
         TimeUnit::Milliseconds,
-        NO_TIMEZONE,
+        None,
     )
     .unwrap(); // unwrapping as we pass None as the time zone
 
@@ -644,7 +644,7 @@ fn test_rolling_lookback() {
         &dates,
         ClosedWindow::Right,
         TimeUnit::Milliseconds,
-        NO_TIMEZONE.copied(),
+        None,
     )
     .unwrap();
     assert_eq!(dates.len(), groups.len());
@@ -665,7 +665,7 @@ fn test_rolling_lookback() {
         &dates,
         ClosedWindow::Right,
         TimeUnit::Milliseconds,
-        NO_TIMEZONE.copied(),
+        None,
     )
     .unwrap();
     assert_eq!(dates.len(), groups.len());
@@ -686,19 +686,19 @@ fn test_rolling_lookback() {
         &dates,
         ClosedWindow::Right,
         TimeUnit::Milliseconds,
-        NO_TIMEZONE.copied(),
+        None,
     )
     .unwrap();
     assert_eq!(dates.len(), groups.len());
-    assert_eq!(groups[0], [0, 5]);
-    assert_eq!(groups[1], [1, 5]);
-    assert_eq!(groups[2], [2, 5]);
-    assert_eq!(groups[3], [3, 5]);
-    assert_eq!(groups[4], [4, 5]);
-    assert_eq!(groups[5], [5, 4]);
-    assert_eq!(groups[6], [6, 3]);
-    assert_eq!(groups[7], [7, 2]);
-    assert_eq!(groups[8], [8, 0]);
+    assert_eq!(groups[0], [1, 4]); // (00:00, 02:00]
+    assert_eq!(groups[1], [2, 4]); // (00:30, 02:30]
+    assert_eq!(groups[2], [3, 4]); // (01:00, 03:00]
+    assert_eq!(groups[3], [4, 4]); // (01:30, 03:30]
+    assert_eq!(groups[4], [5, 4]); // (02:00, 04:00]
+    assert_eq!(groups[5], [6, 3]); // (02:30, 04:30]
+    assert_eq!(groups[6], [7, 2]); // (03:00, 05:00]
+    assert_eq!(groups[7], [8, 1]); // (03:30, 05:30]
+    assert_eq!(groups[8], [9, 0]); // (04:00, 06:00]
 
     let period = Duration::parse("2h");
     let tu = TimeUnit::Milliseconds;
@@ -708,53 +708,15 @@ fn test_rolling_lookback() {
         ClosedWindow::Both,
         ClosedWindow::None,
     ] {
-        let offset = Duration::parse("0h");
-        let g0 = groupby_values_iter_full_lookahead(
-            period,
-            offset,
-            &dates,
-            closed_window,
-            tu,
-            NO_TIMEZONE.copied(),
-            0,
-            None,
-        )
-        .collect::<PolarsResult<Vec<_>>>()
-        .unwrap();
-        let g1 = groupby_values_iter_partial_lookbehind(
-            period,
-            offset,
-            &dates,
-            closed_window,
-            tu,
-            NO_TIMEZONE.copied(),
-        )
-        .collect::<PolarsResult<Vec<_>>>()
-        .unwrap();
-        assert_eq!(g0, g1);
-
         let offset = Duration::parse("-2h");
-        let g0 = groupby_values_iter_full_lookbehind(
-            period,
-            offset,
-            &dates,
-            closed_window,
-            tu,
-            NO_TIMEZONE.copied(),
-            0,
-        )
-        .collect::<PolarsResult<Vec<_>>>()
-        .unwrap();
-        let g1 = groupby_values_iter_partial_lookbehind(
-            period,
-            offset,
-            &dates,
-            closed_window,
-            tu,
-            NO_TIMEZONE.copied(),
-        )
-        .collect::<PolarsResult<Vec<_>>>()
-        .unwrap();
+        let g0 =
+            groupby_values_iter_full_lookbehind(period, offset, &dates, closed_window, tu, None, 0)
+                .collect::<PolarsResult<Vec<_>>>()
+                .unwrap();
+        let g1 =
+            groupby_values_iter_partial_lookbehind(period, offset, &dates, closed_window, tu, None)
+                .collect::<PolarsResult<Vec<_>>>()
+                .unwrap();
         assert_eq!(g0, g1);
     }
 }

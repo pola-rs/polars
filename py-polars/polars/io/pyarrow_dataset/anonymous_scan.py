@@ -8,8 +8,7 @@ from polars.dependencies import pickle
 from polars.dependencies import pyarrow as pa  # noqa: TCH001
 
 if TYPE_CHECKING:
-    from polars.dataframe import DataFrame
-    from polars.lazyframe import LazyFrame
+    from polars import DataFrame, LazyFrame
 
 
 def _scan_pyarrow_dataset(

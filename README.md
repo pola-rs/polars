@@ -204,17 +204,17 @@ pip install 'polars[numpy,pandas,pyarrow]'  # install a subset of all optional d
 
 You can also install the dependencies directly.
 
-| Tag        | Description                                                                                                                           |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| all        | Install all optional dependencies (all of the following)                                                                              |
-| pandas     | Install with Pandas for converting data to and from Pandas Dataframes/Series                                                          |
-| numpy      | Install with numpy for converting data to and from numpy arrays                                                                       |
-| pyarrow    | Reading data formats using PyArrow                                                                                                    |
-| fsspec     | Support for reading from remote file systems                                                                                          |
-| connectorx | Support for reading from SQL databases                                                                                                |
-| xlsx2csv   | Support for reading from Excel files                                                                                                  |
-| deltalake  | Support for reading from Delta Lake Tables                                                                                            |
-| timezone   | Timezone support, only needed if 1. you are on Python < 3.9 and/or 2. you are on Windows, otherwise no dependencies will be installed |
+| Tag        | Description                                                                  |
+| ---------- | ---------------------------------------------------------------------------- |
+| **all**    | Install all optional dependencies (all of the following)                     |
+| pandas     | Install with Pandas for converting data to and from Pandas Dataframes/Series |
+| numpy      | Install with numpy for converting data to and from numpy arrays              |
+| pyarrow    | Reading data formats using PyArrow                                           |
+| fsspec     | Support for reading from remote file systems                                 |
+| connectorx | Support for reading from SQL databases                                       |
+| xlsx2csv   | Support for reading from Excel files                                         |
+| deltalake  | Support for reading from Delta Lake Tables                                   |
+| timezone   | Timezone support, only needed if are on Python<3.9 or you are on Windows     |
 
 Releases happen quite often (weekly / every few days) at the moment, so updating polars regularly to get the latest bugfixes / features might not be a bad idea.
 

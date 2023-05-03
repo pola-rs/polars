@@ -4,6 +4,30 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 
+def test_comparison_order_null_broadcasting() -> None:
+    # see more: 8183
+    exprs = [
+        pl.col("v") < pl.col("null"),
+        pl.col("null") < pl.col("v"),
+        pl.col("v") <= pl.col("null"),
+        pl.col("null") <= pl.col("v"),
+        pl.col("v") > pl.col("null"),
+        pl.col("null") > pl.col("v"),
+        pl.col("v") >= pl.col("null"),
+        pl.col("null") >= pl.col("v"),
+    ]
+
+    kwargs = {f"out{i}": e for i, e in zip(range(len(exprs)), exprs)}
+
+    # single value, hits broadcasting branch
+    df = pl.DataFrame({"v": [42], "null": [None]})
+    assert all((df.select(**kwargs).null_count() == 1).rows()[0])
+
+    # multiple values, hits default branch
+    df = pl.DataFrame({"v": [42, 42], "null": [None, None]})
+    assert all((df.select(**kwargs).null_count() == 2).rows()[0])
+
+
 def test_comparison_nulls_single() -> None:
     df1 = pl.DataFrame(
         {
@@ -19,8 +43,8 @@ def test_comparison_nulls_single() -> None:
             "c": pl.Series([None], dtype=pl.Boolean),
         }
     )
-    assert (df1 == df2).row(0) == (True, True, True)
-    assert (df1 != df2).row(0) == (False, False, False)
+    assert (df1 == df2).row(0) == (None, None, None)
+    assert (df1 != df2).row(0) == (None, None, None)
 
 
 def test_comparison_series_expr() -> None:

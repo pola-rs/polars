@@ -97,6 +97,24 @@ pub(crate) fn aexpr_is_simple_projection(current_node: Node, arena: &Arena<AExpr
         .all(|(_node, e)| matches!(e, AExpr::Column(_) | AExpr::Alias(_, _)))
 }
 
+pub(crate) fn aexpr_is_elementwise(current_node: Node, arena: &Arena<AExpr>) -> bool {
+    arena.iter(current_node).all(|(_node, e)| {
+        use AExpr::*;
+        match e {
+            AnonymousFunction { options, .. } | Function { options, .. } => {
+                !matches!(options.collect_groups, ApplyOptions::ApplyGroups)
+            }
+            Column(_)
+            | Alias(_, _)
+            | Literal(_)
+            | BinaryExpr { .. }
+            | Ternary { .. }
+            | Cast { .. } => true,
+            _ => false,
+        }
+    })
+}
+
 pub fn has_aexpr<F>(current_node: Node, arena: &Arena<AExpr>, matches: F) -> bool
 where
     F: Fn(&AExpr) -> bool,
@@ -194,7 +212,7 @@ pub fn expr_to_leaf_column_name(expr: &Expr) -> PolarsResult<Arc<str>> {
     match roots.pop() {
         Some(Expr::Column(name)) => Ok(name),
         Some(Expr::Wildcard) => polars_bail!(
-            ComputeError: "wildcard has not root column name",
+            ComputeError: "wildcard has no root column name",
         ),
         Some(_) => unreachable!(),
         None => polars_bail!(

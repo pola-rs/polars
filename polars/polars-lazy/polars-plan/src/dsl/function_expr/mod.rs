@@ -2,6 +2,8 @@
 mod abs;
 #[cfg(feature = "arg_where")]
 mod arg_where;
+#[cfg(feature = "dtype-array")]
+mod array;
 mod binary;
 mod boolean;
 mod bounds;
@@ -9,11 +11,15 @@ mod bounds;
 mod cat;
 #[cfg(feature = "round_series")]
 mod clip;
+mod concat;
+mod correlation;
 mod cum;
 #[cfg(feature = "temporal")]
 mod datetime;
 mod dispatch;
 mod fill_null;
+#[cfg(feature = "fused")]
+mod fused;
 mod list;
 #[cfg(feature = "log")]
 mod log;
@@ -44,6 +50,11 @@ mod unique;
 
 use std::fmt::{Display, Formatter};
 
+#[cfg(feature = "dtype-array")]
+pub(super) use array::ArrayFunction;
+pub(crate) use correlation::CorrelationMethod;
+#[cfg(feature = "fused")]
+pub(crate) use fused::FusedOperator;
 pub(super) use list::ListFunction;
 use polars_core::prelude::*;
 use schema::FieldsMapper;
@@ -107,6 +118,8 @@ pub enum FunctionExpr {
         max: Option<AnyValue<'static>>,
     },
     ListExpr(ListFunction),
+    #[cfg(feature = "dtype-array")]
+    ArrayExpr(ArrayFunction),
     #[cfg(feature = "dtype-struct")]
     StructExpr(StructFunction),
     #[cfg(feature = "top_k")]
@@ -142,8 +155,6 @@ pub enum FunctionExpr {
     Diff(i64, NullBehavior),
     #[cfg(feature = "interpolate")]
     Interpolate(InterpolationMethod),
-    #[cfg(feature = "dot_product")]
-    Dot,
     #[cfg(feature = "log")]
     Entropy {
         base: f64,
@@ -168,6 +179,14 @@ pub enum FunctionExpr {
     Ceil,
     UpperBound,
     LowerBound,
+    #[cfg(feature = "fused")]
+    Fused(fused::FusedOperator),
+    ConcatExpr(bool),
+    Correlation {
+        method: correlation::CorrelationMethod,
+        ddof: u8,
+    },
+    ToPhysical,
 }
 
 impl Display for FunctionExpr {
@@ -231,8 +250,6 @@ impl Display for FunctionExpr {
             Diff(_, _) => "diff",
             #[cfg(feature = "interpolate")]
             Interpolate(_) => "interpolate",
-            #[cfg(feature = "dot_product")]
-            Dot => "dot",
             #[cfg(feature = "log")]
             Entropy { .. } => "entropy",
             #[cfg(feature = "log")]
@@ -256,6 +273,13 @@ impl Display for FunctionExpr {
             Ceil => "ceil",
             UpperBound => "upper_bound",
             LowerBound => "lower_bound",
+            #[cfg(feature = "fused")]
+            Fused(fused) => return Display::fmt(fused, f),
+            #[cfg(feature = "dtype-array")]
+            ArrayExpr(af) => return Display::fmt(af, f),
+            ConcatExpr(_) => "concat_expr",
+            Correlation { method, .. } => return Display::fmt(method, f),
+            ToPhysical => "to_physical",
         };
         write!(f, "{s}")
     }
@@ -411,6 +435,16 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     Sum => map!(list::sum),
                 }
             }
+            #[cfg(feature = "dtype-array")]
+            ArrayExpr(lf) => {
+                use ArrayFunction::*;
+                match lf {
+                    Min => map!(array::min),
+                    Max => map!(array::max),
+                    Sum => map!(array::sum),
+                    Unique(stable) => map!(array::unique, stable),
+                }
+            }
             #[cfg(feature = "dtype-struct")]
             StructExpr(sf) => {
                 use StructFunction::*;
@@ -443,10 +477,6 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Interpolate(method) => {
                 map!(dispatch::interpolate, method)
             }
-            #[cfg(feature = "dot_product")]
-            Dot => {
-                map_as_slice!(dispatch::dot_impl)
-            }
             #[cfg(feature = "log")]
             Entropy { base, normalize } => map!(log::entropy, base, normalize),
             #[cfg(feature = "log")]
@@ -464,6 +494,11 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Ceil => map!(round::ceil),
             UpperBound => map!(bounds::upper_bound),
             LowerBound => map!(bounds::lower_bound),
+            #[cfg(feature = "fused")]
+            Fused(op) => map_as_slice!(fused::fused, op),
+            ConcatExpr(rechunk) => map_as_slice!(concat::concat_expr, rechunk),
+            Correlation { method, ddof } => map_as_slice!(correlation::corr, ddof, method),
+            ToPhysical => map!(dispatch::to_physical),
         }
     }
 }
@@ -516,6 +551,9 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "string_from_radix")]
             FromRadix(radix, strict) => map!(strings::from_radix, radix, strict),
             Slice(start, length) => map!(strings::str_slice, start, length),
+            Explode => map!(strings::explode),
+            #[cfg(feature = "dtype-decimal")]
+            ToDecimal(infer_len) => map!(strings::to_decimal, infer_len),
         }
     }
 }
@@ -575,18 +613,22 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "timezones")]
             TzLocalize(tz) => map!(datetime::tz_localize, &tz),
             Combine(tu) => map_as_slice!(temporal::combine, tu),
-            DateRange {
-                name,
-                every,
-                closed,
-                tz,
-            } => {
+            DateRange { every, closed, tz } => {
                 map_as_slice!(
-                    datetime::date_range_dispatch,
-                    name.as_ref(),
+                    temporal::temporal_range_dispatch,
+                    "date",
                     every,
                     closed,
                     tz.clone()
+                )
+            }
+            TimeRange { every, closed } => {
+                map_as_slice!(
+                    temporal::temporal_range_dispatch,
+                    "time",
+                    every,
+                    closed,
+                    None
                 )
             }
         }

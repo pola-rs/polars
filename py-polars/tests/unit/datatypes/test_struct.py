@@ -218,16 +218,6 @@ def test_nested_struct() -> None:
     assert isinstance(nest_l1.dtypes[0], pl.datatypes.Struct)
 
 
-def test_eager_struct() -> None:
-    with pytest.raises(pl.DuplicateError, match="multiple fields with name '' found"):
-        s = pl.struct([pl.Series([1, 2, 3]), pl.Series(["a", "b", "c"])], eager=True)
-
-    s = pl.struct(
-        [pl.Series("a", [1, 2, 3]), pl.Series("b", ["a", "b", "c"])], eager=True
-    )
-    assert s.dtype == pl.Struct
-
-
 def test_struct_to_pandas() -> None:
     df = pd.DataFrame([{"a": {"b": {"c": 2}}}])
     pl_df = pl.from_pandas(df)
@@ -312,14 +302,14 @@ def test_from_dicts_struct() -> None:
 
 def test_list_to_struct() -> None:
     df = pl.DataFrame({"a": [[1, 2, 3], [1, 2]]})
-    assert df.select([pl.col("a").arr.to_struct()]).to_series().to_list() == [
+    assert df.select([pl.col("a").list.to_struct()]).to_series().to_list() == [
         {"field_0": 1, "field_1": 2, "field_2": 3},
         {"field_0": 1, "field_1": 2, "field_2": None},
     ]
 
     df = pl.DataFrame({"a": [[1, 2], [1, 2, 3]]})
     assert df.select(
-        [pl.col("a").arr.to_struct(name_generator=lambda idx: f"col_name_{idx}")]
+        [pl.col("a").list.to_struct(fields=lambda idx: f"col_name_{idx}")]
     ).to_series().to_list() == [
         {"col_name_0": 1, "col_name_1": 2},
         {"col_name_0": 1, "col_name_1": 2},
@@ -327,7 +317,7 @@ def test_list_to_struct() -> None:
 
     df = pl.DataFrame({"a": [[1, 2], [1, 2, 3]]})
     assert df.select(
-        [pl.col("a").arr.to_struct(n_field_strategy="max_width")]
+        [pl.col("a").list.to_struct(n_field_strategy="max_width")]
     ).to_series().to_list() == [
         {"field_0": 1, "field_1": 2, "field_2": None},
         {"field_0": 1, "field_1": 2, "field_2": 3},
@@ -335,7 +325,7 @@ def test_list_to_struct() -> None:
 
     # set upper bound
     df = pl.DataFrame({"lists": [[1, 1, 1], [0, 1, 0], [1, 0, 0]]})
-    assert df.lazy().select(pl.col("lists").arr.to_struct(upper_bound=3)).unnest(
+    assert df.lazy().select(pl.col("lists").list.to_struct(upper_bound=3)).unnest(
         "lists"
     ).sum().collect().columns == ["field_0", "field_1", "field_2"]
 
@@ -357,8 +347,8 @@ def test_struct_list_head_tail() -> None:
         }
     ).with_columns(
         [
-            pl.col("list_of_struct").arr.head(1).alias("head"),
-            pl.col("list_of_struct").arr.tail(1).alias("tail"),
+            pl.col("list_of_struct").list.head(1).alias("head"),
+            pl.col("list_of_struct").list.tail(1).alias("tail"),
         ]
     ).to_dict(
         False
@@ -419,13 +409,13 @@ def test_struct_arr_methods() -> None:
             ],
         }
     )
-    assert df.select([pl.col("list_struct").arr.first()]).to_dict(False) == {
+    assert df.select([pl.col("list_struct").list.first()]).to_dict(False) == {
         "list_struct": [{"a": 1, "b": 2}, {"a": 1, "b": 2}, {"a": 1, "b": 2}]
     }
-    assert df.select([pl.col("list_struct").arr.last()]).to_dict(False) == {
+    assert df.select([pl.col("list_struct").list.last()]).to_dict(False) == {
         "list_struct": [{"a": 5, "b": 6}, {"a": 3, "b": 4}, {"a": 1, "b": 2}]
     }
-    assert df.select([pl.col("list_struct").arr.get(0)]).to_dict(False) == {
+    assert df.select([pl.col("list_struct").list.get(0)]).to_dict(False) == {
         "list_struct": [{"a": 1, "b": 2}, {"a": 1, "b": 2}, {"a": 1, "b": 2}]
     }
 
@@ -442,7 +432,9 @@ def test_struct_concat_list() -> None:
                 [{"a": 6, "b": 7}],
             ],
         }
-    ).with_columns([pl.col("list_struct1").arr.concat("list_struct2").alias("result")])[
+    ).with_columns(
+        [pl.col("list_struct1").list.concat("list_struct2").alias("result")]
+    )[
         "result"
     ].to_list() == [
         [{"a": 1, "b": 2}, {"a": 3, "b": 4}, {"a": 6, "b": 7}, {"a": 8, "b": 9}],
@@ -458,7 +450,7 @@ def test_struct_arr_reverse() -> None:
                 [{"a": 30, "b": 40}, {"a": 10, "b": 20}, {"a": 50, "b": 60}],
             ],
         }
-    ).with_columns([pl.col("list_struct").arr.reverse()]).to_dict(False) == {
+    ).with_columns([pl.col("list_struct").list.reverse()]).to_dict(False) == {
         "list_struct": [
             [{"a": 5, "b": 6}, {"a": 3, "b": 4}, {"a": 1, "b": 2}],
             [{"a": 50, "b": 60}, {"a": 10, "b": 20}, {"a": 30, "b": 40}],
@@ -580,7 +572,7 @@ def test_struct_arr_eval() -> None:
         {"col_struct": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 1, "b": 11}]]}
     )
     assert df.with_columns(
-        pl.col("col_struct").arr.eval(pl.element().first()).alias("first")
+        pl.col("col_struct").list.eval(pl.element().first()).alias("first")
     ).to_dict(False) == {
         "col_struct": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 1, "b": 11}]],
         "first": [[{"a": 1, "b": 11}]],
@@ -593,7 +585,7 @@ def test_arr_unique() -> None:
         {"col_struct": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 1, "b": 11}]]}
     )
     # the order is unpredictable
-    unique = df.with_columns(pl.col("col_struct").arr.unique().alias("unique"))[
+    unique = df.with_columns(pl.col("col_struct").list.unique().alias("unique"))[
         "unique"
     ].to_list()
     assert len(unique) == 1
@@ -683,55 +675,10 @@ def test_struct_getitem() -> None:
     ).to_dict(False) == {"a": [1]}
 
 
-def test_struct_broadcasting() -> None:
-    df = pl.DataFrame(
-        {
-            "col1": [1, 2],
-            "col2": [10, 20],
-        }
-    )
-
-    assert (
-        df.select(
-            pl.struct(
-                [
-                    pl.lit("a").alias("a"),
-                    pl.col("col1").alias("col1"),
-                ]
-            ).alias("my_struct")
-        )
-    ).to_dict(False) == {"my_struct": [{"a": "a", "col1": 1}, {"a": "a", "col1": 2}]}
-
-
 def test_struct_supertype() -> None:
     assert pl.from_dicts(
         [{"vehicle": {"auto": "car"}}, {"vehicle": {"auto": None}}]
     ).to_dict(False) == {"vehicle": [{"auto": "car"}, {"auto": None}]}
-
-
-def test_suffix_in_struct_creation() -> None:
-    assert (
-        pl.DataFrame(
-            {
-                "a": [1, 2],
-                "b": [3, 4],
-                "c": [5, 6],
-            }
-        ).select(pl.struct(pl.col(["a", "c"]).suffix("_foo")).alias("bar"))
-    ).unnest("bar").to_dict(False) == {"a_foo": [1, 2], "c_foo": [5, 6]}
-
-
-def test_concat_list_reverse_struct_fields() -> None:
-    df = pl.DataFrame({"nums": [1, 2, 3, 4], "letters": ["a", "b", "c", "d"]}).select(
-        [
-            pl.col("nums"),
-            pl.struct(["letters", "nums"]).alias("combo"),
-            pl.struct(["nums", "letters"]).alias("reverse_combo"),
-        ]
-    )
-    result1 = df.select(pl.concat_list(["combo", "reverse_combo"]))
-    result2 = df.select(pl.concat_list(["combo", "combo"]))
-    assert_frame_equal(result1, result2)
 
 
 def test_struct_any_value_get_after_append() -> None:
@@ -865,28 +812,6 @@ def test_sort_structs() -> None:
     }
 
 
-def test_struct_args_kwargs() -> None:
-    df = pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": ["a", "b"]})
-
-    # Single input
-    result = df.select(r=pl.struct((pl.col("a") + pl.col("b")).alias("p")))
-    expected = pl.DataFrame({"r": [{"p": 4}, {"p": 6}]})
-    assert_frame_equal(result, expected)
-
-    # List input
-    result = df.select(r=pl.struct([pl.col("a").alias("p"), pl.col("b").alias("q")]))
-    expected = pl.DataFrame({"r": [{"p": 1, "q": 3}, {"p": 2, "q": 4}]})
-    assert_frame_equal(result, expected)
-
-    # Positional input
-    result = df.select(r=pl.struct(pl.col("a").alias("p"), pl.col("b").alias("q")))
-    assert_frame_equal(result, expected)
-
-    # Keyword input
-    result = df.select(r=pl.struct(p="a", q="b"))
-    assert_frame_equal(result, expected)
-
-
 def test_struct_applies_as_map() -> None:
     df = pl.DataFrame({"id": [1, 1, 2], "x": ["a", "b", "c"], "y": ["d", "e", "f"]})
 
@@ -897,24 +822,6 @@ def test_struct_applies_as_map() -> None:
     ).to_dict(False) == {
         "x": [{"x": "a", "y": "dd"}, {"x": "b", "y": "ee"}, {"x": "c", "y": "ff"}]
     }
-
-
-def test_struct_with_lit() -> None:
-    expr = pl.struct([pl.col("a"), pl.lit(1).alias("b")])
-
-    assert (
-        pl.DataFrame({"a": pl.Series([], dtype=pl.Int64)}).select(expr).to_dict(False)
-    ) == {"a": []}
-
-    assert (
-        pl.DataFrame({"a": pl.Series([1], dtype=pl.Int64)}).select(expr).to_dict(False)
-    ) == {"a": [{"a": 1, "b": 1}]}
-
-    assert (
-        pl.DataFrame({"a": pl.Series([1, 2], dtype=pl.Int64)})
-        .select(expr)
-        .to_dict(False)
-    ) == {"a": [{"a": 1, "b": 1}, {"a": 2, "b": 1}]}
 
 
 def test_struct_unique_df() -> None:
@@ -929,9 +836,10 @@ def test_struct_unique_df() -> None:
 
 
 def test_struct_is_in() -> None:
+    # The dtype casts below test that struct is_in upcasts dtypes.
     s1 = (
         pl.DataFrame({"x": [4, 3, 4, 9], "y": [0, 4, 6, 2]})
-        .select(pl.struct(["x", "y"]))
+        .select(pl.struct(schema={"x": pl.Int8, "y": pl.Float32}))
         .to_series()
     )
     s2 = (
@@ -950,15 +858,6 @@ def test_nested_struct_logicals() -> None:
     # double nested
     payload = [[[{"a": time(10)}]], [[{"a": time(10)}]]]
     assert pl.Series(payload).to_list() == payload
-
-
-def test_struct_list_cat_8235() -> None:
-    df = pl.DataFrame(
-        {"values": [["a", "b", "c"]]}, schema={"values": pl.List(pl.Categorical)}
-    )
-    assert df.select(pl.struct("values")).to_dict(False) == {
-        "values": [{"values": ["a", "b", "c"]}]
-    }
 
 
 def test_struct_name_passed_in_agg_apply() -> None:
@@ -1007,17 +906,7 @@ def test_struct_name_passed_in_agg_apply() -> None:
     }
 
 
-def test_struct_lit_cast() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3]})
-    schema = {"a": pl.Int64, "b": pl.List(pl.Int64)}
-
-    for lit in [pl.lit(None), pl.lit([[]])]:
-        s = df.select(pl.struct([pl.col("a"), lit.alias("b")], schema=schema))["a"]  # type: ignore[arg-type]
-        assert s.dtype == pl.Struct(
-            [pl.Field("a", pl.Int64), pl.Field("b", pl.List(pl.Int64))]
-        )
-        assert s.to_list() == [
-            {"a": 1, "b": None},
-            {"a": 2, "b": None},
-            {"a": 3, "b": None},
-        ]
+def test_struct_null_count_strict_cast() -> None:
+    s = pl.Series([{"a": None}]).cast(pl.Struct({"a": pl.Categorical}))
+    assert s.dtype == pl.Struct([pl.Field("a", pl.Categorical)])
+    assert s.to_list() == [{"a": None}]

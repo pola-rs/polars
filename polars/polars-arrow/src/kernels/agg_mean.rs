@@ -1,4 +1,4 @@
-use std::simd::{Mask, Simd, SimdElement, SimdFloat, StdFloat, ToBitMask};
+use std::simd::{Mask, Simd, SimdCast, SimdElement, SimdFloat, StdFloat, ToBitMask};
 
 use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::utils::{BitChunkIterExact, BitChunksExact};
@@ -14,7 +14,7 @@ use crate::utils::with_match_primitive_type;
 #[multiversion(targets = "simd")]
 fn nonnull_sum_as_f64<T>(values: &[T]) -> f64
 where
-    T: NativeType + SimdElement + ToPrimitive,
+    T: NativeType + SimdElement + ToPrimitive + SimdCast,
 {
     // we choose 8 as that the maximum size of f64x8 -> 512bit wide
     const LANES: usize = 8;
@@ -41,7 +41,7 @@ where
 #[multiversion(targets = "simd")]
 fn null_sum_as_f64_impl<T, I>(values: &[T], mut validity_masks: I) -> f64
 where
-    T: NativeType + SimdElement + ToPrimitive + IsFloat,
+    T: NativeType + SimdElement + ToPrimitive + IsFloat + SimdCast,
     I: BitChunkIterExact<u8>,
 {
     const LANES: usize = 8;
@@ -106,7 +106,7 @@ where
 
 fn null_sum_as_f64<T>(values: &[T], bitmap: &Bitmap) -> f64
 where
-    T: NativeType + SimdElement + ToPrimitive + IsFloat,
+    T: NativeType + SimdElement + ToPrimitive + IsFloat + SimdCast,
 {
     let (slice, offset, length) = bitmap.as_slice();
     if offset == 0 {

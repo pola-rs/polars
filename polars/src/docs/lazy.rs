@@ -106,7 +106,7 @@
 //!
 //! ## Groupby
 //!
-//! This example is from the polars [user guide](https://pola-rs.github.io/polars-book/user-guide/howcani/df/groupby.html).
+//! This example is from the polars [user guide](https://pola-rs.github.io/polars-book/user-guide/concepts/contexts/#groupby-aggregation).
 //!
 //! ```
 //! use polars::prelude::*;

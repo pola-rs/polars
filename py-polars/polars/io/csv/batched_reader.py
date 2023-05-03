@@ -21,7 +21,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PyBatchedCsv
 
 if TYPE_CHECKING:
-    from polars.dataframe import DataFrame
+    from polars import DataFrame
     from polars.type_aliases import CsvEncoding, PolarsDataType, SchemaDict
 
 

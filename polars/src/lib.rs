@@ -9,7 +9,7 @@
 //! expression into powerful aggregations and column selections. All expressions are evaluated
 //! in parallel and your queries are optimized just in time.
 //!
-//! ```rust no_run
+//! ```no_run
 //! use polars::prelude::*;
 //! # fn example() -> PolarsResult<()> {
 //!
@@ -133,7 +133,7 @@
 //! (Note that within an expression there may be more parallelization going on).
 //!
 //! Understanding polars expressions is most important when starting with the polars library. Read more
-//! about them in the [User Guide](https://pola-rs.github.io/polars-book/user-guide/dsl/intro.html).
+//! about them in the [User Guide](https://pola-rs.github.io/polars-book/user-guide/concepts/expressions).
 //! Though the examples given there are in python. The expressions API is almost identical and the
 //! the read should certainly be valuable to rust users as well.
 //!
@@ -230,7 +230,7 @@
 //!     - `mode` - [Return the most occurring value(s)](crate::chunked_array::ops::ChunkUnique::mode)
 //!     - `cum_agg` - cumsum, cummin, cummax aggregation.
 //!     - `rolling_window` - rolling window functions, like rolling_mean
-//!     - `interpolate` [interpolate None values](crate::chunked_array::ops::Interpolate)
+//!     - `interpolate` [interpolate None values](polars_ops::chunked_array::interpolate)
 //!     - `extract_jsonpath` - [Run jsonpath queries on Utf8Chunked](https://goessner.net/articles/JsonPath/)
 //!     - `list` - List utils.
 //!         - `list_take` take sublist by multiple indices
@@ -305,6 +305,7 @@
 //! #[global_allocator]
 //! static GLOBAL: MiMalloc = MiMalloc;
 //! ```
+//!
 //! ```ignore
 //! use jemallocator::Jemalloc;
 //!
@@ -317,10 +318,11 @@
 //! outperforms Mimalloc on all tasks and is therefor the default Linux allocator used for the Python bindings.
 //!
 //! #### Cargo.toml
-//! ```ignore
+//! ```toml
 //! [dependencies]
 //! mimalloc = { version = "*", default-features = false }
 //! ```
+//!
 //! ## Config with ENV vars
 //!
 //! * `POLARS_FMT_TABLE_FORMATTING` -> define styling of tables using any of the following options (default = UTF8_FULL_CONDENSED):

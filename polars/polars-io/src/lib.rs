@@ -15,7 +15,7 @@ pub mod ipc;
 #[cfg(feature = "json")]
 pub mod json;
 #[cfg(feature = "json")]
-pub mod ndjson_core;
+pub mod ndjson;
 #[cfg(feature = "cloud")]
 pub use crate::cloud::glob as async_glob;
 
@@ -29,10 +29,7 @@ pub mod mmap;
 mod options;
 #[cfg(feature = "parquet")]
 pub mod parquet;
-#[cfg(feature = "private")]
 pub mod predicates;
-#[cfg(not(feature = "private"))]
-pub(crate) mod predicates;
 pub mod prelude;
 #[cfg(all(test, feature = "csv"))]
 mod tests;

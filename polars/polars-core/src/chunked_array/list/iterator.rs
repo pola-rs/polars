@@ -5,7 +5,6 @@ use crate::prelude::*;
 use crate::series::unstable::{ArrayBox, UnstableSeries};
 use crate::utils::CustomIterTools;
 
-#[cfg(feature = "private")]
 pub struct AmortizedListIter<'a, I: Iterator<Item = Option<ArrayBox>>> {
     len: usize,
     series_container: Box<Series>,
@@ -15,6 +14,25 @@ pub struct AmortizedListIter<'a, I: Iterator<Item = Option<ArrayBox>>> {
     // used only if feature="dtype-struct"
     #[allow(dead_code)]
     inner_dtype: DataType,
+}
+
+impl<'a, I: Iterator<Item = Option<ArrayBox>>> AmortizedListIter<'a, I> {
+    pub(crate) fn new(
+        len: usize,
+        series_container: Box<Series>,
+        inner: NonNull<ArrayRef>,
+        iter: I,
+        inner_dtype: DataType,
+    ) -> Self {
+        Self {
+            len,
+            series_container,
+            inner,
+            lifetime: PhantomData,
+            iter,
+            inner_dtype,
+        }
+    }
 }
 
 impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a, I> {
@@ -72,13 +90,12 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
 
 // # Safety
 // we correctly implemented size_hint
-#[cfg(feature = "private")]
 unsafe impl<'a, I: Iterator<Item = Option<ArrayBox>>> TrustedLen for AmortizedListIter<'a, I> {}
 
 impl ListChunked {
     /// This is an iterator over a ListChunked that save allocations.
     /// A Series is:
-    ///     1. Arc<ChunkedArray>
+    ///     1. [`Arc<ChunkedArray>`]
     ///     ChunkedArray is:
     ///         2. Vec< 3. ArrayRef>
     ///
@@ -92,12 +109,10 @@ impl ListChunked {
     /// this function still needs precautions. The returned should never be cloned or taken longer
     /// than a single iteration, as every call on `next` of the iterator will change the contents of
     /// that Series.
-    #[cfg(feature = "private")]
     pub fn amortized_iter(&self) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
         self.amortized_iter_with_name("")
     }
 
-    #[cfg(feature = "private")]
     pub fn amortized_iter_with_name(
         &self,
         name: &str,
@@ -129,18 +144,16 @@ impl ListChunked {
 
         let ptr = series_container.array_ref(0) as *const ArrayRef as *mut ArrayRef;
 
-        AmortizedListIter {
-            len: self.len(),
+        AmortizedListIter::new(
+            self.len(),
             series_container,
-            inner: NonNull::new(ptr).unwrap(),
-            lifetime: PhantomData,
-            iter: self.downcast_iter().flat_map(|arr| arr.iter()),
+            NonNull::new(ptr).unwrap(),
+            self.downcast_iter().flat_map(|arr| arr.iter()),
             inner_dtype,
-        }
+        )
     }
 
     /// Apply a closure `F` elementwise.
-    #[cfg(feature = "private")]
     #[must_use]
     pub fn apply_amortized<'a, F>(&'a self, mut f: F) -> Self
     where

@@ -178,7 +178,7 @@ pub(crate) mod private {
             invalid_operation_panic!(zip_with_same_type, self)
         }
 
-        fn arg_sort_multiple(&self, _by: &[Series], _descending: &[bool]) -> PolarsResult<IdxCa> {
+        fn arg_sort_multiple(&self, _options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
             polars_bail!(opq = arg_sort_multiple, self._dtype());
         }
     }
@@ -310,9 +310,6 @@ pub trait SeriesTrait:
     /// Aggregate all chunks to a contiguous array of memory.
     fn rechunk(&self) -> Series;
 
-    /// Take every nth value as a new Series
-    fn take_every(&self, n: usize) -> Series;
-
     /// Drop all null values and return a new Series.
     fn drop_nulls(&self) -> Series {
         if self.null_count() == 0 {
@@ -359,7 +356,6 @@ pub trait SeriesTrait:
     ///
     /// # Safety
     /// Does not do any bounds checking
-    #[cfg(feature = "private")]
     unsafe fn get_unchecked(&self, _index: usize) -> AnyValue {
         invalid_operation_panic!(get_unchecked, self)
     }
@@ -512,8 +508,8 @@ pub trait SeriesTrait:
         polars_bail!(opq = is_in, self._dtype());
     }
     #[cfg(feature = "repeat_by")]
-    fn repeat_by(&self, _by: &IdxCa) -> ListChunked {
-        invalid_operation_panic!(repeat_by, self)
+    fn repeat_by(&self, _by: &IdxCa) -> PolarsResult<ListChunked> {
+        polars_bail!(opq = repeat_by, self._dtype());
     }
     #[cfg(feature = "checked_arithmetic")]
     fn checked_div(&self, _rhs: &Series) -> PolarsResult<Series> {
@@ -543,6 +539,10 @@ pub trait SeriesTrait:
     /// * `delimiter` - A string that will act as delimiter between values.
     fn str_concat(&self, _delimiter: &str) -> Utf8Chunked {
         invalid_operation_panic!(str_concat, self);
+    }
+
+    fn tile(&self, _n: usize) -> Series {
+        invalid_operation_panic!(tile, self);
     }
 }
 

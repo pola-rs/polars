@@ -1,21 +1,28 @@
 from __future__ import annotations
 
 import datetime as dt
+import warnings
 from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
-from polars.utils._parse_expr_input import expr_to_lit_or_expr
+from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import deprecated_alias
+from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
     from datetime import timedelta
 
-    from polars.expr import Expr
+    from polars import Expr
     from polars.type_aliases import EpochTimeUnit, TimeUnit
+
+TIME_ZONE_DEPRECATION_MESSAGE = (
+    "In a future version of polars, time zones other than those in `zoneinfo.available_timezones()` "
+    "will no longer be supported. Please use one of them instead."
+)
 
 
 class ExprDateTimeNameSpace:
@@ -34,7 +41,8 @@ class ExprDateTimeNameSpace:
         """
         Divide the date/datetime range into buckets.
 
-        Each date/datetime is mapped to the start of its bucket.
+        Each date/datetime is mapped to the start of its bucket. Note that weekly
+        buckets start on Monday.
 
         Parameters
         ----------
@@ -59,6 +67,7 @@ class ExprDateTimeNameSpace:
         - 1mo # 1 calendar month
         - 1mo_saturating # same as above, but saturates to the last day of the month
           if the target date does not exist
+        - 1q  # 1 calendar quarter
         - 1y  # 1 calendar year
 
         These strings can be combined:
@@ -79,12 +88,12 @@ class ExprDateTimeNameSpace:
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
         >>> df = pl.date_range(
-        ...     start, stop, timedelta(minutes=225), name="dates", eager=True
+        ...     start, stop, timedelta(minutes=225), eager=True
         ... ).to_frame()
         >>> df
         shape: (7, 1)
         ┌─────────────────────┐
-        │ dates               │
+        │ date                │
         │ ---                 │
         │ datetime[μs]        │
         ╞═════════════════════╡
@@ -96,10 +105,10 @@ class ExprDateTimeNameSpace:
         │ 2001-01-01 18:45:00 │
         │ 2001-01-01 22:30:00 │
         └─────────────────────┘
-        >>> df.select(pl.col("dates").dt.truncate("1h"))
+        >>> df.select(pl.col("date").dt.truncate("1h"))
         shape: (7, 1)
         ┌─────────────────────┐
-        │ dates               │
+        │ date                │
         │ ---                 │
         │ datetime[μs]        │
         ╞═════════════════════╡
@@ -111,18 +120,18 @@ class ExprDateTimeNameSpace:
         │ 2001-01-01 18:00:00 │
         │ 2001-01-01 22:00:00 │
         └─────────────────────┘
-        >>> df.select(pl.col("dates").dt.truncate("1h")).frame_equal(
-        ...     df.select(pl.col("dates").dt.truncate(timedelta(hours=1)))
+        >>> df.select(pl.col("date").dt.truncate("1h")).frame_equal(
+        ...     df.select(pl.col("date").dt.truncate(timedelta(hours=1)))
         ... )
         True
 
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 1, 1)
-        >>> df = pl.date_range(start, stop, "10m", name="dates", eager=True).to_frame()
-        >>> df.select(["dates", pl.col("dates").dt.truncate("30m").alias("truncate")])
+        >>> df = pl.date_range(start, stop, "10m", eager=True).to_frame()
+        >>> df.select(["date", pl.col("date").dt.truncate("30m").alias("truncate")])
         shape: (7, 2)
         ┌─────────────────────┬─────────────────────┐
-        │ dates               ┆ truncate            │
+        │ date                ┆ truncate            │
         │ ---                 ┆ ---                 │
         │ datetime[μs]        ┆ datetime[μs]        │
         ╞═════════════════════╪═════════════════════╡
@@ -180,6 +189,7 @@ class ExprDateTimeNameSpace:
         1d   # 1 day
         1w   # 1 calendar week
         1mo  # 1 calendar month
+        1q   # 1 calendar quarter
         1y   # 1 calendar year
 
         eg: 3d12h4m25s  # 3 days, 12 hours, 4 minutes, and 25 seconds
@@ -203,12 +213,12 @@ class ExprDateTimeNameSpace:
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
         >>> df = pl.date_range(
-        ...     start, stop, timedelta(minutes=225), name="dates", eager=True
+        ...     start, stop, timedelta(minutes=225), eager=True
         ... ).to_frame()
         >>> df
         shape: (7, 1)
         ┌─────────────────────┐
-        │ dates               │
+        │ date                │
         │ ---                 │
         │ datetime[μs]        │
         ╞═════════════════════╡
@@ -220,10 +230,10 @@ class ExprDateTimeNameSpace:
         │ 2001-01-01 18:45:00 │
         │ 2001-01-01 22:30:00 │
         └─────────────────────┘
-        >>> df.select(pl.col("dates").dt.round("1h"))
+        >>> df.select(pl.col("date").dt.round("1h"))
         shape: (7, 1)
         ┌─────────────────────┐
-        │ dates               │
+        │ date                │
         │ ---                 │
         │ datetime[μs]        │
         ╞═════════════════════╡
@@ -235,18 +245,18 @@ class ExprDateTimeNameSpace:
         │ 2001-01-01 19:00:00 │
         │ 2001-01-01 23:00:00 │
         └─────────────────────┘
-        >>> df.select(pl.col("dates").dt.round("1h")).frame_equal(
-        ...     df.select(pl.col("dates").dt.round(timedelta(hours=1)))
+        >>> df.select(pl.col("date").dt.round("1h")).frame_equal(
+        ...     df.select(pl.col("date").dt.round(timedelta(hours=1)))
         ... )
         True
 
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 1, 1)
-        >>> df = pl.date_range(start, stop, "10m", name="dates", eager=True).to_frame()
-        >>> df.select(["dates", pl.col("dates").dt.round("30m").alias("round")])
+        >>> df = pl.date_range(start, stop, "10m", eager=True).to_frame()
+        >>> df.select(["date", pl.col("date").dt.round("30m").alias("round")])
         shape: (7, 2)
         ┌─────────────────────┬─────────────────────┐
-        │ dates               ┆ round               │
+        │ date                ┆ round               │
         │ ---                 ┆ ---                 │
         │ datetime[μs]        ┆ datetime[μs]        │
         ╞═════════════════════╪═════════════════════╡
@@ -328,8 +338,8 @@ class ExprDateTimeNameSpace:
             raise TypeError(
                 f"expected 'time' to be a python time or polars expression, found {time!r}"
             )
-        time = expr_to_lit_or_expr(time)
-        return wrap_expr(self._pyexpr.dt_combine(time._pyexpr, time_unit))
+        time = parse_as_expression(time)
+        return wrap_expr(self._pyexpr.dt_combine(time, time_unit))
 
     def to_string(self, format: str) -> Expr:
         """
@@ -1358,6 +1368,14 @@ class ExprDateTimeNameSpace:
         │ 2020-05-01 00:00:00 UTC ┆ 2020-05-01 01:00:00 BST     │
         └─────────────────────────┴─────────────────────────────┘
         """
+        from polars.dependencies import zoneinfo
+
+        if time_zone not in zoneinfo.available_timezones():
+            warnings.warn(
+                TIME_ZONE_DEPRECATION_MESSAGE,
+                DeprecationWarning,
+                stacklevel=find_stacklevel(),
+            )
         return wrap_expr(self._pyexpr.dt_convert_time_zone(time_zone))
 
     def replace_time_zone(
@@ -1455,6 +1473,14 @@ class ExprDateTimeNameSpace:
         └─────────────────────┴───────┴───────────────────────────────┘
 
         """
+        from polars.dependencies import zoneinfo
+
+        if time_zone is not None and time_zone not in zoneinfo.available_timezones():
+            warnings.warn(
+                TIME_ZONE_DEPRECATION_MESSAGE,
+                DeprecationWarning,
+                stacklevel=find_stacklevel(),
+            )
         return wrap_expr(self._pyexpr.dt_replace_time_zone(time_zone, use_earliest))
 
     def days(self) -> Expr:
@@ -1779,6 +1805,7 @@ class ExprDateTimeNameSpace:
             - 1d    (1 day)
             - 1w    (1 week)
             - 1mo   (1 calendar month)
+            - 1q    (1 calendar quarter)
             - 1y    (1 calendar year)
             - 1i    (1 index count)
 

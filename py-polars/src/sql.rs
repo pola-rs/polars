@@ -25,15 +25,23 @@ impl PySQLContext {
         }
     }
 
-    pub fn register(&mut self, name: &str, lf: PyLazyFrame) {
-        self.context.register(name, lf.ldf)
-    }
-
     pub fn execute(&mut self, query: &str) -> PyResult<PyLazyFrame> {
         Ok(self
             .context
             .execute(query)
             .map_err(PyPolarsErr::from)?
             .into())
+    }
+
+    pub fn get_tables(&self) -> PyResult<Vec<String>> {
+        Ok(self.context.get_tables())
+    }
+
+    pub fn register(&mut self, name: &str, lf: PyLazyFrame) {
+        self.context.register(name, lf.ldf)
+    }
+
+    pub fn unregister(&mut self, name: &str) {
+        self.context.unregister(name)
     }
 }

@@ -43,6 +43,7 @@ fn test_special_groupby_schemas() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
+        .with_column(col("a").set_sorted_flag(IsSorted::Ascending))
         .groupby_rolling(
             col("a"),
             [],
@@ -67,6 +68,7 @@ fn test_special_groupby_schemas() -> PolarsResult<()> {
 
     let out = df
         .lazy()
+        .with_column(col("a").set_sorted_flag(IsSorted::Ascending))
         .groupby_dynamic(
             col("a"),
             [],
@@ -165,7 +167,7 @@ fn test_sorted_path_joins() -> PolarsResult<()> {
     let out = dfa
         .lazy()
         .with_column(col("a").set_sorted_flag(IsSorted::Ascending))
-        .join(dfb.lazy(), [col("a")], [col("a")], JoinType::Left)
+        .join(dfb.lazy(), [col("a")], [col("a")], JoinType::Left.into())
         .collect()?;
 
     let s = out.column("a")?;

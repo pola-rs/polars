@@ -2,7 +2,6 @@
 use polars_arrow::kernels::list_bytes_iter::numeric_list_bytes_iter;
 use polars_arrow::kernels::sort_partition::{create_clean_partitions, partition_to_groups};
 use polars_arrow::prelude::*;
-use polars_utils::HashSingle;
 
 use super::*;
 use crate::config::verbose;
@@ -256,7 +255,7 @@ impl IntoGroupsProxy for BinaryChunked {
                         ca.into_iter()
                             .map(|opt_b| {
                                 let hash = match opt_b {
-                                    Some(s) => hb.hash_single(s),
+                                    Some(s) => hb.hash_one(s),
                                     None => null_h,
                                 };
                                 // Safety:
@@ -278,7 +277,7 @@ impl IntoGroupsProxy for BinaryChunked {
                 .into_iter()
                 .map(|opt_b| {
                     let hash = match opt_b {
-                        Some(s) => hb.hash_single(s),
+                        Some(s) => hb.hash_one(s),
                         None => null_h,
                     };
                     BytesHash::new(opt_b, hash)
@@ -310,7 +309,7 @@ impl IntoGroupsProxy for ListChunked {
                 for arr in ca.downcast_iter() {
                     out.extend(numeric_list_bytes_iter(arr)?.map(|opt_bytes| {
                         let hash = match opt_bytes {
-                            Some(s) => hb.hash_single(s),
+                            Some(s) => hb.hash_one(s),
                             None => null_h,
                         };
 
@@ -355,6 +354,19 @@ impl IntoGroupsProxy for ListChunked {
         {
             panic!("activate 'groupby_list' feature")
         }
+    }
+}
+
+#[cfg(feature = "dtype-array")]
+impl IntoGroupsProxy for ArrayChunked {
+    #[allow(clippy::needless_lifetimes)]
+    #[allow(unused_variables)]
+    fn group_tuples<'a>(
+        &'a self,
+        _multithreaded: bool,
+        _sorted: bool,
+    ) -> PolarsResult<GroupsProxy> {
+        todo!("grouping FixedSizeList not yet supported")
     }
 }
 

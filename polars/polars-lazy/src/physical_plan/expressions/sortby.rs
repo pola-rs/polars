@@ -74,7 +74,12 @@ impl PhysicalExpr for SortByExpr {
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
-                s_sort_by[0].arg_sort_multiple(&s_sort_by[1..], &descending)
+                let options = SortMultipleOptions {
+                    other: s_sort_by[1..].to_vec(),
+                    descending,
+                    multithreaded: true,
+                };
+                s_sort_by[0].arg_sort_multiple(&options)
             };
             POOL.install(|| rayon::join(series_f, sorted_idx_f))
         };
@@ -117,25 +122,28 @@ impl PhysicalExpr for SortByExpr {
             let mut s = s.list().unwrap().clone();
 
             let descending = self.descending[0];
-            let mut ca: ListChunked = s
-                .par_iter_indexed()
-                .zip(sort_by.par_iter_indexed())
-                .map(|(opt_s, s_sort_by)| match (opt_s, s_sort_by) {
-                    (Some(s), Some(s_sort_by)) => {
-                        if s.len() != s_sort_by.len() {
-                            invalid.store(true, Ordering::Relaxed);
-                            None
-                        } else {
-                            let idx = s_sort_by.arg_sort(SortOptions {
-                                descending,
-                                ..Default::default()
-                            });
-                            Some(unsafe { s.take_unchecked(&idx).unwrap() })
+            let mut ca: ListChunked = POOL.install(|| {
+                s.par_iter_indexed()
+                    .zip(sort_by.par_iter_indexed())
+                    .map(|(opt_s, s_sort_by)| match (opt_s, s_sort_by) {
+                        (Some(s), Some(s_sort_by)) => {
+                            if s.len() != s_sort_by.len() {
+                                invalid.store(true, Ordering::Relaxed);
+                                None
+                            } else {
+                                let idx = s_sort_by.arg_sort(SortOptions {
+                                    descending,
+                                    // we are already in par iter.
+                                    multithreaded: false,
+                                    ..Default::default()
+                                });
+                                Some(unsafe { s.take_unchecked(&idx).unwrap() })
+                            }
                         }
-                    }
-                    _ => None,
-                })
-                .collect();
+                        _ => None,
+                    })
+                    .collect()
+            });
             ca.rename(s.name());
             let s = ca.into_series();
             ac_in.with_series(s, true, Some(&self.expr))?;
@@ -156,37 +164,48 @@ impl PhysicalExpr for SortByExpr {
                 );
                 let groups = ac_sort_by.groups();
 
-                let groups = groups
-                    .par_iter()
-                    .map(|indicator| {
-                        let new_idx = match indicator {
-                            GroupsIndicator::Idx((_, idx)) => {
-                                // Safety:
-                                // Group tuples are always in bounds
-                                let group = unsafe {
-                                    sort_by_s
-                                        .take_iter_unchecked(&mut idx.iter().map(|i| *i as usize))
-                                };
+                let groups = POOL.install(|| {
+                    groups
+                        .par_iter()
+                        .map(|indicator| {
+                            let new_idx = match indicator {
+                                GroupsIndicator::Idx((_, idx)) => {
+                                    // Safety:
+                                    // Group tuples are always in bounds
+                                    let group = unsafe {
+                                        sort_by_s.take_iter_unchecked(
+                                            &mut idx.iter().map(|i| *i as usize),
+                                        )
+                                    };
 
-                                let sorted_idx = group.arg_sort(SortOptions {
-                                    descending: descending[0],
-                                    ..Default::default()
-                                });
-                                map_sorted_indices_to_group_idx(&sorted_idx, idx)
-                            }
-                            GroupsIndicator::Slice([first, len]) => {
-                                let group = sort_by_s.slice(first as i64, len as usize);
-                                let sorted_idx = group.arg_sort(SortOptions {
-                                    descending: descending[0],
-                                    ..Default::default()
-                                });
-                                map_sorted_indices_to_group_slice(&sorted_idx, first)
-                            }
-                        };
+                                    let sorted_idx = group.arg_sort(SortOptions {
+                                        descending: descending[0],
+                                        // we are already in par iter.
+                                        multithreaded: false,
+                                        ..Default::default()
+                                    });
+                                    map_sorted_indices_to_group_idx(&sorted_idx, idx)
+                                }
+                                GroupsIndicator::Slice([first, len]) => {
+                                    let group = sort_by_s.slice(first as i64, len as usize);
+                                    let sorted_idx = group.arg_sort(SortOptions {
+                                        descending: descending[0],
+                                        // we are already in par iter.
+                                        multithreaded: false,
+                                        ..Default::default()
+                                    });
+                                    map_sorted_indices_to_group_slice(&sorted_idx, first)
+                                }
+                            };
+                            let first = new_idx.first().unwrap_or_else(|| {
+                                invalid.store(true, Ordering::Relaxed);
+                                &0
+                            });
 
-                        (new_idx[0], new_idx)
-                    })
-                    .collect();
+                            (*first, new_idx)
+                        })
+                        .collect()
+                });
 
                 (GroupsProxy::Idx(groups), ordered_by_group_operation)
             } else {
@@ -220,40 +239,56 @@ impl PhysicalExpr for SortByExpr {
                 );
                 let groups = ac_sort_by[0].groups();
 
-                let groups = groups
-                    .par_iter()
-                    .map(|indicator| {
-                        let new_idx = match indicator {
-                            GroupsIndicator::Idx((_first, idx)) => {
-                                // Safety:
-                                // Group tuples are always in bounds
-                                let groups = sort_by_s
-                                    .iter()
-                                    .map(|s| unsafe {
-                                        s.take_iter_unchecked(&mut idx.iter().map(|i| *i as usize))
-                                    })
-                                    .collect::<Vec<_>>();
+                let groups = POOL.install(|| {
+                    groups
+                        .par_iter()
+                        .map(|indicator| {
+                            let new_idx = match indicator {
+                                GroupsIndicator::Idx((_first, idx)) => {
+                                    // Safety:
+                                    // Group tuples are always in bounds
+                                    let groups = sort_by_s
+                                        .iter()
+                                        .map(|s| unsafe {
+                                            s.take_iter_unchecked(
+                                                &mut idx.iter().map(|i| *i as usize),
+                                            )
+                                        })
+                                        .collect::<Vec<_>>();
 
-                                let sorted_idx = groups[0]
-                                    .arg_sort_multiple(&groups[1..], &descending)
-                                    .unwrap();
-                                map_sorted_indices_to_group_idx(&sorted_idx, idx)
-                            }
-                            GroupsIndicator::Slice([first, len]) => {
-                                let groups = sort_by_s
-                                    .iter()
-                                    .map(|s| s.slice(first as i64, len as usize))
-                                    .collect::<Vec<_>>();
-                                let sorted_idx = groups[0]
-                                    .arg_sort_multiple(&groups[1..], &descending)
-                                    .unwrap();
-                                map_sorted_indices_to_group_slice(&sorted_idx, first)
-                            }
-                        };
+                                    let options = SortMultipleOptions {
+                                        other: groups[1..].to_vec(),
+                                        descending: descending.clone(),
+                                        multithreaded: false,
+                                    };
 
-                        (new_idx[0], new_idx)
-                    })
-                    .collect();
+                                    let sorted_idx = groups[0].arg_sort_multiple(&options).unwrap();
+                                    map_sorted_indices_to_group_idx(&sorted_idx, idx)
+                                }
+                                GroupsIndicator::Slice([first, len]) => {
+                                    let groups = sort_by_s
+                                        .iter()
+                                        .map(|s| s.slice(first as i64, len as usize))
+                                        .collect::<Vec<_>>();
+
+                                    let options = SortMultipleOptions {
+                                        other: groups[1..].to_vec(),
+                                        descending: descending.clone(),
+                                        multithreaded: false,
+                                    };
+                                    let sorted_idx = groups[0].arg_sort_multiple(&options).unwrap();
+                                    map_sorted_indices_to_group_slice(&sorted_idx, first)
+                                }
+                            };
+                            let first = new_idx.first().unwrap_or_else(|| {
+                                invalid.store(true, Ordering::Relaxed);
+                                &0
+                            });
+
+                            (*first, new_idx)
+                        })
+                        .collect()
+                });
 
                 (GroupsProxy::Idx(groups), ordered_by_group_operation)
             };

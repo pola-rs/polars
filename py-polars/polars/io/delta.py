@@ -9,8 +9,7 @@ from polars.dependencies import _DELTALAKE_AVAILABLE, deltalake
 from polars.io.pyarrow_dataset import scan_pyarrow_dataset
 
 if TYPE_CHECKING:
-    from polars.dataframe import DataFrame
-    from polars.lazyframe import LazyFrame
+    from polars import DataFrame, LazyFrame
 
 
 def read_delta(
@@ -103,7 +102,7 @@ def read_delta(
     * adl://<container>/<path>
     * abfs://<container>/<path>
 
-    Supported options for Azure are available `here
+    See a list of supported storage options for Azure `here
     <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html#variants>`__.
 
     >>> table_path = "az://container/path/to/delta-table/"
@@ -127,7 +126,7 @@ def read_delta(
     if pyarrow_options is None:
         pyarrow_options = {}
 
-    resolved_uri = _resolve_delta_lake_uri(source)
+    resolved_uri = resolve_delta_lake_uri(source)
 
     dl_tbl = _get_delta_lake_table(
         table_path=resolved_uri,
@@ -255,7 +254,7 @@ def scan_delta(
     if pyarrow_options is None:
         pyarrow_options = {}
 
-    resolved_uri = _resolve_delta_lake_uri(source)
+    resolved_uri = resolve_delta_lake_uri(source)
     dl_tbl = _get_delta_lake_table(
         table_path=resolved_uri,
         version=version,
@@ -267,11 +266,11 @@ def scan_delta(
     return scan_pyarrow_dataset(pa_ds)
 
 
-def _resolve_delta_lake_uri(table_uri: str) -> str:
+def resolve_delta_lake_uri(table_uri: str, strict: bool = True) -> str:
     parsed_result = urlparse(table_uri)
 
     resolved_uri = str(
-        Path(table_uri).expanduser().resolve(True)
+        Path(table_uri).expanduser().resolve(strict)
         if parsed_result.scheme == ""
         else table_uri
     )
@@ -298,10 +297,7 @@ def _get_delta_lake_table(
     DeltaTable
 
     """
-    if not _DELTALAKE_AVAILABLE:
-        raise ImportError(
-            "deltalake is not installed. Please run `pip install deltalake>=0.8.0`."
-        )
+    check_if_delta_available()
 
     if delta_table_options is None:
         delta_table_options = {}
@@ -314,3 +310,10 @@ def _get_delta_lake_table(
     )
 
     return dl_tbl
+
+
+def check_if_delta_available() -> None:
+    if not _DELTALAKE_AVAILABLE:
+        raise ImportError(
+            "deltalake is not installed. Please run `pip install deltalake>=0.9.0`."
+        )

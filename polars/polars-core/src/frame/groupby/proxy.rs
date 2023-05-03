@@ -64,7 +64,7 @@ impl From<Vec<(Vec<IdxSize>, Vec<Vec<IdxSize>>)>> for GroupsIdx {
 
         POOL.install(|| {
             v.into_par_iter().zip(offsets).for_each(
-                |((local_first_vals, local_all_vals), offset)| unsafe {
+                |((local_first_vals, mut local_all_vals), offset)| unsafe {
                     let global_first: *mut IdxSize = global_first_ptr.get();
                     let global_all: *mut Vec<IdxSize> = global_all_ptr.get();
                     let global_first = global_first.add(offset);
@@ -80,8 +80,11 @@ impl From<Vec<(Vec<IdxSize>, Vec<Vec<IdxSize>>)>> for GroupsIdx {
                         global_all,
                         local_all_vals.len(),
                     );
-                    // ensure the vecs don't get dropped
-                    std::mem::forget(local_all_vals);
+                    // local_all_vals: Vec<Vec<IdxSize>>
+                    // we just copied the contents: Vec<IdxSize> to a new buffer
+                    // now, we want to free the outer vec, without freeing
+                    // the inner vecs as they are moved, so we set the len to 0
+                    local_all_vals.set_len(0);
                 },
             );
         });
@@ -282,11 +285,14 @@ impl IntoParallelIterator for GroupsIdx {
 ///  - first value is an index to the start of the group
 ///  - second value is the length of the group
 /// Only used when group values are stored together
+///
+/// This type should have the invariant that it is always sorted in ascending order.
 pub type GroupsSlice = Vec<[IdxSize; 2]>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GroupsProxy {
     Idx(GroupsIdx),
+    /// Slice is always sorted in ascending order.
     Slice {
         // the groups slices
         groups: GroupsSlice,
@@ -302,7 +308,6 @@ impl Default for GroupsProxy {
 }
 
 impl GroupsProxy {
-    #[cfg(feature = "private")]
     pub fn into_idx(self) -> GroupsIdx {
         match self {
             GroupsProxy::Idx(groups) => groups,
@@ -320,7 +325,6 @@ impl GroupsProxy {
         GroupsProxyIter::new(self)
     }
 
-    #[cfg(feature = "private")]
     pub fn sort(&mut self) {
         match self {
             GroupsProxy::Idx(groups) => {
@@ -328,10 +332,8 @@ impl GroupsProxy {
                     groups.sort()
                 }
             }
-            GroupsProxy::Slice { groups, rolling } => {
-                if !*rolling {
-                    groups.sort_unstable_by_key(|[first, _]| *first);
-                }
+            GroupsProxy::Slice { .. } => {
+                // invariant of the type
             }
         }
     }
@@ -365,7 +367,6 @@ impl GroupsProxy {
         }
     }
 
-    #[cfg(feature = "private")]
     pub fn par_iter(&self) -> GroupsProxyParIter {
         GroupsProxyParIter::new(self)
     }
@@ -459,6 +460,24 @@ impl GroupsProxy {
                     ca.into_inner().into_series()
                 })
                 .collect_trusted(),
+        }
+    }
+
+    pub fn unroll(self) -> GroupsProxy {
+        match self {
+            GroupsProxy::Idx(_) => self,
+            GroupsProxy::Slice { rolling: false, .. } => self,
+            GroupsProxy::Slice { mut groups, .. } => {
+                let mut offset = 0 as IdxSize;
+                for g in groups.iter_mut() {
+                    g[0] = offset;
+                    offset += g[1];
+                }
+                GroupsProxy::Slice {
+                    groups,
+                    rolling: false,
+                }
+            }
         }
     }
 

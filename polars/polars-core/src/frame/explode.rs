@@ -15,6 +15,8 @@ fn get_exploded(series: &Series) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
     match series.dtype() {
         DataType::List(_) => series.list().unwrap().explode_and_offsets(),
         DataType::Utf8 => series.utf8().unwrap().explode_and_offsets(),
+        #[cfg(feature = "dtype-array")]
+        DataType::Array(_, _) => series.array().unwrap().explode_and_offsets(),
         _ => polars_bail!(opq = explode, series.dtype()),
     }
 }
@@ -298,7 +300,7 @@ impl DataFrame {
             len * values_len + 1,
         );
         // prepare ids
-        let ids_ = self.select(id_vars)?;
+        let ids_ = self.select_with_schema_unchecked(id_vars, &schema)?;
         let mut ids = ids_.clone();
         if ids.width() > 0 {
             for _ in 0..value_vars.len() - 1 {

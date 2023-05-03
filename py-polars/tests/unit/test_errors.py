@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.datatypes.convert import dtype_to_py_type
 
 
 def test_error_on_empty_groupby() -> None:
@@ -21,21 +22,21 @@ def test_error_on_reducing_map() -> None:
     df = pl.DataFrame(
         {"id": [0, 0, 0, 1, 1, 1], "t": [2, 4, 5, 10, 11, 14], "y": [0, 1, 1, 2, 3, 4]}
     )
-
     with pytest.raises(
         pl.InvalidOperationError,
         match=(
-            "output length of `map` must be equal to that of the input length; consider using `apply` instead"
+            r"output length of `map` \(6\) must be equal to "
+            r"the input length \(1\); consider using `apply` instead"
         ),
     ):
         df.groupby("id").agg(pl.map(["t", "y"], np.trapz))
 
     df = pl.DataFrame({"x": [1, 2, 3, 4], "group": [1, 2, 1, 2]})
-
     with pytest.raises(
         pl.InvalidOperationError,
         match=(
-            "output length of `map` must be equal to that of the input length; consider using `apply` instead"
+            r"output length of `map` \(4\) must be equal to "
+            r"the input length \(1\); consider using `apply` instead"
         ),
     ):
         df.select(
@@ -57,6 +58,21 @@ def test_error_on_invalid_by_in_asof_join() -> None:
     df2 = df1.with_columns(pl.col("a").cast(pl.Categorical))
     with pytest.raises(pl.ComputeError):
         df1.join_asof(df2, on="b", by=["a", "c"])
+
+
+def test_error_on_invalid_series_init() -> None:
+    for dtype in pl.TEMPORAL_DTYPES:
+        py_type = dtype_to_py_type(dtype)
+        with pytest.raises(
+            TypeError,
+            match=f"'float' object cannot be interpreted as a {py_type.__name__}",
+        ):
+            pl.Series([1.5, 2.0, 3.75], dtype=dtype)
+
+    with pytest.raises(
+        TypeError, match="'float' object cannot be interpreted as an integer"
+    ):
+        pl.Series([1.5, 2.0, 3.75], dtype=pl.Int32)
 
 
 def test_error_on_invalid_struct_field() -> None:
@@ -246,8 +262,6 @@ def test_err_asof_join_null_values() -> None:
 
 def test_is_nan_on_non_boolean() -> None:
     with pytest.raises(pl.InvalidOperationError):
-        pl.Series([1, 2, 3]).fill_nan(0)
-    with pytest.raises(pl.InvalidOperationError):
         pl.Series(["1", "2", "3"]).fill_nan("2")  # type: ignore[arg-type]
 
 
@@ -282,22 +296,20 @@ def test_lazy_concat_err() -> None:
             "bar": [8, 9],
         }
     )
-
-    for how in ["horizontal"]:
-        with pytest.raises(
-            ValueError,
-            match="'LazyFrame' only allows {{'vertical', 'diagonal'}} concat strategy.",
-        ):
-            pl.concat([df1.lazy(), df2.lazy()], how=how).collect()
+    with pytest.raises(
+        ValueError,
+        match="'LazyFrame' only allows {'vertical','diagonal','align'} concat strategies.",
+    ):
+        pl.concat([df1.lazy(), df2.lazy()], how="horizontal").collect()
 
 
 @typing.no_type_check
 def test_series_concat_err() -> None:
     s = pl.Series([1, 2, 3])
-    for how in ["horizontal", "diagonal"]:
+    for how in ("horizontal", "diagonal"):
         with pytest.raises(
             ValueError,
-            match="'Series' only allows {{'vertical'}} concat strategy.",
+            match="'Series' only allows {'vertical'} concat strategy.",
         ):
             pl.concat([s, s], how=how)
 
@@ -357,7 +369,7 @@ def test_arr_eval_named_cols() -> None:
     with pytest.raises(
         pl.ComputeError,
     ):
-        df.select(pl.col("B").arr.eval(pl.element().append(pl.col("A"))))
+        df.select(pl.col("B").list.eval(pl.element().append(pl.col("A"))))
 
 
 def test_alias_in_join_keys() -> None:
@@ -571,18 +583,79 @@ def test_invalid_getitem_key_err() -> None:
 def test_invalid_groupby_arg() -> None:
     df = pl.DataFrame({"a": [1]})
     with pytest.raises(
-        ValueError,
-        match=r"'aggs' argument should be one or multiple expressions, got: '{'a': 'sum'}'",
+        ValueError, match="specifying aggregations as a dictionary is not supported"
     ):
         df.groupby(1).agg({"a": "sum"})
 
 
-def test_no_sorted_warning(capfd: typing.Any) -> None:
+def test_no_sorted_err() -> None:
     df = pl.DataFrame(
         {
             "dt": [datetime(2001, 1, 1), datetime(2001, 1, 2)],
         }
     )
-    df.groupby_dynamic("dt", every="1h").agg(pl.all().count().suffix("_foo"))
-    (_, err) = capfd.readouterr()
-    assert "argument in operation 'groupby_dynamic' is not explicitly sorted" in err
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match=r"argument in operation 'groupby_dynamic' is not explicitly sorted",
+    ):
+        df.groupby_dynamic("dt", every="1h").agg(pl.all().count().suffix("_foo"))
+
+
+def test_serde_validation() -> None:
+    f = io.StringIO(
+        """
+    {
+      "columns": [
+        {
+          "name": "a",
+          "datatype": "Int64",
+          "values": [
+            1,
+            2
+          ]
+        },
+        {
+          "name": "b",
+          "datatype": "Int64",
+          "values": [
+            1
+          ]
+        }
+      ]
+    }
+    """
+    )
+    with pytest.raises(
+        pl.ComputeError,
+        match=r"lengths don't match",
+    ):
+        pl.read_json(f)
+
+
+def test_transpose_categorical_cached() -> None:
+    with pytest.raises(
+        pl.ComputeError,
+        match=r"'transpose' of categorical can only be done if all are from the same global string cache",
+    ):
+        pl.DataFrame(
+            {"b": pl.Series(["a", "b", "c"], dtype=pl.Categorical)}
+        ).transpose()
+
+
+def test_overflow_msg() -> None:
+    with pytest.raises(
+        pl.ComputeError,
+        match=r"could not append value: 2147483648 of type: i64 to the builder",
+    ):
+        pl.DataFrame([[2**31]], [("a", pl.Int32)], orient="row")
+
+
+def test_sort_by_err_9259() -> None:
+    df = pl.DataFrame(
+        {"a": [1, 1, 1], "b": [3, 2, 1], "c": [1, 1, 2]},
+        schema={"a": pl.Float32, "b": pl.Float32, "c": pl.Float32},
+    )
+    with pytest.raises(pl.ComputeError):
+        df.lazy().groupby("c").agg(
+            [pl.col("a").sort_by(pl.col("b").filter(pl.col("b") > 100)).sum()]
+        ).collect()

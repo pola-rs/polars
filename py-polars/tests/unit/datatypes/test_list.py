@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import date, datetime, time
 
 import pandas as pd
-import pytest
 
 import polars as pl
 
@@ -76,64 +75,6 @@ def test_categorical() -> None:
     assert not out.inner_dtype.is_nested
 
 
-def test_list_concat_rolling_window() -> None:
-    # inspired by:
-    # https://stackoverflow.com/questions/70377100/use-the-rolling-function-of-polars-to-get-a-list-of-all-values-in-the-rolling-wi
-    # this tests if it works without specifically creating list dtype upfront. note that
-    # the given answer is preferred over this snippet as that reuses the list array when
-    # shifting
-    df = pl.DataFrame(
-        {
-            "A": [1.0, 2.0, 9.0, 2.0, 13.0],
-        }
-    )
-    out = df.with_columns(
-        [pl.col("A").shift(i).alias(f"A_lag_{i}") for i in range(3)]
-    ).select(
-        [pl.concat_list([f"A_lag_{i}" for i in range(3)][::-1]).alias("A_rolling")]
-    )
-    assert out.shape == (5, 1)
-
-    s = out.to_series()
-    assert s.dtype == pl.List
-    assert s.to_list() == [
-        [None, None, 1.0],
-        [None, 1.0, 2.0],
-        [1.0, 2.0, 9.0],
-        [2.0, 9.0, 2.0],
-        [9.0, 2.0, 13.0],
-    ]
-
-    # this test proper null behavior of concat list
-    out = (
-        df.with_columns(pl.col("A").reshape((-1, 1)))  # first turn into a list
-        .with_columns(
-            [
-                pl.col("A").shift(i).alias(f"A_lag_{i}")
-                for i in range(3)  # slice the lists to a lag
-            ]
-        )
-        .select(
-            [
-                pl.all(),
-                pl.concat_list([f"A_lag_{i}" for i in range(3)][::-1]).alias(
-                    "A_rolling"
-                ),
-            ]
-        )
-    )
-    assert out.shape == (5, 5)
-
-    l64 = pl.List(pl.Float64)
-    assert out.schema == {
-        "A": l64,
-        "A_lag_0": l64,
-        "A_lag_1": l64,
-        "A_lag_2": l64,
-        "A_rolling": l64,
-    }
-
-
 def test_cast_inner() -> None:
     a = pl.Series([[1, 2]])
     for t in [bool, pl.Boolean]:
@@ -178,7 +119,7 @@ def test_list_fill_null() -> None:
     df = pl.DataFrame({"C": [["a", "b", "c"], [], [], ["d", "e"]]})
     assert df.with_columns(
         [
-            pl.when(pl.col("C").arr.lengths() == 0)
+            pl.when(pl.col("C").list.lengths() == 0)
             .then(None)
             .otherwise(pl.col("C"))
             .alias("C")
@@ -189,7 +130,7 @@ def test_list_fill_null() -> None:
 def test_list_fill_list() -> None:
     assert pl.DataFrame({"a": [[1, 2, 3], []]}).select(
         [
-            pl.when(pl.col("a").arr.lengths() == 0)
+            pl.when(pl.col("a").list.lengths() == 0)
             .then([5])
             .otherwise(pl.col("a"))
             .alias("filled")
@@ -206,29 +147,6 @@ def test_empty_list_construction() -> None:
     df = pl.DataFrame(schema=[("col", pl.List)])
     assert df.schema == {"col": pl.List}
     assert df.rows() == []
-
-
-def test_list_concat_nulls() -> None:
-    assert pl.DataFrame(
-        {
-            "a": [["a", "b"], None, ["c", "d", "e"], None],
-            "t": [["x"], ["y"], None, None],
-        }
-    ).with_columns(pl.concat_list(["a", "t"]).alias("concat"))["concat"].to_list() == [
-        ["a", "b", "x"],
-        None,
-        None,
-        None,
-    ]
-
-
-def test_list_concat_supertype() -> None:
-    df = pl.DataFrame(
-        [pl.Series("a", [1, 2], pl.UInt8), pl.Series("b", [10000, 20000], pl.UInt16)]
-    )
-    assert df.with_columns(pl.concat_list(pl.col(["a", "b"])).alias("concat_list"))[
-        "concat_list"
-    ].to_list() == [[1, 10000], [2, 20000]]
 
 
 def test_list_hash() -> None:
@@ -322,62 +240,20 @@ def test_fast_explode_on_list_struct_6208() -> None:
     }
 
 
-def test_concat_list_in_agg_6397() -> None:
-    df = pl.DataFrame({"group": [1, 2, 2, 3], "value": ["a", "b", "c", "d"]})
-
-    # single list
-    assert df.groupby("group").agg(
-        [
-            # this casts every element to a list
-            pl.concat_list(pl.col("value")),
-        ]
-    ).sort("group").to_dict(False) == {
-        "group": [1, 2, 3],
-        "value": [[["a"]], [["b"], ["c"]], [["d"]]],
-    }
-
-    # nested list
-    assert df.groupby("group").agg(
-        [
-            pl.concat_list(pl.col("value").implode()).alias("result"),
-        ]
-    ).sort("group").to_dict(False) == {
-        "group": [1, 2, 3],
-        "result": [[["a"]], [["b", "c"]], [["d"]]],
-    }
-
-
-def test_concat_list_empty_raises() -> None:
-    with pytest.raises(pl.ComputeError):
-        pl.DataFrame({"a": [1, 2, 3]}).with_columns(pl.concat_list([]))
-
-
 def test_flat_aggregation_to_list_conversion_6918() -> None:
     df = pl.DataFrame({"a": [1, 2, 2], "b": [[0, 1], [2, 3], [4, 5]]})
 
     assert df.groupby("a", maintain_order=True).agg(
-        pl.concat_list([pl.col("b").arr.get(i).mean().implode() for i in range(2)])
+        pl.concat_list([pl.col("b").list.get(i).mean().implode() for i in range(2)])
     ).to_dict(False) == {"a": [1, 2], "b": [[[0.0, 1.0]], [[3.0, 4.0]]]}
-
-
-def test_concat_list_with_lit() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3]})
-
-    assert df.select(pl.concat_list([pl.col("a"), pl.lit(1)]).alias("a")).to_dict(
-        False
-    ) == {"a": [[1, 1], [2, 1], [3, 1]]}
-
-    assert df.select(pl.concat_list([pl.lit(1), pl.col("a")]).alias("a")).to_dict(
-        False
-    ) == {"a": [[1, 1], [1, 2], [1, 3]]}
 
 
 def test_list_count_match() -> None:
     assert pl.DataFrame({"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]}).select(
-        pl.col("listcol").arr.count_match(2).alias("number_of_twos")
+        pl.col("listcol").list.count_match(2).alias("number_of_twos")
     ).to_dict(False) == {"number_of_twos": [0, 0, 2, 1, 0]}
     assert pl.DataFrame({"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]}).select(
-        pl.col("listcol").arr.count_match(2).alias("number_of_twos")
+        pl.col("listcol").list.count_match(2).alias("number_of_twos")
     ).to_dict(False) == {"number_of_twos": [0, 0, 2, 1, 0]}
 
 
@@ -401,23 +277,23 @@ def test_list_sum_and_dtypes() -> None:
         summed = df.explode("a").sum()
         assert summed.dtypes == [dt_out]
         assert summed.item() == 32
-        assert df.select(pl.col("a").arr.sum()).dtypes == [dt_out]
+        assert df.select(pl.col("a").list.sum()).dtypes == [dt_out]
 
-    assert df.select(pl.col("a").arr.sum()).to_dict(False) == {"a": [1, 6, 10, 15]}
+    assert df.select(pl.col("a").list.sum()).to_dict(False) == {"a": [1, 6, 10, 15]}
 
     # include nulls
     assert pl.DataFrame(
         {"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5], None]}
-    ).select(pl.col("a").arr.sum()).to_dict(False) == {"a": [1, 6, 10, 15, None]}
+    ).select(pl.col("a").list.sum()).to_dict(False) == {"a": [1, 6, 10, 15, None]}
 
 
 def test_list_mean() -> None:
     assert pl.DataFrame({"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]]}).select(
-        pl.col("a").arr.mean()
+        pl.col("a").list.mean()
     ).to_dict(False) == {"a": [1.0, 2.0, 2.5, 3.0]}
 
     assert pl.DataFrame({"a": [[1], [1, 2, 3], [1, 2, 3, 4], None]}).select(
-        pl.col("a").arr.mean()
+        pl.col("a").list.mean()
     ).to_dict(False) == {"a": [1.0, 2.0, 2.5, None]}
 
 
@@ -429,18 +305,20 @@ def test_list_min_max() -> None:
             {"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]]},
             schema={"a": pl.List(dt)},
         )
-        assert df.select(pl.col("a").arr.min())["a"].series_equal(
-            df.select(pl.col("a").arr.first())["a"]
+        assert df.select(pl.col("a").list.min())["a"].series_equal(
+            df.select(pl.col("a").list.first())["a"]
         )
-        assert df.select(pl.col("a").arr.max())["a"].series_equal(
-            df.select(pl.col("a").arr.last())["a"]
+        assert df.select(pl.col("a").list.max())["a"].series_equal(
+            df.select(pl.col("a").list.last())["a"]
         )
 
     df = pl.DataFrame(
         {"a": [[1], [1, 5, -1, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5], None]},
     )
-    assert df.select(pl.col("a").arr.min()).to_dict(False) == {"a": [1, -1, 1, 1, None]}
-    assert df.select(pl.col("a").arr.max()).to_dict(False) == {"a": [1, 5, 4, 5, None]}
+    assert df.select(pl.col("a").list.min()).to_dict(False) == {
+        "a": [1, -1, 1, 1, None]
+    }
+    assert df.select(pl.col("a").list.max()).to_dict(False) == {"a": [1, 5, 4, 5, None]}
 
 
 def test_fill_null_empty_list() -> None:
@@ -537,3 +415,15 @@ def test_list_null_list_categorical_cast() -> None:
     s = pl.Series([[]], dtype=pl.List(pl.Null)).cast(expected)
     assert s.dtype == expected
     assert s.to_list() == [[]]
+
+
+def test_struct_with_nulls_as_list() -> None:
+    df = pl.DataFrame([[{"a": 1, "b": 2}], [{"c": 3, "d": None}]])
+    assert df.select(pl.concat_list(pl.all()).alias("as_list")).to_dict(False) == {
+        "as_list": [
+            [
+                {"a": 1, "b": 2, "c": None, "d": None},
+                {"a": None, "b": None, "c": 3, "d": None},
+            ]
+        ]
+    }

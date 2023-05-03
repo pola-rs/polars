@@ -64,11 +64,20 @@ impl<'a> AnonymousBuilder<'a> {
         self.update_validity()
     }
 
+    #[inline]
     pub fn push_null(&mut self) {
         self.offsets.push(self.last_offset());
         match &mut self.validity {
             Some(validity) => validity.push(false),
             None => self.init_validity(),
+        }
+    }
+
+    #[inline]
+    pub fn push_opt(&mut self, arr: Option<&'a dyn Array>) {
+        match arr {
+            None => self.push_null(),
+            Some(arr) => self.push(arr),
         }
     }
 

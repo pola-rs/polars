@@ -60,6 +60,7 @@ impl FunctionExpr {
                     #[cfg(feature = "timezones")]
                     TzLocalize(tz) => return mapper.map_datetime_dtype_timezone(Some(tz)),
                     DateRange { .. } => return mapper.map_to_supertype(),
+                    TimeRange { .. } => DataType::Time,
                     Combine(tu) => match mapper.with_same_dtype().unwrap().dtype {
                         DataType::Datetime(_, tz) => DataType::Datetime(*tu, tz),
                         DataType::Date => DataType::Datetime(*tu, None),
@@ -96,18 +97,22 @@ impl FunctionExpr {
                     Take(_) => mapper.with_same_dtype(),
                     #[cfg(feature = "list_count")]
                     CountMatch => mapper.with_dtype(IDX_DTYPE),
-                    Sum => {
-                        let mut first = fields[0].clone();
-                        use DataType::*;
-                        let dt = first.data_type().inner_dtype().cloned().unwrap_or(Unknown);
-
-                        if matches!(dt, UInt8 | Int8 | Int16 | UInt16) {
-                            first.coerce(Int64);
+                    Sum => mapper.nested_sum_type(),
+                }
+            }
+            #[cfg(feature = "dtype-array")]
+            ArrayExpr(af) => {
+                use ArrayFunction::*;
+                match af {
+                    Min | Max => mapper.with_same_dtype(),
+                    Sum => mapper.nested_sum_type(),
+                    Unique(_) => mapper.try_map_dtype(|dt| {
+                        if let DataType::Array(inner, _) = dt {
+                            Ok(DataType::List(inner.clone()))
                         } else {
-                            first.coerce(dt);
+                            polars_bail!(ComputeError: "expected array dtype")
                         }
-                        Ok(first)
-                    }
+                    }),
                 }
             }
             #[cfg(feature = "dtype-struct")]
@@ -187,20 +192,17 @@ impl FunctionExpr {
                     }
                 })
             }
-            #[cfg(feature = "dot_product")]
-            Dot => mapper.map_dtype(|dt| {
-                use DataType::*;
-                match dt {
-                    Int8 | Int16 | UInt16 | UInt8 => Int64,
-                    _ => dt.clone(),
-                }
-            }),
             #[cfg(feature = "log")]
             Entropy { .. } | Log { .. } | Log1p | Exp => mapper.map_to_float_dtype(),
             Unique(_) => mapper.with_same_dtype(),
             #[cfg(feature = "round_series")]
             Round { .. } | Floor | Ceil => mapper.with_same_dtype(),
             UpperBound | LowerBound => mapper.with_same_dtype(),
+            #[cfg(feature = "fused")]
+            Fused(_) => mapper.map_to_supertype(),
+            ConcatExpr(_) => mapper.map_to_supertype(),
+            Correlation { .. } => mapper.map_to_float_dtype(),
+            ToPhysical => mapper.to_physical_type(),
         }
     }
 }
@@ -234,8 +236,13 @@ impl<'a> FieldsMapper<'a> {
         })
     }
 
+    /// Map to a physical type.
+    pub(super) fn to_physical_type(&self) -> PolarsResult<Field> {
+        self.map_dtype(|dtype| dtype.to_physical())
+    }
+
     /// Map a single dtype with a potentially failing mapper function.
-    #[cfg(feature = "timezones")]
+    #[cfg(any(feature = "timezones", feature = "dtype-array"))]
     pub(super) fn try_map_dtype(
         &self,
         func: impl Fn(&DataType) -> PolarsResult<DataType>,
@@ -318,5 +325,18 @@ impl<'a> FieldsMapper<'a> {
                 polars_bail!(op = "cast-timezone", got = dt, expected = "Datetime");
             }
         })
+    }
+
+    fn nested_sum_type(&self) -> PolarsResult<Field> {
+        let mut first = self.fields[0].clone();
+        use DataType::*;
+        let dt = first.data_type().inner_dtype().cloned().unwrap_or(Unknown);
+
+        if matches!(dt, UInt8 | Int8 | Int16 | UInt16) {
+            first.coerce(Int64);
+        } else {
+            first.coerce(dt);
+        }
+        Ok(first)
     }
 }

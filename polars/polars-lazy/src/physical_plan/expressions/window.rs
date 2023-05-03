@@ -5,7 +5,7 @@ use polars_arrow::export::arrow::array::PrimitiveArray;
 use polars_core::export::arrow::bitmap::Bitmap;
 use polars_core::frame::groupby::{GroupBy, GroupsProxy};
 use polars_core::frame::hash_join::{
-    default_join_ids, private_left_join_multiple_keys, JoinOptIds,
+    default_join_ids, private_left_join_multiple_keys, ChunkJoinOptIds, JoinValidation,
 };
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
@@ -40,8 +40,6 @@ enum MapStrategy {
     Join,
     // explode now
     Explode,
-    // will be exploded by subsequent `.flatten()` call
-    ExplodeLater,
     // Use an arg_sort to map the values back
     Map,
     Nothing,
@@ -321,29 +319,24 @@ impl WindowExpr {
         &self,
         agg_state: &AggState,
         sorted_keys: bool,
-        explicit_list: bool,
         gb: &GroupBy,
     ) -> PolarsResult<MapStrategy> {
-        match (self.options.explode, explicit_list, agg_state) {
+        match (self.options.mapping, agg_state) {
             // Explode
             // `(col("x").sum() * col("y")).list().over("groups").flatten()`
-            (true, true, _) => Ok(MapStrategy::ExplodeLater),
-            // Explode all the aggregated lists. Maybe add later?
-            (true, false, _) => {
-                polars_bail!(
-                    expr = self.expr, ComputeError:
-                    "this operation is likely not what you want (you may need `.list()`)"
-                );
-            }
-            // explicit list
-            // `(col("x").sum() * col("y")).list().over("groups")`
-            (false, true, _) => Ok(MapStrategy::Join),
+            (WindowMapping::Explode, _) => Ok(MapStrategy::Explode),
+            // // explicit list
+            // // `(col("x").sum() * col("y")).list().over("groups")`
+            // (false, false, _) => Ok(MapStrategy::Join),
             // aggregations
             //`sum("foo").over("groups")`
-            (false, false, AggState::AggregatedFlat(_)) => Ok(MapStrategy::Join),
+            (_, AggState::AggregatedFlat(_)) => Ok(MapStrategy::Join),
             // no explicit aggregations, map over the groups
             //`(col("x").sum() * col("y")).over("groups")`
-            (false, false, AggState::AggregatedList(_)) => {
+            (WindowMapping::Join, AggState::AggregatedList(_)) => Ok(MapStrategy::Join),
+            // no explicit aggregations, map over the groups
+            //`(col("x").sum() * col("y")).over("groups")`
+            (WindowMapping::GroupsToRows, AggState::AggregatedList(_)) => {
                 if sorted_keys {
                     if let GroupsProxy::Idx(g) = gb.get_groups() {
                         debug_assert!(g.is_sorted_flag())
@@ -360,7 +353,7 @@ impl WindowExpr {
             // or an aggregation that has been flattened
             // we have to check which one
             //`col("foo").over("groups")`
-            (false, false, AggState::NotAggregated(_)) => {
+            (WindowMapping::GroupsToRows, AggState::NotAggregated(_)) => {
                 // col()
                 // or col().alias()
                 if self.is_simple_column_expr() {
@@ -369,8 +362,9 @@ impl WindowExpr {
                     Ok(MapStrategy::Map)
                 }
             }
+            (WindowMapping::Join, AggState::NotAggregated(_)) => Ok(MapStrategy::Join),
             // literals, do nothing and let broadcast
-            (false, false, AggState::Literal(_)) => Ok(MapStrategy::Nothing),
+            (_, AggState::Literal(_)) => Ok(MapStrategy::Nothing),
         }
     }
 }
@@ -428,18 +422,8 @@ impl PhysicalExpr for WindowExpr {
         });
         let explicit_list_agg = self.is_explicit_list_agg();
 
-        // A `sort()` in a window function is one level flatter
-        // Assume we have column a : i32
-        // than a sort in a groupby. A groupby sorts the groups and returns array: list[i32]
-        // whereas a window function returns array: i32
-        // So a `sort().list()` in a groupby returns: list[list[i32]]
-        // whereas in a window function would return: list[i32]
-        if explicit_list_agg {
-            state.set_finalize_window_as_list();
-        }
-
         // if we flatten this column we need to make sure the groups are sorted.
-        let mut sort_groups = self.options.explode ||
+        let mut sort_groups = matches!(self.options.mapping, WindowMapping::Explode) ||
             // if not
             //      `col().over()`
             // and not
@@ -463,7 +447,7 @@ impl PhysicalExpr for WindowExpr {
         };
 
         // Try to get cached grouptuples
-        let (groups, _, cache_key) = if state.cache_window() {
+        let (mut groups, _, cache_key) = if state.cache_window() {
             let mut cache_key = String::with_capacity(32 * groupby_columns.len());
             write!(&mut cache_key, "{}", state.branch_idx).unwrap();
             for s in &groupby_columns {
@@ -478,9 +462,6 @@ impl PhysicalExpr for WindowExpr {
                 if df.height() > 0 {
                     assert!(!gt.is_empty());
                 };
-                if sort_groups {
-                    gt.sort()
-                }
 
                 // We take now, but it is important that we set this before we return!
                 // a next windows function may get this cached key and get an empty if this
@@ -499,12 +480,20 @@ impl PhysicalExpr for WindowExpr {
             .iter()
             .map(|s| s.as_ref().to_string())
             .collect();
+
+        // some window expressions need sorted groups
+        // to make sure that the caches align we sort
+        // the groups, so that the cached groups and join keys
+        // are consistent among all windows
+        if sort_groups || state.cache_window() {
+            groups.sort()
+        }
         let gb = GroupBy::new(df, groupby_columns.clone(), groups, Some(apply_columns));
 
         let mut ac = self.run_aggregation(df, state, &gb)?;
 
         use MapStrategy::*;
-        match self.determine_map_strategy(ac.agg_state(), sorted_keys, explicit_list_agg, &gb)? {
+        match self.determine_map_strategy(ac.agg_state(), sorted_keys, &gb)? {
             Nothing => {
                 let mut out = ac.flat_naive().into_owned();
                 cache_gb(gb, state, &cache_key);
@@ -515,14 +504,6 @@ impl PhysicalExpr for WindowExpr {
             }
             Explode => {
                 let mut out = ac.aggregated().explode()?;
-                cache_gb(gb, state, &cache_key);
-                if let Some(name) = &self.out_name {
-                    out.rename(name.as_ref());
-                }
-                Ok(out)
-            }
-            ExplodeLater => {
-                let mut out = ac.aggregated();
                 cache_gb(gb, state, &cache_key);
                 if let Some(name) = &self.out_name {
                     out.rename(name.as_ref());
@@ -574,7 +555,10 @@ impl PhysicalExpr for WindowExpr {
                             if groupby_columns.len() == 1 {
                                 // group key from right column
                                 let right = &keys[0];
-                                groupby_columns[0].hash_join_left(right).1
+                                groupby_columns[0]
+                                    .hash_join_left(right, JoinValidation::ManyToMany)
+                                    .unwrap()
+                                    .1
                             } else {
                                 let df_right = DataFrame::new_no_checks(keys);
                                 let df_left = DataFrame::new_no_checks(groupby_columns);
@@ -638,7 +622,7 @@ impl PhysicalExpr for WindowExpr {
     }
 }
 
-fn materialize_column(join_opt_ids: &JoinOptIds, out_column: &Series) -> Series {
+fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Series) -> Series {
     #[cfg(feature = "chunked_ids")]
     {
         use polars_arrow::export::arrow::Either;

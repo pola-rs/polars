@@ -9,6 +9,7 @@ This page gives an overview of all public polars expressions.
    :hidden:
 
    aggregation
+   array
    binary
    boolean
    categories

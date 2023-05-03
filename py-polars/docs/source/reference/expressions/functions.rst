@@ -39,7 +39,7 @@ These functions are available from the polars module root and can be used as exp
    from_epoch
    groups
    head
-   list
+   implode
    lit
    map
    max
@@ -47,16 +47,18 @@ These functions are available from the polars module root and can be used as exp
    median
    min
    n_unique
-   pearson_corr
    quantile
    reduce
    repeat
+   rolling_corr
+   rolling_cov
    select
-   spearman_rank_corr
    std
    struct
    sum
+   sql_expr
    tail
+   time
    var
    when
 

@@ -1,3 +1,5 @@
+use polars_arrow::error::PolarsResult;
+
 use crate::prelude::*;
 macro_rules! push_expr {
     ($current_expr:expr, $push:ident, $iter:ident) => {{
@@ -89,7 +91,10 @@ macro_rules! push_expr {
             }
             Exclude(e, _) => $push(e),
             KeepName(e) => $push(e),
+            Cache { input, .. } => $push(input),
             RenameAlias { expr, .. } => $push(expr),
+            // pass
+            Selector(_) => {}
         }
     }};
 }
@@ -116,16 +121,24 @@ impl<'a> ExprMut<'a> {
     where
         F: FnMut(&mut Expr) -> bool,
     {
+        let _ = self.try_apply(|e| Ok(f(e)));
+    }
+
+    pub fn try_apply<F>(&mut self, mut f: F) -> PolarsResult<()>
+    where
+        F: FnMut(&mut Expr) -> PolarsResult<bool>,
+    {
         while let Some(current_expr) = self.stack.pop() {
             // the order is important, we first modify the Expr
             // before we push its children on the stack.
             // The modification can make the children invalid.
-            if !f(current_expr) {
+            if !f(current_expr)? {
                 break;
             }
             let mut push = |e: &'a mut Expr| self.stack.push(e);
             push_expr!(current_expr, push, iter_mut);
         }
+        Ok(())
     }
 }
 
@@ -172,6 +185,7 @@ impl AExpr {
                 push(left);
             }
             Cast { expr, .. } => push(expr),
+            Cache { input, .. } => push(input),
             Sort { expr, .. } => push(expr),
             Take { expr, idx } => {
                 push(idx);

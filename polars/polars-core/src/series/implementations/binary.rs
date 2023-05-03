@@ -87,8 +87,8 @@ impl private::PrivateSeries for SeriesWrap<BinaryChunked> {
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
     }
 
-    fn arg_sort_multiple(&self, by: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {
-        self.0.arg_sort_multiple(by, descending)
+    fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
+        self.0.arg_sort_multiple(options)
     }
 }
 
@@ -165,10 +165,6 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
         Ok(ChunkTake::take(&self.0, iter.into())?.into_series())
     }
 
-    fn take_every(&self, n: usize) -> Series {
-        self.0.take_every(n).into_series()
-    }
-
     unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
         ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
     }
@@ -221,7 +217,6 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
     }
 
     #[inline]
-    #[cfg(feature = "private")]
     unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
         self.0.get_any_value_unchecked(index)
     }
@@ -292,7 +287,7 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
         IsIn::is_in(&self.0, other)
     }
     #[cfg(feature = "repeat_by")]
-    fn repeat_by(&self, by: &IdxCa) -> ListChunked {
+    fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {
         RepeatBy::repeat_by(&self.0, by)
     }
 

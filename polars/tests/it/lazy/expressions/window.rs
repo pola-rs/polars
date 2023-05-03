@@ -47,10 +47,12 @@ fn test_shift_and_fill_window_function() -> PolarsResult<()> {
         .lazy()
         .select([
             col("fruits"),
-            col("B")
-                .shift_and_fill(-1, lit(-1))
-                .implode()
-                .over([col("fruits")]),
+            col("B").shift_and_fill(-1, lit(-1)).over_with_options(
+                [col("fruits")],
+                WindowOptions {
+                    mapping: WindowMapping::Join,
+                },
+            ),
         ])
         .collect()?;
 
@@ -59,10 +61,12 @@ fn test_shift_and_fill_window_function() -> PolarsResult<()> {
         .lazy()
         .select([
             col("fruits"),
-            col("B")
-                .shift_and_fill(-1, lit(-1))
-                .implode()
-                .over([col("fruits")]),
+            col("B").shift_and_fill(-1, lit(-1)).over_with_options(
+                [col("fruits")],
+                WindowOptions {
+                    mapping: WindowMapping::Join,
+                },
+            ),
         ])
         .collect()?;
 
@@ -83,9 +87,12 @@ fn test_exploded_window_function() -> PolarsResult<()> {
             col("fruits"),
             col("B")
                 .shift(1)
-                .implode()
-                .over([col("fruits")])
-                .explode()
+                .over_with_options(
+                    [col("fruits")],
+                    WindowOptions {
+                        mapping: WindowMapping::Explode,
+                    },
+                )
                 .alias("shifted"),
         ])
         .collect()?;
@@ -104,9 +111,12 @@ fn test_exploded_window_function() -> PolarsResult<()> {
             col("fruits"),
             col("B")
                 .shift_and_fill(1, lit(-1.0f32))
-                .implode()
-                .over([col("fruits")])
-                .explode()
+                .over_with_options(
+                    [col("fruits")],
+                    WindowOptions {
+                        mapping: WindowMapping::Explode,
+                    },
+                )
                 .alias("shifted"),
         ])
         .collect()?;
@@ -175,8 +185,12 @@ fn test_literal_window_fn() -> PolarsResult<()> {
         .lazy()
         .select([repeat(1, count())
             .cumsum(false)
-            .implode()
-            .over([col("chars")])
+            .over_with_options(
+                [col("chars")],
+                WindowOptions {
+                    mapping: WindowMapping::Join,
+                },
+            )
             .alias("foo")])
         .collect()?;
 

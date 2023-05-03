@@ -31,17 +31,11 @@ where
     f(&mut us)
 }
 
-pub fn ensure_sorted_arg(s: &Series, operation: &str) {
-    if matches!(s.is_sorted_flag(), IsSorted::Not) {
-        eprintln!(
-            "argument in operation '{}' is not explicitly sorted
+pub fn ensure_sorted_arg(s: &Series, operation: &str) -> PolarsResult<()> {
+    polars_ensure!(!matches!(s.is_sorted_flag(), IsSorted::Not), InvalidOperation: "argument in operation '{}' is not explicitly sorted
 
 - If your data is ALREADY sorted, set the sorted flag with: '.set_sorted()'.
 - If your data is NOT sorted, sort the 'expr/series/column' first.
-
-This might become an error in a future version.
-    ",
-            operation
-        );
-    }
+    ", operation);
+    Ok(())
 }

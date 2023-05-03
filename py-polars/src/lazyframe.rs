@@ -14,6 +14,7 @@ use polars::prelude::{ClosedWindow, CsvEncoding, DataFrame, Field, JoinType, Sch
 use polars::time::*;
 use polars_core::cloud;
 use polars_core::frame::explode::MeltArgs;
+use polars_core::frame::hash_join::JoinValidation;
 use polars_core::frame::UniqueKeepStrategy;
 use polars_core::prelude::*;
 use pyo3::exceptions::PyValueError;
@@ -21,8 +22,9 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyDict, PyList};
 
 use crate::arrow_interop::to_rust::pyarrow_schema_to_rust;
-use crate::conversion::{ToExprs, Wrap};
+use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
+use crate::expr::ToExprs;
 use crate::file::get_file_like;
 use crate::prelude::*;
 use crate::py_modules::POLARS;
@@ -509,6 +511,7 @@ impl PyLazyFrame {
         offset: &str,
         closed: Wrap<ClosedWindow>,
         by: Vec<PyExpr>,
+        check_sorted: bool,
     ) -> PyLazyGroupBy {
         let closed_window = closed.0;
         let ldf = self.ldf.clone();
@@ -524,6 +527,7 @@ impl PyLazyFrame {
                 period: Duration::parse(period),
                 offset: Duration::parse(offset),
                 closed_window,
+                check_sorted,
             },
         );
 
@@ -542,6 +546,7 @@ impl PyLazyFrame {
         closed: Wrap<ClosedWindow>,
         by: Vec<PyExpr>,
         start_by: Wrap<StartBy>,
+        check_sorted: bool,
     ) -> PyLazyGroupBy {
         let closed_window = closed.0;
         let by = by
@@ -560,6 +565,7 @@ impl PyLazyFrame {
                 include_boundaries,
                 closed_window,
                 start_by: start_by.0,
+                check_sorted,
                 ..Default::default()
             },
         );
@@ -622,6 +628,7 @@ impl PyLazyFrame {
         force_parallel: bool,
         how: Wrap<JoinType>,
         suffix: String,
+        validate: Wrap<JoinValidation>,
     ) -> PyResult<Self> {
         let ldf = self.ldf.clone();
         let other = other.ldf;
@@ -642,6 +649,7 @@ impl PyLazyFrame {
             .allow_parallel(allow_parallel)
             .force_parallel(force_parallel)
             .how(how.0)
+            .validate(validate.0)
             .suffix(suffix)
             .finish()
             .into())
@@ -726,6 +734,11 @@ impl PyLazyFrame {
         let ldf = self.ldf.clone();
         let column = column.to_exprs();
         ldf.explode(column).into()
+    }
+
+    fn null_count(&self) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.null_count().into()
     }
 
     #[pyo3(signature = (maintain_order, subset, keep))]

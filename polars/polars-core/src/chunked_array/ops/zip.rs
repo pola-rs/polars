@@ -66,6 +66,26 @@ macro_rules! impl_ternary_broadcast {
     }};
 }
 
+fn zip_with<T: PolarsDataType>(
+    left: &ChunkedArray<T>,
+    right: &ChunkedArray<T>,
+    mask: &BooleanChunked,
+) -> PolarsResult<ChunkedArray<T>> {
+    let (left, right, mask) = align_chunks_ternary(left, right, mask);
+    let chunks = left
+        .chunks()
+        .iter()
+        .zip(right.chunks())
+        .zip(mask.downcast_iter())
+        .map(|((left_c, right_c), mask_c)| {
+            let mask_c = prepare_mask(mask_c);
+            let arr = if_then_else(&mask_c, left_c.as_ref(), right_c.as_ref())?;
+            Ok(arr)
+        })
+        .collect::<PolarsResult<Vec<_>>>()?;
+    unsafe { Ok(left.copy_with_chunks(chunks, false, false)) }
+}
+
 impl<T> ChunkZip<T> for ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -79,18 +99,7 @@ where
         if self.len() != mask.len() || other.len() != mask.len() {
             impl_ternary_broadcast!(self, self.len(), other.len(), other, mask, T)
         } else {
-            let (left, right, mask) = align_chunks_ternary(self, other, mask);
-            let chunks = left
-                .downcast_iter()
-                .zip(right.downcast_iter())
-                .zip(mask.downcast_iter())
-                .map(|((left_c, right_c), mask_c)| {
-                    let mask_c = prepare_mask(mask_c);
-                    let arr = if_then_else(&mask_c, left_c, right_c)?;
-                    Ok(arr)
-                })
-                .collect::<PolarsResult<Vec<_>>>()?;
-            unsafe { Ok(ChunkedArray::from_chunks(self.name(), chunks)) }
+            zip_with(self, other, mask)
         }
     }
 }
@@ -105,39 +114,17 @@ impl ChunkZip<BooleanType> for BooleanChunked {
         if self.len() != mask.len() || other.len() != mask.len() {
             impl_ternary_broadcast!(self, self.len(), other.len(), other, mask, BooleanType)
         } else {
-            let (left, right, mask) = align_chunks_ternary(self, other, mask);
-            let chunks = left
-                .downcast_iter()
-                .zip(right.downcast_iter())
-                .zip(mask.downcast_iter())
-                .map(|((left_c, right_c), mask_c)| {
-                    let mask_c = prepare_mask(mask_c);
-                    let arr = if_then_else(&mask_c, left_c, right_c)?;
-                    Ok(arr)
-                })
-                .collect::<PolarsResult<Vec<_>>>()?;
-            unsafe { Ok(ChunkedArray::from_chunks(self.name(), chunks)) }
+            zip_with(self, other, mask)
         }
     }
 }
 
 impl ChunkZip<Utf8Type> for Utf8Chunked {
     fn zip_with(&self, mask: &BooleanChunked, other: &Utf8Chunked) -> PolarsResult<Utf8Chunked> {
-        if self.len() != mask.len() || other.len() != mask.len() {
-            impl_ternary_broadcast!(self, self.len(), other.len(), other, mask, Utf8Type)
-        } else {
-            let (left, right, mask) = align_chunks_ternary(self, other, mask);
-            let chunks = left
-                .downcast_iter()
-                .zip(right.downcast_iter())
-                .zip(mask.downcast_iter())
-                .map(|((left_c, right_c), mask_c)| {
-                    let mask_c = prepare_mask(mask_c);
-                    let arr = if_then_else(&mask_c, left_c, right_c)?;
-                    Ok(arr)
-                })
-                .collect::<PolarsResult<Vec<_>>>()?;
-            unsafe { Ok(ChunkedArray::from_chunks(self.name(), chunks)) }
+        unsafe {
+            self.as_binary()
+                .zip_with(mask, &other.as_binary())
+                .map(|ca| ca.to_utf8())
         }
     }
 }
@@ -151,40 +138,21 @@ impl ChunkZip<BinaryType> for BinaryChunked {
         if self.len() != mask.len() || other.len() != mask.len() {
             impl_ternary_broadcast!(self, self.len(), other.len(), other, mask, BinaryType)
         } else {
-            let (left, right, mask) = align_chunks_ternary(self, other, mask);
-            let chunks = left
-                .downcast_iter()
-                .zip(right.downcast_iter())
-                .zip(mask.downcast_iter())
-                .map(|((left_c, right_c), mask_c)| {
-                    let mask_c = prepare_mask(mask_c);
-                    let arr = if_then_else(&mask_c, left_c, right_c)?;
-                    Ok(arr)
-                })
-                .collect::<PolarsResult<Vec<_>>>()?;
-            unsafe { Ok(ChunkedArray::from_chunks(self.name(), chunks)) }
+            zip_with(self, other, mask)
         }
     }
 }
 
 impl ChunkZip<ListType> for ListChunked {
-    fn zip_with(
-        &self,
-        mask: &BooleanChunked,
-        other: &ChunkedArray<ListType>,
-    ) -> PolarsResult<ChunkedArray<ListType>> {
-        let (left, right, mask) = align_chunks_ternary(self, other, mask);
-        let chunks = left
-            .downcast_iter()
-            .zip(right.downcast_iter())
-            .zip(mask.downcast_iter())
-            .map(|((left_c, right_c), mask_c)| {
-                let mask_c = prepare_mask(mask_c);
-                let arr = if_then_else(&mask_c, left_c, right_c)?;
-                Ok(arr)
-            })
-            .collect::<PolarsResult<Vec<_>>>()?;
-        unsafe { Ok(ChunkedArray::from_chunks(self.name(), chunks)) }
+    fn zip_with(&self, mask: &BooleanChunked, other: &ListChunked) -> PolarsResult<ListChunked> {
+        zip_with(self, other, mask)
+    }
+}
+
+#[cfg(feature = "dtype-array")]
+impl ChunkZip<FixedSizeListType> for ArrayChunked {
+    fn zip_with(&self, mask: &BooleanChunked, other: &ArrayChunked) -> PolarsResult<ArrayChunked> {
+        zip_with(self, other, mask)
     }
 }
 

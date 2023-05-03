@@ -1,5 +1,6 @@
 #[cfg(feature = "timezones")]
-use arrow::temporal_conversions::parse_offset;
+use chrono_tz::Tz;
+use polars_core::frame::hash_join::JoinArgs;
 use polars_core::prelude::*;
 use polars_core::utils::ensure_sorted_arg;
 use polars_ops::prelude::*;
@@ -110,7 +111,7 @@ fn upsample_impl(
     stable: bool,
 ) -> PolarsResult<DataFrame> {
     let s = source.column(index_column)?;
-    ensure_sorted_arg(s, "upsample");
+    ensure_sorted_arg(s, "upsample")?;
     if matches!(s.dtype(), DataType::Date) {
         let mut df = source.clone();
         df.try_apply(index_column, |s| {
@@ -157,25 +158,16 @@ fn upsample_single_impl(
                 (Some(first), Some(last)) => {
                     let (first, last) = match tz {
                         #[cfg(feature = "timezones")]
-                        Some(tz) => match tz.parse::<chrono_tz::Tz>() {
-                            Ok(tz) => (
-                                unlocalize_timestamp(first, *tu, tz),
-                                unlocalize_timestamp(last, *tu, tz),
-                            ),
-                            Err(_) => match parse_offset(tz) {
-                                Ok(tz) => (
-                                    unlocalize_timestamp(first, *tu, tz),
-                                    unlocalize_timestamp(last, *tu, tz),
-                                ),
-                                Err(_) => unreachable!(),
-                            },
-                        },
+                        Some(tz) => (
+                            unlocalize_timestamp(first, *tu, tz.parse::<Tz>().unwrap()),
+                            unlocalize_timestamp(last, *tu, tz.parse::<Tz>().unwrap()),
+                        ),
                         _ => (first, last),
                     };
                     let first = match tu {
-                        TimeUnit::Nanoseconds => offset.add_ns(first, NO_TIMEZONE)?,
-                        TimeUnit::Microseconds => offset.add_us(first, NO_TIMEZONE)?,
-                        TimeUnit::Milliseconds => offset.add_ms(first, NO_TIMEZONE)?,
+                        TimeUnit::Nanoseconds => offset.add_ns(first, None)?,
+                        TimeUnit::Microseconds => offset.add_us(first, None)?,
+                        TimeUnit::Milliseconds => offset.add_ms(first, None)?,
                     };
                     let range = date_range_impl(
                         index_col_name,
@@ -192,8 +184,7 @@ fn upsample_single_impl(
                         source,
                         &[index_col_name],
                         &[index_col_name],
-                        JoinType::Left,
-                        None,
+                        JoinArgs::new(JoinType::Left),
                     )
                 }
                 _ => polars_bail!(

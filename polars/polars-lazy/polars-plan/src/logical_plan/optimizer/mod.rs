@@ -8,10 +8,13 @@ mod cache_states;
 mod cse;
 mod delay_rechunk;
 mod drop_nulls;
+
 mod fast_projection;
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv", feature = "cse"))]
 pub(crate) mod file_caching;
 mod flatten_union;
+#[cfg(feature = "fused")]
+mod fused;
 mod predicate_pushdown;
 mod projection_pushdown;
 mod simplify_expr;
@@ -69,6 +72,7 @@ pub fn optimize(
     // gradually fill the rules passed to the optimizer
     let opt = StackOptimizer {};
     let mut rules: Vec<Box<dyn OptimizationRule>> = Vec::with_capacity(8);
+
     // during debug we check if the optimizations have not modified the final schema
     #[cfg(debug_assertions)]
     let prev_schema = logical_plan.schema()?.into_owned();
@@ -89,6 +93,8 @@ pub fn optimize(
     // we do simplification
     if simplify_expr {
         rules.push(Box::new(SimplifyExprRule {}));
+        #[cfg(feature = "fused")]
+        rules.push(Box::new(fused::FusedArithmetic {}));
     }
 
     // should be run before predicate pushdown

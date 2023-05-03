@@ -1,4 +1,4 @@
-//! Implementations of upstream traits for ChunkedArray<T>
+//! Implementations of upstream traits for [`ChunkedArray<T>`]
 use std::borrow::{Borrow, Cow};
 use std::collections::LinkedList;
 use std::iter::FromIterator;
@@ -14,6 +14,8 @@ use rayon::prelude::*;
 use crate::chunked_array::builder::{
     get_list_builder, AnonymousListBuilder, AnonymousOwnedListBuilder,
 };
+#[cfg(feature = "dtype-array")]
+use crate::chunked_array::builder::{AnonymousOwnedFixedSizeListBuilder, FixedSizeListBuilder};
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;
 use crate::prelude::*;
@@ -115,7 +117,7 @@ where
     }
 }
 
-/// Local AsRef<T> trait to circumvent the orphan rule.
+/// Local [`AsRef<T>`] trait to circumvent the orphan rule.
 pub trait PolarsAsRef<T: ?Sized>: AsRef<T> {}
 
 impl PolarsAsRef<str> for String {}
@@ -295,6 +297,27 @@ impl FromIterator<Option<Box<dyn Array>>> for ListChunked {
         let mut builder = AnonymousListBuilder::new("collected", cap, None);
         for val in &vals {
             builder.append_opt_array(val.as_deref());
+        }
+        builder.finish()
+    }
+}
+
+#[cfg(feature = "dtype-array")]
+impl ArrayChunked {
+    pub(crate) unsafe fn from_iter_and_args<I: IntoIterator<Item = Option<Box<dyn Array>>>>(
+        iter: I,
+        width: usize,
+        capacity: usize,
+        inner_dtype: Option<DataType>,
+        name: &str,
+    ) -> Self {
+        let mut builder =
+            AnonymousOwnedFixedSizeListBuilder::new(name, width, capacity, inner_dtype);
+        for val in iter {
+            match val {
+                None => builder.push_null(),
+                Some(arr) => builder.push_unchecked(arr.as_ref(), 0),
+            }
         }
         builder.finish()
     }

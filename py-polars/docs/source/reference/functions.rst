@@ -24,10 +24,9 @@ Eager/Lazy functions
 
     arg_where
     concat
-    cut
     date_range
-    get_dummies
     ones
+    time_range
     zeros
 
 Miscellaneous
@@ -46,8 +45,13 @@ Parallelization
 
 StringCache
 ~~~~~~~~~~~
+
+Note that the `StringCache` can be used as both a context manager
+and a decorator, in order to explicitly scope cache lifetime.
+
 .. autosummary::
    :toctree: api/
 
-    enable_string_cache
     StringCache
+    enable_string_cache
+    using_string_cache

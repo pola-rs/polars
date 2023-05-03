@@ -57,14 +57,14 @@ _POLARS_CFG_ENV_VARS = {
 _POLARS_CFG_DIRECT_VARS = {"set_fmt_float": _get_float_fmt}
 
 
-class Config:
+class Config(contextlib.ContextDecorator):
     """
     Configure polars; offers options for table formatting and more.
 
     Notes
     -----
-    Can also be used as a context manager in order to temporarily scope
-    the lifetime of specific options. For example:
+    Can also be used as a context manager OR a function decorator in order to
+    temporarily scope the lifetime of specific options. For example:
 
     >>> with pl.Config() as cfg:
     ...     # set verbose for more detailed output within the scope
@@ -80,11 +80,19 @@ class Config:
 
     (The compact format is available for all `Config` methods that take a single value).
 
+    Alternatively, you can use as a decorator in order to scope the duration of the
+    selected options to a specific function:
+
+    >>> @pl.Config(verbose=True)
+    ... def test():
+    ...     pass
+    ...
+
     """
 
     _original_state: str = ""
 
-    def __init__(self, **options: Any) -> None:
+    def __init__(self, *, restore_defaults: bool = False, **options: Any) -> None:
         """
         Initialise a Config object instance for context manager usage.
 
@@ -93,6 +101,9 @@ class Config:
 
         Parameters
         ----------
+        restore_defaults
+            set all options to their default values (this is applied before
+            setting any other options).
         options
             keyword args that will set the option; equivalent to calling the
             named "set_<option>" method with the given value.
@@ -109,6 +120,9 @@ class Config:
         """
         # save original state _before_ any changes are made
         self._original_state = self.save()
+
+        if restore_defaults:
+            self.restore_defaults()
 
         for opt, value in options.items():
             if not hasattr(self, opt) and not opt.startswith("set_"):
@@ -305,6 +319,39 @@ class Config:
         ----------
         n : int
             number of characters to display
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "txt": [
+        ...             "Play it, Sam. Play 'As Time Goes By'.",
+        ...             "This is the beginning of a beautiful friendship.",
+        ...         ]
+        ...     }
+        ... )
+        >>> df.with_columns(pl.col("txt").str.lengths().alias("len"))
+        shape: (2, 2)
+        ┌───────────────────────────────────┬─────┐
+        │ txt                               ┆ len │
+        │ ---                               ┆ --- │
+        │ str                               ┆ u32 │
+        ╞═══════════════════════════════════╪═════╡
+        │ Play it, Sam. Play 'As Time Goes… ┆ 37  │
+        │ This is the beginning of a beaut… ┆ 48  │
+        └───────────────────────────────────┴─────┘
+        >>> with pl.Config(fmt_str_lengths=50):
+        ...     print(df)
+        ...
+        shape: (2, 1)
+        ┌──────────────────────────────────────────────────┐
+        │ txt                                              │
+        │ ---                                              │
+        │ str                                              │
+        ╞══════════════════════════════════════════════════╡
+        │ Play it, Sam. Play 'As Time Goes By'.            │
+        │ This is the beginning of a beautiful friendship. │
+        └──────────────────────────────────────────────────┘
 
         """
         if n <= 0:
@@ -522,6 +569,22 @@ class Config:
         The UTF8 styles all use one or more of the semigraphic box-drawing characters
         found in the Unicode Box Drawing block, which are not ASCII compatible:
         https://en.wikipedia.org/wiki/Box-drawing_character#Box_Drawing
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"abc": [-2.5, 5.0], "mno": ["hello", "world"], "xyz": [True, False]}
+        ... )
+        >>> with pl.Config(
+        ...     tbl_formatting="ASCII_MARKDOWN",
+        ...     tbl_hide_column_data_types=True,
+        ...     tbl_hide_dataframe_shape=True,
+        ... ):
+        ...     print(df)
+        | abc  | mno   | xyz   |
+        |------|-------|-------|
+        | -2.5 | hello | true  |
+        | 5.0  | world | false |
 
         Raises
         ------

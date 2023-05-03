@@ -11,6 +11,7 @@ use polars::io::avro::AvroCompression;
 use polars::io::ipc::IpcCompression;
 use polars::prelude::AnyValue;
 use polars::series::ops::NullBehavior;
+use polars_core::frame::hash_join::JoinValidation;
 use polars_core::frame::row::any_values_to_dtype;
 use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::utils::arrow::types::NativeType;
@@ -29,33 +30,7 @@ use crate::object::OBJECT_NAME;
 use crate::prelude::*;
 use crate::py_modules::{POLARS, UTILS};
 use crate::series::PySeries;
-use crate::{PyDataFrame, PyExpr, PyLazyFrame};
-
-pub(crate) trait ToExprs {
-    fn to_exprs(self) -> Vec<Expr>;
-}
-
-impl ToExprs for Vec<PyExpr> {
-    fn to_exprs(self) -> Vec<Expr> {
-        // Safety
-        // repr is transparent
-        // and has only got one inner field`
-        unsafe { std::mem::transmute(self) }
-    }
-}
-
-pub(crate) trait ToPyExprs {
-    fn to_pyexprs(self) -> Vec<PyExpr>;
-}
-
-impl ToPyExprs for Vec<Expr> {
-    fn to_pyexprs(self) -> Vec<PyExpr> {
-        // Safety
-        // repr is transparent
-        // and has only got one inner field`
-        unsafe { std::mem::transmute(self) }
-    }
-}
+use crate::{PyDataFrame, PyLazyFrame};
 
 pub(crate) fn slice_to_wrapped<T>(slice: &[T]) -> &[Wrap<T>] {
     // Safety:
@@ -269,7 +244,7 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                 let convert = utils.getattr("_to_python_time").unwrap();
                 convert.call1((v,)).unwrap().into_py(py)
             }
-            AnyValue::List(v) => PySeries::new(v).to_list(),
+            AnyValue::Array(v, _) | AnyValue::List(v) => PySeries::new(v).to_list(),
             ref av @ AnyValue::Struct(_, _, flds) => struct_dict(py, av._iter_struct_av(), flds),
             AnyValue::StructOwned(payload) => struct_dict(py, payload.0.into_iter(), &payload.1),
             #[cfg(feature = "object")]
@@ -323,12 +298,17 @@ impl ToPyObject for Wrap<DataType> {
             DataType::Decimal(precision, scale) => pl
                 .getattr("Decimal")
                 .unwrap()
-                .call1((*precision, *scale))
+                .call1((*scale, *precision))
                 .unwrap()
                 .into(),
             DataType::Boolean => pl.getattr("Boolean").unwrap().into(),
             DataType::Utf8 => pl.getattr("Utf8").unwrap().into(),
             DataType::Binary => pl.getattr("Binary").unwrap().into(),
+            DataType::Array(inner, size) => {
+                let inner = Wrap(*inner.clone()).to_object(py);
+                let list_class = pl.getattr("Array").unwrap();
+                list_class.call1((*size, inner)).unwrap().into()
+            }
             DataType::List(inner) => {
                 let inner = Wrap(*inner.clone()).to_object(py);
                 let list_class = pl.getattr("List").unwrap();
@@ -405,12 +385,14 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     "Float64" => DataType::Float64,
                     #[cfg(feature = "object")]
                     "Object" => DataType::Object(OBJECT_NAME),
+                    "Array" => DataType::Array(Box::new(DataType::Null), 0),
                     "List" => DataType::List(Box::new(DataType::Null)),
+                    "Struct" => DataType::Struct(vec![]),
                     "Null" => DataType::Null,
                     "Unknown" => DataType::Unknown,
                     dt => {
                         return Err(PyValueError::new_err(format!(
-                            "{dt} is not a correct polars DataType.",
+                            "{dt} is not a recognised polars DataType.",
                         )))
                     }
                 }
@@ -437,6 +419,13 @@ impl FromPyObject<'_> for Wrap<DataType> {
                 let inner = inner.extract::<Wrap<DataType>>()?;
                 DataType::List(Box::new(inner.0))
             }
+            "Array" => {
+                let inner = ob.getattr("inner").unwrap();
+                let width = ob.getattr("width").unwrap();
+                let inner = inner.extract::<Wrap<DataType>>()?;
+                let width = width.extract::<usize>()?;
+                DataType::Array(Box::new(inner.0), width)
+            }
             "Struct" => {
                 let fields = ob.getattr("fields")?;
                 let fields = fields
@@ -448,7 +437,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
             }
             dt => {
                 return Err(PyTypeError::new_err(format!(
-                    "A {dt} object is not a correct polars DataType. \
+                    "A {dt} object is not a recognised polars DataType. \
                     Hint: use the class without instantiating it.",
                 )))
             }
@@ -675,19 +664,19 @@ fn convert_datetime(ob: &PyAny) -> PyResult<Wrap<AnyValue>> {
 
 impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
-        if ob.is_instance_of::<PyBool>()? {
+        if ob.is_instance_of::<PyBool>() {
             Ok(AnyValue::Boolean(ob.extract::<bool>().unwrap()).into())
         } else if let Ok(value) = ob.extract::<i64>() {
             Ok(AnyValue::Int64(value).into())
-        } else if ob.is_instance_of::<PyFloat>()? {
+        } else if ob.is_instance_of::<PyFloat>() {
             let value = ob.extract::<f64>().unwrap();
             Ok(AnyValue::Float64(value).into())
-        } else if ob.is_instance_of::<PyString>()? {
+        } else if ob.is_instance_of::<PyString>() {
             let value = ob.extract::<&'s str>().unwrap();
             Ok(AnyValue::Utf8(value).into())
         } else if ob.is_none() {
             Ok(AnyValue::Null.into())
-        } else if ob.is_instance_of::<PyDict>()? {
+        } else if ob.is_instance_of::<PyDict>() {
             let dict = ob.downcast::<PyDict>().unwrap();
             let len = dict.len();
             let mut keys = Vec::with_capacity(len);
@@ -700,7 +689,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                 vals.push(val)
             }
             Ok(Wrap(AnyValue::StructOwned(Box::new((vals, keys)))))
-        } else if ob.is_instance_of::<PyList>()? || ob.is_instance_of::<PyTuple>()? {
+        } else if ob.is_instance_of::<PyList>() || ob.is_instance_of::<PyTuple>() {
             materialize_list(ob)
         } else if let Ok(value) = ob.extract::<u64>() {
             Ok(AnyValue::UInt64(value).into())
@@ -788,18 +777,6 @@ impl<'s> FromPyObject<'s> for Wrap<Row<'s>> {
         let vals = ob.extract::<Vec<Wrap<AnyValue<'s>>>>()?;
         let vals: Vec<AnyValue> = unsafe { std::mem::transmute(vals) };
         Ok(Wrap(Row(vals)))
-    }
-}
-
-pub(crate) trait ToSeries {
-    fn to_series(self) -> Vec<Series>;
-}
-
-impl ToSeries for Vec<PySeries> {
-    fn to_series(self) -> Vec<Series> {
-        // Safety:
-        // transparent repr
-        unsafe { std::mem::transmute(self) }
     }
 }
 
@@ -962,9 +939,10 @@ impl FromPyObject<'_> for Wrap<AsofStrategy> {
         let parsed = match ob.extract::<&str>()? {
             "backward" => AsofStrategy::Backward,
             "forward" => AsofStrategy::Forward,
+            "nearest" => AsofStrategy::Nearest,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "strategy must be one of {{'backward', 'forward'}}, got {v}",
+                    "strategy must be one of {{'backward', 'forward', 'nearest'}}, got {v}",
                 )))
             }
         };
@@ -1025,9 +1003,15 @@ impl FromPyObject<'_> for Wrap<StartBy> {
             "window" => StartBy::WindowBound,
             "datapoint" => StartBy::DataPoint,
             "monday" => StartBy::Monday,
+            "tuesday" => StartBy::Tuesday,
+            "wednesday" => StartBy::Wednesday,
+            "thursday" => StartBy::Thursday,
+            "friday" => StartBy::Friday,
+            "saturday" => StartBy::Saturday,
+            "sunday" => StartBy::Sunday,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "closed must be one of {{'window', 'datapoint', 'monday'}}, got {v}",
+                    "closed must be one of {{'window', 'datapoint', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}}, got {v}",
                 )))
             }
         };
@@ -1261,6 +1245,39 @@ impl FromPyObject<'_> for Wrap<SearchSortedSide> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "side must be one of {{'any', 'left', 'right'}}, got {v}",
+                )))
+            }
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+impl FromPyObject<'_> for Wrap<WindowMapping> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "group_to_rows" => WindowMapping::GroupsToRows,
+            "join" => WindowMapping::Join,
+            "explode" => WindowMapping::Explode,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "side must be one of {{'group_to_rows', 'join', 'explode'}}, got {v}",
+                )))
+            }
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+impl FromPyObject<'_> for Wrap<JoinValidation> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "1:1" => JoinValidation::OneToOne,
+            "1:m" => JoinValidation::OneToMany,
+            "m:m" => JoinValidation::ManyToMany,
+            "m:1" => JoinValidation::ManyToOne,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "validate must be one of {{'m:m', 'm:1', '1:m', '1:1'}}, got {v}",
                 )))
             }
         };

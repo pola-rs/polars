@@ -14,7 +14,6 @@ use smartstring::alias::String as SmartString;
 pub use supertype::*;
 pub use {arrow, rayon};
 
-#[cfg(feature = "private")]
 pub use crate::chunked_array::ops::sort::arg_sort_no_nulls;
 use crate::prelude::*;
 use crate::POOL;
@@ -109,7 +108,6 @@ macro_rules! split_array {
     }};
 }
 
-#[cfg(feature = "private")]
 pub fn split_ca<T>(ca: &ChunkedArray<T>, n: usize) -> PolarsResult<Vec<ChunkedArray<T>>>
 where
     T: PolarsDataType,
@@ -140,7 +138,6 @@ pub fn _split_offsets(len: usize, n: usize) -> Vec<(usize, usize)> {
     }
 }
 
-#[cfg(feature = "private")]
 #[doc(hidden)]
 pub fn split_series(s: &Series, n: usize) -> PolarsResult<Vec<Series>> {
     split_array!(s, n, i64)
@@ -180,7 +177,6 @@ pub fn split_df_as_ref(df: &DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>>
     Ok(out)
 }
 
-#[cfg(feature = "private")]
 #[doc(hidden)]
 /// Split a [`DataFrame`] into `n` parts. We take a `&mut` to be able to repartition/align chunks.
 pub fn split_df(df: &mut DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>> {
@@ -188,7 +184,7 @@ pub fn split_df(df: &mut DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>> {
         return Ok(vec![df.clone()]);
     }
     // make sure that chunks are aligned.
-    df.rechunk();
+    df.align_chunks();
     split_df_as_ref(df, n)
 }
 
@@ -198,7 +194,6 @@ pub fn slice_slice<T>(vals: &[T], offset: i64, len: usize) -> &[T] {
 }
 
 #[inline]
-#[cfg(feature = "private")]
 #[doc(hidden)]
 pub fn slice_offsets(offset: i64, length: usize, array_len: usize) -> (usize, usize) {
     let abs_offset = offset.unsigned_abs() as usize;
@@ -523,7 +518,6 @@ macro_rules! df {
     }
 }
 
-#[cfg(feature = "private")]
 pub fn get_time_units(tu_l: &TimeUnit, tu_r: &TimeUnit) -> TimeUnit {
     use TimeUnit::*;
     match (tu_l, tu_r) {
@@ -604,40 +598,6 @@ pub fn accumulate_dataframes_horizontal(dfs: Vec<DataFrame>) -> PolarsResult<Dat
     Ok(acc_df)
 }
 
-/// Simple wrapper to parallelize functions that can be divided over threads aggregated and
-/// finally aggregated in the main thread. This can be done for sum, min, max, etc.
-#[cfg(feature = "private")]
-pub fn parallel_op_series<F>(
-    f: F,
-    s: Series,
-    n_threads: Option<usize>,
-) -> PolarsResult<Option<Series>>
-where
-    F: Fn(Series) -> PolarsResult<Series> + Send + Sync,
-{
-    let n_threads = n_threads.unwrap_or_else(|| POOL.current_num_threads());
-    let splits = _split_offsets(s.len(), n_threads);
-
-    let chunks = POOL.install(|| {
-        splits
-            .into_par_iter()
-            .map(|(offset, len)| {
-                let s = s.slice(offset as i64, len);
-                f(s)
-            })
-            .collect::<PolarsResult<Vec<_>>>()
-    })?;
-
-    let mut iter = chunks.into_iter();
-    let first = iter.next().unwrap();
-    let out = iter.fold(first, |mut acc, s| {
-        acc.append(&s).unwrap();
-        acc
-    });
-
-    f(out).map(Some)
-}
-
 pub fn align_chunks_binary<'a, T, B>(
     left: &'a ChunkedArray<T>,
     right: &'a ChunkedArray<B>,
@@ -695,7 +655,7 @@ where
 
 #[allow(clippy::type_complexity)]
 #[cfg(feature = "zip_with")]
-pub(crate) fn align_chunks_ternary<'a, A, B, C>(
+pub fn align_chunks_ternary<'a, A, B, C>(
     a: &'a ChunkedArray<A>,
     b: &'a ChunkedArray<B>,
     c: &'a ChunkedArray<C>,

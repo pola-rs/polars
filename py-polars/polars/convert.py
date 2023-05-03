@@ -23,9 +23,8 @@ from polars.io import read_csv
 from polars.utils.various import _cast_repr_strings_with_schema, parse_version
 
 if TYPE_CHECKING:
-    from polars.dataframe import DataFrame
+    from polars import DataFrame, Series
     from polars.dependencies import numpy as np
-    from polars.series import Series
     from polars.type_aliases import Orientation, SchemaDefinition, SchemaDict
 
 
@@ -607,9 +606,7 @@ def from_arrow(
             schema=schema,
             schema_overrides=schema_overrides,
         ).to_series()
-        return (
-            s if (name or schema or schema_overrides) else s.rename("", in_place=True)
-        )
+        return s if (name or schema or schema_overrides) else s.alias("")
 
     if isinstance(data, pa.RecordBatch):
         data = [data]

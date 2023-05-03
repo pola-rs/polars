@@ -254,7 +254,7 @@ class Decimal(FractionalType):
     precision: int | None
     scale: int
 
-    def __init__(self, precision: int | None, scale: int):
+    def __init__(self, scale: int, precision: int | None = None):
         self.precision = precision
         self.scale = scale
 
@@ -429,6 +429,51 @@ class List(NestedType):
         if type(other) is DataTypeClass and issubclass(other, List):
             return True
         if isinstance(other, List):
+            if self.inner is None or other.inner is None:
+                return True
+            else:
+                return self.inner == other.inner
+        else:
+            return False
+
+    def __hash__(self) -> int:
+        return hash((self.__class__, self.inner))
+
+    def __repr__(self) -> str:
+        class_name = self.__class__.__name__
+        return f"{class_name}({self.inner!r})"
+
+
+class Array(NestedType):
+    inner: PolarsDataType | None = None
+    width: int
+
+    def __init__(self, width: int, inner: PolarsDataType | PythonDataType = Null):
+        """
+        Nested list/array type.
+
+        Parameters
+        ----------
+        width
+            The fixed size length of the inner arrays.
+        inner
+            The `DataType` of values within the list
+
+        """
+        self.width = width
+        self.inner = polars.datatypes.py_type_to_dtype(inner)
+
+    def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
+        # This equality check allows comparison of type classes and type instances.
+        # If a parent type is not specific about its inner type, we infer it as equal:
+        # > fixed-size-list[i64] == fixed-size-list[i64] -> True
+        # > fixed-size-list[i64] == fixed-size-list[f32] -> False
+        # > fixed-size-list[i64] == fixed-size-list      -> True
+
+        # allow comparing object instances to class
+        if type(other) is DataTypeClass and issubclass(other, Array):
+            return True
+        if isinstance(other, Array):
             if self.inner is None or other.inner is None:
                 return True
             else:

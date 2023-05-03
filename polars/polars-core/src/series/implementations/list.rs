@@ -106,10 +106,6 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         Ok(ChunkTake::take(&self.0, iter.into())?.into_series())
     }
 
-    fn take_every(&self, n: usize) -> Series {
-        self.0.take_every(n).into_series()
-    }
-
     unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
         ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
     }
@@ -153,7 +149,6 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     }
 
     #[inline]
-    #[cfg(feature = "private")]
     unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
         self.0.get_any_value_unchecked(index)
     }

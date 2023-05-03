@@ -37,6 +37,7 @@ use smartstring::alias::String as SmartString;
 use crate::frame::groupby::GroupsIndicator;
 #[cfg(feature = "row_hash")]
 use crate::hashing::df_rows_to_hashes_threaded_vertical;
+#[cfg(feature = "zip_with")]
 use crate::prelude::min_max_binary::min_max_binary_series;
 use crate::prelude::sort::{argsort_multiple_row_fmt, prepare_arg_sort};
 use crate::series::IsSorted;
@@ -52,7 +53,6 @@ pub enum NullStrategy {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum UniqueKeepStrategy {
     /// Keep the first unique row.
-    #[default]
     First,
     /// Keep the last unique row.
     Last,
@@ -60,6 +60,7 @@ pub enum UniqueKeepStrategy {
     None,
     /// Keep any of the unique rows
     /// This allows more optimizations
+    #[default]
     Any,
 }
 
@@ -138,7 +139,6 @@ pub enum UniqueKeepStrategy {
 /// # Ok::<(), PolarsError>(())
 /// ```
 #[derive(Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DataFrame {
     pub(crate) columns: Vec<Series>,
 }
@@ -478,7 +478,7 @@ impl DataFrame {
     }
 
     /// Ensure all the chunks in the DataFrame are aligned.
-    pub fn rechunk(&mut self) -> &mut Self {
+    pub fn align_chunks(&mut self) -> &mut Self {
         if self.should_rechunk() {
             self.as_single_chunk_par()
         } else {
@@ -525,7 +525,6 @@ impl DataFrame {
         &self.columns
     }
 
-    #[cfg(feature = "private")]
     #[inline]
     /// Get mutable access to the underlying columns.
     /// # Safety
@@ -819,7 +818,7 @@ impl DataFrame {
 
     /// Concatenate a `DataFrame` to this `DataFrame` and return as newly allocated `DataFrame`.
     ///
-    /// If many `vstack` operations are done, it is recommended to call [`DataFrame::rechunk`].
+    /// If many `vstack` operations are done, it is recommended to call [`DataFrame::align_chunks`].
     ///
     /// # Example
     ///
@@ -865,7 +864,7 @@ impl DataFrame {
 
     /// Concatenate a DataFrame to this DataFrame
     ///
-    /// If many `vstack` operations are done, it is recommended to call [`DataFrame::rechunk`].
+    /// If many `vstack` operations are done, it is recommended to call [`DataFrame::align_chunks`].
     ///
     /// # Example
     ///
@@ -920,7 +919,7 @@ impl DataFrame {
             .zip(other.columns.iter())
             .try_for_each::<_, PolarsResult<_>>(|(left, right)| {
                 ensure_can_extend(left, right)?;
-                left.append(right).expect("should not fail");
+                left.append(right)?;
                 Ok(())
             })?;
         Ok(self)
@@ -949,7 +948,7 @@ impl DataFrame {
     ///
     /// Prefer `vstack` over `extend` when you want to append many times before doing a query. For instance
     /// when you read in multiple files and when to store them in a single `DataFrame`. In the latter case, finish the sequence
-    /// of `append` operations with a [`rechunk`](Self::rechunk).
+    /// of `append` operations with a [`rechunk`](Self::align_chunks).
     pub fn extend(&mut self, other: &DataFrame) -> PolarsResult<()> {
         polars_ensure!(
             self.width() == other.width(),
@@ -1429,6 +1428,63 @@ impl DataFrame {
         Ok(DataFrame::new_no_checks(selected))
     }
 
+    /// Select with a known schema.
+    pub fn select_with_schema<I, S>(&self, selection: I, schema: &SchemaRef) -> PolarsResult<Self>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let cols = selection
+            .into_iter()
+            .map(|s| SmartString::from(s.as_ref()))
+            .collect::<Vec<_>>();
+        self.select_with_schema_impl(&cols, schema, true)
+    }
+
+    /// Select with a known schema. This doesn't check for duplicates.
+    pub fn select_with_schema_unchecked<I, S>(
+        &self,
+        selection: I,
+        schema: &Schema,
+    ) -> PolarsResult<Self>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let cols = selection
+            .into_iter()
+            .map(|s| SmartString::from(s.as_ref()))
+            .collect::<Vec<_>>();
+        self.select_with_schema_impl(&cols, schema, false)
+    }
+
+    fn select_with_schema_impl(
+        &self,
+        cols: &[SmartString],
+        schema: &Schema,
+        check_duplicates: bool,
+    ) -> PolarsResult<Self> {
+        if check_duplicates {
+            self.select_check_duplicates(cols)?;
+        }
+        let selected = self.select_series_impl_with_schema(cols, schema)?;
+        Ok(DataFrame::new_no_checks(selected))
+    }
+
+    /// A non generic implementation to reduce compiler bloat.
+    fn select_series_impl_with_schema(
+        &self,
+        cols: &[SmartString],
+        schema: &Schema,
+    ) -> PolarsResult<Vec<Series>> {
+        cols.iter()
+            .map(|name| {
+                let index = schema.try_get_full(name)?.0;
+                Ok(self.columns[index].clone())
+            })
+            .collect()
+    }
+
     pub fn select_physical<I, S>(&self, selection: I) -> PolarsResult<Self>
     where
         I: IntoIterator<Item = S>,
@@ -1786,7 +1842,6 @@ impl DataFrame {
     }
 
     /// This is the dispatch of Self::sort, and exists to reduce compile bloat by monomorphization.
-    #[cfg(feature = "private")]
     pub fn sort_impl(
         &self,
         by_column: Vec<Series>,
@@ -1866,8 +1921,13 @@ impl DataFrame {
                 if nulls_last || has_struct || std::env::var("POLARS_ROW_FMT_SORT").is_ok() {
                     argsort_multiple_row_fmt(&by_column, descending, nulls_last, parallel)?
                 } else {
-                    let (first, by_column, descending) = prepare_arg_sort(by_column, descending)?;
-                    first.arg_sort_multiple(&by_column, &descending)?
+                    let (first, other, descending) = prepare_arg_sort(by_column, descending)?;
+                    let options = SortMultipleOptions {
+                        other,
+                        descending,
+                        multithreaded: parallel,
+                    };
+                    first.arg_sort_multiple(&options)?
                 }
             }
         };

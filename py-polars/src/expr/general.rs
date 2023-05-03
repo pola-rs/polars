@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use polars::lazy::dsl;
 use polars::prelude::*;
 use polars::series::ops::NullBehavior;
@@ -9,6 +11,7 @@ use pyo3::types::{PyBytes, PyFloat};
 
 use crate::apply::lazy::{call_lambda_with_series, map_single};
 use crate::conversion::{parse_fill_null_strategy, Wrap};
+use crate::error::PyPolarsErr;
 use crate::series::PySeries;
 use crate::utils::reinterpret;
 use crate::PyExpr;
@@ -51,8 +54,15 @@ impl PyExpr {
     fn eq(&self, other: Self) -> Self {
         self.clone().inner.eq(other.inner).into()
     }
+
+    fn eq_missing(&self, other: Self) -> Self {
+        self.clone().inner.eq_missing(other.inner).into()
+    }
     fn neq(&self, other: Self) -> Self {
         self.clone().inner.neq(other.inner).into()
+    }
+    fn neq_missing(&self, other: Self) -> Self {
+        self.clone().inner.neq_missing(other.inner).into()
     }
     fn gt(&self, other: Self) -> Self {
         self.clone().inner.gt(other.inner).into()
@@ -69,39 +79,22 @@ impl PyExpr {
 
     fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         // Used in pickle/pickling
-        #[cfg(feature = "json")]
-        {
-            let s = serde_json::to_string(&self.inner).unwrap();
-            Ok(PyBytes::new(py, s.as_bytes()).to_object(py))
-        }
-        #[cfg(not(feature = "json"))]
-        {
-            panic!("activate 'json' feature")
-        }
+        let mut writer: Vec<u8> = vec![];
+        ciborium::ser::into_writer(&self.inner, &mut writer)
+            .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
+
+        Ok(PyBytes::new(py, &writer).to_object(py))
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
         // Used in pickle/pickling
-        #[cfg(feature = "json")]
         match state.extract::<&PyBytes>(py) {
             Ok(s) => {
-                // Safety
-                // we skipped the serializing/deserializing of the static in lifetime in `DataType`
-                // so we actually don't have a lifetime at all when serializing.
-
-                // PyBytes still has a lifetime. Bit its ok, because we drop it immediately
-                // in this scope
-                let s = unsafe { std::mem::transmute::<&'_ PyBytes, &'static PyBytes>(s) };
-                self.inner = serde_json::from_slice(s.as_bytes()).unwrap();
-
+                self.inner = ciborium::de::from_reader(s.as_bytes())
+                    .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
                 Ok(())
             }
             Err(e) => Err(e),
-        }
-
-        #[cfg(not(feature = "json"))]
-        {
-            panic!("activate 'json' feature")
         }
     }
 
@@ -475,12 +468,15 @@ impl PyExpr {
         self.clone().inner.is_duplicated().into()
     }
 
-    fn over(&self, partition_by: Vec<Self>) -> Self {
+    fn over(&self, partition_by: Vec<Self>, mapping: Wrap<WindowMapping>) -> Self {
         let partition_by = partition_by
             .into_iter()
             .map(|e| e.inner)
             .collect::<Vec<Expr>>();
-        self.clone().inner.over(partition_by).into()
+        self.clone()
+            .inner
+            .over_with_options(partition_by, WindowOptions { mapping: mapping.0 })
+            .into()
     }
 
     fn _and(&self, expr: Self) -> Self {
@@ -545,6 +541,7 @@ impl PyExpr {
             weights,
             min_periods,
             center,
+            ..Default::default()
         };
         // get the pypolars module
         // do the import outside of the function.
@@ -561,7 +558,7 @@ impl PyExpr {
                     }
                     Err(_) => {
                         let obj = out;
-                        let is_float = obj.as_ref(py).is_instance_of::<PyFloat>().unwrap();
+                        let is_float = obj.as_ref(py).is_instance_of::<PyFloat>();
 
                         let dtype = s.dtype();
 
@@ -742,6 +739,7 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
+            ..Default::default()
         };
         self.inner.clone().rolling_sum(options).into()
     }
@@ -763,6 +761,7 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
+            ..Default::default()
         };
         self.inner.clone().rolling_min(options).into()
     }
@@ -784,6 +783,7 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
+            ..Default::default()
         };
         self.inner.clone().rolling_max(options).into()
     }
@@ -805,12 +805,14 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
+            ..Default::default()
         };
 
         self.inner.clone().rolling_mean(options).into()
     }
 
-    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
+    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed, ddof))]
+    #[allow(clippy::too_many_arguments)]
     fn rolling_std(
         &self,
         window_size: &str,
@@ -819,6 +821,7 @@ impl PyExpr {
         center: bool,
         by: Option<String>,
         closed: Option<Wrap<ClosedWindow>>,
+        ddof: u8,
     ) -> Self {
         let options = RollingOptions {
             window_size: Duration::parse(window_size),
@@ -827,12 +830,14 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
+            fn_params: Some(Arc::new(RollingVarParams { ddof }) as Arc<dyn Any + Send + Sync>),
         };
 
         self.inner.clone().rolling_std(options).into()
     }
 
-    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed))]
+    #[pyo3(signature = (window_size, weights, min_periods, center, by, closed, ddof))]
+    #[allow(clippy::too_many_arguments)]
     fn rolling_var(
         &self,
         window_size: &str,
@@ -841,6 +846,7 @@ impl PyExpr {
         center: bool,
         by: Option<String>,
         closed: Option<Wrap<ClosedWindow>>,
+        ddof: u8,
     ) -> Self {
         let options = RollingOptions {
             window_size: Duration::parse(window_size),
@@ -849,6 +855,7 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
+            fn_params: Some(Arc::new(RollingVarParams { ddof }) as Arc<dyn Any + Send + Sync>),
         };
 
         self.inner.clone().rolling_var(options).into()
@@ -871,6 +878,7 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
+            ..Default::default()
         };
         self.inner.clone().rolling_median(options).into()
     }
@@ -895,6 +903,7 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
+            ..Default::default()
         };
 
         self.inner
@@ -955,14 +964,7 @@ impl PyExpr {
     }
 
     fn to_physical(&self) -> Self {
-        self.inner
-            .clone()
-            .map(
-                |s| Ok(Some(s.to_physical_repr().into_owned())),
-                GetOutput::map_dtype(|dt| dt.to_physical()),
-            )
-            .with_fmt("to_physical")
-            .into()
+        self.inner.clone().to_physical().into()
     }
 
     fn shuffle(&self, seed: Option<u64>) -> Self {
@@ -1082,5 +1084,9 @@ impl PyExpr {
             IsSorted::Ascending
         };
         self.inner.clone().set_sorted_flag(is_sorted).into()
+    }
+
+    fn cache(&self) -> Self {
+        self.inner.clone().cache().into()
     }
 }

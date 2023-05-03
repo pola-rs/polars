@@ -27,9 +27,14 @@ pub struct AsOfOptions {
     pub right_by: Option<Vec<SmartString>>,
 }
 
-fn check_asof_columns(a: &Series, b: &Series) -> PolarsResult<()> {
+fn check_asof_columns(a: &Series, b: &Series, check_sorted: bool) -> PolarsResult<()> {
     let dtype_a = a.dtype();
     let dtype_b = b.dtype();
+    polars_ensure!(
+        dtype_a.to_physical().is_numeric() && dtype_b.to_physical().is_numeric(),
+        InvalidOperation:
+        "asof join only supported on numeric/temporal keys"
+    );
     polars_ensure!(
         dtype_a == dtype_b,
         ComputeError: "mismatching key dtypes in asof-join: `{}` and `{}`",
@@ -39,8 +44,10 @@ fn check_asof_columns(a: &Series, b: &Series) -> PolarsResult<()> {
         a.null_count() == 0 && b.null_count() == 0,
         ComputeError: "asof join must not have null values in 'on' arguments"
     );
-    ensure_sorted_arg(a, "asof_join");
-    ensure_sorted_arg(b, "asof_join");
+    if check_sorted {
+        ensure_sorted_arg(a, "asof_join")?;
+        ensure_sorted_arg(b, "asof_join")?;
+    }
     Ok(())
 }
 
@@ -52,6 +59,8 @@ pub enum AsofStrategy {
     Backward,
     /// selects the first row in the right DataFrame whose ‘on’ key is greater than or equal to the left’s key.
     Forward,
+    /// selects the right in the right DataFrame whose 'on' key is nearest to the left's key.
+    Nearest,
 }
 
 impl<T> ChunkedArray<T>
@@ -94,6 +103,9 @@ where
                     )
                 }
             },
+            AsofStrategy::Nearest => {
+                join_asof_nearest(ca.cont_slice().unwrap(), other.cont_slice().unwrap())
+            }
         };
         Ok(out)
     }
@@ -115,7 +127,7 @@ impl DataFrame {
         let left_key = self.column(left_on)?;
         let right_key = other.column(right_on)?;
 
-        check_asof_columns(left_key, right_key)?;
+        check_asof_columns(left_key, right_key, true)?;
         let left_key = left_key.to_physical_repr();
         let right_key = right_key.to_physical_repr();
 

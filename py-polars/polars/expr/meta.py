@@ -1,11 +1,16 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from io import BytesIO, StringIO
+from pathlib import Path
+from typing import TYPE_CHECKING, overload
 
 from polars.utils._wrap import wrap_expr
+from polars.utils.various import normalise_filepath
 
 if TYPE_CHECKING:
-    from polars.expr.expr import Expr
+    from io import IOBase
+
+    from polars import Expr
 
 
 class ExprMetaNameSpace:
@@ -68,3 +73,46 @@ class ExprMetaNameSpace:
     def undo_aliases(self) -> Expr:
         """Undo any renaming operation like ``alias`` or ``keep_name``."""
         return wrap_expr(self._pyexpr.meta_undo_aliases())
+
+    def _as_selector(self) -> Expr:
+        """Turn this expression in a selector."""
+        return wrap_expr(self._pyexpr._meta_as_selector())
+
+    def _selector_add(self, other: Expr) -> Expr:
+        """Add selectors."""
+        return wrap_expr(self._pyexpr._meta_selector_add(other._pyexpr))
+
+    def _selector_sub(self, other: Expr) -> Expr:
+        """Subtract selectors."""
+        return wrap_expr(self._pyexpr._meta_selector_sub(other._pyexpr))
+
+    def _selector_and(self, other: Expr) -> Expr:
+        """& selectors."""
+        return wrap_expr(self._pyexpr._meta_selector_and(other._pyexpr))
+
+    @overload
+    def write_json(self, file: None = ...) -> str:
+        ...
+
+    @overload
+    def write_json(self, file: IOBase | str | Path) -> None:
+        ...
+
+    def write_json(self, file: IOBase | str | Path | None = None) -> str | None:
+        """Write expression to json."""
+        if isinstance(file, (str, Path)):
+            file = normalise_filepath(file)
+        to_string_io = (file is not None) and isinstance(file, StringIO)
+        if file is None or to_string_io:
+            with BytesIO() as buf:
+                self._pyexpr.meta_write_json(buf)
+                json_bytes = buf.getvalue()
+
+            json_str = json_bytes.decode("utf8")
+            if to_string_io:
+                file.write(json_str)  # type: ignore[union-attr]
+            else:
+                return json_str
+        else:
+            self._pyexpr.meta_write_json(file)
+        return None

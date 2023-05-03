@@ -5,21 +5,19 @@ from typing import TYPE_CHECKING
 
 from polars.datatypes import Date, Datetime, Time, py_type_to_dtype
 from polars.exceptions import ChronoFormatWarning
-from polars.utils import no_default
-from polars.utils._parse_expr_input import expr_to_lit_or_expr
+from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
 from polars.utils.decorators import deprecated_alias
 from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
-    from polars.expr.expr import Expr
+    from polars import Expr
     from polars.type_aliases import (
         PolarsDataType,
         PolarsTemporalType,
         TimeUnit,
         TransferEncoding,
     )
-    from polars.utils import NoDefault
 
 
 class ExprStringNameSpace:
@@ -53,6 +51,10 @@ class ExprStringNameSpace:
         exact
             Require an exact format match. If False, allow the format to match anywhere
             in the target string.
+
+            .. note::
+                Using ``exact=False`` introduces a performance penalty - cleaning your
+                data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted dates to apply the conversion.
 
@@ -81,8 +83,7 @@ class ExprStringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        utc: bool = False,
-        _tz_aware: bool = False,
+        utc: bool | None = None,
     ) -> Expr:
         """
         Convert a Utf8 column into a Datetime column.
@@ -106,25 +107,44 @@ class ExprStringNameSpace:
         exact
             Require an exact format match. If False, allow the format to match anywhere
             in the target string.
+
+            .. note::
+                Using ``exact=False`` introduces a performance penalty - cleaning your
+                data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted datetimes to apply the conversion.
         utc
             Parse time zone aware datetimes as UTC. This may be useful if you have data
             with mixed offsets.
 
+            .. deprecated:: 0.18.0
+                This is now a no-op, you can safely remove it.
+                Offset-naive strings are parsed as ``pl.Datetime(time_unit)``,
+                and offset-aware strings are converted to
+                ``pl.Datetime(time_unit, "UTC")``.
+
         Examples
         --------
         >>> s = pl.Series(["2020-01-01 01:00Z", "2020-01-01 02:00Z"])
         >>> s.str.to_datetime("%Y-%m-%d %H:%M%#z")
         shape: (2,)
-        Series: '' [datetime[μs, +00:00]]
+        Series: '' [datetime[μs, UTC]]
         [
-                2020-01-01 01:00:00 +00:00
-                2020-01-01 02:00:00 +00:00
+                2020-01-01 01:00:00 UTC
+                2020-01-01 02:00:00 UTC
         ]
-
         """
         _validate_format_argument(format)
+        if utc is not None:
+            warnings.warn(
+                "The `utc` argument is now a no-op and has no effect. "
+                "You can safely remove it. "
+                "Offset-naive strings are parsed as ``pl.Datetime(time_unit)``, "
+                "and offset-aware strings are converted to "
+                '``pl.Datetime(time_unit, "UTC")``.',
+                DeprecationWarning,
+                stacklevel=find_stacklevel(),
+            )
         return wrap_expr(
             self._pyexpr.str_to_datetime(
                 format,
@@ -133,8 +153,6 @@ class ExprStringNameSpace:
                 strict,
                 exact,
                 cache,
-                utc,
-                _tz_aware,
             )
         )
 
@@ -185,8 +203,7 @@ class ExprStringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        utc: bool = False,
-        tz_aware: bool | NoDefault = no_default,
+        utc: bool | None = None,
     ) -> Expr:
         """
         Convert a Utf8 column into a Date/Datetime/Time column.
@@ -205,18 +222,21 @@ class ExprStringNameSpace:
         exact
             Require an exact format match. If False, allow the format to match anywhere
             in the target string. Conversion to the Time type is always exact.
+
+            .. note::
+                Using ``exact=False`` introduces a performance penalty - cleaning your
+                data beforehand will almost certainly be more performant.
         cache
             Use a cache of unique, converted dates to apply the datetime conversion.
         utc
             Parse time zone aware datetimes as UTC. This may be useful if you have data
             with mixed offsets.
-        tz_aware
-            Parse time zone aware datetimes. This may be automatically toggled by the
-            `format` given.
 
-            .. deprecated:: 0.16.17
-                This is now auto-inferred from the given `format`. You can safely drop
-                this argument, it will be removed in a future version.
+            .. deprecated:: 0.18.0
+                This is now a no-op, you can safely remove it.
+                Offset-naive strings are parsed as ``pl.Datetime(time_unit)``,
+                and offset-aware strings are converted to
+                ``pl.Datetime(time_unit, "UTC")``.
 
         Notes
         -----
@@ -231,10 +251,10 @@ class ExprStringNameSpace:
         >>> s = pl.Series(["2020-01-01 01:00Z", "2020-01-01 02:00Z"])
         >>> s.str.strptime(pl.Datetime, "%Y-%m-%d %H:%M%#z")
         shape: (2,)
-        Series: '' [datetime[μs, +00:00]]
+        Series: '' [datetime[μs, UTC]]
         [
-                2020-01-01 01:00:00 +00:00
-                2020-01-01 02:00:00 +00:00
+                2020-01-01 01:00:00 UTC
+                2020-01-01 02:00:00 UTC
         ]
 
         Dealing with different formats.
@@ -264,19 +284,8 @@ class ExprStringNameSpace:
                 2022-01-31
                 2001-07-08
         ]
-
         """
         _validate_format_argument(format)
-
-        if tz_aware is no_default:
-            tz_aware = False
-        else:
-            warnings.warn(
-                "`tz_aware` is now auto-inferred from `format` and will be removed "
-                "in a future version. You can safely drop this argument.",
-                category=DeprecationWarning,
-                stacklevel=find_stacklevel(),
-            )
 
         if dtype == Date:
             return self.to_date(format, strict=strict, exact=exact, cache=cache)
@@ -291,12 +300,59 @@ class ExprStringNameSpace:
                 exact=exact,
                 cache=cache,
                 utc=utc,
-                _tz_aware=tz_aware,
             )
         elif dtype == Time:
             return self.to_time(format, strict=strict, cache=cache)
         else:
             raise ValueError("dtype should be of type {Date, Datetime, Time}")
+
+    def to_decimal(
+        self,
+        inference_length: int = 100,
+    ) -> Expr:
+        """
+        Convert a Utf8 column into a Decimal column.
+
+        This method infers the needed parameters ``precision`` and ``scale``.
+
+        Parameters
+        ----------
+        inference_length
+            Number of elements to parse to determine the `precision` and `scale`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "numbers": [
+        ...             "40.12",
+        ...             "3420.13",
+        ...             "120134.19",
+        ...             "3212.98",
+        ...             "12.90",
+        ...             "143.09",
+        ...             "143.9",
+        ...         ]
+        ...     }
+        ... )
+        >>> df.select(pl.col("numbers").str.to_decimal())
+        shape: (7, 1)
+        ┌────────────┐
+        │ numbers    │
+        │ ---        │
+        │ decimal[2] │
+        ╞════════════╡
+        │ 40.12      │
+        │ 3420.13    │
+        │ 120134.19  │
+        │ 3212.98    │
+        │ 12.9       │
+        │ 143.09     │
+        │ 143.9      │
+        └────────────┘
+
+        """
+        return wrap_expr(self._pyexpr.str_to_decimal(inference_length))
 
     def lengths(self) -> Expr:
         """
@@ -448,7 +504,19 @@ class ExprStringNameSpace:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"foo": [" hello ", "\tworld"]})
+        >>> df = pl.DataFrame({"foo": [" hello", "\nworld"]})
+        >>> df
+        shape: (2, 1)
+        ┌────────┐
+        │ foo    │
+        │ ---    │
+        │ str    │
+        ╞════════╡
+        │  hello │
+        │        │
+        │ world  │
+        └────────┘
+
         >>> df.select(pl.col("foo").str.strip())
         shape: (2, 1)
         ┌───────┐
@@ -461,18 +529,19 @@ class ExprStringNameSpace:
         └───────┘
 
         Characters can be stripped by passing a string as argument. Note that whitespace
-        will not be stripped automatically when doing so.
+        will not be stripped automatically when doing so, unless that whitespace is
+        also included in the string.
 
-        >>> df.select(pl.col("foo").str.strip("od\t"))
+        >>> df.select(pl.col("foo").str.strip("ow\n"))
         shape: (2, 1)
-        ┌─────────┐
-        │ foo     │
-        │ ---     │
-        │ str     │
-        ╞═════════╡
-        │  hello  │
-        │ worl    │
-        └─────────┘
+        ┌───────┐
+        │ foo   │
+        │ ---   │
+        │ str   │
+        ╞═══════╡
+        │  hell │
+        │ rld   │
+        └───────┘
 
         """
         return wrap_expr(self._pyexpr.str_strip(characters))
@@ -532,7 +601,18 @@ class ExprStringNameSpace:
 
         Examples
         --------
-        >>> df = pl.DataFrame({"foo": [" hello ", "world\t"]})
+        >>> df = pl.DataFrame({"foo": [" hello", "world\n"]})
+        >>> df
+        shape: (2, 1)
+        ┌────────┐
+        │ foo    │
+        │ ---    │
+        │ str    │
+        ╞════════╡
+        │  hello │
+        │ world  │
+        │        │
+        └────────┘
         >>> df.select(pl.col("foo").str.rstrip())
         shape: (2, 1)
         ┌────────┐
@@ -545,18 +625,20 @@ class ExprStringNameSpace:
         └────────┘
 
         Characters can be stripped by passing a string as argument. Note that whitespace
-        will not be stripped automatically when doing so.
+        will not be stripped automatically when doing so, unless that whitespace is
+        also included in the string.
 
-        >>> df.select(pl.col("foo").str.rstrip("wod\t"))
+        >>> df.select(pl.col("foo").str.rstrip("oldw "))
         shape: (2, 1)
-        ┌─────────┐
-        │ foo     │
-        │ ---     │
-        │ str     │
-        ╞═════════╡
-        │  hello  │
-        │ worl    │
-        └─────────┘
+        ┌───────┐
+        │ foo   │
+        │ ---   │
+        │ str   │
+        ╞═══════╡
+        │  he   │
+        │ world │
+        │       │
+        └───────┘
 
         """
         return wrap_expr(self._pyexpr.str_rstrip(characters))
@@ -682,23 +764,45 @@ class ExprStringNameSpace:
         Parameters
         ----------
         pattern
-            A regex pattern compatible with the `regex crate
+            A valid regular expression pattern, compatible with the `regex crate
             <https://docs.rs/regex/latest/regex/>`_.
         literal
-            Treat pattern as a literal string.
+            Treat ``pattern`` as a literal string, not as a regular expression.
         strict
-            Raise an error if the underlying pattern is not a valid regex expression,
+            Raise an error if the underlying pattern is not a valid regex,
             otherwise mask out with a null value.
+
+        Notes
+        -----
+        To modify regular expression behaviour (such as case-sensitivity) with
+        flags, use the inline ``(?iLmsuxU)`` syntax. For example:
+
+        >>> pl.DataFrame({"s": ["AAA", "aAa", "aaa"]}).with_columns(
+        ...     default_match=pl.col("s").str.contains("AA"),
+        ...     insensitive_match=pl.col("s").str.contains("(?i)AA"),
+        ... )
+        shape: (3, 3)
+        ┌─────┬───────────────┬───────────────────┐
+        │ s   ┆ default_match ┆ insensitive_match │
+        │ --- ┆ ---           ┆ ---               │
+        │ str ┆ bool          ┆ bool              │
+        ╞═════╪═══════════════╪═══════════════════╡
+        │ AAA ┆ true          ┆ true              │
+        │ aAa ┆ false         ┆ true              │
+        │ aaa ┆ false         ┆ true              │
+        └─────┴───────────────┴───────────────────┘
+
+        See the regex crate's section on `grouping and flags
+        <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
+        additional information about the use of inline expression modifiers.
 
         Examples
         --------
         >>> df = pl.DataFrame({"a": ["Crab", "cat and dog", "rab$bit", None]})
         >>> df.select(
-        ...     [
-        ...         pl.col("a"),
-        ...         pl.col("a").str.contains("cat|bit").alias("regex"),
-        ...         pl.col("a").str.contains("rab$", literal=True).alias("literal"),
-        ...     ]
+        ...     pl.col("a"),
+        ...     pl.col("a").str.contains("cat|bit").alias("regex"),
+        ...     pl.col("a").str.contains("rab$", literal=True).alias("literal"),
         ... )
         shape: (4, 3)
         ┌─────────────┬───────┬─────────┐
@@ -718,7 +822,7 @@ class ExprStringNameSpace:
         ends_with : Check if string values end with a substring.
 
         """
-        pattern = expr_to_lit_or_expr(pattern, str_to_lit=True)._pyexpr
+        pattern = parse_as_expression(pattern, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_contains(pattern, literal, strict))
 
     def ends_with(self, suffix: str | Expr) -> Expr:
@@ -765,7 +869,7 @@ class ExprStringNameSpace:
         starts_with : Check if string values start with a substring.
 
         """
-        suffix = expr_to_lit_or_expr(suffix, str_to_lit=True)._pyexpr
+        suffix = parse_as_expression(suffix, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_ends_with(suffix))
 
     def starts_with(self, prefix: str | Expr) -> Expr:
@@ -812,7 +916,7 @@ class ExprStringNameSpace:
         ends_with : Check if string values end with a substring.
 
         """
-        prefix = expr_to_lit_or_expr(prefix, str_to_lit=True)._pyexpr
+        prefix = parse_as_expression(prefix, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_starts_with(prefix))
 
     def json_extract(self, dtype: PolarsDataType | None = None) -> Expr:
@@ -964,12 +1068,42 @@ class ExprStringNameSpace:
         Parameters
         ----------
         pattern
-            A regex pattern compatible with the `regex crate
+            A valid regular expression pattern, compatible with the `regex crate
             <https://docs.rs/regex/latest/regex/>`_.
         group_index
             Index of the targeted capture group.
             Group 0 mean the whole pattern, first group begin at index 1
             Default to the first capture group
+
+        Notes
+        -----
+        To modify regular expression behaviour (such as multi-line matching)
+        with flags, use the inline ``(?iLmsuxU)`` syntax. For example:
+
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "lines": [
+        ...             "I Like\nThose\nOdds",
+        ...             "This is\nThe Way",
+        ...         ]
+        ...     }
+        ... )
+        >>> df.select(
+        ...     pl.col("lines").str.extract(r"(?m)^(T\w+)", 1).alias("matches"),
+        ... )
+        shape: (2, 1)
+        ┌─────────┐
+        │ matches │
+        │ ---     │
+        │ str     │
+        ╞═════════╡
+        │ Those   │
+        │ This    │
+        └─────────┘
+
+        See the regex crate's section on `grouping and flags
+        <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
+        additional information about the use of inline expression modifiers.
 
         Returns
         -------
@@ -979,57 +1113,101 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame(
         ...     {
-        ...         "a": [
-        ...             "http://vote.com/ballon_dor?candidate=messi&ref=polars",
-        ...             "http://vote.com/ballon_dor?candidat=jorginho&ref=polars",
+        ...         "url": [
+        ...             "http://vote.com/ballon_dor?error=404&ref=unknown",
+        ...             "http://vote.com/ballon_dor?ref=polars&candidate=messi",
         ...             "http://vote.com/ballon_dor?candidate=ronaldo&ref=polars",
         ...         ]
         ...     }
         ... )
         >>> df.select(
-        ...     [
-        ...         pl.col("a").str.extract(r"candidate=(\w+)", 1),
-        ...     ]
+        ...     pl.col("url").str.extract(r"candidate=(\w+)", 1).alias("candidate"),
+        ...     pl.col("url").str.extract(r"ref=(\w+)", 1).alias("referer"),
+        ...     pl.col("url").str.extract(r"error=(\w+)", 1).alias("error"),
         ... )
-        shape: (3, 1)
-        ┌─────────┐
-        │ a       │
-        │ ---     │
-        │ str     │
-        ╞═════════╡
-        │ messi   │
-        │ null    │
-        │ ronaldo │
-        └─────────┘
+        shape: (3, 3)
+        ┌───────────┬─────────┬───────┐
+        │ candidate ┆ referer ┆ error │
+        │ ---       ┆ ---     ┆ ---   │
+        │ str       ┆ str     ┆ str   │
+        ╞═══════════╪═════════╪═══════╡
+        │ null      ┆ unknown ┆ 404   │
+        │ messi     ┆ polars  ┆ null  │
+        │ ronaldo   ┆ polars  ┆ null  │
+        └───────────┴─────────┴───────┘
 
         """
         return wrap_expr(self._pyexpr.str_extract(pattern, group_index))
 
     def extract_all(self, pattern: str | Expr) -> Expr:
-        r"""
-        Extracts all matches for the given regex pattern.
+        r'''
+        Extract all matches for the given regex pattern.
 
-        Extracts each successive non-overlapping regex match in an individual string as
-        an array.
+        Extract each successive non-overlapping regex match in an individual string
+        as a list. Extracted matches contain ``null`` if the original value is null
+        or the regex did not capture anything.
 
         Parameters
         ----------
         pattern
-            A regex pattern compatible with the `regex crate
+            A valid regular expression pattern, compatible with the `regex crate
             <https://docs.rs/regex/latest/regex/>`_.
+
+        Notes
+        -----
+        To modify regular expression behaviour (such as "verbose" mode and/or
+        case-sensitive matching) with flags, use the inline ``(?iLmsuxU)`` syntax.
+        For example:
+
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "email": [
+        ...             "real.email@spam.com",
+        ...             "some_account@somewhere.net",
+        ...             "abc.def.ghi.jkl@uvw.xyz.co.uk",
+        ...         ]
+        ...     }
+        ... )
+        >>> # extract name/domain parts from the addresses, using verbose regex
+        >>> df.with_columns(
+        ...     pl.col("email")
+        ...     .str.extract_all(
+        ...         r"""(?xi)   # activate 'verbose' and 'case-insensitive' flags
+        ...         [           # (start character group)
+        ...           A-Z       # letters
+        ...           0-9       # digits
+        ...           ._%+\-    # special chars
+        ...         ]           # (end character group)
+        ...         +           # 'one or more' quantifier
+        ...         """
+        ...     )
+        ...     .list.to_struct(fields=["name", "domain"])
+        ...     .alias("email_parts")
+        ... ).unnest("email_parts")
+        shape: (3, 3)
+        ┌───────────────────────────────┬─────────────────┬───────────────┐
+        │ email                         ┆ name            ┆ domain        │
+        │ ---                           ┆ ---             ┆ ---           │
+        │ str                           ┆ str             ┆ str           │
+        ╞═══════════════════════════════╪═════════════════╪═══════════════╡
+        │ real.email@spam.com           ┆ real.email      ┆ spam.com      │
+        │ some_account@somewhere.net    ┆ some_account    ┆ somewhere.net │
+        │ abc.def.ghi.jkl@uvw.xyz.co.uk ┆ abc.def.ghi.jkl ┆ uvw.xyz.co.uk │
+        └───────────────────────────────┴─────────────────┴───────────────┘
+
+        See the regex crate's section on `grouping and flags
+        <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
+        additional information about the use of inline expression modifiers.
 
         Returns
         -------
-        List[Utf8] array. Contain null if original value is null or regex capture
-        nothing.
+        List[Utf8]
 
         Examples
         --------
         >>> df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"]})
         >>> df.select(
-        ...     [
-        ...         pl.col("foo").str.extract_all(r"(\d+)").alias("extracted_nrs"),
-        ...     ]
+        ...     pl.col("foo").str.extract_all(r"\d+").alias("extracted_nrs"),
         ... )
         shape: (2, 1)
         ┌────────────────┐
@@ -1041,9 +1219,9 @@ class ExprStringNameSpace:
         │ ["678", "910"] │
         └────────────────┘
 
-        """
-        pattern = expr_to_lit_or_expr(pattern, str_to_lit=True)
-        return wrap_expr(self._pyexpr.str_extract_all(pattern._pyexpr))
+        '''
+        pattern = parse_as_expression(pattern, str_as_lit=True)
+        return wrap_expr(self._pyexpr.str_extract_all(pattern))
 
     def count_match(self, pattern: str) -> Expr:
         r"""
@@ -1052,7 +1230,7 @@ class ExprStringNameSpace:
         Parameters
         ----------
         pattern
-            A regex pattern compatible with the `regex crate
+            A valid regular expression pattern, compatible with the `regex crate
             <https://docs.rs/regex/latest/regex/>`_.
 
         Returns
@@ -1063,9 +1241,7 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"]})
         >>> df.select(
-        ...     [
-        ...         pl.col("foo").str.count_match(r"\d").alias("count_digits"),
-        ...     ]
+        ...     pl.col("foo").str.count_match(r"\d").alias("count_digits"),
         ... )
         shape: (2, 1)
         ┌──────────────┐
@@ -1136,9 +1312,7 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame({"x": ["a_1", None, "c", "d_4"]})
         >>> df.select(
-        ...     [
-        ...         pl.col("x").str.split_exact("_", 1).alias("fields"),
-        ...     ]
+        ...     pl.col("x").str.split_exact("_", 1).alias("fields"),
         ... )
         shape: (4, 1)
         ┌─────────────┐
@@ -1260,14 +1434,46 @@ class ExprStringNameSpace:
         Parameters
         ----------
         pattern
-            A regex pattern compatible with the `regex crate
+            A valid regular expression pattern, compatible with the `regex crate
             <https://docs.rs/regex/latest/regex/>`_.
         value
-            Replacement string.
+            String that will replace the matched substring.
         literal
-             Treat pattern as a literal string.
+            Treat pattern as a literal string.
         n
-            Number of matches to replace
+            Number of matches to replace.
+
+        Notes
+        -----
+        To modify regular expression behaviour (such as case-sensitivity) with flags,
+        use the inline ``(?iLmsuxU)`` syntax. For example:
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "city": "Philadelphia",
+        ...         "season": ["Spring", "Summer", "Autumn", "Winter"],
+        ...         "weather": ["Rainy", "Sunny", "Cloudy", "Snowy"],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     # apply case-insensitive string replacement
+        ...     pl.col("weather").str.replace(r"(?i)foggy|rainy|cloudy|snowy", "Sunny")
+        ... )
+        shape: (4, 3)
+        ┌──────────────┬────────┬─────────┐
+        │ city         ┆ season ┆ weather │
+        │ ---          ┆ ---    ┆ ---     │
+        │ str          ┆ str    ┆ str     │
+        ╞══════════════╪════════╪═════════╡
+        │ Philadelphia ┆ Spring ┆ Sunny   │
+        │ Philadelphia ┆ Summer ┆ Sunny   │
+        │ Philadelphia ┆ Autumn ┆ Sunny   │
+        │ Philadelphia ┆ Winter ┆ Sunny   │
+        └──────────────┴────────┴─────────┘
+
+        See the regex crate's section on `grouping and flags
+        <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
+        additional information about the use of inline expression modifiers.
 
         See Also
         --------
@@ -1290,11 +1496,9 @@ class ExprStringNameSpace:
         └─────┴────────┘
 
         """
-        pattern = expr_to_lit_or_expr(pattern, str_to_lit=True)
-        value = expr_to_lit_or_expr(value, str_to_lit=True)
-        return wrap_expr(
-            self._pyexpr.str_replace_n(pattern._pyexpr, value._pyexpr, literal, n)
-        )
+        pattern = parse_as_expression(pattern, str_as_lit=True)
+        value = parse_as_expression(value, str_as_lit=True)
+        return wrap_expr(self._pyexpr.str_replace_n(pattern, value, literal, n))
 
     def replace_all(
         self, pattern: str | Expr, value: str | Expr, *, literal: bool = False
@@ -1305,12 +1509,12 @@ class ExprStringNameSpace:
         Parameters
         ----------
         pattern
-            A regex pattern compatible with the `regex crate
+            A valid regular expression pattern, compatible with the `regex crate
             <https://docs.rs/regex/latest/regex/>`_.
         value
             Replacement string.
         literal
-             Treat pattern as a literal string.
+            Treat pattern as a literal string.
 
         See Also
         --------
@@ -1331,11 +1535,9 @@ class ExprStringNameSpace:
         └─────┴─────────┘
 
         """
-        pattern = expr_to_lit_or_expr(pattern, str_to_lit=True)
-        value = expr_to_lit_or_expr(value, str_to_lit=True)
-        return wrap_expr(
-            self._pyexpr.str_replace_all(pattern._pyexpr, value._pyexpr, literal)
-        )
+        pattern = parse_as_expression(pattern, str_as_lit=True)
+        value = parse_as_expression(value, str_as_lit=True)
+        return wrap_expr(self._pyexpr.str_replace_all(pattern, value, literal))
 
     def slice(self, offset: int, length: int | None = None) -> Expr:
         """
@@ -1419,7 +1621,7 @@ class ExprStringNameSpace:
         └─────┘
 
         """
-        return wrap_expr(self._pyexpr.explode())
+        return wrap_expr(self._pyexpr.str_explode())
 
     def parse_int(self, radix: int = 2, *, strict: bool = True) -> Expr:
         """

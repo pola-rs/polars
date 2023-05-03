@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::prelude::*;
 
 pub mod chunked_array;
+mod df;
 pub mod series;
 
 /// Intermediate enum. Needed because [crate::datatypes::DataType] has

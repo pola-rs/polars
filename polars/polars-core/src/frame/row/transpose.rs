@@ -68,6 +68,30 @@ impl DataFrame {
             NoData: "unable to transpose an empty dataframe"
         );
         let dtype = self.get_supertype().unwrap()?;
+        match dtype {
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Categorical(_) => {
+                let mut valid = true;
+                let mut cache_id = None;
+                for s in self.columns.iter() {
+                    if let DataType::Categorical(Some(rev_map)) = &s.dtype() {
+                        match &**rev_map {
+                            RevMapping::Local(_) => valid = false,
+                            RevMapping::Global(_, _, id) => {
+                                if let Some(cache_id) = cache_id {
+                                    if cache_id != *id {
+                                        valid = false;
+                                    }
+                                }
+                                cache_id = Some(*id);
+                            }
+                        }
+                    }
+                }
+                polars_ensure!(valid, ComputeError: "'transpose' of categorical can only be done if all are from the same global string cache")
+            }
+            _ => {}
+        }
         self.transpose_from_dtype(&dtype)
     }
 }

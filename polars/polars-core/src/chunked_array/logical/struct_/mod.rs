@@ -133,7 +133,7 @@ impl StructChunked {
                 .iter()
                 .map(|s| match s.dtype() {
                     #[cfg(feature = "object")]
-                    DataType::Object(_) => s.to_arrow(0),
+                    DataType::Object(_) => s.to_arrow(i),
                     _ => s.chunks()[i].clone(),
                 })
                 .collect::<Vec<_>>();
@@ -182,22 +182,46 @@ impl StructChunked {
         let mut null_count = 0;
         let chunks_lens = self.fields()[0].chunks().len();
 
+        // fast path
+        // we early return if a column doesn't have nulls
         for i in 0..chunks_lens {
-            // If all fields are null we count it as null
-            // so we bitand every chunk
+            for s in self.fields() {
+                let arr = &s.chunks()[i];
+                let has_nulls = arr.null_count() > 0 || matches!(s.dtype(), DataType::Null);
+                if !has_nulls {
+                    self.null_count = 0;
+                    return;
+                }
+            }
+        }
+
+        // slow path
+        // we bitand every null validity bitmask to determine
+        // in which rows all values are null
+        for i in 0..chunks_lens {
             let mut validity_agg = None;
 
+            let mut all_null_array = true;
             for s in self.fields() {
                 let arr = &s.chunks()[i];
 
-                match (&validity_agg, arr.validity()) {
-                    (Some(agg), Some(validity)) => validity_agg = Some(validity.bitand(agg)),
-                    (None, Some(validity)) => validity_agg = Some(validity.clone()),
-                    _ => {}
+                if !matches!(s.dtype(), DataType::Null) {
+                    all_null_array = false;
+                    match (&validity_agg, arr.validity()) {
+                        (Some(agg), Some(validity)) => validity_agg = Some(validity.bitand(agg)),
+                        (None, Some(validity)) => validity_agg = Some(validity.clone()),
+                        _ => {}
+                    }
                 }
             }
+            // we add the null count
             if let Some(validity) = &validity_agg {
                 null_count += validity.unset_bits()
+            }
+            // all arrays are null arrays
+            // we add the length of the chunk to the null_count
+            else if all_null_array {
+                null_count += self.fields()[0].chunks()[i].len()
             }
         }
         self.null_count = null_count

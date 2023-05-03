@@ -64,6 +64,8 @@ impl AExpr {
                     | Operator::And
                     | Operator::LtEq
                     | Operator::GtEq
+                    | Operator::NotEqValidity
+                    | Operator::EqValidity
                     | Operator::Or => {
                         let out_field;
                         let out_name = {
@@ -139,7 +141,7 @@ impl AExpr {
                     NUnique(expr) => {
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;
-                        field.coerce(DataType::UInt32);
+                        field.coerce(IDX_DTYPE);
                         Ok(field)
                     }
                     Count(expr) => {
@@ -150,7 +152,7 @@ impl AExpr {
                     }
                     AggGroups(expr) => {
                         let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
-                        field.coerce(DataType::List(IDX_DTYPE.into()));
+                        field.coerce(List(IDX_DTYPE.into()));
                         Ok(field)
                     }
                     Quantile { expr, .. } => {
@@ -200,6 +202,7 @@ impl AExpr {
                 function.get_field(schema, ctxt, &fields)
             }
             Slice { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
+            Cache { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Wildcard => panic!("should be no wildcard at this point"),
             Nth(_) => panic!("should be no nth at this point"),
         }
@@ -237,6 +240,12 @@ fn get_arithmetic_field(
                 (Date, Date) => Duration(TimeUnit::Milliseconds),
                 (left, right) => try_get_supertype(left, &right)?,
             }
+        }
+        Operator::Plus
+            if left_field.dtype == Boolean
+                && right_ae.get_type(schema, Context::Default, arena)? == Boolean =>
+        {
+            IDX_DTYPE
         }
         _ => {
             match (left_ae, right_ae) {

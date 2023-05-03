@@ -5,93 +5,131 @@ from typing import TYPE_CHECKING, Iterable
 
 import polars._reexport as pl
 from polars import functions as F
+from polars.exceptions import ComputeError
 
 if TYPE_CHECKING:
-    from polars.expr import Expr
+    from polars import Expr
     from polars.polars import PyExpr
     from polars.type_aliases import IntoExpr
 
 
-def selection_to_pyexpr_list(
-    exprs: IntoExpr | Iterable[IntoExpr],
-    structify: bool = False,
+def parse_as_list_of_expressions(
+    *inputs: IntoExpr | Iterable[IntoExpr],
+    __structify: bool = False,
+    **named_inputs: IntoExpr,
 ) -> list[PyExpr]:
-    if exprs is None:
-        return []
-
-    if isinstance(
-        exprs, (str, pl.Expr, pl.Series, F.whenthen.WhenThen, F.whenthen.WhenThenThen)
-    ) or not isinstance(exprs, Iterable):
-        return [
-            expr_to_lit_or_expr(exprs, str_to_lit=False, structify=structify)._pyexpr,
-        ]
-
-    return [
-        expr_to_lit_or_expr(e, str_to_lit=False, structify=structify)._pyexpr
-        for e in exprs  # type: ignore[union-attr]
-    ]
-
-
-def expr_to_lit_or_expr(
-    expr: IntoExpr | Iterable[IntoExpr],
-    str_to_lit: bool = True,
-    structify: bool = False,
-    name: str | None = None,
-) -> Expr:
     """
-    Convert args to expressions.
+    Parse multiple inputs into a list of expressions.
 
     Parameters
     ----------
-    expr
-        Any argument.
-    str_to_lit
-        If True string argument `"foo"` will be converted to `lit("foo")`.
-        If False it will be converted to `col("foo")`.
-    structify
-        If the final unaliased expression has multiple output names,
-        automatically convert it to struct.
-    name
-        Apply the given name as an alias to the resulting expression.
-
-    Returns
-    -------
-    Expr
+    *inputs
+        Inputs to be parsed as expressions, specified as positional arguments.
+    **named_inputs
+        Additional inputs to be parsed as expressions, specified as keyword arguments.
+        The expressions will be renamed to the keyword used.
+    __structify
+        Convert multi-column expressions to a single struct expression.
 
     """
-    if isinstance(expr, pl.Expr):
-        pass
-    elif isinstance(expr, str) and not str_to_lit:
-        expr = F.col(expr)
+    exprs = _parse_regular_inputs(inputs, structify=__structify)
+    if named_inputs:
+        named_exprs = _parse_named_inputs(named_inputs, structify=__structify)
+        exprs.extend(named_exprs)
+
+    return exprs
+
+
+def _parse_regular_inputs(
+    inputs: tuple[IntoExpr | Iterable[IntoExpr], ...],
+    *,
+    structify: bool = False,
+) -> list[PyExpr]:
+    if not inputs:
+        return []
+
+    input_list = _first_input_to_list(inputs[0])
+    input_list.extend(inputs[1:])  # type: ignore[arg-type]
+    return [parse_as_expression(e, structify=structify) for e in input_list]
+
+
+def _first_input_to_list(
+    inputs: IntoExpr | Iterable[IntoExpr] | None,
+) -> list[IntoExpr]:
+    if inputs is None:
+        return []
+    elif not isinstance(inputs, Iterable) or isinstance(inputs, (str, pl.Series)):
+        return [inputs]
+    else:
+        return list(inputs)
+
+
+def _parse_named_inputs(
+    named_inputs: dict[str, IntoExpr], *, structify: bool = False
+) -> Iterable[PyExpr]:
+    return (
+        parse_as_expression(input, structify=structify).alias(name)
+        for name, input in named_inputs.items()
+    )
+
+
+def parse_as_expression(
+    input: IntoExpr,
+    *,
+    str_as_lit: bool = False,
+    structify: bool = False,
+) -> PyExpr | Expr:
+    """
+    Parse a single input into an expression.
+
+    Parameters
+    ----------
+    input
+        The input to be parsed as an expression.
+    str_as_lit
+        Interpret string input as a string literal. If set to ``False`` (default),
+        strings are parsed as column names.
+    structify
+        Convert multi-column expressions to a single struct expression.
+    wrap
+        Return an ``Expr`` object rather than a ``PyExpr`` object.
+
+    """
+    if isinstance(input, pl.Expr):
+        expr = input
+    elif isinstance(input, str) and not str_as_lit:
+        expr = F.col(input)
+        structify = False
     elif (
-        isinstance(expr, (int, float, str, pl.Series, datetime, date, time, timedelta))
-        or expr is None
+        isinstance(input, (int, float, str, pl.Series, datetime, date, time, timedelta))
+        or input is None
     ):
-        expr = F.lit(expr)
+        expr = F.lit(input)
         structify = False
-    elif isinstance(expr, list):
-        expr = F.lit(pl.Series("", [expr]))
+    elif isinstance(input, list):
+        expr = F.lit(pl.Series("", [input]))
         structify = False
-    elif isinstance(expr, (F.whenthen.WhenThen, F.whenthen.WhenThenThen)):
-        expr = expr.otherwise(None)  # implicitly add the null branch.
+    elif isinstance(input, (F.whenthen.WhenThen, F.whenthen.WhenThenThen)):
+        expr = input.otherwise(None)  # implicitly add the null branch.
     else:
         raise TypeError(
-            f"did not expect value {expr} of type {type(expr)}, maybe disambiguate with"
+            f"did not expect value {input!r} of type {type(input)}, maybe disambiguate with"
             " pl.lit or pl.col"
         )
 
     if structify:
-        unaliased_expr = expr.meta.undo_aliases()
-        if unaliased_expr.meta.has_multiple_outputs():
-            expr_name = _expr_output_name(expr)
-            expr = F.struct(expr if expr_name is None else unaliased_expr)
-            name = name or expr_name
+        expr = _structify_expression(expr)
 
-    return expr if name is None else expr.alias(name)
+    return expr._pyexpr
 
 
-def _expr_output_name(expr: Expr) -> str | None:
-    try:
-        return expr.meta.output_name()
-    except Exception:
-        return None
+def _structify_expression(expr: Expr) -> Expr:
+    unaliased_expr = expr.meta.undo_aliases()
+    if unaliased_expr.meta.has_multiple_outputs():
+        try:
+            expr_name = expr.meta.output_name()
+        except ComputeError:
+            expr = F.struct(expr)
+        else:
+            expr = F.struct(unaliased_expr).alias(expr_name)
+    return expr
