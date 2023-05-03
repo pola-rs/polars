@@ -174,7 +174,7 @@ fn can_run_partitioned(
             eprintln!("POLARS_FORCE_PARTITION set: running partitioned HASH AGGREGATION")
         }
         Ok(true)
-    } else if original_df.height() < 1000 && !cfg!(test) {
+    } else if original_df.height() < 1000 && !cfg!(debug_assertions) {
         if state.verbose() {
             eprintln!("DATAFRAME < 1000 rows: running default HASH AGGREGATION")
         }
@@ -291,8 +291,10 @@ impl PartitionGroupByExec {
             }
 
             #[cfg(feature = "streaming")]
-            if let Some(out) = self.run_streaming(state, original_df.clone()) {
-                return out;
+            if !self.maintain_order {
+                if let Some(out) = self.run_streaming(state, original_df.clone()) {
+                    return out;
+                }
             }
 
             if state.verbose() {
