@@ -601,7 +601,7 @@ class StringNameSpace:
         ...         ]
         ...     }
         ... )
-        >>> df.select([pl.col("a").str.extract(r"candidate=(\w+)", 1)])
+        >>> df.select(pl.col("a").str.extract(r"candidate=(\w+)", 1))
         shape: (3, 1)
         ┌─────────┐
         │ a       │

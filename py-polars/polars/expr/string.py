@@ -718,11 +718,9 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame({"a": ["Crab", "cat and dog", "rab$bit", None]})
         >>> df.select(
-        ...     [
-        ...         pl.col("a"),
-        ...         pl.col("a").str.contains("cat|bit").alias("regex"),
-        ...         pl.col("a").str.contains("rab$", literal=True).alias("literal"),
-        ...     ]
+        ...     pl.col("a"),
+        ...     pl.col("a").str.contains("cat|bit").alias("regex"),
+        ...     pl.col("a").str.contains("rab$", literal=True).alias("literal"),
         ... )
         shape: (4, 3)
         ┌─────────────┬───────┬─────────┐
@@ -1011,9 +1009,7 @@ class ExprStringNameSpace:
         ...     }
         ... )
         >>> df.select(
-        ...     [
-        ...         pl.col("a").str.extract(r"candidate=(\w+)", 1),
-        ...     ]
+        ...     pl.col("a").str.extract(r"candidate=(\w+)", 1),
         ... )
         shape: (3, 1)
         ┌─────────┐
@@ -1051,9 +1047,7 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"]})
         >>> df.select(
-        ...     [
-        ...         pl.col("foo").str.extract_all(r"(\d+)").alias("extracted_nrs"),
-        ...     ]
+        ...     pl.col("foo").str.extract_all(r"(\d+)").alias("extracted_nrs"),
         ... )
         shape: (2, 1)
         ┌────────────────┐
@@ -1087,9 +1081,7 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"]})
         >>> df.select(
-        ...     [
-        ...         pl.col("foo").str.count_match(r"\d").alias("count_digits"),
-        ...     ]
+        ...     pl.col("foo").str.count_match(r"\d").alias("count_digits"),
         ... )
         shape: (2, 1)
         ┌──────────────┐
@@ -1160,9 +1152,7 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame({"x": ["a_1", None, "c", "d_4"]})
         >>> df.select(
-        ...     [
-        ...         pl.col("x").str.split_exact("_", 1).alias("fields"),
-        ...     ]
+        ...     pl.col("x").str.split_exact("_", 1).alias("fields"),
         ... )
         shape: (4, 1)
         ┌─────────────┐
