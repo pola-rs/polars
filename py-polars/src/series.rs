@@ -1,14 +1,17 @@
+mod aggregation;
 mod arithmetic;
 mod comparison;
 mod construction;
+mod export;
+mod npy;
+mod set_at_idx;
 
 use polars_algo::{cut, hist, qcut};
-use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_series;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyList};
+use pyo3::types::PyBytes;
 use pyo3::Python;
 
 use crate::apply::series::{call_lambda_and_extract, ApplyLambda};
@@ -16,8 +19,7 @@ use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::prelude::*;
 use crate::py_modules::POLARS;
-use crate::set::set_at_idx;
-use crate::{apply_method_all_arrow_series2, arrow_interop, raise_err};
+use crate::{apply_method_all_arrow_series2, raise_err};
 
 #[pyclass]
 #[repr(transparent)]
@@ -206,46 +208,6 @@ impl PySeries {
         out.into()
     }
 
-    pub fn mean(&self) -> Option<f64> {
-        match self.series.dtype() {
-            DataType::Boolean => {
-                let s = self.series.cast(&DataType::UInt8).unwrap();
-                s.mean()
-            }
-            _ => self.series.mean(),
-        }
-    }
-
-    pub fn max(&self, py: Python) -> PyResult<PyObject> {
-        Ok(Wrap(
-            self.series
-                .max_as_series()
-                .get(0)
-                .map_err(PyPolarsErr::from)?,
-        )
-        .into_py(py))
-    }
-
-    pub fn min(&self, py: Python) -> PyResult<PyObject> {
-        Ok(Wrap(
-            self.series
-                .min_as_series()
-                .get(0)
-                .map_err(PyPolarsErr::from)?,
-        )
-        .into_py(py))
-    }
-
-    pub fn sum(&self, py: Python) -> PyResult<PyObject> {
-        Ok(Wrap(
-            self.series
-                .sum_as_series()
-                .get(0)
-                .map_err(PyPolarsErr::from)?,
-        )
-        .into_py(py))
-    }
-
     pub fn n_chunks(&self) -> usize {
         self.series.n_chunks()
     }
@@ -294,14 +256,6 @@ impl PySeries {
         Ok(df.into())
     }
 
-    pub fn arg_min(&self) -> Option<usize> {
-        self.series.arg_min()
-    }
-
-    pub fn arg_max(&self) -> Option<usize> {
-        self.series.arg_max()
-    }
-
     pub fn take_with_series(&self, indices: &PySeries) -> PyResult<Self> {
         let idx = indices.series.idx().map_err(PyPolarsErr::from)?;
         let take = self.series.take(idx).map_err(PyPolarsErr::from)?;
@@ -325,38 +279,6 @@ impl PySeries {
             self.series.series_equal(&other.series)
         }
     }
-    pub fn eq(&self, rhs: &PySeries) -> PyResult<Self> {
-        let s = self.series.equal(&rhs.series).map_err(PyPolarsErr::from)?;
-        Ok(s.into_series().into())
-    }
-
-    pub fn neq(&self, rhs: &PySeries) -> PyResult<Self> {
-        let s = self
-            .series
-            .not_equal(&rhs.series)
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.into_series().into())
-    }
-
-    pub fn gt(&self, rhs: &PySeries) -> PyResult<Self> {
-        let s = self.series.gt(&rhs.series).map_err(PyPolarsErr::from)?;
-        Ok(s.into_series().into())
-    }
-
-    pub fn gt_eq(&self, rhs: &PySeries) -> PyResult<Self> {
-        let s = self.series.gt_eq(&rhs.series).map_err(PyPolarsErr::from)?;
-        Ok(s.into_series().into())
-    }
-
-    pub fn lt(&self, rhs: &PySeries) -> PyResult<Self> {
-        let s = self.series.lt(&rhs.series).map_err(PyPolarsErr::from)?;
-        Ok(s.into_series().into())
-    }
-
-    pub fn lt_eq(&self, rhs: &PySeries) -> PyResult<Self> {
-        let s = self.series.lt_eq(&rhs.series).map_err(PyPolarsErr::from)?;
-        Ok(s.into_series().into())
-    }
 
     pub fn _not(&self) -> PyResult<Self> {
         let bool = self.series.bool().map_err(PyPolarsErr::from)?;
@@ -371,162 +293,11 @@ impl PySeries {
         self.series.len()
     }
 
-    pub fn to_list(&self) -> PyObject {
-        Python::with_gil(|py| {
-            let series = &self.series;
-
-            fn to_list_recursive(py: Python, series: &Series) -> PyObject {
-                let pylist = match series.dtype() {
-                    DataType::Boolean => PyList::new(py, series.bool().unwrap()),
-                    DataType::UInt8 => PyList::new(py, series.u8().unwrap()),
-                    DataType::UInt16 => PyList::new(py, series.u16().unwrap()),
-                    DataType::UInt32 => PyList::new(py, series.u32().unwrap()),
-                    DataType::UInt64 => PyList::new(py, series.u64().unwrap()),
-                    DataType::Int8 => PyList::new(py, series.i8().unwrap()),
-                    DataType::Int16 => PyList::new(py, series.i16().unwrap()),
-                    DataType::Int32 => PyList::new(py, series.i32().unwrap()),
-                    DataType::Int64 => PyList::new(py, series.i64().unwrap()),
-                    DataType::Float32 => PyList::new(py, series.f32().unwrap()),
-                    DataType::Float64 => PyList::new(py, series.f64().unwrap()),
-                    DataType::Categorical(_) => {
-                        PyList::new(py, series.categorical().unwrap().iter_str())
-                    }
-                    #[cfg(feature = "object")]
-                    DataType::Object(_) => {
-                        let v = PyList::empty(py);
-                        for i in 0..series.len() {
-                            let obj: Option<&ObjectValue> =
-                                series.get_object(i).map(|any| any.into());
-                            let val = obj.to_object(py);
-
-                            v.append(val).unwrap();
-                        }
-                        v
-                    }
-                    DataType::List(_) => {
-                        let v = PyList::empty(py);
-                        let ca = series.list().unwrap();
-                        for opt_s in ca.amortized_iter() {
-                            match opt_s {
-                                None => {
-                                    v.append(py.None()).unwrap();
-                                }
-                                Some(s) => {
-                                    let pylst = to_list_recursive(py, s.as_ref());
-                                    v.append(pylst).unwrap();
-                                }
-                            }
-                        }
-                        v
-                    }
-                    DataType::Date => {
-                        let ca = series.date().unwrap();
-                        return Wrap(ca).to_object(py);
-                    }
-                    DataType::Time => {
-                        let ca = series.time().unwrap();
-                        return Wrap(ca).to_object(py);
-                    }
-                    DataType::Datetime(_, _) => {
-                        let ca = series.datetime().unwrap();
-                        return Wrap(ca).to_object(py);
-                    }
-                    DataType::Decimal(_, _) => {
-                        let ca = series.decimal().unwrap();
-                        return Wrap(ca).to_object(py);
-                    }
-                    DataType::Utf8 => {
-                        let ca = series.utf8().unwrap();
-                        return Wrap(ca).to_object(py);
-                    }
-                    DataType::Struct(_) => {
-                        let ca = series.struct_().unwrap();
-                        return Wrap(ca).to_object(py);
-                    }
-                    DataType::Duration(_) => {
-                        let ca = series.duration().unwrap();
-                        return Wrap(ca).to_object(py);
-                    }
-                    DataType::Binary => {
-                        let ca = series.binary().unwrap();
-                        return Wrap(ca).to_object(py);
-                    }
-                    DataType::Null => {
-                        let null: Option<u8> = None;
-                        let n = series.len();
-                        let iter = std::iter::repeat(null).take(n);
-                        use std::iter::{Repeat, Take};
-                        struct NullIter {
-                            iter: Take<Repeat<Option<u8>>>,
-                            n: usize,
-                        }
-                        impl Iterator for NullIter {
-                            type Item = Option<u8>;
-
-                            fn next(&mut self) -> Option<Self::Item> {
-                                self.iter.next()
-                            }
-                            fn size_hint(&self) -> (usize, Option<usize>) {
-                                (self.n, Some(self.n))
-                            }
-                        }
-                        impl ExactSizeIterator for NullIter {}
-
-                        PyList::new(py, NullIter { iter, n })
-                    }
-                    DataType::Unknown => {
-                        panic!("to_list not implemented for unknown")
-                    }
-                };
-                pylist.to_object(py)
-            }
-
-            let pylist = to_list_recursive(py, series);
-            pylist.to_object(py)
-        })
-    }
-
-    pub fn median(&self) -> Option<f64> {
-        match self.series.dtype() {
-            DataType::Boolean => {
-                let s = self.series.cast(&DataType::UInt8).unwrap();
-                s.median()
-            }
-            _ => self.series.median(),
-        }
-    }
-
-    pub fn quantile(
-        &self,
-        quantile: f64,
-        interpolation: Wrap<QuantileInterpolOptions>,
-    ) -> PyObject {
-        Python::with_gil(|py| {
-            Wrap(
-                self.series
-                    .quantile_as_series(quantile, interpolation.0)
-                    .expect("invalid quantile")
-                    .get(0)
-                    .unwrap_or(AnyValue::Null),
-            )
-            .into_py(py)
-        })
-    }
-
     /// Rechunk and return a pointer to the start of the Series.
     /// Only implemented for numeric types
     pub fn as_single_ptr(&mut self) -> PyResult<usize> {
         let ptr = self.series.as_single_ptr().map_err(PyPolarsErr::from)?;
         Ok(ptr)
-    }
-
-    pub fn to_arrow(&mut self) -> PyResult<PyObject> {
-        self.rechunk(true);
-        Python::with_gil(|py| {
-            let pyarrow = py.import("pyarrow")?;
-
-            arrow_interop::to_py::to_py_array(self.series.to_arrow(0), py, pyarrow)
-        })
     }
 
     pub fn clone(&self) -> Self {
@@ -888,18 +659,6 @@ impl PySeries {
         }
     }
 
-    pub fn set_at_idx(&mut self, idx: PySeries, values: PySeries) -> PyResult<()> {
-        // we take the value because we want a ref count
-        // of 1 so that we can have mutable access
-        let s = std::mem::take(&mut self.series);
-        match set_at_idx(s, &idx.series, &values.series) {
-            Ok(out) => {
-                self.series = out;
-                Ok(())
-            }
-            Err(e) => Err(PyErr::from(PyPolarsErr::from(e))),
-        }
-    }
     pub fn get_chunks(&self) -> PyResult<Vec<PyObject>> {
         Python::with_gil(|py| {
             let wrap_s = py_modules::POLARS.getattr(py, "wrap_s").unwrap();

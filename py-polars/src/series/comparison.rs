@@ -4,6 +4,42 @@ use crate::error::PyPolarsErr;
 use crate::prelude::*;
 use crate::PySeries;
 
+#[pymethods]
+impl PySeries {
+    fn eq(&self, rhs: &PySeries) -> PyResult<Self> {
+        let s = self.series.equal(&rhs.series).map_err(PyPolarsErr::from)?;
+        Ok(s.into_series().into())
+    }
+
+    fn neq(&self, rhs: &PySeries) -> PyResult<Self> {
+        let s = self
+            .series
+            .not_equal(&rhs.series)
+            .map_err(PyPolarsErr::from)?;
+        Ok(s.into_series().into())
+    }
+
+    fn gt(&self, rhs: &PySeries) -> PyResult<Self> {
+        let s = self.series.gt(&rhs.series).map_err(PyPolarsErr::from)?;
+        Ok(s.into_series().into())
+    }
+
+    fn gt_eq(&self, rhs: &PySeries) -> PyResult<Self> {
+        let s = self.series.gt_eq(&rhs.series).map_err(PyPolarsErr::from)?;
+        Ok(s.into_series().into())
+    }
+
+    fn lt(&self, rhs: &PySeries) -> PyResult<Self> {
+        let s = self.series.lt(&rhs.series).map_err(PyPolarsErr::from)?;
+        Ok(s.into_series().into())
+    }
+
+    fn lt_eq(&self, rhs: &PySeries) -> PyResult<Self> {
+        let s = self.series.lt_eq(&rhs.series).map_err(PyPolarsErr::from)?;
+        Ok(s.into_series().into())
+    }
+}
+
 macro_rules! impl_eq_num {
     ($name:ident, $type:ty) => {
         #[pymethods]

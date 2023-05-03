@@ -1401,7 +1401,7 @@ class Series:
 
     def product(self) -> int | float:
         """Reduce this Series to the product value."""
-        return self.to_frame().select(F.col(self.name).product()).to_series()[0]
+        return self.to_frame().select(F.col(self.name).product()).to_series().item()
 
     def pow(self, exponent: int | float | Series) -> Series:
         """
