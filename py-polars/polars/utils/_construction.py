@@ -28,6 +28,7 @@ from polars.datatypes import (
     Datetime,
     Duration,
     Float32,
+    UInt32,
     List,
     Object,
     Struct,
@@ -58,7 +59,7 @@ from polars.dependencies import pyarrow as pa
 from polars.exceptions import ComputeError, ShapeError
 from polars.utils._wrap import wrap_df, wrap_s
 from polars.utils.convert import _tzinfo_to_str
-from polars.utils.meta import threadpool_size
+from polars.utils.meta import threadpool_size, get_index_type
 from polars.utils.various import _is_generator, arrlen, range_to_series
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -1484,3 +1485,37 @@ def coerce_arrow(array: pa.Array, rechunk: bool = True) -> pa.Array:
                 array, pa.dictionary(pa.uint32(), pa.large_string())
             ).combine_chunks()
     return array
+
+def numpy_to_idxs(idxs: np.ndarray, size: int) -> pl.Series:
+    if idxs.ndim != 1:
+        raise ValueError("Only 1D numpy array is supported as index.")
+
+    idx_type = get_index_type()
+
+    if len(idxs) == 0:
+        return pl.Series("", [], dtype=idx_type)
+
+    # Numpy array with signed or unsigned integers.
+    if not idxs.dtype.kind in ("i", "u"):
+        raise NotImplementedError("Unsupported idxs datatype.")
+
+    if idx_type == UInt32:
+        if idxs.dtype in {np.int64, np.uint64} and idxs.max() >= 2**32:
+            raise ValueError("Index positions should be smaller than 2^32.")
+        if idxs.dtype == np.int64 and idxs.min() < -(2**32):
+            raise ValueError(
+                "Index positions should be bigger than -2^32 + 1."
+            )
+
+    if idxs.dtype.kind == "i" and idxs.min() < 0:
+        if idx_type == UInt32:
+            if idxs.dtype in (np.int8, np.int16):
+                idxs = idxs.astype(np.int32)
+        else:
+            if idxs.dtype in (np.int8, np.int16, np.int32):
+                idxs = idxs.astype(np.int64)
+
+        # Update negative indexes to absolute indexes.
+        idxs = np.where(idxs < 0, size + idxs, idxs)
+
+    return pl.Series("", idxs, dtype=idx_type)

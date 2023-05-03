@@ -80,6 +80,7 @@ from polars.utils._construction import (
     pandas_to_pyseries,
     sequence_to_pyseries,
     series_to_pyseries,
+    numpy_to_idxs,
 )
 from polars.utils._wrap import wrap_df
 from polars.utils.convert import (
@@ -921,11 +922,8 @@ class Series:
             #   - Signed numpy array indexes are converted pl.UInt32 (polars) or
             #     pl.UInt64 (polars_u64_idx) after negative indexes are converted
             #     to absolute indexes.
-            pl_type = numpy_char_code_to_dtype(item.dtype)
             return self._from_pyseries(
-                self._s.take_with_series(
-                    pl.Series("", item, dtype=pl_type)._pos_idxs(self.len())._s
-                )
+                self._s.take_with_series(numpy_to_idxs(item, self.len())._s)
             )
 
         # Integer.

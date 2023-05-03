@@ -85,6 +85,7 @@ from polars.utils._construction import (
     pandas_to_pydf,
     sequence_to_pydf,
     series_to_pydf,
+    numpy_to_idxs,
 )
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
 from polars.utils._wrap import wrap_ldf, wrap_s
@@ -1570,9 +1571,7 @@ class DataFrame:
                 # Numpy array with signed or unsigned integers.
                 pl_type = numpy_char_code_to_dtype(item.dtype)
                 return self._from_pydf(
-                    self._df.take_with_series(
-                        pl.Series("", item, dtype=pl_type)._pos_idxs(self.shape[0])._s
-                    )
+                    self._df.take_with_series(numpy_to_idxs(item, self.shape[0])._s)
                 )
             if isinstance(item[0], str):
                 return self._from_pydf(self._df.select(item))
