@@ -1540,6 +1540,12 @@ class DataFrame:
         if isinstance(item, tuple) and len(item) == 2:
             row_selection, col_selection = item
 
+            # df[[], :]
+            if isinstance(row_selection, Sequence):
+                if len(row_selection) == 0:
+                    # handle empty list by falling through to slice
+                    row_selection = slice(0)
+
             # df[:, unknown]
             if isinstance(row_selection, slice):
                 # multiple slices
