@@ -2497,6 +2497,16 @@ def test_getitem() -> None:
     # slice. Below an example of taking every second row
     assert_frame_equal(df[1::2], pl.DataFrame({"a": [2.0, 4.0], "b": [4, 6]}))
 
+    # slice, empty slice
+    assert df[:0].columns == ["a", "b"]
+    assert len(df[:0]) == 0
+
+    # empty list with column selector drops rows but keeps columns
+    assert_frame_equal(df[[], :], df[:0])
+
+    # empty list without column select return empty frame
+    assert_frame_equal(df[[]], pl.DataFrame({}))
+
     # numpy array: assumed to be row indices if integers, or columns if strings
 
     # numpy array: positive idxs.
