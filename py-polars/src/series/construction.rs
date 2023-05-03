@@ -1,5 +1,5 @@
 use numpy::PyArray1;
-pub use polars_core::prelude::*;
+use polars_core::prelude::*;
 use polars_core::utils::{CustomIterTools, NoNull};
 use pyo3::prelude::*;
 
@@ -16,12 +16,7 @@ macro_rules! init_method {
         #[pymethods]
         impl PySeries {
             #[staticmethod]
-            pub fn $name(
-                py: Python,
-                name: &str,
-                array: &PyArray1<$type>,
-                _strict: bool,
-            ) -> PySeries {
+            fn $name(py: Python, name: &str, array: &PyArray1<$type>, _strict: bool) -> PySeries {
                 let array = array.readonly();
                 let vals = array.as_slice().unwrap();
                 py.allow_threads(|| PySeries {
@@ -45,7 +40,7 @@ init_method!(new_u64, u64);
 #[pymethods]
 impl PySeries {
     #[staticmethod]
-    pub fn new_f32(py: Python, name: &str, array: &PyArray1<f32>, nan_is_null: bool) -> PySeries {
+    fn new_f32(py: Python, name: &str, array: &PyArray1<f32>, nan_is_null: bool) -> PySeries {
         let array = array.readonly();
         let vals = array.as_slice().unwrap();
         py.allow_threads(|| {
@@ -63,7 +58,7 @@ impl PySeries {
     }
 
     #[staticmethod]
-    pub fn new_f64(py: Python, name: &str, array: &PyArray1<f64>, nan_is_null: bool) -> PySeries {
+    fn new_f64(py: Python, name: &str, array: &PyArray1<f64>, nan_is_null: bool) -> PySeries {
         let array = array.readonly();
         let vals = array.as_slice().unwrap();
         py.allow_threads(|| {
@@ -84,7 +79,7 @@ impl PySeries {
 #[pymethods]
 impl PySeries {
     #[staticmethod]
-    pub fn new_opt_bool(name: &str, obj: &PyAny, strict: bool) -> PyResult<PySeries> {
+    fn new_opt_bool(name: &str, obj: &PyAny, strict: bool) -> PyResult<PySeries> {
         let len = obj.len()?;
         let mut builder = BooleanChunkedBuilder::new(name, len);
 
@@ -149,7 +144,7 @@ macro_rules! init_method_opt {
         #[pymethods]
         impl PySeries {
             #[staticmethod]
-            pub fn $name(name: &str, obj: &PyAny, strict: bool) -> PyResult<PySeries> {
+            fn $name(name: &str, obj: &PyAny, strict: bool) -> PyResult<PySeries> {
                 new_primitive::<$type>(name, obj, strict)
             }
         }
@@ -175,7 +170,7 @@ init_method_opt!(new_opt_f64, Float64Type, f64);
 )]
 impl PySeries {
     #[staticmethod]
-    pub fn new_from_anyvalues(
+    fn new_from_anyvalues(
         name: &str,
         val: Vec<Wrap<AnyValue<'_>>>,
         strict: bool,
@@ -187,21 +182,21 @@ impl PySeries {
     }
 
     #[staticmethod]
-    pub fn new_str(name: &str, val: Wrap<Utf8Chunked>, _strict: bool) -> Self {
+    fn new_str(name: &str, val: Wrap<Utf8Chunked>, _strict: bool) -> Self {
         let mut s = val.0.into_series();
         s.rename(name);
         s.into()
     }
 
     #[staticmethod]
-    pub fn new_binary(name: &str, val: Wrap<BinaryChunked>, _strict: bool) -> Self {
+    fn new_binary(name: &str, val: Wrap<BinaryChunked>, _strict: bool) -> Self {
         let mut s = val.0.into_series();
         s.rename(name);
         s.into()
     }
 
     #[staticmethod]
-    pub fn new_null(name: &str, val: &PyAny, _strict: bool) -> PyResult<Self> {
+    fn new_null(name: &str, val: &PyAny, _strict: bool) -> PyResult<Self> {
         let s = Series::new_null(name, val.len()?);
         Ok(s.into())
     }
@@ -221,17 +216,13 @@ impl PySeries {
     }
 
     #[staticmethod]
-    pub fn new_series_list(name: &str, val: Vec<Self>, _strict: bool) -> Self {
+    fn new_series_list(name: &str, val: Vec<Self>, _strict: bool) -> Self {
         let series_vec = to_series_collection(val);
         Series::new(name, &series_vec).into()
     }
 
     #[staticmethod]
-    pub fn new_decimal(
-        name: &str,
-        val: Vec<Wrap<AnyValue<'_>>>,
-        strict: bool,
-    ) -> PyResult<PySeries> {
+    fn new_decimal(name: &str, val: Vec<Wrap<AnyValue<'_>>>, strict: bool) -> PyResult<PySeries> {
         // TODO: do we have to respect 'strict' here? it's possible if we want to
         let avs = slice_extract_wrapped(&val);
         // create a fake dtype with a placeholder "none" scale, to be inferred later
@@ -242,7 +233,7 @@ impl PySeries {
     }
 
     #[staticmethod]
-    pub fn repeat(name: &str, val: &PyAny, n: usize, dtype: Wrap<DataType>) -> Self {
+    fn repeat(name: &str, val: &PyAny, n: usize, dtype: Wrap<DataType>) -> Self {
         match dtype.0 {
             DataType::Utf8 => {
                 let val = val.extract::<&str>().unwrap();
@@ -285,7 +276,7 @@ impl PySeries {
     }
 
     #[staticmethod]
-    pub fn from_arrow(name: &str, array: &PyAny) -> PyResult<Self> {
+    fn from_arrow(name: &str, array: &PyAny) -> PyResult<Self> {
         let arr = array_to_rust(array)?;
 
         match arr.data_type() {

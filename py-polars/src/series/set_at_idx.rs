@@ -7,7 +7,7 @@ use crate::PySeries;
 
 #[pymethods]
 impl PySeries {
-    pub fn set_at_idx(&mut self, idx: PySeries, values: PySeries) -> PyResult<()> {
+    fn set_at_idx(&mut self, idx: PySeries, values: PySeries) -> PyResult<()> {
         // we take the value because we want a ref count
         // of 1 so that we can have mutable access
         let s = std::mem::take(&mut self.series);

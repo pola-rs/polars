@@ -3,12 +3,13 @@ mod arithmetic;
 mod comparison;
 mod construction;
 mod export;
-mod npy;
+mod numpy_ufunc;
 mod set_at_idx;
 
 use polars_algo::{cut, hist, qcut};
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_series;
+use polars_core::with_match_physical_numeric_polars_type;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
@@ -65,38 +66,38 @@ pub(crate) fn to_pyseries_collection(s: Vec<Series>) -> Vec<PySeries> {
 
 #[pymethods]
 impl PySeries {
-    pub fn struct_unnest(&self) -> PyResult<PyDataFrame> {
+    fn struct_unnest(&self) -> PyResult<PyDataFrame> {
         let ca = self.series.struct_().map_err(PyPolarsErr::from)?;
         let df: DataFrame = ca.clone().into();
         Ok(df.into())
     }
 
-    pub fn struct_fields(&self) -> PyResult<Vec<&str>> {
+    fn struct_fields(&self) -> PyResult<Vec<&str>> {
         let ca = self.series.struct_().map_err(PyPolarsErr::from)?;
         Ok(ca.fields().iter().map(|s| s.name()).collect())
     }
 
-    pub fn is_sorted_ascending_flag(&self) -> bool {
+    fn is_sorted_ascending_flag(&self) -> bool {
         matches!(self.series.is_sorted_flag(), IsSorted::Ascending)
     }
 
-    pub fn is_sorted_descending_flag(&self) -> bool {
+    fn is_sorted_descending_flag(&self) -> bool {
         matches!(self.series.is_sorted_flag(), IsSorted::Descending)
     }
 
-    pub fn can_fast_explode_flag(&self) -> bool {
+    fn can_fast_explode_flag(&self) -> bool {
         match self.series.list() {
             Err(_) => false,
             Ok(list) => list._can_fast_explode(),
         }
     }
 
-    pub fn estimated_size(&self) -> usize {
+    fn estimated_size(&self) -> usize {
         self.series.estimated_size()
     }
 
     #[cfg(feature = "object")]
-    pub fn get_object(&self, index: usize) -> PyObject {
+    fn get_object(&self, index: usize) -> PyObject {
         Python::with_gil(|py| {
             if matches!(self.series.dtype(), DataType::Object(_)) {
                 let obj: Option<&ObjectValue> = self.series.get_object(index).map(|any| any.into());
@@ -107,7 +108,7 @@ impl PySeries {
         })
     }
 
-    pub fn get_fmt(&self, index: usize, str_lengths: usize) -> String {
+    fn get_fmt(&self, index: usize, str_lengths: usize) -> String {
         let val = format!("{}", self.series.get(index).unwrap());
         if let DataType::Utf8 | DataType::Categorical(_) = self.series.dtype() {
             let v_trunc = &val[..val
@@ -126,7 +127,7 @@ impl PySeries {
         }
     }
 
-    pub fn rechunk(&mut self, in_place: bool) -> Option<Self> {
+    fn rechunk(&mut self, in_place: bool) -> Option<Self> {
         let series = self.series.rechunk();
         if in_place {
             self.series = series;
@@ -136,7 +137,7 @@ impl PySeries {
         }
     }
 
-    pub fn get_idx(&self, py: Python, idx: usize) -> PyResult<PyObject> {
+    fn get_idx(&self, py: Python, idx: usize) -> PyResult<PyObject> {
         let av = self.series.get(idx).map_err(PyPolarsErr::from)?;
         if let AnyValue::List(s) = av {
             let pyseries = PySeries::new(s);
@@ -152,7 +153,7 @@ impl PySeries {
         }
     }
 
-    pub fn bitand(&self, other: &PySeries) -> PyResult<Self> {
+    fn bitand(&self, other: &PySeries) -> PyResult<Self> {
         let out = self
             .series
             .bitand(&other.series)
@@ -160,14 +161,14 @@ impl PySeries {
         Ok(out.into())
     }
 
-    pub fn bitor(&self, other: &PySeries) -> PyResult<Self> {
+    fn bitor(&self, other: &PySeries) -> PyResult<Self> {
         let out = self
             .series
             .bitor(&other.series)
             .map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
-    pub fn bitxor(&self, other: &PySeries) -> PyResult<Self> {
+    fn bitxor(&self, other: &PySeries) -> PyResult<Self> {
         let out = self
             .series
             .bitxor(&other.series)
@@ -175,23 +176,23 @@ impl PySeries {
         Ok(out.into())
     }
 
-    pub fn chunk_lengths(&self) -> Vec<usize> {
+    fn chunk_lengths(&self) -> Vec<usize> {
         self.series.chunk_lengths().collect()
     }
 
-    pub fn name(&self) -> &str {
+    fn name(&self) -> &str {
         self.series.name()
     }
 
-    pub fn rename(&mut self, name: &str) {
+    fn rename(&mut self, name: &str) {
         self.series.rename(name);
     }
 
-    pub fn dtype(&self, py: Python) -> PyObject {
+    fn dtype(&self, py: Python) -> PyObject {
         Wrap(self.series.dtype().clone()).to_object(py)
     }
 
-    pub fn inner_dtype(&self, py: Python) -> Option<PyObject> {
+    fn inner_dtype(&self, py: Python) -> Option<PyObject> {
         self.series
             .dtype()
             .inner_dtype()
@@ -208,25 +209,25 @@ impl PySeries {
         out.into()
     }
 
-    pub fn n_chunks(&self) -> usize {
+    fn n_chunks(&self) -> usize {
         self.series.n_chunks()
     }
 
-    pub fn append(&mut self, other: &PySeries) -> PyResult<()> {
+    fn append(&mut self, other: &PySeries) -> PyResult<()> {
         self.series
             .append(&other.series)
             .map_err(PyPolarsErr::from)?;
         Ok(())
     }
 
-    pub fn extend(&mut self, other: &PySeries) -> PyResult<()> {
+    fn extend(&mut self, other: &PySeries) -> PyResult<()> {
         self.series
             .extend(&other.series)
             .map_err(PyPolarsErr::from)?;
         Ok(())
     }
 
-    pub fn new_from_index(&self, index: usize, length: usize) -> PyResult<Self> {
+    fn new_from_index(&self, index: usize, length: usize) -> PyResult<Self> {
         if index >= self.series.len() {
             Err(PyValueError::new_err("index is out of bounds"))
         } else {
@@ -234,7 +235,7 @@ impl PySeries {
         }
     }
 
-    pub fn filter(&self, filter: &PySeries) -> PyResult<Self> {
+    fn filter(&self, filter: &PySeries) -> PyResult<Self> {
         let filter_series = &filter.series;
         if let Ok(ca) = filter_series.bool() {
             let series = self.series.filter(ca).map_err(PyPolarsErr::from)?;
@@ -244,11 +245,11 @@ impl PySeries {
         }
     }
 
-    pub fn sort(&mut self, descending: bool) -> Self {
+    fn sort(&mut self, descending: bool) -> Self {
         self.series.sort(descending).into()
     }
 
-    pub fn value_counts(&self, sorted: bool) -> PyResult<PyDataFrame> {
+    fn value_counts(&self, sorted: bool) -> PyResult<PyDataFrame> {
         let df = self
             .series
             .value_counts(true, sorted)
@@ -256,21 +257,21 @@ impl PySeries {
         Ok(df.into())
     }
 
-    pub fn take_with_series(&self, indices: &PySeries) -> PyResult<Self> {
+    fn take_with_series(&self, indices: &PySeries) -> PyResult<Self> {
         let idx = indices.series.idx().map_err(PyPolarsErr::from)?;
         let take = self.series.take(idx).map_err(PyPolarsErr::from)?;
         Ok(take.into())
     }
 
-    pub fn null_count(&self) -> PyResult<usize> {
+    fn null_count(&self) -> PyResult<usize> {
         Ok(self.series.null_count())
     }
 
-    pub fn has_validity(&self) -> bool {
+    fn has_validity(&self) -> bool {
         self.series.has_validity()
     }
 
-    pub fn series_equal(&self, other: &PySeries, null_equal: bool, strict: bool) -> bool {
+    fn series_equal(&self, other: &PySeries, null_equal: bool, strict: bool) -> bool {
         if strict {
             self.series.eq(&other.series)
         } else if null_equal {
@@ -280,32 +281,32 @@ impl PySeries {
         }
     }
 
-    pub fn _not(&self) -> PyResult<Self> {
+    fn _not(&self) -> PyResult<Self> {
         let bool = self.series.bool().map_err(PyPolarsErr::from)?;
         Ok((!bool).into_series().into())
     }
 
-    pub fn as_str(&self) -> PyResult<String> {
+    fn as_str(&self) -> PyResult<String> {
         Ok(format!("{:?}", self.series))
     }
 
-    pub fn len(&self) -> usize {
+    fn len(&self) -> usize {
         self.series.len()
     }
 
     /// Rechunk and return a pointer to the start of the Series.
     /// Only implemented for numeric types
-    pub fn as_single_ptr(&mut self) -> PyResult<usize> {
+    fn as_single_ptr(&mut self) -> PyResult<usize> {
         let ptr = self.series.as_single_ptr().map_err(PyPolarsErr::from)?;
         Ok(ptr)
     }
 
-    pub fn clone(&self) -> Self {
+    fn clone(&self) -> Self {
         self.series.clone().into()
     }
 
     #[pyo3(signature = (lambda, output_type, skip_nulls))]
-    pub fn apply_lambda(
+    fn apply_lambda(
         &self,
         lambda: &PyAny,
         output_type: Option<Wrap<DataType>>,
@@ -548,7 +549,7 @@ impl PySeries {
         })
     }
 
-    pub fn zip_with(&self, mask: &PySeries, other: &PySeries) -> PyResult<Self> {
+    fn zip_with(&self, mask: &PySeries, other: &PySeries) -> PyResult<Self> {
         let mask = mask.series.bool().map_err(PyPolarsErr::from)?;
         let s = self
             .series
@@ -557,7 +558,7 @@ impl PySeries {
         Ok(s.into())
     }
 
-    pub fn to_dummies(&self, separator: Option<&str>) -> PyResult<PyDataFrame> {
+    fn to_dummies(&self, separator: Option<&str>) -> PyResult<PyDataFrame> {
         let df = self
             .series
             .to_dummies(separator)
@@ -565,7 +566,7 @@ impl PySeries {
         Ok(df.into())
     }
 
-    pub fn get_list(&self, index: usize) -> Option<Self> {
+    fn get_list(&self, index: usize) -> Option<Self> {
         if let Ok(ca) = &self.series.list() {
             let s = ca.get(index);
             s.map(|s| s.into())
@@ -574,33 +575,33 @@ impl PySeries {
         }
     }
 
-    pub fn peak_max(&self) -> Self {
+    fn peak_max(&self) -> Self {
         self.series.peak_max().into_series().into()
     }
 
-    pub fn peak_min(&self) -> Self {
+    fn peak_min(&self) -> Self {
         self.series.peak_min().into_series().into()
     }
 
-    pub fn n_unique(&self) -> PyResult<usize> {
+    fn n_unique(&self) -> PyResult<usize> {
         let n = self.series.n_unique().map_err(PyPolarsErr::from)?;
         Ok(n)
     }
 
-    pub fn floor(&self) -> PyResult<Self> {
+    fn floor(&self) -> PyResult<Self> {
         let s = self.series.floor().map_err(PyPolarsErr::from)?;
         Ok(s.into())
     }
 
-    pub fn shrink_to_fit(&mut self) {
+    fn shrink_to_fit(&mut self) {
         self.series.shrink_to_fit();
     }
 
-    pub fn dot(&self, other: &PySeries) -> Option<f64> {
+    fn dot(&self, other: &PySeries) -> Option<f64> {
         self.series.dot(&other.series)
     }
 
-    pub fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         // Used in pickle/pickling
         let mut writer: Vec<u8> = vec![];
         ciborium::ser::into_writer(&self.series, &mut writer)
@@ -609,7 +610,7 @@ impl PySeries {
         Ok(PyBytes::new(py, &writer).to_object(py))
     }
 
-    pub fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
         // Used in pickle/pickling
         match state.extract::<&PyBytes>(py) {
             Ok(s) => {
@@ -621,12 +622,12 @@ impl PySeries {
         }
     }
 
-    pub fn skew(&self, bias: bool) -> PyResult<Option<f64>> {
+    fn skew(&self, bias: bool) -> PyResult<Option<f64>> {
         let out = self.series.skew(bias).map_err(PyPolarsErr::from)?;
         Ok(out)
     }
 
-    pub fn kurtosis(&self, fisher: bool, bias: bool) -> PyResult<Option<f64>> {
+    fn kurtosis(&self, fisher: bool, bias: bool) -> PyResult<Option<f64>> {
         let out = self
             .series
             .kurtosis(fisher, bias)
@@ -634,7 +635,7 @@ impl PySeries {
         Ok(out)
     }
 
-    pub fn cast(&self, dtype: Wrap<DataType>, strict: bool) -> PyResult<Self> {
+    fn cast(&self, dtype: Wrap<DataType>, strict: bool) -> PyResult<Self> {
         let dtype = dtype.0;
         let out = if strict {
             self.series.strict_cast(&dtype)
@@ -645,7 +646,7 @@ impl PySeries {
         Ok(out.into())
     }
 
-    pub fn time_unit(&self) -> Option<&str> {
+    fn time_unit(&self) -> Option<&str> {
         if let DataType::Datetime(time_unit, _) | DataType::Duration(time_unit) =
             self.series.dtype()
         {
@@ -659,7 +660,7 @@ impl PySeries {
         }
     }
 
-    pub fn get_chunks(&self) -> PyResult<Vec<PyObject>> {
+    fn get_chunks(&self) -> PyResult<Vec<PyObject>> {
         Python::with_gil(|py| {
             let wrap_s = py_modules::POLARS.getattr(py, "wrap_s").unwrap();
             flatten_series(&self.series)
@@ -669,7 +670,7 @@ impl PySeries {
         })
     }
 
-    pub fn is_sorted(&self, descending: bool) -> bool {
+    fn is_sorted(&self, descending: bool) -> bool {
         let options = SortOptions {
             descending,
             nulls_last: descending,
@@ -678,12 +679,12 @@ impl PySeries {
         self.series.is_sorted(options)
     }
 
-    pub fn clear(&self) -> Self {
+    fn clear(&self) -> Self {
         self.series.clear().into()
     }
 
     #[pyo3(signature = (bins, labels, break_point_label, category_label, maintain_order))]
-    pub fn cut(
+    fn cut(
         &self,
         bins: Self,
         labels: Option<Vec<&str>>,
@@ -704,7 +705,7 @@ impl PySeries {
     }
 
     #[pyo3(signature = (quantiles, labels, break_point_label, category_label, maintain_order))]
-    pub fn qcut(
+    fn qcut(
         &self,
         quantiles: Self,
         labels: Option<Vec<&str>>,
@@ -732,11 +733,48 @@ impl PySeries {
         Ok(out.into())
     }
 
-    pub fn hist(&self, bins: Option<Self>, bin_count: Option<usize>) -> PyResult<PyDataFrame> {
+    fn hist(&self, bins: Option<Self>, bin_count: Option<usize>) -> PyResult<PyDataFrame> {
         let bins = bins.map(|s| s.series);
         let out = hist(&self.series, bins.as_ref(), bin_count).map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
+
+    fn get_ptr(&self) -> PyResult<usize> {
+        let s = self.series.to_physical_repr();
+        let arrays = s.chunks();
+        if arrays.len() != 1 {
+            let msg = "Only can take pointer, if the 'series' contains a single chunk";
+            raise_err!(msg, ComputeError);
+        }
+        match s.dtype() {
+            DataType::Boolean => {
+                let ca = s.bool().unwrap();
+                let arr = ca.downcast_iter().next().unwrap();
+                // this one is quite useless as you need to know the offset
+                // into the first byte.
+                let (slice, start, _len) = arr.values().as_slice();
+                if start == 0 {
+                    Ok(slice.as_ptr() as usize)
+                } else {
+                    let msg = "Cannot take pointer boolean buffer as it is not perfectly aligned.";
+                    raise_err!(msg, ComputeError);
+                }
+            }
+            dt if dt.is_numeric() => Ok(with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
+                let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+                get_ptr(ca)
+            })),
+            _ => {
+                let msg = "Cannot take pointer of nested type";
+                raise_err!(msg, ComputeError);
+            }
+        }
+    }
+}
+
+fn get_ptr<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> usize {
+    let arr = ca.downcast_iter().next().unwrap();
+    arr.values().as_ptr() as usize
 }
 
 macro_rules! impl_set_with_mask {
@@ -754,7 +792,7 @@ macro_rules! impl_set_with_mask {
 
         #[pymethods]
         impl PySeries {
-            pub fn $name(&self, filter: &PySeries, value: Option<$native>) -> PyResult<Self> {
+            fn $name(&self, filter: &PySeries, value: Option<$native>) -> PyResult<Self> {
                 let series = $name(&self.series, filter, value).map_err(PyPolarsErr::from)?;
                 Ok(Self::new(series))
             }
@@ -779,7 +817,7 @@ macro_rules! impl_get {
     ($name:ident, $series_variant:ident, $type:ty) => {
         #[pymethods]
         impl PySeries {
-            pub fn $name(&self, index: i64) -> Option<$type> {
+            fn $name(&self, index: i64) -> Option<$type> {
                 if let Ok(ca) = self.series.$series_variant() {
                     let index = if index < 0 {
                         (ca.len() as i64 + index) as usize
