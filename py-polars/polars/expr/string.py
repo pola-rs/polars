@@ -693,7 +693,7 @@ class ExprStringNameSpace:
         Notes
         -----
         To modify regular expression behaviour (such as case-sensitivity) with
-        flags, use the inline ``(?iLmsuxU)`` syntax.
+        flags, use the inline ``(?iLmsuxU)`` syntax. For example:
 
         >>> pl.DataFrame({"s": ["AAA", "aAa", "aaa"]}).with_columns(
         ...     default_match=pl.col("s").str.contains("AA"),
@@ -986,12 +986,42 @@ class ExprStringNameSpace:
         Parameters
         ----------
         pattern
-            A regex pattern compatible with the `regex crate
+            A valid regular expression pattern, compatible with the `regex crate
             <https://docs.rs/regex/latest/regex/>`_.
         group_index
             Index of the targeted capture group.
             Group 0 mean the whole pattern, first group begin at index 1
             Default to the first capture group
+
+        Notes
+        -----
+        To modify regular expression behaviour (such as multi-line matching)
+        with flags, use the inline ``(?iLmsuxU)`` syntax. For example:
+
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "lines": [
+        ...             "I Like\nThose\nOdds",
+        ...             "This is\nThe Way",
+        ...         ]
+        ...     }
+        ... )
+        >>> df.select(
+        ...     pl.col("lines").str.extract(r"(?m)^(T\w+)", 1).alias("matches"),
+        ... )
+        shape: (2, 1)
+        ┌─────────┐
+        │ matches │
+        │ ---     │
+        │ str     │
+        ╞═════════╡
+        │ Those   │
+        │ This    │
+        └─────────┘
+
+        See the regex crate's section on `grouping and flags
+        <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
+        additional information about the use of inline expression modifiers.
 
         Returns
         -------
@@ -1001,26 +1031,28 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame(
         ...     {
-        ...         "a": [
-        ...             "http://vote.com/ballon_dor?candidate=messi&ref=polars",
-        ...             "http://vote.com/ballon_dor?candidat=jorginho&ref=polars",
+        ...         "url": [
+        ...             "http://vote.com/ballon_dor?error=404&ref=unknown",
+        ...             "http://vote.com/ballon_dor?ref=polars&candidate=messi",
         ...             "http://vote.com/ballon_dor?candidate=ronaldo&ref=polars",
         ...         ]
         ...     }
         ... )
         >>> df.select(
-        ...     pl.col("a").str.extract(r"candidate=(\w+)", 1),
+        ...     pl.col("url").str.extract(r"candidate=(\w+)", 1).alias("candidate"),
+        ...     pl.col("url").str.extract(r"ref=(\w+)", 1).alias("referer"),
+        ...     pl.col("url").str.extract(r"error=(\w+)", 1).alias("error"),
         ... )
-        shape: (3, 1)
-        ┌─────────┐
-        │ a       │
-        │ ---     │
-        │ str     │
-        ╞═════════╡
-        │ messi   │
-        │ null    │
-        │ ronaldo │
-        └─────────┘
+        shape: (3, 3)
+        ┌───────────┬─────────┬───────┐
+        │ candidate ┆ referer ┆ error │
+        │ ---       ┆ ---     ┆ ---   │
+        │ str       ┆ str     ┆ str   │
+        ╞═══════════╪═════════╪═══════╡
+        │ null      ┆ unknown ┆ 404   │
+        │ messi     ┆ polars  ┆ null  │
+        │ ronaldo   ┆ polars  ┆ null  │
+        └───────────┴─────────┴───────┘
 
         """
         return wrap_expr(self._pyexpr.str_extract(pattern, group_index))
