@@ -812,6 +812,7 @@ def test_get() -> None:
     neg_and_pos_idxs = pl.Series(
         "neg_and_pos_idxs", [-2, 1, 0, -1, 2, -3], dtype=pl.Int8
     )
+    empty_idxs = pl.Series("idxs", [], dtype=pl.Int8)
     assert a[0] == 1
     assert a[:2].to_list() == [1, 2]
     assert a[range(1)].to_list() == [1]
@@ -830,6 +831,8 @@ def test_get() -> None:
     ):
         assert a[pos_idxs.cast(dtype)].to_list() == [3, 1, 2, 1]
         assert a[pos_idxs.cast(dtype).to_numpy()].to_list() == [3, 1, 2, 1]
+        assert a[empty_idxs.cast(dtype)].to_list() == []
+        assert a[empty_idxs.cast(dtype).to_numpy()].to_list() == []
 
     for dtype in (pl.Int8, pl.Int16, pl.Int32, pl.Int64):
         nps = a[neg_and_pos_idxs.cast(dtype).to_numpy()]
