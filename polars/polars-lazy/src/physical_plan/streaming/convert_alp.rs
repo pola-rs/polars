@@ -172,6 +172,7 @@ pub(crate) fn insert_streaming_nodes(
                 } else {
                     (input_left, input_right)
                 };
+                let mut state_left = state.split();
 
                 // rhs is second, so that is first on the stack
                 let mut state_right = state;
@@ -183,18 +184,12 @@ pub(crate) fn insert_streaming_nodes(
 
                 // we want to traverse lhs first, so push it latest on the stack
                 // rhs is a new pipeline
-                let mut state_left = Branch {
-                    streamable: true,
-                    join_count,
-                    ..Default::default()
-                };
                 state_left.operators_sinks.push(PipelineNode::Sink(root));
                 stack.push((input_left, state_left, current_idx));
             }
             // add globbing patterns
             #[cfg(all(feature = "csv", feature = "parquet"))]
-            Union { inputs, .. } => {
-                if state.streamable
+            Union { inputs, .. } if state.streamable
                     && inputs.iter().all(|node| match lp_arena.get(*node) {
                         ParquetScan { .. } => true,
                         CsvScan { .. } => true,
@@ -205,12 +200,31 @@ pub(crate) fn insert_streaming_nodes(
                             matches!(lp_arena.get(*input), ParquetScan { .. } | CsvScan { .. })
                         }
                         _ => false,
-                    })
+                    }) => {
                 {
                     state.sources.push(root);
                     pipeline_trees[current_idx].push(state);
                 }
             }
+            // Union { inputs, .. } => {
+            //     {
+            //         state.streamable = true;
+            //         for (i, input) in inputs.iter().enumerate() {
+            //             let (mut state, join_count) = if i == 0 {
+            //                 let state = state.split();
+            //                 let join_count = state.join_count + inputs.len() as u32 - 1;
+            //                 (state,
+            //                 join_count)
+            //             } else {
+            //                 (state.split(),
+            //                 0)
+            //             };
+            //             state.join_count = join_count;
+            //             state.operators_sinks.push(PipelineNode::Operator(root));
+            //             stack.push((*input, state, current_idx));
+            //         }
+            //     }
+            // }
             Distinct { input, options }
                 if !options.maintain_order
                     && !matches!(options.keep_strategy, UniqueKeepStrategy::None) =>

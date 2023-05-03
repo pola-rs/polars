@@ -1,5 +1,7 @@
-use std::collections::BTreeSet;
+use std::cell::RefCell;
+use std::collections::{BTreeSet, LinkedList};
 use std::fmt::Debug;
+use std::rc::Rc;
 
 use polars_core::prelude::*;
 use polars_plan::prelude::*;
@@ -25,12 +27,36 @@ impl PipelineNode {
 /// Represents a pipeline/ branch in a subquery tree
 #[derive(Default, Debug, Clone)]
 pub(super) struct Branch {
+    pub(super) shared_sinks: LinkedList<Rc<Vec<Node>>>,
     pub(super) streamable: bool,
     pub(super) sources: Vec<Node>,
     // joins seen in whole branch (we count a union as joins with multiple counts)
     pub(super) join_count: IdxSize,
     // node is operator/sink
     pub(super) operators_sinks: Vec<PipelineNode>,
+}
+
+impl Branch {
+    fn get_sinks(&self) -> Vec<Node> {
+        self.operators_sinks.iter().flat_map(|pl_node| match pl_node {
+            PipelineNode::Sink(node) => Some(*node),
+            _ => None
+        }).collect()
+    }
+
+    pub(super) fn split(&self) -> Self {
+        let mut shared_sinks = self.shared_sinks.clone();
+        let sinks = self.get_sinks();
+        if !sinks.is_empty() {
+            shared_sinks.push_back(Rc::new(sinks));
+        }
+        Self {
+            shared_sinks,
+            streamable: self.streamable,
+            join_count: self.join_count,
+            ..Default::default()
+        }
+    }
 }
 
 /// Represents a subquery tree of pipelines.
