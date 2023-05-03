@@ -9,6 +9,7 @@ use crate::{arrow_interop, raise_err, PySeries};
 
 #[pymethods]
 impl PySeries {
+    #[allow(clippy::wrong_self_convention)]
     fn to_arrow(&mut self) -> PyResult<PyObject> {
         self.rechunk(true);
         Python::with_gil(|py| {
