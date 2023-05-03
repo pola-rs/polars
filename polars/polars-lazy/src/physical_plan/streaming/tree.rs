@@ -26,6 +26,14 @@ impl PipelineNode {
 /// Represents a pipeline/ branch in a subquery tree
 #[derive(Default, Debug, Clone)]
 pub(super) struct Branch {
+    // During traversal of ALP
+    // we determine the execution order
+    // as traversal order == execution order
+    // we can increment this counter
+    // the individual branches are then flattened
+    // sorted and executed in reversed order
+    // (to traverse from leaves to root)
+    pub(super) execution_id: u32,
     pub(super) shared_sinks: LinkedList<Rc<Vec<Node>>>,
     pub(super) streamable: bool,
     pub(super) sources: Vec<Node>,
@@ -35,15 +43,21 @@ pub(super) struct Branch {
     pub(super) operators_sinks: Vec<PipelineNode>,
 }
 
+fn sink_node(pl_node: &PipelineNode) -> Option<Node> {
+    match pl_node {
+        PipelineNode::Sink(node) => Some(*node),
+        _ => None,
+    }
+}
+
 impl Branch {
+    pub(super) fn get_final_sink(&self) -> Option<Node> {
+        // this is still in the order of discovery
+        // so the first sink is the final one.
+        self.operators_sinks.iter().find_map(sink_node)
+    }
     fn get_sinks(&self) -> Vec<Node> {
-        self.operators_sinks
-            .iter()
-            .flat_map(|pl_node| match pl_node {
-                PipelineNode::Sink(node) => Some(*node),
-                _ => None,
-            })
-            .collect()
+        self.operators_sinks.iter().flat_map(sink_node).collect()
     }
 
     pub(super) fn split(&self) -> Self {
@@ -53,6 +67,7 @@ impl Branch {
             shared_sinks.push_back(Rc::new(sinks));
         }
         Self {
+            execution_id: self.execution_id,
             shared_sinks,
             streamable: self.streamable,
             join_count: self.join_count,

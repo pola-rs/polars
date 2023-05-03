@@ -176,6 +176,7 @@ pub(crate) fn insert_streaming_nodes(
                 // rhs is second, so that is first on the stack
                 let mut state_right = state;
                 state_right.join_count = 0;
+                state_right.execution_id += 1;
                 state_right
                     .operators_sinks
                     .push(PipelineNode::RhsJoin(root));

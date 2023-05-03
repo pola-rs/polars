@@ -66,7 +66,10 @@ pub struct PipeLine {
     sinks: Vec<(usize, Vec<Box<dyn Sink>>)>,
     /// are used to identify the sink shared with other pipeline branches
     sink_nodes: Vec<Node>,
-    rh_sides: Vec<PipeLine>,
+    /// Other branch of the pipeline/tree that must be executed
+    /// after this one has executed.
+    /// the dispatcher takes care of this.
+    other_branches: Vec<PipeLine>,
     /// this is a correction as there may be more `operators` than nodes
     /// as during construction, source may have inserted operators
     operator_offset: usize,
@@ -107,7 +110,7 @@ impl PipeLine {
             operator_nodes,
             sinks,
             sink_nodes,
-            rh_sides: vec![],
+            other_branches: vec![],
             operator_offset,
             verbose,
         }
@@ -133,8 +136,8 @@ impl PipeLine {
 
     /// Add a parent
     /// This should be in the right order
-    pub fn with_rhs(mut self, rhs: PipeLine) -> Self {
-        self.rh_sides.push(rhs);
+    pub fn with_other_branch(mut self, rhs: PipeLine) -> Self {
+        self.other_branches.push(rhs);
         self
     }
 
@@ -332,7 +335,7 @@ impl PipeLine {
             fmt.push_str(sink[0].fmt())
         }
         eprintln!("{fmt}");
-        for pl in &self.rh_sides {
+        for pl in &self.other_branches {
             pl.show()
         }
     }
@@ -346,7 +349,7 @@ impl PipeLine {
             self.show();
         }
         let mut sink_out = self.run_pipeline(&ec)?;
-        let mut pipelines = self.rh_sides.iter_mut();
+        let mut pipelines = self.other_branches.iter_mut();
         let mut sink_nodes = std::mem::take(&mut self.sink_nodes);
 
         // This is a stack of operators that should replace the sinks of join nodes

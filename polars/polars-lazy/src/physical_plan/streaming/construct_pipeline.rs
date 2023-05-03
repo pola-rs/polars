@@ -1,5 +1,4 @@
 use std::any::Any;
-use std::collections::VecDeque;
 use std::sync::Arc;
 
 use polars_core::config::verbose;
@@ -49,7 +48,7 @@ pub(super) fn construct(
 ) -> PolarsResult<Option<Node>> {
     use ALogicalPlan::*;
 
-    let mut pipelines = VecDeque::with_capacity(tree.len());
+    let mut pipelines = Vec::with_capacity(tree.len());
 
     // if join is
     //     1
@@ -61,18 +60,25 @@ pub(super) fn construct(
     //
     //   1
     //  /\__
-    //    | |
+    //    | |;
     //    2 3
     // we are iterating from 3 to 1 as the branches are accumulated from left to right
     //
     // the most far right branch will be the latest that sets this
     // variable and thus will point to root
-    let mut latest = None;
+    let mut final_sink = None;
 
     let is_verbose = verbose();
     let mut sink_share_count = PlHashMap::new();
 
     for branch in tree {
+        if branch.execution_id == 0 {
+            final_sink = branch.get_final_sink();
+            if final_sink.is_none() {
+                return Ok(None);
+            }
+        }
+
         // should be reset for every branch
         let mut sink_nodes = vec![];
 
@@ -90,7 +96,6 @@ pub(super) fn construct(
         let mut iter = branch.operators_sinks.into_iter().rev();
 
         for pipeline_node in &mut iter {
-            latest = Some(pipeline_node.node());
             let operator_offset = operators.len();
             match pipeline_node {
                 PipelineNode::Sink(node) => {
@@ -130,6 +135,7 @@ pub(super) fn construct(
                 }
             }
         }
+        let execution_id = branch.execution_id;
 
         let pipeline = create_pipeline(
             &branch.sources,
@@ -141,22 +147,23 @@ pub(super) fn construct(
             to_physical_piped_expr,
             is_verbose,
         )?;
-        pipelines.push_back(pipeline);
+        pipelines.push((execution_id, pipeline));
     }
 
     let mut counts = sink_share_count.into_iter().collect::<Vec<_>>();
     counts.sort_by_key(|tpl| tpl.1);
+    pipelines.sort_by(|a, b| a.0.cmp(&b.0).reverse());
 
     // some queries only have source/sources and don't have any
     // operators/sink so no latest
     // if let Some(latest_sink) = counts.first().map(|tpl| Node(tpl.0)).or(latest) {
-    if let Some(latest_sink) = latest {
+    if let Some(latest_sink) = final_sink {
         // the most right latest node should be the root of the pipeline
         let schema = lp_arena.get(latest_sink).schema(lp_arena).into_owned();
 
-        let Some(mut most_left) = pipelines.pop_front() else {unreachable!()};
-        while let Some(rhs) = pipelines.pop_front() {
-            most_left = most_left.with_rhs(rhs)
+        let Some((_, mut most_left)) = pipelines.pop() else {unreachable!()};
+        while let Some((_, rhs)) = pipelines.pop() {
+            most_left = most_left.with_other_branch(rhs)
         }
         // keep the original around for formatting purposes
         let original_lp = if fmt {
