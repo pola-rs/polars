@@ -106,8 +106,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
 
-    from polars.dataframe import DataFrame
-    from polars.expr.expr import Expr
+    from polars import DataFrame, Expr
     from polars.series._numpy import SeriesView
     from polars.type_aliases import (
         ClosedInterval,

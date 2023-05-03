@@ -14,7 +14,7 @@ from polars.utils.decorators import deprecated_alias
 if TYPE_CHECKING:
     from datetime import timedelta
 
-    from polars.expr import Expr
+    from polars import Expr
     from polars.type_aliases import EpochTimeUnit, TimeUnit
 
 

@@ -116,9 +116,7 @@ if TYPE_CHECKING:
     from pyarrow.interchange.dataframe import _PyArrowDataFrame
     from xlsxwriter import Workbook
 
-    from polars.expr import Expr
-    from polars.lazyframe import LazyFrame
-    from polars.series import Series
+    from polars import Expr, LazyFrame, Series
     from polars.type_aliases import (
         AsofJoinStrategy,
         AvroCompression,

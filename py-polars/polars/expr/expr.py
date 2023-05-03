@@ -51,13 +51,12 @@ from polars.utils.various import sphinx_accessor
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import arg_where as py_arg_where
     from polars.polars import reduce as pyreduce
+
 if TYPE_CHECKING:
     import sys
 
-    from polars.dataframe import DataFrame
-    from polars.lazyframe import LazyFrame
+    from polars import DataFrame, LazyFrame, Series
     from polars.polars import PyExpr
-    from polars.series import Series
     from polars.type_aliases import (
         ApplyStrategy,
         ClosedInterval,

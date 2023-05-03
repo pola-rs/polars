@@ -12,7 +12,7 @@ from polars.utils.decorators import deprecated_alias
 from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
-    from polars.expr.expr import Expr
+    from polars import Expr
     from polars.type_aliases import (
         PolarsDataType,
         PolarsTemporalType,

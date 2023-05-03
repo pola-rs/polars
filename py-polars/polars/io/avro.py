@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     from io import BytesIO
     from pathlib import Path
 
-    from polars.dataframe import DataFrame
+    from polars import DataFrame
 
 
 def read_avro(

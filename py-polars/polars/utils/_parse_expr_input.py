@@ -7,7 +7,7 @@ import polars._reexport as pl
 from polars import functions as F
 
 if TYPE_CHECKING:
-    from polars.expr import Expr
+    from polars import Expr
     from polars.polars import PyExpr
     from polars.type_aliases import IntoExpr
 

@@ -11,8 +11,7 @@ from polars.utils._wrap import wrap_expr
 if TYPE_CHECKING:
     from datetime import date, datetime, time
 
-    from polars.expr import Expr
-    from polars.series import Series
+    from polars import Expr, Series
     from polars.type_aliases import NullBehavior, ToStructStrategy
 
 

@@ -11,9 +11,8 @@ from polars.utils.decorators import deprecated_alias
 if TYPE_CHECKING:
     import datetime as dt
 
-    from polars.expr.expr import Expr
+    from polars import Expr, Series
     from polars.polars import PySeries
-    from polars.series import Series
     from polars.type_aliases import EpochTimeUnit, TimeUnit
 
 

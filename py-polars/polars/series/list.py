@@ -9,9 +9,8 @@ from polars.utils._wrap import wrap_s
 if TYPE_CHECKING:
     from datetime import date, datetime, time
 
-    from polars.expr.expr import Expr
+    from polars import Expr, Series
     from polars.polars import PySeries
-    from polars.series import Series
     from polars.type_aliases import NullBehavior, ToStructStrategy
 
 
