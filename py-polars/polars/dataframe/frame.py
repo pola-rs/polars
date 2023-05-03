@@ -47,7 +47,6 @@ from polars.datatypes import (
     py_type_to_dtype,
     unpack_dtypes,
 )
-from polars.datatypes.convert import numpy_char_code_to_dtype
 from polars.dependencies import (
     _PYARROW_AVAILABLE,
     _check_for_numpy,
@@ -1574,7 +1573,6 @@ class DataFrame:
                 raise ValueError("Only a 1D-Numpy array is supported as index.")
             if item.dtype.kind in ("i", "u"):
                 # Numpy array with signed or unsigned integers.
-                numpy_char_code_to_dtype(item.dtype)
                 return self._from_pydf(
                     self._df.take_with_series(numpy_to_idxs(item, self.shape[0])._s)
                 )
