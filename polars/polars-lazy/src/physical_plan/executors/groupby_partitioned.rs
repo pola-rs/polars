@@ -291,8 +291,10 @@ impl PartitionGroupByExec {
             }
 
             #[cfg(feature = "streaming")]
-            if let Some(out) = self.run_streaming(state, original_df.clone()) {
-                return out;
+            if !self.maintain_order {
+                if let Some(out) = self.run_streaming(state, original_df.clone()) {
+                    return out;
+                }
             }
 
             if state.verbose() {
