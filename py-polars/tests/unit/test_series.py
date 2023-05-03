@@ -793,6 +793,7 @@ def test_get() -> None:
     assert a[:2].to_list() == [1, 2]
     assert a[range(1)].to_list() == [1]
     assert a[range(0, 4, 2)].to_list() == [1, 3]
+    assert a[[]].to_list() == []
     for dtype in (
         pl.UInt8,
         pl.UInt16,
