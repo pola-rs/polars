@@ -350,12 +350,34 @@ class StringNameSpace:
         Parameters
         ----------
         pattern
-            A valid regex pattern.
+            A valid regular expression pattern, compatible with the `regex crate
+            <https://docs.rs/regex/latest/regex/>`_.
         literal
-            Treat pattern as a literal string.
+            Treat ``pattern`` as a literal string, not as a regular expression.
         strict
-            Raise an error if the underlying pattern is not a valid regex expression,
+            Raise an error if the underlying pattern is not a valid regex,
             otherwise mask out with a null value.
+
+        Notes
+        -----
+        To modify regular expression behaviour (such as case-sensitivity) with
+        flags, use the inline ``(?iLmsuxU)`` syntax.
+
+        Default (case-sensitive) match:
+
+        >>> s = pl.Series("s", ["AAA", "aAa", "aaa"])
+        >>> s.str.contains("AA").to_list()
+        [True, False, False]
+
+        Case-insensitive match, using an inline flag:
+
+        >>> s = pl.Series("s", ["AAA", "aAa", "aaa"])
+        >>> s.str.contains("(?i)AA").to_list()
+        [True, True, True]
+
+        See the regex crate's section on `grouping and flags
+        <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
+        additional information about the use of inline expression modifiers.
 
         Returns
         -------
