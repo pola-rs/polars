@@ -71,11 +71,13 @@ fn test_streaming_union() -> PolarsResult<()> {
     let q = get_csv_glob();
     let q = q
         .select([col("sugars_g"), col("calories")])
-        .filter(col("sugars_g").gt(lit(10)));
+        .filter(col("sugars_g").gt(lit(10)))
+        ;
+    let q = q.sort("sugars_g", Default::default());
 
-    let q = concat([q.clone(), q.clone()], false, false)?
-        .sort("sugars_g", Default::default())
-        .with_streaming(true);
+    // let q = concat([q.clone(), q.clone()], false, false)?
+    //     .sort("sugars_g", Default::default())
+    //     .with_streaming(true);
     // .groupby([col("sugars_g")])
     // .agg([col("calories").sum() ])
     // .sort("sugars_g", Default::default());
@@ -84,10 +86,11 @@ fn test_streaming_union() -> PolarsResult<()> {
     // print!("{plan}");
     // let plan = q.to_dot(true).unwrap();
     // print!("{plan}");
-    let plan = q.describe_optimized_plan().unwrap();
-    print!("{plan}");
+    // let plan = q.describe_optimized_plan().unwrap();
+    // print!("{plan}");
 
-    // assert_streaming_with_default(q);
+    dbg!(q.with_streaming(true).collect());
+    // assert_streaming_with_default(q, true);
     Ok(())
 }
 

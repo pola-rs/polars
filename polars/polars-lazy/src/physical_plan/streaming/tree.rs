@@ -77,6 +77,10 @@ impl Branch {
             ..Default::default()
         }
     }
+
+    pub(super) fn split_from_sink(&self) -> Self {
+        todo!()
+    }
 }
 
 /// Represents a subquery tree of pipelines.

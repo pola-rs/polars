@@ -90,6 +90,8 @@ pub(super) fn construct(
         }
     }
 
+    let mut sink_cache = PlHashMap::new();
+
     for branch in tree {
         if branch.execution_id == 0 {
             final_sink = branch.get_final_sink();
@@ -163,6 +165,7 @@ pub(super) fn construct(
             expr_arena,
             to_physical_piped_expr,
             is_verbose,
+            &mut sink_cache
         )?;
         pipelines.push((execution_id, pipeline));
     }
