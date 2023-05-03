@@ -5,7 +5,22 @@ use polars_core::prelude::*;
 use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
 
-use super::*;
+#[derive(Copy, Clone, Debug)]
+pub(super) enum PipelineNode {
+    Sink(Node),
+    Operator(Node),
+    RhsJoin(Node),
+}
+
+impl PipelineNode {
+    pub(super) fn node(self) -> Node {
+        match self {
+            Self::Sink(node) => node,
+            Self::Operator(node) => node,
+            Self::RhsJoin(node) => node,
+        }
+    }
+}
 
 /// Represents a pipeline/ branch in a subquery tree
 #[derive(Default, Debug, Clone)]
@@ -15,17 +30,18 @@ pub(super) struct Branch {
     // joins seen in whole branch (we count a union as joins with multiple counts)
     pub(super) join_count: IdxSize,
     // node is operator/sink
-    pub(super) operators_sinks: Vec<(IsSink, IsRhsJoin, Node)>,
+    pub(super) operators_sinks: Vec<PipelineNode>,
 }
 
 /// Represents a subquery tree of pipelines.
-type Tree<'a> = &'a [Branch];
+type TreeRef<'a> = &'a [Branch];
+pub(super) type Tree = Vec<Branch>;
 
 /// We validate a tree in order to check if it is eligible for streaming.
 /// It could be that a join branch wasn't added during collection of branches
 /// (because it contained a non-streamable node). This function checks if every join
 /// node has a match.
-pub(super) fn is_valid_tree(tree: Tree) -> bool {
+pub(super) fn is_valid_tree(tree: TreeRef) -> bool {
     if tree.is_empty() {
         return false;
     };
@@ -33,16 +49,18 @@ pub(super) fn is_valid_tree(tree: Tree) -> bool {
     // rhs joins will initially be placeholders
     let mut left_joins = BTreeSet::new();
     for branch in tree {
-        for (_sink, is_rhs_join, node) in &branch.operators_sinks {
-            if !*is_rhs_join {
-                left_joins.insert(node.0);
+        for pl_node in &branch.operators_sinks {
+            if !matches!(pl_node, PipelineNode::RhsJoin(_)) {
+                left_joins.insert(pl_node.node().0);
             }
         }
     }
     for branch in tree {
-        for (_sink, is_rhs_join, node) in &branch.operators_sinks {
+        for pl_node in &branch.operators_sinks {
             // check if every rhs join has a lhs join node
-            if *is_rhs_join && !left_joins.contains(&node.0) {
+            if matches!(pl_node, PipelineNode::RhsJoin(_))
+                && !left_joins.contains(&pl_node.node().0)
+            {
                 return false;
             }
         }
@@ -71,9 +89,9 @@ pub(super) fn dbg_branch(b: &Branch, lp_arena: &Arena<ALogicalPlan>) {
     }
     print!("=> ");
 
-    for (_, rhs_join, node) in &b.operators_sinks {
-        let lp = lp_arena.get(*node);
-        if *rhs_join {
+    for pl_node in &b.operators_sinks {
+        let lp = lp_arena.get(pl_node.node());
+        if matches!(pl_node, PipelineNode::RhsJoin(_)) {
             print!("rhs_join_placeholder -> ");
         } else {
             print!("{} -> ", lp.name());
@@ -92,8 +110,8 @@ pub(super) fn dbg_tree(tree: Tree, lp_arena: &Arena<ALogicalPlan>, expr_arena: &
     let root = tree
         .iter()
         .map(|branch| {
-            let (_, _, root) = branch.operators_sinks.last().unwrap();
-            *root
+            let pl_node = branch.operators_sinks.last().unwrap();
+            pl_node.node()
         })
         .max_by_key(|root| {
             // count the children of this root

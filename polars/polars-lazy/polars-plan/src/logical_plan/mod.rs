@@ -30,6 +30,7 @@ pub(crate) mod projection;
 #[cfg(feature = "python")]
 mod pyarrow;
 mod schema;
+mod visitor;
 
 pub use aexpr::*;
 pub use alp::*;
@@ -44,6 +45,7 @@ pub use optimizer::*;
 pub use schema::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+pub use visitor::*;
 
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "csv", feature = "cse"))]
 pub use crate::logical_plan::optimizer::file_caching::{
