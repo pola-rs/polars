@@ -2549,11 +2549,14 @@ def test_getitem() -> None:
     assert df[:0].columns == ["a", "b"]
     assert len(df[:0]) == 0
 
+    # make mypy happy
+    empty: list[int] = []
+
     # empty list with column selector drops rows but keeps columns
-    assert_frame_equal(df[[], :], df[:0])
+    assert_frame_equal(df[empty, :], df[:0])
 
     # empty list without column select return empty frame
-    assert_frame_equal(df[[]], pl.DataFrame({}))
+    assert_frame_equal(df[empty], pl.DataFrame({}))
 
     # numpy array: assumed to be row indices if integers, or columns if strings
 

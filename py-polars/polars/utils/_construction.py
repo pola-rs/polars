@@ -32,11 +32,11 @@ from polars.datatypes import (
     Datetime,
     Duration,
     Float32,
-    UInt32,
     List,
     Object,
     Struct,
     Time,
+    UInt32,
     Unknown,
     Utf8,
     dtype_to_py_type,
@@ -62,7 +62,7 @@ from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import ComputeError, ShapeError, TimeZoneAwareConstructorWarning
 from polars.utils._wrap import wrap_df, wrap_s
-from polars.utils.meta import threadpool_size, get_index_type
+from polars.utils.meta import get_index_type, threadpool_size
 from polars.utils.various import _is_generator, arrlen, find_stacklevel, range_to_series
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -1545,7 +1545,8 @@ def coerce_arrow(array: pa.Array, rechunk: bool = True) -> pa.Array:
             ).combine_chunks()
     return array
 
-def numpy_to_idxs(idxs: np.ndarray, size: int) -> pl.Series:
+
+def numpy_to_idxs(idxs: np.ndarray[Any, Any], size: int) -> pl.Series:
     if idxs.ndim != 1:
         raise ValueError("Only 1D numpy array is supported as index.")
 
@@ -1555,16 +1556,14 @@ def numpy_to_idxs(idxs: np.ndarray, size: int) -> pl.Series:
         return pl.Series("", [], dtype=idx_type)
 
     # Numpy array with signed or unsigned integers.
-    if not idxs.dtype.kind in ("i", "u"):
+    if idxs.dtype.kind not in ("i", "u"):
         raise NotImplementedError("Unsupported idxs datatype.")
 
     if idx_type == UInt32:
         if idxs.dtype in {np.int64, np.uint64} and idxs.max() >= 2**32:
             raise ValueError("Index positions should be smaller than 2^32.")
         if idxs.dtype == np.int64 and idxs.min() < -(2**32):
-            raise ValueError(
-                "Index positions should be bigger than -2^32 + 1."
-            )
+            raise ValueError("Index positions should be bigger than -2^32 + 1.")
 
     if idxs.dtype.kind == "i" and idxs.min() < 0:
         if idx_type == UInt32:

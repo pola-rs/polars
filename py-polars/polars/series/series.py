@@ -44,8 +44,6 @@ from polars.datatypes import (
     List,
     Object,
     Time,
-    UInt8,
-    UInt16,
     UInt32,
     UInt64,
     Unknown,
@@ -79,11 +77,11 @@ from polars.slice import PolarsSlice
 from polars.utils._construction import (
     arrow_to_pyseries,
     iterable_to_pyseries,
+    numpy_to_idxs,
     numpy_to_pyseries,
     pandas_to_pyseries,
     sequence_to_pyseries,
     series_to_pyseries,
-    numpy_to_idxs,
 )
 from polars.utils._wrap import wrap_df
 from polars.utils.convert import (
@@ -876,37 +874,27 @@ class Series:
 
         if self.dtype == idx_type:
             return self
-        
-        if not self.dtype in INTEGER_DTYPES:
+
+        if self.dtype not in INTEGER_DTYPES:
             raise NotImplementedError("Unsupported idxs datatype.")
-        
+
         if self.len() == 0:
             return Series(self.name, [], dtype=idx_type)
 
         if idx_type == UInt32:
             if self.dtype in {Int64, UInt64}:
                 if self.max() >= 2**32:  # type: ignore[operator]
-                    raise ValueError(
-                        "Index positions should be smaller than 2^32."
-                    )
+                    raise ValueError("Index positions should be smaller than 2^32.")
             if self.dtype == Int64:
                 if self.min() < -(2**32):  # type: ignore[operator]
-                    raise ValueError(
-                        "Index positions should be bigger than -2^32 + 1."
-                    )
+                    raise ValueError("Index positions should be bigger than -2^32 + 1.")
 
         if self.dtype in SIGNED_INTEGER_DTYPES:
             if self.min() < 0:  # type: ignore[operator]
                 if idx_type == UInt32:
-                    if self.dtype in {Int8, Int16}:
-                        idxs = self.cast(Int32)
-                    else:
-                        idxs = self
+                    idxs = self.cast(Int32) if self.dtype in {Int8, Int16} else self
                 else:
-                    if idxs.dtype in {Int8, Int16, Int32}:
-                        idxs = self.cast(Int64)
-                    else:
-                        idxs = self
+                    idxs = self.cast(Int64) if self.dtype in {Int8, Int16, Int32} else self
 
                 # Update negative indexes to absolute indexes.
                 return (
@@ -988,7 +976,9 @@ class Series:
         # Sequence of integers (slow to check if sequence contains all integers).
         elif is_int_sequence(item):
             return self._from_pyseries(
-                self._s.take_with_series(Series("", item, dtype=UInt32)._pos_idxs(self.len())._s)
+                self._s.take_with_series(
+                    Series("", item, dtype=UInt32)._pos_idxs(self.len())._s
+                )
             )
 
         raise ValueError(

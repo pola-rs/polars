@@ -34,24 +34,15 @@ from polars.datatypes import (
     INTEGER_DTYPES,
     N_INFER_DEFAULT,
     NUMERIC_DTYPES,
-    SIGNED_INTEGER_DTYPES,
     Boolean,
     Categorical,
     DataTypeClass,
     Float64,
-    Int8,
-    Int16,
-    Int32,
-    Int64,
     List,
     Null,
     Object,
     Struct,
     Time,
-    UInt8,
-    UInt16,
-    UInt32,
-    UInt64,
     Utf8,
     py_type_to_dtype,
     unpack_dtypes,
@@ -86,17 +77,16 @@ from polars.utils._construction import (
     arrow_to_pydf,
     dict_to_pydf,
     iterable_to_pydf,
+    numpy_to_idxs,
     numpy_to_pydf,
     pandas_to_pydf,
     sequence_to_pydf,
     series_to_pydf,
-    numpy_to_idxs,
 )
 from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr, wrap_ldf, wrap_s
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import deprecated_alias
-from polars.utils.meta import get_index_type
 from polars.utils.various import (
     _prepare_row_count_args,
     _process_null_values,
@@ -1584,7 +1574,7 @@ class DataFrame:
                 raise ValueError("Only a 1D-Numpy array is supported as index.")
             if item.dtype.kind in ("i", "u"):
                 # Numpy array with signed or unsigned integers.
-                pl_type = numpy_char_code_to_dtype(item.dtype)
+                numpy_char_code_to_dtype(item.dtype)
                 return self._from_pydf(
                     self._df.take_with_series(numpy_to_idxs(item, self.shape[0])._s)
                 )
