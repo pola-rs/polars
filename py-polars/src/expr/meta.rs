@@ -1,6 +1,6 @@
 use pyo3::prelude::*;
 
-use crate::conversion::ToPyExprs;
+use crate::expr::ToPyExprs;
 use crate::{PyExpr, PyPolarsErr};
 
 #[pymethods]
