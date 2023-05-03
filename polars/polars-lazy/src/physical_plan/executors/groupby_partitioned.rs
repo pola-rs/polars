@@ -174,7 +174,7 @@ fn can_run_partitioned(
             eprintln!("POLARS_FORCE_PARTITION set: running partitioned HASH AGGREGATION")
         }
         Ok(true)
-    } else if original_df.height() < 1000 && !cfg!(debug_assertions) {
+    } else if original_df.height() < 1000 && !cfg!(test) {
         if state.verbose() {
             eprintln!("DATAFRAME < 1000 rows: running default HASH AGGREGATION")
         }
