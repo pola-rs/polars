@@ -2,7 +2,6 @@ use std::collections::{BTreeSet, LinkedList};
 use std::fmt::Debug;
 use std::rc::Rc;
 
-use polars_core::prelude::*;
 use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
 
@@ -38,7 +37,7 @@ pub(super) struct Branch {
     pub(super) streamable: bool,
     pub(super) sources: Vec<Node>,
     // joins seen in whole branch (we count a union as joins with multiple counts)
-    pub(super) join_count: IdxSize,
+    pub(super) join_count: u32,
     // node is operator/sink
     pub(super) operators_sinks: Vec<PipelineNode>,
 }
@@ -88,8 +87,8 @@ pub(super) fn is_valid_tree(tree: TreeRef) -> bool {
     if tree.is_empty() {
         return false;
     };
-    let joins_in_tree = tree.iter().map(|branch| branch.join_count).sum::<IdxSize>();
-    let branches_in_tree = tree.len() as IdxSize;
+    let joins_in_tree = tree.iter().map(|branch| branch.join_count).sum::<u32>();
+    let branches_in_tree = tree.len() as u32;
 
     // all join branches should be added, if not we skip the tree, as it is invalid
     if (branches_in_tree - 1) != joins_in_tree {

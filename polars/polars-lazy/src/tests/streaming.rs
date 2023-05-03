@@ -62,7 +62,7 @@ fn test_streaming_glob() -> PolarsResult<()> {
 
     let q = q.sort("sugars_g", Default::default());
 
-    assert_streaming_with_default(q, false);
+    assert_streaming_with_default(q, true);
     Ok(())
 }
 
@@ -82,8 +82,8 @@ fn test_streaming_union() -> PolarsResult<()> {
 
     // let plan = q.describe_plan();
     // print!("{plan}");
-    let plan = q.to_dot(true).unwrap();
-    print!("{plan}");
+    // let plan = q.to_dot(true).unwrap();
+    // print!("{plan}");
     let plan = q.describe_optimized_plan().unwrap();
     print!("{plan}");
 

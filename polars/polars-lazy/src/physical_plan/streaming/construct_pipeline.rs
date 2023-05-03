@@ -150,13 +150,15 @@ pub(super) fn construct(
         pipelines.push((execution_id, pipeline));
     }
 
-    let mut counts = sink_share_count.into_iter().collect::<Vec<_>>();
-    counts.sort_by_key(|tpl| tpl.1);
     pipelines.sort_by(|a, b| a.0.cmp(&b.0).reverse());
+    dbg!(&pipelines.iter().map(|k| k.0).collect::<Vec<_>>());
+    dbg!(&sink_share_count);
+    for (k, v) in sink_share_count.iter() {
+        dbg!(lp_arena.get(Node(*k)));
+    }
 
     // some queries only have source/sources and don't have any
     // operators/sink so no latest
-    // if let Some(latest_sink) = counts.first().map(|tpl| Node(tpl.0)).or(latest) {
     if let Some(latest_sink) = final_sink {
         // the most right latest node should be the root of the pipeline
         let schema = lp_arena.get(latest_sink).schema(lp_arena).into_owned();

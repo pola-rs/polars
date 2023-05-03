@@ -63,6 +63,8 @@ pub(crate) fn insert_streaming_nodes(
     // every inner vec contains a branch/pipeline of a complete pipeline tree
     // the outer vec contains whole pipeline trees
     let mut pipeline_trees: Vec<Tree> = vec![vec![]];
+    // keep the counter global so that the order will match traversal order
+    let mut exection_id = 0;
 
     use ALogicalPlan::*;
     while let Some((root, mut state, mut current_idx)) = stack.pop() {
@@ -173,10 +175,11 @@ pub(crate) fn insert_streaming_nodes(
                 };
                 let mut state_left = state.split();
 
+                exection_id += 1;
                 // rhs is second, so that is first on the stack
                 let mut state_right = state;
                 state_right.join_count = 0;
-                state_right.execution_id += 1;
+                state_right.execution_id = exection_id;
                 state_right
                     .operators_sinks
                     .push(PipelineNode::RhsJoin(root));
@@ -207,25 +210,27 @@ pub(crate) fn insert_streaming_nodes(
                 state.sources.push(root);
                 pipeline_trees[current_idx].push(state);
             }
-            // Union { inputs, .. } => {
-            //     {
-            //         state.streamable = true;
-            //         for (i, input) in inputs.iter().enumerate() {
-            //             let (mut state, join_count) = if i == 0 {
-            //                 let state = state.split();
-            //                 let join_count = state.join_count + inputs.len() as u32 - 1;
-            //                 (state,
-            //                 join_count)
-            //             } else {
-            //                 (state.split(),
-            //                 0)
-            //             };
-            //             state.join_count = join_count;
-            //             state.operators_sinks.push(PipelineNode::Operator(root));
-            //             stack.push((*input, state, current_idx));
-            //         }
-            //     }
-            // }
+            Union { inputs, .. } => {
+                {
+                    state.streamable = true;
+                    for (i, input) in inputs.iter().enumerate() {
+                        let mut state = if i == 0 {
+                            // note the clone!
+                            let mut state = state.clone();
+                            state.join_count += inputs.len() as u32 - 1;
+                            state
+                        } else {
+                            exection_id += 1;
+                            let mut state = state.split();
+                            state.execution_id = exection_id;
+                            state.join_count = 0;
+                            state
+                        };
+                        state.operators_sinks.push(PipelineNode::Operator(root));
+                        stack.push((*input, state, current_idx));
+                    }
+                }
+            }
             Distinct { input, options }
                 if !options.maintain_order
                     && !matches!(options.keep_strategy, UniqueKeepStrategy::None) =>
