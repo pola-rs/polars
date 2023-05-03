@@ -62,13 +62,6 @@ pub(super) fn construct(
     // variable and thus will point to root
     let mut latest = None;
 
-    let joins_in_tree = tree.iter().map(|branch| branch.join_count).sum::<IdxSize>();
-    let branches_in_tree = tree.len() as IdxSize;
-
-    // all join branches should be added, if not we skip the tree, as it is invalid
-    if (branches_in_tree - 1) != joins_in_tree {
-        return Ok(None);
-    }
     let is_verbose = verbose();
 
     for branch in tree {

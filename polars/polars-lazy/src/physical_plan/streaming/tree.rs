@@ -45,6 +45,13 @@ pub(super) fn is_valid_tree(tree: TreeRef) -> bool {
     if tree.is_empty() {
         return false;
     };
+    let joins_in_tree = tree.iter().map(|branch| branch.join_count).sum::<IdxSize>();
+    let branches_in_tree = tree.len() as IdxSize;
+
+    // all join branches should be added, if not we skip the tree, as it is invalid
+    if (branches_in_tree - 1) != joins_in_tree {
+        return false;
+    }
 
     // rhs joins will initially be placeholders
     let mut left_joins = BTreeSet::new();
