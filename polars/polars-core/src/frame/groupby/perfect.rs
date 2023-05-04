@@ -122,7 +122,7 @@ where
                                         }
                                     }
                                     // last thread handles null values
-                                    else if thread_no == n_threads - 1 {
+                                    else if thread_no == cache_line_offsets.len() - 2 {
                                         let buf =
                                             unsafe { groups.get_unchecked_release_mut(null_idx) };
                                         buf.push(row_nr);
