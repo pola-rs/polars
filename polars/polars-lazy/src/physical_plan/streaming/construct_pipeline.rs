@@ -92,9 +92,7 @@ pub(super) fn construct(
     for branch in tree {
         if branch.execution_id == 0 {
             final_sink = branch.get_final_sink();
-            if final_sink.is_none() {
-                return Ok(None);
-            }
+            assert!(final_sink.is_some(), "unexpected")
         }
 
         // should be reset for every branch
@@ -194,7 +192,23 @@ pub(super) fn construct(
 
         // replace the part of the logical plan with a `MapFunction` that will execute the pipeline.
         let pipeline_node = get_pipeline_node(lp_arena, most_left, schema, original_lp);
-        lp_arena.replace(latest_sink, pipeline_node);
+
+        let insertion_location = match lp_arena.get(latest_sink) {
+            // this was inserted only during conversion and does not exist
+            // in the original tree, so we take the input, as that's where
+            // we connect into the original tree.
+            FileSink {
+                input,
+                payload:
+                    FileSinkOptions {
+                        file_type: FileType::Memory,
+                        ..
+                    },
+            } => *input,
+            // default case if the tree ended with a sink
+            _ => latest_sink,
+        };
+        lp_arena.replace(insertion_location, pipeline_node);
 
         Ok(Some(latest_sink))
     } else {

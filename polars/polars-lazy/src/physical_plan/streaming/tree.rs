@@ -1,6 +1,5 @@
-use std::collections::{BTreeSet, LinkedList};
+use std::collections::BTreeSet;
 use std::fmt::Debug;
-use std::rc::Rc;
 
 use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
@@ -58,10 +57,6 @@ impl Branch {
         self.operators_sinks.iter().flat_map(sink_node)
     }
 
-    fn get_sinks(&self) -> Vec<Node> {
-        self.operators_sinks.iter().flat_map(sink_node).collect()
-    }
-
     pub(super) fn split(&self) -> Self {
         Self {
             execution_id: self.execution_id,
@@ -83,7 +78,7 @@ impl Branch {
                 execution_id: self.execution_id,
                 streamable: self.streamable,
                 join_count: self.join_count,
-                operators_sinks: (&self.operators_sinks[pos..]).to_vec(),
+                operators_sinks: self.operators_sinks[pos..].to_vec(),
                 ..Default::default()
             },
         }

@@ -31,7 +31,7 @@ fn process_non_streamable_node(
 }
 
 pub(crate) fn insert_streaming_nodes(
-    root: Node,
+    mut root: Node,
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
@@ -42,6 +42,18 @@ pub(crate) fn insert_streaming_nodes(
     set_estimated_row_counts(root, lp_arena, expr_arena, 0);
 
     scratch.clear();
+
+    // The pipelines need a final sink, we insert that here.
+    // this allows us to split at joins/unions and share a sink
+    if !matches!(lp_arena.get(root), ALogicalPlan::FileSink { .. }) {
+        root = lp_arena.add(FileSink {
+            input: root,
+            payload: FileSinkOptions {
+                path: Default::default(),
+                file_type: FileType::Memory,
+            },
+        })
+    }
 
     let mut stack = Vec::with_capacity(16);
 

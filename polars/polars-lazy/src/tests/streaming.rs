@@ -77,6 +77,16 @@ fn test_streaming_union() -> PolarsResult<()> {
 }
 
 #[test]
+fn test_streaming_union_no_sink() -> PolarsResult<()> {
+    let q = get_csv_glob();
+    let q = q.select([col("sugars_g"), col("calories")]);
+    let q = q.sort("sugars_g", Default::default());
+
+    assert_streaming_with_default(q, true);
+    Ok(())
+}
+
+#[test]
 fn test_streaming_multiple_keys_aggregate() -> PolarsResult<()> {
     let q = get_csv_glob();
 

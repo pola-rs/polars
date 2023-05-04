@@ -311,6 +311,7 @@ pub enum FileType {
     Parquet(ParquetWriteOptions),
     #[cfg(feature = "ipc")]
     Ipc(IpcWriterOptions),
+    Memory,
 }
 
 #[cfg(not(any(feature = "parquet", feature = "ipc")))]

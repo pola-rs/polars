@@ -139,6 +139,7 @@ where
                 FileType::Ipc(options) => {
                     Box::new(IpcSink::new(path, *options, input_schema.as_ref())?) as Box<dyn Sink>
                 }
+                FileType::Memory => Box::new(OrderedSink::new()),
             }
         }
         Join {
@@ -530,7 +531,7 @@ where
     let operator_offset = operator_objects.len();
     operator_objects.extend(operators);
 
-    let mut sink_nodes = sink_nodes
+    let sink_nodes = sink_nodes
         .into_iter()
         .map(|(offset, node, shared_count)| {
             // ensure that shared sinks are really shared
@@ -551,20 +552,6 @@ where
             Ok((offset + operator_offset, node, sink, shared_count))
         })
         .collect::<PolarsResult<Vec<_>>>()?;
-
-    if sink_nodes.is_empty() ||
-        // if this evaluates true
-        // then there are still operators after the last sink
-        // so we add a final sink to make sure the latest operators run
-        sink_nodes[sink_nodes.len() - 1].0 < operator_nodes.len()
-    {
-        sink_nodes.push((
-            operator_objects.len(),
-            Node::default(),
-            Box::new(OrderedSink::new()),
-            Rc::new(RefCell::new(1)),
-        ));
-    }
 
     Ok(PipeLine::new(
         source_objects,

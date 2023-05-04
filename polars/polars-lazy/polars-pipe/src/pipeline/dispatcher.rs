@@ -1,7 +1,6 @@
-use std::cell::{RefCell, UnsafeCell};
+use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
-use std::ops::SubAssign;
 use std::rc::Rc;
 
 use polars_core::error::PolarsResult;
@@ -69,6 +68,7 @@ pub struct PipeLine {
     /// - shared_count
     ///     when that hits 0, the sink will finalize
     /// - node of the sink
+    #[allow(clippy::type_complexity)]
     sinks: Vec<(usize, Rc<RefCell<u32>>, Vec<Box<dyn Sink>>)>,
     /// are used to identify the sink shared with other pipeline branches
     sink_nodes: Vec<Node>,
@@ -84,6 +84,7 @@ pub struct PipeLine {
 }
 
 impl PipeLine {
+    #[allow(clippy::type_complexity)]
     pub fn new(
         sources: Vec<Box<dyn Source>>,
         operators: Vec<Box<dyn Operator>>,
@@ -153,7 +154,7 @@ impl PipeLine {
 
     /// Add a parent
     /// This should be in the right order
-    pub fn with_other_branch(mut self, rhs: PipeLine) -> Self {
+    pub fn with_other_branch(self, rhs: PipeLine) -> Self {
         self.other_branches.borrow_mut().push_back(rhs);
         self
     }
@@ -280,7 +281,7 @@ impl PipeLine {
         let mut out = None;
         let mut operator_start = 0;
         let last_i = self.sinks.len() - 1;
-        for (i, (operator_end, mut shared_count, mut sink)) in
+        for (i, (operator_end, shared_count, mut sink)) in
             std::mem::take(&mut self.sinks).into_iter().enumerate()
         {
             for src in &mut std::mem::take(&mut self.sources) {
@@ -357,7 +358,7 @@ impl PipeLine {
         pipeline_q: Rc<RefCell<VecDeque<PipeLine>>>,
     ) -> PolarsResult<Option<FinalizedSink>> {
         let (sink_shared_count, mut reduced_sink) =
-            self.run_pipeline_no_finalize(ec, pipeline_q.clone())?;
+            self.run_pipeline_no_finalize(ec, pipeline_q)?;
         assert_eq!(sink_shared_count, 0);
         Ok(reduced_sink.finalize(ec).ok())
     }
