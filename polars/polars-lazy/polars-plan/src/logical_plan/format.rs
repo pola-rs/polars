@@ -399,6 +399,7 @@ impl Debug for Expr {
             RenameAlias { expr, .. } => write!(f, "RENAME_ALIAS {expr:?}"),
             Columns(names) => write!(f, "COLUMNS({names:?})"),
             DtypeColumn(dt) => write!(f, "COLUMN OF DTYPE: {dt:?}"),
+            Cache { input, .. } => write!(f, "CACHE {input:?}"),
         }
     }
 }

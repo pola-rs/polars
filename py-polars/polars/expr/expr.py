@@ -6912,6 +6912,10 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.shrink_dtype())
 
+    def cache(self) -> Self:
+        """Cache this expression so that it only is executed once per context."""
+        return self._from_pyexpr(self._pyexpr.cache())
+
     def map_dict(
         self,
         remapping: dict[Any, Any],

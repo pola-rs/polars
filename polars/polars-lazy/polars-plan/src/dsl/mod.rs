@@ -1885,6 +1885,20 @@ impl Expr {
         )
     }
 
+    /// Cache this expression, so that it is executed only once per context.
+    pub fn cache(self) -> Expr {
+        match &self {
+            // don't cache cheap no-ops
+            Expr::Column(_) => self,
+            Expr::Alias(input, _) if matches!(**input, Expr::Column(_)) => self,
+            _ => {
+                let input = Box::new(self);
+                let id = input.as_ref() as *const Expr as usize;
+                Self::Cache { input, id }
+            }
+        }
+    }
+
     #[cfg(feature = "row_hash")]
     /// Compute the hash of every element
     pub fn hash(self, k0: u64, k1: u64, k2: u64, k3: u64) -> Expr {
