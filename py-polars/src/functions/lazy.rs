@@ -26,6 +26,46 @@ pub fn arange(start: PyExpr, end: PyExpr, step: i64) -> PyExpr {
 }
 
 #[pyfunction]
+pub fn rolling_corr(
+    x: PyExpr,
+    y: PyExpr,
+    window_size: IdxSize,
+    min_periods: IdxSize,
+    ddof: u8,
+) -> PyExpr {
+    dsl::rolling_corr(
+        x.inner,
+        y.inner,
+        RollingCovOptions {
+            min_periods,
+            window_size,
+            ddof,
+        },
+    )
+    .into()
+}
+
+#[pyfunction]
+pub fn rolling_cov(
+    x: PyExpr,
+    y: PyExpr,
+    window_size: IdxSize,
+    min_periods: IdxSize,
+    ddof: u8,
+) -> PyExpr {
+    dsl::rolling_cov(
+        x.inner,
+        y.inner,
+        RollingCovOptions {
+            min_periods,
+            window_size,
+            ddof,
+        },
+    )
+    .into()
+}
+
+#[pyfunction]
 pub fn arg_sort_by(by: Vec<PyExpr>, descending: Vec<bool>) -> PyExpr {
     let by = by.into_iter().map(|e| e.inner).collect::<Vec<Expr>>();
     dsl::arg_sort_by(by, &descending).into()

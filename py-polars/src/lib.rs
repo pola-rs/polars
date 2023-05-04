@@ -145,6 +145,10 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::pearson_corr))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::rolling_corr))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::rolling_cov))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::reduce))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::repeat))
