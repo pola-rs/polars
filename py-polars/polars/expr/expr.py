@@ -246,6 +246,7 @@ class Expr:
         - :func:`polars.datatypes.Time` -> :func:`polars.datatypes.Int64`
         - :func:`polars.datatypes.Duration` -> :func:`polars.datatypes.Int64`
         - :func:`polars.datatypes.Categorical` -> :func:`polars.datatypes.UInt32`
+        - ``List(inner)`` -> ``List(physical of inner)``
 
         Other data types will be left unchanged.
 
