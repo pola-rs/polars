@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import copy
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Sequence
 
 import polars._reexport as pl
 from polars import functions as F
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
 from polars.utils._wrap import wrap_expr
+from polars.utils.decorators import deprecated_alias
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time
@@ -708,10 +709,11 @@ class ExprListNameSpace:
             self._pyexpr.list_count_match(expr_to_lit_or_expr(element)._pyexpr)
         )
 
+    @deprecated_alias(name_generator="fields")
     def to_struct(
         self,
         n_field_strategy: ToStructStrategy = "first_non_null",
-        name_generator: Callable[[int], str] | None = None,
+        fields: Sequence[str] | Callable[[int], str] | None = None,
         upper_bound: int = 0,
     ) -> Expr:
         """
@@ -721,44 +723,67 @@ class ExprListNameSpace:
         ----------
         n_field_strategy : {'first_non_null', 'max_width'}
             Strategy to determine the number of fields of the struct.
-        name_generator
-            A custom function that can be used to generate the field names.
-            Default field names are `field_0, field_1 .. field_n`
+
+            * "first_non_null": set number of fields equal to the length of the
+              first non zero-length sublist.
+            * "max_width": set number of fields as max length of all sublists.
+
+        fields
+            If the name and number of the desired fields is known in advance
+            a list of field names can be given, which will be assigned by index.
+            Otherwise, to dynamically assign field names, a custom function can be
+            used; if neither are set, fields will be `field_0, field_1 .. field_n`.
         upper_bound
-            A polars `LazyFrame` needs to know the schema at all time.
-            The caller therefore must provide an `upper_bound` of
-            struct fields that will be set.
-            If this is incorrectly downstream operation may fail.
-            For instance an `all().sum()` expression will look in
-            the current schema to determine which columns to select.
-            It is advised to set this value in a lazy query.
+            A polars ``LazyFrame`` needs to know the schema at all times, so the
+            caller must provide an upper bound of the number of struct fields that
+            will be created; if set incorrectly, subsequent operations may fail.
+            (For example, an ``all().sum()`` expression will look in the current
+            schema to determine which columns to select).
+
+            When operating on a ``DataFrame``, the schema does not need to be
+            tracked or pre-determined, as the result will be eagerly evaluated,
+            so you can leave this parameter unset.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [[1, 2, 3], [1, 2]]})
-        >>> df.select([pl.col("a").arr.to_struct()])
+        Convert list to struct with default field name assignment:
+
+        >>> df = pl.DataFrame({"n": [[0, 1, 2], [0, 1]]})
+        >>> df.select(pl.col("n").arr.to_struct())
         shape: (2, 1)
         ┌────────────┐
-        │ a          │
+        │ n          │
         │ ---        │
         │ struct[3]  │
         ╞════════════╡
-        │ {1,2,3}    │
-        │ {1,2,null} │
+        │ {0,1,2}    │
+        │ {0,1,null} │
         └────────────┘
-        >>> df.select(
-        ...     [
-        ...         pl.col("a").arr.to_struct(
-        ...             name_generator=lambda idx: f"col_name_{idx}"
-        ...         )
-        ...     ]
-        ... ).to_series().to_list()
-        [{'col_name_0': 1, 'col_name_1': 2, 'col_name_2': 3},
-        {'col_name_0': 1, 'col_name_1': 2, 'col_name_2': None}]
+
+        Convert list to struct with field name assignment by function/index:
+
+        >>> df.select(pl.col("n").arr.to_struct(fields=lambda idx: f"n{idx}")).rows(
+        ...     named=True
+        ... )
+        [{'n': {'n0': 0, 'n1': 1, 'n2': 2}}, {'n': {'n0': 0, 'n1': 1, 'n2': None}}]
+
+        Convert list to struct with field name assignment by index from a list of names:
+
+        >>> df.select(pl.col("n").arr.to_struct(fields=["one", "two", "three"])).rows(
+        ...     named=True
+        ... )
+        [{'n': {'one': 0, 'two': 1, 'three': 2}},
+        {'n': {'one': 0, 'two': 1, 'three': None}}]
 
         """
+        if isinstance(fields, Sequence):
+            field_names = list(fields)
+
+            def fields(idx: int) -> str:
+                return field_names[idx]
+
         return wrap_expr(
-            self._pyexpr.list_to_struct(n_field_strategy, name_generator, upper_bound)
+            self._pyexpr.list_to_struct(n_field_strategy, fields, upper_bound)
         )
 
     def eval(self, expr: Expr, *, parallel: bool = False) -> Expr:
