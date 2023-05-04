@@ -36,6 +36,7 @@ from polars.functions.lazy import (
     from_epoch,
     groups,
     head,
+    implode,
     last,
     lit,
     map,
@@ -102,6 +103,7 @@ __all__ = [
     "from_epoch",
     "groups",
     "head",
+    "implode",
     "last",
     "list",  # named list_, see import above
     "lit",
