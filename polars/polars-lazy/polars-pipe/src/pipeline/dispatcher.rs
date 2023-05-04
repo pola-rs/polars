@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::collections::VecDeque;
+use std::fmt::{Debug, Formatter};
 use std::ops::SubAssign;
 use std::rc::Rc;
 
@@ -333,40 +334,16 @@ impl PipeLine {
         Ok(out)
     }
 
-    /// print the branches of the pipeline
-    /// in the order they run.
-    fn show(&self) {
-        let mut fmt = String::new();
-        let mut start = 0usize;
-        fmt.push_str(self.sources[0].fmt());
-        for (offset_end, _, sink) in &self.sinks {
-            fmt.push_str(" -> ");
-            // take operators of a single thread
-            let ops = &self.operators[0];
-            // slice the pipeline
-            let ops = &ops[start..*offset_end];
-            for op in ops {
-                fmt.push_str(op.fmt());
-                fmt.push_str(" -> ")
-            }
-            start = *offset_end;
-            fmt.push_str(sink[0].fmt())
-        }
-        eprintln!("{fmt}");
-        for pl in &self.other_branches {
-            pl.show()
-        }
-    }
-
     /// Executes all branches and replaces operators and sinks during execution to ensure
     /// we materialize.
     pub fn execute(&mut self, state: Box<dyn SExecutionContext>) -> PolarsResult<DataFrame> {
         let ec = PExecutionContext::new(state, self.verbose);
 
         if self.verbose {
-            self.show();
+            eprintln!("{self:?}");
+            eprintln!("{:?}", &self.other_branches);
         }
-        dbg!(self.other_branches.len());
+        dbg!(&self.other_branches);
         let mut sink_out = self.run_pipeline(&ec)?;
         let mut pipelines = self.other_branches.iter_mut();
         let mut sink_nodes = std::mem::take(&mut self.sink_nodes);
@@ -435,6 +412,28 @@ impl PipeLine {
                 }
             }
         }
+    }
+}
+
+impl Debug for PipeLine {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut fmt = String::new();
+        let mut start = 0usize;
+        fmt.push_str(self.sources[0].fmt());
+        for (offset_end, _, sink) in &self.sinks {
+            fmt.push_str(" -> ");
+            // take operators of a single thread
+            let ops = &self.operators[0];
+            // slice the pipeline
+            let ops = &ops[start..*offset_end];
+            for op in ops {
+                fmt.push_str(op.fmt());
+                fmt.push_str(" -> ")
+            }
+            start = *offset_end;
+            fmt.push_str(sink[0].fmt())
+        }
+        write!(f, "{fmt}")
     }
 }
 
