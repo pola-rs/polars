@@ -165,11 +165,6 @@ pub(super) fn construct(
     }
 
     pipelines.sort_by(|a, b| a.0.cmp(&b.0).reverse());
-    // dbg!(&pipelines.iter().map(|k| k.0).collect::<Vec<_>>());
-    // dbg!(&sink_share_count);
-    // for (k, v) in sink_share_count.iter() {
-    //     dbg!(lp_arena.get(Node(*k)));
-    // }
 
     // some queries only have source/sources and don't have any
     // operators/sink so no latest

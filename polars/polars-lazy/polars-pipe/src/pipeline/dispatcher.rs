@@ -267,7 +267,7 @@ impl PipeLine {
         self.sources.push(src);
     }
 
-    fn run_pipeline_no_finalize(&mut self, ec: &PExecutionContext) -> PolarsResult<Box<dyn Sink>> {
+    fn run_pipeline_no_finalize(&mut self, ec: &PExecutionContext) -> PolarsResult<(u32, Box<dyn Sink>)> {
         let mut out = None;
         let mut operator_start = 0;
         let last_i = self.sinks.len() - 1;
@@ -307,7 +307,6 @@ impl PipeLine {
 
 
             let mut sink_decr = shared_count.borrow_mut();
-            dbg!(*sink_decr);
             *sink_decr -= 1;
 
             if i != last_i {
@@ -322,7 +321,7 @@ impl PipeLine {
                     }
                 }
             } else {
-                out = Some(reduced_sink)
+                out = Some((*sink_decr, reduced_sink))
             }
 
         }
@@ -335,7 +334,16 @@ impl PipeLine {
     ///
     /// The sink can be finished, but can also become a new source and then rinse and repeat.
     pub fn run_pipeline(&mut self, ec: &PExecutionContext) -> PolarsResult<Option<FinalizedSink>> {
-        self.run_pipeline_no_finalize(ec).map(|mut sink| sink.finalize(ec).ok())
+        let (mut sink_shared_count, mut reduced_sink) = self.run_pipeline_no_finalize(ec)?;
+
+        while sink_shared_count > 0 {
+            let mut pipeline = self.other_branches.borrow_mut().pop_front().unwrap();
+            let (count, mut sink) = pipeline.run_pipeline_no_finalize(ec)?;
+            reduced_sink.combine(sink.as_mut());
+            sink_shared_count = count;
+
+        }
+        Ok(reduced_sink.finalize(ec).ok())
     }
 
     /// Executes all branches and replaces operators and sinks during execution to ensure
@@ -362,8 +370,6 @@ impl PipeLine {
             match &mut sink_out {
                 None => {
                     let mut pipeline = self.other_branches.borrow_mut().pop_front().unwrap();
-                    dbg!("next");
-                    // let pipeline = pipelines.next().unwrap();
                     sink_out = pipeline.run_pipeline(&ec)?;
                     sink_nodes = std::mem::take(&mut pipeline.sink_nodes);
                 }

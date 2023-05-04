@@ -71,45 +71,40 @@ fn test_streaming_union() -> PolarsResult<()> {
     let q = get_csv_glob();
     let q = q
         .select([col("sugars_g"), col("calories")]);
-        // .filter(col("sugars_g").gt(lit(10)));
     let q = q.sort("sugars_g", Default::default());
 
-    // let q = concat([q.clone(), q.clone()], false, false)?
-    //     .sort("sugars_g", Default::default())
-    //     .with_streaming(true);
-    // .groupby([col("sugars_g")])
-    // .agg([col("calories").sum() ])
-    // .sort("sugars_g", Default::default());
+    assert_streaming_with_default(q, true);
+    Ok(())
+}
 
-    // let plan = q.describe_plan();
-    // print!("{plan}");
-    // let plan = q.to_dot(true).unwrap();
-    // print!("{plan}");
-    // let plan = q.describe_optimized_plan().unwrap();
-    // print!("{plan}");
-    dbg!(q.clone().collect());
+#[test]
+fn test_streaming_union2() -> PolarsResult<()> {
+    let q = get_csv_glob();
+    let q = q
+        .select([col("sugars_g"), col("calories")]);
+    // let q = q.sort("sugars_g", Default::default());
 
     dbg!(q.with_streaming(true).collect());
     // assert_streaming_with_default(q, true);
     Ok(())
 }
 
-// #[test]
-// fn test_streaming_multiple_keys_aggregate() -> PolarsResult<()> {
-//     let q = get_csv_glob();
-//
-//     let q = q
-//         .filter(col("sugars_g").gt(lit(10)))
-//         .groupby([col("sugars_g"), col("calories")])
-//         .agg([
-//             (col("fats_g") * lit(10)).sum(),
-//             col("calories").mean().alias("cal_mean"),
-//         ])
-//         .sort_by_exprs([col("sugars_g"), col("calories")], [false, false], false);
-//
-//     assert_streaming_with_default(q, false);
-//     Ok(())
-// }
+#[test]
+fn test_streaming_multiple_keys_aggregate() -> PolarsResult<()> {
+    let q = get_csv_glob();
+
+    let q = q
+        .filter(col("sugars_g").gt(lit(10)))
+        .groupby([col("sugars_g"), col("calories")])
+        .agg([
+            (col("fats_g") * lit(10)).sum(),
+            col("calories").mean().alias("cal_mean"),
+        ])
+        .sort_by_exprs([col("sugars_g"), col("calories")], [false, false], false);
+
+    assert_streaming_with_default(q, false);
+    Ok(())
+}
 
 #[test]
 fn test_streaming_first_sum() -> PolarsResult<()> {
