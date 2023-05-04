@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, Callable, Sequence
 from polars import functions as F
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
+from polars.utils.decorators import deprecated_alias
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time
@@ -387,10 +388,11 @@ class ListNameSpace:
 
         """
 
+    @deprecated_alias(name_generator="fields")
     def to_struct(
         self,
         n_field_strategy: ToStructStrategy = "first_non_null",
-        name_generator: Callable[[int], str] | Sequence[str] | None = None,
+        fields: Callable[[int], str] | Sequence[str] | None = None,
     ) -> Series:
         """
         Convert the series of type ``List`` to a series of type ``Struct``.
@@ -404,11 +406,11 @@ class ListNameSpace:
               first non zero-length sublist.
             * "max_width": set number of fields as max length of all sublists.
 
-        name_generator
-            A custom function that can be used to generate the field names. If
-            unset, the default field names are `field_0, field_1 .. field_n`. If
-            the name and number of the desired fields is known in advance you
-            can also pass a list of field names, which will be assigned by index.
+        fields
+            If the name and number of the desired fields is known in advance
+            a list of field names can be given, which will be assigned by index.
+            Otherwise, to dynamically assign field names, a custom function can be
+            used; if neither are set, fields will be `field_0, field_1 .. field_n`.
 
         Examples
         --------
@@ -428,13 +430,13 @@ class ListNameSpace:
 
         Convert list to struct with field name assignment by function/index:
 
-        >>> s3 = s1.arr.to_struct(name_generator=lambda idx: f"n{idx:02}")
+        >>> s3 = s1.arr.to_struct(fields=lambda idx: f"n{idx:02}")
         >>> s3.struct.fields
         ['n00', 'n01', 'n02']
 
         Convert list to struct with field name assignment by index from a list of names:
 
-        >>> s1.arr.to_struct(name_generator=["one", "two", "three"]).struct.unnest()
+        >>> s1.arr.to_struct(fields=["one", "two", "three"]).struct.unnest()
         shape: (2, 3)
         ┌─────┬─────┬───────┐
         │ one ┆ two ┆ three │
@@ -454,7 +456,7 @@ class ListNameSpace:
                     # note: in eager mode, 'upper_bound' is always zero, as (unlike
                     # in lazy mode) there is no need to determine/track the schema.
                     n_field_strategy,
-                    name_generator,
+                    fields,
                     upper_bound=0,
                 )
             )

@@ -319,7 +319,7 @@ def test_list_to_struct() -> None:
 
     df = pl.DataFrame({"a": [[1, 2], [1, 2, 3]]})
     assert df.select(
-        [pl.col("a").arr.to_struct(name_generator=lambda idx: f"col_name_{idx}")]
+        [pl.col("a").arr.to_struct(fields=lambda idx: f"col_name_{idx}")]
     ).to_series().to_list() == [
         {"col_name_0": 1, "col_name_1": 2},
         {"col_name_0": 1, "col_name_1": 2},
