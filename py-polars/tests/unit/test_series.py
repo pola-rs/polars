@@ -597,6 +597,20 @@ def test_to_python() -> None:
     assert a.to_list() == [1, None, 2]
 
 
+def test_to_struct() -> None:
+    s = pl.Series("nums", ["12 34", "56 78", "90 00"]).str.extract_all(r"\d+")
+
+    assert s.arr.to_struct().struct.fields == ["field_0", "field_1"]
+    assert s.arr.to_struct(name_generator=lambda idx: f"n{idx:02}").struct.fields == [
+        "n00",
+        "n01",
+    ]
+    assert_frame_equal(
+        s.arr.to_struct(name_generator=["one", "two"]).struct.unnest(),
+        pl.DataFrame({"one": ["12", "56", "90"], "two": ["34", "78", "00"]}),
+    )
+
+
 def test_sort() -> None:
     a = pl.Series("a", [2, 1, 3])
     assert_series_equal(a.sort(), pl.Series("a", [1, 2, 3]))

@@ -413,3 +413,26 @@ def test_list_unique() -> None:
         .arr.unique(maintain_order=True)
         .series_equal(pl.Series([[1, 2, 3], [3, 2, 1]]))
     )
+
+
+def test_list_to_struct() -> None:
+    df = pl.DataFrame({"n": [[0, 1, 2], [0, 1]]})
+
+    assert df.select(pl.col("n").arr.to_struct()).rows(named=True) == [
+        {"n": {"field_0": 0, "field_1": 1, "field_2": 2}},
+        {"n": {"field_0": 0, "field_1": 1, "field_2": None}},
+    ]
+
+    assert df.select(
+        pl.col("n").arr.to_struct(name_generator=lambda idx: f"n{idx}")
+    ).rows(named=True) == [
+        {"n": {"n0": 0, "n1": 1, "n2": 2}},
+        {"n": {"n0": 0, "n1": 1, "n2": None}},
+    ]
+
+    assert df.select(
+        pl.col("n").arr.to_struct(name_generator=["one", "two", "three"])
+    ).rows(named=True) == [
+        {"n": {"one": 0, "two": 1, "three": 2}},
+        {"n": {"one": 0, "two": 1, "three": None}},
+    ]
