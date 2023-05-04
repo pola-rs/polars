@@ -360,7 +360,7 @@ class StringNameSpace:
         Notes
         -----
         To modify regular expression behaviour (such as case-sensitivity) with
-        flags, use the inline ``(?iLmsuxU)`` syntax.
+        flags, use the inline ``(?iLmsuxU)`` syntax. For example:
 
         Default (case-sensitive) match:
 
@@ -579,11 +579,36 @@ class StringNameSpace:
         Parameters
         ----------
         pattern
-            A valid regex pattern
+            A valid regular expression pattern, compatible with the `regex crate
+            <https://docs.rs/regex/latest/regex/>`_.
         group_index
             Index of the targeted capture group.
             Group 0 mean the whole pattern, first group begin at index 1
             Default to the first capture group
+
+        Notes
+        -----
+        To modify regular expression behaviour (such as multi-line matching)
+        with flags, use the inline ``(?iLmsuxU)`` syntax. For example:
+
+        >>> s = pl.Series(
+        ...     name="lines",
+        ...     values=[
+        ...         "I Like\nThose\nOdds",
+        ...         "This is\nThe Way",
+        ...     ],
+        ... )
+        >>> s.str.extract(r"(?m)^(T\w+)", 1).alias("matches")
+        shape: (2,)
+        Series: 'matches' [str]
+        [
+            "Those"
+            "This"
+        ]
+
+        See the regex crate's section on `grouping and flags
+        <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
+        additional information about the use of inline expression modifiers.
 
         Returns
         -------
@@ -591,26 +616,22 @@ class StringNameSpace:
 
         Examples
         --------
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [
-        ...             "http://vote.com/ballon_dor?candidate=messi&ref=polars",
-        ...             "http://vote.com/ballon_dor?candidat=jorginho&ref=polars",
-        ...             "http://vote.com/ballon_dor?candidate=ronaldo&ref=polars",
-        ...         ]
-        ...     }
+        >>> s = pl.Series(
+        ...     name="url",
+        ...     values=[
+        ...         "http://vote.com/ballon_dor?ref=polars&candidate=messi",
+        ...         "http://vote.com/ballon_dor?candidate=ronaldo&ref=polars",
+        ...         "http://vote.com/ballon_dor?error=404&ref=unknown",
+        ...     ],
         ... )
-        >>> df.select(pl.col("a").str.extract(r"candidate=(\w+)", 1))
-        shape: (3, 1)
-        ┌─────────┐
-        │ a       │
-        │ ---     │
-        │ str     │
-        ╞═════════╡
-        │ messi   │
-        │ null    │
-        │ ronaldo │
-        └─────────┘
+        >>> s.str.extract(r"candidate=(\w+)", 1).alias("candidate")
+        shape: (3,)
+        Series: 'candidate' [str]
+        [
+            "messi"
+            "ronaldo"
+            null
+        ]
 
         """
 
