@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::sync::Arc;
-use hashbrown::hash_map::Entry;
 
+use hashbrown::hash_map::Entry;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_integer_polars_type;
 use polars_plan::prelude::*;
@@ -461,7 +461,7 @@ pub fn create_pipeline<F>(
     expr_arena: &mut Arena<AExpr>,
     to_physical: F,
     verbose: bool,
-    sink_cache: &mut PlHashMap<usize, Box<dyn Sink>>
+    sink_cache: &mut PlHashMap<usize, Box<dyn Sink>>,
 ) -> PolarsResult<PipeLine>
 where
     F: Fn(Node, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
@@ -546,7 +546,7 @@ where
                         let sink = get_sink(node, lp_arena, expr_arena, &to_physical)?;
                         entry.insert(sink.split(0));
                         sink
-                    },
+                    }
                     Entry::Occupied(entry) => {
                         dbg!("cache");
                         entry.get().split(0)
@@ -554,12 +554,7 @@ where
                 }
             };
 
-            Ok((
-                offset + operator_offset,
-                node,
-                sink,
-                shared_count
-            ))
+            Ok((offset + operator_offset, node, sink, shared_count))
         })
         .collect::<PolarsResult<Vec<_>>>()?;
 
@@ -573,7 +568,7 @@ where
             operator_objects.len(),
             Node::default(),
             Box::new(OrderedSink::new()),
-            RefCell::new(1)
+            RefCell::new(1),
         ));
     }
 

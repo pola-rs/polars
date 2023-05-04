@@ -77,12 +77,6 @@ pub(super) fn construct(
     let n_branches = tree.len();
     if n_branches > 1 {
         for branch in &tree {
-            for sinks in &branch.shared_sinks {
-                for sink in sinks.as_ref() {
-                    let count = sink_share_count.entry(sink.0).or_insert(RefCell::new(0u32));
-                    *count.get_mut() += 1;
-                }
-            }
             for sink in branch.iter_sinks() {
                 let count = sink_share_count.entry(sink.0).or_insert(RefCell::new(0u32));
                 *count.get_mut() += 1;
@@ -106,7 +100,6 @@ pub(super) fn construct(
         let mut operators = Vec::with_capacity(branch.operators_sinks.len());
         let mut operator_nodes = Vec::with_capacity(branch.operators_sinks.len());
 
-
         // iterate from leaves upwards
         let mut iter = branch.operators_sinks.into_iter().rev();
 
@@ -114,7 +107,7 @@ pub(super) fn construct(
             let operator_offset = operators.len();
             match pipeline_node {
                 PipelineNode::Sink(node) => {
-                    let shared_count = if n_branches > 1{
+                    let shared_count = if n_branches > 1 {
                         // should be here
                         sink_share_count.get(&node.0).unwrap().clone()
                     } else {
@@ -165,7 +158,7 @@ pub(super) fn construct(
             expr_arena,
             to_physical_piped_expr,
             is_verbose,
-            &mut sink_cache
+            &mut sink_cache,
         )?;
         pipelines.push((execution_id, pipeline));
     }

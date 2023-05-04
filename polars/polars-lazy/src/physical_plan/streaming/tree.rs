@@ -33,7 +33,6 @@ pub(super) struct Branch {
     // sorted and executed in reversed order
     // (to traverse from leaves to root)
     pub(super) execution_id: u32,
-    pub(super) shared_sinks: LinkedList<Rc<Vec<Node>>>,
     pub(super) streamable: bool,
     pub(super) sources: Vec<Node>,
     // joins seen in whole branch (we count a union as joins with multiple counts)
@@ -55,7 +54,7 @@ impl Branch {
         // so the first sink is the final one.
         self.operators_sinks.iter().find_map(sink_node)
     }
-    pub(super) fn iter_sinks(&self) -> impl Iterator<Item=Node> + '_ {
+    pub(super) fn iter_sinks(&self) -> impl Iterator<Item = Node> + '_ {
         self.operators_sinks.iter().flat_map(sink_node)
     }
 
@@ -64,22 +63,30 @@ impl Branch {
     }
 
     pub(super) fn split(&self) -> Self {
-        let mut shared_sinks = self.shared_sinks.clone();
-        let sinks = self.get_sinks();
-        if !sinks.is_empty() {
-            shared_sinks.push_back(Rc::new(sinks));
-        }
         Self {
             execution_id: self.execution_id,
-            shared_sinks,
             streamable: self.streamable,
             join_count: self.join_count,
             ..Default::default()
         }
     }
 
+    /// this will share the sink
     pub(super) fn split_from_sink(&self) -> Self {
-        todo!()
+        match self
+            .operators_sinks
+            .iter()
+            .rposition(|pl_node| sink_node(pl_node).is_some())
+        {
+            None => self.split(),
+            Some(pos) => Self {
+                execution_id: self.execution_id,
+                streamable: self.streamable,
+                join_count: self.join_count,
+                operators_sinks: (&self.operators_sinks[pos..]).to_vec(),
+                ..Default::default()
+            },
+        }
     }
 }
 

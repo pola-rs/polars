@@ -221,7 +221,7 @@ pub(crate) fn insert_streaming_nodes(
                             state
                         } else {
                             exection_id += 1;
-                            let mut state = state.split();
+                            let mut state = state.split_from_sink();
                             state.execution_id = exection_id;
                             state.join_count = 0;
                             state

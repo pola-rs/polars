@@ -71,8 +71,7 @@ fn test_streaming_union() -> PolarsResult<()> {
     let q = get_csv_glob();
     let q = q
         .select([col("sugars_g"), col("calories")])
-        .filter(col("sugars_g").gt(lit(10)))
-        ;
+        .filter(col("sugars_g").gt(lit(10)));
     let q = q.sort("sugars_g", Default::default());
 
     // let q = concat([q.clone(), q.clone()], false, false)?

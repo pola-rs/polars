@@ -99,7 +99,13 @@ impl PipeLine {
         let sink_nodes = sink_and_nodes.iter().map(|(_, node, _, _)| *node).collect();
         let sinks = sink_and_nodes
             .into_iter()
-            .map(|(offset, _, sink, shared_count)| (offset, shared_count, (0..n_threads).map(|i| sink.split(i)).collect()))
+            .map(|(offset, _, sink, shared_count)| {
+                (
+                    offset,
+                    shared_count,
+                    (0..n_threads).map(|i| sink.split(i)).collect(),
+                )
+            })
             .collect();
 
         // every index maps to a chain of operators than can be pushed as a pipeline for one thread
@@ -267,7 +273,8 @@ impl PipeLine {
         let mut out = None;
         let mut operator_start = 0;
         let last_i = self.sinks.len() - 1;
-        for (i, (operator_end, shared_count, mut sink)) in std::mem::take(&mut self.sinks).into_iter().enumerate()
+        for (i, (operator_end, shared_count, mut sink)) in
+            std::mem::take(&mut self.sinks).into_iter().enumerate()
         {
             for src in &mut std::mem::take(&mut self.sources) {
                 while let SourceResult::GotMoreData(chunks) = src.get_batches(ec)? {
