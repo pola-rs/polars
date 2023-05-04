@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use hashbrown::hash_map::Entry;
@@ -456,7 +457,7 @@ pub fn create_pipeline<F>(
     sources: &[Node],
     operators: Vec<Box<dyn Operator>>,
     operator_nodes: Vec<Node>,
-    sink_nodes: Vec<(usize, Node, RefCell<u32>)>,
+    sink_nodes: Vec<(usize, Node, Rc<RefCell<u32>>)>,
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
     to_physical: F,
@@ -529,26 +530,21 @@ where
     let operator_offset = operator_objects.len();
     operator_objects.extend(operators);
 
-    dbg!(&sink_nodes);
     let mut sink_nodes = sink_nodes
         .into_iter()
         .map(|(offset, node, shared_count)| {
-            dbg!(node);
             // ensure that shared sinks are really shared
             // to achieve this we store/fetch them in a cache
             let sink = if *shared_count.borrow() == 1 {
-                dbg!("no_cache");
                 get_sink(node, lp_arena, expr_arena, &to_physical)?
             } else {
                 match sink_cache.entry(node.0) {
                     Entry::Vacant(entry) => {
-                        dbg!("cache miss");
                         let sink = get_sink(node, lp_arena, expr_arena, &to_physical)?;
                         entry.insert(sink.split(0));
                         sink
                     }
                     Entry::Occupied(entry) => {
-                        dbg!("cache");
                         entry.get().split(0)
                     }
                 }
@@ -568,7 +564,7 @@ where
             operator_objects.len(),
             Node::default(),
             Box::new(OrderedSink::new()),
-            RefCell::new(1),
+            Rc::new(RefCell::new(1)),
         ));
     }
 

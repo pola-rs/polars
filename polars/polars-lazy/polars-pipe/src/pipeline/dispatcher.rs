@@ -1,5 +1,7 @@
 use std::cell::RefCell;
 use std::collections::VecDeque;
+use std::ops::SubAssign;
+use std::rc::Rc;
 
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
@@ -66,7 +68,7 @@ pub struct PipeLine {
     /// - shared_count
     ///     when that hits 0, the sink will finalize
     /// - node of the sink
-    sinks: Vec<(usize, RefCell<u32>, Vec<Box<dyn Sink>>)>,
+    sinks: Vec<(usize, Rc<RefCell<u32>>, Vec<Box<dyn Sink>>)>,
     /// are used to identify the sink shared with other pipeline branches
     sink_nodes: Vec<Node>,
     /// Other branch of the pipeline/tree that must be executed
@@ -86,7 +88,7 @@ impl PipeLine {
         operators: Vec<Box<dyn Operator>>,
         operator_nodes: Vec<Node>,
         // (offset, node (for identification), sink, shared_counter)
-        sink_and_nodes: Vec<(usize, Node, Box<dyn Sink>, RefCell<u32>)>,
+        sink_and_nodes: Vec<(usize, Node, Box<dyn Sink>, Rc<RefCell<u32>>)>,
         operator_offset: usize,
         verbose: bool,
     ) -> PipeLine {
@@ -137,7 +139,7 @@ impl PipeLine {
             sources,
             operators,
             vec![],
-            vec![(operators_len, Node::default(), sink, RefCell::new(1))],
+            vec![(operators_len, Node::default(), sink, Rc::new(RefCell::new(1)))],
             0,
             verbose,
         )
@@ -269,11 +271,11 @@ impl PipeLine {
     /// thread and finalize in a sink.
     ///
     /// The sink can be finished, but can also become a new source and then rinse and repeat.
-    pub fn run_pipeline(&mut self, ec: &PExecutionContext) -> PolarsResult<FinalizedSink> {
+    pub fn run_pipeline(&mut self, ec: &PExecutionContext) -> PolarsResult<Option<FinalizedSink>> {
         let mut out = None;
         let mut operator_start = 0;
         let last_i = self.sinks.len() - 1;
-        for (i, (operator_end, shared_count, mut sink)) in
+        for (i, (operator_end, mut shared_count, mut sink)) in
             std::mem::take(&mut self.sinks).into_iter().enumerate()
         {
             for src in &mut std::mem::take(&mut self.sources) {
@@ -308,21 +310,27 @@ impl PipeLine {
             let sink_result = reduced_sink.finalize(ec)?;
             operator_start = operator_end;
 
-            if i != last_i {
-                match sink_result {
-                    // turn this sink an a new source
-                    FinalizedSink::Finished(df) => self.set_df_as_sources(df),
-                    FinalizedSink::Source(src) => self.set_sources(src),
-                    // should not happen
-                    FinalizedSink::Operator(_) => {
-                        unreachable!()
+            let mut sink_decr = shared_count.borrow_mut();
+            *sink_decr -= 1;
+            if *sink_decr == 0 {
+
+                if i != last_i {
+                    match sink_result {
+                        // turn this sink an a new source
+                        FinalizedSink::Finished(df) => self.set_df_as_sources(df),
+                        FinalizedSink::Source(src) => self.set_sources(src),
+                        // should not happen
+                        FinalizedSink::Operator(_) => {
+                            unreachable!()
+                        }
                     }
+                } else {
+                    out = Some(sink_result)
                 }
-            } else {
-                out = Some(sink_result)
+
             }
         }
-        Ok(out.unwrap())
+        Ok(out)
     }
 
     /// print the branches of the pipeline
@@ -358,6 +366,7 @@ impl PipeLine {
         if self.verbose {
             self.show();
         }
+        dbg!(self.other_branches.len());
         let mut sink_out = self.run_pipeline(&ec)?;
         let mut pipelines = self.other_branches.iter_mut();
         let mut sink_nodes = std::mem::take(&mut self.sink_nodes);
@@ -372,8 +381,14 @@ impl PipeLine {
 
         loop {
             match &mut sink_out {
-                FinalizedSink::Finished(df) => return Ok(std::mem::take(df)),
-                FinalizedSink::Source(src) => return consume_source(&mut **src, &ec),
+                None => {
+                    dbg!("next");
+                    let pipeline = pipelines.next().unwrap();
+                    sink_out = pipeline.run_pipeline(&ec)?;
+                    sink_nodes = std::mem::take(&mut pipeline.sink_nodes);
+                }
+                Some(FinalizedSink::Finished(df)) => return Ok(std::mem::take(df)),
+                Some(FinalizedSink::Source(src)) => return consume_source(&mut **src, &ec),
 
                 //
                 //  1/\
@@ -383,7 +398,7 @@ impl PipeLine {
                 // we replace the dummy node in the right hand side pipeline with this
                 // operator and then we run the pipeline rinse and repeat
                 // until the final right hand side pipeline ran
-                FinalizedSink::Operator(op) => {
+                Some(FinalizedSink::Operator(op)) => {
                     // we unwrap, because the latest pipeline should not return an Operator
                     let pipeline = pipelines.next().unwrap();
 

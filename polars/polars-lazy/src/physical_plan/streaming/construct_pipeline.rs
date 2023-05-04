@@ -1,5 +1,6 @@
 use std::any::Any;
 use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use polars_core::config::verbose;
@@ -78,8 +79,8 @@ pub(super) fn construct(
     if n_branches > 1 {
         for branch in &tree {
             for sink in branch.iter_sinks() {
-                let count = sink_share_count.entry(sink.0).or_insert(RefCell::new(0u32));
-                *count.get_mut() += 1;
+                let count = sink_share_count.entry(sink.0).or_insert(Rc::new(RefCell::new(0u32)));
+                *count.borrow_mut() += 1;
             }
         }
     }
@@ -111,7 +112,7 @@ pub(super) fn construct(
                         // should be here
                         sink_share_count.get(&node.0).unwrap().clone()
                     } else {
-                        RefCell::new(1)
+                        Rc::new(RefCell::new(1))
                     };
                     sink_nodes.push((operator_offset, node, shared_count))
                 }
@@ -140,7 +141,7 @@ pub(super) fn construct(
                             offset: *offset,
                             len: *len as IdxSize,
                         });
-                        sink_nodes.push((operator_offset + 1, slice_node, RefCell::new(1)));
+                        sink_nodes.push((operator_offset + 1, slice_node, Rc::new(RefCell::new(1))));
                     }
                     let op = get_dummy_operator();
                     operators.push(op)
@@ -164,11 +165,11 @@ pub(super) fn construct(
     }
 
     pipelines.sort_by(|a, b| a.0.cmp(&b.0).reverse());
-    dbg!(&pipelines.iter().map(|k| k.0).collect::<Vec<_>>());
-    dbg!(&sink_share_count);
-    for (k, v) in sink_share_count.iter() {
-        dbg!(lp_arena.get(Node(*k)));
-    }
+    // dbg!(&pipelines.iter().map(|k| k.0).collect::<Vec<_>>());
+    // dbg!(&sink_share_count);
+    // for (k, v) in sink_share_count.iter() {
+    //     dbg!(lp_arena.get(Node(*k)));
+    // }
 
     // some queries only have source/sources and don't have any
     // operators/sink so no latest
