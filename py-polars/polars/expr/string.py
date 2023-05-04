@@ -1058,7 +1058,7 @@ class ExprStringNameSpace:
         return wrap_expr(self._pyexpr.str_extract(pattern, group_index))
 
     def extract_all(self, pattern: str | Expr) -> Expr:
-        r"""
+        r'''
         Extracts all matches for the given regex pattern.
 
         Extracts each successive non-overlapping regex match in an individual string as
@@ -1067,19 +1067,65 @@ class ExprStringNameSpace:
         Parameters
         ----------
         pattern
-            A regex pattern compatible with the `regex crate
+            A valid regular expression pattern, compatible with the `regex crate
             <https://docs.rs/regex/latest/regex/>`_.
+
+        Notes
+        -----
+        To modify regular expression behaviour (such as "verbose" mode and/or
+        case-sensitive matching) with flags, use the inline ``(?iLmsuxU)`` syntax.
+        For example:
+
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "email": [
+        ...             "real.email@spam.com",
+        ...             "some_account@somewhere.net",
+        ...             "abc.def.ghi.jkl@uvw.xyz.co.uk",
+        ...         ]
+        ...     }
+        ... )
+        >>> # extract name/domain parts from the addresses, using verbose regex
+        >>> df.with_columns(
+        ...     pl.col("email")
+        ...     .str.extract_all(
+        ...         r"""(?xi)   # activate 'verbose' and 'case-insensitive' flags
+        ...         [           # (start character group)
+        ...           A-Z       # letters
+        ...           0-9       # digits
+        ...           ._%+\-    # special chars
+        ...         ]           # (end character group)
+        ...         +           # 'one or more' quantifier
+        ...         """
+        ...     )
+        ...     .arr.to_struct(fields=["name", "domain"])
+        ...     .alias("email_parts")
+        ... ).unnest("email_parts")
+        shape: (3, 3)
+        ┌───────────────────────────────┬─────────────────┬───────────────┐
+        │ email                         ┆ name            ┆ domain        │
+        │ ---                           ┆ ---             ┆ ---           │
+        │ str                           ┆ str             ┆ str           │
+        ╞═══════════════════════════════╪═════════════════╪═══════════════╡
+        │ real.email@spam.com           ┆ real.email      ┆ spam.com      │
+        │ some_account@somewhere.net    ┆ some_account    ┆ somewhere.net │
+        │ abc.def.ghi.jkl@uvw.xyz.co.uk ┆ abc.def.ghi.jkl ┆ uvw.xyz.co.uk │
+        └───────────────────────────────┴─────────────────┴───────────────┘
+
+        See the regex crate's section on `grouping and flags
+        <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
+        additional information about the use of inline expression modifiers.
 
         Returns
         -------
-        List[Utf8] array. Contain null if original value is null or regex capture
-        nothing.
+        List[Utf8] array. Contains ``null`` if the original value is null or
+        the regex did not capture anything.
 
         Examples
         --------
         >>> df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"]})
         >>> df.select(
-        ...     pl.col("foo").str.extract_all(r"(\d+)").alias("extracted_nrs"),
+        ...     pl.col("foo").str.extract_all(r"\d+").alias("extracted_nrs"),
         ... )
         shape: (2, 1)
         ┌────────────────┐
@@ -1091,7 +1137,7 @@ class ExprStringNameSpace:
         │ ["678", "910"] │
         └────────────────┘
 
-        """
+        '''
         pattern = expr_to_lit_or_expr(pattern, str_to_lit=True)
         return wrap_expr(self._pyexpr.str_extract_all(pattern._pyexpr))
 
