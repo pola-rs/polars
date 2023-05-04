@@ -156,6 +156,7 @@ pub(crate) fn evaluate_physical_expressions(
     state: &mut ExecutionState,
     has_windows: bool,
 ) -> PolarsResult<DataFrame> {
+    state.expr_cache = Some(Default::default());
     let zero_length = df.height() == 0;
     let selected_columns = if has_windows {
         execute_projection_cached_window_fns(df, exprs, state)?
@@ -167,6 +168,8 @@ pub(crate) fn evaluate_physical_expressions(
                 .collect::<PolarsResult<_>>()
         })?
     };
+    state.clear_window_expr_cache();
+    state.expr_cache = None;
 
     check_expand_literals(selected_columns, zero_length)
 }

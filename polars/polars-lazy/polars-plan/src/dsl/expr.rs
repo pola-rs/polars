@@ -395,6 +395,10 @@ pub enum Expr {
         output_type: GetOutput,
         options: FunctionOptions,
     },
+    Cache {
+        input: Box<Expr>,
+        id: usize,
+    },
 }
 
 // TODO! derive. This is only a temporary fix

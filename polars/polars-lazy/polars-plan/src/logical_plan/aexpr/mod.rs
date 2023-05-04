@@ -109,6 +109,10 @@ pub enum AExpr {
     },
     Count,
     Nth(i64),
+    Cache {
+        input: Node,
+        id: usize,
+    },
 }
 
 impl AExpr {
@@ -142,6 +146,7 @@ impl AExpr {
             | Ternary { .. }
             | Wildcard
             | Cast { .. }
+            | Cache{..}
             | Filter { .. } => false,
         }
     }
@@ -218,6 +223,7 @@ impl AExpr {
             }
             Wildcard => panic!("no wildcard expected"),
             Slice { input, .. } => Single(*input),
+            Cache { input, .. } => Single(*input),
             Count => Leaf,
             Nth(_) => Leaf,
         }

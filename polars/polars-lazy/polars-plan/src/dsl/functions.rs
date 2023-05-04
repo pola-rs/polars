@@ -1342,6 +1342,8 @@ pub fn date_range(
 
 #[cfg(feature = "rolling_window")]
 pub fn rolling_corr(x: Expr, y: Expr, options: RollingCovOptions) -> Expr {
+    let x = x.cache();
+    let y = y.cache();
     // see: https://github.com/pandas-dev/pandas/blob/v1.5.1/pandas/core/window/rolling.py#L1780-L1804
     let rolling_options = RollingOptions {
         window_size: Duration::new(options.window_size as i64),
@@ -1364,7 +1366,8 @@ pub fn rolling_corr(x: Expr, y: Expr, options: RollingCovOptions) -> Expr {
     let count_x_y = (x + y)
         .is_not_null()
         .cast(DataType::Float64)
-        .rolling_sum(rolling_options_count);
+        .rolling_sum(rolling_options_count)
+        .cache();
     let numerator = (mean_x_y - mean_x * mean_y) * (count_x_y.clone() / (count_x_y - lit(ddof)));
     let denominator = (var_x * var_y).pow(lit(0.5));
 
@@ -1373,6 +1376,8 @@ pub fn rolling_corr(x: Expr, y: Expr, options: RollingCovOptions) -> Expr {
 
 #[cfg(feature = "rolling_window")]
 pub fn rolling_cov(x: Expr, y: Expr, options: RollingCovOptions) -> Expr {
+    let x = x.cache();
+    let y = y.cache();
     // see: https://github.com/pandas-dev/pandas/blob/91111fd99898d9dcaa6bf6bedb662db4108da6e6/pandas/core/window/rolling.py#L1700
     let rolling_options = RollingOptions {
         window_size: Duration::new(options.window_size as i64),
@@ -1391,7 +1396,8 @@ pub fn rolling_cov(x: Expr, y: Expr, options: RollingCovOptions) -> Expr {
     let count_x_y = (x + y)
         .is_not_null()
         .cast(DataType::Float64)
-        .rolling_sum(rolling_options_count);
+        .rolling_sum(rolling_options_count)
+        .cache();
 
     let ddof = options.ddof as f64;
 

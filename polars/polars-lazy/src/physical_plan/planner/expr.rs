@@ -609,6 +609,14 @@ pub(crate) fn create_physical_expr(
                 ApplyOptions::ApplyGroups,
             )))
         }
+        Cache { input, id } => {
+            let input = create_physical_expr(input, ctxt, expr_arena, schema)?;
+            Ok(Arc::new(CacheExpr::new(
+                input,
+                node_to_expr(expression, expr_arena),
+                id,
+            )))
+        }
         Wildcard => panic!("should be no wildcard at this point"),
         Nth(_) => panic!("should be no nth at this point"),
     }
