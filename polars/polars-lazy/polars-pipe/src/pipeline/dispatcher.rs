@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{RefCell, UnsafeCell};
 use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
 use std::ops::SubAssign;
@@ -75,7 +75,7 @@ pub struct PipeLine {
     /// Other branch of the pipeline/tree that must be executed
     /// after this one has executed.
     /// the dispatcher takes care of this.
-    other_branches: Vec<PipeLine>,
+    other_branches: RefCell<VecDeque<PipeLine>>,
     /// this is a correction as there may be more `operators` than nodes
     /// as during construction, source may have inserted operators
     operator_offset: usize,
@@ -122,7 +122,7 @@ impl PipeLine {
             operator_nodes,
             sinks,
             sink_nodes,
-            other_branches: vec![],
+            other_branches: RefCell::new(VecDeque::new()),
             operator_offset,
             verbose,
         }
@@ -149,7 +149,7 @@ impl PipeLine {
     /// Add a parent
     /// This should be in the right order
     pub fn with_other_branch(mut self, rhs: PipeLine) -> Self {
-        self.other_branches.push(rhs);
+        self.other_branches.borrow_mut().push_back(rhs);
         self
     }
 
@@ -267,17 +267,12 @@ impl PipeLine {
         self.sources.push(src);
     }
 
-    /// Run a single pipeline branch.
-    /// This pulls data from the sources and pushes it into the operators which run on a different
-    /// thread and finalize in a sink.
-    ///
-    /// The sink can be finished, but can also become a new source and then rinse and repeat.
-    pub fn run_pipeline(&mut self, ec: &PExecutionContext) -> PolarsResult<Option<FinalizedSink>> {
+    fn run_pipeline_no_finalize(&mut self, ec: &PExecutionContext) -> PolarsResult<Box<dyn Sink>> {
         let mut out = None;
         let mut operator_start = 0;
         let last_i = self.sinks.len() - 1;
         for (i, (operator_end, mut shared_count, mut sink)) in
-            std::mem::take(&mut self.sinks).into_iter().enumerate()
+        std::mem::take(&mut self.sinks).into_iter().enumerate()
         {
             for src in &mut std::mem::take(&mut self.sources) {
                 while let SourceResult::GotMoreData(chunks) = src.get_batches(ec)? {
@@ -308,30 +303,39 @@ impl PipeLine {
                     })
                 })
                 .unwrap();
-            let sink_result = reduced_sink.finalize(ec)?;
             operator_start = operator_end;
 
+
             let mut sink_decr = shared_count.borrow_mut();
+            dbg!(*sink_decr);
             *sink_decr -= 1;
-            if *sink_decr == 0 {
 
-                if i != last_i {
-                    match sink_result {
-                        // turn this sink an a new source
-                        FinalizedSink::Finished(df) => self.set_df_as_sources(df),
-                        FinalizedSink::Source(src) => self.set_sources(src),
-                        // should not happen
-                        FinalizedSink::Operator(_) => {
-                            unreachable!()
-                        }
+            if i != last_i {
+                let sink_result = reduced_sink.finalize(ec)?;
+                match sink_result {
+                    // turn this sink an a new source
+                    FinalizedSink::Finished(df) => self.set_df_as_sources(df),
+                    FinalizedSink::Source(src) => self.set_sources(src),
+                    // should not happen
+                    FinalizedSink::Operator(_) => {
+                        unreachable!()
                     }
-                } else {
-                    out = Some(sink_result)
                 }
-
+            } else {
+                out = Some(reduced_sink)
             }
+
         }
-        Ok(out)
+        Ok(out.unwrap())
+    }
+
+    /// Run a single pipeline branch.
+    /// This pulls data from the sources and pushes it into the operators which run on a different
+    /// thread and finalize in a sink.
+    ///
+    /// The sink can be finished, but can also become a new source and then rinse and repeat.
+    pub fn run_pipeline(&mut self, ec: &PExecutionContext) -> PolarsResult<Option<FinalizedSink>> {
+        self.run_pipeline_no_finalize(ec).map(|mut sink| sink.finalize(ec).ok())
     }
 
     /// Executes all branches and replaces operators and sinks during execution to ensure
@@ -343,9 +347,7 @@ impl PipeLine {
             eprintln!("{self:?}");
             eprintln!("{:?}", &self.other_branches);
         }
-        dbg!(&self.other_branches);
         let mut sink_out = self.run_pipeline(&ec)?;
-        let mut pipelines = self.other_branches.iter_mut();
         let mut sink_nodes = std::mem::take(&mut self.sink_nodes);
 
         // This is a stack of operators that should replace the sinks of join nodes
@@ -359,8 +361,9 @@ impl PipeLine {
         loop {
             match &mut sink_out {
                 None => {
+                    let mut pipeline = self.other_branches.borrow_mut().pop_front().unwrap();
                     dbg!("next");
-                    let pipeline = pipelines.next().unwrap();
+                    // let pipeline = pipelines.next().unwrap();
                     sink_out = pipeline.run_pipeline(&ec)?;
                     sink_nodes = std::mem::take(&mut pipeline.sink_nodes);
                 }
@@ -377,7 +380,7 @@ impl PipeLine {
                 // until the final right hand side pipeline ran
                 Some(FinalizedSink::Operator(op)) => {
                     // we unwrap, because the latest pipeline should not return an Operator
-                    let pipeline = pipelines.next().unwrap();
+                    let mut pipeline = self.other_branches.borrow_mut().pop_front().unwrap();
 
                     // First check the operators
                     // keep a counter as we also push to the front of deque
