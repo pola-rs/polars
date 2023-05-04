@@ -79,7 +79,9 @@ pub(super) fn construct(
     if n_branches > 1 {
         for branch in &tree {
             for sink in branch.iter_sinks() {
-                let count = sink_share_count.entry(sink.0).or_insert(Rc::new(RefCell::new(0u32)));
+                let count = sink_share_count
+                    .entry(sink.0)
+                    .or_insert(Rc::new(RefCell::new(0u32)));
                 *count.borrow_mut() += 1;
             }
         }
@@ -141,7 +143,11 @@ pub(super) fn construct(
                             offset: *offset,
                             len: *len as IdxSize,
                         });
-                        sink_nodes.push((operator_offset + 1, slice_node, Rc::new(RefCell::new(1))));
+                        sink_nodes.push((
+                            operator_offset + 1,
+                            slice_node,
+                            Rc::new(RefCell::new(1)),
+                        ));
                     }
                     let op = get_dummy_operator();
                     operators.push(op)

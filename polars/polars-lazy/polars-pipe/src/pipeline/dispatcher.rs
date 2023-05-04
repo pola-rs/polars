@@ -75,7 +75,7 @@ pub struct PipeLine {
     /// Other branch of the pipeline/tree that must be executed
     /// after this one has executed.
     /// the dispatcher takes care of this.
-    other_branches: RefCell<VecDeque<PipeLine>>,
+    other_branches: Rc<RefCell<VecDeque<PipeLine>>>,
     /// this is a correction as there may be more `operators` than nodes
     /// as during construction, source may have inserted operators
     operator_offset: usize,
@@ -122,7 +122,7 @@ impl PipeLine {
             operator_nodes,
             sinks,
             sink_nodes,
-            other_branches: RefCell::new(VecDeque::new()),
+            other_branches: Default::default(),
             operator_offset,
             verbose,
         }
@@ -140,7 +140,12 @@ impl PipeLine {
             sources,
             operators,
             vec![],
-            vec![(operators_len, Node::default(), sink, Rc::new(RefCell::new(1)))],
+            vec![(
+                operators_len,
+                Node::default(),
+                sink,
+                Rc::new(RefCell::new(1)),
+            )],
             0,
             verbose,
         )
@@ -267,12 +272,16 @@ impl PipeLine {
         self.sources.push(src);
     }
 
-    fn run_pipeline_no_finalize(&mut self, ec: &PExecutionContext) -> PolarsResult<(u32, Box<dyn Sink>)> {
+    fn run_pipeline_no_finalize(
+        &mut self,
+        ec: &PExecutionContext,
+        pipeline_q: Rc<RefCell<VecDeque<PipeLine>>>,
+    ) -> PolarsResult<(u32, Box<dyn Sink>)> {
         let mut out = None;
         let mut operator_start = 0;
         let last_i = self.sinks.len() - 1;
         for (i, (operator_end, mut shared_count, mut sink)) in
-        std::mem::take(&mut self.sinks).into_iter().enumerate()
+            std::mem::take(&mut self.sinks).into_iter().enumerate()
         {
             for src in &mut std::mem::take(&mut self.sources) {
                 while let SourceResult::GotMoreData(chunks) = src.get_batches(ec)? {
@@ -305,9 +314,19 @@ impl PipeLine {
                 .unwrap();
             operator_start = operator_end;
 
+            let mut shared_sink_count = {
+                let mut shared_sink_count = shared_count.borrow_mut();
+                *shared_sink_count -= 1;
+                *shared_sink_count
+            };
 
-            let mut sink_decr = shared_count.borrow_mut();
-            *sink_decr -= 1;
+            while shared_sink_count > 0 {
+                let mut pipeline = pipeline_q.borrow_mut().pop_front().unwrap();
+                let (count, mut sink) =
+                    pipeline.run_pipeline_no_finalize(ec, pipeline_q.clone())?;
+                reduced_sink.combine(sink.as_mut());
+                shared_sink_count = count;
+            }
 
             if i != last_i {
                 let sink_result = reduced_sink.finalize(ec)?;
@@ -321,9 +340,8 @@ impl PipeLine {
                     }
                 }
             } else {
-                out = Some((*sink_decr, reduced_sink))
+                out = Some((shared_sink_count, reduced_sink))
             }
-
         }
         Ok(out.unwrap())
     }
@@ -333,16 +351,14 @@ impl PipeLine {
     /// thread and finalize in a sink.
     ///
     /// The sink can be finished, but can also become a new source and then rinse and repeat.
-    pub fn run_pipeline(&mut self, ec: &PExecutionContext) -> PolarsResult<Option<FinalizedSink>> {
-        let (mut sink_shared_count, mut reduced_sink) = self.run_pipeline_no_finalize(ec)?;
-
-        while sink_shared_count > 0 {
-            let mut pipeline = self.other_branches.borrow_mut().pop_front().unwrap();
-            let (count, mut sink) = pipeline.run_pipeline_no_finalize(ec)?;
-            reduced_sink.combine(sink.as_mut());
-            sink_shared_count = count;
-
-        }
+    pub fn run_pipeline(
+        &mut self,
+        ec: &PExecutionContext,
+        pipeline_q: Rc<RefCell<VecDeque<PipeLine>>>,
+    ) -> PolarsResult<Option<FinalizedSink>> {
+        let (sink_shared_count, mut reduced_sink) =
+            self.run_pipeline_no_finalize(ec, pipeline_q.clone())?;
+        assert_eq!(sink_shared_count, 0);
         Ok(reduced_sink.finalize(ec).ok())
     }
 
@@ -355,7 +371,7 @@ impl PipeLine {
             eprintln!("{self:?}");
             eprintln!("{:?}", &self.other_branches);
         }
-        let mut sink_out = self.run_pipeline(&ec)?;
+        let mut sink_out = self.run_pipeline(&ec, self.other_branches.clone())?;
         let mut sink_nodes = std::mem::take(&mut self.sink_nodes);
 
         // This is a stack of operators that should replace the sinks of join nodes
@@ -370,7 +386,7 @@ impl PipeLine {
             match &mut sink_out {
                 None => {
                     let mut pipeline = self.other_branches.borrow_mut().pop_front().unwrap();
-                    sink_out = pipeline.run_pipeline(&ec)?;
+                    sink_out = pipeline.run_pipeline(&ec, self.other_branches.clone())?;
                     sink_nodes = std::mem::take(&mut pipeline.sink_nodes);
                 }
                 Some(FinalizedSink::Finished(df)) => return Ok(std::mem::take(df)),
@@ -416,7 +432,7 @@ impl PipeLine {
                             operators_to_replace.push_back((swap, sink_node));
                         }
                     }
-                    sink_out = pipeline.run_pipeline(&ec)?;
+                    sink_out = pipeline.run_pipeline(&ec, self.other_branches.clone())?;
                     sink_nodes = std::mem::take(&mut pipeline.sink_nodes);
                 }
             }

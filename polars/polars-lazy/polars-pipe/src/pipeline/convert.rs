@@ -544,9 +544,7 @@ where
                         entry.insert(sink.split(0));
                         sink
                     }
-                    Entry::Occupied(entry) => {
-                        entry.get().split(0)
-                    }
+                    Entry::Occupied(entry) => entry.get().split(0),
                 }
             };
 

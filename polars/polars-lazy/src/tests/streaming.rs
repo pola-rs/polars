@@ -69,23 +69,10 @@ fn test_streaming_glob() -> PolarsResult<()> {
 #[test]
 fn test_streaming_union() -> PolarsResult<()> {
     let q = get_csv_glob();
-    let q = q
-        .select([col("sugars_g"), col("calories")]);
+    let q = q.select([col("sugars_g"), col("calories")]);
     let q = q.sort("sugars_g", Default::default());
 
     assert_streaming_with_default(q, true);
-    Ok(())
-}
-
-#[test]
-fn test_streaming_union2() -> PolarsResult<()> {
-    let q = get_csv_glob();
-    let q = q
-        .select([col("sugars_g"), col("calories")]);
-    // let q = q.sort("sugars_g", Default::default());
-
-    dbg!(q.with_streaming(true).collect());
-    // assert_streaming_with_default(q, true);
     Ok(())
 }
 
@@ -102,7 +89,7 @@ fn test_streaming_multiple_keys_aggregate() -> PolarsResult<()> {
         ])
         .sort_by_exprs([col("sugars_g"), col("calories")], [false, false], false);
 
-    assert_streaming_with_default(q, false);
+    assert_streaming_with_default(q, true);
     Ok(())
 }
 
