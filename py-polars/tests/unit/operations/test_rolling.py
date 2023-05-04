@@ -606,3 +606,19 @@ def test_rolling_kernels_groupby_dynamic_7548() -> None:
         "max_value": [2, 3, 3, 3],
         "sum_value": [3, 6, 5, 3],
     }
+
+
+def test_rolling_cov_corr() -> None:
+    df = pl.DataFrame({"x": [3, 3, 3, 5, 8], "y": [3, 4, 4, 4, 8]})
+
+    assert (
+        str(
+            df.select(
+                [
+                    pl.rolling_cov("x", "y", window_size=3).alias("cov"),
+                    pl.rolling_corr("x", "y", window_size=3).alias("corr"),
+                ]
+            ).to_dict(False)
+        )
+        == "{'cov': [None, None, 0.0, 0.0, 5.333333333333336], 'corr': [None, None, nan, nan, 0.9176629354822473]}"
+    )

@@ -1,8 +1,17 @@
 use std::borrow::Cow;
 
 use polars_core::prelude::JoinType;
+use polars_utils::IdxSize;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+#[derive(Copy, Clone, PartialEq, Debug, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct RollingCovOptions {
+    pub window_size: IdxSize,
+    pub min_periods: IdxSize,
+    pub ddof: u8,
+}
 
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
