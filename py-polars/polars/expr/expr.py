@@ -440,6 +440,12 @@ class Expr:
         name
             New name.
 
+        See Also
+        --------
+        map_alias
+        prefix
+        suffix
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -697,6 +703,17 @@ class Expr:
         """
         Add a prefix to the root column name of the expression.
 
+        Parameters
+        ----------
+        prefix
+            Prefix to add to root column name.
+
+        See Also
+        --------
+        alias
+        map_alias
+        suffix
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -743,6 +760,17 @@ class Expr:
     def suffix(self, suffix: str) -> Self:
         """
         Add a suffix to the root column name of the expression.
+
+        Parameters
+        ----------
+        suffix
+            Suffix to add to root column name.
+
+        See Also
+        --------
+        alias
+        map_alias
+        prefix
 
         Examples
         --------
@@ -796,6 +824,12 @@ class Expr:
         function
             Function that maps root name to new name.
 
+        See Also
+        --------
+        alias
+        prefix
+        suffix
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -804,18 +838,23 @@ class Expr:
         ...         "B": [3, 4],
         ...     }
         ... )
-        >>> df.select(
-        ...     pl.all().reverse().map_alias(lambda colName: colName + "_reverse")
+
+        >>> df.select(pl.all().reverse().suffix("_reverse")).with_columns(
+        ...     pl.all().map_alias(
+        ...         # Remove "_reverse" suffix and convert to lower case.
+        ...         lambda col_name: col_name.rsplit("_reverse", 1)[0].lower()
+        ...     )
         ... )
-        shape: (2, 2)
-        ┌───────────┬───────────┐
-        │ A_reverse ┆ B_reverse │
-        │ ---       ┆ ---       │
-        │ i64       ┆ i64       │
-        ╞═══════════╪═══════════╡
-        │ 2         ┆ 4         │
-        │ 1         ┆ 3         │
-        └───────────┴───────────┘
+        shape: (2, 4)
+        ┌───────────┬───────────┬─────┬─────┐
+        │ A_reverse ┆ B_reverse ┆ a   ┆ b   │
+        │ ---       ┆ ---       ┆ --- ┆ --- │
+        │ i64       ┆ i64       ┆ i64 ┆ i64 │
+        ╞═══════════╪═══════════╪═════╪═════╡
+        │ 2         ┆ 4         ┆ 2   ┆ 4   │
+        │ 1         ┆ 3         ┆ 1   ┆ 3   │
+        └───────────┴───────────┴─────┴─────┘
+
 
         """
         return self._from_pyexpr(self._pyexpr.map_alias(function))
@@ -3221,6 +3260,10 @@ class Expr:
             Dtype of the output Series.
         agg_list
             Aggregate list
+
+        See Also
+        --------
+        map_dict
 
         Examples
         --------
@@ -6938,6 +6981,10 @@ class Expr:
             Use ``pl.first()``, to keep the original value.
         return_dtype
             Set return dtype to override automatic return dtype determination.
+
+        See Also
+        --------
+        map
 
         Examples
         --------
