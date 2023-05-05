@@ -21,7 +21,6 @@ impl Display for FusedOperator {
 }
 
 pub(super) fn fused(input: &[Series], op: FusedOperator) -> PolarsResult<Series> {
-    dbg!("fused_multiply add");
     match op {
         FusedOperator::MultiplyAdd => Ok(fma_series(&input[0], &input[1], &input[2])),
     }
