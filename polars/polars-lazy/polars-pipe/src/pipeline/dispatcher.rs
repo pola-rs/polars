@@ -162,12 +162,14 @@ impl PipeLine {
     // returns if operator was successfully replaced
     fn replace_operator(&mut self, op: &dyn Operator, node: Node) -> bool {
         if let Some(pos) = self.operator_nodes.iter().position(|n| *n == node) {
+            dbg!("REPLACED");
             let pos = pos + self.operator_offset;
             for (i, operator_pipe) in &mut self.operators.iter_mut().enumerate() {
                 operator_pipe[pos] = op.split(i)
             }
             true
         } else {
+            dbg!("NOT REPLACED");
             false
         }
     }
@@ -320,6 +322,7 @@ impl PipeLine {
                 *shared_sink_count -= 1;
                 *shared_sink_count
             };
+            dbg!(shared_sink_count, reduced_sink.fmt());
 
             while shared_sink_count > 0 {
                 let mut pipeline = pipeline_q.borrow_mut().pop_front().unwrap();
@@ -374,15 +377,6 @@ impl PipeLine {
         }
         let mut sink_out = self.run_pipeline(&ec, self.other_branches.clone())?;
         let mut sink_nodes = std::mem::take(&mut self.sink_nodes);
-
-        // This is a stack of operators that should replace the sinks of join nodes
-        // If we don't reorder joins, the order we run the pipelines coincide with the
-        // order the sinks need to be replaced, however this is not always the case
-        // if we reorder joins.
-        // This stack ensures we still replace the dummy operators even if they are all in
-        // the most right branch
-        let mut operators_to_replace: VecDeque<(Box<dyn Operator>, Node)> = VecDeque::new();
-
         loop {
             match &mut sink_out {
                 None => {
@@ -402,39 +396,27 @@ impl PipeLine {
                 // operator and then we run the pipeline rinse and repeat
                 // until the final right hand side pipeline ran
                 Some(FinalizedSink::Operator(op)) => {
+                    dbg!("replace");
                     // we unwrap, because the latest pipeline should not return an Operator
                     let mut pipeline = self.other_branches.borrow_mut().pop_front().unwrap();
+                    dbg!(&pipeline);
 
-                    // First check the operators
-                    // keep a counter as we also push to the front of deque
-                    // otherwise we keep iterating
-                    let mut remaining = operators_to_replace.len();
-                    while let Some((op, sink_node)) = operators_to_replace.pop_back() {
-                        if !pipeline.replace_operator(op.as_ref(), sink_node) {
-                            operators_to_replace.push_front((op, sink_node))
-                        } else {
-                        }
-                        if remaining == 0 {
-                            break;
-                        }
-                        remaining -= 1;
-                    }
+                    dbg!(&sink_nodes);
+                    dbg!(&pipeline.operator_nodes);
 
                     // latest sink_node will be the operator, as the left side of the join
                     // always finishes that branch.
                     if let Some(sink_node) = sink_nodes.pop() {
-                        // if placeholder that should be replaced is not found in this branch
-                        // we push it to the operators stack that should be replaced
-                        // on the next branch of the pipeline we first check this stack.
-                        // this only happens if we reorder joins
-                        if !pipeline.replace_operator(op.as_ref(), sink_node) {
-                            let mut swap = Box::<PlaceHolder>::default() as Box<dyn Operator>;
-                            std::mem::swap(op, &mut swap);
-                            operators_to_replace.push_back((swap, sink_node));
+                        // we traverse all pipeline
+                        pipeline.replace_operator(op.as_ref(), sink_node);
+                        // if there are unions, there can be more
+                        for pl in self.other_branches.borrow_mut().iter_mut() {
+                            pl.replace_operator(op.as_ref(), sink_node);
                         }
                     }
                     sink_out = pipeline.run_pipeline(&ec, self.other_branches.clone())?;
                     sink_nodes = std::mem::take(&mut pipeline.sink_nodes);
+                    dbg!("success");
                 }
             }
         }

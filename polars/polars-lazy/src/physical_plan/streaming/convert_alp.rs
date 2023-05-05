@@ -80,6 +80,8 @@ pub(crate) fn insert_streaming_nodes(
 
     use ALogicalPlan::*;
     while let Some((root, mut state, mut current_idx)) = stack.pop() {
+        state.execution_id = execution_id;
+        execution_id += 1;
         match lp_arena.get(root) {
             Selection { input, predicate }
                 if is_streamable(*predicate, expr_arena, Context::Default) =>
@@ -187,20 +189,18 @@ pub(crate) fn insert_streaming_nodes(
                 };
                 let mut state_left = state.split();
 
-                execution_id += 1;
                 // rhs is second, so that is first on the stack
                 let mut state_right = state;
                 state_right.join_count = 0;
-                state_right.execution_id = execution_id;
                 state_right
                     .operators_sinks
                     .push(PipelineNode::RhsJoin(root));
-                stack.push((input_right, state_right, current_idx));
 
-                // we want to traverse lhs first, so push it latest on the stack
+                // we want to traverse lhs last, so push it first on the stack
                 // rhs is a new pipeline
                 state_left.operators_sinks.push(PipelineNode::Sink(root));
                 stack.push((input_left, state_left, current_idx));
+                stack.push((input_right, state_right, current_idx));
             }
             // add globbing patterns
             #[cfg(any(feature = "csv", feature = "parquet"))]
@@ -232,9 +232,7 @@ pub(crate) fn insert_streaming_nodes(
                             state.join_count += inputs.len() as u32 - 1;
                             state
                         } else {
-                            execution_id += 1;
                             let mut state = state.split_from_sink();
-                            state.execution_id = execution_id;
                             state.join_count = 0;
                             state
                         };

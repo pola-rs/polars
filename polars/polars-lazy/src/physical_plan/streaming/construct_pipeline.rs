@@ -68,7 +68,7 @@ pub(super) fn construct(
     //
     // the most far right branch will be the latest that sets this
     // variable and thus will point to root
-    let mut final_sink = None;
+    let final_sink = tree[0].get_final_sink();
 
     let is_verbose = verbose();
 
@@ -90,11 +90,7 @@ pub(super) fn construct(
     let mut sink_cache = PlHashMap::new();
 
     for branch in tree {
-        if branch.execution_id == 0 {
-            final_sink = branch.get_final_sink();
-            assert!(final_sink.is_some(), "unexpected")
-        }
-
+        dbg!(branch.execution_id);
         // should be reset for every branch
         let mut sink_nodes = vec![];
 
@@ -114,6 +110,7 @@ pub(super) fn construct(
                     } else {
                         Rc::new(RefCell::new(1))
                     };
+                    // dbg!(lp_arena.get(node), &shared_count);
                     sink_nodes.push((operator_offset, node, shared_count))
                 }
                 PipelineNode::Operator(node) => {
@@ -168,7 +165,8 @@ pub(super) fn construct(
         pipelines.push((execution_id, pipeline));
     }
 
-    pipelines.sort_by(|a, b| a.0.cmp(&b.0).reverse());
+    pipelines.sort_by(|a, b| a.0.cmp(&b.0));
+    dbg!(&pipelines);
 
     // some queries only have source/sources and don't have any
     // operators/sink so no latest
@@ -177,6 +175,7 @@ pub(super) fn construct(
         let schema = lp_arena.get(latest_sink).schema(lp_arena).into_owned();
 
         let Some((_, mut most_left)) = pipelines.pop() else {unreachable!()};
+        dbg!(&most_left);
         while let Some((_, rhs)) = pipelines.pop() {
             most_left = most_left.with_other_branch(rhs)
         }
