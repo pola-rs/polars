@@ -4,6 +4,8 @@ mod approx_unique;
 mod arg_min_max;
 #[cfg(feature = "round_series")]
 mod floor_divide;
+#[cfg(feature = "fused")]
+mod fused;
 #[cfg(feature = "is_first")]
 mod is_first;
 #[cfg(feature = "is_unique")]
@@ -24,6 +26,8 @@ pub use approx_unique::*;
 pub use arg_min_max::ArgAgg;
 #[cfg(feature = "round_series")]
 pub use floor_divide::*;
+#[cfg(feature = "fused")]
+pub use fused::*;
 #[cfg(feature = "is_first")]
 pub use is_first::*;
 #[cfg(feature = "is_unique")]
