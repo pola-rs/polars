@@ -1245,12 +1245,10 @@ impl Expr {
         self.apply_private(BooleanFunction::IsFirst.into())
     }
 
-    #[cfg(feature = "dot_product")]
     fn dot_impl(self, other: Expr) -> Expr {
-        self.apply_many_private(FunctionExpr::Dot, &[other], true, true)
+        self.cache() * other.cache().sum()
     }
 
-    #[cfg(feature = "dot_product")]
     pub fn dot<E: Into<Expr>>(self, other: E) -> Expr {
         self.dot_impl(other.into())
     }

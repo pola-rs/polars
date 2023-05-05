@@ -142,8 +142,6 @@ pub enum FunctionExpr {
     Diff(i64, NullBehavior),
     #[cfg(feature = "interpolate")]
     Interpolate(InterpolationMethod),
-    #[cfg(feature = "dot_product")]
-    Dot,
     #[cfg(feature = "log")]
     Entropy {
         base: f64,
@@ -231,8 +229,6 @@ impl Display for FunctionExpr {
             Diff(_, _) => "diff",
             #[cfg(feature = "interpolate")]
             Interpolate(_) => "interpolate",
-            #[cfg(feature = "dot_product")]
-            Dot => "dot",
             #[cfg(feature = "log")]
             Entropy { .. } => "entropy",
             #[cfg(feature = "log")]
@@ -442,10 +438,6 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "interpolate")]
             Interpolate(method) => {
                 map!(dispatch::interpolate, method)
-            }
-            #[cfg(feature = "dot_product")]
-            Dot => {
-                map_as_slice!(dispatch::dot_impl)
             }
             #[cfg(feature = "log")]
             Entropy { base, normalize } => map!(log::entropy, base, normalize),
