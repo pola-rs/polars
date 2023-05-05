@@ -14,6 +14,8 @@ mod cum;
 mod datetime;
 mod dispatch;
 mod fill_null;
+#[cfg(feature = "fused")]
+mod fused;
 mod list;
 #[cfg(feature = "log")]
 mod log;
@@ -44,6 +46,8 @@ mod unique;
 
 use std::fmt::{Display, Formatter};
 
+#[cfg(feature = "fused")]
+pub(crate) use fused::FusedOperator;
 pub(super) use list::ListFunction;
 use polars_core::prelude::*;
 use schema::FieldsMapper;
@@ -166,6 +170,8 @@ pub enum FunctionExpr {
     Ceil,
     UpperBound,
     LowerBound,
+    #[cfg(feature = "fused")]
+    Fused(fused::FusedOperator),
 }
 
 impl Display for FunctionExpr {
@@ -252,6 +258,8 @@ impl Display for FunctionExpr {
             Ceil => "ceil",
             UpperBound => "upper_bound",
             LowerBound => "lower_bound",
+            #[cfg(feature = "fused")]
+            Fused(fused) => return Display::fmt(fused, f),
         };
         write!(f, "{s}")
     }
@@ -456,6 +464,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Ceil => map!(round::ceil),
             UpperBound => map!(bounds::upper_bound),
             LowerBound => map!(bounds::lower_bound),
+            #[cfg(feature = "fused")]
+            Fused(op) => map_as_slice!(fused::fused, op),
         }
     }
 }

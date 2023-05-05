@@ -193,6 +193,8 @@ impl FunctionExpr {
             #[cfg(feature = "round_series")]
             Round { .. } | Floor | Ceil => mapper.with_same_dtype(),
             UpperBound | LowerBound => mapper.with_same_dtype(),
+            #[cfg(feature = "fused")]
+            Fused(_) => mapper.map_to_supertype(),
         }
     }
 }

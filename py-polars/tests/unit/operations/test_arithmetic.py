@@ -138,3 +138,23 @@ def test_series_expr_arithm() -> None:
     assert (s // pl.col("a")).meta == pl.lit(s) // pl.col("a")
     assert (s * pl.col("a")).meta == pl.lit(s) * pl.col("a")
     assert (s % pl.col("a")).meta == pl.lit(s) % pl.col("a")
+
+
+def test_fma() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": [10, 20, 30],
+            "c": [5, 5, 5],
+        }
+    )
+
+    q = df.lazy().select(
+        pl.col("a") * pl.col("b") + pl.col("c"),
+        (pl.col("a") + pl.col("b") * pl.col("c")).alias("2"),
+    )
+    assert (
+        """col("c").fma([col("a"), col("b")]), col("a").fma([col("b"), col("c")]).alias("2")]"""
+        in q.explain()
+    )
+    assert q.collect().to_dict(False) == {"c": [15, 45, 95], "2": [51, 102, 153]}

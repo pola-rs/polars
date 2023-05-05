@@ -127,6 +127,7 @@ serde = [
   "polars-io/serde",
   "polars-ops/serde",
 ]
+fused = ["polars-plan/fused", "polars-ops/fused"]
 
 binary_encoding = ["polars-plan/binary_encoding"]
 
