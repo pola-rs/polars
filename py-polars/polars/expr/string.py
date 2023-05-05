@@ -1368,24 +1368,26 @@ class ExprStringNameSpace:
 
         >>> df = pl.DataFrame(
         ...     {
-        ...         "city": ["Tokyo", "Abu Dhabi", "Stockholm"],
-        ...         "weather": ["Rainy", "Sunny", "Foggy"],
+        ...         "city": "Philadelphia",
+        ...         "season": ["Spring", "Summer", "Autumn", "Winter"],
+        ...         "weather": ["Rainy", "Sunny", "Cloudy", "Snowy"],
         ...     }
         ... )
         >>> df.with_columns(
         ...     # apply case-insensitive string replacement
-        ...     pl.col("weather").str.replace(r"(?i)foggy|rainy", "Sunny")
+        ...     pl.col("weather").str.replace(r"(?i)foggy|rainy|cloudy|snowy", "Sunny")
         ... )
-        shape: (3, 2)
-        ┌───────────┬─────────┐
-        │ city      ┆ weather │
-        │ ---       ┆ ---     │
-        │ str       ┆ str     │
-        ╞═══════════╪═════════╡
-        │ Tokyo     ┆ Sunny   │
-        │ Abu Dhabi ┆ Sunny   │
-        │ Stockholm ┆ Sunny   │
-        └───────────┴─────────┘
+        shape: (4, 3)
+        ┌──────────────┬────────┬─────────┐
+        │ city         ┆ season ┆ weather │
+        │ ---          ┆ ---    ┆ ---     │
+        │ str          ┆ str    ┆ str     │
+        ╞══════════════╪════════╪═════════╡
+        │ Philadelphia ┆ Spring ┆ Sunny   │
+        │ Philadelphia ┆ Summer ┆ Sunny   │
+        │ Philadelphia ┆ Autumn ┆ Sunny   │
+        │ Philadelphia ┆ Winter ┆ Sunny   │
+        └──────────────┴────────┴─────────┘
 
         See the regex crate's section on `grouping and flags
         <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
