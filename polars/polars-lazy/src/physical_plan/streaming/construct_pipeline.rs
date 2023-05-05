@@ -204,18 +204,20 @@ pub(super) fn construct(
     let pipeline_node = get_pipeline_node(lp_arena, most_left, schema, original_lp);
 
     let insertion_location = match lp_arena.get(latest_sink) {
-        // this was inserted only during conversion and does not exist
-        // in the original tree, so we take the input, as that's where
-        // we connect into the original tree.
         FileSink {
             input,
-            payload:
-                FileSinkOptions {
-                    file_type: FileType::Memory,
-                    ..
-                },
-        } => *input,
-        // default case if the tree ended with a sink
+            payload: FileSinkOptions { file_type, .. },
+        } => {
+            // this was inserted only during conversion and does not exist
+            // in the original tree, so we take the input, as that's where
+            // we connect into the original tree.
+            if matches!(file_type, FileType::Memory) {
+                *input
+            } else {
+                // default case if the tree ended with a file_sink
+                latest_sink
+            }
+        }
         _ => unreachable!(),
     };
     lp_arena.replace(insertion_location, pipeline_node);
