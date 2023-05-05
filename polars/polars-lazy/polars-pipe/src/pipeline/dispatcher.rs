@@ -10,7 +10,6 @@ use polars_core::POOL;
 use polars_utils::arena::Node;
 use rayon::prelude::*;
 
-use crate::executors::operators::PlaceHolder;
 use crate::executors::sources::DataFrameSource;
 use crate::operators::{
     DataChunk, FinalizedSink, Operator, OperatorResult, PExecutionContext, SExecutionContext, Sink,
@@ -162,14 +161,12 @@ impl PipeLine {
     // returns if operator was successfully replaced
     fn replace_operator(&mut self, op: &dyn Operator, node: Node) -> bool {
         if let Some(pos) = self.operator_nodes.iter().position(|n| *n == node) {
-            dbg!("REPLACED");
             let pos = pos + self.operator_offset;
             for (i, operator_pipe) in &mut self.operators.iter_mut().enumerate() {
                 operator_pipe[pos] = op.split(i)
             }
             true
         } else {
-            dbg!("NOT REPLACED");
             false
         }
     }
@@ -322,7 +319,6 @@ impl PipeLine {
                 *shared_sink_count -= 1;
                 *shared_sink_count
             };
-            dbg!(shared_sink_count, reduced_sink.fmt());
 
             while shared_sink_count > 0 {
                 let mut pipeline = pipeline_q.borrow_mut().pop_front().unwrap();
@@ -396,13 +392,8 @@ impl PipeLine {
                 // operator and then we run the pipeline rinse and repeat
                 // until the final right hand side pipeline ran
                 Some(FinalizedSink::Operator(op)) => {
-                    dbg!("replace");
                     // we unwrap, because the latest pipeline should not return an Operator
                     let mut pipeline = self.other_branches.borrow_mut().pop_front().unwrap();
-                    dbg!(&pipeline);
-
-                    dbg!(&sink_nodes);
-                    dbg!(&pipeline.operator_nodes);
 
                     // latest sink_node will be the operator, as the left side of the join
                     // always finishes that branch.
@@ -416,7 +407,6 @@ impl PipeLine {
                     }
                     sink_out = pipeline.run_pipeline(&ec, self.other_branches.clone())?;
                     sink_nodes = std::mem::take(&mut pipeline.sink_nodes);
-                    dbg!("success");
                 }
             }
         }

@@ -88,9 +88,11 @@ pub(super) fn construct(
 
     for branch in tree {
         // the file sink is always to the top of the tree
-        let node = branch.get_final_sink();
-        if matches!(lp_arena.get(node), ALogicalPlan::FileSink {..}) {
-            final_sink = Some(node)
+        // not every branch has a final sink. For instance rhs join branches
+        if let Some(node) = branch.get_final_sink() {
+            if matches!(lp_arena.get(node), ALogicalPlan::FileSink { .. }) {
+                final_sink = Some(node)
+            }
         }
         // should be reset for every branch
         let mut sink_nodes = vec![];
@@ -111,7 +113,6 @@ pub(super) fn construct(
                     } else {
                         Rc::new(RefCell::new(1))
                     };
-                    // dbg!(lp_arena.get(node), &shared_count);
                     sink_nodes.push((operator_offset, node, shared_count))
                 }
                 PipelineNode::Operator(node) => {
@@ -166,12 +167,12 @@ pub(super) fn construct(
         pipelines.push((execution_id, pipeline));
     }
 
-    /// We sort to ensure we get the t
+    // We sort to ensure we execute in the stack traversal order.
+    // this is important to make unions and joins work as expected
+    // also pipelines are not ready to receive inputs otherwise
     pipelines.sort_by(|a, b| a.0.cmp(&b.0));
-    dbg!(&pipelines);
 
-
-    let latest_sink = final_sink.unwrap();
+    let Some(latest_sink) = final_sink else { return Ok(None) };
     let schema = lp_arena.get(latest_sink).schema(lp_arena).into_owned();
 
     let Some((_, mut most_left)) = pipelines.pop() else {unreachable!()};
@@ -206,7 +207,6 @@ pub(super) fn construct(
         // default case if the tree ended with a sink
         _ => unreachable!(),
     };
-    dbg!(insertion_location, lp_arena.get(insertion_location));
     lp_arena.replace(insertion_location, pipeline_node);
 
     Ok(Some(latest_sink))

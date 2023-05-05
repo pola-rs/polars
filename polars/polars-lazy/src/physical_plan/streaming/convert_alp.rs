@@ -18,20 +18,39 @@ fn process_non_streamable_node(
     scratch: &mut Vec<Node>,
     pipeline_trees: &mut Vec<Vec<Branch>>,
     lp: &ALogicalPlan,
+    insert_file_sink: &mut u32,
 ) {
     if state.streamable {
         *current_idx += 1;
+        // create a completely new streaming pipeline
+        // maybe we can stream a subsection of the plan
         pipeline_trees.push(vec![]);
     }
     state.streamable = false;
     lp.copy_inputs(scratch);
     while let Some(input) = scratch.pop() {
+        *insert_file_sink += 1;
         stack.push((input, Branch::default(), *current_idx))
     }
 }
 
+fn insert_file_sink(mut root: Node, lp_arena: &mut Arena<ALogicalPlan>) -> Node {
+    // The pipelines need a final sink, we insert that here.
+    // this allows us to split at joins/unions and share a sink
+    if !matches!(lp_arena.get(root), ALogicalPlan::FileSink { .. }) {
+        root = lp_arena.add(ALogicalPlan::FileSink {
+            input: root,
+            payload: FileSinkOptions {
+                path: Default::default(),
+                file_type: FileType::Memory,
+            },
+        })
+    }
+    root
+}
+
 pub(crate) fn insert_streaming_nodes(
-    mut root: Node,
+    root: Node,
     lp_arena: &mut Arena<ALogicalPlan>,
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
@@ -45,15 +64,7 @@ pub(crate) fn insert_streaming_nodes(
 
     // The pipelines need a final sink, we insert that here.
     // this allows us to split at joins/unions and share a sink
-    if !matches!(lp_arena.get(root), ALogicalPlan::FileSink { .. }) {
-        root = lp_arena.add(FileSink {
-            input: root,
-            payload: FileSinkOptions {
-                path: Default::default(),
-                file_type: FileType::Memory,
-            },
-        })
-    }
+    let root = insert_file_sink(root, lp_arena);
 
     let mut stack = Vec::with_capacity(16);
 
@@ -78,8 +89,15 @@ pub(crate) fn insert_streaming_nodes(
     // keep the counter global so that the order will match traversal order
     let mut execution_id = 0;
 
+    // when this is positive we should insert a file sink
+    let mut insert_file_sink_ptr: u32 = 0;
+
     use ALogicalPlan::*;
-    while let Some((root, mut state, mut current_idx)) = stack.pop() {
+    while let Some((mut root, mut state, mut current_idx)) = stack.pop() {
+        if insert_file_sink_ptr > 0 {
+            root = insert_file_sink(root, lp_arena);
+        }
+        insert_file_sink_ptr = insert_file_sink_ptr.saturating_sub(1);
         state.execution_id = execution_id;
         execution_id += 1;
         match lp_arena.get(root) {
@@ -143,6 +161,7 @@ pub(crate) fn insert_streaming_nodes(
                         scratch,
                         &mut pipeline_trees,
                         lp,
+                        &mut insert_file_sink_ptr,
                     )
                 }
             }
@@ -311,6 +330,7 @@ pub(crate) fn insert_streaming_nodes(
                 scratch,
                 &mut pipeline_trees,
                 lp,
+                &mut insert_file_sink_ptr,
             ),
         }
     }
