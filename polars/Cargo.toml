@@ -70,6 +70,7 @@ performant = [
   "cse",
   "polars-ops/performant",
   "streaming",
+  "fused",
 ]
 
 # Dataframe formatting.
@@ -151,6 +152,7 @@ cse = ["polars-lazy/cse"]
 propagate_nans = ["polars-lazy/propagate_nans"]
 coalesce = ["polars-lazy/coalesce"]
 streaming = ["polars-lazy/streaming"]
+fused = ["polars-ops/fused", "polars-lazy/fused"]
 
 test = [
   "lazy",

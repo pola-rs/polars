@@ -114,6 +114,7 @@ semi_anti_join = ["polars-core/semi_anti_join", "polars-ops/semi_anti_join"]
 cse = []
 propagate_nans = ["polars-ops/propagate_nans"]
 coalesce = []
+fused = []
 
 # no guarantees whatsoever
 private = ["polars-time/private"]
