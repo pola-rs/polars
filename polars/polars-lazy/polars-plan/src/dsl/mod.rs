@@ -1246,7 +1246,7 @@ impl Expr {
     }
 
     fn dot_impl(self, other: Expr) -> Expr {
-        self.cache() * other.cache().sum()
+        (self * other).sum()
     }
 
     pub fn dot<E: Into<Expr>>(self, other: E) -> Expr {
