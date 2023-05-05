@@ -48,10 +48,10 @@ fn sink_node(pl_node: &PipelineNode) -> Option<Node> {
 }
 
 impl Branch {
-    pub(super) fn get_final_sink(&self) -> Option<Node> {
+    pub(super) fn get_final_sink(&self) -> Node {
         // this is still in the order of discovery
         // so the first sink is the final one.
-        self.operators_sinks.iter().find_map(sink_node)
+        self.operators_sinks.iter().find_map(sink_node).unwrap()
     }
     pub(super) fn iter_sinks(&self) -> impl Iterator<Item = Node> + '_ {
         self.operators_sinks.iter().flat_map(sink_node)

@@ -65,10 +65,6 @@ pub(super) fn construct(
     //    | |;
     //    2 3
     // we are iterating from 3 to 1 as the branches are accumulated from left to right
-    //
-    // the most far right branch will be the latest that sets this
-    // variable and thus will point to root
-    let final_sink = tree[0].get_final_sink();
 
     let is_verbose = verbose();
 
@@ -88,9 +84,14 @@ pub(super) fn construct(
     }
 
     let mut sink_cache = PlHashMap::new();
+    let mut final_sink = None;
 
     for branch in tree {
-        dbg!(branch.execution_id);
+        // the file sink is always to the top of the tree
+        let node = branch.get_final_sink();
+        if matches!(lp_arena.get(node), ALogicalPlan::FileSink {..}) {
+            final_sink = Some(node)
+        }
         // should be reset for every branch
         let mut sink_nodes = vec![];
 
@@ -165,54 +166,50 @@ pub(super) fn construct(
         pipelines.push((execution_id, pipeline));
     }
 
+    /// We sort to ensure we get the t
     pipelines.sort_by(|a, b| a.0.cmp(&b.0));
     dbg!(&pipelines);
 
-    // some queries only have source/sources and don't have any
-    // operators/sink so no latest
-    if let Some(latest_sink) = final_sink {
-        // the most right latest node should be the root of the pipeline
-        let schema = lp_arena.get(latest_sink).schema(lp_arena).into_owned();
 
-        let Some((_, mut most_left)) = pipelines.pop() else {unreachable!()};
-        dbg!(&most_left);
-        while let Some((_, rhs)) = pipelines.pop() {
-            most_left = most_left.with_other_branch(rhs)
-        }
-        // keep the original around for formatting purposes
-        let original_lp = if fmt {
-            let original_lp = lp_arena.take(latest_sink);
-            let original_node = lp_arena.add(original_lp);
-            let original_lp = node_to_lp_cloned(original_node, expr_arena, lp_arena);
-            Some(original_lp)
-        } else {
-            None
-        };
+    let latest_sink = final_sink.unwrap();
+    let schema = lp_arena.get(latest_sink).schema(lp_arena).into_owned();
 
-        // replace the part of the logical plan with a `MapFunction` that will execute the pipeline.
-        let pipeline_node = get_pipeline_node(lp_arena, most_left, schema, original_lp);
-
-        let insertion_location = match lp_arena.get(latest_sink) {
-            // this was inserted only during conversion and does not exist
-            // in the original tree, so we take the input, as that's where
-            // we connect into the original tree.
-            FileSink {
-                input,
-                payload:
-                    FileSinkOptions {
-                        file_type: FileType::Memory,
-                        ..
-                    },
-            } => *input,
-            // default case if the tree ended with a sink
-            _ => latest_sink,
-        };
-        lp_arena.replace(insertion_location, pipeline_node);
-
-        Ok(Some(latest_sink))
-    } else {
-        Ok(None)
+    let Some((_, mut most_left)) = pipelines.pop() else {unreachable!()};
+    while let Some((_, rhs)) = pipelines.pop() {
+        most_left = most_left.with_other_branch(rhs)
     }
+    // keep the original around for formatting purposes
+    let original_lp = if fmt {
+        let original_lp = lp_arena.take(latest_sink);
+        let original_node = lp_arena.add(original_lp);
+        let original_lp = node_to_lp_cloned(original_node, expr_arena, lp_arena);
+        Some(original_lp)
+    } else {
+        None
+    };
+
+    // replace the part of the logical plan with a `MapFunction` that will execute the pipeline.
+    let pipeline_node = get_pipeline_node(lp_arena, most_left, schema, original_lp);
+
+    let insertion_location = match lp_arena.get(latest_sink) {
+        // this was inserted only during conversion and does not exist
+        // in the original tree, so we take the input, as that's where
+        // we connect into the original tree.
+        FileSink {
+            input,
+            payload:
+                FileSinkOptions {
+                    file_type: FileType::Memory,
+                    ..
+                },
+        } => *input,
+        // default case if the tree ended with a sink
+        _ => unreachable!(),
+    };
+    dbg!(insertion_location, lp_arena.get(insertion_location));
+    lp_arena.replace(insertion_location, pipeline_node);
+
+    Ok(Some(latest_sink))
 }
 
 impl SExecutionContext for ExecutionState {
