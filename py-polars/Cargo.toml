@@ -94,6 +94,7 @@ all = [
   "cse",
   "propagate_nans",
   "polars/groupby_list",
+  "polars/fused",
   "sql",
   "binary_encoding",
   "streaming",
