@@ -605,7 +605,8 @@ impl ALogicalPlan {
     /// panics if more than one input
     #[cfg(any(
         all(feature = "strings", feature = "concat_str"),
-        feature = "streaming"
+        feature = "streaming",
+        feature = "fused"
     ))]
     pub(crate) fn get_input(&self) -> Option<Node> {
         let mut inputs = [None, None];
