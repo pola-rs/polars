@@ -49,6 +49,21 @@ fn insert_file_sink(mut root: Node, lp_arena: &mut Arena<ALogicalPlan>) -> Node 
     root
 }
 
+fn insert_slice(
+    root: Node,
+    offset: i64,
+    len: IdxSize,
+    lp_arena: &mut Arena<ALogicalPlan>,
+    state: &mut Branch,
+) {
+    let node = lp_arena.add(ALogicalPlan::Slice {
+        input: root,
+        offset,
+        len: len as IdxSize,
+    });
+    state.operators_sinks.push(PipelineNode::Sink(node));
+}
+
 pub(crate) fn insert_streaming_nodes(
     root: Node,
     lp_arena: &mut Arena<ALogicalPlan>,
@@ -85,6 +100,15 @@ pub(crate) fn insert_streaming_nodes(
     // or in this case 1, 2, 3, 4
     // every inner vec contains a branch/pipeline of a complete pipeline tree
     // the outer vec contains whole pipeline trees
+    //
+    // # Execution order
+    // Trees can have arbitrary splits via joins and unions
+    // the branches we have accumulated are flattened into a single Vec<Branch>
+    // this therefore has lost the information of the tree. To know in which
+    // order the branches need to be executed. For this reason we keep track of
+    // an `execution_id` which will be incremented on every stack operation.
+    // This way we know in which order the stack/tree was traversed and can
+    // use that info to determine the execution order of the single branch/pipelines
     let mut pipeline_trees: Vec<Tree> = vec![vec![]];
     // keep the counter global so that the order will match traversal order
     let mut execution_id = 0;
@@ -166,8 +190,13 @@ pub(crate) fn insert_streaming_nodes(
                 }
             }
             #[cfg(feature = "csv")]
-            CsvScan { .. } => {
+            CsvScan { options, .. } => {
                 if state.streamable {
+                    // the batched csv reader doesn't stop exactly at n_rows
+                    if let Some(n_rows) = options.n_rows {
+                        insert_slice(root, 0, n_rows as IdxSize, lp_arena, &mut state);
+                    }
+
                     state.sources.push(root);
                     pipeline_trees[current_idx].push(state)
                 }
@@ -241,7 +270,36 @@ pub(crate) fn insert_streaming_nodes(
                 state.sources.push(root);
                 pipeline_trees[current_idx].push(state);
             }
-            Union { inputs, .. } => {
+            Union {
+                options:
+                    UnionOptions {
+                        slice: Some((offset, len)),
+                        ..
+                    },
+                ..
+            } if *offset >= 0 => {
+                insert_slice(root, *offset, *len as IdxSize, lp_arena, &mut state);
+                state.streamable = true;
+                let Union {inputs, ..} =  lp_arena.get(root) else {unreachable!()};
+                for (i, input) in inputs.iter().enumerate() {
+                    let mut state = if i == 0 {
+                        // note the clone!
+                        let mut state = state.clone();
+                        state.join_count += inputs.len() as u32 - 1;
+                        state
+                    } else {
+                        let mut state = state.split_from_sink();
+                        state.join_count = 0;
+                        state
+                    };
+                    state.operators_sinks.push(PipelineNode::Union(root));
+                    stack.push((*input, state, current_idx));
+                }
+            }
+            Union {
+                inputs,
+                options: UnionOptions { slice: None, .. },
+            } => {
                 {
                     state.streamable = true;
                     for (i, input) in inputs.iter().enumerate() {
@@ -255,7 +313,7 @@ pub(crate) fn insert_streaming_nodes(
                             state.join_count = 0;
                             state
                         };
-                        state.operators_sinks.push(PipelineNode::Operator(root));
+                        state.operators_sinks.push(PipelineNode::Union(root));
                         stack.push((*input, state, current_idx));
                     }
                 }

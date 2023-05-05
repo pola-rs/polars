@@ -3,8 +3,15 @@ use polars_core::error::PolarsResult;
 use crate::operators::{DataChunk, Operator, OperatorResult, PExecutionContext};
 
 /// Simply pass through the chunks
-#[derive(Default)]
-pub struct Pass {}
+pub struct Pass {
+    name: &'static str,
+}
+
+impl Pass {
+    pub(crate) fn new(name: &'static str) -> Self {
+        Self { name }
+    }
+}
 
 impl Operator for Pass {
     fn execute(
@@ -16,7 +23,7 @@ impl Operator for Pass {
     }
 
     fn split(&self, _thread_no: usize) -> Box<dyn Operator> {
-        Box::new(Self {})
+        Box::new(Self { name: self.name })
     }
 
     fn fmt(&self) -> &str {

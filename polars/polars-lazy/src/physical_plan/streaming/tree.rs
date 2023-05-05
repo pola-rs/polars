@@ -9,6 +9,7 @@ pub(super) enum PipelineNode {
     Sink(Node),
     Operator(Node),
     RhsJoin(Node),
+    Union(Node),
 }
 
 impl PipelineNode {
@@ -17,6 +18,7 @@ impl PipelineNode {
             Self::Sink(node) => node,
             Self::Operator(node) => node,
             Self::RhsJoin(node) => node,
+            Self::Union(node) => node,
         }
     }
 }

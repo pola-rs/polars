@@ -441,7 +441,7 @@ where
             Box::new(op) as Box<dyn Operator>
         }
         Union { .. } => {
-            let op = operators::Pass::default();
+            let op = operators::Pass::new("union");
             Box::new(op) as Box<dyn Operator>
         }
 

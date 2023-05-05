@@ -42,6 +42,45 @@ fn to_physical_piped_expr(
         .map(|e| Arc::new(Wrap(e)) as Arc<dyn PhysicalPipedExpr>)
 }
 
+fn jit_insert_slice(
+    node: Node,
+    lp_arena: &mut Arena<ALogicalPlan>,
+    sink_nodes: &mut Vec<(usize, Node, Rc<RefCell<u32>>)>,
+    operator_offset: usize,
+) {
+    // if the join/union has a slice, we add a new slice node
+    // note that we take the offset + 1, because we want to
+    // slice AFTER the join has happened and the join will be an
+    // operator
+    use ALogicalPlan::*;
+    match lp_arena.get(node) {
+        Join {
+            options:
+                JoinOptions {
+                    slice: Some((offset, len)),
+                    ..
+                },
+            ..
+        }
+        | Union {
+            options:
+                UnionOptions {
+                    slice: Some((offset, len)),
+                    ..
+                },
+            ..
+        } => {
+            let slice_node = lp_arena.add(Slice {
+                input: Node::default(),
+                offset: *offset,
+                len: *len as IdxSize,
+            });
+            sink_nodes.push((operator_offset + 1, slice_node, Rc::new(RefCell::new(1))));
+        }
+        _ => {}
+    }
+}
+
 pub(super) fn construct(
     tree: Tree,
     lp_arena: &mut Arena<ALogicalPlan>,
@@ -52,24 +91,12 @@ pub(super) fn construct(
 
     let mut pipelines = Vec::with_capacity(tree.len());
 
-    // if join is
-    //     1
-    //    /\2
-    //      /\3
-    //
-    //
-    // or join/union is
-    //
-    //   1
-    //  /\__
-    //    | |;
-    //    2 3
-    // we are iterating from 3 to 1 as the branches are accumulated from left to right
-
     let is_verbose = verbose();
 
     // first traverse the branches and nodes to determine how often a sink is
     // shared
+    // this shared count will be used in the pipeline to determine
+    // when the sink can be finalized.
     let mut sink_share_count = PlHashMap::new();
     let n_branches = tree.len();
     if n_branches > 1 {
@@ -83,6 +110,7 @@ pub(super) fn construct(
         }
     }
 
+    // shared sinks are stored in a cache, so that they share info
     let mut sink_cache = PlHashMap::new();
     let mut final_sink = None;
 
@@ -120,32 +148,15 @@ pub(super) fn construct(
                     let op = get_operator(node, lp_arena, expr_arena, &to_physical_piped_expr)?;
                     operators.push(op);
                 }
+                PipelineNode::Union(node) => {
+                    operator_nodes.push(node);
+                    jit_insert_slice(node, lp_arena, &mut sink_nodes, operator_offset);
+                    let op = get_operator(node, lp_arena, expr_arena, &to_physical_piped_expr)?;
+                    operators.push(op);
+                }
                 PipelineNode::RhsJoin(node) => {
                     operator_nodes.push(node);
-                    // if the join has a slice, we add a new slice node
-                    // note that we take the offset + 1, because we want to
-                    // slice AFTER the join has happened and the join will be an
-                    // operator
-                    if let Join {
-                        options:
-                            JoinOptions {
-                                slice: Some((offset, len)),
-                                ..
-                            },
-                        ..
-                    } = lp_arena.get(node)
-                    {
-                        let slice_node = lp_arena.add(Slice {
-                            input: Node::default(),
-                            offset: *offset,
-                            len: *len as IdxSize,
-                        });
-                        sink_nodes.push((
-                            operator_offset + 1,
-                            slice_node,
-                            Rc::new(RefCell::new(1)),
-                        ));
-                    }
+                    jit_insert_slice(node, lp_arena, &mut sink_nodes, operator_offset);
                     let op = get_dummy_operator();
                     operators.push(op)
                 }
