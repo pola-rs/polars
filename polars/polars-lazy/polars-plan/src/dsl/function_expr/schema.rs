@@ -187,14 +187,6 @@ impl FunctionExpr {
                     }
                 })
             }
-            #[cfg(feature = "dot_product")]
-            Dot => mapper.map_dtype(|dt| {
-                use DataType::*;
-                match dt {
-                    Int8 | Int16 | UInt16 | UInt8 => Int64,
-                    _ => dt.clone(),
-                }
-            }),
             #[cfg(feature = "log")]
             Entropy { .. } | Log { .. } | Log1p | Exp => mapper.map_to_float_dtype(),
             Unique(_) => mapper.with_same_dtype(),
