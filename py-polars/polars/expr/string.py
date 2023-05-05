@@ -1059,10 +1059,11 @@ class ExprStringNameSpace:
 
     def extract_all(self, pattern: str | Expr) -> Expr:
         r'''
-        Extracts all matches for the given regex pattern.
+        Extract all matches for the given regex pattern.
 
-        Extracts each successive non-overlapping regex match in an individual string as
-        an array.
+        Extract each successive non-overlapping regex match in an individual string
+        as a list. Extracted matches contain ``null`` if the original value is null
+        or the regex did not capture anything.
 
         Parameters
         ----------
@@ -1118,8 +1119,7 @@ class ExprStringNameSpace:
 
         Returns
         -------
-        List[Utf8] array. Contains ``null`` if the original value is null or
-        the regex did not capture anything.
+        List[Utf8]
 
         Examples
         --------
@@ -1148,7 +1148,7 @@ class ExprStringNameSpace:
         Parameters
         ----------
         pattern
-            A regex pattern compatible with the `regex crate
+            A valid regular expression pattern, compatible with the `regex crate
             <https://docs.rs/regex/latest/regex/>`_.
 
         Returns
@@ -1352,14 +1352,44 @@ class ExprStringNameSpace:
         Parameters
         ----------
         pattern
-            A regex pattern compatible with the `regex crate
+            A valid regular expression pattern, compatible with the `regex crate
             <https://docs.rs/regex/latest/regex/>`_.
         value
-            Replacement string.
+            String that will replace the matched substring.
         literal
-             Treat pattern as a literal string.
+            Treat pattern as a literal string.
         n
-            Number of matches to replace
+            Number of matches to replace.
+
+        Notes
+        -----
+        To modify regular expression behaviour (such as case-sensitivity) with flags,
+        use the inline ``(?iLmsuxU)`` syntax. For example:
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "city": ["Tokyo", "Abu Dhabi", "Stockholm"],
+        ...         "weather": ["Rainy", "Sunny", "Foggy"],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     # apply case-insensitive string replacement
+        ...     pl.col("weather").str.replace(r"(?i)foggy|rainy", "Sunny")
+        ... )
+        shape: (3, 2)
+        ┌───────────┬─────────┐
+        │ city      ┆ weather │
+        │ ---       ┆ ---     │
+        │ str       ┆ str     │
+        ╞═══════════╪═════════╡
+        │ Tokyo     ┆ Sunny   │
+        │ Abu Dhabi ┆ Sunny   │
+        │ Stockholm ┆ Sunny   │
+        └───────────┴─────────┘
+
+        See the regex crate's section on `grouping and flags
+        <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
+        additional information about the use of inline expression modifiers.
 
         See Also
         --------
@@ -1397,12 +1427,12 @@ class ExprStringNameSpace:
         Parameters
         ----------
         pattern
-            A regex pattern compatible with the `regex crate
+            A valid regular expression pattern, compatible with the `regex crate
             <https://docs.rs/regex/latest/regex/>`_.
         value
             Replacement string.
         literal
-             Treat pattern as a literal string.
+            Treat pattern as a literal string.
 
         See Also
         --------

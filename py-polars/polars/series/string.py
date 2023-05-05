@@ -637,10 +637,11 @@ class StringNameSpace:
 
     def extract_all(self, pattern: str | Series) -> Series:
         r'''
-        Extracts all matches for the given regex pattern.
+        Extract all matches for the given regex pattern.
 
-        Extract each successive non-overlapping regex match in an individual string as
-        an array
+        Extract each successive non-overlapping regex match in an individual string
+        as a list. Extracted matches contain ``null`` if the original value is null
+        or the regex did not capture anything.
 
         Parameters
         ----------
@@ -687,8 +688,7 @@ class StringNameSpace:
 
         Returns
         -------
-        List[Utf8] array. Contains ``null`` if the original value is null or
-        the regex did not capture anything.
+        List[Utf8]
 
         Examples
         --------
@@ -710,7 +710,8 @@ class StringNameSpace:
         Parameters
         ----------
         pattern
-            A valid regex pattern
+            A valid regular expression pattern, compatible with the `regex crate
+            <https://docs.rs/regex/latest/regex/>`_.
 
         Returns
         -------
@@ -874,13 +875,41 @@ class StringNameSpace:
         Parameters
         ----------
         pattern
-            A valid regex pattern.
+            A valid regular expression pattern, compatible with the `regex crate
+            <https://docs.rs/regex/latest/regex/>`_.
         value
-            Substring to replace.
+            String that will replace the matched substring.
         literal
-             Treat pattern as a literal string.
+            Treat pattern as a literal string.
         n
-            Number of matches to replace
+            Number of matches to replace.
+
+        Notes
+        -----
+        To modify regular expression behaviour (such as case-sensitivity) with flags,
+        use the inline ``(?iLmsuxU)`` syntax. For example:
+
+        >>> s = pl.Series(
+        ...     name="weather",
+        ...     values=[
+        ...         "Foggy",
+        ...         "Rainy",
+        ...         "Sunny",
+        ...     ],
+        ... )
+        >>> # apply case-insensitive string replacement
+        >>> s.str.replace(r"(?i)foggy|rainy", "Sunny")
+        shape: (3,)
+        Series: 'weather' [str]
+        [
+            "Sunny"
+            "Sunny"
+            "Sunny"
+        ]
+
+        See the regex crate's section on `grouping and flags
+        <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
+        additional information about the use of inline expression modifiers.
 
         See Also
         --------
@@ -906,11 +935,12 @@ class StringNameSpace:
         Parameters
         ----------
         pattern
-            A valid regex pattern.
+            A valid regular expression pattern, compatible with the `regex crate
+            <https://docs.rs/regex/latest/regex/>`_.
         value
-            Substring to replace.
+            String that will replace the matches.
         literal
-             Treat pattern as a literal string.
+            Treat pattern as a literal string.
 
         See Also
         --------
