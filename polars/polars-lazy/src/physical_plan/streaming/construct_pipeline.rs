@@ -1,5 +1,6 @@
 use std::any::Any;
-use std::collections::VecDeque;
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use polars_core::config::verbose;
@@ -41,6 +42,45 @@ fn to_physical_piped_expr(
         .map(|e| Arc::new(Wrap(e)) as Arc<dyn PhysicalPipedExpr>)
 }
 
+fn jit_insert_slice(
+    node: Node,
+    lp_arena: &mut Arena<ALogicalPlan>,
+    sink_nodes: &mut Vec<(usize, Node, Rc<RefCell<u32>>)>,
+    operator_offset: usize,
+) {
+    // if the join/union has a slice, we add a new slice node
+    // note that we take the offset + 1, because we want to
+    // slice AFTER the join has happened and the join will be an
+    // operator
+    use ALogicalPlan::*;
+    match lp_arena.get(node) {
+        Join {
+            options:
+                JoinOptions {
+                    slice: Some((offset, len)),
+                    ..
+                },
+            ..
+        }
+        | Union {
+            options:
+                UnionOptions {
+                    slice: Some((offset, len)),
+                    ..
+                },
+            ..
+        } => {
+            let slice_node = lp_arena.add(Slice {
+                input: Node::default(),
+                offset: *offset,
+                len: *len as IdxSize,
+            });
+            sink_nodes.push((operator_offset + 1, slice_node, Rc::new(RefCell::new(1))));
+        }
+        _ => {}
+    }
+}
+
 pub(super) fn construct(
     tree: Tree,
     lp_arena: &mut Arena<ALogicalPlan>,
@@ -49,29 +89,39 @@ pub(super) fn construct(
 ) -> PolarsResult<Option<Node>> {
     use ALogicalPlan::*;
 
-    let mut pipelines = VecDeque::with_capacity(tree.len());
+    let mut pipelines = Vec::with_capacity(tree.len());
 
-    // if join is
-    //     1
-    //    /\2
-    //      /\3
-    //
-    // we are iterating from 3 to 1.
-
-    // the most far right branch will be the latest that sets this
-    // variable and thus will point to root
-    let mut latest = None;
-
-    let joins_in_tree = tree.iter().map(|branch| branch.join_count).sum::<IdxSize>();
-    let branches_in_tree = tree.len() as IdxSize;
-
-    // all join branches should be added, if not we skip the tree, as it is invalid
-    if (branches_in_tree - 1) != joins_in_tree {
-        return Ok(None);
-    }
     let is_verbose = verbose();
 
+    // first traverse the branches and nodes to determine how often a sink is
+    // shared
+    // this shared count will be used in the pipeline to determine
+    // when the sink can be finalized.
+    let mut sink_share_count = PlHashMap::new();
+    let n_branches = tree.len();
+    if n_branches > 1 {
+        for branch in &tree {
+            for sink in branch.iter_sinks() {
+                let count = sink_share_count
+                    .entry(sink.0)
+                    .or_insert(Rc::new(RefCell::new(0u32)));
+                *count.borrow_mut() += 1;
+            }
+        }
+    }
+
+    // shared sinks are stored in a cache, so that they share info
+    let mut sink_cache = PlHashMap::new();
+    let mut final_sink = None;
+
     for branch in tree {
+        // the file sink is always to the top of the tree
+        // not every branch has a final sink. For instance rhs join branches
+        if let Some(node) = branch.get_final_sink() {
+            if matches!(lp_arena.get(node), ALogicalPlan::FileSink { .. }) {
+                final_sink = Some(node)
+            }
+        }
         // should be reset for every branch
         let mut sink_nodes = vec![];
 
@@ -82,42 +132,37 @@ pub(super) fn construct(
         let mut iter = branch.operators_sinks.into_iter().rev();
 
         for pipeline_node in &mut iter {
-            latest = Some(pipeline_node.node());
             let operator_offset = operators.len();
             match pipeline_node {
-                PipelineNode::Sink(node) => sink_nodes.push((operator_offset, node)),
+                PipelineNode::Sink(node) => {
+                    let shared_count = if n_branches > 1 {
+                        // should be here
+                        sink_share_count.get(&node.0).unwrap().clone()
+                    } else {
+                        Rc::new(RefCell::new(1))
+                    };
+                    sink_nodes.push((operator_offset, node, shared_count))
+                }
                 PipelineNode::Operator(node) => {
                     operator_nodes.push(node);
                     let op = get_operator(node, lp_arena, expr_arena, &to_physical_piped_expr)?;
                     operators.push(op);
                 }
+                PipelineNode::Union(node) => {
+                    operator_nodes.push(node);
+                    jit_insert_slice(node, lp_arena, &mut sink_nodes, operator_offset);
+                    let op = get_operator(node, lp_arena, expr_arena, &to_physical_piped_expr)?;
+                    operators.push(op);
+                }
                 PipelineNode::RhsJoin(node) => {
                     operator_nodes.push(node);
-                    // if the join has a slice, we add a new slice node
-                    // note that we take the offset + 1, because we want to
-                    // slice AFTER the join has happened and the join will be an
-                    // operator
-                    if let Join {
-                        options:
-                            JoinOptions {
-                                slice: Some((offset, len)),
-                                ..
-                            },
-                        ..
-                    } = lp_arena.get(node)
-                    {
-                        let slice_node = lp_arena.add(Slice {
-                            input: Node::default(),
-                            offset: *offset,
-                            len: *len as IdxSize,
-                        });
-                        sink_nodes.push((operator_offset + 1, slice_node));
-                    }
+                    jit_insert_slice(node, lp_arena, &mut sink_nodes, operator_offset);
                     let op = get_dummy_operator();
                     operators.push(op)
                 }
             }
         }
+        let execution_id = branch.execution_id;
 
         let pipeline = create_pipeline(
             &branch.sources,
@@ -128,37 +173,56 @@ pub(super) fn construct(
             expr_arena,
             to_physical_piped_expr,
             is_verbose,
+            &mut sink_cache,
         )?;
-        pipelines.push_back(pipeline);
+        pipelines.push((execution_id, pipeline));
     }
-    // some queries only have source/sources and don't have any
-    // operators/sink so no latest
-    if let Some(latest) = latest {
-        // the most right latest node should be the root of the pipeline
-        let schema = lp_arena.get(latest).schema(lp_arena).into_owned();
 
-        let Some(mut most_left) = pipelines.pop_front() else {unreachable!()};
-        while let Some(rhs) = pipelines.pop_front() {
-            most_left = most_left.with_rhs(rhs)
-        }
-        // keep the original around for formatting purposes
-        let original_lp = if fmt {
-            let original_lp = lp_arena.take(latest);
-            let original_node = lp_arena.add(original_lp);
-            let original_lp = node_to_lp_cloned(original_node, expr_arena, lp_arena);
-            Some(original_lp)
-        } else {
-            None
-        };
+    // We sort to ensure we execute in the stack traversal order.
+    // this is important to make unions and joins work as expected
+    // also pipelines are not ready to receive inputs otherwise
+    pipelines.sort_by(|a, b| a.0.cmp(&b.0));
 
-        // replace the part of the logical plan with a `MapFunction` that will execute the pipeline.
-        let pipeline_node = get_pipeline_node(lp_arena, most_left, schema, original_lp);
-        lp_arena.replace(latest, pipeline_node);
+    let Some(latest_sink) = final_sink else { return Ok(None) };
+    let schema = lp_arena.get(latest_sink).schema(lp_arena).into_owned();
 
-        Ok(Some(latest))
+    let Some((_, mut most_left)) = pipelines.pop() else {unreachable!()};
+    while let Some((_, rhs)) = pipelines.pop() {
+        most_left = most_left.with_other_branch(rhs)
+    }
+    // keep the original around for formatting purposes
+    let original_lp = if fmt {
+        let original_lp = lp_arena.take(latest_sink);
+        let original_node = lp_arena.add(original_lp);
+        let original_lp = node_to_lp_cloned(original_node, expr_arena, lp_arena);
+        Some(original_lp)
     } else {
-        Ok(None)
-    }
+        None
+    };
+
+    // replace the part of the logical plan with a `MapFunction` that will execute the pipeline.
+    let pipeline_node = get_pipeline_node(lp_arena, most_left, schema, original_lp);
+
+    let insertion_location = match lp_arena.get(latest_sink) {
+        FileSink {
+            input,
+            payload: FileSinkOptions { file_type, .. },
+        } => {
+            // this was inserted only during conversion and does not exist
+            // in the original tree, so we take the input, as that's where
+            // we connect into the original tree.
+            if matches!(file_type, FileType::Memory) {
+                *input
+            } else {
+                // default case if the tree ended with a file_sink
+                latest_sink
+            }
+        }
+        _ => unreachable!(),
+    };
+    lp_arena.replace(insertion_location, pipeline_node);
+
+    Ok(Some(latest_sink))
 }
 
 impl SExecutionContext for ExecutionState {

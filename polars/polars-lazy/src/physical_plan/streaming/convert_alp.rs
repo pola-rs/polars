@@ -18,16 +18,50 @@ fn process_non_streamable_node(
     scratch: &mut Vec<Node>,
     pipeline_trees: &mut Vec<Vec<Branch>>,
     lp: &ALogicalPlan,
+    insert_file_sink: &mut u32,
 ) {
     if state.streamable {
         *current_idx += 1;
+        // create a completely new streaming pipeline
+        // maybe we can stream a subsection of the plan
         pipeline_trees.push(vec![]);
     }
     state.streamable = false;
     lp.copy_inputs(scratch);
     while let Some(input) = scratch.pop() {
+        *insert_file_sink += 1;
         stack.push((input, Branch::default(), *current_idx))
     }
+}
+
+fn insert_file_sink(mut root: Node, lp_arena: &mut Arena<ALogicalPlan>) -> Node {
+    // The pipelines need a final sink, we insert that here.
+    // this allows us to split at joins/unions and share a sink
+    if !matches!(lp_arena.get(root), ALogicalPlan::FileSink { .. }) {
+        root = lp_arena.add(ALogicalPlan::FileSink {
+            input: root,
+            payload: FileSinkOptions {
+                path: Default::default(),
+                file_type: FileType::Memory,
+            },
+        })
+    }
+    root
+}
+
+fn insert_slice(
+    root: Node,
+    offset: i64,
+    len: IdxSize,
+    lp_arena: &mut Arena<ALogicalPlan>,
+    state: &mut Branch,
+) {
+    let node = lp_arena.add(ALogicalPlan::Slice {
+        input: root,
+        offset,
+        len: len as IdxSize,
+    });
+    state.operators_sinks.push(PipelineNode::Sink(node));
 }
 
 pub(crate) fn insert_streaming_nodes(
@@ -42,6 +76,10 @@ pub(crate) fn insert_streaming_nodes(
     set_estimated_row_counts(root, lp_arena, expr_arena, 0);
 
     scratch.clear();
+
+    // The pipelines need a final sink, we insert that here.
+    // this allows us to split at joins/unions and share a sink
+    let root = insert_file_sink(root, lp_arena);
 
     let mut stack = Vec::with_capacity(16);
 
@@ -62,10 +100,30 @@ pub(crate) fn insert_streaming_nodes(
     // or in this case 1, 2, 3, 4
     // every inner vec contains a branch/pipeline of a complete pipeline tree
     // the outer vec contains whole pipeline trees
+    //
+    // # Execution order
+    // Trees can have arbitrary splits via joins and unions
+    // the branches we have accumulated are flattened into a single Vec<Branch>
+    // this therefore has lost the information of the tree. To know in which
+    // order the branches need to be executed. For this reason we keep track of
+    // an `execution_id` which will be incremented on every stack operation.
+    // This way we know in which order the stack/tree was traversed and can
+    // use that info to determine the execution order of the single branch/pipelines
     let mut pipeline_trees: Vec<Tree> = vec![vec![]];
+    // keep the counter global so that the order will match traversal order
+    let mut execution_id = 0;
+
+    // when this is positive we should insert a file sink
+    let mut insert_file_sink_ptr: u32 = 0;
 
     use ALogicalPlan::*;
-    while let Some((root, mut state, mut current_idx)) = stack.pop() {
+    while let Some((mut root, mut state, mut current_idx)) = stack.pop() {
+        if insert_file_sink_ptr > 0 {
+            root = insert_file_sink(root, lp_arena);
+        }
+        insert_file_sink_ptr = insert_file_sink_ptr.saturating_sub(1);
+        state.execution_id = execution_id;
+        execution_id += 1;
         match lp_arena.get(root) {
             Selection { input, predicate }
                 if is_streamable(*predicate, expr_arena, Context::Default) =>
@@ -127,12 +185,18 @@ pub(crate) fn insert_streaming_nodes(
                         scratch,
                         &mut pipeline_trees,
                         lp,
+                        &mut insert_file_sink_ptr,
                     )
                 }
             }
             #[cfg(feature = "csv")]
-            CsvScan { .. } => {
+            CsvScan { options, .. } => {
                 if state.streamable {
+                    // the batched csv reader doesn't stop exactly at n_rows
+                    if let Some(n_rows) = options.n_rows {
+                        insert_slice(root, 0, n_rows as IdxSize, lp_arena, &mut state);
+                    }
+
                     state.sources.push(root);
                     pipeline_trees[current_idx].push(state)
                 }
@@ -161,7 +225,6 @@ pub(crate) fn insert_streaming_nodes(
                 state.streamable = true;
                 state.join_count += 1;
 
-                let join_count = state.join_count;
                 // We swap so that the build phase contains the smallest table
                 // and then we stream the larger table
                 // *except* for a left join. In a left join we use the right
@@ -172,6 +235,7 @@ pub(crate) fn insert_streaming_nodes(
                 } else {
                     (input_left, input_right)
                 };
+                let mut state_left = state.split();
 
                 // rhs is second, so that is first on the stack
                 let mut state_right = state;
@@ -179,36 +243,79 @@ pub(crate) fn insert_streaming_nodes(
                 state_right
                     .operators_sinks
                     .push(PipelineNode::RhsJoin(root));
-                stack.push((input_right, state_right, current_idx));
 
-                // we want to traverse lhs first, so push it latest on the stack
+                // we want to traverse lhs last, so push it first on the stack
                 // rhs is a new pipeline
-                let mut state_left = Branch {
-                    streamable: true,
-                    join_count,
-                    ..Default::default()
-                };
                 state_left.operators_sinks.push(PipelineNode::Sink(root));
                 stack.push((input_left, state_left, current_idx));
+                stack.push((input_right, state_right, current_idx));
             }
             // add globbing patterns
-            #[cfg(all(feature = "csv", feature = "parquet"))]
-            Union { inputs, .. } => {
-                if state.streamable
-                    && inputs.iter().all(|node| match lp_arena.get(*node) {
-                        ParquetScan { .. } => true,
-                        CsvScan { .. } => true,
-                        MapFunction {
-                            input,
-                            function: FunctionNode::Rechunk,
-                        } => {
-                            matches!(lp_arena.get(*input), ParquetScan { .. } | CsvScan { .. })
-                        }
-                        _ => false,
-                    })
+            #[cfg(any(feature = "csv", feature = "parquet"))]
+            Union { inputs, .. }
+                if inputs.iter().all(|node| match lp_arena.get(*node) {
+                    #[cfg(feature = "parquet")]
+                    ParquetScan { .. } => true,
+                    #[cfg(feature = "csv")]
+                    CsvScan { .. } => true,
+                    MapFunction {
+                        input,
+                        function: FunctionNode::Rechunk,
+                    } => {
+                        matches!(lp_arena.get(*input), ParquetScan { .. } | CsvScan { .. })
+                    }
+                    _ => false,
+                }) =>
+            {
+                state.sources.push(root);
+                pipeline_trees[current_idx].push(state);
+            }
+            Union {
+                options:
+                    UnionOptions {
+                        slice: Some((offset, len)),
+                        ..
+                    },
+                ..
+            } if *offset >= 0 => {
+                insert_slice(root, *offset, *len as IdxSize, lp_arena, &mut state);
+                state.streamable = true;
+                let Union {inputs, ..} =  lp_arena.get(root) else {unreachable!()};
+                for (i, input) in inputs.iter().enumerate() {
+                    let mut state = if i == 0 {
+                        // note the clone!
+                        let mut state = state.clone();
+                        state.join_count += inputs.len() as u32 - 1;
+                        state
+                    } else {
+                        let mut state = state.split_from_sink();
+                        state.join_count = 0;
+                        state
+                    };
+                    state.operators_sinks.push(PipelineNode::Union(root));
+                    stack.push((*input, state, current_idx));
+                }
+            }
+            Union {
+                inputs,
+                options: UnionOptions { slice: None, .. },
+            } => {
                 {
-                    state.sources.push(root);
-                    pipeline_trees[current_idx].push(state);
+                    state.streamable = true;
+                    for (i, input) in inputs.iter().enumerate() {
+                        let mut state = if i == 0 {
+                            // note the clone!
+                            let mut state = state.clone();
+                            state.join_count += inputs.len() as u32 - 1;
+                            state
+                        } else {
+                            let mut state = state.split_from_sink();
+                            state.join_count = 0;
+                            state
+                        };
+                        state.operators_sinks.push(PipelineNode::Union(root));
+                        stack.push((*input, state, current_idx));
+                    }
                 }
             }
             Distinct { input, options }
@@ -281,6 +388,7 @@ pub(crate) fn insert_streaming_nodes(
                 scratch,
                 &mut pipeline_trees,
                 lp,
+                &mut insert_file_sink_ptr,
             ),
         }
     }

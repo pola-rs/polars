@@ -303,7 +303,6 @@ pub struct FileSinkOptions {
     pub file_type: FileType,
 }
 
-#[cfg(any(feature = "parquet", feature = "ipc"))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub enum FileType {
@@ -311,7 +310,5 @@ pub enum FileType {
     Parquet(ParquetWriteOptions),
     #[cfg(feature = "ipc")]
     Ipc(IpcWriterOptions),
+    Memory,
 }
-
-#[cfg(not(any(feature = "parquet", feature = "ipc")))]
-pub type FileType = ();

@@ -1,7 +1,6 @@
 use std::collections::BTreeSet;
 use std::fmt::Debug;
 
-use polars_core::prelude::*;
 use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
 
@@ -10,6 +9,7 @@ pub(super) enum PipelineNode {
     Sink(Node),
     Operator(Node),
     RhsJoin(Node),
+    Union(Node),
 }
 
 impl PipelineNode {
@@ -18,6 +18,7 @@ impl PipelineNode {
             Self::Sink(node) => node,
             Self::Operator(node) => node,
             Self::RhsJoin(node) => node,
+            Self::Union(node) => node,
         }
     }
 }
@@ -25,12 +26,65 @@ impl PipelineNode {
 /// Represents a pipeline/ branch in a subquery tree
 #[derive(Default, Debug, Clone)]
 pub(super) struct Branch {
+    // During traversal of ALP
+    // we determine the execution order
+    // as traversal order == execution order
+    // we can increment this counter
+    // the individual branches are then flattened
+    // sorted and executed in reversed order
+    // (to traverse from leaves to root)
+    pub(super) execution_id: u32,
     pub(super) streamable: bool,
     pub(super) sources: Vec<Node>,
     // joins seen in whole branch (we count a union as joins with multiple counts)
-    pub(super) join_count: IdxSize,
+    pub(super) join_count: u32,
     // node is operator/sink
     pub(super) operators_sinks: Vec<PipelineNode>,
+}
+
+fn sink_node(pl_node: &PipelineNode) -> Option<Node> {
+    match pl_node {
+        PipelineNode::Sink(node) => Some(*node),
+        _ => None,
+    }
+}
+
+impl Branch {
+    pub(super) fn get_final_sink(&self) -> Option<Node> {
+        // this is still in the order of discovery
+        // so the first sink is the final one.
+        self.operators_sinks.iter().find_map(sink_node)
+    }
+    pub(super) fn iter_sinks(&self) -> impl Iterator<Item = Node> + '_ {
+        self.operators_sinks.iter().flat_map(sink_node)
+    }
+
+    pub(super) fn split(&self) -> Self {
+        Self {
+            execution_id: self.execution_id,
+            streamable: self.streamable,
+            join_count: self.join_count,
+            ..Default::default()
+        }
+    }
+
+    /// this will share the sink
+    pub(super) fn split_from_sink(&self) -> Self {
+        match self
+            .operators_sinks
+            .iter()
+            .rposition(|pl_node| sink_node(pl_node).is_some())
+        {
+            None => self.split(),
+            Some(pos) => Self {
+                execution_id: self.execution_id,
+                streamable: self.streamable,
+                join_count: self.join_count,
+                operators_sinks: self.operators_sinks[pos..].to_vec(),
+                ..Default::default()
+            },
+        }
+    }
 }
 
 /// Represents a subquery tree of pipelines.
@@ -45,6 +99,13 @@ pub(super) fn is_valid_tree(tree: TreeRef) -> bool {
     if tree.is_empty() {
         return false;
     };
+    let joins_in_tree = tree.iter().map(|branch| branch.join_count).sum::<u32>();
+    let branches_in_tree = tree.len() as u32;
+
+    // all join branches should be added, if not we skip the tree, as it is invalid
+    if (branches_in_tree - 1) != joins_in_tree {
+        return false;
+    }
 
     // rhs joins will initially be placeholders
     let mut left_joins = BTreeSet::new();
