@@ -11,7 +11,7 @@ impl Series {
                 let s = ca.apply(|val| val.round()).into_series();
                 return Ok(s);
             } else {
-                // Note we do the computation on f64 floats to not loose precision
+                // Note we do the computation on f64 floats to not lose precision
                 // when the computation is done, we cast to f32
                 let multiplier = 10.0.pow(decimals as f64);
                 let s = ca
