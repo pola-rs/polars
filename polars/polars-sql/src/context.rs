@@ -204,11 +204,11 @@ impl SQLContext {
             .get(0)
             .ok_or_else(|| polars_err!(ComputeError: "no table name provided in query"))?;
 
-        let lf = self.execute_from_statement(sql_tbl)?;
+        let mut lf = self.execute_from_statement(sql_tbl)?;
         let mut contains_wildcard = false;
 
         // Filter Expression
-        let lf = match select_stmt.selection.as_ref() {
+        lf = match select_stmt.selection.as_ref() {
             Some(expr) => {
                 let filter_expression = parse_sql_expr(expr, self)?;
                 lf.filter(filter_expression)
@@ -262,7 +262,13 @@ impl SQLContext {
         if groupby_keys.is_empty() {
             Ok(lf.select(projections))
         } else {
-            self.process_groupby(lf, contains_wildcard, &groupby_keys, &projections)
+            lf = self.process_groupby(lf, contains_wildcard, &groupby_keys, &projections)?;
+
+            // Apply 'having' clause, post-aggregation
+            match select_stmt.having.as_ref() {
+                Some(expr) => Ok(lf.filter(parse_sql_expr(expr, self)?)),
+                None => Ok(lf),
+            }
         }
     }
 
