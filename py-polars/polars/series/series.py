@@ -3307,7 +3307,10 @@ class Series:
             By setting this to True, a copy of the array is made to ensure
             it is writable.
         use_pyarrow
-            Use pyarrow for the conversion to numpy.
+            Use `pyarrow.Array.to_numpy
+            <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
+
+            for the conversion to numpy.
 
         Examples
         --------
