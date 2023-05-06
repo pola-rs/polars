@@ -1026,6 +1026,8 @@ class Series:
             raise ValueError(f'cannot use "{key}" for indexing')
 
     def __array__(self, dtype: Any = None) -> np.ndarray[Any, Any]:
+        if not dtype and self.dtype == Utf8 and not self.has_validity():
+            dtype = np.dtype("U")
         if dtype:
             return self.to_numpy().__array__(dtype)
         else:
