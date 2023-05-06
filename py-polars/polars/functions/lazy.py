@@ -291,6 +291,9 @@ def count(column: str | Series | None = None) -> Expr | int:
     """
     Count the number of values in this column/context.
 
+    .. warning::
+        `null` is deemed a value in this context.
+
     Parameters
     ----------
     column
