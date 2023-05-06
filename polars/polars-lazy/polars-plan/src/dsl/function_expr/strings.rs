@@ -393,15 +393,10 @@ fn to_datetime(
     time_zone: Option<&TimeZone>,
     options: &StrptimeOptions,
 ) -> PolarsResult<Series> {
-    let tz_aware = match (options.tz_aware, &options.format) {
-        (true, Some(_)) => true,
-        (true, None) => polars_bail!(
-            ComputeError:
-            "passing 'tz_aware=True' without 'format' is not yet supported, please specify 'format'"
-        ),
+    let tz_aware = match &options.format {
         #[cfg(feature = "timezones")]
-        (false, Some(format)) => TZ_AWARE_RE.is_match(format),
-        (false, _) => false,
+        Some(format) => TZ_AWARE_RE.is_match(format),
+        _ => false,
     };
     match (time_zone, tz_aware, options.utc) {
         (Some(_), true, _) => polars_bail!(
