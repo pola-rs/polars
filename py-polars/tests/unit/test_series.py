@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
+from numpy.testing import assert_array_equal
 
 import polars as pl
 from polars.datatypes import (
@@ -794,6 +795,14 @@ def test_ufunc() -> None:
     assert_series_equal(
         cast(pl.Series, c2),
         pl.Series("a", [3.0, None, 9.0, 12.0, 15.0, None]),
+    )
+
+
+def test_numpy_string_array() -> None:
+    s_utf8 = pl.Series("a", ["aa", "bb", "cc", "dd"], dtype=pl.Utf8)
+    assert_array_equal(
+        np.char.capitalize(s_utf8),
+        np.array(["Aa", "Bb", "Cc", "Dd"], dtype="<U2"),
     )
 
 
