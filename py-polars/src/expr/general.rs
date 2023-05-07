@@ -1049,6 +1049,22 @@ impl PyExpr {
             .with_fmt("extend")
             .into()
     }
+    fn prepend_constant(&self, py: Python, value: Wrap<AnyValue>, n: usize) -> Self {
+        let value = value.into_py(py);
+        self.inner
+            .clone()
+            .apply(
+                move |s| {
+                    Python::with_gil(|py| {
+                        let value = value.extract::<Wrap<AnyValue>>(py).unwrap().0;
+                        s.prepend_constant(value, n).map(Some)
+                    })
+                },
+                GetOutput::same_type(),
+            )
+            .with_fmt("extend")
+            .into()
+    }
     fn any(&self) -> Self {
         self.inner.clone().any().into()
     }

@@ -11,4 +11,15 @@ impl Series {
         out.append(&to_append)?;
         Ok(out)
     }
+
+    /// Prepend with a constant value.
+    pub fn prepend_constant(&self, value: AnyValue, n: usize) -> PolarsResult<Self> {
+        let s = Series::from_any_values("", &[value], false).unwrap();
+        let s = s.cast(self.dtype())?;
+        let mut out = s.new_from_index(0, n);
+
+        let s = self.clone();
+        out.append(&s)?;
+        Ok(out)
+    }
 }

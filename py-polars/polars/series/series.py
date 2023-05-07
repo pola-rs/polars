@@ -5803,6 +5803,34 @@ class Series:
 
         """
 
+    def prepend_constant(self, value: PythonLiteral | None, n: int) -> Series:
+        """
+        Prepend the Series with 'n' copies of a value.
+
+        Parameters
+        ----------
+        value
+            A constant literal value (not an expression) with which to prepend
+            to the beginning the Series; can pass None to extend with nulls.
+        n
+            The number of additional values that will be added.
+
+        Examples
+        --------
+        >>> s = pl.Series([1, 2, 3])
+        >>> s.prepend_constant(99, n=2)
+        shape: (5,)
+        Series: '' [i64]
+        [
+                99
+                99
+                1
+                2
+                3
+        ]
+
+        """
+
     def set_sorted(self, *, descending: bool = False) -> Self:
         """
         Flags the Series as 'sorted'.

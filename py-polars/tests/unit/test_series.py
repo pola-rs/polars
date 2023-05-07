@@ -2310,6 +2310,26 @@ def test_extend_constant(const: Any, dtype: pl.PolarsDataType) -> None:
     assert_series_equal(s.extend_constant(const, 3), expected)
 
 
+@pytest.mark.parametrize(
+    ("const", "dtype"),
+    [
+        (1, pl.Int8),
+        (4, pl.UInt32),
+        (4.5, pl.Float32),
+        (None, pl.Float64),
+        ("白鵬翔", pl.Utf8),
+        (date.today(), pl.Date),
+        (datetime.now(), pl.Datetime("ns")),
+        (time(23, 59, 59), pl.Time),
+        (timedelta(hours=7, seconds=123), pl.Duration("ms")),
+    ],
+)
+def test_prepend_constant(const: Any, dtype: pl.PolarsDataType) -> None:
+    s = pl.Series("s", [None], dtype=dtype)
+    expected = pl.Series("s", [const, const, const, None], dtype=dtype)
+    assert_series_equal(s.prepend_constant(const, 3), expected)
+
+
 def test_any_all() -> None:
     a = pl.Series("a", [True, False, True])
     assert a.any() is True
