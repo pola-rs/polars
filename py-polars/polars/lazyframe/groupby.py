@@ -346,6 +346,9 @@ class LazyGroupBy(Generic[LDF]):
         """
         Count the number of values in each group.
 
+        .. warning::
+            `null` is deemed a value in this context.
+
         Examples
         --------
         >>> ldf = pl.DataFrame(
