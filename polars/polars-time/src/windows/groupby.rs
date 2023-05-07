@@ -33,6 +33,12 @@ pub enum StartBy {
     DataPoint,
     /// only useful if periods are weekly
     Monday,
+    Tuesday,
+    Wednesday,
+    Thursday,
+    Friday,
+    Saturday,
+    Sunday,
 }
 
 impl Default for StartBy {
