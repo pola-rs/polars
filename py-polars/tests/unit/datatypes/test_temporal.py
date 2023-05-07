@@ -21,7 +21,7 @@ from polars.testing import (
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
-    from polars.type_aliases import PolarsTemporalType, TimeUnit
+    from polars.type_aliases import PolarsTemporalType, StartBy, TimeUnit
 else:
     from polars.utils.convert import get_zoneinfo as ZoneInfo
 
@@ -1170,7 +1170,7 @@ def test_groupby_dynamic_crossing_dst(rule: str, offset: timedelta) -> None:
     ],
 )
 def test_groupby_dynamic_startby_monday_crossing_dst(
-    start_by, expected_time, expected_value
+    start_by: StartBy, expected_time: list[datetime], expected_value: list[float]
 ) -> None:
     start_dt = datetime(2021, 11, 7)
     end_dt = datetime(2021, 11, 14)
