@@ -12,7 +12,7 @@ import pytest
 
 import polars as pl
 from polars import lit, when
-from polars.datatypes import NUMERIC_DTYPES
+from polars.datatypes import FLOAT_DTYPES, NUMERIC_DTYPES
 from polars.testing import assert_frame_equal
 from polars.testing.asserts import assert_series_equal
 
@@ -532,9 +532,33 @@ def test_floor() -> None:
     assert_series_equal(ldf.collect()["a"], pl.Series("a", [1, 1, 3]).cast(pl.Float64))
 
 
-def test_round() -> None:
-    ldf = pl.LazyFrame({"a": [1.8, 1.2, 3.0]}).select(pl.col("a").round(decimals=0))
-    assert_series_equal(ldf.collect()["a"], pl.Series("a", [2, 1, 3]).cast(pl.Float64))
+@pytest.mark.parametrize(
+    ("n", "ndigits", "expected"),
+    [
+        (1.005, 2, 1.0),
+        (1234.00000254495, 10, 1234.000002545),
+        (1835.665, 2, 1835.67),
+        (-1835.665, 2, -1835.67),
+        (1.27499, 2, 1.27),
+        (123.45678, 2, 123.46),
+        (1254, 2, 1254.0),
+        (1254, 0, 1254.0),
+        (123.55, 0, 124.0),
+        (123.55, 1, 123.6),
+        (-1.23456789, 6, -1.234568),
+        (-1835.665, 2, -1835.67),
+        (1.0e-5, 5, 0.00001),
+        (1.0e-20, 20, 1e-20),
+        (1.0e20, 2, 100000000000000000000.0),
+    ],
+)
+def test_round(n: float, ndigits: int, expected: float) -> None:
+    for float_dtype in FLOAT_DTYPES:
+        ldf = pl.LazyFrame({"value": [n]}, schema_overrides={"value": float_dtype})
+        assert_series_equal(
+            ldf.select(pl.col("value").round(decimals=ndigits)).collect().to_series(),
+            pl.Series("value", [expected], dtype=float_dtype),
+        )
 
 
 def test_dot() -> None:
