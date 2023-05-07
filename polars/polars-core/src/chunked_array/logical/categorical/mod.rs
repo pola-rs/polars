@@ -295,7 +295,7 @@ mod test {
         reset_string_cache();
         enable_string_cache(false);
 
-        // tests several things that may loose the dtype information
+        // tests several things that may lose the dtype information
         let s = Series::new("a", vec!["a", "b", "c"]).cast(&DataType::Categorical(None))?;
 
         assert_eq!(
