@@ -52,7 +52,6 @@ pub enum NullStrategy {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum UniqueKeepStrategy {
     /// Keep the first unique row.
-    #[default]
     First,
     /// Keep the last unique row.
     Last,
@@ -60,6 +59,7 @@ pub enum UniqueKeepStrategy {
     None,
     /// Keep any of the unique rows
     /// This allows more optimizations
+    #[default]
     Any,
 }
 
