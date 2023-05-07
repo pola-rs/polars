@@ -527,6 +527,33 @@ impl Expr {
         }
     }
 
+    pub fn map_typed<F, T>(self, function: F) -> Self
+    where
+        F: Fn(Series) -> PolarsResult<Option<ChunkedArray<T>>> + 'static + Send + Sync,
+        T: PolarsDataType,
+        ChunkedArray<T>: IntoSeries,
+    {
+        let f = move |s: &mut [Series]| {
+            function(std::mem::take(&mut s[0])).map(|opt| opt.map(|ca| ca.into_series()))
+        };
+        let output_type = GetOutput::from_type(T::get_dtype());
+
+        Expr::AnonymousFunction {
+            input: vec![self],
+            function: SpecialEq::new(Arc::new(f)),
+            output_type,
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ApplyFlat,
+                input_wildcard_expansion: false,
+                auto_explode: false,
+                fmt_str: "map",
+                cast_to_supertypes: false,
+                allow_rename: false,
+                pass_name_to_apply: false,
+            },
+        }
+    }
+
     fn map_private(self, function_expr: FunctionExpr) -> Self {
         Expr::Function {
             input: vec![self],
