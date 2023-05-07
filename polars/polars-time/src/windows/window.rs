@@ -1,6 +1,4 @@
-#[cfg(feature = "timezones")]
 use chrono::NaiveDateTime;
-#[cfg(feature = "timezones")]
 use now::DateTimeNow;
 use polars_arrow::export::arrow::temporal_conversions::*;
 use polars_arrow::time_zone::PolarsTimeZone;
@@ -218,7 +216,6 @@ impl<'a, T: PolarsTimeZone> BoundsIter<'a, T> {
                 TimeUnit::Milliseconds => window.get_earliest_bounds_ms(boundary.start, tz)?,
             },
             StartBy::Monday => {
-                #[cfg(feature = "timezones")]
                 {
                     #[allow(clippy::type_complexity)]
                     let (from, to, offset): (
@@ -246,6 +243,7 @@ impl<'a, T: PolarsTimeZone> BoundsIter<'a, T> {
                     let mut boundary = boundary;
                     let dt = from(boundary.start);
                     (boundary.start, boundary.stop) = match tz {
+                        #[cfg(feature = "timezones")]
                         Some(tz) => {
                             let dt = dt.and_local_timezone(tz.clone()).unwrap();
                             let dt = dt.beginning_of_week();
@@ -257,7 +255,7 @@ impl<'a, T: PolarsTimeZone> BoundsIter<'a, T> {
                             let stop = offset(&window.period, start, Some(tz))?;
                             (start, stop)
                         }
-                        None => {
+                        _ => {
                             let tz = chrono::Utc;
                             let dt = dt.and_local_timezone(tz).unwrap();
                             let dt = dt.beginning_of_week();
@@ -271,10 +269,6 @@ impl<'a, T: PolarsTimeZone> BoundsIter<'a, T> {
                         }
                     };
                     boundary
-                }
-                #[cfg(not(feature = "timezones"))]
-                {
-                    panic!("activate 'timezones' feature")
                 }
             }
         };
