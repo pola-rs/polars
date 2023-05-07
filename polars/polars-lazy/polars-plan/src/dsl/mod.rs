@@ -527,31 +527,21 @@ impl Expr {
         }
     }
 
+    /// Apply a function/closure once the logical plan get executed.
+    ///
+    /// Unlike [`Expr::map`], the closure returns a `PolarsResult<ChunkedArray<T>>>`, _not_ a
+    /// `PolarsResult<Option<Series>>`. Because the closure's return type is available at compile time, this means the
+    /// schema is guaranteed to be correct, and there is no need for a second `output_type` argument.
     pub fn map_typed<F, T>(self, function: F) -> Self
     where
         F: Fn(Series) -> PolarsResult<Option<ChunkedArray<T>>> + 'static + Send + Sync,
         T: PolarsDataType,
         ChunkedArray<T>: IntoSeries,
     {
-        let f = move |s: &mut [Series]| {
-            function(std::mem::take(&mut s[0])).map(|opt| opt.map(|ca| ca.into_series()))
-        };
-        let output_type = GetOutput::from_type(T::get_dtype());
-
-        Expr::AnonymousFunction {
-            input: vec![self],
-            function: SpecialEq::new(Arc::new(f)),
-            output_type,
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
-                fmt_str: "map",
-                cast_to_supertypes: false,
-                allow_rename: false,
-                pass_name_to_apply: false,
-            },
-        }
+        self.map(
+            move |series| function(series).map(|opt| opt.map(|ca| ca.into_series())),
+            GetOutput::from_type(T::get_dtype()),
+        )
     }
 
     fn map_private(self, function_expr: FunctionExpr) -> Self {
