@@ -1,3 +1,4 @@
+import math
 import typing
 from datetime import date, datetime, timedelta
 
@@ -92,6 +93,12 @@ def test_list_aggregation_that_filters_all_data_6017() -> None:
 def test_median() -> None:
     s = pl.Series([1, 2, 3])
     assert s.median() == 2
+
+
+def test_single_element_std() -> None:
+    s = pl.Series([1])
+    assert math.isnan(s.std(ddof=1))
+    assert s.std(ddof=0) == 0.0
 
 
 def test_quantile() -> None:
