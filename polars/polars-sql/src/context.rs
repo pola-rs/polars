@@ -80,7 +80,7 @@ impl SQLContext {
     /// # }
     ///```
     pub fn execute(&mut self, query: &str) -> PolarsResult<LazyFrame> {
-        let ast = Parser::parse_sql(&GenericDialect::default(), query).map_err(to_compute_err)?;
+        let ast = Parser::parse_sql(&GenericDialect, query).map_err(to_compute_err)?;
         polars_ensure!(ast.len() == 1, ComputeError: "One and only one statement at a time please");
         let res = self.execute_statement(ast.get(0).unwrap());
         // every execution should clear the cte map

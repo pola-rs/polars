@@ -6,7 +6,7 @@ on:
       - py-*
 
 env:
-  RUST_TOOLCHAIN: nightly-2023-04-11
+  RUST_TOOLCHAIN: nightly-2023-05-07
   PYTHON_VERSION: '3.7'
   MATURIN_VERSION: '0.14.10'
   MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
