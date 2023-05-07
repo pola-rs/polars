@@ -4,6 +4,7 @@ import contextlib
 from typing import TYPE_CHECKING
 
 from polars.utils._wrap import wrap_ldf
+from polars.utils.decorators import deprecated_alias
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PySQLContext
@@ -26,7 +27,32 @@ class SQLContext:
     def __init__(self) -> None:
         self._ctxt = PySQLContext.new()
 
-    def register(self, name: str, lf: LazyFrame) -> None:
+    def execute(self, query: str) -> LazyFrame:
+        """
+        Parse the given SQL query and apply it lazily, returning a ``LazyFrame``.
+
+        Parameters
+        ----------
+        query
+            A valid string SQL query.
+
+        """
+        return wrap_ldf(self._ctxt.execute(query))
+
+    def query(self, query: str) -> DataFrame:
+        """
+        Parse the given SQL query and execute it eagerly to return a ``DataFrame``.
+
+        Parameters
+        ----------
+        query
+            A valid string SQL query.
+
+        """
+        return self.execute(query).collect()
+
+    @deprecated_alias(lf="frame")
+    def register(self, name: str, frame: LazyFrame) -> None:
         """
         Register a ``LazyFrame`` in this ``SQLContext`` under a given ``name``.
 
@@ -34,23 +60,28 @@ class SQLContext:
         ----------
         name
             Name of the table
-        lf
+        frame
             LazyFrame to add as this table name.
 
         """
-        self._ctxt.register(name, lf._ldf)
+        self._ctxt.register(name, frame._ldf)
 
-    def execute(self, query: str) -> LazyFrame:
+    def register_many(
+        self, frames: dict[str, LazyFrame] | None = None, **named_frames: LazyFrame
+    ) -> None:
         """
-        Parse the givens SQL query and transform that to a ``LazyFrame``.
+        Register multiple named ``LazyFrame`` objects in this ``SQLContext``.
 
         Parameters
         ----------
-        query
-            A SQL query
+        frames
+            A ``{name:lazyframe, ...}`` mapping.
+        **named_frames
+            Named ``LazyFrame`` objects, provided as kwargs.
 
         """
-        return wrap_ldf(self._ctxt.execute(query))
+        frames = frames or {}
+        frames.update(named_frames)
 
-    def query(self, query: str) -> DataFrame:
-        return self.execute(query).collect()
+        for name, lf in frames.items():
+            self._ctxt.register(name, lf._ldf)
