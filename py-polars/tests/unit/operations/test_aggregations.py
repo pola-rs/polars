@@ -97,7 +97,7 @@ def test_median() -> None:
 
 def test_single_element_std() -> None:
     s = pl.Series([1])
-    assert math.isnan(s.std(ddof=1))
+    assert math.isnan(typing.cast(float, s.std(ddof=1)))
     assert s.std(ddof=0) == 0.0
 
 
