@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 from typing import TYPE_CHECKING
 
+from polars.dataframe import DataFrame
 from polars.utils._wrap import wrap_ldf
 from polars.utils.decorators import deprecated_alias
 
@@ -10,7 +11,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PySQLContext
 
 if TYPE_CHECKING:
-    from polars import DataFrame, LazyFrame
+    from polars import LazyFrame
 
 
 class SQLContext:
@@ -64,6 +65,10 @@ class SQLContext:
             LazyFrame to add as this table name.
 
         """
+        if isinstance(frame, DataFrame):
+            raise TypeError(
+                "Cannot register an eager DataFrame in an SQLContext; use LazyFrame instead"
+            )
         self._ctxt.register(name, frame._ldf)
 
     def register_many(
@@ -83,5 +88,5 @@ class SQLContext:
         frames = frames or {}
         frames.update(named_frames)
 
-        for name, lf in frames.items():
-            self._ctxt.register(name, lf._ldf)
+        for name, frame in frames.items():
+            self.register(name, frame)

@@ -374,5 +374,11 @@ pub(super) fn process_join_constraint(
             _ => {}
         }
     }
+    if let JoinConstraint::Using(idents) = constraint {
+        if let 1.. = idents.len() {
+            let cols = &idents[0].value;
+            return Ok((col(cols), col(cols)));
+        }
+    }
     polars_bail!(ComputeError: "SQL join constraint {:?} is not yet supported", constraint);
 }

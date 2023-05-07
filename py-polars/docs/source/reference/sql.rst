@@ -20,5 +20,6 @@ Methods
    :toctree: api/
 
     SQLContext.execute
-    SQLContext.register
     SQLContext.query
+    SQLContext.register
+    SQLContext.register_many
