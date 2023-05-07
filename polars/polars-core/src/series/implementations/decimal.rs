@@ -62,7 +62,8 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
-        self.0.append(other.as_ref().as_ref());
+        let other = other.decimal()?;
+        self.0.append(&other.0);
         Ok(())
     }
 
