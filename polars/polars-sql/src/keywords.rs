@@ -53,6 +53,7 @@ pub fn all_keywords() -> Vec<&'static str> {
         keywords::NOT,
         keywords::IN,
         keywords::WITH,
+        keywords::HAVING,
     ];
     keywords.extend_from_slice(sql_keywords);
     keywords

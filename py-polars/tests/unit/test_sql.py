@@ -20,24 +20,42 @@ def test_sql_groupby(foods_ipc_path: Path) -> None:
 
     out = c.query(
         """
-    SELECT
-        category,
-        count(category) as count,
-        max(calories),
-        min(fats_g)
-    FROM foods
-    GROUP BY category
-    ORDER BY count, category DESC
-    LIMIT 2
-    """
+        SELECT
+            category,
+            count(category) as n,
+            max(calories),
+            min(fats_g)
+        FROM foods
+        GROUP BY category
+        HAVING n > 5
+        ORDER BY n, category DESC
+        """
     )
-
     assert out.to_dict(False) == {
-        "category": ["meat", "vegetables"],
-        "count": [5, 7],
-        "calories": [120, 45],
-        "fats_g": [5.0, 0.0],
+        "category": ["vegetables", "fruit", "seafood"],
+        "n": [7, 7, 8],
+        "calories": [45, 130, 200],
+        "fats_g": [0.0, 0.0, 1.5],
     }
+
+    lf = pl.LazyFrame(
+        {
+            "group": ["a", "b", "c", "c", "b"],
+            "attr": ["x", "y", "x", "y", "y"],
+        }
+    )
+    c.register("test", lf)
+    out = c.query(
+        """
+        SELECT
+            group,
+            COUNT(DISTINCT attr) AS n_dist_attr
+        FROM test
+        GROUP BY group
+        HAVING n_dist_attr > 1
+        """
+    )
+    assert out.to_dict(False) == {"group": ["c"], "n_dist_attr": [2]}
 
 
 def test_sql_join(foods_ipc_path: Path) -> None:
