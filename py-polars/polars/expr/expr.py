@@ -1124,6 +1124,9 @@ class Expr:
         """
         Count the number of values in this expression.
 
+        .. warning::
+            `null` is deemed a value in this context.
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": [8, 9, 10], "b": [None, 4, 4]})
