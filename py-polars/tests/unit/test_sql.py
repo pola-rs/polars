@@ -59,18 +59,16 @@ def test_sql_groupby(foods_ipc_path: Path) -> None:
 
 
 def test_sql_join(foods_ipc_path: Path) -> None:
-    c = pl.SQLContext()
-
     lf = pl.scan_ipc(foods_ipc_path)
-    c.register("foods1", lf)
-    c.register("foods2", lf)
 
+    c = pl.SQLContext()
+    c.register_many(foods1=lf, foods2=lf)
     out = c.query(
         """
-    SELECT * FROM
-    foods1 INNER JOIN foods2 ON foods1.category = foods2.category
-    LIMIT 2
-    """
+        SELECT * FROM
+        foods1 INNER JOIN foods2 ON foods1.category = foods2.category
+        LIMIT 2
+        """
     )
     assert out.to_dict(False) == {
         "category": ["vegetables", "vegetables"],
@@ -91,10 +89,10 @@ def test_sql_is_between(foods_ipc_path: Path) -> None:
 
     out = c.query(
         """
-    SELECT * FROM foods1
-    WHERE foods1.calories BETWEEN 20 AND 31
-    LIMIT 4
-    """
+        SELECT * FROM foods1
+        WHERE foods1.calories BETWEEN 20 AND 31
+        LIMIT 4
+        """
     )
 
     assert out.to_dict(False) == {
@@ -106,10 +104,10 @@ def test_sql_is_between(foods_ipc_path: Path) -> None:
 
     out = c.query(
         """
-    SELECT * FROM foods1
-    WHERE calories NOT BETWEEN 20 AND 31
-    LIMIT 4
-    """
+        SELECT * FROM foods1
+        WHERE calories NOT BETWEEN 20 AND 31
+        LIMIT 4
+        """
     )
 
     assert out.to_dict(False) == {
@@ -128,8 +126,8 @@ def test_sql_trim(foods_ipc_path: Path) -> None:
 
     out = c.query(
         """
-    SELECT TRIM(LEADING 'v' FROM category) FROM foods1
-    LIMIT 2
-    """
+        SELECT TRIM(LEADING 'v' FROM category) FROM foods1
+        LIMIT 2
+        """
     )
     assert out.to_dict(False) == {"category": ["egetables", "seafood"]}
