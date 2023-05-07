@@ -527,11 +527,13 @@ impl Expr {
         }
     }
 
-    /// Apply a function/closure once the logical plan get executed.
+    /// Apply a strongly typed function/closure once the logical plan get executed.
     ///
-    /// Unlike [`Expr::map`], the closure returns a `PolarsResult<ChunkedArray<T>>>`, _not_ a
-    /// `PolarsResult<Option<Series>>`. Because the closure's return type is available at compile time, this means the
-    /// schema is guaranteed to be correct, and there is no need for a second `output_type` argument.
+    /// Unlike [`Expr::map`], the closure returns a
+    /// `PolarsResult<Option<ChunkedArray<T>>>`, _not_ a `PolarsResult<Option<Series>>`.
+    /// Because the closure's return type is available at compile time, this means the
+    /// schema is guaranteed to be correct, and there is no need for a second
+    /// `output_type` argument.
     pub fn map_typed<F, T>(self, function: F) -> Self
     where
         F: Fn(Series) -> PolarsResult<Option<ChunkedArray<T>>> + 'static + Send + Sync,
