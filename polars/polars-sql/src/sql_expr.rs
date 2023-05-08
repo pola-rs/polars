@@ -1,3 +1,4 @@
+use polars_core::export::regex::internal::Input;
 use polars_core::prelude::*;
 use polars_lazy::dsl::Expr;
 use polars_lazy::prelude::*;
@@ -375,7 +376,7 @@ pub(super) fn process_join_constraint(
         }
     }
     if let JoinConstraint::Using(idents) = constraint {
-        if let 1.. = idents.len() {
+        if !idents.is_empty() {
             let cols = &idents[0].value;
             return Ok((col(cols), col(cols)));
         }
