@@ -1133,6 +1133,11 @@ def test_repeat() -> None:
     s = pl.repeat(0, 0, eager=True)
     assert s.dtype == pl.Int32
     assert s.len() == 0
+    assert pl.repeat(datetime(2023, 2, 2), 3, eager=True).to_list() == [
+        datetime(2023, 2, 2, 0, 0),
+        datetime(2023, 2, 2, 0, 0),
+        datetime(2023, 2, 2, 0, 0),
+    ]
 
 
 def test_shape() -> None:

@@ -40,7 +40,7 @@ impl SQLContext {
         }
     }
 
-    /// Register a DataFrame as a table in the SQLContext.
+    /// Register a LazyFrame as a table in the SQLContext.
     /// ```rust
     /// # use polars_sql::SQLContext;
     /// # use polars_core::prelude::*;
@@ -48,7 +48,6 @@ impl SQLContext {
     /// # fn main() {
     ///
     /// let mut ctx = SQLContext::new();
-    ///
     /// let df = df! {
     ///    "a" =>  [1, 2, 3],
     /// }.unwrap().lazy();
@@ -61,7 +60,13 @@ impl SQLContext {
         self.tables.push(name.to_owned());
     }
 
-    /// Execute a sql query and return the result as a LazyFrame.
+    /// Unregister a LazyFrame table from the SQLContext.
+    pub fn unregister(&mut self, name: &str) {
+        self.table_map.remove(&name.to_owned());
+        self.tables.retain(|nm| nm != &name.to_owned());
+    }
+
+    /// Execute a SQL query, returning a LazyFrame.
     /// ```rust
     /// # use polars_sql::SQLContext;
     /// # use polars_core::prelude::*;
@@ -116,10 +121,14 @@ impl SQLContext {
 
     pub(crate) fn execute_query(&mut self, query: &Query) -> PolarsResult<LazyFrame> {
         self.register_ctes(query)?;
+
         let mut lf = match &query.body.as_ref() {
             SetExpr::Select(select_stmt) => self.execute_select(select_stmt)?,
             SetExpr::Query(query) => self.execute_query(query)?,
-            _ => polars_bail!(ComputeError: "INSERT, UPDATE is not supported"),
+            SetExpr::SetOperation { op, .. } => {
+                polars_bail!(ComputeError: "{} operation not yet supported", op)
+            }
+            _ => polars_bail!(ComputeError: "INSERT, UPDATE, VALUES not yet supported"),
         };
 
         if !query.order_by.is_empty() {
@@ -260,15 +269,22 @@ impl SQLContext {
             .collect::<PolarsResult<_>>()?;
 
         if groupby_keys.is_empty() {
-            Ok(lf.select(projections))
+            lf = lf.select(projections)
         } else {
             lf = self.process_groupby(lf, contains_wildcard, &groupby_keys, &projections)?;
 
-            // Apply 'having' clause, post-aggregation
-            match select_stmt.having.as_ref() {
-                Some(expr) => Ok(lf.filter(parse_sql_expr(expr, self)?)),
-                None => Ok(lf),
-            }
+            // Apply optional 'having' clause, post-aggregation
+            lf = match select_stmt.having.as_ref() {
+                Some(expr) => lf.filter(parse_sql_expr(expr, self)?),
+                None => lf,
+            };
+        };
+
+        // Apply optional 'distinct' clause
+        if select_stmt.distinct {
+            Ok(lf.unique(None, UniqueKeepStrategy::Any))
+        } else {
+            Ok(lf)
         }
     }
 

@@ -184,4 +184,4 @@ lto = "fat"
 built = { version = "0.6", features = ["chrono", "git2"], optional = true }
 
 [patch.crates-io]
-simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "alignment" }
+# simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "alignment" }
