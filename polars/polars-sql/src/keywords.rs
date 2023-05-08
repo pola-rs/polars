@@ -26,6 +26,7 @@ pub fn all_keywords() -> Vec<&'static str> {
         keywords::DATE,
         keywords::DATETIME,
         keywords::DESC,
+        keywords::DISTINCT,
         keywords::DOUBLE,
         keywords::FLOAT,
         keywords::FROM,
