@@ -215,7 +215,7 @@ impl<'a, T: PolarsTimeZone> BoundsIter<'a, T> {
                 TimeUnit::Microseconds => window.get_earliest_bounds_us(boundary.start, tz)?,
                 TimeUnit::Milliseconds => window.get_earliest_bounds_ms(boundary.start, tz)?,
             },
-            StartBy::Monday => {
+            _ => {
                 {
                     #[allow(clippy::type_complexity)]
                     let (from, to, offset): (
@@ -249,6 +249,12 @@ impl<'a, T: PolarsTimeZone> BoundsIter<'a, T> {
                             let dt = dt.beginning_of_week();
                             let dt = dt.naive_utc();
                             let start = to(dt);
+                            // adjust start of the week based on given day of the week
+                            let start = offset(
+                                &Duration::parse(&format!("{}d", start_by.weekday().unwrap())),
+                                start,
+                                Some(tz),
+                            )?;
                             // apply the 'offset'
                             let start = offset(&window.offset, start, Some(tz))?;
                             // and compute the end of the window defined by the 'period'
@@ -261,6 +267,13 @@ impl<'a, T: PolarsTimeZone> BoundsIter<'a, T> {
                             let dt = dt.beginning_of_week();
                             let dt = dt.naive_utc();
                             let start = to(dt);
+                            // adjust start of the week based on given day of the week
+                            let start = offset(
+                                &Duration::parse(&format!("{}d", start_by.weekday().unwrap())),
+                                start,
+                                None::<&T>,
+                            )
+                            .unwrap();
                             // apply the 'offset'
                             let start = offset(&window.offset, start, None::<&T>).unwrap();
                             // and compute the end of the window defined by the 'period'
