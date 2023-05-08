@@ -475,7 +475,7 @@ def test_groupby_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
         "count": [2, 1, 1, 1, 1, 1],
     }
 
-    # start by week
+    # start by monday
     start = datetime(2022, 1, 1, tzinfo=tzinfo)
     stop = datetime(2022, 1, 12, 7, tzinfo=tzinfo)
 
@@ -483,14 +483,15 @@ def test_groupby_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
         {"date": pl.date_range(start, stop, "12h", eager=True)}
     ).with_columns(pl.col("date").dt.weekday().alias("day"))
 
-    assert df.groupby_dynamic(
+    result = df.groupby_dynamic(
         "date",
         every="1w",
         period="3d",
         include_boundaries=True,
         start_by="monday",
         truncate=False,
-    ).agg([pl.count(), pl.col("day").first().alias("data_day")]).to_dict(False) == {
+    ).agg([pl.count(), pl.col("day").first().alias("data_day")])
+    assert result.to_dict(False) == {
         "_lower_boundary": [
             datetime(2022, 1, 3, 0, 0, tzinfo=tzinfo),
             datetime(2022, 1, 10, 0, 0, tzinfo=tzinfo),
@@ -505,6 +506,31 @@ def test_groupby_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
         ],
         "count": [6, 5],
         "data_day": [1, 1],
+    }
+    # start by saturday
+    result = df.groupby_dynamic(
+        "date",
+        every="1w",
+        period="3d",
+        include_boundaries=True,
+        start_by="saturday",
+        truncate=False,
+    ).agg([pl.count(), pl.col("day").first().alias("data_day")])
+    assert result.to_dict(False) == {
+        "_lower_boundary": [
+            datetime(2022, 1, 1, 0, 0, tzinfo=tzinfo),
+            datetime(2022, 1, 8, 0, 0, tzinfo=tzinfo),
+        ],
+        "_upper_boundary": [
+            datetime(2022, 1, 4, 0, 0, tzinfo=tzinfo),
+            datetime(2022, 1, 11, 0, 0, tzinfo=tzinfo),
+        ],
+        "date": [
+            datetime(2022, 1, 1, 0, 0, tzinfo=tzinfo),
+            datetime(2022, 1, 8, 0, 0, tzinfo=tzinfo),
+        ],
+        "count": [6, 6],
+        "data_day": [6, 6],
     }
 
 

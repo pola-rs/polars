@@ -4818,12 +4818,15 @@ class DataFrame:
             Define which sides of the temporal interval are closed (inclusive).
         by
             Also group by this column/these columns
-        start_by : {'window', 'datapoint', 'monday'}
+        start_by : {'window', 'datapoint', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}
             The strategy to determine the start of the first window by.
 
             - 'window': Truncate the start of the window with the 'every' argument.
             - 'datapoint': Start from the first encountered data point.
             - 'monday': Start the window on the monday before the first data point.
+            - 'tuesday': Start the window on the tuesday before the first data point.
+            - ...
+            - 'sunday': Start the window on the sunday before the first data point.
 
         Returns
         -------

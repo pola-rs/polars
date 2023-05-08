@@ -104,7 +104,17 @@ SizeUnit: TypeAlias = Literal[
     "gigabytes",
     "terabytes",
 ]
-StartBy: TypeAlias = Literal["window", "datapoint", "monday"]
+StartBy: TypeAlias = Literal[
+    "window",
+    "datapoint",
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+]
 TimeUnit: TypeAlias = Literal["ns", "us", "ms"]
 UniqueKeepStrategy: TypeAlias = Literal["first", "last", "any", "none"]
 UnstackDirection: TypeAlias = Literal["vertical", "horizontal"]

@@ -33,11 +33,32 @@ pub enum StartBy {
     DataPoint,
     /// only useful if periods are weekly
     Monday,
+    Tuesday,
+    Wednesday,
+    Thursday,
+    Friday,
+    Saturday,
+    Sunday,
 }
 
 impl Default for StartBy {
     fn default() -> Self {
         Self::WindowBound
+    }
+}
+
+impl StartBy {
+    pub fn weekday(&self) -> Option<u32> {
+        match self {
+            StartBy::Monday => Some(0),
+            StartBy::Tuesday => Some(1),
+            StartBy::Wednesday => Some(2),
+            StartBy::Thursday => Some(3),
+            StartBy::Friday => Some(4),
+            StartBy::Saturday => Some(5),
+            StartBy::Sunday => Some(6),
+            _ => None,
+        }
     }
 }
 

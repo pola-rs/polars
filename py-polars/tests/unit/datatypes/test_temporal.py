@@ -21,7 +21,7 @@ from polars.testing import (
 if TYPE_CHECKING:
     from zoneinfo import ZoneInfo
 
-    from polars.type_aliases import PolarsTemporalType, TimeUnit
+    from polars.type_aliases import PolarsTemporalType, StartBy, TimeUnit
 else:
     from polars.utils.convert import get_zoneinfo as ZoneInfo
 
@@ -1108,24 +1108,81 @@ def test_groupby_dynamic_crossing_dst(rule: str, offset: timedelta) -> None:
     assert_frame_equal(result, expected)
 
 
-def test_groupby_dynamic_startby_monday_crossing_dst() -> None:
+@pytest.mark.parametrize(
+    ("start_by", "expected_time", "expected_value"),
+    [
+        (
+            "monday",
+            [
+                datetime(2021, 11, 1, tzinfo=ZoneInfo("US/Central")),
+                datetime(2021, 11, 8, tzinfo=ZoneInfo("US/Central")),
+            ],
+            [0.0, 4.0],
+        ),
+        (
+            "tuesday",
+            [
+                datetime(2021, 11, 2, tzinfo=ZoneInfo("US/Central")),
+                datetime(2021, 11, 9, tzinfo=ZoneInfo("US/Central")),
+            ],
+            [0.5, 4.5],
+        ),
+        (
+            "wednesday",
+            [
+                datetime(2021, 11, 3, tzinfo=ZoneInfo("US/Central")),
+                datetime(2021, 11, 10, tzinfo=ZoneInfo("US/Central")),
+            ],
+            [1.0, 5.0],
+        ),
+        (
+            "thursday",
+            [
+                datetime(2021, 11, 4, tzinfo=ZoneInfo("US/Central")),
+                datetime(2021, 11, 11, tzinfo=ZoneInfo("US/Central")),
+            ],
+            [1.5, 5.5],
+        ),
+        (
+            "friday",
+            [
+                datetime(2021, 11, 5, tzinfo=ZoneInfo("US/Central")),
+                datetime(2021, 11, 12, tzinfo=ZoneInfo("US/Central")),
+            ],
+            [2.0, 6.0],
+        ),
+        (
+            "saturday",
+            [
+                datetime(2021, 11, 6, tzinfo=ZoneInfo("US/Central")),
+                datetime(2021, 11, 13, tzinfo=ZoneInfo("US/Central")),
+            ],
+            [2.5, 6.5],
+        ),
+        (
+            "sunday",
+            [
+                datetime(2021, 11, 7, tzinfo=ZoneInfo("US/Central")),
+                datetime(2021, 11, 14, tzinfo=ZoneInfo("US/Central")),
+            ],
+            [3.0, 7.0],
+        ),
+    ],
+)
+def test_groupby_dynamic_startby_monday_crossing_dst(
+    start_by: StartBy, expected_time: list[datetime], expected_value: list[float]
+) -> None:
     start_dt = datetime(2021, 11, 7)
     end_dt = datetime(2021, 11, 14)
     date_range = pl.date_range(
         start_dt, end_dt, "1d", time_zone="US/Central", eager=True
     )
     df = pl.DataFrame({"time": date_range, "value": range(len(date_range))})
-    result = df.groupby_dynamic("time", every="1w", start_by="monday").agg(
+    result = df.groupby_dynamic("time", every="1w", start_by=start_by).agg(
         pl.col("value").mean()
     )
     expected = pl.DataFrame(
-        {
-            "time": [
-                datetime(2021, 11, 1, tzinfo=ZoneInfo("US/Central")),
-                datetime(2021, 11, 8, tzinfo=ZoneInfo("US/Central")),
-            ],
-            "value": [0.0, 4.0],
-        },
+        {"time": expected_time, "value": expected_value},
     )
     assert_frame_equal(result, expected)
 
