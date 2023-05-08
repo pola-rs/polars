@@ -27,7 +27,7 @@ macro_rules! impl_dyn_series {
             fn into_series(self) -> Series {
                 Series(Arc::new(SeriesWrap(self)))
             }
-            crate::impl_get_simple_dtype_error!($ca);
+            crate::impl_intoseries_get_simple_dtype_error!($ca);
         }
 
         impl private::PrivateSeries for SeriesWrap<$ca> {
