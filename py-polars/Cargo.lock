@@ -1473,7 +1473,7 @@ dependencies = [
 
 [[package]]
 name = "polars"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "getrandom",
  "polars-core",
@@ -1487,7 +1487,7 @@ dependencies = [
 
 [[package]]
 name = "polars-algo"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "polars-core",
  "polars-lazy",
@@ -1496,7 +1496,7 @@ dependencies = [
 
 [[package]]
 name = "polars-arrow"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "arrow2",
  "chrono",
@@ -1511,7 +1511,7 @@ dependencies = [
 
 [[package]]
 name = "polars-core"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "ahash",
  "arrow2",
@@ -1544,7 +1544,7 @@ dependencies = [
 
 [[package]]
 name = "polars-error"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "arrow2",
  "regex",
@@ -1553,7 +1553,7 @@ dependencies = [
 
 [[package]]
 name = "polars-io"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "ahash",
  "arrow2",
@@ -1587,7 +1587,7 @@ dependencies = [
 
 [[package]]
 name = "polars-lazy"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "ahash",
  "bitflags",
@@ -1608,7 +1608,7 @@ dependencies = [
 
 [[package]]
 name = "polars-ops"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "argminmax",
  "arrow2",
@@ -1627,7 +1627,7 @@ dependencies = [
 
 [[package]]
 name = "polars-pipe"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "crossbeam-channel",
  "crossbeam-queue",
@@ -1647,7 +1647,7 @@ dependencies = [
 
 [[package]]
 name = "polars-plan"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "ahash",
  "arrow2",
@@ -1669,7 +1669,7 @@ dependencies = [
 
 [[package]]
 name = "polars-row"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "arrow2",
  "polars-error",
@@ -1678,7 +1678,7 @@ dependencies = [
 
 [[package]]
 name = "polars-sql"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "polars-arrow",
  "polars-core",
@@ -1691,7 +1691,7 @@ dependencies = [
 
 [[package]]
 name = "polars-time"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "arrow2",
  "atoi",
@@ -1710,7 +1710,7 @@ dependencies = [
 
 [[package]]
 name = "polars-utils"
-version = "0.28.0"
+version = "0.29.0"
 dependencies = [
  "once_cell",
  "rayon",
