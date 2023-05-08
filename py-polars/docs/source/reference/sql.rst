@@ -23,3 +23,4 @@ Methods
     SQLContext.query
     SQLContext.register
     SQLContext.register_many
+    SQLContext.unregister

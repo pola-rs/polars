@@ -40,7 +40,7 @@ impl SQLContext {
         }
     }
 
-    /// Register a DataFrame as a table in the SQLContext.
+    /// Register a LazyFrame as a table in the SQLContext.
     /// ```rust
     /// # use polars_sql::SQLContext;
     /// # use polars_core::prelude::*;
@@ -48,7 +48,6 @@ impl SQLContext {
     /// # fn main() {
     ///
     /// let mut ctx = SQLContext::new();
-    ///
     /// let df = df! {
     ///    "a" =>  [1, 2, 3],
     /// }.unwrap().lazy();
@@ -61,7 +60,13 @@ impl SQLContext {
         self.tables.push(name.to_owned());
     }
 
-    /// Execute a sql query and return the result as a LazyFrame.
+    /// Unregister a LazyFrame table from the SQLContext.
+    pub fn unregister(&mut self, name: &str) {
+        self.table_map.remove(&name.to_owned());
+        self.tables.retain(|nm| nm != &name.to_owned());
+    }
+
+    /// Execute a SQL query, returning a LazyFrame.
     /// ```rust
     /// # use polars_sql::SQLContext;
     /// # use polars_core::prelude::*;

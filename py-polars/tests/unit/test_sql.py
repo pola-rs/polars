@@ -19,8 +19,7 @@ def test_sql_distinct() -> None:
             "b": [1, 2, 3, 4, 5, 6],
         }
     )
-    c = pl.SQLContext()
-    c.register("df", lf)
+    c = pl.SQLContext(df=lf)
     out = c.query(
         """
         SELECT DISTINCT a
@@ -43,6 +42,11 @@ def test_sql_distinct() -> None:
         "two_a": [2, 2, 4, 6],
         "half_b": [1, 0, 2, 3],
     }
+
+    # test unregistration
+    c.unregister("df")
+    with pytest.raises(pl.ComputeError, match=".*'df'.*not found"):
+        c.query("SELECT * FROM df")
 
 
 def test_sql_groupby(foods_ipc_path: Path) -> None:
@@ -129,9 +133,7 @@ def test_sql_join_left() -> None:
         "tbl_b": pl.LazyFrame({"a": [3, 2, 1], "b": [6, 5, 4], "c": ["x", "y", "z"]}),
         "tbl_c": pl.LazyFrame({"c": ["w", "y", "z"], "d": [10.5, -50.0, 25.5]}),
     }
-    c = pl.SQLContext()
-    c.register_many(frames)
-
+    c = pl.SQLContext(frames)
     out = c.execute(
         """
         SELECT a, b, c, d
@@ -151,9 +153,7 @@ def test_sql_join_left() -> None:
 def test_sql_is_between(foods_ipc_path: Path) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
 
-    c = pl.SQLContext()
-    c.register("foods1", lf)
-
+    c = pl.SQLContext(foods1=lf)
     out = c.query(
         """
         SELECT *
@@ -186,16 +186,11 @@ def test_sql_is_between(foods_ipc_path: Path) -> None:
 
 
 def test_sql_trim(foods_ipc_path: Path) -> None:
-    lf = pl.scan_ipc(foods_ipc_path)
-
-    c = pl.SQLContext()
-    c.register("foods1", lf)
-
-    out = c.query(
+    out = pl.SQLContext(foods1=pl.scan_ipc(foods_ipc_path)).query(
         """
-        SELECT TRIM(LEADING 'v' FROM category)
+        SELECT DISTINCT TRIM(LEADING 'vmf' FROM category)
         FROM foods1
-        LIMIT 2
+        ORDER BY category DESC
         """
     )
-    assert out.to_dict(False) == {"category": ["egetables", "seafood"]}
+    assert out.to_dict(False) == {"category": ["seafood", "ruit", "egetables", "eat"]}
