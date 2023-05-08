@@ -31,6 +31,7 @@ mod interpolate;
 #[cfg(feature = "is_in")]
 mod is_in;
 mod len;
+#[cfg(feature = "zip_with")]
 pub(crate) mod min_max_binary;
 mod nulls;
 mod peaks;
