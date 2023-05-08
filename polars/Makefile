@@ -101,12 +101,12 @@ doctest:
 	cargo doc --all-features -p polars-sql
 
 publish:
-#	cargo publish --allow-dirty -p polars-error
-#	sleep 20
-#	cargo publish --allow-dirty -p polars-utils
-#	sleep 20
-#	cargo publish --allow-dirty -p polars-row
-#	sleep 20
+	cargo publish --allow-dirty -p polars-error
+	sleep 20
+	cargo publish --allow-dirty -p polars-utils
+	sleep 20
+	cargo publish --allow-dirty -p polars-row
+	sleep 20
 	cargo publish --allow-dirty -p polars-arrow
 	sleep 20
 	cargo publish --allow-dirty -p polars-core

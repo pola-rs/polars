@@ -163,10 +163,10 @@ ndarray = { version = "0.15", optional = true, default_features = false }
 num-traits.workspace = true
 object_store = { version = "0.5.3", default-features = false, optional = true }
 once_cell.workspace = true
-polars-arrow = { version = "0.28.0", path = "../polars-arrow", features = ["compute"] }
-polars-error = { version = "0.28.0", path = "../polars-error" }
-polars-row = { version = "0.28.0", path = "../polars-row" }
-polars-utils = { version = "0.28.0", path = "../polars-utils" }
+polars-arrow = { version = "0.29.0", path = "../polars-arrow", features = ["compute"] }
+polars-error = { version = "0.29.0", path = "../polars-error" }
+polars-row = { version = "0.29.0", path = "../polars-row" }
+polars-utils = { version = "0.29.0", path = "../polars-utils" }
 rand = { version = "0.8", optional = true, features = ["small_rng", "std"] }
 rand_distr = { version = "0.4", optional = true }
 rayon.workspace = true

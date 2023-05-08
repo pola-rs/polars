@@ -15,7 +15,7 @@ chrono-tz = { version = "0.8", optional = true }
 hashbrown.workspace = true
 multiversion.workspace = true
 num-traits.workspace = true
-polars-error = { version = "0.28.0", path = "../polars-error" }
+polars-error = { version = "0.29.0", path = "../polars-error" }
 serde = { version = "1", features = ["derive"], optional = true }
 thiserror.workspace = true
 
