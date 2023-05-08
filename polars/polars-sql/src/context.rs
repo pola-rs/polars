@@ -116,6 +116,7 @@ impl SQLContext {
 
     pub(crate) fn execute_query(&mut self, query: &Query) -> PolarsResult<LazyFrame> {
         self.register_ctes(query)?;
+
         let mut lf = match &query.body.as_ref() {
             SetExpr::Select(select_stmt) => self.execute_select(select_stmt)?,
             SetExpr::Query(query) => self.execute_query(query)?,
@@ -260,15 +261,22 @@ impl SQLContext {
             .collect::<PolarsResult<_>>()?;
 
         if groupby_keys.is_empty() {
-            Ok(lf.select(projections))
+            lf = lf.select(projections)
         } else {
             lf = self.process_groupby(lf, contains_wildcard, &groupby_keys, &projections)?;
 
-            // Apply 'having' clause, post-aggregation
-            match select_stmt.having.as_ref() {
-                Some(expr) => Ok(lf.filter(parse_sql_expr(expr, self)?)),
-                None => Ok(lf),
-            }
+            // Apply optional 'having' clause, post-aggregation
+            lf = match select_stmt.having.as_ref() {
+                Some(expr) => lf.filter(parse_sql_expr(expr, self)?),
+                None => lf,
+            };
+        };
+
+        // Apply optional 'distinct' clause
+        if select_stmt.distinct {
+            Ok(lf.unique(None, UniqueKeepStrategy::Any))
+        } else {
+            Ok(lf)
         }
     }
 
