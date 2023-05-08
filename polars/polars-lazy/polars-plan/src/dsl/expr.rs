@@ -195,7 +195,7 @@ impl GetOutput {
         Default::default()
     }
 
-    pub fn infer() -> Self {
+    pub fn infer_type() -> Self {
         SpecialEq::new(Arc::new(ShouldInferOutputTypeMarker))
     }
 
