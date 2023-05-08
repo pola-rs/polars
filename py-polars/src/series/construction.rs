@@ -1,6 +1,6 @@
 use numpy::PyArray1;
 use polars_core::prelude::*;
-use polars_core::utils::{CustomIterTools, NoNull};
+use polars_core::utils::CustomIterTools;
 use pyo3::prelude::*;
 
 use crate::arrow_interop::to_rust::array_to_rust;
@@ -233,46 +233,13 @@ impl PySeries {
     }
 
     #[staticmethod]
-    fn repeat(name: &str, val: &PyAny, n: usize, dtype: Wrap<DataType>) -> Self {
-        match dtype.0 {
-            DataType::Utf8 => {
-                let val = val.extract::<&str>().unwrap();
-                let mut ca: Utf8Chunked = (0..n).map(|_| val).collect_trusted();
-                ca.rename(name);
-                ca.into_series().into()
-            }
-            DataType::Int64 => {
-                let val = val.extract::<i64>().unwrap();
-                let mut ca: NoNull<Int64Chunked> = (0..n).map(|_| val).collect_trusted();
-                ca.rename(name);
-                ca.into_inner().into_series().into()
-            }
-            DataType::Int32 => {
-                let val = val.extract::<i32>().unwrap();
-                let mut ca: NoNull<Int32Chunked> = (0..n).map(|_| val).collect_trusted();
-                ca.rename(name);
-                ca.into_inner().into_series().into()
-            }
-            DataType::Float64 => {
-                let val = val.extract::<f64>().unwrap();
-                let mut ca: NoNull<Float64Chunked> = (0..n).map(|_| val).collect_trusted();
-                ca.rename(name);
-                ca.into_inner().into_series().into()
-            }
-            DataType::Boolean => {
-                let val = val.extract::<bool>().unwrap();
-                let mut ca: BooleanChunked = (0..n).map(|_| val).collect_trusted();
-                ca.rename(name);
-                ca.into_series().into()
-            }
-            DataType::Null => {
-                let s = Series::new_null(name, n);
-                s.into()
-            }
-            dt => {
-                panic!("cannot create repeat with dtype: {dt:?}");
-            }
-        }
+    fn repeat(name: &str, val: Wrap<AnyValue>, n: usize, dtype: Wrap<DataType>) -> PyResult<Self> {
+        let av = val.0;
+        Ok(Series::new(name, &[av])
+            .cast(&dtype.0)
+            .map_err(PyPolarsErr::from)?
+            .new_from_index(0, n)
+            .into())
     }
 
     #[staticmethod]
