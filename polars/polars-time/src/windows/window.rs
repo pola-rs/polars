@@ -245,7 +245,7 @@ impl<'a, T: PolarsTimeZone> BoundsIter<'a, T> {
                     (boundary.start, boundary.stop) = match tz {
                         #[cfg(feature = "timezones")]
                         Some(tz) => {
-                            let dt = dt.and_local_timezone(tz.clone()).unwrap();
+                            let dt = tz.from_utc_datetime(&dt);
                             let dt = dt.beginning_of_week();
                             let dt = dt.naive_utc();
                             let start = to(dt);
