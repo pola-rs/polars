@@ -3073,7 +3073,7 @@ def struct(
 
 @overload
 def repeat(
-    value: float | int | str | bool | None,
+    value: float | int | str | bool | date | datetime | time | timedelta | None,
     n: Expr | int,
     *,
     eager: Literal[False] = ...,
@@ -3084,7 +3084,7 @@ def repeat(
 
 @overload
 def repeat(
-    value: float | int | str | bool | None,
+    value: float | int | str | bool | date | datetime | time | timedelta | None,
     n: Expr | int,
     *,
     eager: Literal[True],
@@ -3095,7 +3095,7 @@ def repeat(
 
 @overload
 def repeat(
-    value: float | int | str | bool | None,
+    value: float | int | str | bool | date | datetime | time | timedelta | None,
     n: Expr | int,
     *,
     eager: bool,
@@ -3105,7 +3105,7 @@ def repeat(
 
 
 def repeat(
-    value: float | int | str | bool | None,
+    value: float | int | str | bool | date | datetime | time | timedelta | None,
     n: Expr | int,
     *,
     eager: bool = False,
