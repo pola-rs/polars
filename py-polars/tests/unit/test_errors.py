@@ -21,21 +21,21 @@ def test_error_on_reducing_map() -> None:
     df = pl.DataFrame(
         {"id": [0, 0, 0, 1, 1, 1], "t": [2, 4, 5, 10, 11, 14], "y": [0, 1, 1, 2, 3, 4]}
     )
-
     with pytest.raises(
         pl.InvalidOperationError,
         match=(
-            "output length of `map` must be equal to that of the input length; consider using `apply` instead"
+            r"output length of `map` \(6\) must be equal to "
+            r"the input length \(1\); consider using `apply` instead"
         ),
     ):
         df.groupby("id").agg(pl.map(["t", "y"], np.trapz))
 
     df = pl.DataFrame({"x": [1, 2, 3, 4], "group": [1, 2, 1, 2]})
-
     with pytest.raises(
         pl.InvalidOperationError,
         match=(
-            "output length of `map` must be equal to that of the input length; consider using `apply` instead"
+            r"output length of `map` \(4\) must be equal to "
+            r"the input length \(1\); consider using `apply` instead"
         ),
     ):
         df.select(

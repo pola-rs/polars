@@ -125,7 +125,10 @@ impl SQLContext {
         let mut lf = match &query.body.as_ref() {
             SetExpr::Select(select_stmt) => self.execute_select(select_stmt)?,
             SetExpr::Query(query) => self.execute_query(query)?,
-            _ => polars_bail!(ComputeError: "INSERT, UPDATE is not supported"),
+            SetExpr::SetOperation { op, .. } => {
+                polars_bail!(ComputeError: "{} operation not yet supported", op)
+            }
+            _ => polars_bail!(ComputeError: "INSERT, UPDATE, VALUES not yet supported"),
         };
 
         if !query.order_by.is_empty() {
