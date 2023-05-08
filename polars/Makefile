@@ -102,32 +102,20 @@ doctest:
 
 publish:
 	cargo publish --allow-dirty -p polars-error
-	sleep 20
 	cargo publish --allow-dirty -p polars-utils
-	sleep 20
 	cargo publish --allow-dirty -p polars-row
-	sleep 20
 	cargo publish --allow-dirty -p polars-arrow
-	sleep 20
 	cargo publish --allow-dirty -p polars-core
-	sleep 20
 	cargo publish --allow-dirty -p polars-ops
-	sleep 20
 	cargo publish --allow-dirty -p polars-time
-	sleep 20
 	cargo publish --allow-dirty -p polars-io
-	sleep 20
 	cargo publish --allow-dirty -p polars-plan
-	sleep 20
 	cargo publish --allow-dirty -p polars-pipe
-	sleep 20
 	cargo publish --allow-dirty -p polars-lazy
-	sleep 20
 	cargo publish --allow-dirty -p polars-algo
-	sleep 20
 	cargo publish --allow-dirty -p polars-sql
-	sleep 20
 	cargo publish --allow-dirty -p polars
+	cd .. && cargo publish --allow-dirty -p polars-cli
 
 .PHONY: help
 help:  ## Display this help screen
