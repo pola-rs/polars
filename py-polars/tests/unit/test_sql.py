@@ -185,6 +185,19 @@ def test_sql_is_between(foods_ipc_path: Path) -> None:
     }
 
 
+def test_sql_union() -> None:
+    # note: set operations are not currently supported;
+    # check that we raise an accurate error to this effect...
+    lf = pl.LazyFrame({"a": ["xx", "yy"], "b": ["zz", None]})
+
+    c = pl.SQLContext(
+        u1=lf.select("a"),
+        u2=lf.select("b"),
+    )
+    with pytest.raises(pl.ComputeError, match="UNION.+ not yet supported"):
+        c.query("""(SELECT * FROM u1) UNION (SELECT * FROM u2)""")
+
+
 def test_sql_trim(foods_ipc_path: Path) -> None:
     out = pl.SQLContext(foods1=pl.scan_ipc(foods_ipc_path)).query(
         """

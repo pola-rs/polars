@@ -225,8 +225,8 @@ fn all_unit_length(ca: &ListChunked) -> bool {
 fn check_map_output_len(input_len: usize, output_len: usize, expr: &Expr) -> PolarsResult<()> {
     polars_ensure!(
         input_len == output_len, expr = expr, InvalidOperation:
-        "output length of `map` must be equal to that of the input length; \
-        consider using `apply` instead"
+        "output length of `map` ({}) must be equal to the input length ({}); \
+        consider using `apply` instead", input_len, output_len
     );
     Ok(())
 }
