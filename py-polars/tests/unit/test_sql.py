@@ -12,6 +12,39 @@ def foods_ipc_path() -> str:
     return str(Path(os.path.dirname(__file__)) / "io" / "files" / "foods1.ipc")
 
 
+def test_sql_distinct() -> None:
+    lf = pl.LazyFrame(
+        {
+            "a": [1, 1, 1, 2, 2, 3],
+            "b": [1, 2, 3, 4, 5, 6],
+        }
+    )
+    c = pl.SQLContext()
+    c.register("df", lf)
+    out = c.query(
+        """
+        SELECT DISTINCT a
+        FROM df
+        ORDER BY a DESC
+        """
+    )
+    assert out.to_dict(False) == {"a": [3, 2, 1]}
+
+    out = c.query(
+        """
+        SELECT DISTINCT
+          a*2 AS two_a,
+          b/2 AS half_b
+        FROM df
+        ORDER BY two_a ASC, half_b DESC
+        """
+    )
+    assert out.to_dict(False) == {
+        "two_a": [2, 2, 4, 6],
+        "half_b": [1, 0, 2, 3],
+    }
+
+
 def test_sql_groupby(foods_ipc_path: Path) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
 
@@ -129,7 +162,6 @@ def test_sql_is_between(foods_ipc_path: Path) -> None:
         LIMIT 4
     """
     )
-
     assert out.to_dict(False) == {
         "category": ["fruit", "vegetables", "fruit", "vegetables"],
         "calories": [30, 25, 30, 22],
@@ -145,7 +177,6 @@ def test_sql_is_between(foods_ipc_path: Path) -> None:
         LIMIT 4
         """
     )
-
     assert out.to_dict(False) == {
         "category": ["vegetables", "seafood", "meat", "fruit"],
         "calories": [45, 150, 100, 60],
