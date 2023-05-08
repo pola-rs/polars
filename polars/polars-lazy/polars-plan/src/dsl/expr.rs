@@ -166,6 +166,18 @@ where
 
 pub trait FunctionOutputField: Send + Sync {
     fn get_field(&self, input_schema: &Schema, cntxt: Context, fields: &[Field]) -> Field;
+    fn output_type_is_inferred(&self) -> bool;
+}
+
+struct ShouldInferOutputTypeMarker;
+
+impl FunctionOutputField for ShouldInferOutputTypeMarker {
+    fn get_field(&self, _: &Schema, _: Context, fields: &[Field]) -> Field {
+        fields[0].clone()
+    }
+    fn output_type_is_inferred(&self) -> bool {
+        true
+    }
 }
 
 pub type GetOutput = SpecialEq<Arc<dyn FunctionOutputField>>;
@@ -181,6 +193,10 @@ impl Default for GetOutput {
 impl GetOutput {
     pub fn same_type() -> Self {
         Default::default()
+    }
+
+    pub fn infer() -> Self {
+        SpecialEq::new(Arc::new(ShouldInferOutputTypeMarker))
     }
 
     pub fn from_type(dt: DataType) -> Self {
@@ -247,6 +263,9 @@ where
 {
     fn get_field(&self, input_schema: &Schema, cntxt: Context, fields: &[Field]) -> Field {
         self(input_schema, cntxt, fields)
+    }
+    fn output_type_is_inferred(&self) -> bool {
+        false
     }
 }
 

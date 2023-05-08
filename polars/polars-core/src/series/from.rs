@@ -536,6 +536,28 @@ impl TryFrom<(&str, ArrayRef)> for Series {
     }
 }
 
+#[macro_export]
+macro_rules! impl_intoseries_get_simple_dtype_error {
+    ($type_name:ty) => {
+        fn get_simple_dtype() -> PolarsResult<DataType>
+        where
+            Self: Sized,
+        {
+            Err(PolarsError::ComputeError(
+                format!(
+                    "Output type inference is only enabled for ChunkedArray<T>. \
+                     Because {tn:?} is a more complex and/or dynamic type, the output \
+                     type cannot be inferred from it. Either return a `ChunkedArray<T>` \
+                     or use `GetOutput::from_type(output_type)` with an explicit \
+                     `output_type` as the output type.",
+                    tn = stringify!($type_name),
+                )
+                .into(),
+            ))
+        }
+    };
+}
+
 /// Used to convert a [`ChunkedArray`], `&dyn SeriesTrait` and [`Series`]
 /// into a [`Series`].
 /// # Safety
@@ -551,6 +573,8 @@ pub unsafe trait IntoSeries {
     fn into_series(self) -> Series
     where
         Self: Sized;
+
+    fn get_simple_dtype() -> PolarsResult<DataType>;
 }
 
 impl<T> From<ChunkedArray<T>> for Series
@@ -595,6 +619,7 @@ unsafe impl IntoSeries for Arc<dyn SeriesTrait> {
     fn into_series(self) -> Series {
         Series(self)
     }
+    impl_intoseries_get_simple_dtype_error!(Arc<dyn SeriesTrait>);
 }
 
 unsafe impl IntoSeries for Series {
@@ -605,6 +630,8 @@ unsafe impl IntoSeries for Series {
     fn into_series(self) -> Series {
         self
     }
+
+    impl_intoseries_get_simple_dtype_error!(Series);
 }
 
 fn new_null(name: &str, chunks: &[ArrayRef]) -> Series {

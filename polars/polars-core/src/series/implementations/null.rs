@@ -189,4 +189,5 @@ unsafe impl IntoSeries for NullChunked {
     {
         Series(Arc::new(self))
     }
+    crate::impl_intoseries_get_simple_dtype_error!(NullChunked);
 }

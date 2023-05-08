@@ -19,6 +19,7 @@ unsafe impl IntoSeries for CategoricalChunked {
     fn into_series(self) -> Series {
         Series(Arc::new(SeriesWrap(self)))
     }
+    crate::impl_intoseries_get_simple_dtype_error!(CategoricalChunked);
 }
 
 impl SeriesWrap<CategoricalChunked> {

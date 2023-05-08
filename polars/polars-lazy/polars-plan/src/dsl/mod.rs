@@ -505,11 +505,24 @@ impl Expr {
     ///
     /// It is the responsibility of the caller that the schema is correct by giving
     /// the correct output_type. If None given the output type of the input expr is used.
-    pub fn map<F>(self, function: F, output_type: GetOutput) -> Self
+    pub fn map<F, A>(self, function: F, mut output_type: GetOutput) -> Self
     where
-        F: Fn(Series) -> PolarsResult<Option<Series>> + 'static + Send + Sync,
+        A: IntoSeries + 'static,
+        F: Fn(Series) -> PolarsResult<Option<A>> + 'static + Send + Sync,
     {
-        let f = move |s: &mut [Series]| function(std::mem::take(&mut s[0]));
+        let will_infer = output_type.output_type_is_inferred();
+        if will_infer {
+            if let Ok(dt) = A::get_simple_dtype() {
+                output_type = GetOutput::from_type(dt);
+            }
+        }
+
+        let f = move |s: &mut [Series]| {
+            if will_infer {
+                A::get_simple_dtype()?;
+            }
+            function(std::mem::take(&mut s[0])).map(|opt| opt.map(|arr| arr.into_series()))
+        };
 
         Expr::AnonymousFunction {
             input: vec![self],
@@ -525,25 +538,6 @@ impl Expr {
                 pass_name_to_apply: false,
             },
         }
-    }
-
-    /// Apply a strongly typed function/closure once the logical plan get executed.
-    ///
-    /// Unlike [`Expr::map`], the closure returns a
-    /// `PolarsResult<Option<ChunkedArray<T>>>`, _not_ a `PolarsResult<Option<Series>>`.
-    /// Because the closure's return type is available at compile time, this means the
-    /// schema is guaranteed to be correct, and there is no need for a second
-    /// `output_type` argument.
-    pub fn map_typed<F, T>(self, function: F) -> Self
-    where
-        F: Fn(Series) -> PolarsResult<Option<ChunkedArray<T>>> + 'static + Send + Sync,
-        T: PolarsDataType,
-        ChunkedArray<T>: IntoSeries,
-    {
-        self.map(
-            move |series| function(series).map(|opt| opt.map(|ca| ca.into_series())),
-            GetOutput::from_type(T::get_dtype()),
-        )
     }
 
     fn map_private(self, function_expr: FunctionExpr) -> Self {

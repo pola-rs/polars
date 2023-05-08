@@ -5,6 +5,7 @@ unsafe impl IntoSeries for DecimalChunked {
     fn into_series(self) -> Series {
         Series(Arc::new(SeriesWrap(self)))
     }
+    crate::impl_intoseries_get_simple_dtype_error!(DecimalChunked);
 }
 
 impl private::PrivateSeriesNumeric for SeriesWrap<DecimalChunked> {}

@@ -72,6 +72,10 @@ where
     {
         Series(Arc::new(SeriesWrap(self)))
     }
+
+    fn get_simple_dtype() -> PolarsResult<DataType> {
+        Ok(T::get_dtype())
+    }
 }
 
 macro_rules! impl_dyn_series {

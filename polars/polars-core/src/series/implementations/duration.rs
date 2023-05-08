@@ -15,6 +15,7 @@ unsafe impl IntoSeries for DurationChunked {
     fn into_series(self) -> Series {
         Series(Arc::new(SeriesWrap(self)))
     }
+    crate::impl_intoseries_get_simple_dtype_error!(DurationChunked);
 }
 
 impl private::PrivateSeriesNumeric for SeriesWrap<DurationChunked> {

@@ -9,6 +9,7 @@ unsafe impl IntoSeries for StructChunked {
     fn into_series(self) -> Series {
         Series(Arc::new(SeriesWrap(self)))
     }
+    crate::impl_intoseries_get_simple_dtype_error!(StructChunked);
 }
 
 impl PrivateSeriesNumeric for SeriesWrap<StructChunked> {}
