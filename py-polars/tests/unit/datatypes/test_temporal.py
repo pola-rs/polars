@@ -1130,6 +1130,27 @@ def test_groupby_dynamic_startby_monday_crossing_dst() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_groupby_dynamic_startby_monday_dst_8737() -> None:
+    start_dt = datetime(2021, 11, 6, 20)
+    stop_dt = datetime(2021, 11, 7, 20)
+    date_range = pl.date_range(
+        start_dt, stop_dt, "1d", time_zone="US/Central", eager=True
+    )
+    df = pl.DataFrame({"time": date_range, "value": range(len(date_range))})
+    result = df.groupby_dynamic("time", every="1w", start_by="monday").agg(
+        pl.col("value").mean()
+    )
+    expected = pl.DataFrame(
+        {
+            "time": [
+                datetime(2021, 11, 1, tzinfo=ZoneInfo("US/Central")),
+            ],
+            "value": [0.5],
+        },
+    )
+    assert_frame_equal(result, expected)
+
+
 def test_groupby_dynamic_monthly_crossing_dst() -> None:
     start_dt = datetime(2021, 11, 1)
     end_dt = datetime(2021, 12, 1)
