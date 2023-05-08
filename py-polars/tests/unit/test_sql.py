@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 # TODO: Do not rely on I/O for these tests
@@ -19,26 +20,23 @@ def test_sql_distinct() -> None:
             "b": [1, 2, 3, 4, 5, 6],
         }
     )
-    c = pl.SQLContext(df=lf)
-    out = c.query(
-        """
-        SELECT DISTINCT a
-        FROM df
-        ORDER BY a DESC
-        """
+    c = pl.SQLContext(register_globals=True)
+    res1 = c.execute("SELECT DISTINCT a FROM lf ORDER BY a DESC")
+    assert_frame_equal(
+        left=lf.select("a").unique().sort(by="a", descending=True).collect(),
+        right=res1.collect(),
     )
-    assert out.to_dict(False) == {"a": [3, 2, 1]}
 
-    out = c.query(
+    res2 = c.query(
         """
         SELECT DISTINCT
           a*2 AS two_a,
           b/2 AS half_b
-        FROM df
+        FROM lf
         ORDER BY two_a ASC, half_b DESC
         """
     )
-    assert out.to_dict(False) == {
+    assert res2.to_dict(False) == {
         "two_a": [2, 2, 4, 6],
         "half_b": [1, 0, 2, 3],
     }
