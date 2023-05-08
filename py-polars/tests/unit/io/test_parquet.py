@@ -463,3 +463,15 @@ def test_nested_null_roundtrip() -> None:
     f.seek(0)
     df_read = pl.read_parquet(f)
     assert_frame_equal(df_read, df)
+
+
+@typing.no_type_check
+def test_parquet_nested_list_pandas() -> None:
+    # pandas/pyarrow writes as nested null dict
+    df = pd.DataFrame({"listcol": [[] * 10]})
+    f = io.BytesIO()
+    df.to_parquet(f)
+    f.seek(0)
+    df = pl.read_parquet(f)
+    assert df.dtypes == [pl.List(pl.Null)]
+    assert df.to_dict(False) == {"listcol": [[]]}
