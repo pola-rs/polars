@@ -47,6 +47,21 @@ impl Default for StartBy {
     }
 }
 
+impl StartBy {
+    pub fn weekday(&self) -> Option<u32> {
+        match self {
+            StartBy::Monday => Some(0),
+            StartBy::Tuesday => Some(1),
+            StartBy::Wednesday => Some(2),
+            StartBy::Thursday => Some(3),
+            StartBy::Friday => Some(4),
+            StartBy::Saturday => Some(5),
+            StartBy::Sunday => Some(6),
+            _ => None,
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn update_groups_and_bounds<T: PolarsTimeZone>(
     bounds_iter: BoundsIter<'_, T>,

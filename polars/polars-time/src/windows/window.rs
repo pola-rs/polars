@@ -239,16 +239,6 @@ impl<'a, T: PolarsTimeZone> BoundsIter<'a, T> {
                             Duration::add_ms,
                         ),
                     };
-                    let weekday_offset = match start_by {
-                        StartBy::Monday => 0,
-                        StartBy::Tuesday => 1,
-                        StartBy::Wednesday => 2,
-                        StartBy::Thursday => 3,
-                        StartBy::Friday => 4,
-                        StartBy::Saturday => 5,
-                        StartBy::Sunday => 6,
-                        _ => unreachable!(),
-                    };
                     // find beginning of the week.
                     let mut boundary = boundary;
                     let dt = from(boundary.start);
@@ -261,7 +251,7 @@ impl<'a, T: PolarsTimeZone> BoundsIter<'a, T> {
                             let start = to(dt);
                             // adjust start of the week based on given day of the week
                             let start = offset(
-                                &Duration::parse(&format!("{}d", weekday_offset)),
+                                &Duration::parse(&format!("{}d", start_by.weekday().unwrap())),
                                 start,
                                 Some(tz),
                             )?;
@@ -279,7 +269,7 @@ impl<'a, T: PolarsTimeZone> BoundsIter<'a, T> {
                             let start = to(dt);
                             // adjust start of the week based on given day of the week
                             let start = offset(
-                                &Duration::parse(&format!("{}d", weekday_offset)),
+                                &Duration::parse(&format!("{}d", start_by.weekday().unwrap())),
                                 start,
                                 None::<&T>,
                             )
