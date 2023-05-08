@@ -18,17 +18,3 @@ fn test_vstack_empty_3220() -> PolarsResult<()> {
     assert!(stacked.frame_equal(&read_df));
     Ok(())
 }
-
-#[test]
-fn test_scan_parquet_files() -> PolarsResult<()> {
-    let files_to_load_set = vec![
-        "../examples/datasets/foods1.parquet".to_string(),
-        "../examples/datasets/foods2.parquet".to_string(),
-    ];
-
-    // Use of deprecated scan_parquet_files() for testing purposes
-    #[allow(deprecated)]
-    let df = LazyFrame::scan_parquet_files(files_to_load_set, Default::default())?.collect()?;
-    assert_eq!(df.shape(), (54, 4));
-    Ok(())
-}

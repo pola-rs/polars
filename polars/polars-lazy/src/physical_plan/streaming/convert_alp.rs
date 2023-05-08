@@ -261,9 +261,13 @@ pub(crate) fn insert_streaming_nodes(
                     MapFunction {
                         input,
                         function: FunctionNode::Rechunk,
-                    } => {
-                        matches!(lp_arena.get(*input), ParquetScan { .. } | CsvScan { .. })
-                    }
+                    } => match lp_arena.get(*input) {
+                        #[cfg(feature = "parquet")]
+                        ParquetScan { .. } => true,
+                        #[cfg(feature = "csv")]
+                        CsvScan { .. } => true,
+                        _ => false,
+                    },
                     _ => false,
                 }) =>
             {

@@ -106,29 +106,6 @@ impl LazyFileListReader for LazyParquetReader {
 
 impl LazyFrame {
     /// Create a LazyFrame directly from a parquet scan.
-    #[deprecated(note = "please use `concat_lf` instead")]
-    pub fn scan_parquet_files<P: AsRef<Path>>(
-        paths: Vec<P>,
-        args: ScanArgsParquet,
-    ) -> PolarsResult<Self> {
-        let reader = LazyParquetReader::new(
-            paths.first().expect("got no files").as_ref().to_owned(),
-            args,
-        );
-        let lfs = paths
-            .iter()
-            .map(|p| {
-                reader
-                    .clone()
-                    .with_path(p.as_ref().to_owned())
-                    .finish_no_glob()
-            })
-            .collect::<PolarsResult<Vec<_>>>()?;
-
-        reader.concat_impl(lfs)
-    }
-
-    /// Create a LazyFrame directly from a parquet scan.
     pub fn scan_parquet(path: impl AsRef<Path>, args: ScanArgsParquet) -> PolarsResult<Self> {
         LazyParquetReader::new(path.as_ref().to_owned(), args).finish()
     }

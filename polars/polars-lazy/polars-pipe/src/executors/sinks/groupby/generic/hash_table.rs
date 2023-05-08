@@ -102,7 +102,13 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
     ) -> Option<&[AnyValue]> {
         // safety: no references
         let keys_scratch = unsafe { &mut *self.keys_scratch.get() };
-        keys_scratch.clear();
+
+        unsafe {
+            // safety:
+            // this scratch is set with borrowed anyvalues, so we don't have to drop
+            // them as they only borrow data
+            keys_scratch.set_len(0);
+        }
         for key in keys {
             unsafe {
                 // safety: this function should never be called if iterator is depleted
