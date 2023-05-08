@@ -1,4 +1,3 @@
-use polars_core::export::regex::internal::Input;
 use polars_core::prelude::*;
 use polars_lazy::dsl::Expr;
 use polars_lazy::prelude::*;
