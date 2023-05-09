@@ -357,3 +357,30 @@ def find_stacklevel() -> int:
         else:
             break
     return n
+
+
+def _get_stack_locals(
+    of_type: type | tuple[type, ...] | None = None, n_objects: int | None = None
+) -> dict[str, Any]:
+    """
+    Retrieve f_locals from all stack frames (starting from the current frame).
+
+    Parameters
+    ----------
+    of_type
+        Only return objects of this type.
+    n_objects
+        If specified, return only the most recent ``n`` matching objects.
+
+    """
+    objects = {}
+    stack_frame = getattr(inspect.currentframe(), "f_back", None)
+    while stack_frame:
+        local_items = list(stack_frame.f_locals.items())
+        for nm, obj in reversed(local_items):
+            if nm not in objects and (not of_type or isinstance(obj, of_type)):
+                objects[nm] = obj
+                if n_objects is not None and len(objects) >= n_objects:
+                    return objects
+        stack_frame = stack_frame.f_back
+    return objects
