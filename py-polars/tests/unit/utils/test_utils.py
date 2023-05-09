@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import warnings
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -14,7 +15,7 @@ from polars.utils.convert import (
     _timedelta_to_pl_duration,
     _timedelta_to_pl_timedelta,
 )
-from polars.utils.decorators import deprecate_nonkeyword_arguments
+from polars.utils.decorators import deprecate_nonkeyword_arguments, redirect
 from polars.utils.various import parse_version
 
 if TYPE_CHECKING:
@@ -136,3 +137,24 @@ def test_deprecate_nonkeyword_arguments_method_warning() -> None:
     )
     with pytest.deprecated_call(match=msg):
         Foo().bar("qux", "quox")
+
+
+def test_redirect() -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+
+        # one-to-one redirection
+        @redirect({"foo": "bar"})
+        class DemoClass1:
+            def bar(self, upper: bool = False) -> str:
+                return "BAZ" if upper else "baz"
+
+        assert DemoClass1().foo() == "baz"  # type: ignore[attr-defined]
+
+        # redirection with **kwargs
+        @redirect({"foo": ("bar", {"upper": True})})
+        class DemoClass2:
+            def bar(self, upper: bool = False) -> str:
+                return "BAZ" if upper else "baz"
+
+        assert DemoClass2().foo() == "BAZ"  # type: ignore[attr-defined]
