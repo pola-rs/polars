@@ -139,7 +139,6 @@ pub enum UniqueKeepStrategy {
 /// # Ok::<(), PolarsError>(())
 /// ```
 #[derive(Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DataFrame {
     pub(crate) columns: Vec<Series>,
 }
