@@ -158,3 +158,8 @@ def test_fma() -> None:
         in q.explain()
     )
     assert q.collect().to_dict(False) == {"c": [15, 45, 95], "2": [51, 102, 153]}
+    # 8752
+    df = pl.DataFrame({"x": pl.Series(values=[0, 0])})
+    q = df.lazy().with_columns((0 + 2.5 * (0.5 + pl.col("x"))).alias("compute"))
+    assert q.collect()["compute"][0] == 1.25
+    assert "0.0.fma" in q.explain()
