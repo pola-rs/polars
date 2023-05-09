@@ -5,7 +5,6 @@ from typing import (
     TYPE_CHECKING,
     Collection,
     Generic,
-    Literal,
     Mapping,
     TypeVar,
     overload,
@@ -24,9 +23,9 @@ if TYPE_CHECKING:
     import sys
 
     if sys.version_info >= (3, 8):
-        from typing import Final
+        from typing import Final, Literal
     else:
-        from typing_extensions import Final
+        from typing_extensions import Final, Literal
 
     if sys.version_info >= (3, 11):
         from typing import Self
