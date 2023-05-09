@@ -62,8 +62,9 @@ where
 
         use Either::*;
 
-        let offset = arr.values().offset();
-        if offset == 0 {
+        if arr.values().is_sliced() {
+            extend_immutable(&arr, &mut self.chunks, &other.chunks);
+        } else {
             match arr.into_mut() {
                 Left(immutable) => {
                     extend_immutable(&immutable, &mut self.chunks, &other.chunks);
@@ -79,8 +80,6 @@ where
                     self.chunks.push(Box::new(arr) as ArrayRef)
                 }
             }
-        } else {
-            extend_immutable(&arr, &mut self.chunks, &other.chunks);
         }
         self.compute_len();
         self.set_sorted_flag(IsSorted::Not);

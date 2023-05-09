@@ -71,7 +71,6 @@ where
             // make sure we have a single ref count coming in.
             drop(arr);
 
-            let offset = owned_arr.values().offset();
             let compute_immutable = |arr: &PrimitiveArray<S::Native>| {
                 Box::new(arrow::compute::arity::unary(
                     arr,
@@ -80,7 +79,7 @@ where
                 ))
             };
 
-            if offset > 0 {
+            if owned_arr.values().is_sliced() {
                 compute_immutable(&owned_arr)
             } else {
                 match owned_arr.into_mut() {
