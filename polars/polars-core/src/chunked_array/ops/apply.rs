@@ -71,17 +71,25 @@ where
             // make sure we have a single ref count coming in.
             drop(arr);
 
-            match owned_arr.into_mut() {
-                Left(immutable) => Box::new(arrow::compute::arity::unary(
-                    &immutable,
+            let compute_immutable = |arr: &PrimitiveArray<S::Native>| {
+                Box::new(arrow::compute::arity::unary(
+                    arr,
                     f,
                     S::get_dtype().to_arrow(),
-                )),
-                Right(mut mutable) => {
-                    let vals = mutable.values_mut_slice();
-                    vals.iter_mut().for_each(|v| *v = f(*v));
-                    let a: PrimitiveArray<_> = mutable.into();
-                    Box::new(a) as ArrayRef
+                ))
+            };
+
+            if owned_arr.values().is_sliced() {
+                compute_immutable(&owned_arr)
+            } else {
+                match owned_arr.into_mut() {
+                    Left(immutable) => compute_immutable(&immutable),
+                    Right(mut mutable) => {
+                        let vals = mutable.values_mut_slice();
+                        vals.iter_mut().for_each(|v| *v = f(*v));
+                        let a: PrimitiveArray<_> = mutable.into();
+                        Box::new(a) as ArrayRef
+                    }
                 }
             }
         })
