@@ -63,7 +63,7 @@ where
         use Either::*;
 
         let offset = arr.values().offset();
-        if offset > 0 {
+        if offset == 0 {
             match arr.into_mut() {
                 Left(immutable) => {
                     extend_immutable(&immutable, &mut self.chunks, &other.chunks);
