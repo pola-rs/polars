@@ -80,6 +80,16 @@ where
     T: PolarsNumericType,
 {
     fn cast_impl(&self, data_type: &DataType, checked: bool) -> PolarsResult<Series> {
+        if self.dtype() == data_type {
+            // safety: chunks are correct dtype
+            return unsafe {
+                Ok(Series::from_chunks_and_dtype_unchecked(
+                    self.name(),
+                    self.chunks.clone(),
+                    data_type,
+                ))
+            };
+        }
         match data_type {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => {

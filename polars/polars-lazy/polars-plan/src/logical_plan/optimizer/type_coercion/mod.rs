@@ -446,7 +446,15 @@ impl OptimizationRule for TypeCoercionRule {
                         return Ok(None);
                     }
                     let new_st = unpack!(get_supertype(&super_type, &type_other));
-                    super_type = modify_supertype(new_st, self_ae, other, &type_self, &type_other)
+                    if input.len() == 2 {
+                        // modify_supertype is a bit more conservative of casting columns
+                        // to literals
+                        super_type =
+                            modify_supertype(new_st, self_ae, other, &type_self, &type_other)
+                    } else {
+                        // when dealing with more than 1 argument, we simply find the supertypes
+                        super_type = new_st
+                    }
                 }
                 // only cast if the type is not already the super type.
                 // this can prevent an expensive flattening and subsequent aggregation
