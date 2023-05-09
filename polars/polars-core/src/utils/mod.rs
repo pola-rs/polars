@@ -604,40 +604,6 @@ pub fn accumulate_dataframes_horizontal(dfs: Vec<DataFrame>) -> PolarsResult<Dat
     Ok(acc_df)
 }
 
-/// Simple wrapper to parallelize functions that can be divided over threads aggregated and
-/// finally aggregated in the main thread. This can be done for sum, min, max, etc.
-#[cfg(feature = "private")]
-pub fn parallel_op_series<F>(
-    f: F,
-    s: Series,
-    n_threads: Option<usize>,
-) -> PolarsResult<Option<Series>>
-where
-    F: Fn(Series) -> PolarsResult<Series> + Send + Sync,
-{
-    let n_threads = n_threads.unwrap_or_else(|| POOL.current_num_threads());
-    let splits = _split_offsets(s.len(), n_threads);
-
-    let chunks = POOL.install(|| {
-        splits
-            .into_par_iter()
-            .map(|(offset, len)| {
-                let s = s.slice(offset as i64, len);
-                f(s)
-            })
-            .collect::<PolarsResult<Vec<_>>>()
-    })?;
-
-    let mut iter = chunks.into_iter();
-    let first = iter.next().unwrap();
-    let out = iter.fold(first, |mut acc, s| {
-        acc.append(&s).unwrap();
-        acc
-    });
-
-    f(out).map(Some)
-}
-
 pub fn align_chunks_binary<'a, T, B>(
     left: &'a ChunkedArray<T>,
     right: &'a ChunkedArray<B>,

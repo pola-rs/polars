@@ -11,7 +11,7 @@ use polars_pipe::pipeline::{create_pipeline, get_dummy_operator, get_operator, P
 use polars_pipe::SExecutionContext;
 use polars_utils::IdxSize;
 
-use crate::physical_plan::planner::create_physical_expr;
+use crate::physical_plan::planner::{create_physical_expr, ExpressionConversionState};
 use crate::physical_plan::state::ExecutionState;
 use crate::physical_plan::streaming::tree::{PipelineNode, Tree};
 use crate::prelude::*;
@@ -38,8 +38,14 @@ fn to_physical_piped_expr(
     schema: Option<&SchemaRef>,
 ) -> PolarsResult<Arc<dyn PhysicalPipedExpr>> {
     // this is a double Arc<dyn> explore if we can create a single of it.
-    create_physical_expr(node, Context::Default, expr_arena, schema)
-        .map(|e| Arc::new(Wrap(e)) as Arc<dyn PhysicalPipedExpr>)
+    create_physical_expr(
+        node,
+        Context::Default,
+        expr_arena,
+        schema,
+        &mut ExpressionConversionState::new(false),
+    )
+    .map(|e| Arc::new(Wrap(e)) as Arc<dyn PhysicalPipedExpr>)
 }
 
 fn jit_insert_slice(
