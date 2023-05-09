@@ -3223,6 +3223,57 @@ class DataFrame:
         else:
             raise ValueError(f"'engine' {engine} is not supported.")
 
+    def write_delta(
+        self,
+        table_or_uri: str | Path | deltalake.DeltaTable,
+        *,
+        mode: Literal["error", "append", "overwrite", "ignore"] = "error",
+        overwrite_schema: bool = False,
+        storage_options: dict[str, str] | None = None,
+        delta_write_options: dict[str, Any] | None = None,
+    ) -> None:
+        """
+        Write DataFrame as delta table.
+
+        Parameters
+        ----------
+        table_or_uri
+            URI of a table or a DeltaTable object.
+        mode
+            How to handle existing data. Default is to error if table already exists.
+
+                * If 'append', will add new data.
+                * If 'overwrite', will replace table with new data.
+                * If 'ignore', will not write anything if table already exists.
+        overwrite_schema
+            If True, allows updating the schema of the table.
+        storage_options
+            Extra options for the storage backends supported by `deltalake`.
+            For cloud storages, this may include configurations for authentication etc.
+        delta_write_options
+            Additional keyword arguments while writing a Delta lake Table.
+        """
+        from polars.io.delta import _check_if_delta_available, _resolve_delta_lake_uri
+
+        _check_if_delta_available()
+
+        from deltalake.writer import write_deltalake  # type: ignore[import]
+
+        if delta_write_options is None:
+            delta_write_options = {}
+
+        if isinstance(table_or_uri, (str, Path)):
+            table_or_uri = _resolve_delta_lake_uri(str(table_or_uri))
+
+        write_deltalake(
+            table_or_uri=table_or_uri,
+            data=self.to_arrow(),
+            mode=mode,
+            overwrite_schema=overwrite_schema,
+            storage_options=storage_options,
+            **delta_write_options,
+        )
+
     def estimated_size(self, unit: SizeUnit = "b") -> int | float:
         """
         Return an estimation of the total (heap) allocated size of the `DataFrame`.

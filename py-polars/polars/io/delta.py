@@ -297,10 +297,7 @@ def _get_delta_lake_table(
     DeltaTable
 
     """
-    if not _DELTALAKE_AVAILABLE:
-        raise ImportError(
-            "deltalake is not installed. Please run `pip install deltalake>=0.8.0`."
-        )
+    _check_if_delta_available()
 
     if delta_table_options is None:
         delta_table_options = {}
@@ -313,3 +310,10 @@ def _get_delta_lake_table(
     )
 
     return dl_tbl
+
+
+def _check_if_delta_available() -> None:
+    if not _DELTALAKE_AVAILABLE:
+        raise ImportError(
+            "deltalake is not installed. Please run `pip install deltalake>=0.8.0`."
+        )
