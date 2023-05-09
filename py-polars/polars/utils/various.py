@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from collections.abc import Reversible
     from pathlib import Path
 
-    from polars import DataFrame, Series
+    from polars import DataFrame, Expr, LazyFrame, Series
     from polars.type_aliases import PolarsDataType, SizeUnit
 
     if sys.version_info >= (3, 10):
@@ -62,6 +62,22 @@ def _is_generator(val: object) -> bool:
         or isinstance(val, MappingView)
         or (sys.version_info >= (3, 11) and isinstance(val, _reverse_mapping_views))
     )
+
+
+def is_df_sequence(val: Iterable[object]) -> TypeGuard[Sequence[DataFrame]]:
+    return isinstance(val, Sequence) and all(isinstance(x, pl.DataFrame) for x in val)
+
+
+def is_ldf_sequence(val: Iterable[object]) -> TypeGuard[Sequence[LazyFrame]]:
+    return isinstance(val, Sequence) and all(isinstance(x, pl.LazyFrame) for x in val)
+
+
+def is_series_sequence(val: Iterable[object]) -> TypeGuard[Sequence[Series]]:
+    return isinstance(val, Sequence) and all(isinstance(x, pl.Series) for x in val)
+
+
+def is_expr_sequence(val: Iterable[object]) -> TypeGuard[Sequence[Expr]]:
+    return isinstance(val, Sequence) and all(isinstance(x, pl.Expr) for x in val)
 
 
 def _is_iterable_of(val: Iterable[object], eltype: type | tuple[type, ...]) -> bool:

@@ -89,6 +89,27 @@ def test_concat_horizontal() -> None:
     assert_frame_equal(out, expected)
 
 
+def test_concat_horizontal_with_keys() -> None:
+    df1 = pl.DataFrame(
+        {
+            "key": [1, 2, 3],
+            "a": [4, 5, 6],
+        }
+    )
+
+    df2 = pl.DataFrame(
+        {
+            "key": [1, 3, 4],
+            "b": [7, 8, 9],
+        }
+    )
+
+    assert_frame_equal(
+        pl.concat([df1, df2], how="horizontal", align_on=["key"]),
+        pl.DataFrame({"key": [1, 2, 3, 4], "a": [4, 5, 6, None], "b": [7, None, 8, 9]}),
+    )
+
+
 def test_all_any_horizontally() -> None:
     df = pl.DataFrame(
         [

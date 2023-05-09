@@ -5,6 +5,7 @@ import warnings
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Iterable, Sequence, overload
 
+# from typing import cast
 import polars._reexport as pl
 from polars.datatypes import Date
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
@@ -15,7 +16,14 @@ from polars.utils.convert import (
     _tzinfo_to_str,
 )
 from polars.utils.decorators import deprecated_alias
-from polars.utils.various import find_stacklevel, no_default
+from polars.utils.various import (
+    find_stacklevel,
+    is_df_sequence,
+    is_expr_sequence,
+    is_ldf_sequence,
+    is_series_sequence,
+    no_default,
+)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -96,6 +104,7 @@ def concat(
     items: Iterable[DataFrame],
     *,
     how: ConcatMethod = ...,
+    align_on: None | str | Sequence[str] = None,
     rechunk: bool = ...,
     parallel: bool = ...,
 ) -> DataFrame:
@@ -107,6 +116,7 @@ def concat(
     items: Iterable[Series],
     *,
     how: ConcatMethod = ...,
+    align_on: None | str | Sequence[str] = None,
     rechunk: bool = ...,
     parallel: bool = ...,
 ) -> Series:
@@ -118,6 +128,7 @@ def concat(
     items: Iterable[LazyFrame],
     *,
     how: ConcatMethod = ...,
+    align_on: None | str | Sequence[str] = None,
     rechunk: bool = ...,
     parallel: bool = ...,
 ) -> LazyFrame:
@@ -129,6 +140,7 @@ def concat(
     items: Iterable[Expr],
     *,
     how: ConcatMethod = ...,
+    align_on: None | str | Sequence[str] = None,
     rechunk: bool = ...,
     parallel: bool = ...,
 ) -> Expr:
@@ -141,6 +153,7 @@ def concat(
     ),
     *,
     how: ConcatMethod = "vertical",
+    align_on: None | str | Sequence[str] = None,
     rechunk: bool = True,
     parallel: bool = True,
 ) -> DataFrame | Series | LazyFrame | Expr:
@@ -160,6 +173,11 @@ def concat(
             values with null.
         - Horizontal: stacks Series from DataFrames horizontally and fills with nulls
             if the lengths don't match.
+    align_on
+        Name or list of names of columns on which to align during horizontal
+        concatenation.
+    names
+        List of new column names in which keys are stored
     rechunk
         Make sure that all data is in contiguous memory.
     parallel
@@ -248,20 +266,29 @@ def concat(
         raise ValueError("cannot concat empty list")
 
     out: Series | DataFrame | LazyFrame | Expr
-    first = elems[0]
-    if isinstance(first, pl.DataFrame):
+    if is_df_sequence(elems):
         if how == "vertical":
             out = wrap_df(plr.concat_df(elems))
         elif how == "diagonal":
             out = wrap_df(plr.diag_concat_df(elems))
         elif how == "horizontal":
+            if align_on is not None:
+                # align frames and remove key in frames 2..N
+                elems = align_frames(*elems, on=align_on)  # type: ignore[assignment]
+                for elem in elems[1:]:
+                    if isinstance(align_on, str):
+                        elem.drop_in_place(align_on)
+                    else:
+                        for key in align_on:
+                            elem.drop_in_place(key)
+
             out = wrap_df(plr.hor_concat_df(elems))
         else:
             raise ValueError(
                 f"how must be one of {{'vertical', 'diagonal', 'horizontal'}}, "
                 f"got {how}"
             )
-    elif isinstance(first, pl.LazyFrame):
+    elif is_ldf_sequence(elems):
         if how == "vertical":
             return wrap_ldf(plr.concat_lf(elems, rechunk, parallel))
         if how == "diagonal":
@@ -270,17 +297,18 @@ def concat(
             raise ValueError(
                 "'LazyFrame' only allows {{'vertical', 'diagonal'}} concat strategy."
             )
-    elif isinstance(first, pl.Series):
+    elif is_series_sequence(elems):
         if how == "vertical":
             out = wrap_s(plr.concat_series(elems))
         else:
             raise ValueError("'Series' only allows {{'vertical'}} concat strategy.")
-    elif isinstance(first, pl.Expr):
-        out = first
+    # elif isinstance(first, pl.Expr):
+    elif is_expr_sequence(elems):
+        out = elems[0]
         for e in elems[1:]:
-            out = out.append(e)  # type: ignore[arg-type]
+            out = out.append(e)
     else:
-        raise ValueError(f"did not expect type: {type(first)} in 'pl.concat'.")
+        raise ValueError(f"did not expect type: {type(elems[0])} in 'pl.concat'.")
 
     if rechunk:
         return out.rechunk()
