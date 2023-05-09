@@ -2,10 +2,6 @@
 
 `polars-io` is a submodule of polars-lazy that provides IO functionality.
 
-## License
-
-This project is licensed under the MIT License.
-
 ## Repository
 
 The source code for this crate can be found on GitHub: [https://github.com/pola-rs/polars](https://github.com/pola-rs/polars)
