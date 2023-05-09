@@ -1,4 +1,5 @@
 use polars_core::prelude::*;
+use polars_core::POOL;
 
 use super::super::executors::{self, Executor};
 use super::*;
@@ -170,7 +171,13 @@ pub fn create_physical_plan(
         Selection { input, predicate } => {
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
             let has_windows = has_windows(&[predicate], expr_arena);
-            let predicate = create_physical_expr(predicate, Context::Default, expr_arena, None)?;
+            let predicate = create_physical_expr(
+                predicate,
+                Context::Default,
+                expr_arena,
+                None,
+                &mut Default::default(),
+            )?;
             Ok(Box::new(executors::FilterExec::new(
                 predicate,
                 input,
@@ -187,7 +194,13 @@ pub fn create_physical_plan(
         } => {
             let predicate = predicate
                 .map(|pred| {
-                    create_physical_expr(pred, Context::Default, expr_arena, output_schema.as_ref())
+                    create_physical_expr(
+                        pred,
+                        Context::Default,
+                        expr_arena,
+                        output_schema.as_ref(),
+                        &mut Default::default(),
+                    )
                 })
                 .map_or(Ok(None), |v| v.map(Some))?;
             Ok(Box::new(executors::CsvExec {
@@ -207,7 +220,13 @@ pub fn create_physical_plan(
         } => {
             let predicate = predicate
                 .map(|pred| {
-                    create_physical_expr(pred, Context::Default, expr_arena, output_schema.as_ref())
+                    create_physical_expr(
+                        pred,
+                        Context::Default,
+                        expr_arena,
+                        output_schema.as_ref(),
+                        &mut Default::default(),
+                    )
                 })
                 .map_or(Ok(None), |v| v.map(Some))?;
 
@@ -229,7 +248,13 @@ pub fn create_physical_plan(
         } => {
             let predicate = predicate
                 .map(|pred| {
-                    create_physical_expr(pred, Context::Default, expr_arena, output_schema.as_ref())
+                    create_physical_expr(
+                        pred,
+                        Context::Default,
+                        expr_arena,
+                        output_schema.as_ref(),
+                        &mut Default::default(),
+                    )
                 })
                 .map_or(Ok(None), |v| v.map(Some))?;
 
@@ -255,6 +280,7 @@ pub fn create_physical_plan(
                 Context::Default,
                 expr_arena,
                 Some(&input_schema),
+                &mut ExpressionConversionState::new(POOL.current_num_threads() > expr.len()),
             )?;
             Ok(Box::new(executors::ProjectionExec {
                 input,
@@ -280,6 +306,7 @@ pub fn create_physical_plan(
                 Context::Default,
                 expr_arena,
                 Some(&input_schema),
+                &mut Default::default(),
             )?;
             Ok(Box::new(executors::ProjectionExec {
                 input,
@@ -301,7 +328,15 @@ pub fn create_physical_plan(
                 .map(|node| has_windows(&[node], expr_arena))
                 .unwrap_or(false);
             let selection = predicate
-                .map(|pred| create_physical_expr(pred, Context::Default, expr_arena, Some(&schema)))
+                .map(|pred| {
+                    create_physical_expr(
+                        pred,
+                        Context::Default,
+                        expr_arena,
+                        Some(&schema),
+                        &mut Default::default(),
+                    )
+                })
                 .transpose()?;
             Ok(Box::new(executors::DataFrameExec {
                 df,
@@ -319,7 +354,13 @@ pub fn create_physical_plan(
         } => {
             let predicate = predicate
                 .map(|pred| {
-                    create_physical_expr(pred, Context::Default, expr_arena, output_schema.as_ref())
+                    create_physical_expr(
+                        pred,
+                        Context::Default,
+                        expr_arena,
+                        output_schema.as_ref(),
+                        &mut Default::default(),
+                    )
                 })
                 .map_or(Ok(None), |v| v.map(Some))?;
             Ok(Box::new(executors::AnonymousScanExec {
@@ -339,6 +380,7 @@ pub fn create_physical_plan(
                 Context::Default,
                 expr_arena,
                 Some(input_schema.as_ref()),
+                &mut Default::default(),
             )?;
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
             Ok(Box::new(executors::SortExec {
@@ -370,12 +412,14 @@ pub fn create_physical_plan(
                 Context::Default,
                 expr_arena,
                 Some(&input_schema),
+                &mut Default::default(),
             )?;
             let phys_aggs = create_physical_expressions(
                 &aggs,
                 Context::Aggregation,
                 expr_arena,
                 Some(&input_schema),
+                &mut Default::default(),
             )?;
 
             let _slice = options.slice;
@@ -474,10 +518,20 @@ pub fn create_physical_plan(
 
             let input_left = create_physical_plan(input_left, lp_arena, expr_arena)?;
             let input_right = create_physical_plan(input_right, lp_arena, expr_arena)?;
-            let left_on =
-                create_physical_expressions(&left_on, Context::Default, expr_arena, None)?;
-            let right_on =
-                create_physical_expressions(&right_on, Context::Default, expr_arena, None)?;
+            let left_on = create_physical_expressions(
+                &left_on,
+                Context::Default,
+                expr_arena,
+                None,
+                &mut Default::default(),
+            )?;
+            let right_on = create_physical_expressions(
+                &right_on,
+                Context::Default,
+                expr_arena,
+                None,
+                &mut Default::default(),
+            )?;
             Ok(Box::new(executors::JoinExec::new(
                 input_left,
                 input_right,
@@ -498,6 +552,7 @@ pub fn create_physical_plan(
                 Context::Default,
                 expr_arena,
                 Some(&input_schema),
+                &mut ExpressionConversionState::new(POOL.current_num_threads() > exprs.len()),
             )?;
             Ok(Box::new(executors::StackExec {
                 input,
