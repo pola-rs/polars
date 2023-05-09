@@ -6959,7 +6959,13 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.shrink_dtype())
 
     def cache(self) -> Self:
-        """Cache this expression so that it only is executed once per context."""
+        """
+        Cache this expression so that it only is executed once per context.
+
+        This can actually hurt performance and can have a lot of contention.
+        It is adviced not to use it until actually benchmarked on your problem.
+
+        """
         return self._from_pyexpr(self._pyexpr.cache())
 
     def map_dict(
