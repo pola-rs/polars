@@ -586,3 +586,34 @@ def test_no_sorted_warning(capfd: typing.Any) -> None:
     df.groupby_dynamic("dt", every="1h").agg(pl.all().count().suffix("_foo"))
     (_, err) = capfd.readouterr()
     assert "argument in operation 'groupby_dynamic' is not explicitly sorted" in err
+
+
+def test_serde_validation() -> None:
+    f = io.StringIO(
+        """
+    {
+      "columns": [
+        {
+          "name": "a",
+          "datatype": "Int64",
+          "values": [
+            1,
+            2
+          ]
+        },
+        {
+          "name": "b",
+          "datatype": "Int64",
+          "values": [
+            1
+          ]
+        }
+      ]
+    }
+    """
+    )
+    with pytest.raises(
+        pl.ComputeError,
+        match=r"lengths don't match",
+    ):
+        pl.read_json(f)
