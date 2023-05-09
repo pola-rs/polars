@@ -6963,7 +6963,7 @@ class Expr:
         Cache this expression so that it only is executed once per context.
 
         This can actually hurt performance and can have a lot of contention.
-        It is adviced not to use it until actually benchmarked on your problem.
+        It is advised not to use it until actually benchmarked on your problem.
 
         """
         return self._from_pyexpr(self._pyexpr.cache())
