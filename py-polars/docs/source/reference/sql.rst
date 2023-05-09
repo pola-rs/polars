@@ -20,7 +20,7 @@ Methods
    :toctree: api/
 
     SQLContext.execute
-    SQLContext.query
     SQLContext.register
+    SQLContext.register_globals
     SQLContext.register_many
     SQLContext.unregister
