@@ -4819,9 +4819,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         # no need to join if only join columns are in other
         if len(right_added_names) == 0:
+            if row_count_used:
+                return self.drop(row_count_name)
             return self
-        tmp_name = "__POLARS_RIGHT"
 
+        tmp_name = "__POLARS_RIGHT"
         result = (
             self.join(other.select(list(union_names)), on=on, how=how, suffix=tmp_name)
             .with_columns(
@@ -4836,4 +4838,5 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         if row_count_used:
             result = result.drop(row_count_name)
+
         return self._from_pyldf(result._ldf)
