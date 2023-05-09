@@ -869,6 +869,14 @@ class Series:
                 yield from self.slice(offset, buffer_size).to_list()
 
     def _pos_idxs(self, size: int) -> Series:
+        # Unsigned or signed Series (ordered from fastest to slowest).
+        #   - pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx) Series indexes.
+        #   - Other unsigned Series indexes are converted to pl.UInt32 (polars)
+        #     or pl.UInt64 (polars_u64_idx).
+        #   - Signed Series indexes are converted pl.UInt32 (polars) or
+        #     pl.UInt64 (polars_u64_idx) after negative indexes are converted
+        #     to absolute indexes.
+
         # pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx).
         idx_type = get_index_type()
 
@@ -912,6 +920,9 @@ class Series:
 
         return self.cast(idx_type)
 
+    def _take_with_series(self, s: Series) -> Series:
+        return self._from_pyseries(self._s.take_with_series(s._s))
+
     @overload
     def __getitem__(self, item: int) -> Any:
         ...
@@ -930,36 +941,10 @@ class Series:
         ),
     ) -> Any:
         if isinstance(item, Series) and item.dtype in INTEGER_DTYPES:
-            # Unsigned or signed Series (ordered from fastest to slowest).
-            #   - pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx) Series indexes.
-            #   - Other unsigned Series indexes are converted to pl.UInt32 (polars)
-            #     or pl.UInt64 (polars_u64_idx).
-            #   - Signed Series indexes are converted pl.UInt32 (polars) or
-            #     pl.UInt64 (polars_u64_idx) after negative indexes are converted
-            #     to absolute indexes.
-            return self._from_pyseries(
-                self._s.take_with_series(item._pos_idxs(self.len())._s)
-            )
+            return self._take_with_series(item._pos_idxs(self.len()))
 
-        elif (
-            _check_for_numpy(item)
-            and isinstance(item, np.ndarray)
-            and item.dtype.kind in ("i", "u")
-        ):
-            if item.ndim != 1:
-                raise ValueError("Only a 1D-Numpy array is supported as index.")
-
-            # Unsigned or signed Numpy array (ordered from fastest to slowest).
-            #   - np.uint32 (polars) or np.uint64 (polars_u64_idx) numpy array
-            #     indexes.
-            #   - Other unsigned numpy array indexes are converted to pl.UInt32
-            #     (polars) or pl.UInt64 (polars_u64_idx).
-            #   - Signed numpy array indexes are converted pl.UInt32 (polars) or
-            #     pl.UInt64 (polars_u64_idx) after negative indexes are converted
-            #     to absolute indexes.
-            return self._from_pyseries(
-                self._s.take_with_series(numpy_to_idxs(item, self.len())._s)
-            )
+        elif _check_for_numpy(item) and isinstance(item, np.ndarray):
+            return self._take_with_series(numpy_to_idxs(item, self.len()))
 
         # Integer.
         elif isinstance(item, int):
@@ -976,11 +961,10 @@ class Series:
             return self[range_to_slice(item)]
 
         # Sequence of integers (slow to check if sequence contains all integers).
+        # Also triggers on empty sequence
         elif is_int_sequence(item):
-            return self._from_pyseries(
-                self._s.take_with_series(
-                    Series("", item, dtype=Int64)._pos_idxs(self.len())._s
-                )
+            return self._take_with_series(
+                Series("", item, dtype=Int64)._pos_idxs(self.len())
             )
 
         raise ValueError(

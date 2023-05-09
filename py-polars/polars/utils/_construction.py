@@ -1547,6 +1547,14 @@ def coerce_arrow(array: pa.Array, rechunk: bool = True) -> pa.Array:
 
 
 def numpy_to_idxs(idxs: np.ndarray[Any, Any], size: int) -> pl.Series:
+    # Unsigned or signed Numpy array (ordered from fastest to slowest).
+    #   - np.uint32 (polars) or np.uint64 (polars_u64_idx) numpy array
+    #     indexes.
+    #   - Other unsigned numpy array indexes are converted to pl.UInt32
+    #     (polars) or pl.UInt64 (polars_u64_idx).
+    #   - Signed numpy array indexes are converted pl.UInt32 (polars) or
+    #     pl.UInt64 (polars_u64_idx) after negative indexes are converted
+    #     to absolute indexes.
     if idxs.ndim != 1:
         raise ValueError("Only 1D numpy array is supported as index.")
 
@@ -1575,5 +1583,8 @@ def numpy_to_idxs(idxs: np.ndarray[Any, Any], size: int) -> pl.Series:
 
         # Update negative indexes to absolute indexes.
         idxs = np.where(idxs < 0, size + idxs, idxs)
+
+    # numpy conversion is much faster
+    idxs = idxs.astype(np.uint32) if idx_type == UInt32 else idxs.astype(np.uint64)
 
     return pl.Series("", idxs, dtype=idx_type)
