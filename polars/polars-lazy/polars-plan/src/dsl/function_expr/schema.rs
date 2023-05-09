@@ -139,6 +139,7 @@ impl FunctionExpr {
             #[cfg(feature = "top_k")]
             TopK { .. } => mapper.with_same_dtype(),
             Shift(..) | Reverse => mapper.with_same_dtype(),
+            ExtendConstant { .. } => mapper.with_same_dtype(),
             Boolean(func) => func.get_field(mapper),
             #[cfg(feature = "dtype-categorical")]
             Categorical(func) => func.get_field(mapper),

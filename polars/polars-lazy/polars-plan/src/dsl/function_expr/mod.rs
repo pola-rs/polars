@@ -119,6 +119,10 @@ pub enum FunctionExpr {
         descending: bool,
     },
     Shift(i64),
+    ExtendConstant {
+        value: AnyValue,
+        n: usize,
+    },
     Cumcount {
         reverse: bool,
     },
@@ -218,6 +222,7 @@ impl Display for FunctionExpr {
             #[cfg(feature = "top_k")]
             TopK { .. } => "top_k",
             Shift(_) => "shift",
+            ExtendConstant { .. } => "extend_constant",
             Cumcount { .. } => "cumcount",
             Cumsum { .. } => "cumsum",
             Cumprod { .. } => "cumprod",
@@ -428,6 +433,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map!(top_k, k, descending)
             }
             Shift(periods) => map!(dispatch::shift, periods),
+            ExtendConstant { value, n } => map!(dispatch::extend_constant, value, n),
             Cumcount { reverse } => map!(cum::cumcount, reverse),
             Cumsum { reverse } => map!(cum::cumsum, reverse),
             Cumprod { reverse } => map!(cum::cumprod, reverse),

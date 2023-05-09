@@ -1037,7 +1037,7 @@ impl PyExpr {
         let value = value.into_py(py);
         self.inner
             .clone()
-            .apply(
+            .apply_private(
                 move |s| {
                     Python::with_gil(|py| {
                         let value = value.extract::<Wrap<AnyValue>>(py).unwrap().0;

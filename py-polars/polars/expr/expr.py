@@ -6676,13 +6676,13 @@ class Expr:
 
     def prepend_constant(self, value: PythonLiteral | None, n: int) -> Self:
         """
-        Extremely fast method for extending the Series with 'n' copies of a value.
+        Method for prepending the Series with 'n' copies of a value.
 
         Parameters
         ----------
         value
-            A constant literal value (not an expression) with which to prepend the
-            to the beignnign of the expression result Series; can pass None to extend
+            A constant literal value (not an expression) with which to prepend to
+            the beginning of the expression result Series; can pass None to extend
             with nulls.
         n
             The number of additional values that will be added.
