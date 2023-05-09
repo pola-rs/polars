@@ -62,20 +62,25 @@ where
 
         use Either::*;
 
-        match arr.into_mut() {
-            Left(immutable) => {
-                extend_immutable(&immutable, &mut self.chunks, &other.chunks);
-            }
-            Right(mut mutable) => {
-                for arr in other.downcast_iter() {
-                    match arr.null_count() {
-                        0 => mutable.extend_from_slice(arr.values()),
-                        _ => mutable.extend_trusted_len(arr.into_iter()),
-                    }
+        let offset = arr.values().offset();
+        if offset > 0 {
+            match arr.into_mut() {
+                Left(immutable) => {
+                    extend_immutable(&immutable, &mut self.chunks, &other.chunks);
                 }
-                let arr: PrimitiveArray<T::Native> = mutable.into();
-                self.chunks.push(Box::new(arr) as ArrayRef)
+                Right(mut mutable) => {
+                    for arr in other.downcast_iter() {
+                        match arr.null_count() {
+                            0 => mutable.extend_from_slice(arr.values()),
+                            _ => mutable.extend_trusted_len(arr.into_iter()),
+                        }
+                    }
+                    let arr: PrimitiveArray<T::Native> = mutable.into();
+                    self.chunks.push(Box::new(arr) as ArrayRef)
+                }
             }
+        } else {
+            extend_immutable(&arr, &mut self.chunks, &other.chunks);
         }
         self.compute_len();
         self.set_sorted_flag(IsSorted::Not);
