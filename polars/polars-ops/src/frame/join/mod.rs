@@ -165,7 +165,17 @@ pub trait DataFrameJoinOps: IntoDf {
             .iter()
             .zip(&selected_right)
             .all(|(l, r)| l.dtype() == r.dtype()),
-            ComputeError: "datatypes of join keys don't match"
+            ComputeError: {
+                let (l, r) = selected_left
+                .iter()
+                .zip(&selected_right)
+                .find(|(l, r)| l.dtype() != r.dtype())
+                .unwrap();
+                format!(
+                    "datatypes of join keys don't match - `{}`: {} on left does not match `{}`: {} on right",
+                    l.name(), l.dtype(), r.name(), r.dtype()
+                )
+            }
         );
 
         #[cfg(feature = "dtype-categorical")]
