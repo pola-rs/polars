@@ -78,7 +78,7 @@ semi_anti_join = []
 chunked_ids = []
 describe = []
 timezones = ["chrono-tz", "arrow/chrono-tz", "polars-arrow/timezones"]
-dynamic_groupby = ["dtype-datetime", "dtype-date"]
+dynamic_groupby = ["dtype-datetime", "dtype-date", "polars-lazy/dynamic_groupby"]
 
 # opt-in datatypes for Series
 dtype-date = ["temporal"]
