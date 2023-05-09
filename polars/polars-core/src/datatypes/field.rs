@@ -153,7 +153,7 @@ impl From<&ArrowDataType> for DataType {
             }
             #[cfg(feature = "dtype-decimal")]
             ArrowDataType::Decimal(precision, scale) => DataType::Decimal(Some(*precision), Some(*scale)),
-            dt => panic!("Arrow datatype {dt:?} not supported by Polars. You probably need to activate that data-type feature."),
+            dt => panic!("Arrow datatype {dt:?} not supported by Polars. You probably need to add a missing data-type feature to the Cargo.toml and rebuild. Specifically check if the polars-core crate has these feature flags in the Cargo.toml: [..., \"dtype-categorical\", \"dtype-struct\", \"dtype-decimal\"]"),
         }
     }
 }
