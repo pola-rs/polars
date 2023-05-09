@@ -16,6 +16,6 @@
 | fmt            | Enables pretty formatting of dataframes                  |
 | timezones      | Enables timezone parsing via chrono-tz                   |
 | default        | The default feature set for polars-time.                 |
-| private        | Enables private APIs. <sup>[1](#footnote1)</sup>         |
+| private        | Enables private APIs. <sup> [1](#footnote1)</sup>        |
 
 <sup><a name="footnote1">1</a></sup> Private APIs in `polars` are not intended for public use and may change without notice. Use at your own risk.

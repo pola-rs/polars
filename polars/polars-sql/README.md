@@ -21,13 +21,13 @@ use polars_sql::*;
 
 `polars-sql` has the following features:
 
-| Feature | Description                                      |
-| ------- | ------------------------------------------------ |
-| csv     | Enables support for CSV files.                   |
-| json    | Enables support for JSON files.                  |
-| default | The default feature set for Polars.              |
-| ipc     | Enables support for IPC/Arrow files.             |
-| parquet | Enables support for Parquet files.               |
-| private | Enables private APIs. <sup>[1](#footnote1)</sup> |
+| Feature | Description                                       |
+| ------- | ------------------------------------------------- |
+| csv     | Enables support for CSV files.                    |
+| json    | Enables support for JSON files.                   |
+| default | The default feature set for Polars.               |
+| ipc     | Enables support for IPC/Arrow files.              |
+| parquet | Enables support for Parquet files.                |
+| private | Enables private APIs. <sup> [1](#footnote1)</sup> |
 
 <sup><a name="footnote1">1</a></sup> Private APIs in `polars` are not intended for public use and may change without notice. Use at your own risk.

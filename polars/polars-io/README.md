@@ -33,6 +33,6 @@ The source code for this crate can be found on GitHub: [https://github.com/pola-
 | partition         | partitioned writing                                  |
 | temporal          | temporal data types: `Datetime`, `Date`, and `Time`. |
 | simd              | Reserved for future use.                             |
-| private           | private APIs. <sup>[1](#footnote1)</sup>             |
+| private           | private APIs. <sup> [1](#footnote1)</sup>            |
 
 <sup><a name="footnote1">1</a></sup> Private APIs in `polars` are not intended for public use and may change without notice. Use at your own risk.
