@@ -158,7 +158,7 @@ pub trait DataFrameJoinOps: IntoDf {
 
         polars_ensure!(
             selected_left.len() == selected_right.len(),
-            ComputeError: "the number of columns given as join key should be equal"
+            ComputeError: format!("the number of columns given as join key (left: {}, right:{}) should be equal", selected_left.len(), selected_right.len())
         );
         polars_ensure!(
             selected_left
