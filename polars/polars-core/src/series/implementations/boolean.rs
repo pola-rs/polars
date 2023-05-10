@@ -101,6 +101,9 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
     fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
         self.0.arg_sort_multiple(options)
     }
+    fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
+        NumOpsDispatch::add_to(&self.0, rhs)
+    }
 }
 
 impl SeriesTrait for SeriesWrap<BooleanChunked> {
