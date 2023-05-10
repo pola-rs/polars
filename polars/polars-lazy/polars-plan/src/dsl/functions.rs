@@ -244,7 +244,7 @@ pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8, propagate_nans: bool) -> E
 pub fn arg_sort_by<E: AsRef<[Expr]>>(by: E, descending: &[bool]) -> Expr {
     let e = &by.as_ref()[0];
     let name = expr_output_name(e).unwrap();
-    arange(lit(0u32), count().cast(IDX_DTYPE), 1)
+    arange(lit(0 as IdxSize), count().cast(IDX_DTYPE), 1)
         .sort_by(by, descending)
         .alias(name.as_ref())
 }
