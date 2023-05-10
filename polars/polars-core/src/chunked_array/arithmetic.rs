@@ -9,6 +9,7 @@ use arrow::compute::arithmetics::decimal;
 use arrow::compute::arity_assign;
 use arrow::types::NativeType;
 use num_traits::{Num, NumCast, ToPrimitive, Zero};
+use polars_arrow::utils::combine_validities_and;
 
 use crate::prelude::*;
 use crate::series::IsSorted;
@@ -595,18 +596,7 @@ impl Add<&str> for &Utf8Chunked {
     type Output = Utf8Chunked;
 
     fn add(self, rhs: &str) -> Self::Output {
-        let mut ca: Self::Output = match self.has_validity() {
-            false => self
-                .into_no_null_iter()
-                .map(|l| concat_strings(l, rhs))
-                .collect_trusted(),
-            _ => self
-                .into_iter()
-                .map(|opt_l| opt_l.map(|l| concat_strings(l, rhs)))
-                .collect_trusted(),
-        };
-        ca.rename(self.name());
-        ca
+        unsafe { ((&self.as_binary()) + rhs.as_bytes()).to_utf8() }
     }
 }
 
@@ -669,6 +659,52 @@ impl Add<&[u8]> for &BinaryChunked {
         };
         ca.rename(self.name());
         ca
+    }
+}
+
+fn add_boolean(a: &BooleanArray, b: &BooleanArray) -> PrimitiveArray<IdxSize> {
+    let validity = combine_validities_and(a.validity(), b.validity());
+
+    let values = a
+        .values_iter()
+        .zip(b.values_iter())
+        .map(|(a, b)| a as IdxSize + b as IdxSize)
+        .collect::<Vec<_>>();
+    PrimitiveArray::from_data_default(values.into(), validity)
+}
+
+impl Add for &BooleanChunked {
+    type Output = IdxCa;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        // broadcasting path rhs
+        if rhs.len() == 1 {
+            let rhs = rhs.get(0);
+            return match rhs {
+                Some(rhs) => self.apply_cast_numeric(|v| v as IdxSize + rhs as IdxSize),
+                None => IdxCa::full_null(self.name(), self.len()),
+            };
+        }
+        // broadcasting path lhs
+        if self.len() == 1 {
+            return rhs.add(self);
+        }
+        let (lhs, rhs) = align_chunks_binary(self, rhs);
+        let chunks = lhs
+            .downcast_iter()
+            .zip(rhs.downcast_iter())
+            .map(|(a, b)| Box::new(add_boolean(a, b)) as ArrayRef)
+            .collect::<Vec<_>>();
+
+        unsafe { IdxCa::from_chunks(self.name(), chunks) }
+    }
+}
+
+impl Add for BooleanChunked {
+    type Output = IdxCa;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        (&self).add(&rhs)
     }
 }
 
