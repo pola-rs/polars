@@ -239,6 +239,12 @@ fn get_arithmetic_field(
                 (left, right) => try_get_supertype(left, &right)?,
             }
         }
+        Operator::Plus
+            if left_field.dtype == Boolean
+                && right_ae.get_type(schema, Context::Default, arena)? == Boolean =>
+        {
+            IDX_DTYPE
+        }
         _ => {
             match (left_ae, right_ae) {
                 (AExpr::Literal(_), AExpr::Literal(_)) => {}

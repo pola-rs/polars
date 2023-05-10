@@ -105,6 +105,14 @@ impl NumOpsDispatchInner for BinaryType {
     }
 }
 
+impl NumOpsDispatchInner for BooleanType {
+    fn add_to(lhs: &BooleanChunked, rhs: &Series) -> PolarsResult<Series> {
+        let rhs = lhs.unpack_series_matching_type(rhs)?;
+        let out = lhs + rhs;
+        Ok(out.into_series())
+    }
+}
+
 #[cfg(feature = "checked_arithmetic")]
 pub mod checked {
     use num_traits::{CheckedDiv, One, ToPrimitive, Zero};

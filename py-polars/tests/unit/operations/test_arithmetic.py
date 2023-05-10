@@ -163,3 +163,14 @@ def test_fma() -> None:
     q = df.lazy().with_columns((0 + 2.5 * (0.5 + pl.col("x"))).alias("compute"))
     assert q.collect()["compute"][0] == 1.25
     assert "0.0.fma" in q.explain()
+
+
+def test_boolean_addition() -> None:
+    s = pl.DataFrame({"a": [True, False, False], "b": [True, False, True]}).sum(axis=1)
+
+    assert s.dtype == pl.utils.get_index_type()
+    assert s.to_list() == [2, 0, 1]
+    df = pl.DataFrame(
+        {"a": [True], "b": [False]},
+    ).select(pl.sum(pl.col(["a", "b"])))
+    assert df.dtypes == [pl.utils.get_index_type()]
