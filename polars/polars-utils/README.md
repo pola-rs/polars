@@ -1,10 +1,6 @@
-# Polars-utils
+# polars-utils
 
-private utils for the polars dataframe library
+`polars-utils` is a submodule that provides private utils for the Polars dataframe library.
 
-## Features
+Not intended for external usage
 
-| Feature | Description                                                                                                   |
-| ------- | ------------------------------------------------------------------------------------------------------------- |
-| bigidx  | Enables support for large arrays and indexes in the code.                                                     |
-| nightly | Enables the use of unstable and experimental features that are only available on the nightly version of Rust. |
