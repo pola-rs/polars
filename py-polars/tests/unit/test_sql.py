@@ -1,4 +1,5 @@
 import os
+import warnings
 from pathlib import Path
 
 import pytest
@@ -14,27 +15,27 @@ def foods_ipc_path() -> str:
 
 
 def test_sql_distinct() -> None:
-    lf = pl.LazyFrame(
+    df = pl.DataFrame(
         {
             "a": [1, 1, 1, 2, 2, 3],
             "b": [1, 2, 3, 4, 5, 6],
         }
     )
-    c = pl.SQLContext(register_globals=True)
-    res1 = c.execute("SELECT DISTINCT a FROM lf ORDER BY a DESC")
+    c = pl.SQLContext(register_globals=True, eager_execution=True)
+    res1 = c.execute("SELECT DISTINCT a FROM df ORDER BY a DESC")
     assert_frame_equal(
-        left=lf.select("a").unique().sort(by="a", descending=True).collect(),
-        right=res1.collect(),
+        left=df.select("a").unique().sort(by="a", descending=True),
+        right=res1,
     )
 
-    res2 = c.query(
+    res2 = c.execute(
         """
         SELECT DISTINCT
           a*2 AS two_a,
           b/2 AS half_b
-        FROM lf
+        FROM df
         ORDER BY two_a ASC, half_b DESC
-        """
+        """,
     )
     assert res2.to_dict(False) == {
         "two_a": [2, 2, 4, 6],
@@ -44,16 +45,16 @@ def test_sql_distinct() -> None:
     # test unregistration
     c.unregister("df")
     with pytest.raises(pl.ComputeError, match=".*'df'.*not found"):
-        c.query("SELECT * FROM df")
+        c.execute("SELECT * FROM df")
 
 
 def test_sql_groupby(foods_ipc_path: Path) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
 
-    c = pl.SQLContext()
+    c = pl.SQLContext(eager_execution=True)
     c.register("foods", lf)
 
-    out = c.query(
+    out = c.execute(
         """
         SELECT
             category,
@@ -79,11 +80,8 @@ def test_sql_groupby(foods_ipc_path: Path) -> None:
             "att": ["x", "y", "x", "y", "y"],
         }
     )
-    with pytest.raises(TypeError, match="Cannot register.*DataFrame.*use LazyFrame"):
-        c.register("test", lf.collect())  # type: ignore[arg-type]
-
     c.register("test", lf)
-    out = c.query(
+    out = c.execute(
         """
         SELECT
             grp,
@@ -106,7 +104,7 @@ def test_sql_join_inner(foods_ipc_path: Path) -> None:
         "ON foods1.category = foods2.category",
         "USING (category)",
     ):
-        out = c.query(
+        out = c.execute(
             f"""
             SELECT *
             FROM foods1
@@ -114,7 +112,7 @@ def test_sql_join_inner(foods_ipc_path: Path) -> None:
             LIMIT 2
             """
         )
-        assert out.to_dict(False) == {
+        assert out.collect().to_dict(False) == {
             "category": ["vegetables", "vegetables"],
             "calories": [45, 20],
             "fats_g": [0.5, 0.0],
@@ -127,9 +125,9 @@ def test_sql_join_inner(foods_ipc_path: Path) -> None:
 
 def test_sql_join_left() -> None:
     frames = {
-        "tbl_a": pl.LazyFrame({"a": [1, 2, 3], "b": [4, None, 6]}),
-        "tbl_b": pl.LazyFrame({"a": [3, 2, 1], "b": [6, 5, 4], "c": ["x", "y", "z"]}),
-        "tbl_c": pl.LazyFrame({"c": ["w", "y", "z"], "d": [10.5, -50.0, 25.5]}),
+        "tbl_a": pl.DataFrame({"a": [1, 2, 3], "b": [4, None, 6]}),
+        "tbl_b": pl.DataFrame({"a": [3, 2, 1], "b": [6, 5, 4], "c": ["x", "y", "z"]}),
+        "tbl_c": pl.DataFrame({"c": ["w", "y", "z"], "d": [10.5, -50.0, 25.5]}),
     }
     c = pl.SQLContext(frames)
     out = c.execute(
@@ -151,8 +149,8 @@ def test_sql_join_left() -> None:
 def test_sql_is_between(foods_ipc_path: Path) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
 
-    c = pl.SQLContext(foods1=lf)
-    out = c.query(
+    c = pl.SQLContext(foods1=lf, eager_execution=True)
+    out = c.execute(
         """
         SELECT *
         FROM foods1
@@ -167,7 +165,7 @@ def test_sql_is_between(foods_ipc_path: Path) -> None:
         "sugars_g": [5, 2, 3, 3],
     }
 
-    out = c.query(
+    out = c.execute(
         """
         SELECT *
         FROM foods1
@@ -193,15 +191,20 @@ def test_sql_union() -> None:
         u2=lf.select("b"),
     )
     with pytest.raises(pl.ComputeError, match="UNION.+ not yet supported"):
-        c.query("""(SELECT * FROM u1) UNION (SELECT * FROM u2)""")
+        c.execute("""(SELECT * FROM u1) UNION (SELECT * FROM u2)""")
 
 
 def test_sql_trim(foods_ipc_path: Path) -> None:
-    out = pl.SQLContext(foods1=pl.scan_ipc(foods_ipc_path)).query(
-        """
-        SELECT DISTINCT TRIM(LEADING 'vmf' FROM category)
-        FROM foods1
-        ORDER BY category DESC
-        """
-    )
-    assert out.to_dict(False) == {"category": ["seafood", "ruit", "egetables", "eat"]}
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+
+        out = pl.SQLContext(foods1=pl.scan_ipc(foods_ipc_path)).query(  # type: ignore[attr-defined]
+            """
+            SELECT DISTINCT TRIM(LEADING 'vmf' FROM category)
+            FROM foods1
+            ORDER BY category DESC
+            """
+        )
+        assert out.to_dict(False) == {
+            "category": ["seafood", "ruit", "egetables", "eat"]
+        }
