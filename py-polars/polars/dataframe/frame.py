@@ -7818,6 +7818,7 @@ class DataFrame:
             `fraction` is None.
         fraction
             Fraction of items to return. Cannot be used with `n`.
+            .. note:: This parameter is renamed to `frac`.
         with_replacement
             Allow values to be sampled more than once.
         shuffle
