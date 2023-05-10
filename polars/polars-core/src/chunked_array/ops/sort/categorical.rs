@@ -120,26 +120,25 @@ impl CategoricalChunked {
 
     /// Retrieve the indexes need to sort this and the other arrays.
 
-    pub(crate) fn arg_sort_multiple(
-        &self,
-        other: &[Series],
-        descending: &[bool],
-    ) -> PolarsResult<IdxCa> {
+    pub(crate) fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
         if self.use_lexical_sort() {
-            args_validate(self.logical(), other, descending)?;
+            args_validate(self.logical(), &options.other, &options.descending)?;
             let mut count: IdxSize = 0;
+
+            // we use bytes to save a monomorphisized str impl
+            // as bytes already is used for binary and utf8 sorting
             let vals: Vec<_> = self
                 .iter_str()
                 .map(|v| {
                     let i = count;
                     count += 1;
-                    (i, v)
+                    (i, v.map(|v| v.as_bytes()))
                 })
                 .collect_trusted();
 
-            arg_sort_multiple_impl(vals, other, descending)
+            arg_sort_multiple_impl(vals, options)
         } else {
-            self.logical().arg_sort_multiple(other, descending)
+            self.logical().arg_sort_multiple(options)
         }
     }
 }
