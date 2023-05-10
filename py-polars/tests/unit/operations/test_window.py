@@ -131,6 +131,7 @@ def test_arange_no_rows() -> None:
 
     df = pl.DataFrame({"x": []})
     out = df.with_columns(expr)
+    print(out)
     expected = pl.DataFrame(
         {"x": [], "arange": []}, schema={"x": pl.Float32, "arange": pl.Int64}
     )

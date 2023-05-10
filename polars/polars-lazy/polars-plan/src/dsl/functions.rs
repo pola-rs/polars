@@ -343,6 +343,7 @@ where
     Ok(Some(ca.into_series()))
 }
 
+// TODO! rewrite this with the apply_private architecture
 /// Create list entries that are range arrays
 /// - if `start` and `end` are a column, every element will expand into an array in a list column.
 /// - if `start` and `end` are literals the output will be of `Int64`.
@@ -429,7 +430,7 @@ pub fn arange(start: Expr, end: Expr, step: i64) -> Expr {
                 let dtype = if input.data_type() == &IDX_DTYPE {
                     IDX_DTYPE
                 } else {
-                    input.data_type().clone()
+                    DataType::Int64
                 };
                 Field::new("arange", dtype)
             }),
