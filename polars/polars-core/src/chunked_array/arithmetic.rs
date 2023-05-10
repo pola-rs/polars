@@ -1,5 +1,4 @@
 //! Implementations of arithmetic operations on ChunkedArray's.
-use std::borrow::Cow;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use arrow::array::PrimitiveArray;
@@ -451,7 +450,8 @@ where
     fn mul(self, rhs: N) -> Self::Output {
         // don't set sorted flag as probability of overflow is higher
         let multiplier: T::Native = NumCast::from(rhs).unwrap();
-        self.apply(|val| val * multiplier)
+        let rhs = ChunkedArray::from_vec("", vec![multiplier]);
+        self.mul(&rhs)
     }
 }
 
@@ -464,7 +464,8 @@ where
 
     fn rem(self, rhs: N) -> Self::Output {
         let rhs: T::Native = NumCast::from(rhs).expect("could not cast");
-        self.apply_kernel(&|arr| Box::new(<T::Native as ArrayArithmetics>::rem_scalar(arr, &rhs)))
+        let rhs = ChunkedArray::from_vec("", vec![rhs]);
+        self.rem(&rhs)
     }
 }
 
@@ -512,13 +513,9 @@ where
     type Output = ChunkedArray<T>;
 
     fn mul(mut self, rhs: N) -> Self::Output {
-        if std::env::var("ASSIGN").is_ok() {
-            let multiplier: T::Native = NumCast::from(rhs).unwrap();
-            self.apply_mut(|val| val * multiplier);
-            self
-        } else {
-            (&self).mul(rhs)
-        }
+        let multiplier: T::Native = NumCast::from(rhs).unwrap();
+        self.apply_mut(|val| val * multiplier);
+        self
     }
 }
 
@@ -534,53 +531,18 @@ where
     }
 }
 
-fn concat_strings(l: &str, r: &str) -> String {
-    // fastest way to concat strings according to https://github.com/hoodie/concatenation_benchmarks-rs
-    let mut s = String::with_capacity(l.len() + r.len());
-    s.push_str(l);
-    s.push_str(r);
-    s
-}
+fn concat_binary_arrs(l: &[u8], r: &[u8], buf: &mut Vec<u8>) {
+    buf.clear();
 
-fn concat_binary_arrs(l: &[u8], r: &[u8]) -> Vec<u8> {
-    let mut v = Vec::with_capacity(l.len() + r.len());
-    v.extend_from_slice(l);
-    v.extend_from_slice(r);
-    v
+    buf.extend_from_slice(l);
+    buf.extend_from_slice(r);
 }
 
 impl Add for &Utf8Chunked {
     type Output = Utf8Chunked;
 
     fn add(self, rhs: Self) -> Self::Output {
-        // broadcasting path rhs
-        if rhs.len() == 1 {
-            let rhs = rhs.get(0);
-            return match rhs {
-                Some(rhs) => self.add(rhs),
-                None => Utf8Chunked::full_null(self.name(), self.len()),
-            };
-        }
-        // broadcasting path lhs
-        if self.len() == 1 {
-            let lhs = self.get(0);
-            return match lhs {
-                Some(lhs) => rhs.apply(|s| Cow::Owned(concat_strings(lhs, s))),
-                None => Utf8Chunked::full_null(self.name(), rhs.len()),
-            };
-        }
-
-        // todo! add no_null variants. Need 4 paths.
-        let mut ca: Self::Output = self
-            .into_iter()
-            .zip(rhs.into_iter())
-            .map(|(opt_l, opt_r)| match (opt_l, opt_r) {
-                (Some(l), Some(r)) => Some(concat_strings(l, r)),
-                _ => None,
-            })
-            .collect_trusted();
-        ca.rename(self.name());
-        ca
+        unsafe { (self.as_binary() + rhs.as_binary()).to_utf8() }
     }
 }
 
@@ -600,6 +562,22 @@ impl Add<&str> for &Utf8Chunked {
     }
 }
 
+fn concat_binary(a: &BinaryArray<i64>, b: &BinaryArray<i64>) -> BinaryArray<i64> {
+    let validity = combine_validities_and(a.validity(), b.validity());
+    let mut values = Vec::with_capacity(a.get_values_size() + b.get_values_size());
+    let mut offsets = Vec::with_capacity(a.len() + 1);
+    let mut offset_so_far = 0i64;
+    offsets.push(offset_so_far);
+
+    for (a, b) in a.values_iter().zip(b.values_iter()) {
+        values.extend_from_slice(a);
+        values.extend_from_slice(b);
+        offset_so_far = values.len() as i64;
+        offsets.push(offset_so_far)
+    }
+    unsafe { BinaryArray::from_data_unchecked_default(offsets.into(), values.into(), validity) }
+}
+
 impl Add for &BinaryChunked {
     type Output = BinaryChunked;
 
@@ -607,31 +585,45 @@ impl Add for &BinaryChunked {
         // broadcasting path rhs
         if rhs.len() == 1 {
             let rhs = rhs.get(0);
+            let mut buf = vec![];
             return match rhs {
-                Some(rhs) => self.add(rhs),
+                Some(rhs) => {
+                    self.apply_mut(|s| {
+                        concat_binary_arrs(s, rhs, &mut buf);
+                        let out = buf.as_slice();
+                        // safety: lifetime is bound to the outer scope and the
+                        // ref is valid for the lifetime of this closure
+                        unsafe { std::mem::transmute::<_, &'static [u8]>(out) }
+                    })
+                }
                 None => BinaryChunked::full_null(self.name(), self.len()),
             };
         }
         // broadcasting path lhs
         if self.len() == 1 {
             let lhs = self.get(0);
+            let mut buf = vec![];
             return match lhs {
-                Some(lhs) => rhs.apply(|s| Cow::Owned(concat_binary_arrs(lhs, s))),
+                Some(lhs) => rhs.apply_mut(|s| {
+                    concat_binary_arrs(lhs, s, &mut buf);
+
+                    let out = buf.as_slice();
+                    // safety: lifetime is bound to the outer scope and the
+                    // ref is valid for the lifetime of this closure
+                    unsafe { std::mem::transmute::<_, &'static [u8]>(out) }
+                }),
                 None => BinaryChunked::full_null(self.name(), rhs.len()),
             };
         }
 
-        // todo! add no_null variants. Need 4 paths.
-        let mut ca: Self::Output = self
-            .into_iter()
-            .zip(rhs.into_iter())
-            .map(|(opt_l, opt_r)| match (opt_l, opt_r) {
-                (Some(l), Some(r)) => Some(concat_binary_arrs(l, r)),
-                _ => None,
-            })
-            .collect_trusted();
-        ca.rename(self.name());
-        ca
+        let (lhs, rhs) = align_chunks_binary(self, rhs);
+        let chunks = lhs
+            .downcast_iter()
+            .zip(rhs.downcast_iter())
+            .map(|(a, b)| Box::new(concat_binary(a, b)) as ArrayRef)
+            .collect();
+
+        unsafe { BinaryChunked::from_chunks(self.name(), chunks) }
     }
 }
 
@@ -647,18 +639,9 @@ impl Add<&[u8]> for &BinaryChunked {
     type Output = BinaryChunked;
 
     fn add(self, rhs: &[u8]) -> Self::Output {
-        let mut ca: Self::Output = match self.has_validity() {
-            false => self
-                .into_no_null_iter()
-                .map(|l| concat_binary_arrs(l, rhs))
-                .collect_trusted(),
-            _ => self
-                .into_iter()
-                .map(|opt_l| opt_l.map(|l| concat_binary_arrs(l, rhs)))
-                .collect_trusted(),
-        };
-        ca.rename(self.name());
-        ca
+        let arr = BinaryArray::<i64>::from_slice([rhs]);
+        let rhs = unsafe { BinaryChunked::from_chunks("", vec![Box::new(arr) as ArrayRef]) };
+        self.add(&rhs)
     }
 }
 
