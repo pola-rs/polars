@@ -59,6 +59,7 @@ These functions are available from the polars module root and can be used as exp
    struct
    sum
    tail
+   time
    var
    when
 
