@@ -25,6 +25,7 @@ pub(crate) fn create_physical_expressions(
 pub(crate) struct ExpressionConversionState {
     has_cache: bool,
     pub allow_threading: bool,
+    pub has_windows: bool,
 }
 
 impl ExpressionConversionState {
@@ -53,6 +54,7 @@ pub(crate) fn create_physical_expr(
             order_by: _,
             options,
         } => {
+            state.has_windows = true;
             // TODO! Order by
             let group_by = create_physical_expressions(
                 &partition_by,
@@ -671,9 +673,17 @@ fn parallel_op_series<F>(
 where
     F: Fn(Series) -> PolarsResult<Series> + Send + Sync,
 {
+    // set during debug low so
+    // we mimic production size data behavior
+    #[cfg(debug_assertions)]
+    let thread_boundary = 0;
+
+    #[cfg(not(debug_assertions))]
+    let thread_boundary = 100_000;
+
     // threading overhead/ splitting work stealing is costly..
     if !state.allow_threading
-        || s.len() < 100_000
+        || s.len() < thread_boundary
         || state.has_cache
         || POOL.current_thread_has_pending_tasks().unwrap_or(false)
     {

@@ -5,10 +5,6 @@ use super::super::executors::{self, Executor};
 use super::*;
 use crate::utils::*;
 
-fn has_windows(expr: &[Node], expr_arena: &Arena<AExpr>) -> bool {
-    expr.iter().any(|node| has_aexpr_window(*node, expr_arena))
-}
-
 fn partitionable_gb(
     keys: &[Node],
     aggs: &[Node],
@@ -170,18 +166,13 @@ pub fn create_physical_plan(
         }
         Selection { input, predicate } => {
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
-            let has_windows = has_windows(&[predicate], expr_arena);
-            let predicate = create_physical_expr(
-                predicate,
-                Context::Default,
-                expr_arena,
-                None,
-                &mut Default::default(),
-            )?;
+            let mut state = ExpressionConversionState::default();
+            let predicate =
+                create_physical_expr(predicate, Context::Default, expr_arena, None, &mut state)?;
             Ok(Box::new(executors::FilterExec::new(
                 predicate,
                 input,
-                has_windows,
+                state.has_windows,
             )))
         }
         #[cfg(feature = "csv")]
@@ -273,19 +264,19 @@ pub fn create_physical_plan(
             ..
         } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
-            let has_windows = has_windows(&expr, expr_arena);
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
+            let mut state = ExpressionConversionState::new(POOL.current_num_threads() > expr.len());
             let phys_expr = create_physical_expressions(
                 &expr,
                 Context::Default,
                 expr_arena,
                 Some(&input_schema),
-                &mut ExpressionConversionState::new(POOL.current_num_threads() > expr.len()),
+                &mut state,
             )?;
             Ok(Box::new(executors::ProjectionExec {
                 input,
                 expr: phys_expr,
-                has_windows,
+                has_windows: state.has_windows,
                 input_schema,
                 #[cfg(test)]
                 schema: _schema,
@@ -299,19 +290,19 @@ pub fn create_physical_plan(
         } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
 
-            let has_windows = has_windows(&expr, expr_arena);
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
+            let mut state = ExpressionConversionState::new(POOL.current_num_threads() > expr.len());
             let phys_expr = create_physical_expressions(
                 &expr,
                 Context::Default,
                 expr_arena,
                 Some(&input_schema),
-                &mut Default::default(),
+                &mut state,
             )?;
             Ok(Box::new(executors::ProjectionExec {
                 input,
                 expr: phys_expr,
-                has_windows,
+                has_windows: state.has_windows,
                 input_schema,
                 #[cfg(test)]
                 schema: _schema,
@@ -324,9 +315,7 @@ pub fn create_physical_plan(
             schema,
             ..
         } => {
-            let predicate_has_windows = predicate
-                .map(|node| has_windows(&[node], expr_arena))
-                .unwrap_or(false);
+            let mut state = ExpressionConversionState::default();
             let selection = predicate
                 .map(|pred| {
                     create_physical_expr(
@@ -334,7 +323,7 @@ pub fn create_physical_plan(
                         Context::Default,
                         expr_arena,
                         Some(&schema),
-                        &mut Default::default(),
+                        &mut state,
                     )
                 })
                 .transpose()?;
@@ -342,7 +331,7 @@ pub fn create_physical_plan(
                 df,
                 projection,
                 selection,
-                predicate_has_windows,
+                predicate_has_windows: state.has_windows,
             }))
         }
         AnonymousScan {
@@ -545,18 +534,20 @@ pub fn create_physical_plan(
         }
         HStack { input, exprs, .. } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
-            let has_windows = has_windows(&exprs, expr_arena);
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
+
+            let mut state =
+                ExpressionConversionState::new(POOL.current_num_threads() > exprs.len());
             let phys_expr = create_physical_expressions(
                 &exprs,
                 Context::Default,
                 expr_arena,
                 Some(&input_schema),
-                &mut ExpressionConversionState::new(POOL.current_num_threads() > exprs.len()),
+                &mut state,
             )?;
             Ok(Box::new(executors::StackExec {
                 input,
-                has_windows,
+                has_windows: state.has_windows,
                 expr: phys_expr,
                 input_schema,
             }))
