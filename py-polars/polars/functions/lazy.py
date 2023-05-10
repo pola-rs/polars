@@ -2612,13 +2612,13 @@ def datetime_(
     day
         column or literal, ranging from 1-31.
     hour
-        column or literal, ranging from 1-23.
+        column or literal, ranging from 0-23.
     minute
-        column or literal, ranging from 1-59.
+        column or literal, ranging from 0-59.
     second
-        column or literal, ranging from 1-59.
+        column or literal, ranging from 0-59.
     microsecond
-        column or literal, ranging from 1-999999.
+        column or literal, ranging from 0-999999.
 
     Returns
     -------
@@ -2674,6 +2674,39 @@ def date_(
 
     """
     return datetime_(year, month, day).cast(Date).alias("date")
+
+
+def time_(
+    hour: Expr | str | int | None = None,
+    minute: Expr | str | int | None = None,
+    second: Expr | str | int | None = None,
+    microsecond: Expr | str | int | None = None,
+) -> Expr:
+    """
+    Create a Polars literal expression of type Date.
+
+    Parameters
+    ----------
+    hour
+        column or literal, ranging from 0-23.
+    minute
+        column or literal, ranging from 0-59.
+    second
+        column or literal, ranging from 0-59.
+    microsecond
+        column or literal, ranging from 0-999999.
+
+    Returns
+    -------
+    Expr of type pl.Date
+
+    """
+    epoch_start = (1970, 1, 1)
+    return (
+        datetime_(*epoch_start, hour, minute, second, microsecond)
+        .cast(Time)
+        .alias("time")
+    )
 
 
 def concat_str(
