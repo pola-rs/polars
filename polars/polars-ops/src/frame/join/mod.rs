@@ -158,15 +158,22 @@ pub trait DataFrameJoinOps: IntoDf {
 
         polars_ensure!(
             selected_left.len() == selected_right.len(),
-            ComputeError: "the number of columns given as join key should be equal"
+            ComputeError: format!("the number of columns given as join key (left: {}, right:{}) should be equal", selected_left.len(), selected_right.len())
         );
-        polars_ensure!(
-            selected_left
+
+        if let Some((l, r)) = selected_left
             .iter()
             .zip(&selected_right)
-            .all(|(l, r)| l.dtype() == r.dtype()),
-            ComputeError: "datatypes of join keys don't match"
-        );
+            .find(|(l, r)| l.dtype() != r.dtype())
+        {
+            polars_bail!(
+                ComputeError:
+                    format!(
+                        "datatypes of join keys don't match - `{}`: {} on left does not match `{}`: {} on right",
+                        l.name(), l.dtype(), r.name(), r.dtype()
+                    )
+            );
+        };
 
         #[cfg(feature = "dtype-categorical")]
         for (l, r) in selected_left.iter().zip(&selected_right) {
