@@ -128,6 +128,8 @@ impl PhysicalExpr for SortByExpr {
                         } else {
                             let idx = s_sort_by.arg_sort(SortOptions {
                                 descending,
+                                // we are already in par iter.
+                                multithreaded: false,
                                 ..Default::default()
                             });
                             Some(unsafe { s.take_unchecked(&idx).unwrap() })
@@ -170,6 +172,8 @@ impl PhysicalExpr for SortByExpr {
 
                                 let sorted_idx = group.arg_sort(SortOptions {
                                     descending: descending[0],
+                                    // we are already in par iter.
+                                    multithreaded: false,
                                     ..Default::default()
                                 });
                                 map_sorted_indices_to_group_idx(&sorted_idx, idx)
@@ -178,6 +182,8 @@ impl PhysicalExpr for SortByExpr {
                                 let group = sort_by_s.slice(first as i64, len as usize);
                                 let sorted_idx = group.arg_sort(SortOptions {
                                     descending: descending[0],
+                                    // we are already in par iter.
+                                    multithreaded: false,
                                     ..Default::default()
                                 });
                                 map_sorted_indices_to_group_slice(&sorted_idx, first)
