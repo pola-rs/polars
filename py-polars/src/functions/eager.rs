@@ -116,3 +116,16 @@ pub fn hor_concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
     let df = functions::hor_concat_df(&dfs).map_err(PyPolarsErr::from)?;
     Ok(df.into())
 }
+
+#[pyfunction]
+pub fn time_range(
+    start: i64,
+    stop: i64,
+    every: &str,
+    closed: Wrap<ClosedWindow>,
+    name: &str,
+) -> PyResult<PySeries> {
+    let time_range = time::time_range_impl(name, start, stop, Duration::parse(every), closed.0)
+        .map_err(PyPolarsErr::from)?;
+    Ok(time_range.into_series().into())
+}

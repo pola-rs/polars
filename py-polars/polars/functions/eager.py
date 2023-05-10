@@ -2,15 +2,17 @@ from __future__ import annotations
 
 import contextlib
 import warnings
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from typing import TYPE_CHECKING, Iterable, Sequence, overload
 
 import polars._reexport as pl
+from polars import functions as F
 from polars.datatypes import Date
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
 from polars.utils._wrap import wrap_df, wrap_expr, wrap_ldf, wrap_s
 from polars.utils.convert import (
     _datetime_to_pl_timestamp,
+    _time_to_pl_time,
     _timedelta_to_pl_duration,
     _tzinfo_to_str,
 )
@@ -382,15 +384,15 @@ def date_range(
     end
         Upper bound of the date range, given as a date, datetime, Expr, or column name.
     interval
-        Interval periods. It can be a python timedelta object, like
-        ``timedelta(days=10)``, or a polars duration string, such as ``3d12h4m25s``
-        representing 3 days, 12 hours, 4 minutes, and 25 seconds.
+        Interval of the range periods; can be a python timedelta object like
+        ``timedelta(days=10)`` or a polars duration string, such as ``3d12h4m25s``
+        (representing 3 days, 12 hours, 4 minutes, and 25 seconds).
     lazy:
         Return an expression.
 
             .. deprecated:: 0.17.10
     eager:
-        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
+        Evaluate immediately and return a ``Series``; if set to ``False`` (default),
         return an expression instead.
     closed : {'both', 'left', 'right', 'none'}
         Define whether the temporal window interval is closed or not.
@@ -514,6 +516,7 @@ def date_range(
     else:
         # user only passed eager. Nothing to warn about :)
         pass
+
     if name is None:
         name = ""
     if isinstance(interval, timedelta):
@@ -522,9 +525,9 @@ def date_range(
         interval = interval.replace(" ", "")
 
     if (
-        isinstance(start, (str, pl.Expr))
+        not eager
+        or isinstance(start, (str, pl.Expr))
         or isinstance(end, (str, pl.Expr))
-        or not eager
     ):
         start = expr_to_lit_or_expr(start, str_to_lit=False)._pyexpr
         end = expr_to_lit_or_expr(end, str_to_lit=False)._pyexpr
@@ -572,6 +575,133 @@ def date_range(
         dt_range = dt_range.cast(Date)
 
     return dt_range
+
+
+def time_range(
+    start: time | Expr | str | None = None,
+    end: time | Expr | str | None = None,
+    interval: str | timedelta = "1h",
+    *,
+    eager: bool = False,
+    closed: ClosedInterval = "both",
+    name: str | None = None,
+) -> Series | Expr:
+    """
+    Create a range of type `Time`.
+
+    Parameters
+    ----------
+    start
+        Lower bound of the time range, given as a time, Expr, or column name.
+        If omitted, will default to ``time(0,0,0,0)``.
+    end
+        Upper bound of the time range, given as a time, Expr, or column name.
+        If omitted, will default to ``time(23,59,59,999999)``.
+    interval
+        Interval of the range periods; can be a python timedelta object like
+        ``timedelta(minutes=10)`` or a polars duration string, such as ``1h30m25s``
+        (representing 1 hour, 30 minutes, and 25 seconds).
+    eager:
+        Evaluate immediately and return a ``Series``; if set to ``False`` (default),
+        return an expression instead.
+    closed : {'both', 'left', 'right', 'none'}
+        Define whether the temporal window interval is closed or not.
+    name
+        Name of the output Series.
+
+    Returns
+    -------
+    A Series of type `Time`.
+
+    Examples
+    --------
+    Create a Series that starts at 14:00, with intervals of 3 hours and 15 mins:
+
+    >>> from datetime import time
+    >>> pl.time_range(
+    ...     start=time(14, 0),
+    ...     interval=timedelta(hours=3, minutes=15),
+    ...     eager=True,
+    ...     name="tm",
+    ... )
+    shape: (4,)
+    Series: 'tm' [time]
+    [
+        14:00:00
+        17:15:00
+        20:30:00
+        23:45:00
+    ]
+
+    Generate a DataFrame with two columns made of eager ``time_range`` Series,
+    and create a third column using ``time_range`` in expression context:
+
+    >>> lf = pl.LazyFrame(
+    ...     {
+    ...         "start": pl.time_range(interval="6h", eager=True),
+    ...         "stop": pl.time_range(start=time(2, 59), interval="5h59m", eager=True),
+    ...     }
+    ... ).with_columns(
+    ...     intervals=pl.time_range("start", "stop", interval="1h29m", eager=False)
+    ... )
+    >>> lf.collect()
+    shape: (4, 3)
+    ┌──────────┬──────────┬────────────────────────────────┐
+    │ start    ┆ stop     ┆ intervals                      │
+    │ ---      ┆ ---      ┆ ---                            │
+    │ time     ┆ time     ┆ list[time]                     │
+    ╞══════════╪══════════╪════════════════════════════════╡
+    │ 00:00:00 ┆ 02:59:00 ┆ [00:00:00, 01:29:00, 02:58:00] │
+    │ 06:00:00 ┆ 08:58:00 ┆ [06:00:00, 07:29:00, 08:58:00] │
+    │ 12:00:00 ┆ 14:57:00 ┆ [12:00:00, 13:29:00]           │
+    │ 18:00:00 ┆ 20:56:00 ┆ [18:00:00, 19:29:00]           │
+    └──────────┴──────────┴────────────────────────────────┘
+
+    """
+    if isinstance(interval, timedelta):
+        interval = _timedelta_to_pl_duration(interval)
+    elif " " in interval:
+        interval = interval.replace(" ", "").lower()
+
+    for unit in ("y", "mo", "w", "d"):
+        if unit in interval:
+            raise ValueError(f"invalid interval unit for time_range: found {unit!r}")
+
+    name = name or ""
+    default_start = time(0, 0, 0)
+    default_end = time(23, 59, 59, 999999)
+    if (
+        not eager
+        or isinstance(start, (str, pl.Expr))
+        or isinstance(end, (str, pl.Expr))
+    ):
+        start_expr = (
+            F.lit(default_start)
+            if start is None
+            else expr_to_lit_or_expr(start, str_to_lit=False)
+        )._pyexpr
+
+        end_expr = (
+            F.lit(default_end)
+            if end is None
+            else expr_to_lit_or_expr(end, str_to_lit=False)
+        )._pyexpr
+
+        tm_expr = wrap_expr(
+            plr.time_range_lazy(start_expr, end_expr, interval, closed, name)
+        )
+        return tm_expr.alias(name)
+    else:
+        tm_srs = wrap_s(
+            plr.time_range(
+                _time_to_pl_time(default_start if start is None else start),
+                _time_to_pl_time(default_end if end is None else end),
+                interval,
+                closed,
+                name,
+            )
+        )
+        return tm_srs
 
 
 def cut(
