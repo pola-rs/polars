@@ -8,12 +8,13 @@ mod datetime;
 mod duration;
 #[cfg(feature = "dtype-time")]
 mod time;
-
 #[cfg(feature = "dtype-date")]
 use chrono::NaiveDate;
 use chrono::NaiveDateTime;
 #[cfg(any(feature = "dtype-time", feature = "dtype-date"))]
 use chrono::NaiveTime;
+#[cfg(feature = "dtype-time")]
+pub use time::time_to_time64ns;
 
 pub use self::conversion::*;
 

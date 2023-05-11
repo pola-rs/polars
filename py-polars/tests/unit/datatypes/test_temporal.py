@@ -672,6 +672,82 @@ def test_date_range_invalid_time_zone() -> None:
         )
 
 
+def test_time_range_lit() -> None:
+    for eager in (True, False):
+        tm = pl.select(
+            pl.time_range(
+                start=time(1, 2, 3),
+                end=time(23, 59, 59),
+                interval="5h45m10s333ms",
+                closed="right",
+                eager=eager,
+                name="tm",
+            )
+        )
+        assert tm["tm"].to_list() == [
+            time(6, 47, 13, 333000),
+            time(12, 32, 23, 666000),
+            time(18, 17, 33, 999000),
+        ]
+
+        # validate unset start/end
+        tm = pl.select(
+            pl.time_range(
+                interval="5h45m10s333ms",
+                eager=eager,
+                name="tm",
+            )
+        )
+        assert tm["tm"].to_list() == [
+            time(0, 0),
+            time(5, 45, 10, 333000),
+            time(11, 30, 20, 666000),
+            time(17, 15, 30, 999000),
+            time(23, 0, 41, 332000),
+        ]
+
+        tm = pl.select(
+            pl.time_range(
+                start=pl.lit(time(23, 59, 59, 999980)),
+                interval="10000ns",
+                eager=eager,
+                name="tm",
+            )
+        )
+        assert tm["tm"].to_list() == [
+            time(23, 59, 59, 999980),
+            time(23, 59, 59, 999990),
+        ]
+
+
+def test_time_range_expr() -> None:
+    df = pl.DataFrame(
+        {
+            "start": pl.time_range(interval="6h", eager=True),
+            "stop": pl.time_range(start=time(2, 59), interval="5h59m", eager=True),
+        }
+    ).with_columns(
+        intervals=pl.time_range("start", pl.col("stop"), interval="1h29m", eager=False)
+    )
+    # shape: (4, 3)
+    # ┌──────────┬──────────┬────────────────────────────────┐
+    # │ start    ┆ stop     ┆ intervals                      │
+    # │ ---      ┆ ---      ┆ ---                            │
+    # │ time     ┆ time     ┆ list[time]                     │
+    # ╞══════════╪══════════╪════════════════════════════════╡
+    # │ 00:00:00 ┆ 02:59:00 ┆ [00:00:00, 01:29:00, 02:58:00] │
+    # │ 06:00:00 ┆ 08:58:00 ┆ [06:00:00, 07:29:00, 08:58:00] │
+    # │ 12:00:00 ┆ 14:57:00 ┆ [12:00:00, 13:29:00]           │
+    # │ 18:00:00 ┆ 20:56:00 ┆ [18:00:00, 19:29:00]           │
+    # └──────────┴──────────┴────────────────────────────────┘
+    assert df.rows() == [
+        (time(0, 0), time(2, 59), [time(0, 0), time(1, 29), time(2, 58)]),
+        (time(6, 0), time(8, 58), [time(6, 0), time(7, 29), time(8, 58)]),
+        (time(12, 0), time(14, 57), [time(12, 0), time(13, 29)]),
+        (time(18, 0), time(20, 56), [time(18, 0), time(19, 29)]),
+    ]
+
+
 @pytest.mark.parametrize(
     ("one", "two"),
     [

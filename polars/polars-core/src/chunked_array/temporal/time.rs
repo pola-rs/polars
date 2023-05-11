@@ -9,7 +9,7 @@ use crate::prelude::*;
 const SECONDS_IN_MINUTE: i64 = 60;
 const SECONDS_IN_HOUR: i64 = 3_600;
 
-pub(crate) fn time_to_time64ns(time: &NaiveTime) -> i64 {
+pub fn time_to_time64ns(time: &NaiveTime) -> i64 {
     (time.hour() as i64 * SECONDS_IN_HOUR
         + time.minute() as i64 * SECONDS_IN_MINUTE
         + time.second() as i64)

@@ -28,6 +28,7 @@ Eager/Lazy functions
     date_range
     get_dummies
     ones
+    time_range
     zeros
 
 Miscellaneous

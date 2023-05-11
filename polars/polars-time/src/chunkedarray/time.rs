@@ -1,18 +1,6 @@
-use chrono::Timelike;
-use polars_arrow::export::arrow::temporal_conversions::NANOSECONDS;
+use polars_core::chunked_array::temporal::time_to_time64ns;
 
 use super::*;
-
-const SECONDS_IN_MINUTE: i64 = 60;
-const SECONDS_IN_HOUR: i64 = 3_600;
-
-pub(crate) fn time_to_time64ns(time: &NaiveTime) -> i64 {
-    (time.hour() as i64 * SECONDS_IN_HOUR
-        + time.minute() as i64 * SECONDS_IN_MINUTE
-        + time.second() as i64)
-        * NANOSECONDS
-        + time.nanosecond() as i64
-}
 
 pub trait TimeMethods {
     /// Extract hour from underlying NaiveDateTime representation.

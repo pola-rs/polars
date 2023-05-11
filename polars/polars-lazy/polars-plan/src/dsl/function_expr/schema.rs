@@ -60,6 +60,7 @@ impl FunctionExpr {
                     #[cfg(feature = "timezones")]
                     TzLocalize(tz) => return mapper.map_datetime_dtype_timezone(Some(tz)),
                     DateRange { .. } => return mapper.map_to_supertype(),
+                    TimeRange { .. } => DataType::Time,
                     Combine(tu) => match mapper.with_same_dtype().unwrap().dtype {
                         DataType::Datetime(_, tz) => DataType::Datetime(*tu, tz),
                         DataType::Date => DataType::Datetime(*tu, None),
