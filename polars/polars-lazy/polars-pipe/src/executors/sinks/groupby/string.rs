@@ -25,7 +25,6 @@ use crate::executors::sinks::utils::load_vec;
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
-use crate::pipeline::FORCE_OOC_GROUPBY;
 
 // we store a hashmap per partition (partitioned by hash)
 // the hashmap contains indexes as keys and as values
@@ -72,7 +71,6 @@ impl Utf8GroupbySink {
         output_schema: SchemaRef,
         slice: Option<(i64, usize)>,
     ) -> Self {
-        let ooc = std::env::var(FORCE_OOC_GROUPBY).is_ok();
         Self::new_inner(
             key_column,
             aggregation_columns,
@@ -81,7 +79,7 @@ impl Utf8GroupbySink {
             output_schema,
             slice,
             None,
-            ooc,
+            false,
         )
     }
 
@@ -346,7 +344,7 @@ impl Sink for Utf8GroupbySink {
 
                     // initialize the aggregators
                     for agg_fn in &agg_fns {
-                        aggregators.push(agg_fn.split2())
+                        aggregators.push(agg_fn.split())
                     }
                     value_offset
                 }
@@ -434,7 +432,7 @@ impl Sink for Utf8GroupbySink {
                             entry.insert(key, values_offset);
                             // initialize the new aggregators
                             for agg_fn in &self.agg_fns {
-                                self.aggregators.push(agg_fn.split2())
+                                self.aggregators.push(agg_fn.split())
                             }
                             values_offset
                         }
@@ -461,7 +459,7 @@ impl Sink for Utf8GroupbySink {
         let mut new = Self::new_inner(
             self.key_column.clone(),
             self.aggregation_columns.clone(),
-            self.agg_fns.iter().map(|func| func.split2()).collect(),
+            self.agg_fns.iter().map(|func| func.split()).collect(),
             self.input_schema.clone(),
             self.output_schema.clone(),
             self.slice,

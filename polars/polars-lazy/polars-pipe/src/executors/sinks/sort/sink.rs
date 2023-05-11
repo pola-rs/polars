@@ -1,5 +1,4 @@
 use std::any::Any;
-use std::collections::VecDeque;
 use std::sync::{Arc, RwLock};
 
 use polars_core::config::verbose;
@@ -13,11 +12,11 @@ use crate::executors::sinks::io::{block_thread_until_io_thread_done, IOThread};
 use crate::executors::sinks::memory::MemTracker;
 use crate::executors::sinks::sort::ooc::sort_ooc;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
-use crate::pipeline::{morsels_per_sink, FORCE_OOC_SORT};
+use crate::pipeline::{morsels_per_sink, FORCE_OOC};
 
 pub struct SortSink {
     schema: SchemaRef,
-    chunks: VecDeque<DataFrame>,
+    chunks: Vec<DataFrame>,
     // Stores available memory in the system at the start of this sink.
     // and stores the memory used by this this sink.
     mem_track: MemTracker,
@@ -29,14 +28,19 @@ pub struct SortSink {
     // location in the dataframe of the columns to sort by
     sort_idx: usize,
     sort_args: SortArguments,
+    // Statistics
     // sampled values so we can find the distribution.
     dist_sample: Vec<AnyValue<'static>>,
+    // total rows accumulated in current chunk
+    current_chunk_rows: usize,
+    // total bytes of tables in current chunks
+    current_chunks_size: usize,
 }
 
 impl SortSink {
     pub(crate) fn new(sort_idx: usize, sort_args: SortArguments, schema: SchemaRef) -> Self {
         // for testing purposes
-        let ooc = std::env::var(FORCE_OOC_SORT).is_ok();
+        let ooc = std::env::var(FORCE_OOC).is_ok();
         let n_morsels_per_sink = morsels_per_sink();
 
         let mut out = Self {
@@ -48,6 +52,8 @@ impl SortSink {
             sort_idx,
             sort_args,
             dist_sample: vec![],
+            current_chunk_rows: 0,
+            current_chunks_size: 0,
         };
         if ooc {
             eprintln!("OOC sort forced");
@@ -71,8 +77,8 @@ impl SortSink {
     }
 
     fn store_chunk(&mut self, chunk: DataChunk) -> PolarsResult<()> {
+        let chunk_bytes = chunk.data.estimated_size();
         if !self.ooc {
-            let chunk_bytes = chunk.data.estimated_size();
             let used = self.mem_track.fetch_add(chunk_bytes);
             let free = self.mem_track.get_available();
 
@@ -80,15 +86,24 @@ impl SortSink {
             // so we keep 3x the sort data size before we go out of core
             if used * 3 > free {
                 self.init_ooc()?;
+                self.dump(true)?;
             }
-        }
-        self.chunks.push_back(chunk.data);
+        };
+        self.current_chunks_size += chunk_bytes;
+        self.current_chunk_rows += chunk.data.height();
+        self.chunks.push(chunk.data);
         Ok(())
     }
 
-    fn dump(&mut self) -> PolarsResult<()> {
-        // take from the front so that sorted data remains sorted in writing order
-        while let Some(df) = self.chunks.pop_front() {
+    fn dump(&mut self, force: bool) -> PolarsResult<()> {
+        let larger_than_32_mb = self.current_chunks_size > 1 << 25;
+        if (force || larger_than_32_mb || self.current_chunk_rows > 50_000)
+            && !self.chunks.is_empty()
+        {
+            // into a single chunk because multiple file IO's is expensive
+            // and may lead to many smaller files in ooc-sort later, which is exponentially
+            // expensive
+            let df = accumulate_dataframes_vertical_unchecked(self.chunks.drain(..));
             if df.height() > 0 {
                 // safety: we just asserted height > 0
                 let sample = unsafe {
@@ -99,7 +114,12 @@ impl SortSink {
 
                 let iot = self.io_thread.read().unwrap();
                 let iot = iot.as_ref().unwrap();
-                iot.dump_chunk(df)
+
+                iot.dump_chunk(df);
+
+                // reset sizes
+                self.current_chunk_rows = 0;
+                self.current_chunks_size = 0;
             }
         }
         Ok(())
@@ -111,7 +131,7 @@ impl Sink for SortSink {
         self.store_chunk(chunk)?;
 
         if self.ooc {
-            self.dump()?;
+            self.dump(false)?;
         }
         Ok(SinkResult::CanHaveMoreInput)
     }
@@ -124,7 +144,7 @@ impl Sink for SortSink {
             .extend(std::mem::take(&mut other.dist_sample));
 
         if self.ooc {
-            self.dump().unwrap()
+            self.dump(false).unwrap()
         }
     }
 
@@ -138,11 +158,15 @@ impl Sink for SortSink {
             sort_idx: self.sort_idx,
             sort_args: self.sort_args.clone(),
             dist_sample: vec![],
+            current_chunk_rows: 0,
+            current_chunks_size: 0,
         })
     }
 
-    fn finalize(&mut self, _context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
+    fn finalize(&mut self, context: &PExecutionContext) -> PolarsResult<FinalizedSink> {
         if self.ooc {
+            // spill everything
+            self.dump(true).unwrap();
             let lock = self.io_thread.read().unwrap();
             let io_thread = lock.as_ref().unwrap();
 
@@ -161,6 +185,7 @@ impl Sink for SortSink {
                 self.sort_idx,
                 self.sort_args.descending[0],
                 self.sort_args.slice,
+                context.verbose,
             )
         } else {
             let chunks = std::mem::take(&mut self.chunks);

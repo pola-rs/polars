@@ -1,6 +1,9 @@
+from datetime import timedelta
+
 import numpy as np
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_corr() -> None:
@@ -10,10 +13,14 @@ def test_corr() -> None:
             "b": [-1, 23, 8],
         }
     )
-    assert df.corr().to_dict(False) == {
-        "a": [1.0, 0.18898223650461357],
-        "b": [0.1889822365046136, 1.0],
-    }
+    result = df.corr()
+    expected = pl.DataFrame(
+        {
+            "a": [1.0, 0.18898223650461357],
+            "b": [0.1889822365046136, 1.0],
+        }
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_cut() -> None:
@@ -86,3 +93,13 @@ def test_cut_null_values() -> None:
         str(s.qcut([0.2, 0.3], maintain_order=False).to_dict(False))
         == "{'': [-1.0, 1.0, 2.0, 4.0, 8.0, None, None], 'break_point': [0.5999999999999996, 1.2000000000000002, inf, inf, inf, None, None], 'category': ['(-inf, 0.5999999999999996]', '(0.5999999999999996, 1.2000000000000002]', '(1.2000000000000002, inf]', '(1.2000000000000002, inf]', '(1.2000000000000002, inf]', None, None]}"
     )
+
+
+def test_median_quantile_duration() -> None:
+    df = pl.DataFrame({"A": [timedelta(days=0), timedelta(days=1)]})
+    assert df.select(pl.col("A").median()).to_dict(False) == {
+        "A": [timedelta(seconds=43200)]
+    }
+    assert df.select(pl.col("A").quantile(0.5, interpolation="linear")).to_dict(
+        False
+    ) == {"A": [timedelta(seconds=43200)]}

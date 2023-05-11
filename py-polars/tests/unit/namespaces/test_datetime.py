@@ -1,14 +1,23 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
+import sys
+from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
-from polars.exceptions import ComputeError
+from polars.dependencies import _ZONEINFO_AVAILABLE
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_series_equal
+
+if sys.version_info >= (3, 9):
+    from zoneinfo import ZoneInfo
+elif _ZONEINFO_AVAILABLE:
+    # Import from submodule due to typing issue with backports.zoneinfo package:
+    # https://github.com/pganssle/zoneinfo/issues/125
+    from backports.zoneinfo._zoneinfo import ZoneInfo
 
 if TYPE_CHECKING:
     from polars.type_aliases import TimeUnit
@@ -24,10 +33,13 @@ def series_of_str_dates() -> pl.Series:
     return pl.Series(["2020-01-01 00:00:00.000000000", "2020-02-02 03:20:10.987654321"])
 
 
-def test_dt_strftime(series_of_int_dates: pl.Series) -> None:
+def test_dt_to_string(series_of_int_dates: pl.Series) -> None:
     expected_str_dates = pl.Series(["1997-05-19", "2024-10-04", "2052-02-20"])
 
     assert series_of_int_dates.dtype == pl.Date
+    assert_series_equal(series_of_int_dates.dt.to_string("%F"), expected_str_dates)
+
+    # Check strftime alias as well
     assert_series_equal(series_of_int_dates.dt.strftime("%F"), expected_str_dates)
 
 
@@ -66,7 +78,7 @@ def test_strptime_extract_times(
     series_of_int_dates: pl.Series,
     series_of_str_dates: pl.Series,
 ) -> None:
-    s = series_of_str_dates.str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S.%9f")
+    s = series_of_str_dates.str.strptime(pl.Datetime, format="%Y-%m-%d %H:%M:%S.%9f")
 
     assert_series_equal(getattr(s.dt, unit_attr)(), expected)
 
@@ -117,6 +129,97 @@ def test_dt_datetime_date_time_invalid() -> None:
 
 
 @pytest.mark.parametrize(
+    ("dt", "expected"),
+    [
+        (datetime(2022, 3, 15, 3), datetime(2022, 3, 1, 3)),
+        (datetime(2022, 3, 15, 3, 2, 1, 123000), datetime(2022, 3, 1, 3, 2, 1, 123000)),
+        (datetime(2022, 3, 15), datetime(2022, 3, 1)),
+        (datetime(2022, 3, 1), datetime(2022, 3, 1)),
+    ],
+)
+@pytest.mark.parametrize(
+    "tzinfo", [None, ZoneInfo("Asia/Kathmandu"), timezone(timedelta(hours=1))]
+)
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_month_start_datetime(
+    dt: datetime,
+    expected: datetime,
+    time_unit: TimeUnit,
+    tzinfo: ZoneInfo | timezone | None,
+) -> None:
+    ser = pl.Series([dt.replace(tzinfo=tzinfo)]).dt.cast_time_unit(time_unit)
+    result = ser.dt.month_start().item()
+    assert result == expected.replace(tzinfo=tzinfo)
+
+
+@pytest.mark.parametrize(
+    ("dt", "expected"),
+    [
+        (date(2022, 3, 15), date(2022, 3, 1)),
+        (date(2022, 3, 31), date(2022, 3, 1)),
+    ],
+)
+def test_month_start_date(dt: date, expected: date) -> None:
+    ser = pl.Series([dt])
+    result = ser.dt.month_start().item()
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    ("dt", "expected"),
+    [
+        (datetime(2022, 3, 15, 3), datetime(2022, 3, 31, 3)),
+        (
+            datetime(2022, 3, 15, 3, 2, 1, 123000),
+            datetime(2022, 3, 31, 3, 2, 1, 123000),
+        ),
+        (datetime(2022, 3, 15), datetime(2022, 3, 31)),
+        (datetime(2022, 3, 31), datetime(2022, 3, 31)),
+    ],
+)
+@pytest.mark.parametrize(
+    "tzinfo", [None, ZoneInfo("Asia/Kathmandu"), timezone(timedelta(hours=1))]
+)
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_month_end_datetime(
+    dt: datetime,
+    expected: datetime,
+    time_unit: TimeUnit,
+    tzinfo: ZoneInfo | timezone | None,
+) -> None:
+    ser = pl.Series([dt.replace(tzinfo=tzinfo)]).dt.cast_time_unit(time_unit)
+    result = ser.dt.month_end().item()
+    assert result == expected.replace(tzinfo=tzinfo)
+
+
+@pytest.mark.parametrize(
+    ("dt", "expected"),
+    [
+        (date(2022, 3, 15), date(2022, 3, 31)),
+        (date(2022, 3, 31), date(2022, 3, 31)),
+    ],
+)
+def test_month_end_date(dt: date, expected: date) -> None:
+    ser = pl.Series([dt])
+    result = ser.dt.month_end().item()
+    assert result == expected
+
+
+def test_month_start_end_invalid() -> None:
+    ser = pl.Series([time(1, 2, 3)])
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"`month_start` operation not supported for dtype `time` \(expected: date/datetime\)",
+    ):
+        ser.dt.month_start()
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"`month_end` operation not supported for dtype `time` \(expected: date/datetime\)",
+    ):
+        ser.dt.month_end()
+
+
+@pytest.mark.parametrize(
     ("time_unit", "expected"),
     [
         ("d", pl.Series(values=[18262, 18294], dtype=pl.Int32)),
@@ -132,13 +235,13 @@ def test_strptime_epoch(
     expected: pl.Series,
     series_of_str_dates: pl.Series,
 ) -> None:
-    s = series_of_str_dates.str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S.%9f")
+    s = series_of_str_dates.str.strptime(pl.Datetime, format="%Y-%m-%d %H:%M:%S.%9f")
 
     assert_series_equal(s.dt.epoch(time_unit=time_unit), expected)
 
 
 def test_strptime_fractional_seconds(series_of_str_dates: pl.Series) -> None:
-    s = series_of_str_dates.str.strptime(pl.Datetime, fmt="%Y-%m-%d %H:%M:%S.%9f")
+    s = series_of_str_dates.str.strptime(pl.Datetime, format="%Y-%m-%d %H:%M:%S.%9f")
 
     assert_series_equal(
         s.dt.second(fractional=True),
@@ -187,6 +290,7 @@ def test_truncate(
         timedelta(minutes=30),
         name=f"dates[{time_unit}]",
         time_unit=time_unit,
+        eager=True,
     )
 
     # can pass strings and time-deltas
@@ -221,6 +325,7 @@ def test_round(
         timedelta(minutes=30),
         name=f"dates[{time_unit}]",
         time_unit=time_unit,
+        eager=True,
     )
 
     # can pass strings and time-deltas
@@ -266,13 +371,19 @@ def test_epoch_matches_timestamp() -> None:
     )
 
 
-def test_date_time_combine() -> None:
+@pytest.mark.parametrize(
+    ("tzinfo", "expected_time_zone"),
+    [(None, None), (ZoneInfo("Asia/Kathmandu"), "Asia/Kathmandu")],
+)
+def test_date_time_combine(
+    tzinfo: ZoneInfo | None, expected_time_zone: str | None
+) -> None:
     # Define a DataFrame with columns for datetime, date, and time
     df = pl.DataFrame(
         {
             "dtm": [
-                datetime(2022, 12, 31, 10, 30, 45),
-                datetime(2023, 7, 5, 23, 59, 59),
+                datetime(2022, 12, 31, 10, 30, 45, tzinfo=tzinfo),
+                datetime(2023, 7, 5, 23, 59, 59, tzinfo=tzinfo),
             ],
             "dt": [
                 date(2022, 10, 10),
@@ -297,8 +408,8 @@ def test_date_time_combine() -> None:
     # Assert that the new columns have the expected values and datatypes
     expected_dict = {
         "d1": [  # Time component should be overwritten by `tm` values
-            datetime(2022, 12, 31, 1, 2, 3, 456000),
-            datetime(2023, 7, 5, 7, 8, 9, 101000),
+            datetime(2022, 12, 31, 1, 2, 3, 456000, tzinfo=tzinfo),
+            datetime(2023, 7, 5, 7, 8, 9, 101000, tzinfo=tzinfo),
         ],
         "d2": [  # Both date and time components combined "as-is" into new datetime
             datetime(2022, 10, 10, 1, 2, 3, 456000),
@@ -312,16 +423,56 @@ def test_date_time_combine() -> None:
     assert df.to_dict(False) == expected_dict
 
     expected_schema = {
-        "d1": pl.Datetime("us"),
+        "d1": pl.Datetime("us", expected_time_zone),
         "d2": pl.Datetime("us"),
         "d3": pl.Datetime("us"),
     }
     assert df.schema == expected_schema
 
 
+def test_combine_unsupported_types() -> None:
+    with pytest.raises(ComputeError, match="expected Date or Datetime, got time"):
+        pl.Series([time(1, 2)]).dt.combine(time(3, 4))
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+@pytest.mark.parametrize(
+    ("tzinfo", "expected_time_zone"),
+    [
+        (ZoneInfo("Asia/Kathmandu"), "Asia/Kathmandu"),
+        (None, None),
+    ],
+)
+def test_combine_lazy_schema_datetime(
+    tzinfo: ZoneInfo | None,
+    expected_time_zone: str | None,
+    time_unit: TimeUnit,
+) -> None:
+    df = pl.DataFrame({"ts": pl.Series([datetime(2020, 1, 1, tzinfo=tzinfo)])})
+    result = (
+        df.lazy()
+        .select(pl.col("ts").dt.combine(time(1, 2, 3), time_unit=time_unit))
+        .dtypes
+    )
+    expected = [pl.Datetime(time_unit, expected_time_zone)]
+    assert result == expected
+
+
+@pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
+def test_combine_lazy_schema_date(time_unit: TimeUnit) -> None:
+    df = pl.DataFrame({"ts": pl.Series([date(2020, 1, 1)])})
+    result = (
+        df.lazy()
+        .select(pl.col("ts").dt.combine(time(1, 2, 3), time_unit=time_unit))
+        .dtypes
+    )
+    expected = [pl.Datetime(time_unit, None)]
+    assert result == expected
+
+
 def test_is_leap_year() -> None:
     assert pl.date_range(
-        datetime(1990, 1, 1), datetime(2004, 1, 1), "1y"
+        datetime(1990, 1, 1), datetime(2004, 1, 1), "1y", eager=True
     ).dt.is_leap_year().to_list() == [
         False,
         False,
@@ -343,13 +494,17 @@ def test_is_leap_year() -> None:
 
 def test_quarter() -> None:
     assert pl.date_range(
-        datetime(2022, 1, 1), datetime(2022, 12, 1), "1mo"
+        datetime(2022, 1, 1), datetime(2022, 12, 1), "1mo", eager=True
     ).dt.quarter().to_list() == [1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4]
 
 
 def test_date_offset() -> None:
     df = pl.DataFrame(
-        {"dates": pl.date_range(datetime(2000, 1, 1), datetime(2020, 1, 1), "1y")}
+        {
+            "dates": pl.date_range(
+                datetime(2000, 1, 1), datetime(2020, 1, 1), "1y", eager=True
+            )
+        }
     )
 
     # Add two new columns to the DataFrame using the offset_by() method
@@ -375,6 +530,28 @@ def test_offset_by_crossing_dst(time_zone: str | None) -> None:
     result = ser.dt.offset_by("1d")
     expected = pl.Series([datetime(2021, 11, 8)]).dt.replace_time_zone(time_zone)
     assert_series_equal(result, expected)
+
+
+def test_negative_offset_by_err_msg_8464() -> None:
+    with pytest.raises(
+        ComputeError, match=r"cannot advance '2022-03-30 00:00:00' by -1 month\(s\)"
+    ):
+        pl.Series([datetime(2022, 3, 30)]).dt.offset_by("-1mo")
+
+
+@pytest.mark.parametrize(
+    ("duration", "input_date", "expected"),
+    [
+        ("1mo_saturating", date(2018, 1, 31), date(2018, 2, 28)),
+        ("1y_saturating", date(2024, 2, 29), date(2025, 2, 28)),
+        ("1y1mo_saturating", date(2024, 1, 30), date(2025, 2, 28)),
+    ],
+)
+def test_offset_by_saturating_8217_8474(
+    duration: str, input_date: date, expected: date
+) -> None:
+    result = pl.Series([input_date]).dt.offset_by(duration).item()
+    assert result == expected
 
 
 def test_year_empty_df() -> None:

@@ -33,11 +33,32 @@ pub enum StartBy {
     DataPoint,
     /// only useful if periods are weekly
     Monday,
+    Tuesday,
+    Wednesday,
+    Thursday,
+    Friday,
+    Saturday,
+    Sunday,
 }
 
 impl Default for StartBy {
     fn default() -> Self {
         Self::WindowBound
+    }
+}
+
+impl StartBy {
+    pub fn weekday(&self) -> Option<u32> {
+        match self {
+            StartBy::Monday => Some(0),
+            StartBy::Tuesday => Some(1),
+            StartBy::Wednesday => Some(2),
+            StartBy::Thursday => Some(3),
+            StartBy::Friday => Some(4),
+            StartBy::Saturday => Some(5),
+            StartBy::Sunday => Some(6),
+            _ => None,
+        }
     }
 }
 
@@ -233,16 +254,14 @@ pub(crate) fn groupby_values_iter_full_lookbehind<'a>(
     tu: TimeUnit,
     tz: Option<impl PolarsTimeZone + 'a>,
     start_offset: usize,
-) -> impl Iterator<Item = (IdxSize, IdxSize)> + TrustedLen + 'a {
+) -> impl Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen + 'a {
     debug_assert!(offset.duration_ns() >= period.duration_ns());
     debug_assert!(offset.negative);
-    fn add<T: PolarsTimeZone>(tu: TimeUnit) -> fn(&Duration, i64, Option<&T>) -> PolarsResult<i64> {
-        match tu {
-            TimeUnit::Nanoseconds => Duration::add_ns,
-            TimeUnit::Microseconds => Duration::add_us,
-            TimeUnit::Milliseconds => Duration::add_ms,
-        }
-    }
+    let add = match tu {
+        TimeUnit::Nanoseconds => Duration::add_ns,
+        TimeUnit::Microseconds => Duration::add_us,
+        TimeUnit::Milliseconds => Duration::add_ms,
+    };
 
     let mut last_lookbehind_i = 0;
     let mut last = i64::MIN;
@@ -255,8 +274,8 @@ pub(crate) fn groupby_values_iter_full_lookbehind<'a>(
             }
             last = *lower;
             i += start_offset;
-            let lower = add(tu)(&offset, *lower, tz.as_ref()).unwrap();
-            let upper = add(tu)(&period, lower, tz.as_ref()).unwrap();
+            let lower = add(&offset, *lower, tz.as_ref())?;
+            let upper = add(&period, lower, tz.as_ref())?;
 
             let b = Bounds::new(lower, upper);
 
@@ -284,7 +303,7 @@ pub(crate) fn groupby_values_iter_full_lookbehind<'a>(
                 len += 1;
             }
 
-            (lookbehind_i as IdxSize, len as IdxSize)
+            Ok((lookbehind_i as IdxSize, len as IdxSize))
         })
 }
 
@@ -296,28 +315,21 @@ pub(crate) fn groupby_values_iter_window_behind_t<'a>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<impl PolarsTimeZone + 'a>,
-) -> impl Iterator<Item = (IdxSize, IdxSize)> + TrustedLen + 'a {
-    fn add<T: PolarsTimeZone>(tu: TimeUnit) -> fn(&Duration, i64, Option<&T>) -> PolarsResult<i64> {
-        match tu {
-            TimeUnit::Nanoseconds => Duration::add_ns,
-            TimeUnit::Microseconds => Duration::add_us,
-            TimeUnit::Milliseconds => Duration::add_ms,
-        }
-    }
+) -> impl Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen + 'a {
+    let add = match tu {
+        TimeUnit::Nanoseconds => Duration::add_ns,
+        TimeUnit::Microseconds => Duration::add_us,
+        TimeUnit::Milliseconds => Duration::add_ms,
+    };
 
     let mut lagging_offset = 0;
-    let mut last = i64::MIN;
     time.iter().enumerate().map(move |(i, lower)| {
-        if *lower < last {
-            panic!("index column of 'groupby_rolling' must be sorted!")
-        }
-        last = *lower;
-        let lower = add(tu)(&offset, *lower, tz.as_ref()).unwrap();
-        let upper = add(tu)(&period, lower, tz.as_ref()).unwrap();
+        let lower = add(&offset, *lower, tz.as_ref())?;
+        let upper = add(&period, lower, tz.as_ref())?;
 
         let b = Bounds::new(lower, upper);
         if b.is_future(time[0], closed_window) {
-            (0, 0)
+            Ok((0, 0))
         } else {
             // find starting point of window
             // we can start searching from lagging offset as that is the minimum boundary because data is sorted
@@ -340,7 +352,7 @@ pub(crate) fn groupby_values_iter_window_behind_t<'a>(
             let slice = unsafe { time.get_unchecked(lagging_offset..) };
             let len = slice.partition_point(|v| b.is_member(*v, closed_window));
 
-            (lagging_offset as IdxSize, len as IdxSize)
+            Ok((lagging_offset as IdxSize, len as IdxSize))
         }
     })
 }
@@ -353,24 +365,17 @@ pub(crate) fn groupby_values_iter_partial_lookbehind<'a>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<impl PolarsTimeZone + 'a>,
-) -> impl Iterator<Item = (IdxSize, IdxSize)> + TrustedLen + 'a {
-    fn add<T: PolarsTimeZone>(tu: TimeUnit) -> fn(&Duration, i64, Option<&T>) -> PolarsResult<i64> {
-        match tu {
-            TimeUnit::Nanoseconds => Duration::add_ns,
-            TimeUnit::Microseconds => Duration::add_us,
-            TimeUnit::Milliseconds => Duration::add_ms,
-        }
-    }
+) -> impl Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen + 'a {
+    let add = match tu {
+        TimeUnit::Nanoseconds => Duration::add_ns,
+        TimeUnit::Microseconds => Duration::add_us,
+        TimeUnit::Milliseconds => Duration::add_ms,
+    };
 
     let mut lagging_offset = 0;
-    let mut last = i64::MIN;
     time.iter().enumerate().map(move |(i, lower)| {
-        if *lower < last {
-            panic!("index column of 'groupby_rolling' must be sorted!")
-        }
-        last = *lower;
-        let lower = add(tu)(&offset, *lower, tz.as_ref()).unwrap();
-        let upper = add(tu)(&period, lower, tz.as_ref()).unwrap();
+        let lower = add(&offset, *lower, tz.as_ref())?;
+        let upper = add(&period, lower, tz.as_ref())?;
 
         let b = Bounds::new(lower, upper);
 
@@ -386,7 +391,7 @@ pub(crate) fn groupby_values_iter_partial_lookbehind<'a>(
         let slice = unsafe { time.get_unchecked(lagging_offset..) };
         let len = slice.partition_point(|v| b.is_member(*v, closed_window));
 
-        (lagging_offset as IdxSize, len as IdxSize)
+        Ok((lagging_offset as IdxSize, len as IdxSize))
     })
 }
 
@@ -400,30 +405,23 @@ pub(crate) fn groupby_values_iter_full_lookahead<'a>(
     tz: Option<impl PolarsTimeZone + 'a>,
     start_offset: usize,
     upper_bound: Option<usize>,
-) -> impl Iterator<Item = (IdxSize, IdxSize)> + TrustedLen + 'a {
+) -> impl Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen + 'a {
     let upper_bound = upper_bound.unwrap_or(time.len());
     debug_assert!(!offset.negative);
 
-    fn add<T: PolarsTimeZone>(tu: TimeUnit) -> fn(&Duration, i64, Option<&T>) -> PolarsResult<i64> {
-        match tu {
-            TimeUnit::Nanoseconds => Duration::add_ns,
-            TimeUnit::Microseconds => Duration::add_us,
-            TimeUnit::Milliseconds => Duration::add_ms,
-        }
-    }
+    let add = match tu {
+        TimeUnit::Nanoseconds => Duration::add_ns,
+        TimeUnit::Microseconds => Duration::add_us,
+        TimeUnit::Milliseconds => Duration::add_ms,
+    };
 
-    let mut last = i64::MIN;
     time[start_offset..upper_bound]
         .iter()
         .enumerate()
         .map(move |(mut i, lower)| {
-            if *lower < last {
-                panic!("index column of 'groupby_rolling' must be sorted!")
-            }
-            last = *lower;
             i += start_offset;
-            let lower = add(tu)(&offset, *lower, tz.as_ref()).unwrap();
-            let upper = add(tu)(&period, lower, tz.as_ref()).unwrap();
+            let lower = add(&offset, *lower, tz.as_ref())?;
+            let upper = add(&period, lower, tz.as_ref())?;
 
             let b = Bounds::new(lower, upper);
 
@@ -431,7 +429,7 @@ pub(crate) fn groupby_values_iter_full_lookahead<'a>(
             let slice = unsafe { time.get_unchecked(i..) };
             let len = slice.partition_point(|v| b.is_member(*v, closed_window));
 
-            (i as IdxSize, len as IdxSize)
+            Ok((i as IdxSize, len as IdxSize))
         })
 }
 
@@ -453,7 +451,7 @@ pub(crate) fn groupby_values_iter<'a>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<impl PolarsTimeZone + 'a>,
-) -> Box<dyn TrustedLen<Item = (IdxSize, IdxSize)> + 'a> {
+) -> Box<dyn TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + 'a> {
     partially_check_sorted(time);
     // we have a (partial) lookbehind window
     if offset.negative {
@@ -496,7 +494,7 @@ pub fn groupby_values<'a>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<impl PolarsTimeZone + 'a>,
-) -> GroupsSlice {
+) -> PolarsResult<GroupsSlice> {
     partially_check_sorted(time);
     let thread_offsets = _split_offsets(time.len(), POOL.current_num_threads());
 
@@ -523,12 +521,12 @@ pub fn groupby_values<'a>(
                                 tz.clone(),
                                 base_offset,
                             );
-                            iter.map(|(offset, len)| [offset as IdxSize, len])
-                                .collect_trusted::<Vec<_>>()
+                            iter.map(|result| result.map(|(offset, len)| [offset, len]))
+                                .collect::<PolarsResult<Vec<_>>>()
                         })
-                        .collect::<Vec<_>>()
-                });
-                flatten(&vals, Some(time.len()))
+                        .collect::<PolarsResult<Vec<_>>>()
+                })?;
+                Ok(flatten(&vals, Some(time.len())))
             }
             // window is completely behind t and t itself is not a member
             // ---------------t---
@@ -542,7 +540,8 @@ pub fn groupby_values<'a>(
                     tu,
                     tz,
                 );
-                iter.map(|(offset, len)| [offset, len]).collect_trusted()
+                iter.map(|result| result.map(|(offset, len)| [offset, len]))
+                    .collect::<PolarsResult<_>>()
             }
         }
         // partial lookbehind
@@ -554,7 +553,8 @@ pub fn groupby_values<'a>(
         else {
             let iter =
                 groupby_values_iter_partial_lookbehind(period, offset, time, closed_window, tu, tz);
-            iter.map(|(offset, len)| [offset, len]).collect_trusted()
+            iter.map(|result| result.map(|(offset, len)| [offset, len]))
+                .collect::<PolarsResult<_>>()
         }
     } else {
         let vals = POOL.install(|| {
@@ -574,11 +574,11 @@ pub fn groupby_values<'a>(
                         lower_bound,
                         Some(upper_bound),
                     );
-                    iter.map(|(offset, len)| [offset as IdxSize, len])
-                        .collect_trusted::<Vec<_>>()
+                    iter.map(|result| result.map(|(offset, len)| [offset as IdxSize, len]))
+                        .collect::<PolarsResult<Vec<_>>>()
                 })
-                .collect::<Vec<_>>()
-        });
-        flatten(&vals, Some(time.len()))
+                .collect::<PolarsResult<Vec<_>>>()
+        })?;
+        Ok(flatten(&vals, Some(time.len())))
     }
 }

@@ -31,6 +31,7 @@ Manipulation/selection
     LazyFrame.rename
     LazyFrame.reverse
     LazyFrame.select
+    LazyFrame.set_sorted
     LazyFrame.shift
     LazyFrame.shift_and_fill
     LazyFrame.slice

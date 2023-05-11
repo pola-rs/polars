@@ -3,7 +3,7 @@ name: Deploy Rust documentation
 on:
   push:
     branches:
-      - master
+      - main
     paths:
       - polars/**
       - .github/workflows/docs-deploy-rust.yml

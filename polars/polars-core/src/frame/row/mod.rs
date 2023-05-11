@@ -38,7 +38,7 @@ pub fn infer_schema(
             add_or_insert(&mut values, &key, value.into());
         }
     }
-    Schema::from(resolve_fields(values).into_iter())
+    Schema::from_iter(resolve_fields(values))
 }
 
 fn add_or_insert(values: &mut Tracker, key: &str, data_type: DataType) {
@@ -174,7 +174,7 @@ pub fn rows_to_schema_first_non_null(rows: &[Row], infer_schema_length: Option<u
 
                 if !is_nested_null(val) {
                     let dtype = val.into();
-                    schema.coerce_by_index(i, dtype).unwrap();
+                    schema.set_dtype_at_index(i, dtype).unwrap();
                 }
             }
         }
@@ -190,11 +190,13 @@ impl<'a> From<&AnyValue<'a>> for Field {
 
 impl From<&Row<'_>> for Schema {
     fn from(row: &Row) -> Self {
-        let fields = row.0.iter().enumerate().map(|(i, av)| {
-            let dtype = av.into();
-            Field::new(format!("column_{i}").as_ref(), dtype)
-        });
-
-        Schema::from(fields)
+        row.0
+            .iter()
+            .enumerate()
+            .map(|(i, av)| {
+                let dtype = av.into();
+                Field::new(format!("column_{i}").as_ref(), dtype)
+            })
+            .collect()
     }
 }

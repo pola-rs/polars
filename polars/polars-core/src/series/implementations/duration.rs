@@ -7,7 +7,6 @@ use super::{private, IntoSeries, SeriesTrait, SeriesWrap, *};
 use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
-use crate::fmt::FmtList;
 use crate::frame::groupby::*;
 use crate::frame::hash_join::*;
 use crate::prelude::*;
@@ -150,7 +149,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
     fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
         match (self.dtype(), rhs.dtype()) {
             (DataType::Duration(tu), DataType::Duration(tur)) => {
-                assert_eq!(tu, tur);
+                polars_ensure!(tu == tur, InvalidOperation: "units are different");
                 let lhs = self.cast(&DataType::Int64).unwrap();
                 let rhs = rhs.cast(&DataType::Int64).unwrap();
                 Ok(lhs.subtract(&rhs)?.into_duration(*tu).into_series())
@@ -161,13 +160,13 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
     fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
         match (self.dtype(), rhs.dtype()) {
             (DataType::Duration(tu), DataType::Duration(tur)) => {
-                assert_eq!(tu, tur);
+                polars_ensure!(tu == tur, InvalidOperation: "units are different");
                 let lhs = self.cast(&DataType::Int64).unwrap();
                 let rhs = rhs.cast(&DataType::Int64).unwrap();
                 Ok(lhs.add_to(&rhs)?.into_duration(*tu).into_series())
             }
             (DataType::Duration(tu), DataType::Datetime(tur, tz)) => {
-                assert_eq!(tu, tur);
+                polars_ensure!(tu == tur, InvalidOperation: "units are different");
                 let lhs = self.cast(&DataType::Int64).unwrap();
                 let rhs = rhs.cast(&DataType::Int64).unwrap();
                 Ok(lhs
@@ -179,20 +178,28 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
         }
     }
     fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
+        // dependent on units, doesn't make sense
         polars_bail!(opq = mul, self.dtype(), rhs.dtype());
     }
     fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
+        // dependent on units, doesn't make sense
         polars_bail!(opq = div, self.dtype(), rhs.dtype());
     }
     fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
-        polars_bail!(opq = rem, self.dtype(), rhs.dtype());
+        polars_ensure!(self.dtype() == rhs.dtype(), InvalidOperation: "dtypes and units must be equal in duration arithmetic");
+        let lhs = self.cast(&DataType::Int64).unwrap();
+        let rhs = rhs.cast(&DataType::Int64).unwrap();
+        Ok(lhs
+            .remainder(&rhs)?
+            .into_duration(self.0.time_unit())
+            .into_series())
     }
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         self.0.group_tuples(multithreaded, sorted)
     }
 
-    fn arg_sort_multiple(&self, by: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {
-        self.0.deref().arg_sort_multiple(by, descending)
+    fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
+        self.0.deref().arg_sort_multiple(options)
     }
 }
 
@@ -302,7 +309,7 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         if self.0.is_sorted_ascending_flag()
             && (idx.is_sorted_ascending_flag() || idx.is_sorted_descending_flag())
         {
-            out.set_sorted_flag(idx.is_sorted_flag2())
+            out.set_sorted_flag(idx.is_sorted_flag())
         }
 
         Ok(out.into_duration(self.0.time_unit()).into_series())
@@ -422,32 +429,23 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         self.0.min_as_series().into_duration(self.0.time_unit())
     }
     fn median_as_series(&self) -> Series {
-        Int32Chunked::full_null(self.name(), 1)
-            .cast(self.dtype())
+        self.0
+            .median_as_series()
+            .cast(&self.dtype().to_physical())
             .unwrap()
-    }
-    fn var_as_series(&self, _ddof: u8) -> Series {
-        Int32Chunked::full_null(self.name(), 1)
-            .cast(self.dtype())
-            .unwrap()
-    }
-    fn std_as_series(&self, _ddof: u8) -> Series {
-        Int32Chunked::full_null(self.name(), 1)
             .cast(self.dtype())
             .unwrap()
     }
     fn quantile_as_series(
         &self,
-        _quantile: f64,
-        _interpol: QuantileInterpolOptions,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
     ) -> PolarsResult<Series> {
-        Ok(Int32Chunked::full_null(self.name(), 1)
+        self.0
+            .quantile_as_series(quantile, interpol)?
+            .cast(&self.dtype().to_physical())
+            .unwrap()
             .cast(self.dtype())
-            .unwrap())
-    }
-
-    fn fmt_list(&self) -> String {
-        FmtList::fmt_list(&self.0)
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

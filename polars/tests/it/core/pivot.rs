@@ -24,7 +24,7 @@ fn test_pivot_date() -> PolarsResult<()> {
     let mut out = pivot_stable(&df, ["C"], ["B"], ["A"], true, Some(PivotAgg::First), None)?;
     out.try_apply("1", |s| {
         let ca = s.date()?;
-        Ok(ca.strftime("%Y-%d-%m"))
+        Ok(ca.to_string("%Y-%d-%m"))
     })?;
 
     let expected = df![

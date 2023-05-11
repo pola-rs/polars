@@ -200,7 +200,9 @@ def test_groupby_agg_input_types(lazy: bool) -> None:
 
 @pytest.mark.parametrize("lazy", [True, False])
 def test_groupby_rolling_agg_input_types(lazy: bool) -> None:
-    df = pl.DataFrame({"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]})
+    df = pl.DataFrame({"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]}).set_sorted(
+        "index_column"
+    )
     df_or_lazy: pl.DataFrame | pl.LazyFrame = df.lazy() if lazy else df
 
     for bad_param in bad_agg_parameters():
@@ -224,7 +226,9 @@ def test_groupby_rolling_agg_input_types(lazy: bool) -> None:
 
 @pytest.mark.parametrize("lazy", [True, False])
 def test_groupby_dynamic_agg_input_types(lazy: bool) -> None:
-    df = pl.DataFrame({"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]})
+    df = pl.DataFrame({"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]}).set_sorted(
+        "index_column"
+    )
     df_or_lazy: pl.DataFrame | pl.LazyFrame = df.lazy() if lazy else df
 
     for bad_param in bad_agg_parameters():
@@ -304,7 +308,9 @@ def test_apply_after_take_in_groupby_3869() -> None:
 def test_groupby_rolling_negative_offset_3914() -> None:
     df = pl.DataFrame(
         {
-            "datetime": pl.date_range(datetime(2020, 1, 1), datetime(2020, 1, 5), "1d"),
+            "datetime": pl.date_range(
+                datetime(2020, 1, 1), datetime(2020, 1, 5), "1d", eager=True
+            ),
         }
     )
     assert df.groupby_rolling(index_column="datetime", period="2d", offset="-4d").agg(
@@ -348,7 +354,11 @@ def test_groupby_rolling_negative_offset_crossing_dst(time_zone: str | None) -> 
     df = pl.DataFrame(
         {
             "datetime": pl.date_range(
-                datetime(2021, 11, 6), datetime(2021, 11, 9), "1d", time_zone=time_zone
+                datetime(2021, 11, 6),
+                datetime(2021, 11, 9),
+                "1d",
+                time_zone=time_zone,
+                eager=True,
             ),
             "value": [1, 4, 9, 155],
         }
@@ -359,7 +369,11 @@ def test_groupby_rolling_negative_offset_crossing_dst(time_zone: str | None) -> 
     expected = pl.DataFrame(
         {
             "datetime": pl.date_range(
-                datetime(2021, 11, 6), datetime(2021, 11, 9), "1d", time_zone=time_zone
+                datetime(2021, 11, 6),
+                datetime(2021, 11, 9),
+                "1d",
+                time_zone=time_zone,
+                eager=True,
             ),
             "value": [[1, 4], [4, 9], [9, 155], [155]],
         }
@@ -424,7 +438,7 @@ def test_unique_order() -> None:
 
 
 def test_groupby_dynamic_flat_agg_4814() -> None:
-    df = pl.DataFrame({"a": [1, 2, 2], "b": [1, 8, 12]})
+    df = pl.DataFrame({"a": [1, 2, 2], "b": [1, 8, 12]}).set_sorted("a")
 
     assert df.groupby_dynamic("a", every="1i", period="2i").agg(
         [
@@ -462,6 +476,7 @@ def test_groupby_dynamic_overlapping_groups_flat_apply_multiple_5038(
             }
         )
         .lazy()
+        .set_sorted("a")
         .groupby_dynamic("a", every=every, period=period)
         .agg([pl.col("b").var().sqrt().alias("corr")])
     ).collect().sum().to_dict(False) == pytest.approx(
@@ -558,7 +573,7 @@ def test_groupby_dynamic_iter(every: str | timedelta, tzinfo: ZoneInfo | None) -
             "a": [1, 2, 2],
             "b": [4, 5, 6],
         }
-    )
+    ).set_sorted("datetime")
 
     # Without 'by' argument
     result1 = [
@@ -595,6 +610,7 @@ def test_groupby_dynamic_lazy(every: str | timedelta, tzinfo: ZoneInfo | None) -
                 start=datetime(2021, 12, 16, tzinfo=tzinfo),
                 end=datetime(2021, 12, 16, 2, tzinfo=tzinfo),
                 interval="30m",
+                eager=True,
             ),
             "n": range(5),
         }
@@ -657,6 +673,7 @@ def test_groupby_dynamic_elementwise_following_mean_agg_6904(
             }
         )
         .lazy()
+        .set_sorted("a")
         .groupby_dynamic("a", every="10s", period="100s")
         .agg([pl.col("b").mean().sin().alias("c")])
         .collect()
@@ -720,3 +737,230 @@ def test_groupby_empty_groups(
         pl.col("a").cast(expected_dtype)
     )
     assert_frame_equal(result, expected)
+
+
+def test_perfect_hash_table_null_values_8663() -> None:
+    s = pl.Series(
+        "a",
+        [
+            "3",
+            "41",
+            "17",
+            "5",
+            "26",
+            "27",
+            "43",
+            "45",
+            "41",
+            "13",
+            "45",
+            "48",
+            "17",
+            "22",
+            "31",
+            "25",
+            "28",
+            "13",
+            "7",
+            "26",
+            "17",
+            "4",
+            "43",
+            "47",
+            "30",
+            "28",
+            "8",
+            "27",
+            "6",
+            "7",
+            "26",
+            "11",
+            "37",
+            "29",
+            "49",
+            "20",
+            "29",
+            "28",
+            "23",
+            "9",
+            None,
+            "38",
+            "19",
+            "7",
+            "38",
+            "3",
+            "30",
+            "37",
+            "41",
+            "5",
+            "16",
+            "26",
+            "31",
+            "6",
+            "25",
+            "11",
+            "17",
+            "31",
+            "31",
+            "20",
+            "26",
+            None,
+            "39",
+            "10",
+            "38",
+            "4",
+            "39",
+            "15",
+            "13",
+            "35",
+            "38",
+            "11",
+            "39",
+            "11",
+            "48",
+            "36",
+            "18",
+            "11",
+            "34",
+            "16",
+            "28",
+            "9",
+            "37",
+            "8",
+            "17",
+            "48",
+            "44",
+            "28",
+            "25",
+            "30",
+            "37",
+            "30",
+            "18",
+            "12",
+            None,
+            "27",
+            "10",
+            "3",
+            "16",
+            "27",
+            "6",
+        ],
+        dtype=pl.Categorical,
+    )
+
+    assert s.to_frame("a").groupby("a").agg(pl.col("a").alias("agg")).to_dict(
+        False
+    ) == {
+        "a": [
+            "3",
+            "41",
+            "17",
+            "5",
+            "26",
+            "27",
+            "43",
+            "45",
+            "13",
+            "48",
+            "22",
+            "31",
+            "25",
+            "28",
+            "7",
+            "4",
+            "47",
+            "30",
+            "8",
+            "6",
+            "11",
+            "37",
+            "29",
+            "49",
+            "20",
+            "23",
+            "9",
+            "38",
+            "19",
+            "16",
+            "39",
+            "10",
+            "15",
+            "35",
+            "36",
+            "18",
+            "34",
+            "44",
+            "12",
+            None,
+        ],
+        "agg": [
+            ["3", "3", "3"],
+            ["41", "41", "41"],
+            ["17", "17", "17", "17", "17"],
+            ["5", "5"],
+            ["26", "26", "26", "26", "26"],
+            ["27", "27", "27", "27"],
+            ["43", "43"],
+            ["45", "45"],
+            ["13", "13", "13"],
+            ["48", "48", "48"],
+            ["22"],
+            ["31", "31", "31", "31"],
+            ["25", "25", "25"],
+            ["28", "28", "28", "28", "28"],
+            ["7", "7", "7"],
+            ["4", "4"],
+            ["47"],
+            ["30", "30", "30", "30"],
+            ["8", "8"],
+            ["6", "6", "6"],
+            ["11", "11", "11", "11", "11"],
+            ["37", "37", "37", "37"],
+            ["29", "29"],
+            ["49"],
+            ["20", "20"],
+            ["23"],
+            ["9", "9"],
+            ["38", "38", "38", "38"],
+            ["19"],
+            ["16", "16", "16"],
+            ["39", "39", "39"],
+            ["10", "10"],
+            ["15"],
+            ["35"],
+            ["36"],
+            ["18", "18"],
+            ["34"],
+            ["44"],
+            ["12"],
+            [None, None, None],
+        ],
+    }
+
+
+def test_rolling_groupby_overlapping_groups() -> None:
+    # this first aggregates overlapping groups
+    # so they cannot be naively flattened
+    df = pl.DataFrame(
+        {
+            "a": [41, 60, 37, 51, 52, 39, 40],
+        }
+    )
+
+    assert_series_equal(
+        (
+            df.with_row_count()
+            .with_columns(pl.col("row_nr").cast(pl.Int32))
+            .groupby_rolling(
+                index_column="row_nr",
+                period="5i",
+            )
+            .agg(
+                # the apply to trigger the apply on the expression engine
+                pl.col("a")
+                .apply(lambda x: x)
+                .sum()
+            )
+        )["a"],
+        df["a"].rolling_sum(window_size=5, min_periods=1),
+    )

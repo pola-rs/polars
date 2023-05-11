@@ -21,14 +21,28 @@ def test_error_on_reducing_map() -> None:
     df = pl.DataFrame(
         {"id": [0, 0, 0, 1, 1, 1], "t": [2, 4, 5, 10, 11, 14], "y": [0, 1, 1, 2, 3, 4]}
     )
-
     with pytest.raises(
-        pl.ComputeError,
+        pl.InvalidOperationError,
         match=(
-            "output length of `map` must be equal to that of the input length; consider using `apply` instead"
+            r"output length of `map` \(6\) must be equal to "
+            r"the input length \(1\); consider using `apply` instead"
         ),
     ):
         df.groupby("id").agg(pl.map(["t", "y"], np.trapz))
+
+    df = pl.DataFrame({"x": [1, 2, 3, 4], "group": [1, 2, 1, 2]})
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match=(
+            r"output length of `map` \(4\) must be equal to "
+            r"the input length \(1\); consider using `apply` instead"
+        ),
+    ):
+        df.select(
+            pl.col("x")
+            .map(lambda x: x.cut(bins=[1, 2, 3], maintain_order=True))
+            .over("group")
+        )
 
 
 def test_error_on_invalid_by_in_asof_join() -> None:
@@ -38,7 +52,7 @@ def test_error_on_invalid_by_in_asof_join() -> None:
             "b": [1, 2, 3],
             "c": ["a", "b", "a"],
         }
-    )
+    ).set_sorted("b")
 
     df2 = df1.with_columns(pl.col("a").cast(pl.Categorical))
     with pytest.raises(pl.ComputeError):
@@ -504,7 +518,7 @@ def test_err_on_time_datetime_cast() -> None:
 def test_invalid_inner_type_cast_list() -> None:
     s = pl.Series([[-1, 1]])
     with pytest.raises(
-        pl.ComputeError, match=r"cannot cast list inner type: 'Int64' to Categorical"
+        pl.ComputeError, match=r"cannot cast List inner type: 'Int64' to Categorical"
     ):
         s.cast(pl.List(pl.Categorical))
 
@@ -537,3 +551,69 @@ def test_groupby_dynamic_validation(every: str, match: str) -> None:
 def test_lit_agg_err() -> None:
     with pytest.raises(pl.ComputeError, match=r"cannot aggregate a literal"):
         pl.DataFrame({"y": [1]}).with_columns(pl.lit(1).sum().over("y"))
+
+
+def test_window_size_validation() -> None:
+    df = pl.DataFrame({"x": [1.0]})
+
+    with pytest.raises(ValueError, match=r"'window_size' should be positive"):
+        df.with_columns(trailing_min=pl.col("x").rolling_min(window_size=-3))
+
+
+@typing.no_type_check
+def test_invalid_getitem_key_err() -> None:
+    df = pl.DataFrame({"x": [1.0], "y": [1.0]})
+
+    with pytest.raises(KeyError, match=r"('x', 'y')"):
+        df["x", "y"]
+
+
+def test_invalid_groupby_arg() -> None:
+    df = pl.DataFrame({"a": [1]})
+    with pytest.raises(
+        ValueError,
+        match=r"'aggs' argument should be one or multiple expressions, got: '{'a': 'sum'}'",
+    ):
+        df.groupby(1).agg({"a": "sum"})
+
+
+def test_no_sorted_warning(capfd: typing.Any) -> None:
+    df = pl.DataFrame(
+        {
+            "dt": [datetime(2001, 1, 1), datetime(2001, 1, 2)],
+        }
+    )
+    df.groupby_dynamic("dt", every="1h").agg(pl.all().count().suffix("_foo"))
+    (_, err) = capfd.readouterr()
+    assert "argument in operation 'groupby_dynamic' is not explicitly sorted" in err
+
+
+def test_serde_validation() -> None:
+    f = io.StringIO(
+        """
+    {
+      "columns": [
+        {
+          "name": "a",
+          "datatype": "Int64",
+          "values": [
+            1,
+            2
+          ]
+        },
+        {
+          "name": "b",
+          "datatype": "Int64",
+          "values": [
+            1
+          ]
+        }
+      ]
+    }
+    """
+    )
+    with pytest.raises(
+        pl.ComputeError,
+        match=r"lengths don't match",
+    ):
+        pl.read_json(f)

@@ -1,4 +1,4 @@
-use std::ops::BitAnd;
+use std::ops::{BitAnd, BitOr};
 
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;
@@ -50,12 +50,18 @@ where
     }
 }
 
-pub fn combine_validities(opt_l: Option<&Bitmap>, opt_r: Option<&Bitmap>) -> Option<Bitmap> {
+pub fn combine_validities_and(opt_l: Option<&Bitmap>, opt_r: Option<&Bitmap>) -> Option<Bitmap> {
     match (opt_l, opt_r) {
         (Some(l), Some(r)) => Some(l.bitand(r)),
         (None, Some(r)) => Some(r.clone()),
         (Some(l), None) => Some(l.clone()),
         (None, None) => None,
+    }
+}
+pub fn combine_validities_or(opt_l: Option<&Bitmap>, opt_r: Option<&Bitmap>) -> Option<Bitmap> {
+    match (opt_l, opt_r) {
+        (Some(l), Some(r)) => Some(l.bitor(r)),
+        _ => None,
     }
 }
 unsafe impl<I, J> arrow::trusted_len::TrustedLen for TrustMyLength<I, J> where I: Iterator<Item = J> {}

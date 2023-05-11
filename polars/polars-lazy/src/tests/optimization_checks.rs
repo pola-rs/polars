@@ -57,6 +57,32 @@ pub(crate) fn predicate_at_scan(q: LazyFrame) -> bool {
     })
 }
 
+pub(crate) fn is_pipeline(q: LazyFrame) -> bool {
+    let (mut expr_arena, mut lp_arena) = get_arenas();
+    let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
+    matches!(
+        lp_arena.get(lp),
+        ALogicalPlan::MapFunction {
+            function: FunctionNode::Pipeline { .. },
+            ..
+        }
+    )
+}
+
+pub(crate) fn has_pipeline(q: LazyFrame) -> bool {
+    let (mut expr_arena, mut lp_arena) = get_arenas();
+    let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
+    (&lp_arena).iter(lp).any(|(_, lp)| {
+        matches!(
+            lp,
+            ALogicalPlan::MapFunction {
+                function: FunctionNode::Pipeline { .. },
+                ..
+            }
+        )
+    })
+}
+
 fn slice_at_scan(q: LazyFrame) -> bool {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
@@ -506,7 +532,7 @@ fn test_with_column_prune() -> PolarsResult<()> {
     }));
     assert_eq!(
         q.schema().unwrap().as_ref(),
-        &Schema::from([Field::new("c1", DataType::Int32)].into_iter())
+        &Schema::from_iter([Field::new("c1", DataType::Int32)])
     );
     Ok(())
 }

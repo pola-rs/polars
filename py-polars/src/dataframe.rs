@@ -30,10 +30,9 @@ use crate::conversion::parse_parquet_compression;
 use crate::conversion::{ObjectValue, Wrap};
 use crate::error::PyPolarsErr;
 use crate::file::{get_either_file, get_file_like, get_mmap_bytes_reader, EitherRustPythonFile};
-use crate::lazy::dataframe::PyLazyFrame;
 use crate::prelude::{dicts_to_rows, strings_to_smartstrings};
 use crate::series::{to_pyseries_collection, to_series_collection, PySeries};
-use crate::{arrow_interop, py_modules, PyExpr};
+use crate::{arrow_interop, py_modules, PyExpr, PyLazyFrame};
 
 #[pyclass]
 #[repr(transparent)]
@@ -52,10 +51,7 @@ impl PyDataFrame {
         infer_schema_length: Option<usize>,
         schema_overwrite: Option<Schema>,
     ) -> PyResult<Self> {
-        // object builder must be registered.
-        #[cfg(feature = "object")]
-        crate::object::register_object_builder();
-
+        // object builder must be registered. this is done on import
         let schema =
             rows_to_schema_supertypes(&rows, infer_schema_length.map(|n| std::cmp::max(1, n)))
                 .map_err(PyPolarsErr::from)?;
@@ -71,11 +67,11 @@ impl PyDataFrame {
             }
             _ => fld,
         });
-        let mut schema = Schema::from(fields);
+        let mut schema = Schema::from_iter(fields);
 
         if let Some(schema_overwrite) = schema_overwrite {
             for (i, (name, dtype)) in schema_overwrite.into_iter().enumerate() {
-                if let Some((name_, dtype_)) = schema.get_index_mut(i) {
+                if let Some((name_, dtype_)) = schema.get_at_index_mut(i) {
                     *name_ = name;
 
                     // if user sets dtype unknown, we use the inferred datatype
@@ -136,7 +132,7 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[allow(clippy::too_many_arguments)]
-    #[cfg(feature = "csv-file")]
+    #[cfg(feature = "csv")]
     #[pyo3(signature = (
         py_f, infer_schema_length, chunk_size, has_header, ignore_errors, n_rows,
         skip_rows, projection, separator, rechunk, columns, encoding, n_threads, path,
@@ -187,11 +183,13 @@ impl PyDataFrame {
         };
 
         let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {
-            let fields = overwrite_dtype.iter().map(|(name, dtype)| {
-                let dtype = dtype.0.clone();
-                Field::new(name, dtype)
-            });
-            Schema::from(fields)
+            overwrite_dtype
+                .iter()
+                .map(|(name, dtype)| {
+                    let dtype = dtype.0.clone();
+                    Field::new(name, dtype)
+                })
+                .collect::<Schema>()
         });
 
         let overwrite_dtype_slice = overwrite_dtype_slice.map(|overwrite_dtype| {
@@ -371,14 +369,23 @@ impl PyDataFrame {
             // on failure we try
             match serde_json::from_slice::<DataFrame>(bytes) {
                 Ok(df) => Ok(df.into()),
-                // try arrow json reader instead
-                // this is row oriented
-                Err(_) => {
-                    let out = JsonReader::new(mmap_bytes_r)
-                        .with_json_format(JsonFormat::Json)
-                        .finish()
-                        .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
-                    Ok(out.into())
+                Err(e) => {
+                    let msg = format!("{e}");
+                    // parsing succeeded, but the dataframe was invalid
+                    if msg.contains("successful parse invalid data") {
+                        let e = PyPolarsErr::from(PolarsError::ComputeError(msg.into()));
+                        Err(PyErr::from(e))
+                    }
+                    // parsing error
+                    // try arrow json reader instead
+                    // this is row oriented
+                    else {
+                        let out = JsonReader::new(mmap_bytes_r)
+                            .with_json_format(JsonFormat::Json)
+                            .finish()
+                            .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
+                        Ok(out.into())
+                    }
                 }
             }
         }

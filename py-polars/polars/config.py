@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from polars.dependencies import json
 
@@ -72,11 +72,60 @@ class Config:
     ...
     >>> # scope exit - no longer in verbose mode
 
+    This can also be written more compactly as:
+
+    >>> with pl.Config(verbose=True):
+    ...     pass
+    ...
+
+    (The compact format is available for all `Config` methods that take a single value).
+
     """
+
+    _original_state: str = ""
+
+    def __init__(self, *, restore_defaults: bool = False, **options: Any) -> None:
+        """
+        Initialise a Config object instance for context manager usage.
+
+        Any `options` kwargs should correspond to the available named "set_"
+        methods, but can optionally to omit the "set_" prefix for brevity.
+
+        Parameters
+        ----------
+        restore_defaults
+            set all options to their default values (this is applied before
+            setting any other options).
+        options
+            keyword args that will set the option; equivalent to calling the
+            named "set_<option>" method with the given value.
+
+        Examples
+        --------
+        >>> with pl.Config(
+        ...     # these options will be set for scope duration
+        ...     tbl_formatting="ASCII_MARKDOWN",
+        ...     tbl_width_chars=180,
+        ... ):
+        ...     pass
+
+        """
+        # save original state _before_ any changes are made
+        self._original_state = self.save()
+
+        if restore_defaults:
+            self.restore_defaults()
+
+        for opt, value in options.items():
+            if not hasattr(self, opt) and not opt.startswith("set_"):
+                opt = f"set_{opt}"
+            if not hasattr(self, opt):
+                raise AttributeError(f"Config has no {opt!r} option")
+            getattr(self, opt)(value)
 
     def __enter__(self) -> Config:
         """Support setting temporary Config options that are reset on scope exit."""
-        self._original_state = self.save()
+        self._original_state = self._original_state or self.save()
         return self
 
     def __exit__(
@@ -87,6 +136,7 @@ class Config:
     ) -> None:
         """Reset any Config options that were set within the scope."""
         self.restore_defaults().load(self._original_state)
+        self._original_state = ""
 
     @classmethod
     def load(cls, cfg: str) -> type[Config]:
@@ -344,32 +394,34 @@ class Config:
 
         Examples
         --------
-        >>> with pl.Config() as cfg:
-        ...     cfg.set_tbl_cols(5)  # doctest: +IGNORE_RESULT
-        ...     df = pl.DataFrame({str(i): [i] for i in range(100)})
-        ...     df
-        ...
-        shape: (1, 100)
-        ┌─────┬─────┬─────┬─────┬─────┬─────┐
-        │ 0   ┆ 1   ┆ 2   ┆ ... ┆ 98  ┆ 99  │
-        │ --- ┆ --- ┆ --- ┆     ┆ --- ┆ --- │
-        │ i64 ┆ i64 ┆ i64 ┆     ┆ i64 ┆ i64 │
-        ╞═════╪═════╪═════╪═════╪═════╪═════╡
-        │ 0   ┆ 1   ┆ 2   ┆ ... ┆ 98  ┆ 99  │
-        └─────┴─────┴─────┴─────┴─────┴─────┘
+        Set number of displayed columns to a low value:
 
         >>> with pl.Config() as cfg:
-        ...     cfg.set_tbl_cols(10)  # doctest: +IGNORE_RESULT
-        ...     df
+        ...     cfg.set_tbl_cols(5)
+        ...     df = pl.DataFrame({str(i): [i] for i in range(100)})
+        ...     print(df)
+        ...
+        <class 'polars.config.Config'>
+        shape: (1, 100)
+        ┌─────┬─────┬─────┬───┬─────┬─────┐
+        │ 0   ┆ 1   ┆ 2   ┆ … ┆ 98  ┆ 99  │
+        │ --- ┆ --- ┆ --- ┆   ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ i64 ┆   ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╪═══╪═════╪═════╡
+        │ 0   ┆ 1   ┆ 2   ┆ … ┆ 98  ┆ 99  │
+        └─────┴─────┴─────┴───┴─────┴─────┘
+
+        >>> with pl.Config(tbl_cols=10):
+        ...     print(df)
         ...
         shape: (1, 100)
-        ┌─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┐
-        │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ 4   ┆ ... ┆ 95  ┆ 96  ┆ 97  ┆ 98  ┆ 99  │
-        │ --- ┆ --- ┆ --- ┆ --- ┆ --- ┆     ┆ --- ┆ --- ┆ --- ┆ --- ┆ --- │
-        │ i64 ┆ i64 ┆ i64 ┆ i64 ┆ i64 ┆     ┆ i64 ┆ i64 ┆ i64 ┆ i64 ┆ i64 │
-        ╞═════╪═════╪═════╪═════╪═════╪═════╪═════╪═════╪═════╪═════╪═════╡
-        │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ 4   ┆ ... ┆ 95  ┆ 96  ┆ 97  ┆ 98  ┆ 99  │
-        └─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┘
+        ┌─────┬─────┬─────┬─────┬─────┬───┬─────┬─────┬─────┬─────┬─────┐
+        │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ 4   ┆ … ┆ 95  ┆ 96  ┆ 97  ┆ 98  ┆ 99  │
+        │ --- ┆ --- ┆ --- ┆ --- ┆ --- ┆   ┆ --- ┆ --- ┆ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ i64 ┆ i64 ┆ i64 ┆   ┆ i64 ┆ i64 ┆ i64 ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╪═════╪═════╪═══╪═════╪═════╪═════╪═════╪═════╡
+        │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ 4   ┆ … ┆ 95  ┆ 96  ┆ 97  ┆ 98  ┆ 99  │
+        └─────┴─────┴─────┴─────┴─────┴───┴─────┴─────┴─────┴─────┴─────┘
 
         """
         os.environ["POLARS_FMT_MAX_COLS"] = str(n)
@@ -611,18 +663,19 @@ class Config:
         >>> df = pl.DataFrame(
         ...     {"abc": [1.0, 2.5, 3.5, 5.0], "xyz": [True, False, True, False]}
         ... )
-        >>> pl.Config.set_tbl_rows(2)  # doctest: +SKIP
-        # ...
-        # shape: (4, 2)
-        # ┌─────┬───────┐
-        # │ abc ┆ xyz   │
-        # │ --- ┆ ---   │
-        # │ f64 ┆ bool  │
-        # ╞═════╪═══════╡
-        # │ 1.0 ┆ true  │
-        # │ …   ┆ …     │
-        # │ 5.0 ┆ false │
-        # └─────┴───────┘
+        >>> with pl.Config(tbl_rows=2):
+        ...     print(df)
+        ...
+        shape: (4, 2)
+        ┌─────┬───────┐
+        │ abc ┆ xyz   │
+        │ --- ┆ ---   │
+        │ f64 ┆ bool  │
+        ╞═════╪═══════╡
+        │ 1.0 ┆ true  │
+        │ …   ┆ …     │
+        │ 5.0 ┆ false │
+        └─────┴───────┘
 
         """
         os.environ["POLARS_FMT_MAX_ROWS"] = str(n)

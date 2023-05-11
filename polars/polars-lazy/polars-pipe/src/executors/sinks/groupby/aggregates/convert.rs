@@ -24,8 +24,10 @@ use crate::operators::DataChunk;
 struct Count {}
 
 impl PhysicalPipedExpr for Count {
-    fn evaluate(&self, _chunk: &DataChunk, _lazy_state: &dyn Any) -> PolarsResult<Series> {
-        Ok(Series::new_empty("", &IDX_DTYPE))
+    fn evaluate(&self, chunk: &DataChunk, _lazy_state: &dyn Any) -> PolarsResult<Series> {
+        // the length must match the chunks as the operators expect that
+        // so we fill a null series.
+        Ok(Series::new_null("", chunk.data.height()))
     }
 
     fn field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
@@ -104,18 +106,23 @@ pub fn can_convert_to_hash_agg(
     }
 }
 
+/// # Returns:
+///     - input_dtype: dtype that goes into the agg expression
+///     - physical expr: physical expression that produces the input of the aggregation
+///     - aggregation function: the aggregation function
 pub(crate) fn convert_to_hash_agg<F>(
     node: Node,
     expr_arena: &Arena<AExpr>,
     schema: &SchemaRef,
     to_physical: &F,
-) -> (Arc<dyn PhysicalPipedExpr>, AggregateFunction)
+) -> (DataType, Arc<dyn PhysicalPipedExpr>, AggregateFunction)
 where
     F: Fn(Node, &Arena<AExpr>, Option<&SchemaRef>) -> PolarsResult<Arc<dyn PhysicalPipedExpr>>,
 {
     match expr_arena.get(node) {
         AExpr::Alias(input, _) => convert_to_hash_agg(*input, expr_arena, schema, to_physical),
         AExpr::Count => (
+            IDX_DTYPE,
             Arc::new(Count {}),
             AggregateFunction::Count(CountAgg::new()),
         ),
@@ -137,7 +144,7 @@ where
                     DataType::Float64 => AggregateFunction::MinMaxF64(new_min()),
                     dt => panic!("{dt} unexpected"),
                 };
-                (phys_expr, agg_fn)
+                (logical_dtype, phys_expr, agg_fn)
             }
             AAggExpr::Max { input, .. } => {
                 let phys_expr = to_physical(*input, expr_arena, Some(schema)).unwrap();
@@ -156,7 +163,7 @@ where
                     DataType::Float64 => AggregateFunction::MinMaxF64(new_max()),
                     dt => panic!("{dt} unexpected"),
                 };
-                (phys_expr, agg_fn)
+                (logical_dtype, phys_expr, agg_fn)
             }
             AAggExpr::Sum(input) => {
                 let phys_expr = to_physical(*input, expr_arena, Some(schema)).unwrap();
@@ -165,6 +172,7 @@ where
                 #[cfg(feature = "dtype-categorical")]
                 if matches!(logical_dtype, DataType::Categorical(_)) {
                     return (
+                        logical_dtype.clone(),
                         phys_expr,
                         AggregateFunction::Null(NullAgg::new(logical_dtype)),
                     );
@@ -193,7 +201,7 @@ where
                     DataType::Float64 => AggregateFunction::SumF64(SumAgg::<f64>::new()),
                     dt => AggregateFunction::Null(NullAgg::new(dt)),
                 };
-                (phys_expr, agg_fn)
+                (logical_dtype, phys_expr, agg_fn)
             }
             AAggExpr::Mean(input) => {
                 let phys_expr = to_physical(*input, expr_arena, Some(schema)).unwrap();
@@ -202,6 +210,7 @@ where
                 #[cfg(feature = "dtype-categorical")]
                 if matches!(logical_dtype, DataType::Categorical(_)) {
                     return (
+                        logical_dtype.clone(),
                         phys_expr,
                         AggregateFunction::Null(NullAgg::new(logical_dtype)),
                     );
@@ -212,27 +221,34 @@ where
                     DataType::Float64 => AggregateFunction::MeanF64(MeanAgg::<f64>::new()),
                     dt => AggregateFunction::Null(NullAgg::new(dt)),
                 };
-                (phys_expr, agg_fn)
+                (logical_dtype, phys_expr, agg_fn)
             }
             AAggExpr::First(input) => {
                 let phys_expr = to_physical(*input, expr_arena, Some(schema)).unwrap();
-                let dtype = phys_expr.field(schema).unwrap().dtype;
+                let logical_dtype = phys_expr.field(schema).unwrap().dtype;
                 (
+                    logical_dtype.clone(),
                     phys_expr,
-                    AggregateFunction::First(FirstAgg::new(dtype.to_physical())),
+                    AggregateFunction::First(FirstAgg::new(logical_dtype.to_physical())),
                 )
             }
             AAggExpr::Last(input) => {
                 let phys_expr = to_physical(*input, expr_arena, Some(schema)).unwrap();
-                let dtype = phys_expr.field(schema).unwrap().dtype;
+                let logical_dtype = phys_expr.field(schema).unwrap().dtype;
                 (
+                    logical_dtype.clone(),
                     phys_expr,
-                    AggregateFunction::Last(LastAgg::new(dtype.to_physical())),
+                    AggregateFunction::Last(LastAgg::new(logical_dtype.to_physical())),
                 )
             }
             AAggExpr::Count(input) => {
                 let phys_expr = to_physical(*input, expr_arena, Some(schema)).unwrap();
-                (phys_expr, AggregateFunction::Count(CountAgg::new()))
+                let logical_dtype = phys_expr.field(schema).unwrap().dtype;
+                (
+                    logical_dtype,
+                    phys_expr,
+                    AggregateFunction::Count(CountAgg::new()),
+                )
             }
             agg => panic!("{agg:?} not yet implemented."),
         },

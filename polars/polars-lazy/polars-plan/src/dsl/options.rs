@@ -1,17 +1,23 @@
 use std::borrow::Cow;
 
-use polars_core::datatypes::DataType;
-use polars_core::prelude::{JoinType, TimeUnit};
+use polars_core::prelude::JoinType;
+use polars_utils::IdxSize;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+#[derive(Copy, Clone, PartialEq, Debug, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct RollingCovOptions {
+    pub window_size: IdxSize,
+    pub min_periods: IdxSize,
+    pub ddof: u8,
+}
+
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct StrpTimeOptions {
-    /// DataType to parse in. One of {Date, Datetime}
-    pub date_dtype: DataType,
+pub struct StrptimeOptions {
     /// Formatting string
-    pub fmt: Option<String>,
+    pub format: Option<String>,
     /// If set then polars will return an error if any date parsing fails
     pub strict: bool,
     /// If polars may parse matches that not contain the whole string
@@ -25,13 +31,12 @@ pub struct StrpTimeOptions {
     pub utc: bool,
 }
 
-impl Default for StrpTimeOptions {
+impl Default for StrptimeOptions {
     fn default() -> Self {
-        StrpTimeOptions {
-            date_dtype: DataType::Datetime(TimeUnit::Microseconds, None),
-            fmt: None,
-            strict: false,
-            exact: false,
+        StrptimeOptions {
+            format: None,
+            strict: true,
+            exact: true,
             cache: true,
             tz_aware: false,
             utc: false,

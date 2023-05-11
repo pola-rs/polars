@@ -31,22 +31,22 @@ pub(super) fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Opt
                 }
                 #[cfg(feature = "dtype-date")]
                 AnyValue::Date(v) => {
-                    // the function `_to_python_datetime` and `Date` have to be in scope
-                    // on the python side
-                    Some(format!("_to_python_datetime(value={v}, dtype=Date)"))
+                    // the function `_to_python_date` and the `Date`
+                    // dtype have to be in scope on the python side
+                    Some(format!("_to_python_date(value={v})"))
                 }
                 #[cfg(feature = "dtype-datetime")]
                 AnyValue::Datetime(v, tu, tz) => {
-                    // the function `_to_python_datetime` and `Datetime` have to be in scope
-                    // on the python side
+                    // the function `_to_python_datetime` and the `Datetime`
+                    // dtype have to be in scope on the python side
                     match tz {
                         None => Some(format!(
-                            "_to_python_datetime(value={}, dtype=Datetime, tu='{}')",
+                            "_to_python_datetime(value={}, tu='{}')",
                             v,
                             tu.to_ascii()
                         )),
                         Some(tz) => Some(format!(
-                            "to_python_datetime(value={}, dtype=Datetime, tu='{}', tz={})",
+                            "_to_python_datetime(value={}, tu='{}', tz={})",
                             v,
                             tu.to_ascii(),
                             tz
@@ -84,7 +84,7 @@ pub(super) fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Opt
             }
         }
         AExpr::Function {
-            function: FunctionExpr::Not,
+            function: FunctionExpr::Boolean(BooleanFunction::IsNot),
             input,
             ..
         } => {
@@ -93,7 +93,7 @@ pub(super) fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Opt
             Some(format!("~({input})"))
         }
         AExpr::Function {
-            function: FunctionExpr::IsNull,
+            function: FunctionExpr::Boolean(BooleanFunction::IsNull),
             input,
             ..
         } => {
@@ -102,7 +102,7 @@ pub(super) fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Opt
             Some(format!("({input}).is_null()"))
         }
         AExpr::Function {
-            function: FunctionExpr::IsNotNull,
+            function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
             input,
             ..
         } => {

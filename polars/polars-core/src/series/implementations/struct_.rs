@@ -280,7 +280,12 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
 
     /// Get unique values in the Series.
     fn unique(&self) -> PolarsResult<Series> {
-        let groups = self.group_tuples(true, false);
+        // this can called in aggregation, so this fast path can be worth a lot
+        if self.len() < 2 {
+            return Ok(self.0.clone().into_series());
+        }
+        let main_thread = POOL.current_thread_index().is_none();
+        let groups = self.group_tuples(main_thread, false);
         // safety:
         // groups are in bounds
         Ok(unsafe { self.0.clone().into_series().agg_first(&groups?) })
@@ -288,13 +293,28 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
 
     /// Get unique values in the Series.
     fn n_unique(&self) -> PolarsResult<usize> {
-        let groups = self.group_tuples(true, false)?;
-        Ok(groups.len())
+        // this can called in aggregation, so this fast path can be worth a lot
+        match self.len() {
+            0 => Ok(0),
+            1 => Ok(1),
+            _ => {
+                // TODO! try row encoding
+                let main_thread = POOL.current_thread_index().is_none();
+                let groups = self.group_tuples(main_thread, false)?;
+                Ok(groups.len())
+            }
+        }
     }
 
     /// Get first indexes of unique values.
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
-        let groups = self.group_tuples(true, false)?;
+        // this can called in aggregation, so this fast path can be worth a lot
+        if self.len() == 1 {
+            return Ok(IdxCa::new_vec(self.name(), vec![0 as IdxSize]));
+        }
+        // TODO! try row encoding
+        let main_thread = POOL.current_thread_index().is_none();
+        let groups = self.group_tuples(main_thread, false)?;
         let first = groups.take_group_firsts();
         Ok(IdxCa::from_vec(self.name(), first))
     }
@@ -328,10 +348,6 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     #[cfg(feature = "is_in")]
     fn is_in(&self, other: &Series) -> PolarsResult<BooleanChunked> {
         self.0.is_in(other)
-    }
-
-    fn fmt_list(&self) -> String {
-        self.0.fmt_list()
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

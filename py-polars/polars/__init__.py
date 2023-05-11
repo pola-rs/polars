@@ -1,4 +1,12 @@
+import contextlib
 import os
+
+with contextlib.suppress(ImportError):  # Module not available when building docs
+    # ensure the object constructor is known by polars
+    # we set this once on import
+    from polars.polars import register_object_builder
+
+    register_object_builder()
 
 from polars import api
 from polars.config import Config
@@ -49,6 +57,7 @@ from polars.datatypes import (
 )
 from polars.exceptions import (
     ArrowError,
+    ChronoFormatWarning,
     ColumnNotFoundError,
     ComputeError,
     DuplicateError,
@@ -74,6 +83,7 @@ from polars.functions.lazy import (
     all,
     any,
     apply,
+    approx_unique,
     arange,
     arg_sort_by,
     arg_where,
@@ -98,6 +108,7 @@ from polars.functions.lazy import (
     from_epoch,
     groups,
     head,
+    implode,
     last,
     lit,
     map,
@@ -110,6 +121,8 @@ from polars.functions.lazy import (
     quantile,
     reduce,
     repeat,
+    rolling_corr,
+    rolling_cov,
     select,
     spearman_rank_corr,
     std,
@@ -121,6 +134,7 @@ from polars.functions.lazy import (
 from polars.functions.lazy import date_ as date
 from polars.functions.lazy import datetime_ as datetime
 from polars.functions.lazy import list_ as list
+from polars.functions.lazy import time_ as time
 from polars.functions.whenthen import when
 from polars.io import (
     read_avro,
@@ -176,6 +190,7 @@ __all__ = [
     "ArrowError",
     "ColumnNotFoundError",
     "ComputeError",
+    "ChronoFormatWarning",
     "DuplicateError",
     "InvalidOperationError",
     "NoDataError",
@@ -294,6 +309,7 @@ __all__ = [
     "from_epoch",
     "groups",
     "head",
+    "implode",
     "last",
     "list",  # named list_, see import above
     "lit",
@@ -303,15 +319,19 @@ __all__ = [
     "median",
     "min",
     "n_unique",
+    "approx_unique",
     "pearson_corr",
     "quantile",
     "reduce",
+    "rolling_corr",
+    "rolling_cov",
     "select",
     "spearman_rank_corr",
     "std",
     "struct",
     "sum",
     "tail",
+    "time",  # named time_, see import above
     "var",
     # polars.convert
     "from_arrow",

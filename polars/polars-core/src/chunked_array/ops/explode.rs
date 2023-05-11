@@ -172,7 +172,7 @@ impl ExplodeByOffsets for Float64Chunked {
 
 impl ExplodeByOffsets for NullChunked {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        NullChunked::new(self.name.clone(), get_capacity(offsets)).into_series()
+        NullChunked::new(self.name.clone(), offsets.len() - 1).into_series()
     }
 }
 
@@ -375,7 +375,14 @@ impl ChunkExplode for ListChunked {
                 // we are in bounds
                 values = unsafe { values.sliced_unchecked(start, len) };
             }
-            Series::try_from((self.name(), values)).unwrap()
+            // safety: inner_dtype should be correct
+            unsafe {
+                Series::from_chunks_and_dtype_unchecked(
+                    self.name(),
+                    vec![values],
+                    &self.inner_dtype().to_physical(),
+                )
+            }
         } else {
             // during tests
             // test that this code branch is not hit with list arrays that could be fast exploded
@@ -394,31 +401,20 @@ impl ChunkExplode for ListChunked {
                 }
             }
 
-            let values = Series::try_from((self.name(), values)).unwrap();
+            // safety: inner_dtype should be correct
+            let values = unsafe {
+                Series::from_chunks_and_dtype_unchecked(
+                    self.name(),
+                    vec![values],
+                    &self.inner_dtype().to_physical(),
+                )
+            };
             values.explode_by_offsets(offsets)
         };
         debug_assert_eq!(s.name(), self.name());
-        // make sure we restore the logical type
-        match self.inner_dtype() {
-            #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(rev_map) => {
-                let cats = s.u32().unwrap().clone();
-                // safety:
-                // rev_map is from same array, so we are still in bounds
-                s = unsafe {
-                    CategoricalChunked::from_cats_and_rev_map_unchecked(cats, rev_map.unwrap())
-                        .into_series()
-                };
-            }
-            #[cfg(feature = "dtype-date")]
-            DataType::Date => s = s.into_date(),
-            #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(tu, tz) => s = s.into_datetime(tu, tz),
-            #[cfg(feature = "dtype-duration")]
-            DataType::Duration(tu) => s = s.into_duration(tu),
-            #[cfg(feature = "dtype-time")]
-            DataType::Time => s = s.into_time(),
-            _ => {}
+        // restore logical type
+        unsafe {
+            s = s.cast_unchecked(&self.inner_dtype()).unwrap();
         }
 
         Ok((s, offsets_buf))

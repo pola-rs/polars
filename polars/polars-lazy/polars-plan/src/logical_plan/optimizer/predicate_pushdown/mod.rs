@@ -283,7 +283,7 @@ impl PredicatePushDown {
                 };
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             CsvScan {
                 path,
                 file_info,
@@ -408,7 +408,11 @@ impl PredicatePushDown {
                     // unique and duplicated can be caused by joins
                     #[cfg(feature = "is_unique")]
                     let matches = {
-                        |e: &AExpr| matches!(e, AExpr::Function{function: FunctionExpr::IsDuplicated | FunctionExpr::IsUnique, ..})
+                        |e: &AExpr| matches!(e, AExpr::Function{
+                            function: FunctionExpr::Boolean(BooleanFunction::IsDuplicated)
+                                | FunctionExpr::Boolean(BooleanFunction::IsUnique),
+                            ..
+                        })
                     };
                     #[cfg(not(feature = "is_unique"))]
                         let matches = {
@@ -417,7 +421,11 @@ impl PredicatePushDown {
 
 
                     let checks_nulls =
-                        |e: &AExpr| matches!(e, AExpr::Function{function: FunctionExpr::IsNotNull | FunctionExpr::IsNull, ..} ) ||
+                        |e: &AExpr| matches!(e, AExpr::Function{
+                            function: FunctionExpr::Boolean(BooleanFunction::IsNotNull)
+                                | FunctionExpr::Boolean(BooleanFunction::IsNull),
+                            ..
+                        }) ||
                             // any operation that checks for equality or ordering can be wrong because
                             // the join can produce null values
                             matches!(e, AExpr::BinaryExpr {op, ..} if !matches!(op, Operator::NotEq));
@@ -570,8 +578,22 @@ impl PredicatePushDown {
                 let lp = self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)?;
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
+            lp @ Sort{..} => {
+                let mut local_predicates = vec![];
+                acc_predicates.retain(|_, predicate| {
+                    if predicate_is_sort_boundary(*predicate, expr_arena) {
+                        local_predicates.push(*predicate);
+                        false
+                    } else {
+                        true
+                    }
+                });
+                let lp = self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)?;
+                Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
+
+            }
             // Pushed down passed these nodes
-            lp @ Sort { .. } |lp @ FileSink {..} => {
+            lp@ FileSink {..} => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             }
             lp @ HStack {..} | lp @ Projection {..} | lp @ ExtContext {..} => {

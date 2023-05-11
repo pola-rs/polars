@@ -3,7 +3,7 @@ mod patterns;
 mod strptime;
 
 use chrono::ParseError;
-pub use patterns::Pattern;
+pub use patterns::{Pattern, PatternWithOffset};
 
 use super::*;
 #[cfg(feature = "dtype-date")]
@@ -297,7 +297,7 @@ pub trait Utf8Methods: AsUtf8 {
         ca.rename(utf8_ca.name());
         match tz {
             #[cfg(feature = "timezones")]
-            Some(tz) => ca.into_datetime(tu, None).replace_time_zone(Some(tz)),
+            Some(tz) => ca.into_datetime(tu, None).replace_time_zone(Some(tz), None),
             _ => Ok(ca.into_datetime(tu, None)),
         }
     }
@@ -386,13 +386,13 @@ pub trait Utf8Methods: AsUtf8 {
         tu: TimeUnit,
         cache: bool,
         tz_aware: bool,
-        _utc: bool,
+        utc: bool,
         tz: Option<&TimeZone>,
     ) -> PolarsResult<DatetimeChunked> {
         let utf8_ca = self.as_utf8();
         let fmt = match fmt {
             Some(fmt) => fmt,
-            None => return infer::to_datetime(utf8_ca, tu, tz),
+            None => return infer::to_datetime(utf8_ca, tu, tz, utc),
         };
         let fmt = strptime::compile_fmt(fmt);
         let cache = cache && utf8_ca.len() > 50;
@@ -415,7 +415,7 @@ pub trait Utf8Methods: AsUtf8 {
                     DateTime::parse_from_str(s, &fmt)
                         .ok()
                         .map(|dt| {
-                            if !_utc {
+                            if !utc {
                                 if let Some(tz_found) = tz {
                                     polars_ensure!(
                                         tz_found == dt.timezone(),
@@ -457,7 +457,7 @@ pub trait Utf8Methods: AsUtf8 {
                     .collect::<PolarsResult<_>>()?;
 
                 ca.rename(utf8_ca.name());
-                if !_utc {
+                if !utc {
                     let tz = tz.map(|of| format!("{of}"));
                     Ok(ca.into_datetime(tu, tz))
                 } else {
@@ -484,7 +484,7 @@ pub trait Utf8Methods: AsUtf8 {
                     // Safety:
                     // fmt_len is correct, it was computed with this `fmt` str.
                     match unsafe { strptime_cache.parse(s.as_bytes(), fmt.as_bytes(), fmt_len) } {
-                        None => transform(s, &fmt),
+                        None => transform(s, &fmt, None, utc),
                         Some(ndt) => Some(func(ndt)),
                     }
                 };
@@ -520,18 +520,26 @@ pub trait Utf8Methods: AsUtf8 {
                     .map(|opt_s| {
                         opt_s.and_then(|s| {
                             if cache {
-                                *cache_map.entry(s).or_insert_with(|| transform(s, &fmt))
+                                *cache_map
+                                    .entry(s)
+                                    .or_insert_with(|| transform(s, &fmt, None, false))
                             } else {
-                                transform(s, &fmt)
+                                transform(s, &fmt, None, false)
                             }
                         })
                     })
                     .collect_trusted()
             };
             ca.rename(utf8_ca.name());
-            match tz {
+            match (tz, utc) {
                 #[cfg(feature = "timezones")]
-                Some(tz) => ca.into_datetime(tu, None).replace_time_zone(Some(tz)),
+                (Some(tz), false) => ca.into_datetime(tu, None).replace_time_zone(Some(tz), None),
+                #[cfg(feature = "timezones")]
+                (None, true) => ca
+                    .into_datetime(tu, None)
+                    .replace_time_zone(Some("UTC"), None),
+                #[cfg(feature = "timezones")]
+                (Some(_), true) => unreachable!(), // has already been validated in strptime
                 _ => Ok(ca.into_datetime(tu, None)),
             }
         }

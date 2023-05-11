@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import functools
 import sys
 from datetime import datetime, time, timedelta, timezone
 from decimal import Context
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Callable, Sequence, TypeVar, overload
 
-from polars.datatypes import Date, Datetime
 from polars.dependencies import _ZONEINFO_AVAILABLE, zoneinfo
 
 if TYPE_CHECKING:
@@ -14,7 +13,7 @@ if TYPE_CHECKING:
     from datetime import date, tzinfo
     from decimal import Decimal
 
-    from polars.type_aliases import PolarsDataType, TimeUnit
+    from polars.type_aliases import TimeUnit
 
     if sys.version_info >= (3, 10):
         from typing import ParamSpec
@@ -35,7 +34,6 @@ if TYPE_CHECKING:
         pass
 
 else:
-    from functools import lru_cache
 
     @lru_cache(None)
     def get_zoneinfo(key: str) -> ZoneInfo:
@@ -131,16 +129,16 @@ def _timedelta_to_pl_timedelta(td: timedelta, time_unit: TimeUnit | None = None)
 
 
 def _to_python_time(value: int) -> time:
+    """Convert polars int64 (ns) timestamp to python time object."""
     if value == 0:
         return time(microsecond=0)
-    value = value // 1_000
-    microsecond = value
-    seconds = (microsecond // 1000_000) % 60
-    minutes = (microsecond // (1000_000 * 60)) % 60
-    hours = (microsecond // (1000_000 * 60 * 60)) % 24
-    microsecond = microsecond - (seconds + minutes * 60 + hours * 3600) * 1000_000
-
-    return time(hour=hours, minute=minutes, second=seconds, microsecond=microsecond)
+    else:
+        seconds, nanoseconds = divmod(value, 1_000_000_000)
+        minutes, seconds = divmod(seconds, 60)
+        hours, minutes = divmod(minutes, 60)
+        return time(
+            hour=hours, minute=minutes, second=seconds, microsecond=nanoseconds // 1000
+        )
 
 
 def _to_python_timedelta(value: int | float, time_unit: TimeUnit = "ns") -> timedelta:
@@ -157,61 +155,50 @@ def _to_python_timedelta(value: int | float, time_unit: TimeUnit = "ns") -> time
 
 
 EPOCH = datetime(1970, 1, 1).replace(tzinfo=None)
+EPOCH_UTC = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+_fromtimestamp = datetime.fromtimestamp
+
+
+@lru_cache(256)
+def _to_python_date(value: int | float) -> date:
+    """Convert polars int64 timestamp to Python date."""
+    return (EPOCH_UTC + timedelta(seconds=value * 86400)).date()
 
 
 def _to_python_datetime(
     value: int | float,
-    dtype: PolarsDataType,
     time_unit: TimeUnit | None = "ns",
     time_zone: str | None = None,
-) -> date | datetime:
-    if dtype == Date:
-        # days to seconds
-        # important to create from utc. Not doing this leads
-        # to inconsistencies dependent on the timezone you are in.
-        dt = datetime(1970, 1, 1, tzinfo=timezone.utc)
-        dt += timedelta(seconds=value * 3600 * 24)
-        return dt.date()
-    elif dtype == Datetime:
-        if time_zone is None or time_zone == "":
-            if time_unit == "ns":
-                # nanoseconds to seconds
-                dt = EPOCH + timedelta(microseconds=value / 1000)
-            elif time_unit == "us":
-                dt = EPOCH + timedelta(microseconds=value)
-            elif time_unit == "ms":
-                # milliseconds to seconds
-                dt = datetime.utcfromtimestamp(value / 1000)
-            else:
-                raise ValueError(
-                    f"time_unit must be one of {{'ns', 'us', 'ms'}}, got {time_unit}"
-                )
+) -> datetime:
+    """Convert polars int64 timestamp to Python datetime."""
+    if not time_zone:
+        if time_unit == "us":
+            return EPOCH + timedelta(microseconds=value)
+        elif time_unit == "ns":
+            return EPOCH + timedelta(microseconds=value // 1000)
+        elif time_unit == "ms":
+            return EPOCH + timedelta(milliseconds=value)
         else:
-            if not _ZONEINFO_AVAILABLE:
-                raise ImportError(
-                    "Install polars[timezone] to handle datetimes with timezones."
-                )
-
-            utc = get_zoneinfo("UTC")
-            if time_unit == "ns":
-                # nanoseconds to seconds
-                dt = datetime.fromtimestamp(0, tz=utc) + timedelta(
-                    microseconds=value / 1000
-                )
-            elif time_unit == "us":
-                dt = datetime.fromtimestamp(0, tz=utc) + timedelta(microseconds=value)
-            elif time_unit == "ms":
-                # milliseconds to seconds
-                dt = datetime.fromtimestamp(value / 1000, tz=utc)
-            else:
-                raise ValueError(
-                    f"time_unit must be one of {{'ns', 'us', 'ms'}}, got {time_unit}"
-                )
-            return _localize(dt, time_zone)
-
-        return dt
+            raise ValueError(
+                f"time_unit must be one of {{'ns','us','ms'}}, got {time_unit}"
+            )
+    elif _ZONEINFO_AVAILABLE:
+        if time_unit == "us":
+            dt = EPOCH_UTC + timedelta(microseconds=value)
+        elif time_unit == "ns":
+            dt = EPOCH_UTC + timedelta(microseconds=value // 1000)
+        elif time_unit == "ms":
+            dt = EPOCH_UTC + timedelta(milliseconds=value)
+        else:
+            raise ValueError(
+                f"time_unit must be one of {{'ns','us','ms'}}, got {time_unit}"
+            )
+        return _localize(dt, time_zone)
     else:
-        raise NotImplementedError  # pragma: no cover
+        raise ImportError(
+            "Install polars[timezone] to handle datetimes with timezones."
+        )
 
 
 def _localize(dt: datetime, time_zone: str) -> datetime:
@@ -226,9 +213,25 @@ def _localize(dt: datetime, time_zone: str) -> datetime:
     return dt.astimezone(_tzinfo)
 
 
+def _datetime_for_anyvalue(dt: datetime) -> tuple[float, int]:
+    """Used in pyo3 anyvalue conversion."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    # returns (s, ms)
+    return (dt.replace(microsecond=0).timestamp(), dt.microsecond)
+
+
+def _datetime_for_anyvalue_windows(dt: datetime) -> tuple[float, int]:
+    """Used in pyo3 anyvalue conversion."""
+    if dt.tzinfo is None:
+        dt = _localize(dt, "UTC")
+    # returns (s, ms)
+    return (dt.replace(microsecond=0).timestamp(), dt.microsecond)
+
+
 # cache here as we have a single tz per column
 # and this function will be called on every conversion
-@functools.lru_cache(16)
+@lru_cache(16)
 def _parse_fixed_tz_offset(offset: str) -> tzinfo:
     try:
         # use fromisoformat to parse the offset
@@ -249,7 +252,7 @@ def _to_python_decimal(
     return _create_decimal_with_prec(prec)((sign, digits, scale))
 
 
-@functools.lru_cache(None)
+@lru_cache(None)
 def _create_decimal_with_prec(
     precision: int,
 ) -> Callable[[tuple[int, Sequence[int], int]], Decimal]:

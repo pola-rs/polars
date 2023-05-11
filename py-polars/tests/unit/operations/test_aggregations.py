@@ -1,5 +1,6 @@
+import math
 import typing
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import numpy as np
 import pytest
@@ -43,10 +44,16 @@ def test_duration_aggs() -> None:
     df = pl.DataFrame(
         {
             "time1": pl.date_range(
-                start=datetime(2022, 12, 12), end=datetime(2022, 12, 18), interval="1d"
+                start=datetime(2022, 12, 12),
+                end=datetime(2022, 12, 18),
+                interval="1d",
+                eager=True,
             ),
             "time2": pl.date_range(
-                start=datetime(2023, 1, 12), end=datetime(2023, 1, 18), interval="1d"
+                start=datetime(2023, 1, 12),
+                end=datetime(2023, 1, 18),
+                interval="1d",
+                eager=True,
             ),
         }
     )
@@ -86,6 +93,12 @@ def test_list_aggregation_that_filters_all_data_6017() -> None:
 def test_median() -> None:
     s = pl.Series([1, 2, 3])
     assert s.median() == 2
+
+
+def test_single_element_std() -> None:
+    s = pl.Series([1])
+    assert math.isnan(typing.cast(float, s.std(ddof=1)))
+    assert s.std(ddof=0) == 0.0
 
 
 def test_quantile() -> None:
@@ -158,4 +171,64 @@ def test_literal_group_agg_chunked_7968() -> None:
                 pl.Series("B", [[1, 2, 2]], dtype=pl.List(pl.UInt32)),
             ]
         ),
+    )
+
+
+def test_duration_function_literal() -> None:
+    df = pl.DataFrame(
+        {
+            "A": ["x", "x", "y", "y", "y"],
+            "T": [date(2022, m, 1) for m in range(1, 6)],
+            "S": [1, 2, 4, 8, 16],
+        }
+    ).with_columns(
+        [
+            pl.col("T").cast(pl.Datetime),
+        ]
+    )
+
+    # this checks if the `pl.duration` is flagged as AggState::Literal
+    assert df.groupby("A", maintain_order=True).agg(
+        [((pl.col("T").max() + pl.duration(seconds=1)) - pl.col("T"))]
+    ).to_dict(False) == {
+        "A": ["x", "y"],
+        "T": [
+            [timedelta(days=31, seconds=1), timedelta(seconds=1)],
+            [
+                timedelta(days=61, seconds=1),
+                timedelta(days=30, seconds=1),
+                timedelta(seconds=1),
+            ],
+        ],
+    }
+
+
+def test_string_par_materialize_8207() -> None:
+    df = pl.LazyFrame(
+        {
+            "a": ["a", "b", "d", "c", "e"],
+            "b": ["P", "L", "R", "T", "a long string"],
+        }
+    )
+
+    assert df.groupby(["a"]).agg(pl.min("b")).sort("a").collect().to_dict(False) == {
+        "a": ["a", "b", "c", "d", "e"],
+        "b": ["P", "L", "T", "R", "a long string"],
+    }
+
+
+def test_online_variance() -> None:
+    df = pl.DataFrame(
+        {
+            "id": [1] * 5,
+            "no_nulls": [1, 2, 3, 4, 5],
+            "nulls": [1, None, 3, None, 5],
+        }
+    )
+
+    assert_frame_equal(
+        df.groupby("id")
+        .agg(pl.all().exclude("id").std())
+        .select(["no_nulls", "nulls"]),
+        df.select(pl.all().exclude("id").std()),
     )

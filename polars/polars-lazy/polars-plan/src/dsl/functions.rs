@@ -14,7 +14,7 @@ use polars_core::utils::get_supertype;
 #[cfg(feature = "arg_where")]
 use crate::dsl::function_expr::FunctionExpr;
 use crate::dsl::function_expr::ListFunction;
-#[cfg(feature = "strings")]
+#[cfg(all(feature = "concat_str", feature = "strings"))]
 use crate::dsl::function_expr::StringFunction;
 use crate::dsl::*;
 use crate::prelude::*;
@@ -240,23 +240,13 @@ pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8, propagate_nans: bool) -> E
 /// That means that the first `Series` will be used to determine the ordering
 /// until duplicates are found. Once duplicates are found, the next `Series` will
 /// be used and so on.
+#[cfg(feature = "arange")]
 pub fn arg_sort_by<E: AsRef<[Expr]>>(by: E, descending: &[bool]) -> Expr {
-    let descending = descending.to_vec();
-    let function = SpecialEq::new(Arc::new(move |by: &mut [Series]| {
-        polars_core::functions::arg_sort_by(by, &descending).map(|ca| Some(ca.into_series()))
-    }) as Arc<dyn SeriesUdf>);
-
-    Expr::AnonymousFunction {
-        input: by.as_ref().to_vec(),
-        function,
-        output_type: GetOutput::from_type(IDX_DTYPE),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
-            input_wildcard_expansion: true,
-            fmt_str: "arg_sort_by",
-            ..Default::default()
-        },
-    }
+    let e = &by.as_ref()[0];
+    let name = expr_output_name(e).unwrap();
+    arange(lit(0 as IdxSize), count().cast(IDX_DTYPE), 1)
+        .sort_by(by, descending)
+        .alias(name.as_ref())
 }
 
 #[cfg(all(feature = "concat_str", feature = "strings"))]
@@ -308,7 +298,7 @@ pub fn format_str<E: AsRef<[Expr]>>(format: &str, args: E) -> PolarsResult<Expr>
 }
 
 /// Concat lists entries.
-pub fn concat_lst<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> PolarsResult<Expr> {
+pub fn concat_list<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> PolarsResult<Expr> {
     let s: Vec<_> = s.as_ref().iter().map(|e| e.clone().into()).collect();
 
     polars_ensure!(!s.is_empty(), ComputeError: "`concat_list` needs one or more expressions");
@@ -325,11 +315,40 @@ pub fn concat_lst<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> PolarsResult<
     })
 }
 
-/// Create list entries that are range arrays
-/// - if `low` and `high` are a column, every element will expand into an array in a list column.
-/// - if `low` and `high` are literals the output will be of `Int64`.
 #[cfg(feature = "arange")]
-pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
+fn arange_impl<T>(start: T::Native, end: T::Native, step: i64) -> PolarsResult<Option<Series>>
+where
+    T: PolarsNumericType,
+    ChunkedArray<T>: IntoSeries,
+    std::ops::Range<T::Native>: Iterator<Item = T::Native>,
+    std::ops::RangeInclusive<T::Native>: DoubleEndedIterator<Item = T::Native>,
+{
+    let mut ca = match step {
+        1 => ChunkedArray::<T>::from_iter_values("arange", start..end),
+        2.. => ChunkedArray::<T>::from_iter_values("arange", (start..end).step_by(step as usize)),
+        _ => {
+            polars_ensure!(start > end, InvalidOperation: "range must be decreasing if 'step' is negative");
+            ChunkedArray::<T>::from_iter_values(
+                "arange",
+                (end..=start).rev().step_by(step.unsigned_abs() as usize),
+            )
+        }
+    };
+    let is_sorted = if end < start {
+        IsSorted::Descending
+    } else {
+        IsSorted::Ascending
+    };
+    ca.set_sorted_flag(is_sorted);
+    Ok(Some(ca.into_series()))
+}
+
+// TODO! rewrite this with the apply_private architecture
+/// Create list entries that are range arrays
+/// - if `start` and `end` are a column, every element will expand into an array in a list column.
+/// - if `start` and `end` are literals the output will be of `Int64`.
+#[cfg(feature = "arange")]
+pub fn arange(start: Expr, end: Expr, step: i64) -> Expr {
     let has_col_without_agg = |e: &Expr| {
         has_expr(e, |ae| matches!(ae, Expr::Column(_)))
             &&
@@ -360,44 +379,65 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
         (matches!(e, Expr::Literal(_)) && !matches!(e, Expr::Literal(LiteralValue::Series(_))))
     };
 
-    let any_column_no_agg = has_col_without_agg(&low) || has_col_without_agg(&high);
-    let literal_low = has_lit(&low);
-    let literal_high = has_lit(&high);
+    let any_column_no_agg = has_col_without_agg(&start) || has_col_without_agg(&end);
+    let literal_start = has_lit(&start);
+    let literal_end = has_lit(&end);
 
-    if (literal_low || literal_high) && !any_column_no_agg {
+    if (literal_start || literal_end) && !any_column_no_agg {
         let f = move |sa: Series, sb: Series| {
-            let sa = sa.cast(&DataType::Int64)?;
-            let sb = sb.cast(&DataType::Int64)?;
-            let low = sa
-                .i64()?
-                .get(0)
-                .ok_or_else(|| polars_err!(NoData: "no data in `low` evaluation"))?;
-            let high = sb
-                .i64()?
-                .get(0)
-                .ok_or_else(|| polars_err!(NoData: "no data in `high` evaluation"))?;
+            polars_ensure!(step != 0, InvalidOperation: "step must not be zero");
 
-            let mut ca = if step > 1 {
-                Int64Chunked::from_iter_values("arange", (low..high).step_by(step))
-            } else {
-                Int64Chunked::from_iter_values("arange", low..high)
-            };
-            let is_sorted = if high < low {
-                IsSorted::Descending
-            } else {
-                IsSorted::Ascending
-            };
-            ca.set_sorted_flag(is_sorted);
-            Ok(Some(ca.into_series()))
+            match sa.dtype() {
+                dt if dt == &IDX_DTYPE => {
+                    let start = sa
+                        .idx()?
+                        .get(0)
+                        .ok_or_else(|| polars_err!(NoData: "no data in `start` evaluation"))?;
+                    let sb = sb.cast(&IDX_DTYPE)?;
+                    let end = sb
+                        .idx()?
+                        .get(0)
+                        .ok_or_else(|| polars_err!(NoData: "no data in `end` evaluation"))?;
+                    #[cfg(feature = "bigidx")]
+                    {
+                        arange_impl::<UInt64Type>(start, end, step)
+                    }
+                    #[cfg(not(feature = "bigidx"))]
+                    {
+                        arange_impl::<UInt32Type>(start, end, step)
+                    }
+                }
+                _ => {
+                    let sa = sa.cast(&DataType::Int64)?;
+                    let sb = sb.cast(&DataType::Int64)?;
+                    let start = sa
+                        .i64()?
+                        .get(0)
+                        .ok_or_else(|| polars_err!(NoData: "no data in `start` evaluation"))?;
+                    let end = sb
+                        .i64()?
+                        .get(0)
+                        .ok_or_else(|| polars_err!(NoData: "no data in `end` evaluation"))?;
+                    arange_impl::<Int64Type>(start, end, step)
+                }
+            }
         };
         apply_binary(
-            low,
-            high,
+            start,
+            end,
             f,
-            GetOutput::map_field(|_| Field::new("arange", DataType::Int64)),
+            GetOutput::map_field(|input| {
+                let dtype = if input.data_type() == &IDX_DTYPE {
+                    IDX_DTYPE
+                } else {
+                    DataType::Int64
+                };
+                Field::new("arange", dtype)
+            }),
         )
     } else {
         let f = move |sa: Series, sb: Series| {
+            polars_ensure!(step != 0, InvalidOperation: "step must not be zero");
             let mut sa = sa.cast(&DataType::Int64)?;
             let mut sb = sb.cast(&DataType::Int64)?;
 
@@ -409,58 +449,135 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
                 } else {
                     polars_bail!(
                         ComputeError:
-                        "lengths of `low`: {} and `high`: {} arguments `\
+                        "lengths of `start`: {} and `end`: {} arguments `\
                         cannot be matched in the `arange` expression",
                         sa.len(), sb.len()
                     );
                 }
             }
 
-            let low = sa.i64()?;
-            let high = sb.i64()?;
+            let start = sa.i64()?;
+            let end = sb.i64()?;
             let mut builder = ListPrimitiveChunkedBuilder::<Int64Type>::new(
                 "arange",
-                low.len(),
-                low.len() * 3,
+                start.len(),
+                start.len() * 3,
                 DataType::Int64,
             );
 
-            low.into_iter()
-                .zip(high.into_iter())
-                .for_each(|(opt_l, opt_h)| match (opt_l, opt_h) {
-                    (Some(l), Some(r)) => {
-                        if step > 1 {
-                            builder.append_iter_values((l..r).step_by(step));
-                        } else {
-                            builder.append_iter_values(l..r);
+            for (opt_start, opt_end) in start.into_iter().zip(end.into_iter()) {
+                match (opt_start, opt_end) {
+                    (Some(start_v), Some(end_v)) => match step {
+                        1 => {
+                            builder.append_iter_values(start_v..end_v);
                         }
-                    }
+                        2.. => {
+                            builder.append_iter_values((start_v..end_v).step_by(step as usize));
+                        }
+                        _ => {
+                            polars_ensure!(start_v > end_v, InvalidOperation: "range must be decreasing if 'step' is negative");
+                            builder.append_iter_values(
+                                (end_v..=start_v)
+                                    .rev()
+                                    .step_by(step.unsigned_abs() as usize),
+                            )
+                        }
+                    },
                     _ => builder.append_null(),
-                });
+                }
+            }
 
             Ok(Some(builder.finish().into_series()))
         };
         apply_binary(
-            low,
-            high,
+            start,
+            end,
             f,
             GetOutput::map_field(|_| Field::new("arange", DataType::List(DataType::Int64.into()))),
         )
     }
 }
 
-#[derive(Default)]
+macro_rules! impl_unit_setter {
+    ($fn_name:ident($field:ident)) => {
+        #[doc = concat!("Set the ", stringify!($field))]
+        pub fn $fn_name(mut self, n: Expr) -> Self {
+            self.$field = n.into();
+            self
+        }
+    };
+}
+
+/// Arguments used by [`datetime`] in order to produce an `Expr` of `Datetime`
+///
+/// Construct a `DatetimeArgs` with `DatetimeArgs::new(y, m, d)`. This will set the other time units to `lit(0)`. You
+/// can then set the other fields with the `with_*` methods, or use `with_hms` to set `hour`, `minute`, and `second` all
+/// at once.
+///
+/// # Examples
+/// ```
+/// // construct a DatetimeArgs set to July 20, 1969 at 20:17
+/// let args = DatetimeArgs::new(lit(1969), lit(7), lit(20)).with_hms(lit(20), lit(17), lit(0));
+/// // or
+/// let args = DatetimeArgs::new(lit(1969), lit(7), lit(20)).with_hour(lit(20)).with_minute(lit(17));
+///
+/// // construct a DatetimeArgs using existing columns
+/// let args = DatetimeArgs::new(lit(2023), col("month"), col("day"));
+/// ```
+#[derive(Debug, Clone)]
 pub struct DatetimeArgs {
     pub year: Expr,
     pub month: Expr,
     pub day: Expr,
-    pub hour: Option<Expr>,
-    pub minute: Option<Expr>,
-    pub second: Option<Expr>,
-    pub microsecond: Option<Expr>,
+    pub hour: Expr,
+    pub minute: Expr,
+    pub second: Expr,
+    pub microsecond: Expr,
 }
 
-/// Construct a column of `Datetime` from the provided args.
+impl DatetimeArgs {
+    /// Construct a new `DatetimeArgs` set to `year`, `month`, `day`
+    ///
+    /// Other fields default to `lit(0)`. Use the `with_*` methods to set them.
+    pub fn new(year: Expr, month: Expr, day: Expr) -> Self {
+        Self {
+            year,
+            month,
+            day,
+            hour: lit(0),
+            minute: lit(0),
+            second: lit(0),
+            microsecond: lit(0),
+        }
+    }
+
+    /// Set `hour`, `minute`, and `second`
+    ///
+    /// Equivalent to
+    /// ```ignore
+    /// self.with_hour(hour)
+    ///     .with_minute(minute)
+    ///     .with_second(second)
+    /// ```
+    pub fn with_hms(self, hour: Expr, minute: Expr, second: Expr) -> Self {
+        Self {
+            hour,
+            minute,
+            second,
+            ..self
+        }
+    }
+
+    impl_unit_setter!(with_year(year));
+    impl_unit_setter!(with_month(month));
+    impl_unit_setter!(with_day(day));
+    impl_unit_setter!(with_hour(hour));
+    impl_unit_setter!(with_minute(minute));
+    impl_unit_setter!(with_second(second));
+    impl_unit_setter!(with_microsecond(microsecond));
+}
+
+/// Construct a column of `Datetime` from the provided [`DatetimeArgs`].
 #[cfg(feature = "temporal")]
 pub fn datetime(args: DatetimeArgs) -> Expr {
     use polars_core::export::chrono::NaiveDate;
@@ -543,15 +660,7 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
     }) as Arc<dyn SeriesUdf>);
 
     Expr::AnonymousFunction {
-        input: vec![
-            year,
-            month,
-            day,
-            hour.unwrap_or_else(|| lit(0)),
-            minute.unwrap_or_else(|| lit(0)),
-            second.unwrap_or_else(|| lit(0)),
-            microsecond.unwrap_or_else(|| lit(0)),
-        ],
+        input: vec![year, month, day, hour, minute, second, microsecond],
         function,
         output_type: GetOutput::from_type(DataType::Datetime(TimeUnit::Microseconds, None)),
         options: FunctionOptions {
@@ -564,23 +673,117 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
     .alias("datetime")
 }
 
-#[derive(Default)]
+/// Arguments used by [`duration`] in order to produce an `Expr` of `Duration`
+///
+/// To construct a `DurationArgs`, use struct literal syntax with `..Default::default()` to leave unspecified fields at
+/// their default value of `lit(0)`, as demonstrated below.
+///
+/// ```
+/// let args = DurationArgs {
+///     days: lit(5),
+///     hours: col("num_hours"),
+///     minutes: col("num_minutes"),
+///     ..Default::default()  // other fields are lit(0)
+/// };
+/// ```
+/// If you prefer builder syntax, `with_*` methods are also available.
+/// ```
+/// let args = DurationArgs::new().with_weeks(lit(42)).with_hours(lit(84));
+/// ```
+#[derive(Debug, Clone)]
 pub struct DurationArgs {
-    pub days: Option<Expr>,
-    pub seconds: Option<Expr>,
-    pub nanoseconds: Option<Expr>,
-    pub microseconds: Option<Expr>,
-    pub milliseconds: Option<Expr>,
-    pub minutes: Option<Expr>,
-    pub hours: Option<Expr>,
-    pub weeks: Option<Expr>,
+    pub weeks: Expr,
+    pub days: Expr,
+    pub hours: Expr,
+    pub minutes: Expr,
+    pub seconds: Expr,
+    pub milliseconds: Expr,
+    pub microseconds: Expr,
+    pub nanoseconds: Expr,
 }
 
-/// Construct a column of `Duration` from the provided args.
+impl Default for DurationArgs {
+    fn default() -> Self {
+        Self {
+            weeks: lit(0),
+            days: lit(0),
+            hours: lit(0),
+            minutes: lit(0),
+            seconds: lit(0),
+            milliseconds: lit(0),
+            microseconds: lit(0),
+            nanoseconds: lit(0),
+        }
+    }
+}
+
+impl DurationArgs {
+    /// Create a new `DurationArgs` with all fields set to `lit(0)`. Use the `with_*` methods to set the fields.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set `hours`, `minutes`, and `seconds`
+    ///
+    /// Equivalent to
+    /// ```ignore
+    /// self.with_hours(hours)
+    ///     .with_minutes(minutes)
+    ///     .with_seconds(seconds)
+    /// ```.
+    pub fn with_hms(self, hours: Expr, minutes: Expr, seconds: Expr) -> Self {
+        Self {
+            hours,
+            minutes,
+            seconds,
+            ..self
+        }
+    }
+
+    /// Set `milliseconds`, `microseconds`, and `nanoseconds`
+    ///
+    /// Equivalent to
+    /// ```ignore
+    /// self.with_milliseconds(milliseconds)
+    ///     .with_microseconds(microseconds)
+    ///     .with_nanoseconds(nanoseconds)
+    /// ```
+    pub fn with_fractional_seconds(
+        self,
+        milliseconds: Expr,
+        microseconds: Expr,
+        nanoseconds: Expr,
+    ) -> Self {
+        Self {
+            milliseconds,
+            microseconds,
+            nanoseconds,
+            ..self
+        }
+    }
+
+    impl_unit_setter!(with_weeks(weeks));
+    impl_unit_setter!(with_days(days));
+    impl_unit_setter!(with_hours(hours));
+    impl_unit_setter!(with_minutes(minutes));
+    impl_unit_setter!(with_seconds(seconds));
+    impl_unit_setter!(with_milliseconds(milliseconds));
+    impl_unit_setter!(with_microseconds(microseconds));
+    impl_unit_setter!(with_nanoseconds(nanoseconds));
+}
+
+/// Construct a column of `Duration` from the provided [`DurationArgs`]
 #[cfg(feature = "temporal")]
 pub fn duration(args: DurationArgs) -> Expr {
     let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
         assert_eq!(s.len(), 8);
+        if s.iter().any(|s| s.is_empty()) {
+            return Ok(Some(Series::new_empty(
+                s[0].name(),
+                &DataType::Duration(TimeUnit::Nanoseconds),
+            )));
+        }
+
         let days = s[0].cast(&DataType::Int64).unwrap();
         let seconds = s[1].cast(&DataType::Int64).unwrap();
         let mut nanoseconds = s[2].cast(&DataType::Int64).unwrap();
@@ -629,14 +832,14 @@ pub fn duration(args: DurationArgs) -> Expr {
 
     Expr::AnonymousFunction {
         input: vec![
-            args.days.unwrap_or_else(|| lit(0i64)),
-            args.seconds.unwrap_or_else(|| lit(0i64)),
-            args.nanoseconds.unwrap_or_else(|| lit(0i64)),
-            args.microseconds.unwrap_or_else(|| lit(0i64)),
-            args.milliseconds.unwrap_or_else(|| lit(0i64)),
-            args.minutes.unwrap_or_else(|| lit(0i64)),
-            args.hours.unwrap_or_else(|| lit(0i64)),
-            args.weeks.unwrap_or_else(|| lit(0i64)),
+            args.days,
+            args.seconds,
+            args.nanoseconds,
+            args.microseconds,
+            args.milliseconds,
+            args.minutes,
+            args.hours,
+            args.weeks,
         ],
         function,
         output_type: GetOutput::from_type(DataType::Duration(TimeUnit::Nanoseconds)),
@@ -1089,6 +1292,7 @@ pub fn as_struct(exprs: &[Expr]) -> Expr {
     .with_function_options(|mut options| {
         options.input_wildcard_expansion = true;
         options.fmt_str = "as_struct";
+        options.pass_name_to_apply = true;
         options
     })
 }
@@ -1164,4 +1368,68 @@ pub fn date_range(
             ..Default::default()
         },
     }
+}
+
+#[cfg(feature = "rolling_window")]
+pub fn rolling_corr(x: Expr, y: Expr, options: RollingCovOptions) -> Expr {
+    let x = x.cache();
+    let y = y.cache();
+    // see: https://github.com/pandas-dev/pandas/blob/v1.5.1/pandas/core/window/rolling.py#L1780-L1804
+    let rolling_options = RollingOptions {
+        window_size: Duration::new(options.window_size as i64),
+        min_periods: options.min_periods as usize,
+        ..Default::default()
+    };
+
+    let mean_x_y = (x.clone() * y.clone()).rolling_mean(rolling_options.clone());
+    let mean_x = x.clone().rolling_mean(rolling_options.clone());
+    let mean_y = y.clone().rolling_mean(rolling_options.clone());
+    let var_x = x.clone().rolling_var(rolling_options.clone());
+    let var_y = y.clone().rolling_var(rolling_options);
+
+    let rolling_options_count = RollingOptions {
+        window_size: Duration::new(options.window_size as i64),
+        min_periods: 0,
+        ..Default::default()
+    };
+    let ddof = options.ddof as f64;
+    let count_x_y = (x + y)
+        .is_not_null()
+        .cast(DataType::Float64)
+        .rolling_sum(rolling_options_count)
+        .cache();
+    let numerator = (mean_x_y - mean_x * mean_y) * (count_x_y.clone() / (count_x_y - lit(ddof)));
+    let denominator = (var_x * var_y).pow(lit(0.5));
+
+    numerator / denominator
+}
+
+#[cfg(feature = "rolling_window")]
+pub fn rolling_cov(x: Expr, y: Expr, options: RollingCovOptions) -> Expr {
+    let x = x.cache();
+    let y = y.cache();
+    // see: https://github.com/pandas-dev/pandas/blob/91111fd99898d9dcaa6bf6bedb662db4108da6e6/pandas/core/window/rolling.py#L1700
+    let rolling_options = RollingOptions {
+        window_size: Duration::new(options.window_size as i64),
+        min_periods: options.min_periods as usize,
+        ..Default::default()
+    };
+
+    let mean_x_y = (x.clone() * y.clone()).rolling_mean(rolling_options.clone());
+    let mean_x = x.clone().rolling_mean(rolling_options.clone());
+    let mean_y = y.clone().rolling_mean(rolling_options);
+    let rolling_options_count = RollingOptions {
+        window_size: Duration::new(options.window_size as i64),
+        min_periods: 0,
+        ..Default::default()
+    };
+    let count_x_y = (x + y)
+        .is_not_null()
+        .cast(DataType::Float64)
+        .rolling_sum(rolling_options_count)
+        .cache();
+
+    let ddof = options.ddof as f64;
+
+    (mean_x_y - mean_x * mean_y) * (count_x_y.clone() / (count_x_y - lit(ddof)))
 }

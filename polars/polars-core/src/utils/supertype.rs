@@ -217,22 +217,12 @@ pub fn get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             #[cfg(feature = "dtype-duration")]
             (Duration(lu), Duration(ru)) => Some(Duration(get_time_units(lu, ru))),
 
-            // None and Some("") timezones
-            // we cast from more precision to higher precision as that always fits with occasional loss of precision
-            #[cfg(feature = "dtype-datetime")]
-            (Datetime(tu_l, tz_l), Datetime(tu_r, tz_r))
-                if (tz_l.is_none() || tz_l.as_deref() == Some(""))
-                    && (tz_r.is_none() || tz_r.as_deref() == Some("")) =>
-            {
-                let tu = get_time_units(tu_l, tu_r);
-                Some(Datetime(tu, None))
-            }
-            // None and Some("<tz>") timezones
+            // both None or both Some("<tz>") timezones
             // we cast from more precision to higher precision as that always fits with occasional loss of precision
             #[cfg(feature = "dtype-datetime")]
             (Datetime(tu_l, tz_l), Datetime(tu_r, tz_r)) if
                 // both are none
-                tz_l.is_none() && tz_r.is_some()
+                (tz_l.is_none() && tz_r.is_none())
                 // both have the same time zone
                 || (tz_l.is_some() && (tz_l == tz_r)) => {
                 let tu = get_time_units(tu_l, tu_r);

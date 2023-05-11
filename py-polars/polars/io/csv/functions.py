@@ -11,7 +11,7 @@ from typing import (
     TextIO,
 )
 
-from polars import internals as pli
+import polars._reexport as pl
 from polars.datatypes import N_INFER_DEFAULT, Utf8
 from polars.io._utils import _prepare_file_arg
 from polars.io.csv._utils import _check_arg_is_1byte, _update_columns
@@ -21,8 +21,7 @@ from polars.utils.various import handle_projection_columns, normalise_filepath
 if TYPE_CHECKING:
     from io import BytesIO
 
-    from polars.dataframe import DataFrame
-    from polars.lazyframe import LazyFrame
+    from polars import DataFrame, LazyFrame
     from polars.type_aliases import CsvEncoding, PolarsDataType, SchemaDict
 
 
@@ -117,7 +116,7 @@ def read_csv(
         ``infer_schema_length=0`` to read all columns as ``pl.Utf8`` to check which
         values might cause an issue.
     try_parse_dates
-        Try to automatically parse dates. Most ISO8601-like time zone naive formats can
+        Try to automatically parse dates. Most ISO8601-like formats can
         be inferred, as well as a handful of others. If this does not succeed,
         the column remains of data type ``pl.Utf8``.
         If ``use_pyarrow=True``, dates will always be parsed.
@@ -141,7 +140,7 @@ def read_csv(
     encoding : {'utf8', 'utf8-lossy', ...}
         Lossy means that invalid utf8 values are replaced with ``�``
         characters. When using other encodings than ``utf8`` or
-        ``utf8-lossy``, the input is first decoded im memory with
+        ``utf8-lossy``, the input is first decoded in memory with
         python. Defaults to ``utf8``.
     low_memory
         Reduce memory usage at expense of performance.
@@ -256,7 +255,7 @@ def read_csv(
                 [f"column_{int(column[1:]) + 1}" for column in tbl.column_names]
             )
 
-        df = pli.DataFrame._from_arrow(tbl, rechunk=rechunk)
+        df = pl.DataFrame._from_arrow(tbl, rechunk=rechunk)
         if new_columns:
             return _update_columns(df, new_columns)
         return df
@@ -352,7 +351,7 @@ def read_csv(
     with _prepare_file_arg(
         source, encoding=encoding, use_pyarrow=False, **storage_options
     ) as data:
-        df = pli.DataFrame._read_csv(
+        df = pl.DataFrame._read_csv(
             data,
             has_header=has_header,
             columns=columns if columns else projection,
@@ -467,7 +466,7 @@ def read_csv_batched(
         First try ``infer_schema_length=0`` to read all columns as
         ``pl.Utf8`` to check which values might cause an issue.
     try_parse_dates
-        Try to automatically parse dates. Most ISO8601-like time zone naive formats can
+        Try to automatically parse dates. Most ISO8601-like formats can
         be inferred, as well as a handful of others. If this does not succeed,
         the column remains of data type ``pl.Utf8``.
     n_threads
@@ -488,7 +487,7 @@ def read_csv_batched(
     encoding : {'utf8', 'utf8-lossy', ...}
         Lossy means that invalid utf8 values are replaced with ``�``
         characters. When using other encodings than ``utf8`` or
-        ``utf8-lossy``, the input is first decoded im memory with
+        ``utf8-lossy``, the input is first decoded in memory with
         python. Defaults to ``utf8``.
     low_memory
         Reduce memory usage at expense of performance.
@@ -775,7 +774,7 @@ def scan_csv(
     row_count_offset
         Offset to start the row_count column (only used if the name is set).
     try_parse_dates
-        Try to automatically parse dates. Most ISO8601-like time zone naive formats
+        Try to automatically parse dates. Most ISO8601-like formats
         can be inferred, as well as a handful of others. If this does not succeed,
         the column remains of data type ``pl.Utf8``.
     eol_char
@@ -873,7 +872,7 @@ def scan_csv(
     if isinstance(source, (str, Path)):
         source = normalise_filepath(source)
 
-    return pli.LazyFrame._scan_csv(
+    return pl.LazyFrame._scan_csv(
         source,
         has_header=has_header,
         separator=separator,

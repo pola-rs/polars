@@ -8,22 +8,35 @@ pub struct CacheExec {
 
 impl Executor for CacheExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
-        if self.count > 0 {
-            if let Some(df) = state.cache_hit(&self.id) {
-                if state.verbose() {
-                    println!("CACHE HIT: cache id: {:x}", self.id);
-                }
-                self.count -= 0;
-                return Ok(df);
+        // skip cache and always re-execute
+        if self.count == 0 {
+            if state.verbose() {
+                println!("CACHE IGNORE: cache id: {:x}", self.id);
+            }
+            return self.input.execute(state);
+        }
+
+        let cache = state.get_df_cache(self.id);
+        let mut cache_hit = true;
+
+        let df = cache.get_or_try_init(|| {
+            cache_hit = false;
+            self.input.execute(state)
+        })?;
+
+        // decrement count on cache hits
+        if cache_hit {
+            self.count -= 1;
+        }
+
+        if state.verbose() {
+            if cache_hit {
+                println!("CACHE HIT: cache id: {:x}", self.id);
+            } else {
+                println!("CACHE SET: cache id: {:x}", self.id);
             }
         }
 
-        // cache miss
-        let df = self.input.execute(state)?;
-        state.store_cache(self.id, df.clone());
-        if state.verbose() {
-            println!("CACHE SET: cache id: {:x}", self.id);
-        }
-        Ok(df)
+        Ok(df.clone())
     }
 }

@@ -11,9 +11,9 @@ Aggregation
     Expr.arg_min
     Expr.count
     Expr.first
+    Expr.implode
     Expr.last
     Expr.len
-    Expr.list
     Expr.max
     Expr.mean
     Expr.median

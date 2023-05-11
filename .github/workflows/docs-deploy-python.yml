@@ -3,7 +3,7 @@ name: Deploy Python documentation
 on:
   push:
     branches:
-      - master
+      - main
     paths:
       - py-polars/docs/**
       - py-polars/polars/**
@@ -38,14 +38,14 @@ jobs:
         run: make html
 
       - name: Deploy Python docs for latest development version
-        if: ${{ github.ref_name == 'master' }}
+        if: ${{ github.ref_name == 'main' }}
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: py-polars/docs/build/html
           target-folder: py-polars/dev
 
       - name: Deploy Python docs for latest release version
-        if: ${{ github.ref_name != 'master' }}
+        if: ${{ github.ref_name != 'main' }}
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: py-polars/docs/build/html

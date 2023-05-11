@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -9,6 +8,7 @@ import pytest
 import polars as pl
 from polars.exceptions import PolarsPanicError
 from polars.testing import assert_frame_equal
+from polars.testing._tempdir import TemporaryDirectory
 
 
 @pytest.fixture()
@@ -19,6 +19,11 @@ def foods_file_path(io_files_path: Path) -> Path:
 def test_scan_csv(io_files_path: Path) -> None:
     df = pl.scan_csv(io_files_path / "small.csv")
     assert df.collect().shape == (4, 3)
+
+
+def test_scan_csv_no_cse_deadlock(io_files_path: Path) -> None:
+    dfs = [pl.scan_csv(io_files_path / "small.csv")] * (pl.threadpool_size() + 1)
+    pl.concat(dfs, parallel=True).collect(common_subplan_elimination=False)
 
 
 def test_scan_empty_csv(io_files_path: Path) -> None:
@@ -32,7 +37,7 @@ def test_invalid_utf8() -> None:
     np.random.seed(1)
     bts = bytes(np.random.randint(0, 255, 200))
 
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         file_path = Path(temp_dir) / "nonutf8.csv"
         with open(file_path, "wb") as f:
             f.write(bts)
@@ -180,7 +185,7 @@ def test_scan_slice_streaming(foods_file_path: Path) -> None:
 
 @pytest.mark.write_disk()
 def test_glob_skip_rows() -> None:
-    with tempfile.TemporaryDirectory() as temp_dir:
+    with TemporaryDirectory() as temp_dir:
         for i in range(2):
             file_path = Path(temp_dir) / f"test_{i}.csv"
             with open(file_path, "w") as f:
@@ -216,3 +221,16 @@ def test_glob_n_rows(io_files_path: Path) -> None:
         "fats_g": [0.5, 6.0],
         "sugars_g": [2, 2],
     }
+
+
+def test_scan_csv_schema_overwrite_not_projected_8483(foods_file_path: str) -> None:
+    df = (
+        pl.scan_csv(
+            foods_file_path,
+            dtypes={"calories": pl.Utf8, "sugars_g": pl.Int8},
+        )
+        .select(pl.count())
+        .collect()
+    )
+    expected = pl.DataFrame({"count": 27}, schema={"count": pl.UInt32})
+    assert_frame_equal(df, expected)

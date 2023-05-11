@@ -21,4 +21,6 @@ Methods
 
     SQLContext.execute
     SQLContext.register
-    SQLContext.query
+    SQLContext.register_globals
+    SQLContext.register_many
+    SQLContext.unregister

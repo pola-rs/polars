@@ -209,6 +209,29 @@ def test_sorted_flag() -> None:
     assert s.flags["SORTED_ASC"]
     assert s.reverse().flags["SORTED_DESC"]
     assert pl.Series([b"a"]).set_sorted().flags["SORTED_ASC"]
+    assert (
+        pl.Series([date(2020, 1, 1), date(2020, 1, 2)])
+        .set_sorted()
+        .cast(pl.Datetime)
+        .flags["SORTED_ASC"]
+    )
+
+    # empty
+    q = pl.LazyFrame(
+        schema={
+            "store_id": pl.UInt16,
+            "item_id": pl.UInt32,
+            "timestamp": pl.Datetime,
+        }
+    ).sort("timestamp")
+
+    assert q.collect()["timestamp"].flags["SORTED_ASC"]
+    assert q.collect(streaming=True)["timestamp"].flags["SORTED_ASC"]
+
+    # top-k/bottom-k
+    df = pl.DataFrame({"foo": [56, 2, 3]})
+    assert df.top_k(2, by="foo")["foo"].flags["SORTED_DESC"]
+    assert df.bottom_k(2, by="foo")["foo"].flags["SORTED_ASC"]
 
     # ensure we don't panic for these types
     # struct
@@ -341,7 +364,7 @@ def test_sort_slice_fast_path_5245() -> None:
 def test_explicit_list_agg_sort_in_groupby() -> None:
     df = pl.DataFrame({"A": ["a", "a", "a", "b", "b", "a"], "B": [1, 2, 3, 4, 5, 6]})
 
-    # this was col().list().sort() before we changed the logic
+    # this was col().implode().sort() before we changed the logic
     result = df.groupby("A").agg(pl.col("B").sort(descending=True)).sort("A")
     expected = df.groupby("A").agg(pl.col("B").sort(descending=True)).sort("A")
     assert_frame_equal(result, expected)
@@ -402,13 +425,13 @@ def test_sort_by_in_over_5499() -> None:
 
 def test_merge_sorted() -> None:
     df_a = (
-        pl.date_range(datetime(2022, 1, 1), datetime(2022, 12, 1), "1mo")
+        pl.date_range(datetime(2022, 1, 1), datetime(2022, 12, 1), "1mo", eager=True)
         .to_frame("range")
         .with_row_count()
     )
 
     df_b = (
-        pl.date_range(datetime(2022, 1, 1), datetime(2022, 12, 1), "2mo")
+        pl.date_range(datetime(2022, 1, 1), datetime(2022, 12, 1), "2mo", eager=True)
         .to_frame("range")
         .with_row_count()
         .with_columns(pl.col("row_nr") * 10)
@@ -520,7 +543,7 @@ def test_sort_row_fmt() -> None:
 
 @pytest.mark.slow()
 def test_streaming_sort_multiple_columns(monkeypatch: Any, capfd: Any) -> None:
-    monkeypatch.setenv("POLARS_FORCE_OOC_SORT", "1")
+    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     df = get_str_ints_df(1000)
 
@@ -646,3 +669,32 @@ def test_arg_sort_struct() -> None:
         8,
         9,
     ]
+
+
+def test_sort_top_k_fast_path() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, None],
+            "b": [6.0, 5.0, 4.0],
+            "c": ["a", "c", "b"],
+        }
+    )
+    # this triggers fast path as head is equal to n-rows
+    assert df.lazy().sort("b").head(3).collect().to_dict(False) == {
+        "a": [None, 2, 1],
+        "b": [4.0, 5.0, 6.0],
+        "c": ["b", "c", "a"],
+    }
+
+
+def test_sorted_flag_groupby_dynamic() -> None:
+    df = pl.DataFrame({"ts": [date(2020, 1, 1), date(2020, 1, 2)], "val": [1, 2]})
+    assert (
+        (
+            df.groupby_dynamic(pl.col("ts").set_sorted(), every="1d").agg(
+                pl.col("val").sum()
+            )
+        )
+        .to_series()
+        .flags["SORTED_ASC"]
+    )

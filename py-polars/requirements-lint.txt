@@ -1,5 +1,5 @@
 black==23.3.0
 blackdoc==0.3.8
-mypy==1.1.1
-ruff==0.0.259
+mypy==1.2.0
+ruff==0.0.262
 typos==1.14.3

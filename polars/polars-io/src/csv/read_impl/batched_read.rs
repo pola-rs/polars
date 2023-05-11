@@ -193,7 +193,8 @@ impl<'a> CoreReader<'a> {
         let reader_bytes = self.reader_bytes.take().unwrap();
 
         let ReaderBytes::Mapped(bytes, mut file) = &reader_bytes else { unreachable!() };
-        let (_, starting_point_offset) = self.find_starting_point(bytes, self.eol_char)?;
+        let (_, starting_point_offset) =
+            self.find_starting_point(bytes, self.quote_char, self.eol_char)?;
         if let Some(starting_point_offset) = starting_point_offset {
             file.seek(SeekFrom::Current(starting_point_offset as i64))
                 .unwrap();

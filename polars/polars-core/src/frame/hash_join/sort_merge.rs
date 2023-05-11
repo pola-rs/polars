@@ -1,11 +1,11 @@
 #[cfg(feature = "performant")]
 use polars_arrow::kernels::sorted_join;
-#[cfg(feature = "performant")]
-use polars_utils::flatten;
 
 use super::*;
 #[cfg(feature = "performant")]
 use crate::utils::_split_offsets;
+#[cfg(feature = "performant")]
+use crate::utils::flatten::flatten_par;
 
 #[cfg(feature = "performant")]
 fn par_sorted_merge_left_impl<T>(
@@ -33,7 +33,7 @@ where
     let lefts = indexes.iter().map(|t| &t.0).collect::<Vec<_>>();
     let rights = indexes.iter().map(|t| &t.1).collect::<Vec<_>>();
 
-    (flatten(&lefts, None), flatten(&rights, None))
+    (flatten_par(&lefts), flatten_par(&rights))
 }
 
 #[cfg(feature = "performant")]
@@ -106,11 +106,11 @@ where
     let lefts = indexes.iter().map(|t| &t.0).collect::<Vec<_>>();
     let rights = indexes.iter().map(|t| &t.1).collect::<Vec<_>>();
 
-    (flatten(&lefts, None), flatten(&rights, None))
+    (flatten_par(&lefts), flatten_par(&rights))
 }
 
 #[cfg(feature = "performant")]
-pub(super) fn par_sorted_merge_inner(
+pub(super) fn par_sorted_merge_inner_no_nulls(
     s_left: &Series,
     s_right: &Series,
 ) -> (Vec<IdxSize>, Vec<IdxSize>) {
@@ -198,14 +198,18 @@ pub fn _sort_or_hash_inner(
         .map(|s| s.parse::<f32>().unwrap())
         .unwrap_or(1.0);
     let is_numeric = s_left.dtype().to_physical().is_numeric();
-    match (s_left.is_sorted_flag(), s_right.is_sorted_flag()) {
-        (IsSorted::Ascending, IsSorted::Ascending) if is_numeric => {
+
+    let no_nulls = s_left.null_count() == 0 && s_right.null_count() == 0;
+    match (s_left.is_sorted_flag(), s_right.is_sorted_flag(), no_nulls) {
+        (IsSorted::Ascending, IsSorted::Ascending, true) if is_numeric => {
             if verbose {
                 eprintln!("inner join: keys are sorted: use sorted merge join");
             }
-            (par_sorted_merge_inner(s_left, s_right), true)
+            (par_sorted_merge_inner_no_nulls(s_left, s_right), true)
         }
-        (IsSorted::Ascending, _) if is_numeric && size_factor_rhs < size_factor_acceptable => {
+        (IsSorted::Ascending, _, true)
+            if is_numeric && size_factor_rhs < size_factor_acceptable =>
+        {
             if verbose {
                 eprintln!("right key will be descending sorted in inner join operation.")
             }
@@ -216,7 +220,7 @@ pub fn _sort_or_hash_inner(
                 multithreaded: true,
             });
             let s_right = unsafe { s_right.take_unchecked(&sort_idx).unwrap() };
-            let ids = par_sorted_merge_inner(s_left, &s_right);
+            let ids = par_sorted_merge_inner_no_nulls(s_left, &s_right);
             let reverse_idx_map = create_reverse_map_from_arg_sort(sort_idx);
 
             let (left, mut right) = ids;
@@ -229,7 +233,9 @@ pub fn _sort_or_hash_inner(
 
             ((left, right), true)
         }
-        (_, IsSorted::Ascending) if is_numeric && size_factor_lhs < size_factor_acceptable => {
+        (_, IsSorted::Ascending, true)
+            if is_numeric && size_factor_lhs < size_factor_acceptable =>
+        {
             if verbose {
                 eprintln!("left key will be descending sorted in inner join operation.")
             }
@@ -240,7 +246,7 @@ pub fn _sort_or_hash_inner(
                 multithreaded: true,
             });
             let s_left = unsafe { s_left.take_unchecked(&sort_idx).unwrap() };
-            let ids = par_sorted_merge_inner(&s_left, s_right);
+            let ids = par_sorted_merge_inner_no_nulls(&s_left, s_right);
             let reverse_idx_map = create_reverse_map_from_arg_sort(sort_idx);
 
             let (mut left, right) = ids;
@@ -271,15 +277,19 @@ pub(super) fn sort_or_hash_left(s_left: &Series, s_right: &Series, verbose: bool
         .unwrap_or(1.0);
     let is_numeric = s_left.dtype().to_physical().is_numeric();
 
-    match (s_left.is_sorted_flag(), s_right.is_sorted_flag()) {
-        (IsSorted::Ascending, IsSorted::Ascending) if is_numeric => {
+    let no_nulls = s_left.null_count() == 0 && s_right.null_count() == 0;
+
+    match (s_left.is_sorted_flag(), s_right.is_sorted_flag(), no_nulls) {
+        (IsSorted::Ascending, IsSorted::Ascending, true) if is_numeric => {
             if verbose {
                 eprintln!("left join: keys are sorted: use sorted merge join");
             }
             let (left_idx, right_idx) = par_sorted_merge_left(s_left, s_right);
             to_left_join_ids(left_idx, right_idx)
         }
-        (IsSorted::Ascending, _) if is_numeric && size_factor_rhs < size_factor_acceptable => {
+        (IsSorted::Ascending, _, true)
+            if is_numeric && size_factor_rhs < size_factor_acceptable =>
+        {
             if verbose {
                 eprintln!("right key will be reverse sorted in left join operation.")
             }

@@ -1,22 +1,51 @@
+import sys
 from datetime import date, datetime
 from typing import Iterator
 
+import pytest
+
 import polars as pl
+from polars.dependencies import _ZONEINFO_AVAILABLE
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
+
+if sys.version_info >= (3, 9):
+    from zoneinfo import ZoneInfo
+elif _ZONEINFO_AVAILABLE:
+    # Import from submodule due to typing issue with backports.zoneinfo package:
+    # https://github.com/pganssle/zoneinfo/issues/125
+    from backports.zoneinfo._zoneinfo import ZoneInfo
 
 
 def test_transpose_supertype() -> None:
-    assert pl.DataFrame(
-        {"a": [1, 2, 3], "b": ["foo", "bar", "ham"]}
-    ).transpose().to_dict(False) == {
-        "column_0": ["1", "foo"],
-        "column_1": ["2", "bar"],
-        "column_2": ["3", "ham"],
-    }
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["foo", "bar", "ham"]})
+    result = df.transpose()
+    expected = pl.DataFrame(
+        {
+            "column_0": ["1", "foo"],
+            "column_1": ["2", "bar"],
+            "column_2": ["3", "ham"],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_transpose_tz_naive_and_tz_aware() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [datetime(2020, 1, 1)],
+            "b": [datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu"))],
+        }
+    )
+    with pytest.raises(
+        ComputeError,
+        match=r"failed to determine supertype of datetime\[μs\] and datetime\[μs, Asia/Kathmandu\]",
+    ):
+        df.transpose()
 
 
 def test_transpose_struct() -> None:
-    assert pl.DataFrame(
+    df = pl.DataFrame(
         {
             "a": ["foo", "bar", "ham"],
             "b": [
@@ -25,29 +54,35 @@ def test_transpose_struct() -> None:
                 {"a": date(2022, 1, 3), "b": False},
             ],
         }
-    ).transpose().to_dict(False) == {
-        "column_0": ["foo", "{2022-01-01,true}"],
-        "column_1": ["bar", "{2022-01-02,false}"],
-        "column_2": ["ham", "{2022-01-03,false}"],
-    }
+    )
+    result = df.transpose()
+    expected = pl.DataFrame(
+        {
+            "column_0": ["foo", "{2022-01-01,true}"],
+            "column_1": ["bar", "{2022-01-02,false}"],
+            "column_2": ["ham", "{2022-01-03,false}"],
+        }
+    )
+    assert_frame_equal(result, expected)
 
-    assert (
-        pl.DataFrame(
-            {
-                "b": [
-                    {"a": date(2022, 1, 1), "b": True},
-                    {"a": date(2022, 1, 2), "b": False},
-                    {"a": date(2022, 1, 3), "b": False},
-                ]
-            }
-        )
-        .transpose()
-        .to_dict(False)
-    ) == {
-        "column_0": [{"a": date(2022, 1, 1), "b": True}],
-        "column_1": [{"a": date(2022, 1, 2), "b": False}],
-        "column_2": [{"a": date(2022, 1, 3), "b": False}],
-    }
+    df = pl.DataFrame(
+        {
+            "b": [
+                {"a": date(2022, 1, 1), "b": True},
+                {"a": date(2022, 1, 2), "b": False},
+                {"a": date(2022, 1, 3), "b": False},
+            ]
+        }
+    )
+    result = df.transpose()
+    expected = pl.DataFrame(
+        {
+            "column_0": [{"a": date(2022, 1, 1), "b": True}],
+            "column_1": [{"a": date(2022, 1, 2), "b": False}],
+            "column_2": [{"a": date(2022, 1, 3), "b": False}],
+        }
+    )
+    assert_frame_equal(result, expected)
 
 
 def test_transpose_arguments() -> None:
@@ -105,13 +140,18 @@ def test_transpose_arguments() -> None:
 
 
 def test_transpose_logical_data() -> None:
-    assert pl.DataFrame(
+    df = pl.DataFrame(
         {
             "a": [date(2022, 2, 1), date(2022, 2, 2), date(2022, 1, 3)],
             "b": [datetime(2022, 1, 1), datetime(2022, 1, 2), datetime(2022, 1, 3)],
         }
-    ).transpose().to_dict(False) == {
-        "column_0": [datetime(2022, 2, 1, 0, 0), datetime(2022, 1, 1, 0, 0)],
-        "column_1": [datetime(2022, 2, 2, 0, 0), datetime(2022, 1, 2, 0, 0)],
-        "column_2": [datetime(2022, 1, 3, 0, 0), datetime(2022, 1, 3, 0, 0)],
-    }
+    )
+    result = df.transpose()
+    expected = pl.DataFrame(
+        {
+            "column_0": [datetime(2022, 2, 1, 0, 0), datetime(2022, 1, 1, 0, 0)],
+            "column_1": [datetime(2022, 2, 2, 0, 0), datetime(2022, 1, 2, 0, 0)],
+            "column_2": [datetime(2022, 1, 3, 0, 0), datetime(2022, 1, 3, 0, 0)],
+        }
+    )
+    assert_frame_equal(result, expected)

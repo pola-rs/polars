@@ -1,3 +1,5 @@
+use std::fmt::Write;
+
 use arrow::temporal_conversions::{time64ns_to_time, NANOSECONDS};
 use chrono::Timelike;
 
@@ -16,6 +18,45 @@ pub(crate) fn time_to_time64ns(time: &NaiveTime) -> i64 {
 }
 
 impl TimeChunked {
+    /// Convert from Time into Utf8 with the given format.
+    /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+    pub fn to_string(&self, format: &str) -> Utf8Chunked {
+        let time = NaiveTime::from_hms_opt(0, 0, 0).unwrap();
+        let fmted = format!("{}", time.format(format));
+
+        let mut ca: Utf8Chunked = self.apply_kernel_cast(&|arr| {
+            let mut buf = String::new();
+            let mut mutarr =
+                MutableUtf8Array::with_capacities(arr.len(), arr.len() * fmted.len() + 1);
+
+            for opt in arr.into_iter() {
+                match opt {
+                    None => mutarr.push_null(),
+                    Some(v) => {
+                        buf.clear();
+                        let timefmt = time64ns_to_time(*v).format(format);
+                        write!(buf, "{timefmt}").unwrap();
+                        mutarr.push(Some(&buf))
+                    }
+                }
+            }
+
+            let arr: Utf8Array<i64> = mutarr.into();
+            Box::new(arr)
+        });
+
+        ca.rename(self.name());
+        ca
+    }
+
+    /// Convert from Time into Utf8 with the given format.
+    /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+    ///
+    /// Alias for `to_string`.
+    pub fn strftime(&self, format: &str) -> Utf8Chunked {
+        self.to_string(format)
+    }
+
     pub fn as_time_iter(&self) -> impl Iterator<Item = Option<NaiveTime>> + TrustedLen + '_ {
         // we know the iterators len
         unsafe {

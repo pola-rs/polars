@@ -210,13 +210,13 @@ impl WindowExpr {
     }
 
     fn is_explicit_list_agg(&self) -> bool {
-        // col("foo").list()
-        // col("foo").list().alias()
+        // col("foo").implode()
+        // col("foo").implode().alias()
         // ..
-        // col("foo").list().alias().alias()
+        // col("foo").implode().alias().alias()
         //
         // but not:
-        // col("foo").list().sum().alias()
+        // col("foo").implode().sum().alias()
         // ..
         // col("foo").min()
         let mut explicit_list = false;
@@ -226,7 +226,7 @@ impl WindowExpr {
                 let mut finishes_list = false;
                 for e in &**function {
                     match e {
-                        Expr::Agg(AggExpr::List(_)) => {
+                        Expr::Agg(AggExpr::Implode(_)) => {
                             finishes_list = true;
                         }
                         Expr::Alias(_, _) => {}
@@ -407,6 +407,12 @@ impl PhysicalExpr for WindowExpr {
         //          This can be used to reverse, sort, shuffle etc. the values in a group
 
         // 4. select the final column and return
+
+        if df.height() == 0 {
+            let field = self.phys_function.to_field(&df.schema())?;
+            return Ok(Series::full_null(field.name(), 0, field.data_type()));
+        }
+
         let groupby_columns = self
             .group_by
             .iter()

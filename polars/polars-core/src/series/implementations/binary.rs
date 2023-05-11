@@ -9,7 +9,6 @@ use crate::chunked_array::ops::compare_inner::{
 };
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
-use crate::fmt::FmtList;
 use crate::frame::groupby::*;
 use crate::frame::hash_join::ZipOuterJoinColumn;
 use crate::prelude::*;
@@ -88,8 +87,8 @@ impl private::PrivateSeries for SeriesWrap<BinaryChunked> {
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
     }
 
-    fn arg_sort_multiple(&self, by: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {
-        self.0.arg_sort_multiple(by, descending)
+    fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
+        self.0.arg_sort_multiple(options)
     }
 }
 
@@ -186,7 +185,7 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
         if self.0.is_sorted_ascending_flag()
             && (idx.is_sorted_ascending_flag() || idx.is_sorted_descending_flag())
         {
-            out.set_sorted_flag(idx.is_sorted_flag2())
+            out.set_sorted_flag(idx.is_sorted_flag())
         }
 
         Ok(out.into_series())
@@ -283,9 +282,6 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
     }
     fn min_as_series(&self) -> Series {
         ChunkAggSeries::min_as_series(&self.0)
-    }
-    fn fmt_list(&self) -> String {
-        FmtList::fmt_list(&self.0)
     }
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))

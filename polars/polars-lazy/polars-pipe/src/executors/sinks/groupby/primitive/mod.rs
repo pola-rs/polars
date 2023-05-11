@@ -28,7 +28,6 @@ use crate::executors::sinks::utils::load_vec;
 use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
-use crate::pipeline::FORCE_OOC_GROUPBY;
 
 // hash + value
 #[derive(Eq, Copy, Clone)]
@@ -92,7 +91,7 @@ where
         output_schema: SchemaRef,
         slice: Option<(i64, usize)>,
     ) -> Self {
-        let ooc = std::env::var(FORCE_OOC_GROUPBY).is_ok();
+        // this ooc is broken fix later
         Self::new_inner(
             key,
             aggregation_columns,
@@ -101,7 +100,7 @@ where
             output_schema,
             slice,
             None,
-            ooc,
+            false,
         )
     }
 
@@ -174,7 +173,7 @@ where
                         let agg_fns =
                             unsafe { std::slice::from_raw_parts_mut(ptr, aggregators_len) };
                         let mut key_builder = PrimitiveChunkedBuilder::<K>::new(
-                            self.output_schema.get_index(0).unwrap().0,
+                            self.output_schema.get_at_index(0).unwrap().0,
                             agg_map.len(),
                         );
                         let dtypes = agg_fns
@@ -352,7 +351,7 @@ where
         let ca: &ChunkedArray<K> = s.as_ref().as_ref();
 
         // sorted fast path
-        if matches!(ca.is_sorted_flag2(), IsSorted::Ascending) && ca.null_count() == 0 {
+        if matches!(ca.is_sorted_flag(), IsSorted::Ascending) && ca.null_count() == 0 {
             return self.sink_sorted(ca, chunk);
         }
 
@@ -418,7 +417,7 @@ where
                             entry.insert(*key, offset);
                             // initialize the aggregators
                             for agg_fn in &self.agg_fns {
-                                self.aggregators.push(agg_fn.split2())
+                                self.aggregators.push(agg_fn.split())
                             }
                             offset
                         }
@@ -461,7 +460,7 @@ where
         let mut new = Self::new_inner(
             self.key.clone(),
             self.aggregation_columns.clone(),
-            self.agg_fns.iter().map(|func| func.split2()).collect(),
+            self.agg_fns.iter().map(|func| func.split()).collect(),
             self.input_schema.clone(),
             self.output_schema.clone(),
             self.slice,
@@ -509,7 +508,7 @@ where
             entry.insert(key, offset);
             // initialize the aggregators
             for agg_fn in agg_fns {
-                current_aggregators.push(agg_fn.split2())
+                current_aggregators.push(agg_fn.split())
             }
             offset
         }

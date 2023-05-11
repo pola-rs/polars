@@ -33,7 +33,7 @@
 //! let df_read = IpcStreamReader::new(buf).finish().unwrap();
 //! assert!(df.frame_equal(&df_read));
 //! ```
-use std::io::{Read, Seek, Write};
+use std::io::{Read, Write};
 use std::path::PathBuf;
 
 use arrow::io::ipc::read::{StreamMetadata, StreamState};
@@ -73,10 +73,10 @@ pub struct IpcStreamReader<R> {
     metadata: Option<StreamMetadata>,
 }
 
-impl<R: Read + Seek> IpcStreamReader<R> {
+impl<R: Read> IpcStreamReader<R> {
     /// Get schema of the Ipc Stream File
     pub fn schema(&mut self) -> PolarsResult<Schema> {
-        Ok((self.metadata()?.schema.fields.iter()).into())
+        Ok(Schema::from_iter(&self.metadata()?.schema.fields))
     }
 
     /// Get arrow schema of the Ipc Stream File, this is faster than creating a polars schema.
@@ -122,7 +122,7 @@ impl<R: Read + Seek> IpcStreamReader<R> {
 
 impl<R> ArrowReader for read::StreamReader<R>
 where
-    R: Read + Seek,
+    R: Read,
 {
     fn next_record_batch(&mut self) -> ArrowResult<Option<ArrowChunk>> {
         self.next().map_or(Ok(None), |v| match v {
@@ -137,7 +137,7 @@ where
 
 impl<R> SerReader<R> for IpcStreamReader<R>
 where
-    R: Read + Seek,
+    R: Read,
 {
     fn new(reader: R) -> Self {
         IpcStreamReader {

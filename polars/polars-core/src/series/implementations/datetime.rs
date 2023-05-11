@@ -6,7 +6,6 @@ use ahash::RandomState;
 use super::{private, IntoSeries, SeriesTrait, SeriesWrap, *};
 use crate::chunked_array::ops::explode::ExplodeByOffsets;
 use crate::chunked_array::AsSinglePtr;
-use crate::fmt::FmtList;
 use crate::frame::groupby::*;
 use crate::frame::hash_join::*;
 use crate::prelude::*;
@@ -163,8 +162,8 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
         self.0.group_tuples(multithreaded, sorted)
     }
 
-    fn arg_sort_multiple(&self, by: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {
-        self.0.deref().arg_sort_multiple(by, descending)
+    fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
+        self.0.deref().arg_sort_multiple(options)
     }
 }
 
@@ -281,7 +280,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         if self.0.is_sorted_ascending_flag()
             && (idx.is_sorted_ascending_flag() || idx.is_sorted_descending_flag())
         {
-            out.set_sorted_flag(idx.is_sorted_flag2())
+            out.set_sorted_flag(idx.is_sorted_flag())
         }
 
         Ok(out
@@ -324,13 +323,13 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
         match (data_type, self.0.time_unit()) {
             (DataType::Utf8, TimeUnit::Milliseconds) => {
-                Ok(self.0.strftime("%F %T%.3f")?.into_series())
+                Ok(self.0.to_string("%F %T%.3f")?.into_series())
             }
             (DataType::Utf8, TimeUnit::Microseconds) => {
-                Ok(self.0.strftime("%F %T%.6f")?.into_series())
+                Ok(self.0.to_string("%F %T%.6f")?.into_series())
             }
             (DataType::Utf8, TimeUnit::Nanoseconds) => {
-                Ok(self.0.strftime("%F %T%.9f")?.into_series())
+                Ok(self.0.to_string("%F %T%.9f")?.into_series())
             }
             _ => self.0.cast(data_type),
         }
@@ -444,10 +443,6 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         Ok(Int32Chunked::full_null(self.name(), 1)
             .cast(self.dtype())
             .unwrap())
-    }
-
-    fn fmt_list(&self) -> String {
-        FmtList::fmt_list(&self.0)
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

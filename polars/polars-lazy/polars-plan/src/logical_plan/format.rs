@@ -143,7 +143,7 @@ impl LogicalPlan {
                 write!(f, "{:indent$}FILTER {predicate:?} FROM", "")?;
                 input._format(f, indent)
             }
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             CsvScan {
                 path,
                 options,
@@ -343,7 +343,7 @@ impl Debug for Expr {
                     Mean(expr) => write!(f, "{expr:?}.mean()"),
                     First(expr) => write!(f, "{expr:?}.first()"),
                     Last(expr) => write!(f, "{expr:?}.last()"),
-                    List(expr) => write!(f, "{expr:?}.list()"),
+                    Implode(expr) => write!(f, "{expr:?}.list()"),
                     NUnique(expr) => write!(f, "{expr:?}.n_unique()"),
                     Sum(expr) => write!(f, "{expr:?}.sum()"),
                     AggGroups(expr) => write!(f, "{expr:?}.groups()"),
@@ -399,32 +399,14 @@ impl Debug for Expr {
             RenameAlias { expr, .. } => write!(f, "RENAME_ALIAS {expr:?}"),
             Columns(names) => write!(f, "COLUMNS({names:?})"),
             DtypeColumn(dt) => write!(f, "COLUMN OF DTYPE: {dt:?}"),
+            Cache { input, .. } => write!(f, "CACHE {input:?}"),
         }
     }
 }
 
 impl Debug for Operator {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        use Operator::*;
-        let s = match self {
-            Eq => "==",
-            NotEq => "!=",
-            Lt => "<",
-            LtEq => "<=",
-            Gt => ">",
-            GtEq => ">=",
-            Plus => "+",
-            Minus => "-",
-            Multiply => "*",
-            Divide => "/",
-            TrueDivide => "/",
-            FloorDivide => "//",
-            Modulus => "%",
-            And => "&",
-            Or => "|",
-            Xor => "^",
-        };
-        write!(f, "{s}")
+        Display::fmt(self, f)
     }
 }
 

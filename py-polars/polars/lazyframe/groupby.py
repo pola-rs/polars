@@ -6,8 +6,7 @@ from polars import functions as F
 from polars.utils._parse_expr_input import expr_to_lit_or_expr, selection_to_pyexpr_list
 
 if TYPE_CHECKING:
-    from polars.dataframe import DataFrame
-    from polars.lazyframe import LazyFrame
+    from polars import DataFrame, LazyFrame
     from polars.polars import PyLazyGroupBy
     from polars.type_aliases import IntoExpr, RollingInterpolationMethod, SchemaDict
 
@@ -119,6 +118,10 @@ class LazyGroupBy(Generic[LDF]):
         └─────┴───────┴────────────────┘
 
         """
+        if isinstance(aggs, dict):
+            raise ValueError(
+                f"'aggs' argument should be one or multiple expressions, got: '{aggs}'."
+            )
         if aggs is None and not named_aggs:
             raise ValueError("Expected at least one of 'aggs' or '**named_aggs'")
 
@@ -342,6 +345,9 @@ class LazyGroupBy(Generic[LDF]):
     def count(self) -> LDF:
         """
         Count the number of values in each group.
+
+        .. warning::
+            `null` is deemed a value in this context.
 
         Examples
         --------

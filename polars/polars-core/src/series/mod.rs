@@ -21,6 +21,7 @@ use std::sync::Arc;
 
 use ahash::RandomState;
 use arrow::compute::aggregate::estimated_bytes_size;
+use arrow::offset::Offsets;
 pub use from::*;
 pub use iterator::{SeriesIter, SeriesPhysIter};
 use num_traits::NumCast;
@@ -266,6 +267,15 @@ impl Series {
     /// This can lead to invalid memory access in downstream code.
     pub unsafe fn cast_unchecked(&self, dtype: &DataType) -> PolarsResult<Self> {
         match self.dtype() {
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(_) => {
+                let ca = self.struct_().unwrap();
+                ca.cast_unchecked(dtype)
+            }
+            DataType::List(_) => {
+                let ca = self.list().unwrap();
+                ca.cast_unchecked(dtype)
+            }
             dt if dt.is_numeric() => {
                 with_match_physical_numeric_polars_type!(dt, |$T| {
                     let ca: &ChunkedArray<$T> = self.as_ref().as_ref().as_ref();
@@ -392,6 +402,7 @@ impl Series {
     /// * Datetime-> Int64
     /// * Time -> Int64
     /// * Categorical -> UInt32
+    /// * List(inner) -> List(physical of inner)
     ///
     pub fn to_physical_repr(&self) -> Cow<Series> {
         use DataType::*;
@@ -400,6 +411,7 @@ impl Series {
             Datetime(_, _) | Duration(_) | Time => Cow::Owned(self.cast(&Int64).unwrap()),
             #[cfg(feature = "dtype-categorical")]
             Categorical(_) => Cow::Owned(self.cast(&UInt32).unwrap()),
+            List(inner) => Cow::Owned(self.cast(&List(Box::new(inner.to_physical()))).unwrap()),
             _ => Cow::Borrowed(self),
         }
     }
@@ -543,7 +555,7 @@ impl Series {
         if self.is_empty()
             && (self.dtype().is_numeric() || matches!(self.dtype(), DataType::Boolean))
         {
-            return Series::new("", [0])
+            return Series::new(self.name(), [0])
                 .cast(self.dtype())
                 .unwrap()
                 .sum_as_series();
@@ -616,6 +628,12 @@ impl Series {
                 Float64 => {
                     let ca = self.f64().unwrap();
                     ca.cumsum(reverse).into_series()
+                }
+                #[cfg(feature = "dtype-duration")]
+                Duration(tu) => {
+                    let ca = self.to_physical_repr();
+                    let ca = ca.i64().unwrap();
+                    ca.cumsum(reverse).cast(&Duration(*tu)).unwrap()
                 }
                 dt => panic!("cumsum not supported for dtype: {dt:?}"),
             }
@@ -714,8 +732,15 @@ impl Series {
     pub fn strict_cast(&self, dtype: &DataType) -> PolarsResult<Series> {
         let null_count = self.null_count();
         let len = self.len();
-        if null_count == len {
-            return Ok(Series::full_null(self.name(), len, dtype));
+
+        match self.dtype() {
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(_) => {}
+            _ => {
+                if null_count == len {
+                    return Ok(Series::full_null(self.name(), len, dtype));
+                }
+            }
         }
         let s = self.0.cast(dtype)?;
         if null_count != s.null_count() {
@@ -946,6 +971,22 @@ impl Series {
 
         size
     }
+
+    /// Packs every element into a list
+    pub fn as_list(&self) -> ListChunked {
+        let s = self.rechunk();
+        let values = s.to_arrow(0);
+        let offsets = (0i64..(s.len() as i64 + 1)).collect::<Vec<_>>();
+        let offsets = unsafe { Offsets::new_unchecked(offsets) };
+
+        let new_arr = LargeListArray::new(
+            DataType::List(Box::new(s.dtype().clone())).to_arrow(),
+            offsets.into(),
+            values,
+            None,
+        );
+        unsafe { ListChunked::from_chunks(s.name(), vec![Box::new(new_arr)]) }
+    }
 }
 
 impl Deref for Series {
@@ -973,17 +1014,23 @@ where
     T: 'static + PolarsDataType,
 {
     fn as_ref(&self) -> &ChunkedArray<T> {
-        if &T::get_dtype() == self.dtype() ||
-            // needed because we want to get ref of List no matter what the inner type is.
-            (matches!(T::get_dtype(), DataType::List(_)) && matches!(self.dtype(), DataType::List(_)))
-        {
-            unsafe { &*(self as *const dyn SeriesTrait as *const ChunkedArray<T>) }
-        } else {
-            panic!(
-                "implementation error, cannot get ref {:?} from {:?}",
-                T::get_dtype(),
-                self.dtype()
-            )
+        match T::get_dtype() {
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(None, None) => panic!("impl error"),
+            _ => {
+                if &T::get_dtype() == self.dtype() ||
+                    // needed because we want to get ref of List no matter what the inner type is.
+                    (matches!(T::get_dtype(), DataType::List(_)) && matches!(self.dtype(), DataType::List(_)))
+                {
+                    unsafe { &*(self as *const dyn SeriesTrait as *const ChunkedArray<T>) }
+                } else {
+                    panic!(
+                        "implementation error, cannot get ref {:?} from {:?}",
+                        T::get_dtype(),
+                        self.dtype()
+                    );
+                }
+            }
         }
     }
 }

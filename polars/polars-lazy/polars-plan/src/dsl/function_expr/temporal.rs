@@ -19,13 +19,9 @@ pub(super) fn date_offset(s: Series, offset: Duration) -> PolarsResult<Series> {
             date_offset(s, offset).and_then(|s| s.cast(&DataType::Date))
         }
         DataType::Datetime(tu, tz) => {
-            // drop series, so that we might modify in place
-            let mut ca = {
-                let me = std::mem::ManuallyDrop::new(s);
-                me.datetime().unwrap().clone()
-            };
+            let ca = s.datetime().unwrap();
 
-            fn adder<T: PolarsTimeZone>(
+            fn offset_fn<T: PolarsTimeZone>(
                 tu: TimeUnit,
             ) -> fn(&Duration, i64, Option<&T>) -> PolarsResult<i64> {
                 match tu {
@@ -35,26 +31,27 @@ pub(super) fn date_offset(s: Series, offset: Duration) -> PolarsResult<Series> {
                 }
             }
 
-            match tz {
+            let out = match tz {
                 #[cfg(feature = "timezones")]
-                Some(tz) => match tz.parse::<Tz>() {
-                    // TODO write `try_apply_mut` and use that instead of `apply_mut`,
-                    // then remove `unwrap`.
+                Some(ref tz) => match tz.parse::<Tz>() {
                     Ok(tz) => {
-                        ca.0.apply_mut(|v| adder(tu)(&offset, v, Some(&tz)).unwrap())
+                        let offset_fn = offset_fn(tu);
+                        ca.0.try_apply(|v| offset_fn(&offset, v, Some(&tz)))
                     }
-                    Err(_) => match parse_offset(&tz) {
+                    Err(_) => match parse_offset(tz) {
                         Ok(tz) => {
-                            ca.0.apply_mut(|v| adder(tu)(&offset, v, Some(&tz)).unwrap())
+                            let offset_fn = offset_fn(tu);
+                            ca.0.try_apply(|v| offset_fn(&offset, v, Some(&tz)))
                         }
                         Err(_) => unreachable!(),
                     },
                 },
                 _ => {
-                    ca.0.apply_mut(|v| adder(tu)(&offset, v, NO_TIMEZONE).unwrap())
+                    let offset_fn = offset_fn(tu);
+                    ca.0.try_apply(|v| offset_fn(&offset, v, NO_TIMEZONE))
                 }
-            };
-            Ok(ca.into_series())
+            }?;
+            out.cast(&DataType::Datetime(tu, tz))
         }
         dt => polars_bail!(
             ComputeError: "cannot use 'date_offset' on Series of datatype {}", dt,
@@ -66,9 +63,26 @@ pub(super) fn combine(s: &[Series], tu: TimeUnit) -> PolarsResult<Series> {
     let date = &s[0];
     let time = &s[1];
 
+    let tz = match date.dtype() {
+        DataType::Date => None,
+        DataType::Datetime(_, tz) => tz.as_ref(),
+        _dtype => {
+            polars_bail!(ComputeError: format!("expected Date or Datetime, got {}", _dtype))
+        }
+    };
+
     let date = date.cast(&DataType::Date)?;
     let datetime = date.cast(&DataType::Datetime(tu, None)).unwrap();
 
     let duration = time.cast(&DataType::Duration(tu))?;
-    Ok(datetime + duration)
+    let result_naive = datetime + duration;
+    match tz {
+        #[cfg(feature = "timezones")]
+        Some(tz) => Ok(result_naive
+            .datetime()
+            .unwrap()
+            .replace_time_zone(Some(tz), None)?
+            .into()),
+        _ => Ok(result_naive),
+    }
 }

@@ -87,7 +87,11 @@ impl DataFrame {
                 }
             }
             let keys_df = prepare_dataframe_unsorted(&by);
-            groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
+            if multithreaded {
+                groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
+            } else {
+                groupby_multiple_keys(keys_df, sorted)
+            }
         };
         Ok(GroupBy::new(self, by, groups?, None))
     }
@@ -261,7 +265,7 @@ impl<'df> GroupBy<'df> {
                 .map(|s| {
                     match groups {
                         GroupsProxy::Idx(groups) => {
-                            let mut iter = groups.iter().map(|(first, _idx)| first as usize);
+                            let mut iter = groups.first().iter().map(|first| *first as usize);
                             // Safety:
                             // groups are always in bounds
                             let mut out = unsafe { s.take_iter_unchecked(&mut iter) };
@@ -761,7 +765,7 @@ impl<'df> GroupBy<'df> {
     pub fn agg_list(&self) -> PolarsResult<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
-            let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::List);
+            let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Implode);
             let mut agg = unsafe { agg_col.agg_list(&self.groups) };
             agg.rename(&new_name);
             cols.push(agg);
@@ -804,7 +808,7 @@ impl<'df> GroupBy<'df> {
             .collect::<PolarsResult<Vec<_>>>()?;
 
         let mut df = accumulate_dataframes_vertical(dfs)?;
-        df.as_single_chunk();
+        df.as_single_chunk_par();
         Ok(df)
     }
 
@@ -826,7 +830,7 @@ impl<'df> GroupBy<'df> {
             .collect::<PolarsResult<Vec<_>>>()?;
 
         let mut df = accumulate_dataframes_vertical(dfs)?;
-        df.as_single_chunk();
+        df.as_single_chunk_par();
         Ok(df)
     }
 }
@@ -853,7 +857,7 @@ pub enum GroupByMethod {
     NUnique,
     Quantile(f64, QuantileInterpolOptions),
     Count,
-    List,
+    Implode,
     Std(u8),
     Var(u8),
 }
@@ -875,7 +879,7 @@ impl Display for GroupByMethod {
             NUnique => "n_unique",
             Quantile(_, _) => "quantile",
             Count => "count",
-            List => "list",
+            Implode => "list",
             Std(_) => "std",
             Var(_) => "var",
         };
@@ -899,7 +903,7 @@ pub fn fmt_groupby_column(name: &str, method: GroupByMethod) -> String {
         Groups => "groups".to_string(),
         NUnique => format!("{name}_n_unique"),
         Count => format!("{name}_count"),
-        List => format!("{name}_agg_list"),
+        Implode => format!("{name}_agg_list"),
         Quantile(quantile, _interpol) => format!("{name}_quantile_{quantile:.2}"),
         Std(_) => format!("{name}_agg_std"),
         Var(_) => format!("{name}_agg_var"),
@@ -910,9 +914,7 @@ pub fn fmt_groupby_column(name: &str, method: GroupByMethod) -> String {
 mod test {
     use num_traits::FloatConst;
 
-    use crate::frame::groupby::groupby;
     use crate::prelude::*;
-    use crate::utils::split_ca;
 
     #[test]
     #[cfg(feature = "dtype-date")]

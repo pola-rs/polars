@@ -76,6 +76,27 @@ pub(super) fn predicate_at_scan(
     }
 }
 
+fn shifts_elements(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    let matches = |e: &AExpr| {
+        matches!(
+            e,
+            AExpr::Function {
+                function: FunctionExpr::Shift(_) | FunctionExpr::ShiftAndFill { .. },
+                ..
+            }
+        )
+    };
+    has_aexpr(node, expr_arena, matches)
+}
+
+pub(super) fn predicate_is_sort_boundary(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    let matches = |e: &AExpr| match e {
+        AExpr::Window { function, .. } => shifts_elements(*function, expr_arena),
+        _ => false,
+    };
+    has_aexpr(node, expr_arena, matches)
+}
+
 // this checks if a predicate from a node upstream can pass
 // the predicate in this filter
 // Cases where this cannot be the case:

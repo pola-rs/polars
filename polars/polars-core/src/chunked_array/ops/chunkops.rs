@@ -1,6 +1,6 @@
 #[cfg(feature = "object")]
 use arrow::array::Array;
-use arrow::compute::concatenate;
+use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
 
 use super::*;
 #[cfg(feature = "object")]
@@ -93,10 +93,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             }
             _ => {
                 fn inner_rechunk(chunks: &[ArrayRef]) -> Vec<ArrayRef> {
-                    vec![concatenate::concatenate(
-                        chunks.iter().map(|a| &**a).collect::<Vec<_>>().as_slice(),
-                    )
-                    .unwrap()]
+                    vec![concatenate_owned_unchecked(chunks).unwrap()]
                 }
 
                 if self.chunks.len() == 1 {

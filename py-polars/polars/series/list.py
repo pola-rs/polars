@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Sequence
 
 from polars import functions as F
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
+from polars.utils.decorators import deprecated_alias
 
 if TYPE_CHECKING:
     from datetime import date, datetime, time
 
-    from polars.expr.expr import Expr
+    from polars import Expr, Series
     from polars.polars import PySeries
-    from polars.series import Series
     from polars.type_aliases import NullBehavior, ToStructStrategy
 
 
@@ -388,10 +388,11 @@ class ListNameSpace:
 
         """
 
+    @deprecated_alias(name_generator="fields")
     def to_struct(
         self,
         n_field_strategy: ToStructStrategy = "first_non_null",
-        name_generator: Callable[[int], str] | None = None,
+        fields: Callable[[int], str] | Sequence[str] | None = None,
     ) -> Series:
         """
         Convert the series of type ``List`` to a series of type ``Struct``.
@@ -400,45 +401,63 @@ class ListNameSpace:
         ----------
         n_field_strategy : {'first_non_null', 'max_width'}
             Strategy to determine the number of fields of the struct.
-            'first_non_null': set number of fields to the length of the first
-            non-zero-length sublist.
-            'max_width': set number of fields as max length of all sublists.
-        name_generator
-            A custom function that can be used to generate the field names.
-            Default field names are `field_0, field_1 .. field_n`
+
+            * "first_non_null": set number of fields equal to the length of the
+              first non zero-length sublist.
+            * "max_width": set number of fields as max length of all sublists.
+
+        fields
+            If the name and number of the desired fields is known in advance
+            a list of field names can be given, which will be assigned by index.
+            Otherwise, to dynamically assign field names, a custom function can be
+            used; if neither are set, fields will be `field_0, field_1 .. field_n`.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"a": [[1, 2, 3], [1, 2]]})
-        >>> df.select([pl.col("a").arr.to_struct()])
-        shape: (2, 1)
-        ┌────────────┐
-        │ a          │
-        │ ---        │
-        │ struct[3]  │
-        ╞════════════╡
-        │ {1,2,3}    │
-        │ {1,2,null} │
-        └────────────┘
-        >>> df.select(
-        ...     [
-        ...         pl.col("a").arr.to_struct(
-        ...             name_generator=lambda idx: f"col_name_{idx}"
-        ...         )
-        ...     ]
-        ... ).to_series().to_list()
-        [{'col_name_0': 1, 'col_name_1': 2, 'col_name_2': 3},
-        {'col_name_0': 1, 'col_name_1': 2, 'col_name_2': None}]
+        Convert list to struct with default field name assignment:
+
+        >>> s1 = pl.Series("n", [[0, 1, 2], [0, 1]])
+        >>> s2 = s1.arr.to_struct()
+        >>> s2
+        shape: (2,)
+        Series: 'n' [struct[3]]
+        [
+            {0,1,2}
+            {0,1,null}
+        ]
+        >>> s2.struct.fields
+        ['field_0', 'field_1', 'field_2']
+
+        Convert list to struct with field name assignment by function/index:
+
+        >>> s3 = s1.arr.to_struct(fields=lambda idx: f"n{idx:02}")
+        >>> s3.struct.fields
+        ['n00', 'n01', 'n02']
+
+        Convert list to struct with field name assignment by index from a list of names:
+
+        >>> s1.arr.to_struct(fields=["one", "two", "three"]).struct.unnest()
+        shape: (2, 3)
+        ┌─────┬─────┬───────┐
+        │ one ┆ two ┆ three │
+        │ --- ┆ --- ┆ ---   │
+        │ i64 ┆ i64 ┆ i64   │
+        ╞═════╪═════╪═══════╡
+        │ 0   ┆ 1   ┆ 2     │
+        │ 0   ┆ 1   ┆ null  │
+        └─────┴─────┴───────┘
 
         """
-        # We set the upper bound to 0.
-        # No need to create the proper schema in eager mode.
-        s = wrap_s(self)
+        s = wrap_s(self._s)
         return (
             s.to_frame()
             .select(
                 F.col(s.name).arr.to_struct(
-                    n_field_strategy, name_generator, upper_bound=0
+                    # note: in eager mode, 'upper_bound' is always zero, as (unlike
+                    # in lazy mode) there is no need to determine/track the schema.
+                    n_field_strategy,
+                    fields,
+                    upper_bound=0,
                 )
             )
             .to_series()

@@ -3,14 +3,13 @@ from __future__ import annotations
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
+import polars._reexport as pl
 import polars.io.ipc
-from polars import internals as pli
 from polars.dependencies import pickle
 from polars.io._utils import _prepare_file_arg
 
 if TYPE_CHECKING:
-    from polars.dataframe import DataFrame
-    from polars.lazyframe import LazyFrame
+    from polars import DataFrame, LazyFrame
 
 
 def _scan_ipc_fsspec(
@@ -24,23 +23,27 @@ def _scan_ipc_fsspec(
     with _prepare_file_arg(source, **storage_options) as data:
         schema = polars.io.ipc.read_ipc_schema(data)
 
-    return pli.LazyFrame._scan_python_function(schema, func_serialized)
+    return pl.LazyFrame._scan_python_function(schema, func_serialized)
 
 
 def _scan_ipc_impl(  # noqa: D417
-    source: str, columns: list[str] | None, **kwargs: Any
+    source: str,
+    columns: list[str] | None,
+    predicate: str | None,
+    n_rows: int | None,
+    **kwargs: Any,
 ) -> DataFrame:
     """
     Take the projected columns and materialize an arrow table.
 
     Parameters
     ----------
-    uri
+    source
         Source URI
     columns
         Columns that are projected
 
     """
-    import polars as pl
+    from polars import read_ipc
 
-    return pl.read_ipc(source, columns=columns, **kwargs)
+    return read_ipc(source, columns=columns, n_rows=n_rows, **kwargs)

@@ -1,5 +1,6 @@
 use polars_core::error::PolarsResult as Result;
 use polars_core::prelude::*;
+use polars_core::series::IsSorted;
 use polars_lazy::prelude::*;
 use polars_ops::prelude::*;
 
@@ -9,7 +10,7 @@ pub fn hist(s: &Series, bins: Option<&Series>, bin_count: Option<usize>) -> Resu
 
     // if the bins are provided, then we can just use them
     let bins = if let Some(bins_in) = bins {
-        Series::new(breakpoint_str, bins_in)
+        Series::new(breakpoint_str, bins_in).sort(false)
     } else {
         // data is sorted, so this is O(1)
         let start = s.min::<f64>().unwrap().floor() - 1.0;
@@ -49,9 +50,11 @@ pub fn hist(s: &Series, bins: Option<&Series>, bin_count: Option<usize>) -> Resu
             "cannot take histogram of non-numeric types; consider a groupby and count"
         ),
     };
+    let mut bins = bins.extend_constant(max_value, 1)?;
+    bins.set_sorted_flag(IsSorted::Ascending);
 
     let cuts_df = df![
-        breakpoint_str => bins.extend_constant(max_value, 1)?
+        breakpoint_str => bins
     ]?;
 
     let cuts_df = cuts_df
@@ -154,9 +157,14 @@ pub fn cut(
     let bins_len = bins.len();
 
     bins.rename(breakpoint_str);
+
+    let mut s_bins = bins
+        .cast(&DataType::Float64)
+        .map_err(|_| PolarsError::ComputeError("expected numeric bins".into()))?
+        .extend_constant(AnyValue::Float64(f64::INFINITY), 1)?;
+    s_bins.set_sorted_flag(IsSorted::Ascending);
     let cuts_df = df![
-        breakpoint_str => bins.cast(&DataType::Float64).map_err(|_| PolarsError::ComputeError("expected numeric bins".into()))?
-            .extend_constant(AnyValue::Float64(f64::INFINITY), 1)?
+        breakpoint_str => s_bins
     ]?;
 
     let cuts_df = if let Some(labels) = labels {

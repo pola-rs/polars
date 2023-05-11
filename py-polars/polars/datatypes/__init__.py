@@ -4,6 +4,7 @@ from polars.datatypes.classes import (
     Categorical,
     DataType,
     DataTypeClass,
+    DataTypeGroup,
     Date,
     Datetime,
     Decimal,
@@ -39,7 +40,9 @@ from polars.datatypes.constants import (
     INTEGER_DTYPES,
     N_INFER_DEFAULT,
     NUMERIC_DTYPES,
+    SIGNED_INTEGER_DTYPES,
     TEMPORAL_DTYPES,
+    UNSIGNED_INTEGER_DTYPES,
 )
 from polars.datatypes.constructor import (
     numpy_type_to_constructor,
@@ -48,7 +51,6 @@ from polars.datatypes.constructor import (
     py_type_to_constructor,
 )
 from polars.datatypes.convert import (
-    dtype_to_arrow_type,
     dtype_to_ctype,
     dtype_to_ffiname,
     dtype_to_py_type,
@@ -58,6 +60,7 @@ from polars.datatypes.convert import (
     py_type_to_arrow_type,
     py_type_to_dtype,
     supported_numpy_char_code,
+    unpack_dtypes,
 )
 from polars.type_aliases import (
     OneOrMoreDataTypes,
@@ -75,6 +78,7 @@ __all__ = [
     "Categorical",
     "DataType",
     "DataTypeClass",
+    "DataTypeGroup",
     "Date",
     "Datetime",
     "Decimal",
@@ -107,16 +111,17 @@ __all__ = [
     "DURATION_DTYPES",
     "FLOAT_DTYPES",
     "INTEGER_DTYPES",
-    "N_INFER_DEFAULT",
     "NUMERIC_DTYPES",
+    "N_INFER_DEFAULT",
+    "SIGNED_INTEGER_DTYPES",
     "TEMPORAL_DTYPES",
+    "UNSIGNED_INTEGER_DTYPES",
     # constructor
     "numpy_type_to_constructor",
     "numpy_values_and_dtype",
     "polars_type_to_constructor",
     "py_type_to_constructor",
     # convert
-    "dtype_to_arrow_type",
     "dtype_to_ctype",
     "dtype_to_ffiname",
     "dtype_to_py_type",
@@ -126,11 +131,12 @@ __all__ = [
     "py_type_to_arrow_type",
     "py_type_to_dtype",
     "supported_numpy_char_code",
+    "unpack_dtypes",
     # type_aliases
     "OneOrMoreDataTypes",
     "PolarsDataType",
     "PolarsTemporalType",
     "PythonDataType",
-    "SchemaDict",
     "SchemaDefinition",
+    "SchemaDict",
 ]

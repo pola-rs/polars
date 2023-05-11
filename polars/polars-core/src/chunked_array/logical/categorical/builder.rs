@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Formatter};
 use std::hash::{Hash, Hasher};
 
 use arrow::array::*;
@@ -46,13 +47,26 @@ impl RevMappingBuilder {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum RevMapping {
     /// Hashmap: maps the indexes from the global cache/categorical array to indexes in the local Utf8Array
     /// Utf8Array: caches the string values
     Global(PlHashMap<u32, u32>, Utf8Array<i64>, u128),
     /// Utf8Array: caches the string values
     Local(Utf8Array<i64>),
+}
+
+impl Debug for RevMapping {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RevMapping::Global(_, _, _) => {
+                write!(f, "global")
+            }
+            RevMapping::Local(_) => {
+                write!(f, "local")
+            }
+        }
+    }
 }
 
 impl Default for RevMapping {
@@ -73,6 +87,10 @@ impl Default for RevMapping {
 impl RevMapping {
     pub fn is_global(&self) -> bool {
         matches!(self, Self::Global(_, _, _))
+    }
+
+    pub fn is_local(&self) -> bool {
+        !self.is_global()
     }
 
     /// Get the length of the [`RevMapping`]

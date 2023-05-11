@@ -368,9 +368,9 @@ def test_list_function_group_awareness() -> None:
 
     assert df.groupby("group").agg(
         [
-            pl.col("a").list().arr.get(0).alias("get"),
-            pl.col("a").list().arr.take([0]).alias("take"),
-            pl.col("a").list().arr.slice(0, 3).alias("slice"),
+            pl.col("a").implode().arr.get(0).alias("get"),
+            pl.col("a").implode().arr.take([0]).alias("take"),
+            pl.col("a").implode().arr.slice(0, 3).alias("slice"),
         ]
     ).sort("group").to_dict(False) == {
         "group": [0, 1, 2],
@@ -413,3 +413,26 @@ def test_list_unique() -> None:
         .arr.unique(maintain_order=True)
         .series_equal(pl.Series([[1, 2, 3], [3, 2, 1]]))
     )
+
+
+def test_list_to_struct() -> None:
+    df = pl.DataFrame({"n": [[0, 1, 2], [0, 1]]})
+
+    assert df.select(pl.col("n").arr.to_struct()).rows(named=True) == [
+        {"n": {"field_0": 0, "field_1": 1, "field_2": 2}},
+        {"n": {"field_0": 0, "field_1": 1, "field_2": None}},
+    ]
+
+    assert df.select(pl.col("n").arr.to_struct(fields=lambda idx: f"n{idx}")).rows(
+        named=True
+    ) == [
+        {"n": {"n0": 0, "n1": 1, "n2": 2}},
+        {"n": {"n0": 0, "n1": 1, "n2": None}},
+    ]
+
+    assert df.select(pl.col("n").arr.to_struct(fields=["one", "two", "three"])).rows(
+        named=True
+    ) == [
+        {"n": {"one": 0, "two": 1, "three": 2}},
+        {"n": {"one": 0, "two": 1, "three": None}},
+    ]

@@ -154,9 +154,9 @@ where
         Value::String(s) => s,
         _ => return None,
     };
-    infer_pattern_single(val).and_then(|pattern| {
-        match DatetimeInfer::<T::Native>::try_from(pattern) {
-            Ok(mut infer) => infer.parse(val),
+    infer_pattern_single(val).and_then(|pattern_with_offset| {
+        match DatetimeInfer::<T::Native>::try_from(pattern_with_offset.pattern) {
+            Ok(mut infer) => infer.parse(val, pattern_with_offset.offset),
             Err(_) => None,
         }
     })

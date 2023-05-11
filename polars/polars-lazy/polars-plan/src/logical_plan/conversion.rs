@@ -73,7 +73,7 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
                 AggExpr::First(expr) => AAggExpr::First(to_aexpr(*expr, arena)),
                 AggExpr::Last(expr) => AAggExpr::Last(to_aexpr(*expr, arena)),
                 AggExpr::Mean(expr) => AAggExpr::Mean(to_aexpr(*expr, arena)),
-                AggExpr::List(expr) => AAggExpr::List(to_aexpr(*expr, arena)),
+                AggExpr::Implode(expr) => AAggExpr::Implode(to_aexpr(*expr, arena)),
                 AggExpr::Count(expr) => AAggExpr::Count(to_aexpr(*expr, arena)),
                 AggExpr::Quantile {
                     expr,
@@ -145,6 +145,10 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             offset: to_aexpr(*offset, arena),
             length: to_aexpr(*length, arena),
         },
+        Expr::Cache { input, id } => AExpr::Cache {
+            input: to_aexpr(*input, arena),
+            id,
+        },
         Expr::Wildcard => AExpr::Wildcard,
         Expr::Count => AExpr::Count,
         Expr::Nth(i) => AExpr::Nth(i),
@@ -202,7 +206,7 @@ pub fn to_alp(
             let input = to_alp(*input, expr_arena, lp_arena)?;
             ALogicalPlan::Slice { input, offset, len }
         }
-        #[cfg(feature = "csv-file")]
+        #[cfg(feature = "csv")]
         LogicalPlan::CsvScan {
             path,
             file_info,
@@ -523,9 +527,9 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Mean(Box::new(exp)).into()
             }
-            AAggExpr::List(expr) => {
+            AAggExpr::Implode(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
-                AggExpr::List(Box::new(exp)).into()
+                AggExpr::Implode(Box::new(exp)).into()
             }
             AAggExpr::Quantile {
                 expr,
@@ -622,6 +626,10 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             offset: Box::new(node_to_expr(offset, expr_arena)),
             length: Box::new(node_to_expr(length, expr_arena)),
         },
+        AExpr::Cache { input, id } => Expr::Cache {
+            input: Box::new(node_to_expr(input, expr_arena)),
+            id,
+        },
         AExpr::Count => Expr::Count,
         AExpr::Nth(i) => Expr::Nth(i),
         AExpr::Wildcard => Expr::Wildcard,
@@ -684,7 +692,7 @@ impl ALogicalPlan {
                     predicate: p,
                 }
             }
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             ALogicalPlan::CsvScan {
                 path,
                 file_info,

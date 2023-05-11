@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
-from functools import singledispatch
+from functools import lru_cache, partial, singledispatch
 from itertools import islice, zip_longest
 from sys import version_info
 from typing import (
@@ -18,8 +18,8 @@ from typing import (
     get_type_hints,
 )
 
+import polars._reexport as pl
 from polars import functions as F
-from polars import internals as pli
 from polars.datatypes import (
     N_INFER_DEFAULT,
     Boolean,
@@ -48,7 +48,9 @@ from polars.dependencies import (
     _NUMPY_AVAILABLE,
     _check_for_numpy,
     _check_for_pandas,
+    _check_for_pydantic,
     dataclasses,
+    pydantic,
 )
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
@@ -63,8 +65,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PyDataFrame, PySeries
 
 if TYPE_CHECKING:
-    from polars.dataframe import DataFrame
-    from polars.series import Series
+    from polars import DataFrame, Series
     from polars.type_aliases import (
         Orientation,
         PolarsDataType,
@@ -74,19 +75,37 @@ if TYPE_CHECKING:
 
 if version_info >= (3, 10):
 
-    def dataclass_type_hints(obj: type) -> dict[str, Any]:
+    def type_hints(obj: type) -> dict[str, Any]:
         return get_type_hints(obj)
 
 else:
 
-    def dataclass_type_hints(obj: type) -> dict[str, Any]:
+    def type_hints(obj: type) -> dict[str, Any]:
         return getattr(obj, "__annotations__", {})
 
 
-def is_namedtuple(value: Any, annotated: bool = False) -> bool:
-    """Infer whether value is a NamedTuple."""
-    if all(hasattr(value, attr) for attr in ("_fields", "_field_defaults", "_replace")):
-        return len(value.__annotations__) == len(value._fields) if annotated else True
+@lru_cache(64)
+def is_namedtuple(cls: Any, annotated: bool = False) -> bool:
+    """Check whether given class derives from NamedTuple."""
+    if all(hasattr(cls, attr) for attr in ("_fields", "_field_defaults", "_replace")):
+        if len(cls.__annotations__) == len(cls._fields) if annotated else True:
+            return all(isinstance(fld, str) for fld in cls._fields)
+    return False
+
+
+def is_pydantic_model(value: Any) -> bool:
+    """Check whether value derives from a pydantic.BaseModel."""
+    return _check_for_pydantic(value) and isinstance(value, pydantic.BaseModel)
+
+
+def contains_nested(value: Any, is_nested: Callable[[Any], bool]) -> bool:
+    """Determine if value contains (or is) nested structured data."""
+    if is_nested(value):
+        return True
+    elif isinstance(value, dict):
+        return any(contains_nested(v, is_nested) for v in value.values())
+    elif isinstance(value, (list, tuple)):
+        return any(contains_nested(v, is_nested) for v in value)
     return False
 
 
@@ -98,6 +117,20 @@ def include_unknowns(
         col: (schema.get(col, Unknown) or Unknown)  # type: ignore[truthy-bool]
         for col in cols
     }
+
+
+def nt_unpack(obj: Any) -> Any:
+    """Recursively unpack a nested NamedTuple."""
+    if isinstance(obj, dict):
+        return {key: nt_unpack(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [nt_unpack(value) for value in obj]
+    elif is_namedtuple(obj.__class__):
+        return {key: nt_unpack(value) for key, value in obj._asdict().items()}
+    elif isinstance(obj, tuple):
+        return tuple(nt_unpack(value) for value in obj)
+    else:
+        return obj
 
 
 ################################
@@ -125,7 +158,7 @@ def arrow_to_pyseries(name: str, values: pa.Array, rechunk: bool = True) -> PySe
             pa.large_utf8(),
         )
     ):
-        pys = pli.Series(name, [], dtype=Categorical)._s
+        pys = pl.Series(name, [], dtype=Categorical)._s
 
     elif not hasattr(array, "num_chunks"):
         pys = PySeries.from_arrow(name, array)
@@ -220,7 +253,7 @@ def iterable_to_pyseries(
         values = iter(values)
 
     def to_series_chunk(values: list[Any], dtype: PolarsDataType | None) -> Series:
-        return pli.Series(
+        return pl.Series(
             name=name,
             values=values,
             dtype=dtype,
@@ -316,8 +349,12 @@ def sequence_to_pyseries(
 
     value = _get_first_non_none(values)
     if value is not None:
-        if dataclasses.is_dataclass(value) or is_namedtuple(value, annotated=True):
-            return pli.DataFrame(values).to_struct(name)._s
+        if (
+            dataclasses.is_dataclass(value)
+            or is_pydantic_model(value)
+            or is_namedtuple(value.__class__, annotated=True)
+        ):
+            return pl.DataFrame(values).to_struct(name)._s
         elif isinstance(value, range):
             values = [range_to_series("", v) for v in values]
         else:
@@ -412,12 +449,13 @@ def sequence_to_pyseries(
             if isinstance(dtype, Object):
                 return PySeries.new_object(name, values, strict)
             if dtype:
-                return sequence_from_anyvalue_or_object(name, values).cast(
-                    dtype, strict=False
-                )
+                srs = sequence_from_anyvalue_or_object(name, values)
+                if dtype.is_not(srs.dtype()):
+                    srs = srs.cast(dtype, strict=False)
+                return srs
             return sequence_from_anyvalue_or_object(name, values)
 
-        elif python_dtype == pli.Series:
+        elif python_dtype == pl.Series:
             return PySeries.new_series_list(name, [v._s for v in values], strict)
 
         elif python_dtype == PySeries:
@@ -501,7 +539,7 @@ def _handle_columns_arg(
         return data
     else:
         if not data:
-            return [pli.Series(c, None)._s for c in columns]
+            return [pl.Series(c, None)._s for c in columns]
         elif len(data) == len(columns):
             if from_dict:
                 series_map = {s.name(): s for s in data}
@@ -613,32 +651,30 @@ def _expand_dict_scalars(
             for name, val in data.items():
                 dtype = dtypes.get(name)
                 if isinstance(val, dict) and dtype != Struct:
-                    updated_data[name] = pli.DataFrame(val).to_struct(name)
+                    updated_data[name] = pl.DataFrame(val).to_struct(name)
 
                 elif arrlen(val) is not None or _is_generator(val):
-                    updated_data[name] = pli.Series(
+                    updated_data[name] = pl.Series(
                         name=name, values=val, dtype=dtype, nan_to_null=nan_to_null
                     )
                 elif val is None or isinstance(  # type: ignore[redundant-expr]
                     val, (int, float, str, bool, date, datetime, time, timedelta)
                 ):
-                    updated_data[name] = pli.Series(
+                    updated_data[name] = pl.Series(
                         name=name, values=[val], dtype=dtype
                     ).extend_constant(val, array_len - 1)
                 else:
-                    updated_data[name] = pli.Series(
+                    updated_data[name] = pl.Series(
                         name=name, values=[val] * array_len, dtype=dtype
                     )
 
         elif all((arrlen(val) == 0) for val in data.values()):
             for name, val in data.items():
-                updated_data[name] = pli.Series(
-                    name, values=val, dtype=dtypes.get(name)
-                )
+                updated_data[name] = pl.Series(name, values=val, dtype=dtypes.get(name))
 
         elif all((arrlen(val) is None) for val in data.values()):
             for name, val in data.items():
-                updated_data[name] = pli.Series(
+                updated_data[name] = pl.Series(
                     name,
                     values=(val if _is_generator(val) else [val]),
                     dtype=dtypes.get(name),
@@ -691,7 +727,7 @@ def dict_to_pydf(
                     zip(
                         column_names,
                         pool.map(
-                            lambda t: pli.Series(t[0], t[1])
+                            lambda t: pl.Series(t[0], t[1])
                             if isinstance(t[1], np.ndarray)
                             else t[1],
                             [(k, v) for k, v in data.items()],
@@ -701,7 +737,7 @@ def dict_to_pydf(
 
     if not data and schema_overrides:
         data_series = [
-            pli.Series(
+            pl.Series(
                 name, [], dtype=schema_overrides.get(name), nan_to_null=nan_to_null
             )._s
             for name in column_names
@@ -796,7 +832,7 @@ def _sequence_to_pydf_dispatcher(
         first_element = data[0]
         register_with_singledispatch = False
 
-    elif isinstance(first_element, pli.Series):
+    elif isinstance(first_element, pl.Series):
         to_pydf = _sequence_of_series_to_pydf
 
     elif _check_for_numpy(first_element) and isinstance(first_element, np.ndarray):
@@ -808,7 +844,10 @@ def _sequence_to_pydf_dispatcher(
         to_pydf = _sequence_of_pandas_to_pydf
 
     elif dataclasses.is_dataclass(first_element):
-        to_pydf = _sequence_of_dataclasses_to_pydf
+        to_pydf = _dataclasses_or_models_to_pydf
+
+    elif is_pydantic_model(first_element):
+        to_pydf = partial(_dataclasses_or_models_to_pydf, pydantic_model=True)
     else:
         to_pydf = _sequence_of_elements_to_pydf
 
@@ -846,21 +885,30 @@ def _sequence_of_sequence_to_pydf(
         column_names, schema_overrides = _unpack_schema(
             schema, schema_overrides=schema_overrides, n_expected=len(first_element)
         )
-        schema_override = (
+        local_schema_override = (
             include_unknowns(schema_overrides, column_names) if schema_overrides else {}
         )
         if column_names and len(first_element) != len(column_names):
             raise ShapeError("The row data does not match the number of columns")
 
-        for col, tp in schema_override.items():
+        unpack_nested = False
+        for col, tp in local_schema_override.items():
             if tp == Categorical:
-                schema_override[col] = Utf8
+                local_schema_override[col] = Utf8
+            elif not unpack_nested and (tp.base_type() in (Unknown, Struct)):
+                unpack_nested = contains_nested(
+                    getattr(first_element, col, None).__class__, is_namedtuple
+                )
 
-        pydf = PyDataFrame.read_rows(
-            data,
-            infer_schema_length,
-            schema_override or None,
-        )
+        if unpack_nested:
+            dicts = [nt_unpack(d) for d in data]
+            pydf = PyDataFrame.read_dicts(dicts, infer_schema_length)
+        else:
+            pydf = PyDataFrame.read_rows(
+                data,
+                infer_schema_length,
+                local_schema_override or None,
+            )
         if column_names or schema_overrides:
             pydf = _post_apply_columns(
                 pydf, column_names, schema_overrides=schema_overrides
@@ -872,7 +920,7 @@ def _sequence_of_sequence_to_pydf(
             schema, schema_overrides=schema_overrides, n_expected=len(data)
         )
         data_series: list[PySeries] = [
-            pli.Series(
+            pl.Series(
                 column_names[i], element, schema_overrides.get(column_names[i])
             )._s
             for i, element in enumerate(data)
@@ -893,8 +941,8 @@ def _sequence_of_tuple_to_pydf(
     orient: Orientation | None,
     infer_schema_length: int | None,
 ) -> PyDataFrame:
-    # infer additional meta information if NAMED tuple...
-    if is_namedtuple(first_element):
+    # infer additional meta information if named tuple
+    if is_namedtuple(first_element.__class__):
         if schema is None:
             schema = first_element._fields  # type: ignore[attr-defined]
             if len(first_element.__annotations__) == len(schema):
@@ -958,7 +1006,7 @@ def _sequence_of_elements_to_pydf(
         schema, schema_overrides=schema_overrides, n_expected=1
     )
     data_series: list[PySeries] = [
-        pli.Series(column_names[0], data, schema_overrides.get(column_names[0]))._s
+        pl.Series(column_names[0], data, schema_overrides.get(column_names[0]))._s
     ]
     data_series = _handle_columns_arg(data_series, columns=column_names)
     return PyDataFrame(data_series)
@@ -1003,7 +1051,7 @@ def _sequence_of_pandas_to_pydf(
     return PyDataFrame(data_series)
 
 
-def _sequence_of_dataclasses_to_pydf(
+def _dataclasses_or_models_to_pydf(
     first_element: Any,
     data: Sequence[Any],
     schema: SchemaDefinition | None,
@@ -1011,8 +1059,11 @@ def _sequence_of_dataclasses_to_pydf(
     infer_schema_length: int | None,
     **kwargs: Any,
 ) -> PyDataFrame:
-    from dataclasses import astuple
+    """Initialise DataFrame from python dataclass and/or pydantic model objects."""
+    from dataclasses import asdict, astuple
 
+    from_model = kwargs.get("pydantic_model")
+    unpack_nested = False
     if schema:
         column_names, schema_overrides = _unpack_schema(schema, schema_overrides)
         schema_override = {
@@ -1022,22 +1073,42 @@ def _sequence_of_dataclasses_to_pydf(
         column_names = []
         schema_override = {
             col: (py_type_to_dtype(tp, raise_unmatched=False) or Unknown)
-            for col, tp in dataclass_type_hints(first_element.__class__).items()
+            for col, tp in type_hints(first_element.__class__).items()
+            if col != "__slots__"
         }
         schema_override.update(schema_overrides or {})
 
     for col, tp in schema_override.items():
         if tp == Categorical:
             schema_override[col] = Utf8
+        elif not unpack_nested and (tp.base_type() in (Unknown, Struct)):
+            unpack_nested = contains_nested(
+                getattr(first_element, col, None),
+                is_pydantic_model if from_model else dataclasses.is_dataclass,  # type: ignore[arg-type]
+            )
 
-    pydf = PyDataFrame.read_rows(
-        [astuple(dc) for dc in data],
-        infer_schema_length,
-        schema_override or None,
-    )
+    if unpack_nested:
+        if from_model:
+            dicts = (
+                [md.model_dump(mode="python") for md in data]
+                if hasattr(first_element, "model_dump")
+                else [md.dict() for md in data]
+            )
+        else:
+            dicts = [asdict(md) for md in data]
+        pydf = PyDataFrame.read_dicts(dicts, infer_schema_length)
+    else:
+        rows = (
+            [tuple(md.__dict__.values()) for md in data]
+            if from_model
+            else [astuple(dc) for dc in data]
+        )
+        pydf = PyDataFrame.read_rows(rows, infer_schema_length, schema_override or None)
+
     if schema_override:
         structs = {c: tp for c, tp in schema_override.items() if isinstance(tp, Struct)}
         pydf = _post_apply_columns(pydf, column_names, structs, schema_overrides)
+
     return pydf
 
 
@@ -1048,59 +1119,82 @@ def numpy_to_pydf(
     orient: Orientation | None = None,
     nan_to_null: bool = False,
 ) -> PyDataFrame:
-    """Construct a PyDataFrame from a numpy ndarray."""
+    """Construct a PyDataFrame from a numpy ndarray (including structured ndarrays)."""
     shape = data.shape
 
-    # Unpack columns
-    if shape == (0,):
-        n_columns = 0
+    if data.dtype.names is not None:
+        structured_array, orient = True, "col"
+        record_names = list(data.dtype.names)
+        n_columns = len(record_names)
+        for nm in record_names:
+            shape = data[nm].shape
+            if len(data[nm].shape) > 2:
+                raise ValueError(
+                    f"Cannot create DataFrame from structured array with elements > 2D; shape[{nm!r}] = {shape}"
+                )
+        if not schema:
+            schema = record_names
+    else:
+        # Unpack columns
+        structured_array, record_names = False, []
+        if shape == (0,):
+            n_columns = 0
 
-    elif len(shape) == 1:
-        n_columns = 1
+        elif len(shape) == 1:
+            n_columns = 1
 
-    elif len(shape) == 2:
-        # default convention
-        # first axis is rows, second axis is columns
-        if orient is None and schema is None:
-            n_columns = shape[1]
-            orient = "row"
+        elif len(shape) == 2:
+            if orient is None and schema is None:
+                # default convention; first axis is rows, second axis is columns
+                n_columns = shape[1]
+                orient = "row"
 
-        # Infer orientation if columns argument is given
-        elif orient is None and schema is not None:
-            if len(schema) == shape[0]:
-                orient = "col"
+            elif orient is None and schema is not None:
+                # infer orientation from 'schema' param
+                if len(schema) == shape[0]:
+                    orient = "col"
+                    n_columns = shape[0]
+                else:
+                    orient = "row"
+                    n_columns = shape[1]
+
+            elif orient == "row":
+                n_columns = shape[1]
+            elif orient == "col":
                 n_columns = shape[0]
             else:
-                orient = "row"
-                n_columns = shape[1]
-
-        elif orient == "row":
-            n_columns = shape[1]
-        elif orient == "col":
-            n_columns = shape[0]
+                raise ValueError(
+                    f"orient must be one of {{'col', 'row', None}}; found {orient!r} instead."
+                )
         else:
             raise ValueError(
-                f"orient must be one of {{'col', 'row', None}}, got {orient} instead."
+                f"Cannot create DataFrame from array with more than two dimensions; shape = {shape}"
             )
-    else:
-        raise ValueError(
-            "Cannot create DataFrame from numpy array with more than two dimensions."
-        )
 
     if schema is not None and len(schema) != n_columns:
-        raise ValueError("Dimensions of columns arg must match data dimensions.")
+        raise ValueError("Dimensions of 'schema' arg must match data dimensions.")
 
     column_names, schema_overrides = _unpack_schema(
         schema, schema_overrides=schema_overrides, n_expected=n_columns
     )
 
     # Convert data to series
-    if shape == (0,):
+    if structured_array:
+        data_series = [
+            pl.Series(
+                name=series_name,
+                values=data[record_name],
+                dtype=schema_overrides.get(record_name),
+                nan_to_null=nan_to_null,
+            )._s
+            for series_name, record_name in zip(column_names, record_names)
+        ]
+    elif shape == (0,):
         data_series = []
 
     elif len(shape) == 1:
         data_series = [
-            pli.Series(
+            pl.Series(
                 name=column_names[0],
                 values=data,
                 dtype=schema_overrides.get(column_names[0]),
@@ -1110,7 +1204,7 @@ def numpy_to_pydf(
     else:
         if orient == "row":
             data_series = [
-                pli.Series(
+                pl.Series(
                     name=column_names[i],
                     values=data[:, i],
                     dtype=schema_overrides.get(column_names[i]),
@@ -1120,7 +1214,7 @@ def numpy_to_pydf(
             ]
         else:
             data_series = [
-                pli.Series(
+                pl.Series(
                     name=column_names[i],
                     values=data[i],
                     dtype=schema_overrides.get(column_names[i]),
@@ -1177,16 +1271,13 @@ def arrow_to_pydf(
 
         # path for table without rows that keeps datatype
         if tbl.shape[0] == 0:
-            pydf = pli.DataFrame(
-                [
-                    pli.Series(name, c)
-                    for (name, c) in zip(tbl.column_names, tbl.columns)
-                ]
+            pydf = pl.DataFrame(
+                [pl.Series(name, c) for (name, c) in zip(tbl.column_names, tbl.columns)]
             )._df
         else:
             pydf = PyDataFrame.from_arrow_record_batches(tbl.to_batches())
     else:
-        pydf = pli.DataFrame([])._df
+        pydf = pl.DataFrame([])._df
     if rechunk:
         pydf = pydf.rechunk()
 
@@ -1270,9 +1361,9 @@ def iterable_to_pydf(
                 for idx, col in enumerate(column_names)
             }
 
-        return pli.DataFrame(
+        return pl.DataFrame(
             {
-                (column_names[idx] if column_names else f"column_{idx}"): pli.Series(
+                (column_names[idx] if column_names else f"column_{idx}"): pl.Series(
                     coldata, dtype=dtypes_by_idx.get(idx)
                 )
                 for idx, coldata in enumerate(data)
@@ -1280,7 +1371,7 @@ def iterable_to_pydf(
         )._df
 
     def to_frame_chunk(values: list[Any], schema: SchemaDefinition | None) -> DataFrame:
-        return pli.DataFrame(
+        return pl.DataFrame(
             data=values,
             schema=schema,
             orient="row",
@@ -1339,7 +1430,7 @@ def pandas_has_default_index(df: pd.DataFrame) -> bool:
         # finally, is the index _equivalent_ to a default unnamed
         # integer index with frame data that was previously sorted
         return (
-            df.index.dtype == "int"  # type: ignore[comparison-overlap]
+            str(df.index.dtype).startswith("int")
             and (df.index.sort_values() == np.arange(len(df))).all()
         )
 

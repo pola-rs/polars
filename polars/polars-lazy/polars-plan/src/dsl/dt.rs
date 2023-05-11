@@ -7,14 +7,22 @@ use crate::prelude::function_expr::TemporalFunction;
 pub struct DateLikeNameSpace(pub(crate) Expr);
 
 impl DateLikeNameSpace {
-    /// Format Date/datetime with a formatting rule
+    /// Convert from Date/Time/Datetime into Utf8 with the given format.
     /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
-    pub fn strftime(self, fmt: &str) -> Expr {
-        let fmt = fmt.to_string();
-        let function = move |s: Series| s.strftime(&fmt).map(Some);
+    pub fn to_string(self, format: &str) -> Expr {
+        let format = format.to_string();
+        let function = move |s: Series| TemporalMethods::to_string(&s, &format).map(Some);
         self.0
             .map(function, GetOutput::from_type(DataType::Utf8))
-            .with_fmt("strftime")
+            .with_fmt("to_string")
+    }
+
+    /// Convert from Date/Time/Datetime into Utf8 with the given format.
+    /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+    ///
+    /// Alias for `to_string`.
+    pub fn strftime(self, format: &str) -> Expr {
+        self.to_string(format)
     }
 
     /// Change the underlying [`TimeUnit`]. And update the data accordingly.
@@ -227,6 +235,20 @@ impl DateLikeNameSpace {
             )))
     }
 
+    // roll backward to the first day of the month
+    #[cfg(feature = "date_offset")]
+    pub fn month_start(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::MonthStart))
+    }
+
+    // roll forward to the last day of the month
+    #[cfg(feature = "date_offset")]
+    pub fn month_end(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::TemporalExpr(TemporalFunction::MonthEnd))
+    }
+
     pub fn round<S: AsRef<str>>(self, every: S, offset: S) -> Expr {
         let every = every.as_ref().into();
         let offset = offset.as_ref().into();
@@ -244,10 +266,15 @@ impl DateLikeNameSpace {
     }
 
     #[cfg(feature = "timezones")]
-    pub fn replace_time_zone(self, time_zone: Option<TimeZone>) -> Expr {
+    pub fn replace_time_zone(
+        self,
+        time_zone: Option<TimeZone>,
+        use_earliest: Option<bool>,
+    ) -> Expr {
         self.0
             .map_private(FunctionExpr::TemporalExpr(TemporalFunction::CastTimezone(
                 time_zone,
+                use_earliest,
             )))
     }
 

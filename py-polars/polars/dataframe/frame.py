@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import contextlib
-import math
 import os
 import random
 import typing
@@ -25,14 +24,16 @@ from typing import (
     overload,
 )
 
+import polars._reexport as pl
 from polars import functions as F
-from polars import internals as pli
 from polars.dataframe._html import NotebookFormatter
 from polars.dataframe.groupby import DynamicGroupBy, GroupBy, RollingGroupBy
 from polars.datatypes import (
     FLOAT_DTYPES,
     INTEGER_DTYPES,
     N_INFER_DEFAULT,
+    NUMERIC_DTYPES,
+    SIGNED_INTEGER_DTYPES,
     Boolean,
     Categorical,
     DataTypeClass,
@@ -48,6 +49,7 @@ from polars.datatypes import (
     UInt64,
     Utf8,
     py_type_to_dtype,
+    unpack_dtypes,
 )
 from polars.dependencies import (
     _PYARROW_AVAILABLE,
@@ -91,6 +93,7 @@ from polars.utils.meta import get_index_type
 from polars.utils.various import (
     _prepare_row_count_args,
     _process_null_values,
+    find_stacklevel,
     handle_projection_columns,
     is_bool_sequence,
     is_int_sequence,
@@ -113,9 +116,7 @@ if TYPE_CHECKING:
     from pyarrow.interchange.dataframe import _PyArrowDataFrame
     from xlsxwriter import Workbook
 
-    from polars.expr import Expr
-    from polars.lazyframe import LazyFrame
-    from polars.series import Series
+    from polars import Expr, LazyFrame, Series
     from polars.type_aliases import (
         AsofJoinStrategy,
         AvroCompression,
@@ -365,7 +366,7 @@ class DataFrame:
                 orient=orient,
                 infer_schema_length=infer_schema_length,
             )
-        elif isinstance(data, pli.Series):
+        elif isinstance(data, pl.Series):
             self._df = series_to_pydf(
                 data, schema=schema, schema_overrides=schema_overrides
             )
@@ -1283,7 +1284,7 @@ class DataFrame:
             raise ValueError(f"got unexpected comparison operator: {op}")
 
     def _div(self, other: Any, floordiv: bool) -> Self:
-        if isinstance(other, pli.Series):
+        if isinstance(other, pl.Series):
             if floordiv:
                 return self.select(F.all() // lit(other))
             return self.select(F.all() / lit(other))
@@ -1408,7 +1409,7 @@ class DataFrame:
         # pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx).
         idx_type = get_index_type()
 
-        if isinstance(idxs, pli.Series):
+        if isinstance(idxs, pl.Series):
             if idxs.dtype == idx_type:
                 return idxs
             if idxs.dtype in {
@@ -1431,7 +1432,7 @@ class DataFrame:
                             raise ValueError(
                                 "Index positions should be bigger than -2^32 + 1."
                             )
-                if idxs.dtype in {Int8, Int16, Int32, Int64}:
+                if idxs.dtype in SIGNED_INTEGER_DTYPES:
                     if idxs.min() < 0:  # type: ignore[operator]
                         if idx_type == UInt32:
                             if idxs.dtype in {Int8, Int16}:
@@ -1472,7 +1473,7 @@ class DataFrame:
                     # Update negative indexes to absolute indexes.
                     idxs = np.where(idxs < 0, self.shape[dim] + idxs, idxs)
 
-                return pli.Series("", idxs, dtype=idx_type)
+                return pl.Series("", idxs, dtype=idx_type)
 
         raise NotImplementedError("Unsupported idxs datatype.")
 
@@ -1494,19 +1495,11 @@ class DataFrame:
         ...
 
     @overload
-    def __getitem__(self, item: tuple[MultiRowSelector, int]) -> Series:
+    def __getitem__(self, item: tuple[int, int | str]) -> Any:
         ...
 
     @overload
-    def __getitem__(self, item: tuple[MultiRowSelector, str]) -> Series:
-        ...
-
-    @overload
-    def __getitem__(self, item: tuple[int, int]) -> Any:
-        ...
-
-    @overload
-    def __getitem__(self, item: tuple[int, str]) -> Any:
+    def __getitem__(self, item: tuple[MultiRowSelector, int | str]) -> Series:
         ...
 
     def __getitem__(
@@ -1518,13 +1511,19 @@ class DataFrame:
             | MultiColSelector
             | tuple[int, MultiColSelector]
             | tuple[MultiRowSelector, MultiColSelector]
-            | tuple[MultiRowSelector, int]
-            | tuple[MultiRowSelector, str]
-            | tuple[int, int]
-            | tuple[int, str]
+            | tuple[MultiRowSelector, int | str]
+            | tuple[int, int | str]
         ),
     ) -> DataFrame | Series:
         """Get item. Does quite a lot. Read the comments."""
+        # fail on ['col1', 'col2', ..., 'coln']
+        if (
+            isinstance(item, tuple)
+            and len(item) > 1
+            and all(isinstance(x, str) for x in item)
+        ):
+            raise KeyError(item)
+
         # select rows and columns at once
         # every 2d selection, i.e. tuple is row column order, just like numpy
         if isinstance(item, tuple) and len(item) == 2:
@@ -1555,7 +1554,7 @@ class DataFrame:
 
                 # df[:, [True, False]]
                 if is_bool_sequence(col_selection) or (
-                    isinstance(col_selection, pli.Series)
+                    isinstance(col_selection, pl.Series)
                     and col_selection.dtype == Boolean
                 ):
                     if len(col_selection) != self.width:
@@ -1649,15 +1648,15 @@ class DataFrame:
             # df[["foo", "bar"]]
             return self._from_pydf(self._df.select(item))
         elif is_int_sequence(item):
-            item = pli.Series("", item)  # fall through to next if isinstance
+            item = pl.Series("", item)  # fall through to next if isinstance
 
-        if isinstance(item, pli.Series):
+        if isinstance(item, pl.Series):
             dtype = item.dtype
             if dtype == Utf8:
                 return self._from_pydf(self._df.select(item))
-            if dtype == UInt32:
+            elif dtype == UInt32:
                 return self._from_pydf(self._df.take_with_series(item._s))
-            if dtype in {UInt8, UInt16, UInt64, Int8, Int16, Int32, Int64}:
+            elif dtype in INTEGER_DTYPES:
                 return self._from_pydf(
                     self._df.take_with_series(self._pos_idxs(item, dim=0)._s)
                 )
@@ -1695,7 +1694,7 @@ class DataFrame:
             # todo! we can parallelize this by calling from_numpy
             columns = []
             for i, name in enumerate(key):
-                columns.append(pli.Series(name, value[:, i]))
+                columns.append(pl.Series(name, value[:, i]))
             self._df = self.with_columns(columns)._df
 
         # df[a, b]
@@ -1703,7 +1702,7 @@ class DataFrame:
             row_selection, col_selection = key
 
             if (
-                isinstance(row_selection, pli.Series) and row_selection.dtype == Boolean
+                isinstance(row_selection, pl.Series) and row_selection.dtype == Boolean
             ) or is_bool_sequence(row_selection):
                 raise ValueError(
                     "Not allowed to set 'DataFrame' by boolean mask in the "
@@ -1775,35 +1774,49 @@ class DataFrame:
             ).render()
         )
 
-    def item(self) -> Any:
+    def item(self, row: int | None = None, column: int | str | None = None) -> Any:
         """
-        Return the dataframe as a scalar.
+        Return the dataframe as a scalar, or return the element at the given row/column.
 
-        Equivalent to ``df[0,0]``, with a check that the shape is (1,1).
+        Notes
+        -----
+        If row/col not provided, this is equivalent to ``df[0,0]``, with a check that
+        the shape is (1,1). With row/col, this is equivalent to ``df[row,col]``.
+
+        Parameters
+        ----------
+        row
+            Optional row index.
+        column
+            Optional column index or name.
 
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
-        >>> result = df.select((pl.col("a") * pl.col("b")).sum())
-        >>> result
-        shape: (1, 1)
-        ┌─────┐
-        │ a   │
-        │ --- │
-        │ i64 │
-        ╞═════╡
-        │ 32  │
-        └─────┘
-        >>> result.item()
+        >>> df.select((pl.col("a") * pl.col("b")).sum()).item()
         32
+        >>> df.item(1, 1)
+        5
+        >>> df.item(2, "b")
+        6
+
+        See Also
+        --------
+        row: Get the values of a single row, either by index or by predicate.
 
         """
-        if self.shape != (1, 1):
-            raise ValueError(
-                f"Can only call .item() if the dataframe is of shape (1,1), "
-                f"dataframe is of shape {self.shape}"
-            )
-        return self[0, 0]
+        if row is None and column is None:
+            if self.shape != (1, 1):
+                raise ValueError(
+                    f"Can only call '.item()' if the dataframe is of shape (1,1), or if "
+                    f"explicit row/col values are provided; frame has shape {self.shape}"
+                )
+            return self[0, 0]
+
+        elif row is None or column is None:
+            raise ValueError("Cannot call '.item()' with only one of 'row' or 'column'")
+
+        return self[row, column]
 
     def to_arrow(self) -> pa.Table:
         """
@@ -1955,11 +1968,17 @@ class DataFrame:
         """
         return list(self.iter_rows(named=True))
 
-    def to_numpy(self) -> np.ndarray[Any, Any]:
+    def to_numpy(self, structured: bool = False) -> np.ndarray[Any, Any]:
         """
         Convert DataFrame to a 2D NumPy array.
 
         This operation clones data.
+
+        Parameters
+        ----------
+        structured
+            Optionally return a structured array, with field names and
+            dtypes that correspond to the DataFrame schema.
 
         Notes
         -----
@@ -1969,20 +1988,61 @@ class DataFrame:
         Examples
         --------
         >>> df = pl.DataFrame(
-        ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6.5, 7.0, 8.5],
+        ...         "ham": ["a", "b", "c"],
+        ...     },
+        ...     schema_overrides={"foo": pl.UInt8, "bar": pl.Float32},
         ... )
-        >>> numpy_array = df.to_numpy()
-        >>> type(numpy_array)
-        <class 'numpy.ndarray'>
+
+        Export to a standard 2D numpy array.
+
+        >>> df.to_numpy()
+        array([[1, 6.5, 'a'],
+               [2, 7.0, 'b'],
+               [3, 8.5, 'c']], dtype=object)
+
+        Export to a structured array, which can better-preserve individual
+        column data, such as name and dtype...
+
+        >>> df.to_numpy(structured=True)
+        array([(1, 6.5, 'a'), (2, 7. , 'b'), (3, 8.5, 'c')],
+              dtype=[('foo', 'u1'), ('bar', '<f4'), ('ham', '<U1')])
+
+        ...optionally zero-copying as a record array view:
+
+        >>> import numpy as np
+        >>> df.to_numpy(True).view(np.recarray)
+        rec.array([(1, 6.5, 'a'), (2, 7. , 'b'), (3, 8.5, 'c')],
+                  dtype=[('foo', 'u1'), ('bar', '<f4'), ('ham', '<U1')])
 
         """
-        out = self._df.to_numpy()
-        if out is None:
-            return np.vstack(
-                [self.to_series(i).to_numpy() for i in range(self.width)]
-            ).T
+        if structured:
+            # see: https://numpy.org/doc/stable/user/basics.rec.html
+            arrays = []
+            for c, tp in self.schema.items():
+                s = self[c]
+                a = s.to_numpy()
+                arrays.append(
+                    a.astype(str, copy=False)
+                    if tp == Utf8 and not s.has_validity()
+                    else a
+                )
+
+            out = np.empty(
+                len(self), dtype=list(zip(self.columns, (a.dtype for a in arrays)))
+            )
+            for idx, c in enumerate(self.columns):
+                out[c] = arrays[idx]
         else:
-            return out
+            out = self._df.to_numpy()
+            if out is None:
+                return np.vstack(
+                    [self.to_series(i).to_numpy() for i in range(self.width)]
+                ).T
+
+        return out
 
     def to_pandas(  # noqa: D417
         self,
@@ -3039,11 +3099,7 @@ class DataFrame:
         statistics
             Write statistics to the parquet headers. This requires extra compute.
         row_group_size
-            Size of the row groups in number of rows.
-            If None (default), the chunks of the `DataFrame` are
-            used. Writing in smaller chunks may reduce memory pressure and improve
-            writing speeds. If None and ``use_pyarrow=True``, the row group size
-            will be the minimum of the DataFrame size and 64 * 1024 * 1024.
+            Size of the row groups in number of rows. Defaults to 512^2 rows.
         use_pyarrow
             Use C++ parquet implementation vs Rust parquet implementation.
             At the moment C++ supports more features.
@@ -3490,7 +3546,7 @@ class DataFrame:
 
         """
         if _check_for_numpy(predicate) and isinstance(predicate, np.ndarray):
-            predicate = pli.Series(predicate)
+            predicate = pl.Series(predicate)
 
         return self._from_pydf(
             self.lazy()
@@ -3550,6 +3606,7 @@ class DataFrame:
         # always print at most this number of values, mainly used to ensure
         # we do not cast long arrays to strings which would be very slow
         max_num_values = min(10, self.height)
+        max_col_name_trunc = 50
 
         def _parse_column(col_name: str, dtype: PolarsDataType) -> tuple[str, str, str]:
             dtype_str = (
@@ -3559,6 +3616,8 @@ class DataFrame:
             )
             val = self[:max_num_values][col_name].to_list()
             val_str = ", ".join(map(str, val))
+            if len(col_name) > max_col_name_trunc:
+                col_name = col_name[: (max_col_name_trunc - 3)] + "..."
             return col_name, dtype_str, val_str
 
         data = [_parse_column(s, dtype) for s, dtype in self.schema.items()]
@@ -3593,9 +3652,17 @@ class DataFrame:
         else:
             return s
 
-    def describe(self) -> Self:
+    def describe(
+        self, percentiles: Sequence[float] | float | None = (0.25, 0.75)
+    ) -> Self:
         """
         Summary statistics for a DataFrame.
+
+        Parameters
+        ----------
+        percentiles
+            One or more percentiles to include in the summary statistics.
+            All values must be in the range `[0, 1]`.
 
         See Also
         --------
@@ -3615,7 +3682,7 @@ class DataFrame:
         ...     }
         ... )
         >>> df.describe()
-        shape: (7, 7)
+        shape: (9, 7)
         ┌────────────┬──────────┬──────────┬──────────┬──────┬──────┬────────────┐
         │ describe   ┆ a        ┆ b        ┆ c        ┆ d    ┆ e    ┆ f          │
         │ ---        ┆ ---      ┆ ---      ┆ ---      ┆ ---  ┆ ---  ┆ ---        │
@@ -3628,44 +3695,56 @@ class DataFrame:
         │ min        ┆ 1.0      ┆ 4.0      ┆ 0.0      ┆ b    ┆ eur  ┆ 2020-01-01 │
         │ max        ┆ 3.0      ┆ 5.0      ┆ 1.0      ┆ c    ┆ usd  ┆ 2022-01-01 │
         │ median     ┆ 2.8      ┆ 4.5      ┆ 1.0      ┆ null ┆ null ┆ null       │
+        │ 25%        ┆ 1.0      ┆ 4.0      ┆ null     ┆ null ┆ null ┆ null       │
+        │ 75%        ┆ 3.0      ┆ 5.0      ┆ null     ┆ null ┆ null ┆ null       │
         └────────────┴──────────┴──────────┴──────────┴──────┴──────┴────────────┘
 
         """
+        if isinstance(percentiles, float):
+            percentiles = [percentiles]
+        if percentiles and not all((0 <= p <= 1) for p in percentiles):
+            raise ValueError("Percentiles must all be in the range [0, 1].")
 
-        def describe_cast(stat: Self) -> Self:
-            columns = []
-            for i, s in enumerate(self.columns):
-                if self[s].is_numeric() or self[s].is_boolean():
-                    columns.append(stat[:, i].cast(float))
-                else:
-                    # for dates, strings, etc, we cast to string so that all
-                    # statistics can be shown
-                    columns.append(stat[:, i].cast(str))
-            return self.__class__(columns)
+        # determine metrics (optional/additional percentiles)
+        metrics = ["count", "null_count", "mean", "std", "min", "max", "median"]
+        percentile_exprs = []
+        for p in percentiles or ():
+            percentile_exprs.append(F.all().quantile(p).prefix(f"{p}:"))
+            metrics.append(f"{p:.0%}")
 
-        summary = self._from_pydf(
-            F.concat(
-                [
-                    describe_cast(
-                        self.__class__({c: [len(self)] for c in self.columns})
-                    ),
-                    describe_cast(self.null_count()),
-                    describe_cast(self.mean()),
-                    describe_cast(self.std()),
-                    describe_cast(self.min()),
-                    describe_cast(self.max()),
-                    describe_cast(self.median()),
-                ]
-            )._df
-        )
-        summary.insert_at_idx(
-            0,
-            pli.Series(
-                "describe",
-                ["count", "null_count", "mean", "std", "min", "max", "median"],
-            ),
-        )
-        return summary
+        # execute metrics in parallel
+        df_metrics = self.select(
+            F.all().count().prefix("count:"),
+            F.all().null_count().prefix("null_count:"),
+            F.all().mean().prefix("mean:"),
+            F.all().std().prefix("std:"),
+            F.all().min().prefix("min:"),
+            F.all().max().prefix("max:"),
+            F.all().median().prefix("median:"),
+            *percentile_exprs,
+        ).row(0)
+
+        # reshape wide result
+        n_cols = len(self.columns)
+        described = [
+            df_metrics[(n * n_cols) : (n + 1) * n_cols] for n in range(0, len(metrics))
+        ]
+
+        # cast by column type (numeric/bool -> float), (other -> string)
+        summary = dict(zip(self.columns, list(zip(*described))))
+        num_or_bool = NUMERIC_DTYPES | {Boolean}
+        for c, tp in self.schema.items():
+            summary[c] = [
+                None
+                if (v is None or isinstance(v, dict))
+                else (float(v) if tp in num_or_bool else str(v))
+                for v in summary[c]
+            ]
+
+        # return results as a frame
+        df_summary = self.__class__(summary)
+        df_summary.insert_at_idx(0, pl.Series("describe", metrics))
+        return df_summary
 
     def find_idx_by_name(self, name: str) -> int:
         """
@@ -4541,7 +4620,7 @@ class DataFrame:
 
     def groupby_rolling(
         self,
-        index_column: str,
+        index_column: IntoExpr,
         *,
         period: str | timedelta,
         offset: str | timedelta | None = None,
@@ -4575,6 +4654,10 @@ class DataFrame:
         Or combine them:
         "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
 
+        Suffix with `"_saturating"` to indicate that dates too large for
+        their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
+        instead of erroring.
+
         In case of a groupby_rolling on an integer column, the windows are defined by:
 
         - **"1i"      # length 1**
@@ -4600,6 +4683,13 @@ class DataFrame:
         by
             Also group by this column/these columns
 
+        Returns
+        -------
+        RollingGroupBy
+            Object you can call ``.agg`` on to aggregate by groups, the result
+            of which will be sorted by `index_column` (but note that if `by` columns are
+            passed, it will only be sorted within each `by` group).
+
         See Also
         --------
         groupby_dynamic
@@ -4615,7 +4705,7 @@ class DataFrame:
         ...     "2020-01-08 23:16:43",
         ... ]
         >>> df = pl.DataFrame({"dt": dates, "a": [3, 7, 5, 9, 2, 1]}).with_columns(
-        ...     pl.col("dt").str.strptime(pl.Datetime)
+        ...     pl.col("dt").str.strptime(pl.Datetime).set_sorted()
         ... )
         >>> out = df.groupby_rolling(index_column="dt", period="2d").agg(
         ...     [
@@ -4647,7 +4737,7 @@ class DataFrame:
 
     def groupby_dynamic(
         self,
-        index_column: str,
+        index_column: IntoExpr,
         *,
         every: str | timedelta,
         period: str | timedelta | None = None,
@@ -4690,6 +4780,10 @@ class DataFrame:
         Or combine them:
         "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
 
+        Suffix with `"_saturating"` to indicate that dates too large for
+        their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
+        instead of erroring.
+
         In case of a groupby_dynamic on an integer column, the windows are defined by:
 
         - "1i"      # length 1
@@ -4726,12 +4820,22 @@ class DataFrame:
             Define which sides of the temporal interval are closed (inclusive).
         by
             Also group by this column/these columns
-        start_by : {'window', 'datapoint', 'monday'}
+        start_by : {'window', 'datapoint', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}
             The strategy to determine the start of the first window by.
 
             - 'window': Truncate the start of the window with the 'every' argument.
             - 'datapoint': Start from the first encountered data point.
             - 'monday': Start the window on the monday before the first data point.
+            - 'tuesday': Start the window on the tuesday before the first data point.
+            - ...
+            - 'sunday': Start the window on the sunday before the first data point.
+
+        Returns
+        -------
+        DynamicGroupBy
+            Object you can call ``.agg`` on to aggregate by groups, the result
+            of which will be sorted by `index_column` (but note that if `by` columns are
+            passed, it will only be sorted within each `by` group).
 
         Examples
         --------
@@ -4743,6 +4847,7 @@ class DataFrame:
         ...             start=datetime(2021, 12, 16),
         ...             end=datetime(2021, 12, 16, 3),
         ...             interval="30m",
+        ...             eager=True,
         ...         ),
         ...         "n": range(7),
         ...     }
@@ -4847,6 +4952,7 @@ class DataFrame:
         ...             start=datetime(2021, 12, 16),
         ...             end=datetime(2021, 12, 16, 3),
         ...             interval="30m",
+        ...             eager=True,
         ...         ),
         ...         "groups": ["a", "a", "a", "b", "b", "a", "a"],
         ...     }
@@ -4974,6 +5080,16 @@ class DataFrame:
         Or combine them:
         "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
 
+        Suffix with `"_saturating"` to indicate that dates too large for
+        their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
+        instead of erroring.
+
+        Returns
+        -------
+        DataFrame
+            Result will be sorted by `time_column` (but note that if `by` columns are
+            passed, it will only be sorted within each `by` group).
+
         Examples
         --------
         Upsample a DataFrame by a certain interval.
@@ -4990,7 +5106,7 @@ class DataFrame:
         ...         "groups": ["A", "B", "A", "B"],
         ...         "values": [0, 1, 2, 3],
         ...     }
-        ... )
+        ... ).set_sorted("time")
         >>> df.upsample(
         ...     time_column="time", every="1mo", by="groups", maintain_order=True
         ... ).select(pl.all().forward_fill())
@@ -5100,6 +5216,10 @@ class DataFrame:
                 Or combine them:
                 "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
 
+                Suffix with `"_saturating"` to indicate that dates too large for
+                their month should saturate at the largest date
+                (e.g. 2022-02-29 -> 2022-02-28) instead of erroring.
+
         allow_parallel
             Allow the physical plan to optionally evaluate the computation of both
             DataFrames up to the join in parallel.
@@ -5120,7 +5240,7 @@ class DataFrame:
         ...         ],  # note record date: Jan 1st (sorted!)
         ...         "gdp": [4164, 4411, 4566, 4696],
         ...     }
-        ... )
+        ... ).set_sorted("date")
         >>> population = pl.DataFrame(
         ...     {
         ...         "date": [
@@ -5131,10 +5251,8 @@ class DataFrame:
         ...         ],  # note record date: May 12th (sorted!)
         ...         "population": [82.19, 82.66, 83.12, 83.52],
         ...     }
-        ... )
-        >>> population.join_asof(
-        ...     gdp, left_on="date", right_on="date", strategy="backward"
-        ... )
+        ... ).set_sorted("date")
+        >>> population.join_asof(gdp, on="date", strategy="backward")
         shape: (4, 3)
         ┌─────────────────────┬────────────┬──────┐
         │ date                ┆ population ┆ gdp  │
@@ -5370,7 +5488,10 @@ class DataFrame:
 
         It is better to implement this with an expression:
 
-        >>> df.select([pl.col("foo") * 2, pl.col("bar") * 3])  # doctest: +IGNORE_RESULT
+        >>> df.select(
+        ...     pl.col("foo") * 2,
+        ...     pl.col("bar") * 3,
+        ... )  # doctest: +IGNORE_RESULT
 
         Return a Series by mapping each row to a scalar:
 
@@ -5687,7 +5808,7 @@ class DataFrame:
         if n > 0 or len(self) > 0:
             return self.__class__(
                 {
-                    nm: pli.Series(name=nm, dtype=tp).extend_constant(None, n)
+                    nm: pl.Series(name=nm, dtype=tp).extend_constant(None, n)
                     for nm, tp in self.schema.items()
                 }
             )
@@ -6072,7 +6193,9 @@ class DataFrame:
         ...         "baz": [1, 2, 3, 4, 5, 6],
         ...     }
         ... )
-        >>> df.pivot(values="baz", index="foo", columns="bar")
+        >>> df.pivot(
+        ...     values="baz", index="foo", columns="bar", aggregate_function="first"
+        ... )
         shape: (2, 4)
         ┌─────┬─────┬─────┬─────┐
         │ foo ┆ A   ┆ B   ┆ C   │
@@ -6082,6 +6205,31 @@ class DataFrame:
         │ one ┆ 1   ┆ 2   ┆ 3   │
         │ two ┆ 4   ┆ 5   ┆ 6   │
         └─────┴─────┴─────┴─────┘
+
+        Run an expression as aggregation function
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "col1": ["a", "a", "a", "b", "b", "b"],
+        ...         "col2": ["x", "x", "x", "x", "y", "y"],
+        ...         "col3": [6, 7, 3, 2, 5, 7],
+        ...     }
+        ... )
+        >>> df.pivot(
+        ...     index="col1",
+        ...     columns="col2",
+        ...     values="col3",
+        ...     aggregate_function=pl.element().tanh().mean(),
+        ... )
+        shape: (2, 3)
+        ┌──────┬──────────┬──────────┐
+        │ col1 ┆ x        ┆ y        │
+        │ ---  ┆ ---      ┆ ---      │
+        │ str  ┆ f64      ┆ f64      │
+        ╞══════╪══════════╪══════════╡
+        │ a    ┆ 0.998347 ┆ null     │
+        │ b    ┆ 0.964028 ┆ 0.999954 │
+        └──────┴──────────┴──────────┘
 
         """  # noqa: W505
         if isinstance(values, str):
@@ -6097,7 +6245,7 @@ class DataFrame:
                 "will change from `'first'` to `None`. Please pass `'first'` to keep the "
                 "current behaviour, or `None` to accept the new one.",
                 DeprecationWarning,
-                stacklevel=4,
+                stacklevel=find_stacklevel(),
             )
             aggregate_function = "first"
 
@@ -6254,7 +6402,7 @@ class DataFrame:
         │ B    ┆ 1    │
         │ C    ┆ 2    │
         │ D    ┆ 3    │
-        │ …    ┆ …    │
+        │ E    ┆ 4    │
         │ F    ┆ 5    │
         │ G    ┆ 6    │
         │ H    ┆ 7    │
@@ -6284,6 +6432,8 @@ class DataFrame:
         └────────┴────────┴────────┴────────┴────────┴────────┘
 
         """
+        import math
+
         df = self.select(columns) if columns is not None else self
 
         height = df.height
@@ -6788,8 +6938,7 @@ class DataFrame:
         Expressions with multiple outputs can be automatically instantiated as Structs
         by enabling the experimental setting ``Config.set_auto_structify(True)``:
 
-        >>> with pl.Config() as cfg:
-        ...     cfg.set_auto_structify(True)  # doctest: +IGNORE_RESULT
+        >>> with pl.Config(auto_structify=True):
         ...     df.select(
         ...         is_odd=(pl.col(pl.INTEGER_DTYPES) % 2).suffix("_is_odd"),
         ...     )
@@ -6815,7 +6964,7 @@ class DataFrame:
 
     def with_columns(
         self,
-        exprs: IntoExpr | Iterable[IntoExpr] = None,
+        exprs: IntoExpr | Iterable[IntoExpr] | None = None,
         *more_exprs: IntoExpr,
         **named_exprs: IntoExpr,
     ) -> Self:
@@ -6944,8 +7093,7 @@ class DataFrame:
         Expressions with multiple outputs can be automatically instantiated as Structs
         by enabling the experimental setting ``Config.set_auto_structify(True)``:
 
-        >>> with pl.Config() as cfg:
-        ...     cfg.set_auto_structify(True)  # doctest: +IGNORE_RESULT
+        >>> with pl.Config(auto_structify=True):
         ...     df.drop("c").with_columns(
         ...         diffs=pl.col(["a", "b"]).diff().suffix("_diff"),
         ...     )
@@ -7609,7 +7757,7 @@ class DataFrame:
         """
         if isinstance(subset, str):
             subset = [F.col(subset)]
-        elif isinstance(subset, pli.Expr):
+        elif isinstance(subset, pl.Expr):
             subset = [subset]
 
         if isinstance(subset, Sequence) and len(subset) == 1:
@@ -7872,8 +8020,8 @@ class DataFrame:
 
         Warnings
         --------
-        You should NEVER use this method to iterate over a DataFrame; if you absolutely
-        require row-iteration you should strongly prefer ``iter_rows()`` instead.
+        You should NEVER use this method to iterate over a DataFrame; if you require
+        row-iteration you should strongly prefer use of ``iter_rows()`` instead.
 
         Examples
         --------
@@ -7904,13 +8052,14 @@ class DataFrame:
         --------
         iter_rows : Row iterator over frame data (does not materialise all rows).
         rows : Materialises all frame data as a list of rows.
+        item: Return dataframe element as a scalar.
 
         """
         if index is not None and by_predicate is not None:
             raise ValueError(
                 "Cannot set both 'index' and 'by_predicate'; mutually exclusive"
             )
-        elif isinstance(index, pli.Expr):
+        elif isinstance(index, pl.Expr):
             raise TypeError("Expressions should be passed to the 'by_predicate' param")
 
         if index is not None:
@@ -7921,7 +8070,7 @@ class DataFrame:
                 return row
 
         elif by_predicate is not None:
-            if not isinstance(by_predicate, pli.Expr):
+            if not isinstance(by_predicate, pl.Expr):
                 raise TypeError(
                     f"Expected 'by_predicate to be an expression; "
                     f"found {type(by_predicate)}"
@@ -8083,7 +8232,8 @@ class DataFrame:
                 and _PYARROW_AVAILABLE
                 # note: 'ns' precision instantiates values as pandas types - avoid
                 and not any(
-                    (getattr(tp, "time_unit", None) == "ns") for tp in self.dtypes
+                    (getattr(tp, "time_unit", None) == "ns")
+                    for tp in unpack_dtypes(*self.dtypes)
                 )
             )
             for offset in range(0, self.height, buffer_size):
@@ -8433,6 +8583,31 @@ class DataFrame:
             ._df
         )
 
+    def set_sorted(
+        self,
+        column: str | Iterable[str],
+        *more_columns: str,
+        descending: bool = False,
+    ) -> Self:
+        """
+        Indicate that one or multiple columns are sorted.
+
+        Parameters
+        ----------
+        column
+            Columns that are sorted
+        more_columns
+            Additional columns that are sorted, specified as positional arguments.
+        descending
+            Whether the columns are sorted in descending order.
+        """
+        return self._from_pydf(
+            self.lazy()
+            .set_sorted(column, *more_columns, descending=descending)
+            .collect(no_optimization=True)
+            ._df
+        )
+
     def update(
         self,
         other: DataFrame,
@@ -8521,12 +8696,12 @@ class DataFrame:
 def _prepare_other_arg(other: Any, length: int | None = None) -> Series:
     # if not a series create singleton series such that it will broadcast
     value = other
-    if not isinstance(other, pli.Series):
+    if not isinstance(other, pl.Series):
         if isinstance(other, str):
             pass
         elif isinstance(other, Sequence):
             raise ValueError("Operation not supported.")
-        other = pli.Series("", [other])
+        other = pl.Series("", [other])
 
     if length and length > 1:
         other = other.extend_constant(value=value, n=length - 1)

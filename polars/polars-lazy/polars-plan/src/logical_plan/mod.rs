@@ -1,5 +1,5 @@
 use std::fmt::Debug;
-#[cfg(any(feature = "ipc", feature = "csv-file", feature = "parquet"))]
+#[cfg(any(feature = "ipc", feature = "csv", feature = "parquet"))]
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -45,12 +45,7 @@ pub use schema::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-#[cfg(any(
-    feature = "ipc",
-    feature = "parquet",
-    feature = "csv-file",
-    feature = "cse"
-))]
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "csv", feature = "cse"))]
 pub use crate::logical_plan::optimizer::file_caching::{
     collect_fingerprints, find_column_union_and_fingerprints, FileCacher, FileFingerPrint,
 };
@@ -70,7 +65,20 @@ pub enum ErrorState {
     AlreadyEncountered { prev_err_msg: String },
 }
 
-#[derive(Debug, Clone)]
+impl std::fmt::Display for ErrorState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ErrorState::NotYetEncountered { err } => write!(f, "NotYetEncountered({err})")?,
+            ErrorState::AlreadyEncountered { prev_err_msg } => {
+                write!(f, "AlreadyEncountered({prev_err_msg})")?
+            }
+        };
+
+        Ok(())
+    }
+}
+
+#[derive(Clone)]
 pub struct ErrorStateSync(Arc<Mutex<ErrorState>>);
 
 impl std::ops::Deref for ErrorStateSync {
@@ -81,20 +89,30 @@ impl std::ops::Deref for ErrorStateSync {
     }
 }
 
+impl std::fmt::Debug for ErrorStateSync {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ErrorStateSync({})", &*self.0.lock().unwrap())
+    }
+}
+
 impl ErrorStateSync {
     fn take(&self) -> PolarsError {
-        let mut err = self.0.lock().unwrap();
-        match &*err {
+        let mut curr_err = self.0.lock().unwrap();
+
+        match &*curr_err {
             ErrorState::NotYetEncountered { err: polars_err } => {
-                let msg = format!("{polars_err:?}");
-                let err = std::mem::replace(
-                    &mut *err,
-                    ErrorState::AlreadyEncountered { prev_err_msg: msg },
+                // Need to finish using `polars_err` here so that NLL considers `err` dropped
+                let prev_err_msg = polars_err.to_string();
+                // Place AlreadyEncountered in `self` for future users of `self`
+                let prev_err = std::mem::replace(
+                    &mut *curr_err,
+                    ErrorState::AlreadyEncountered { prev_err_msg },
                 );
-                let ErrorState::NotYetEncountered { err } = err else {
-                    unreachable!("polars bug in LogicalPlan error handling")
-                };
-                err
+                // Since we're in this branch, we know err was a NotYetEncountered
+                match prev_err {
+                    ErrorState::NotYetEncountered { err } => err,
+                    ErrorState::AlreadyEncountered { .. } => unreachable!(),
+                }
             }
             ErrorState::AlreadyEncountered { prev_err_msg } => {
                 polars_err!(
@@ -136,7 +154,7 @@ pub enum LogicalPlan {
         count: usize,
     },
     /// Scan a CSV file
-    #[cfg(feature = "csv-file")]
+    #[cfg(feature = "csv")]
     CsvScan {
         path: PathBuf,
         file_info: FileInfo,

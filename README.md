@@ -19,6 +19,9 @@
   <a href="https://www.npmjs.com/package/nodejs-polars">
     <img src="https://img.shields.io/npm/v/nodejs-polars.svg" alt="NPM Latest Release"/>
   </a>
+  <a href="https://rpolars.r-universe.dev">
+    <img src="https://rpolars.r-universe.dev/badges/polars" alt="R-universe Latest Release"/>
+  </a>
   <a href="https://doi.org/10.5281/zenodo.7697217">
     <img src="https://zenodo.org/badge/DOI/10.5281/zenodo.7697217.svg" alt="DOI Latest Release"/>
   </a>
@@ -31,6 +34,8 @@
   <a href="https://pola-rs.github.io/polars/polars/index.html">Rust</a>
   -
   <a href="https://pola-rs.github.io/nodejs-polars/index.html">Node.js</a>
+  -
+  <a href="https://rpolars.github.io/index.html">R</a>
   |
   <b>StackOverflow</b>:
   <a href="https://stackoverflow.com/questions/tagged/python-polars">Python</a>
@@ -38,15 +43,17 @@
   <a href="https://stackoverflow.com/questions/tagged/rust-polars">Rust</a>
   -
   <a href="https://stackoverflow.com/questions/tagged/nodejs-polars">Node.js</a>
+  -
+  <a href="https://stackoverflow.com/questions/tagged/r-polars">R</a>
   |
   <a href="https://pola-rs.github.io/polars-book/">User Guide</a>
   |
   <a href="https://discord.gg/4UfP5cfBE7">Discord</a>
 </p>
 
-## Polars: Blazingly fast DataFrames in Rust, Python & Node.js
+## Polars: Blazingly fast DataFrames in Rust, Python, Node.js, R and SQL
 
-Polars is a blazingly fast DataFrames library implemented in Rust using
+Polars is a DataFrame interface on top of an OLAP Query Engine implemented in Rust using
 [Apache Arrow Columnar Format](https://arrow.apache.org/docs/format/Columnar.html) as the memory model.
 
 - Lazy | eager execution
@@ -55,9 +62,11 @@ Polars is a blazingly fast DataFrames library implemented in Rust using
 - Query optimization
 - Powerful expression API
 - Hybrid Streaming (larger than RAM datasets)
-- Rust | Python | NodeJS | ...
+- Rust | Python | NodeJS | R | ...
 
 To learn more, read the [User Guide](https://pola-rs.github.io/polars-book/).
+
+## Python
 
 ```python
 >>> import polars as pl
@@ -96,12 +105,65 @@ shape: (5, 8)
 └──────────┴──────────┴──────────────┴─────┴─────────────┴─────────────┴─────────────┴─────────────┘
 ```
 
+## SQL
+
+```python
+>>> # create a sql context
+>>> context = pl.SQLContext()
+>>> # register a table
+>>> table = pl.scan_ipc("file.arrow")
+>>> context.register("my_table", table)
+>>> # the query we want to run
+>>> query = """
+... SELECT sum(v1) as sum_v1, min(v2) as min_v2 FROM my_table
+... WHERE id1 = 'id016'
+... LIMIT 10
+... """
+>>> ## OPTION 1
+>>> # run query to materialization
+>>> context.query(query)
+ shape: (1, 2)
+ ┌────────┬────────┐
+ │ sum_v1 ┆ min_v2 │
+ │ ---    ┆ ---    │
+ │ i64    ┆ i64    │
+ ╞════════╪════════╡
+ │ 298268 ┆ 1      │
+ └────────┴────────┘
+>>> ## OPTION 2
+>>> # Don't materialize the query, but return as LazyFrame
+>>> # and continue in python
+>>> lf = context.execute(query)
+>>> (lf.join(other_table)
+...      .groupby("foo")
+...      .agg(
+...     pl.col("sum_v1").count()
+... ).collect())
+```
+
+SQL commands can also be ran directly from your terminal.
+
+```bash
+> cargo install polars-cli --locked
+# run an inline sql query
+> polars -c "SELECT sum(v1) as sum_v1, min(v2) as min_v2 FROM read_ipc('file.arrow') WHERE id1 = 'id016' LIMIT 10"
+
+# run interactively
+> polars
+Polars CLI v0.1.0
+Type .help for help.
+
+> SELECT sum(v1) as sum_v1, min(v2) as min_v2 FROM read_ipc('file.arrow') WHERE id1 = 'id016' LIMIT 10;
+```
+
+Refer to [polars-cli](./polars-cli/README.md) for more information.
+
 ## Performance 🚀🚀
 
 ### Blazingly fast
 
 Polars is very fast. In fact, it is one of the best performing solutions available.
-See the results in [h2oai's db-benchmark](https://h2oai.github.io/db-benchmark/).
+See the results in [DuckDB's db-benchmark](https://duckdblabs.github.io/db-benchmark/).
 
 In the [TPCH benchmarks](https://www.pola.rs/benchmarks.html) polars is orders of magnitudes faster than pandas, dask, modin and vaex
 on full queries (including IO).
@@ -142,24 +204,24 @@ pip install 'polars[numpy,pandas,pyarrow]'  # install a subset of all optional d
 
 You can also install the dependencies directly.
 
-| Tag        | Description                                                                                                                           |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| all        | Install all optional dependencies (all of the following)                                                                              |
-| pandas     | Install with Pandas for converting data to and from Pandas Dataframes/Series                                                          |
-| numpy      | Install with numpy for converting data to and from numpy arrays                                                                       |
-| pyarrow    | Reading data formats using PyArrow                                                                                                    |
-| fsspec     | Support for reading from remote file systems                                                                                          |
-| connectorx | Support for reading from SQL databases                                                                                                |
-| xlsx2csv   | Support for reading from Excel files                                                                                                  |
-| deltalake  | Support for reading from Delta Lake Tables                                                                                            |
-| timezone   | Timezone support, only needed if 1. you are on Python < 3.9 and/or 2. you are on Windows, otherwise no dependencies will be installed |
+| Tag        | Description                                                                  |
+| ---------- | ---------------------------------------------------------------------------- |
+| **all**    | Install all optional dependencies (all of the following)                     |
+| pandas     | Install with Pandas for converting data to and from Pandas Dataframes/Series |
+| numpy      | Install with numpy for converting data to and from numpy arrays              |
+| pyarrow    | Reading data formats using PyArrow                                           |
+| fsspec     | Support for reading from remote file systems                                 |
+| connectorx | Support for reading from SQL databases                                       |
+| xlsx2csv   | Support for reading from Excel files                                         |
+| deltalake  | Support for reading from Delta Lake Tables                                   |
+| timezone   | Timezone support, only needed if are on Python<3.9 or you are on Windows     |
 
 Releases happen quite often (weekly / every few days) at the moment, so updating polars regularly to get the latest bugfixes / features might not be a bad idea.
 
 ### Rust
 
 You can take latest release from `crates.io`, or if you want to use the latest features / performance improvements
-point to the `master` branch of this repo.
+point to the `main` branch of this repo.
 
 ```toml
 polars = { git = "https://github.com/pola-rs/polars", rev = "<optional git tag>" }

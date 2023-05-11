@@ -9,8 +9,7 @@ from polars.dependencies import _DELTALAKE_AVAILABLE, deltalake
 from polars.io.pyarrow_dataset import scan_pyarrow_dataset
 
 if TYPE_CHECKING:
-    from polars.dataframe import DataFrame
-    from polars.lazyframe import LazyFrame
+    from polars import DataFrame, LazyFrame
 
 
 def read_delta(

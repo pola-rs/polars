@@ -69,8 +69,10 @@ use arrow::array::StructArray;
 pub use arrow::error::Result as ArrowResult;
 pub use arrow::io::json;
 use polars_arrow::conversion::chunk_to_struct;
+use polars_arrow::utils::CustomIterTools;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
+use polars_core::utils::try_get_supertype;
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::prelude::*;
@@ -197,11 +199,32 @@ where
 
         let out = match self.json_format {
             JsonFormat::Json => {
+                use arrow::io::json::read::json_deserializer::Value;
                 let bytes = rb.deref();
                 let json_value =
                     json::read::json_deserializer::parse(bytes).map_err(to_compute_err)?;
                 // likely struct type
-                let dtype = json::read::infer(&json_value)?;
+                let dtype = if let Value::Array(values) = &json_value {
+                    // struct types may have missing fields so find supertype
+                    let dtype = values
+                        .iter()
+                        .take(self.infer_schema_len.unwrap_or(usize::MAX))
+                        .map(|value| {
+                            json::read::infer(value)
+                                .map_err(PolarsError::from)
+                                .map(|dt| DataType::from(&dt))
+                        })
+                        .fold_first_(|l, r| {
+                            let l = l?;
+                            let r = r?;
+                            try_get_supertype(&l, &r)
+                        })
+                        .unwrap()?;
+                    let dtype = DataType::List(Box::new(dtype));
+                    dtype.to_arrow()
+                } else {
+                    json::read::infer(&json_value)?
+                };
                 let arr = json::read::deserialize(&json_value, dtype)?;
                 let arr = arr.as_any().downcast_ref::<StructArray>().ok_or_else(
                     || polars_err!(ComputeError: "can only deserialize json objects"),

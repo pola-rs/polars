@@ -53,7 +53,7 @@ impl DataFrame {
         let Some(total_rows) = n_rows_left.checked_mul(n_rows_right) else {
             polars_bail!(
                 ComputeError: "cross joins would produce more rows than fits into 2^32; \
-                consider comping with polars-big-idx feature, or set 'streaming'"
+                consider compiling with polars-big-idx feature, or set 'streaming'"
             );
         };
         if n_rows_left == 0 || n_rows_right == 0 {

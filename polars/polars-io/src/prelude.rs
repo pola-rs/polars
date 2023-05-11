@@ -1,7 +1,7 @@
 #[cfg(test)]
 use polars_core::prelude::*;
 
-#[cfg(feature = "csv-file")]
+#[cfg(feature = "csv")]
 pub use crate::csv::*;
 #[cfg(any(feature = "ipc", feature = "ipc_streaming"))]
 pub use crate::ipc::*;

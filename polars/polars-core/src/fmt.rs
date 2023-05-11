@@ -94,7 +94,7 @@ macro_rules! format_array {
             };
             Ok(())
         };
-        if limit < $a.len() {
+        if (limit == 0 && $a.len() > 0) || ($a.len() > limit + 1) {
             if limit > 0 {
                 for i in 0..std::cmp::max((limit / 2), 1) {
                     let v = $a.get_any_value(i).unwrap();
@@ -109,7 +109,7 @@ macro_rules! format_array {
                 }
             }
         } else {
-            for i in 0..limit {
+            for i in 0..$a.len() {
                 let v = $a.get_any_value(i).unwrap();
                 write_fn(v, $f)?;
             }
@@ -498,7 +498,9 @@ impl Display for DataFrame {
                 table.apply_modifier(UTF8_ROUND_CORNERS);
             }
             if max_n_rows > 0 {
-                if height > max_n_rows {
+                if height > max_n_rows + 1 {
+                    // Truncate the table if we have more rows than the configured maximum number
+                    // of rows plus the single row which would contain "…".
                     let mut rows = Vec::with_capacity(std::cmp::max(max_n_rows, 2));
                     for i in 0..std::cmp::max(max_n_rows / 2, 1) {
                         let row = self
@@ -858,116 +860,25 @@ fn fmt_struct(f: &mut Formatter<'_>, vals: &[AnyValue]) -> fmt::Result {
     write!(f, "}}")
 }
 
-macro_rules! impl_fmt_list {
-    ($self:ident) => {{
-        match $self.len() {
-            0 => format!("[]"),
-            1 => format!("[{}]", $self.get_any_value(0).unwrap()),
-            2 => format!(
-                "[{}, {}]",
-                $self.get_any_value(0).unwrap(),
-                $self.get_any_value(1).unwrap()
-            ),
+impl Series {
+    pub fn fmt_list(&self) -> String {
+        match self.len() {
+            0 => "[]".to_string(),
+            1 => format!("[{}]", self.get(0).unwrap()),
+            2 => format!("[{}, {}]", self.get(0).unwrap(), self.get(1).unwrap()),
             3 => format!(
                 "[{}, {}, {}]",
-                $self.get_any_value(0).unwrap(),
-                $self.get_any_value(1).unwrap(),
-                $self.get_any_value(2).unwrap()
+                self.get(0).unwrap(),
+                self.get(1).unwrap(),
+                self.get(2).unwrap()
             ),
             _ => format!(
                 "[{}, {}, … {}]",
-                $self.get_any_value(0).unwrap(),
-                $self.get_any_value(1).unwrap(),
-                $self.get_any_value($self.len() - 1).unwrap()
+                self.get(0).unwrap(),
+                self.get(1).unwrap(),
+                self.get(self.len() - 1).unwrap()
             ),
         }
-    }};
-}
-
-pub(crate) trait FmtList {
-    fn fmt_list(&self) -> String;
-}
-
-impl<T> FmtList for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    T::Native: fmt::Display,
-{
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-impl FmtList for BooleanChunked {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-impl FmtList for Utf8Chunked {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-impl FmtList for BinaryChunked {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-impl FmtList for ListChunked {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-#[cfg(feature = "dtype-categorical")]
-impl FmtList for CategoricalChunked {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-#[cfg(feature = "dtype-date")]
-impl FmtList for DateChunked {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-#[cfg(feature = "dtype-datetime")]
-impl FmtList for DatetimeChunked {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-#[cfg(feature = "dtype-duration")]
-impl FmtList for DurationChunked {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-#[cfg(feature = "dtype-time")]
-impl FmtList for TimeChunked {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-#[cfg(feature = "dtype-struct")]
-impl FmtList for StructChunked {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
-    }
-}
-
-#[cfg(feature = "object")]
-impl<T: PolarsObject> FmtList for ObjectChunked<T> {
-    fn fmt_list(&self) -> String {
-        impl_fmt_list!(self)
     }
 }
 

@@ -52,7 +52,7 @@ pub fn date_range_impl(
                     )
                     .into_datetime(tu, _tz.cloned())
                 }
-                _ => polars_bail!(ComputeError: "unable to parse time zone: {}", tz),
+                _ => polars_bail!(ComputeError: "unable to parse time zone: '{}'", tz),
             },
         },
         _ => Int64Chunked::new_vec(

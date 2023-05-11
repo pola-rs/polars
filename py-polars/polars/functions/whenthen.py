@@ -8,10 +8,10 @@ from polars.utils._parse_expr_input import expr_to_lit_or_expr
 from polars.utils._wrap import wrap_expr
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import when as pywhen
+    from polars.polars import when as _when
 
 if TYPE_CHECKING:
-    from polars.expr.expr import Expr
+    from polars import Expr
     from polars.type_aliases import IntoExpr
 
 
@@ -94,14 +94,14 @@ def when(expr: IntoExpr | Iterable[IntoExpr]) -> When:
 
     """
     expr = expr_to_lit_or_expr(expr)
-    pw = pywhen(expr._pyexpr)
-    return When(pw)
+    pywhen = _when(expr._pyexpr)
+    return When(pywhen)
 
 
 class When:
     """Utility class. See the `when` function."""
 
-    def __init__(self, pywhen: pywhen):
+    def __init__(self, pywhen: Any):
         self._pywhen = pywhen
 
     def then(self, expr: IntoExpr | Iterable[IntoExpr]) -> WhenThen:

@@ -31,6 +31,7 @@ def test_series_from_pydecimal_and_ints() -> None:
         assert s.null_count() == 1
         for i, d in enumerate(data):
             assert s[i] == d
+        assert s.to_list() == [D(x) if x is not None else None for x in data]
 
 
 def test_frame_from_pydecimal_and_ints(monkeypatch: Any) -> None:
@@ -74,10 +75,13 @@ def test_to_from_pydecimal_and_format() -> None:
 
 
 def test_init_decimal_dtype() -> None:
-    _ = pl.Series("a", [D("-0.01"), D("1.2345678"), D("500")], dtype=pl.Decimal)
-    _ = pl.DataFrame(
+    s = pl.Series("a", [D("-0.01"), D("1.2345678"), D("500")], dtype=pl.Decimal)
+    assert s.is_numeric()
+
+    df = pl.DataFrame(
         {"a": [D("-0.01"), D("1.2345678"), D("500")]}, schema={"a": pl.Decimal}
     )
+    assert df["a"].is_numeric()
 
 
 def test_decimal_cast() -> None:
@@ -92,3 +96,8 @@ def test_decimal_cast() -> None:
     assert df.with_columns(pl.col("decimals").cast(pl.Float32).alias("b2")).to_dict(
         False
     ) == {"decimals": [D("2"), D("2")], "b2": [2.0, 2.0]}
+
+
+def test_decimal_scale_precision_roundtrip(monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
+    assert pl.from_arrow(pl.Series("dec", [D("10.0")]).to_arrow()).item() == D("10.0")

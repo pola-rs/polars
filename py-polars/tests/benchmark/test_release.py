@@ -159,6 +159,55 @@ def test_max_statistic_parquet_writer() -> None:
     df = pl.arange(0, n, eager=True, dtype=pl.Int64).to_frame()
     f = "/tmp/tmp.parquet"
     df.write_parquet(f, statistics=True, use_pyarrow=False, row_group_size=n)
-    assert pl.scan_parquet(f).filter(pl.col("arange") > n - 3).collect().to_dict(
-        False
-    ) == {"arange": [149998, 149999]}
+    result = pl.scan_parquet(f).filter(pl.col("arange") > n - 3).collect()
+    expected = pl.DataFrame({"arange": [149998, 149999]})
+    assert_frame_equal(result, expected)
+
+
+def test_boolean_min_max_agg() -> None:
+    np.random.seed(0)
+    idx = np.random.randint(0, 500, 1000)
+    c = np.random.randint(0, 500, 1000) > 250
+
+    df = pl.DataFrame({"idx": idx, "c": c})
+    aggs = [pl.col("c").min().alias("c_min"), pl.col("c").max().alias("c_max")]
+    assert df.groupby("idx").agg(aggs).sum().to_dict(False) == {
+        "idx": [107583],
+        "c_min": [120],
+        "c_max": [321],
+    }
+
+    nulls = np.random.randint(0, 500, 1000) < 100
+    assert df.with_columns(
+        c=pl.when(pl.lit(nulls)).then(None).otherwise(pl.col("c"))
+    ).groupby("idx").agg(aggs).sum().to_dict(False) == {
+        "idx": [107583],
+        "c_min": [133],
+        "c_max": [276],
+    }
+
+
+def test_categorical_vs_str_groupby() -> None:
+    # this triggers the perfect hash table
+    s = pl.Series("a", np.random.randint(0, 50, 100))
+    s_with_nulls = pl.select(
+        pl.when(s < 3).then(None).otherwise(s).alias("a")
+    ).to_series()
+
+    for s_ in [s, s_with_nulls]:
+        s_ = s_.cast(str)
+        cat_out = (
+            s_.cast(pl.Categorical)
+            .to_frame("a")
+            .groupby("a")
+            .agg(pl.first().alias("first"))
+        )
+
+        str_out = s_.to_frame("a").groupby("a").agg(pl.first().alias("first"))
+        cat_out.with_columns(pl.col("a").cast(str))
+        assert_frame_equal(
+            cat_out.with_columns(
+                pl.col("a").cast(str), pl.col("first").cast(pl.List(str))
+            ).sort("a"),
+            str_out.sort("a"),
+        )

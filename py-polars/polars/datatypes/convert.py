@@ -11,6 +11,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
+    Collection,
     ForwardRef,
     Optional,
     TypeVar,
@@ -28,6 +29,7 @@ from polars.datatypes import (
     Datetime,
     Decimal,
     Duration,
+    Field,
     Float32,
     Float64,
     Int8,
@@ -140,16 +142,73 @@ def map_py_type_to_dtype(python_dtype: PythonDataType | type[object]) -> PolarsD
     raise TypeError("Invalid type")
 
 
-def is_polars_dtype(data_type: Any, include_unknown: bool = False) -> bool:
+def is_polars_dtype(dtype: Any, include_unknown: bool = False) -> bool:
     """Indicate whether the given input is a Polars dtype, or dtype specialisation."""
     try:
-        if data_type == Unknown:
+        if dtype == Unknown:
             # does not represent a realisable dtype, so ignore by default
             return include_unknown
         else:
-            return isinstance(data_type, (DataType, DataTypeClass))
+            return isinstance(dtype, (DataType, DataTypeClass))
     except ValueError:
         return False
+
+
+def unpack_dtypes(
+    *dtypes: PolarsDataType | None,
+    include_compound: bool = False,
+) -> set[PolarsDataType]:
+    """
+    Return a set of unique dtypes found in one or more (potentially compound) dtypes.
+
+    Parameters
+    ----------
+    *dtypes : PolarsDataType | Collection[PolarsDataType] | None
+        one or more polars dtypes.
+
+    include_compound : bool, default True
+        * if True, any parent/compound dtypes (List, Struct) are included in the result.
+        * if False, only the child/scalar dtypes are returned from these types.
+
+    Examples
+    --------
+    >>> from polars.datatypes import unpack_dtypes
+    >>> list_dtype = [pl.List(pl.Float64)]
+    >>> struct_dtype = pl.Struct(
+    ...     [
+    ...         pl.Field("a", pl.Int64),
+    ...         pl.Field("b", pl.Utf8),
+    ...         pl.Field("c", pl.List(pl.Float64)),
+    ...     ]
+    ... )
+    >>> unpack_dtypes([struct_dtype, list_dtype])  # doctest: +IGNORE_RESULT
+    {Float64, Int64, Utf8}
+    >>> unpack_dtypes(
+    ...     [struct_dtype, list_dtype], include_compound=True
+    ... )  # doctest: +IGNORE_RESULT
+    {Float64, Int64, Utf8, List(Float64), Struct([Field('a', Int64), Field('b', Utf8), Field('c', List(Float64))])}
+
+    """  # noqa: W505
+    if not dtypes:
+        return set()
+    elif len(dtypes) == 1 and isinstance(dtypes[0], Collection):
+        dtypes = dtypes[0]
+
+    unpacked: set[PolarsDataType] = set()
+    for tp in dtypes:
+        if isinstance(tp, List):
+            if include_compound:
+                unpacked.add(tp)
+            unpacked.update(unpack_dtypes(tp.inner, include_compound=include_compound))
+        elif isinstance(tp, Struct):
+            if include_compound:
+                unpacked.add(tp)
+            unpacked.update(unpack_dtypes(tp.fields, include_compound=include_compound))  # type: ignore[arg-type]
+        elif isinstance(tp, Field):
+            unpacked.update(unpack_dtypes(tp.dtype, include_compound=include_compound))
+        elif tp is not None and is_polars_dtype(tp):
+            unpacked.add(tp)
+    return unpacked
 
 
 class _DataTypeMappings:
@@ -167,6 +226,7 @@ class _DataTypeMappings:
             UInt64: "u64",
             Float32: "f32",
             Float64: "f64",
+            Decimal: "decimal",
             Boolean: "bool",
             Utf8: "str",
             List: "list",
@@ -256,35 +316,6 @@ class _DataTypeMappings:
             datetime: pa.timestamp("us"),
             timedelta: pa.duration("us"),
             None.__class__: pa.null(),
-        }
-
-    @property
-    @cache
-    def DTYPE_TO_ARROW_TYPE(self) -> dict[PolarsDataType, pa.lib.DataType]:
-        return {
-            Int8: pa.int8(),
-            Int16: pa.int16(),
-            Int32: pa.int32(),
-            Int64: pa.int64(),
-            UInt8: pa.uint8(),
-            UInt16: pa.uint16(),
-            UInt32: pa.uint32(),
-            UInt64: pa.uint64(),
-            Float32: pa.float32(),
-            Float64: pa.float64(),
-            Boolean: pa.bool_(),
-            Utf8: pa.large_utf8(),
-            Date: pa.date32(),
-            Datetime: pa.timestamp("us"),
-            Datetime("ms"): pa.timestamp("ms"),
-            Datetime("us"): pa.timestamp("us"),
-            Datetime("ns"): pa.timestamp("ns"),
-            Duration: pa.duration("us"),
-            Duration("ms"): pa.duration("ms"),
-            Duration("us"): pa.duration("us"),
-            Duration("ns"): pa.duration("ns"),
-            Time: pa.time64("us"),
-            Null: pa.null(),
         }
 
     @property
@@ -402,25 +433,6 @@ def py_type_to_arrow_type(dtype: PythonDataType) -> pa.lib.DataType:
         ) from None
 
 
-def dtype_to_arrow_type(dtype: PolarsDataType) -> pa.lib.DataType:
-    """Convert a Polars dtype to an Arrow dtype."""
-    try:
-        # special handling for mapping to tz-aware timestamp type.
-        # (don't want to include every possible tz string in the lookup)
-        time_zone = None
-        if dtype == Datetime:
-            dtype, time_zone = Datetime(dtype.time_unit), dtype.time_zone  # type: ignore[union-attr]
-
-        arrow_type = DataTypeMappings.DTYPE_TO_ARROW_TYPE[dtype]
-        if time_zone:
-            arrow_type = pa.timestamp(dtype.time_unit or "us", time_zone)  # type: ignore[union-attr]
-        return arrow_type
-    except KeyError:  # pragma: no cover
-        raise ValueError(
-            f"Cannot parse data type {dtype} into Arrow data type."
-        ) from None
-
-
 def dtype_short_repr_to_dtype(dtype_string: str | None) -> PolarsDataType | None:
     """Map a PolarsDataType short repr (eg: 'i64', 'list[str]') back into a dtype."""
     if dtype_string is None:
@@ -432,9 +444,14 @@ def dtype_short_repr_to_dtype(dtype_string: str | None) -> PolarsDataType | None
     dtype_base, subtype = m.groups()
     dtype = DataTypeMappings.REPR_TO_DTYPE.get(dtype_base)
     if dtype and subtype:
-        # TODO: better-handle nested types (such as List,Struct)
-        subtype = (s.strip("""'" """) for s in subtype.replace("μs", "us").split(","))
+        # TODO: further-improve handling for nested types (such as List,Struct)
         try:
+            if dtype == Decimal:
+                subtype = (None, int(subtype))
+            else:
+                subtype = (
+                    s.strip("'\" ") for s in subtype.replace("μs", "us").split(",")
+                )
             return dtype(*subtype)  # type: ignore[operator]
         except ValueError:
             pass
@@ -453,7 +470,8 @@ def supported_numpy_char_code(dtype_char: str) -> bool:
 def numpy_char_code_to_dtype(dtype_char: str) -> PolarsDataType:
     """Convert a numpy character dtype to a Polars dtype."""
     dtype = np.dtype(dtype_char)
-
+    if dtype.kind == "U":
+        return Utf8
     try:
         return DataTypeMappings.NUMPY_KIND_AND_ITEMSIZE_TO_DTYPE[
             (dtype.kind, dtype.itemsize)

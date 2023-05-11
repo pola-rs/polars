@@ -6,6 +6,10 @@ fn log<T: PolarsNumericType>(ca: &ChunkedArray<T>, base: f64) -> Float64Chunked 
     ca.cast_and_apply_in_place(|v: f64| v.log(base))
 }
 
+fn log1p<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> Float64Chunked {
+    ca.cast_and_apply_in_place(|v: f64| v.ln_1p())
+}
+
 fn exp<T: PolarsNumericType>(ca: &ChunkedArray<T>) -> Float64Chunked {
     ca.cast_and_apply_in_place(|v: f64| v.exp())
 }
@@ -25,6 +29,23 @@ pub trait LogSeries: SeriesSealed {
             Float32 => s.f32().unwrap().apply(|v| v.log(base as f32)).into_series(),
             Float64 => s.f64().unwrap().apply(|v| v.log(base)).into_series(),
             _ => s.cast(&DataType::Float64).unwrap().log(base),
+        }
+    }
+
+    /// Compute the natural logarithm of all elements plus one in the input array
+    fn log1p(&self) -> Series {
+        let s = self.as_series().to_physical_repr();
+        let s = s.as_ref();
+
+        use DataType::*;
+        match s.dtype() {
+            Int32 => log1p(s.i32().unwrap()).into_series(),
+            Int64 => log1p(s.i64().unwrap()).into_series(),
+            UInt32 => log1p(s.u32().unwrap()).into_series(),
+            UInt64 => log1p(s.u64().unwrap()).into_series(),
+            Float32 => s.f32().unwrap().apply(|v| v.ln_1p()).into_series(),
+            Float64 => s.f64().unwrap().apply(|v| v.ln_1p()).into_series(),
+            _ => s.cast(&DataType::Float64).unwrap().log1p(),
         }
     }
 

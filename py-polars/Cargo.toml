@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.16.18"
+version = "0.17.12"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -15,7 +15,7 @@ jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 
 [dependencies]
 ahash = "0.8"
-bincode = "1.3"
+ciborium = "0.2.0"
 lexical-core = "0.8"
 # todo: unfix when compilation problem is solved
 libc = "0.2"
@@ -51,7 +51,7 @@ meta = ["polars/meta"]
 search_sorted = ["polars/search_sorted"]
 decompress = ["polars/decompress"]
 lazy_regex = ["polars/lazy_regex"]
-csv-file = ["polars/csv-file"]
+csv = ["polars/csv"]
 object = ["polars/object"]
 extract_jsonpath = ["polars/extract_jsonpath"]
 pivot = ["polars/pivot"]
@@ -84,7 +84,7 @@ all = [
   "meta",
   "decompress",
   "lazy_regex",
-  "csv-file",
+  "csv",
   "extract_jsonpath",
   "timezones",
   "object",
@@ -94,6 +94,7 @@ all = [
   "cse",
   "propagate_nans",
   "polars/groupby_list",
+  "polars/fused",
   "sql",
   "binary_encoding",
   "streaming",
@@ -164,6 +165,7 @@ features = [
   "string_from_radix",
   "arg_where",
   "date_offset",
+  "approx_unique",
 ]
 
 [lib]
@@ -182,4 +184,4 @@ lto = "fat"
 built = { version = "0.6", features = ["chrono", "git2"], optional = true }
 
 [patch.crates-io]
-simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "alignment" }
+# simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "alignment" }

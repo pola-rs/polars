@@ -62,7 +62,8 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
-        self.0.append(other.as_ref().as_ref());
+        let other = other.decimal()?;
+        self.0.append(&other.0);
         Ok(())
     }
 
@@ -111,7 +112,7 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         if self.0.is_sorted_ascending_flag()
             && (idx.is_sorted_ascending_flag() || idx.is_sorted_descending_flag())
         {
-            out.set_sorted_flag(idx.is_sorted_flag2())
+            out.set_sorted_flag(idx.is_sorted_flag())
         }
 
         Ok(out
@@ -192,5 +193,9 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
 
     fn shift(&self, periods: i64) -> Series {
         self.apply_logical(|ca| ca.shift(periods))
+    }
+
+    fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
+        Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
 }

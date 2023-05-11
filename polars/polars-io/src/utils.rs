@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use dirs::home_dir;
+use home::home_dir;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::*;
 

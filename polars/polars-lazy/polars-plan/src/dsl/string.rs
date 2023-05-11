@@ -101,10 +101,53 @@ impl StringNameSpace {
         self.0.map_private(StringFunction::CountMatch(pat).into())
     }
 
-    /// Construct a `Datetime` column by parsing this string column as datetimes, using the provided `options`.
+    /// Convert a Utf8 column into a Date/Datetime/Time column.
     #[cfg(feature = "temporal")]
-    pub fn strptime(self, options: StrpTimeOptions) -> Expr {
-        self.0.map_private(StringFunction::Strptime(options).into())
+    pub fn strptime(self, dtype: DataType, options: StrptimeOptions) -> Expr {
+        self.0
+            .map_private(StringFunction::Strptime(dtype, options).into())
+    }
+
+    /// Convert a Utf8 column into a Date column.
+    #[cfg(feature = "dtype-date")]
+    pub fn to_date(self, options: StrptimeOptions) -> Expr {
+        self.strptime(DataType::Date, options)
+    }
+
+    /// Convert a Utf8 column into a Datetime column.
+    #[cfg(feature = "dtype-datetime")]
+    pub fn to_datetime(
+        self,
+        time_unit: Option<TimeUnit>,
+        time_zone: Option<TimeZone>,
+        options: StrptimeOptions,
+    ) -> Expr {
+        // If time_unit is None, try to infer it from the format or set a default
+        let time_unit = match (&options.format, time_unit) {
+            (_, Some(time_unit)) => time_unit,
+            (Some(format), None) => {
+                if format.contains("%.9f")
+                    || format.contains("%9f")
+                    || format.contains("%f")
+                    || format.contains("%.f")
+                {
+                    TimeUnit::Nanoseconds
+                } else if format.contains("%.3f") || format.contains("%3f") {
+                    TimeUnit::Milliseconds
+                } else {
+                    TimeUnit::Microseconds
+                }
+            }
+            (None, None) => TimeUnit::Microseconds,
+        };
+
+        self.strptime(DataType::Datetime(time_unit, time_zone), options)
+    }
+
+    /// Convert a Utf8 column into a Time column.
+    #[cfg(feature = "dtype-time")]
+    pub fn to_time(self, options: StrptimeOptions) -> Expr {
+        self.strptime(DataType::Time, options)
     }
 
     /// Concat the values into a string array.
@@ -404,6 +447,14 @@ impl StringNameSpace {
         self.0
             .map_private(FunctionExpr::StringExpr(StringFunction::FromRadix(
                 radix, strict,
+            )))
+    }
+
+    /// Slice the string values.
+    pub fn str_slice(self, start: i64, length: Option<u64>) -> Expr {
+        self.0
+            .map_private(FunctionExpr::StringExpr(StringFunction::Slice(
+                start, length,
             )))
     }
 }

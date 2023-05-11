@@ -645,7 +645,8 @@ fn test_rolling_lookback() {
         ClosedWindow::Right,
         TimeUnit::Milliseconds,
         NO_TIMEZONE.copied(),
-    );
+    )
+    .unwrap();
     assert_eq!(dates.len(), groups.len());
     assert_eq!(groups[0], [0, 1]); // bound: 22:00 -> 24:00     time: 24:00
     assert_eq!(groups[1], [0, 2]); // bound: 22:30 -> 00:30     time: 00:30
@@ -665,7 +666,8 @@ fn test_rolling_lookback() {
         ClosedWindow::Right,
         TimeUnit::Milliseconds,
         NO_TIMEZONE.copied(),
-    );
+    )
+    .unwrap();
     assert_eq!(dates.len(), groups.len());
     assert_eq!(groups[0], [0, 3]);
     assert_eq!(groups[1], [0, 4]);
@@ -685,7 +687,8 @@ fn test_rolling_lookback() {
         ClosedWindow::Right,
         TimeUnit::Milliseconds,
         NO_TIMEZONE.copied(),
-    );
+    )
+    .unwrap();
     assert_eq!(dates.len(), groups.len());
     assert_eq!(groups[0], [0, 5]);
     assert_eq!(groups[1], [1, 5]);
@@ -716,7 +719,8 @@ fn test_rolling_lookback() {
             0,
             None,
         )
-        .collect::<Vec<_>>();
+        .collect::<PolarsResult<Vec<_>>>()
+        .unwrap();
         let g1 = groupby_values_iter_partial_lookbehind(
             period,
             offset,
@@ -725,7 +729,8 @@ fn test_rolling_lookback() {
             tu,
             NO_TIMEZONE.copied(),
         )
-        .collect::<Vec<_>>();
+        .collect::<PolarsResult<Vec<_>>>()
+        .unwrap();
         assert_eq!(g0, g1);
 
         let offset = Duration::parse("-2h");
@@ -738,7 +743,8 @@ fn test_rolling_lookback() {
             NO_TIMEZONE.copied(),
             0,
         )
-        .collect::<Vec<_>>();
+        .collect::<PolarsResult<Vec<_>>>()
+        .unwrap();
         let g1 = groupby_values_iter_partial_lookbehind(
             period,
             offset,
@@ -747,7 +753,8 @@ fn test_rolling_lookback() {
             tu,
             NO_TIMEZONE.copied(),
         )
-        .collect::<Vec<_>>();
+        .collect::<PolarsResult<Vec<_>>>()
+        .unwrap();
         assert_eq!(g0, g1);
     }
 }

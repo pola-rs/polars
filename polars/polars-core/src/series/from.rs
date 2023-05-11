@@ -8,7 +8,7 @@ use arrow::compute::cast::utf8_to_large_utf8;
 ))]
 use arrow::temporal_conversions::*;
 use polars_arrow::compute::cast::cast;
-#[cfg(feature = "dtype-struct")]
+#[cfg(any(feature = "dtype-struct", feature = "dtype-categorical"))]
 use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
 
 use crate::chunked_array::cast::cast_chunks;
@@ -16,7 +16,7 @@ use crate::chunked_array::cast::cast_chunks;
 use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::EXTENSION_NAME;
-#[cfg(feature = "dtype-decimal")]
+#[cfg(all(feature = "dtype-decimal", feature = "python"))]
 use crate::config::decimal_is_active;
 use crate::config::verbose;
 use crate::prelude::*;
@@ -78,8 +78,12 @@ impl Series {
             #[cfg(feature = "dtype-categorical")]
             Categorical(rev_map) => {
                 let cats = UInt32Chunked::from_chunks(name, chunks);
-                CategoricalChunked::from_cats_and_rev_map_unchecked(cats, rev_map.clone().unwrap())
-                    .into_series()
+                let mut ca = CategoricalChunked::from_cats_and_rev_map_unchecked(
+                    cats,
+                    rev_map.clone().unwrap(),
+                );
+                ca.set_fast_unique(false);
+                ca.into_series()
             }
             Boolean => BooleanChunked::from_chunks(name, chunks).into_series(),
             Float32 => Float32Chunked::from_chunks(name, chunks).into_series(),
@@ -87,7 +91,23 @@ impl Series {
             #[cfg(feature = "dtype-struct")]
             Struct(_) => Series::try_from_arrow_unchecked(name, chunks, &dtype.to_arrow()).unwrap(),
             #[cfg(feature = "object")]
-            Object(_) => todo!(),
+            Object(_) => {
+                assert_eq!(chunks.len(), 1);
+                let arr = chunks[0]
+                    .as_any()
+                    .downcast_ref::<FixedSizeBinaryArray>()
+                    .unwrap();
+                // Safety:
+                // this is highly unsafe. it will dereference a raw ptr on the heap
+                // make sure the ptr is allocated and from this pid
+                // (the pid is checked before dereference)
+                {
+                    let pe = PolarsExtension::new(arr.clone());
+                    let s = pe.get_series(name);
+                    pe.take_and_forget();
+                    s
+                }
+            }
             Null => new_null(name, &chunks),
             Unknown => panic!("uh oh, somehow we don't know the dtype?"),
             #[allow(unreachable_patterns)]
@@ -210,8 +230,7 @@ impl Series {
                 use arrow::datatypes::IntegerType;
                 // don't spuriously call this; triggers a read on mmapped data
                 let arr = if chunks.len() > 1 {
-                    let chunks = chunks.iter().map(|arr| &**arr).collect::<Vec<_>>();
-                    arrow::compute::concatenate::concatenate(&chunks)?
+                    concatenate_owned_unchecked(&chunks)?
                 } else {
                     chunks[0].clone()
                 };
@@ -267,7 +286,9 @@ impl Series {
 
                 // Safety
                 // the invariants of an Arrow Dictionary guarantee the keys are in bounds
-                Ok(CategoricalChunked::from_keys_and_values(name, keys, values).into_series())
+                let mut ca = CategoricalChunked::from_keys_and_values(name, keys, values);
+                ca.set_fast_unique(false);
+                Ok(ca.into_series())
             }
             #[cfg(feature = "object")]
             ArrowDataType::Extension(s, _, Some(_)) if s == EXTENSION_NAME => {
@@ -289,7 +310,7 @@ impl Series {
                 Ok(s)
             }
             #[cfg(feature = "dtype-struct")]
-            ArrowDataType::Struct(_) => {
+            ArrowDataType::Struct(logical_fields) => {
                 let arr = if chunks.len() > 1 {
                     // don't spuriously call this. This triggers a read on memmapped data
                     concatenate_owned_unchecked(&chunks).unwrap() as ArrayRef
@@ -321,10 +342,18 @@ impl Series {
                         None,
                     ));
                 }
+
+                // ensure we maintain logical types if proved by the caller
+                let dtype_fields = if logical_fields.is_empty() {
+                    struct_arr.fields()
+                } else {
+                    logical_fields
+                };
+
                 let fields = struct_arr
                     .values()
                     .iter()
-                    .zip(struct_arr.fields())
+                    .zip(dtype_fields)
                     .map(|(arr, field)| {
                         Series::try_from_arrow_unchecked(
                             &field.name,

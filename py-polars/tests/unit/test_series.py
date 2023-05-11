@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
+from numpy.testing import assert_array_equal
 
 import polars as pl
 from polars.datatypes import (
@@ -146,11 +147,13 @@ def test_init_inputs(monkeypatch: Any) -> None:
         pl.DataFrame(np.array([1, 2, 3]), schema=["a"])
 
 
-def test_init_dataclass_namedtuple() -> None:
-    from dataclasses import dataclass
+def test_init_structured_objects() -> None:
+    # validate init from dataclass, namedtuple, and pydantic model objects
     from typing import NamedTuple
 
-    @dataclass
+    from polars.dependencies import dataclasses, pydantic
+
+    @dataclasses.dataclass
     class TeaShipmentDC:
         exporter: str
         importer: str
@@ -163,11 +166,18 @@ def test_init_dataclass_namedtuple() -> None:
         product: str
         tonnes: None | int
 
-    for Tea in (TeaShipmentDC, TeaShipmentNT):
+    class TeaShipmentPD(pydantic.BaseModel):
+        exporter: str
+        importer: str
+        product: str
+        tonnes: int
+
+    for Tea in (TeaShipmentDC, TeaShipmentNT, TeaShipmentPD):
         t0 = Tea(exporter="Sri Lanka", importer="USA", product="Ceylon", tonnes=10)
         t1 = Tea(exporter="India", importer="UK", product="Darjeeling", tonnes=25)
+        t2 = Tea(exporter="China", importer="UK", product="Keemum", tonnes=40)
 
-        s = pl.Series("t", [t0, t1])
+        s = pl.Series("t", [t0, t1, t2])
 
         assert isinstance(s, pl.Series)
         assert s.dtype.fields == [  # type: ignore[union-attr]
@@ -189,8 +199,14 @@ def test_init_dataclass_namedtuple() -> None:
                 "product": "Darjeeling",
                 "tonnes": 25,
             },
+            {
+                "exporter": "China",
+                "importer": "UK",
+                "product": "Keemum",
+                "tonnes": 40,
+            },
         ]
-        assert_frame_equal(s.to_frame(), pl.DataFrame({"t": [t0, t1]}))
+        assert_frame_equal(s.to_frame(), pl.DataFrame({"t": [t0, t1, t2]}))
 
 
 def test_concat() -> None:
@@ -455,10 +471,36 @@ def test_various() -> None:
     assert_series_equal(a.arg_unique(), pl.Series("a", [0, 1, 3], dtype=UInt32))
 
     assert_series_equal(a.take([2, 3]), pl.Series("a", [1, 4]))
-    assert a.is_numeric()
 
-    a = pl.Series("bool", [True, False])
-    assert not a.is_numeric()
+
+def test_series_dtype_is() -> None:
+    s = pl.Series("s", [1, 2, 3])
+
+    assert s.is_numeric()
+    assert s.is_integer()
+    assert s.is_integer(signed=True)
+    assert not s.is_integer(signed=False)
+    assert (s * 0.99).is_float()
+
+    s = pl.Series("s", [1, 2, 3], dtype=pl.UInt8)
+    assert s.is_numeric()
+    assert s.is_integer()
+    assert not s.is_integer(signed=True)
+    assert s.is_integer(signed=False)
+
+    s = pl.Series("bool", [True, None, False])
+    assert not s.is_numeric()
+
+    s = pl.Series("s", ["testing..."])
+    assert s.is_utf8()
+
+    s = pl.Series("s", [], dtype=pl.Decimal(20, 15))
+    assert not s.is_float()
+    assert s.is_numeric()
+    assert s.is_empty()
+
+    s = pl.Series("s", [], dtype=pl.Datetime("ms", time_zone="UTC"))
+    assert s.is_temporal()
 
 
 def test_series_head_tail_limit() -> None:
@@ -554,6 +596,20 @@ def test_to_python() -> None:
     a = pl.Series("a", [1, None, 2])
     assert a.null_count() == 1
     assert a.to_list() == [1, None, 2]
+
+
+def test_to_struct() -> None:
+    s = pl.Series("nums", ["12 34", "56 78", "90 00"]).str.extract_all(r"\d+")
+
+    assert s.arr.to_struct().struct.fields == ["field_0", "field_1"]
+    assert s.arr.to_struct(fields=lambda idx: f"n{idx:02}").struct.fields == [
+        "n00",
+        "n01",
+    ]
+    assert_frame_equal(
+        s.arr.to_struct(fields=["one", "two"]).struct.unnest(),
+        pl.DataFrame({"one": ["12", "56", "90"], "two": ["34", "78", "00"]}),
+    )
 
 
 def test_sort() -> None:
@@ -742,6 +798,14 @@ def test_ufunc() -> None:
     )
 
 
+def test_numpy_string_array() -> None:
+    s_utf8 = pl.Series("a", ["aa", "bb", "cc", "dd"], dtype=pl.Utf8)
+    assert_array_equal(
+        np.char.capitalize(s_utf8),
+        np.array(["Aa", "Bb", "Cc", "Dd"], dtype="<U2"),
+    )
+
+
 def test_get() -> None:
     a = pl.Series("a", [1, 2, 3])
     pos_idxs = pl.Series("idxs", [2, 0, 1, 0], dtype=pl.Int8)
@@ -835,6 +899,19 @@ def test_set_list_and_tuple(idx: list[int] | tuple[int]) -> None:
     a = pl.Series("a", [1, 2, 3])
     a[idx] = 4
     assert_series_equal(a, pl.Series("a", [4, 2, 4]))
+
+
+def test_init_nested_tuple() -> None:
+    s1 = pl.Series("s", (1, 2, 3))
+    assert s1.to_list() == [1, 2, 3]
+
+    s2 = pl.Series("s", ((1, 2, 3),), dtype=pl.List(pl.UInt8))
+    assert s2.to_list() == [[1, 2, 3]]
+    assert s2.dtype == pl.List(pl.UInt8)
+
+    s3 = pl.Series("s", ((1, 2, 3), (1, 2, 3)), dtype=pl.List(pl.Int32))
+    assert s3.to_list() == [[1, 2, 3], [1, 2, 3]]
+    assert s3.dtype == pl.List(pl.Int32)
 
 
 def test_fill_null() -> None:
@@ -1056,6 +1133,11 @@ def test_repeat() -> None:
     s = pl.repeat(0, 0, eager=True)
     assert s.dtype == pl.Int32
     assert s.len() == 0
+    assert pl.repeat(datetime(2023, 2, 2), 3, eager=True).to_list() == [
+        datetime(2023, 2, 2, 0, 0),
+        datetime(2023, 2, 2, 0, 0),
+        datetime(2023, 2, 2, 0, 0),
+    ]
 
 
 def test_shape() -> None:
@@ -1130,6 +1212,9 @@ def test_describe() -> None:
         "min": 1.0,
         "null_count": 0.0,
         "std": 1.0,
+        "median": 2.0,
+        "25%": 1.0,
+        "75%": 3.0,
     }
     assert dict(float_s.describe().rows()) == {  # type: ignore[arg-type]
         "count": 3.0,
@@ -1138,6 +1223,9 @@ def test_describe() -> None:
         "min": 1.3,
         "null_count": 0.0,
         "std": 3.8109491381194442,
+        "median": 4.6,
+        "25%": 1.3,
+        "75%": 8.9,
     }
     assert dict(str_s.describe().rows()) == {  # type: ignore[arg-type]
         "count": 3,
@@ -1153,36 +1241,12 @@ def test_describe() -> None:
         "count": "3",
         "max": "2021-01-03",
         "min": "2021-01-01",
+        "median": "2021-01-02",
         "null_count": "0",
     }
 
     with pytest.raises(ValueError):
         assert empty_s.describe()
-
-
-def test_is_in() -> None:
-    s = pl.Series(["a", "b", "c"])
-
-    out = s.is_in(["a", "b"])
-    assert out.to_list() == [True, True, False]
-
-    # Check if empty list is converted to pl.Utf8.
-    out = s.is_in([])
-    assert out.to_list() == [False]  # one element?
-
-    for x_y_z in (["x", "y", "z"], {"x", "y", "z"}):
-        out = s.is_in(x_y_z)
-        assert out.to_list() == [False, False, False]
-
-    df = pl.DataFrame({"a": [1.0, 2.0], "b": [1, 4], "c": ["e", "d"]})
-    assert df.select(pl.col("a").is_in(pl.col("b"))).to_series().to_list() == [
-        True,
-        False,
-    ]
-    assert df.select(pl.col("b").is_in([])).to_series().to_list() == [False]
-
-    with pytest.raises(pl.ComputeError, match=r"cannot compare"):
-        df.select(pl.col("b").is_in(["x", "x"]))
 
 
 def test_slice() -> None:
@@ -1242,6 +1306,9 @@ def test_round() -> None:
     a = pl.Series("f", [1.003, 2.003])
     b = a.round(2)
     assert b.to_list() == [1.00, 2.00]
+
+    b = a.round()
+    assert b.to_list() == [1.0, 2.0]
 
 
 def test_apply_list_out() -> None:
@@ -1316,6 +1383,14 @@ def test_pct_change() -> None:
     s = pl.Series("a", [1, 2, 4, 8, 16, 32, 64])
     expected = pl.Series("a", [None, None, float("inf"), 3.0, 3.0, 3.0, 3.0])
     assert_series_equal(s.pct_change(2), expected)
+    # negative
+    assert pl.Series(range(5)).pct_change(-1).to_list() == [
+        -1.0,
+        -0.5,
+        -0.3333333333333333,
+        -0.25,
+        None,
+    ]
 
 
 def test_skew() -> None:
@@ -1599,9 +1674,6 @@ def test_comparisons_int_series_to_float() -> None:
     assert_series_equal(srs_int % 2.0, pl.Series([1.0, 0.0, 1.0, 0.0]))
     assert_series_equal(4.0 % srs_int, pl.Series([0.0, 0.0, 1.0, 0.0]))
 
-    assert_series_equal(srs_int - pl.lit(1.0), pl.Series([0.0, 1.0, 2.0, 3.0]))
-    assert_series_equal(srs_int + pl.lit(1.0), pl.Series([2.0, 3.0, 4.0, 5.0]))
-
     assert_series_equal(srs_int // 2.0, pl.Series([0.0, 1.0, 1.0, 2.0]))
     assert_series_equal(srs_int < 3.0, pl.Series([True, True, False, False]))
     assert_series_equal(srs_int <= 3.0, pl.Series([True, True, True, False]))
@@ -1620,9 +1692,6 @@ def test_comparisons_float_series_to_int() -> None:
     assert_series_equal(srs_float / 2, pl.Series([0.5, 1.0, 1.5, 2.0]))
     assert_series_equal(srs_float % 2, pl.Series([1.0, 0.0, 1.0, 0.0]))
     assert_series_equal(4 % srs_float, pl.Series([0.0, 0.0, 1.0, 0.0]))
-
-    assert_series_equal(srs_float - pl.lit(1), pl.Series([0.0, 1.0, 2.0, 3.0]))
-    assert_series_equal(srs_float + pl.lit(1), pl.Series([2.0, 3.0, 4.0, 5.0]))
 
     assert_series_equal(srs_float // 2, pl.Series([0.0, 1.0, 1.0, 2.0]))
     assert_series_equal(srs_float < 3, pl.Series([True, True, False, False]))
@@ -1772,6 +1841,11 @@ def test_arg_min_and_arg_max() -> None:
     assert s.flags == {"SORTED_ASC": False, "SORTED_DESC": True}
     assert s.arg_min() == 4
     assert s.arg_max() == 0
+
+    # test empty series
+    s = pl.Series("a", [])
+    assert s.arg_min() is None
+    assert s.arg_max() is None
 
 
 def test_is_null_is_not_null() -> None:
@@ -1923,11 +1997,35 @@ def test_init_categorical() -> None:
             assert_series_equal(a, expected)
 
 
-def test_nested_list_types_preserved() -> None:
-    expected_dtype = pl.UInt32
-    srs1 = pl.Series([pl.Series([3, 4, 5, 6], dtype=expected_dtype) for _ in range(5)])
-    for srs2 in srs1:
-        assert srs2.dtype == expected_dtype
+def test_iter_nested_list() -> None:
+    elems = list(pl.Series("s", [[1, 2], [3, 4]]))
+    assert_series_equal(elems[0], pl.Series([1, 2]))
+    assert_series_equal(elems[1], pl.Series([3, 4]))
+
+
+def test_iter_nested_struct() -> None:
+    # note: this feels inconsistent with the above test for nested list, but
+    # let's ensure the behaviour is codified before potentially modifying...
+    elems = list(pl.Series("s", [{"a": 1, "b": 2}, {"a": 3, "b": 4}]))
+    assert elems[0] == {"a": 1, "b": 2}
+    assert elems[1] == {"a": 3, "b": 4}
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.UInt8,
+        pl.Float32,
+        pl.Int32,
+        pl.Boolean,
+        pl.List(pl.Utf8),
+        pl.Struct([pl.Field("a", pl.Int64), pl.Field("b", pl.Boolean)]),
+    ],
+)
+def test_nested_list_types_preserved(dtype: pl.DataType) -> None:
+    srs = pl.Series([pl.Series([], dtype=dtype) for _ in range(5)])
+    for srs_nested in srs:
+        assert srs_nested.dtype == dtype
 
 
 def test_log_exp() -> None:
@@ -1940,6 +2038,9 @@ def test_log_exp() -> None:
 
     expected = pl.Series("a", np.exp(b.to_numpy()))
     assert_series_equal(b.exp(), expected)
+
+    expected = pl.Series("a", np.log1p(a.to_numpy()))
+    assert_series_equal(a.log1p(), expected)
 
 
 def test_shuffle() -> None:
@@ -1960,6 +2061,16 @@ def test_to_physical() -> None:
     # casting a date results in an Int32
     s = pl.Series("a", [date(2020, 1, 1)] * 3)
     expected = pl.Series("a", [18262] * 3, dtype=Int32)
+    assert_series_equal(s.to_physical(), expected)
+
+    # casting a categorical results in a UInt32
+    s = pl.Series(["cat1"]).cast(pl.Categorical)
+    expected = pl.Series([0], dtype=UInt32)
+    assert_series_equal(s.to_physical(), expected)
+
+    # casting a List(Categorical) results in a List(UInt32)
+    s = pl.Series([["cat1"]]).cast(pl.List(pl.Categorical))
+    expected = pl.Series([[0]], dtype=pl.List(UInt32))
     assert_series_equal(s.to_physical(), expected)
 
 
@@ -2443,6 +2554,9 @@ def test_item() -> None:
     s = pl.Series("a", [1, 2])
     with pytest.raises(ValueError):
         s.item()
+
+    assert s.item(0) == 1
+    assert s.item(-1) == 2
 
     s = pl.Series("a", [])
     with pytest.raises(ValueError):

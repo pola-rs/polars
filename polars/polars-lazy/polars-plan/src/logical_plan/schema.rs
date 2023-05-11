@@ -23,7 +23,7 @@ impl LogicalPlan {
             DataFrameScan { schema, .. } => Ok(Cow::Borrowed(schema)),
             AnonymousScan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
             Selection { input, .. } => input.schema(),
-            #[cfg(feature = "csv-file")]
+            #[cfg(feature = "csv")]
             CsvScan { file_info, .. } => Ok(Cow::Borrowed(&file_info.schema)),
             Projection { schema, .. } => Ok(Cow::Borrowed(schema)),
             LocalProjection { schema, .. } => Ok(Cow::Borrowed(schema)),
@@ -112,8 +112,8 @@ pub fn set_estimated_row_counts(
                 let mut sum_output = (None, 0);
                 for input in &inputs {
                     let mut out = set_estimated_row_counts(*input, lp_arena, expr_arena, 0);
-                    if options.slice {
-                        apply_slice(&mut out, Some((0, options.slice_len as usize)))
+                    if let Some((_offset, len)) = options.slice {
+                        apply_slice(&mut out, Some((0, len)))
                     }
                     // todo! deal with known as well
                     let out = estimate_sizes(out.0, out.1, out.2);
@@ -189,7 +189,7 @@ pub fn set_estimated_row_counts(
             let len = df.height();
             (Some(len), len, _filter_count)
         }
-        #[cfg(feature = "csv-file")]
+        #[cfg(feature = "csv")]
         CsvScan { file_info, .. } => {
             let (known_size, estimated_size) = file_info.row_estimation;
             (known_size, estimated_size, _filter_count)

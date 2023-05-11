@@ -28,7 +28,7 @@ pub enum AAggExpr {
     First(Node),
     Last(Node),
     Mean(Node),
-    List(Node),
+    Implode(Node),
     Quantile {
         expr: Node,
         quantile: Node,
@@ -109,6 +109,10 @@ pub enum AExpr {
     },
     Count,
     Nth(i64),
+    Cache {
+        input: Node,
+        id: usize,
+    },
 }
 
 impl AExpr {
@@ -142,6 +146,7 @@ impl AExpr {
             | Ternary { .. }
             | Wildcard
             | Cast { .. }
+            | Cache{..}
             | Filter { .. } => false,
         }
     }
@@ -218,6 +223,7 @@ impl AExpr {
             }
             Wildcard => panic!("no wildcard expected"),
             Slice { input, .. } => Single(*input),
+            Cache { input, .. } => Single(*input),
             Count => Leaf,
             Nth(_) => Leaf,
         }
@@ -235,7 +241,7 @@ impl AAggExpr {
             First(input) => Single(*input),
             Last(input) => Single(*input),
             Mean(input) => Single(*input),
-            List(input) => Single(*input),
+            Implode(input) => Single(*input),
             Quantile { expr, .. } => Single(*expr),
             Sum(input) => Single(*input),
             Count(input) => Single(*input),

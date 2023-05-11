@@ -22,13 +22,12 @@ else:
     from typing_extensions import Literal
 
 if TYPE_CHECKING:
+    from polars import Expr, Series
     from polars.datatypes import DataType, DataTypeClass, TemporalType
     from polars.dependencies import numpy as np
     from polars.dependencies import pandas as pd
     from polars.dependencies import pyarrow as pa
-    from polars.expr import Expr
     from polars.functions.whenthen import WhenThen, WhenThenThen
-    from polars.series import Series
 
     if sys.version_info >= (3, 10):
         from typing import TypeAlias
@@ -105,7 +104,17 @@ SizeUnit: TypeAlias = Literal[
     "gigabytes",
     "terabytes",
 ]
-StartBy: TypeAlias = Literal["window", "datapoint", "monday"]
+StartBy: TypeAlias = Literal[
+    "window",
+    "datapoint",
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+]
 TimeUnit: TypeAlias = Literal["ns", "us", "ms"]
 UniqueKeepStrategy: TypeAlias = Literal["first", "last", "any", "none"]
 UnstackDirection: TypeAlias = Literal["vertical", "horizontal"]
@@ -163,3 +172,6 @@ RowTotalsDefinition: TypeAlias = Union[
     Collection[str],
     bool,
 ]
+
+# standard/named hypothesis profiles used for parametric testing
+ParametricProfileNames: TypeAlias = Literal["fast", "balanced", "expensive"]

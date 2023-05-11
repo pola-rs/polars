@@ -122,6 +122,14 @@ impl DataType {
             #[cfg(feature = "dtype-categorical")]
             Categorical(_) => UInt32,
             List(dt) => List(Box::new(dt.to_physical())),
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields) => {
+                let new_fields = fields
+                    .iter()
+                    .map(|s| Field::new(s.name(), s.data_type().to_physical()))
+                    .collect();
+                Struct(new_fields)
+            }
             _ => self.clone(),
         }
     }
@@ -240,6 +248,17 @@ impl DataType {
                 ArrowDataType::Struct(fields)
             }
             Unknown => unreachable!(),
+        }
+    }
+
+    pub fn is_nested_null(&self) -> bool {
+        use DataType::*;
+        match self {
+            Null => true,
+            List(field) => field.is_nested_null(),
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields) => fields.iter().all(|fld| fld.dtype.is_nested_null()),
+            _ => false,
         }
     }
 }

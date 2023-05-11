@@ -5,6 +5,12 @@ on:
     tags:
       - py-*
 
+env:
+  RUST_TOOLCHAIN: nightly-2023-05-07
+  PYTHON_VERSION: '3.7'
+  MATURIN_VERSION: '0.14.10'
+  MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
+
 defaults:
   run:
     shell: bash
@@ -16,7 +22,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
         with:
-          python-version: '3.7'
+          python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Fix README symlink
         run: |
@@ -26,13 +32,12 @@ jobs:
       - name: Publish wheel
         uses: messense/maturin-action@v1
         env:
-          MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
           RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
         with:
-          rust-toolchain: nightly-2023-04-02
-          maturin-version: '0.14.10'
           command: publish
           args: -m py-polars/Cargo.toml --skip-existing -o wheels -u ritchie46
+          maturin-version: ${{ env.MATURIN_VERSION }}
+          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
 
   # Needed for Docker on Apple M1
   manylinux-aarch64:
@@ -41,7 +46,12 @@ jobs:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
         with:
-          python-version: '3.7'
+          python-version: ${{ env.PYTHON_VERSION }}
+      # needed because we got OOM
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 10
 
       - name: Fix README symlink
         run: |
@@ -51,14 +61,13 @@ jobs:
       - name: Publish wheel
         uses: messense/maturin-action@v1
         env:
-          MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
           JEMALLOC_SYS_WITH_LG_PAGE: 16
         with:
-          rust-toolchain: nightly-2023-04-02
-          target: aarch64-unknown-linux-gnu
-          maturin-version: '0.14.10'
           command: publish
           args: -m py-polars/Cargo.toml --skip-existing --no-sdist -o wheels -i python -u ritchie46
+          target: aarch64-unknown-linux-gnu
+          maturin-version: ${{ env.MATURIN_VERSION }}
+          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
 
   manylinux-bigidx:
     runs-on: ubuntu-latest
@@ -66,7 +75,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
         with:
-          python-version: '3.7'
+          python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Fix README symlink
         run: |
@@ -82,13 +91,12 @@ jobs:
       - name: Publish wheel
         uses: messense/maturin-action@v1
         env:
-          MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
           RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+avx,+fma
         with:
-          rust-toolchain: nightly-2023-04-02
-          maturin-version: '0.14.10'
           command: publish
           args: -m py-polars/Cargo.toml --skip-existing -o wheels -u ritchie46
+          maturin-version: ${{ env.MATURIN_VERSION }}
+          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
 
   manylinux-x64_64-lts-cpu:
     runs-on: ubuntu-latest
@@ -96,7 +104,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
         with:
-          python-version: '3.7'
+          python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Fix README symlink
         run: |
@@ -109,13 +117,12 @@ jobs:
       - name: Publish wheel
         uses: messense/maturin-action@v1
         env:
-          MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
           RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt --cfg use_mimalloc
         with:
-          rust-toolchain: nightly-2023-04-02
-          maturin-version: '0.14.10'
           command: publish
           args: -m py-polars/Cargo.toml --skip-existing -o wheels -u ritchie46
+          maturin-version: ${{ env.MATURIN_VERSION }}
+          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
 
   win-macos:
     runs-on: ${{ matrix.os }}
@@ -128,7 +135,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
         with:
-          python-version: '3.7'
+          python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Fix README symlink
         run: |
@@ -138,13 +145,12 @@ jobs:
       - name: Publish wheel
         uses: messense/maturin-action@v1
         env:
-          MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
           RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+sse4.1,+sse4.2
         with:
-          rust-toolchain: nightly-2023-04-02
-          maturin-version: '0.14.10'
           command: publish
           args: -m py-polars/Cargo.toml --no-sdist --skip-existing -o wheels -i python -u ritchie46
+          maturin-version: ${{ env.MATURIN_VERSION }}
+          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
 
   macos-aarch64:
     runs-on: macos-latest
@@ -152,7 +158,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
         with:
-          python-version: '3.7'
+          python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Fix README symlink
         run: |
@@ -164,36 +170,7 @@ jobs:
 
       - name: Publish wheel
         uses: messense/maturin-action@v1
-        env:
-          MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
         with:
-          maturin-version: '0.14.10'
           command: publish
           args: -m py-polars/Cargo.toml --target aarch64-apple-darwin --no-sdist -o wheels -i python -u ritchie46
-
-  # uncomment to build a universal2 wheel
-  # we don't run it because it is twice as big and not needed because we build for both architectures separately
-  # macos-aarch64-universal:
-  #   runs-on: macos-latest
-  #   steps:
-  #     - uses: actions/checkout@v3
-  #     - uses: actions/setup-python@v4
-  #       with:
-  #         python-version: '3.7'
-
-  #     - name: Fix README symlink
-  #       run: |
-  #         rm py-polars/README.md
-  #         cp README.md py-polars/README.md
-
-  #     - name: Set up Rust targets
-  #       run: rustup target add aarch64-apple-darwin
-
-  #     - name: Publish wheel
-  #       uses: messense/maturin-action@v1
-  #       env:
-  #         MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
-  #       with:
-  #         maturin-version: '0.14.10'
-  #         command: publish
-  #         args: -m py-polars/Cargo.toml --no-sdist --universal2 -o wheels -i python -u ritchie46
+          maturin-version: ${{ env.MATURIN_VERSION }}

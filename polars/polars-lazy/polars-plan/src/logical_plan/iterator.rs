@@ -38,7 +38,7 @@ macro_rules! push_expr {
                     NUnique(e) => $push(e),
                     First(e) => $push(e),
                     Last(e) => $push(e),
-                    List(e) => $push(e),
+                    Implode(e) => $push(e),
                     Count(e) => $push(e),
                     Quantile { expr, .. } => $push(expr),
                     Sum(e) => $push(e),
@@ -89,6 +89,7 @@ macro_rules! push_expr {
             }
             Exclude(e, _) => $push(e),
             KeepName(e) => $push(e),
+            Cache { input, .. } => $push(input),
             RenameAlias { expr, .. } => $push(expr),
         }
     }};
@@ -172,6 +173,7 @@ impl AExpr {
                 push(left);
             }
             Cast { expr, .. } => push(expr),
+            Cache { input, .. } => push(input),
             Sort { expr, .. } => push(expr),
             Take { expr, idx } => {
                 push(idx);
@@ -200,7 +202,7 @@ impl AExpr {
                     NUnique(e) => push(e),
                     First(e) => push(e),
                     Last(e) => push(e),
-                    List(e) => push(e),
+                    Implode(e) => push(e),
                     Count(e) => push(e),
                     Quantile { expr, .. } => push(expr),
                     Sum(e) => push(e),

@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 import sys
 import typing
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from itertools import permutations
 from typing import Any, cast
 
@@ -1034,3 +1034,88 @@ def test_operators_vs_expressions() -> None:
             | (pl.col("y").cast(int) == pl.col("z"))
         ),
     )
+
+
+def test_head() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
+    assert df.select(pl.col("a").head(0)).to_dict(False) == {"a": []}
+    assert df.select(pl.col("a").head(3)).to_dict(False) == {"a": [1, 2, 3]}
+    assert df.select(pl.col("a").head(10)).to_dict(False) == {"a": [1, 2, 3, 4, 5]}
+    assert df.select(pl.col("a").head(pl.count() / 2)).to_dict(False) == {"a": [1, 2]}
+
+
+def test_tail() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
+    assert df.select(pl.col("a").tail(0)).to_dict(False) == {"a": []}
+    assert df.select(pl.col("a").tail(3)).to_dict(False) == {"a": [3, 4, 5]}
+    assert df.select(pl.col("a").tail(10)).to_dict(False) == {"a": [1, 2, 3, 4, 5]}
+    assert df.select(pl.col("a").tail(pl.count() / 2)).to_dict(False) == {"a": [4, 5]}
+
+
+def test_cache_expr(monkeypatch: Any, capfd: Any) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    df = pl.DataFrame(
+        {
+            "x": [3, 3, 3, 5, 8],
+        }
+    )
+    x = (pl.col("x") * 10).cache()
+
+    assert (df.groupby(1).agg([x * x * x])).to_dict(False) == {
+        "literal": [1],
+        "x": [[27000, 27000, 27000, 125000, 512000]],
+    }
+    _, err = capfd.readouterr()
+    assert """cache hit: CACHE [(col("x")) * (10)]""" in err
+
+
+@pytest.mark.parametrize(
+    ("const", "dtype"),
+    [
+        (1, pl.Int8),
+        (4, pl.UInt32),
+        (4.5, pl.Float32),
+        (None, pl.Float64),
+        ("白鵬翔", pl.Utf8),
+        (date.today(), pl.Date),
+        (datetime.now(), pl.Datetime("ns")),
+        (time(23, 59, 59), pl.Time),
+        (timedelta(hours=7, seconds=123), pl.Duration("ms")),
+    ],
+)
+def test_extend_constant(const: Any, dtype: pl.PolarsDataType) -> None:
+    df = pl.DataFrame({"a": pl.Series("s", [None], dtype=dtype)})
+
+    expected = pl.DataFrame(
+        {"a": pl.Series("s", [None, const, const, const], dtype=dtype)}
+    )
+
+    assert_frame_equal(df.select(pl.col("a").extend_constant(const, 3)), expected)
+
+
+@pytest.mark.parametrize(
+    ("const", "dtype"),
+    [
+        (1, pl.Int8),
+        (4, pl.UInt32),
+        (4.5, pl.Float32),
+        (None, pl.Float64),
+        ("白鵬翔", pl.Utf8),
+        (date.today(), pl.Date),
+        (datetime.now(), pl.Datetime("ns")),
+        (time(23, 59, 59), pl.Time),
+        (timedelta(hours=7, seconds=123), pl.Duration("ms")),
+    ],
+)
+def test_extend_constant_arr(const: Any, dtype: pl.PolarsDataType) -> None:
+    """
+    Test extend_constant in pl.List array.
+
+    NOTE: This function currently fails when the Series is a list with a single [None]
+          value. Hence, this function does not begin with [[None]], but [[const]].
+    """
+    s = pl.Series("s", [[const]], dtype=pl.List(dtype))
+
+    expected = pl.Series("s", [[const, const, const, const]], dtype=pl.List(dtype))
+
+    assert_series_equal(s.arr.eval(pl.element().extend_constant(const, 3)), expected)

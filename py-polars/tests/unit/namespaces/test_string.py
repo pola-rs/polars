@@ -74,6 +74,28 @@ def test_str_decode_exception() -> None:
         s.str.decode("utf8")  # type: ignore[arg-type]
 
 
+def test_hex_decode_return_dtype() -> None:
+    data = {"a": ["68656c6c6f", "776f726c64"]}
+    expr = pl.col("a").str.decode("hex")
+
+    df = pl.DataFrame(data).select(expr)
+    assert df.schema == {"a": pl.Binary}
+
+    ldf = pl.LazyFrame(data).select(expr)
+    assert ldf.schema == {"a": pl.Binary}
+
+
+def test_base64_decode_return_dtype() -> None:
+    data = {"a": ["Zm9v", "YmFy"]}
+    expr = pl.col("a").str.decode("base64")
+
+    df = pl.DataFrame(data).select(expr)
+    assert df.schema == {"a": pl.Binary}
+
+    ldf = pl.LazyFrame(data).select(expr)
+    assert ldf.schema == {"a": pl.Binary}
+
+
 def test_str_replace_str_replace_all() -> None:
     s = pl.Series(["hello", "world", "test", "rooted"])
     expected = pl.Series(["hell0", "w0rld", "test", "r0oted"])

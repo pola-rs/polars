@@ -12,10 +12,10 @@ from typing import TYPE_CHECKING, Any, Callable, Iterator, Sequence, cast
 import numpy as np
 import pyarrow as pa
 import pytest
-from numpy.testing import assert_array_equal
+from numpy.testing import assert_array_equal, assert_equal
 
 import polars as pl
-from polars.datatypes import DTYPE_TEMPORAL_UNITS, INTEGER_DTYPES
+from polars.datatypes import DTYPE_TEMPORAL_UNITS, FLOAT_DTYPES, INTEGER_DTYPES
 from polars.testing import (
     assert_frame_equal,
     assert_frame_not_equal,
@@ -538,7 +538,7 @@ def test_take_misc(fruits_cars: pl.DataFrame) -> None:
     with pytest.raises(pl.ComputeError):
         (
             df.sort("fruits").select(
-                [pl.col("B").reverse().take([1, 2]).list().over("fruits"), "fruits"]
+                [pl.col("B").reverse().take([1, 2]).implode().over("fruits"), "fruits"]
             )
         )
 
@@ -548,7 +548,7 @@ def test_take_misc(fruits_cars: pl.DataFrame) -> None:
                 pl.col("B")
                 .reverse()
                 .take(index)  # type: ignore[arg-type]
-                .list()
+                .implode()
                 .over("fruits"),
                 "fruits",
             ]
@@ -558,7 +558,7 @@ def test_take_misc(fruits_cars: pl.DataFrame) -> None:
         assert out[4, "B"].to_list() == [1, 4]
 
     out = df.sort("fruits").select(
-        [pl.col("B").reverse().take(pl.lit(1)).list().over("fruits"), "fruits"]
+        [pl.col("B").reverse().take(pl.lit(1)).implode().over("fruits"), "fruits"]
     )
     assert out[0, "B"] == 3
     assert out[4, "B"] == 4
@@ -739,6 +739,12 @@ def test_extend() -> None:
             pl.col("cat").cast(pl.Categorical),
         )
         assert_frame_equal(df1, expected)
+
+        # 8745
+        df = pl.DataFrame([{"age": 1}, {"age": 2}, {"age": 3}])
+        df = df[:-1]
+        tail = pl.DataFrame([{"age": 8}])
+        assert df.extend(tail).to_dict(False) == {"age": [1, 2, 8]}
 
 
 def test_file_buffer() -> None:
@@ -1221,13 +1227,33 @@ def test_describe() -> None:
     df = df.with_columns(pl.col("e").cast(pl.Categorical))
     expected = pl.DataFrame(
         {
-            "describe": ["count", "null_count", "mean", "std", "min", "max", "median"],
-            "a": [3.0, 0.0, 2.2666667, 1.101514, 1.0, 3.0, 2.8],
-            "b": [3.0, 1.0, 4.5, 0.7071067811865476, 4.0, 5.0, 4.5],
-            "c": [3.0, 0.0, 0.6666666666666666, 0.5773502588272095, 0.0, 1.0, 1.0],
-            "d": ["3", "1", None, None, "b", "c", None],
-            "e": ["3", "1", None, None, None, None, None],
-            "f": ["3", "0", None, None, "2020-01-01", "2022-01-01", None],
+            "describe": [
+                "count",
+                "null_count",
+                "mean",
+                "std",
+                "min",
+                "max",
+                "median",
+                "25%",
+                "75%",
+            ],
+            "a": [3.0, 0.0, 2.2666667, 1.101514, 1.0, 3.0, 2.8, 1.0, 3.0],
+            "b": [3.0, 1.0, 4.5, 0.7071067811865476, 4.0, 5.0, 4.5, 4.0, 5.0],
+            "c": [
+                3.0,
+                0.0,
+                0.6666666666666666,
+                0.5773502588272095,
+                0.0,
+                1.0,
+                1.0,
+                None,
+                None,
+            ],
+            "d": ["3", "1", None, None, "b", "c", None, None, None],
+            "e": ["3", "1", None, None, None, None, None, None, None],
+            "f": ["3", "0", None, None, "2020-01-01", "2022-01-01", None, None, None],
         }
     )
     assert_frame_equal(df.describe(), expected)
@@ -1242,11 +1268,63 @@ def test_describe() -> None:
     )
 
     assert df.describe().to_dict(False) == {
-        "describe": ["count", "null_count", "mean", "std", "min", "max", "median"],
-        "numerical": [4.0, 1.0, 1.3333333333333333, 0.5773502691896257, 1.0, 2.0, 1.0],
-        "struct": ["4", "1", None, None, None, None, None],
-        "list": ["4", "1", None, None, None, None, None],
+        "describe": [
+            "count",
+            "null_count",
+            "mean",
+            "std",
+            "min",
+            "max",
+            "median",
+            "25%",
+            "75%",
+        ],
+        "numerical": [
+            4.0,
+            1.0,
+            1.3333333333333333,
+            0.5773502691896257,
+            1.0,
+            2.0,
+            1.0,
+            1.0,
+            2.0,
+        ],
+        "struct": ["4", "1", None, None, None, None, None, None, None],
+        "list": ["4", "1", None, None, None, None, None, None, None],
     }
+
+    for pcts in (None, []):  # type:ignore[var-annotated]
+        assert df.describe(percentiles=pcts).rows() == [
+            ("count", 4.0, "4", "4"),
+            ("null_count", 1.0, "1", "1"),
+            ("mean", 1.3333333333333333, None, None),
+            ("std", 0.5773502691896257, None, None),
+            ("min", 1.0, None, None),
+            ("max", 2.0, None, None),
+            ("median", 1.0, None, None),
+        ]
+
+    described = df.describe(percentiles=(0.2, 0.4, 0.6, 0.8))
+    assert described.schema == {
+        "describe": pl.Utf8,
+        "numerical": pl.Float64,
+        "struct": pl.Utf8,
+        "list": pl.Utf8,
+    }
+    assert described.rows() == [
+        ("count", 4.0, "4", "4"),
+        ("null_count", 1.0, "1", "1"),
+        ("mean", 1.3333333333333333, None, None),
+        ("std", 0.5773502691896257, None, None),
+        ("min", 1.0, None, None),
+        ("max", 2.0, None, None),
+        ("median", 1.0, None, None),
+        ("20%", 1.0, None, None),
+        ("40%", 1.0, None, None),
+        ("60%", 1.0, None, None),
+        ("80%", 2.0, None, None),
+    ]
 
 
 def test_duration_arithmetic() -> None:
@@ -1329,14 +1407,67 @@ def test_assign() -> None:
 
 def test_to_numpy() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+
     out_array = df.to_numpy()
     expected_array = np.array([[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]], dtype=np.float64)
     assert_array_equal(out_array, expected_array)
     assert out_array.flags["F_CONTIGUOUS"] is True
 
+    structured_array = df.to_numpy(structured=True)
+    expected_array = np.array(
+        [(1, 1.0), (2, 2.0), (3, 3.0)], dtype=[("a", "<i8"), ("b", "<f8")]
+    )
+    assert_array_equal(structured_array, expected_array)
+    assert structured_array.flags["F_CONTIGUOUS"] is True
+
+
+def test_to_numpy_structured() -> None:
+    # round-trip structured array: validate init/export
+    structured_array = np.array(
+        [
+            ("Google Pixel 7", 521.90, True),
+            ("Apple iPhone 14 Pro", 999.00, True),
+            ("OnePlus 11", 699.00, True),
+            ("Samsung Galaxy S23 Ultra", 1199.99, False),
+        ],
+        dtype=np.dtype(
+            [
+                ("product", "U24"),
+                ("price_usd", "float64"),
+                ("in_stock", "bool"),
+            ]
+        ),
+    )
+
+    df = pl.from_numpy(structured_array)
+    assert df.schema == {
+        "product": pl.Utf8,
+        "price_usd": pl.Float64,
+        "in_stock": pl.Boolean,
+    }
+    exported_array = df.to_numpy(structured=True)
+    assert exported_array["product"].dtype == np.dtype("U24")
+    assert_array_equal(exported_array, structured_array)
+
+    # none/nan values
+    df = pl.DataFrame({"x": ["a", None, "b"], "y": [5.5, None, -5.5]})
+    exported_array = df.to_numpy(structured=True)
+
+    assert exported_array.dtype == np.dtype([("x", object), ("y", float)])
+    for name in df.columns:
+        assert_equal(
+            list(exported_array[name]),
+            (
+                df[name].fill_null(float("nan"))
+                if df.schema[name] in FLOAT_DTYPES
+                else df[name]
+            ).to_list(),
+        )
+
 
 def test__array__() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+
     out_array = np.asarray(df.to_numpy())
     expected_array = np.array([[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]], dtype=np.float64)
     assert_array_equal(out_array, expected_array)
@@ -1625,6 +1756,7 @@ def test_join_dates() -> None:
         datetime(2021, 6, 24, 10, 0, 0),
         interval=timedelta(hours=1),
         closed="left",
+        eager=True,
     )
     dts = (
         dts_in.cast(int)
@@ -1645,8 +1777,12 @@ def test_join_dates() -> None:
 
 
 def test_asof_cross_join() -> None:
-    left = pl.DataFrame({"a": [-10, 5, 10], "left_val": ["a", "b", "c"]})
-    right = pl.DataFrame({"a": [1, 2, 3, 6, 7], "right_val": [1, 2, 3, 6, 7]})
+    left = pl.DataFrame({"a": [-10, 5, 10], "left_val": ["a", "b", "c"]}).with_columns(
+        pl.col("a").set_sorted()
+    )
+    right = pl.DataFrame(
+        {"a": [1, 2, 3, 6, 7], "right_val": [1, 2, 3, 6, 7]}
+    ).with_columns(pl.col("a").set_sorted())
 
     # only test dispatch of asof join
     out = left.join_asof(right, on="a")
@@ -1953,7 +2089,7 @@ def test_partitioned_groupby_order() -> None:
     # check if group ordering is maintained.
     # we only have 30 groups, so this triggers a partitioned group by
     df = pl.DataFrame({"x": [chr(v) for v in range(33, 63)], "y": range(30)})
-    out = df.groupby("x", maintain_order=True).agg(pl.all().list())
+    out = df.groupby("x", maintain_order=True).agg(pl.all().implode())
     assert_series_equal(out["x"], df["x"])
 
 
@@ -2591,15 +2727,6 @@ def test_is_between_data_types() -> None:
     )
 
 
-def test_is_in() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3]})
-    assert df.select(pl.col("a").is_in([1, 2]))["a"].to_list() == [
-        True,
-        True,
-        False,
-    ]
-
-
 def test_empty_is_in() -> None:
     df_empty_isin = pl.DataFrame({"foo": ["a", "b", "c", "d"]}).filter(
         pl.col("foo").is_in([])
@@ -2633,7 +2760,7 @@ def test_join_suffixes() -> None:
         # no need for an assert, we error if wrong
         df_a.join(df_b, on="A", suffix="_y", how=how)["B_y"]
 
-    df_a.join_asof(df_b, on="A", suffix="_y")["B_y"]
+    df_a.join_asof(df_b, on=pl.col("A").set_sorted(), suffix="_y")["B_y"]
 
 
 def test_preservation_of_subclasses_after_groupby_statements() -> None:
@@ -2688,9 +2815,9 @@ def test_asof_by_multiple_keys() -> None:
         }
     )
 
-    result = lhs.join_asof(rhs, on="a", by=["by", "by2"], strategy="backward").select(
-        ["a", "by"]
-    )
+    result = lhs.join_asof(
+        rhs, on=pl.col("a").set_sorted(), by=["by", "by2"], strategy="backward"
+    ).select(["a", "by"])
     expected = pl.DataFrame({"a": [-20, -19, 8, 12, 14], "by": [1, 1, 2, 2, 2]})
     assert_frame_equal(result, expected)
 
@@ -3303,13 +3430,25 @@ def test_glimpse(capsys: Any) -> None:
             "d": [None, "b", "c"],
             "e": ["usd", "eur", None],
             "f": pl.date_range(
-                datetime(2023, 1, 1), datetime(2023, 1, 3), "1d", time_unit="us"
+                datetime(2023, 1, 1),
+                datetime(2023, 1, 3),
+                "1d",
+                time_unit="us",
+                eager=True,
             ),
             "g": pl.date_range(
-                datetime(2023, 1, 1), datetime(2023, 1, 3), "1d", time_unit="ms"
+                datetime(2023, 1, 1),
+                datetime(2023, 1, 3),
+                "1d",
+                time_unit="ms",
+                eager=True,
             ),
             "h": pl.date_range(
-                datetime(2023, 1, 1), datetime(2023, 1, 3), "1d", time_unit="ns"
+                datetime(2023, 1, 1),
+                datetime(2023, 1, 3),
+                "1d",
+                time_unit="ns",
+                eager=True,
             ),
             "i": [[5, 6], [3, 4], [9, 8]],
             "j": [[5.0, 6.0], [3.0, 4.0], [9.0, 8.0]],
@@ -3342,6 +3481,18 @@ def test_glimpse(capsys: Any) -> None:
     # remove the last newline on the capsys
     assert capsys.readouterr().out[:-1] == expected
 
+    colc = "a" * 96
+    df = pl.DataFrame({colc: [11, 22, 33]})
+    result = df.glimpse(return_as_string=True)
+    expected = textwrap.dedent(
+        """\
+        Rows: 3
+        Columns: 1
+        $ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa... <i64> 11, 22, 33
+        """
+    )
+    assert result == expected
+
 
 def test_item() -> None:
     df = pl.DataFrame({"a": [1]})
@@ -3351,9 +3502,15 @@ def test_item() -> None:
     with pytest.raises(ValueError):
         df.item()
 
+    assert df.item(0, 0) == 1
+    assert df.item(1, "a") == 2
+
     df = pl.DataFrame({"a": [1], "b": [2]})
     with pytest.raises(ValueError):
         df.item()
+
+    assert df.item(0, "a") == 1
+    assert df.item(0, "b") == 2
 
     df = pl.DataFrame({})
     with pytest.raises(ValueError):
@@ -3714,6 +3871,14 @@ def test_window_deadlock() -> None:
         [
             pl.col("*"),  # select all
             pl.col("random").sum().over("groups").alias("sum[random]/groups"),
-            pl.col("random").list().over("names").alias("random/name"),
+            pl.col("random").implode().over("names").alias("random/name"),
         ]
     )
+
+
+def test_sum_empty_column_names() -> None:
+    df = pl.DataFrame({"x": [], "y": []}, schema={"x": pl.Boolean, "y": pl.Boolean})
+    expected = pl.DataFrame(
+        {"x": [0], "y": [0]}, schema={"x": pl.UInt32, "y": pl.UInt32}
+    )
+    assert_frame_equal(df.sum(), expected)

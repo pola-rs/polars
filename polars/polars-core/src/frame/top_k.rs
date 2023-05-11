@@ -10,6 +10,7 @@ use crate::frame::DataFrame;
 use crate::prelude::sort::_broadcast_descending;
 use crate::prelude::sort::arg_sort_multiple::_get_rows_encoded;
 use crate::prelude::*;
+use crate::series::IsSorted;
 use crate::utils::NoNull;
 
 #[derive(Eq)]
@@ -65,6 +66,7 @@ impl DataFrame {
             .collect::<Vec<_>>();
 
         let sorted = if k >= self.height() {
+            rows.sort_unstable();
             &rows
         } else {
             let (lower, _el, _upper) = rows.select_nth_unstable(k);
@@ -74,6 +76,23 @@ impl DataFrame {
 
         let idx: NoNull<IdxCa> = sorted.iter().map(|cmp_row| cmp_row.idx).collect();
 
-        unsafe { Ok(self.take_unchecked(&idx.into_inner())) }
+        let mut df = unsafe { self.take_unchecked(&idx.into_inner()) };
+
+        let first_descending = descending[0];
+        let first_by_column = by_column[0].name().to_string();
+
+        // Mark the first sort column as sorted
+        // if the column did not exists it is ok, because we sorted by an expression
+        // not present in the dataframe
+        let _ = df.apply(&first_by_column, |s| {
+            let mut s = s.clone();
+            if first_descending {
+                s.set_sorted_flag(IsSorted::Descending)
+            } else {
+                s.set_sorted_flag(IsSorted::Ascending)
+            }
+            s
+        });
+        Ok(df)
     }
 }

@@ -31,9 +31,13 @@ pub enum TemporalFunction {
     Nanosecond,
     TimeStamp(TimeUnit),
     Truncate(String, String),
+    #[cfg(feature = "date_offset")]
+    MonthStart,
+    #[cfg(feature = "date_offset")]
+    MonthEnd,
     Round(String, String),
     #[cfg(feature = "timezones")]
-    CastTimezone(Option<TimeZone>),
+    CastTimezone(Option<TimeZone>, Option<bool>),
     #[cfg(feature = "timezones")]
     TzLocalize(TimeZone),
     DateRange {
@@ -69,9 +73,13 @@ impl Display for TemporalFunction {
             Nanosecond => "nanosecond",
             TimeStamp(tu) => return write!(f, "dt.timestamp({tu})"),
             Truncate(..) => "truncate",
+            #[cfg(feature = "date_offset")]
+            MonthStart => "month_start",
+            #[cfg(feature = "date_offset")]
+            MonthEnd => "month_end",
             Round(..) => "round",
             #[cfg(feature = "timezones")]
-            CastTimezone(_) => "replace_timezone",
+            CastTimezone(_, _) => "replace_timezone",
             #[cfg(feature = "timezones")]
             TzLocalize(_) => "tz_localize",
             DateRange { .. } => return write!(f, "date_range"),
@@ -114,7 +122,7 @@ pub(super) fn time(s: &Series) -> PolarsResult<Series> {
         DataType::Datetime(_, Some(_)) => s
             .datetime()
             .unwrap()
-            .replace_time_zone(None)?
+            .replace_time_zone(None, None)?
             .cast(&DataType::Time),
         DataType::Datetime(_, _) => s.datetime().unwrap().cast(&DataType::Time),
         DataType::Date => s.datetime().unwrap().cast(&DataType::Time),
@@ -128,7 +136,7 @@ pub(super) fn date(s: &Series) -> PolarsResult<Series> {
         DataType::Datetime(_, Some(_)) => s
             .datetime()
             .unwrap()
-            .replace_time_zone(None)?
+            .replace_time_zone(None, None)?
             .cast(&DataType::Date),
         DataType::Datetime(_, _) => s.datetime().unwrap().cast(&DataType::Date),
         DataType::Date => Ok(s.clone()),
@@ -141,7 +149,7 @@ pub(super) fn datetime(s: &Series) -> PolarsResult<Series> {
         DataType::Datetime(tu, Some(_)) => s
             .datetime()
             .unwrap()
-            .replace_time_zone(None)?
+            .replace_time_zone(None, None)?
             .cast(&DataType::Datetime(*tu, None)),
         DataType::Datetime(tu, _) => s.datetime().unwrap().cast(&DataType::Datetime(*tu, None)),
         dtype => polars_bail!(ComputeError: "expected Datetime, got {}", dtype),
@@ -205,6 +213,48 @@ pub(super) fn truncate(s: &Series, every: &str, offset: &str) -> PolarsResult<Se
     })
 }
 
+#[cfg(feature = "date_offset")]
+pub(super) fn month_start(s: &Series) -> PolarsResult<Series> {
+    Ok(match s.dtype() {
+        DataType::Datetime(_, tz) => match tz {
+            #[cfg(feature = "timezones")]
+            Some(tz) => match tz.parse::<Tz>() {
+                Ok(tz) => s.datetime().unwrap().month_start(Some(&tz))?.into_series(),
+                Err(_) => match parse_offset(tz) {
+                    Ok(tz) => s.datetime().unwrap().month_start(Some(&tz))?.into_series(),
+                    Err(_) => unreachable!(),
+                },
+            },
+            _ => s
+                .datetime()
+                .unwrap()
+                .month_start(NO_TIMEZONE)?
+                .into_series(),
+        },
+        DataType::Date => s.date().unwrap().month_start(NO_TIMEZONE)?.into_series(),
+        dt => polars_bail!(opq = month_start, got = dt, expected = "date/datetime"),
+    })
+}
+
+#[cfg(feature = "date_offset")]
+pub(super) fn month_end(s: &Series) -> PolarsResult<Series> {
+    Ok(match s.dtype() {
+        DataType::Datetime(_, tz) => match tz {
+            #[cfg(feature = "timezones")]
+            Some(tz) => match tz.parse::<Tz>() {
+                Ok(tz) => s.datetime().unwrap().month_end(Some(&tz))?.into_series(),
+                Err(_) => match parse_offset(tz) {
+                    Ok(tz) => s.datetime().unwrap().month_end(Some(&tz))?.into_series(),
+                    Err(_) => unreachable!(),
+                },
+            },
+            _ => s.datetime().unwrap().month_end(NO_TIMEZONE)?.into_series(),
+        },
+        DataType::Date => s.date().unwrap().month_end(NO_TIMEZONE)?.into_series(),
+        dt => polars_bail!(opq = month_end, got = dt, expected = "date/datetime"),
+    })
+}
+
 pub(super) fn round(s: &Series, every: &str, offset: &str) -> PolarsResult<Series> {
     let every = Duration::parse(every);
     let offset = Duration::parse(offset);
@@ -242,9 +292,14 @@ pub(super) fn round(s: &Series, every: &str, offset: &str) -> PolarsResult<Serie
 }
 
 #[cfg(feature = "timezones")]
-pub(super) fn replace_timezone(s: &Series, time_zone: Option<&str>) -> PolarsResult<Series> {
+pub(super) fn replace_timezone(
+    s: &Series,
+    time_zone: Option<&str>,
+    use_earliest: Option<bool>,
+) -> PolarsResult<Series> {
     let ca = s.datetime()?;
-    ca.replace_time_zone(time_zone).map(|ca| ca.into_series())
+    ca.replace_time_zone(time_zone, use_earliest)
+        .map(|ca| ca.into_series())
 }
 
 #[cfg(feature = "timezones")]
@@ -257,7 +312,7 @@ pub(super) fn tz_localize(s: &Series, tz: &str) -> PolarsResult<Series> {
         "cannot localize a tz-aware datetime \
         (consider using 'dt.convert_time_zone' or 'dt.replace_time_zone')"
     );
-    Ok(ca.replace_time_zone(Some(tz))?.into_series())
+    Ok(ca.replace_time_zone(Some(tz), None)?.into_series())
 }
 
 pub(super) fn date_range_dispatch(
