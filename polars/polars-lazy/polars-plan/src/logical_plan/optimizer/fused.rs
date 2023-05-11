@@ -14,6 +14,28 @@ fn get_expr(input: Vec<Node>, op: FusedOperator) -> AExpr {
     }
 }
 
+fn check_eligible(
+    left: &Node,
+    right: &Node,
+    lp_node: Node,
+    expr_arena: &Arena<AExpr>,
+    lp_arena: &Arena<ALogicalPlan>,
+) -> PolarsResult<Option<bool>> {
+    let Some(input_node) = lp_arena.get(lp_node).get_input() else {return Ok(None)};
+    let schema = lp_arena.get(input_node).schema(lp_arena);
+    let type_left = expr_arena
+        .get(*left)
+        .get_type(&schema, Context::Default, expr_arena)?;
+    let type_right = expr_arena
+        .get(*right)
+        .get_type(&schema, Context::Default, expr_arena)?;
+    if type_left.is_numeric() && type_right.is_numeric() {
+        Ok(Some(true))
+    } else {
+        Ok(Some(false))
+    }
+}
+
 impl OptimizationRule for FusedArithmetic {
     #[allow(clippy::float_cmp)]
     fn optimize_expr(
@@ -46,26 +68,13 @@ impl OptimizationRule for FusedArithmetic {
                         left: a,
                         op: Operator::Multiply,
                         right: b,
-                    } => {
-                        let Some(input_node) = lp_arena.get(lp_node).get_input() else {return Ok(None)};
-                        let schema = lp_arena.get(input_node).schema(lp_arena);
-                        let type_left = expr_arena.get(*left).get_type(
-                            &schema,
-                            Context::Default,
-                            expr_arena,
-                        )?;
-                        let type_right = expr_arena.get(*right).get_type(
-                            &schema,
-                            Context::Default,
-                            expr_arena,
-                        )?;
-                        if type_left.is_numeric() && type_right.is_numeric() {
+                    } => match check_eligible(left, right, lp_node, expr_arena, lp_arena)? {
+                        None | Some(false) => Ok(None),
+                        Some(true) => {
                             let input = vec![*right, *a, *b];
                             Ok(Some(get_expr(input, FusedOperator::MultiplyAdd)))
-                        } else {
-                            Ok(None)
                         }
-                    }
+                    },
                     _ => match expr_arena.get(*right) {
                         // input
                         // (a + (b * c)
@@ -74,26 +83,13 @@ impl OptimizationRule for FusedArithmetic {
                             left: a,
                             op: Operator::Multiply,
                             right: b,
-                        } => {
-                            let Some(input_node) = lp_arena.get(lp_node).get_input() else {return Ok(None)};
-                            let schema = lp_arena.get(input_node).schema(lp_arena);
-                            let type_left = expr_arena.get(*left).get_type(
-                                &schema,
-                                Context::Default,
-                                expr_arena,
-                            )?;
-                            let type_right = expr_arena.get(*right).get_type(
-                                &schema,
-                                Context::Default,
-                                expr_arena,
-                            )?;
-                            if type_left.is_numeric() && type_right.is_numeric() {
+                        } => match check_eligible(left, right, lp_node, expr_arena, lp_arena)? {
+                            None | Some(false) => Ok(None),
+                            Some(true) => {
                                 let input = vec![*left, *a, *b];
                                 Ok(Some(get_expr(input, FusedOperator::MultiplyAdd)))
-                            } else {
-                                Ok(None)
                             }
-                        }
+                        },
                         _ => Ok(None),
                     },
                 }
@@ -113,26 +109,13 @@ impl OptimizationRule for FusedArithmetic {
                         left: a,
                         op: Operator::Multiply,
                         right: b,
-                    } => {
-                        let Some(input_node) = lp_arena.get(lp_node).get_input() else {return Ok(None)};
-                        let schema = lp_arena.get(input_node).schema(lp_arena);
-                        let type_left = expr_arena.get(*left).get_type(
-                            &schema,
-                            Context::Default,
-                            expr_arena,
-                        )?;
-                        let type_right = expr_arena.get(*right).get_type(
-                            &schema,
-                            Context::Default,
-                            expr_arena,
-                        )?;
-                        if type_left.is_numeric() && type_right.is_numeric() {
+                    } => match check_eligible(left, right, lp_node, expr_arena, lp_arena)? {
+                        None | Some(false) => Ok(None),
+                        Some(true) => {
                             let input = vec![*left, *a, *b];
                             Ok(Some(get_expr(input, FusedOperator::SubMultiply)))
-                        } else {
-                            Ok(None)
                         }
-                    }
+                    },
                     _ => {
                         // FUSED MULTIPLY SUB
                         match expr_arena.get(*left) {
@@ -144,23 +127,12 @@ impl OptimizationRule for FusedArithmetic {
                                 op: Operator::Multiply,
                                 right: b,
                             } => {
-                                let Some(input_node) = lp_arena.get(lp_node).get_input() else {return Ok(None)};
-                                let schema = lp_arena.get(input_node).schema(lp_arena);
-                                let type_left = expr_arena.get(*left).get_type(
-                                    &schema,
-                                    Context::Default,
-                                    expr_arena,
-                                )?;
-                                let type_right = expr_arena.get(*right).get_type(
-                                    &schema,
-                                    Context::Default,
-                                    expr_arena,
-                                )?;
-                                if type_left.is_numeric() && type_right.is_numeric() {
-                                    let input = vec![*a, *b, *right];
-                                    Ok(Some(get_expr(input, FusedOperator::MultiplySub)))
-                                } else {
-                                    Ok(None)
+                                match check_eligible(left, right, lp_node, expr_arena, lp_arena)? {
+                                    None | Some(false) => Ok(None),
+                                    Some(true) => {
+                                        let input = vec![*a, *b, *right];
+                                        Ok(Some(get_expr(input, FusedOperator::MultiplySub)))
+                                    }
                                 }
                             }
                             _ => Ok(None),
