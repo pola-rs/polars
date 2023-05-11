@@ -2351,7 +2351,8 @@ def arange(
     end: int | Expr | Series,
     step: int = ...,
     *,
-    eager: Literal[False],
+    eager: Literal[False] = ...,
+    dtype: PolarsDataType | None = ...,
 ) -> Expr:
     ...
 
