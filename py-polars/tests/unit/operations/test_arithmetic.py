@@ -140,7 +140,7 @@ def test_series_expr_arithm() -> None:
     assert (s % pl.col("a")).meta == pl.lit(s) % pl.col("a")
 
 
-def test_fma() -> None:
+def test_fused_arithm() -> None:
     df = pl.DataFrame(
         {
             "a": [1, 2, 3],
@@ -163,6 +163,15 @@ def test_fma() -> None:
     q = df.lazy().with_columns((0 + 2.5 * (0.5 + pl.col("x"))).alias("compute"))
     assert q.collect()["compute"][0] == 1.25
     assert "0.0.fma" in q.explain()
+
+    q = df.lazy().select(pl.col("a") - pl.col("b") * pl.col("c"))
+    assert """col("a").fsm([col("b"), col("c")])""" in q.explain()
+    assert q.collect()["a"].to_list() == [-49, -98, -147]
+
+    q = df.lazy().select(pl.col("a") * pl.col("b") - pl.col("c"))
+    q.explain()
+    assert """col("a").fms([col("b"), col("c")])""" in q.explain()
+    assert q.collect()["a"].to_list() == [5, 35, 85]
 
 
 def test_boolean_addition() -> None:
