@@ -84,7 +84,7 @@ class Config:
 
     _original_state: str = ""
 
-    def __init__(self, **options: Any) -> None:
+    def __init__(self, *, restore_defaults: bool = False, **options: Any) -> None:
         """
         Initialise a Config object instance for context manager usage.
 
@@ -93,6 +93,9 @@ class Config:
 
         Parameters
         ----------
+        restore_defaults
+            set all options to their default values (this is applied before
+            setting any other options).
         options
             keyword args that will set the option; equivalent to calling the
             named "set_<option>" method with the given value.
@@ -109,6 +112,9 @@ class Config:
         """
         # save original state _before_ any changes are made
         self._original_state = self.save()
+
+        if restore_defaults:
+            self.restore_defaults()
 
         for opt, value in options.items():
             if not hasattr(self, opt) and not opt.startswith("set_"):

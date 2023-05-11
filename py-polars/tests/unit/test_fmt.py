@@ -1,8 +1,15 @@
-from typing import Any, List
+from typing import Any, Iterator, List
 
 import pytest
 
 import polars as pl
+
+
+@pytest.fixture(autouse=True)
+def _environ() -> Iterator[None]:
+    """Fixture to ensure we run with default Config settings during tests."""
+    with pl.Config(restore_defaults=True):
+        yield
 
 
 @pytest.mark.parametrize(
