@@ -158,20 +158,20 @@ def test_fused_arithm() -> None:
         in q.explain()
     )
     assert q.collect().to_dict(False) == {"c": [15, 45, 95], "2": [51, 102, 153]}
+    # fsm
+    q = df.lazy().select(pl.col("a") - pl.col("b") * pl.col("c"))
+    assert """col("a").fsm([col("b"), col("c")])""" in q.explain()
+    assert q.collect()["a"].to_list() == [-49, -98, -147]
+    # fms
+    q = df.lazy().select(pl.col("a") * pl.col("b") - pl.col("c"))
+    assert """col("a").fms([col("b"), col("c")])""" in q.explain()
+    assert q.collect()["a"].to_list() == [5, 35, 85]
+
     # 8752
     df = pl.DataFrame({"x": pl.Series(values=[0, 0])})
     q = df.lazy().with_columns((0 + 2.5 * (0.5 + pl.col("x"))).alias("compute"))
     assert q.collect()["compute"][0] == 1.25
     assert "0.0.fma" in q.explain()
-
-    q = df.lazy().select(pl.col("a") - pl.col("b") * pl.col("c"))
-    assert """col("a").fsm([col("b"), col("c")])""" in q.explain()
-    assert q.collect()["a"].to_list() == [-49, -98, -147]
-
-    q = df.lazy().select(pl.col("a") * pl.col("b") - pl.col("c"))
-    q.explain()
-    assert """col("a").fms([col("b"), col("c")])""" in q.explain()
-    assert q.collect()["a"].to_list() == [5, 35, 85]
 
 
 def test_boolean_addition() -> None:
