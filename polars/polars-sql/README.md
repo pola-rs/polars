@@ -1,6 +1,6 @@
 # Polars SQL
 
-`polars-sql` is a submodule that provides a SQL transpiler for Polars. It can convert SQL queries to Polars logical plans.
+`polars-sql` is a sub-crate that provides a SQL transpiler for Polars. It can convert SQL queries to Polars logical plans.
 
 ## Usage
 

@@ -1,5 +1,5 @@
 # polars-algo
 
-`polars-algo` is a submodule of Polars that contains algorithms built upon Polars primitives.
+`polars-algo` is a sub-crate of Polars that contains algorithms built upon Polars primitives.
 
 Not intended for external usage
