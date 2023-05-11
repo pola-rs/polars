@@ -936,3 +936,31 @@ def test_perfect_hash_table_null_values_8663() -> None:
             [None, None, None],
         ],
     }
+
+
+def test_rolling_groupby_overlapping_groups() -> None:
+    # this first aggregates overlapping groups
+    # so they cannot be naively flattened
+    df = pl.DataFrame(
+        {
+            "a": [41, 60, 37, 51, 52, 39, 40],
+        }
+    )
+
+    assert_series_equal(
+        (
+            df.with_row_count()
+            .with_columns(pl.col("row_nr").cast(pl.Int32))
+            .groupby_rolling(
+                index_column="row_nr",
+                period="5i",
+            )
+            .agg(
+                # the apply to trigger the apply on the expression engine
+                pl.col("a")
+                .apply(lambda x: x)
+                .sum()
+            )
+        )["a"],
+        df["a"].rolling_sum(window_size=5, min_periods=1),
+    )

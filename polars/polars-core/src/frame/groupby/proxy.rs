@@ -462,6 +462,24 @@ impl GroupsProxy {
         }
     }
 
+    pub fn unroll(self) -> GroupsProxy {
+        match self {
+            GroupsProxy::Idx(_) => self,
+            GroupsProxy::Slice { rolling: false, .. } => self,
+            GroupsProxy::Slice { mut groups, .. } => {
+                let mut offset = 0 as IdxSize;
+                for g in groups.iter_mut() {
+                    g[0] = offset;
+                    offset += g[1];
+                }
+                GroupsProxy::Slice {
+                    groups,
+                    rolling: false,
+                }
+            }
+        }
+    }
+
     pub fn slice(&self, offset: i64, len: usize) -> SlicedGroups {
         // Safety:
         // we create new `Vec`s from the sliced groups. But we wrap them in ManuallyDrop
