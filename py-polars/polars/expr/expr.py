@@ -127,7 +127,7 @@ class Expr:
     def __radd__(self, other: Any) -> Self:
         return self._from_pyexpr(self._to_pyexpr(other) + self._pyexpr)
 
-    def __and__(self, other: Expr) -> Self:
+    def __and__(self, other: Expr | int) -> Self:
         return self._from_pyexpr(self._pyexpr._and(self._to_pyexpr(other)))
 
     def __rand__(self, other: Any) -> Self:
@@ -175,7 +175,7 @@ class Expr:
     def __neg__(self) -> Expr:
         return F.lit(0) - self
 
-    def __or__(self, other: Expr) -> Self:
+    def __or__(self, other: Expr | int) -> Self:
         return self._from_pyexpr(self._pyexpr._or(self._to_pyexpr(other)))
 
     def __ror__(self, other: Any) -> Self:

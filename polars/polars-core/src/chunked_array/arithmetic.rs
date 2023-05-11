@@ -137,7 +137,7 @@ macro_rules! apply_operand_on_chunkedarray_by_iter {
     }
 }
 
-fn arithmetic_helper<T, Kernel, F>(
+pub(super) fn arithmetic_helper<T, Kernel, F>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<T>,
     kernel: Kernel,
