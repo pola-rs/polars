@@ -123,7 +123,7 @@ def test_window_function_cache() -> None:
 
 def test_arange_no_rows() -> None:
     df = pl.DataFrame({"x": [5, 5, 4, 4, 2, 2]})
-    expr = pl.arange(0, pl.count()).over("x")  # type: ignore[union-attr]
+    expr = pl.arange(0, pl.count()).over("x")
     out = df.with_columns(expr)
     assert_frame_equal(
         out, pl.DataFrame({"x": [5, 5, 4, 4, 2, 2], "arange": [0, 1, 0, 1, 0, 1]})
