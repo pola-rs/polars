@@ -174,3 +174,19 @@ def test_boolean_addition() -> None:
         {"a": [True], "b": [False]},
     ).select(pl.sum(pl.col(["a", "b"])))
     assert df.dtypes == [pl.utils.get_index_type()]
+
+
+def test_bitwise_6311() -> None:
+    df = pl.DataFrame({"col1": [0, 1, 2, 3], "flag": [0, 0, 0, 0]})
+
+    assert (
+        df.with_columns(
+            pl.when((pl.col("col1") < 1) | (pl.col("col1") >= 3))
+            .then(pl.col("flag") | 2)  # set flag b0010
+            .otherwise(pl.col("flag"))
+        ).with_columns(
+            pl.when(pl.col("col1") > -1)
+            .then(pl.col("flag") | 4)
+            .otherwise(pl.col("flag"))
+        )
+    ).to_dict(False) == {"col1": [0, 1, 2, 3], "flag": [6, 4, 4, 6]}
