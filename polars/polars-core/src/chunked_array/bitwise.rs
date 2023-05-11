@@ -1,9 +1,12 @@
 use std::ops::{BitAnd, BitOr, BitXor, Not};
 
 use arrow::compute;
+use polars_arrow::compute::bitwise;
+use polars_arrow::utils::combine_validities_and;
 
+use super::arithmetic::arithmetic_helper;
 use super::*;
-use crate::utils::{align_chunks_binary, combine_validities_and, CustomIterTools};
+use crate::utils::align_chunks_binary;
 
 impl<T> BitAnd for &ChunkedArray<T>
 where
@@ -13,28 +16,7 @@ where
     type Output = ChunkedArray<T>;
 
     fn bitand(self, rhs: Self) -> Self::Output {
-        let (l, r) = align_chunks_binary(self, rhs);
-        let chunks = l
-            .downcast_iter()
-            .zip(r.downcast_iter())
-            .map(|(l_arr, r_arr)| {
-                let l_vals = l_arr.values().as_slice();
-                let r_vals = r_arr.values().as_slice();
-                let validity = combine_validities_and(l_arr.validity(), r_arr.validity());
-
-                let av = l_vals
-                    .iter()
-                    .zip(r_vals)
-                    .map(|(l, r)| *l & *r)
-                    .collect_trusted::<Vec<_>>();
-
-                let arr = PrimitiveArray::new(T::get_dtype().to_arrow(), av.into(), validity);
-                Box::new(arr) as ArrayRef
-            })
-            .collect::<Vec<_>>();
-
-        // safety: same type
-        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
+        arithmetic_helper(self, rhs, bitwise::bitand, |a, b| a.bitand(b))
     }
 }
 
@@ -46,28 +28,7 @@ where
     type Output = ChunkedArray<T>;
 
     fn bitor(self, rhs: Self) -> Self::Output {
-        let (l, r) = align_chunks_binary(self, rhs);
-        let chunks = l
-            .downcast_iter()
-            .zip(r.downcast_iter())
-            .map(|(l_arr, r_arr)| {
-                let l_vals = l_arr.values().as_slice();
-                let r_vals = r_arr.values().as_slice();
-                let validity = combine_validities_and(l_arr.validity(), r_arr.validity());
-
-                let av = l_vals
-                    .iter()
-                    .zip(r_vals)
-                    .map(|(l, r)| *l | *r)
-                    .collect_trusted::<Vec<_>>();
-
-                let arr = PrimitiveArray::new(T::get_dtype().to_arrow(), av.into(), validity);
-                Box::new(arr) as ArrayRef
-            })
-            .collect::<Vec<_>>();
-
-        // safety: same type
-        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
+        arithmetic_helper(self, rhs, bitwise::bitor, |a, b| a.bitor(b))
     }
 }
 
@@ -79,28 +40,7 @@ where
     type Output = ChunkedArray<T>;
 
     fn bitxor(self, rhs: Self) -> Self::Output {
-        let (l, r) = align_chunks_binary(self, rhs);
-        let chunks = l
-            .downcast_iter()
-            .zip(r.downcast_iter())
-            .map(|(l_arr, r_arr)| {
-                let l_vals = l_arr.values().as_slice();
-                let r_vals = r_arr.values().as_slice();
-                let validity = combine_validities_and(l_arr.validity(), r_arr.validity());
-
-                let av = l_vals
-                    .iter()
-                    .zip(r_vals)
-                    .map(|(l, r)| l.bitxor(*r))
-                    .collect_trusted::<Vec<_>>();
-
-                let arr = PrimitiveArray::new(T::get_dtype().to_arrow(), av.into(), validity);
-                Box::new(arr) as ArrayRef
-            })
-            .collect::<Vec<_>>();
-
-        // safety: same type
-        unsafe { ChunkedArray::from_chunks(self.name(), chunks) }
+        arithmetic_helper(self, rhs, bitwise::bitxor, |a, b| a.bitxor(b))
     }
 }
 
