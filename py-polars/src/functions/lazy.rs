@@ -429,3 +429,17 @@ pub fn sum_exprs(exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = exprs.to_exprs();
     dsl::sum_exprs(exprs).into()
 }
+
+#[pyfunction]
+pub fn time_range_lazy(
+    start: PyExpr,
+    end: PyExpr,
+    every: &str,
+    closed: Wrap<ClosedWindow>,
+    name: String,
+) -> PyExpr {
+    let start = start.inner;
+    let end = end.inner;
+    let every = Duration::parse(every);
+    dsl::functions::time_range(name, start, end, every, closed.0).into()
+}

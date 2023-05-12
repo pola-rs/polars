@@ -77,6 +77,7 @@ from polars.functions.eager import (
     date_range,
     get_dummies,
     ones,
+    time_range,
     zeros,
 )
 from polars.functions.lazy import (
@@ -280,6 +281,7 @@ __all__ = [
     "get_dummies",
     "ones",
     "repeat",
+    "time_range",
     "zeros",
     # polars.functions.lazy
     "all",

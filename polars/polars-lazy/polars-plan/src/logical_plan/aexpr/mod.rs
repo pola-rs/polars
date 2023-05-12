@@ -228,6 +228,12 @@ impl AExpr {
             Nth(_) => Leaf,
         }
     }
+    pub(crate) fn is_leaf(&self) -> bool {
+        matches!(
+            self,
+            AExpr::Column(_) | AExpr::Literal(_) | AExpr::Count | AExpr::Nth(_)
+        )
+    }
 }
 
 impl AAggExpr {
