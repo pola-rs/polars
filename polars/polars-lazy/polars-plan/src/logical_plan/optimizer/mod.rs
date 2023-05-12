@@ -73,8 +73,6 @@ pub fn optimize(
     let opt = StackOptimizer {};
     let mut rules: Vec<Box<dyn OptimizationRule>> = Vec::with_capacity(8);
 
-    if simplify_expr {}
-
     // during debug we check if the optimizations have not modified the final schema
     #[cfg(debug_assertions)]
     let prev_schema = logical_plan.schema()?.into_owned();
@@ -94,9 +92,9 @@ pub fn optimize(
 
     // we do simplification
     if simplify_expr {
+        rules.push(Box::new(SimplifyExprRule {}));
         #[cfg(feature = "fused")]
         rules.push(Box::new(fused::FusedArithmetic {}));
-        rules.push(Box::new(SimplifyExprRule {}));
     }
 
     // should be run before predicate pushdown
