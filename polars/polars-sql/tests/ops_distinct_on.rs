@@ -4,7 +4,7 @@ use polars_lazy::prelude::*;
 use polars_sql::*;
 
 #[test]
-fn iss_8821() {
+fn test_distinct_on() {
     let df = df! {
       "Name" => ["Bob", "Pete", "Pete", "Pete", "Martha", "Martha"],
       "Record Date" => [1, 1, 2, 4, 1, 3],
