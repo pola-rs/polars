@@ -436,3 +436,9 @@ def test_list_to_struct() -> None:
         {"n": {"one": 0, "two": 1, "three": 2}},
         {"n": {"one": 0, "two": 1, "three": None}},
     ]
+
+
+def test_list_arr_get_8810() -> None:
+    assert pl.DataFrame(pl.Series("a", [None], pl.List(pl.Int64))).select(
+        pl.col("a").arr.get(0)
+    ).to_dict(False) == {"a": [None]}
