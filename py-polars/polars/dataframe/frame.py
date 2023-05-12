@@ -5753,9 +5753,12 @@ class DataFrame:
 
     def clear(self, n: int = 0) -> Self:
         """
-        Create an empty copy of the current DataFrame, with `n` rows. All values in every column in the copy are set to null.
+        Create an empty copy of the current DataFrame, with `n` rows. All values
+        in every column in the copy are set to null.
 
-        Returns a DataFrame with an identical schema, but no data (i.e., all null values). `n` can be greater than the current number of rows in the DataFrame.
+        Returns a DataFrame with an identical schema, but no data (i.e., all null
+        values). `n` can be greater than the current number of rows in the
+        DataFrame.
 
         Parameters
         ----------
