@@ -366,3 +366,23 @@ def test_window_function_implode_contention_8536() -> None:
         True,
         True,
     ]
+
+
+def test_cached_windows_sync_8803() -> None:
+    assert (
+        pl.DataFrame(
+            [
+                pl.Series("id", [4, 5, 4, 6, 4, 5], dtype=pl.Int64),
+                pl.Series(
+                    "is_valid",
+                    [True, False, False, False, False, False],
+                    dtype=pl.Boolean,
+                ),
+            ]
+        )
+        .with_columns(
+            a=pl.col("is_valid").implode().arr.contains(True).over("id"),
+            b=pl.col("is_valid").sum().gt(0).over("id"),
+        )
+        .sum()
+    ).to_dict(False) == {"id": [28], "is_valid": [1], "a": [3], "b": [3]}
