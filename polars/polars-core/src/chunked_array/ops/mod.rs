@@ -732,7 +732,7 @@ pub trait IsFirst<T: PolarsDataType> {
     }
 }
 
-#[cfg(feature = "is_first")]
+#[cfg(feature = "is_last")]
 /// Mask the last unique values as `true`
 pub trait IsLast<T: PolarsDataType> {
     fn is_last(&self) -> PolarsResult<BooleanChunked> {
