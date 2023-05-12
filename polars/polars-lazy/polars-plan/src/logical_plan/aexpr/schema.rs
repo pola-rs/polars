@@ -200,6 +200,7 @@ impl AExpr {
                 function.get_field(schema, ctxt, &fields)
             }
             Slice { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
+            Cache { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Wildcard => panic!("should be no wildcard at this point"),
             Nth(_) => panic!("should be no nth at this point"),
         }
@@ -237,6 +238,12 @@ fn get_arithmetic_field(
                 (Date, Date) => Duration(TimeUnit::Milliseconds),
                 (left, right) => try_get_supertype(left, &right)?,
             }
+        }
+        Operator::Plus
+            if left_field.dtype == Boolean
+                && right_ae.get_type(schema, Context::Default, arena)? == Boolean =>
+        {
+            IDX_DTYPE
         }
         _ => {
             match (left_ae, right_ae) {

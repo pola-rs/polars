@@ -21,21 +21,21 @@ def test_error_on_reducing_map() -> None:
     df = pl.DataFrame(
         {"id": [0, 0, 0, 1, 1, 1], "t": [2, 4, 5, 10, 11, 14], "y": [0, 1, 1, 2, 3, 4]}
     )
-
     with pytest.raises(
         pl.InvalidOperationError,
         match=(
-            "output length of `map` must be equal to that of the input length; consider using `apply` instead"
+            r"output length of `map` \(6\) must be equal to "
+            r"the input length \(1\); consider using `apply` instead"
         ),
     ):
         df.groupby("id").agg(pl.map(["t", "y"], np.trapz))
 
     df = pl.DataFrame({"x": [1, 2, 3, 4], "group": [1, 2, 1, 2]})
-
     with pytest.raises(
         pl.InvalidOperationError,
         match=(
-            "output length of `map` must be equal to that of the input length; consider using `apply` instead"
+            r"output length of `map` \(4\) must be equal to "
+            r"the input length \(1\); consider using `apply` instead"
         ),
     ):
         df.select(
@@ -518,7 +518,7 @@ def test_err_on_time_datetime_cast() -> None:
 def test_invalid_inner_type_cast_list() -> None:
     s = pl.Series([[-1, 1]])
     with pytest.raises(
-        pl.ComputeError, match=r"cannot cast list inner type: 'Int64' to Categorical"
+        pl.ComputeError, match=r"cannot cast List inner type: 'Int64' to Categorical"
     ):
         s.cast(pl.List(pl.Categorical))
 
@@ -586,3 +586,34 @@ def test_no_sorted_warning(capfd: typing.Any) -> None:
     df.groupby_dynamic("dt", every="1h").agg(pl.all().count().suffix("_foo"))
     (_, err) = capfd.readouterr()
     assert "argument in operation 'groupby_dynamic' is not explicitly sorted" in err
+
+
+def test_serde_validation() -> None:
+    f = io.StringIO(
+        """
+    {
+      "columns": [
+        {
+          "name": "a",
+          "datatype": "Int64",
+          "values": [
+            1,
+            2
+          ]
+        },
+        {
+          "name": "b",
+          "datatype": "Int64",
+          "values": [
+            1
+          ]
+        }
+      ]
+    }
+    """
+    )
+    with pytest.raises(
+        pl.ComputeError,
+        match=r"lengths don't match",
+    ):
+        pl.read_json(f)

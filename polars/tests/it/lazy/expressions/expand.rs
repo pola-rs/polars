@@ -31,7 +31,7 @@ fn test_expand_datetimes_3042() -> PolarsResult<()> {
     .with_column(
         dtype_col(&DataType::Datetime(TimeUnit::Milliseconds, None))
             .dt()
-            .strftime("%m/%d/%Y"),
+            .to_string("%m/%d/%Y"),
     )
     .limit(3)
     .collect()?;

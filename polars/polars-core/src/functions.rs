@@ -12,7 +12,6 @@ use num_traits::{Float, NumCast, ToPrimitive};
 #[cfg(feature = "concat_str")]
 use polars_arrow::prelude::ValueSize;
 
-use crate::chunked_array::ops::sort::prepare_arg_sort;
 use crate::prelude::*;
 use crate::utils::coalesce_nulls;
 #[cfg(feature = "diagonal_concat")]
@@ -91,20 +90,6 @@ where
     let b = b.as_ref();
 
     Some(cov_f(a, b)? / (a.std(ddof)? * b.std(ddof)?))
-}
-
-/// Find the indexes that would sort these series in order of appearance.
-/// That means that the first `Series` will be used to determine the ordering
-/// until duplicates are found. Once duplicates are found, the next `Series` will
-/// be used and so on.
-pub fn arg_sort_by(by: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {
-    polars_ensure!(
-        by.len() == descending.len(),
-        ComputeError: "the number of ordering booleans: {} does not match the number of series: {}",
-        descending.len(), by.len()
-    );
-    let (first, by, descending) = prepare_arg_sort(by.to_vec(), descending.to_vec()).unwrap();
-    first.arg_sort_multiple(&by, &descending)
 }
 
 // utility to be able to also add literals to concat_str function

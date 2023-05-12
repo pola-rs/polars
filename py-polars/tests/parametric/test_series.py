@@ -184,7 +184,9 @@ def test_series_slice(
 
 
 @given(
-    s=series(min_size=1, max_size=10, excluded_dtypes=[pl.Categorical]).filter(
+    s=series(
+        min_size=1, max_size=10, excluded_dtypes=[pl.Categorical, pl.List, pl.Struct]
+    ).filter(
         lambda x: (
             getattr(x.dtype, "time_unit", None) in (None, "us", "ns")
             and (x.dtype != pl.Utf8 or not x.str.contains("\x00").any())

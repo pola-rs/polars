@@ -2,6 +2,7 @@ mod aggregation;
 mod alias;
 mod apply;
 mod binary;
+mod cache;
 mod cast;
 mod column;
 mod count;
@@ -22,6 +23,7 @@ pub(crate) use aggregation::*;
 pub(crate) use alias::*;
 pub(crate) use apply::*;
 pub(crate) use binary::*;
+pub(crate) use cache::*;
 pub(crate) use cast::*;
 pub(crate) use column::*;
 pub(crate) use count::*;
@@ -437,6 +439,46 @@ impl<'a> AggregationContext<'a> {
         }
     }
 
+    pub(crate) fn get_final_aggregation(mut self) -> (Series, Cow<'a, GroupsProxy>) {
+        let _ = self.groups();
+        let groups = self.groups;
+        match self.state {
+            AggState::NotAggregated(s) => (s, groups),
+            AggState::AggregatedFlat(s) => (s, groups),
+            AggState::Literal(s) => (s, groups),
+            AggState::AggregatedList(s) => {
+                let flattened = s.explode().unwrap();
+                let groups = groups.into_owned();
+                // unroll the possible flattened state
+                // say we have groups with overlapping windows:
+                //
+                // offset, len
+                // 0, 1
+                // 0, 2
+                // 0, 4
+                //
+                // gets aggregation
+                //
+                // [0]
+                // [0, 1],
+                // [0, 1, 2, 3]
+                //
+                // before aggregation the column was
+                // [0, 1, 2, 3]
+                // but explode on this list yields
+                // [0, 0, 1, 0, 1, 2, 3]
+                //
+                // so we unroll the groups as
+                //
+                // [0, 1]
+                // [1, 2]
+                // [3, 4]
+                let groups = groups.unroll();
+                (flattened, Cow::Owned(groups))
+            }
+        }
+    }
+
     /// Get the not-aggregated version of the series.
     /// Note that we call it naive, because if a previous expr
     /// has filtered or sorted this, this information is in the
@@ -551,17 +593,35 @@ impl Display for &dyn PhysicalExpr {
 /// This is used to filter rows during the scan of file.
 pub struct PhysicalIoHelper {
     pub expr: Arc<dyn PhysicalExpr>,
+    pub has_window_function: bool,
 }
 
 impl PhysicalIoExpr for PhysicalIoHelper {
     fn evaluate(&self, df: &DataFrame) -> PolarsResult<Series> {
-        self.expr.evaluate(df, &Default::default())
+        let mut state: ExecutionState = Default::default();
+        if self.has_window_function {
+            state.insert_has_window_function_flag();
+        }
+        self.expr.evaluate(df, &state)
     }
 
     #[cfg(feature = "parquet")]
     fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
         self.expr.as_stats_evaluator()
     }
+}
+
+pub(super) fn phys_expr_to_io_expr(expr: Arc<dyn PhysicalExpr>) -> Arc<dyn PhysicalIoExpr> {
+    let has_window_function = if let Some(expr) = expr.as_expression() {
+        expr.into_iter()
+            .any(|expr| matches!(expr, Expr::Window { .. }))
+    } else {
+        false
+    };
+    Arc::new(PhysicalIoHelper {
+        expr,
+        has_window_function,
+    }) as Arc<dyn PhysicalIoExpr>
 }
 
 pub trait PartitionedAggregation: Send + Sync + PhysicalExpr {

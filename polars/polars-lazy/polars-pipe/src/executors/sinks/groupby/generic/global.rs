@@ -7,7 +7,7 @@ use polars_core::POOL;
 use rayon::prelude::*;
 
 use super::*;
-use crate::pipeline::PARTITION_SIZE;
+use crate::pipeline::{FORCE_OOC, PARTITION_SIZE};
 
 struct SpillPartitions {
     // outer vec: partitions (factor of 2)
@@ -59,6 +59,8 @@ pub(super) struct GlobalTable {
     inner_maps: PartitionVec<Mutex<AggHashTable<false>>>,
     spill_partitions: SpillPartitions,
     early_merge_counter: Arc<AtomicU16>,
+    // IO is expensive so we only spill if we have `N` payloads to dump.
+    spill_partition_ob_size: usize,
 }
 
 impl GlobalTable {
@@ -68,6 +70,13 @@ impl GlobalTable {
         output_schema: SchemaRef,
     ) -> Self {
         let spill_partitions = SpillPartitions::new();
+
+        let spill_partition_ob_size = if std::env::var(FORCE_OOC).is_ok() {
+            1
+        } else {
+            64
+        };
+
         let mut inner_maps = Vec::with_capacity(PARTITION_SIZE);
         inner_maps.resize_with(PARTITION_SIZE, || {
             Mutex::new(AggHashTable::new(
@@ -82,6 +91,7 @@ impl GlobalTable {
             inner_maps,
             spill_partitions,
             early_merge_counter: Default::default(),
+            spill_partition_ob_size,
         }
     }
 
@@ -105,12 +115,51 @@ impl GlobalTable {
         // round robin a partition to dump
         let partition =
             self.early_merge_counter.fetch_add(1, Ordering::Relaxed) as usize % PARTITION_SIZE;
+
         // IO is expensive so we only spill if we have `N` payloads to dump.
-        let bucket = self.spill_partitions.drain_partition(partition, 64)?;
+        let bucket = self
+            .spill_partitions
+            .drain_partition(partition, self.spill_partition_ob_size)?;
         Some((
             partition,
             accumulate_dataframes_vertical_unchecked(bucket.into_iter().map(|pl| pl.into_df())),
         ))
+    }
+
+    fn process_partition_impl(
+        &self,
+        hash_map: &mut AggHashTable<false>,
+        hashes: &[u64],
+        chunk_indexes: &[IdxSize],
+        keys: &[Series],
+        agg_cols: &[Series],
+    ) {
+        debug_assert_eq!(hashes.len(), chunk_indexes.len());
+        debug_assert_eq!(hashes.len(), keys[0].len());
+
+        let mut keys_iters = keys.iter().map(|s| s.phys_iter()).collect::<Vec<_>>();
+        let mut agg_cols_iters = agg_cols.iter().map(|s| s.phys_iter()).collect::<Vec<_>>();
+
+        // amortize loop counter
+        for i in 0..hashes.len() {
+            unsafe {
+                let hash = *hashes.get_unchecked(i);
+                let chunk_index = *chunk_indexes.get_unchecked(i);
+
+                // safety: keys_iters and cols_iters are not depleted
+                let out = hash_map.insert(hash, &mut keys_iters, &mut agg_cols_iters, chunk_index);
+                // should never overflow
+                debug_assert!(out.is_none());
+            }
+        }
+    }
+
+    pub(super) fn process_partition_from_dumped(&self, partition: usize, spilled: &DataFrame) {
+        let mut hash_map = self.inner_maps[partition].lock().unwrap();
+        let (hashes, chunk_indexes, keys_and_aggs) = SpillPayload::spilled_to_columns(spilled);
+        let keys = &keys_and_aggs[..hash_map.num_keys];
+        let aggs = &keys_and_aggs[hash_map.num_keys..];
+        self.process_partition_impl(&mut hash_map, hashes, chunk_indexes, keys, aggs);
     }
 
     fn process_partition(&self, partition: usize) {
@@ -122,29 +171,7 @@ impl GlobalTable {
                 let keys = payload.keys();
                 let chunk_indexes = payload.chunk_index();
                 let agg_cols = payload.cols();
-                debug_assert_eq!(hashes.len(), chunk_indexes.len());
-                debug_assert_eq!(hashes.len(), keys[0].len());
-
-                let mut keys_iters = keys.iter().map(|s| s.phys_iter()).collect::<Vec<_>>();
-                let mut agg_cols_iters = agg_cols.iter().map(|s| s.phys_iter()).collect::<Vec<_>>();
-
-                // amortize loop counter
-                for i in 0..hashes.len() {
-                    unsafe {
-                        let hash = *hashes.get_unchecked(i);
-                        let chunk_index = *chunk_indexes.get_unchecked(i);
-
-                        // safety: keys_iters and cols_iters are not depleted
-                        let out = hash_map.insert(
-                            hash,
-                            &mut keys_iters,
-                            &mut agg_cols_iters,
-                            chunk_index,
-                        );
-                        // should never overflow
-                        debug_assert!(out.is_none());
-                    }
-                }
+                self.process_partition_impl(&mut hash_map, hashes, chunk_indexes, keys, agg_cols);
             }
         }
     }
@@ -156,6 +183,17 @@ impl GlobalTable {
             let mut pt_map = pt_map.lock().unwrap();
             pt_map.combine_on_partition(partition_i, finalized_local_map)
         }
+    }
+
+    pub(super) fn finalize_partition(
+        &self,
+        partition: usize,
+        slice: &mut Option<(i64, usize)>,
+    ) -> DataFrame {
+        // ensure all spilled partitions are processed
+        self.process_partition(partition);
+        let mut hash_map = self.inner_maps[partition].lock().unwrap();
+        hash_map.finalize(slice)
     }
 
     // only should be called if all state is in-memory

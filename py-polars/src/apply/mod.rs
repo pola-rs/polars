@@ -1,4 +1,5 @@
 pub mod dataframe;
+pub mod lazy;
 pub mod series;
 
 use std::collections::BTreeMap;

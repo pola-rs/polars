@@ -240,23 +240,13 @@ pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8, propagate_nans: bool) -> E
 /// That means that the first `Series` will be used to determine the ordering
 /// until duplicates are found. Once duplicates are found, the next `Series` will
 /// be used and so on.
+#[cfg(feature = "arange")]
 pub fn arg_sort_by<E: AsRef<[Expr]>>(by: E, descending: &[bool]) -> Expr {
-    let descending = descending.to_vec();
-    let function = SpecialEq::new(Arc::new(move |by: &mut [Series]| {
-        polars_core::functions::arg_sort_by(by, &descending).map(|ca| Some(ca.into_series()))
-    }) as Arc<dyn SeriesUdf>);
-
-    Expr::AnonymousFunction {
-        input: by.as_ref().to_vec(),
-        function,
-        output_type: GetOutput::from_type(IDX_DTYPE),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
-            input_wildcard_expansion: true,
-            fmt_str: "arg_sort_by",
-            ..Default::default()
-        },
-    }
+    let e = &by.as_ref()[0];
+    let name = expr_output_name(e).unwrap();
+    arange(lit(0 as IdxSize), count().cast(IDX_DTYPE), 1)
+        .sort_by(by, descending)
+        .alias(name.as_ref())
 }
 
 #[cfg(all(feature = "concat_str", feature = "strings"))]
@@ -308,7 +298,7 @@ pub fn format_str<E: AsRef<[Expr]>>(format: &str, args: E) -> PolarsResult<Expr>
 }
 
 /// Concat lists entries.
-pub fn concat_lst<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> PolarsResult<Expr> {
+pub fn concat_list<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> PolarsResult<Expr> {
     let s: Vec<_> = s.as_ref().iter().map(|e| e.clone().into()).collect();
 
     polars_ensure!(!s.is_empty(), ComputeError: "`concat_list` needs one or more expressions");
@@ -325,6 +315,35 @@ pub fn concat_lst<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> PolarsResult<
     })
 }
 
+#[cfg(feature = "arange")]
+fn arange_impl<T>(start: T::Native, end: T::Native, step: i64) -> PolarsResult<Option<Series>>
+where
+    T: PolarsNumericType,
+    ChunkedArray<T>: IntoSeries,
+    std::ops::Range<T::Native>: Iterator<Item = T::Native>,
+    std::ops::RangeInclusive<T::Native>: DoubleEndedIterator<Item = T::Native>,
+{
+    let mut ca = match step {
+        1 => ChunkedArray::<T>::from_iter_values("arange", start..end),
+        2.. => ChunkedArray::<T>::from_iter_values("arange", (start..end).step_by(step as usize)),
+        _ => {
+            polars_ensure!(start > end, InvalidOperation: "range must be decreasing if 'step' is negative");
+            ChunkedArray::<T>::from_iter_values(
+                "arange",
+                (end..=start).rev().step_by(step.unsigned_abs() as usize),
+            )
+        }
+    };
+    let is_sorted = if end < start {
+        IsSorted::Descending
+    } else {
+        IsSorted::Ascending
+    };
+    ca.set_sorted_flag(is_sorted);
+    Ok(Some(ca.into_series()))
+}
+
+// TODO! rewrite this with the apply_private architecture
 /// Create list entries that are range arrays
 /// - if `start` and `end` are a column, every element will expand into an array in a list column.
 /// - if `start` and `end` are literals the output will be of `Int64`.
@@ -367,43 +386,54 @@ pub fn arange(start: Expr, end: Expr, step: i64) -> Expr {
     if (literal_start || literal_end) && !any_column_no_agg {
         let f = move |sa: Series, sb: Series| {
             polars_ensure!(step != 0, InvalidOperation: "step must not be zero");
-            let sa = sa.cast(&DataType::Int64)?;
-            let sb = sb.cast(&DataType::Int64)?;
-            let start = sa
-                .i64()?
-                .get(0)
-                .ok_or_else(|| polars_err!(NoData: "no data in `start` evaluation"))?;
-            let end = sb
-                .i64()?
-                .get(0)
-                .ok_or_else(|| polars_err!(NoData: "no data in `end` evaluation"))?;
 
-            let mut ca = match step {
-                1 => Int64Chunked::from_iter_values("arange", start..end),
-                2.. => {
-                    Int64Chunked::from_iter_values("arange", (start..end).step_by(step as usize))
+            match sa.dtype() {
+                dt if dt == &IDX_DTYPE => {
+                    let start = sa
+                        .idx()?
+                        .get(0)
+                        .ok_or_else(|| polars_err!(NoData: "no data in `start` evaluation"))?;
+                    let sb = sb.cast(&IDX_DTYPE)?;
+                    let end = sb
+                        .idx()?
+                        .get(0)
+                        .ok_or_else(|| polars_err!(NoData: "no data in `end` evaluation"))?;
+                    #[cfg(feature = "bigidx")]
+                    {
+                        arange_impl::<UInt64Type>(start, end, step)
+                    }
+                    #[cfg(not(feature = "bigidx"))]
+                    {
+                        arange_impl::<UInt32Type>(start, end, step)
+                    }
                 }
                 _ => {
-                    polars_ensure!(start > end, InvalidOperation: "range must be decreasing if 'step' is negative");
-                    Int64Chunked::from_iter_values(
-                        "arange",
-                        (end..=start).rev().step_by(step.unsigned_abs() as usize),
-                    )
+                    let sa = sa.cast(&DataType::Int64)?;
+                    let sb = sb.cast(&DataType::Int64)?;
+                    let start = sa
+                        .i64()?
+                        .get(0)
+                        .ok_or_else(|| polars_err!(NoData: "no data in `start` evaluation"))?;
+                    let end = sb
+                        .i64()?
+                        .get(0)
+                        .ok_or_else(|| polars_err!(NoData: "no data in `end` evaluation"))?;
+                    arange_impl::<Int64Type>(start, end, step)
                 }
-            };
-            let is_sorted = if end < start {
-                IsSorted::Descending
-            } else {
-                IsSorted::Ascending
-            };
-            ca.set_sorted_flag(is_sorted);
-            Ok(Some(ca.into_series()))
+            }
         };
         apply_binary(
             start,
             end,
             f,
-            GetOutput::map_field(|_| Field::new("arange", DataType::Int64)),
+            GetOutput::map_field(|input| {
+                let dtype = if input.data_type() == &IDX_DTYPE {
+                    IDX_DTYPE
+                } else {
+                    DataType::Int64
+                };
+                Field::new("arange", dtype)
+            }),
         )
     } else {
         let f = move |sa: Series, sb: Series| {
@@ -1338,4 +1368,94 @@ pub fn date_range(
             ..Default::default()
         },
     }
+}
+
+/// Create a time range, named `name`, from a `start` and `stop` expression.
+#[cfg(feature = "temporal")]
+pub fn time_range(
+    name: String,
+    start: Expr,
+    end: Expr,
+    every: Duration,
+    closed: ClosedWindow,
+) -> Expr {
+    let input = vec![start, end];
+
+    Expr::Function {
+        input,
+        function: FunctionExpr::TemporalExpr(TemporalFunction::TimeRange {
+            name,
+            every,
+            closed,
+        }),
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyGroups,
+            cast_to_supertypes: false,
+            ..Default::default()
+        },
+    }
+}
+
+#[cfg(feature = "rolling_window")]
+pub fn rolling_corr(x: Expr, y: Expr, options: RollingCovOptions) -> Expr {
+    let x = x.cache();
+    let y = y.cache();
+    // see: https://github.com/pandas-dev/pandas/blob/v1.5.1/pandas/core/window/rolling.py#L1780-L1804
+    let rolling_options = RollingOptions {
+        window_size: Duration::new(options.window_size as i64),
+        min_periods: options.min_periods as usize,
+        ..Default::default()
+    };
+
+    let mean_x_y = (x.clone() * y.clone()).rolling_mean(rolling_options.clone());
+    let mean_x = x.clone().rolling_mean(rolling_options.clone());
+    let mean_y = y.clone().rolling_mean(rolling_options.clone());
+    let var_x = x.clone().rolling_var(rolling_options.clone());
+    let var_y = y.clone().rolling_var(rolling_options);
+
+    let rolling_options_count = RollingOptions {
+        window_size: Duration::new(options.window_size as i64),
+        min_periods: 0,
+        ..Default::default()
+    };
+    let ddof = options.ddof as f64;
+    let count_x_y = (x + y)
+        .is_not_null()
+        .cast(DataType::Float64)
+        .rolling_sum(rolling_options_count)
+        .cache();
+    let numerator = (mean_x_y - mean_x * mean_y) * (count_x_y.clone() / (count_x_y - lit(ddof)));
+    let denominator = (var_x * var_y).pow(lit(0.5));
+
+    numerator / denominator
+}
+
+#[cfg(feature = "rolling_window")]
+pub fn rolling_cov(x: Expr, y: Expr, options: RollingCovOptions) -> Expr {
+    let x = x.cache();
+    let y = y.cache();
+    // see: https://github.com/pandas-dev/pandas/blob/91111fd99898d9dcaa6bf6bedb662db4108da6e6/pandas/core/window/rolling.py#L1700
+    let rolling_options = RollingOptions {
+        window_size: Duration::new(options.window_size as i64),
+        min_periods: options.min_periods as usize,
+        ..Default::default()
+    };
+
+    let mean_x_y = (x.clone() * y.clone()).rolling_mean(rolling_options.clone());
+    let mean_x = x.clone().rolling_mean(rolling_options.clone());
+    let mean_y = y.clone().rolling_mean(rolling_options);
+    let rolling_options_count = RollingOptions {
+        window_size: Duration::new(options.window_size as i64),
+        min_periods: 0,
+        ..Default::default()
+    };
+    let count_x_y = (x + y)
+        .is_not_null()
+        .cast(DataType::Float64)
+        .rolling_sum(rolling_options_count)
+        .cache();
+
+    let ddof = options.ddof as f64;
+
+    (mean_x_y - mean_x * mean_y) * (count_x_y.clone() / (count_x_y - lit(ddof)))
 }

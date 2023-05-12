@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Sequence
 
 if TYPE_CHECKING:
-    from polars.dataframe import DataFrame
+    from polars import DataFrame
 
 
 def _check_arg_is_1byte(

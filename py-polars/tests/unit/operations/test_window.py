@@ -123,7 +123,7 @@ def test_window_function_cache() -> None:
 
 def test_arange_no_rows() -> None:
     df = pl.DataFrame({"x": [5, 5, 4, 4, 2, 2]})
-    expr = pl.arange(0, pl.count()).over("x")  # type: ignore[union-attr]
+    expr = pl.arange(0, pl.count()).over("x")
     out = df.with_columns(expr)
     assert_frame_equal(
         out, pl.DataFrame({"x": [5, 5, 4, 4, 2, 2], "arange": [0, 1, 0, 1, 0, 1]})
@@ -131,6 +131,7 @@ def test_arange_no_rows() -> None:
 
     df = pl.DataFrame({"x": []})
     out = df.with_columns(expr)
+    print(out)
     expected = pl.DataFrame(
         {"x": [], "arange": []}, schema={"x": pl.Float32, "arange": pl.Int64}
     )
@@ -337,3 +338,31 @@ def test_window_5868() -> None:
         .get_column("a")
     )
     assert_series_equal(result, expected)
+
+
+def test_window_function_implode_contention_8536() -> None:
+    df = pl.DataFrame(
+        data={
+            "policy": ["a", "b", "c", "c", "d", "d", "d", "d", "e", "e"],
+            "memo": ["LE", "RM", "", "", "", "LE", "", "", "", "RM"],
+        },
+        schema={"policy": pl.Utf8, "memo": pl.Utf8},
+    )
+
+    assert df.select(
+        [
+            (pl.lit("LE").is_in(pl.col("memo").implode().over("policy")))
+            | (pl.lit("RM").is_in(pl.col("memo").implode().over("policy")))
+        ]
+    ).to_series().to_list() == [
+        True,
+        True,
+        False,
+        False,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+    ]

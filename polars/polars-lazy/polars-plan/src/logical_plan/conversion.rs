@@ -145,6 +145,10 @@ pub fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             offset: to_aexpr(*offset, arena),
             length: to_aexpr(*length, arena),
         },
+        Expr::Cache { input, id } => AExpr::Cache {
+            input: to_aexpr(*input, arena),
+            id,
+        },
         Expr::Wildcard => AExpr::Wildcard,
         Expr::Count => AExpr::Count,
         Expr::Nth(i) => AExpr::Nth(i),
@@ -621,6 +625,10 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             input: Box::new(node_to_expr(input, expr_arena)),
             offset: Box::new(node_to_expr(offset, expr_arena)),
             length: Box::new(node_to_expr(length, expr_arena)),
+        },
+        AExpr::Cache { input, id } => Expr::Cache {
+            input: Box::new(node_to_expr(input, expr_arena)),
+            id,
         },
         AExpr::Count => Expr::Count,
         AExpr::Nth(i) => Expr::Nth(i),

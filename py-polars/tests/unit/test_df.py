@@ -12,10 +12,10 @@ from typing import TYPE_CHECKING, Any, Callable, Iterator, Sequence, cast
 import numpy as np
 import pyarrow as pa
 import pytest
-from numpy.testing import assert_array_equal
+from numpy.testing import assert_array_equal, assert_equal
 
 import polars as pl
-from polars.datatypes import DTYPE_TEMPORAL_UNITS, INTEGER_DTYPES
+from polars.datatypes import DTYPE_TEMPORAL_UNITS, FLOAT_DTYPES, INTEGER_DTYPES
 from polars.testing import (
     assert_frame_equal,
     assert_frame_not_equal,
@@ -740,6 +740,12 @@ def test_extend() -> None:
         )
         assert_frame_equal(df1, expected)
 
+        # 8745
+        df = pl.DataFrame([{"age": 1}, {"age": 2}, {"age": 3}])
+        df = df[:-1]
+        tail = pl.DataFrame([{"age": 8}])
+        assert df.extend(tail).to_dict(False) == {"age": [1, 2, 8]}
+
 
 def test_file_buffer() -> None:
     f = BytesIO()
@@ -1401,14 +1407,67 @@ def test_assign() -> None:
 
 def test_to_numpy() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+
     out_array = df.to_numpy()
     expected_array = np.array([[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]], dtype=np.float64)
     assert_array_equal(out_array, expected_array)
     assert out_array.flags["F_CONTIGUOUS"] is True
 
+    structured_array = df.to_numpy(structured=True)
+    expected_array = np.array(
+        [(1, 1.0), (2, 2.0), (3, 3.0)], dtype=[("a", "<i8"), ("b", "<f8")]
+    )
+    assert_array_equal(structured_array, expected_array)
+    assert structured_array.flags["F_CONTIGUOUS"] is True
+
+
+def test_to_numpy_structured() -> None:
+    # round-trip structured array: validate init/export
+    structured_array = np.array(
+        [
+            ("Google Pixel 7", 521.90, True),
+            ("Apple iPhone 14 Pro", 999.00, True),
+            ("OnePlus 11", 699.00, True),
+            ("Samsung Galaxy S23 Ultra", 1199.99, False),
+        ],
+        dtype=np.dtype(
+            [
+                ("product", "U24"),
+                ("price_usd", "float64"),
+                ("in_stock", "bool"),
+            ]
+        ),
+    )
+
+    df = pl.from_numpy(structured_array)
+    assert df.schema == {
+        "product": pl.Utf8,
+        "price_usd": pl.Float64,
+        "in_stock": pl.Boolean,
+    }
+    exported_array = df.to_numpy(structured=True)
+    assert exported_array["product"].dtype == np.dtype("U24")
+    assert_array_equal(exported_array, structured_array)
+
+    # none/nan values
+    df = pl.DataFrame({"x": ["a", None, "b"], "y": [5.5, None, -5.5]})
+    exported_array = df.to_numpy(structured=True)
+
+    assert exported_array.dtype == np.dtype([("x", object), ("y", float)])
+    for name in df.columns:
+        assert_equal(
+            list(exported_array[name]),
+            (
+                df[name].fill_null(float("nan"))
+                if df.schema[name] in FLOAT_DTYPES
+                else df[name]
+            ).to_list(),
+        )
+
 
 def test__array__() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
+
     out_array = np.asarray(df.to_numpy())
     expected_array = np.array([[1.0, 1.0], [2.0, 2.0], [3.0, 3.0]], dtype=np.float64)
     assert_array_equal(out_array, expected_array)
@@ -1697,6 +1756,7 @@ def test_join_dates() -> None:
         datetime(2021, 6, 24, 10, 0, 0),
         interval=timedelta(hours=1),
         closed="left",
+        eager=True,
     )
     dts = (
         dts_in.cast(int)
@@ -3370,13 +3430,25 @@ def test_glimpse(capsys: Any) -> None:
             "d": [None, "b", "c"],
             "e": ["usd", "eur", None],
             "f": pl.date_range(
-                datetime(2023, 1, 1), datetime(2023, 1, 3), "1d", time_unit="us"
+                datetime(2023, 1, 1),
+                datetime(2023, 1, 3),
+                "1d",
+                time_unit="us",
+                eager=True,
             ),
             "g": pl.date_range(
-                datetime(2023, 1, 1), datetime(2023, 1, 3), "1d", time_unit="ms"
+                datetime(2023, 1, 1),
+                datetime(2023, 1, 3),
+                "1d",
+                time_unit="ms",
+                eager=True,
             ),
             "h": pl.date_range(
-                datetime(2023, 1, 1), datetime(2023, 1, 3), "1d", time_unit="ns"
+                datetime(2023, 1, 1),
+                datetime(2023, 1, 3),
+                "1d",
+                time_unit="ns",
+                eager=True,
             ),
             "i": [[5, 6], [3, 4], [9, 8]],
             "j": [[5.0, 6.0], [3.0, 4.0], [9.0, 8.0]],

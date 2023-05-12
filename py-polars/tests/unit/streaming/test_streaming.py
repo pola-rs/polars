@@ -1,4 +1,5 @@
 import time
+import typing
 from datetime import date
 from typing import Any
 
@@ -128,7 +129,11 @@ def test_streaming_non_streaming_gb() -> None:
     q = q.groupby("a").agg(pl.count()).sort("a")
     assert_frame_equal(q.collect(streaming=True), q.collect())
     q = df.lazy().with_columns(pl.col("a").alias("b"))
-    q = q.groupby(["a", "b"]).agg(pl.count()).sort("a")
+    q = (
+        q.groupby(["a", "b"])
+        .agg(pl.count(), pl.col("a").sum().alias("sum_a"))
+        .sort("a")
+    )
     assert_frame_equal(q.collect(streaming=True), q.collect())
 
 
@@ -231,7 +236,7 @@ def test_cross_join_stack() -> None:
 
 @pytest.mark.slow()
 def test_ooc_sort(monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_FORCE_OOC_SORT", "1")
+    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
 
     s = pl.arange(0, 100_000, eager=True).rename("idx")
 
@@ -344,7 +349,7 @@ def test_streaming_unique(monkeypatch: Any, capfd: Any) -> None:
 @pytest.mark.write_disk()
 def test_streaming_sort(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
-    monkeypatch.setenv("POLARS_FORCE_OOC_SORT", "1")
+    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
     # this creates a lot of duplicate partitions and triggers: #7568
     assert (
         pl.Series(np.random.randint(0, 100, 100))
@@ -363,7 +368,7 @@ def test_streaming_groupby_ooc(monkeypatch: Any) -> None:
     np.random.seed(1)
     s = pl.Series("a", np.random.randint(0, 10, 100))
 
-    for env in ["POLARS_FORCE_OOC_SORT", "_NO_OP"]:
+    for env in ["POLARS_FORCE_OOC", "_NO_OP"]:
         monkeypatch.setenv(env, "1")
         q = (
             s.to_frame()
@@ -426,4 +431,72 @@ def test_streaming_groupby_struct_key() -> None:
         "tuples": [{"A": 3, "C": 4}, {"A": 1, "C": 2}, {"A": 2, "C": 3}],
         "count": [1, 1, 2],
         "B": ["apple", "google", "ms"],
+    }
+
+
+@pytest.mark.slow()
+def test_streaming_groupby_all_numeric_types_stability_8570() -> None:
+    m = 1000
+    n = 1000
+
+    rng = np.random.default_rng(seed=0)
+    dfa = pl.DataFrame({"x": pl.arange(start=0, end=n, eager=True)})
+    dfb = pl.DataFrame(
+        {
+            "y": rng.integers(low=0, high=10, size=m),
+            "z": rng.integers(low=0, high=2, size=m),
+        }
+    )
+    dfc = dfa.join(dfb, how="cross")
+
+    for keys in [["x", "y"], "z"]:
+        for dtype in [pl.Boolean, *pl.INTEGER_DTYPES]:
+            # the alias checks if the schema is correctly handled
+            dfd = (
+                dfc.lazy()
+                .with_columns(pl.col("z").cast(dtype))
+                .groupby(keys)
+                .agg(pl.col("z").sum().alias("z_sum"))
+                .collect(streaming=True)
+            )
+            assert dfd["z_sum"].sum() == dfc["z"].sum()
+
+
+@typing.no_type_check
+def test_streaming_groupby_categorical_aggregate() -> None:
+    with pl.StringCache():
+        out = (
+            pl.LazyFrame(
+                {
+                    "a": pl.Series(
+                        ["a", "a", "b", "b", "c", "c", None, None], dtype=pl.Categorical
+                    ),
+                    "b": pl.Series(
+                        pl.date_range(
+                            date(2023, 4, 28),
+                            date(2023, 5, 5),
+                            eager=True,
+                        ).to_list(),
+                        dtype=pl.Date,
+                    ),
+                }
+            )
+            .groupby(["a", "b"])
+            .agg([pl.col("a").first().alias("sum")])
+            .collect(streaming=True)
+        )
+
+    assert out.sort("b").to_dict(False) == {
+        "a": ["a", "a", "b", "b", "c", "c", None, None],
+        "b": [
+            date(2023, 4, 28),
+            date(2023, 4, 29),
+            date(2023, 4, 30),
+            date(2023, 5, 1),
+            date(2023, 5, 2),
+            date(2023, 5, 3),
+            date(2023, 5, 4),
+            date(2023, 5, 5),
+        ],
+        "sum": ["a", "a", "b", "b", "c", "c", None, None],
     }

@@ -12,8 +12,13 @@ from polars.utils.decorators import deprecated_alias
 from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
-    from polars.expr.expr import Expr
-    from polars.type_aliases import PolarsDataType, PolarsTemporalType, TransferEncoding
+    from polars import Expr
+    from polars.type_aliases import (
+        PolarsDataType,
+        PolarsTemporalType,
+        TimeUnit,
+        TransferEncoding,
+    )
     from polars.utils import NoDefault
 
 
@@ -25,6 +30,152 @@ class ExprStringNameSpace:
     def __init__(self, expr: Expr):
         self._pyexpr = expr._pyexpr
 
+    def to_date(
+        self,
+        format: str | None = None,
+        *,
+        strict: bool = True,
+        exact: bool = True,
+        cache: bool = True,
+    ) -> Expr:
+        """
+        Convert a Utf8 column into a Date column.
+
+        Parameters
+        ----------
+        format
+            Format to use for conversion. Refer to the `chrono crate documentation
+            <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            for the full specification. Example: ``"%Y-%m-%d"``.
+            If set to None (default), the format is inferred from the data.
+        strict
+            Raise an error if any conversion fails.
+        exact
+            Require an exact format match. If False, allow the format to match anywhere
+            in the target string.
+        cache
+            Use a cache of unique, converted dates to apply the conversion.
+
+        Examples
+        --------
+        >>> s = pl.Series(["2020/01/01", "2020/02/01", "2020/03/01"])
+        >>> s.str.to_date()
+        shape: (3,)
+        Series: '' [date]
+        [
+                2020-01-01
+                2020-02-01
+                2020-03-01
+        ]
+
+        """
+        _validate_format_argument(format)
+        return wrap_expr(self._pyexpr.str_to_date(format, strict, exact, cache))
+
+    def to_datetime(
+        self,
+        format: str | None = None,
+        *,
+        time_unit: TimeUnit | None = None,
+        time_zone: str | None = None,
+        strict: bool = True,
+        exact: bool = True,
+        cache: bool = True,
+        utc: bool = False,
+        _tz_aware: bool = False,
+    ) -> Expr:
+        """
+        Convert a Utf8 column into a Datetime column.
+
+        Parameters
+        ----------
+        format
+            Format to use for conversion. Refer to the `chrono crate documentation
+            <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            for the full specification. Example: ``"%Y-%m-%d %H:%M:%S"``.
+            If set to None (default), the format is inferred from the data.
+        time_unit : {None, 'us', 'ns', 'ms'}
+            Unit of time for the resulting Datetime column. If set to None (default),
+            the time unit is inferred from the format string if given, eg:
+            ``"%F %T%.3f"`` => ``Datetime("ms")``. If no fractional second component is
+            found, the default is ``"us"``.
+        time_zone
+            Time zone for the resulting Datetime column.
+        strict
+            Raise an error if any conversion fails.
+        exact
+            Require an exact format match. If False, allow the format to match anywhere
+            in the target string.
+        cache
+            Use a cache of unique, converted datetimes to apply the conversion.
+        utc
+            Parse time zone aware datetimes as UTC. This may be useful if you have data
+            with mixed offsets.
+
+        Examples
+        --------
+        >>> s = pl.Series(["2020-01-01 01:00Z", "2020-01-01 02:00Z"])
+        >>> s.str.to_datetime("%Y-%m-%d %H:%M%#z")
+        shape: (2,)
+        Series: '' [datetime[μs, +00:00]]
+        [
+                2020-01-01 01:00:00 +00:00
+                2020-01-01 02:00:00 +00:00
+        ]
+
+        """
+        _validate_format_argument(format)
+        return wrap_expr(
+            self._pyexpr.str_to_datetime(
+                format,
+                time_unit,
+                time_zone,
+                strict,
+                exact,
+                cache,
+                utc,
+                _tz_aware,
+            )
+        )
+
+    def to_time(
+        self,
+        format: str | None = None,
+        *,
+        strict: bool = True,
+        cache: bool = True,
+    ) -> Expr:
+        """
+        Convert a Utf8 column into a Time column.
+
+        Parameters
+        ----------
+        format
+            Format to use for conversion. Refer to the `chrono crate documentation
+            <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+            for the full specification. Example: ``"%H:%M:%S"``.
+            If set to None (default), the format is inferred from the data.
+        strict
+            Raise an error if any conversion fails.
+        cache
+            Use a cache of unique, converted times to apply the conversion.
+
+        Examples
+        --------
+        >>> s = pl.Series(["01:00", "02:00", "03:00"])
+        >>> s.str.to_time("%H:%M")
+        shape: (3,)
+        Series: '' [time]
+        [
+                01:00:00
+                02:00:00
+                03:00:00
+        ]
+
+        """
+        _validate_format_argument(format)
+        return wrap_expr(self._pyexpr.str_to_time(format, strict, cache))
+
     @deprecated_alias(datatype="dtype", fmt="format")
     def strptime(
         self,
@@ -34,50 +185,51 @@ class ExprStringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        tz_aware: bool | NoDefault = no_default,
         utc: bool = False,
+        tz_aware: bool | NoDefault = no_default,
     ) -> Expr:
         """
-        Parse a Utf8 expression to a Date/Datetime/Time type.
+        Convert a Utf8 column into a Date/Datetime/Time column.
 
         Parameters
         ----------
         dtype
-            Date | Datetime | Time
+            The data type to convert into. Can be either Date, Datetime, or Time.
         format
-            Format to use, refer to the `chrono strftime documentation
+            Format to use for conversion. Refer to the `chrono crate documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
-            for specification. Example: ``"%y-%m-%d"``.
+            for the full specification. Example: ``"%Y-%m-%d %H:%M:%S"``.
+            If set to None (default), the format is inferred from the data.
         strict
             Raise an error if any conversion fails.
         exact
-            - If True, require an exact format match.
-            - If False, allow the format to match anywhere in the target string.
+            Require an exact format match. If False, allow the format to match anywhere
+            in the target string. Conversion to the Time type is always exact.
         cache
             Use a cache of unique, converted dates to apply the datetime conversion.
+        utc
+            Parse time zone aware datetimes as UTC. This may be useful if you have data
+            with mixed offsets.
         tz_aware
-            Parse timezone aware datetimes. This may be automatically toggled by the
+            Parse time zone aware datetimes. This may be automatically toggled by the
             `format` given.
 
             .. deprecated:: 0.16.17
                 This is now auto-inferred from the given `format`. You can safely drop
                 this argument, it will be removed in a future version.
-        utc
-            Parse timezone aware datetimes as UTC. This may be useful if you have data
-            with mixed offsets.
 
         Notes
         -----
-        When parsing a Datetime the column precision will be inferred from
-        the format string, if given, eg: "%F %T%.3f" => Datetime("ms"). If
-        no fractional second component is found then the default is "us".
+        When converting to a Datetime type, the time unit is inferred from the format
+        string if given, eg: ``"%F %T%.3f"`` => ``Datetime("ms")``. If no fractional
+        second component is found, the default is ``"us"``.
 
         Examples
         --------
         Dealing with a consistent format:
 
-        >>> ts = ["2020-01-01 01:00Z", "2020-01-01 02:00Z"]
-        >>> pl.Series(ts).str.strptime(pl.Datetime, "%Y-%m-%d %H:%M%#z")
+        >>> s = pl.Series(["2020-01-01 01:00Z", "2020-01-01 02:00Z"])
+        >>> s.str.strptime(pl.Datetime, "%Y-%m-%d %H:%M%#z")
         shape: (2,)
         Series: '' [datetime[μs, +00:00]]
         [
@@ -96,24 +248,22 @@ class ExprStringNameSpace:
         ...         "Sun Jul  8 00:34:60 2001",
         ...     ],
         ... )
-        >>> s.to_frame().with_columns(
-        ...     pl.col("date")
-        ...     .str.strptime(pl.Date, "%F", strict=False)
-        ...     .fill_null(pl.col("date").str.strptime(pl.Date, "%F %T", strict=False))
-        ...     .fill_null(pl.col("date").str.strptime(pl.Date, "%D", strict=False))
-        ...     .fill_null(pl.col("date").str.strptime(pl.Date, "%c", strict=False))
-        ... )
-        shape: (4, 1)
-        ┌────────────┐
-        │ date       │
-        │ ---        │
-        │ date       │
-        ╞════════════╡
-        │ 2021-04-22 │
-        │ 2022-01-04 │
-        │ 2022-01-31 │
-        │ 2001-07-08 │
-        └────────────┘
+        >>> s.to_frame().select(
+        ...     pl.coalesce(
+        ...         pl.col("date").str.strptime(pl.Date, "%F", strict=False),
+        ...         pl.col("date").str.strptime(pl.Date, "%F %T", strict=False),
+        ...         pl.col("date").str.strptime(pl.Date, "%D", strict=False),
+        ...         pl.col("date").str.strptime(pl.Date, "%c", strict=False),
+        ...     )
+        ... ).to_series()
+        shape: (4,)
+        Series: 'date' [date]
+        [
+                2021-04-22
+                2022-01-04
+                2022-01-31
+                2001-07-08
+        ]
 
         """
         _validate_format_argument(format)
@@ -129,24 +279,22 @@ class ExprStringNameSpace:
             )
 
         if dtype == Date:
-            return wrap_expr(self._pyexpr.str_to_date(format, strict, exact, cache))
+            return self.to_date(format, strict=strict, exact=exact, cache=cache)
         elif dtype == Datetime:
             time_unit = dtype.time_unit  # type: ignore[union-attr]
             time_zone = dtype.time_zone  # type: ignore[union-attr]
-            return wrap_expr(
-                self._pyexpr.str_to_datetime(
-                    format,
-                    time_unit,
-                    time_zone,
-                    strict,
-                    exact,
-                    cache,
-                    tz_aware,
-                    utc,
-                )
+            return self.to_datetime(
+                format,
+                time_unit=time_unit,
+                time_zone=time_zone,
+                strict=strict,
+                exact=exact,
+                cache=cache,
+                utc=utc,
+                _tz_aware=tz_aware,
             )
         elif dtype == Time:
-            return wrap_expr(self._pyexpr.str_to_time(format, strict, exact, cache))
+            return self.to_time(format, strict=strict, cache=cache)
         else:
             raise ValueError("dtype should be of type {Date, Datetime, Time}")
 
@@ -534,23 +682,45 @@ class ExprStringNameSpace:
         Parameters
         ----------
         pattern
-            A regex pattern compatible with the `regex crate
+            A valid regular expression pattern, compatible with the `regex crate
             <https://docs.rs/regex/latest/regex/>`_.
         literal
-            Treat pattern as a literal string.
+            Treat ``pattern`` as a literal string, not as a regular expression.
         strict
-            Raise an error if the underlying pattern is not a valid regex expression,
+            Raise an error if the underlying pattern is not a valid regex,
             otherwise mask out with a null value.
+
+        Notes
+        -----
+        To modify regular expression behaviour (such as case-sensitivity) with
+        flags, use the inline ``(?iLmsuxU)`` syntax. For example:
+
+        >>> pl.DataFrame({"s": ["AAA", "aAa", "aaa"]}).with_columns(
+        ...     default_match=pl.col("s").str.contains("AA"),
+        ...     insensitive_match=pl.col("s").str.contains("(?i)AA"),
+        ... )
+        shape: (3, 3)
+        ┌─────┬───────────────┬───────────────────┐
+        │ s   ┆ default_match ┆ insensitive_match │
+        │ --- ┆ ---           ┆ ---               │
+        │ str ┆ bool          ┆ bool              │
+        ╞═════╪═══════════════╪═══════════════════╡
+        │ AAA ┆ true          ┆ true              │
+        │ aAa ┆ false         ┆ true              │
+        │ aaa ┆ false         ┆ true              │
+        └─────┴───────────────┴───────────────────┘
+
+        See the regex crate's section on `grouping and flags
+        <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
+        additional information about the use of inline expression modifiers.
 
         Examples
         --------
         >>> df = pl.DataFrame({"a": ["Crab", "cat and dog", "rab$bit", None]})
         >>> df.select(
-        ...     [
-        ...         pl.col("a"),
-        ...         pl.col("a").str.contains("cat|bit").alias("regex"),
-        ...         pl.col("a").str.contains("rab$", literal=True).alias("literal"),
-        ...     ]
+        ...     pl.col("a"),
+        ...     pl.col("a").str.contains("cat|bit").alias("regex"),
+        ...     pl.col("a").str.contains("rab$", literal=True).alias("literal"),
         ... )
         shape: (4, 3)
         ┌─────────────┬───────┬─────────┐
@@ -816,12 +986,42 @@ class ExprStringNameSpace:
         Parameters
         ----------
         pattern
-            A regex pattern compatible with the `regex crate
+            A valid regular expression pattern, compatible with the `regex crate
             <https://docs.rs/regex/latest/regex/>`_.
         group_index
             Index of the targeted capture group.
             Group 0 mean the whole pattern, first group begin at index 1
             Default to the first capture group
+
+        Notes
+        -----
+        To modify regular expression behaviour (such as multi-line matching)
+        with flags, use the inline ``(?iLmsuxU)`` syntax. For example:
+
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "lines": [
+        ...             "I Like\nThose\nOdds",
+        ...             "This is\nThe Way",
+        ...         ]
+        ...     }
+        ... )
+        >>> df.select(
+        ...     pl.col("lines").str.extract(r"(?m)^(T\w+)", 1).alias("matches"),
+        ... )
+        shape: (2, 1)
+        ┌─────────┐
+        │ matches │
+        │ ---     │
+        │ str     │
+        ╞═════════╡
+        │ Those   │
+        │ This    │
+        └─────────┘
+
+        See the regex crate's section on `grouping and flags
+        <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
+        additional information about the use of inline expression modifiers.
 
         Returns
         -------
@@ -831,57 +1031,101 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame(
         ...     {
-        ...         "a": [
-        ...             "http://vote.com/ballon_dor?candidate=messi&ref=polars",
-        ...             "http://vote.com/ballon_dor?candidat=jorginho&ref=polars",
+        ...         "url": [
+        ...             "http://vote.com/ballon_dor?error=404&ref=unknown",
+        ...             "http://vote.com/ballon_dor?ref=polars&candidate=messi",
         ...             "http://vote.com/ballon_dor?candidate=ronaldo&ref=polars",
         ...         ]
         ...     }
         ... )
         >>> df.select(
-        ...     [
-        ...         pl.col("a").str.extract(r"candidate=(\w+)", 1),
-        ...     ]
+        ...     pl.col("url").str.extract(r"candidate=(\w+)", 1).alias("candidate"),
+        ...     pl.col("url").str.extract(r"ref=(\w+)", 1).alias("referer"),
+        ...     pl.col("url").str.extract(r"error=(\w+)", 1).alias("error"),
         ... )
-        shape: (3, 1)
-        ┌─────────┐
-        │ a       │
-        │ ---     │
-        │ str     │
-        ╞═════════╡
-        │ messi   │
-        │ null    │
-        │ ronaldo │
-        └─────────┘
+        shape: (3, 3)
+        ┌───────────┬─────────┬───────┐
+        │ candidate ┆ referer ┆ error │
+        │ ---       ┆ ---     ┆ ---   │
+        │ str       ┆ str     ┆ str   │
+        ╞═══════════╪═════════╪═══════╡
+        │ null      ┆ unknown ┆ 404   │
+        │ messi     ┆ polars  ┆ null  │
+        │ ronaldo   ┆ polars  ┆ null  │
+        └───────────┴─────────┴───────┘
 
         """
         return wrap_expr(self._pyexpr.str_extract(pattern, group_index))
 
     def extract_all(self, pattern: str | Expr) -> Expr:
-        r"""
-        Extracts all matches for the given regex pattern.
+        r'''
+        Extract all matches for the given regex pattern.
 
-        Extracts each successive non-overlapping regex match in an individual string as
-        an array.
+        Extract each successive non-overlapping regex match in an individual string
+        as a list. Extracted matches contain ``null`` if the original value is null
+        or the regex did not capture anything.
 
         Parameters
         ----------
         pattern
-            A regex pattern compatible with the `regex crate
+            A valid regular expression pattern, compatible with the `regex crate
             <https://docs.rs/regex/latest/regex/>`_.
+
+        Notes
+        -----
+        To modify regular expression behaviour (such as "verbose" mode and/or
+        case-sensitive matching) with flags, use the inline ``(?iLmsuxU)`` syntax.
+        For example:
+
+        >>> df = pl.DataFrame(
+        ...     data={
+        ...         "email": [
+        ...             "real.email@spam.com",
+        ...             "some_account@somewhere.net",
+        ...             "abc.def.ghi.jkl@uvw.xyz.co.uk",
+        ...         ]
+        ...     }
+        ... )
+        >>> # extract name/domain parts from the addresses, using verbose regex
+        >>> df.with_columns(
+        ...     pl.col("email")
+        ...     .str.extract_all(
+        ...         r"""(?xi)   # activate 'verbose' and 'case-insensitive' flags
+        ...         [           # (start character group)
+        ...           A-Z       # letters
+        ...           0-9       # digits
+        ...           ._%+\-    # special chars
+        ...         ]           # (end character group)
+        ...         +           # 'one or more' quantifier
+        ...         """
+        ...     )
+        ...     .arr.to_struct(fields=["name", "domain"])
+        ...     .alias("email_parts")
+        ... ).unnest("email_parts")
+        shape: (3, 3)
+        ┌───────────────────────────────┬─────────────────┬───────────────┐
+        │ email                         ┆ name            ┆ domain        │
+        │ ---                           ┆ ---             ┆ ---           │
+        │ str                           ┆ str             ┆ str           │
+        ╞═══════════════════════════════╪═════════════════╪═══════════════╡
+        │ real.email@spam.com           ┆ real.email      ┆ spam.com      │
+        │ some_account@somewhere.net    ┆ some_account    ┆ somewhere.net │
+        │ abc.def.ghi.jkl@uvw.xyz.co.uk ┆ abc.def.ghi.jkl ┆ uvw.xyz.co.uk │
+        └───────────────────────────────┴─────────────────┴───────────────┘
+
+        See the regex crate's section on `grouping and flags
+        <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
+        additional information about the use of inline expression modifiers.
 
         Returns
         -------
-        List[Utf8] array. Contain null if original value is null or regex capture
-        nothing.
+        List[Utf8]
 
         Examples
         --------
         >>> df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"]})
         >>> df.select(
-        ...     [
-        ...         pl.col("foo").str.extract_all(r"(\d+)").alias("extracted_nrs"),
-        ...     ]
+        ...     pl.col("foo").str.extract_all(r"\d+").alias("extracted_nrs"),
         ... )
         shape: (2, 1)
         ┌────────────────┐
@@ -893,7 +1137,7 @@ class ExprStringNameSpace:
         │ ["678", "910"] │
         └────────────────┘
 
-        """
+        '''
         pattern = expr_to_lit_or_expr(pattern, str_to_lit=True)
         return wrap_expr(self._pyexpr.str_extract_all(pattern._pyexpr))
 
@@ -904,7 +1148,7 @@ class ExprStringNameSpace:
         Parameters
         ----------
         pattern
-            A regex pattern compatible with the `regex crate
+            A valid regular expression pattern, compatible with the `regex crate
             <https://docs.rs/regex/latest/regex/>`_.
 
         Returns
@@ -915,9 +1159,7 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"]})
         >>> df.select(
-        ...     [
-        ...         pl.col("foo").str.count_match(r"\d").alias("count_digits"),
-        ...     ]
+        ...     pl.col("foo").str.count_match(r"\d").alias("count_digits"),
         ... )
         shape: (2, 1)
         ┌──────────────┐
@@ -930,7 +1172,7 @@ class ExprStringNameSpace:
         └──────────────┘
 
         """
-        return wrap_expr(self._pyexpr.count_match(pattern))
+        return wrap_expr(self._pyexpr.str_count_match(pattern))
 
     def split(self, by: str, *, inclusive: bool = False) -> Expr:
         """
@@ -988,9 +1230,7 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame({"x": ["a_1", None, "c", "d_4"]})
         >>> df.select(
-        ...     [
-        ...         pl.col("x").str.split_exact("_", 1).alias("fields"),
-        ...     ]
+        ...     pl.col("x").str.split_exact("_", 1).alias("fields"),
         ... )
         shape: (4, 1)
         ┌─────────────┐
@@ -1112,14 +1352,46 @@ class ExprStringNameSpace:
         Parameters
         ----------
         pattern
-            A regex pattern compatible with the `regex crate
+            A valid regular expression pattern, compatible with the `regex crate
             <https://docs.rs/regex/latest/regex/>`_.
         value
-            Replacement string.
+            String that will replace the matched substring.
         literal
-             Treat pattern as a literal string.
+            Treat pattern as a literal string.
         n
-            Number of matches to replace
+            Number of matches to replace.
+
+        Notes
+        -----
+        To modify regular expression behaviour (such as case-sensitivity) with flags,
+        use the inline ``(?iLmsuxU)`` syntax. For example:
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "city": "Philadelphia",
+        ...         "season": ["Spring", "Summer", "Autumn", "Winter"],
+        ...         "weather": ["Rainy", "Sunny", "Cloudy", "Snowy"],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     # apply case-insensitive string replacement
+        ...     pl.col("weather").str.replace(r"(?i)foggy|rainy|cloudy|snowy", "Sunny")
+        ... )
+        shape: (4, 3)
+        ┌──────────────┬────────┬─────────┐
+        │ city         ┆ season ┆ weather │
+        │ ---          ┆ ---    ┆ ---     │
+        │ str          ┆ str    ┆ str     │
+        ╞══════════════╪════════╪═════════╡
+        │ Philadelphia ┆ Spring ┆ Sunny   │
+        │ Philadelphia ┆ Summer ┆ Sunny   │
+        │ Philadelphia ┆ Autumn ┆ Sunny   │
+        │ Philadelphia ┆ Winter ┆ Sunny   │
+        └──────────────┴────────┴─────────┘
+
+        See the regex crate's section on `grouping and flags
+        <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
+        additional information about the use of inline expression modifiers.
 
         See Also
         --------
@@ -1157,12 +1429,12 @@ class ExprStringNameSpace:
         Parameters
         ----------
         pattern
-            A regex pattern compatible with the `regex crate
+            A valid regular expression pattern, compatible with the `regex crate
             <https://docs.rs/regex/latest/regex/>`_.
         value
             Replacement string.
         literal
-             Treat pattern as a literal string.
+            Treat pattern as a literal string.
 
         See Also
         --------

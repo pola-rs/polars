@@ -60,6 +60,7 @@ impl FunctionExpr {
                     #[cfg(feature = "timezones")]
                     TzLocalize(tz) => return mapper.map_datetime_dtype_timezone(Some(tz)),
                     DateRange { .. } => return mapper.map_to_supertype(),
+                    TimeRange { .. } => DataType::Time,
                     Combine(tu) => match mapper.with_same_dtype().unwrap().dtype {
                         DataType::Datetime(_, tz) => DataType::Datetime(*tu, tz),
                         DataType::Date => DataType::Datetime(*tu, None),
@@ -187,20 +188,14 @@ impl FunctionExpr {
                     }
                 })
             }
-            #[cfg(feature = "dot_product")]
-            Dot => mapper.map_dtype(|dt| {
-                use DataType::*;
-                match dt {
-                    Int8 | Int16 | UInt16 | UInt8 => Int64,
-                    _ => dt.clone(),
-                }
-            }),
             #[cfg(feature = "log")]
             Entropy { .. } | Log { .. } | Log1p | Exp => mapper.map_to_float_dtype(),
             Unique(_) => mapper.with_same_dtype(),
             #[cfg(feature = "round_series")]
             Round { .. } | Floor | Ceil => mapper.with_same_dtype(),
             UpperBound | LowerBound => mapper.with_same_dtype(),
+            #[cfg(feature = "fused")]
+            Fused(_) => mapper.map_to_supertype(),
         }
     }
 }

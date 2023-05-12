@@ -2,46 +2,39 @@ from __future__ import annotations
 
 import contextlib
 import warnings
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from typing import TYPE_CHECKING, Iterable, Sequence, overload
 
-from polars import internals as pli
+import polars._reexport as pl
+from polars import functions as F
 from polars.datatypes import Date
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
 from polars.utils._wrap import wrap_df, wrap_expr, wrap_ldf, wrap_s
 from polars.utils.convert import (
     _datetime_to_pl_timestamp,
+    _time_to_pl_time,
     _timedelta_to_pl_duration,
     _tzinfo_to_str,
 )
 from polars.utils.decorators import deprecated_alias
-from polars.utils.various import find_stacklevel
+from polars.utils.various import find_stacklevel, no_default
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import concat_df as _concat_df
-    from polars.polars import concat_lf as _concat_lf
-    from polars.polars import concat_series as _concat_series
-    from polars.polars import py_date_range as _py_date_range
-    from polars.polars import py_date_range_lazy as _py_date_range_lazy
-    from polars.polars import py_diag_concat_df as _diag_concat_df
-    from polars.polars import py_diag_concat_lf as _diag_concat_lf
-    from polars.polars import py_hor_concat_df as _hor_concat_df
+    import polars.polars as plr
 
 
 if TYPE_CHECKING:
     import sys
     from datetime import date
 
-    from polars.dataframe import DataFrame
-    from polars.expr.expr import Expr
-    from polars.lazyframe import LazyFrame
-    from polars.series import Series
+    from polars import DataFrame, Expr, LazyFrame, Series
     from polars.type_aliases import (
         ClosedInterval,
         ConcatMethod,
         PolarsDataType,
         TimeUnit,
     )
+    from polars.utils.various import NoDefault
 
     if sys.version_info >= (3, 8):
         from typing import Literal
@@ -258,33 +251,33 @@ def concat(
 
     out: Series | DataFrame | LazyFrame | Expr
     first = elems[0]
-    if isinstance(first, pli.DataFrame):
+    if isinstance(first, pl.DataFrame):
         if how == "vertical":
-            out = wrap_df(_concat_df(elems))
+            out = wrap_df(plr.concat_df(elems))
         elif how == "diagonal":
-            out = wrap_df(_diag_concat_df(elems))
+            out = wrap_df(plr.diag_concat_df(elems))
         elif how == "horizontal":
-            out = wrap_df(_hor_concat_df(elems))
+            out = wrap_df(plr.hor_concat_df(elems))
         else:
             raise ValueError(
                 f"how must be one of {{'vertical', 'diagonal', 'horizontal'}}, "
                 f"got {how}"
             )
-    elif isinstance(first, pli.LazyFrame):
+    elif isinstance(first, pl.LazyFrame):
         if how == "vertical":
-            return wrap_ldf(_concat_lf(elems, rechunk, parallel))
+            return wrap_ldf(plr.concat_lf(elems, rechunk, parallel))
         if how == "diagonal":
-            return wrap_ldf(_diag_concat_lf(elems, rechunk, parallel))
+            return wrap_ldf(plr.diag_concat_lf(elems, rechunk, parallel))
         else:
             raise ValueError(
                 "'LazyFrame' only allows {{'vertical', 'diagonal'}} concat strategy."
             )
-    elif isinstance(first, pli.Series):
+    elif isinstance(first, pl.Series):
         if how == "vertical":
-            out = wrap_s(_concat_series(elems))
+            out = wrap_s(plr.concat_series(elems))
         else:
             raise ValueError("'Series' only allows {{'vertical'}} concat strategy.")
-    elif isinstance(first, pli.Expr):
+    elif isinstance(first, pl.Expr):
         out = first
         for e in elems[1:]:
             out = out.append(e)  # type: ignore[arg-type]
@@ -314,7 +307,7 @@ def date_range(
     end: date | datetime | Expr | str,
     interval: str | timedelta = ...,
     *,
-    lazy: Literal[False] = ...,
+    eager: Literal[True] = ...,
     closed: ClosedInterval = ...,
     name: str | None = ...,
     time_unit: TimeUnit | None = ...,
@@ -329,7 +322,7 @@ def date_range(
     end: Expr,
     interval: str | timedelta = ...,
     *,
-    lazy: Literal[False] = ...,
+    eager: Literal[True] = ...,
     closed: ClosedInterval = ...,
     name: str | None = ...,
     time_unit: TimeUnit | None = ...,
@@ -344,7 +337,7 @@ def date_range(
     end: date | datetime | str,
     interval: str | timedelta = ...,
     *,
-    lazy: Literal[False] = ...,
+    eager: Literal[True] = ...,
     closed: ClosedInterval = ...,
     name: str | None = ...,
     time_unit: TimeUnit | None = ...,
@@ -359,7 +352,7 @@ def date_range(
     end: date | datetime | Expr | str,
     interval: str | timedelta = ...,
     *,
-    lazy: Literal[True],
+    eager: Literal[False],
     closed: ClosedInterval = ...,
     name: str | None = None,
     time_unit: TimeUnit | None = ...,
@@ -374,7 +367,8 @@ def date_range(
     end: date | datetime | Expr | str,
     interval: str | timedelta = "1d",
     *,
-    lazy: bool = False,
+    lazy: bool | NoDefault = no_default,
+    eager: bool | NoDefault = no_default,
     closed: ClosedInterval = "both",
     name: str | None = None,
     time_unit: TimeUnit | None = None,
@@ -390,11 +384,16 @@ def date_range(
     end
         Upper bound of the date range, given as a date, datetime, Expr, or column name.
     interval
-        Interval periods. It can be a python timedelta object, like
-        ``timedelta(days=10)``, or a polars duration string, such as ``3d12h4m25s``
-        representing 3 days, 12 hours, 4 minutes, and 25 seconds.
+        Interval of the range periods; can be a python timedelta object like
+        ``timedelta(days=10)`` or a polars duration string, such as ``3d12h4m25s``
+        (representing 3 days, 12 hours, 4 minutes, and 25 seconds).
     lazy:
         Return an expression.
+
+            .. deprecated:: 0.17.10
+    eager:
+        Evaluate immediately and return a ``Series``; if set to ``False`` (default),
+        return an expression instead.
     closed : {'both', 'left', 'right', 'none'}
         Define whether the temporal window interval is closed or not.
     name
@@ -420,7 +419,9 @@ def date_range(
     Using polars duration string to specify the interval:
 
     >>> from datetime import date
-    >>> pl.date_range(date(2022, 1, 1), date(2022, 3, 1), "1mo", name="dtrange")
+    >>> pl.date_range(
+    ...     date(2022, 1, 1), date(2022, 3, 1), "1mo", name="dtrange", eager=True
+    ... )
     shape: (3,)
     Series: 'dtrange' [date]
     [
@@ -437,6 +438,7 @@ def date_range(
     ...     datetime(1985, 1, 10),
     ...     timedelta(days=1, hours=12),
     ...     time_unit="ms",
+    ...     eager=True,
     ... )
     shape: (7,)
     Series: '' [datetime[ms]]
@@ -457,6 +459,7 @@ def date_range(
     ...     datetime(2022, 3, 1),
     ...     "1mo",
     ...     time_zone="America/New_York",
+    ...     eager=True,
     ... )
     shape: (3,)
     Series: '' [datetime[μs, America/New_York]]
@@ -470,9 +473,7 @@ def date_range(
 
     >>> (
     ...     pl.date_range(
-    ...         datetime(2022, 1, 1),
-    ...         datetime(2022, 3, 1),
-    ...         "1mo",
+    ...         datetime(2022, 1, 1), datetime(2022, 3, 1), "1mo", eager=True
     ...     ).dt.month_end()
     ... )
     shape: (3,)
@@ -484,6 +485,38 @@ def date_range(
     ]
 
     """
+    if eager is no_default and lazy is no_default:
+        # user passed nothing
+        warnings.warn(
+            "In a future version of polars, the default will change from `lazy=False` to `eager=False`. "
+            "To silence this warning, please:\n"
+            "- set `eager=False` to opt in to the new default behaviour, or\n"
+            "- set `eager=True` to retain the old one.",
+            FutureWarning,
+            stacklevel=find_stacklevel(),
+        )
+        eager = True
+    elif eager is no_default and lazy is not no_default:
+        # user only passed lazy
+        warnings.warn(
+            "In a future version of polars, the default will change from `lazy=False` to `eager=False`. "
+            "To silence this warning, please remove `lazy` and then:\n"
+            "- set `eager=False` to opt in to the new default behaviour, or\n"
+            "- set `eager=True` to retain the old one.",
+            FutureWarning,
+            stacklevel=find_stacklevel(),
+        )
+        eager = not lazy
+    elif eager is not no_default and lazy is not no_default:
+        # user passed both
+        raise TypeError(
+            "cannot pass both `eager` and `lazy`. Please only pass `eager`, as `lazy` will be removed "
+            "in a future version."
+        )
+    else:
+        # user only passed eager. Nothing to warn about :)
+        pass
+
     if name is None:
         name = ""
     if isinstance(interval, timedelta):
@@ -491,11 +524,15 @@ def date_range(
     elif " " in interval:
         interval = interval.replace(" ", "")
 
-    if isinstance(start, (str, pli.Expr)) or isinstance(end, (str, pli.Expr)) or lazy:
+    if (
+        not eager
+        or isinstance(start, (str, pl.Expr))
+        or isinstance(end, (str, pl.Expr))
+    ):
         start = expr_to_lit_or_expr(start, str_to_lit=False)._pyexpr
         end = expr_to_lit_or_expr(end, str_to_lit=False)._pyexpr
         return wrap_expr(
-            _py_date_range_lazy(start, end, interval, closed, name, time_zone)
+            plr.date_range_lazy(start, end, interval, closed, name, time_zone)
         )
 
     start, start_is_date = _ensure_datetime(start)
@@ -528,7 +565,7 @@ def date_range(
     start_pl = _datetime_to_pl_timestamp(start, time_unit_)
     end_pl = _datetime_to_pl_timestamp(end, time_unit_)
     dt_range = wrap_s(
-        _py_date_range(start_pl, end_pl, interval, closed, name, time_unit_, time_zone)
+        plr.date_range(start_pl, end_pl, interval, closed, name, time_unit_, time_zone)
     )
     if (
         start_is_date
@@ -538,6 +575,133 @@ def date_range(
         dt_range = dt_range.cast(Date)
 
     return dt_range
+
+
+def time_range(
+    start: time | Expr | str | None = None,
+    end: time | Expr | str | None = None,
+    interval: str | timedelta = "1h",
+    *,
+    eager: bool = False,
+    closed: ClosedInterval = "both",
+    name: str | None = None,
+) -> Series | Expr:
+    """
+    Create a range of type `Time`.
+
+    Parameters
+    ----------
+    start
+        Lower bound of the time range, given as a time, Expr, or column name.
+        If omitted, will default to ``time(0,0,0,0)``.
+    end
+        Upper bound of the time range, given as a time, Expr, or column name.
+        If omitted, will default to ``time(23,59,59,999999)``.
+    interval
+        Interval of the range periods; can be a python timedelta object like
+        ``timedelta(minutes=10)`` or a polars duration string, such as ``1h30m25s``
+        (representing 1 hour, 30 minutes, and 25 seconds).
+    eager:
+        Evaluate immediately and return a ``Series``; if set to ``False`` (default),
+        return an expression instead.
+    closed : {'both', 'left', 'right', 'none'}
+        Define whether the temporal window interval is closed or not.
+    name
+        Name of the output Series.
+
+    Returns
+    -------
+    A Series of type `Time`.
+
+    Examples
+    --------
+    Create a Series that starts at 14:00, with intervals of 3 hours and 15 mins:
+
+    >>> from datetime import time
+    >>> pl.time_range(
+    ...     start=time(14, 0),
+    ...     interval=timedelta(hours=3, minutes=15),
+    ...     eager=True,
+    ...     name="tm",
+    ... )
+    shape: (4,)
+    Series: 'tm' [time]
+    [
+        14:00:00
+        17:15:00
+        20:30:00
+        23:45:00
+    ]
+
+    Generate a DataFrame with two columns made of eager ``time_range`` Series,
+    and create a third column using ``time_range`` in expression context:
+
+    >>> lf = pl.LazyFrame(
+    ...     {
+    ...         "start": pl.time_range(interval="6h", eager=True),
+    ...         "stop": pl.time_range(start=time(2, 59), interval="5h59m", eager=True),
+    ...     }
+    ... ).with_columns(
+    ...     intervals=pl.time_range("start", "stop", interval="1h29m", eager=False)
+    ... )
+    >>> lf.collect()
+    shape: (4, 3)
+    ┌──────────┬──────────┬────────────────────────────────┐
+    │ start    ┆ stop     ┆ intervals                      │
+    │ ---      ┆ ---      ┆ ---                            │
+    │ time     ┆ time     ┆ list[time]                     │
+    ╞══════════╪══════════╪════════════════════════════════╡
+    │ 00:00:00 ┆ 02:59:00 ┆ [00:00:00, 01:29:00, 02:58:00] │
+    │ 06:00:00 ┆ 08:58:00 ┆ [06:00:00, 07:29:00, 08:58:00] │
+    │ 12:00:00 ┆ 14:57:00 ┆ [12:00:00, 13:29:00]           │
+    │ 18:00:00 ┆ 20:56:00 ┆ [18:00:00, 19:29:00]           │
+    └──────────┴──────────┴────────────────────────────────┘
+
+    """
+    if isinstance(interval, timedelta):
+        interval = _timedelta_to_pl_duration(interval)
+    elif " " in interval:
+        interval = interval.replace(" ", "").lower()
+
+    for unit in ("y", "mo", "w", "d"):
+        if unit in interval:
+            raise ValueError(f"invalid interval unit for time_range: found {unit!r}")
+
+    name = name or ""
+    default_start = time(0, 0, 0)
+    default_end = time(23, 59, 59, 999999)
+    if (
+        not eager
+        or isinstance(start, (str, pl.Expr))
+        or isinstance(end, (str, pl.Expr))
+    ):
+        start_expr = (
+            F.lit(default_start)
+            if start is None
+            else expr_to_lit_or_expr(start, str_to_lit=False)
+        )._pyexpr
+
+        end_expr = (
+            F.lit(default_end)
+            if end is None
+            else expr_to_lit_or_expr(end, str_to_lit=False)
+        )._pyexpr
+
+        tm_expr = wrap_expr(
+            plr.time_range_lazy(start_expr, end_expr, interval, closed, name)
+        )
+        return tm_expr.alias(name)
+    else:
+        tm_srs = wrap_s(
+            plr.time_range(
+                _time_to_pl_time(default_start if start is None else start),
+                _time_to_pl_time(default_end if end is None else end),
+                interval,
+                closed,
+                name,
+            )
+        )
+        return tm_srs
 
 
 def cut(
@@ -766,7 +930,7 @@ def align_frames(
         )
 
     # establish the superset of all "on" column values, sort, and cache
-    eager = isinstance(frames[0], pli.DataFrame)
+    eager = isinstance(frames[0], pl.DataFrame)
     alignment_frame = (
         concat([df.lazy().select(on) for df in frames])
         .unique(maintain_order=False)
@@ -820,7 +984,7 @@ def ones(n: int, dtype: PolarsDataType | None = None) -> Series:
     ]
 
     """
-    s = pli.Series([1.0])
+    s = pl.Series([1.0])
     if dtype:
         s = s.cast(dtype)
     return s.new_from_index(0, n)
@@ -856,7 +1020,7 @@ def zeros(n: int, dtype: PolarsDataType | None = None) -> Series:
     ]
 
     """
-    s = pli.Series([0.0])
+    s = pl.Series([0.0])
     if dtype:
         s = s.cast(dtype)
     return s.new_from_index(0, n)

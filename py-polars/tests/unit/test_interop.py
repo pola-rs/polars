@@ -386,6 +386,56 @@ def test_from_numpy() -> None:
     assert df.schema == {"a": pl.UInt32, "b": pl.UInt32}
 
 
+def test_from_numpy_structured() -> None:
+    test_data = [
+        ("Google Pixel 7", 521.90, True),
+        ("Apple iPhone 14 Pro", 999.00, True),
+        ("Samsung Galaxy S23 Ultra", 1199.99, False),
+        ("OnePlus 11", 699.00, True),
+    ]
+    # create a numpy structured array...
+    arr_structured = np.array(
+        test_data,
+        dtype=np.dtype(
+            [
+                ("product", "U32"),
+                ("price_usd", "float64"),
+                ("in_stock", "bool"),
+            ]
+        ),
+    )
+    # ...and also establish as a record array view
+    arr_records = arr_structured.view(np.recarray)
+
+    # confirm that we can cleanly initialise a DataFrame from both,
+    # respecting the native dtypes and any schema overrides, etc.
+    for arr in (arr_structured, arr_records):
+        df = pl.DataFrame(data=arr).sort(by="price_usd", descending=True)
+
+        assert df.schema == {
+            "product": pl.Utf8,
+            "price_usd": pl.Float64,
+            "in_stock": pl.Boolean,
+        }
+        assert df.rows() == sorted(test_data, key=lambda row: -row[1])
+
+        for df in (
+            pl.DataFrame(
+                data=arr, schema=["phone", ("price_usd", pl.Float32), "available"]
+            ),
+            pl.DataFrame(
+                data=arr,
+                schema=["phone", "price_usd", "available"],
+                schema_overrides={"price_usd": pl.Float32},
+            ),
+        ):
+            assert df.schema == {
+                "phone": pl.Utf8,
+                "price_usd": pl.Float32,
+                "available": pl.Boolean,
+            }
+
+
 def test_from_arrow() -> None:
     data = pa.table({"a": [1, 2, 3], "b": [4, 5, 6]})
     df = pl.from_arrow(data)
@@ -669,9 +719,9 @@ def test_from_pyarrow_chunked_array() -> None:
 
 
 def test_numpy_preserve_uint64_4112() -> None:
-    assert pl.DataFrame({"a": [1, 2, 3]}).with_columns(
-        pl.col("a").hash()
-    ).to_numpy().dtype == np.dtype("uint64")
+    df = pl.DataFrame({"a": [1, 2, 3]}).with_columns(pl.col("a").hash())
+    assert df.to_numpy().dtype == np.dtype("uint64")
+    assert df.to_numpy(structured=True).dtype == np.dtype([("a", "uint64")])
 
 
 def test_view_ub() -> None:
@@ -817,6 +867,21 @@ def test_dataframe_from_repr() -> None:
         "total": pl.Float64,
     }
 
+    # empty frame with no dtypes
+    df = cast(
+        pl.DataFrame,
+        pl.from_repr(
+            """
+        ┌──────┬───────┐
+        │ misc ┆ other │
+        ╞══════╪═══════╡
+        └──────┴───────┘
+        """
+        ),
+    )
+    assert df.rows() == []
+    assert df.schema == {"misc": pl.Utf8, "other": pl.Utf8}
+
     df = cast(
         pl.DataFrame,
         pl.from_repr(
@@ -848,6 +913,28 @@ def test_dataframe_from_repr() -> None:
         (date(2023, 3, 25), 1, 2, 3, 96, 97, 98, 99),
         (date(1999, 12, 31), 3, 6, 9, 288, 291, 294, None),
         (None, 9, 18, 27, 864, 873, 882, 891),
+    ]
+
+    df = cast(
+        pl.DataFrame,
+        pl.from_repr(
+            """
+        # >>> no dtypes:
+        # ┌────────────┬──────┐
+        # │ dt         ┆ c99  │
+        # ╞════════════╪══════╡
+        # │ 2023-03-25 ┆ 99   │
+        # │ 1999-12-31 ┆ null │
+        # │ null       ┆ 891  │
+        # └────────────┴──────┘
+        """
+        ),
+    )
+    assert df.schema == {"dt": pl.Date, "c99": pl.Int64}
+    assert df.rows() == [
+        (date(2023, 3, 25), 99),
+        (date(1999, 12, 31), None),
+        (None, 891),
     ]
 
     df = cast(

@@ -9,12 +9,6 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, Generator, Iterable, Sequence, TypeVar
 
 import polars as pl
-
-if sys.version_info >= (3, 8):
-    from typing import Literal
-else:
-    from typing_extensions import Literal
-
 from polars import functions as F
 from polars.datatypes import (
     Boolean,
@@ -27,20 +21,16 @@ from polars.datatypes import (
     is_polars_dtype,
 )
 
-if TYPE_CHECKING:
-    from polars.internals import DataFrame
-    from polars.series import Series
-
-
-# note: reversed views don't match as instances of MappingView
-if sys.version_info >= (3, 11):
-    _views: list[Reversible[Any]] = [{}.keys(), {}.values(), {}.items()]
-    _reverse_mapping_views = tuple(type(reversed(view)) for view in _views)
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal
 
 if TYPE_CHECKING:
     from collections.abc import Reversible
     from pathlib import Path
 
+    from polars import DataFrame, Series
     from polars.type_aliases import PolarsDataType, SizeUnit
 
     if sys.version_info >= (3, 10):
@@ -50,6 +40,11 @@ if TYPE_CHECKING:
 
     P = ParamSpec("P")
     T = TypeVar("T")
+
+# note: reversed views don't match as instances of MappingView
+if sys.version_info >= (3, 11):
+    _views: list[Reversible[Any]] = [{}.keys(), {}.values(), {}.items()]
+    _reverse_mapping_views = tuple(type(reversed(view)) for view in _views)
 
 
 def _process_null_values(
@@ -215,7 +210,7 @@ def scale_bytes(sz: int, unit: SizeUnit) -> int | float:
 
 
 def _cast_repr_strings_with_schema(
-    df: DataFrame, schema: dict[str, PolarsDataType]
+    df: DataFrame, schema: dict[str, PolarsDataType | None]
 ) -> DataFrame:
     """
     Utility function to cast table repr/string values into frame-native types.
@@ -233,6 +228,7 @@ def _cast_repr_strings_with_schema(
     special handling; as this function is only used for reprs, parsing is flexible.
 
     """
+    tp: PolarsDataType | None
     if not df.is_empty():
         for tp in df.schema.values():
             if tp != Utf8:
@@ -361,3 +357,30 @@ def find_stacklevel() -> int:
         else:
             break
     return n
+
+
+def _get_stack_locals(
+    of_type: type | tuple[type, ...] | None = None, n_objects: int | None = None
+) -> dict[str, Any]:
+    """
+    Retrieve f_locals from all stack frames (starting from the current frame).
+
+    Parameters
+    ----------
+    of_type
+        Only return objects of this type.
+    n_objects
+        If specified, return only the most recent ``n`` matching objects.
+
+    """
+    objects = {}
+    stack_frame = getattr(inspect.currentframe(), "f_back", None)
+    while stack_frame:
+        local_items = list(stack_frame.f_locals.items())
+        for nm, obj in reversed(local_items):
+            if nm not in objects and (not of_type or isinstance(obj, of_type)):
+                objects[nm] = obj
+                if n_objects is not None and len(objects) >= n_objects:
+                    return objects
+        stack_frame = stack_frame.f_back
+    return objects

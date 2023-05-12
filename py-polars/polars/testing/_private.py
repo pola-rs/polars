@@ -3,8 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from polars.dataframe import DataFrame
-    from polars.series import Series
+    from polars import DataFrame, Series
 
 
 def _to_rust_syntax(df: DataFrame) -> str:

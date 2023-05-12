@@ -8,9 +8,9 @@ from polars.utils._wrap import wrap_df
 from polars.utils.various import sphinx_accessor
 
 if TYPE_CHECKING:
-    from polars.dataframe import DataFrame
+    from polars import DataFrame, Series
+    from polars.datatypes import PolarsDataType
     from polars.polars import PySeries
-    from polars.series import Series
 elif os.getenv("BUILDING_SPHINX_DOCS"):
     property = sphinx_accessor
 
@@ -63,6 +63,13 @@ class StructNameSpace:
             New names in the order of the struct's fields
 
         """
+
+    @property
+    def schema(self) -> dict[str, PolarsDataType]:
+        """Get the struct definition as a name/dtype schema dict."""
+        if getattr(self, "_s", None) is None:
+            return {}
+        return self._s.dtype().to_schema()
 
     def unnest(self) -> DataFrame:
         """

@@ -399,32 +399,14 @@ impl Debug for Expr {
             RenameAlias { expr, .. } => write!(f, "RENAME_ALIAS {expr:?}"),
             Columns(names) => write!(f, "COLUMNS({names:?})"),
             DtypeColumn(dt) => write!(f, "COLUMN OF DTYPE: {dt:?}"),
+            Cache { input, .. } => write!(f, "CACHE {input:?}"),
         }
     }
 }
 
 impl Debug for Operator {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        use Operator::*;
-        let s = match self {
-            Eq => "==",
-            NotEq => "!=",
-            Lt => "<",
-            LtEq => "<=",
-            Gt => ">",
-            GtEq => ">=",
-            Plus => "+",
-            Minus => "-",
-            Multiply => "*",
-            Divide => "/",
-            TrueDivide => "/",
-            FloorDivide => "//",
-            Modulus => "%",
-            And => "&",
-            Or => "|",
-            Xor => "^",
-        };
-        write!(f, "{s}")
+        Display::fmt(self, f)
     }
 }
 

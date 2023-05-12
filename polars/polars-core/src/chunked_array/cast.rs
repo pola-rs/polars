@@ -80,6 +80,16 @@ where
     T: PolarsNumericType,
 {
     fn cast_impl(&self, data_type: &DataType, checked: bool) -> PolarsResult<Series> {
+        if self.dtype() == data_type {
+            // safety: chunks are correct dtype
+            return unsafe {
+                Ok(Series::from_chunks_and_dtype_unchecked(
+                    self.name(),
+                    self.chunks.clone(),
+                    data_type,
+                ))
+            };
+        }
         match data_type {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => {
@@ -260,8 +270,8 @@ impl ChunkCast for ListChunked {
             List(child_type) => {
                 match (self.inner_dtype(), &**child_type) {
                     #[cfg(feature = "dtype-categorical")]
-                    (dt, Categorical(None)) if !matches!(dt, Utf8) => {
-                        polars_bail!(ComputeError: "cannot cast list inner type: '{:?}' to Categorical", dt)
+                    (dt, Categorical(None)) if !matches!(dt, Utf8 | Null) => {
+                        polars_bail!(ComputeError: "cannot cast List inner type: '{:?}' to Categorical", dt)
                     }
                     _ => {
                         // ensure the inner logical type bubbles up
@@ -278,7 +288,13 @@ impl ChunkCast for ListChunked {
                     }
                 }
             }
-            _ => polars_bail!(ComputeError: "cannot cast list type"),
+            _ => {
+                polars_bail!(
+                    ComputeError: "cannot cast List type (inner: '{:?}', to: '{:?}')",
+                    self.inner_dtype(),
+                    data_type,
+                )
+            }
         }
     }
 

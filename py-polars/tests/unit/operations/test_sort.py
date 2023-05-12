@@ -209,6 +209,29 @@ def test_sorted_flag() -> None:
     assert s.flags["SORTED_ASC"]
     assert s.reverse().flags["SORTED_DESC"]
     assert pl.Series([b"a"]).set_sorted().flags["SORTED_ASC"]
+    assert (
+        pl.Series([date(2020, 1, 1), date(2020, 1, 2)])
+        .set_sorted()
+        .cast(pl.Datetime)
+        .flags["SORTED_ASC"]
+    )
+
+    # empty
+    q = pl.LazyFrame(
+        schema={
+            "store_id": pl.UInt16,
+            "item_id": pl.UInt32,
+            "timestamp": pl.Datetime,
+        }
+    ).sort("timestamp")
+
+    assert q.collect()["timestamp"].flags["SORTED_ASC"]
+    assert q.collect(streaming=True)["timestamp"].flags["SORTED_ASC"]
+
+    # top-k/bottom-k
+    df = pl.DataFrame({"foo": [56, 2, 3]})
+    assert df.top_k(2, by="foo")["foo"].flags["SORTED_DESC"]
+    assert df.bottom_k(2, by="foo")["foo"].flags["SORTED_ASC"]
 
     # ensure we don't panic for these types
     # struct
@@ -402,13 +425,13 @@ def test_sort_by_in_over_5499() -> None:
 
 def test_merge_sorted() -> None:
     df_a = (
-        pl.date_range(datetime(2022, 1, 1), datetime(2022, 12, 1), "1mo")
+        pl.date_range(datetime(2022, 1, 1), datetime(2022, 12, 1), "1mo", eager=True)
         .to_frame("range")
         .with_row_count()
     )
 
     df_b = (
-        pl.date_range(datetime(2022, 1, 1), datetime(2022, 12, 1), "2mo")
+        pl.date_range(datetime(2022, 1, 1), datetime(2022, 12, 1), "2mo", eager=True)
         .to_frame("range")
         .with_row_count()
         .with_columns(pl.col("row_nr") * 10)
@@ -520,7 +543,7 @@ def test_sort_row_fmt() -> None:
 
 @pytest.mark.slow()
 def test_streaming_sort_multiple_columns(monkeypatch: Any, capfd: Any) -> None:
-    monkeypatch.setenv("POLARS_FORCE_OOC_SORT", "1")
+    monkeypatch.setenv("POLARS_FORCE_OOC", "1")
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     df = get_str_ints_df(1000)
 

@@ -203,7 +203,7 @@ def linkcode_resolve(domain, info):
 
 def _minify_classpaths(s: str) -> str:
     # strip private polars classpaths, leaving the classname:
-    # * "pli.Expr" -> "Expr"
+    # * "pl.Expr" -> "Expr"
     # * "polars.expr.expr.Expr" -> "Expr"
     # * "polars.lazyframe.frame.LazyFrame" -> "LazyFrame"
     # also:
@@ -213,9 +213,9 @@ def _minify_classpaths(s: str) -> str:
         pattern=r"""
         ~?
         (
-          (?:pli|
+          (?:pl|
             (?:polars\.
-              (?:internals|datatypes)
+              (?:_reexport|datatypes)
             )
           )
           (?:\.[a-z.]+)?\.

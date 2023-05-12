@@ -14,6 +14,7 @@ use polars::series::ops::NullBehavior;
 use polars_core::frame::row::any_values_to_dtype;
 use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::utils::arrow::types::NativeType;
+use polars_lazy::prelude::*;
 use pyo3::basic::CompareOp;
 use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::exceptions::{PyTypeError, PyValueError};
@@ -22,14 +23,13 @@ use pyo3::types::{PyBool, PyBytes, PyDict, PyFloat, PyList, PySequence, PyString
 use pyo3::{PyAny, PyResult};
 use smartstring::alias::String as SmartString;
 
-use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
-use crate::lazy::dataframe::PyLazyFrame;
 #[cfg(feature = "object")]
 use crate::object::OBJECT_NAME;
 use crate::prelude::*;
 use crate::py_modules::{POLARS, UTILS};
 use crate::series::PySeries;
+use crate::{PyDataFrame, PyLazyFrame};
 
 pub(crate) fn slice_to_wrapped<T>(slice: &[T]) -> &[Wrap<T>] {
     // Safety:
@@ -1005,9 +1005,15 @@ impl FromPyObject<'_> for Wrap<StartBy> {
             "window" => StartBy::WindowBound,
             "datapoint" => StartBy::DataPoint,
             "monday" => StartBy::Monday,
+            "tuesday" => StartBy::Tuesday,
+            "wednesday" => StartBy::Wednesday,
+            "thursday" => StartBy::Thursday,
+            "friday" => StartBy::Friday,
+            "saturday" => StartBy::Saturday,
+            "sunday" => StartBy::Sunday,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "closed must be one of {{'window', 'datapoint', 'monday'}}, got {v}",
+                    "closed must be one of {{'window', 'datapoint', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}}, got {v}",
                 )))
             }
         };

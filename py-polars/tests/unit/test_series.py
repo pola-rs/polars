@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
+from numpy.testing import assert_array_equal
 
 import polars as pl
 from polars.datatypes import (
@@ -597,6 +598,20 @@ def test_to_python() -> None:
     assert a.to_list() == [1, None, 2]
 
 
+def test_to_struct() -> None:
+    s = pl.Series("nums", ["12 34", "56 78", "90 00"]).str.extract_all(r"\d+")
+
+    assert s.arr.to_struct().struct.fields == ["field_0", "field_1"]
+    assert s.arr.to_struct(fields=lambda idx: f"n{idx:02}").struct.fields == [
+        "n00",
+        "n01",
+    ]
+    assert_frame_equal(
+        s.arr.to_struct(fields=["one", "two"]).struct.unnest(),
+        pl.DataFrame({"one": ["12", "56", "90"], "two": ["34", "78", "00"]}),
+    )
+
+
 def test_sort() -> None:
     a = pl.Series("a", [2, 1, 3])
     assert_series_equal(a.sort(), pl.Series("a", [1, 2, 3]))
@@ -780,6 +795,14 @@ def test_ufunc() -> None:
     assert_series_equal(
         cast(pl.Series, c2),
         pl.Series("a", [3.0, None, 9.0, 12.0, 15.0, None]),
+    )
+
+
+def test_numpy_string_array() -> None:
+    s_utf8 = pl.Series("a", ["aa", "bb", "cc", "dd"], dtype=pl.Utf8)
+    assert_array_equal(
+        np.char.capitalize(s_utf8),
+        np.array(["Aa", "Bb", "Cc", "Dd"], dtype="<U2"),
     )
 
 
@@ -1110,6 +1133,11 @@ def test_repeat() -> None:
     s = pl.repeat(0, 0, eager=True)
     assert s.dtype == pl.Int32
     assert s.len() == 0
+    assert pl.repeat(datetime(2023, 2, 2), 3, eager=True).to_list() == [
+        datetime(2023, 2, 2, 0, 0),
+        datetime(2023, 2, 2, 0, 0),
+        datetime(2023, 2, 2, 0, 0),
+    ]
 
 
 def test_shape() -> None:
@@ -1278,6 +1306,9 @@ def test_round() -> None:
     a = pl.Series("f", [1.003, 2.003])
     b = a.round(2)
     assert b.to_list() == [1.00, 2.00]
+
+    b = a.round()
+    assert b.to_list() == [1.0, 2.0]
 
 
 def test_apply_list_out() -> None:
@@ -2030,6 +2061,16 @@ def test_to_physical() -> None:
     # casting a date results in an Int32
     s = pl.Series("a", [date(2020, 1, 1)] * 3)
     expected = pl.Series("a", [18262] * 3, dtype=Int32)
+    assert_series_equal(s.to_physical(), expected)
+
+    # casting a categorical results in a UInt32
+    s = pl.Series(["cat1"]).cast(pl.Categorical)
+    expected = pl.Series([0], dtype=UInt32)
+    assert_series_equal(s.to_physical(), expected)
+
+    # casting a List(Categorical) results in a List(UInt32)
+    s = pl.Series([["cat1"]]).cast(pl.List(pl.Categorical))
+    expected = pl.Series([[0]], dtype=pl.List(UInt32))
     assert_series_equal(s.to_physical(), expected)
 
 

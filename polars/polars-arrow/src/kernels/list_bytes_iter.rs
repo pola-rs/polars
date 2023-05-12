@@ -18,7 +18,7 @@ unsafe fn bytes_iter<'a, T: NativeType>(
         start = end;
 
         let data = out.as_ptr() as *const u8;
-        let out = std::slice::from_raw_parts(data, std::mem::size_of::<T>() * out.len());
+        let out = std::slice::from_raw_parts(data, std::mem::size_of_val(out));
         match validity {
             None => Some(out),
             Some(validity) => {

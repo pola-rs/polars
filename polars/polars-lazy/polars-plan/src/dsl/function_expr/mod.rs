@@ -14,6 +14,8 @@ mod cum;
 mod datetime;
 mod dispatch;
 mod fill_null;
+#[cfg(feature = "fused")]
+mod fused;
 mod list;
 #[cfg(feature = "log")]
 mod log;
@@ -44,6 +46,8 @@ mod unique;
 
 use std::fmt::{Display, Formatter};
 
+#[cfg(feature = "fused")]
+pub(crate) use fused::FusedOperator;
 pub(super) use list::ListFunction;
 use polars_core::prelude::*;
 use schema::FieldsMapper;
@@ -142,8 +146,6 @@ pub enum FunctionExpr {
     Diff(i64, NullBehavior),
     #[cfg(feature = "interpolate")]
     Interpolate(InterpolationMethod),
-    #[cfg(feature = "dot_product")]
-    Dot,
     #[cfg(feature = "log")]
     Entropy {
         base: f64,
@@ -168,6 +170,8 @@ pub enum FunctionExpr {
     Ceil,
     UpperBound,
     LowerBound,
+    #[cfg(feature = "fused")]
+    Fused(fused::FusedOperator),
 }
 
 impl Display for FunctionExpr {
@@ -231,8 +235,6 @@ impl Display for FunctionExpr {
             Diff(_, _) => "diff",
             #[cfg(feature = "interpolate")]
             Interpolate(_) => "interpolate",
-            #[cfg(feature = "dot_product")]
-            Dot => "dot",
             #[cfg(feature = "log")]
             Entropy { .. } => "entropy",
             #[cfg(feature = "log")]
@@ -256,6 +258,8 @@ impl Display for FunctionExpr {
             Ceil => "ceil",
             UpperBound => "upper_bound",
             LowerBound => "lower_bound",
+            #[cfg(feature = "fused")]
+            Fused(fused) => return Display::fmt(fused, f),
         };
         write!(f, "{s}")
     }
@@ -443,10 +447,6 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Interpolate(method) => {
                 map!(dispatch::interpolate, method)
             }
-            #[cfg(feature = "dot_product")]
-            Dot => {
-                map_as_slice!(dispatch::dot_impl)
-            }
             #[cfg(feature = "log")]
             Entropy { base, normalize } => map!(log::entropy, base, normalize),
             #[cfg(feature = "log")]
@@ -464,6 +464,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
             Ceil => map!(round::ceil),
             UpperBound => map!(bounds::upper_bound),
             LowerBound => map!(bounds::lower_bound),
+            #[cfg(feature = "fused")]
+            Fused(op) => map_as_slice!(fused::fused, op),
         }
     }
 }
@@ -499,8 +501,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                 map!(strings::rjust, width, fillchar)
             }
             #[cfg(feature = "temporal")]
-            Strptime(options) => {
-                map!(strings::strptime, &options)
+            Strptime(dtype, options) => {
+                map!(strings::strptime, dtype.clone(), &options)
             }
             #[cfg(feature = "concat_str")]
             ConcatVertical(delimiter) => map!(strings::concat, &delimiter),
@@ -582,11 +584,24 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                 tz,
             } => {
                 map_as_slice!(
-                    datetime::date_range_dispatch,
+                    temporal::temporal_range_dispatch,
                     name.as_ref(),
                     every,
                     closed,
                     tz.clone()
+                )
+            }
+            TimeRange {
+                name,
+                every,
+                closed,
+            } => {
+                map_as_slice!(
+                    temporal::temporal_range_dispatch,
+                    name.as_ref(),
+                    every,
+                    closed,
+                    None
                 )
             }
         }

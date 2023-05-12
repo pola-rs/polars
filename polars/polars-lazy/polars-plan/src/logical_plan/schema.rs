@@ -112,8 +112,8 @@ pub fn set_estimated_row_counts(
                 let mut sum_output = (None, 0);
                 for input in &inputs {
                     let mut out = set_estimated_row_counts(*input, lp_arena, expr_arena, 0);
-                    if options.slice {
-                        apply_slice(&mut out, Some((0, options.slice_len as usize)))
+                    if let Some((_offset, len)) = options.slice {
+                        apply_slice(&mut out, Some((0, len)))
                     }
                     // todo! deal with known as well
                     let out = estimate_sizes(out.0, out.1, out.2);

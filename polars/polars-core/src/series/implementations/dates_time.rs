@@ -154,8 +154,8 @@ macro_rules! impl_dyn_series {
                 self.0.group_tuples(multithreaded, sorted)
             }
 
-            fn arg_sort_multiple(&self, by: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {
-                self.0.deref().arg_sort_multiple(by, descending)
+            fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
+                self.0.deref().arg_sort_multiple(options)
             }
         }
 
@@ -301,7 +301,7 @@ macro_rules! impl_dyn_series {
                         .into_series()
                         .date()
                         .unwrap()
-                        .strftime("%Y-%m-%d")
+                        .to_string("%Y-%m-%d")
                         .into_series()),
                     (DataType::Time, DataType::Utf8) => Ok(self
                         .0
@@ -309,7 +309,7 @@ macro_rules! impl_dyn_series {
                         .into_series()
                         .time()
                         .unwrap()
-                        .strftime("%T")
+                        .to_string("%T")
                         .into_series()),
                     #[cfg(feature = "dtype-datetime")]
                     (DataType::Time, DataType::Datetime(_, _)) => {
@@ -317,6 +317,12 @@ macro_rules! impl_dyn_series {
                             ComputeError:
                             "cannot cast `Time` to `Datetime`; consider using 'dt.combine'"
                         );
+                    }
+                    #[cfg(feature = "dtype-datetime")]
+                    (DataType::Date, DataType::Datetime(_, _)) => {
+                        let mut out = self.0.cast(data_type)?;
+                        out.set_sorted_flag(self.0.is_sorted_flag());
+                        Ok(out)
                     }
                     _ => self.0.cast(data_type),
                 }

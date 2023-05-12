@@ -3,14 +3,12 @@ from __future__ import annotations
 from functools import partial
 from typing import TYPE_CHECKING
 
-import polars as pl
-from polars import internals as pli
+import polars._reexport as pl
 from polars.dependencies import pickle
 from polars.dependencies import pyarrow as pa  # noqa: TCH001
 
 if TYPE_CHECKING:
-    from polars.dataframe import DataFrame
-    from polars.lazyframe import LazyFrame
+    from polars import DataFrame, LazyFrame
 
 
 def _scan_pyarrow_dataset(
@@ -34,7 +32,7 @@ def _scan_pyarrow_dataset(
     """
     func = partial(_scan_pyarrow_dataset_impl, ds)
     func_serialized = pickle.dumps(func)
-    return pli.LazyFrame._scan_python_function(
+    return pl.LazyFrame._scan_python_function(
         ds.schema, func_serialized, allow_pyarrow_filter
     )
 
@@ -64,6 +62,8 @@ def _scan_pyarrow_dataset_impl(
     DataFrame
 
     """
+    from polars import from_arrow
+
     _filter = None
     if predicate:
         # imports are used by inline python evaluated by `eval`
@@ -76,6 +76,6 @@ def _scan_pyarrow_dataset_impl(
 
         _filter = eval(predicate)
     if n_rows:
-        return pl.from_arrow(ds.head(n_rows, columns=with_columns, filter=_filter))  # type: ignore[return-value]
+        return from_arrow(ds.head(n_rows, columns=with_columns, filter=_filter))  # type: ignore[return-value]
 
-    return pl.from_arrow(ds.to_table(columns=with_columns, filter=_filter))  # type: ignore[return-value]
+    return from_arrow(ds.to_table(columns=with_columns, filter=_filter))  # type: ignore[return-value]

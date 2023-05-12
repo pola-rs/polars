@@ -14,6 +14,7 @@ def test_dtype() -> None:
     assert a.dtype == pl.List
     assert a.inner_dtype == pl.Int64
     assert a.dtype.inner == pl.Int64  # type: ignore[union-attr]
+    assert a.dtype.is_(pl.List(pl.Int64))
 
     # explicit
     df = pl.DataFrame(
@@ -529,3 +530,10 @@ def test_list_recursive_time_unit_cast() -> None:
     out = s.cast(dtype)
     assert out.dtype == dtype
     assert out.to_list() == values
+
+
+def test_list_null_list_categorical_cast() -> None:
+    expected = pl.List(pl.Categorical)
+    s = pl.Series([[]], dtype=pl.List(pl.Null)).cast(expected)
+    assert s.dtype == expected
+    assert s.to_list() == [[]]

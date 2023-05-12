@@ -304,20 +304,29 @@ pub trait TemporalMethods: AsSeries {
         }
     }
 
-    /// Format Date/Datetimewith a `format` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
-    fn strftime(&self, format: &str) -> PolarsResult<Series> {
+    /// Convert Time into Utf8 with the given format.
+    /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+    fn to_string(&self, format: &str) -> PolarsResult<Series> {
         let s = self.as_series();
         match s.dtype() {
             #[cfg(feature = "dtype-date")]
-            DataType::Date => s.date().map(|ca| ca.strftime(format).into_series()),
+            DataType::Date => s.date().map(|ca| ca.to_string(format).into_series()),
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => s
                 .datetime()
-                .map(|ca| Ok(ca.strftime(format)?.into_series()))?,
+                .map(|ca| Ok(ca.to_string(format)?.into_series()))?,
             #[cfg(feature = "dtype-time")]
-            DataType::Time => s.time().map(|ca| ca.strftime(format).into_series()),
-            dt => polars_bail!(opq = strftime, dt),
+            DataType::Time => s.time().map(|ca| ca.to_string(format).into_series()),
+            dt => polars_bail!(opq = to_string, dt),
         }
+    }
+
+    /// Convert from Time into Utf8 with the given format.
+    /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+    ///
+    /// Alias for `to_string`.
+    fn strftime(&self, format: &str) -> PolarsResult<Series> {
+        self.to_string(format)
     }
 
     #[cfg(all(feature = "dtype-date", feature = "dtype-datetime"))]

@@ -15,9 +15,6 @@ where
         + compute::aggregate::SimdOrd<T::Native>,
 {
     fn var(&self, ddof: u8) -> Option<f64> {
-        if self.len() == 1 {
-            return Some(0.0);
-        }
         let n_values = self.len() - self.null_count();
 
         if ddof as usize > n_values {

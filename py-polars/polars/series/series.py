@@ -18,8 +18,8 @@ from typing import (
     overload,
 )
 
+import polars._reexport as pl
 from polars import functions as F
-from polars import internals as pli
 from polars.datatypes import (
     FLOAT_DTYPES,
     INTEGER_DTYPES,
@@ -106,8 +106,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
 
-    from polars.dataframe import DataFrame
-    from polars.expr.expr import Expr
+    from polars import DataFrame, Expr
     from polars.series._numpy import SeriesView
     from polars.type_aliases import (
         ClosedInterval,
@@ -497,50 +496,110 @@ class Series:
 
         return self._from_pyseries(f(other))
 
-    def __eq__(self, other: Any) -> Self:  # type: ignore[override]
+    @overload  # type: ignore[override]
+    def __eq__(self, other: Expr) -> Expr:  # type: ignore[misc]
+        ...
+
+    @overload
+    def __eq__(self, other: Any) -> Self:
+        ...
+
+    def __eq__(self, other: Any) -> Self | Expr:
+        if isinstance(other, pl.Expr):
+            return F.lit(self).__eq__(other)
         return self._comp(other, "eq")
 
-    def __ne__(self, other: Any) -> Self:  # type: ignore[override]
+    @overload  # type: ignore[override]
+    def __ne__(self, other: Expr) -> Expr:  # type: ignore[misc]
+        ...
+
+    @overload
+    def __ne__(self, other: Any) -> Self:
+        ...
+
+    def __ne__(self, other: Any) -> Self | Expr:
+        if isinstance(other, pl.Expr):
+            return F.lit(self).__ne__(other)
         return self._comp(other, "neq")
 
+    @overload
+    def __gt__(self, other: Expr) -> Expr:  # type: ignore[misc]
+        ...
+
+    @overload
     def __gt__(self, other: Any) -> Self:
+        ...
+
+    def __gt__(self, other: Any) -> Self | Expr:
+        if isinstance(other, pl.Expr):
+            return F.lit(self).__gt__(other)
         return self._comp(other, "gt")
 
+    @overload
+    def __lt__(self, other: Expr) -> Expr:  # type: ignore[misc]
+        ...
+
+    @overload
     def __lt__(self, other: Any) -> Self:
+        ...
+
+    def __lt__(self, other: Any) -> Self | Expr:
+        if isinstance(other, pl.Expr):
+            return F.lit(self).__lt__(other)
         return self._comp(other, "lt")
 
+    @overload
+    def __ge__(self, other: Expr) -> Expr:  # type: ignore[misc]
+        ...
+
+    @overload
     def __ge__(self, other: Any) -> Self:
+        ...
+
+    def __ge__(self, other: Any) -> Self | Expr:
+        if isinstance(other, pl.Expr):
+            return F.lit(self).__ge__(other)
         return self._comp(other, "gt_eq")
 
+    @overload
+    def __le__(self, other: Expr) -> Expr:  # type: ignore[misc]
+        ...
+
+    @overload
     def __le__(self, other: Any) -> Self:
+        ...
+
+    def __le__(self, other: Any) -> Self | Expr:
+        if isinstance(other, pl.Expr):
+            return F.lit(self).__le__(other)
         return self._comp(other, "lt_eq")
 
-    def le(self, other: Any) -> Self:
+    def le(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression ``series <= other``."""
         return self.__le__(other)
 
-    def lt(self, other: Any) -> Self:
+    def lt(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression ``series < other``."""
         return self.__lt__(other)
 
-    def eq(self, other: Any) -> Self:
+    def eq(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression ``series == other``."""
         return self.__eq__(other)
 
-    def ne(self, other: Any) -> Self:
+    def ne(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression ``series != other``."""
         return self.__ne__(other)
 
-    def ge(self, other: Any) -> Self:
+    def ge(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression ``series >= other``."""
         return self.__ge__(other)
 
-    def gt(self, other: Any) -> Self:
+    def gt(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression ``series > other``."""
         return self.__gt__(other)
 
     def _arithmetic(self, other: Any, op_s: str, op_ffi: str) -> Self:
-        if isinstance(other, pli.Expr):
+        if isinstance(other, pl.Expr):
             # expand pl.lit, pl.datetime, pl.duration Exprs to compatible Series
             other = self.to_frame().select(other).to_series()
         if isinstance(other, Series):
@@ -581,9 +640,9 @@ class Series:
     def __add__(self, other: Any) -> Self | DataFrame | Expr:
         if isinstance(other, str):
             other = Series("", [other])
-        elif isinstance(other, pli.DataFrame):
+        elif isinstance(other, pl.DataFrame):
             return other + self
-        elif isinstance(other, pli.Expr):
+        elif isinstance(other, pl.Expr):
             return F.lit(self) + other
         return self._arithmetic(other, "add", "add_<>")
 
@@ -596,7 +655,7 @@ class Series:
         ...
 
     def __sub__(self, other: Any) -> Self | Expr:
-        if isinstance(other, pli.Expr):
+        if isinstance(other, pl.Expr):
             return F.lit(self) - other
         return self._arithmetic(other, "sub", "sub_<>")
 
@@ -609,7 +668,7 @@ class Series:
         ...
 
     def __truediv__(self, other: Any) -> Series | Expr:
-        if isinstance(other, pli.Expr):
+        if isinstance(other, pl.Expr):
             return F.lit(self) / other
         if self.is_temporal():
             raise ValueError("first cast to integer before dividing datelike dtypes")
@@ -623,11 +682,11 @@ class Series:
     # python 3.7 is not happy. Remove this when we finally ditch that
     @typing.no_type_check
     def __floordiv__(self, other: Any) -> Series:
-        if isinstance(other, pli.Expr):
+        if isinstance(other, pl.Expr):
             return F.lit(self).__floordiv__(other)
         if self.is_temporal():
             raise ValueError("first cast to integer before dividing datelike dtypes")
-        if not isinstance(other, pli.Expr):
+        if not isinstance(other, pl.Expr):
             other = F.lit(other)
         return self.to_frame().select(F.col(self.name) // other).to_series()
 
@@ -649,11 +708,11 @@ class Series:
         ...
 
     def __mul__(self, other: Any) -> Series | DataFrame | Expr:
-        if isinstance(other, pli.Expr):
+        if isinstance(other, pl.Expr):
             return F.lit(self) * other
         if self.is_temporal():
             raise ValueError("first cast to integer before multiplying datelike dtypes")
-        elif isinstance(other, pli.DataFrame):
+        elif isinstance(other, pl.DataFrame):
             return other * self
         else:
             return self._arithmetic(other, "mul", "mul_<>")
@@ -667,7 +726,7 @@ class Series:
         ...
 
     def __mod__(self, other: Any) -> Series | Expr:
-        if isinstance(other, pli.Expr):
+        if isinstance(other, pl.Expr):
             return F.lit(self).__mod__(other)
         if self.is_temporal():
             raise ValueError(
@@ -725,7 +784,7 @@ class Series:
             _check_for_numpy(other) and isinstance(other, np.ndarray)
         ):
             other = Series(other)
-        # elif isinstance(other, pli.DataFrame):
+        # elif isinstance(other, pl.DataFrame):
         #     return other.__rmatmul__(self)  # type: ignore[return-value]
         return self.dot(other)
 
@@ -967,6 +1026,8 @@ class Series:
             raise ValueError(f'cannot use "{key}" for indexing')
 
     def __array__(self, dtype: Any = None) -> np.ndarray[Any, Any]:
+        if not dtype and self.dtype == Utf8 and not self.has_validity():
+            dtype = np.dtype("U")
         if dtype:
             return self.to_numpy().__array__(dtype)
         else:
@@ -1306,7 +1367,7 @@ class Series:
         else:
             raise TypeError("This type is not supported")
 
-        return pli.DataFrame({"statistic": stats.keys(), "value": stats.values()})
+        return pl.DataFrame({"statistic": stats.keys(), "value": stats.values()})
 
     def sum(self) -> int | float:
         """
@@ -1341,7 +1402,7 @@ class Series:
 
     def product(self) -> int | float:
         """Reduce this Series to the product value."""
-        return self.to_frame().select(F.col(self.name).product()).to_series()[0]
+        return self.to_frame().select(F.col(self.name).product()).to_series().item()
 
     def pow(self, exponent: int | float | Series) -> Series:
         """
@@ -2932,6 +2993,7 @@ class Series:
         - :func:`polars.datatypes.Time` -> :func:`polars.datatypes.Int64`
         - :func:`polars.datatypes.Duration` -> :func:`polars.datatypes.Int64`
         - :func:`polars.datatypes.Categorical` -> :func:`polars.datatypes.UInt32`
+        - ``List(inner)`` -> ``List(physical of inner)``
         - Other data types will be left unchanged.
 
         Examples
@@ -3247,7 +3309,10 @@ class Series:
             By setting this to True, a copy of the array is made to ensure
             it is writable.
         use_pyarrow
-            Use pyarrow for the conversion to numpy.
+            Use `pyarrow.Array.to_numpy
+            <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
+
+            for the conversion to numpy.
 
         Examples
         --------
@@ -3761,7 +3826,7 @@ class Series:
 
         """
 
-    def round(self, decimals: int) -> Series:
+    def round(self, decimals: int = 0) -> Series:
         """
         Round underlying floating point data by `decimals` digits.
 
@@ -4179,7 +4244,7 @@ class Series:
 
     def shift_and_fill(
         self,
-        fill_value: int | pli.Expr,
+        fill_value: int | Expr,
         *,
         periods: int = 1,
     ) -> Series:

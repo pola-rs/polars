@@ -1,3 +1,4 @@
+import math
 import typing
 from datetime import date, datetime, timedelta
 
@@ -43,10 +44,16 @@ def test_duration_aggs() -> None:
     df = pl.DataFrame(
         {
             "time1": pl.date_range(
-                start=datetime(2022, 12, 12), end=datetime(2022, 12, 18), interval="1d"
+                start=datetime(2022, 12, 12),
+                end=datetime(2022, 12, 18),
+                interval="1d",
+                eager=True,
             ),
             "time2": pl.date_range(
-                start=datetime(2023, 1, 12), end=datetime(2023, 1, 18), interval="1d"
+                start=datetime(2023, 1, 12),
+                end=datetime(2023, 1, 18),
+                interval="1d",
+                eager=True,
             ),
         }
     )
@@ -86,6 +93,12 @@ def test_list_aggregation_that_filters_all_data_6017() -> None:
 def test_median() -> None:
     s = pl.Series([1, 2, 3])
     assert s.median() == 2
+
+
+def test_single_element_std() -> None:
+    s = pl.Series([1])
+    assert math.isnan(typing.cast(float, s.std(ddof=1)))
+    assert s.std(ddof=0) == 0.0
 
 
 def test_quantile() -> None:

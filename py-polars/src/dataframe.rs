@@ -30,10 +30,9 @@ use crate::conversion::parse_parquet_compression;
 use crate::conversion::{ObjectValue, Wrap};
 use crate::error::PyPolarsErr;
 use crate::file::{get_either_file, get_file_like, get_mmap_bytes_reader, EitherRustPythonFile};
-use crate::lazy::dataframe::PyLazyFrame;
 use crate::prelude::{dicts_to_rows, strings_to_smartstrings};
 use crate::series::{to_pyseries_collection, to_series_collection, PySeries};
-use crate::{arrow_interop, py_modules, PyExpr};
+use crate::{arrow_interop, py_modules, PyExpr, PyLazyFrame};
 
 #[pyclass]
 #[repr(transparent)]
@@ -370,14 +369,23 @@ impl PyDataFrame {
             // on failure we try
             match serde_json::from_slice::<DataFrame>(bytes) {
                 Ok(df) => Ok(df.into()),
-                // try arrow json reader instead
-                // this is row oriented
-                Err(_) => {
-                    let out = JsonReader::new(mmap_bytes_r)
-                        .with_json_format(JsonFormat::Json)
-                        .finish()
-                        .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
-                    Ok(out.into())
+                Err(e) => {
+                    let msg = format!("{e}");
+                    // parsing succeeded, but the dataframe was invalid
+                    if msg.contains("successful parse invalid data") {
+                        let e = PyPolarsErr::from(PolarsError::ComputeError(msg.into()));
+                        Err(PyErr::from(e))
+                    }
+                    // parsing error
+                    // try arrow json reader instead
+                    // this is row oriented
+                    else {
+                        let out = JsonReader::new(mmap_bytes_r)
+                            .with_json_format(JsonFormat::Json)
+                            .finish()
+                            .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
+                        Ok(out.into())
+                    }
                 }
             }
         }

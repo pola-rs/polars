@@ -31,12 +31,15 @@ impl<T> Deref for Wrap<T> {
 
 pub fn _set_partition_size() -> usize {
     let mut n_partitions = POOL.current_num_threads();
-    // set n_partitions to closes 2^n above the no of threads.
+    if n_partitions == 1 {
+        return 1;
+    }
+    // set n_partitions to closest 2^n size
     loop {
         if n_partitions.is_power_of_two() {
             break;
         } else {
-            n_partitions += 1;
+            n_partitions -= 1;
         }
     }
     n_partitions
@@ -152,7 +155,7 @@ pub fn split_df_as_ref(df: &DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>>
             .chunk_lengths()
             .all(|len| len.abs_diff(chunk_size) < 100)
     {
-        return Ok(flatten_df(df).collect());
+        return Ok(flatten_df_iter(df).collect());
     }
 
     let mut out = Vec::with_capacity(n);
@@ -168,7 +171,7 @@ pub fn split_df_as_ref(df: &DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>>
         if df.n_chunks() > 1 {
             // we add every chunk as separate dataframe. This make sure that every partition
             // deals with it.
-            out.extend(flatten_df(&df))
+            out.extend(flatten_df_iter(&df))
         } else {
             out.push(df)
         }
@@ -601,40 +604,6 @@ pub fn accumulate_dataframes_horizontal(dfs: Vec<DataFrame>) -> PolarsResult<Dat
     Ok(acc_df)
 }
 
-/// Simple wrapper to parallelize functions that can be divided over threads aggregated and
-/// finally aggregated in the main thread. This can be done for sum, min, max, etc.
-#[cfg(feature = "private")]
-pub fn parallel_op_series<F>(
-    f: F,
-    s: Series,
-    n_threads: Option<usize>,
-) -> PolarsResult<Option<Series>>
-where
-    F: Fn(Series) -> PolarsResult<Series> + Send + Sync,
-{
-    let n_threads = n_threads.unwrap_or_else(|| POOL.current_num_threads());
-    let splits = _split_offsets(s.len(), n_threads);
-
-    let chunks = POOL.install(|| {
-        splits
-            .into_par_iter()
-            .map(|(offset, len)| {
-                let s = s.slice(offset as i64, len);
-                f(s)
-            })
-            .collect::<PolarsResult<Vec<_>>>()
-    })?;
-
-    let mut iter = chunks.into_iter();
-    let first = iter.next().unwrap();
-    let out = iter.fold(first, |mut acc, s| {
-        acc.append(&s).unwrap();
-        acc
-    });
-
-    f(out).map(Some)
-}
-
 pub fn align_chunks_binary<'a, T, B>(
     left: &'a ChunkedArray<T>,
     right: &'a ChunkedArray<B>,
@@ -692,7 +661,7 @@ where
 
 #[allow(clippy::type_complexity)]
 #[cfg(feature = "zip_with")]
-pub(crate) fn align_chunks_ternary<'a, A, B, C>(
+pub fn align_chunks_ternary<'a, A, B, C>(
     a: &'a ChunkedArray<A>,
     b: &'a ChunkedArray<B>,
     c: &'a ChunkedArray<C>,

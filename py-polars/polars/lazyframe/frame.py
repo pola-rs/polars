@@ -18,8 +18,8 @@ from typing import (
     overload,
 )
 
+import polars._reexport as pl
 from polars import functions as F
-from polars import internals as pli
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
     N_INFER_DEFAULT,
@@ -69,9 +69,7 @@ if TYPE_CHECKING:
 
     import pyarrow as pa
 
-    from polars.dataframe import DataFrame
-    from polars.expr.expr import Expr
-    from polars.series import Series
+    from polars import DataFrame, Expr, Series
     from polars.type_aliases import (
         AsofJoinStrategy,
         ClosedInterval,
@@ -1936,7 +1934,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └──────┴──────┴──────┘
 
         """
-        return self._from_pyldf(pli.DataFrame(schema=self.schema).clear(n).lazy()._ldf)
+        return self._from_pyldf(pl.DataFrame(schema=self.schema).clear(n).lazy()._ldf)
 
     def clone(self) -> Self:
         """
@@ -2021,7 +2019,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         """
         if isinstance(predicate, list):
-            predicate = pli.Series(predicate)
+            predicate = pl.Series(predicate)
 
         return self._from_pyldf(
             self._ldf.filter(expr_to_lit_or_expr(predicate, str_to_lit=False)._pyexpr)
@@ -2470,12 +2468,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Define which sides of the temporal interval are closed (inclusive).
         by
             Also group by this column/these columns
-        start_by : {'window', 'datapoint', 'monday'}
+        start_by : {'window', 'datapoint', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}
             The strategy to determine the start of the first window by.
 
             * 'window': Truncate the start of the window with the 'every' argument.
             * 'datapoint': Start from the first encountered data point.
             * 'monday': Start the window on the monday before the first data point.
+            * 'tuesday': Start the window on the tuesday before the first data point.
+            * ...
+            * 'sunday': Start the window on the sunday before the first data point.
 
         Returns
         -------
@@ -2498,6 +2499,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...             start=datetime(2021, 12, 16),
         ...             end=datetime(2021, 12, 16, 3),
         ...             interval="30m",
+        ...             eager=True,
         ...         ),
         ...         "n": range(7),
         ...     }
@@ -2602,6 +2604,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...             start=datetime(2021, 12, 16),
         ...             end=datetime(2021, 12, 16, 3),
         ...             interval="30m",
+        ...             eager=True,
         ...         ),
         ...         "groups": ["a", "a", "a", "b", "b", "a", "a"],
         ...     }
@@ -2828,7 +2831,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 f"Expected 'other' join table to be a LazyFrame, not a {type(other).__name__}"
             )
 
-        if isinstance(on, (str, pli.Expr)):
+        if isinstance(on, (str, pl.Expr)):
             left_on = on
             right_on = on
 
@@ -2839,7 +2842,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         by_left_ = [by_left] if isinstance(by_left, str) else by_left
 
         by_right_: Sequence[str] | None
-        by_right_ = [by_right] if isinstance(by_right, (str, pli.Expr)) else by_right
+        by_right_ = [by_right] if isinstance(by_right, (str, pl.Expr)) else by_right
 
         if isinstance(by, str):
             by_left_ = [by]
@@ -2855,9 +2858,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         else:
             tolerance_num = tolerance
 
-        if not isinstance(left_on, pli.Expr):
+        if not isinstance(left_on, pl.Expr):
             left_on = F.col(left_on)
-        if not isinstance(right_on, pli.Expr):
+        if not isinstance(right_on, pl.Expr):
             right_on = F.col(right_on)
 
         return self._from_pyldf(
@@ -3474,7 +3477,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┘
 
         """
-        if not isinstance(fill_value, pli.Expr):
+        if not isinstance(fill_value, pl.Expr):
             fill_value = F.lit(fill_value)
         return self._from_pyldf(self._ldf.shift_and_fill(periods, fill_value._pyexpr))
 
@@ -3895,7 +3898,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             def infer_dtype(value: Any) -> PolarsDataType:
                 return next(iter(self.select(value).schema.values()))
 
-            if isinstance(value, pli.Expr):
+            if isinstance(value, pl.Expr):
                 dtypes = [infer_dtype(value)]
             elif isinstance(value, bool):
                 dtypes = [Boolean]
@@ -3970,7 +3973,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └──────┴──────┘
 
         """
-        if not isinstance(value, pli.Expr):
+        if not isinstance(value, pl.Expr):
             value = F.lit(value)
         return self._from_pyldf(self._ldf.fill_nan(value._pyexpr))
 
@@ -4816,9 +4819,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         # no need to join if only join columns are in other
         if len(right_added_names) == 0:
+            if row_count_used:
+                return self.drop(row_count_name)
             return self
-        tmp_name = "__POLARS_RIGHT"
 
+        tmp_name = "__POLARS_RIGHT"
         result = (
             self.join(other.select(list(union_names)), on=on, how=how, suffix=tmp_name)
             .with_columns(
@@ -4833,4 +4838,5 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         )
         if row_count_used:
             result = result.drop(row_count_name)
+
         return self._from_pyldf(result._ldf)

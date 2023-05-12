@@ -22,7 +22,11 @@ impl Executor for UnionExec {
         }
         let mut inputs = std::mem::take(&mut self.inputs);
 
-        let sliced_path = self.options.slice && self.options.slice_offset >= 0;
+        let sliced_path = if let Some((offset, _)) = self.options.slice {
+            offset >= 0
+        } else {
+            false
+        };
 
         if !self.options.parallel || sliced_path {
             if state.verbose() {
@@ -33,8 +37,8 @@ impl Executor for UnionExec {
                 }
             }
 
-            let mut offset = self.options.slice_offset as usize;
-            let mut len = self.options.slice_len as usize;
+            let (slice_offset, mut slice_len) = self.options.slice.unwrap_or((0, usize::MAX));
+            let mut slice_offset = slice_offset as usize;
             let dfs = inputs
                 .into_iter()
                 .enumerate()
@@ -47,22 +51,22 @@ impl Executor for UnionExec {
                         return Ok(Some(df));
                     }
 
-                    Ok(if offset > df.height() {
-                        offset -= df.height();
+                    Ok(if slice_offset > df.height() {
+                        slice_offset -= df.height();
                         None
-                    } else if offset + len > df.height() {
-                        len -= df.height() - offset;
-                        if offset == 0 {
+                    } else if slice_offset + slice_len > df.height() {
+                        slice_len -= df.height() - slice_offset;
+                        if slice_offset == 0 {
                             Some(df)
                         } else {
-                            let out = Some(df.slice(offset as i64, usize::MAX));
-                            offset = 0;
+                            let out = Some(df.slice(slice_offset as i64, usize::MAX));
+                            slice_offset = 0;
                             out
                         }
                     } else {
-                        let out = Some(df.slice(offset as i64, len));
-                        len = 0;
-                        offset = 0;
+                        let out = Some(df.slice(slice_offset as i64, slice_len));
+                        slice_len = 0;
+                        slice_offset = 0;
                         out
                     })
                 })

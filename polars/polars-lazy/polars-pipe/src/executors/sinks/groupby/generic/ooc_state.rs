@@ -1,11 +1,9 @@
-use std::sync::Mutex;
-
 use polars_core::config::verbose;
 
 use super::*;
 use crate::executors::sinks::io::IOThread;
 use crate::executors::sinks::memory::MemTracker;
-use crate::pipeline::morsels_per_sink;
+use crate::pipeline::{morsels_per_sink, FORCE_OOC};
 
 #[derive(Clone)]
 pub(super) struct OocState {
@@ -16,17 +14,25 @@ pub(super) struct OocState {
     // sort in-memory or out-of-core
     pub(super) ooc: bool,
     // when ooc, we write to disk using an IO thread
-    pub(super) io_thread: Arc<Mutex<Option<IOThread>>>,
+    pub(super) io_thread: IOThreadRef,
     count: u16,
+    to_disk_threshold: f64,
 }
 
 impl Default for OocState {
     fn default() -> Self {
+        let to_disk_threshold = if std::env::var(FORCE_OOC).is_ok() {
+            1.0
+        } else {
+            TO_DISK_THRESHOLD
+        };
+
         Self {
             mem_track: MemTracker::new(morsels_per_sink()),
             ooc: false,
             io_thread: Default::default(),
             count: 0,
+            to_disk_threshold,
         }
     }
 }
@@ -45,7 +51,7 @@ pub(super) enum SpillAction {
 }
 
 impl OocState {
-    fn init_ooc(&mut self, spill_schema: &dyn Fn() -> Option<Schema>) -> PolarsResult<()> {
+    fn init_ooc(&mut self, spill_schema: Schema) -> PolarsResult<()> {
         if verbose() {
             eprintln!("OOC groupby started");
         }
@@ -54,9 +60,7 @@ impl OocState {
         // start IO thread
         let mut iot = self.io_thread.lock().unwrap();
         if iot.is_none() {
-            if let Some(schema) = spill_schema() {
-                *iot = Some(IOThread::try_new(Arc::new(schema), "groupby")?)
-            }
+            *iot = Some(IOThread::try_new(Arc::new(spill_schema), "groupby").unwrap());
         }
         Ok(())
     }
@@ -71,9 +75,13 @@ impl OocState {
         let free_frac = self.mem_track.free_memory_fraction_since_start();
         self.count += 1;
 
-        if free_frac < TO_DISK_THRESHOLD {
-            self.init_ooc(spill_schema)?;
-            Ok(SpillAction::Dump)
+        if free_frac < self.to_disk_threshold {
+            if let Some(schema) = spill_schema() {
+                self.init_ooc(schema)?;
+                Ok(SpillAction::Dump)
+            } else {
+                Ok(SpillAction::None)
+            }
         } else if free_frac < EARLY_MERGE_THRESHOLD
         // clean up some spills
          || (self.count % 512) == 0

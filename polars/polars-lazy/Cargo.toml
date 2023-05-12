@@ -17,14 +17,14 @@ ahash.workspace = true
 bitflags.workspace = true
 glob = "0.3"
 once_cell = "1"
-polars-arrow = { version = "0.28.0", path = "../polars-arrow" }
-polars-core = { version = "0.28.0", path = "../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
-polars-io = { version = "0.28.0", path = "../polars-io", features = ["lazy", "csv", "private"], default-features = false }
-polars-ops = { version = "0.28.0", path = "../polars-ops", default-features = false }
-polars-pipe = { version = "0.28.0", path = "./polars-pipe", optional = true }
-polars-plan = { version = "0.28.0", path = "./polars-plan" }
-polars-time = { version = "0.28.0", path = "../polars-time", optional = true }
-polars-utils = { version = "0.28.0", path = "../polars-utils" }
+polars-arrow = { version = "0.29.0", path = "../polars-arrow" }
+polars-core = { version = "0.29.0", path = "../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
+polars-io = { version = "0.29.0", path = "../polars-io", features = ["lazy", "csv", "private"], default-features = false }
+polars-ops = { version = "0.29.0", path = "../polars-ops", default-features = false }
+polars-pipe = { version = "0.29.0", path = "./polars-pipe", optional = true }
+polars-plan = { version = "0.29.0", path = "./polars-plan" }
+polars-time = { version = "0.29.0", path = "../polars-time", optional = true }
+polars-utils = { version = "0.29.0", path = "../polars-utils" }
 pyo3 = { version = "0.18", optional = true }
 rayon.workspace = true
 smartstring.workspace = true
@@ -78,9 +78,8 @@ repeat_by = ["polars-plan/repeat_by"]
 round_series = ["polars-plan/round_series", "polars-ops/round_series"]
 is_first = ["polars-plan/is_first"]
 is_unique = ["polars-plan/is_unique"]
-cross_join = ["polars-plan/cross_join", "polars-pipe/cross_join"]
+cross_join = ["polars-plan/cross_join", "polars-pipe/cross_join", "polars-ops/cross_join"]
 asof_join = ["polars-plan/asof_join", "polars-time"]
-dot_product = ["polars-plan/dot_product"]
 concat_str = ["polars-plan/concat_str"]
 arange = ["polars-plan/arange"]
 mode = ["polars-plan/mode"]
@@ -129,6 +128,7 @@ serde = [
   "polars-io/serde",
   "polars-ops/serde",
 ]
+fused = ["polars-plan/fused", "polars-ops/fused"]
 
 binary_encoding = ["polars-plan/binary_encoding"]
 

@@ -4,20 +4,19 @@ import contextlib
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO
 
-from polars import internals as pli
+import polars._reexport as pl
 from polars.convert import from_arrow
 from polars.dependencies import _PYARROW_AVAILABLE
 from polars.io._utils import _prepare_file_arg
 from polars.utils.various import normalise_filepath
 
 with contextlib.suppress(ImportError):
-    from polars.polars import parquet_schema as _parquet_schema
+    from polars.polars import read_parquet_schema as _read_parquet_schema
 
 if TYPE_CHECKING:
     from io import BytesIO
 
-    from polars.dataframe import DataFrame
-    from polars.lazyframe import LazyFrame
+    from polars import DataFrame, LazyFrame
     from polars.type_aliases import ParallelStrategy, PolarsDataType
 
 
@@ -121,7 +120,7 @@ def read_parquet(
                 )
             )
 
-        return pli.DataFrame._read_parquet(
+        return pl.DataFrame._read_parquet(
             source_prep,
             columns=columns,
             n_rows=n_rows,
@@ -153,7 +152,7 @@ def read_parquet_schema(
     if isinstance(source, (str, Path)):
         source = normalise_filepath(source)
 
-    return _parquet_schema(source)
+    return _read_parquet_schema(source)
 
 
 def scan_parquet(
@@ -208,7 +207,7 @@ def scan_parquet(
     if isinstance(source, (str, Path)):
         source = normalise_filepath(source)
 
-    return pli.LazyFrame._scan_parquet(
+    return pl.LazyFrame._scan_parquet(
         source,
         n_rows=n_rows,
         cache=cache,

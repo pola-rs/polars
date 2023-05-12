@@ -2,6 +2,7 @@ use std::hash::{BuildHasher, Hash};
 
 use hashbrown::hash_map::{Entry, RawEntryMut};
 use hashbrown::HashMap;
+use polars_utils::iter::EnumerateIdxTrait;
 use polars_utils::sync::SyncPtr;
 use polars_utils::HashSingle;
 use rayon::prelude::*;
@@ -10,12 +11,28 @@ use super::GroupsProxy;
 use crate::datatypes::PlHashMap;
 use crate::frame::groupby::{GroupsIdx, IdxItem};
 use crate::hashing::{
-    df_rows_to_hashes_threaded_vertical, this_partition, AsU64, IdBuildHasher, IdxHash,
+    df_rows_to_hashes_threaded_vertical, series_to_hashes, this_partition, AsU64, IdBuildHasher,
+    IdxHash,
 };
 use crate::prelude::compare_inner::PartialEqInner;
 use crate::prelude::*;
 use crate::utils::{flatten, split_df, CustomIterTools};
 use crate::POOL;
+
+// We must strike a balance between cache coherence and resizing costs.
+// Overallocation seems a lot more expensive than resizing so we start reasonable small.
+pub(crate) const HASHMAP_INIT_SIZE: usize = 512;
+
+fn get_init_size() -> usize {
+    // we check if this is executed from the main thread
+    // we don't want to pre-allocate this much if executed
+    // group_tuples in a parallel iterator as that explodes allocation
+    if POOL.current_thread_index().is_none() {
+        HASHMAP_INIT_SIZE
+    } else {
+        0
+    }
+}
 
 fn finish_group_order(mut out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsProxy {
     if sorted {
@@ -66,6 +83,9 @@ fn finish_group_order(mut out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsProxy {
     }
 }
 
+// The inner vecs should be sorted by IdxSize
+// the groupby multiple keys variants suffice
+// this requirements as they use an IdxMap strategy
 fn finish_group_order_vecs(
     mut vecs: Vec<(Vec<IdxSize>, Vec<Vec<IdxSize>>)>,
     sorted: bool,
@@ -126,16 +146,12 @@ fn finish_group_order_vecs(
     }
 }
 
-// We must strike a balance between cache coherence and resizing costs.
-// Overallocation seems a lot more expensive than resizing so we start reasonable small.
-pub(crate) const HASHMAP_INIT_SIZE: usize = 512;
-
 pub(crate) fn groupby<T>(a: impl Iterator<Item = T>, sorted: bool) -> GroupsProxy
 where
     T: Hash + Eq,
 {
-    let mut hash_tbl: PlHashMap<T, (IdxSize, Vec<IdxSize>)> =
-        PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
+    let init_size = get_init_size();
+    let mut hash_tbl: PlHashMap<T, (IdxSize, Vec<IdxSize>)> = PlHashMap::with_capacity(init_size);
     let mut cnt = 0;
     a.for_each(|k| {
         let idx = cnt;
@@ -179,6 +195,7 @@ where
     IntoSlice: AsRef<[T]> + Send + Sync,
 {
     assert!(n_partitions.is_power_of_two());
+    let init_size = get_init_size();
 
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
@@ -188,7 +205,7 @@ where
             .into_par_iter()
             .map(|thread_no| {
                 let mut hash_tbl: PlHashMap<T, (IdxSize, Vec<IdxSize>)> =
-                    PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
+                    PlHashMap::with_capacity(init_size);
 
                 let mut offset = 0;
                 for keys in &keys {
@@ -242,6 +259,7 @@ where
     T: Send + Hash + Eq + Sync + Copy + AsU64,
 {
     assert!(n_partitions.is_power_of_two());
+    let init_size = get_init_size();
 
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
@@ -251,7 +269,7 @@ where
             .into_par_iter()
             .map(|thread_no| {
                 let mut hash_tbl: PlHashMap<T, (IdxSize, Vec<IdxSize>)> =
-                    PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
+                    PlHashMap::with_capacity(init_size);
 
                 let mut offset = 0;
                 for keys in keys {
@@ -443,6 +461,8 @@ pub(crate) fn groupby_threaded_multiple_keys_flat(
     let (hashes, _random_state) = df_rows_to_hashes_threaded_vertical(&dfs, None)?;
     let n_partitions = n_partitions as u64;
 
+    let init_size = get_init_size();
+
     // trait object to compare inner types.
     let keys_cmp = keys
         .iter()
@@ -458,10 +478,12 @@ pub(crate) fn groupby_threaded_multiple_keys_flat(
             .map(|thread_no| {
                 let hashes = &hashes;
 
+                // IndexMap, the indexes are stored in flat vectors
+                // this ensures that order remains and iteration is fast
                 let mut hash_tbl: HashMap<IdxHash, IdxSize, IdBuildHasher> =
-                    HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
-                let mut first_vals = Vec::with_capacity(HASHMAP_INIT_SIZE);
-                let mut all_vals = Vec::with_capacity(HASHMAP_INIT_SIZE);
+                    HashMap::with_capacity_and_hasher(init_size, Default::default());
+                let mut first_vals = Vec::with_capacity(init_size);
+                let mut all_vals = Vec::with_capacity(init_size);
 
                 // put the buffers behind a pointer so we can access them from as the bchk doesn't allow
                 // 2 mutable borrows (this is safe as we don't alias)
@@ -517,5 +539,60 @@ pub(crate) fn groupby_threaded_multiple_keys_flat(
             })
             .collect::<Vec<_>>()
     });
+    Ok(finish_group_order_vecs(v, sorted))
+}
+
+pub(crate) fn groupby_multiple_keys(keys: DataFrame, sorted: bool) -> PolarsResult<GroupsProxy> {
+    let mut hashes = Vec::with_capacity(keys.height());
+    let _ = series_to_hashes(keys.get_columns(), None, &mut hashes)?;
+
+    let init_size = get_init_size();
+
+    // trait object to compare inner types.
+    let keys_cmp = keys
+        .iter()
+        .map(|s| s.into_partial_eq_inner())
+        .collect::<Vec<_>>();
+
+    // IndexMap, the indexes are stored in flat vectors
+    // this ensures that order remains and iteration is fast
+    let mut hash_tbl: HashMap<IdxHash, IdxSize, IdBuildHasher> =
+        HashMap::with_capacity_and_hasher(init_size, Default::default());
+    let mut first_vals = Vec::with_capacity(init_size);
+    let mut all_vals = Vec::with_capacity(init_size);
+
+    // put the buffers behind a pointer so we can access them from as the bchk doesn't allow
+    // 2 mutable borrows (this is safe as we don't alias)
+    // even if the vecs reallocate, we have a pointer to the stack vec, and thus always
+    // access the proper data.
+    let all_buf_ptr = &mut all_vals as *mut Vec<Vec<IdxSize>> as *const Vec<Vec<IdxSize>>;
+    let first_buf_ptr = &mut first_vals as *mut Vec<IdxSize> as *const Vec<IdxSize>;
+
+    for (row_idx, h) in hashes.into_iter().enumerate_idx() {
+        populate_multiple_key_hashmap2(
+            &mut hash_tbl,
+            row_idx,
+            h,
+            &keys_cmp,
+            || unsafe {
+                let first_vals = &mut *(first_buf_ptr as *mut Vec<IdxSize>);
+                let all_vals = &mut *(all_buf_ptr as *mut Vec<Vec<IdxSize>>);
+                let offset_idx = first_vals.len() as IdxSize;
+
+                let tuples = vec![row_idx];
+                all_vals.push(tuples);
+                first_vals.push(row_idx);
+                offset_idx
+            },
+            |v| unsafe {
+                let all_vals = &mut *(all_buf_ptr as *mut Vec<Vec<IdxSize>>);
+                let offset_idx = *v;
+                let buf = all_vals.get_unchecked_mut(offset_idx as usize);
+                buf.push(row_idx)
+            },
+        );
+    }
+
+    let v = vec![(first_vals, all_vals)];
     Ok(finish_group_order_vecs(v, sorted))
 }

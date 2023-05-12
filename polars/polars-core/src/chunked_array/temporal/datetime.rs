@@ -124,52 +124,26 @@ impl DatetimeChunked {
         time_zone: Option<&str>,
         use_earliest: Option<bool>,
     ) -> PolarsResult<DatetimeChunked> {
-        let out: PolarsResult<_> = match (self.time_zone(), time_zone) {
-            (Some(from), Some(to)) => {
-                let chunks = self
-                    .downcast_iter()
-                    .map(|arr| {
-                        replace_timezone(arr, self.time_unit().to_arrow(), to, from, use_earliest)
-                    })
-                    .collect::<PolarsResult<_>>()?;
-                let out = unsafe { ChunkedArray::from_chunks(self.name(), chunks) };
-                Ok(out.into_datetime(self.time_unit(), Some(to.to_string())))
-            }
-            (Some(from), None) => {
-                let chunks = self
-                    .downcast_iter()
-                    .map(|arr| {
-                        replace_timezone(
-                            arr,
-                            self.time_unit().to_arrow(),
-                            "UTC",
-                            from,
-                            use_earliest,
-                        )
-                    })
-                    .collect::<PolarsResult<_>>()?;
-                let out = unsafe { ChunkedArray::from_chunks(self.name(), chunks) };
-                Ok(out.into_datetime(self.time_unit(), None))
-            }
-            (None, Some(to)) => {
-                let chunks = self
-                    .downcast_iter()
-                    .map(|arr| {
-                        replace_timezone(arr, self.time_unit().to_arrow(), to, "UTC", use_earliest)
-                    })
-                    .collect::<PolarsResult<_>>()?;
-                let out = unsafe { ChunkedArray::from_chunks(self.name(), chunks) };
-                Ok(out.into_datetime(self.time_unit(), Some(to.to_string())))
-            }
-            (None, None) => Ok(self.clone()),
+        let out: PolarsResult<_> = {
+            let from = self.time_zone().as_deref().unwrap_or("UTC");
+            let to = time_zone.unwrap_or("UTC");
+            let chunks = self
+                .downcast_iter()
+                .map(|arr| {
+                    replace_timezone(arr, self.time_unit().to_arrow(), to, from, use_earliest)
+                })
+                .collect::<PolarsResult<_>>()?;
+            let out = unsafe { ChunkedArray::from_chunks(self.name(), chunks) };
+            Ok(out.into_datetime(self.time_unit(), time_zone.map(|x| x.to_string())))
         };
         let mut out = out?;
         out.set_sorted_flag(self.is_sorted_flag());
         Ok(out)
     }
 
-    /// Format Datetime with a `format` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
-    pub fn strftime(&self, format: &str) -> PolarsResult<Utf8Chunked> {
+    /// Convert from Datetime into Utf8 with the given format.
+    /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+    pub fn to_string(&self, format: &str) -> PolarsResult<Utf8Chunked> {
         #[cfg(feature = "timezones")]
         use chrono::Utc;
         let conversion_f = match self.time_unit() {
@@ -216,6 +190,14 @@ impl DatetimeChunked {
         };
         ca.rename(self.name());
         Ok(ca)
+    }
+
+    /// Convert from Datetime into Utf8 with the given format.
+    /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+    ///
+    /// Alias for `to_string`.
+    pub fn strftime(&self, format: &str) -> PolarsResult<Utf8Chunked> {
+        self.to_string(format)
     }
 
     /// Construct a new [`DatetimeChunked`] from an iterator over [`NaiveDateTime`].

@@ -112,7 +112,7 @@ def test_rolling_crossing_dst(
     time_zone: str | None, rolling_fn: str, expected_values: list[int | None | float]
 ) -> None:
     ts = pl.date_range(
-        datetime(2021, 11, 5), datetime(2021, 11, 10), "1d", time_zone="UTC"
+        datetime(2021, 11, 5), datetime(2021, 11, 10), "1d", time_zone="UTC", eager=True
     ).dt.replace_time_zone(time_zone)
     df = pl.DataFrame({"ts": ts, "value": [1, 2, 3, 4, 5, 6]})
     result = df.with_columns(getattr(pl.col("value"), rolling_fn)("1d", by="ts"))
@@ -415,6 +415,7 @@ def test_dynamic_groupby_timezone_awareness() -> None:
                 timedelta(days=1),
                 time_unit="ns",
                 name="datetime",
+                eager=True,
             ).dt.replace_time_zone("UTC"),
             pl.Series("value", pl.arange(1, 11, eager=True)),
         )
@@ -438,7 +439,7 @@ def test_groupby_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
     # start by datapoint
     start = datetime(2022, 12, 16, tzinfo=tzinfo)
     stop = datetime(2022, 12, 16, hour=3, tzinfo=tzinfo)
-    df = pl.DataFrame({"date": pl.date_range(start, stop, "30m")})
+    df = pl.DataFrame({"date": pl.date_range(start, stop, "30m", eager=True)})
 
     assert df.groupby_dynamic(
         "date",
@@ -474,22 +475,23 @@ def test_groupby_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
         "count": [2, 1, 1, 1, 1, 1],
     }
 
-    # start by week
+    # start by monday
     start = datetime(2022, 1, 1, tzinfo=tzinfo)
     stop = datetime(2022, 1, 12, 7, tzinfo=tzinfo)
 
-    df = pl.DataFrame({"date": pl.date_range(start, stop, "12h")}).with_columns(
-        pl.col("date").dt.weekday().alias("day")
-    )
+    df = pl.DataFrame(
+        {"date": pl.date_range(start, stop, "12h", eager=True)}
+    ).with_columns(pl.col("date").dt.weekday().alias("day"))
 
-    assert df.groupby_dynamic(
+    result = df.groupby_dynamic(
         "date",
         every="1w",
         period="3d",
         include_boundaries=True,
         start_by="monday",
         truncate=False,
-    ).agg([pl.count(), pl.col("day").first().alias("data_day")]).to_dict(False) == {
+    ).agg([pl.count(), pl.col("day").first().alias("data_day")])
+    assert result.to_dict(False) == {
         "_lower_boundary": [
             datetime(2022, 1, 3, 0, 0, tzinfo=tzinfo),
             datetime(2022, 1, 10, 0, 0, tzinfo=tzinfo),
@@ -504,6 +506,31 @@ def test_groupby_dynamic_startby_5599(tzinfo: ZoneInfo | None) -> None:
         ],
         "count": [6, 5],
         "data_day": [1, 1],
+    }
+    # start by saturday
+    result = df.groupby_dynamic(
+        "date",
+        every="1w",
+        period="3d",
+        include_boundaries=True,
+        start_by="saturday",
+        truncate=False,
+    ).agg([pl.count(), pl.col("day").first().alias("data_day")])
+    assert result.to_dict(False) == {
+        "_lower_boundary": [
+            datetime(2022, 1, 1, 0, 0, tzinfo=tzinfo),
+            datetime(2022, 1, 8, 0, 0, tzinfo=tzinfo),
+        ],
+        "_upper_boundary": [
+            datetime(2022, 1, 4, 0, 0, tzinfo=tzinfo),
+            datetime(2022, 1, 11, 0, 0, tzinfo=tzinfo),
+        ],
+        "date": [
+            datetime(2022, 1, 1, 0, 0, tzinfo=tzinfo),
+            datetime(2022, 1, 8, 0, 0, tzinfo=tzinfo),
+        ],
+        "count": [6, 6],
+        "data_day": [6, 6],
     }
 
 
@@ -605,3 +632,19 @@ def test_rolling_kernels_groupby_dynamic_7548() -> None:
         "max_value": [2, 3, 3, 3],
         "sum_value": [3, 6, 5, 3],
     }
+
+
+def test_rolling_cov_corr() -> None:
+    df = pl.DataFrame({"x": [3, 3, 3, 5, 8], "y": [3, 4, 4, 4, 8]})
+
+    assert (
+        str(
+            df.select(
+                [
+                    pl.rolling_cov("x", "y", window_size=3).alias("cov"),
+                    pl.rolling_corr("x", "y", window_size=3).alias("corr"),
+                ]
+            ).to_dict(False)
+        )
+        == "{'cov': [None, None, 0.0, 0.0, 5.333333333333336], 'corr': [None, None, nan, nan, 0.9176629354822473]}"
+    )

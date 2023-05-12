@@ -1,13 +1,28 @@
-mod apply;
-pub mod dataframe;
-pub mod dsl;
+mod binary;
+mod categorical;
+mod datetime;
+mod general;
+mod list;
 #[cfg(feature = "meta")]
 mod meta;
-pub mod utils;
+mod string;
+mod r#struct;
 
-pub use apply::*;
-use dsl::*;
-use polars_lazy::prelude::*;
+use polars::lazy::dsl::Expr;
+use pyo3::prelude::*;
+
+#[pyclass]
+#[repr(transparent)]
+#[derive(Clone)]
+pub struct PyExpr {
+    pub inner: Expr,
+}
+
+impl From<Expr> for PyExpr {
+    fn from(expr: Expr) -> Self {
+        PyExpr { inner: expr }
+    }
+}
 
 pub(crate) trait ToExprs {
     fn to_exprs(self) -> Vec<Expr>;

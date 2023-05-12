@@ -1,20 +1,20 @@
 use super::*;
 
 pub(super) fn fill_null(s: &[Series], super_type: &DataType) -> PolarsResult<Series> {
-    let array = &s[0];
+    let series = &s[0];
     let fill_value = &s[1];
 
     let (series, fill_value) = if matches!(super_type, DataType::Unknown) {
-        let fill_value = fill_value.cast(array.dtype()).map_err(|_| {
+        let fill_value = fill_value.cast(series.dtype()).map_err(|_| {
             polars_err!(
                 SchemaMismatch:
                 "`fill_null` supertype could not be determined; set correct literal value or \
                 ensure the type of the expression is known"
             )
         })?;
-        (array.clone(), fill_value)
+        (series.clone(), fill_value)
     } else {
-        (array.cast(super_type)?, fill_value.cast(super_type)?)
+        (series.cast(super_type)?, fill_value.cast(super_type)?)
     };
     // nothing to fill, so return early
     // this is done after casting as the output type must be correct
@@ -36,7 +36,7 @@ pub(super) fn fill_null(s: &[Series], super_type: &DataType) -> PolarsResult<Ser
         #[cfg(feature = "dtype-categorical")]
         // for Categoricals we first need to check if the category already exist
         DataType::Categorical(Some(rev_map)) => {
-            if fill_value.len() == 1 && fill_value.null_count() == 0 {
+            if rev_map.is_local() && fill_value.len() == 1 && fill_value.null_count() == 0 {
                 let fill_av = fill_value.get(0).unwrap();
                 let fill_str = fill_av.get_str().unwrap();
 

@@ -578,8 +578,22 @@ impl PredicatePushDown {
                 let lp = self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)?;
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
+            lp @ Sort{..} => {
+                let mut local_predicates = vec![];
+                acc_predicates.retain(|_, predicate| {
+                    if predicate_is_sort_boundary(*predicate, expr_arena) {
+                        local_predicates.push(*predicate);
+                        false
+                    } else {
+                        true
+                    }
+                });
+                let lp = self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)?;
+                Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
+
+            }
             // Pushed down passed these nodes
-            lp @ Sort { .. } |lp @ FileSink {..} => {
+            lp@ FileSink {..} => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             }
             lp @ HStack {..} | lp @ Projection {..} | lp @ ExtContext {..} => {

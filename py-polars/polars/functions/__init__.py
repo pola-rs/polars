@@ -5,6 +5,7 @@ from polars.functions.eager import (
     date_range,
     get_dummies,
     ones,
+    time_range,
     zeros,
 )
 from polars.functions.lazy import (
@@ -36,6 +37,7 @@ from polars.functions.lazy import (
     from_epoch,
     groups,
     head,
+    implode,
     last,
     lit,
     map,
@@ -48,6 +50,8 @@ from polars.functions.lazy import (
     quantile,
     reduce,
     repeat,
+    rolling_corr,
+    rolling_cov,
     select,
     spearman_rank_corr,
     std,
@@ -59,6 +63,7 @@ from polars.functions.lazy import (
 from polars.functions.lazy import date_ as date
 from polars.functions.lazy import datetime_ as datetime
 from polars.functions.lazy import list_ as list
+from polars.functions.lazy import time_ as time
 from polars.functions.whenthen import when
 
 __all__ = [
@@ -73,6 +78,7 @@ __all__ = [
     "get_dummies",
     "ones",
     "repeat",
+    "time_range",
     "zeros",
     # polars.functions.lazy
     "all",
@@ -102,6 +108,7 @@ __all__ = [
     "from_epoch",
     "groups",
     "head",
+    "implode",
     "last",
     "list",  # named list_, see import above
     "lit",
@@ -114,12 +121,15 @@ __all__ = [
     "pearson_corr",
     "quantile",
     "reduce",
+    "rolling_corr",
+    "rolling_cov",
     "select",
     "spearman_rank_corr",
     "std",
     "struct",
     "sum",
     "tail",
+    "time",
     "var",
     # polars.functions.whenthen
     "when",

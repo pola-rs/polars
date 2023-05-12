@@ -5,6 +5,7 @@ use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use super::*;
 use crate::executors::sinks::groupby::generic::global::GlobalTable;
 use crate::executors::sinks::groupby::generic::ooc_state::{OocState, SpillAction};
+use crate::executors::sinks::groupby::generic::source::GroupBySource;
 use crate::executors::sources::DataFrameSource;
 use crate::expressions::PhysicalPipedExpr;
 
@@ -22,6 +23,7 @@ impl GenericGroupby2 {
         aggregation_columns: Arc<Vec<Arc<dyn PhysicalPipedExpr>>>,
         agg_constructors: Arc<[AggregateFunction]>,
         output_schema: SchemaRef,
+        agg_input_dtypes: Vec<DataType>,
         slice: Option<(i64, usize)>,
     ) -> Self {
         let key_dtypes: Arc<[DataType]> = Arc::from(
@@ -31,6 +33,8 @@ impl GenericGroupby2 {
                 .cloned()
                 .collect::<Vec<_>>(),
         );
+
+        let agg_dtypes: Arc<[DataType]> = Arc::from(agg_input_dtypes);
 
         let global_map = GlobalTable::new(
             agg_constructors.clone(),
@@ -42,6 +46,7 @@ impl GenericGroupby2 {
             thread_local_table: UnsafeCell::new(ThreadLocalTable::new(
                 agg_constructors,
                 key_dtypes,
+                agg_dtypes,
                 output_schema,
             )),
             global_table: Arc::new(global_map),
@@ -73,7 +78,6 @@ impl Sink for GenericGroupby2 {
                 if let Some((partition, spill_payload)) =
                     table.insert(*hash, &mut keys, &mut aggs, chunk_idx)
                 {
-                    // append payload to global spills
                     self.global_table.spill(partition, spill_payload)
                 }
             }
@@ -157,7 +161,11 @@ impl Sink for GenericGroupby2 {
             }
             // create an ooc source
             else {
-                todo!()
+                Ok(FinalizedSink::Source(Box::new(GroupBySource::new(
+                    &self.ooc_state.io_thread,
+                    self.slice,
+                    self.global_table.clone(),
+                )?)))
             }
         }
     }

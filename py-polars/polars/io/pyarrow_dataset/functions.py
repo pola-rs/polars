@@ -7,8 +7,8 @@ from polars.io.pyarrow_dataset.anonymous_scan import _scan_pyarrow_dataset
 from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
+    from polars import LazyFrame
     from polars.dependencies import pyarrow as pa
-    from polars.lazyframe import LazyFrame
 
 
 def scan_pyarrow_dataset(

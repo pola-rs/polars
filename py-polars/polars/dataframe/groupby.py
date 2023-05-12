@@ -2,15 +2,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Callable, Generic, Iterable, Iterator, TypeVar
 
+import polars._reexport as pl
 from polars import functions as F
-from polars import internals as pli
 from polars.functions.whenthen import WhenThen, WhenThenThen
 from polars.utils.convert import _timedelta_to_pl_duration
 
 if TYPE_CHECKING:
     from datetime import timedelta
 
-    from polars.dataframe import DataFrame
+    from polars import DataFrame
     from polars.type_aliases import (
         ClosedInterval,
         IntoExpr,
@@ -107,7 +107,7 @@ class GroupBy(Generic[DF]):
         # When grouping by multiple columns, group name is a tuple of values
         self._group_names: Iterator[object] | Iterator[tuple[object, ...]]
         if (
-            isinstance(self.by, (str, pli.Expr, WhenThen, WhenThenThen))
+            isinstance(self.by, (str, pl.Expr, WhenThen, WhenThenThen))
             and not self.more_by
         ):
             self._group_names = iter(group_names.to_series())
@@ -451,6 +451,9 @@ class GroupBy(Generic[DF]):
     def count(self) -> DF:
         """
         Count the number of values in each group.
+
+        .. warning::
+            `null` is deemed a value in this context.
 
         Examples
         --------

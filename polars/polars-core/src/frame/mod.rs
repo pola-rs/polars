@@ -37,6 +37,7 @@ use smartstring::alias::String as SmartString;
 use crate::frame::groupby::GroupsIndicator;
 #[cfg(feature = "row_hash")]
 use crate::hashing::df_rows_to_hashes_threaded_vertical;
+#[cfg(feature = "zip_with")]
 use crate::prelude::min_max_binary::min_max_binary_series;
 use crate::prelude::sort::{argsort_multiple_row_fmt, prepare_arg_sort};
 use crate::series::IsSorted;
@@ -52,7 +53,6 @@ pub enum NullStrategy {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum UniqueKeepStrategy {
     /// Keep the first unique row.
-    #[default]
     First,
     /// Keep the last unique row.
     Last,
@@ -60,6 +60,7 @@ pub enum UniqueKeepStrategy {
     None,
     /// Keep any of the unique rows
     /// This allows more optimizations
+    #[default]
     Any,
 }
 
@@ -138,7 +139,6 @@ pub enum UniqueKeepStrategy {
 /// # Ok::<(), PolarsError>(())
 /// ```
 #[derive(Clone)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DataFrame {
     pub(crate) columns: Vec<Series>,
 }
@@ -1795,8 +1795,34 @@ impl DataFrame {
         slice: Option<(i64, usize)>,
         parallel: bool,
     ) -> PolarsResult<Self> {
+        // note that the by_column argument also contains evaluated expression from polars-lazy
+        // that may not even be present in this dataframe.
+
+        // therefore when we try to set the first columns as sorted, we ignore the error
+        // as expressions are not present (they are renamed to _POLARS_SORT_COLUMN_i.
+        let first_descending = descending[0];
+        let first_by_column = by_column[0].name().to_string();
+
+        let set_sorted = |df: &mut DataFrame| {
+            // Mark the first sort column as sorted
+            // if the column did not exists it is ok, because we sorted by an expression
+            // not present in the dataframe
+            let _ = df.apply(&first_by_column, |s| {
+                let mut s = s.clone();
+                if first_descending {
+                    s.set_sorted_flag(IsSorted::Descending)
+                } else {
+                    s.set_sorted_flag(IsSorted::Ascending)
+                }
+                s
+            });
+        };
+
         if self.height() == 0 {
-            return Ok(self.clone());
+            let mut out = self.clone();
+            set_sorted(&mut out);
+
+            return Ok(out);
         }
 
         if let Some((0, k)) = slice {
@@ -1815,13 +1841,6 @@ impl DataFrame {
         // a lot of indirection in both sorting and take
         let mut df = self.clone();
         let df = df.as_single_chunk_par();
-        // note that the by_column argument also contains evaluated expression from polars-lazy
-        // that may not even be present in this dataframe.
-
-        // therefore when we try to set the first columns as sorted, we ignore the error
-        // as expressions are not present (they are renamed to _POLARS_SORT_COLUMN_i.
-        let first_descending = descending[0];
-        let first_by_column = by_column[0].name().to_string();
         let mut take = match (by_column.len(), has_struct) {
             (1, false) => {
                 let s = &by_column[0];
@@ -1847,8 +1866,13 @@ impl DataFrame {
                 if nulls_last || has_struct || std::env::var("POLARS_ROW_FMT_SORT").is_ok() {
                     argsort_multiple_row_fmt(&by_column, descending, nulls_last, parallel)?
                 } else {
-                    let (first, by_column, descending) = prepare_arg_sort(by_column, descending)?;
-                    first.arg_sort_multiple(&by_column, &descending)?
+                    let (first, other, descending) = prepare_arg_sort(by_column, descending)?;
+                    let options = SortMultipleOptions {
+                        other,
+                        descending,
+                        multithreaded: parallel,
+                    };
+                    first.arg_sort_multiple(&options)?
                 }
             }
         };
@@ -1860,18 +1884,7 @@ impl DataFrame {
         // Safety:
         // the created indices are in bounds
         let mut df = unsafe { df.take_unchecked_impl(&take, parallel) };
-        // Mark the first sort column as sorted
-        // if the column did not exists it is ok, because we sorted by an expression
-        // not present in the dataframe
-        let _ = df.apply(&first_by_column, |s| {
-            let mut s = s.clone();
-            if first_descending {
-                s.set_sorted_flag(IsSorted::Descending)
-            } else {
-                s.set_sorted_flag(IsSorted::Ascending)
-            }
-            s
-        });
+        set_sorted(&mut df);
         Ok(df)
     }
 

@@ -24,6 +24,7 @@ pub(crate) struct IOThread {
     pub(in crate::executors::sinks) sent: Arc<AtomicUsize>,
     pub(in crate::executors::sinks) total: Arc<AtomicUsize>,
     pub(in crate::executors::sinks) thread_local_count: Arc<AtomicUsize>,
+    schema: SchemaRef,
 }
 
 fn get_lockfile_path(dir: &Path) -> PathBuf {
@@ -36,7 +37,8 @@ fn get_lockfile_path(dir: &Path) -> PathBuf {
 /// have a lockfile (opened with 'w' permissions).
 fn gc_thread(operation_name: &'static str) {
     let _ = std::thread::spawn(move || {
-        let dir = resolve_homedir(Path::new(&format!("~/.polars/{operation_name}/")));
+        let mut dir = std::env::temp_dir();
+        dir.push(&format!("polars/{operation_name}"));
 
         // if the directory does not exist, there is nothing to clean
         let rd = match std::fs::read_dir(&dir) {
@@ -83,7 +85,8 @@ impl IOThread {
             .unwrap()
             .as_nanos();
 
-        let dir = resolve_homedir(Path::new(&format!("~/.polars/{operation_name}/{uuid}")));
+        let mut dir = std::env::temp_dir();
+        dir.push(&format!("polars/{operation_name}/{uuid}"));
         std::fs::create_dir_all(&dir)?;
 
         // make sure we create lockfile before we GC
@@ -104,7 +107,9 @@ impl IOThread {
         let dir2 = dir.clone();
         let total2 = total.clone();
         let lockfile2 = lockfile.clone();
+        let schema2 = schema.clone();
         std::thread::spawn(move || {
+            let schema = schema2;
             // this moves the lockfile in the thread
             // we keep one in the thread and one in the `IoThread` struct
             let _keep_hold_on_lockfile = lockfile2;
@@ -125,7 +130,7 @@ impl IOThread {
                         let _ = std::fs::create_dir(&path);
                         path.push(format!("{count}.ipc"));
 
-                        let file = std::fs::File::create(path).unwrap();
+                        let file = File::create(path).unwrap();
                         let writer = IpcWriter::new(file);
                         let mut writer = writer.batched(&schema).unwrap();
                         writer.write_batch(&df).unwrap();
@@ -136,7 +141,7 @@ impl IOThread {
                     let mut path = dir2.clone();
                     path.push(format!("{count}.ipc"));
 
-                    let file = std::fs::File::create(path).unwrap();
+                    let file = File::create(path).unwrap();
                     let writer = IpcWriter::new(file);
                     let mut writer = writer.batched(&schema).unwrap();
 
@@ -158,6 +163,7 @@ impl IOThread {
             total,
             _lockfile: lockfile,
             thread_local_count,
+            schema,
         })
     }
 
@@ -171,7 +177,7 @@ impl IOThread {
             // duplicates
             path.push(format!("_{count}.ipc"));
 
-            let file = std::fs::File::create(path).unwrap();
+            let file = File::create(path).unwrap();
             let mut writer = IpcWriter::new(file);
             writer.finish(&mut df).unwrap();
         } else {
@@ -184,6 +190,26 @@ impl IOThread {
         let partition = Some(IdxCa::from_vec("", vec![partition_no]));
         let iter = Box::new(std::iter::once(df));
         self.dump_iter(partition, iter)
+    }
+
+    pub(in crate::executors::sinks) fn dump_partition_local(
+        &self,
+        partition_no: IdxSize,
+        df: DataFrame,
+    ) {
+        let count = self.thread_local_count.fetch_add(1, Ordering::Relaxed);
+        let mut path = self.dir.clone();
+        path.push(format!("{partition_no}"));
+
+        let _ = std::fs::create_dir(&path);
+        // thread local name we start with an underscore to ensure we don't get
+        // duplicates
+        path.push(format!("_{count}.ipc"));
+        let file = File::create(path).unwrap();
+        let writer = IpcWriter::new(file);
+        let mut writer = writer.batched(&self.schema).unwrap();
+        writer.write_batch(&df).unwrap();
+        writer.finish().unwrap();
     }
 
     pub(in crate::executors::sinks) fn dump_iter(&self, partition: Option<IdxCa>, iter: DfIter) {

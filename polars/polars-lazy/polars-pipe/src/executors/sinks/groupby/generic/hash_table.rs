@@ -102,7 +102,13 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
     ) -> Option<&[AnyValue]> {
         // safety: no references
         let keys_scratch = unsafe { &mut *self.keys_scratch.get() };
-        keys_scratch.clear();
+
+        unsafe {
+            // safety:
+            // this scratch is set with borrowed anyvalues, so we don't have to drop
+            // them as they only borrow data
+            keys_scratch.set_len(0);
+        }
         for key in keys {
             unsafe {
                 // safety: this function should never be called if iterator is depleted
@@ -294,10 +300,9 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
             .collect::<Vec<_>>();
 
         let mut agg_builders = self
-            .output_schema
-            .iter_dtypes()
-            .skip(self.num_keys)
-            .map(|dtype| AnyValueBufferTrusted::new(dtype, take_len))
+            .agg_constructors
+            .iter()
+            .map(|ac| AnyValueBufferTrusted::new(&ac.dtype(), take_len))
             .collect::<Vec<_>>();
         let num_aggs = self.agg_constructors.len();
 

@@ -31,6 +31,7 @@ mod interpolate;
 #[cfg(feature = "is_in")]
 mod is_in;
 mod len;
+#[cfg(feature = "zip_with")]
 pub(crate) mod min_max_binary;
 mod nulls;
 mod peaks;
@@ -475,6 +476,14 @@ pub struct SortOptions {
     pub multithreaded: bool,
 }
 
+#[derive(Clone)]
+#[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
+pub struct SortMultipleOptions {
+    pub other: Vec<Series>,
+    pub descending: Vec<bool>,
+    pub multithreaded: bool,
+}
+
 impl Default for SortOptions {
     fn default() -> Self {
         Self {
@@ -497,7 +506,7 @@ pub trait ChunkSort<T: PolarsDataType> {
     fn arg_sort(&self, options: SortOptions) -> IdxCa;
 
     /// Retrieve the indexes need to sort this and the other arrays.
-    fn arg_sort_multiple(&self, _other: &[Series], _descending: &[bool]) -> PolarsResult<IdxCa> {
+    fn arg_sort_multiple(&self, _options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
         polars_bail!(opq = arg_sort_multiple, T::get_dtype());
     }
 }

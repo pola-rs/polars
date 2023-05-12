@@ -24,8 +24,8 @@ from typing import (
     overload,
 )
 
+import polars._reexport as pl
 from polars import functions as F
-from polars import internals as pli
 from polars.dataframe._html import NotebookFormatter
 from polars.dataframe.groupby import DynamicGroupBy, GroupBy, RollingGroupBy
 from polars.datatypes import (
@@ -116,9 +116,7 @@ if TYPE_CHECKING:
     from pyarrow.interchange.dataframe import _PyArrowDataFrame
     from xlsxwriter import Workbook
 
-    from polars.expr import Expr
-    from polars.lazyframe import LazyFrame
-    from polars.series import Series
+    from polars import Expr, LazyFrame, Series
     from polars.type_aliases import (
         AsofJoinStrategy,
         AvroCompression,
@@ -368,7 +366,7 @@ class DataFrame:
                 orient=orient,
                 infer_schema_length=infer_schema_length,
             )
-        elif isinstance(data, pli.Series):
+        elif isinstance(data, pl.Series):
             self._df = series_to_pydf(
                 data, schema=schema, schema_overrides=schema_overrides
             )
@@ -1280,7 +1278,7 @@ class DataFrame:
             raise ValueError(f"got unexpected comparison operator: {op}")
 
     def _div(self, other: Any, floordiv: bool) -> Self:
-        if isinstance(other, pli.Series):
+        if isinstance(other, pl.Series):
             if floordiv:
                 return self.select(F.all() // lit(other))
             return self.select(F.all() / lit(other))
@@ -1405,7 +1403,7 @@ class DataFrame:
         # pl.UInt32 (polars) or pl.UInt64 (polars_u64_idx).
         idx_type = get_index_type()
 
-        if isinstance(idxs, pli.Series):
+        if isinstance(idxs, pl.Series):
             if idxs.dtype == idx_type:
                 return idxs
             if idxs.dtype in {
@@ -1469,7 +1467,7 @@ class DataFrame:
                     # Update negative indexes to absolute indexes.
                     idxs = np.where(idxs < 0, self.shape[dim] + idxs, idxs)
 
-                return pli.Series("", idxs, dtype=idx_type)
+                return pl.Series("", idxs, dtype=idx_type)
 
         raise NotImplementedError("Unsupported idxs datatype.")
 
@@ -1550,7 +1548,7 @@ class DataFrame:
 
                 # df[:, [True, False]]
                 if is_bool_sequence(col_selection) or (
-                    isinstance(col_selection, pli.Series)
+                    isinstance(col_selection, pl.Series)
                     and col_selection.dtype == Boolean
                 ):
                     if len(col_selection) != self.width:
@@ -1644,9 +1642,9 @@ class DataFrame:
             # df[["foo", "bar"]]
             return self._from_pydf(self._df.select(item))
         elif is_int_sequence(item):
-            item = pli.Series("", item)  # fall through to next if isinstance
+            item = pl.Series("", item)  # fall through to next if isinstance
 
-        if isinstance(item, pli.Series):
+        if isinstance(item, pl.Series):
             dtype = item.dtype
             if dtype == Utf8:
                 return self._from_pydf(self._df.select(item))
@@ -1690,7 +1688,7 @@ class DataFrame:
             # todo! we can parallelize this by calling from_numpy
             columns = []
             for i, name in enumerate(key):
-                columns.append(pli.Series(name, value[:, i]))
+                columns.append(pl.Series(name, value[:, i]))
             self._df = self.with_columns(columns)._df
 
         # df[a, b]
@@ -1698,7 +1696,7 @@ class DataFrame:
             row_selection, col_selection = key
 
             if (
-                isinstance(row_selection, pli.Series) and row_selection.dtype == Boolean
+                isinstance(row_selection, pl.Series) and row_selection.dtype == Boolean
             ) or is_bool_sequence(row_selection):
                 raise ValueError(
                     "Not allowed to set 'DataFrame' by boolean mask in the "
@@ -1964,11 +1962,17 @@ class DataFrame:
         """
         return list(self.iter_rows(named=True))
 
-    def to_numpy(self) -> np.ndarray[Any, Any]:
+    def to_numpy(self, structured: bool = False) -> np.ndarray[Any, Any]:
         """
         Convert DataFrame to a 2D NumPy array.
 
         This operation clones data.
+
+        Parameters
+        ----------
+        structured
+            Optionally return a structured array, with field names and
+            dtypes that correspond to the DataFrame schema.
 
         Notes
         -----
@@ -1978,20 +1982,61 @@ class DataFrame:
         Examples
         --------
         >>> df = pl.DataFrame(
-        ...     {"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]}
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6.5, 7.0, 8.5],
+        ...         "ham": ["a", "b", "c"],
+        ...     },
+        ...     schema_overrides={"foo": pl.UInt8, "bar": pl.Float32},
         ... )
-        >>> numpy_array = df.to_numpy()
-        >>> type(numpy_array)
-        <class 'numpy.ndarray'>
+
+        Export to a standard 2D numpy array.
+
+        >>> df.to_numpy()
+        array([[1, 6.5, 'a'],
+               [2, 7.0, 'b'],
+               [3, 8.5, 'c']], dtype=object)
+
+        Export to a structured array, which can better-preserve individual
+        column data, such as name and dtype...
+
+        >>> df.to_numpy(structured=True)
+        array([(1, 6.5, 'a'), (2, 7. , 'b'), (3, 8.5, 'c')],
+              dtype=[('foo', 'u1'), ('bar', '<f4'), ('ham', '<U1')])
+
+        ...optionally zero-copying as a record array view:
+
+        >>> import numpy as np
+        >>> df.to_numpy(True).view(np.recarray)
+        rec.array([(1, 6.5, 'a'), (2, 7. , 'b'), (3, 8.5, 'c')],
+                  dtype=[('foo', 'u1'), ('bar', '<f4'), ('ham', '<U1')])
 
         """
-        out = self._df.to_numpy()
-        if out is None:
-            return np.vstack(
-                [self.to_series(i).to_numpy() for i in range(self.width)]
-            ).T
+        if structured:
+            # see: https://numpy.org/doc/stable/user/basics.rec.html
+            arrays = []
+            for c, tp in self.schema.items():
+                s = self[c]
+                a = s.to_numpy()
+                arrays.append(
+                    a.astype(str, copy=False)
+                    if tp == Utf8 and not s.has_validity()
+                    else a
+                )
+
+            out = np.empty(
+                len(self), dtype=list(zip(self.columns, (a.dtype for a in arrays)))
+            )
+            for idx, c in enumerate(self.columns):
+                out[c] = arrays[idx]
         else:
-            return out
+            out = self._df.to_numpy()
+            if out is None:
+                return np.vstack(
+                    [self.to_series(i).to_numpy() for i in range(self.width)]
+                ).T
+
+        return out
 
     def to_pandas(  # noqa: D417
         self,
@@ -3048,11 +3093,7 @@ class DataFrame:
         statistics
             Write statistics to the parquet headers. This requires extra compute.
         row_group_size
-            Size of the row groups in number of rows.
-            If None (default), the chunks of the `DataFrame` are
-            used. Writing in smaller chunks may reduce memory pressure and improve
-            writing speeds. If None and ``use_pyarrow=True``, the row group size
-            will be the minimum of the DataFrame size and 64 * 1024 * 1024.
+            Size of the row groups in number of rows. Defaults to 512^2 rows.
         use_pyarrow
             Use C++ parquet implementation vs Rust parquet implementation.
             At the moment C++ supports more features.
@@ -3499,7 +3540,7 @@ class DataFrame:
 
         """
         if _check_for_numpy(predicate) and isinstance(predicate, np.ndarray):
-            predicate = pli.Series(predicate)
+            predicate = pl.Series(predicate)
 
         return self._from_pydf(
             self.lazy()
@@ -3696,7 +3737,7 @@ class DataFrame:
 
         # return results as a frame
         df_summary = self.__class__(summary)
-        df_summary.insert_at_idx(0, pli.Series("describe", metrics))
+        df_summary.insert_at_idx(0, pl.Series("describe", metrics))
         return df_summary
 
     def find_idx_by_name(self, name: str) -> int:
@@ -4773,12 +4814,15 @@ class DataFrame:
             Define which sides of the temporal interval are closed (inclusive).
         by
             Also group by this column/these columns
-        start_by : {'window', 'datapoint', 'monday'}
+        start_by : {'window', 'datapoint', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'}
             The strategy to determine the start of the first window by.
 
             - 'window': Truncate the start of the window with the 'every' argument.
             - 'datapoint': Start from the first encountered data point.
             - 'monday': Start the window on the monday before the first data point.
+            - 'tuesday': Start the window on the tuesday before the first data point.
+            - ...
+            - 'sunday': Start the window on the sunday before the first data point.
 
         Returns
         -------
@@ -4797,6 +4841,7 @@ class DataFrame:
         ...             start=datetime(2021, 12, 16),
         ...             end=datetime(2021, 12, 16, 3),
         ...             interval="30m",
+        ...             eager=True,
         ...         ),
         ...         "n": range(7),
         ...     }
@@ -4901,6 +4946,7 @@ class DataFrame:
         ...             start=datetime(2021, 12, 16),
         ...             end=datetime(2021, 12, 16, 3),
         ...             interval="30m",
+        ...             eager=True,
         ...         ),
         ...         "groups": ["a", "a", "a", "b", "b", "a", "a"],
         ...     }
@@ -5031,6 +5077,12 @@ class DataFrame:
         Suffix with `"_saturating"` to indicate that dates too large for
         their month should saturate at the largest date (e.g. 2022-02-29 -> 2022-02-28)
         instead of erroring.
+
+        Returns
+        -------
+        DataFrame
+            Result will be sorted by `time_column` (but note that if `by` columns are
+            passed, it will only be sorted within each `by` group).
 
         Examples
         --------
@@ -5430,7 +5482,10 @@ class DataFrame:
 
         It is better to implement this with an expression:
 
-        >>> df.select([pl.col("foo") * 2, pl.col("bar") * 3])  # doctest: +IGNORE_RESULT
+        >>> df.select(
+        ...     pl.col("foo") * 2,
+        ...     pl.col("bar") * 3,
+        ... )  # doctest: +IGNORE_RESULT
 
         Return a Series by mapping each row to a scalar:
 
@@ -5747,7 +5802,7 @@ class DataFrame:
         if n > 0 or len(self) > 0:
             return self.__class__(
                 {
-                    nm: pli.Series(name=nm, dtype=tp).extend_constant(None, n)
+                    nm: pl.Series(name=nm, dtype=tp).extend_constant(None, n)
                     for nm, tp in self.schema.items()
                 }
             )
@@ -7696,7 +7751,7 @@ class DataFrame:
         """
         if isinstance(subset, str):
             subset = [F.col(subset)]
-        elif isinstance(subset, pli.Expr):
+        elif isinstance(subset, pl.Expr):
             subset = [subset]
 
         if isinstance(subset, Sequence) and len(subset) == 1:
@@ -7998,7 +8053,7 @@ class DataFrame:
             raise ValueError(
                 "Cannot set both 'index' and 'by_predicate'; mutually exclusive"
             )
-        elif isinstance(index, pli.Expr):
+        elif isinstance(index, pl.Expr):
             raise TypeError("Expressions should be passed to the 'by_predicate' param")
 
         if index is not None:
@@ -8009,7 +8064,7 @@ class DataFrame:
                 return row
 
         elif by_predicate is not None:
-            if not isinstance(by_predicate, pli.Expr):
+            if not isinstance(by_predicate, pl.Expr):
                 raise TypeError(
                     f"Expected 'by_predicate to be an expression; "
                     f"found {type(by_predicate)}"
@@ -8172,7 +8227,7 @@ class DataFrame:
                 # note: 'ns' precision instantiates values as pandas types - avoid
                 and not any(
                     (getattr(tp, "time_unit", None) == "ns")
-                    for tp in unpack_dtypes(self.dtypes)
+                    for tp in unpack_dtypes(*self.dtypes)
                 )
             )
             for offset in range(0, self.height, buffer_size):
@@ -8635,12 +8690,12 @@ class DataFrame:
 def _prepare_other_arg(other: Any, length: int | None = None) -> Series:
     # if not a series create singleton series such that it will broadcast
     value = other
-    if not isinstance(other, pli.Series):
+    if not isinstance(other, pl.Series):
         if isinstance(other, str):
             pass
         elif isinstance(other, Sequence):
             raise ValueError("Operation not supported.")
-        other = pli.Series("", [other])
+        other = pl.Series("", [other])
 
     if length and length > 1:
         other = other.extend_constant(value=value, n=length - 1)

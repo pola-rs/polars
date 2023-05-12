@@ -107,7 +107,8 @@ impl<'a> CoreReader<'a> {
     pub fn batched_mmap(mut self, _has_cat: bool) -> PolarsResult<BatchedCsvReaderMmap<'a>> {
         let reader_bytes = self.reader_bytes.take().unwrap();
         let bytes = reader_bytes.as_ref();
-        let (bytes, starting_point_offset) = self.find_starting_point(bytes, self.eol_char)?;
+        let (bytes, starting_point_offset) =
+            self.find_starting_point(bytes, self.quote_char, self.eol_char)?;
 
         // this is arbitrarily chosen.
         // we don't want this to depend on the thread pool size

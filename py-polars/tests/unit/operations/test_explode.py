@@ -294,3 +294,9 @@ def test_logical_explode() -> None:
     )
     assert out["cats"].dtype == pl.Categorical
     assert out["cats"].to_list() == ["Value1", "Value2", "Value1"]
+
+
+def test_explode_inner_null() -> None:
+    expected = pl.DataFrame({"A": [None, None]}, schema={"A": pl.Null})
+    out = pl.DataFrame({"A": [[], []]}, schema={"A": pl.List(pl.Null)}).explode("A")
+    assert_frame_equal(out, expected)
