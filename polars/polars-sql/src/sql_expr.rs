@@ -245,7 +245,7 @@ impl SqlExprVisitor<'_> {
         if negated {
             Ok(expr.clone().lt(low).or(expr.gt(high)))
         } else {
-            Ok(expr.clone().gt(low).and(expr.lt(high)))
+            Ok(expr.clone().gt_eq(low).and(expr.lt_eq(high)))
         }
     }
 

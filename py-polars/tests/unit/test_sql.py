@@ -154,31 +154,29 @@ def test_sql_is_between(foods_ipc_path: Path) -> None:
         """
         SELECT *
         FROM foods1
-        WHERE foods1.calories BETWEEN 20 AND 31
-        LIMIT 4
+        WHERE foods1.calories BETWEEN 22 AND 30
+        ORDER BY "calories" DESC, "sugars_g" DESC
     """
     )
-    assert out.to_dict(False) == {
-        "category": ["fruit", "vegetables", "fruit", "vegetables"],
-        "calories": [30, 25, 30, 22],
-        "fats_g": [0.0, 0.0, 0.0, 0.0],
-        "sugars_g": [5, 2, 3, 3],
-    }
+    assert out.rows() == [
+        ("fruit", 30, 0.0, 5),
+        ("vegetables", 30, 0.0, 5),
+        ("fruit", 30, 0.0, 3),
+        ("vegetables", 25, 0.0, 4),
+        ("vegetables", 25, 0.0, 3),
+        ("vegetables", 25, 0.0, 2),
+        ("vegetables", 22, 0.0, 3),
+    ]
 
     out = c.execute(
         """
         SELECT *
         FROM foods1
-        WHERE calories NOT BETWEEN 20 AND 31
-        LIMIT 4
+        WHERE calories NOT BETWEEN 22 AND 30
+        ORDER BY "calories" ASC
         """
     )
-    assert out.to_dict(False) == {
-        "category": ["vegetables", "seafood", "meat", "fruit"],
-        "calories": [45, 150, 100, 60],
-        "fats_g": [0.5, 5.0, 5.0, 0.0],
-        "sugars_g": [2, 0, 0, 11],
-    }
+    assert not any((22 <= cal <= 30) for cal in out["calories"])
 
 
 def test_sql_union() -> None:
