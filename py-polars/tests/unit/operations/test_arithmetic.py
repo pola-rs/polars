@@ -167,6 +167,10 @@ def test_fused_arithm() -> None:
     assert """col("a").fms([col("b"), col("c")])""" in q.explain()
     assert q.collect()["a"].to_list() == [5, 35, 85]
 
+    # check if we constant fold instead of fma
+    q = df.lazy().select(pl.lit(1) * pl.lit(2) - pl.col("c"))
+    assert """(2) - (col("c")""" in q.explain()
+
     # 8752
     df = pl.DataFrame({"x": pl.Series(values=[0, 0])})
     q = df.lazy().with_columns((0 + 2.5 * (0.5 + pl.col("x"))).alias("compute"))

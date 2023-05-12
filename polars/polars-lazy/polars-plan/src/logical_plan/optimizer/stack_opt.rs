@@ -21,6 +21,7 @@ impl StackOptimizer {
 
         // nodes of expressions and lp node from which the expressions are a member of
         let mut exprs = Vec::with_capacity(32);
+        let mut scratch = vec![];
 
         // run loop until reaching fixed point
         while changed {
@@ -40,11 +41,31 @@ impl StackOptimizer {
                 let plan = lp_arena.get(current_node);
 
                 // traverse subplans and expressions and add to the stack
-                plan.copy_exprs(&mut exprs);
+                plan.copy_exprs(&mut scratch);
                 plan.copy_inputs(&mut plans);
+
+                // first do a single pass to ensure we process
+                // from leaves to root.
+                // this ensures for instance
+                // that we first do constant folding on operands
+                // before we decide that multiple binary expression
+                // can be replaced with a fused operator
+                while let Some(expr_node) = scratch.pop() {
+                    exprs.push(expr_node);
+                    // traverse all subexpressions and add to the stack
+                    let expr = unsafe { expr_arena.get_unchecked(expr_node) };
+                    expr.nodes(&mut exprs);
+                }
 
                 // process the expressions on the stack and apply optimizations.
                 while let Some(current_expr_node) = exprs.pop() {
+                    {
+                        let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
+                        // don't apply rules to `col`, `lit` etc.
+                        if expr.is_leaf() {
+                            continue;
+                        }
+                    }
                     for rule in rules.iter() {
                         // keep iterating over same rule
                         while let Some(x) = rule.optimize_expr(
@@ -58,9 +79,9 @@ impl StackOptimizer {
                         }
                     }
 
+                    let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
                     // traverse subexpressions and add to the stack
-                    let expr = expr_arena.get(current_expr_node);
-                    expr.nodes(&mut exprs);
+                    expr.nodes(&mut exprs)
                 }
             }
         }
