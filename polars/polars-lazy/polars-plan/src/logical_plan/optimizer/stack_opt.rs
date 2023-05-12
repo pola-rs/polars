@@ -53,12 +53,19 @@ impl StackOptimizer {
                 while let Some(expr_node) = scratch.pop() {
                     exprs.push(expr_node);
                     // traverse all subexpressions and add to the stack
-                    let expr = expr_arena.get(expr_node);
+                    let expr = unsafe { expr_arena.get_unchecked(expr_node) };
                     expr.nodes(&mut exprs);
                 }
 
                 // process the expressions on the stack and apply optimizations.
                 while let Some(current_expr_node) = exprs.pop() {
+                    {
+                        let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
+                        // don't apply rules to `col`, `lit` etc.
+                        if expr.is_leaf() {
+                            continue;
+                        }
+                    }
                     for rule in rules.iter() {
                         // keep iterating over same rule
                         while let Some(x) = rule.optimize_expr(
@@ -72,16 +79,9 @@ impl StackOptimizer {
                         }
                     }
 
-                    // traverse subexpressions and add some to the stack
-                    // we only push arity expressions for the second
-                    // pass to save some iterations
-                    let expr = expr_arena.get(current_expr_node);
-
-                    expr.nodes(&mut scratch);
-                    if scratch.len() > 1 {
-                        exprs.extend_from_slice(&scratch);
-                    }
-                    scratch.clear();
+                    let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
+                    // traverse subexpressions and add to the stack
+                    expr.nodes(&mut exprs)
                 }
             }
         }
