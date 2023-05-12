@@ -7,8 +7,9 @@ use polars_lazy::prelude::*;
 use polars_plan::prelude::*;
 use polars_plan::utils::expressions_to_schema;
 use sqlparser::ast::{
-    Expr as SqlExpr, FunctionArg, JoinOperator, ObjectName, Offset, OrderByExpr, Query, Select,
-    SelectItem, SetExpr, Statement, TableAlias, TableFactor, TableWithJoins, Value as SQLValue,
+    Distinct, Expr as SqlExpr, FunctionArg, JoinOperator, ObjectName, Offset, OrderByExpr, Query,
+    Select, SelectItem, SetExpr, Statement, TableAlias, TableFactor, TableWithJoins,
+    Value as SQLValue,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
@@ -122,18 +123,14 @@ impl SQLContext {
     pub(crate) fn execute_query(&mut self, query: &Query) -> PolarsResult<LazyFrame> {
         self.register_ctes(query)?;
 
-        let mut lf = match &query.body.as_ref() {
-            SetExpr::Select(select_stmt) => self.execute_select(select_stmt)?,
+        let lf = match &query.body.as_ref() {
+            SetExpr::Select(select_stmt) => self.execute_select(select_stmt, query)?,
             SetExpr::Query(query) => self.execute_query(query)?,
             SetExpr::SetOperation { op, .. } => {
                 polars_bail!(ComputeError: "{} operation not yet supported", op)
             }
             _ => polars_bail!(ComputeError: "INSERT, UPDATE, VALUES not yet supported"),
         };
-
-        if !query.order_by.is_empty() {
-            lf = self.process_order_by(lf, &query.order_by)?;
-        }
 
         self.process_limit_offset(lf, &query.limit, &query.offset)
     }
@@ -195,7 +192,7 @@ impl SQLContext {
     }
 
     /// execute the 'SELECT' part of the query
-    fn execute_select(&mut self, select_stmt: &Select) -> PolarsResult<LazyFrame> {
+    fn execute_select(&mut self, select_stmt: &Select, query: &Query) -> PolarsResult<LazyFrame> {
         // Determine involved dataframe
         // Implicit join require some more work in query parsers, Explicit join are preferred for now.
         let sql_tbl: &TableWithJoins = select_stmt
@@ -271,10 +268,26 @@ impl SQLContext {
         };
 
         // Apply optional 'distinct' clause
-        if select_stmt.distinct {
-            Ok(lf.unique(None, UniqueKeepStrategy::Any))
-        } else {
-            Ok(lf)
+        match &select_stmt.distinct {
+            Some(Distinct::Distinct) => Ok(lf.unique(None, UniqueKeepStrategy::Any)),
+            Some(Distinct::On(exprs)) => {
+                let gb_cols = exprs
+                    .into_iter()
+                    .map(|e| parse_sql_expr(e, self))
+                    .collect::<PolarsResult<Vec<_>>>()?;
+                // DISTINCT ON applies the ORDER BY before the operation.
+                if !query.order_by.is_empty() {
+                    lf = self.process_order_by(lf, &query.order_by)?;
+                }
+                Ok(lf.groupby_stable(gb_cols).agg(vec![col("*").first()]))
+            }
+            None => {
+                //  apply the ORDER BY last
+                if !query.order_by.is_empty() {
+                    lf = self.process_order_by(lf, &query.order_by)?;
+                }
+                Ok(lf)
+            }
         }
     }
 
