@@ -282,11 +282,14 @@ impl IntoParallelIterator for GroupsIdx {
 ///  - first value is an index to the start of the group
 ///  - second value is the length of the group
 /// Only used when group values are stored together
+///
+/// This type should have the invariant that it is always sorted in ascending order.
 pub type GroupsSlice = Vec<[IdxSize; 2]>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GroupsProxy {
     Idx(GroupsIdx),
+    /// Slice is always sorted in ascending order.
     Slice {
         // the groups slices
         groups: GroupsSlice,
@@ -328,10 +331,8 @@ impl GroupsProxy {
                     groups.sort()
                 }
             }
-            GroupsProxy::Slice { groups, rolling } => {
-                if !*rolling {
-                    groups.sort_unstable_by_key(|[first, _]| *first);
-                }
+            GroupsProxy::Slice { .. } => {
+                // invariant of the type
             }
         }
     }

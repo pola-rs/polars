@@ -463,7 +463,7 @@ impl PhysicalExpr for WindowExpr {
         };
 
         // Try to get cached grouptuples
-        let (groups, _, cache_key) = if state.cache_window() {
+        let (mut groups, _, cache_key) = if state.cache_window() {
             let mut cache_key = String::with_capacity(32 * groupby_columns.len());
             write!(&mut cache_key, "{}", state.branch_idx).unwrap();
             for s in &groupby_columns {
@@ -478,9 +478,6 @@ impl PhysicalExpr for WindowExpr {
                 if df.height() > 0 {
                     assert!(!gt.is_empty());
                 };
-                if sort_groups {
-                    gt.sort()
-                }
 
                 // We take now, but it is important that we set this before we return!
                 // a next windows function may get this cached key and get an empty if this
@@ -499,6 +496,14 @@ impl PhysicalExpr for WindowExpr {
             .iter()
             .map(|s| s.as_ref().to_string())
             .collect();
+
+        // some window expressions need sorted groups
+        // to make sure that the caches align we sort
+        // the groups, so that the cached groups and join keys
+        // are consistent among all windows
+        if sort_groups || state.cache_window() {
+            groups.sort()
+        }
         let gb = GroupBy::new(df, groupby_columns.clone(), groups, Some(apply_columns));
 
         let mut ac = self.run_aggregation(df, state, &gb)?;

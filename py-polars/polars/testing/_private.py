@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from polars.datatypes import Utf8
+
 if TYPE_CHECKING:
     from polars import DataFrame, Series
 
@@ -12,7 +14,10 @@ def _to_rust_syntax(df: DataFrame) -> str:
 
     def format_s(s: Series) -> str:
         if s.null_count() == 0:
-            return str(s.to_list()).replace("'", '"')
+            out = str(s.to_list()).replace("'", '"')
+            if s.dtype != Utf8:
+                out = out.lower()
+            return out
         else:
             tmp = "["
             for val in s:
@@ -22,6 +27,7 @@ def _to_rust_syntax(df: DataFrame) -> str:
                     if isinstance(val, str):
                         tmp += f'Some("{val}"), '
                     else:
+                        val = str(val).lower()
                         tmp += f"Some({val}), "
             tmp = tmp[:-2] + "]"
             return tmp
