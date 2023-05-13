@@ -3855,7 +3855,7 @@ class DataFrame:
         string = F.all().exclude(NUMERIC_DTYPES | {Boolean} | {Date})
 
         # determine metrics (optional/additional percentiles)
-        metrics: dict[str, F.expr] = {
+        metrics = {
             "count": F.struct(
                 num_or_bool.count().cast(float),
                 date.count().cast(str),
@@ -3868,7 +3868,7 @@ class DataFrame:
             ),
             "mean": F.struct(
                 num_or_bool.mean().cast(float),
-                date.dt.mean().cast(str),
+                date.mean().cast(str),
                 string.mean().cast(str),
             ),
             "std": F.struct(
