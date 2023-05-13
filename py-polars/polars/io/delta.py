@@ -126,7 +126,7 @@ def read_delta(
     if pyarrow_options is None:
         pyarrow_options = {}
 
-    resolved_uri = _resolve_delta_lake_uri(source)
+    resolved_uri = resolve_delta_lake_uri(source)
 
     dl_tbl = _get_delta_lake_table(
         table_path=resolved_uri,
@@ -254,7 +254,7 @@ def scan_delta(
     if pyarrow_options is None:
         pyarrow_options = {}
 
-    resolved_uri = _resolve_delta_lake_uri(source)
+    resolved_uri = resolve_delta_lake_uri(source)
     dl_tbl = _get_delta_lake_table(
         table_path=resolved_uri,
         version=version,
@@ -266,7 +266,7 @@ def scan_delta(
     return scan_pyarrow_dataset(pa_ds)
 
 
-def _resolve_delta_lake_uri(table_uri: str) -> str:
+def resolve_delta_lake_uri(table_uri: str) -> str:
     parsed_result = urlparse(table_uri)
 
     resolved_uri = str(
@@ -297,7 +297,7 @@ def _get_delta_lake_table(
     DeltaTable
 
     """
-    _check_if_delta_available()
+    check_if_delta_available()
 
     if delta_table_options is None:
         delta_table_options = {}
@@ -312,8 +312,8 @@ def _get_delta_lake_table(
     return dl_tbl
 
 
-def _check_if_delta_available() -> None:
+def check_if_delta_available() -> None:
     if not _DELTALAKE_AVAILABLE:
         raise ImportError(
-            "deltalake is not installed. Please run `pip install deltalake>=0.8.0`."
+            "deltalake is not installed. Please run `pip install deltalake>=0.9.0`."
         )

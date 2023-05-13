@@ -113,6 +113,7 @@ if TYPE_CHECKING:
     from datetime import timedelta
     from io import IOBase
 
+    import deltalake
     from pyarrow.interchange.dataframe import _PyArrowDataFrame
     from xlsxwriter import Workbook
 
@@ -3253,9 +3254,9 @@ class DataFrame:
         delta_write_options
             Additional keyword arguments while writing a Delta lake Table.
         """
-        from polars.io.delta import _check_if_delta_available, _resolve_delta_lake_uri
+        from polars.io.delta import check_if_delta_available, resolve_delta_lake_uri
 
-        _check_if_delta_available()
+        check_if_delta_available()
 
         from deltalake.writer import write_deltalake  # type: ignore[import]
 
@@ -3263,7 +3264,29 @@ class DataFrame:
             delta_write_options = {}
 
         if isinstance(table_or_uri, (str, Path)):
-            table_or_uri = _resolve_delta_lake_uri(str(table_or_uri))
+            table_or_uri = resolve_delta_lake_uri(str(table_or_uri))
+
+        from polars.datatypes import List, Null, Struct, Time
+
+        unsupported_cols = []
+        unsupported_types = [Time, Categorical, Null]
+
+        def is_unsupported_type(n: str, t: PolarsDataType):
+            print(n, t, type(t), isinstance(t, Struct), isinstance(t, List))
+            if t in unsupported_types:
+                unsupported_cols.append(n)
+            elif isinstance(t, Struct):
+                [is_unsupported_type(f"{n}.{i.name}", i.dtype) for i in t.fields]
+            elif isinstance(t, List):
+                is_unsupported_type(n, t.inner)
+
+        for n, t in self.schema.items():
+            is_unsupported_type(n, t)
+
+        if len(unsupported_cols) != 0:
+            raise TypeError(
+                f"Column(s) in {unsupported_cols} have unsupported data types."
+            )
 
         write_deltalake(
             table_or_uri=table_or_uri,
