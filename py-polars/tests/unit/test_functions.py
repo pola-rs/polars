@@ -220,6 +220,45 @@ def test_align_frames() -> None:
     assert pf2.rows() == [(5, None, None), (4, 2, 0), (3, 8, 9), (2, 5, 6)]
 
 
+def test_align_frames_duplicate_key() -> None:
+    # setup some test frames with duplicate key/alignment values
+    df1 = pl.DataFrame({"x": ["a", "a", "a", "e"], "y": [1, 2, 4, 5]})
+    df2 = pl.DataFrame({"y": [0, 0, -1], "z": [5.5, 6.0, 7.5], "x": ["a", "b", "b"]})
+
+    # align rows, confirming correctness and original column order
+    af1, af2 = pl.align_frames(df1, df2, on="x")
+
+    # shape: (6, 2)   shape: (6, 3)
+    # ┌─────┬──────┐  ┌──────┬──────┬─────┐
+    # │ x   ┆ y    │  │ y    ┆ z    ┆ x   │
+    # │ --- ┆ ---  │  │ ---  ┆ ---  ┆ --- │
+    # │ str ┆ i64  │  │ i64  ┆ f64  ┆ str │
+    # ╞═════╪══════╡  ╞══════╪══════╪═════╡
+    # │ a   ┆ 1    │  │ 0    ┆ 5.5  ┆ a   │
+    # │ a   ┆ 2    │  │ 0    ┆ 5.5  ┆ a   │
+    # │ a   ┆ 4    │  │ 0    ┆ 5.5  ┆ a   │
+    # │ b   ┆ null │  │ 0    ┆ 6.0  ┆ b   │
+    # │ b   ┆ null │  │ -1   ┆ 7.5  ┆ b   │
+    # │ e   ┆ 5    │  │ null ┆ null ┆ e   │
+    # └─────┴──────┘  └──────┴──────┴─────┘
+    assert af1.rows() == [
+        ("a", 1),
+        ("a", 2),
+        ("a", 4),
+        ("b", None),
+        ("b", None),
+        ("e", 5),
+    ]
+    assert af2.rows() == [
+        (0, 5.5, "a"),
+        (0, 5.5, "a"),
+        (0, 5.5, "a"),
+        (0, 6.0, "b"),
+        (-1, 7.5, "b"),
+        (None, None, "e"),
+    ]
+
+
 def test_nan_aggregations() -> None:
     df = pl.DataFrame({"a": [1.0, float("nan"), 2.0, 3.0], "b": [1, 1, 1, 1]})
 
