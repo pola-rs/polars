@@ -38,6 +38,7 @@ from polars.datatypes import (
     Boolean,
     Categorical,
     DataTypeClass,
+    Date,
     Float64,
     Int8,
     Int16,
@@ -3847,45 +3848,69 @@ class DataFrame:
         if percentiles and not all((0 <= p <= 1) for p in percentiles):
             raise ValueError("Percentiles must all be in the range [0, 1].")
 
+        # we treat different data types differently in terms of formatting
+        num_or_bool = F.col(NUMERIC_DTYPES | {Boolean})
+        date = F.col({Date})
+        # all other datatypes
+        string = F.all().exclude(NUMERIC_DTYPES | {Boolean} | {Date})
+
         # determine metrics (optional/additional percentiles)
-        metrics = ["count", "null_count", "mean", "std", "min", "max", "median"]
-        percentile_exprs = []
+        metrics: dict[str, F.expr] = {
+            "count": F.struct(
+                num_or_bool.count().cast(float),
+                date.count().cast(str),
+                string.count().cast(str),
+            ),
+            "null_count": F.struct(
+                num_or_bool.null_count().cast(float),
+                date.null_count().cast(str),
+                string.null_count().cast(str),
+            ),
+            "mean": F.struct(
+                num_or_bool.mean().cast(float),
+                date.dt.mean().cast(str),
+                string.mean().cast(str),
+            ),
+            "std": F.struct(
+                num_or_bool.std().cast(float),
+                date.std().cast(str),
+                string.std().cast(str),
+            ),
+            "min": F.struct(
+                num_or_bool.min().cast(float),
+                date.min().cast(str),
+                string.min().cast(str),
+            ),
+            "max": F.struct(
+                num_or_bool.max().cast(float),
+                date.max().cast(str),
+                string.max().cast(str),
+            ),
+            "median": F.struct(
+                num_or_bool.median().cast(float),
+                date.median().cast(str),
+                string.median().cast(str),
+            ),
+        }
+
         for p in percentiles or ():
-            percentile_exprs.append(F.all().quantile(p).prefix(f"{p}:"))
-            metrics.append(f"{p:.0%}")
+            metrics[f"{p:.0%}"] = F.struct(
+                num_or_bool.quantile(p).cast(float),
+                date.quantile(p).cast(str),
+                string.quantile(p).cast(str),
+            )
 
         # execute metrics in parallel
-        df_metrics = self.select(
-            F.all().count().prefix("count:"),
-            F.all().null_count().prefix("null_count:"),
-            F.all().mean().prefix("mean:"),
-            F.all().std().prefix("std:"),
-            F.all().min().prefix("min:"),
-            F.all().max().prefix("max:"),
-            F.all().median().prefix("median:"),
-            *percentile_exprs,
-        ).row(0)
+        df_metrics = self.select(**metrics)  # 1 row dataframe with struct columns
 
-        # reshape wide result
-        n_cols = len(self.columns)
-        described = [
-            df_metrics[(n * n_cols) : (n + 1) * n_cols] for n in range(0, len(metrics))
-        ]
+        # stack & unnest structs to columns
+        df_summary = df_metrics.transpose(
+            include_header=True, header_name="describe"
+        ).unnest("column_0")
 
-        # cast by column type (numeric/bool -> float), (other -> string)
-        summary = dict(zip(self.columns, list(zip(*described))))
-        num_or_bool = NUMERIC_DTYPES | {Boolean}
-        for c, tp in self.schema.items():
-            summary[c] = [
-                None
-                if (v is None or isinstance(v, dict))
-                else (float(v) if tp in num_or_bool else str(v))
-                for v in summary[c]
-            ]
+        # put columns in original order
+        df_summary = df_summary.select(["describe"] + self.columns)
 
-        # return results as a frame
-        df_summary = self.__class__(summary)
-        df_summary.insert_at_idx(0, pl.Series("describe", metrics))
         return df_summary
 
     def find_idx_by_name(self, name: str) -> int:
