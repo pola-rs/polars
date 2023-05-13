@@ -3271,17 +3271,17 @@ class DataFrame:
         unsupported_cols = []
         unsupported_types = [Time, Categorical, Null]
 
-        def is_unsupported_type(n: str, t: PolarsDataType):
-            print(n, t, type(t), isinstance(t, Struct), isinstance(t, List))
-            if t in unsupported_types:
+        def check_unsupported_types(n: str, t: PolarsDataType | None) -> None:
+            if t is None or t in unsupported_types:
                 unsupported_cols.append(n)
             elif isinstance(t, Struct):
-                [is_unsupported_type(f"{n}.{i.name}", i.dtype) for i in t.fields]
+                for i in t.fields:
+                    check_unsupported_types(f"{n}.{i.name}", i.dtype)
             elif isinstance(t, List):
-                is_unsupported_type(n, t.inner)
+                check_unsupported_types(n, t.inner)
 
-        for n, t in self.schema.items():
-            is_unsupported_type(n, t)
+        for name, data_type in self.schema.items():
+            check_unsupported_types(name, data_type)
 
         if len(unsupported_cols) != 0:
             raise TypeError(
