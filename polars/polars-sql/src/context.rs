@@ -211,6 +211,7 @@ impl SQLContext {
             }
             None => lf,
         };
+
         // Column Projections
         let projections: Vec<_> = select_stmt
             .projection
@@ -268,26 +269,29 @@ impl SQLContext {
         };
 
         // Apply optional 'distinct' clause
-        match &select_stmt.distinct {
-            Some(Distinct::Distinct) => Ok(lf.unique(None, UniqueKeepStrategy::Any)),
+        lf = match &select_stmt.distinct {
+            Some(Distinct::Distinct) => lf.unique(None, UniqueKeepStrategy::Any),
             Some(Distinct::On(exprs)) => {
                 let gb_cols = exprs
-                    .into_iter()
+                    .iter()
                     .map(|e| parse_sql_expr(e, self))
                     .collect::<PolarsResult<Vec<_>>>()?;
                 // DISTINCT ON applies the ORDER BY before the operation.
                 if !query.order_by.is_empty() {
                     lf = self.process_order_by(lf, &query.order_by)?;
                 }
-                Ok(lf.groupby_stable(gb_cols).agg(vec![col("*").first()]))
+                return Ok(lf.groupby_stable(gb_cols).agg(vec![col("*").first()]));
             }
             None => {
                 //  apply the ORDER BY last
-                if !query.order_by.is_empty() {
-                    lf = self.process_order_by(lf, &query.order_by)?;
-                }
-                Ok(lf)
+                lf
             }
+        };
+
+        if query.order_by.is_empty() {
+            Ok(lf)
+        } else {
+            self.process_order_by(lf, &query.order_by)
         }
     }
 
