@@ -601,3 +601,45 @@ def test_median(values: list[date | None], expected_median: date | None) -> None
 def test_mean(values: list[date | None], expected_mean: date | None) -> None:
     result = pl.Series(values).cast(pl.Date).dt.mean()
     assert result == expected_mean
+
+
+def test_mean_date_expr() -> None:
+    df = pl.DataFrame(
+        {"dt": [date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15), None]}
+    )
+    assert df.select(pl.col("dt").dt.mean()).item() == date(2022, 10, 16)
+
+    # if the average falls in between two dates, it will be rounded down
+    df = pl.DataFrame({"dt": [date(2022, 1, 1), date(2022, 1, 2)]})
+    assert df.select(pl.col("dt").dt.mean()).item() == date(2022, 1, 1)
+
+
+def test_median_date_expr() -> None:
+    df = pl.DataFrame(
+        {"dt": [date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15), None]}
+    )
+    assert df.select(pl.col("dt").dt.median()).item() == date(2022, 1, 2)
+
+    # if the median falls in between two dates, it will be rounded down
+    df = pl.DataFrame({"dt": [date(2022, 1, 1), date(2022, 1, 2)]})
+    assert df.select(pl.col("dt").dt.median()).item() == date(2022, 1, 1)
+
+
+def test_quantile_date_expr() -> None:
+    df = pl.DataFrame(
+        {"dt": [date(2022, 1, 1), date(2022, 1, 2), date(2024, 5, 15), None]}
+    )
+    assert df.select(pl.col("dt").dt.quantile(0.5)).item() == date(2022, 1, 2)
+
+
+def test_mean_datetime_expr() -> None:
+    df = pl.DataFrame(
+        {
+            "dt": [
+                datetime(2022, 12, 31, 1, 2, 3, 456000),
+                datetime(2023, 12, 31, 1, 2, 3),
+                None,
+            ]
+        }
+    )
+    assert df.select(pl.col("dt").dt.mean()).item() == date(2022, 10, 16)

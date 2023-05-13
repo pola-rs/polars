@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from datetime import timedelta
 
     from polars import Expr
-    from polars.type_aliases import EpochTimeUnit, TimeUnit
+    from polars.type_aliases import EpochTimeUnit, RollingInterpolationMethod, TimeUnit
 
 
 class ExprDateTimeNameSpace:
@@ -1935,3 +1935,31 @@ class ExprDateTimeNameSpace:
         └─────────────────────┘
         """
         return wrap_expr(self._pyexpr.dt_month_end())
+
+    def mean(self) -> Expr:
+        return wrap_expr(self._pyexpr.to_physical().mean().cast(Date, True))
+
+    def median(self) -> Expr:
+        return wrap_expr(self._pyexpr.to_physical().median().cast(Date, True))
+
+    def quantile(
+        self,
+        quantile: float | Expr,
+        interpolation: RollingInterpolationMethod = "nearest",
+    ) -> Expr:
+        """
+        Aggregate the columns of this DataFrame to their quantile value.
+
+        Parameters
+        ----------
+        quantile
+            Quantile between 0.0 and 1.0.
+        interpolation : {'nearest', 'higher', 'lower', 'midpoint', 'linear'}
+            Interpolation method.
+        """
+        quantile = expr_to_lit_or_expr(quantile, str_to_lit=False)
+        return wrap_expr(
+            self._pyexpr.to_physical()
+            .quantile(quantile._pyexpr, interpolation)
+            .cast(Date, True)
+        )
