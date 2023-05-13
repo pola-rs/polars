@@ -140,7 +140,7 @@ def test_series_expr_arithm() -> None:
     assert (s % pl.col("a")).meta == pl.lit(s) % pl.col("a")
 
 
-def test_fma() -> None:
+def test_fused_arithm() -> None:
     df = pl.DataFrame(
         {
             "a": [1, 2, 3],
@@ -158,8 +158,48 @@ def test_fma() -> None:
         in q.explain()
     )
     assert q.collect().to_dict(False) == {"c": [15, 45, 95], "2": [51, 102, 153]}
+    # fsm
+    q = df.lazy().select(pl.col("a") - pl.col("b") * pl.col("c"))
+    assert """col("a").fsm([col("b"), col("c")])""" in q.explain()
+    assert q.collect()["a"].to_list() == [-49, -98, -147]
+    # fms
+    q = df.lazy().select(pl.col("a") * pl.col("b") - pl.col("c"))
+    assert """col("a").fms([col("b"), col("c")])""" in q.explain()
+    assert q.collect()["a"].to_list() == [5, 35, 85]
+
+    # check if we constant fold instead of fma
+    q = df.lazy().select(pl.lit(1) * pl.lit(2) - pl.col("c"))
+    assert """(2) - (col("c")""" in q.explain()
+
     # 8752
     df = pl.DataFrame({"x": pl.Series(values=[0, 0])})
     q = df.lazy().with_columns((0 + 2.5 * (0.5 + pl.col("x"))).alias("compute"))
     assert q.collect()["compute"][0] == 1.25
     assert "0.0.fma" in q.explain()
+
+
+def test_boolean_addition() -> None:
+    s = pl.DataFrame({"a": [True, False, False], "b": [True, False, True]}).sum(axis=1)
+
+    assert s.dtype == pl.utils.get_index_type()
+    assert s.to_list() == [2, 0, 1]
+    df = pl.DataFrame(
+        {"a": [True], "b": [False]},
+    ).select(pl.sum(pl.col(["a", "b"])))
+    assert df.dtypes == [pl.utils.get_index_type()]
+
+
+def test_bitwise_6311() -> None:
+    df = pl.DataFrame({"col1": [0, 1, 2, 3], "flag": [0, 0, 0, 0]})
+
+    assert (
+        df.with_columns(
+            pl.when((pl.col("col1") < 1) | (pl.col("col1") >= 3))
+            .then(pl.col("flag") | 2)  # set flag b0010
+            .otherwise(pl.col("flag"))
+        ).with_columns(
+            pl.when(pl.col("col1") > -1)
+            .then(pl.col("flag") | 4)
+            .otherwise(pl.col("flag"))
+        )
+    ).to_dict(False) == {"col1": [0, 1, 2, 3], "flag": [6, 4, 4, 6]}

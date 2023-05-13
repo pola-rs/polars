@@ -1,7 +1,9 @@
 use polars_core::frame::groupby::GroupByMethod;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_core::utils::parallel_op_series;
+use polars_core::utils::_split_offsets;
+use polars_core::POOL;
+use rayon::prelude::*;
 
 use super::super::expressions as phys_expr;
 use crate::prelude::*;
@@ -11,11 +13,28 @@ pub(crate) fn create_physical_expressions(
     context: Context,
     expr_arena: &Arena<AExpr>,
     schema: Option<&SchemaRef>,
+    state: &mut ExpressionConversionState,
 ) -> PolarsResult<Vec<Arc<dyn PhysicalExpr>>> {
     exprs
         .iter()
-        .map(|e| create_physical_expr(*e, context, expr_arena, schema))
+        .map(|e| create_physical_expr(*e, context, expr_arena, schema, state))
         .collect()
+}
+
+#[derive(Copy, Clone, Default)]
+pub(crate) struct ExpressionConversionState {
+    has_cache: bool,
+    pub allow_threading: bool,
+    pub has_windows: bool,
+}
+
+impl ExpressionConversionState {
+    pub(crate) fn new(allow_threading: bool) -> Self {
+        Self {
+            allow_threading,
+            ..Default::default()
+        }
+    }
 }
 
 pub(crate) fn create_physical_expr(
@@ -23,6 +42,7 @@ pub(crate) fn create_physical_expr(
     ctxt: Context,
     expr_arena: &Arena<AExpr>,
     schema: Option<&SchemaRef>,
+    state: &mut ExpressionConversionState,
 ) -> PolarsResult<Arc<dyn PhysicalExpr>> {
     use AExpr::*;
 
@@ -34,11 +54,17 @@ pub(crate) fn create_physical_expr(
             order_by: _,
             options,
         } => {
+            state.has_windows = true;
             // TODO! Order by
-            let group_by =
-                create_physical_expressions(&partition_by, Context::Default, expr_arena, schema)?;
+            let group_by = create_physical_expressions(
+                &partition_by,
+                Context::Default,
+                expr_arena,
+                schema,
+                state,
+            )?;
             let phys_function =
-                create_physical_expr(function, Context::Aggregation, expr_arena, schema)?;
+                create_physical_expr(function, Context::Aggregation, expr_arena, schema, state)?;
             let mut out_name = None;
             let mut apply_columns = aexpr_to_leaf_names(function, expr_arena);
             // sort and then dedup removes consecutive duplicates == all duplicates
@@ -81,8 +107,8 @@ pub(crate) fn create_physical_expr(
             node_to_expr(expression, expr_arena),
         ))),
         BinaryExpr { left, op, right } => {
-            let lhs = create_physical_expr(left, ctxt, expr_arena, schema)?;
-            let rhs = create_physical_expr(right, ctxt, expr_arena, schema)?;
+            let lhs = create_physical_expr(left, ctxt, expr_arena, schema, state)?;
+            let rhs = create_physical_expr(right, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(phys_expr::BinaryExpr::new(
                 lhs,
                 op,
@@ -96,7 +122,7 @@ pub(crate) fn create_physical_expr(
             schema.cloned(),
         ))),
         Sort { expr, options } => {
-            let phys_expr = create_physical_expr(expr, ctxt, expr_arena, schema)?;
+            let phys_expr = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(SortExpr::new(
                 phys_expr,
                 options,
@@ -104,8 +130,8 @@ pub(crate) fn create_physical_expr(
             )))
         }
         Take { expr, idx } => {
-            let phys_expr = create_physical_expr(expr, ctxt, expr_arena, schema)?;
-            let phys_idx = create_physical_expr(idx, ctxt, expr_arena, schema)?;
+            let phys_expr = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
+            let phys_idx = create_physical_expr(idx, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(TakeExpr {
                 phys_expr,
                 idx: phys_idx,
@@ -117,8 +143,8 @@ pub(crate) fn create_physical_expr(
             by,
             descending,
         } => {
-            let phys_expr = create_physical_expr(expr, ctxt, expr_arena, schema)?;
-            let phys_by = create_physical_expressions(&by, ctxt, expr_arena, schema)?;
+            let phys_expr = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
+            let phys_by = create_physical_expressions(&by, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(SortByExpr::new(
                 phys_expr,
                 phys_by,
@@ -127,8 +153,8 @@ pub(crate) fn create_physical_expr(
             )))
         }
         Filter { input, by } => {
-            let phys_input = create_physical_expr(input, ctxt, expr_arena, schema)?;
-            let phys_by = create_physical_expr(by, ctxt, expr_arena, schema)?;
+            let phys_input = create_physical_expr(input, ctxt, expr_arena, schema, state)?;
+            let phys_by = create_physical_expr(by, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(FilterExpr::new(
                 phys_input,
                 phys_by,
@@ -136,7 +162,7 @@ pub(crate) fn create_physical_expr(
             )))
         }
         Alias(expr, name) => {
-            let phys_expr = create_physical_expr(expr, ctxt, expr_arena, schema)?;
+            let phys_expr = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(AliasExpr::new(
                 phys_expr,
                 name,
@@ -149,7 +175,7 @@ pub(crate) fn create_physical_expr(
                     input: expr,
                     propagate_nans,
                 } => {
-                    let input = create_physical_expr(expr, ctxt, expr_arena, schema)?;
+                    let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
                     match ctxt {
                         Context::Aggregation => {
                             if propagate_nans {
@@ -159,6 +185,7 @@ pub(crate) fn create_physical_expr(
                             }
                         }
                         Context::Default => {
+                            let state = *state;
                             let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
 
@@ -171,6 +198,7 @@ pub(crate) fn create_physical_expr(
                                             },
                                             s,
                                             None,
+                                            state,
                                         );
                                     }
                                     #[cfg(not(feature = "propagate_nans"))]
@@ -183,9 +211,12 @@ pub(crate) fn create_physical_expr(
                                     IsSorted::Ascending | IsSorted::Descending => {
                                         Ok(Some(s.min_as_series()))
                                     }
-                                    IsSorted::Not => {
-                                        parallel_op_series(|s| Ok(s.min_as_series()), s, None)
-                                    }
+                                    IsSorted::Not => parallel_op_series(
+                                        |s| Ok(s.min_as_series()),
+                                        s,
+                                        None,
+                                        state,
+                                    ),
                                 }
                             })
                                 as Arc<dyn SeriesUdf>);
@@ -202,7 +233,7 @@ pub(crate) fn create_physical_expr(
                     input: expr,
                     propagate_nans,
                 } => {
-                    let input = create_physical_expr(expr, ctxt, expr_arena, schema)?;
+                    let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
                     match ctxt {
                         Context::Aggregation => {
                             if propagate_nans {
@@ -212,6 +243,7 @@ pub(crate) fn create_physical_expr(
                             }
                         }
                         Context::Default => {
+                            let state = *state;
                             let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
 
@@ -224,6 +256,7 @@ pub(crate) fn create_physical_expr(
                                             },
                                             s,
                                             None,
+                                            state,
                                         );
                                     }
                                     #[cfg(not(feature = "propagate_nans"))]
@@ -236,9 +269,12 @@ pub(crate) fn create_physical_expr(
                                     IsSorted::Ascending | IsSorted::Descending => {
                                         Ok(Some(s.max_as_series()))
                                     }
-                                    IsSorted::Not => {
-                                        parallel_op_series(|s| Ok(s.max_as_series()), s, None)
-                                    }
+                                    IsSorted::Not => parallel_op_series(
+                                        |s| Ok(s.max_as_series()),
+                                        s,
+                                        None,
+                                        state,
+                                    ),
                                 }
                             })
                                 as Arc<dyn SeriesUdf>);
@@ -252,15 +288,16 @@ pub(crate) fn create_physical_expr(
                     }
                 }
                 AAggExpr::Sum(expr) => {
-                    let input = create_physical_expr(expr, ctxt, expr_arena, schema)?;
+                    let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
                     match ctxt {
                         Context::Aggregation => {
                             Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Sum)))
                         }
                         Context::Default => {
+                            let state = *state;
                             let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
-                                parallel_op_series(|s| Ok(s.sum_as_series()), s, None)
+                                parallel_op_series(|s| Ok(s.sum_as_series()), s, None, state)
                             })
                                 as Arc<dyn SeriesUdf>);
                             Ok(Arc::new(ApplyExpr::new_minimal(
@@ -273,7 +310,7 @@ pub(crate) fn create_physical_expr(
                     }
                 }
                 AAggExpr::Std(expr, ddof) => {
-                    let input = create_physical_expr(expr, ctxt, expr_arena, schema)?;
+                    let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
                     match ctxt {
                         Context::Aggregation => Ok(Arc::new(AggregationExpr::new(
                             input,
@@ -295,7 +332,7 @@ pub(crate) fn create_physical_expr(
                     }
                 }
                 AAggExpr::Var(expr, ddof) => {
-                    let input = create_physical_expr(expr, ctxt, expr_arena, schema)?;
+                    let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
                     match ctxt {
                         Context::Aggregation => Ok(Arc::new(AggregationExpr::new(
                             input,
@@ -317,7 +354,7 @@ pub(crate) fn create_physical_expr(
                     }
                 }
                 AAggExpr::Mean(expr) => {
-                    let input = create_physical_expr(expr, ctxt, expr_arena, schema)?;
+                    let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
                     match ctxt {
                         Context::Aggregation => {
                             Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Mean)))
@@ -338,7 +375,7 @@ pub(crate) fn create_physical_expr(
                     }
                 }
                 AAggExpr::Median(expr) => {
-                    let input = create_physical_expr(expr, ctxt, expr_arena, schema)?;
+                    let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
                     match ctxt {
                         Context::Aggregation => {
                             Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Median)))
@@ -359,7 +396,7 @@ pub(crate) fn create_physical_expr(
                     }
                 }
                 AAggExpr::First(expr) => {
-                    let input = create_physical_expr(expr, ctxt, expr_arena, schema)?;
+                    let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
                     match ctxt {
                         Context::Aggregation => {
                             Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::First)))
@@ -380,7 +417,7 @@ pub(crate) fn create_physical_expr(
                     }
                 }
                 AAggExpr::Last(expr) => {
-                    let input = create_physical_expr(expr, ctxt, expr_arena, schema)?;
+                    let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
                     match ctxt {
                         Context::Aggregation => {
                             Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Last)))
@@ -401,7 +438,7 @@ pub(crate) fn create_physical_expr(
                     }
                 }
                 AAggExpr::Implode(expr) => {
-                    let input = create_physical_expr(expr, ctxt, expr_arena, schema)?;
+                    let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
                     match ctxt {
                         Context::Aggregation => Ok(Arc::new(AggregationExpr::new(
                             input,
@@ -423,7 +460,7 @@ pub(crate) fn create_physical_expr(
                     }
                 }
                 AAggExpr::NUnique(expr) => {
-                    let input = create_physical_expr(expr, ctxt, expr_arena, schema)?;
+                    let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
                     match ctxt {
                         Context::Aggregation => Ok(Arc::new(AggregationExpr::new(
                             input,
@@ -455,8 +492,8 @@ pub(crate) fn create_physical_expr(
                     interpol,
                 } => {
                     // todo! add schema to get correct output type
-                    let input = create_physical_expr(expr, ctxt, expr_arena, schema)?;
-                    let quantile = create_physical_expr(quantile, ctxt, expr_arena, schema)?;
+                    let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
+                    let quantile = create_physical_expr(quantile, ctxt, expr_arena, schema, state)?;
                     Ok(Arc::new(AggQuantileExpr::new(input, quantile, interpol)))
                     //
                     // match ctxt {
@@ -483,14 +520,14 @@ pub(crate) fn create_physical_expr(
                     if let Context::Default = ctxt {
                         panic!("agg groups expression only supported in aggregation context")
                     }
-                    let phys_expr = create_physical_expr(expr, ctxt, expr_arena, schema)?;
+                    let phys_expr = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
                     Ok(Arc::new(AggregationExpr::new(
                         phys_expr,
                         GroupByMethod::Groups,
                     )))
                 }
                 AAggExpr::Count(expr) => {
-                    let input = create_physical_expr(expr, ctxt, expr_arena, schema)?;
+                    let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
                     match ctxt {
                         Context::Aggregation => {
                             Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Count)))
@@ -521,7 +558,7 @@ pub(crate) fn create_physical_expr(
             data_type,
             strict,
         } => {
-            let phys_expr = create_physical_expr(expr, ctxt, expr_arena, schema)?;
+            let phys_expr = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(CastExpr {
                 input: phys_expr,
                 data_type,
@@ -534,9 +571,9 @@ pub(crate) fn create_physical_expr(
             truthy,
             falsy,
         } => {
-            let predicate = create_physical_expr(predicate, ctxt, expr_arena, schema)?;
-            let truthy = create_physical_expr(truthy, ctxt, expr_arena, schema)?;
-            let falsy = create_physical_expr(falsy, ctxt, expr_arena, schema)?;
+            let predicate = create_physical_expr(predicate, ctxt, expr_arena, schema, state)?;
+            let truthy = create_physical_expr(truthy, ctxt, expr_arena, schema, state)?;
+            let falsy = create_physical_expr(falsy, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(TernaryExpr::new(
                 predicate,
                 truthy,
@@ -550,7 +587,7 @@ pub(crate) fn create_physical_expr(
             output_type: _,
             options,
         } => {
-            let input = create_physical_expressions(&input, ctxt, expr_arena, schema)?;
+            let input = create_physical_expressions(&input, ctxt, expr_arena, schema, state)?;
 
             Ok(Arc::new(ApplyExpr {
                 inputs: input,
@@ -561,6 +598,7 @@ pub(crate) fn create_physical_expr(
                 allow_rename: options.allow_rename,
                 pass_name_to_apply: options.pass_name_to_apply,
                 input_schema: schema.cloned(),
+                allow_threading: !state.has_cache,
             }))
         }
         Function {
@@ -569,7 +607,7 @@ pub(crate) fn create_physical_expr(
             options,
             ..
         } => {
-            let input = create_physical_expressions(&input, ctxt, expr_arena, schema)?;
+            let input = create_physical_expressions(&input, ctxt, expr_arena, schema, state)?;
 
             Ok(Arc::new(ApplyExpr {
                 inputs: input,
@@ -580,6 +618,7 @@ pub(crate) fn create_physical_expr(
                 allow_rename: options.allow_rename,
                 pass_name_to_apply: options.pass_name_to_apply,
                 input_schema: schema.cloned(),
+                allow_threading: !state.has_cache,
             }))
         }
         Slice {
@@ -587,9 +626,9 @@ pub(crate) fn create_physical_expr(
             offset,
             length,
         } => {
-            let input = create_physical_expr(input, ctxt, expr_arena, schema)?;
-            let offset = create_physical_expr(offset, ctxt, expr_arena, schema)?;
-            let length = create_physical_expr(length, ctxt, expr_arena, schema)?;
+            let input = create_physical_expr(input, ctxt, expr_arena, schema, state)?;
+            let offset = create_physical_expr(offset, ctxt, expr_arena, schema, state)?;
+            let length = create_physical_expr(length, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(SliceExpr {
                 input,
                 offset,
@@ -598,7 +637,7 @@ pub(crate) fn create_physical_expr(
             }))
         }
         Explode(expr) => {
-            let input = create_physical_expr(expr, ctxt, expr_arena, schema)?;
+            let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
             let function =
                 SpecialEq::new(Arc::new(move |s: &mut [Series]| s[0].explode().map(Some))
                     as Arc<dyn SeriesUdf>);
@@ -610,7 +649,8 @@ pub(crate) fn create_physical_expr(
             )))
         }
         Cache { input, id } => {
-            let input = create_physical_expr(input, ctxt, expr_arena, schema)?;
+            state.has_cache = true;
+            let input = create_physical_expr(input, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(CacheExpr::new(
                 input,
                 node_to_expr(expression, expr_arena),
@@ -620,4 +660,54 @@ pub(crate) fn create_physical_expr(
         Wildcard => panic!("should be no wildcard at this point"),
         Nth(_) => panic!("should be no nth at this point"),
     }
+}
+
+/// Simple wrapper to parallelize functions that can be divided over threads aggregated and
+/// finally aggregated in the main thread. This can be done for sum, min, max, etc.
+fn parallel_op_series<F>(
+    f: F,
+    s: Series,
+    n_threads: Option<usize>,
+    state: ExpressionConversionState,
+) -> PolarsResult<Option<Series>>
+where
+    F: Fn(Series) -> PolarsResult<Series> + Send + Sync,
+{
+    // set during debug low so
+    // we mimic production size data behavior
+    #[cfg(debug_assertions)]
+    let thread_boundary = 0;
+
+    #[cfg(not(debug_assertions))]
+    let thread_boundary = 100_000;
+
+    // threading overhead/ splitting work stealing is costly..
+    if !state.allow_threading
+        || s.len() < thread_boundary
+        || state.has_cache
+        || POOL.current_thread_has_pending_tasks().unwrap_or(false)
+    {
+        return f(s).map(Some);
+    }
+    let n_threads = n_threads.unwrap_or_else(|| POOL.current_num_threads());
+    let splits = _split_offsets(s.len(), n_threads);
+
+    let chunks = POOL.install(|| {
+        splits
+            .into_par_iter()
+            .map(|(offset, len)| {
+                let s = s.slice(offset as i64, len);
+                f(s)
+            })
+            .collect::<PolarsResult<Vec<_>>>()
+    })?;
+
+    let mut iter = chunks.into_iter();
+    let first = iter.next().unwrap();
+    let out = iter.fold(first, |mut acc, s| {
+        acc.append(&s).unwrap();
+        acc
+    });
+
+    f(out).map(Some)
 }

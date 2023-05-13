@@ -740,6 +740,12 @@ def test_extend() -> None:
         )
         assert_frame_equal(df1, expected)
 
+        # 8745
+        df = pl.DataFrame([{"age": 1}, {"age": 2}, {"age": 3}])
+        df = df[:-1]
+        tail = pl.DataFrame([{"age": 8}])
+        assert df.extend(tail).to_dict(False) == {"age": [1, 2, 8]}
+
 
 def test_file_buffer() -> None:
     f = BytesIO()

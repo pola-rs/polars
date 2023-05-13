@@ -12,8 +12,8 @@ from polars.testing import assert_frame_equal
 
 @pytest.fixture(autouse=True)
 def _environ() -> Iterator[None]:
-    """Fixture to restore the environment variables/state after the test."""
-    with pl.StringCache(), pl.Config():
+    """Fixture to restore the environment after/during tests."""
+    with pl.StringCache(), pl.Config(restore_defaults=True):
         yield
 
 

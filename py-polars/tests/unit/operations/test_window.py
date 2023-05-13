@@ -123,7 +123,7 @@ def test_window_function_cache() -> None:
 
 def test_arange_no_rows() -> None:
     df = pl.DataFrame({"x": [5, 5, 4, 4, 2, 2]})
-    expr = pl.arange(0, pl.count()).over("x")  # type: ignore[union-attr]
+    expr = pl.arange(0, pl.count()).over("x")
     out = df.with_columns(expr)
     assert_frame_equal(
         out, pl.DataFrame({"x": [5, 5, 4, 4, 2, 2], "arange": [0, 1, 0, 1, 0, 1]})
@@ -131,6 +131,7 @@ def test_arange_no_rows() -> None:
 
     df = pl.DataFrame({"x": []})
     out = df.with_columns(expr)
+    print(out)
     expected = pl.DataFrame(
         {"x": [], "arange": []}, schema={"x": pl.Float32, "arange": pl.Int64}
     )
@@ -365,3 +366,23 @@ def test_window_function_implode_contention_8536() -> None:
         True,
         True,
     ]
+
+
+def test_cached_windows_sync_8803() -> None:
+    assert (
+        pl.DataFrame(
+            [
+                pl.Series("id", [4, 5, 4, 6, 4, 5], dtype=pl.Int64),
+                pl.Series(
+                    "is_valid",
+                    [True, False, False, False, False, False],
+                    dtype=pl.Boolean,
+                ),
+            ]
+        )
+        .with_columns(
+            a=pl.col("is_valid").implode().arr.contains(True).over("id"),
+            b=pl.col("is_valid").sum().gt(0).over("id"),
+        )
+        .sum()
+    ).to_dict(False) == {"id": [28], "is_valid": [1], "a": [3], "b": [3]}

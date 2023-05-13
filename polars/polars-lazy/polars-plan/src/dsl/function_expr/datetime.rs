@@ -2,7 +2,6 @@
 use chrono_tz::Tz;
 #[cfg(feature = "timezones")]
 use polars_core::utils::arrow::temporal_conversions::parse_offset;
-use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -46,6 +45,11 @@ pub enum TemporalFunction {
         closed: ClosedWindow,
         tz: Option<TimeZone>,
     },
+    TimeRange {
+        name: String,
+        every: Duration,
+        closed: ClosedWindow,
+    },
     Combine(TimeUnit),
 }
 
@@ -83,6 +87,7 @@ impl Display for TemporalFunction {
             #[cfg(feature = "timezones")]
             TzLocalize(_) => "tz_localize",
             DateRange { .. } => return write!(f, "date_range"),
+            TimeRange { .. } => return write!(f, "time_range"),
             Combine(_) => "combine",
         };
         write!(f, "dt.{s}")
@@ -313,123 +318,4 @@ pub(super) fn tz_localize(s: &Series, tz: &str) -> PolarsResult<Series> {
         (consider using 'dt.convert_time_zone' or 'dt.replace_time_zone')"
     );
     Ok(ca.replace_time_zone(Some(tz), None)?.into_series())
-}
-
-pub(super) fn date_range_dispatch(
-    s: &[Series],
-    name: &str,
-    every: Duration,
-    closed: ClosedWindow,
-    tz: Option<TimeZone>,
-) -> PolarsResult<Series> {
-    let start = &s[0];
-    let stop = &s[1];
-
-    polars_ensure!(
-        start.len() == stop.len(),
-        ComputeError: "'start' and 'stop' should have the same length",
-    );
-    const TO_MS: i64 = SECONDS_IN_DAY * 1000;
-
-    if start.len() == 1 && stop.len() == 1 {
-        match start.dtype() {
-            DataType::Date => {
-                let start = start.to_physical_repr();
-                let stop = stop.to_physical_repr();
-                // to milliseconds
-                let start = start.get(0).unwrap().extract::<i64>().unwrap() * TO_MS;
-                let stop = stop.get(0).unwrap().extract::<i64>().unwrap() * TO_MS;
-
-                date_range_impl(
-                    name,
-                    start,
-                    stop,
-                    every,
-                    closed,
-                    TimeUnit::Milliseconds,
-                    tz.as_ref(),
-                )?
-                .cast(&DataType::Date)
-            }
-            DataType::Datetime(tu, _) => {
-                let start = start.to_physical_repr();
-                let stop = stop.to_physical_repr();
-                let start = start.get(0).unwrap().extract::<i64>().unwrap();
-                let stop = stop.get(0).unwrap().extract::<i64>().unwrap();
-
-                Ok(
-                    date_range_impl(name, start, stop, every, closed, *tu, tz.as_ref())?
-                        .into_series(),
-                )
-            }
-            _ => unimplemented!(),
-        }
-    } else {
-        let dtype = start.dtype();
-
-        let mut start = start.to_physical_repr().cast(&DataType::Int64)?;
-        let mut stop = stop.to_physical_repr().cast(&DataType::Int64)?;
-
-        let (tu, tz) = match dtype {
-            DataType::Date => {
-                start = &start * TO_MS;
-                stop = &stop * TO_MS;
-                (TimeUnit::Milliseconds, None)
-            }
-            DataType::Datetime(tu, tz) => (*tu, tz.as_ref()),
-            _ => unimplemented!(),
-        };
-
-        let start = start.i64().unwrap();
-        let stop = stop.i64().unwrap();
-
-        let list = match dtype {
-            DataType::Date => {
-                let mut builder = ListPrimitiveChunkedBuilder::<Int32Type>::new(
-                    name,
-                    start.len(),
-                    start.len() * 5,
-                    DataType::Int32,
-                );
-                for (start, stop) in start.into_iter().zip(stop.into_iter()) {
-                    match (start, stop) {
-                        (Some(start), Some(stop)) => {
-                            let date_range =
-                                date_range_impl("", start, stop, every, closed, tu, tz)?;
-                            let date_range = date_range.cast(&DataType::Date).unwrap();
-                            let date_range = date_range.to_physical_repr();
-                            let date_range = date_range.i32().unwrap();
-                            builder.append_slice(date_range.cont_slice().unwrap())
-                        }
-                        _ => builder.append_null(),
-                    }
-                }
-                builder.finish().into_series()
-            }
-            DataType::Datetime(_, _) => {
-                let mut builder = ListPrimitiveChunkedBuilder::<Int64Type>::new(
-                    name,
-                    start.len(),
-                    start.len() * 5,
-                    DataType::Int64,
-                );
-
-                for (start, stop) in start.into_iter().zip(stop.into_iter()) {
-                    match (start, stop) {
-                        (Some(start), Some(stop)) => {
-                            let date_range =
-                                date_range_impl("", start, stop, every, closed, tu, tz)?;
-                            builder.append_slice(date_range.cont_slice().unwrap())
-                        }
-                        _ => builder.append_null(),
-                    }
-                }
-                builder.finish().into_series()
-            }
-            _ => unimplemented!(),
-        };
-
-        let to_type = DataType::List(Box::new(dtype.clone()));
-        list.cast(&to_type)
-    }
 }

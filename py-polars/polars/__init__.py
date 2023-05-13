@@ -77,6 +77,7 @@ from polars.functions.eager import (
     date_range,
     get_dummies,
     ones,
+    time_range,
     zeros,
 )
 from polars.functions.lazy import (
@@ -134,6 +135,7 @@ from polars.functions.lazy import (
 from polars.functions.lazy import date_ as date
 from polars.functions.lazy import datetime_ as datetime
 from polars.functions.lazy import list_ as list
+from polars.functions.lazy import time_ as time
 from polars.functions.whenthen import when
 from polars.io import (
     read_avro,
@@ -279,6 +281,7 @@ __all__ = [
     "get_dummies",
     "ones",
     "repeat",
+    "time_range",
     "zeros",
     # polars.functions.lazy
     "all",
@@ -330,6 +333,7 @@ __all__ = [
     "struct",
     "sum",
     "tail",
+    "time",  # named time_, see import above
     "var",
     # polars.convert
     "from_arrow",

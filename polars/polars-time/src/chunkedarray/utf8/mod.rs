@@ -4,12 +4,12 @@ mod strptime;
 
 use chrono::ParseError;
 pub use patterns::{Pattern, PatternWithOffset};
+#[cfg(feature = "dtype-time")]
+use polars_core::chunked_array::temporal::time_to_time64ns;
 
 use super::*;
 #[cfg(feature = "dtype-date")]
 use crate::chunkedarray::date::naive_date_to_date;
-#[cfg(feature = "dtype-time")]
-use crate::chunkedarray::time::time_to_time64ns;
 use crate::prelude::utf8::strptime::StrpTimeState;
 
 #[cfg(feature = "dtype-time")]

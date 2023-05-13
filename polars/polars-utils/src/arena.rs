@@ -1,4 +1,5 @@
 use crate::error::*;
+use crate::slice::GetSaferUnchecked;
 
 unsafe fn index_of_unchecked<T>(slice: &[T], item: &T) -> usize {
     (item as *const _ as usize - slice.as_ptr() as usize) / std::mem::size_of::<T>()
@@ -78,6 +79,13 @@ impl<T> Arena<T> {
     #[inline]
     pub fn get(&self, idx: Node) -> &T {
         self.items.get(idx.0).unwrap()
+    }
+
+    #[inline]
+    /// # Safety
+    /// Doesn't do any bound checks
+    pub unsafe fn get_unchecked(&self, idx: Node) -> &T {
+        self.items.get_unchecked_release(idx.0)
     }
 
     #[inline]

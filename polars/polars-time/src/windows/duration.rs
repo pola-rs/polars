@@ -582,7 +582,11 @@ impl Duration {
                 polars_err!(
                     ComputeError: format!(
                         "cannot advance '{}' by {} month(s). \
-                         If you were trying to get the last day of each month, you may want to try `.dt.month_end`", ts, if d.negative {-d.months} else {d.months})
+                         If you were trying to get the last day of each month, you may want to try `.dt.month_end` \
+                         or append \"_saturating\" to your duration string.",
+                         ts,
+                         if d.negative {-d.months} else {d.months}
+                    )
                 ),
             )?;
             new_t = match tz {

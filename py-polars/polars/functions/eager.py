@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import contextlib
 import warnings
-from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Iterable, Sequence, overload
+from datetime import datetime, time, timedelta
+from functools import reduce
+from typing import TYPE_CHECKING, Iterable, Sequence, cast, overload
 
 import polars._reexport as pl
+from polars import functions as F
 from polars.datatypes import Date
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
 from polars.utils._wrap import wrap_df, wrap_expr, wrap_ldf, wrap_s
 from polars.utils.convert import (
     _datetime_to_pl_timestamp,
+    _time_to_pl_time,
     _timedelta_to_pl_duration,
     _tzinfo_to_str,
 )
@@ -382,15 +385,15 @@ def date_range(
     end
         Upper bound of the date range, given as a date, datetime, Expr, or column name.
     interval
-        Interval periods. It can be a python timedelta object, like
-        ``timedelta(days=10)``, or a polars duration string, such as ``3d12h4m25s``
-        representing 3 days, 12 hours, 4 minutes, and 25 seconds.
+        Interval of the range periods; can be a python timedelta object like
+        ``timedelta(days=10)`` or a polars duration string, such as ``3d12h4m25s``
+        (representing 3 days, 12 hours, 4 minutes, and 25 seconds).
     lazy:
         Return an expression.
 
             .. deprecated:: 0.17.10
     eager:
-        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
+        Evaluate immediately and return a ``Series``; if set to ``False`` (default),
         return an expression instead.
     closed : {'both', 'left', 'right', 'none'}
         Define whether the temporal window interval is closed or not.
@@ -514,6 +517,7 @@ def date_range(
     else:
         # user only passed eager. Nothing to warn about :)
         pass
+
     if name is None:
         name = ""
     if isinstance(interval, timedelta):
@@ -522,9 +526,9 @@ def date_range(
         interval = interval.replace(" ", "")
 
     if (
-        isinstance(start, (str, pl.Expr))
+        not eager
+        or isinstance(start, (str, pl.Expr))
         or isinstance(end, (str, pl.Expr))
-        or not eager
     ):
         start = expr_to_lit_or_expr(start, str_to_lit=False)._pyexpr
         end = expr_to_lit_or_expr(end, str_to_lit=False)._pyexpr
@@ -572,6 +576,133 @@ def date_range(
         dt_range = dt_range.cast(Date)
 
     return dt_range
+
+
+def time_range(
+    start: time | Expr | str | None = None,
+    end: time | Expr | str | None = None,
+    interval: str | timedelta = "1h",
+    *,
+    eager: bool = False,
+    closed: ClosedInterval = "both",
+    name: str | None = None,
+) -> Series | Expr:
+    """
+    Create a range of type `Time`.
+
+    Parameters
+    ----------
+    start
+        Lower bound of the time range, given as a time, Expr, or column name.
+        If omitted, will default to ``time(0,0,0,0)``.
+    end
+        Upper bound of the time range, given as a time, Expr, or column name.
+        If omitted, will default to ``time(23,59,59,999999)``.
+    interval
+        Interval of the range periods; can be a python timedelta object like
+        ``timedelta(minutes=10)`` or a polars duration string, such as ``1h30m25s``
+        (representing 1 hour, 30 minutes, and 25 seconds).
+    eager:
+        Evaluate immediately and return a ``Series``; if set to ``False`` (default),
+        return an expression instead.
+    closed : {'both', 'left', 'right', 'none'}
+        Define whether the temporal window interval is closed or not.
+    name
+        Name of the output Series.
+
+    Returns
+    -------
+    A Series of type `Time`.
+
+    Examples
+    --------
+    Create a Series that starts at 14:00, with intervals of 3 hours and 15 mins:
+
+    >>> from datetime import time
+    >>> pl.time_range(
+    ...     start=time(14, 0),
+    ...     interval=timedelta(hours=3, minutes=15),
+    ...     eager=True,
+    ...     name="tm",
+    ... )
+    shape: (4,)
+    Series: 'tm' [time]
+    [
+        14:00:00
+        17:15:00
+        20:30:00
+        23:45:00
+    ]
+
+    Generate a DataFrame with two columns made of eager ``time_range`` Series,
+    and create a third column using ``time_range`` in expression context:
+
+    >>> lf = pl.LazyFrame(
+    ...     {
+    ...         "start": pl.time_range(interval="6h", eager=True),
+    ...         "stop": pl.time_range(start=time(2, 59), interval="5h59m", eager=True),
+    ...     }
+    ... ).with_columns(
+    ...     intervals=pl.time_range("start", "stop", interval="1h29m", eager=False)
+    ... )
+    >>> lf.collect()
+    shape: (4, 3)
+    ┌──────────┬──────────┬────────────────────────────────┐
+    │ start    ┆ stop     ┆ intervals                      │
+    │ ---      ┆ ---      ┆ ---                            │
+    │ time     ┆ time     ┆ list[time]                     │
+    ╞══════════╪══════════╪════════════════════════════════╡
+    │ 00:00:00 ┆ 02:59:00 ┆ [00:00:00, 01:29:00, 02:58:00] │
+    │ 06:00:00 ┆ 08:58:00 ┆ [06:00:00, 07:29:00, 08:58:00] │
+    │ 12:00:00 ┆ 14:57:00 ┆ [12:00:00, 13:29:00]           │
+    │ 18:00:00 ┆ 20:56:00 ┆ [18:00:00, 19:29:00]           │
+    └──────────┴──────────┴────────────────────────────────┘
+
+    """
+    if isinstance(interval, timedelta):
+        interval = _timedelta_to_pl_duration(interval)
+    elif " " in interval:
+        interval = interval.replace(" ", "").lower()
+
+    for unit in ("y", "mo", "w", "d"):
+        if unit in interval:
+            raise ValueError(f"invalid interval unit for time_range: found {unit!r}")
+
+    name = name or ""
+    default_start = time(0, 0, 0)
+    default_end = time(23, 59, 59, 999999)
+    if (
+        not eager
+        or isinstance(start, (str, pl.Expr))
+        or isinstance(end, (str, pl.Expr))
+    ):
+        start_expr = (
+            F.lit(default_start)
+            if start is None
+            else expr_to_lit_or_expr(start, str_to_lit=False)
+        )._pyexpr
+
+        end_expr = (
+            F.lit(default_end)
+            if end is None
+            else expr_to_lit_or_expr(end, str_to_lit=False)
+        )._pyexpr
+
+        tm_expr = wrap_expr(
+            plr.time_range_lazy(start_expr, end_expr, interval, closed, name)
+        )
+        return tm_expr.alias(name)
+    else:
+        tm_srs = wrap_s(
+            plr.time_range(
+                _time_to_pl_time(default_start if start is None else start),
+                _time_to_pl_time(default_end if end is None else end),
+                interval,
+                closed,
+                name,
+            )
+        )
+        return tm_srs
 
 
 def cut(
@@ -673,7 +804,9 @@ def align_frames(
     filling the non-key columns), and each resulting frame is sorted by the key.
 
     The original column order of input frames is not changed unless ``select`` is
-    specified (in which case the final column order is determined from that).
+    specified (in which case the final column order is determined from that). In the
+    case where duplicate key values exist, the alignment behaviour is equivalent to
+    an outer join.
 
     Note that this does not result in a joined frame - you receive the same number
     of frames back that you passed in, but each is now aligned by key and has
@@ -798,30 +931,40 @@ def align_frames(
         raise TypeError(
             "Input frames must be of a consistent type (all LazyFrame or all DataFrame)"
         )
+    on = [on] if (isinstance(on, str) or not isinstance(on, Sequence)) else on
+    align_on = [(c.meta.output_name() if isinstance(c, pl.Expr) else c) for c in on]
 
-    # establish the superset of all "on" column values, sort, and cache
+    # create lazy alignment frame
     eager = isinstance(frames[0], pl.DataFrame)
-    alignment_frame = (
-        concat([df.lazy().select(on) for df in frames])
-        .unique(maintain_order=False)
-        .sort(by=on, descending=descending)
+    alignment_frame: pl.LazyFrame = (
+        cast(
+            pl.LazyFrame,
+            reduce(
+                lambda x, y: x.lazy().join(
+                    y.lazy(), how="outer", on=align_on, suffix=str(id(y))
+                ),
+                frames,
+            ),
+        )
+        .select(*align_on, F.exclude(align_on))
+        .sort(by=align_on, descending=descending)
     )
-    alignment_frame = (
-        alignment_frame.collect().lazy() if eager else alignment_frame.cache()
-    )
-    # finally, align all frames
-    aligned_frames = [
-        alignment_frame.join(
-            other=df.lazy(),
-            on=alignment_frame.columns,
-            how="left",
-        ).select(df.columns)
-        for df in frames
-    ]
-    if select is not None:
-        aligned_frames = [df.select(select) for df in aligned_frames]
 
-    return [df.collect() for df in aligned_frames] if eager else aligned_frames
+    # select out aligned frames
+    aligned_cols = set(alignment_frame.columns[len(align_on) :])
+    aligned_frames = []
+    for df in frames:
+        sfx = str(id(df))
+        df_cols = [
+            F.col(f"{c}{sfx}").alias(c) if f"{c}{sfx}" in aligned_cols else F.col(c)
+            for c in df.columns
+        ]
+        aligned_frames.append(alignment_frame.select(*df_cols))
+
+    aligned_frames = [
+        df if select is None else df.select(select) for df in aligned_frames
+    ]
+    return F.collect_all(aligned_frames) if eager else aligned_frames
 
 
 def ones(n: int, dtype: PolarsDataType | None = None) -> Series:

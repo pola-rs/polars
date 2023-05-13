@@ -21,14 +21,34 @@ def test_date_datetime() -> None:
         }
     )
     out = df.select(
-        [
-            pl.all(),
-            pl.datetime("year", "month", "day", "hour").dt.hour().cast(int).alias("h2"),
-            pl.date("year", "month", "day").dt.day().cast(int).alias("date"),
-        ]
+        pl.all(),
+        pl.datetime("year", "month", "day", "hour").dt.hour().cast(int).alias("h2"),
+        pl.date("year", "month", "day").dt.day().cast(int).alias("date"),
     )
     assert_series_equal(out["date"], df["day"].rename("date"))
     assert_series_equal(out["h2"], df["hour"].rename("h2"))
+
+
+def test_time() -> None:
+    df = pl.DataFrame(
+        {
+            "hour": [7, 14, 21],
+            "min": [10, 20, 30],
+            "sec": [15, 30, 45],
+            "micro": [123456, 555555, 987654],
+        }
+    )
+    out = df.select(
+        pl.all(),
+        pl.time("hour", "min", "sec", "micro").dt.hour().cast(int).alias("h2"),
+        pl.time("hour", "min", "sec", "micro").dt.minute().cast(int).alias("m2"),
+        pl.time("hour", "min", "sec", "micro").dt.second().cast(int).alias("s2"),
+        pl.time("hour", "min", "sec", "micro").dt.microsecond().cast(int).alias("ms2"),
+    )
+    assert_series_equal(out["h2"], df["hour"].rename("h2"))
+    assert_series_equal(out["m2"], df["min"].rename("m2"))
+    assert_series_equal(out["s2"], df["sec"].rename("s2"))
+    assert_series_equal(out["ms2"], df["micro"].rename("ms2"))
 
 
 def test_diag_concat() -> None:
@@ -198,6 +218,45 @@ def test_align_frames() -> None:
     )
     assert pf1.rows() == [(5, 8, 9), (4, None, None), (3, 5, 6), (2, None, None)]
     assert pf2.rows() == [(5, None, None), (4, 2, 0), (3, 8, 9), (2, 5, 6)]
+
+
+def test_align_frames_duplicate_key() -> None:
+    # setup some test frames with duplicate key/alignment values
+    df1 = pl.DataFrame({"x": ["a", "a", "a", "e"], "y": [1, 2, 4, 5]})
+    df2 = pl.DataFrame({"y": [0, 0, -1], "z": [5.5, 6.0, 7.5], "x": ["a", "b", "b"]})
+
+    # align rows, confirming correctness and original column order
+    af1, af2 = pl.align_frames(df1, df2, on="x")
+
+    # shape: (6, 2)   shape: (6, 3)
+    # ┌─────┬──────┐  ┌──────┬──────┬─────┐
+    # │ x   ┆ y    │  │ y    ┆ z    ┆ x   │
+    # │ --- ┆ ---  │  │ ---  ┆ ---  ┆ --- │
+    # │ str ┆ i64  │  │ i64  ┆ f64  ┆ str │
+    # ╞═════╪══════╡  ╞══════╪══════╪═════╡
+    # │ a   ┆ 1    │  │ 0    ┆ 5.5  ┆ a   │
+    # │ a   ┆ 2    │  │ 0    ┆ 5.5  ┆ a   │
+    # │ a   ┆ 4    │  │ 0    ┆ 5.5  ┆ a   │
+    # │ b   ┆ null │  │ 0    ┆ 6.0  ┆ b   │
+    # │ b   ┆ null │  │ -1   ┆ 7.5  ┆ b   │
+    # │ e   ┆ 5    │  │ null ┆ null ┆ e   │
+    # └─────┴──────┘  └──────┴──────┴─────┘
+    assert af1.rows() == [
+        ("a", 1),
+        ("a", 2),
+        ("a", 4),
+        ("b", None),
+        ("b", None),
+        ("e", 5),
+    ]
+    assert af2.rows() == [
+        (0, 5.5, "a"),
+        (0, 5.5, "a"),
+        (0, 5.5, "a"),
+        (0, 6.0, "b"),
+        (-1, 7.5, "b"),
+        (None, None, "e"),
+    ]
 
 
 def test_nan_aggregations() -> None:
