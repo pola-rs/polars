@@ -3,7 +3,8 @@ from __future__ import annotations
 import contextlib
 import warnings
 from datetime import datetime, time, timedelta
-from typing import TYPE_CHECKING, Iterable, Sequence, overload
+from functools import reduce
+from typing import TYPE_CHECKING, Iterable, Sequence, cast, overload
 
 import polars._reexport as pl
 from polars import functions as F
@@ -803,7 +804,9 @@ def align_frames(
     filling the non-key columns), and each resulting frame is sorted by the key.
 
     The original column order of input frames is not changed unless ``select`` is
-    specified (in which case the final column order is determined from that).
+    specified (in which case the final column order is determined from that). In the
+    case where duplicate key values exist, the alignment behaviour is equivalent to
+    an outer join.
 
     Note that this does not result in a joined frame - you receive the same number
     of frames back that you passed in, but each is now aligned by key and has
@@ -928,30 +931,40 @@ def align_frames(
         raise TypeError(
             "Input frames must be of a consistent type (all LazyFrame or all DataFrame)"
         )
+    on = [on] if (isinstance(on, str) or not isinstance(on, Sequence)) else on
+    align_on = [(c.meta.output_name() if isinstance(c, pl.Expr) else c) for c in on]
 
-    # establish the superset of all "on" column values, sort, and cache
+    # create lazy alignment frame
     eager = isinstance(frames[0], pl.DataFrame)
-    alignment_frame = (
-        concat([df.lazy().select(on) for df in frames])
-        .unique(maintain_order=False)
-        .sort(by=on, descending=descending)
+    alignment_frame: pl.LazyFrame = (
+        cast(
+            pl.LazyFrame,
+            reduce(
+                lambda x, y: x.lazy().join(
+                    y.lazy(), how="outer", on=align_on, suffix=str(id(y))
+                ),
+                frames,
+            ),
+        )
+        .select(*align_on, F.exclude(align_on))
+        .sort(by=align_on, descending=descending)
     )
-    alignment_frame = (
-        alignment_frame.collect().lazy() if eager else alignment_frame.cache()
-    )
-    # finally, align all frames
-    aligned_frames = [
-        alignment_frame.join(
-            other=df.lazy(),
-            on=alignment_frame.columns,
-            how="left",
-        ).select(df.columns)
-        for df in frames
-    ]
-    if select is not None:
-        aligned_frames = [df.select(select) for df in aligned_frames]
 
-    return [df.collect() for df in aligned_frames] if eager else aligned_frames
+    # select out aligned frames
+    aligned_cols = set(alignment_frame.columns[len(align_on) :])
+    aligned_frames = []
+    for df in frames:
+        sfx = str(id(df))
+        df_cols = [
+            F.col(f"{c}{sfx}").alias(c) if f"{c}{sfx}" in aligned_cols else F.col(c)
+            for c in df.columns
+        ]
+        aligned_frames.append(alignment_frame.select(*df_cols))
+
+    aligned_frames = [
+        df if select is None else df.select(select) for df in aligned_frames
+    ]
+    return F.collect_all(aligned_frames) if eager else aligned_frames
 
 
 def ones(n: int, dtype: PolarsDataType | None = None) -> Series:
