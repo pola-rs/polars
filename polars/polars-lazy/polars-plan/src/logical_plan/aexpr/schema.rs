@@ -139,7 +139,7 @@ impl AExpr {
                     NUnique(expr) => {
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;
-                        field.coerce(DataType::UInt32);
+                        field.coerce(IDX_DTYPE);
                         Ok(field)
                     }
                     Count(expr) => {
@@ -150,7 +150,7 @@ impl AExpr {
                     }
                     AggGroups(expr) => {
                         let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
-                        field.coerce(DataType::List(IDX_DTYPE.into()));
+                        field.coerce(List(IDX_DTYPE.into()));
                         Ok(field)
                     }
                     Quantile { expr, .. } => {

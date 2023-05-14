@@ -3,6 +3,7 @@ mod schema;
 use std::sync::Arc;
 
 use polars_arrow::prelude::QuantileInterpolOptions;
+use polars_core::frame::groupby::GroupByMethod;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};
@@ -39,6 +40,40 @@ pub enum AAggExpr {
     Std(Node, u8),
     Var(Node, u8),
     AggGroups(Node),
+}
+
+impl From<AAggExpr> for GroupByMethod {
+    fn from(value: AAggExpr) -> Self {
+        use AAggExpr::*;
+        match value {
+            Min { propagate_nans, .. } => {
+                if propagate_nans {
+                    GroupByMethod::NanMin
+                } else {
+                    GroupByMethod::Min
+                }
+            }
+            Max { propagate_nans, .. } => {
+                if propagate_nans {
+                    GroupByMethod::NanMax
+                } else {
+                    GroupByMethod::Max
+                }
+            }
+            Median(_) => GroupByMethod::Median,
+            NUnique(_) => GroupByMethod::NUnique,
+            First(_) => GroupByMethod::First,
+            Last(_) => GroupByMethod::Last,
+            Mean(_) => GroupByMethod::Mean,
+            Implode(_) => GroupByMethod::Implode,
+            Sum(_) => GroupByMethod::Sum,
+            Count(_) => GroupByMethod::Count,
+            Std(_, ddof) => GroupByMethod::Std(ddof),
+            Var(_, ddof) => GroupByMethod::Var(ddof),
+            AggGroups(_) => GroupByMethod::Groups,
+            Quantile { .. } => unreachable!(),
+        }
+    }
 }
 
 // AExpr representation of Nodes which are allocated in an Arena
@@ -237,7 +272,7 @@ impl AExpr {
 }
 
 impl AAggExpr {
-    pub(crate) fn get_input(&self) -> NodeInputs {
+    pub fn get_input(&self) -> NodeInputs {
         use AAggExpr::*;
         match self {
             Min { input, .. } => Single(*input),
@@ -258,14 +293,14 @@ impl AAggExpr {
     }
 }
 
-pub(crate) enum NodeInputs {
+pub enum NodeInputs {
     Leaf,
     Single(Node),
     Many(Vec<Node>),
 }
 
 impl NodeInputs {
-    pub(crate) fn first(&self) -> Node {
+    pub fn first(&self) -> Node {
         match self {
             Single(node) => *node,
             NodeInputs::Many(nodes) => nodes[0],
