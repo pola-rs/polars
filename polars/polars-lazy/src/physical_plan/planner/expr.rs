@@ -170,23 +170,17 @@ pub(crate) fn create_physical_expr(
             )))
         }
         Agg(agg) => {
-            match agg {
-                AAggExpr::Min {
-                    input: expr,
-                    propagate_nans,
-                } => {
-                    let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
-                    match ctxt {
-                        Context::Aggregation => {
-                            if propagate_nans {
-                                Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::NanMin)))
-                            } else {
-                                Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Min)))
-                            }
-                        }
-                        Context::Default => {
+            let expr = agg.get_input().first();
+            let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
+
+            match ctxt {
+                // TODO!: implement these functions somewhere else
+                // this should not be in the planner.
+                Context::Default if !matches!(agg, AAggExpr::Quantile { .. }) => {
+                    let function = match agg {
+                        AAggExpr::Min { propagate_nans, .. } => {
                             let state = *state;
-                            let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
+                            SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
 
                                 if propagate_nans && s.dtype().is_float() {
@@ -218,33 +212,11 @@ pub(crate) fn create_physical_expr(
                                         state,
                                     ),
                                 }
-                            })
-                                as Arc<dyn SeriesUdf>);
-                            Ok(Arc::new(ApplyExpr::new_minimal(
-                                vec![input],
-                                function,
-                                node_to_expr(expression, expr_arena),
-                                ApplyOptions::ApplyFlat,
-                            )))
+                            }) as Arc<dyn SeriesUdf>)
                         }
-                    }
-                }
-                AAggExpr::Max {
-                    input: expr,
-                    propagate_nans,
-                } => {
-                    let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
-                    match ctxt {
-                        Context::Aggregation => {
-                            if propagate_nans {
-                                Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::NanMax)))
-                            } else {
-                                Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Max)))
-                            }
-                        }
-                        Context::Default => {
+                        AAggExpr::Max { propagate_nans, .. } => {
                             let state = *state;
-                            let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
+                            SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
 
                                 if propagate_nans && s.dtype().is_float() {
@@ -276,198 +248,15 @@ pub(crate) fn create_physical_expr(
                                         state,
                                     ),
                                 }
-                            })
-                                as Arc<dyn SeriesUdf>);
-                            Ok(Arc::new(ApplyExpr::new_minimal(
-                                vec![input],
-                                function,
-                                node_to_expr(expression, expr_arena),
-                                ApplyOptions::ApplyFlat,
-                            )))
+                            }) as Arc<dyn SeriesUdf>)
                         }
-                    }
-                }
-                AAggExpr::Sum(expr) => {
-                    let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
-                    match ctxt {
-                        Context::Aggregation => {
-                            Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Sum)))
-                        }
-                        Context::Default => {
-                            let state = *state;
-                            let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                                let s = std::mem::take(&mut s[0]);
-                                parallel_op_series(|s| Ok(s.sum_as_series()), s, None, state)
-                            })
-                                as Arc<dyn SeriesUdf>);
-                            Ok(Arc::new(ApplyExpr::new_minimal(
-                                vec![input],
-                                function,
-                                node_to_expr(expression, expr_arena),
-                                ApplyOptions::ApplyFlat,
-                            )))
-                        }
-                    }
-                }
-                AAggExpr::Std(expr, ddof) => {
-                    let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
-                    match ctxt {
-                        Context::Aggregation => Ok(Arc::new(AggregationExpr::new(
-                            input,
-                            GroupByMethod::Std(ddof),
-                        ))),
-                        Context::Default => {
-                            let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                                let s = std::mem::take(&mut s[0]);
-                                Ok(Some(s.std_as_series(ddof)))
-                            })
-                                as Arc<dyn SeriesUdf>);
-                            Ok(Arc::new(ApplyExpr::new_minimal(
-                                vec![input],
-                                function,
-                                node_to_expr(expression, expr_arena),
-                                ApplyOptions::ApplyFlat,
-                            )))
-                        }
-                    }
-                }
-                AAggExpr::Var(expr, ddof) => {
-                    let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
-                    match ctxt {
-                        Context::Aggregation => Ok(Arc::new(AggregationExpr::new(
-                            input,
-                            GroupByMethod::Var(ddof),
-                        ))),
-                        Context::Default => {
-                            let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                                let s = std::mem::take(&mut s[0]);
-                                Ok(Some(s.var_as_series(ddof)))
-                            })
-                                as Arc<dyn SeriesUdf>);
-                            Ok(Arc::new(ApplyExpr::new_minimal(
-                                vec![input],
-                                function,
-                                node_to_expr(expression, expr_arena),
-                                ApplyOptions::ApplyFlat,
-                            )))
-                        }
-                    }
-                }
-                AAggExpr::Mean(expr) => {
-                    let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
-                    match ctxt {
-                        Context::Aggregation => {
-                            Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Mean)))
-                        }
-                        Context::Default => {
-                            let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                                let s = std::mem::take(&mut s[0]);
-                                Ok(Some(s.mean_as_series()))
-                            })
-                                as Arc<dyn SeriesUdf>);
-                            Ok(Arc::new(ApplyExpr::new_minimal(
-                                vec![input],
-                                function,
-                                node_to_expr(expression, expr_arena),
-                                ApplyOptions::ApplyFlat,
-                            )))
-                        }
-                    }
-                }
-                AAggExpr::Median(expr) => {
-                    let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
-                    match ctxt {
-                        Context::Aggregation => {
-                            Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Median)))
-                        }
-                        Context::Default => {
-                            let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                                let s = std::mem::take(&mut s[0]);
-                                Ok(Some(s.median_as_series()))
-                            })
-                                as Arc<dyn SeriesUdf>);
-                            Ok(Arc::new(ApplyExpr::new_minimal(
-                                vec![input],
-                                function,
-                                node_to_expr(expression, expr_arena),
-                                ApplyOptions::ApplyFlat,
-                            )))
-                        }
-                    }
-                }
-                AAggExpr::First(expr) => {
-                    let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
-                    match ctxt {
-                        Context::Aggregation => {
-                            Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::First)))
-                        }
-                        Context::Default => {
-                            let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                                let s = std::mem::take(&mut s[0]);
-                                Ok(Some(s.head(Some(1))))
-                            })
-                                as Arc<dyn SeriesUdf>);
-                            Ok(Arc::new(ApplyExpr::new_minimal(
-                                vec![input],
-                                function,
-                                node_to_expr(expression, expr_arena),
-                                ApplyOptions::ApplyFlat,
-                            )))
-                        }
-                    }
-                }
-                AAggExpr::Last(expr) => {
-                    let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
-                    match ctxt {
-                        Context::Aggregation => {
-                            Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Last)))
-                        }
-                        Context::Default => {
-                            let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                                let s = std::mem::take(&mut s[0]);
-                                Ok(Some(s.tail(Some(1))))
-                            })
-                                as Arc<dyn SeriesUdf>);
-                            Ok(Arc::new(ApplyExpr::new_minimal(
-                                vec![input],
-                                function,
-                                node_to_expr(expression, expr_arena),
-                                ApplyOptions::ApplyFlat,
-                            )))
-                        }
-                    }
-                }
-                AAggExpr::Implode(expr) => {
-                    let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
-                    match ctxt {
-                        Context::Aggregation => Ok(Arc::new(AggregationExpr::new(
-                            input,
-                            GroupByMethod::Implode,
-                        ))),
-                        Context::Default => {
-                            let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                                let s = &s[0];
-                                s.implode().map(|ca| Some(ca.into_series()))
-                            })
-                                as Arc<dyn SeriesUdf>);
-                            Ok(Arc::new(ApplyExpr::new_minimal(
-                                vec![input],
-                                function,
-                                node_to_expr(expression, expr_arena),
-                                ApplyOptions::ApplyFlat,
-                            )))
-                        }
-                    }
-                }
-                AAggExpr::NUnique(expr) => {
-                    let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
-                    match ctxt {
-                        Context::Aggregation => Ok(Arc::new(AggregationExpr::new(
-                            input,
-                            GroupByMethod::NUnique,
-                        ))),
-                        Context::Default => {
-                            let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
+                        AAggExpr::Median(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
+                            let s = std::mem::take(&mut s[0]);
+                            Ok(Some(s.median_as_series()))
+                        })
+                            as Arc<dyn SeriesUdf>),
+                        AAggExpr::NUnique(_) => {
+                            SpecialEq::new(Arc::new(move |s: &mut [Series]| {
                                 let s = std::mem::take(&mut s[0]);
                                 s.n_unique().map(|count| {
                                     Some(
@@ -475,81 +264,93 @@ pub(crate) fn create_physical_expr(
                                             .into_series(),
                                     )
                                 })
-                            })
-                                as Arc<dyn SeriesUdf>);
-                            Ok(Arc::new(ApplyExpr::new_minimal(
-                                vec![input],
-                                function,
-                                node_to_expr(expression, expr_arena),
-                                ApplyOptions::ApplyFlat,
-                            )))
+                            }) as Arc<dyn SeriesUdf>)
                         }
-                    }
-                }
-                AAggExpr::Quantile {
-                    expr,
-                    quantile,
-                    interpol,
-                } => {
-                    // todo! add schema to get correct output type
-                    let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
-                    let quantile = create_physical_expr(quantile, ctxt, expr_arena, schema, state)?;
-                    Ok(Arc::new(AggQuantileExpr::new(input, quantile, interpol)))
-                    //
-                    // match ctxt {
-                    //     Context::Aggregation => {
-                    //
-                    //         Ok(Arc::new(AggQuantileExpr::new(input, quantile, interpol)))
-                    //     }
-                    //     Context::Default => {
-                    //         let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                    //             let s = std::mem::take(&mut s[0]);
-                    //             s.quantile_as_series(quantile, interpol)
-                    //         })
-                    //             as Arc<dyn SeriesUdf>);
-                    //         Ok(Arc::new(ApplyExpr::new_minimal(
-                    //             vec![input],
-                    //             function,
-                    //             node_to_expr(expression, expr_arena),
-                    //             ApplyOptions::ApplyFlat,
-                    //         )))
-                    //     }
-                    // }
-                }
-                AAggExpr::AggGroups(expr) => {
-                    if let Context::Default = ctxt {
-                        panic!("agg groups expression only supported in aggregation context")
-                    }
-                    let phys_expr = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
-                    Ok(Arc::new(AggregationExpr::new(
-                        phys_expr,
-                        GroupByMethod::Groups,
+                        AAggExpr::First(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
+                            let s = std::mem::take(&mut s[0]);
+                            Ok(Some(s.head(Some(1))))
+                        })
+                            as Arc<dyn SeriesUdf>),
+                        AAggExpr::Last(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
+                            let s = std::mem::take(&mut s[0]);
+                            Ok(Some(s.tail(Some(1))))
+                        })
+                            as Arc<dyn SeriesUdf>),
+                        AAggExpr::Mean(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
+                            let s = std::mem::take(&mut s[0]);
+                            Ok(Some(s.mean_as_series()))
+                        })
+                            as Arc<dyn SeriesUdf>),
+                        AAggExpr::Implode(_) => {
+                            SpecialEq::new(Arc::new(move |s: &mut [Series]| {
+                                let s = &s[0];
+                                s.implode().map(|ca| Some(ca.into_series()))
+                            }) as Arc<dyn SeriesUdf>)
+                        }
+                        AAggExpr::Quantile { .. } => {
+                            unreachable!()
+                        }
+                        AAggExpr::Sum(_) => {
+                            let state = *state;
+                            SpecialEq::new(Arc::new(move |s: &mut [Series]| {
+                                let s = std::mem::take(&mut s[0]);
+                                parallel_op_series(|s| Ok(s.sum_as_series()), s, None, state)
+                            }) as Arc<dyn SeriesUdf>)
+                        }
+                        AAggExpr::Count(_) => SpecialEq::new(Arc::new(move |s: &mut [Series]| {
+                            let s = std::mem::take(&mut s[0]);
+                            let count = s.len();
+                            Ok(Some(
+                                IdxCa::from_slice(s.name(), &[count as IdxSize]).into_series(),
+                            ))
+                        })
+                            as Arc<dyn SeriesUdf>),
+                        AAggExpr::Std(_, ddof) => {
+                            SpecialEq::new(Arc::new(move |s: &mut [Series]| {
+                                let s = std::mem::take(&mut s[0]);
+                                Ok(Some(s.std_as_series(ddof)))
+                            }) as Arc<dyn SeriesUdf>)
+                        }
+                        AAggExpr::Var(_, ddof) => {
+                            SpecialEq::new(Arc::new(move |s: &mut [Series]| {
+                                let s = std::mem::take(&mut s[0]);
+                                Ok(Some(s.var_as_series(ddof)))
+                            }) as Arc<dyn SeriesUdf>)
+                        }
+                        AAggExpr::AggGroups(_) => {
+                            panic!("agg groups expression only supported in aggregation context")
+                        }
+                    };
+                    Ok(Arc::new(ApplyExpr::new_minimal(
+                        vec![input],
+                        function,
+                        node_to_expr(expression, expr_arena),
+                        ApplyOptions::ApplyFlat,
                     )))
                 }
-                AAggExpr::Count(expr) => {
-                    let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
-                    match ctxt {
-                        Context::Aggregation => {
-                            Ok(Arc::new(AggregationExpr::new(input, GroupByMethod::Count)))
-                        }
-                        Context::Default => {
-                            let function = SpecialEq::new(Arc::new(move |s: &mut [Series]| {
-                                let s = std::mem::take(&mut s[0]);
-                                let count = s.len();
-                                Ok(Some(
-                                    UInt32Chunked::from_slice(s.name(), &[count as u32])
-                                        .into_series(),
-                                ))
-                            })
-                                as Arc<dyn SeriesUdf>);
-                            Ok(Arc::new(ApplyExpr::new_minimal(
-                                vec![input],
-                                function,
-                                node_to_expr(expression, expr_arena),
-                                ApplyOptions::ApplyFlat,
-                            )))
-                        }
+                _ => {
+                    if let AAggExpr::Quantile {
+                        expr,
+                        quantile,
+                        interpol,
+                    } = agg
+                    {
+                        let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
+                        let quantile =
+                            create_physical_expr(quantile, ctxt, expr_arena, schema, state)?;
+                        return Ok(Arc::new(AggQuantileExpr::new(input, quantile, interpol)));
                     }
+                    let field = schema
+                        .map(|schema| {
+                            expr_arena.get(expression).to_field(
+                                schema,
+                                Context::Aggregation,
+                                expr_arena,
+                            )
+                        })
+                        .transpose()?;
+                    let agg_method: GroupByMethod = agg.into();
+                    Ok(Arc::new(AggregationExpr::new(input, agg_method, field)))
                 }
             }
         }
