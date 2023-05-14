@@ -7,8 +7,8 @@ use polars_lazy::prelude::*;
 use polars_plan::prelude::*;
 use polars_plan::utils::expressions_to_schema;
 use sqlparser::ast::{
-    Expr as SqlExpr, FunctionArg, JoinOperator, ObjectName, OrderByExpr, Query, Select, SelectItem,
-    SetExpr, Statement, TableAlias, TableFactor, TableWithJoins, Value as SQLValue,
+    Expr as SqlExpr, FunctionArg, JoinOperator, ObjectName, Offset, OrderByExpr, Query, Select,
+    SelectItem, SetExpr, Statement, TableAlias, TableFactor, TableWithJoins, Value as SQLValue,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
@@ -134,18 +134,8 @@ impl SQLContext {
         if !query.order_by.is_empty() {
             lf = self.process_order_by(lf, &query.order_by)?;
         }
-        match &query.limit {
-            Some(SqlExpr::Value(SQLValue::Number(nrow, _))) => {
-                let nrow = nrow
-                    .parse()
-                    .map_err(|e| polars_err!(ComputeError: "conversion error: {}", e))?;
-                Ok(lf.limit(nrow))
-            }
-            None => Ok(lf),
-            _ => polars_bail!(
-                ComputeError: "non-number arguments to LIMIT clause are not supported",
-            ),
-        }
+
+        self.process_limit_offset(lf, &query.limit, &query.offset)
     }
 
     fn execute_show_tables(&mut self, _: &Statement) -> PolarsResult<LazyFrame> {
@@ -433,6 +423,51 @@ impl SQLContext {
             .collect::<Vec<_>>();
 
         Ok(aggregated.select(&final_projection))
+    }
+
+    fn process_limit_offset(
+        &mut self,
+        lf: LazyFrame,
+        limit: &Option<SqlExpr>,
+        offset: &Option<Offset>,
+    ) -> PolarsResult<LazyFrame> {
+        match (offset, limit) {
+            (
+                Some(Offset {
+                    value: SqlExpr::Value(SQLValue::Number(offset, _)),
+                    ..
+                }),
+                Some(SqlExpr::Value(SQLValue::Number(limit, _))),
+            ) => Ok(lf.slice(
+                offset
+                    .parse()
+                    .map_err(|e| polars_err!(ComputeError: "OFFSET conversion error: {}", e))?,
+                limit
+                    .parse()
+                    .map_err(|e| polars_err!(ComputeError: "LIMIT conversion error: {}", e))?,
+            )),
+            (
+                Some(Offset {
+                    value: SqlExpr::Value(SQLValue::Number(offset, _)),
+                    ..
+                }),
+                None,
+            ) => Ok(lf.slice(
+                offset
+                    .parse()
+                    .map_err(|e| polars_err!(ComputeError: "OFFSET conversion error: {}", e))?,
+                IdxSize::MAX,
+            )),
+            (None, Some(SqlExpr::Value(SQLValue::Number(limit, _)))) => Ok(lf.limit(
+                limit
+                    .parse()
+                    .map_err(|e| polars_err!(ComputeError: "LIMIT conversion error: {}", e))?,
+            )),
+            (None, None) => Ok(lf),
+            _ => polars_bail!(
+                ComputeError: "non-numeric arguments for LIMIT/OFFSET are not supported",
+            ),
+        }
     }
 }
 

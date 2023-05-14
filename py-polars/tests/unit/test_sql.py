@@ -94,6 +94,22 @@ def test_sql_groupby(foods_ipc_path: Path) -> None:
     assert out.to_dict(False) == {"grp": ["c"], "n_dist_attr": [2]}
 
 
+def test_sql_limit_offset() -> None:
+    n_values = 11
+    lf = pl.LazyFrame({"a": range(n_values), "b": reversed(range(n_values))})
+    c = pl.SQLContext(tbl=lf)
+
+    assert c.execute("SELECT * FROM tbl LIMIT 3 OFFSET 4", eager=True).rows() == [
+        (4, 6),
+        (5, 5),
+        (6, 4),
+    ]
+    for offset, limit in [(0, 3), (1, n_values), (2, 3), (5, 3), (8, 5), (n_values, 1)]:
+        out = c.execute(f"SELECT * FROM tbl LIMIT {limit} OFFSET {offset}", eager=True)
+        assert_frame_equal(out, lf.slice(offset, limit).collect())
+        assert len(out) == min(limit, n_values - offset)
+
+
 def test_sql_join_inner(foods_ipc_path: Path) -> None:
     lf = pl.scan_ipc(foods_ipc_path)
 
