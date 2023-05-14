@@ -1139,6 +1139,11 @@ def test_quantile(fruits_cars: pl.DataFrame) -> None:
     assert fruits_cars.select(pl.col("A").quantile(0.24, "linear"))["A"][0] == 1.96
 
 
+def test_null_count() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, None, 2], "b": [None, 3, None, 3]})
+    assert lf.null_count().collect().rows() == [(1, 2)]
+
+
 def test_unique() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 2], "b": [3, 3, 3]})
 

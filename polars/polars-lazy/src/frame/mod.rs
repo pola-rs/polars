@@ -1024,6 +1024,11 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
+    /// Aggregate all the columns as the sum of their null value count.
+    pub fn null_count(self) -> LazyFrame {
+        self.select_local(vec![col("*").null_count()])
+    }
+
     /// Keep unique rows and maintain order
     pub fn unique_stable(
         self,
