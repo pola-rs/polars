@@ -272,20 +272,29 @@ impl SQLContext {
         lf = match &select_stmt.distinct {
             Some(Distinct::Distinct) => lf.unique(None, UniqueKeepStrategy::Any),
             Some(Distinct::On(exprs)) => {
-                let gb_cols = exprs
+                // TODO: support exprs in `unique` see https://github.com/pola-rs/polars/issues/5760
+                let cols = exprs
                     .iter()
-                    .map(|e| parse_sql_expr(e, self))
+                    .map(|e| {
+                        let expr = parse_sql_expr(e, self)?;
+                        if let Expr::Column(name) = expr {
+                            Ok(name.to_string())
+                        } else {
+                            Err(polars_err!(
+                                ComputeError:
+                                "DISTINCT ON only supports column names"
+                            ))
+                        }
+                    })
                     .collect::<PolarsResult<Vec<_>>>()?;
+
                 // DISTINCT ON applies the ORDER BY before the operation.
                 if !query.order_by.is_empty() {
                     lf = self.process_order_by(lf, &query.order_by)?;
                 }
-                return Ok(lf.groupby_stable(gb_cols).agg(vec![col("*").first()]));
+                return Ok(lf.unique_stable(Some(cols), UniqueKeepStrategy::First));
             }
-            None => {
-                //  apply the ORDER BY last
-                lf
-            }
+            None => lf,
         };
 
         if query.order_by.is_empty() {
