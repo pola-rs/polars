@@ -256,14 +256,15 @@ impl SlicePushDown {
                     options
                 })
             }
-            (Distinct {input, mut options}, Some(state)) => {
+            (Unique {input, subset, mut options}, Some(state)) => {
                 // first restart optimization in inputs and get the updated LP
                 let input_lp = lp_arena.take(input);
                 let input_lp = self.pushdown(input_lp, None, lp_arena, expr_arena)?;
                 let input= lp_arena.add(input_lp);
                 options.slice = Some((state.offset, state.len as usize));
-                Ok(Distinct {
+                Ok(Unique {
                     input,
+                    subset,
                     options,
                 })
             }
@@ -323,7 +324,7 @@ impl SlicePushDown {
             | m @ (MapFunction {function: FunctionNode::Explode {..}, ..}, _)
             | m @ (MapFunction {function: FunctionNode::Melt {..}, ..}, _)
             | m @ (Cache {..}, _)
-            | m @ (Distinct {..}, _)
+            | m @ (Unique {..}, _)
             | m @ (HStack {..},_)
             | m @ (Aggregate{..},_)
             // blocking in streaming

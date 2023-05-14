@@ -143,8 +143,6 @@ pub struct GroupbyOptions {
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DistinctOptions {
-    /// Subset of columns that will be taken into account.
-    pub subset: Option<Arc<Vec<String>>>,
     /// This will maintain the order of the input.
     /// Note that this is more expensive.
     /// `maintain_order` is not supported in the streaming

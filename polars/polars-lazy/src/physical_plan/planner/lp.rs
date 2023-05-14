@@ -382,9 +382,22 @@ pub fn create_physical_plan(
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
             Ok(Box::new(executors::CacheExec { id, input, count }))
         }
-        Distinct { input, options } => {
+        Unique { input, subset, options } => {
+            let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
             let input = create_physical_plan(input, lp_arena, expr_arena)?;
-            Ok(Box::new(executors::UniqueExec { input, options }))
+
+            let mut state =
+                ExpressionConversionState::new(POOL.current_num_threads() > subset.len());
+
+            let phys_expr = create_physical_expressions(
+                &subset,
+                Context::Default,
+                expr_arena,
+                Some(&input_schema),
+                &mut state,
+            )?;
+
+            Ok(Box::new(executors::UniqueExec { input, expr: phys_expr, input_schema, options }))
         }
         Aggregate {
             input,

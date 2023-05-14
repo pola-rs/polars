@@ -559,17 +559,21 @@ impl ProjectionPushDown {
                     args,
                 })
             }
-            Distinct { input, options } => {
+            Unique {
+                input,
+                subset,
+                options,
+            } => {
                 // make sure that the set of unique columns is projected
                 if !acc_projections.is_empty() {
-                    if let Some(subset) = options.subset.as_ref() {
-                        subset.iter().for_each(|name| {
-                            add_str_to_accumulated(
-                                name,
+                    if !subset.is_empty() {
+                        subset.iter().for_each(|node| {
+                            add_expr_to_accumulated(
+                                *node,
                                 &mut acc_projections,
                                 &mut projected_names,
                                 expr_arena,
-                            )
+                            );
                         })
                     } else {
                         // distinct needs all columns
@@ -593,7 +597,12 @@ impl ProjectionPushDown {
                     lp_arena,
                     expr_arena,
                 )?;
-                Ok(Distinct { input, options })
+                
+                Ok(Unique {
+                    input,
+                    subset,
+                    options,
+                })
             }
             Selection { predicate, input } => {
                 if !acc_projections.is_empty() {

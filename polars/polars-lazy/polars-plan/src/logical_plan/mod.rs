@@ -228,8 +228,9 @@ pub enum LogicalPlan {
         schema: SchemaRef,
     },
     /// Remove duplicates from the table
-    Distinct {
+    Unique {
         input: Box<LogicalPlan>,
+        subset: Vec<Expr>,
         options: DistinctOptions,
     },
     /// Sort the table

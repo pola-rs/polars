@@ -30,7 +30,7 @@ impl LogicalPlan {
             Aggregate { schema, .. } => Ok(Cow::Borrowed(schema)),
             Join { schema, .. } => Ok(Cow::Borrowed(schema)),
             HStack { schema, .. } => Ok(Cow::Borrowed(schema)),
-            Distinct { input, .. } | FileSink { input, .. } => input.schema(),
+            Unique { input, .. } | FileSink { input, .. } => input.schema(),
             Slice { input, .. } => input.schema(),
             MapFunction {
                 input, function, ..

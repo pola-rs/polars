@@ -121,8 +121,9 @@ pub enum ALogicalPlan {
         exprs: Vec<Node>,
         schema: SchemaRef,
     },
-    Distinct {
+    Unique {
         input: Node,
+        subset: Vec<Node>,
         options: DistinctOptions,
     },
     MapFunction {
@@ -196,7 +197,7 @@ impl ALogicalPlan {
             Aggregate { .. } => "aggregate",
             Join { .. } => "join",
             HStack { .. } => "hstack",
-            Distinct { .. } => "distinct",
+            Unique { .. } => "distinct",
             MapFunction { .. } => "map_function",
             Union { .. } => "union",
             ExtContext { .. } => "ext_context",
@@ -247,7 +248,7 @@ impl ALogicalPlan {
             Aggregate { schema, .. } => schema,
             Join { schema, .. } => schema,
             HStack { schema, .. } => schema,
-            Distinct { input, .. } | FileSink { input, .. } => {
+            Unique { input, .. } | FileSink { input, .. } => {
                 return arena.get(*input).schema(arena)
             }
             Slice { input, .. } => return arena.get(*input).schema(arena),
@@ -346,8 +347,11 @@ impl ALogicalPlan {
                 id: *id,
                 count: *count,
             },
-            Distinct { options, .. } => Distinct {
+            Unique {
+                options, subset, ..
+            } => Unique {
                 input: inputs[0],
+                subset: exprs,
                 options: options.clone(),
             },
             HStack { schema, .. } => HStack {
@@ -483,7 +487,7 @@ impl ALogicalPlan {
     pub fn copy_exprs(&self, container: &mut Vec<Node>) {
         use ALogicalPlan::*;
         match self {
-            Slice { .. } | Cache { .. } | Distinct { .. } | Union { .. } | MapFunction { .. } => {}
+            Slice { .. } | Cache { .. } | Unique { .. } | Union { .. } | MapFunction { .. } => {}
             Sort { by_column, .. } => container.extend_from_slice(by_column),
             Selection { predicate, .. } => container.push(*predicate),
             Projection { expr, .. } => container.extend_from_slice(expr),
@@ -572,7 +576,7 @@ impl ALogicalPlan {
                 return;
             }
             HStack { input, .. } => *input,
-            Distinct { input, .. } => *input,
+            Unique { input, .. } => *input,
             MapFunction { input, .. } => *input,
             FileSink { input, .. } => *input,
             ExtContext {

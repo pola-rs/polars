@@ -1025,36 +1025,37 @@ impl LazyFrame {
     }
 
     /// Keep unique rows and maintain order
-    pub fn unique_stable(
+    pub fn unique_stable<E: AsRef<[Expr]>>(
         self,
-        subset: Option<Vec<String>>,
+        subset: Option<E>,
         keep_strategy: UniqueKeepStrategy,
     ) -> LazyFrame {
         let opt_state = self.get_opt_state();
+        let subset = subset.map(|e| e.as_ref().to_vec()).unwrap_or_default();
         let options = DistinctOptions {
-            subset: subset.map(Arc::new),
             maintain_order: true,
             keep_strategy,
             ..Default::default()
         };
-        let lp = self.get_plan_builder().distinct(options).build();
+        let lp = self.get_plan_builder().unique(subset, options).build();
         Self::from_logical_plan(lp, opt_state)
     }
 
     /// Keep unique rows, do not maintain order
-    pub fn unique(
+    pub fn unique<E: AsRef<[Expr]>>(
         self,
-        subset: Option<Vec<String>>,
+        subset: Option<E>,
         keep_strategy: UniqueKeepStrategy,
     ) -> LazyFrame {
         let opt_state = self.get_opt_state();
+        let subset = subset.map(|e| e.as_ref().to_vec()).unwrap_or_default();
+
         let options = DistinctOptions {
-            subset: subset.map(Arc::new),
             maintain_order: false,
             keep_strategy,
             ..Default::default()
         };
-        let lp = self.get_plan_builder().distinct(options).build();
+        let lp = self.get_plan_builder().unique(subset, options).build();
         Self::from_logical_plan(lp, opt_state)
     }
 

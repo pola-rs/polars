@@ -640,9 +640,10 @@ impl LogicalPlanBuilder {
         .into()
     }
 
-    pub fn distinct(self, options: DistinctOptions) -> Self {
-        LogicalPlan::Distinct {
+    pub fn unique(self, subset: Vec<Expr>, options: DistinctOptions) -> Self {
+        LogicalPlan::Unique {
             input: Box::new(self.0),
+            subset,
             options,
         }
         .into()

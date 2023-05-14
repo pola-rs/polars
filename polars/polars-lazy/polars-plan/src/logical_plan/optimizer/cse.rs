@@ -202,7 +202,7 @@ fn lp_node_equal(a: &ALogicalPlan, b: &ALogicalPlan, expr_arena: &Arena<AExpr>) 
                 ..
             },
         ) => expr_nodes_equal(by_l, by_r, expr_arena) && args_l == args_r,
-        (Distinct { options: l, .. }, Distinct { options: r, .. }) => l == r,
+        (Unique { subset: subset_l, options: l, .. }, Unique { subset: subset_r, options: r, .. }) => (l == r) && (subset_l == subset_r),
         (MapFunction { function: l, .. }, MapFunction { function: r, .. }) => l == r,
         (
             Aggregate {

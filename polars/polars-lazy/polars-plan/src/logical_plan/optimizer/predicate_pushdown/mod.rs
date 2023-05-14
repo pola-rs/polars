@@ -349,8 +349,9 @@ impl PredicatePushDown {
                 }
             }
 
-            Distinct {
+            Unique {
                 input,
+                subset,
                 options
             } => {
 
@@ -376,14 +377,16 @@ impl PredicatePushDown {
                     local_predicates.extend_from_slice(&transfer_to_local_by_node(&mut acc_predicates, |node| predicate_is_pushdown_boundary(node, expr_arena)));
 
                     self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
-                    let lp = Distinct {
+                    let lp = Unique {
                         input,
+                        subset,
                         options
                     };
                     Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
                 } else {
-                    let lp = Distinct {
+                    let lp = Unique {
                         input,
+                        subset,
                         options
                     };
                     self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)

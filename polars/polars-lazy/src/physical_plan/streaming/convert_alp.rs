@@ -322,7 +322,7 @@ pub(crate) fn insert_streaming_nodes(
                     }
                 }
             }
-            Distinct { input, options }
+            Unique { input, subset, options }
                 if !options.maintain_order
                     && !matches!(options.keep_strategy, UniqueKeepStrategy::None) =>
             {

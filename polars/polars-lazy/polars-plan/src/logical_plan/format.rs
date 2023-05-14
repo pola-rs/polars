@@ -233,8 +233,8 @@ impl LogicalPlan {
                 write!(f, "\n{:indent$} {exprs:?}", "")?;
                 input._format(f, sub_indent)
             }
-            Distinct { input, options } => {
-                write!(f, "{:indent$}UNIQUE BY {:?}", "", options.subset)?;
+            Unique { input, subset, .. } => {
+                write!(f, "{:indent$}UNIQUE BY {subset:?}", "")?;
                 input._format(f, sub_indent)
             }
             Slice { input, offset, len } => {

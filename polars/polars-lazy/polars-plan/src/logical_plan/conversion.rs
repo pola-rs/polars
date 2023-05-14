@@ -374,9 +374,22 @@ pub fn to_alp(
                 schema,
             }
         }
-        LogicalPlan::Distinct { input, options } => {
+        LogicalPlan::Unique {
+            input,
+            subset,
+            options,
+        } => {
             let input = to_alp(*input, expr_arena, lp_arena)?;
-            ALogicalPlan::Distinct { input, options }
+            let subset = subset
+                .into_iter()
+                .map(|x| to_aexpr(x, expr_arena))
+                .collect();
+
+            ALogicalPlan::Unique {
+                input,
+                subset,
+                options,
+            }
         }
         LogicalPlan::MapFunction { input, function } => {
             let input = to_alp(*input, expr_arena, lp_arena)?;
@@ -842,10 +855,15 @@ impl ALogicalPlan {
                     schema,
                 }
             }
-            ALogicalPlan::Distinct { input, options } => {
+            ALogicalPlan::Unique {
+                input,
+                subset,
+                options,
+            } => {
                 let i = convert_to_lp(input, lp_arena);
-                LogicalPlan::Distinct {
+                LogicalPlan::Unique {
                     input: Box::new(i),
+                    subset: nodes_to_exprs(&subset, expr_arena),
                     options,
                 }
             }
