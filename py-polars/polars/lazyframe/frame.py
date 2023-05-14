@@ -3979,7 +3979,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def std(self, ddof: int = 1) -> Self:
         """
-        Aggregate the columns in the DataFrame to their standard deviation value.
+        Aggregate the columns in the LazyFrame to their standard deviation value.
 
         Parameters
         ----------
@@ -4020,7 +4020,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def var(self, ddof: int = 1) -> Self:
         """
-        Aggregate the columns in the DataFrame to their variance value.
+        Aggregate the columns in the LazyFrame to their variance value.
 
         Parameters
         ----------
@@ -4061,7 +4061,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def max(self) -> Self:
         """
-        Aggregate the columns in the DataFrame to their maximum value.
+        Aggregate the columns in the LazyFrame to their maximum value.
 
         Examples
         --------
@@ -4086,7 +4086,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def min(self) -> Self:
         """
-        Aggregate the columns in the DataFrame to their minimum value.
+        Aggregate the columns in the LazyFrame to their minimum value.
 
         Examples
         --------
@@ -4111,7 +4111,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def sum(self) -> Self:
         """
-        Aggregate the columns in the DataFrame to their sum value.
+        Aggregate the columns in the LazyFrame to their sum value.
 
         Examples
         --------
@@ -4136,7 +4136,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def mean(self) -> Self:
         """
-        Aggregate the columns in the DataFrame to their mean value.
+        Aggregate the columns in the LazyFrame to their mean value.
 
         Examples
         --------
@@ -4161,7 +4161,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def median(self) -> Self:
         """
-        Aggregate the columns in the DataFrame to their median value.
+        Aggregate the columns in the LazyFrame to their median value.
 
         Examples
         --------
@@ -4184,13 +4184,39 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self._from_pyldf(self._ldf.median())
 
+    def null_count(self) -> Self:
+        """
+        Aggregate the columns in the LazyFrame as the sum of their null value count.
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "foo": [1, None, 3],
+        ...         "bar": [6, 7, None],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... )
+        >>> lf.null_count().collect()
+        shape: (1, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ ham │
+        │ --- ┆ --- ┆ --- │
+        │ u32 ┆ u32 ┆ u32 │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 1   ┆ 0   │
+        └─────┴─────┴─────┘
+
+        """
+        return self._from_pyldf(self._ldf.null_count())
+
     def quantile(
         self,
         quantile: float | Expr,
         interpolation: RollingInterpolationMethod = "nearest",
     ) -> Self:
         """
-        Aggregate the columns in the DataFrame to their quantile value.
+        Aggregate the columns in the LazyFrame to their quantile value.
 
         Parameters
         ----------

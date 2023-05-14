@@ -729,6 +729,11 @@ impl PyLazyFrame {
         ldf.explode(column).into()
     }
 
+    fn null_count(&self) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.null_count().into()
+    }
+
     #[pyo3(signature = (maintain_order, subset, keep))]
     fn unique(
         &self,
