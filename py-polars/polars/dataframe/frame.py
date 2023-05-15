@@ -3273,12 +3273,14 @@ class DataFrame:
         >>> df.write_delta(table_path)  # doctest: +SKIP
 
         Append data to an existing Delta Lake table on local filesystem.
-        Note: This will fail if the schema of new data does not match the schema of table.
+        Note: This will fail if schema of the new data does not match the
+        schema of existing table.
 
         >>> df.write_delta(table_path, mode="append")  # doctest: +SKIP
 
         Overwrite a Delta Lake table as a new version.
-        Note: If the schema of the new and old data is same, then setting `overwrite_schema` is not required.
+        Note: If the schema of the new and old data is same,
+        then setting `overwrite_schema` is not required.
 
         >>> existing_table_path = "/path/to/delta-table/"
         >>> df.write_delta(
