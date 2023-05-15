@@ -47,16 +47,9 @@ pub(crate) trait ToSeries {
 
 impl ToSeries for Vec<PySeries> {
     fn to_series(self) -> Vec<Series> {
-        // prevent destruction of ps
-        let mut ps = std::mem::ManuallyDrop::new(self);
-
-        // get mutable pointer and reinterpret as Series
-        let p = ps.as_mut_ptr() as *mut Series;
-        let len = ps.len();
-        let cap = ps.capacity();
-
-        // The pointer ownership will be transferred to Vec and this will be responsible for dealloc
-        unsafe { Vec::from_raw_parts(p, len, cap) }
+        // Safety
+        // repr is transparent and has only got one inner field`
+        unsafe { std::mem::transmute(self) }
     }
 }
 
@@ -66,13 +59,9 @@ pub(crate) trait ToPySeries {
 
 impl ToPySeries for Vec<Series> {
     fn to_pyseries(self) -> Vec<PySeries> {
-        let mut s = std::mem::ManuallyDrop::new(self);
-
-        let p = s.as_mut_ptr() as *mut PySeries;
-        let len = s.len();
-        let cap = s.capacity();
-
-        unsafe { Vec::from_raw_parts(p, len, cap) }
+        // Safety
+        // repr is transparent and has only got one inner field`
+        unsafe { std::mem::transmute(self) }
     }
 }
 
