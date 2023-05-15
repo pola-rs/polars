@@ -237,6 +237,7 @@ mod test {
                 "2021-01-01",
                 "%Y-%m-%d",
                 10,
+                false,
                 Some(
                     NaiveDate::from_ymd_opt(2021, 1, 1)
                         .unwrap()
@@ -248,6 +249,7 @@ mod test {
                 "2021-01-01 07:45:12",
                 "%Y-%m-%d %H:%M:%S",
                 19,
+                true,
                 Some(
                     NaiveDate::from_ymd_opt(2021, 1, 1)
                         .unwrap()
@@ -259,6 +261,7 @@ mod test {
                 "2021-01-01 07:45:12",
                 "%Y-%m-%d %H:%M:%S",
                 19,
+                true,
                 Some(
                     NaiveDate::from_ymd_opt(2021, 1, 1)
                         .unwrap()
@@ -270,6 +273,7 @@ mod test {
                 "2019-04-18T02:45:55.555000000",
                 "%Y-%m-%dT%H:%M:%S.%9f",
                 29,
+                true,
                 Some(
                     NaiveDate::from_ymd_opt(2019, 4, 18)
                         .unwrap()
@@ -281,6 +285,7 @@ mod test {
                 "2019-04-18T02:45:55.555000",
                 "%Y-%m-%dT%H:%M:%S.%6f",
                 26,
+                true,
                 Some(
                     NaiveDate::from_ymd_opt(2019, 4, 18)
                         .unwrap()
@@ -292,6 +297,7 @@ mod test {
                 "2019-04-18T02:45:55.555",
                 "%Y-%m-%dT%H:%M:%S.%3f",
                 23,
+                true,
                 Some(
                     NaiveDate::from_ymd_opt(2019, 4, 18)
                         .unwrap()
@@ -301,11 +307,11 @@ mod test {
             ),
         ];
 
-        for (val, fmt, len, expected) in patterns {
+        for (val, fmt, len, is_datetime, expected) in patterns {
             assert_eq!(fmt_len(fmt.as_bytes()).unwrap(), len);
             unsafe {
                 assert_eq!(
-                    StrpTimeState::default().parse(val.as_bytes(), fmt.as_bytes(), len, true),
+                    StrpTimeState::default().parse(val.as_bytes(), fmt.as_bytes(), len, is_datetime),
                     expected
                 )
             };
