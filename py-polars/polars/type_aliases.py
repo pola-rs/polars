@@ -13,6 +13,7 @@ from typing import (
     Sequence,
     Tuple,
     Type,
+    TypeVar,
     Union,
 )
 
@@ -22,7 +23,7 @@ else:
     from typing_extensions import Literal
 
 if TYPE_CHECKING:
-    from polars import Expr, Series
+    from polars import DataFrame, Expr, LazyFrame, Series
     from polars.datatypes import DataType, DataTypeClass, TemporalType
     from polars.dependencies import numpy as np
     from polars.dependencies import pandas as pd
@@ -175,3 +176,7 @@ RowTotalsDefinition: TypeAlias = Union[
 
 # standard/named hypothesis profiles used for parametric testing
 ParametricProfileNames: TypeAlias = Literal["fast", "balanced", "expensive"]
+
+# typevars for core polars types
+PolarsType = TypeVar("PolarsType", "DataFrame", "LazyFrame", "Series", "Expr")
+FrameType = TypeVar("FrameType", "DataFrame", "LazyFrame")
