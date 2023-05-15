@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import pyarrow.fs
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_frame_not_equal
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 @pytest.fixture()
@@ -151,12 +148,12 @@ def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
 
     assert tbl.version() == 1
     assert partitioned_tbl.version() == 0
-    assert partitioned_tbl.table_uri.rstrip("/") == str(partitioned_tbl_uri)
+    assert Path(partitioned_tbl.table_uri) == partitioned_tbl_uri
     assert partitioned_tbl.metadata().partition_columns == ["strings"]
 
     assert_frame_equal(v0, pl_df_0, check_row_order=False)
     assert_frame_equal(v1, pl_df_1, check_row_order=False)
-    
+
     cols = [c for c in df_supported.columns if not c.startswith("list_")]
     assert_frame_equal(
         df_supported.select(cols),
