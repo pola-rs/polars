@@ -3239,16 +3239,22 @@ class DataFrame:
         mode
             How to handle existing data. Default is to error if table already exists.
 
-                * If 'append', will add new data.
-                * If 'overwrite', will replace table with new data.
-                * If 'ignore', will not write anything if table already exists.
+            * If 'append', will add new data.
+            * If 'overwrite', will replace table with new data.
+            * If 'ignore', will not write anything if table already exists.
         overwrite_schema
             If True, allows updating the schema of the table.
         storage_options
             Extra options for the storage backends supported by `deltalake`.
             For cloud storages, this may include configurations for authentication etc.
+
+            * See a list of supported storage options for S3 `here <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html#variants>`__.
+            * See a list of supported storage options for GCS `here <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html#variants>`__.
+            * See a list of supported storage options for Azure `here <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html#variants>`__.
         delta_write_options
             Additional keyword arguments while writing a Delta lake Table.
+            See a list of supported write options `here <https://github.com/delta-io/delta-rs/blob/395d48b47ea638b70415899dc035cc895b220e55/python/deltalake/writer.py#L65>`__.
+
         """
         from polars.io.delta import check_if_delta_available, resolve_delta_lake_uri
 

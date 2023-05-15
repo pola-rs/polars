@@ -141,10 +141,9 @@ def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
     assert v0.columns == pl_df_0.columns
     assert v1.shape == pl_df_1.shape
     assert v1.columns == pl_df_1.columns
-    assert (
-        df_supported.shape == pl_df_partitioned.shape
-        and df_supported.columns == pl_df_partitioned.columns
-    )
+
+    assert df_supported.shape == pl_df_partitioned.shape
+    assert df_supported.columns == pl_df_partitioned.columns
 
     assert tbl.version() == 1
     assert partitioned_tbl.version() == 0

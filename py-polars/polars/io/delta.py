@@ -102,7 +102,7 @@ def read_delta(
     * adl://<container>/<path>
     * abfs://<container>/<path>
 
-    Supported options for Azure are available `here
+    See a list of supported storage options for Azure `here
     <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html#variants>`__.
 
     >>> table_path = "az://container/path/to/delta-table/"
