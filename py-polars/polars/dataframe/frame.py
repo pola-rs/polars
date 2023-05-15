@@ -3255,6 +3255,46 @@ class DataFrame:
             Additional keyword arguments while writing a Delta lake Table.
             See a list of supported write options `here <https://github.com/delta-io/delta-rs/blob/395d48b47ea638b70415899dc035cc895b220e55/python/deltalake/writer.py#L65>`__.
 
+        Examples
+        --------
+        Instantiate a basic dataframe:
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3, 4, 5],
+        ...         "bar": [6, 7, 8, 9, 10],
+        ...         "ham": ["a", "b", "c", "d", "e"],
+        ...     }
+        ... )
+
+        Write DataFrame as a Delta Lake table on local filesystem.
+
+        >>> table_path = "/path/to/delta-table/"
+        >>> df.write_delta(table_path) # doctest: +SKIP
+
+        Append data to an existing Delta Lake table on local filesystem.
+        Note: This will fail if the schema of new data does not match the schema of table.
+
+        >>> df.write_delta(table_path, mode="append") # doctest: +SKIP
+
+        Overwrite a Delta Lake table as a new version.
+        Note: If the schema of the new and old data is same, then setting `overwrite_schema` is not required.
+
+        >>> existing_table_path = "/path/to/delta-table/"
+        >>> df.write_delta(existing_table_path, mode="overwrite", overwrite_schema=True) # doctest: +SKIP
+
+        Write DataFrame as a Delta Lake table on cloud object store like S3.
+        
+        >>> table_path = "s3://bucket/prefix/to/delta-table/"
+        >>> df.write_delta(
+        ...     table_path,
+        ...     storage_options={
+        ...         "AWS_REGION": "THE_AWS_REGION",
+        ...         "AWS_ACCESS_KEY_ID": "THE_AWS_ACCESS_KEY_ID",
+        ...         "AWS_SECRET_ACCESS_KEY": "THE_AWS_SECRET_ACCESS_KEY",
+        ...     },
+        ... ) # doctest: +SKIP
+
         """
         from polars.io.delta import check_if_delta_available, resolve_delta_lake_uri
 
