@@ -203,7 +203,7 @@ def test_align_frames() -> None:
 
     # expected error condition
     with pytest.raises(TypeError):
-        pl.align_frames(  # type: ignore[call-overload]
+        pl.align_frames(  # type: ignore[type-var]
             pl.from_pandas(df1.reset_index()).lazy(),
             pl.from_pandas(df2.reset_index()),
             on="date",
