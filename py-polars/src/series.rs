@@ -48,7 +48,7 @@ pub(crate) trait ToSeries {
 impl ToSeries for Vec<PySeries> {
     fn to_series(self) -> Vec<Series> {
         // Safety
-        // repr is transparent and has only got one inner field`
+        // repr is transparent
         unsafe { std::mem::transmute(self) }
     }
 }
@@ -60,7 +60,7 @@ pub(crate) trait ToPySeries {
 impl ToPySeries for Vec<Series> {
     fn to_pyseries(self) -> Vec<PySeries> {
         // Safety
-        // repr is transparent and has only got one inner field`
+        // repr is transparent
         unsafe { std::mem::transmute(self) }
     }
 }
