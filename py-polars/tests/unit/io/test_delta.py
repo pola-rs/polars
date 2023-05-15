@@ -101,6 +101,7 @@ def test_read_delta_relative(delta_table_path: Path) -> None:
     assert_frame_equal(expected, df, check_dtype=False)
 
 
+@pytest.mark.write_disk()
 def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
     from deltalake import DeltaTable
 
