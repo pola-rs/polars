@@ -102,3 +102,35 @@ def test_read_delta_relative(delta_table_path: Path) -> None:
 
     expected = pl.DataFrame({"name": ["Joey", "Ivan"], "age": [14, 32]})
     assert_frame_equal(expected, df, check_dtype=False)
+
+
+def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
+    from deltalake import DeltaTable
+
+    # Case: Success (version 0)
+    df.select(pl.col(pl.Utf8)).write_delta(tmp_path)
+
+    # Case: Error if table exists
+    with pytest.raises(ValueError):
+        df.select(pl.col(pl.Int64)).write_delta(tmp_path)
+
+    # Case: Overwrite with new version (version 1)
+    df.select(pl.col(pl.Int64)).write_delta(
+        tmp_path, mode="overwrite", overwrite_schema=True
+    )
+
+    # Case: Error if schema contains unsupported columns
+    with pytest.raises(TypeError):
+        df.write_delta(tmp_path, mode="overwrite", overwrite_schema=True)
+
+    assert DeltaTable(tmp_path).version() == 1
+
+    # Case: Write new partitioned table (version 0)
+    df.drop(["cat", "time"]).write_delta(
+        tmp_path / ".." / "partitioned_table",
+        delta_write_options={"partition_by": "strings"},
+    )
+
+    part_tbl = DeltaTable(tmp_path / ".." / "partitioned_table")
+    assert part_tbl.version() == 0
+    assert part_tbl.metadata().partition_columns == ["strings"]

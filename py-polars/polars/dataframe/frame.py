@@ -3260,7 +3260,7 @@ class DataFrame:
             delta_write_options = {}
 
         if isinstance(table_or_uri, (str, Path)):
-            table_or_uri = resolve_delta_lake_uri(str(table_or_uri))
+            table_or_uri = resolve_delta_lake_uri(str(table_or_uri), strict=False)
 
         from polars.datatypes import List, Null, Struct, Time
 
