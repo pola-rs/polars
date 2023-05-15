@@ -22,4 +22,5 @@ polars-lazy = { version = "0.29.0", path = "../polars-lazy", features = ["compil
 polars-plan = { version = "0.29.0", path = "../polars-lazy/polars-plan", features = ["compile"] }
 serde = "1"
 serde_json = { version = "1" }
-sqlparser = { version = "0.30" }
+sqlparser = { git = "https://github.com/sqlparser-rs/sqlparser-rs.git", rev = "ae3b5844c839072c235965fe0d1bddc473dced87" }
+# sqlparser = { version = "0.30"}
