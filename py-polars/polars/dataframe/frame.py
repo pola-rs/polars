@@ -3270,21 +3270,23 @@ class DataFrame:
         Write DataFrame as a Delta Lake table on local filesystem.
 
         >>> table_path = "/path/to/delta-table/"
-        >>> df.write_delta(table_path) # doctest: +SKIP
+        >>> df.write_delta(table_path)  # doctest: +SKIP
 
         Append data to an existing Delta Lake table on local filesystem.
         Note: This will fail if the schema of new data does not match the schema of table.
 
-        >>> df.write_delta(table_path, mode="append") # doctest: +SKIP
+        >>> df.write_delta(table_path, mode="append")  # doctest: +SKIP
 
         Overwrite a Delta Lake table as a new version.
         Note: If the schema of the new and old data is same, then setting `overwrite_schema` is not required.
 
         >>> existing_table_path = "/path/to/delta-table/"
-        >>> df.write_delta(existing_table_path, mode="overwrite", overwrite_schema=True) # doctest: +SKIP
+        >>> df.write_delta(
+        ...     existing_table_path, mode="overwrite", overwrite_schema=True
+        ... )  # doctest: +SKIP
 
         Write DataFrame as a Delta Lake table on cloud object store like S3.
-        
+
         >>> table_path = "s3://bucket/prefix/to/delta-table/"
         >>> df.write_delta(
         ...     table_path,
@@ -3293,7 +3295,7 @@ class DataFrame:
         ...         "AWS_ACCESS_KEY_ID": "THE_AWS_ACCESS_KEY_ID",
         ...         "AWS_SECRET_ACCESS_KEY": "THE_AWS_SECRET_ACCESS_KEY",
         ...     },
-        ... ) # doctest: +SKIP
+        ... )  # doctest: +SKIP
 
         """
         from polars.io.delta import check_if_delta_available, resolve_delta_lake_uri
