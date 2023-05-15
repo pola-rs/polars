@@ -765,18 +765,6 @@ impl<'s> FromPyObject<'s> for Wrap<Row<'s>> {
     }
 }
 
-pub(crate) trait ToSeries {
-    fn to_series(self) -> Vec<Series>;
-}
-
-impl ToSeries for Vec<PySeries> {
-    fn to_series(self) -> Vec<Series> {
-        // Safety:
-        // transparent repr
-        unsafe { std::mem::transmute(self) }
-    }
-}
-
 impl FromPyObject<'_> for Wrap<Schema> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
         let dict = ob.extract::<&PyDict>()?;
