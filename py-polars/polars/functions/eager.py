@@ -4,7 +4,7 @@ import contextlib
 import warnings
 from datetime import datetime, time, timedelta
 from functools import reduce
-from typing import TYPE_CHECKING, Iterable, Sequence, cast, overload
+from typing import TYPE_CHECKING, Iterable, List, Sequence, cast, overload
 
 import polars._reexport as pl
 from polars import functions as F
@@ -892,13 +892,13 @@ def align_frames(
             F.col(f"{c}{sfx}").alias(c) if f"{c}{sfx}" in aligned_cols else F.col(c)
             for c in df.columns
         ]
-        aligned_frames.append(alignment_frame.select(*df_cols))
+        f = alignment_frame.select(*df_cols)
+        if select is not None:
+            f = f.select(select)
+        aligned_frames.append(f)
 
-    aligned_frames = [
-        df if select is None else df.select(select) for df in aligned_frames
-    ]
     return cast(
-        list[FrameType], F.collect_all(aligned_frames) if eager else aligned_frames
+        List[FrameType], F.collect_all(aligned_frames) if eager else aligned_frames
     )
 
 
