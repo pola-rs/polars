@@ -64,7 +64,7 @@ impl From<Vec<(Vec<IdxSize>, Vec<Vec<IdxSize>>)>> for GroupsIdx {
 
         POOL.install(|| {
             v.into_par_iter().zip(offsets).for_each(
-                |((local_first_vals, local_all_vals), offset)| unsafe {
+                |((local_first_vals, mut local_all_vals), offset)| unsafe {
                     let global_first: *mut IdxSize = global_first_ptr.get();
                     let global_all: *mut Vec<IdxSize> = global_all_ptr.get();
                     let global_first = global_first.add(offset);
@@ -80,8 +80,11 @@ impl From<Vec<(Vec<IdxSize>, Vec<Vec<IdxSize>>)>> for GroupsIdx {
                         global_all,
                         local_all_vals.len(),
                     );
-                    // ensure the vecs don't get dropped
-                    std::mem::forget(local_all_vals);
+                    // local_all_vals: Vec<Vec<IdxSize>>
+                    // we just copied the contents: Vec<IdxSize> to a new buffer
+                    // now, we want to free the outer vec, without freeing
+                    // the inner vecs as they are moved, so we set the len to 0
+                    local_all_vals.set_len(0);
                 },
             );
         });
