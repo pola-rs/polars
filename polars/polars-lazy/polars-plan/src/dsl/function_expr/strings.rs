@@ -442,7 +442,8 @@ fn to_datetime(
             You might want to try:\n\
             - setting `strict=False`\n\
             - explicitly specifying a `format`\n\
-            - setting `utc=True` (if you are parsing datetimes with multiple offsets)"
+            - setting `utc=True` (if you are parsing datetimes with multiple offsets)\n\
+            - using `.to_date` instead of `.to_datetime`, or `.strptime(pl.Date)` instead of `.strptime(pl.Datetime)`"
         );
     }
     Ok(out.into_series())

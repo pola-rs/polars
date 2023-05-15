@@ -70,7 +70,6 @@ for T in ["T", " "]:
         ]
         + [f"{T}%H:%M:%S.{fraction}" for fraction in ["%9f", "%6f", "%3f"]]
         + [f"{T}%H%M%S.{fraction}" for fraction in ["%9f", "%6f", "%3f"]]
-        + [""]
     ):
         for date_sep in ("/", "-"):
             fmt = f"%Y{date_sep}%m{date_sep}%d{hms}"

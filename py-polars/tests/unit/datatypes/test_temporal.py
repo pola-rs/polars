@@ -2132,7 +2132,7 @@ def test_replace_timezone_from_to(
     tzinfo: timezone | ZoneInfo,
     time_unit: TimeUnit,
 ) -> None:
-    ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime(time_unit))
+    ts = pl.Series(["2020-01-01"]).str.strptime(pl.Date).cast(pl.Datetime(time_unit))
     result = ts.dt.replace_time_zone(from_tz).dt.replace_time_zone(to_tz).item()
     expected = datetime(2020, 1, 1, 0, 0, tzinfo=tzinfo)
     assert result == expected
@@ -2188,14 +2188,18 @@ def test_strptime_unguessable_format() -> None:
 
 
 def test_convert_time_zone_invalid() -> None:
-    ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
+    ts = pl.Series(["2020-01-01"]).str.strptime(pl.Date).cast(pl.Datetime)
     with pytest.raises(ComputeError, match="unable to parse time zone: 'foo'"):
         ts.dt.replace_time_zone("UTC").dt.convert_time_zone("foo")
 
 
 def test_convert_time_zone_lazy_schema() -> None:
-    ts_us = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime("us", "UTC"))
-    ts_ms = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime("ms", "UTC"))
+    ts_us = (
+        pl.Series(["2020-01-01"]).str.strptime(pl.Date).cast(pl.Datetime("us", "UTC"))
+    )
+    ts_ms = (
+        pl.Series(["2020-01-01"]).str.strptime(pl.Date).cast(pl.Datetime("ms", "UTC"))
+    )
     ldf = pl.DataFrame({"ts_us": ts_us, "ts_ms": ts_ms}).lazy()
     result = ldf.with_columns(
         pl.col("ts_us").dt.convert_time_zone("America/New_York").alias("ts_us_ny"),
@@ -2211,7 +2215,7 @@ def test_convert_time_zone_lazy_schema() -> None:
 
 
 def test_convert_time_zone_on_tz_naive() -> None:
-    ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
+    ts = pl.Series(["2020-01-01"]).str.strptime(pl.Date).cast(pl.Datetime)
     with pytest.raises(
         ComputeError,
         match="cannot call `convert_time_zone` on tz-naive; set a time zone first with `replace_time_zone`",
@@ -2220,7 +2224,7 @@ def test_convert_time_zone_on_tz_naive() -> None:
 
 
 def test_convert_time_zone_fixed_offset() -> None:
-    ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
+    ts = pl.Series(["2020-01-01"]).str.strptime(pl.Date).cast(pl.Datetime)
     result = ts.dt.replace_time_zone("+00:00")
     assert result.dtype == pl.Datetime("us", "+00:00")
     assert result.item() == datetime(2020, 1, 1, 0, 0, tzinfo=timezone.utc)
@@ -2622,7 +2626,7 @@ def test_tz_aware_truncate() -> None:
 
 
 def test_to_string_invalid_format() -> None:
-    tz_naive = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
+    tz_naive = pl.Series(["2020-01-01"]).str.strptime(pl.Date).cast(pl.Datetime)
     with pytest.raises(
         ComputeError, match="cannot format NaiveDateTime with format '%z'"
     ):

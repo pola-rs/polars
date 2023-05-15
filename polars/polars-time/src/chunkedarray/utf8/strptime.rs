@@ -64,6 +64,7 @@ impl StrpTimeState {
         val: &[u8],
         fmt: &[u8],
         fmt_len: u16,
+        is_datetime: bool,
     ) -> Option<NaiveDateTime> {
         let mut offset = 0;
         let mut negative = false;
@@ -85,6 +86,9 @@ impl StrpTimeState {
         let mut min: u32 = 0;
         let mut sec: u32 = 0;
         let mut nano: u32 = 0;
+
+        let mut found_hour = false;
+        let mut found_minute = false;
 
         let mut fmt_iter = fmt.iter();
 
@@ -116,9 +120,11 @@ impl StrpTimeState {
                     }
                     b'H' => {
                         (hour, offset) = update_and_parse(2, offset, val)?;
+                        found_hour = true;
                     }
                     b'M' => {
                         (min, offset) = update_and_parse(2, offset, val)?;
+                        found_minute = true;
                     }
                     b'S' => {
                         (sec, offset) = update_and_parse(2, offset, val)?;
@@ -162,6 +168,11 @@ impl StrpTimeState {
             } else {
                 return None;
             }
+        }
+        // chrono::NaiveDateTime::parse_from_str requires both hour and minute
+        // to be specified, so this is for compatibility.
+        if is_datetime && !(found_hour && found_minute) {
+            return None;
         }
         // all values processed
         if offset == val.len() {

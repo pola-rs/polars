@@ -47,9 +47,6 @@ def test_date_parse_omit_day() -> None:
     assert df.select(pl.col("month").str.to_date(format="%Y-%m")).item() == date(
         2022, 1, 1
     )
-    assert df.select(
-        pl.col("month").str.to_datetime(format="%Y-%m")
-    ).item() == datetime(2022, 1, 1)
 
 
 def test_to_datetime_precision() -> None:
@@ -142,7 +139,7 @@ def test_to_date_non_exact_strptime() -> None:
 
 
 def test_to_datetime_dates_datetimes() -> None:
-    s = pl.Series("date", ["2021-04-22", "2022-01-04 00:00:00"])
+    s = pl.Series("date", ["2021-04-22 00:00", "2022-01-04 00:00:00"])
     assert s.str.to_datetime().to_list() == [
         datetime(2021, 4, 22, 0, 0),
         datetime(2022, 1, 4, 0, 0),
@@ -152,8 +149,8 @@ def test_to_datetime_dates_datetimes() -> None:
 @pytest.mark.parametrize(
     ("time_string", "expected"),
     [
-        ("09-05-2019", datetime(2019, 5, 9)),
-        ("2018-09-05", datetime(2018, 9, 5)),
+        ("09-05-2019 00:00", datetime(2019, 5, 9)),
+        ("2018-09-05 00:00", datetime(2018, 9, 5)),
         ("2018-09-05T04:05:01", datetime(2018, 9, 5, 4, 5, 1)),
         ("2018-09-05T04:24:01.9", datetime(2018, 9, 5, 4, 24, 1, 900000)),
         ("2018-09-05T04:24:02.11", datetime(2018, 9, 5, 4, 24, 2, 110000)),
@@ -235,7 +232,7 @@ def test_datetime_strptime_patterns_consistent() -> None:
     df = pl.Series(
         "date",
         [
-            "2018-09-05",
+            "2018-09-05 00:00",
             "2018-09-05T04:05:01",
             "2018-09-05T04:24:01.9",
             "2018-09-05T04:24:02.11",
@@ -260,7 +257,7 @@ def test_datetime_strptime_patterns_inconsistent() -> None:
     df = pl.Series(
         "date",
         [
-            "09-05-2019",
+            "09-05-2019 00:00",
             "2018-09-05",
             "2018-09-05T04:05:01",
             "2018-09-05T04:24:01.9",
@@ -282,6 +279,7 @@ def test_datetime_strptime_patterns_inconsistent() -> None:
     (
         "ts",
         "format",
+        "datatype",
         "exp_year",
         "exp_month",
         "exp_day",
@@ -290,13 +288,24 @@ def test_datetime_strptime_patterns_inconsistent() -> None:
         "exp_second",
     ),
     [
-        ("-0031-04-24 22:13:20", "%Y-%m-%d %H:%M:%S", -31, 4, 24, 22, 13, 20),
-        ("-0031-04-24", "%Y-%m-%d", -31, 4, 24, 0, 0, 0),
+        (
+            "-0031-04-24 22:13:20",
+            "%Y-%m-%d %H:%M:%S",
+            pl.Datetime,
+            -31,
+            4,
+            24,
+            22,
+            13,
+            20,
+        ),
+        ("-0031-04-24", "%Y-%m-%d", pl.Date, -31, 4, 24, 0, 0, 0),
     ],
 )
 def test_parse_negative_dates(
     ts: str,
     format: str,
+    datatype: PolarsTemporalType,
     exp_year: int,
     exp_month: int,
     exp_day: int,
@@ -305,7 +314,7 @@ def test_parse_negative_dates(
     exp_second: int,
 ) -> None:
     s = pl.Series([ts])
-    result = s.str.to_datetime(format, time_unit="ms")
+    result = s.str.strptime(datatype, format=format).cast(pl.Datetime)
     # Python datetime.datetime doesn't support negative dates, so comparing
     # with `result.item()` directly won't work.
     assert result.dt.year().item() == exp_year
@@ -331,9 +340,14 @@ def test_short_formats() -> None:
         ("Jul/2020", "%b/%Y", pl.Date, date(2020, 7, 1)),
         ("Jan/2020", "%b/%Y", pl.Date, date(2020, 1, 1)),
         ("02/Apr/2020", "%d/%b/%Y", pl.Date, date(2020, 4, 2)),
-        ("Dec/2020", "%b/%Y", pl.Datetime, datetime(2020, 12, 1, 0, 0)),
-        ("Nov/2020", "%b/%Y", pl.Datetime, datetime(2020, 11, 1, 0, 0)),
-        ("02/Feb/2020", "%d/%b/%Y", pl.Datetime, datetime(2020, 2, 2, 0, 0)),
+        ("Dec/2020 00:00", "%b/%Y %H:%M", pl.Datetime, datetime(2020, 12, 1, 0, 0)),
+        ("Nov/2020 00:00", "%b/%Y %H:%M", pl.Datetime, datetime(2020, 11, 1, 0, 0)),
+        (
+            "02/Feb/2020 00:00",
+            "%d/%b/%Y %H:%M",
+            pl.Datetime,
+            datetime(2020, 2, 2, 0, 0),
+        ),
     ],
 )
 def test_strptime_abbrev_month(
@@ -345,21 +359,21 @@ def test_strptime_abbrev_month(
 
 
 def test_full_month_name() -> None:
-    s = pl.Series(["2022-December-01"]).str.to_datetime("%Y-%B-%d")
-    assert s[0] == datetime(2022, 12, 1)
+    s = pl.Series(["2022-December-01"]).str.to_date("%Y-%B-%d")
+    assert s[0] == date(2022, 12, 1)
 
 
 @pytest.mark.parametrize(
-    ("datatype", "expected"),
+    ("input", "format", "datatype", "expected"),
     [
-        (pl.Datetime, datetime(2022, 1, 1)),
-        (pl.Date, date(2022, 1, 1)),
+        ("2022-1-1 00:00", "%Y-%m-%d %H:%M", pl.Datetime, datetime(2022, 1, 1)),
+        ("2022-1-1", "%Y-%m-%d", pl.Date, date(2022, 1, 1)),
     ],
 )
 def test_single_digit_month(
-    datatype: PolarsTemporalType, expected: datetime | date
+    input: str, format: str, datatype: PolarsTemporalType, expected: datetime | date
 ) -> None:
-    s = pl.Series(["2022-1-1"]).str.strptime(datatype, "%Y-%m-%d")
+    s = pl.Series([input]).str.strptime(datatype, format)
     assert s[0] == expected
 
 

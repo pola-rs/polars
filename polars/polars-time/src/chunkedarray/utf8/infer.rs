@@ -149,7 +149,7 @@ impl StrpTimeParser<i64> for DatetimeInfer<i64> {
         }
         unsafe {
             self.transform_bytes
-                .parse(val, self.latest_fmt.as_bytes(), self.fmt_len)
+                .parse(val, self.latest_fmt.as_bytes(), self.fmt_len, true)
                 .map(datetime_to_timestamp_us)
                 .or_else(|| {
                     // TODO! this will try all patterns.
@@ -160,7 +160,7 @@ impl StrpTimeParser<i64> for DatetimeInfer<i64> {
                         }
                         if let Some(parsed) = self
                             .transform_bytes
-                            .parse(val, fmt.as_bytes(), self.fmt_len)
+                            .parse(val, fmt.as_bytes(), self.fmt_len, true)
                             .map(datetime_to_timestamp_us)
                         {
                             self.latest_fmt = fmt;
@@ -181,7 +181,7 @@ impl StrpTimeParser<i32> for DatetimeInfer<i32> {
         }
         unsafe {
             self.transform_bytes
-                .parse(val, self.latest_fmt.as_bytes(), self.fmt_len)
+                .parse(val, self.latest_fmt.as_bytes(), self.fmt_len, false)
                 .map(|ndt| naive_date_to_date(ndt.date()))
                 .or_else(|| {
                     // TODO! this will try all patterns.
@@ -192,7 +192,7 @@ impl StrpTimeParser<i32> for DatetimeInfer<i32> {
                         }
                         if let Some(parsed) = self
                             .transform_bytes
-                            .parse(val, fmt.as_bytes(), self.fmt_len)
+                            .parse(val, fmt.as_bytes(), self.fmt_len, false)
                             .map(|ndt| naive_date_to_date(ndt.date()))
                         {
                             self.latest_fmt = fmt;
@@ -365,14 +365,9 @@ pub(crate) fn transform_datetime_ns(
     _offset: Option<FixedOffset>,
     _utc: bool,
 ) -> Option<i64> {
-    let out = NaiveDateTime::parse_from_str(val, fmt)
+    NaiveDateTime::parse_from_str(val, fmt)
         .ok()
-        .map(datetime_to_timestamp_ns);
-    out.or_else(|| {
-        NaiveDate::parse_from_str(val, fmt)
-            .ok()
-            .map(|nd| datetime_to_timestamp_ns(nd.and_hms_opt(0, 0, 0).unwrap()))
-    })
+        .map(datetime_to_timestamp_ns)
 }
 
 fn transform_tzaware_datetime_ns(
@@ -398,14 +393,9 @@ pub(crate) fn transform_datetime_us(
     _offset: Option<FixedOffset>,
     _utc: bool,
 ) -> Option<i64> {
-    let out = NaiveDateTime::parse_from_str(val, fmt)
+    NaiveDateTime::parse_from_str(val, fmt)
         .ok()
-        .map(datetime_to_timestamp_us);
-    out.or_else(|| {
-        NaiveDate::parse_from_str(val, fmt)
-            .ok()
-            .map(|nd| datetime_to_timestamp_us(nd.and_hms_opt(0, 0, 0).unwrap()))
-    })
+        .map(datetime_to_timestamp_us)
 }
 
 fn transform_tzaware_datetime_us(
@@ -431,14 +421,9 @@ pub(crate) fn transform_datetime_ms(
     _offset: Option<FixedOffset>,
     _utc: bool,
 ) -> Option<i64> {
-    let out = NaiveDateTime::parse_from_str(val, fmt)
+    NaiveDateTime::parse_from_str(val, fmt)
         .ok()
-        .map(datetime_to_timestamp_ms);
-    out.or_else(|| {
-        NaiveDate::parse_from_str(val, fmt)
-            .ok()
-            .map(|nd| datetime_to_timestamp_ms(nd.and_hms_opt(0, 0, 0).unwrap()))
-    })
+        .map(datetime_to_timestamp_ms)
 }
 
 fn transform_tzaware_datetime_ms(
