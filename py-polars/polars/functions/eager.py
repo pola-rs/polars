@@ -4,11 +4,12 @@ import contextlib
 import warnings
 from datetime import datetime, time, timedelta
 from functools import reduce
-from typing import TYPE_CHECKING, Iterable, Sequence, cast, overload
+from typing import TYPE_CHECKING, Iterable, List, Sequence, cast, overload
 
 import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import Date
+from polars.type_aliases import FrameType
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
 from polars.utils._wrap import wrap_df, wrap_expr, wrap_ldf, wrap_s
 from polars.utils.convert import (
@@ -33,6 +34,7 @@ if TYPE_CHECKING:
         ClosedInterval,
         ConcatMethod,
         PolarsDataType,
+        PolarsType,
         TimeUnit,
     )
     from polars.utils.various import NoDefault
@@ -94,59 +96,13 @@ def get_dummies(
     return df.to_dummies(columns=columns, separator=separator)
 
 
-@overload
 def concat(
-    items: Iterable[DataFrame],
-    *,
-    how: ConcatMethod = ...,
-    rechunk: bool = ...,
-    parallel: bool = ...,
-) -> DataFrame:
-    ...
-
-
-@overload
-def concat(
-    items: Iterable[Series],
-    *,
-    how: ConcatMethod = ...,
-    rechunk: bool = ...,
-    parallel: bool = ...,
-) -> Series:
-    ...
-
-
-@overload
-def concat(
-    items: Iterable[LazyFrame],
-    *,
-    how: ConcatMethod = ...,
-    rechunk: bool = ...,
-    parallel: bool = ...,
-) -> LazyFrame:
-    ...
-
-
-@overload
-def concat(
-    items: Iterable[Expr],
-    *,
-    how: ConcatMethod = ...,
-    rechunk: bool = ...,
-    parallel: bool = ...,
-) -> Expr:
-    ...
-
-
-def concat(
-    items: (
-        Iterable[DataFrame] | Iterable[Series] | Iterable[LazyFrame] | Iterable[Expr]
-    ),
+    items: Iterable[PolarsType],
     *,
     how: ConcatMethod = "vertical",
     rechunk: bool = True,
     parallel: bool = True,
-) -> DataFrame | Series | LazyFrame | Expr:
+) -> PolarsType:
     """
     Aggregate multiple Dataframes/Series to a single DataFrame/Series.
 
@@ -281,7 +237,7 @@ def concat(
     elif isinstance(first, pl.Expr):
         out = first
         for e in elems[1:]:
-            out = out.append(e)  # type: ignore[arg-type]
+            out = out.append(e)
     else:
         raise ValueError(f"did not expect type: {type(first)} in 'pl.concat'.")
 
@@ -771,32 +727,12 @@ def cut(
     return s.cut(bins, labels, break_point_label, category_label)
 
 
-@overload
 def align_frames(
-    *frames: DataFrame,
+    *frames: FrameType,
     on: str | Expr | Sequence[str] | Sequence[Expr] | Sequence[str | Expr],
     select: str | Expr | Sequence[str | Expr] | None = None,
     descending: bool | Sequence[bool] = False,
-) -> list[DataFrame]:
-    ...
-
-
-@overload
-def align_frames(
-    *frames: LazyFrame,
-    on: str | Expr | Sequence[str] | Sequence[Expr] | Sequence[str | Expr],
-    select: str | Expr | Sequence[str | Expr] | None = None,
-    descending: bool | Sequence[bool] = False,
-) -> list[LazyFrame]:
-    ...
-
-
-def align_frames(
-    *frames: DataFrame | LazyFrame,
-    on: str | Expr | Sequence[str] | Sequence[Expr] | Sequence[str | Expr],
-    select: str | Expr | Sequence[str | Expr] | None = None,
-    descending: bool | Sequence[bool] = False,
-) -> list[DataFrame] | list[LazyFrame]:
+) -> list[FrameType]:
     r"""
     Align a sequence of frames using the unique values from one or more columns as a key.
 
@@ -926,7 +862,7 @@ def align_frames(
 
     """  # noqa: W505
     if not frames:
-        return []  # type: ignore[return-value]
+        return []
     elif len({type(f) for f in frames}) != 1:
         raise TypeError(
             "Input frames must be of a consistent type (all LazyFrame or all DataFrame)"
@@ -936,15 +872,12 @@ def align_frames(
 
     # create lazy alignment frame
     eager = isinstance(frames[0], pl.DataFrame)
-    alignment_frame: pl.LazyFrame = (
-        cast(
-            pl.LazyFrame,
-            reduce(
-                lambda x, y: x.lazy().join(
-                    y.lazy(), how="outer", on=align_on, suffix=str(id(y))
-                ),
-                frames,
+    alignment_frame: LazyFrame = (
+        reduce(  # type: ignore[assignment]
+            lambda x, y: x.lazy().join(  # type: ignore[arg-type, return-value]
+                y.lazy(), how="outer", on=align_on, suffix=str(id(y))
             ),
+            frames,
         )
         .select(*align_on, F.exclude(align_on))
         .sort(by=align_on, descending=descending)
@@ -959,12 +892,14 @@ def align_frames(
             F.col(f"{c}{sfx}").alias(c) if f"{c}{sfx}" in aligned_cols else F.col(c)
             for c in df.columns
         ]
-        aligned_frames.append(alignment_frame.select(*df_cols))
+        f = alignment_frame.select(*df_cols)
+        if select is not None:
+            f = f.select(select)
+        aligned_frames.append(f)
 
-    aligned_frames = [
-        df if select is None else df.select(select) for df in aligned_frames
-    ]
-    return F.collect_all(aligned_frames) if eager else aligned_frames
+    return cast(
+        List[FrameType], F.collect_all(aligned_frames) if eager else aligned_frames
+    )
 
 
 def ones(n: int, dtype: PolarsDataType | None = None) -> Series:

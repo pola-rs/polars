@@ -7,8 +7,9 @@ use polars_lazy::prelude::*;
 use polars_plan::prelude::*;
 use polars_plan::utils::expressions_to_schema;
 use sqlparser::ast::{
-    Expr as SqlExpr, FunctionArg, JoinOperator, ObjectName, OrderByExpr, Query, Select, SelectItem,
-    SetExpr, Statement, TableAlias, TableFactor, TableWithJoins, Value as SQLValue,
+    Distinct, Expr as SqlExpr, FunctionArg, JoinOperator, ObjectName, Offset, OrderByExpr, Query,
+    Select, SelectItem, SetExpr, Statement, TableAlias, TableFactor, TableWithJoins,
+    Value as SQLValue,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
@@ -122,8 +123,8 @@ impl SQLContext {
     pub(crate) fn execute_query(&mut self, query: &Query) -> PolarsResult<LazyFrame> {
         self.register_ctes(query)?;
 
-        let mut lf = match &query.body.as_ref() {
-            SetExpr::Select(select_stmt) => self.execute_select(select_stmt)?,
+        let lf = match &query.body.as_ref() {
+            SetExpr::Select(select_stmt) => self.execute_select(select_stmt, query)?,
             SetExpr::Query(query) => self.execute_query(query)?,
             SetExpr::SetOperation { op, .. } => {
                 polars_bail!(ComputeError: "{} operation not yet supported", op)
@@ -131,21 +132,7 @@ impl SQLContext {
             _ => polars_bail!(ComputeError: "INSERT, UPDATE, VALUES not yet supported"),
         };
 
-        if !query.order_by.is_empty() {
-            lf = self.process_order_by(lf, &query.order_by)?;
-        }
-        match &query.limit {
-            Some(SqlExpr::Value(SQLValue::Number(nrow, _))) => {
-                let nrow = nrow
-                    .parse()
-                    .map_err(|e| polars_err!(ComputeError: "conversion error: {}", e))?;
-                Ok(lf.limit(nrow))
-            }
-            None => Ok(lf),
-            _ => polars_bail!(
-                ComputeError: "non-number arguments to LIMIT clause are not supported",
-            ),
-        }
+        self.process_limit_offset(lf, &query.limit, &query.offset)
     }
 
     fn execute_show_tables(&mut self, _: &Statement) -> PolarsResult<LazyFrame> {
@@ -205,7 +192,7 @@ impl SQLContext {
     }
 
     /// execute the 'SELECT' part of the query
-    fn execute_select(&mut self, select_stmt: &Select) -> PolarsResult<LazyFrame> {
+    fn execute_select(&mut self, select_stmt: &Select, query: &Query) -> PolarsResult<LazyFrame> {
         // Determine involved dataframe
         // Implicit join require some more work in query parsers, Explicit join are preferred for now.
         let sql_tbl: &TableWithJoins = select_stmt
@@ -224,6 +211,7 @@ impl SQLContext {
             }
             None => lf,
         };
+
         // Column Projections
         let projections: Vec<_> = select_stmt
             .projection
@@ -281,10 +269,38 @@ impl SQLContext {
         };
 
         // Apply optional 'distinct' clause
-        if select_stmt.distinct {
-            Ok(lf.unique(None, UniqueKeepStrategy::Any))
-        } else {
+        lf = match &select_stmt.distinct {
+            Some(Distinct::Distinct) => lf.unique(None, UniqueKeepStrategy::Any),
+            Some(Distinct::On(exprs)) => {
+                // TODO: support exprs in `unique` see https://github.com/pola-rs/polars/issues/5760
+                let cols = exprs
+                    .iter()
+                    .map(|e| {
+                        let expr = parse_sql_expr(e, self)?;
+                        if let Expr::Column(name) = expr {
+                            Ok(name.to_string())
+                        } else {
+                            Err(polars_err!(
+                                ComputeError:
+                                "DISTINCT ON only supports column names"
+                            ))
+                        }
+                    })
+                    .collect::<PolarsResult<Vec<_>>>()?;
+
+                // DISTINCT ON applies the ORDER BY before the operation.
+                if !query.order_by.is_empty() {
+                    lf = self.process_order_by(lf, &query.order_by)?;
+                }
+                return Ok(lf.unique_stable(Some(cols), UniqueKeepStrategy::First));
+            }
+            None => lf,
+        };
+
+        if query.order_by.is_empty() {
             Ok(lf)
+        } else {
+            self.process_order_by(lf, &query.order_by)
         }
     }
 
@@ -433,6 +449,51 @@ impl SQLContext {
             .collect::<Vec<_>>();
 
         Ok(aggregated.select(&final_projection))
+    }
+
+    fn process_limit_offset(
+        &mut self,
+        lf: LazyFrame,
+        limit: &Option<SqlExpr>,
+        offset: &Option<Offset>,
+    ) -> PolarsResult<LazyFrame> {
+        match (offset, limit) {
+            (
+                Some(Offset {
+                    value: SqlExpr::Value(SQLValue::Number(offset, _)),
+                    ..
+                }),
+                Some(SqlExpr::Value(SQLValue::Number(limit, _))),
+            ) => Ok(lf.slice(
+                offset
+                    .parse()
+                    .map_err(|e| polars_err!(ComputeError: "OFFSET conversion error: {}", e))?,
+                limit
+                    .parse()
+                    .map_err(|e| polars_err!(ComputeError: "LIMIT conversion error: {}", e))?,
+            )),
+            (
+                Some(Offset {
+                    value: SqlExpr::Value(SQLValue::Number(offset, _)),
+                    ..
+                }),
+                None,
+            ) => Ok(lf.slice(
+                offset
+                    .parse()
+                    .map_err(|e| polars_err!(ComputeError: "OFFSET conversion error: {}", e))?,
+                IdxSize::MAX,
+            )),
+            (None, Some(SqlExpr::Value(SQLValue::Number(limit, _)))) => Ok(lf.limit(
+                limit
+                    .parse()
+                    .map_err(|e| polars_err!(ComputeError: "LIMIT conversion error: {}", e))?,
+            )),
+            (None, None) => Ok(lf),
+            _ => polars_bail!(
+                ComputeError: "non-numeric arguments for LIMIT/OFFSET are not supported",
+            ),
+        }
     }
 }
 

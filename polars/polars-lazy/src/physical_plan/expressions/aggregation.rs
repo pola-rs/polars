@@ -19,13 +19,15 @@ use crate::prelude::*;
 pub(crate) struct AggregationExpr {
     pub(crate) input: Arc<dyn PhysicalExpr>,
     pub(crate) agg_type: GroupByMethod,
+    field: Option<Field>,
 }
 
 impl AggregationExpr {
-    pub fn new(expr: Arc<dyn PhysicalExpr>, agg_type: GroupByMethod) -> Self {
+    pub fn new(expr: Arc<dyn PhysicalExpr>, agg_type: GroupByMethod, field: Option<Field>) -> Self {
         Self {
             input: expr,
             agg_type,
+            field,
         }
     }
 }
@@ -272,7 +274,11 @@ impl PhysicalExpr for AggregationExpr {
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
-        self.input.to_field(input_schema)
+        if let Some(field) = self.field.as_ref() {
+            Ok(field.clone())
+        } else {
+            self.input.to_field(input_schema)
+        }
     }
 
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
