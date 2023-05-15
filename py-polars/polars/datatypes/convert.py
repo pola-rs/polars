@@ -398,6 +398,8 @@ def py_type_to_dtype(
             if isinstance(annotation, str)  # type: ignore[redundant-expr]
             else annotation
         )
+    elif type(data_type).__name__ == "InitVar":
+        data_type = data_type.type
 
     if is_polars_dtype(data_type):
         return data_type
@@ -410,7 +412,10 @@ def py_type_to_dtype(
             data_type = possible_types[0]
 
     elif isinstance(data_type, str):
-        data_type = DataTypeMappings.REPR_TO_DTYPE.get(data_type, data_type)
+        data_type = DataTypeMappings.REPR_TO_DTYPE.get(
+            re.sub(r"^(?:dataclasses\.)?InitVar\[(.+)\]$", r"\1", data_type),
+            data_type,
+        )
         if is_polars_dtype(data_type):
             return data_type
     try:

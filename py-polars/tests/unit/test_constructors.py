@@ -395,6 +395,25 @@ def test_init_structured_objects_nested() -> None:
             )
 
 
+def test_dataclasses_initvar_typing() -> None:
+    @dataclasses.dataclass
+    class ABC:
+        x: date
+        y: float
+        z: dataclasses.InitVar[str] = None
+
+    abc = ABC(x=date(1999, 12, 31), y=100.0)
+    df = pl.DataFrame([abc])
+
+    assert_frame_equal(
+        pl.DataFrame(
+            {"x": [date(1999, 12, 31)], "y": [100.0], "z": [None]},
+            schema_overrides={"z": pl.Utf8},
+        ),
+        df,
+    )
+
+
 def test_init_ndarray(monkeypatch: Any) -> None:
     # Empty array
     df = pl.DataFrame(np.array([]))
