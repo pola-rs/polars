@@ -107,30 +107,59 @@ def test_read_delta_relative(delta_table_path: Path) -> None:
 def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
     from deltalake import DeltaTable
 
+    v0 = df.select(pl.col(pl.Utf8))
+    v1 = df.select(pl.col(pl.Int64))
+    df_supported = df.drop(["cat", "time"])
+
     # Case: Success (version 0)
-    df.select(pl.col(pl.Utf8)).write_delta(tmp_path)
+    v0.write_delta(tmp_path)
 
     # Case: Error if table exists
     with pytest.raises(ValueError):
-        df.select(pl.col(pl.Int64)).write_delta(tmp_path)
+        v1.write_delta(tmp_path)
 
     # Case: Overwrite with new version (version 1)
-    df.select(pl.col(pl.Int64)).write_delta(
-        tmp_path, mode="overwrite", overwrite_schema=True
-    )
+    v1.write_delta(tmp_path, mode="overwrite", overwrite_schema=True)
 
     # Case: Error if schema contains unsupported columns
     with pytest.raises(TypeError):
         df.write_delta(tmp_path, mode="overwrite", overwrite_schema=True)
 
-    assert DeltaTable(tmp_path).version() == 1
+    partitioned_tbl_uri = (tmp_path / ".." / "partitioned_table").resolve()
 
     # Case: Write new partitioned table (version 0)
-    df.drop(["cat", "time"]).write_delta(
-        tmp_path / ".." / "partitioned_table",
-        delta_write_options={"partition_by": "strings"},
+    df_supported.write_delta(
+        partitioned_tbl_uri, delta_write_options={"partition_by": "strings"}
     )
 
-    part_tbl = DeltaTable(tmp_path / ".." / "partitioned_table")
-    assert part_tbl.version() == 0
-    assert part_tbl.metadata().partition_columns == ["strings"]
+    # Case: Read back
+    tbl = DeltaTable(tmp_path)
+    partitioned_tbl = DeltaTable(partitioned_tbl_uri)
+
+    pl_df_0 = pl.read_delta(tbl.table_uri, version=0)
+    pl_df_1 = pl.read_delta(tbl.table_uri, version=1)
+    pl_df_partitioned = pl.read_delta(str(partitioned_tbl_uri))
+
+    assert v0.shape == pl_df_0.shape
+    assert v0.columns == pl_df_0.columns
+    assert v1.shape == pl_df_1.shape
+    assert v1.columns == pl_df_1.columns
+    assert (
+        df_supported.shape == pl_df_partitioned.shape
+        and df_supported.columns == pl_df_partitioned.columns
+    )
+
+    assert tbl.version() == 1
+    assert partitioned_tbl.version() == 0
+    assert partitioned_tbl.table_uri.rstrip("/") == str(partitioned_tbl_uri)
+    assert partitioned_tbl.metadata().partition_columns == ["strings"]
+
+    assert_frame_equal(v0, pl_df_0, check_row_order=False)
+    assert_frame_equal(v1, pl_df_1, check_row_order=False)
+    
+    cols = [c for c in df_supported.columns if not c.startswith("list_")]
+    assert_frame_equal(
+        df_supported.select(cols),
+        pl_df_partitioned.select(cols),
+        check_row_order=False,
+    )
