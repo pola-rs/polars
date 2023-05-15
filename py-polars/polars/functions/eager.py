@@ -33,6 +33,7 @@ if TYPE_CHECKING:
         ClosedInterval,
         ConcatMethod,
         PolarsDataType,
+        PolarsType,
         TimeUnit,
     )
     from polars.utils.various import NoDefault
@@ -94,59 +95,13 @@ def get_dummies(
     return df.to_dummies(columns=columns, separator=separator)
 
 
-@overload
 def concat(
-    items: Iterable[DataFrame],
-    *,
-    how: ConcatMethod = ...,
-    rechunk: bool = ...,
-    parallel: bool = ...,
-) -> DataFrame:
-    ...
-
-
-@overload
-def concat(
-    items: Iterable[Series],
-    *,
-    how: ConcatMethod = ...,
-    rechunk: bool = ...,
-    parallel: bool = ...,
-) -> Series:
-    ...
-
-
-@overload
-def concat(
-    items: Iterable[LazyFrame],
-    *,
-    how: ConcatMethod = ...,
-    rechunk: bool = ...,
-    parallel: bool = ...,
-) -> LazyFrame:
-    ...
-
-
-@overload
-def concat(
-    items: Iterable[Expr],
-    *,
-    how: ConcatMethod = ...,
-    rechunk: bool = ...,
-    parallel: bool = ...,
-) -> Expr:
-    ...
-
-
-def concat(
-    items: (
-        Iterable[DataFrame] | Iterable[Series] | Iterable[LazyFrame] | Iterable[Expr]
-    ),
+    items: Iterable[PolarsType],
     *,
     how: ConcatMethod = "vertical",
     rechunk: bool = True,
     parallel: bool = True,
-) -> DataFrame | Series | LazyFrame | Expr:
+) -> PolarsType:
     """
     Aggregate multiple Dataframes/Series to a single DataFrame/Series.
 
@@ -281,7 +236,7 @@ def concat(
     elif isinstance(first, pl.Expr):
         out = first
         for e in elems[1:]:
-            out = out.append(e)  # type: ignore[arg-type]
+            out = out.append(e)
     else:
         raise ValueError(f"did not expect type: {type(first)} in 'pl.concat'.")
 

@@ -6,12 +6,12 @@ from typing import (
     Collection,
     Generic,
     Mapping,
-    TypeVar,
     overload,
 )
 
 from polars.dataframe import DataFrame
 from polars.lazyframe import LazyFrame
+from polars.type_aliases import FrameType
 from polars.utils._wrap import wrap_ldf
 from polars.utils.decorators import deprecated_alias, redirect
 from polars.utils.various import _get_stack_locals
@@ -33,11 +33,8 @@ if TYPE_CHECKING:
         from typing_extensions import Self
 
 
-_FrameType = TypeVar("_FrameType", DataFrame, LazyFrame)
-
-
 @redirect({"query": ("execute", {"eager": True})})
-class SQLContext(Generic[_FrameType]):
+class SQLContext(Generic[FrameType]):
     """
     Run a SQL query against a LazyFrame.
 
