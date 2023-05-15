@@ -31,7 +31,7 @@ use crate::conversion::{ObjectValue, Wrap};
 use crate::error::PyPolarsErr;
 use crate::file::{get_either_file, get_file_like, get_mmap_bytes_reader, EitherRustPythonFile};
 use crate::prelude::{dicts_to_rows, strings_to_smartstrings};
-use crate::series::{to_pyseries_collection, to_series_collection, PySeries};
+use crate::series::{PySeries, ToPySeries, ToSeries};
 use crate::{arrow_interop, py_modules, PyExpr, PyLazyFrame};
 
 #[pyclass]
@@ -113,7 +113,7 @@ impl PyDataFrame {
 
     #[new]
     pub fn __init__(columns: Vec<PySeries>) -> PyResult<Self> {
-        let columns = to_series_collection(columns);
+        let columns = columns.to_series();
         let df = DataFrame::new(columns).map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
     }
@@ -878,7 +878,7 @@ impl PyDataFrame {
 
     pub fn get_columns(&self) -> Vec<PySeries> {
         let cols = self.df.get_columns().to_vec();
-        to_pyseries_collection(cols)
+        cols.to_pyseries()
     }
 
     /// Get column names
@@ -920,13 +920,13 @@ impl PyDataFrame {
     }
 
     pub fn hstack_mut(&mut self, columns: Vec<PySeries>) -> PyResult<()> {
-        let columns = to_series_collection(columns);
+        let columns = columns.to_series();
         self.df.hstack_mut(&columns).map_err(PyPolarsErr::from)?;
         Ok(())
     }
 
     pub fn hstack(&self, columns: Vec<PySeries>) -> PyResult<Self> {
-        let columns = to_series_collection(columns);
+        let columns = columns.to_series();
         let df = self.df.hstack(&columns).map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
