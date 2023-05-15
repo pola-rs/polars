@@ -305,7 +305,7 @@ mod test {
             assert_eq!(fmt_len(fmt.as_bytes()).unwrap(), len);
             unsafe {
                 assert_eq!(
-                    StrpTimeState::default().parse(val.as_bytes(), fmt.as_bytes(), len),
+                    StrpTimeState::default().parse(val.as_bytes(), fmt.as_bytes(), len, true),
                     expected
                 )
             };
