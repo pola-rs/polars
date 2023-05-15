@@ -383,6 +383,11 @@ def test_invalid_date_parsing_4898() -> None:
     ).to_list() == [date(2022, 9, 18), None]
 
 
+def test_single_digit_hour_8849() -> None:
+    with pytest.raises(ComputeError, match="strict conversion to datetimes failed"):
+        pl.Series(["2020-01-01|7"]).str.to_datetime(format="%Y-%m-%d|%H")
+
+
 def test_strptime_invalid_timezone() -> None:
     ts = pl.Series(["2020-01-01 00:00:00+01:00"]).str.to_datetime("%Y-%m-%d %H:%M:%S%z")
     with pytest.raises(ComputeError, match=r"unable to parse time zone: 'foo'"):
