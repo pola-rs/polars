@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Iterable, List, Sequence, cast, overload
 import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import Date
+from polars.expr.datetime import TIME_ZONE_DEPRECATION_MESSAGE
 from polars.type_aliases import FrameType
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
 from polars.utils._wrap import wrap_df, wrap_expr, wrap_ldf, wrap_s
@@ -461,6 +462,14 @@ def date_range(
     ]
 
     """
+    from polars.dependencies import zoneinfo
+
+    if time_zone is not None and time_zone not in zoneinfo.available_timezones():
+        warnings.warn(
+            TIME_ZONE_DEPRECATION_MESSAGE,
+            DeprecationWarning,
+            stacklevel=find_stacklevel(),
+        )
     if eager is no_default and lazy is no_default:
         # user passed nothing
         warnings.warn(

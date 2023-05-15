@@ -96,7 +96,7 @@ def test_rolling_skew() -> None:
     )
 
 
-@pytest.mark.parametrize("time_zone", [None, "US/Central", "+01:00"])
+@pytest.mark.parametrize("time_zone", [None, "US/Central"])
 @pytest.mark.parametrize(
     ("rolling_fn", "expected_values"),
     [
@@ -109,7 +109,9 @@ def test_rolling_skew() -> None:
     ],
 )
 def test_rolling_crossing_dst(
-    time_zone: str | None, rolling_fn: str, expected_values: list[int | None | float]
+    time_zone: str | None,
+    rolling_fn: str,
+    expected_values: list[int | None | float],
 ) -> None:
     ts = pl.date_range(
         datetime(2021, 11, 5), datetime(2021, 11, 10), "1d", time_zone="UTC", eager=True

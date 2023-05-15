@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import warnings
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
 from functools import lru_cache, partial, singledispatch
@@ -441,7 +442,15 @@ def sequence_to_pyseries(
                         "Given time_zone is different from that of timezone aware datetimes."
                         f" Given: '{dtype_tz}', got: '{tz}'."
                     )
-                return s.dt.replace_time_zone("UTC").dt.convert_time_zone(tz)._s
+                with warnings.catch_warnings():
+                    # Silence the warning from convert_time_zone which users can't
+                    # take any action on anyway.
+                    warnings.filterwarnings(
+                        action="ignore",
+                        category=DeprecationWarning,
+                        message=r".*time zones other than those in `zoneinfo.available_timezones.*",
+                    )
+                    return s.dt.replace_time_zone("UTC").dt.convert_time_zone(tz)._s
             return s._s
 
         elif (

@@ -349,7 +349,7 @@ def test_groupby_rolling_negative_offset_3914() -> None:
     ]
 
 
-@pytest.mark.parametrize("time_zone", [None, "US/Central", "+01:00"])
+@pytest.mark.parametrize("time_zone", [None, "US/Central"])
 def test_groupby_rolling_negative_offset_crossing_dst(time_zone: str | None) -> None:
     df = pl.DataFrame(
         {

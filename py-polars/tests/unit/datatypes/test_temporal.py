@@ -662,7 +662,12 @@ def test_date_range_lazy_with_expressions(
 
 
 def test_date_range_invalid_time_zone() -> None:
-    with pytest.raises(ComputeError, match="unable to parse time zone: 'foo'"):
+    with pytest.raises(
+        ComputeError, match="unable to parse time zone: 'foo'"
+    ), pytest.warns(
+        DeprecationWarning,
+        match="time zones other than those in `zoneinfo.available_timezones",
+    ):
         pl.date_range(
             datetime(2001, 1, 1),
             datetime(2001, 1, 3),
@@ -896,28 +901,32 @@ def test_groupby_dynamic_when_conversion_crosses_dates_7274() -> None:
     df = (
         pl.DataFrame(
             data={
-                "timestamp": ["1970-01-01 00:00:00+01:00", "1970-01-01 01:00:00+01:00"],
+                "timestamp_lagos": [
+                    "1970-01-01 00:00:00+01:00",
+                    "1970-01-01 01:00:00+01:00",
+                ],
                 "value": [1, 1],
             }
         )
         .with_columns(
-            pl.col("timestamp")
+            pl.col("timestamp_lagos")
             .str.strptime(pl.Datetime, format="%Y-%m-%d %H:%M:%S%:z")
+            .dt.convert_time_zone("Africa/Lagos")
             .set_sorted()
         )
         .with_columns(
-            pl.col("timestamp")
+            pl.col("timestamp_lagos")
             .dt.convert_time_zone("UTC")
             .alias("timestamp_utc")
             .set_sorted()
         )
     )
     result = df.groupby_dynamic(
-        index_column="timestamp", every="1d", closed="left"
+        index_column="timestamp_lagos", every="1d", closed="left"
     ).agg(pl.col("value").count())
-    expected = pl.DataFrame({"timestamp": [datetime(1970, 1, 1)], "value": [2]})
+    expected = pl.DataFrame({"timestamp_lagos": [datetime(1970, 1, 1)], "value": [2]})
     expected = expected.with_columns(
-        pl.col("timestamp").dt.replace_time_zone("+01:00"),
+        pl.col("timestamp_lagos").dt.replace_time_zone("Africa/Lagos"),
         pl.col("value").cast(pl.UInt32),
     )
     assert_frame_equal(result, expected)
@@ -972,7 +981,6 @@ def test_rolling() -> None:
     [
         (None, None),
         ("Europe/Warsaw", ZoneInfo("Europe/Warsaw")),
-        ("+01:00", timezone(timedelta(hours=1))),
     ],
 )
 def test_upsample(time_zone: str | None, tzinfo: ZoneInfo | timezone | None) -> None:
@@ -1066,7 +1074,6 @@ def test_upsample_crossing_dst(
     ("time_zone", "tzinfo"),
     [
         (None, None),
-        ("+01:00", timezone(timedelta(hours=1))),
         ("Pacific/Rarotonga", ZoneInfo("Pacific/Rarotonga")),
     ],
 )
@@ -2126,12 +2133,11 @@ def test_replace_timezone() -> None:
 @pytest.mark.parametrize(
     ("to_tz", "tzinfo"),
     [
-        ("+01:00", timezone(timedelta(seconds=3600))),
         ("America/Barbados", ZoneInfo(key="America/Barbados")),
         (None, None),
     ],
 )
-@pytest.mark.parametrize("from_tz", ["Asia/Seoul", "-01:00", None])
+@pytest.mark.parametrize("from_tz", ["Asia/Seoul", None])
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_replace_timezone_from_to(
     from_tz: str,
@@ -2159,7 +2165,6 @@ def test_strptime_with_tz() -> None:
     [
         ("us", "Europe/London"),
         ("ms", None),
-        ("ns", "+01:00"),
     ],
 )
 def test_strptime_empty(time_unit: TimeUnit, time_zone: str | None) -> None:
@@ -2168,7 +2173,12 @@ def test_strptime_empty(time_unit: TimeUnit, time_zone: str | None) -> None:
 
 
 def test_strptime_with_invalid_tz() -> None:
-    with pytest.raises(ComputeError, match="unable to parse time zone: 'foo'"):
+    with pytest.raises(
+        ComputeError, match="unable to parse time zone: 'foo'"
+    ), pytest.warns(
+        FutureWarning,
+        match="In a future version of polars, non-area/location time zones",
+    ):
         pl.Series(["2020-01-01 03:00:00"]).str.strptime(pl.Datetime("us", "foo"))
     with pytest.raises(
         ComputeError,
@@ -2196,7 +2206,12 @@ def test_strptime_unguessable_format() -> None:
 
 def test_convert_time_zone_invalid() -> None:
     ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
-    with pytest.raises(ComputeError, match="unable to parse time zone: 'foo'"):
+    with pytest.raises(
+        ComputeError, match="unable to parse time zone: 'foo'"
+    ), pytest.warns(
+        FutureWarning,
+        match="In a future version of polars, non-area/location time zones",
+    ):
         ts.dt.replace_time_zone("UTC").dt.convert_time_zone("foo")
 
 
@@ -2226,9 +2241,13 @@ def test_convert_time_zone_on_tz_naive() -> None:
         ts.dt.convert_time_zone("Africa/Bamako")
 
 
-def test_convert_time_zone_fixed_offset() -> None:
+def test_replace_time_zone_fixed_offset() -> None:
     ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
-    result = ts.dt.replace_time_zone("+00:00")
+    with pytest.warns(
+        DeprecationWarning,
+        match="time zones other than those in `zoneinfo.available_timezones",
+    ):
+        result = ts.dt.replace_time_zone("+00:00")
     assert result.dtype == pl.Datetime("us", "+00:00")
     assert result.item() == datetime(2020, 1, 1, 0, 0, tzinfo=timezone.utc)
 
@@ -2364,13 +2383,17 @@ def test_tzaware_date_range_crossing_dst_monthly() -> None:
 
 
 def test_tzaware_date_range_with_fixed_offset() -> None:
-    result = pl.date_range(
-        datetime(2021, 11, 7),
-        datetime(2021, 11, 7, 2),
-        "1h",
-        time_zone="+01:00",
-        eager=True,
-    )
+    with pytest.warns(
+        DeprecationWarning,
+        match="time zones other than those in `zoneinfo.available_timezones",
+    ):
+        result = pl.date_range(
+            datetime(2021, 11, 7),
+            datetime(2021, 11, 7, 2),
+            "1h",
+            time_zone="+01:00",
+            eager=True,
+        )
     assert result.to_list() == [
         datetime(2021, 11, 7, 0, 0, tzinfo=timezone(timedelta(hours=1))),
         datetime(2021, 11, 7, 1, 0, tzinfo=timezone(timedelta(hours=1))),
@@ -2672,8 +2695,6 @@ def test_tz_aware_to_string() -> None:
     [
         ("Pacific/Pohnpei", "%z", "+1100"),
         ("Pacific/Pohnpei", "%Z", "+11"),
-        ("+01:00", "%z", "+0100"),
-        ("+01:00", "%Z", "+01:00"),
     ],
 )
 def test_tz_aware_with_timezone_directive(
@@ -2840,7 +2861,7 @@ def test_round_by_week() -> None:
     }
 
 
-@pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu", "+01:00"])
+@pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu"])
 def test_round_by_day_datetime(time_zone: str | None) -> None:
     ser = pl.Series([datetime(2021, 11, 7, 3)]).dt.replace_time_zone(time_zone)
     result = ser.dt.round("1d")
