@@ -41,27 +41,39 @@ impl PySeries {
     }
 }
 
-pub(crate) fn to_series_collection(ps: Vec<PySeries>) -> Vec<Series> {
-    // prevent destruction of ps
-    let mut ps = std::mem::ManuallyDrop::new(ps);
-
-    // get mutable pointer and reinterpret as Series
-    let p = ps.as_mut_ptr() as *mut Series;
-    let len = ps.len();
-    let cap = ps.capacity();
-
-    // The pointer ownership will be transferred to Vec and this will be responsible for dealloc
-    unsafe { Vec::from_raw_parts(p, len, cap) }
+pub(crate) trait ToSeries {
+    fn to_series(self) -> Vec<Series>;
 }
 
-pub(crate) fn to_pyseries_collection(s: Vec<Series>) -> Vec<PySeries> {
-    let mut s = std::mem::ManuallyDrop::new(s);
+impl ToSeries for Vec<PySeries> {
+    fn to_series(self) -> Vec<Series> {
+        // prevent destruction of ps
+        let mut ps = std::mem::ManuallyDrop::new(self);
 
-    let p = s.as_mut_ptr() as *mut PySeries;
-    let len = s.len();
-    let cap = s.capacity();
+        // get mutable pointer and reinterpret as Series
+        let p = ps.as_mut_ptr() as *mut Series;
+        let len = ps.len();
+        let cap = ps.capacity();
 
-    unsafe { Vec::from_raw_parts(p, len, cap) }
+        // The pointer ownership will be transferred to Vec and this will be responsible for dealloc
+        unsafe { Vec::from_raw_parts(p, len, cap) }
+    }
+}
+
+pub(crate) trait ToPySeries {
+    fn to_pyseries(self) -> Vec<PySeries>;
+}
+
+impl ToPySeries for Vec<Series> {
+    fn to_pyseries(self) -> Vec<PySeries> {
+        let mut s = std::mem::ManuallyDrop::new(self);
+
+        let p = s.as_mut_ptr() as *mut PySeries;
+        let len = s.len();
+        let cap = s.capacity();
+
+        unsafe { Vec::from_raw_parts(p, len, cap) }
+    }
 }
 
 #[pymethods]
@@ -864,7 +876,7 @@ mod test {
 
         assert_eq!(s.sum::<i32>(), Some(6));
         let collection = vec![ps];
-        let s = to_series_collection(collection);
+        let s = collection.to_series();
         assert_eq!(
             s.iter().map(|s| s.sum::<i32>()).collect::<Vec<_>>(),
             vec![Some(6)]

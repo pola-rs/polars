@@ -7,7 +7,7 @@ use crate::arrow_interop::to_rust::array_to_rust;
 use crate::conversion::{slice_extract_wrapped, Wrap};
 use crate::error::PyPolarsErr;
 use crate::prelude::ObjectValue;
-use crate::series::to_series_collection;
+use crate::series::ToSeries;
 use crate::PySeries;
 
 // Init with numpy arrays
@@ -216,8 +216,8 @@ impl PySeries {
     }
 
     #[staticmethod]
-    fn new_series_list(name: &str, val: Vec<Self>, _strict: bool) -> Self {
-        let series_vec = to_series_collection(val);
+    fn new_series_list(name: &str, val: Vec<PySeries>, _strict: bool) -> Self {
+        let series_vec = val.to_series();
         Series::new(name, &series_vec).into()
     }
 
