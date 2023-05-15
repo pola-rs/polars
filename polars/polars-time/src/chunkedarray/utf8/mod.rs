@@ -316,12 +316,11 @@ pub trait Utf8Methods: AsUtf8 {
 
         // we can use the fast parser
         let mut ca: Int32Chunked = if let Some(fmt_len) = strptime::fmt_len(fmt.as_bytes()) {
-            let mut strptime_cache = StrpTimeState::default();
+            let mut strptime_cache = StrpTimeState { is_datetime: false };
             let mut convert = |s: &str| {
                 // Safety:
                 // fmt_len is correct, it was computed with this `fmt` str.
-                match unsafe { strptime_cache.parse(s.as_bytes(), fmt.as_bytes(), fmt_len, false) }
-                {
+                match unsafe { strptime_cache.parse(s.as_bytes(), fmt.as_bytes(), fmt_len) } {
                     // fallback to chrono
                     None => NaiveDate::parse_from_str(s, &fmt).ok(),
                     Some(ndt) => Some(ndt.date()),
@@ -477,61 +476,60 @@ pub trait Utf8Methods: AsUtf8 {
                 TimeUnit::Milliseconds => infer::transform_datetime_ms,
             };
             // we can use the fast parser
-            let mut ca: Int64Chunked =
-                if let Some(fmt_len) = self::strptime::fmt_len(fmt.as_bytes()) {
-                    let mut strptime_cache = StrpTimeState::default();
-                    let mut convert = |s: &str| {
-                        // Safety:
-                        // fmt_len is correct, it was computed with this `fmt` str.
-                        match unsafe {
-                            strptime_cache.parse(s.as_bytes(), fmt.as_bytes(), fmt_len, true)
-                        } {
-                            None => transform(s, &fmt, None, utc),
-                            Some(ndt) => Some(func(ndt)),
-                        }
-                    };
-                    if utf8_ca.null_count() == 0 {
-                        utf8_ca
-                            .into_no_null_iter()
-                            .map(|val| {
+            let mut ca: Int64Chunked = if let Some(fmt_len) =
+                self::strptime::fmt_len(fmt.as_bytes())
+            {
+                let mut strptime_cache = StrpTimeState { is_datetime: true };
+                let mut convert = |s: &str| {
+                    // Safety:
+                    // fmt_len is correct, it was computed with this `fmt` str.
+                    match unsafe { strptime_cache.parse(s.as_bytes(), fmt.as_bytes(), fmt_len) } {
+                        None => transform(s, &fmt, None, utc),
+                        Some(ndt) => Some(func(ndt)),
+                    }
+                };
+                if utf8_ca.null_count() == 0 {
+                    utf8_ca
+                        .into_no_null_iter()
+                        .map(|val| {
+                            if cache {
+                                *cache_map.entry(val).or_insert_with(|| convert(val))
+                            } else {
+                                convert(val)
+                            }
+                        })
+                        .collect_trusted()
+                } else {
+                    utf8_ca
+                        .into_iter()
+                        .map(|opt_s| {
+                            opt_s.and_then(|val| {
                                 if cache {
                                     *cache_map.entry(val).or_insert_with(|| convert(val))
                                 } else {
                                     convert(val)
                                 }
                             })
-                            .collect_trusted()
-                    } else {
-                        utf8_ca
-                            .into_iter()
-                            .map(|opt_s| {
-                                opt_s.and_then(|val| {
-                                    if cache {
-                                        *cache_map.entry(val).or_insert_with(|| convert(val))
-                                    } else {
-                                        convert(val)
-                                    }
-                                })
-                            })
-                            .collect_trusted()
-                    }
-                } else {
-                    let mut cache_map = PlHashMap::new();
-                    utf8_ca
-                        .into_iter()
-                        .map(|opt_s| {
-                            opt_s.and_then(|s| {
-                                if cache {
-                                    *cache_map
-                                        .entry(s)
-                                        .or_insert_with(|| transform(s, &fmt, None, false))
-                                } else {
-                                    transform(s, &fmt, None, false)
-                                }
-                            })
                         })
                         .collect_trusted()
-                };
+                }
+            } else {
+                let mut cache_map = PlHashMap::new();
+                utf8_ca
+                    .into_iter()
+                    .map(|opt_s| {
+                        opt_s.and_then(|s| {
+                            if cache {
+                                *cache_map
+                                    .entry(s)
+                                    .or_insert_with(|| transform(s, &fmt, None, false))
+                            } else {
+                                transform(s, &fmt, None, false)
+                            }
+                        })
+                    })
+                    .collect_trusted()
+            };
             ca.rename(utf8_ca.name());
             match (tz, utc) {
                 #[cfg(feature = "timezones")]

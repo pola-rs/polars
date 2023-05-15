@@ -149,7 +149,7 @@ impl StrpTimeParser<i64> for DatetimeInfer<i64> {
         }
         unsafe {
             self.transform_bytes
-                .parse(val, self.latest_fmt.as_bytes(), self.fmt_len, true)
+                .parse(val, self.latest_fmt.as_bytes(), self.fmt_len)
                 .map(datetime_to_timestamp_us)
                 .or_else(|| {
                     // TODO! this will try all patterns.
@@ -160,7 +160,7 @@ impl StrpTimeParser<i64> for DatetimeInfer<i64> {
                         }
                         if let Some(parsed) = self
                             .transform_bytes
-                            .parse(val, fmt.as_bytes(), self.fmt_len, true)
+                            .parse(val, fmt.as_bytes(), self.fmt_len)
                             .map(datetime_to_timestamp_us)
                         {
                             self.latest_fmt = fmt;
@@ -181,7 +181,7 @@ impl StrpTimeParser<i32> for DatetimeInfer<i32> {
         }
         unsafe {
             self.transform_bytes
-                .parse(val, self.latest_fmt.as_bytes(), self.fmt_len, false)
+                .parse(val, self.latest_fmt.as_bytes(), self.fmt_len)
                 .map(|ndt| naive_date_to_date(ndt.date()))
                 .or_else(|| {
                     // TODO! this will try all patterns.
@@ -192,7 +192,7 @@ impl StrpTimeParser<i32> for DatetimeInfer<i32> {
                         }
                         if let Some(parsed) = self
                             .transform_bytes
-                            .parse(val, fmt.as_bytes(), self.fmt_len, false)
+                            .parse(val, fmt.as_bytes(), self.fmt_len)
                             .map(|ndt| naive_date_to_date(ndt.date()))
                         {
                             self.latest_fmt = fmt;
@@ -231,7 +231,7 @@ impl TryFrom<Pattern> for DatetimeInfer<i64> {
                 patterns: patterns::DATETIME_D_M_Y,
                 latest_fmt: patterns::DATETIME_D_M_Y[0],
                 transform: transform_datetime_us,
-                transform_bytes: StrpTimeState::default(),
+                transform_bytes: StrpTimeState { is_datetime: true },
                 fmt_len: 0,
                 logical_type: DataType::Datetime(TimeUnit::Microseconds, None),
                 utc: false,
@@ -244,7 +244,7 @@ impl TryFrom<Pattern> for DatetimeInfer<i64> {
                 patterns: patterns::DATETIME_Y_M_D,
                 latest_fmt: patterns::DATETIME_Y_M_D[0],
                 transform: transform_datetime_us,
-                transform_bytes: StrpTimeState::default(),
+                transform_bytes: StrpTimeState { is_datetime: true },
                 fmt_len: 0,
                 logical_type: DataType::Datetime(TimeUnit::Microseconds, None),
                 utc: false,
@@ -257,7 +257,7 @@ impl TryFrom<Pattern> for DatetimeInfer<i64> {
                 patterns: patterns::DATETIME_Y_M_D_Z,
                 latest_fmt: patterns::DATETIME_Y_M_D_Z[0],
                 transform: transform_tzaware_datetime_us,
-                transform_bytes: StrpTimeState::default(),
+                transform_bytes: StrpTimeState { is_datetime: true },
                 fmt_len: 0,
                 logical_type: DataType::Datetime(TimeUnit::Microseconds, None),
                 utc: false,
@@ -281,7 +281,7 @@ impl TryFrom<Pattern> for DatetimeInfer<i32> {
                 patterns: patterns::DATE_D_M_Y,
                 latest_fmt: patterns::DATE_D_M_Y[0],
                 transform: transform_date,
-                transform_bytes: StrpTimeState::default(),
+                transform_bytes: StrpTimeState { is_datetime: false },
                 fmt_len: 0,
                 logical_type: DataType::Date,
                 utc: false,
@@ -294,7 +294,7 @@ impl TryFrom<Pattern> for DatetimeInfer<i32> {
                 patterns: patterns::DATE_Y_M_D,
                 latest_fmt: patterns::DATE_Y_M_D[0],
                 transform: transform_date,
-                transform_bytes: StrpTimeState::default(),
+                transform_bytes: StrpTimeState { is_datetime: false },
                 fmt_len: 0,
                 logical_type: DataType::Date,
                 utc: false,

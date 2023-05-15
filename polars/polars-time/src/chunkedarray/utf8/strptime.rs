@@ -52,8 +52,10 @@ pub(super) fn compile_fmt(fmt: &str) -> String {
         .replace("%F", "%Y-%m-%d")
 }
 
-#[derive(Default, Clone)]
-pub(super) struct StrpTimeState {}
+#[derive(Clone)]
+pub(super) struct StrpTimeState {
+    pub is_datetime: bool,
+}
 
 impl StrpTimeState {
     #[inline]
@@ -64,7 +66,6 @@ impl StrpTimeState {
         val: &[u8],
         fmt: &[u8],
         fmt_len: u16,
-        is_datetime: bool,
     ) -> Option<NaiveDateTime> {
         let mut offset = 0;
         let mut negative = false;
@@ -171,7 +172,7 @@ impl StrpTimeState {
         }
         // chrono::NaiveDateTime::parse_from_str requires both hour and minute
         // to be specified, so this is for compatibility.
-        if is_datetime && !(found_hour && found_minute) {
+        if self.is_datetime && !(found_hour && found_minute) {
             return None;
         }
         // all values processed
@@ -311,12 +312,8 @@ mod test {
             assert_eq!(fmt_len(fmt.as_bytes()).unwrap(), len);
             unsafe {
                 assert_eq!(
-                    StrpTimeState::default().parse(
-                        val.as_bytes(),
-                        fmt.as_bytes(),
-                        len,
-                        is_datetime
-                    ),
+                    StrpTimeState { is_datetime: false }
+                        .parse(val.as_bytes(), fmt.as_bytes(), len,),
                     expected
                 )
             };
