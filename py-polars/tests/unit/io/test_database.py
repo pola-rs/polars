@@ -25,7 +25,7 @@ def sample_df() -> pl.DataFrame:
         {
             "id": [1, 2],
             "name": ["misc", "other"],
-            "value": [100.0, -99.5],
+            "value": [100.0, -99.0],
             "date": ["2020-01-01", "2021-12-31"],
         }
     )
@@ -34,6 +34,14 @@ def sample_df() -> pl.DataFrame:
 def create_temp_sqlite_db(test_db: str) -> None:
     import sqlite3
 
+    if os.path.exists(test_db):
+        os.unlink(test_db)
+
+    # NOTE: at the time of writing adcb/connectorx have weak SQLite support (poor or
+    # no bool/date/datetime dtypes, for example) and there is a bug in connectorx that
+    # causes float rounding < py 3.11, hence we are only testing/storing simple values
+    # in this test db for now. as support improves, we can add/test additional dtypes).
+
     conn = sqlite3.connect(test_db)
     # ┌─────┬───────┬───────┬────────────┐
     # │ id  ┆ name  ┆ value ┆ date       │
@@ -41,7 +49,7 @@ def create_temp_sqlite_db(test_db: str) -> None:
     # │ i64 ┆ str   ┆ f64   ┆ date       │
     # ╞═════╪═══════╪═══════╪════════════╡
     # │ 1   ┆ misc  ┆ 100.0 ┆ 2020-01-01 │
-    # │ 2   ┆ other ┆ -99.5 ┆ 2021-12-31 │
+    # │ 2   ┆ other ┆ -99.0 ┆ 2021-12-31 │
     # └─────┴───────┴───────┴────────────┘
     conn.executescript(
         """
@@ -199,9 +207,6 @@ def test_write_database(
             sample_df = pl.concat([sample_df, sample_df])
 
         result = pl.read_database("SELECT * FROM test_data", f"sqlite:///{test_db}")
-
-    # TODO: Fix this bug! Floats shouldn't be rounded
-    sample_df = sample_df.with_columns(pl.col("value").ceil())
 
     sample_df = sample_df.with_columns(pl.col("date").cast(pl.Utf8))
     assert_frame_equal(sample_df, result)
