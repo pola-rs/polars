@@ -119,8 +119,8 @@ def concat(
           values with ``null``.
         * horizontal: Stacks Series from DataFrames horizontally and fills with ``null``
           if the lengths don't match.
-        * align: Combines frames horizontally, auto-determining the common columns and
-          aligning rows using the same logic as ``align_frames``; this behaviour is
+        * align: Combines frames horizontally, auto-determining the common key columns
+          and aligning rows using the same logic as ``align_frames``; this behaviour is
           patterned after a full outer join, but does not handle column-name collision.
           (If you need more control, you should use a suitable join method instead).
     rechunk
@@ -133,7 +133,7 @@ def concat(
     --------
     >>> df1 = pl.DataFrame({"a": [1], "b": [3]})
     >>> df2 = pl.DataFrame({"a": [2], "b": [4]})
-    >>> pl.concat([df1, df2])
+    >>> pl.concat([df1, df2])  # default is 'vertical' strategy
     shape: (2, 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
@@ -144,26 +144,9 @@ def concat(
     │ 2   ┆ 4   │
     └─────┴─────┘
 
-    >>> df_h1 = pl.DataFrame(
-    ...     {
-    ...         "l1": [1, 2],
-    ...         "l2": [3, 4],
-    ...     }
-    ... )
-    >>> df_h2 = pl.DataFrame(
-    ...     {
-    ...         "r1": [5, 6],
-    ...         "r2": [7, 8],
-    ...         "r3": [9, 10],
-    ...     }
-    ... )
-    >>> pl.concat(
-    ...     [
-    ...         df_h1,
-    ...         df_h2,
-    ...     ],
-    ...     how="horizontal",
-    ... )
+    >>> df_h1 = pl.DataFrame({"l1": [1, 2], "l2": [3, 4]})
+    >>> df_h2 = pl.DataFrame({"r1": [5, 6], "r2": [7, 8], "r3": [9, 10]})
+    >>> pl.concat([df_h1, df_h2], how="horizontal")
     shape: (2, 5)
     ┌─────┬─────┬─────┬─────┬─────┐
     │ l1  ┆ l2  ┆ r1  ┆ r2  ┆ r3  │
@@ -174,34 +157,33 @@ def concat(
     │ 2   ┆ 4   ┆ 6   ┆ 8   ┆ 10  │
     └─────┴─────┴─────┴─────┴─────┘
 
-    >>> df_d1 = pl.DataFrame(
-    ...     {
-    ...         "a": [1],
-    ...         "b": [3],
-    ...     }
-    ... )
-    >>> df_d2 = pl.DataFrame(
-    ...     {
-    ...         "a": [2],
-    ...         "d": [4],
-    ...     }
-    ... )
-    >>> pl.concat(
-    ...     [
-    ...         df_d1,
-    ...         df_d2,
-    ...     ],
-    ...     how="diagonal",
-    ... )
+    >>> df_d1 = pl.DataFrame({"a": [1], "b": [3]})
+    >>> df_d2 = pl.DataFrame({"a": [2], "c": [4]})
+    >>> pl.concat([df_d1, df_d2], how="diagonal")
     shape: (2, 3)
     ┌─────┬──────┬──────┐
-    │ a   ┆ b    ┆ d    │
+    │ a   ┆ b    ┆ c    │
     │ --- ┆ ---  ┆ ---  │
     │ i64 ┆ i64  ┆ i64  │
     ╞═════╪══════╪══════╡
     │ 1   ┆ 3    ┆ null │
     │ 2   ┆ null ┆ 4    │
     └─────┴──────┴──────┘
+
+    >>> df_a1 = pl.DataFrame({"id": [1, 2], "x": [3, 4]})
+    >>> df_a2 = pl.DataFrame({"id": [2, 3], "y": [5, 6]})
+    >>> df_a3 = pl.DataFrame({"id": [1, 3], "z": [7, 8]})
+    >>> pl.concat([df_a1, df_a2, df_a3], how="align")
+    shape: (3, 4)
+    ┌─────┬──────┬──────┬──────┐
+    │ id  ┆ x    ┆ y    ┆ z    │
+    │ --- ┆ ---  ┆ ---  ┆ ---  │
+    │ i64 ┆ i64  ┆ i64  ┆ i64  │
+    ╞═════╪══════╪══════╪══════╡
+    │ 1   ┆ 3    ┆ null ┆ 7    │
+    │ 2   ┆ 4    ┆ 5    ┆ null │
+    │ 3   ┆ null ┆ 6    ┆ 8    │
+    └─────┴──────┴──────┴──────┘
 
     """
     # unpack/standardise (handles generator input)
@@ -232,12 +214,13 @@ def concat(
         )
         # align the frame data using an outer join with no suffix-resolution
         # (so we raise an error in case of column collision, like "horizontal")
-        df = reduce(
+        lf: LazyFrame = reduce(
             lambda x, y: x.join(y, how="outer", on=common_cols, suffix=""),
             [df.lazy() for df in elems],
         ).sort(by=common_cols)
 
-        return df.collect() if isinstance(elems[0], pl.DataFrame) else df  # type: ignore[redundant-expr]
+        eager = isinstance(elems[0], pl.DataFrame)
+        return lf.collect() if eager else lf  # type: ignore[return-value]
 
     out: Series | DataFrame | LazyFrame | Expr
     first = elems[0]
