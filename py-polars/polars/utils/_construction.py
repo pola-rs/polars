@@ -73,7 +73,7 @@ if TYPE_CHECKING:
         SchemaDict,
     )
 
-if version_info >= (3, 10):
+if version_info >= (3, 11):
 
     def type_hints(obj: type) -> dict[str, Any]:
         return get_type_hints(obj)
