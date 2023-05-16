@@ -160,3 +160,22 @@ def test_write_delta(df: pl.DataFrame, tmp_path: Path) -> None:
         pl_df_partitioned.select(cols),
         check_row_order=False,
     )
+
+    # Case: Append to existing tables
+    v1.write_delta(tmp_path, mode="append")
+    tbl = DeltaTable(tmp_path)
+    pl_df_1 = pl.read_delta(tbl.table_uri, version=2)
+
+    assert tbl.version() == 2
+    assert pl_df_1.shape == (6, 2)  # Rows are doubled
+    assert v1.columns == pl_df_1.columns
+
+    df_supported.write_delta(partitioned_tbl_uri, mode="append")
+    partitioned_tbl = DeltaTable(partitioned_tbl_uri)
+    pl_df_partitioned = pl.read_delta(partitioned_tbl.table_uri, version=1)
+
+    assert partitioned_tbl.version() == 1
+    assert pl_df_partitioned.shape == (6, 14)  # Rows are doubled
+    assert df_supported.columns == pl_df_partitioned.columns
+
+    df_supported.write_delta(partitioned_tbl_uri, mode="overwrite")

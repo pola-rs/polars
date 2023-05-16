@@ -3304,7 +3304,10 @@ class DataFrame:
 
         check_if_delta_available()
 
-        from deltalake.writer import write_deltalake  # type: ignore[import]
+        from deltalake.writer import (  # type: ignore[import]
+            try_get_deltatable,
+            write_deltalake,
+        )
 
         if delta_write_options is None:
             delta_write_options = {}
@@ -3334,10 +3337,26 @@ class DataFrame:
                 f"Column(s) in {unsupported_cols} have unsupported data types."
             )
 
+        data = self.to_arrow()
+        data_schema = data.schema
+
+        # Workaround to prevent manual casting of large types
+        table = try_get_deltatable(table_or_uri, storage_options)
+
+        if table is not None:
+            table_schema = table.schema()
+
+            if (
+                data_schema == table_schema.to_pyarrow()
+                or data_schema == table_schema.to_pyarrow(as_large_types=True)
+            ):
+                data_schema = table_schema.to_pyarrow()
+
         write_deltalake(
             table_or_uri=table_or_uri,
-            data=self.to_arrow(),
+            data=data,
             mode=mode,
+            schema=data_schema,
             overwrite_schema=overwrite_schema,
             storage_options=storage_options,
             **delta_write_options,
