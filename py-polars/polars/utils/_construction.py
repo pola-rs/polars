@@ -78,7 +78,7 @@ def _get_annotations(obj: type) -> dict[str, Any]:
     return getattr(obj, "__annotations__", {})
 
 
-if version_info >= (3, 10):
+if version_info >= (3, 11):
 
     def type_hints(obj: type) -> dict[str, Any]:
         try:
