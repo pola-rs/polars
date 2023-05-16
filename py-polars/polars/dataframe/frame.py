@@ -5753,20 +5753,19 @@ class DataFrame:
 
     def clear(self, n: int = 0) -> Self:
         """
-        Create an empty copy of the current DataFrame, with `n` rows.
+        Create an empty copy of the current DataFrame. If `n > 0`, create `n` null-filled rows.
 
-        Returns a DataFrame with an identical schema, but no data (i.e., all
-        values in every column in the copy are set to null).
+        Returns a null-filled DataFrame with an identical schema.
         `n` can be greater than the current number of rows in the DataFrame.
 
         Parameters
         ----------
         n
-            Number of (empty) rows to return in the cleared frame.
+            Number of (null-filled) rows to return in the cleared frame.
 
         See Also
         --------
-        clone : Cheap deepcopy/clone of schema (no rows copied).
+        clone : Cheap deepcopy/clone.
 
         Examples
         --------
