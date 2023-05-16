@@ -296,7 +296,7 @@ def register_lazyframe_namespace(name: str) -> Callable[[type[NS]], type[NS]]:
     │ yy  ┆ 5   ┆ 6   ┆ 7   │
     │ yz  ┆ 6   ┆ 7   ┆ 8   │
     └─────┴─────┴─────┴─────┘
-    >>> [ldf.collect() for ldf in ldf.types.split_by_column_dtypes()]
+    >>> pl.collect_all(ldf.types.split_by_column_dtypes())
     [shape: (4, 1)
     ┌─────┐
     │ a1  │
