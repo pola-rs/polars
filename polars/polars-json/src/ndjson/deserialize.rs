@@ -1,3 +1,5 @@
+use simd_json::BorrowedValue;
+
 use super::*;
 
 /// Deserializes an iterator of rows into an [`Array`] of [`DataType`].
@@ -9,17 +11,25 @@ use super::*;
 pub fn deserialize_iter<'a>(
     rows: impl Iterator<Item = &'a str>,
     data_type: DataType,
+    buf_size: usize,
+    count: usize,
 ) -> PolarsResult<ArrayRef> {
-    // deserialize strings to `Value`s
-    let rows = rows
-        .map(|row| {
-            simd_json::serde::to_borrowed_value(row)
-                .map_err(|e| PolarsError::ComputeError(format!("json parsing error: '{e}'").into()))
-        })
-        .collect::<PolarsResult<Vec<_>>>()?;
-
-    // deserialize &[Value] to Array
-    Ok(super::super::json::deserialize::_deserialize(
-        &rows, data_type,
-    ))
+    let mut buf = String::with_capacity(buf_size + count + 2);
+    buf.push('[');
+    for row in rows {
+        buf.push_str(row);
+        buf.push(',')
+    }
+    let _ = buf.pop();
+    buf.push(']');
+    let slice = unsafe { buf.as_bytes_mut() };
+    let out = simd_json::to_borrowed_value(slice)
+        .map_err(|e| PolarsError::ComputeError(format!("json parsing error: '{e}'").into()))?;
+    if let BorrowedValue::Array(rows) = out {
+        Ok(super::super::json::deserialize::_deserialize(
+            &rows, data_type,
+        ))
+    } else {
+        unreachable!()
+    }
 }
