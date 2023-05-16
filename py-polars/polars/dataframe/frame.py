@@ -5753,7 +5753,8 @@ class DataFrame:
 
     def clear(self, n: int = 0) -> Self:
         """
-        Create an empty copy of the current DataFrame. If `n > 0`, create `n` null-filled rows.
+        Create an empty copy of the current DataFrame. If `n > 0`, create
+            `n` null-filled rows.
 
         Returns a null-filled DataFrame with an identical schema.
         `n` can be greater than the current number of rows in the DataFrame.
