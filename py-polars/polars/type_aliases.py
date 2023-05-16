@@ -136,7 +136,7 @@ ToStructStrategy: TypeAlias = Literal[
 ]  # ListToStructWidthStrategy
 
 # The following have no equivalent on the Rust side
-ConcatMethod = Literal["vertical", "diagonal", "horizontal"]
+ConcatMethod = Literal["vertical", "diagonal", "horizontal", "align"]
 EpochTimeUnit = Literal["ns", "us", "ms", "s", "d"]
 Orientation: TypeAlias = Literal["col", "row"]
 SearchSortedSide: TypeAlias = Literal["any", "left", "right"]

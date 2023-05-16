@@ -191,6 +191,13 @@ def parse_version(version: Sequence[str | int]) -> tuple[int, ...]:
     return tuple(int(re.sub(r"\D", "", str(v))) for v in version)
 
 
+def ordered_unique(values: Sequence[Any]) -> list[Any]:
+    """Return unique list of sequence values, maintaining their order of appearance."""
+    seen: set[Any] = set()
+    add_ = seen.add
+    return [v for v in values if not (v in seen or add_(v))]
+
+
 def scale_bytes(sz: int, unit: SizeUnit) -> int | float:
     """Scale size in bytes to other size units (eg: "kb", "mb", "gb", "tb")."""
     if unit in {"b", "bytes"}:
