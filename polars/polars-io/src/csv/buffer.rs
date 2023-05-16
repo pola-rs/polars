@@ -427,7 +427,8 @@ where
         Some(compiled) => {
             match DatetimeInfer::<T::Native>::try_from(compiled.pattern_with_offset.pattern) {
                 Ok(mut infer) => {
-                    let parsed = infer.parse(val, compiled.pattern_with_offset.offset);
+                    infer.utc = true;
+                    let parsed = infer.parse(val, None);
                     buf.compiled = Some(infer);
                     buf.builder.append_option(parsed);
                     Ok(())
@@ -446,7 +447,8 @@ where
             Some(pattern_with_offset) => {
                 match DatetimeInfer::<T::Native>::try_from(pattern_with_offset.pattern) {
                     Ok(mut infer) => {
-                        let parsed = infer.parse(val, pattern_with_offset.offset);
+                        infer.utc = true;
+                        let parsed = infer.parse(val, None);
                         buf.compiled = Some(infer);
                         buf.builder.append_option(parsed);
                         Ok(())
