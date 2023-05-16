@@ -1,61 +1,21 @@
-use ahash::{AHasher, RandomState};
 use std::borrow::Borrow;
-use std::hash::{BuildHasher, Hasher};
 use std::fmt::Write;
 
+use arrow::array::*;
+use arrow::bitmap::MutableBitmap;
+use arrow::chunk::Chunk;
+use arrow::datatypes::{DataType, Field, IntervalUnit, Schema};
+use arrow::error::Error;
+use arrow::offset::{Offset, Offsets};
+use arrow::temporal_conversions;
+use arrow::types::{f16, NativeType};
+use num_traits::NumCast;
+use polars_arrow::prelude::*;
 use simd_json::{BorrowedValue, StaticNode};
 
-use arrow::{
-    array::*,
-    bitmap::MutableBitmap,
-    chunk::Chunk,
-    datatypes::{DataType, Field, IntervalUnit, Schema},
-    error::Error,
-    offset::{Offset, Offsets},
-    temporal_conversions,
-    types::{f16, NativeType},
-};
-use num_traits::NumCast;
-use polars_core::prelude::*;
+use super::*;
 
-/// A function that converts a &Value into an optional tuple of a byte slice and a Value.
-/// This is used to create a dictionary, where the hashing depends on the DataType of the child object.
-type Extract<'a> = Box<dyn FnOnce(&'a BorrowedValue<'a>) -> Option<(u64, &'a BorrowedValue<'a>)>>;
-const JsonNullValue: BorrowedValue = BorrowedValue::Static(StaticNode::Null);
-
-fn build_extract<'a>(data_type: &'a DataType, mut hasher: AHasher) -> Extract<'a> {
-    match data_type {
-        DataType::LargeUtf8 => Box::new(move |value| match &value {
-            BorrowedValue::String(v) => {
-                hasher.write(v.as_bytes());
-                Some((hasher.finish(), value))
-            }
-            BorrowedValue::Static(v) => match v {
-                StaticNode::Bool(v) => {
-                    hasher.write(&[*v as u8]);
-                    Some((hasher.finish(), value))
-                }
-                _ => todo!(),
-            },
-            _ => None,
-        }),
-        DataType::Int32 | DataType::Int64 | DataType::Int16 | DataType::Int8 => {
-            Box::new(move |value| {
-                let integer = match value {
-                    BorrowedValue::Static(StaticNode::I64(v)) => Some(*v),
-                    BorrowedValue::Static(StaticNode::U64(v)) => Some(*v as i64),
-                    BorrowedValue::Static(StaticNode::Bool(v)) => Some(*v as i64),
-                    _ => None,
-                };
-                integer.map(|integer| {
-                    hasher.write(&integer.to_le_bytes());
-                    (hasher.finish(), value)
-                })
-            })
-        }
-        _ => Box::new(|_| None),
-    }
-}
+const JSON_NULL_VALUE: BorrowedValue = BorrowedValue::Static(StaticNode::Null);
 
 fn deserialize_boolean_into<'a, A: Borrow<BorrowedValue<'a>>>(
     target: &mut MutableBooleanArray,
@@ -68,11 +28,7 @@ fn deserialize_boolean_into<'a, A: Borrow<BorrowedValue<'a>>>(
     target.extend_trusted_len(iter);
 }
 
-fn deserialize_primitive_into<
-    'a,
-    T: NativeType + NumCast,
-    A: Borrow<BorrowedValue<'a>>,
->(
+fn deserialize_primitive_into<'a, T: NativeType + NumCast, A: Borrow<BorrowedValue<'a>>>(
     target: &mut MutablePrimitiveArray<T>,
     rows: &[A],
 ) {
@@ -102,12 +58,14 @@ fn deserialize_utf8_into<'a, O: Offset, A: Borrow<BorrowedValue<'a>>>(
     for row in rows {
         match row.borrow() {
             BorrowedValue::String(v) => target.push(Some(v.as_ref())),
-            BorrowedValue::Static(StaticNode::Bool(v)) => target.push(Some(if *v { "true" } else { "false" })),
+            BorrowedValue::Static(StaticNode::Bool(v)) => {
+                target.push(Some(if *v { "true" } else { "false" }))
+            }
             BorrowedValue::Static(node) if !matches!(node, StaticNode::Null) => {
                 write!(scratch, "{node}").unwrap();
                 target.push(Some(scratch.as_str()));
                 scratch.clear();
-            },
+            }
             _ => target.push_null(),
         }
     }
@@ -185,29 +143,22 @@ fn generic_deserialize_into<'a, A: Borrow<BorrowedValue<'a>>, M: 'static>(
 }
 
 /// Deserialize `rows` by extending them into the given `target`
-fn deserialize_into<'a, A: Borrow<BorrowedValue<'a>>>(target: &mut Box<dyn MutableArray>, rows: &[A]) {
+fn deserialize_into<'a, A: Borrow<BorrowedValue<'a>>>(
+    target: &mut Box<dyn MutableArray>,
+    rows: &[A],
+) {
     match target.data_type() {
         DataType::Boolean => generic_deserialize_into(target, rows, deserialize_boolean_into),
-        DataType::Float32 => {
-            primitive_dispatch::<_, f32>(target, rows, deserialize_primitive_into)
-        }
-        DataType::Float64 => {
-            primitive_dispatch::<_, f64>(target, rows, deserialize_primitive_into)
-        }
+        DataType::Float32 => primitive_dispatch::<_, f32>(target, rows, deserialize_primitive_into),
+        DataType::Float64 => primitive_dispatch::<_, f64>(target, rows, deserialize_primitive_into),
         DataType::Int8 => primitive_dispatch::<_, i8>(target, rows, deserialize_primitive_into),
         DataType::Int16 => primitive_dispatch::<_, i16>(target, rows, deserialize_primitive_into),
         DataType::Int32 => primitive_dispatch::<_, i32>(target, rows, deserialize_primitive_into),
         DataType::Int64 => primitive_dispatch::<_, i64>(target, rows, deserialize_primitive_into),
         DataType::UInt8 => primitive_dispatch::<_, u8>(target, rows, deserialize_primitive_into),
-        DataType::UInt16 => {
-            primitive_dispatch::<_, u16>(target, rows, deserialize_primitive_into)
-        }
-        DataType::UInt32 => {
-            primitive_dispatch::<_, u32>(target, rows, deserialize_primitive_into)
-        }
-        DataType::UInt64 => {
-            primitive_dispatch::<_, u64>(target, rows, deserialize_primitive_into)
-        }
+        DataType::UInt16 => primitive_dispatch::<_, u16>(target, rows, deserialize_primitive_into),
+        DataType::UInt32 => primitive_dispatch::<_, u32>(target, rows, deserialize_primitive_into),
+        DataType::UInt64 => primitive_dispatch::<_, u64>(target, rows, deserialize_primitive_into),
         DataType::LargeUtf8 => generic_deserialize_into::<_, MutableUtf8Array<i64>>(
             target,
             rows,
@@ -226,7 +177,10 @@ fn deserialize_into<'a, A: Borrow<BorrowedValue<'a>>>(target: &mut Box<dyn Mutab
     }
 }
 
-fn deserialize_struct<'a, A: Borrow<BorrowedValue<'a>>>(rows: &[A], data_type: DataType) -> StructArray {
+fn deserialize_struct<'a, A: Borrow<BorrowedValue<'a>>>(
+    rows: &[A],
+    data_type: DataType,
+) -> StructArray {
     let fields = StructArray::get_fields(&data_type);
 
     let mut values = fields
@@ -239,15 +193,15 @@ fn deserialize_struct<'a, A: Borrow<BorrowedValue<'a>>>(rows: &[A], data_type: D
     rows.iter().for_each(|row| {
         match row.borrow() {
             BorrowedValue::Object(value) => {
-                values
-                    .iter_mut()
-                    .for_each(|(s, (_, inner))| inner.push(value.get(*s).unwrap_or(&JsonNullValue)));
+                values.iter_mut().for_each(|(s, (_, inner))| {
+                    inner.push(value.get(*s).unwrap_or(&JSON_NULL_VALUE))
+                });
                 validity.push(true);
             }
             _ => {
                 values
                     .iter_mut()
-                    .for_each(|(_, (_, inner))| inner.push(&JsonNullValue));
+                    .for_each(|(_, (_, inner))| inner.push(&JSON_NULL_VALUE));
                 validity.push(false);
             }
         };
@@ -266,9 +220,9 @@ fn fill_array_from<B, T, A>(
     data_type: DataType,
     rows: &[B],
 ) -> Box<dyn Array>
-    where
-        T: NativeType,
-        A: From<MutablePrimitiveArray<T>> + Array,
+where
+    T: NativeType,
+    A: From<MutablePrimitiveArray<T>> + Array,
 {
     let mut array = MutablePrimitiveArray::<T>::with_capacity(rows.len()).to(data_type);
     f(&mut array, rows);
@@ -280,8 +234,8 @@ fn fill_array_from<B, T, A>(
 pub(crate) trait Container {
     /// Create this array with a given capacity.
     fn with_capacity(capacity: usize) -> Self
-        where
-            Self: Sized;
+    where
+        Self: Sized;
 }
 
 impl<O: Offset> Container for MutableBinaryArray<O> {
@@ -321,9 +275,9 @@ impl<O: Offset> Container for MutableUtf8Array<O> {
 }
 
 fn fill_generic_array_from<B, M, A>(f: fn(&mut M, &[B]), rows: &[B]) -> Box<dyn Array>
-    where
-        M: Container,
-        A: From<M> + Array,
+where
+    M: Container,
+    A: From<M> + Array,
 {
     let mut array = M::with_capacity(rows.len());
     f(&mut array, rows);
@@ -342,20 +296,30 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
         DataType::Int8 => {
             fill_array_from::<_, _, PrimitiveArray<i8>>(deserialize_primitive_into, data_type, rows)
         }
-        DataType::Int16 => {
-            fill_array_from::<_, _, PrimitiveArray<i16>>(deserialize_primitive_into, data_type, rows)
-        }
+        DataType::Int16 => fill_array_from::<_, _, PrimitiveArray<i16>>(
+            deserialize_primitive_into,
+            data_type,
+            rows,
+        ),
         DataType::Int32
         | DataType::Date32
         | DataType::Time32(_)
         | DataType::Interval(IntervalUnit::YearMonth) => {
-            fill_array_from::<_, _, PrimitiveArray<i32>>(deserialize_primitive_into, data_type, rows)
+            fill_array_from::<_, _, PrimitiveArray<i32>>(
+                deserialize_primitive_into,
+                data_type,
+                rows,
+            )
         }
         DataType::Interval(IntervalUnit::DayTime) => {
             unimplemented!("There is no natural representation of DayTime in JSON.")
         }
         DataType::Int64 | DataType::Date64 | DataType::Time64(_) | DataType::Duration(_) => {
-            fill_array_from::<_, _, PrimitiveArray<i64>>(deserialize_primitive_into, data_type, rows)
+            fill_array_from::<_, _, PrimitiveArray<i64>>(
+                deserialize_primitive_into,
+                data_type,
+                rows,
+            )
         }
         DataType::Timestamp(tu, tz) => {
             let iter = rows.iter().map(|row| match row.borrow() {
@@ -374,22 +338,32 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
         DataType::UInt8 => {
             fill_array_from::<_, _, PrimitiveArray<u8>>(deserialize_primitive_into, data_type, rows)
         }
-        DataType::UInt16 => {
-            fill_array_from::<_, _, PrimitiveArray<u16>>(deserialize_primitive_into, data_type, rows)
-        }
-        DataType::UInt32 => {
-            fill_array_from::<_, _, PrimitiveArray<u32>>(deserialize_primitive_into, data_type, rows)
-        }
-        DataType::UInt64 => {
-            fill_array_from::<_, _, PrimitiveArray<u64>>(deserialize_primitive_into, data_type, rows)
-        }
+        DataType::UInt16 => fill_array_from::<_, _, PrimitiveArray<u16>>(
+            deserialize_primitive_into,
+            data_type,
+            rows,
+        ),
+        DataType::UInt32 => fill_array_from::<_, _, PrimitiveArray<u32>>(
+            deserialize_primitive_into,
+            data_type,
+            rows,
+        ),
+        DataType::UInt64 => fill_array_from::<_, _, PrimitiveArray<u64>>(
+            deserialize_primitive_into,
+            data_type,
+            rows,
+        ),
         DataType::Float16 => unreachable!(),
-        DataType::Float32 => {
-            fill_array_from::<_, _, PrimitiveArray<f32>>(deserialize_primitive_into, data_type, rows)
-        }
-        DataType::Float64 => {
-            fill_array_from::<_, _, PrimitiveArray<f64>>(deserialize_primitive_into, data_type, rows)
-        }
+        DataType::Float32 => fill_array_from::<_, _, PrimitiveArray<f32>>(
+            deserialize_primitive_into,
+            data_type,
+            rows,
+        ),
+        DataType::Float64 => fill_array_from::<_, _, PrimitiveArray<f64>>(
+            deserialize_primitive_into,
+            data_type,
+            rows,
+        ),
         DataType::LargeUtf8 => {
             fill_generic_array_from::<_, _, Utf8Array<i64>>(deserialize_utf8_into, rows)
         }
@@ -409,9 +383,7 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
 pub fn deserialize(json: &BorrowedValue, data_type: DataType) -> Result<Box<dyn Array>, Error> {
     match json {
         BorrowedValue::Array(rows) => match data_type {
-            DataType::LargeList(inner) => {
-                Ok(_deserialize(rows, inner.data_type))
-            }
+            DataType::LargeList(inner) => Ok(_deserialize(rows, inner.data_type)),
             _ => todo!("read an Array from a non-Array data type"),
         },
         _ => todo!("read an Array from a non-Array JSON"),

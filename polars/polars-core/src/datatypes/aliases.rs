@@ -18,17 +18,11 @@ pub type IdxType = UInt32Type;
 #[cfg(feature = "bigidx")]
 pub type IdxType = UInt64Type;
 
-#[cfg(feature = "private")]
 pub type PlHashMap<K, V> = hashbrown::HashMap<K, V, RandomState>;
-#[cfg(feature = "private")]
-
 /// This hashmap has the uses an IdHasher
 pub type PlIdHashMap<K, V> = hashbrown::HashMap<K, V, IdBuildHasher>;
-#[cfg(feature = "private")]
 pub type PlHashSet<V> = hashbrown::HashSet<V, RandomState>;
-#[cfg(feature = "private")]
 pub type PlIndexMap<K, V> = indexmap::IndexMap<K, V, RandomState>;
-#[cfg(feature = "private")]
 pub type PlIndexSet<K> = indexmap::IndexSet<K, RandomState>;
 
 pub trait InitHashMaps {

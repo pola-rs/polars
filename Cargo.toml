@@ -14,6 +14,7 @@ members = [
   "polars/polars-sql",
   "polars/polars-error",
   "polars/polars-row",
+  "polars/polars-json",
   "examples/read_csv",
   "examples/read_parquet",
   "examples/read_parquet_cloud",

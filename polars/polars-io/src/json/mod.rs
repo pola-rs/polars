@@ -61,7 +61,6 @@
 //! +-----+--------+-------+--------+
 //! ```
 //!
-mod deserialize;
 use std::convert::TryFrom;
 use std::io::Write;
 use std::ops::Deref;
@@ -119,8 +118,8 @@ impl<W: Write> JsonWriter<W> {
 }
 
 impl<W> SerWriter<W> for JsonWriter<W>
-    where
-        W: Write,
+where
+    W: Write,
 {
     /// Create a new `JsonWriter` writing to `buffer` with format `JsonFormat::JsonLines`. To specify a different
     /// format, use e.g., [`JsonWriter::new(buffer).with_json_format(JsonFormat::Json)`](JsonWriter::with_json_format).
@@ -157,8 +156,8 @@ impl<W> SerWriter<W> for JsonWriter<W>
 /// Reads JSON in one of the formats in [`JsonFormat`] into a DataFrame.
 #[must_use]
 pub struct JsonReader<R>
-    where
-        R: MmapBytesReader,
+where
+    R: MmapBytesReader,
 {
     reader: R,
     rechunk: bool,
@@ -170,8 +169,8 @@ pub struct JsonReader<R>
 }
 
 impl<R> SerReader<R> for JsonReader<R>
-    where
-        R: MmapBytesReader,
+where
+    R: MmapBytesReader,
 {
     fn new(reader: R) -> Self {
         JsonReader {
@@ -260,8 +259,8 @@ impl<R> SerReader<R> for JsonReader<R>
 }
 
 impl<R> JsonReader<R>
-    where
-        R: MmapBytesReader,
+where
+    R: MmapBytesReader,
 {
     /// Set the JSON file's schema
     pub fn with_schema(mut self, schema: &Schema) -> Self {
