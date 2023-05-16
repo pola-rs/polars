@@ -21,7 +21,8 @@ check:
 		-p polars-time \
 		-p polars-error \
 		-p polars-ops \
-		-p polars-sql
+		-p polars-sql \
+		-p polars-json
 
 clippy:
 	cargo clippy --all-features \
@@ -34,7 +35,8 @@ clippy:
 		-p polars-error \
 		-p polars-row \
 		-p polars-time \
-		-p polars-sql
+		-p polars-sql \
+		-p polars-json
 
 clippy-default:
 	cargo clippy

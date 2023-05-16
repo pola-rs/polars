@@ -24,6 +24,7 @@ pub type IdxSize = u32;
 #[cfg(feature = "bigidx")]
 pub type IdxSize = u64;
 
+pub mod aliases;
 pub mod fmt;
 pub mod iter;
 pub mod macros;

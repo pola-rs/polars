@@ -13,7 +13,7 @@ use rayon::prelude::*;
 
 use crate::csv::utils::*;
 use crate::mmap::{MmapBytesReader, ReaderBytes};
-use crate::ndjson_core::buffer::*;
+use crate::ndjson::buffer::*;
 use crate::prelude::*;
 const NEWLINE: u8 = b'\n';
 const RETURN: u8 = b'\r';
