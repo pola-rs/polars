@@ -207,9 +207,13 @@ fn deserialize_struct<'a, A: Borrow<BorrowedValue<'a>>>(
         };
     });
 
-    let values = values
-        .into_iter()
-        .map(|(_, (data_type, values))| _deserialize(&values, data_type.clone()))
+    // ensure we collect in the proper order
+    let values = fields
+        .iter()
+        .map(|fld| {
+            let (data_type, vals) = values.get(fld.name.as_str()).unwrap();
+            _deserialize(vals, (*data_type).clone())
+        })
         .collect::<Vec<_>>();
 
     StructArray::new(data_type, values, validity.into())
