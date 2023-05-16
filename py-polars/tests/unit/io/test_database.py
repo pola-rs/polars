@@ -37,6 +37,11 @@ def create_temp_sqlite_db(test_db: str) -> None:
     if os.path.exists(test_db):
         os.unlink(test_db)
 
+    # NOTE: at the time of writing adcb/connectorx have weak SQLite support (poor or
+    # no bool/date/datetime dtypes, for example) and there is a bug in connectorx that
+    # causes float rounding < py 3.11, hence we are only testing/storing simple values
+    # in this test db for now. as support improves, we can add/test additional dtypes).
+
     conn = sqlite3.connect(test_db)
     # ┌─────┬───────┬───────┬────────────┐
     # │ id  ┆ name  ┆ value ┆ date       │
