@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-import warnings
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
 from functools import lru_cache, partial, singledispatch
@@ -56,11 +55,11 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.exceptions import ComputeError, ShapeError, TimeZoneAwareConstructorWarning
+from polars.exceptions import ComputeError, ShapeError
 from polars.utils._wrap import wrap_df, wrap_s
 from polars.utils.convert import _tzinfo_to_str
 from polars.utils.meta import threadpool_size
-from polars.utils.various import _is_generator, arrlen, find_stacklevel, range_to_series
+from polars.utils.various import _is_generator, arrlen, range_to_series
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame, PySeries
@@ -79,7 +78,7 @@ def _get_annotations(obj: type) -> dict[str, Any]:
     return getattr(obj, "__annotations__", {})
 
 
-if version_info >= (3, 10):
+if version_info >= (3, 11):
 
     def type_hints(obj: type) -> dict[str, Any]:
         try:
@@ -443,25 +442,7 @@ def sequence_to_pyseries(
                         "Given time_zone is different from that of timezone aware datetimes."
                         f" Given: '{dtype_tz}', got: '{tz}'."
                     )
-                with warnings.catch_warnings():
-                    # Silence the warning from convert_time_zone which users can't
-                    # take any action on anyway.
-                    warnings.filterwarnings(
-                        action="ignore",
-                        category=DeprecationWarning,
-                        message=r".*time zones other than those in `zoneinfo.available_timezones.*",
-                    )
-                    if tz != "UTC":
-                        warnings.warn(
-                            "In a future version of polars, constructing a Series with time-zone-aware "
-                            "datetimes will result in a Series with UTC time zone. "
-                            "To silence this warning and opt-in to the new behaviour, you can filter "
-                            "warnings of class TimeZoneAwareConstructorWarning and then use "
-                            "`.dt.convert_time_zone('UTC')`.",
-                            TimeZoneAwareConstructorWarning,
-                            stacklevel=find_stacklevel(),
-                        )
-                    return s.dt.replace_time_zone("UTC").dt.convert_time_zone(tz)._s
+                return s.dt.replace_time_zone("UTC")._s
             return s._s
 
         elif (
