@@ -15,7 +15,7 @@ pub mod ipc;
 #[cfg(feature = "json")]
 pub mod json;
 #[cfg(feature = "json")]
-pub mod ndjson_core;
+pub mod ndjson;
 #[cfg(feature = "cloud")]
 pub use crate::cloud::glob as async_glob;
 
