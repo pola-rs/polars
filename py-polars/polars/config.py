@@ -312,6 +312,39 @@ class Config:
         n : int
             number of characters to display
 
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "txt": [
+        ...             "Play it, Sam. Play 'As Time Goes By'.",
+        ...             "This is the beginning of a beautiful friendship.",
+        ...         ]
+        ...     }
+        ... )
+        >>> df.with_columns(pl.col("txt").str.lengths().alias("len"))
+        shape: (2, 2)
+        ┌───────────────────────────────────┬─────┐
+        │ txt                               ┆ len │
+        │ ---                               ┆ --- │
+        │ str                               ┆ u32 │
+        ╞═══════════════════════════════════╪═════╡
+        │ Play it, Sam. Play 'As Time Goes… ┆ 37  │
+        │ This is the beginning of a beaut… ┆ 48  │
+        └───────────────────────────────────┴─────┘
+        >>> with pl.Config(fmt_str_lengths=50):
+        ...     print(df)
+        ...
+        shape: (2, 1)
+        ┌──────────────────────────────────────────────────┐
+        │ txt                                              │
+        │ ---                                              │
+        │ str                                              │
+        ╞══════════════════════════════════════════════════╡
+        │ Play it, Sam. Play 'As Time Goes By'.            │
+        │ This is the beginning of a beautiful friendship. │
+        └──────────────────────────────────────────────────┘
+
         """
         if n <= 0:
             raise ValueError("number of characters must be > 0")
@@ -528,6 +561,22 @@ class Config:
         The UTF8 styles all use one or more of the semigraphic box-drawing characters
         found in the Unicode Box Drawing block, which are not ASCII compatible:
         https://en.wikipedia.org/wiki/Box-drawing_character#Box_Drawing
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"abc": [-2.5, 5.0], "mno": ["hello", "world"], "xyz": [True, False]}
+        ... )
+        >>> with pl.Config(
+        ...     tbl_formatting="ASCII_MARKDOWN",
+        ...     tbl_hide_column_data_types=True,
+        ...     tbl_hide_dataframe_shape=True,
+        ... ):
+        ...     print(df)
+        | abc  | mno   | xyz   |
+        |------|-------|-------|
+        | -2.5 | hello | true  |
+        | 5.0  | world | false |
 
         Raises
         ------
