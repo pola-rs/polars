@@ -216,7 +216,7 @@ fn deserialize_struct<'a, A: Borrow<BorrowedValue<'a>>>(
         })
         .collect::<Vec<_>>();
 
-    StructArray::new(data_type, values, validity.into())
+    StructArray::new(data_type.clone(), values, validity.into())
 }
 
 fn fill_array_from<B, T, A>(
