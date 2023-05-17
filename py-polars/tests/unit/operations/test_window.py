@@ -386,3 +386,25 @@ def test_cached_windows_sync_8803() -> None:
         )
         .sum()
     ).to_dict(False) == {"id": [28], "is_valid": [1], "a": [3], "b": [3]}
+
+
+def test_window_filtered_aggregation() -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["A", "A", "B", "B"],
+            "field1": [2, 4, 6, 8],
+            "flag": [1, 0, 1, 1],
+        }
+    )
+    out = df.with_columns(
+        pl.col("field1").filter(pl.col("flag") == 1).mean().over("group").alias("mean")
+    )
+    expected = pl.DataFrame(
+        {
+            "group": ["A", "A", "B", "B"],
+            "field1": [2, 4, 6, 8],
+            "flag": [1, 0, 1, 1],
+            "mean": [2.0, 2.0, 7.0, 7.0],
+        }
+    )
+    assert_frame_equal(out, expected)
