@@ -3236,6 +3236,9 @@ class DataFrame:
         """
         Write DataFrame as delta table.
 
+        Note: Some polars data types like `Null`, `Categorical` and `Time` are
+        not supported by the delta protocol specification.
+
         Parameters
         ----------
         target
