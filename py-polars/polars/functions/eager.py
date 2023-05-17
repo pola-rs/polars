@@ -33,6 +33,7 @@ if TYPE_CHECKING:
     from polars.type_aliases import (
         ClosedInterval,
         ConcatMethod,
+        JoinStrategy,
         PolarsDataType,
         PolarsType,
         TimeUnit,
@@ -748,6 +749,7 @@ def cut(
 def align_frames(
     *frames: FrameType,
     on: str | Expr | Sequence[str] | Sequence[Expr] | Sequence[str | Expr],
+    how: JoinStrategy = "outer",
     select: str | Expr | Sequence[str | Expr] | None = None,
     descending: bool | Sequence[bool] = False,
 ) -> list[FrameType]:
@@ -759,25 +761,31 @@ def align_frames(
 
     The original column order of input frames is not changed unless ``select`` is
     specified (in which case the final column order is determined from that). In the
-    case where duplicate key values exist, the alignment behaviour is equivalent to
-    an outer join.
+    case where duplicate key values exist, the alignment behaviour is determined by
+    the given alignment strategy specified in the ``how`` parameter (by default this
+    is a full outer join, but if your data is suitable you can get a large speedup
+    by setting ``how="left"`` instead).
 
-    Note that this does not result in a joined frame - you receive the same number
-    of frames back that you passed in, but each is now aligned by key and has
+    Note that this function does not result in a joined frame - you receive the same
+    number of frames back that you passed in, but each is now aligned by key and has
     the same number of rows.
 
     Parameters
     ----------
     frames
-        sequence of DataFrames or LazyFrames.
+        Sequence of DataFrames or LazyFrames.
     on
-        one or more columns whose unique values will be used to align the frames.
+        One or more columns whose unique values will be used to align the frames.
     select
-        optional post-alignment column select to constrain and/or order
+        Optional post-alignment column select to constrain and/or order
         the columns returned from the newly aligned frames.
     descending
-        sort the alignment column values in descending order; can be a single
+        Sort the alignment column values in descending order; can be a single
         boolean or a list of booleans associated with each column in ``on``.
+    how
+        By default the row alignment values are determined using a full outer join
+        strategy across all frames; if you know that the first frame contains all
+        required keys, you can set ``how="left"`` for a large performance increase.
 
     Examples
     --------
@@ -841,10 +849,10 @@ def align_frames(
     # └────────────┴─────┴──────┘      └────────────┴─────┴──────┘      └────────────┴──────┴──────┘
     ...
 
-    Align frames by "dt", but keep only cols "x" and "y":
+    Align frames by "dt" using "left" alignment, but keep only cols "x" and "y":
 
     >>> af1, af2, af3 = pl.align_frames(
-    ...     df1, df2, df3, on="dt", select=["x", "y"]
+    ...     df1, df2, df3, on="dt", select=["x", "y"], how="left"
     ... )  # doctest: +IGNORE_RESULT
     #
     # af1                 af2                 af3
@@ -885,24 +893,27 @@ def align_frames(
         raise TypeError(
             "Input frames must be of a consistent type (all LazyFrame or all DataFrame)"
         )
+
     on = [on] if (isinstance(on, str) or not isinstance(on, Sequence)) else on
     align_on = [(c.meta.output_name() if isinstance(c, pl.Expr) else c) for c in on]
 
-    # create lazy alignment frame
+    # create aligned master frame (this is the most expensive part; afterwards
+    # we just subselect out the columns representing the component frames)
     eager = isinstance(frames[0], pl.DataFrame)
     alignment_frame: LazyFrame = (
-        reduce(  # type: ignore[assignment]
+        reduce(  # type: ignore[attr-defined]
             lambda x, y: x.lazy().join(  # type: ignore[arg-type, return-value]
-                y.lazy(), how="outer", on=align_on, suffix=str(id(y))
+                y.lazy(), how=how, on=align_on, suffix=str(id(y))
             ),
             frames,
         )
-        .select(*align_on, F.exclude(align_on))
         .sort(by=align_on, descending=descending)
+        .collect()
+        .lazy()
     )
 
-    # select out aligned frames
-    aligned_cols = set(alignment_frame.columns[len(align_on) :])
+    # select-out aligned components from the master frame
+    aligned_cols = set(alignment_frame.columns)
     aligned_frames = []
     for df in frames:
         sfx = str(id(df))
