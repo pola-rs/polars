@@ -42,7 +42,11 @@ from polars.datatypes import (
     Int16,
     Int32,
     Int64,
+    List,
+    Null,
     Object,
+    Struct,
+    Time,
     UInt8,
     UInt16,
     UInt32,
@@ -113,6 +117,7 @@ if TYPE_CHECKING:
     from datetime import timedelta
     from io import IOBase
 
+    import deltalake
     from pyarrow.interchange.dataframe import _PyArrowDataFrame
     from xlsxwriter import Workbook
 
@@ -3218,6 +3223,147 @@ class DataFrame:
 
         else:
             raise ValueError(f"'engine' {engine} is not supported.")
+
+    def write_delta(
+        self,
+        target: str | Path | deltalake.DeltaTable,
+        *,
+        mode: Literal["error", "append", "overwrite", "ignore"] = "error",
+        overwrite_schema: bool = False,
+        storage_options: dict[str, str] | None = None,
+        delta_write_options: dict[str, Any] | None = None,
+    ) -> None:
+        """
+        Write DataFrame as delta table.
+
+        Note: Some polars data types like `Null`, `Categorical` and `Time` are
+        not supported by the delta protocol specification.
+
+        Parameters
+        ----------
+        target
+            URI of a table or a DeltaTable object.
+        mode : {'error', 'append', 'overwrite', 'ignore'}
+            How to handle existing data.
+
+            * If 'error', throw an error if the table already exists (default).
+            * If 'append', will add new data.
+            * If 'overwrite', will replace table with new data.
+            * If 'ignore', will not write anything if table already exists.
+        overwrite_schema
+            If True, allows updating the schema of the table.
+        storage_options
+            Extra options for the storage backends supported by `deltalake`.
+            For cloud storages, this may include configurations for authentication etc.
+
+            * See a list of supported storage options for S3 `here <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html#variants>`__.
+            * See a list of supported storage options for GCS `here <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html#variants>`__.
+            * See a list of supported storage options for Azure `here <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html#variants>`__.
+        delta_write_options
+            Additional keyword arguments while writing a Delta lake Table.
+            See a list of supported write options `here <https://github.com/delta-io/delta-rs/blob/395d48b47ea638b70415899dc035cc895b220e55/python/deltalake/writer.py#L65>`__.
+
+        Examples
+        --------
+        Instantiate a basic dataframe:
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3, 4, 5],
+        ...         "bar": [6, 7, 8, 9, 10],
+        ...         "ham": ["a", "b", "c", "d", "e"],
+        ...     }
+        ... )
+
+        Write DataFrame as a Delta Lake table on local filesystem.
+
+        >>> table_path = "/path/to/delta-table/"
+        >>> df.write_delta(table_path)  # doctest: +SKIP
+
+        Append data to an existing Delta Lake table on local filesystem.
+        Note: This will fail if schema of the new data does not match the
+        schema of existing table.
+
+        >>> df.write_delta(table_path, mode="append")  # doctest: +SKIP
+
+        Overwrite a Delta Lake table as a new version.
+        Note: If the schema of the new and old data is same,
+        then setting `overwrite_schema` is not required.
+
+        >>> existing_table_path = "/path/to/delta-table/"
+        >>> df.write_delta(
+        ...     existing_table_path, mode="overwrite", overwrite_schema=True
+        ... )  # doctest: +SKIP
+
+        Write DataFrame as a Delta Lake table on cloud object store like S3.
+
+        >>> table_path = "s3://bucket/prefix/to/delta-table/"
+        >>> df.write_delta(
+        ...     table_path,
+        ...     storage_options={
+        ...         "AWS_REGION": "THE_AWS_REGION",
+        ...         "AWS_ACCESS_KEY_ID": "THE_AWS_ACCESS_KEY_ID",
+        ...         "AWS_SECRET_ACCESS_KEY": "THE_AWS_SECRET_ACCESS_KEY",
+        ...     },
+        ... )  # doctest: +SKIP
+
+        """
+        from polars.io.delta import check_if_delta_available, resolve_delta_lake_uri
+
+        check_if_delta_available()
+
+        from deltalake.writer import (  # type: ignore[import]
+            try_get_deltatable,
+            write_deltalake,
+        )
+
+        if delta_write_options is None:
+            delta_write_options = {}
+
+        if isinstance(target, (str, Path)):
+            target = resolve_delta_lake_uri(str(target), strict=False)
+
+        unsupported_cols = {}
+        unsupported_types = [Time, Categorical, Null]
+
+        def check_unsupported_types(n: str, t: PolarsDataType | None) -> None:
+            if t is None or t in unsupported_types:
+                unsupported_cols[n] = t
+            elif isinstance(t, Struct):
+                for i in t.fields:
+                    check_unsupported_types(f"{n}.{i.name}", i.dtype)
+            elif isinstance(t, List):
+                check_unsupported_types(n, t.inner)
+
+        for name, data_type in self.schema.items():
+            check_unsupported_types(name, data_type)
+
+        if len(unsupported_cols) != 0:
+            raise TypeError(
+                f"Column(s) in {unsupported_cols} have unsupported data types."
+            )
+
+        data = self.to_arrow()
+        data_schema = data.schema
+
+        # Workaround to prevent manual casting of large types
+        table = try_get_deltatable(target, storage_options)
+
+        if table is not None:
+            table_schema = table.schema()
+
+            if data_schema == table_schema.to_pyarrow(as_large_types=True):
+                data_schema = table_schema.to_pyarrow()
+
+        write_deltalake(
+            table_or_uri=target,
+            data=data,
+            mode=mode,
+            schema=data_schema,
+            overwrite_schema=overwrite_schema,
+            storage_options=storage_options,
+            **delta_write_options,
+        )
 
     def estimated_size(self, unit: SizeUnit = "b") -> int | float:
         """
