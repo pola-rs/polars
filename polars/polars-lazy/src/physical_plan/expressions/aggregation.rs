@@ -68,7 +68,6 @@ impl PhysicalExpr for AggregationExpr {
                 }
             }
         }
-        let mut out_groups = Cow::Borrowed(groups);
         // Safety:
         // groups must always be in bounds.
         let out = unsafe {
@@ -77,35 +76,30 @@ impl PhysicalExpr for AggregationExpr {
                     check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_min(&groups);
-                    out_groups = groups;
                     rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::Max => {
                     check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_max(&groups);
-                    out_groups = groups;
                     rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::Median => {
                     check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_median(&groups);
-                    out_groups = groups;
                     rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::Mean => {
                     check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_mean(&groups);
-                    out_groups = groups;
                     rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::Sum => {
                     check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_sum(&groups);
-                    out_groups = groups;
                     rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::Count => {
@@ -170,21 +164,18 @@ impl PhysicalExpr for AggregationExpr {
                     check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_first(&groups);
-                    out_groups = groups;
                     rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::Last => {
                     check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_last(&groups);
-                    out_groups = groups;
                     rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::NUnique => {
                     check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_n_unique(&groups);
-                    out_groups = groups;
                     rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::Implode => {
@@ -219,14 +210,12 @@ impl PhysicalExpr for AggregationExpr {
                     check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_std(&groups, ddof);
-                    out_groups = groups;
                     rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::Var(ddof) => {
                     check_null_prop!();
                     let (s, groups) = ac.get_final_aggregation();
                     let agg_s = s.agg_var(&groups, ddof);
-                    out_groups = groups;
                     rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::Quantile(_, _) => {
@@ -270,7 +259,7 @@ impl PhysicalExpr for AggregationExpr {
             }
         };
 
-        Ok(AggregationContext::new(out, out_groups, true))
+        Ok(AggregationContext::new(out, Cow::Borrowed(groups), true))
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
