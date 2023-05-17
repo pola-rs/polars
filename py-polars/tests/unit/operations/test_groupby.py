@@ -563,17 +563,19 @@ def test_groupby_when_then_with_binary_and_agg_in_pred_6202() -> None:
 @pytest.mark.parametrize("every", ["1h", timedelta(hours=1)])
 @pytest.mark.parametrize("tzinfo", [None, ZoneInfo("Asia/Kathmandu")])
 def test_groupby_dynamic_iter(every: str | timedelta, tzinfo: ZoneInfo | None) -> None:
+    time_zone = tzinfo.key if tzinfo is not None else None
     df = pl.DataFrame(
         {
             "datetime": [
-                datetime(2020, 1, 1, 10, 0, tzinfo=tzinfo),
-                datetime(2020, 1, 1, 10, 50, tzinfo=tzinfo),
-                datetime(2020, 1, 1, 11, 10, tzinfo=tzinfo),
+                datetime(2020, 1, 1, 10, 0),
+                datetime(2020, 1, 1, 10, 50),
+                datetime(2020, 1, 1, 11, 10),
             ],
             "a": [1, 2, 2],
             "b": [4, 5, 6],
         }
     ).set_sorted("datetime")
+    df = df.with_columns(pl.col("datetime").dt.replace_time_zone(time_zone))
 
     # Without 'by' argument
     result1 = [
