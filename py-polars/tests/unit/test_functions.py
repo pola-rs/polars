@@ -313,6 +313,36 @@ def test_align_frames_duplicate_key() -> None:
         (None, None, "e"),
     ]
 
+    # align frames the other way round, using "left" alignment strategy
+    af1, af2 = pl.align_frames(df2, df1, on="x", how="left")
+
+    # shape: (5, 3)        shape: (5, 2)
+    # ┌─────┬─────┬─────┐  ┌─────┬──────┐
+    # │ y   ┆ z   ┆ x   │  │ x   ┆ y    │
+    # │ --- ┆ --- ┆ --- │  │ --- ┆ ---  │
+    # │ i64 ┆ f64 ┆ str │  │ str ┆ i64  │
+    # ╞═════╪═════╪═════╡  ╞═════╪══════╡
+    # │ 0   ┆ 5.5 ┆ a   │  │ a   ┆ 1    │
+    # │ 0   ┆ 5.5 ┆ a   │  │ a   ┆ 2    │
+    # │ 0   ┆ 5.5 ┆ a   │  │ a   ┆ 4    │
+    # │ 0   ┆ 6.0 ┆ b   │  │ b   ┆ null │
+    # │ -1  ┆ 7.5 ┆ b   │  │ b   ┆ null │
+    # └─────┴─────┴─────┘  └─────┴──────┘
+    assert af1.rows() == [
+        (0, 5.5, "a"),
+        (0, 5.5, "a"),
+        (0, 5.5, "a"),
+        (0, 6.0, "b"),
+        (-1, 7.5, "b"),
+    ]
+    assert af2.rows() == [
+        ("a", 1),
+        ("a", 2),
+        ("a", 4),
+        ("b", None),
+        ("b", None),
+    ]
+
 
 def test_nan_aggregations() -> None:
     df = pl.DataFrame({"a": [1.0, float("nan"), 2.0, 3.0], "b": [1, 1, 1, 1]})
