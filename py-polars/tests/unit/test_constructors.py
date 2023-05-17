@@ -400,18 +400,14 @@ def test_dataclasses_initvar_typing() -> None:
     class ABC:
         x: date
         y: float
-        z: dataclasses.InitVar[str] = None
+        z: dataclasses.InitVar[list[str]] = None
 
+    # should be able to parse the initvar typing...
     abc = ABC(x=date(1999, 12, 31), y=100.0)
     df = pl.DataFrame([abc])
 
-    assert_frame_equal(
-        pl.DataFrame(
-            {"x": [date(1999, 12, 31)], "y": [100.0], "z": [None]},
-            schema_overrides={"z": pl.Utf8},
-        ),
-        df,
-    )
+    # ...but should not load the initvar field into the DataFrame
+    assert dataclasses.asdict(abc) == df.rows(named=True)[0]
 
 
 def test_init_ndarray(monkeypatch: Any) -> None:
