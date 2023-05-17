@@ -201,7 +201,8 @@ def test_null_handling_correlation() -> None:
     )
 
 
-def test_align_frames() -> None:
+@pytest.mark.parametrize("no_duplicate_keys", [False, True])
+def test_align_frames(no_duplicate_keys: bool) -> None:
     import numpy as np
     import pandas as pd
 
@@ -231,6 +232,7 @@ def test_align_frames() -> None:
     pf1, pf2 = pl.align_frames(
         pl.from_pandas(df1.reset_index()),
         pl.from_pandas(df2.reset_index()),
+        no_duplicate_keys=no_duplicate_keys,
         on="date",
     )
     pl_dot = (
@@ -247,6 +249,7 @@ def test_align_frames() -> None:
     lf1, lf2 = pl.align_frames(
         pl.from_pandas(df1.reset_index()).lazy(),
         pl.from_pandas(df2.reset_index()).lazy(),
+        no_duplicate_keys=no_duplicate_keys,
         on="date",
     )
     assert isinstance(lf1, pl.LazyFrame)
@@ -261,21 +264,12 @@ def test_align_frames() -> None:
         pl.align_frames(  # type: ignore[type-var]
             pl.from_pandas(df1.reset_index()).lazy(),
             pl.from_pandas(df2.reset_index()),
+            no_duplicate_keys=no_duplicate_keys,
             on="date",
         )
 
-    # descending
-    pf1, pf2 = pl.align_frames(
-        pl.DataFrame([[3, 5, 6], [5, 8, 9]], orient="row"),
-        pl.DataFrame([[2, 5, 6], [3, 8, 9], [4, 2, 0]], orient="row"),
-        on="column_0",
-        descending=True,
-    )
-    assert pf1.rows() == [(5, 8, 9), (4, None, None), (3, 5, 6), (2, None, None)]
-    assert pf2.rows() == [(5, None, None), (4, 2, 0), (3, 8, 9), (2, 5, 6)]
 
-
-def test_align_frames_duplicate_key() -> None:
+def test_align_frames_duplicate_keys() -> None:
     # setup some test frames with duplicate key/alignment values
     df1 = pl.DataFrame({"x": ["a", "a", "a", "e"], "y": [1, 2, 4, 5]})
     df2 = pl.DataFrame({"y": [0, 0, -1], "z": [5.5, 6.0, 7.5], "x": ["a", "b", "b"]})
@@ -342,6 +336,78 @@ def test_align_frames_duplicate_key() -> None:
         ("b", None),
         ("b", None),
     ]
+
+    # align frames using "inner" alignment strategy
+    for af1, af2 in (
+        pl.align_frames(df1, df2, on="x", how="inner"),
+        pl.align_frames(df2, df1, on="x", how="inner"),
+    ):
+        a, b = sorted([af1, af2], key=lambda f: len(f.columns))
+        assert a.rows() == [("a", 1), ("a", 2), ("a", 4)]
+        assert b.rows() == [(0, 5.5, "a"), (0, 5.5, "a"), (0, 5.5, "a")]
+
+
+@pytest.mark.parametrize("no_duplicate_keys", [False, True])
+def test_align_frames_no_duplicate_keys(no_duplicate_keys: bool) -> None:
+    pf1 = pl.DataFrame([[3, 5, 6], [5, 8, 9]], orient="row")
+    pf2 = pl.DataFrame([[2, 5, 6], [3, 8, 9], [4, 2, 0]], orient="row")
+    af1, af2 = pl.align_frames(
+        pf1,
+        pf2,
+        on="column_0",
+        descending=True,
+        no_duplicate_keys=no_duplicate_keys,
+    )
+    # shape: (4, 3)                       shape: (4, 3)
+    # ┌──────────┬──────────┬──────────┐  ┌──────────┬──────────┬──────────┐
+    # │ column_0 ┆ column_1 ┆ column_2 │  │ column_0 ┆ column_1 ┆ column_2 │
+    # │ ---      ┆ ---      ┆ ---      │  │ ---      ┆ ---      ┆ ---      │
+    # │ i64      ┆ i64      ┆ i64      │  │ i64      ┆ i64      ┆ i64      │
+    # ╞══════════╪══════════╪══════════╡  ╞══════════╪══════════╪══════════╡
+    # │ 5        ┆ 8        ┆ 9        │  │ 5        ┆ null     ┆ null     │
+    # │ 4        ┆ null     ┆ null     │  │ 4        ┆ 2        ┆ 0        │
+    # │ 3        ┆ 5        ┆ 6        │  │ 3        ┆ 8        ┆ 9        │
+    # │ 2        ┆ null     ┆ null     │  │ 2        ┆ 5        ┆ 6        │
+    # └──────────┴──────────┴──────────┘  └──────────┴──────────┴──────────┘
+    assert af1.rows() == [(5, 8, 9), (4, None, None), (3, 5, 6), (2, None, None)]
+    assert af2.rows() == [(5, None, None), (4, 2, 0), (3, 8, 9), (2, 5, 6)]
+
+    af1, af2 = pl.align_frames(
+        pf1,
+        pf2,
+        on="column_0",
+        how="left",
+        no_duplicate_keys=no_duplicate_keys,
+    )
+    # shape: (2, 3)                       shape: (2, 3)
+    # ┌──────────┬──────────┬──────────┐  ┌──────────┬──────────┬──────────┐
+    # │ column_0 ┆ column_1 ┆ column_2 │  │ column_0 ┆ column_1 ┆ column_2 │
+    # │ ---      ┆ ---      ┆ ---      │  │ ---      ┆ ---      ┆ ---      │
+    # │ i64      ┆ i64      ┆ i64      │  │ i64      ┆ i64      ┆ i64      │
+    # ╞══════════╪══════════╪══════════╡  ╞══════════╪══════════╪══════════╡
+    # │ 3        ┆ 5        ┆ 6        │  │ 3        ┆ 8        ┆ 9        │
+    # │ 5        ┆ 8        ┆ 9        │  │ 5        ┆ null     ┆ null     │
+    # └──────────┴──────────┴──────────┘  └──────────┴──────────┴──────────┘
+    assert af1.rows() == [(3, 5, 6), (5, 8, 9)]
+    assert af2.rows() == [(3, 8, 9), (5, None, None)]
+
+    af1, af2 = pl.align_frames(
+        pf1,
+        pf2,
+        on="column_0",
+        how="inner",
+        no_duplicate_keys=no_duplicate_keys,
+    )
+    # shape: (1, 3)                       shape: (1, 3)
+    # ┌──────────┬──────────┬──────────┐  ┌──────────┬──────────┬──────────┐
+    # │ column_0 ┆ column_1 ┆ column_2 │  │ column_0 ┆ column_1 ┆ column_2 │
+    # │ ---      ┆ ---      ┆ ---      │  │ ---      ┆ ---      ┆ ---      │
+    # │ i64      ┆ i64      ┆ i64      │  │ i64      ┆ i64      ┆ i64      │
+    # ╞══════════╪══════════╪══════════╡  ╞══════════╪══════════╪══════════╡
+    # │ 3        ┆ 5        ┆ 6        │  │ 3        ┆ 8        ┆ 9        │
+    # └──────────┴──────────┴──────────┘  └──────────┴──────────┴──────────┘
+    assert af1.rows() == [(3, 5, 6)]
+    assert af2.rows() == [(3, 8, 9)]
 
 
 def test_nan_aggregations() -> None:

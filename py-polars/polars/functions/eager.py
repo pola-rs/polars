@@ -750,6 +750,7 @@ def align_frames(
     *frames: FrameType,
     on: str | Expr | Sequence[str] | Sequence[Expr] | Sequence[str | Expr],
     how: JoinStrategy = "outer",
+    no_duplicate_keys: bool = False,
     select: str | Expr | Sequence[str | Expr] | None = None,
     descending: bool | Sequence[bool] = False,
 ) -> list[FrameType]:
@@ -776,16 +777,26 @@ def align_frames(
         Sequence of DataFrames or LazyFrames.
     on
         One or more columns whose unique values will be used to align the frames.
+    how
+        By default the row alignment values are determined using a full outer join
+        strategy across all frames; if you know that the first frame contains all
+        required keys, you can set ``how="left"`` for a large performance increase.
+    no_duplicate_keys
+        If you know in advance that your data does not contain duplicate keys in
+        any of the individual frames, you can set this flag ``True`` for a large
+        performance increase.
     select
         Optional post-alignment column select to constrain and/or order
         the columns returned from the newly aligned frames.
     descending
         Sort the alignment column values in descending order; can be a single
         boolean or a list of booleans associated with each column in ``on``.
-    how
-        By default the row alignment values are determined using a full outer join
-        strategy across all frames; if you know that the first frame contains all
-        required keys, you can set ``how="left"`` for a large performance increase.
+
+    Notes
+    -----
+    This function currently materialises an intermediary master alignment frame
+    in order to avoid the overhead of having to repeat the alignment process
+    for each frame in the sequence.
 
     Examples
     --------
@@ -896,35 +907,58 @@ def align_frames(
 
     on = [on] if (isinstance(on, str) or not isinstance(on, Sequence)) else on
     align_on = [(c.meta.output_name() if isinstance(c, pl.Expr) else c) for c in on]
-
-    # create aligned master frame (this is the most expensive part; afterwards
-    # we just subselect out the columns representing the component frames)
     eager = isinstance(frames[0], pl.DataFrame)
-    alignment_frame: LazyFrame = (
-        reduce(  # type: ignore[attr-defined]
+
+    alignment_frame: LazyFrame
+    if no_duplicate_keys and how != "inner":
+        # create alignment frame composed of the unique join keys
+        if how == "outer":
+            alignment_frame = concat(
+                [df.lazy().select(align_on) for df in frames]
+            ).unique()
+        elif how == "left":
+            alignment_frame = frames[0].lazy().select(align_on).unique()
+        else:
+            raise ValueError(f"Unsupported alignment type: {how!r}")
+
+        # join the alignment frame with each input frame
+        alignment_frame = (
+            alignment_frame.sort(by=align_on, descending=descending).collect().lazy()
+        )
+        aligned_frames = [
+            alignment_frame.join(
+                other=df.lazy(),
+                on=alignment_frame.columns,
+                how=how,
+            ).select(df.columns)
+            for df in frames
+        ]
+    else:
+        # create a single aligned master frame
+        alignment_frame = reduce(  # type: ignore[assignment]
             lambda x, y: x.lazy().join(  # type: ignore[arg-type, return-value]
                 y.lazy(), how=how, on=align_on, suffix=str(id(y))
             ),
             frames,
         )
-        .sort(by=align_on, descending=descending)
-        .collect()
-        .lazy()
-    )
+        if no_duplicate_keys:
+            alignment_frame = alignment_frame.unique()
+        alignment_frame = (
+            alignment_frame.sort(by=align_on, descending=descending).collect().lazy()
+        )
+        # select-out aligned components from the master frame
+        aligned_cols = set(alignment_frame.columns)
+        aligned_frames = []
+        for df in frames:
+            sfx = str(id(df))
+            df_cols = [
+                F.col(f"{c}{sfx}").alias(c) if f"{c}{sfx}" in aligned_cols else F.col(c)
+                for c in df.columns
+            ]
+            aligned_frames.append(alignment_frame.select(*df_cols))
 
-    # select-out aligned components from the master frame
-    aligned_cols = set(alignment_frame.columns)
-    aligned_frames = []
-    for df in frames:
-        sfx = str(id(df))
-        df_cols = [
-            F.col(f"{c}{sfx}").alias(c) if f"{c}{sfx}" in aligned_cols else F.col(c)
-            for c in df.columns
-        ]
-        f = alignment_frame.select(*df_cols)
-        if select is not None:
-            f = f.select(select)
-        aligned_frames.append(f)
+    if select is not None:
+        aligned_frames = [df.select(select) for df in aligned_frames]
 
     return cast(
         List[FrameType], F.collect_all(aligned_frames) if eager else aligned_frames
