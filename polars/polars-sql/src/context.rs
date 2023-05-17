@@ -139,9 +139,9 @@ impl SQLContext {
     fn execute_explain(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
         match stmt {
             Statement::Explain { statement, .. } => {
-                let lf = self.execute_statement(&statement)?;
+                let lf = self.execute_statement(statement)?;
                 let plan = lf.describe_optimized_plan()?;
-                let mut plan = plan.split("\n").collect::<Series>();
+                let mut plan = plan.split('\n').collect::<Series>();
                 plan.rename("Logical Plan");
 
                 let df = DataFrame::new(vec![plan])?;
