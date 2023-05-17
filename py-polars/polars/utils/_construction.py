@@ -73,15 +73,25 @@ if TYPE_CHECKING:
         SchemaDict,
     )
 
+
+def _get_annotations(obj: type) -> dict[str, Any]:
+    return getattr(obj, "__annotations__", {})
+
+
 if version_info >= (3, 10):
 
     def type_hints(obj: type) -> dict[str, Any]:
-        return get_type_hints(obj)
+        try:
+            # often the same as obj.__annotations__, but handles forward references
+            # encoded as string literals, adds Optional[t] if a default value equal
+            # to None is set and recursively replaces 'Annotated[T, ...]' with 'T'.
+            return get_type_hints(obj)
+        except TypeError:
+            # fallback on edge-cases (eg: InitVar inference on python 3.10).
+            return _get_annotations(obj)
 
 else:
-
-    def type_hints(obj: type) -> dict[str, Any]:
-        return getattr(obj, "__annotations__", {})
+    type_hints = _get_annotations
 
 
 @lru_cache(64)
@@ -1076,7 +1086,15 @@ def _dataclasses_or_models_to_pydf(
             for col, tp in type_hints(first_element.__class__).items()
             if col != "__slots__"
         }
-        schema_override.update(schema_overrides or {})
+        if schema_overrides:
+            schema_override.update(schema_overrides)
+        elif not from_model:
+            dc_fields = set(asdict(first_element))
+            schema_overrides = schema_override = {
+                nm: tp for nm, tp in schema_override.items() if nm in dc_fields
+            }
+        else:
+            schema_overrides = schema_override
 
     for col, tp in schema_override.items():
         if tp == Categorical:
