@@ -77,6 +77,7 @@ Delta Lake
 
    scan_delta
    read_delta
+   DataFrame.write_delta
 
 Datasets
 ~~~~~~~~
