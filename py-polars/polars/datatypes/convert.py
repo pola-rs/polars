@@ -63,11 +63,6 @@ else:
         return tp
 
 
-if sys.version_info > (3, 9):
-    from types import GenericAlias
-else:
-    from typing import GenericAlias
-
 OptionType = type(Optional[type])
 if sys.version_info >= (3, 10):
     from types import NoneType, UnionType
@@ -145,15 +140,19 @@ def map_py_type_to_dtype(python_dtype: PythonDataType | type[object]) -> PolarsD
     if python_dtype is None.__class__:
         return Null
 
-    if isinstance(python_dtype, GenericAlias):
-        # eg: "list[str]"
-        base_type = getattr(python_dtype, "__origin__", None)
+    # cover generic typing aliases, such as 'list[str]'
+    if hasattr(python_dtype, "__origin__") and hasattr(python_dtype, "__args__"):
+        base_type = python_dtype.__origin__
         if base_type is not None:
             dtype = map_py_type_to_dtype(base_type)
-            nested = getattr(python_dtype, "__args__", None)
+            nested = python_dtype.__args__
             if len(nested) == 1:
                 nested = nested[0]
-            return dtype if nested is None else dtype(map_py_type_to_dtype(nested))
+            return (
+                dtype
+                if nested is None
+                else dtype(map_py_type_to_dtype(nested))  # type: ignore[operator]
+            )
 
     raise TypeError("Invalid type")
 
