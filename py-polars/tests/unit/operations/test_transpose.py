@@ -1,20 +1,11 @@
-import sys
 from datetime import date, datetime
 from typing import Iterator
 
 import pytest
 
 import polars as pl
-from polars.dependencies import _ZONEINFO_AVAILABLE
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
-
-if sys.version_info >= (3, 9):
-    from zoneinfo import ZoneInfo
-elif _ZONEINFO_AVAILABLE:
-    # Import from submodule due to typing issue with backports.zoneinfo package:
-    # https://github.com/pganssle/zoneinfo/issues/125
-    from backports.zoneinfo._zoneinfo import ZoneInfo
 
 
 def test_transpose_supertype() -> None:
@@ -34,9 +25,10 @@ def test_transpose_tz_naive_and_tz_aware() -> None:
     df = pl.DataFrame(
         {
             "a": [datetime(2020, 1, 1)],
-            "b": [datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu"))],
+            "b": [datetime(2020, 1, 1)],
         }
     )
+    df = df.with_columns(pl.col("b").dt.replace_time_zone("Asia/Kathmandu"))
     with pytest.raises(
         ComputeError,
         match=r"failed to determine supertype of datetime\[μs\] and datetime\[μs, Asia/Kathmandu\]",
