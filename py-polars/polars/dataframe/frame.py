@@ -3236,9 +3236,10 @@ class DataFrame:
         ----------
         table_or_uri
             URI of a table or a DeltaTable object.
-        mode
-            How to handle existing data. Default is to error if table already exists.
+        mode : {'error', 'append', 'overwrite', 'ignore'}
+            How to handle existing data.
 
+            * If 'error', throw an error if the table already exists (default).
             * If 'append', will add new data.
             * If 'overwrite', will replace table with new data.
             * If 'ignore', will not write anything if table already exists.
@@ -3346,10 +3347,7 @@ class DataFrame:
         if table is not None:
             table_schema = table.schema()
 
-            if (
-                data_schema == table_schema.to_pyarrow()
-                or data_schema == table_schema.to_pyarrow(as_large_types=True)
-            ):
+            if data_schema == table_schema.to_pyarrow(as_large_types=True):
                 data_schema = table_schema.to_pyarrow()
 
         write_deltalake(
