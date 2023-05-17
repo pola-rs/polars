@@ -42,7 +42,11 @@ from polars.datatypes import (
     Int16,
     Int32,
     Int64,
+    List,
+    Null,
     Object,
+    Struct,
+    Time,
     UInt8,
     UInt16,
     UInt32,
@@ -3222,7 +3226,7 @@ class DataFrame:
 
     def write_delta(
         self,
-        table_or_uri: str | Path | deltalake.DeltaTable,
+        target: str | Path | deltalake.DeltaTable,
         *,
         mode: Literal["error", "append", "overwrite", "ignore"] = "error",
         overwrite_schema: bool = False,
@@ -3234,7 +3238,7 @@ class DataFrame:
 
         Parameters
         ----------
-        table_or_uri
+        target
             URI of a table or a DeltaTable object.
         mode : {'error', 'append', 'overwrite', 'ignore'}
             How to handle existing data.
@@ -3313,17 +3317,15 @@ class DataFrame:
         if delta_write_options is None:
             delta_write_options = {}
 
-        if isinstance(table_or_uri, (str, Path)):
-            table_or_uri = resolve_delta_lake_uri(str(table_or_uri), strict=False)
+        if isinstance(target, (str, Path)):
+            target = resolve_delta_lake_uri(str(target), strict=False)
 
-        from polars.datatypes import List, Null, Struct, Time
-
-        unsupported_cols = []
+        unsupported_cols = {}
         unsupported_types = [Time, Categorical, Null]
 
         def check_unsupported_types(n: str, t: PolarsDataType | None) -> None:
             if t is None or t in unsupported_types:
-                unsupported_cols.append(n)
+                unsupported_cols[n] = t
             elif isinstance(t, Struct):
                 for i in t.fields:
                     check_unsupported_types(f"{n}.{i.name}", i.dtype)
@@ -3342,7 +3344,7 @@ class DataFrame:
         data_schema = data.schema
 
         # Workaround to prevent manual casting of large types
-        table = try_get_deltatable(table_or_uri, storage_options)
+        table = try_get_deltatable(target, storage_options)
 
         if table is not None:
             table_schema = table.schema()
@@ -3351,7 +3353,7 @@ class DataFrame:
                 data_schema = table_schema.to_pyarrow()
 
         write_deltalake(
-            table_or_uri=table_or_uri,
+            table_or_uri=target,
             data=data,
             mode=mode,
             schema=data_schema,
