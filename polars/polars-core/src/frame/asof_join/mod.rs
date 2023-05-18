@@ -27,7 +27,7 @@ pub struct AsOfOptions {
     pub right_by: Option<Vec<SmartString>>,
 }
 
-fn check_asof_columns(a: &Series, b: &Series) -> PolarsResult<()> {
+fn check_asof_columns(a: &Series, b: &Series, check_sorted: bool) -> PolarsResult<()> {
     let dtype_a = a.dtype();
     let dtype_b = b.dtype();
     polars_ensure!(
@@ -39,8 +39,10 @@ fn check_asof_columns(a: &Series, b: &Series) -> PolarsResult<()> {
         a.null_count() == 0 && b.null_count() == 0,
         ComputeError: "asof join must not have null values in 'on' arguments"
     );
-    ensure_sorted_arg(a, "asof_join");
-    ensure_sorted_arg(b, "asof_join");
+    if check_sorted {
+        ensure_sorted_arg(a, "asof_join");
+        ensure_sorted_arg(b, "asof_join");
+    }
     Ok(())
 }
 
@@ -115,7 +117,7 @@ impl DataFrame {
         let left_key = self.column(left_on)?;
         let right_key = other.column(right_on)?;
 
-        check_asof_columns(left_key, right_key)?;
+        check_asof_columns(left_key, right_key, true)?;
         let left_key = left_key.to_physical_repr();
         let right_key = right_key.to_physical_repr();
 
