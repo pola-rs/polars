@@ -448,7 +448,7 @@ def sequence_to_pyseries(
                         "datetimes will result in a Series with UTC time zone. "
                         "To silence this warning and opt-in to the new behaviour, you can filter "
                         "warnings of class TimeZoneAwareConstructorWarning and then use "
-                        "`.dt.convert_time_zone('UTC').",
+                        "`.dt.convert_time_zone('UTC')`.",
                         TimeZoneAwareConstructorWarning,
                         stacklevel=find_stacklevel(),
                     )
