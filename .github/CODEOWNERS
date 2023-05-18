@@ -1,0 +1,7 @@
+# default owner for all unmatched paths
+@ritchie46
+
+/polars-cli/ @universalmind303
+/polars/polars-sql/ @universalmind303
+/polars/py-polars/ @stinodego @alexander-beedie 
+/polars/polars-time/ @MarcoGorelli
