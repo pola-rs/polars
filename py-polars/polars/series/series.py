@@ -336,7 +336,7 @@ class Series:
 
     @classmethod
     def _repeat(
-        cls, name: str, val: int | float | str | bool, n: int, dtype: PolarsDataType
+        cls, name: str, val: PythonLiteral, n: int, dtype: PolarsDataType
     ) -> Self:
         return cls._from_pyseries(PySeries.repeat(name, val, n, dtype))
 
