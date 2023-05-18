@@ -442,5 +442,5 @@ pub(super) fn process_join_constraint(
             return Ok((col(cols), col(cols)));
         }
     }
-    polars_bail!(ComputeError: "SQL join constraint {:?} is not yet supported", constraint);
+    polars_bail!(InvalidOperation: "SQL join constraint {:?} is not yet supported", constraint);
 }
