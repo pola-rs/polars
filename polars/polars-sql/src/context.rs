@@ -114,6 +114,7 @@ impl SQLContext {
             Statement::Query(query) => self.execute_query(query)?,
             stmt @ Statement::ShowTables { .. } => self.execute_show_tables(stmt)?,
             stmt @ Statement::CreateTable { .. } => self.execute_create_table(stmt)?,
+            stmt @ Statement::Explain { .. } => self.execute_explain(stmt)?,
             _ => polars_bail!(
                 ComputeError: "SQL statement type {:?} is not supported", ast,
             ),
@@ -134,7 +135,23 @@ impl SQLContext {
 
         self.process_limit_offset(lf, &query.limit, &query.offset)
     }
+    // EXPLAIN SELECT * FROM DF
+    fn execute_explain(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
+        match stmt {
+            Statement::Explain { statement, .. } => {
+                let lf = self.execute_statement(statement)?;
+                let plan = lf.describe_optimized_plan()?;
+                let mut plan = plan.split('\n').collect::<Series>();
+                plan.rename("Logical Plan");
 
+                let df = DataFrame::new(vec![plan])?;
+                Ok(df.lazy())
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    /// SHOW TABLES
     fn execute_show_tables(&mut self, _: &Statement) -> PolarsResult<LazyFrame> {
         let tables = Series::new("name", self.tables.clone());
         let df = DataFrame::new(vec![tables])?;
