@@ -3094,10 +3094,10 @@ def test_series_is_temporal() -> None:
 )
 def test_misc_precision_any_value_conversion(time_zone: Any, warn: bool) -> None:
     tz = ZoneInfo(time_zone) if isinstance(time_zone, str) else time_zone
+    context_manager: contextlib.AbstractContextManager[pytest.WarningsRecorder | None]
+    msg = r"UTC time zone"
     if warn:
-        context_manager: contextlib.AbstractContextManager[
-            pytest.WarningsRecorder | None
-        ] = pytest.warns(TimeZoneAwareConstructorWarning, match=r"UTC time zone")
+        context_manager = pytest.warns(TimeZoneAwareConstructorWarning, match=msg)
     else:
         context_manager = contextlib.nullcontext()
 
