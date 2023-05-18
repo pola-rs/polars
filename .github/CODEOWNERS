@@ -4,4 +4,4 @@
 /polars-cli/ @universalmind303
 /polars/polars-sql/ @universalmind303
 /polars/py-polars/ @stinodego @alexander-beedie 
-/polars/polars-time @MarcoGorelli
+/polars/polars-time/ @MarcoGorelli
