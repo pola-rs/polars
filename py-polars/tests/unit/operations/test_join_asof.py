@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 import numpy as np
 
@@ -352,3 +353,36 @@ def test_join_asof_projection_7481() -> None:
     assert (
         ldf1.join_asof(ldf2, left_on="a", right_on="b").select("a", "b")
     ).collect().to_dict(False) == {"a": [1, 2, 2], "b": ["bleft", "bleft", "bleft"]}
+
+
+def test_asof_join_sorted_by_group(capsys: Any) -> None:
+    df1 = pl.DataFrame(
+        {
+            "key": ["a", "a", "a", "b", "b", "b"],
+            "asof_key": [2.0, 1.0, 3.0, 1.0, 2.0, 3.0],
+            "a": [102, 101, 103, 104, 105, 106],
+        }
+    ).sort(by=["key", "asof_key"])
+
+    df2 = pl.DataFrame(
+        {
+            "key": ["a", "a", "a", "b", "b", "b"],
+            "asof_key": [0.9, 1.9, 2.9, 0.9, 1.9, 2.9],
+            "b": [201, 202, 203, 204, 205, 206],
+        }
+    ).sort(by=["key", "asof_key"])
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("key", ["a", "a", "a", "b", "b", "b"], dtype=pl.Utf8),
+            pl.Series("asof_key", [1.0, 2.0, 3.0, 1.0, 2.0, 3.0], dtype=pl.Float64),
+            pl.Series("a", [101, 102, 103, 104, 105, 106], dtype=pl.Int64),
+            pl.Series("b", [201, 202, 203, 204, 205, 206], dtype=pl.Int64),
+        ]
+    )
+
+    out = df1.join_asof(df2, on="asof_key", by="key")
+    assert_frame_equal(out, expected)
+
+    _, err = capsys.readouterr()
+    assert "is not explicitly sorted" not in err
