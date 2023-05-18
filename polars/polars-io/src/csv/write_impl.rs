@@ -204,6 +204,12 @@ pub(crate) fn write<W: Write>(
             DataType::List(_) => true,
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(_) => true,
+            #[cfg(feature = "object")]
+            DataType::Object(_) => {
+                return Err(PolarsError::ComputeError(
+                    "csv writer does not suppert object dtype".into(),
+                ))
+            }
             _ => false,
         };
         polars_ensure!(
