@@ -43,7 +43,7 @@ lazy = ["polars-core/lazy", "polars-lazy", "polars-lazy/compile"]
 strings = ["polars-core/strings", "polars-lazy/strings", "polars-ops/strings"]
 
 # support for ObjectChunked<T> (downcastable Series of any type)
-object = ["polars-core/object", "polars-lazy/object"]
+object = ["polars-core/object", "polars-lazy/object", "polars-io/object"]
 
 # support for arrows json parsing
 json = ["polars-io", "polars-io/json", "polars-lazy/json", "polars-sql/json"]

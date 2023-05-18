@@ -23,6 +23,7 @@ decompress = ["flate2/miniz_oxide"]
 decompress-fast = ["flate2/zlib-ng"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-date = ["polars-core/dtype-date", "polars-time/dtype-date"]
+object = []
 dtype-datetime = [
   "polars-core/dtype-datetime",
   "polars-core/temporal",
