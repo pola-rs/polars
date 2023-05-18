@@ -23,3 +23,23 @@ fn trailing_commas_allowed() {
     let actual = ctx.execute(sql);
     assert!(actual.is_ok());
 }
+
+#[test]
+fn select_exclude_single() {
+    let mut ctx = create_ctx();
+    let sql = r#"
+    SELECT * EXCLUDE a FROM df
+    "#;
+    let actual = ctx.execute(sql);
+    assert!(actual.is_ok());
+}
+
+#[test]
+fn select_exclude_multi() {
+    let mut ctx = create_ctx();
+    let sql = r#"
+    SELECT * EXCLUDE (a) FROM df
+    "#;
+    let actual = ctx.execute(sql);
+    assert!(actual.is_ok());
+}

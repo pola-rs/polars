@@ -7,9 +7,9 @@ use polars_lazy::prelude::*;
 use polars_plan::prelude::*;
 use polars_plan::utils::expressions_to_schema;
 use sqlparser::ast::{
-    Distinct, Expr as SqlExpr, FunctionArg, JoinOperator, ObjectName, Offset, OrderByExpr, Query,
-    Select, SelectItem, SetExpr, Statement, TableAlias, TableFactor, TableWithJoins,
-    Value as SQLValue,
+    Distinct, ExcludeSelectItem, Expr as SqlExpr, FunctionArg, JoinOperator, ObjectName, Offset,
+    OrderByExpr, Query, Select, SelectItem, SetExpr, Statement, TableAlias, TableFactor,
+    TableWithJoins, Value as SQLValue,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -249,9 +249,21 @@ impl SQLContext {
                         let expr = parse_sql_expr(expr, self)?;
                         expr.alias(&alias.value)
                     }
-                    SelectItem::QualifiedWildcard { .. } | SelectItem::Wildcard { .. } => {
+                    SelectItem::QualifiedWildcard(_, wildcard_options)
+                    | SelectItem::Wildcard(wildcard_options) => {
                         contains_wildcard = true;
-                        col("*")
+                        let e = col("*");
+                        if wildcard_options.opt_except.is_some() {
+                            polars_bail!(InvalidOperation: "EXCEPT not supported. Use EXCLUDE instead")
+                        }
+                        match &wildcard_options.opt_exclude {
+                            Some(ExcludeSelectItem::Single(ident)) => e.exclude(vec![&ident.value]),
+                            Some(ExcludeSelectItem::Multiple(idents)) => {
+                                e.exclude(idents.iter().map(|i| &i.value))
+                            }
+                            _ => e,
+                        }
+
                     }
                 })
             })
