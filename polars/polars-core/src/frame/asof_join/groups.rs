@@ -652,7 +652,11 @@ impl DataFrame {
         let right_asof_name = right_asof.name();
         let left_asof_name = left_asof.name();
 
-        check_asof_columns(&left_asof, &right_asof)?;
+        check_asof_columns(
+            &left_asof,
+            &right_asof,
+            left_by.is_empty() && right_by.is_empty(),
+        )?;
 
         let mut left_by = self.select(left_by)?;
         let mut right_by = other.select(right_by)?;
