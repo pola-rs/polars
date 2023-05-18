@@ -233,8 +233,13 @@ impl PySeries {
     }
 
     #[staticmethod]
-    fn repeat(name: &str, val: Wrap<AnyValue>, n: usize, dtype: Wrap<DataType>) -> PyResult<Self> {
-        let av = val.0;
+    fn repeat(
+        value: Wrap<AnyValue>,
+        n: usize,
+        name: &str,
+        dtype: Wrap<DataType>,
+    ) -> PyResult<Self> {
+        let av = value.0;
         Ok(Series::new(name, &[av])
             .cast(&dtype.0)
             .map_err(PyPolarsErr::from)?

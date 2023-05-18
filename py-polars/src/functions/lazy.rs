@@ -382,7 +382,16 @@ pub fn reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
 }
 
 #[pyfunction]
-pub fn repeat(value: &PyAny, n_times: PyExpr) -> PyResult<PyExpr> {
+pub fn repeat(value: &PyAny, n_times: PyExpr, dtype: Option<Wrap<DataType>>) -> PyResult<PyExpr> {
+    let dtype = dtype.map(|dt| dt.0);
+
+    if let Some(dt) = dtype {
+        // TODO: try to cast value to given dtype
+        let val = value.cast(dtype).unwrap();
+
+        return Ok(dsl::repeat(val, n_times.inner).into());
+    }
+
     if let Ok(true) = value.is_instance_of::<PyBool>() {
         let val = value.extract::<bool>().unwrap();
         Ok(dsl::repeat(val, n_times.inner).into())

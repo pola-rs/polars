@@ -11,13 +11,11 @@ from polars.datatypes import (
     Date,
     Datetime,
     Duration,
-    Int32,
     Int64,
     Struct,
     Time,
     UInt32,
     is_polars_dtype,
-    py_type_to_dtype,
 )
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
@@ -3164,26 +3162,16 @@ def repeat(
     name
         Name of the resulting column.
     dtype
-        Data type of the resulting column.
+        Data type of the resulting column. If set to ``None`` (default), data type is
+        inferred from the given value.
 
     """
     if eager:
-        if name is None:
-            name = ""
-        if dtype is None:
-            dtype = py_type_to_dtype(type(value))
-            if (
-                dtype == Int64
-                and isinstance(value, int)
-                and -(2**31) <= value <= 2**31 - 1
-            ):
-                dtype = Int32
-        s = pl.Series._repeat(name, value, n, dtype)  # type: ignore[arg-type]
-        return s
+        return pl.Series._repeat(value, n, name=name, dtype=dtype)
     else:
         if isinstance(n, int):
             n = lit(n)
-        expr = wrap_expr(plr.repeat(value, n._pyexpr))
+        expr = wrap_expr(plr.repeat(value, n._pyexpr, dtype))
         if name is not None:
             expr = expr.alias(name)
         return expr
