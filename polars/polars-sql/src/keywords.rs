@@ -56,6 +56,9 @@ pub fn all_keywords() -> Vec<&'static str> {
         keywords::VARCHAR,
         keywords::WHERE,
         keywords::WITH,
+        keywords::CASE,
+        keywords::WHEN,
+        keywords::THEN,
     ];
     keywords.extend_from_slice(sql_keywords);
     keywords

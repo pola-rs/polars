@@ -12,7 +12,7 @@ use sqlparser::ast::{
     Value as SQLValue,
 };
 use sqlparser::dialect::GenericDialect;
-use sqlparser::parser::Parser;
+use sqlparser::parser::{Parser, ParserOptions};
 
 use crate::sql_expr::{parse_sql_expr, process_join_constraint};
 use crate::table_functions::PolarsTableFunctions;
@@ -86,7 +86,16 @@ impl SQLContext {
     /// # }
     ///```
     pub fn execute(&mut self, query: &str) -> PolarsResult<LazyFrame> {
-        let ast = Parser::parse_sql(&GenericDialect, query).map_err(to_compute_err)?;
+        let mut parser = Parser::new(&GenericDialect);
+        parser = parser.with_options(ParserOptions {
+            trailing_commas: true,
+        });
+
+        let ast = parser
+            .try_with_sql(query)
+            .map_err(to_compute_err)?
+            .parse_statements()
+            .map_err(to_compute_err)?;
         polars_ensure!(ast.len() == 1, ComputeError: "One and only one statement at a time please");
         let res = self.execute_statement(ast.get(0).unwrap());
         // every execution should clear the cte map

@@ -1,6 +1,7 @@
 use polars_core::prelude::*;
 use polars_lazy::dsl::Expr;
 use polars_lazy::prelude::*;
+use polars_plan::prelude::{col, when};
 use sqlparser::ast::{
     ArrayAgg, BinaryOperator as SQLBinaryOperator, BinaryOperator, DataType as SQLDataType,
     Expr as SqlExpr, Function as SQLFunction, JoinConstraint, OrderByExpr, TrimWhereField,
@@ -85,6 +86,7 @@ impl SqlExprVisitor<'_> {
             } => self.visit_trim(expr, trim_where, trim_what),
             SqlExpr::UnaryOp { op, expr } => self.visit_unary_op(op, expr),
             SqlExpr::Value(value) => self.visit_literal(value),
+            e @ SqlExpr::Case { .. } => self.visit_when_then(e),
             other => polars_bail!(ComputeError: "SQL expression {:?} is not yet supported", other),
         }
     }
@@ -333,6 +335,66 @@ impl SqlExprVisitor<'_> {
         let expr = self.visit_expr(&order_by.expr)?;
         let descending = order_by.asc.unwrap_or(false);
         Ok((expr, descending))
+    }
+
+    fn visit_when_then(&self, expr: &SqlExpr) -> PolarsResult<Expr> {
+        if let SqlExpr::Case {
+            operand,
+            conditions,
+            results,
+            else_result,
+        } = expr
+        {
+            if operand.is_some() {
+                polars_bail!(ComputeError: "CASE operand is not yet supported");
+            }
+
+            polars_ensure!(
+                conditions.len() == results.len(),
+                ComputeError: "WHEN and THEN expressions must have the same length"
+            );
+
+            polars_ensure!(
+                !conditions.is_empty(),
+                ComputeError: "WHEN and THEN expressions must have at least one element"
+            );
+
+            let mut when_thens = conditions.iter().zip(results.iter());
+            let first = when_thens.next();
+
+            if first.is_none() {
+                polars_bail!(ComputeError: "WHEN and THEN expressions must have at least one element");
+            }
+
+            let else_res = match else_result {
+                Some(else_res) => self.visit_expr(else_res)?,
+                None => polars_bail!(ComputeError: "ELSE expression is required"),
+            };
+
+            let first = first.unwrap();
+            let first_cond = self.visit_expr(first.0)?;
+            let first_then = self.visit_expr(first.1)?;
+            let expr = when(first_cond).then(first_then);
+            let next = when_thens.next();
+
+            let mut when_then = if let Some((cond, res)) = next {
+                let cond = self.visit_expr(cond)?;
+                let res = self.visit_expr(res)?;
+                expr.when(cond).then(res)
+            } else {
+                return Ok(expr.otherwise(else_res));
+            };
+
+            for (cond, res) in when_thens {
+                let cond = self.visit_expr(cond)?;
+                let res = self.visit_expr(res)?;
+                when_then = when_then.when(cond).then(res);
+            }
+
+            Ok(when_then.otherwise(else_res))
+        } else {
+            unreachable!()
+        }
     }
 
     fn err(&self, expr: &Expr) -> PolarsResult<Expr> {
