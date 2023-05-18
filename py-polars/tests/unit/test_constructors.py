@@ -675,19 +675,13 @@ def test_init_1d_sequence() -> None:
         [datetime(2020, 1, 1, tzinfo=timezone.utc)], schema={"ts": pl.Datetime("ms")}
     )
     assert df.schema == {"ts": pl.Datetime("ms", "UTC")}
-    with pytest.warns(
-        TimeZoneAwareConstructorWarning,
-        match=r"constructing a Series with time-zone-aware datetimes will result in a Series of datatype `Datetime\(time_unit, 'UTC'\)`",
-    ):
+    with pytest.warns(TimeZoneAwareConstructorWarning, match=r"UTC time zone"):
         df = pl.DataFrame(
             [datetime(2020, 1, 1, tzinfo=timezone(timedelta(hours=1)))],
             schema={"ts": pl.Datetime("ms")},
         )
     assert df.schema == {"ts": pl.Datetime("ms", "+01:00")}
-    with pytest.warns(
-        TimeZoneAwareConstructorWarning,
-        match=r"constructing a Series with time-zone-aware datetimes will result in a Series of datatype `Datetime\(time_unit, 'UTC'\)`",
-    ):
+    with pytest.warns(TimeZoneAwareConstructorWarning, match=r"UTC time zone"):
         df = pl.DataFrame(
             [datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu"))],
             schema={"ts": pl.Datetime("ms")},

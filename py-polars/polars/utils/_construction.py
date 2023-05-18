@@ -445,7 +445,7 @@ def sequence_to_pyseries(
                 if tz != "UTC":
                     warnings.warn(
                         "In a future version of polars, constructing a Series with time-zone-aware "
-                        "datetimes will result in a Series of datatype `Datetime(time_unit, 'UTC')`. "
+                        "datetimes will result in a Series with UTC time zone. "
                         "To silence this warning and opt-in to the new behaviour, you can filter "
                         "warnings of class TimeZoneAwareConstructorWarning and then use "
                         "`.dt.convert_time_zone('UTC').",

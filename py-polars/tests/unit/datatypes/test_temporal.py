@@ -347,10 +347,7 @@ def test_datetime_consistency() -> None:
         datetime(3099, 12, 31, 23, 59, 59, 123456, tzinfo=ZoneInfo("Asia/Kathmandu")),
         datetime(9999, 12, 31, 23, 59, 59, 999999, tzinfo=ZoneInfo("Asia/Kathmandu")),
     ]
-    with pytest.warns(
-        TimeZoneAwareConstructorWarning,
-        match=r"constructing a Series with time-zone-aware datetimes will result in a Series of datatype `Datetime\(time_unit, 'UTC'\)`",
-    ):
+    with pytest.warns(TimeZoneAwareConstructorWarning, match=r"UTC time zone"):
         ddf = pl.DataFrame({"dtm": test_data}).with_columns(
             pl.col("dtm").dt.nanosecond().alias("ns")
         )
@@ -367,10 +364,7 @@ def test_datetime_consistency() -> None:
         datetime(2021, 11, 7, 1, 0, fold=1, tzinfo=ZoneInfo("US/Central")),
         datetime(2021, 11, 7, 2, 0, tzinfo=ZoneInfo("US/Central")),
     ]
-    with pytest.warns(
-        TimeZoneAwareConstructorWarning,
-        match=r"constructing a Series with time-zone-aware datetimes will result in a Series of datatype `Datetime\(time_unit, 'UTC'\)`",
-    ):
+    with pytest.warns(TimeZoneAwareConstructorWarning, match=r"UTC time zone"):
         ddf = pl.DataFrame({"dtm": test_data})
     assert ddf.rows() == [
         (test_data[0],),
@@ -2274,10 +2268,7 @@ def test_tz_datetime_duration_arithm_5221() -> None:
 
 def test_auto_infer_time_zone() -> None:
     dt = datetime(2022, 10, 17, 10, tzinfo=ZoneInfo("Asia/Shanghai"))
-    with pytest.warns(
-        TimeZoneAwareConstructorWarning,
-        match=r"constructing a Series with time-zone-aware datetimes will result in a Series of datatype `Datetime\(time_unit, 'UTC'\)`",
-    ):
+    with pytest.warns(TimeZoneAwareConstructorWarning, match=r"UTC time zone"):
         s = pl.Series([dt])
     assert s.dtype == pl.Datetime("us", "Asia/Shanghai")
     assert s[0] == dt
@@ -3104,10 +3095,9 @@ def test_series_is_temporal() -> None:
 def test_misc_precision_any_value_conversion(time_zone: Any, warn: bool) -> None:
     tz = ZoneInfo(time_zone) if isinstance(time_zone, str) else time_zone
     if warn:
-        context_manager = pytest.warns(
-            TimeZoneAwareConstructorWarning,
-            match=r"constructing a Series with time-zone-aware datetimes will result in a Series of datatype `Datetime\(time_unit, 'UTC'\)`",
-        )
+        context_manager: contextlib.AbstractContextManager[
+            pytest.WarningsRecorder | None
+        ] = pytest.warns(TimeZoneAwareConstructorWarning, match=r"UTC time zone")
     else:
         context_manager = contextlib.nullcontext()
 
