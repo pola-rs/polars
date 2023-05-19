@@ -194,6 +194,7 @@ def test_sql_is_between(foods_ipc_path: Path) -> None:
     )
     assert not any((22 <= cal <= 30) for cal in out["calories"])
 
+
 def test_sql_trim(foods_ipc_path: Path) -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning)
