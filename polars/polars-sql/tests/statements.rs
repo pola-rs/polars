@@ -108,3 +108,35 @@ fn select_qualified_column() {
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
     assert!(actual.frame_equal(&expected));
 }
+
+#[test]
+fn test_union_all() {
+    let df1 = df![
+        "a" => [1,2,3],
+        "b" => ["l", "m", "n"]
+    ]
+    .unwrap();
+    let df2 = df![
+        "a" => [4,2,3],
+        "b" => ["x", "y", "z"]
+    ]
+    .unwrap();
+
+    let mut ctx = SQLContext::new();
+    ctx.register("test", df1.clone().lazy());
+    ctx.register("test2", df2.clone().lazy());
+
+    let sql = r#"
+    SELECT * FROM test
+    UNION ALL (
+        SELECT * FROM test2
+    )
+    "#;
+    let expected = polars_lazy::dsl::concat(vec![df1.lazy(), df2.lazy()], false, true)
+        .unwrap()
+        .collect()
+        .unwrap();
+
+    let actual = ctx.execute(sql).unwrap().collect().unwrap();
+    assert!(actual.frame_equal(&expected));
+}
