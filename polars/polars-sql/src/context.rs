@@ -8,8 +8,8 @@ use polars_plan::prelude::*;
 use polars_plan::utils::expressions_to_schema;
 use sqlparser::ast::{
     Distinct, ExcludeSelectItem, Expr as SqlExpr, FunctionArg, JoinOperator, ObjectName, Offset,
-    OrderByExpr, Query, Select, SelectItem, SetExpr, Statement, TableAlias, TableFactor,
-    TableWithJoins, Value as SQLValue, WildcardAdditionalOptions,
+    OrderByExpr, Query, Select, SelectItem, SetExpr, SetOperator, SetQuantifier, Statement,
+    TableAlias, TableFactor, TableWithJoins, Value as SQLValue, WildcardAdditionalOptions,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -133,16 +133,54 @@ impl SQLContext {
     pub(crate) fn execute_query(&mut self, query: &Query) -> PolarsResult<LazyFrame> {
         self.register_ctes(query)?;
 
-        let lf = match &query.body.as_ref() {
-            SetExpr::Select(select_stmt) => self.execute_select(select_stmt, query)?,
-            SetExpr::Query(query) => self.execute_query(query)?,
-            SetExpr::SetOperation { op, .. } => {
-                polars_bail!(ComputeError: "{} operation not yet supported", op)
-            }
-            _ => polars_bail!(ComputeError: "INSERT, UPDATE, VALUES not yet supported"),
-        };
+        let lf = self.process_set_expr(&query.body, query)?;
 
         self.process_limit_offset(lf, &query.limit, &query.offset)
+    }
+
+    fn process_set_expr(&mut self, expr: &SetExpr, query: &Query) -> PolarsResult<LazyFrame> {
+        match expr {
+            SetExpr::Select(select_stmt) => self.execute_select(select_stmt, query),
+            SetExpr::Query(query) => self.execute_query(query),
+            SetExpr::SetOperation {
+                op: SetOperator::Union,
+                set_quantifier,
+                left,
+                right,
+            } => self.process_union(left, right, set_quantifier, query),
+            SetExpr::SetOperation { op, .. } => {
+                polars_bail!(InvalidOperation: "{} operation not yet supported", op)
+            }
+            op => polars_bail!(InvalidOperation: "{} operation not yet supported", op),
+        }
+    }
+
+    fn process_union(
+        &mut self,
+        left: &SetExpr,
+        right: &SetExpr,
+        quantifier: &SetQuantifier,
+        query: &Query,
+    ) -> PolarsResult<LazyFrame> {
+        match quantifier {
+            // UNION ALL
+            SetQuantifier::All => {
+                let left = self.process_set_expr(left, query)?;
+                let right = self.process_set_expr(right, query)?;
+                polars_lazy::dsl::concat(vec![left, right], false, true)
+            }
+            // UNION DISTINCT
+            SetQuantifier::Distinct => {
+                let left = self.process_set_expr(left, query)?;
+                let right = self.process_set_expr(right, query)?;
+                Ok(polars_lazy::dsl::concat(vec![left, right], true, true)?
+                    .unique(None, UniqueKeepStrategy::Any))
+            }
+            // UNION
+            SetQuantifier::None => {
+                polars_bail!(InvalidOperation: "UNION without quantifier is not supported, use 'UNION ALL' or 'UNION DISTINCT'")
+            }
+        }
     }
     // EXPLAIN SELECT * FROM DF
     fn execute_explain(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
