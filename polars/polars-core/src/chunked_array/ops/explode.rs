@@ -354,8 +354,6 @@ pub(crate) fn offsets_to_indexes(offsets: &[i64], capacity: usize) -> Vec<IdxSiz
     // and are the same unit as `offsets`
     // we also add the start offset as a list can be sliced
     let mut value_count = offsets[0];
-    // `empty_count` counts the duplicates taken because of empty list
-    let mut empty_count = 0usize;
     let mut last_idx = 0;
 
     for offset in &offsets[1..] {
@@ -375,7 +373,6 @@ pub(crate) fn offsets_to_indexes(offsets: &[i64], capacity: usize) -> Vec<IdxSiz
         // if the previous offset is equal to the current offset we have an empty
         // list and we duplicate previous index
         if previous_offset == *offset {
-            empty_count += 1;
             idx.push(last_idx);
         }
 
@@ -383,9 +380,10 @@ pub(crate) fn offsets_to_indexes(offsets: &[i64], capacity: usize) -> Vec<IdxSiz
     }
 
     // take the remaining values
-    for _ in 0..(capacity - (value_count - offsets[0]) as usize - empty_count) {
+    for _ in 0..capacity.saturating_sub(idx.len()) {
         idx.push(last_idx);
     }
+    idx.truncate(capacity);
     idx
 }
 
@@ -806,5 +804,20 @@ mod test {
         let offsets = &[0, 1, 2, 2, 3, 4, 4];
         let out = offsets_to_indexes(offsets, 6);
         assert_eq!(out, &[0, 1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn test_empty_row_offsets() {
+        let offsets = &[0, 0];
+        let out = offsets_to_indexes(offsets, 0);
+        let expected: Vec<IdxSize> = Vec::new();
+        assert_eq!(out, expected);
+    }
+
+    #[test]
+    fn test_row_offsets_over_capacity() {
+        let offsets = &[0, 1, 1, 2, 2];
+        let out = offsets_to_indexes(offsets, 2);
+        assert_eq!(out, &[0, 1]);
     }
 }
