@@ -555,9 +555,10 @@ def _handle_columns_arg(
                 series_map = {s.name(): s for s in data}
                 if all((col in series_map) for col in columns):
                     return [series_map[col] for col in columns]
-
             for i, c in enumerate(columns):
-                data[i].rename(c)
+                if c != data[i].name():
+                    data[i] = data[i].clone()
+                    data[i].rename(c)
             return data
         else:
             raise ValueError("Dimensions of columns arg must match data dimensions.")
@@ -662,6 +663,12 @@ def _expand_dict_scalars(
                 dtype = dtypes.get(name)
                 if isinstance(val, dict) and dtype != Struct:
                     updated_data[name] = pl.DataFrame(val).to_struct(name)
+
+                elif isinstance(val, pl.Series):
+                    s = val.rename(name, in_place=False) if name != val.name else val
+                    if dtype and dtype != s.dtype:
+                        s = s.cast(dtype)
+                    updated_data[name] = s
 
                 elif arrlen(val) is not None or _is_generator(val):
                     updated_data[name] = pl.Series(
