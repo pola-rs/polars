@@ -309,9 +309,7 @@ impl Series {
                     };
                     series_fields.push(s)
                 }
-                return Ok(StructChunked::new(name, &series_fields)
-                    .unwrap()
-                    .into_series());
+                return StructChunked::new(name, &series_fields).map(|ca| ca.into_series());
             }
             #[cfg(feature = "object")]
             DataType::Object(_) => {
