@@ -1,5 +1,5 @@
 pub mod deserialize;
-pub mod infer_schema;
+pub(crate) mod infer_schema;
 
 pub use deserialize::deserialize;
 pub use infer_schema::{infer, infer_records_schema};

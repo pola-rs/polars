@@ -11,7 +11,7 @@ description = "IO related logic for the Polars DataFrame library"
 
 [features]
 # support for arrows json parsing
-json = ["arrow/io_json", "polars-json", "simd-json", "memmap", "lexical", "lexical-core", "serde_json"]
+json = ["arrow/io_json_write", "polars-json", "simd-json", "memmap", "lexical", "lexical-core", "serde_json"]
 # support for arrows ipc file parsing
 ipc = ["arrow/io_ipc", "arrow/io_ipc_compression", "memmap"]
 # support for arrows streaming ipc file parsing

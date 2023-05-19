@@ -158,7 +158,7 @@ impl<'a> CoreJsonReader<'a> {
                 let bytes: &[u8] = &reader_bytes;
                 let mut cursor = Cursor::new(bytes);
 
-                let data_type = arrow_ndjson::read::infer(&mut cursor, infer_schema_len)?;
+                let data_type = polars_json::ndjson::infer(&mut cursor, infer_schema_len)?;
                 let schema = StructArray::get_fields(&data_type).iter().collect();
 
                 Cow::Owned(schema)
@@ -247,17 +247,17 @@ impl<'a> CoreJsonReader<'a> {
 fn parse_impl(
     bytes: &[u8],
     buffers: &mut PlIndexMap<BufferKey, Buffer>,
-    line: &mut Vec<u8>,
+    scratch: &mut Vec<u8>,
 ) -> PolarsResult<usize> {
-    line.clear();
-    line.extend_from_slice(bytes);
-    let n = line.len();
+    scratch.clear();
+    scratch.extend_from_slice(bytes);
+    let n = scratch.len();
     let all_good = match n {
         0 => true,
-        1 => line[0] == NEWLINE,
-        2 => line[0] == NEWLINE && line[1] == RETURN,
+        1 => scratch[0] == NEWLINE,
+        2 => scratch[0] == NEWLINE && scratch[1] == RETURN,
         _ => {
-            let value: simd_json::BorrowedValue = simd_json::to_borrowed_value(line)
+            let value: simd_json::BorrowedValue = simd_json::to_borrowed_value(scratch)
                 .map_err(|e| polars_err!(ComputeError: "error parsing line: {}", e))?;
             match value {
                 simd_json::BorrowedValue::Object(value) => {
