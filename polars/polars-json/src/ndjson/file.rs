@@ -4,6 +4,7 @@ use arrow::datatypes::DataType;
 use fallible_streaming_iterator::FallibleStreamingIterator;
 use polars_error::*;
 use polars_utils::aliases::PlHashSet;
+use simd_json::BorrowedValue;
 
 /// Reads up to a number of lines from `reader` into `rows` bounded by `limit`.
 fn read_rows<R: BufRead>(reader: &mut R, rows: &mut [String], limit: usize) -> PolarsResult<usize> {
@@ -83,6 +84,14 @@ impl<R: BufRead> FallibleStreamingIterator for FileReader<R> {
     }
 }
 
+fn parse_value<'a>(scratch: &'a mut Vec<u8>, val: &[u8]) -> PolarsResult<BorrowedValue<'a>> {
+    scratch.clear();
+    scratch.extend_from_slice(val);
+    // 0 because it is row by row
+    simd_json::to_borrowed_value(scratch)
+        .map_err(|e| PolarsError::ComputeError(format!("{e}").into()))
+}
+
 /// Infers the [`DataType`] from an NDJSON file, optionally only using `number_of_rows` rows.
 ///
 /// # Implementation
@@ -102,13 +111,33 @@ pub fn infer<R: std::io::BufRead>(
     let mut reader = FileReader::new(reader, rows, number_of_rows);
 
     let mut data_types = PlHashSet::default();
+    let mut buf = vec![];
     while let Some(rows) = reader.next()? {
-        let mut bytes = rows[0].as_bytes().to_vec();
         // 0 because it is row by row
-        let value = simd_json::to_borrowed_value(&mut bytes)
-            .map_err(|e| PolarsError::ComputeError(format!("{e}").into()))?;
+        let value = parse_value(&mut buf, rows[0].as_bytes())?;
         let data_type = crate::json::infer(&value)?;
 
+        if data_type != DataType::Null {
+            data_types.insert(data_type);
+        }
+    }
+
+    let v: Vec<&DataType> = data_types.iter().collect();
+    Ok(crate::json::infer_schema::coerce_data_type(&v))
+}
+
+/// Infers the [`DataType`] from an iterator of JSON strings. A limited number of
+/// rows can be used by passing `rows.take(number_of_rows)` as an input.
+///
+/// # Implementation
+/// This implementation infers each row by going through the entire iterator.
+pub fn infer_iter<A: AsRef<str>>(rows: impl Iterator<Item = A>) -> PolarsResult<DataType> {
+    let mut data_types = PlHashSet::default();
+
+    let mut buf = vec![];
+    for row in rows {
+        let v = parse_value(&mut buf, row.as_ref().as_bytes())?;
+        let data_type = crate::json::infer(&v)?;
         if data_type != DataType::Null {
             data_types.insert(data_type);
         }

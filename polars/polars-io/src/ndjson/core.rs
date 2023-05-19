@@ -213,7 +213,7 @@ impl<'a> CoreJsonReader<'a> {
                 .into_par_iter()
                 .map(|(start_pos, stop_at_nbytes)| {
                     let mut buffers = init_buffers(&self.schema, capacity)?;
-                    let _ = parse_lines(&bytes[start_pos..stop_at_nbytes], &mut buffers);
+                    parse_lines(&bytes[start_pos..stop_at_nbytes], &mut buffers)?;
                     DataFrame::new(
                         buffers
                             .into_values()
@@ -261,12 +261,13 @@ fn parse_impl(
                 .map_err(|e| polars_err!(ComputeError: "error parsing line: {}", e))?;
             match value {
                 simd_json::BorrowedValue::Object(value) => {
-                    buffers
-                        .iter_mut()
-                        .for_each(|(s, inner)| match s.0.map_lookup(&value) {
-                            Some(v) => inner.add(v).expect("inner.add(v)"),
+                    buffers.iter_mut().try_for_each(|(s, inner)| {
+                        match s.0.map_lookup(&value) {
+                            Some(v) => inner.add(v)?,
                             None => inner.add_null(),
-                        });
+                        }
+                        PolarsResult::Ok(())
+                    })?;
                 }
                 _ => {
                     buffers.iter_mut().for_each(|(_, inner)| inner.add_null());

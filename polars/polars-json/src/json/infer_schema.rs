@@ -1,7 +1,8 @@
 use std::borrow::Borrow;
 
 use arrow::datatypes::{DataType, Field, Schema};
-use hashbrown::hash_map::Entry;
+use indexmap::map::Entry;
+use indexmap::IndexMap;
 use simd_json::borrowed::Object;
 use simd_json::{BorrowedValue, StaticNode};
 
@@ -140,8 +141,8 @@ pub(crate) fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType
             acc
         });
         // group fields by unique
-        let name_to_dtypes = fields.iter().fold(
-            PlHashMap::<&str, PlHashSet<&DataType>>::default(),
+        let fields = fields.iter().fold(
+            IndexMap::<&str, PlHashSet<&DataType>, ahash::RandomState>::default(),
             |mut acc, field| {
                 match acc.entry(field.name.as_str()) {
                     Entry::Occupied(mut v) => {
@@ -156,13 +157,12 @@ pub(crate) fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType
                 acc
             },
         );
-
+        // and finally, coerce each of the fields within the same name
         let fields = fields
-            .iter()
-            .map(|fld| {
-                let dtypes = name_to_dtypes.get(fld.name.as_str()).unwrap();
-                let dtypes = dtypes.iter().cloned().collect::<Vec<_>>();
-                Field::new(fld.name.clone(), coerce_data_type(&dtypes), true)
+            .into_iter()
+            .map(|(name, dts)| {
+                let dts = dts.into_iter().collect::<Vec<_>>();
+                Field::new(name, coerce_data_type(&dts), true)
             })
             .collect();
         return Struct(fields);

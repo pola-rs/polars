@@ -104,8 +104,6 @@ dependencies = [
  "futures",
  "getrandom",
  "hash_hasher",
- "indexmap",
- "json-deserializer",
  "lexical-core",
  "lz4",
  "multiversion",
@@ -866,15 +864,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "json-deserializer"
-version = "0.4.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f63b421e16eb4100beb677af56f0b4f3a4f08bab74ef2af079ce5bb92c2683f"
-dependencies = [
- "indexmap",
-]
-
-[[package]]
 name = "jsonpath_lib"
 version = "0.3.0"
 source = "git+https://github.com/ritchie46/jsonpath?branch=improve_compiled#24eaf0b4416edff38a4d1b6b17bc4b9f3f047b4b"
@@ -1518,6 +1507,7 @@ dependencies = [
  "arrow2",
  "fallible-streaming-iterator",
  "hashbrown 0.13.2",
+ "indexmap",
  "num-traits",
  "polars-arrow",
  "polars-error",
