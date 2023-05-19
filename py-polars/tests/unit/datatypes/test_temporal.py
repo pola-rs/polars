@@ -910,22 +910,28 @@ def test_groupby_dynamic_when_conversion_crosses_dates_7274() -> None:
         )
         .with_columns(
             pl.col("timestamp")
-            .str.strptime(pl.Datetime, format="%Y-%m-%d %H:%M:%S%:z")
+            .str.strptime(pl.Datetime, format="%Y-%m-%d %H:%M:%S%:z", utc=True)
+            .alias("timestamp_utc")
             .set_sorted()
         )
         .with_columns(
-            pl.col("timestamp")
-            .dt.convert_time_zone("UTC")
-            .alias("timestamp_utc")
+            pl.col("timestamp_utc")
+            .dt.convert_time_zone("Africa/Lagos")
+            .alias("timestamp_lagos")
             .set_sorted()
         )
     )
     result = df.groupby_dynamic(
-        index_column="timestamp", every="1d", closed="left"
+        index_column="timestamp_lagos", every="1d", closed="left"
     ).agg(pl.col("value").count())
-    expected = pl.DataFrame({"timestamp": [datetime(1970, 1, 1)], "value": [2]})
+    expected = pl.DataFrame(
+        {
+            "timestamp_lagos": [datetime(1970, 1, 1)],
+            "value": [2],
+        }
+    )
     expected = expected.with_columns(
-        pl.col("timestamp").dt.replace_time_zone("+01:00"),
+        pl.col("timestamp_lagos").dt.replace_time_zone("Africa/Lagos"),
         pl.col("value").cast(pl.UInt32),
     )
     assert_frame_equal(result, expected)
@@ -2183,11 +2189,14 @@ def test_strptime_with_invalid_tz() -> None:
         match="cannot use strptime with both a tz-aware format and a tz-aware dtype",
     ):
         pl.Series(["2020-01-01 03:00:00+01:00"]).str.strptime(
-            pl.Datetime("us", "foo"), "%Y-%m-%d %H:%M:%S%z"
+            pl.Datetime("us", "foo"), "%Y-%m-%d %H:%M:%S%z", utc=True
         )
     with pytest.raises(
         ComputeError,
         match="cannot use strptime with both 'utc=True' and tz-aware dtype",
+    ), pytest.warns(
+        DeprecationWarning,
+        match=r"offset-naive strings will be converted to ``pl.Datetime\(time_unit\)``",
     ):
         pl.Series(["2020-01-01 03:00:00"]).str.strptime(
             pl.Datetime("us", "foo"), "%Y-%m-%d %H:%M:%S", utc=True
@@ -3020,7 +3029,7 @@ def test_infer_iso8601_tz_aware_datetime(iso8601_tz_aware_format_datetime: str) 
         iso8601_tz_aware_format_datetime.replace("%Y", "2134")
         .replace("%m", "12")
         .replace("%d", "13")
-        .replace("%H", "01")
+        .replace("%H", "02")
         .replace("%M", "12")
         .replace("%S", "34")
         .replace("%3f", "123")
@@ -3028,7 +3037,7 @@ def test_infer_iso8601_tz_aware_datetime(iso8601_tz_aware_format_datetime: str) 
         .replace("%9f", "123456789")
         .replace("%#z", "+01:00")
     )
-    parsed = pl.Series([time_string]).str.strptime(pl.Datetime("ns"))
+    parsed = pl.Series([time_string]).str.strptime(pl.Datetime("ns"), utc=True)
     assert parsed.dt.year().item() == 2134
     assert parsed.dt.month().item() == 12
     assert parsed.dt.day().item() == 13
@@ -3044,7 +3053,7 @@ def test_infer_iso8601_tz_aware_datetime(iso8601_tz_aware_format_datetime: str) 
         assert parsed.dt.nanosecond().item() == 123456000
     if "%3f" in iso8601_tz_aware_format_datetime:
         assert parsed.dt.nanosecond().item() == 123000000
-    assert parsed.dtype == pl.Datetime("ns", "+01:00")
+    assert parsed.dtype == pl.Datetime("ns", "UTC")
 
 
 def test_infer_iso8601_date(iso8601_format_date: str) -> None:

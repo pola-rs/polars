@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import warnings
 from typing import TYPE_CHECKING
 
@@ -112,19 +113,40 @@ class ExprStringNameSpace:
             Parse time zone aware datetimes as UTC. This may be useful if you have data
             with mixed offsets.
 
+            .. deprecated:: 0.17.15
+                In a future version of polars, offset-naive strings will be parsed
+                as ``pl.Datetime(time_unit)``, and offset-aware strings will be
+                converted to ``pl.Datetime(time_unit, "UTC")``. If you have
+                offset-aware strings, please pass ``utc=True`` to opt-in to the future
+                behaviour.
+
         Examples
         --------
         >>> s = pl.Series(["2020-01-01 01:00Z", "2020-01-01 02:00Z"])
-        >>> s.str.to_datetime("%Y-%m-%d %H:%M%#z")
+        >>> s.str.to_datetime("%Y-%m-%d %H:%M%#z", utc=True)
         shape: (2,)
-        Series: '' [datetime[μs, +00:00]]
+        Series: '' [datetime[μs, UTC]]
         [
-                2020-01-01 01:00:00 +00:00
-                2020-01-01 02:00:00 +00:00
+                2020-01-01 01:00:00 UTC
+                2020-01-01 02:00:00 UTC
         ]
-
         """
         _validate_format_argument(format)
+        tz_aware_pattern = r"(%z)|(%:z)|(%::z)|(%:::z)|(%#z)|(^%\+$)"
+        if (
+            format is not None
+            and (re.search(tz_aware_pattern, format) is not None)
+            and not utc
+        ):
+            warnings.warn(
+                "In a future version of polars, offset-aware strings will be "
+                "converted to ``pl.Datetime(time_unit, 'UTC')`` and the ``utc`` "
+                "argument will be removed.\n"
+                "To opt in to the new behaviour and silence this warning, "
+                "please pass ``utc=True``.",
+                DeprecationWarning,
+                stacklevel=find_stacklevel(),
+            )
         return wrap_expr(
             self._pyexpr.str_to_datetime(
                 format,
@@ -210,6 +232,13 @@ class ExprStringNameSpace:
         utc
             Parse time zone aware datetimes as UTC. This may be useful if you have data
             with mixed offsets.
+
+            .. deprecated:: 0.17.15
+                In a future version of polars, offset-naive strings will be parsed
+                as ``pl.Datetime(time_unit)``, and offset-aware strings will be
+                converted to ``pl.Datetime(time_unit, "UTC")``. If you have
+                offset-aware strings, please pass ``utc=True`` to opt-in to the
+                future behaviour.
         tz_aware
             Parse time zone aware datetimes. This may be automatically toggled by the
             `format` given.
@@ -229,12 +258,12 @@ class ExprStringNameSpace:
         Dealing with a consistent format:
 
         >>> s = pl.Series(["2020-01-01 01:00Z", "2020-01-01 02:00Z"])
-        >>> s.str.strptime(pl.Datetime, "%Y-%m-%d %H:%M%#z")
+        >>> s.str.strptime(pl.Datetime, "%Y-%m-%d %H:%M%#z", utc=True)
         shape: (2,)
-        Series: '' [datetime[μs, +00:00]]
+        Series: '' [datetime[μs, UTC]]
         [
-                2020-01-01 01:00:00 +00:00
-                2020-01-01 02:00:00 +00:00
+                2020-01-01 01:00:00 UTC
+                2020-01-01 02:00:00 UTC
         ]
 
         Dealing with different formats.
@@ -264,7 +293,6 @@ class ExprStringNameSpace:
                 2022-01-31
                 2001-07-08
         ]
-
         """
         _validate_format_argument(format)
 

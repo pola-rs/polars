@@ -108,17 +108,23 @@ class StringNameSpace:
             Parse time zone aware datetimes as UTC. This may be useful if you have data
             with mixed offsets.
 
+            .. deprecated:: 0.17.15
+                In a future version of polars, offset-naive strings will be parsed
+                as ``pl.Datetime(time_unit)``, and offset-aware strings will be
+                converted to ``pl.Datetime(time_unit, "UTC")``. If you have
+                offset-aware strings, please pass ``utc=True`` to opt-in to the
+                future behaviour.
+
         Examples
         --------
         >>> s = pl.Series(["2020-01-01 01:00Z", "2020-01-01 02:00Z"])
-        >>> s.str.to_datetime("%Y-%m-%d %H:%M%#z")
+        >>> s.str.to_datetime("%Y-%m-%d %H:%M%#z", utc=True)
         shape: (2,)
-        Series: '' [datetime[μs, +00:00]]
+        Series: '' [datetime[μs, UTC]]
         [
-                2020-01-01 01:00:00 +00:00
-                2020-01-01 02:00:00 +00:00
+                2020-01-01 01:00:00 UTC
+                2020-01-01 02:00:00 UTC
         ]
-
         """
 
     def to_time(
@@ -191,6 +197,13 @@ class StringNameSpace:
         utc
             Parse time zone aware datetimes as UTC. This may be useful if you have data
             with mixed offsets.
+
+            .. deprecated:: 0.17.15
+                In a future version of polars, offset-naive strings will be parsed
+                as ``pl.Datetime(time_unit)``, and offset-aware strings will be
+                converted to ``pl.Datetime(time_unit, "UTC")``. If you have
+                offset-aware strings, please pass ``utc=True`` to opt-in to the
+                future behaviour.
         tz_aware
             Parse time zone aware datetimes. This may be automatically toggled by the
             `format` given.
@@ -210,12 +223,12 @@ class StringNameSpace:
         Dealing with a consistent format:
 
         >>> s = pl.Series(["2020-01-01 01:00Z", "2020-01-01 02:00Z"])
-        >>> s.str.strptime(pl.Datetime, "%Y-%m-%d %H:%M%#z")
+        >>> s.str.strptime(pl.Datetime, "%Y-%m-%d %H:%M%#z", utc=True)
         shape: (2,)
-        Series: '' [datetime[μs, +00:00]]
+        Series: '' [datetime[μs, UTC]]
         [
-                2020-01-01 01:00:00 +00:00
-                2020-01-01 02:00:00 +00:00
+                2020-01-01 01:00:00 UTC
+                2020-01-01 02:00:00 UTC
         ]
 
         Dealing with different formats.
@@ -245,7 +258,6 @@ class StringNameSpace:
                 2022-01-31
                 2001-07-08
         ]
-
         """
         s = wrap_s(self._s)
         return (

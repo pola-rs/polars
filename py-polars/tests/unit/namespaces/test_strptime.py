@@ -86,7 +86,9 @@ def test_to_datetime_precision_with_time_unit(
     time_unit: TimeUnit, expected: str, format: str
 ) -> None:
     s = pl.Series(["2020-01-01 00:00:00.123456789"])
-    result = s.str.to_datetime(format, time_unit=time_unit).dt.to_string("%f")[0]
+    result = s.str.to_datetime(format, time_unit=time_unit, utc=False).dt.to_string(
+        "%f"
+    )[0]
     assert result == expected
 
 
@@ -112,7 +114,9 @@ def test_timezone_aware_strptime(tz_string: str, timedelta: timedelta) -> None:
         }
     )
     assert times.with_columns(
-        pl.col("delivery_datetime").str.to_datetime(format="%Y-%m-%d %H:%M:%S%z")
+        pl.col("delivery_datetime").str.to_datetime(
+            format="%Y-%m-%d %H:%M:%S%z", utc=True
+        )
     ).to_dict(False) == {
         "delivery_datetime": [
             datetime(2021, 12, 5, 6, 0, tzinfo=timezone(timedelta)),
@@ -150,59 +154,75 @@ def test_to_datetime_dates_datetimes() -> None:
 
 
 @pytest.mark.parametrize(
-    ("time_string", "expected"),
+    ("time_string", "expected", "utc"),
     [
-        ("09-05-2019", datetime(2019, 5, 9)),
-        ("2018-09-05", datetime(2018, 9, 5)),
-        ("2018-09-05T04:05:01", datetime(2018, 9, 5, 4, 5, 1)),
-        ("2018-09-05T04:24:01.9", datetime(2018, 9, 5, 4, 24, 1, 900000)),
-        ("2018-09-05T04:24:02.11", datetime(2018, 9, 5, 4, 24, 2, 110000)),
-        ("2018-09-05T14:24:02.123", datetime(2018, 9, 5, 14, 24, 2, 123000)),
-        ("2019-04-18T02:45:55.555000000", datetime(2019, 4, 18, 2, 45, 55, 555000)),
-        ("2019-04-18T22:45:55.555123", datetime(2019, 4, 18, 22, 45, 55, 555123)),
+        ("09-05-2019", datetime(2019, 5, 9), False),
+        ("2018-09-05", datetime(2018, 9, 5), False),
+        ("2018-09-05T04:05:01", datetime(2018, 9, 5, 4, 5, 1), False),
+        ("2018-09-05T04:24:01.9", datetime(2018, 9, 5, 4, 24, 1, 900000), False),
+        ("2018-09-05T04:24:02.11", datetime(2018, 9, 5, 4, 24, 2, 110000), False),
+        ("2018-09-05T14:24:02.123", datetime(2018, 9, 5, 14, 24, 2, 123000), False),
+        (
+            "2019-04-18T02:45:55.555000000",
+            datetime(2019, 4, 18, 2, 45, 55, 555000),
+            False,
+        ),
+        (
+            "2019-04-18T22:45:55.555123",
+            datetime(2019, 4, 18, 22, 45, 55, 555123),
+            False,
+        ),
         (
             "2018-09-05T04:05:01+01:00",
             datetime(2018, 9, 5, 4, 5, 1, tzinfo=timezone(timedelta(hours=1))),
+            True,
         ),
         (
             "2018-09-05T04:24:01.9+01:00",
             datetime(2018, 9, 5, 4, 24, 1, 900000, tzinfo=timezone(timedelta(hours=1))),
+            True,
         ),
         (
             "2018-09-05T04:24:02.11+01:00",
             datetime(2018, 9, 5, 4, 24, 2, 110000, tzinfo=timezone(timedelta(hours=1))),
+            True,
         ),
         (
             "2018-09-05T14:24:02.123+01:00",
             datetime(
                 2018, 9, 5, 14, 24, 2, 123000, tzinfo=timezone(timedelta(hours=1))
             ),
+            True,
         ),
         (
             "2019-04-18T02:45:55.555000000+01:00",
             datetime(
                 2019, 4, 18, 2, 45, 55, 555000, tzinfo=timezone(timedelta(hours=1))
             ),
+            True,
         ),
         (
             "2019-04-18T22:45:55.555123+01:00",
             datetime(
                 2019, 4, 18, 22, 45, 55, 555123, tzinfo=timezone(timedelta(hours=1))
             ),
+            True,
         ),
     ],
 )
-def test_to_datetime_patterns_single(time_string: str, expected: str) -> None:
-    result = pl.Series([time_string]).str.to_datetime().item()
+def test_to_datetime_patterns_single(
+    time_string: str, expected: str, utc: bool
+) -> None:
+    result = pl.Series([time_string]).str.to_datetime(utc=utc).item()
     assert result == expected
 
 
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_infer_tz_aware_time_unit(time_unit: TimeUnit) -> None:
     result = pl.Series(["2020-01-02T04:00:00+02:00"]).str.to_datetime(
-        time_unit=time_unit
+        time_unit=time_unit, utc=True
     )
-    assert result.dtype == pl.Datetime(time_unit, "+02:00")
+    assert result.dtype == pl.Datetime(time_unit, "UTC")
     assert result.item() == datetime(
         2020, 1, 2, 4, 0, tzinfo=timezone(timedelta(hours=2))
     )
@@ -370,7 +390,9 @@ def test_invalid_date_parsing_4898() -> None:
 
 
 def test_strptime_invalid_timezone() -> None:
-    ts = pl.Series(["2020-01-01 00:00:00+01:00"]).str.to_datetime("%Y-%m-%d %H:%M:%S%z")
+    ts = pl.Series(["2020-01-01 00:00:00+01:00"]).str.to_datetime(
+        "%Y-%m-%d %H:%M:%S%z", utc=True
+    )
     with pytest.raises(ComputeError, match=r"unable to parse time zone: 'foo'"):
         ts.dt.replace_time_zone("foo")
 
@@ -415,7 +437,7 @@ def test_to_datetime_ambiguous_or_non_existent() -> None:
     ],
 )
 def test_to_datetime_tz_aware_strptime(ts: str, fmt: str, expected: datetime) -> None:
-    result = pl.Series([ts]).str.to_datetime(fmt).item()
+    result = pl.Series([ts]).str.to_datetime(fmt, utc=True).item()
     assert result == expected
 
 
@@ -430,10 +452,14 @@ def test_crossing_dst(format: str) -> None:
 @pytest.mark.parametrize("format", ["%+", "%Y-%m-%dT%H:%M:%S%z"])
 def test_crossing_dst_tz_aware(format: str) -> None:
     ts = ["2021-03-27T23:59:59+01:00", "2021-03-28T23:59:59+02:00"]
-    with pytest.raises(
-        ComputeError, match="^different timezones found during 'strptime' operation"
-    ):
-        pl.Series(ts).str.to_datetime(format, utc=False)
+    result = pl.Series(ts).str.to_datetime(format, utc=True)
+    expected = pl.Series(
+        [
+            datetime(2021, 3, 27, 22, 59, 59, tzinfo=timezone.utc),
+            datetime(2021, 3, 28, 21, 59, 59, tzinfo=timezone.utc),
+        ]
+    )
+    assert_series_equal(result, expected)
 
 
 def test_tz_aware_without_fmt() -> None:

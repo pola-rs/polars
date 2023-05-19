@@ -540,6 +540,15 @@ pub(crate) fn to_datetime(
             if tz.is_some() && pattern_with_offset.offset.is_some() {
                 polars_bail!(ComputeError: "cannot parse tz-aware values with tz-aware dtype - please drop the time zone from the dtype.")
             }
+            if pattern_with_offset.offset.is_some() && !utc {
+                eprintln!(
+                    "In a future version of polars, offset-aware strings will be \
+                    converted to ``Datetime(time_unit, \"UTC\")`` and the ``utc`` \
+                    argument will be removed.\n\
+                    To opt in to the new behaviour and silence this warning, \
+                    please pass ``utc=true``."
+                );
+            }
             match pattern_with_offset.offset {
                 #[cfg(feature = "timezones")]
                 Some(offset) => infer.coerce_utf8(ca, Some(offset)).datetime().map(|ca| {
