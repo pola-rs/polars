@@ -248,7 +248,7 @@ def _open_adbc_connection(connection_uri: str) -> Any:
         except ImportError:
             raise ImportError(
                 "ADBC sqlite driver not detected. Please run `pip install "
-                "adbc_driver_sqlite`."
+                "adbc_driver_sqlite pyarrow`."
             ) from None
         connection_uri = connection_uri.replace(r"sqlite:///", "")
     elif connection_uri.startswith("postgres"):
@@ -257,7 +257,7 @@ def _open_adbc_connection(connection_uri: str) -> Any:
         except ImportError:
             raise ImportError(
                 "ADBC postgresql driver not detected. Please run `pip install "
-                "adbc_driver_postgresql`."
+                "adbc_driver_postgresql pyarrow`."
             ) from None
     else:
         raise ValueError("ADBC does not currently support this database.")

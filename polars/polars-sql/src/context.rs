@@ -7,12 +7,12 @@ use polars_lazy::prelude::*;
 use polars_plan::prelude::*;
 use polars_plan::utils::expressions_to_schema;
 use sqlparser::ast::{
-    Distinct, Expr as SqlExpr, FunctionArg, JoinOperator, ObjectName, Offset, OrderByExpr, Query,
-    Select, SelectItem, SetExpr, Statement, TableAlias, TableFactor, TableWithJoins,
-    Value as SQLValue,
+    Distinct, ExcludeSelectItem, Expr as SqlExpr, FunctionArg, JoinOperator, ObjectName, Offset,
+    OrderByExpr, Query, Select, SelectItem, SetExpr, Statement, TableAlias, TableFactor,
+    TableWithJoins, Value as SQLValue, WildcardAdditionalOptions,
 };
 use sqlparser::dialect::GenericDialect;
-use sqlparser::parser::Parser;
+use sqlparser::parser::{Parser, ParserOptions};
 
 use crate::sql_expr::{parse_sql_expr, process_join_constraint};
 use crate::table_functions::PolarsTableFunctions;
@@ -86,7 +86,16 @@ impl SQLContext {
     /// # }
     ///```
     pub fn execute(&mut self, query: &str) -> PolarsResult<LazyFrame> {
-        let ast = Parser::parse_sql(&GenericDialect, query).map_err(to_compute_err)?;
+        let mut parser = Parser::new(&GenericDialect);
+        parser = parser.with_options(ParserOptions {
+            trailing_commas: true,
+        });
+
+        let ast = parser
+            .try_with_sql(query)
+            .map_err(to_compute_err)?
+            .parse_statements()
+            .map_err(to_compute_err)?;
         polars_ensure!(ast.len() == 1, ComputeError: "One and only one statement at a time please");
         let res = self.execute_statement(ast.get(0).unwrap());
         // every execution should clear the cte map
@@ -197,7 +206,7 @@ impl SQLContext {
                     JoinOperator::CrossJoin => lf = lf.cross_join(join_tbl),
                     join_type => {
                         polars_bail!(
-                            ComputeError:
+                            InvalidOperation:
                             "join type '{:?}' not yet supported by polars-sql", join_type
                         );
                     }
@@ -207,7 +216,6 @@ impl SQLContext {
 
         Ok(lf)
     }
-
     /// execute the 'SELECT' part of the query
     fn execute_select(&mut self, select_stmt: &Select, query: &Query) -> PolarsResult<LazyFrame> {
         // Determine involved dataframe
@@ -240,9 +248,13 @@ impl SQLContext {
                         let expr = parse_sql_expr(expr, self)?;
                         expr.alias(&alias.value)
                     }
-                    SelectItem::QualifiedWildcard { .. } | SelectItem::Wildcard { .. } => {
+                    SelectItem::QualifiedWildcard(oname, wildcard_options) => {
+                        self.process_qualified_wildcard(oname, wildcard_options)?
+                    }
+                    SelectItem::Wildcard(wildcard_options) => {
                         contains_wildcard = true;
-                        col("*")
+                        let e = col("*");
+                        self.process_wildcard_additional_options(e, wildcard_options)?
                     }
                 })
             })
@@ -511,6 +523,48 @@ impl SQLContext {
                 ComputeError: "non-numeric arguments for LIMIT/OFFSET are not supported",
             ),
         }
+    }
+
+    fn process_qualified_wildcard(
+        &mut self,
+        ObjectName(idents): &ObjectName,
+        options: &WildcardAdditionalOptions,
+    ) -> PolarsResult<Expr> {
+        let idents = idents.as_slice();
+        let e = match idents {
+            [tbl_name] => {
+                let lf = self.table_map.get(&tbl_name.value).ok_or_else(|| {
+                    polars_err!(
+                        ComputeError: "no table named '{}' found",
+                        tbl_name
+                    )
+                })?;
+                let schema = lf.schema()?;
+                cols(schema.iter_names())
+            }
+            e => polars_bail!(
+                ComputeError: "Invalid wildcard expression: {:?}",
+                e
+            ),
+        };
+        self.process_wildcard_additional_options(e, options)
+    }
+
+    fn process_wildcard_additional_options(
+        &mut self,
+        expr: Expr,
+        options: &WildcardAdditionalOptions,
+    ) -> PolarsResult<Expr> {
+        if options.opt_except.is_some() {
+            polars_bail!(InvalidOperation: "EXCEPT not supported. Use EXCLUDE instead")
+        }
+        Ok(match &options.opt_exclude {
+            Some(ExcludeSelectItem::Single(ident)) => expr.exclude(vec![&ident.value]),
+            Some(ExcludeSelectItem::Multiple(idents)) => {
+                expr.exclude(idents.iter().map(|i| &i.value))
+            }
+            _ => expr,
+        })
     }
 }
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import warnings
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
 from functools import lru_cache, partial, singledispatch
@@ -55,11 +56,11 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.exceptions import ComputeError, ShapeError
+from polars.exceptions import ComputeError, ShapeError, TimeZoneAwareConstructorWarning
 from polars.utils._wrap import wrap_df, wrap_s
 from polars.utils.convert import _tzinfo_to_str
 from polars.utils.meta import threadpool_size
-from polars.utils.various import _is_generator, arrlen, range_to_series
+from polars.utils.various import _is_generator, arrlen, find_stacklevel, range_to_series
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame, PySeries
@@ -441,6 +442,16 @@ def sequence_to_pyseries(
                         "Given time_zone is different from that of timezone aware datetimes."
                         f" Given: '{dtype_tz}', got: '{tz}'."
                     )
+                if tz != "UTC":
+                    warnings.warn(
+                        "In a future version of polars, constructing a Series with time-zone-aware "
+                        "datetimes will result in a Series with UTC time zone. "
+                        "To silence this warning and opt-in to the new behaviour, you can filter "
+                        "warnings of class TimeZoneAwareConstructorWarning and then use "
+                        "`.dt.convert_time_zone('UTC')`.",
+                        TimeZoneAwareConstructorWarning,
+                        stacklevel=find_stacklevel(),
+                    )
                 return s.dt.replace_time_zone("UTC").dt.convert_time_zone(tz)._s
             return s._s
 
@@ -555,9 +566,10 @@ def _handle_columns_arg(
                 series_map = {s.name(): s for s in data}
                 if all((col in series_map) for col in columns):
                     return [series_map[col] for col in columns]
-
             for i, c in enumerate(columns):
-                data[i].rename(c)
+                if c != data[i].name():
+                    data[i] = data[i].clone()
+                    data[i].rename(c)
             return data
         else:
             raise ValueError("Dimensions of columns arg must match data dimensions.")
@@ -662,6 +674,12 @@ def _expand_dict_scalars(
                 dtype = dtypes.get(name)
                 if isinstance(val, dict) and dtype != Struct:
                     updated_data[name] = pl.DataFrame(val).to_struct(name)
+
+                elif isinstance(val, pl.Series):
+                    s = val.rename(name, in_place=False) if name != val.name else val
+                    if dtype and dtype != s.dtype:
+                        s = s.cast(dtype)
+                    updated_data[name] = s
 
                 elif arrlen(val) is not None or _is_generator(val):
                     updated_data[name] = pl.Series(
