@@ -97,10 +97,6 @@ impl SqlExprVisitor<'_> {
     ///
     /// e.g. df.column or "df"."column"
     fn visit_compound_identifier(&self, idents: &[sqlparser::ast::Ident]) -> PolarsResult<Expr> {
-        polars_ensure!(
-            idents.len() == 2,
-            ComputeError: "compound identifier {:?} is not yet supported", idents,
-        );
         match idents {
             [tbl_name, column_name] => {
                 let lf = self.ctx.table_map.get(&tbl_name.value).ok_or_else(|| {
@@ -121,9 +117,9 @@ impl SqlExprVisitor<'_> {
                     )
                 }
             }
-            e => polars_bail!(
-                InvalidOperation: "Invalid wildcard expression: {:?}",
-                e
+            _ => polars_bail!(
+                ComputeError: "Invalid identifier {:?}",
+                idents
             ),
         }
     }
