@@ -113,6 +113,7 @@ pub fn infer<R: std::io::BufRead>(
     let mut data_types = PlHashSet::default();
     let mut buf = vec![];
     while let Some(rows) = reader.next()? {
+        dbg!(&rows);
         // 0 because it is row by row
         let value = parse_value(&mut buf, rows[0].as_bytes())?;
         let data_type = crate::json::infer(&value)?;
