@@ -32,6 +32,7 @@ num-traits = "0.2"
 ahash = "0.8"
 xxhash-rust = { version = "0.8.6", features = ["xxh3"] }
 hashbrown = { version = "0.13.1", features = ["rayon", "ahash"] }
+indexmap = { version = "1", features = ["std"] }
 bitflags = "1.3"
 once_cell = "1"
 memchr = "2"
@@ -45,7 +46,7 @@ package = "arrow2"
 git = "https://github.com/ritchie46/arrow2"
 # rev = "1491c6e8f4fd100f53c358e4f3ef1536d9e75090"
 # path = "../arrow2"
-branch = "polars_2023-05-16"
+branch = "polars_2023-05-19"
 version = "0.17"
 default-features = false
 features = [
