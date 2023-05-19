@@ -2,8 +2,8 @@ use std::io::BufRead;
 
 use arrow::datatypes::DataType;
 use fallible_streaming_iterator::FallibleStreamingIterator;
+use indexmap::IndexSet;
 use polars_error::*;
-use polars_utils::aliases::PlHashSet;
 use simd_json::BorrowedValue;
 
 /// Reads up to a number of lines from `reader` into `rows` bounded by `limit`.
@@ -110,7 +110,7 @@ pub fn infer<R: std::io::BufRead>(
     let rows = vec!["".to_string(); 1]; // 1 <=> read row by row
     let mut reader = FileReader::new(reader, rows, number_of_rows);
 
-    let mut data_types = PlHashSet::default();
+    let mut data_types = IndexSet::<_, ahash::RandomState>::default();
     let mut buf = vec![];
     while let Some(rows) = reader.next()? {
         // 0 because it is row by row
@@ -132,7 +132,7 @@ pub fn infer<R: std::io::BufRead>(
 /// # Implementation
 /// This implementation infers each row by going through the entire iterator.
 pub fn infer_iter<A: AsRef<str>>(rows: impl Iterator<Item = A>) -> PolarsResult<DataType> {
-    let mut data_types = PlHashSet::default();
+    let mut data_types = IndexSet::<_, ahash::RandomState>::default();
 
     let mut buf = vec![];
     for row in rows {
