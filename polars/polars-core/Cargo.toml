@@ -157,7 +157,7 @@ chrono-tz = { version = "0.8", optional = true }
 comfy-table = { version = "6.1.4", optional = true, default_features = false }
 either.workspace = true
 hashbrown.workspace = true
-indexmap = { version = "1", features = ["std"] }
+indexmap.workspace = true
 itoap = { version = "1", optional = true }
 ndarray = { version = "0.15", optional = true, default_features = false }
 num-traits.workspace = true
