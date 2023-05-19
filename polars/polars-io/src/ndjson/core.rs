@@ -283,21 +283,14 @@ fn parse_impl(
 fn parse_lines(bytes: &[u8], buffers: &mut PlIndexMap<BufferKey, Buffer>) -> PolarsResult<()> {
     let mut buf = vec![];
 
-    let total_bytes = bytes.len();
-    let mut offset = 0;
     // The `RawValue` is a pointer to the original JSON string and does not perform any deserialization.
     // It is used to properly iterate over the lines without re-implementing the splitlines logic when this does the same thing.
     let mut iter =
         serde_json::Deserializer::from_slice(bytes).into_iter::<Box<serde_json::value::RawValue>>();
     while let Some(Ok(value)) = iter.next() {
         let bytes = value.get().as_bytes();
-        offset += bytes.len();
         parse_impl(bytes, buffers, &mut buf)?;
     }
-    polars_ensure!(
-        offset == total_bytes,
-        ComputeError: "expected {} bytes, but only parsed {}", total_bytes, offset,
-    );
     Ok(())
 }
 
