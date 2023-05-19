@@ -308,11 +308,10 @@ pub(crate) fn offsets_to_indexes(offsets: &[i64], capacity: usize) -> Vec<IdxSiz
         .iter()
         .zip(offsets.iter().skip(1).chain(&[capacity as i64])) // zip gives us pairs of [(start_1, end_1), (start_2, end_2), ..., (start_n, capacity)]
         .enumerate()
-        .map(|(index, (start, end))| {
+        .flat_map(|(index, (start, end))| {
             // make (end - start) copies of 'index' if the range is non-empty, otherwise make one copy of 'index'
             vec![index as IdxSize; (end - start).max(1) as usize]
         })
-        .flatten() // convert the vec of index vecs into a single flat vec
         .take(capacity) // adding indexes for empty offset ranges gives us more indexes than our capacity, so we remove them here
         .collect()
 }
