@@ -64,8 +64,6 @@ pub(super) static DATETIME_Y_M_D: &[&str] = &[
     "%Y-%m-%dT%H%M%S.%6f",
     "%Y/%m/%dT%H%M%S.%3f",
     "%Y-%m-%dT%H%M%S.%3f",
-    "%Y/%m/%d",
-    "%Y-%m-%d",
     "%Y/%m/%d %H:%M:%S",
     "%Y-%m-%d %H:%M:%S",
     "%Y/%m/%d %H%M%S",
