@@ -1,10 +1,11 @@
 use std::borrow::Borrow;
-use super::*;
+
 use arrow::datatypes::{DataType, Field, Schema};
 use hashbrown::hash_map::Entry;
-use simd_json::{BorrowedValue, StaticNode};
 use simd_json::borrowed::Object;
+use simd_json::{BorrowedValue, StaticNode};
 
+use super::*;
 
 const ITEM_NAME: &str = "item";
 
@@ -13,8 +14,8 @@ pub fn infer(json: &BorrowedValue) -> PolarsResult<DataType> {
     Ok(match json {
         BorrowedValue::Static(StaticNode::Bool(_)) => DataType::Boolean,
         BorrowedValue::Static(StaticNode::U64(_) | StaticNode::I64(_)) => DataType::Int64,
-        BorrowedValue::Static(StaticNode::F64(_) ) => DataType::Float64,
-        BorrowedValue::Static(StaticNode::Null ) => DataType::Null,
+        BorrowedValue::Static(StaticNode::F64(_)) => DataType::Float64,
+        BorrowedValue::Static(StaticNode::Null) => DataType::Null,
         BorrowedValue::Array(array) => infer_array(array)?,
         BorrowedValue::String(_) => DataType::LargeUtf8,
         BorrowedValue::Object(inner) => infer_object(inner)?,
@@ -57,7 +58,7 @@ pub fn infer_records_schema(json: &BorrowedValue) -> PolarsResult<Schema> {
 
     Ok(Schema {
         fields,
-        metadata: Default::default()
+        metadata: Default::default(),
     })
 }
 
@@ -156,11 +157,14 @@ pub(crate) fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType
             },
         );
 
-        let fields = fields.iter().map(|fld| {
-            let dtypes = name_to_dtypes.get(fld.name.as_str()).unwrap();
-            let dtypes = dtypes.iter().cloned().collect::<Vec<_>>();
-            Field::new(fld.name.clone(), coerce_data_type(&dtypes), true)
-        }).collect();
+        let fields = fields
+            .iter()
+            .map(|fld| {
+                let dtypes = name_to_dtypes.get(fld.name.as_str()).unwrap();
+                let dtypes = dtypes.iter().cloned().collect::<Vec<_>>();
+                Field::new(fld.name.clone(), coerce_data_type(&dtypes), true)
+            })
+            .collect();
         return Struct(fields);
     } else if datatypes.len() > 2 {
         return LargeUtf8;
