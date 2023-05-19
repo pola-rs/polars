@@ -304,48 +304,17 @@ impl ExplodeByOffsets for BinaryChunked {
 
 /// Convert Arrow array offsets to indexes of the original list
 pub(crate) fn offsets_to_indexes(offsets: &[i64], capacity: usize) -> Vec<IdxSize> {
-    if offsets.is_empty() {
-        return vec![];
-    }
-    let mut idx = Vec::with_capacity(capacity);
-
-    // `value_count` counts the taken values from the list values
-    // and are the same unit as `offsets`
-    // we also add the start offset as a list can be sliced
-    let mut value_count = offsets[0];
-    // `empty_count` counts the duplicates taken because of empty list
-    let mut empty_count = 0usize;
-    let mut last_idx = 0;
-
-    for offset in &offsets[1..] {
-        // this get all the elements up till offsets
-        while value_count < *offset {
-            value_count += 1;
-            idx.push(last_idx)
-        }
-
-        // then we compute the previous offsets
-        // Safety:
-        // we started iterating from 1, so there is always a previous offset
-        // we take the pointer to the previous element and deref that to get
-        // the previous offset
-        let previous_offset = unsafe { *(offset as *const i64).offset(-1) };
-
-        // if the previous offset is equal to the current offset we have an empty
-        // list and we duplicate previous index
-        if previous_offset == *offset {
-            empty_count += 1;
-            idx.push(last_idx);
-        }
-
-        last_idx += 1;
-    }
-
-    // take the remaining values
-    for _ in 0..(capacity - (value_count - offsets[0]) as usize - empty_count) {
-        idx.push(last_idx);
-    }
-    idx
+    offsets
+        .iter()
+        .zip(offsets.iter().skip(1).chain(&[capacity as i64])) // zip gives us pairs of [(start_1, end_1), (start_2, end_2), ..., (start_n, capacity)]
+        .enumerate()
+        .map(|(index, (start, end))| {
+            // make (end - start) copies of 'index' if the range is non-empty, otherwise make one copy of 'index'
+            vec![index as IdxSize; (end - start).max(1) as usize]
+        })
+        .flatten() // convert the vec of index vecs into a single flat vec
+        .take(capacity) // adding indexes for empty offset ranges gives us more indexes than our capacity, so we remove them here
+        .collect()
 }
 
 impl ChunkExplode for ListChunked {
@@ -665,5 +634,12 @@ mod test {
         let offsets = &[0, 1, 2, 2, 3, 4, 4];
         let out = offsets_to_indexes(offsets, 6);
         assert_eq!(out, &[0, 1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn test_empty_row_offsets() {
+        let offsets = &[0, 0];
+        let out = offsets_to_indexes(offsets, 5);
+        assert_eq!(out, &[0, 1, 1, 1, 1]);
     }
 }
