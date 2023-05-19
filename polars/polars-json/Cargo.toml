@@ -14,3 +14,4 @@ polars-arrow = { version = "0.29.0", path = "../polars-arrow", default-features 
 polars-error = { version = "0.29.0", path = "../polars-error" }
 polars-utils = { version = "0.29.0", path = "../polars-utils" }
 simd-json = { version = "0.9", features = ["allow-non-simd", "known-key"] }
+fallible-streaming-iterator = "0.1"

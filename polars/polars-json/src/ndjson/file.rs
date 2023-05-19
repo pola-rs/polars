@@ -1,7 +1,7 @@
 use std::io::BufRead;
 
 use arrow::datatypes::DataType;
-use arrow::io::json::write::FallibleStreamingIterator;
+use fallible_streaming_iterator::FallibleStreamingIterator;
 use polars_error::*;
 use polars_utils::aliases::PlHashSet;
 
