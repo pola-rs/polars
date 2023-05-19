@@ -169,16 +169,12 @@ impl SQLContext {
                 let right = self.process_set_expr(right, query)?;
                 polars_lazy::dsl::concat(vec![left, right], false, true)
             }
-            // UNION DISTINCT
-            SetQuantifier::Distinct => {
+            // UNION DISTINCT | UNION
+            _ => {
                 let left = self.process_set_expr(left, query)?;
                 let right = self.process_set_expr(right, query)?;
                 Ok(polars_lazy::dsl::concat(vec![left, right], true, true)?
                     .unique(None, UniqueKeepStrategy::Any))
-            }
-            // UNION
-            SetQuantifier::None => {
-                polars_bail!(InvalidOperation: "UNION without quantifier is not supported, use 'UNION ALL' or 'UNION DISTINCT'")
             }
         }
     }
