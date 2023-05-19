@@ -639,7 +639,15 @@ mod test {
     #[test]
     fn test_empty_row_offsets() {
         let offsets = &[0, 0];
-        let out = offsets_to_indexes(offsets, 5);
-        assert_eq!(out, &[0, 1, 1, 1, 1]);
+        let out = offsets_to_indexes(offsets, 0);
+        let expected: Vec<IdxSize> = Vec::new();
+        assert_eq!(out, expected);
+    }
+
+    #[test]
+    fn test_row_offsets_over_capacity() {
+        let offsets = &[0, 1, 1, 2, 2];
+        let out = offsets_to_indexes(offsets, 2);
+        assert_eq!(out, &[0, 1]);
     }
 }
