@@ -77,7 +77,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         )
         .map(|mut df| {
             if rechunk {
-                df.rechunk();
+                df.align_chunks();
             };
             df
         })
@@ -209,7 +209,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
         )
         .map(|mut df| {
             if self.rechunk {
-                df.rechunk();
+                df.as_single_chunk_par();
             }
             df
         })

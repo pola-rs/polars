@@ -733,7 +733,7 @@ impl PyDataFrame {
     }
 
     pub fn to_arrow(&mut self) -> PyResult<Vec<PyObject>> {
-        self.df.rechunk();
+        self.df.align_chunks();
         Python::with_gil(|py| {
             let pyarrow = py.import("pyarrow")?;
             let names = self.df.get_column_names();

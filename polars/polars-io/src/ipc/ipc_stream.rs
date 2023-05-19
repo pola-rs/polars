@@ -274,7 +274,7 @@ where
 
         ipc_stream_writer.start(&df.schema().to_arrow(), None)?;
 
-        df.rechunk();
+        df.align_chunks();
         let iter = df.iter_chunks();
 
         for batch in iter {

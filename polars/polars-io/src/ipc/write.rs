@@ -76,7 +76,7 @@ where
                 compression: self.compression.map(|c| c.into()),
             },
         )?;
-        df.rechunk();
+        df.align_chunks();
         let iter = df.iter_chunks();
 
         for batch in iter {

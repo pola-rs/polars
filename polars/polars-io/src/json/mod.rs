@@ -133,7 +133,7 @@ where
     }
 
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
-        df.rechunk();
+        df.align_chunks();
         let fields = df.iter().map(|s| s.field().to_arrow()).collect::<Vec<_>>();
         let batches = df
             .iter_chunks()

@@ -185,7 +185,7 @@ where
     /// Write the given DataFrame in the the writer `W`. Returns the total size of the file.
     pub fn finish(self, df: &mut DataFrame) -> PolarsResult<u64> {
         // ensures all chunks are aligned.
-        df.rechunk();
+        df.align_chunks();
 
         let n_splits = df.height() / self.row_group_size.unwrap_or(512 * 512);
         if n_splits > 0 {
