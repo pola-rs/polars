@@ -16,6 +16,11 @@ pub(super) fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Opt
         }
         AExpr::Column(name) => Some(format!("pa.dataset.field('{}')", name.as_ref())),
         AExpr::Alias(input, _) => predicate_to_pa(*input, expr_arena),
+        AExpr::Literal(LiteralValue::Series(s)) => s
+            .iter()
+            .map(|av| av.to_string())
+            .reduce(|a, b| format!("{a}, {b}"))
+            .map(|s| format!("[{s}]")),
         AExpr::Literal(lv) => {
             let av = lv.to_anyvalue()?;
             let dtype = av.dtype();
@@ -109,6 +114,16 @@ pub(super) fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Opt
             let input = input.first().unwrap();
             let input = predicate_to_pa(*input, expr_arena)?;
             Some(format!("~({input}).is_null()"))
+        }
+        AExpr::Function {
+            function: FunctionExpr::Boolean(BooleanFunction::IsIn),
+            input,
+            ..
+        } => {
+            let col = predicate_to_pa(*input.get(0)?, expr_arena)?;
+            let values = predicate_to_pa(*input.get(1)?, expr_arena)?;
+
+            Some(format!("({col}).isin({values})"))
         }
         _ => None,
     }
