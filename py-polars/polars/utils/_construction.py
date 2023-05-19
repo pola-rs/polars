@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import warnings
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
 from functools import lru_cache, partial, singledispatch
@@ -55,11 +56,11 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.exceptions import ComputeError, ShapeError
+from polars.exceptions import ComputeError, ShapeError, TimeZoneAwareConstructorWarning
 from polars.utils._wrap import wrap_df, wrap_s
 from polars.utils.convert import _tzinfo_to_str
 from polars.utils.meta import threadpool_size
-from polars.utils.various import _is_generator, arrlen, range_to_series
+from polars.utils.various import _is_generator, arrlen, find_stacklevel, range_to_series
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame, PySeries
@@ -73,15 +74,25 @@ if TYPE_CHECKING:
         SchemaDict,
     )
 
+
+def _get_annotations(obj: type) -> dict[str, Any]:
+    return getattr(obj, "__annotations__", {})
+
+
 if version_info >= (3, 10):
 
     def type_hints(obj: type) -> dict[str, Any]:
-        return get_type_hints(obj)
+        try:
+            # often the same as obj.__annotations__, but handles forward references
+            # encoded as string literals, adds Optional[t] if a default value equal
+            # to None is set and recursively replaces 'Annotated[T, ...]' with 'T'.
+            return get_type_hints(obj)
+        except TypeError:
+            # fallback on edge-cases (eg: InitVar inference on python 3.10).
+            return _get_annotations(obj)
 
 else:
-
-    def type_hints(obj: type) -> dict[str, Any]:
-        return getattr(obj, "__annotations__", {})
+    type_hints = _get_annotations
 
 
 @lru_cache(64)
@@ -431,6 +442,16 @@ def sequence_to_pyseries(
                         "Given time_zone is different from that of timezone aware datetimes."
                         f" Given: '{dtype_tz}', got: '{tz}'."
                     )
+                if tz != "UTC":
+                    warnings.warn(
+                        "In a future version of polars, constructing a Series with time-zone-aware "
+                        "datetimes will result in a Series with UTC time zone. "
+                        "To silence this warning and opt-in to the new behaviour, you can filter "
+                        "warnings of class TimeZoneAwareConstructorWarning and then use "
+                        "`.dt.convert_time_zone('UTC')`.",
+                        TimeZoneAwareConstructorWarning,
+                        stacklevel=find_stacklevel(),
+                    )
                 return s.dt.replace_time_zone("UTC").dt.convert_time_zone(tz)._s
             return s._s
 
@@ -545,9 +566,10 @@ def _handle_columns_arg(
                 series_map = {s.name(): s for s in data}
                 if all((col in series_map) for col in columns):
                     return [series_map[col] for col in columns]
-
             for i, c in enumerate(columns):
-                data[i].rename(c)
+                if c != data[i].name():
+                    data[i] = data[i].clone()
+                    data[i].rename(c)
             return data
         else:
             raise ValueError("Dimensions of columns arg must match data dimensions.")
@@ -652,6 +674,12 @@ def _expand_dict_scalars(
                 dtype = dtypes.get(name)
                 if isinstance(val, dict) and dtype != Struct:
                     updated_data[name] = pl.DataFrame(val).to_struct(name)
+
+                elif isinstance(val, pl.Series):
+                    s = val.rename(name, in_place=False) if name != val.name else val
+                    if dtype and dtype != s.dtype:
+                        s = s.cast(dtype)
+                    updated_data[name] = s
 
                 elif arrlen(val) is not None or _is_generator(val):
                     updated_data[name] = pl.Series(
@@ -1076,7 +1104,15 @@ def _dataclasses_or_models_to_pydf(
             for col, tp in type_hints(first_element.__class__).items()
             if col != "__slots__"
         }
-        schema_override.update(schema_overrides or {})
+        if schema_overrides:
+            schema_override.update(schema_overrides)
+        elif not from_model:
+            dc_fields = set(asdict(first_element))
+            schema_overrides = schema_override = {
+                nm: tp for nm, tp in schema_override.items() if nm in dc_fields
+            }
+        else:
+            schema_overrides = schema_override
 
     for col, tp in schema_override.items():
         if tp == Categorical:

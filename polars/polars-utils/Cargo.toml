@@ -9,6 +9,8 @@ description = "private utils for the polars dataframe library"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+ahash.workspace = true
+hashbrown.workspace = true
 once_cell.workspace = true
 rayon.workspace = true
 smartstring.workspace = true

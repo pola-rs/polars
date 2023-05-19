@@ -461,20 +461,20 @@ def test_groupby_dynamic_flat_agg_4814() -> None:
         (timedelta(seconds=10), "100s"),
     ],
 )
-@pytest.mark.parametrize("tzinfo", [None, ZoneInfo("Asia/Kathmandu")])
+@pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu"])
 def test_groupby_dynamic_overlapping_groups_flat_apply_multiple_5038(
-    every: str | timedelta, period: str | timedelta, tzinfo: ZoneInfo | None
+    every: str | timedelta, period: str | timedelta, time_zone: str | None
 ) -> None:
     assert (
         pl.DataFrame(
             {
                 "a": [
-                    datetime(2021, 1, 1, tzinfo=tzinfo) + timedelta(seconds=2**i)
-                    for i in range(10)
+                    datetime(2021, 1, 1) + timedelta(seconds=2**i) for i in range(10)
                 ],
                 "b": [float(i) for i in range(10)],
             }
         )
+        .with_columns(pl.col("a").dt.replace_time_zone(time_zone))
         .lazy()
         .set_sorted("a")
         .groupby_dynamic("a", every=every, period=period)
@@ -563,17 +563,19 @@ def test_groupby_when_then_with_binary_and_agg_in_pred_6202() -> None:
 @pytest.mark.parametrize("every", ["1h", timedelta(hours=1)])
 @pytest.mark.parametrize("tzinfo", [None, ZoneInfo("Asia/Kathmandu")])
 def test_groupby_dynamic_iter(every: str | timedelta, tzinfo: ZoneInfo | None) -> None:
+    time_zone = tzinfo.key if tzinfo is not None else None
     df = pl.DataFrame(
         {
             "datetime": [
-                datetime(2020, 1, 1, 10, 0, tzinfo=tzinfo),
-                datetime(2020, 1, 1, 10, 50, tzinfo=tzinfo),
-                datetime(2020, 1, 1, 11, 10, tzinfo=tzinfo),
+                datetime(2020, 1, 1, 10, 0),
+                datetime(2020, 1, 1, 10, 50),
+                datetime(2020, 1, 1, 11, 10),
             ],
             "a": [1, 2, 2],
             "b": [4, 5, 6],
         }
     ).set_sorted("datetime")
+    df = df.with_columns(pl.col("datetime").dt.replace_time_zone(time_zone))
 
     # Without 'by' argument
     result1 = [
@@ -658,20 +660,20 @@ def test_overflow_mean_partitioned_groupby_5194(dtype: pl.PolarsDataType) -> Non
     ) == {"group": [1, 2], "data": [10000000.0, 10000000.0]}
 
 
-@pytest.mark.parametrize("tzinfo", [None, ZoneInfo("Asia/Kathmandu")])
+@pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu"])
 def test_groupby_dynamic_elementwise_following_mean_agg_6904(
-    tzinfo: ZoneInfo | None,
+    time_zone: str | None,
 ) -> None:
     df = (
         pl.DataFrame(
             {
                 "a": [
-                    datetime(2021, 1, 1, tzinfo=tzinfo) + timedelta(seconds=2**i)
-                    for i in range(5)
+                    datetime(2021, 1, 1) + timedelta(seconds=2**i) for i in range(5)
                 ],
                 "b": [float(i) for i in range(5)],
             }
         )
+        .with_columns(pl.col("a").dt.replace_time_zone(time_zone))
         .lazy()
         .set_sorted("a")
         .groupby_dynamic("a", every="10s", period="100s")
@@ -683,12 +685,12 @@ def test_groupby_dynamic_elementwise_following_mean_agg_6904(
         pl.DataFrame(
             {
                 "a": [
-                    datetime(2021, 1, 1, 0, 0, tzinfo=tzinfo),
-                    datetime(2021, 1, 1, 0, 0, 10, tzinfo=tzinfo),
+                    datetime(2021, 1, 1, 0, 0),
+                    datetime(2021, 1, 1, 0, 0, 10),
                 ],
                 "c": [0.9092974268256817, -0.7568024953079282],
             }
-        ),
+        ).with_columns(pl.col("a").dt.replace_time_zone(time_zone)),
     )
 
 

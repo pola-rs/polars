@@ -282,22 +282,20 @@ def test_lazy_concat_err() -> None:
             "bar": [8, 9],
         }
     )
-
-    for how in ["horizontal"]:
-        with pytest.raises(
-            ValueError,
-            match="'LazyFrame' only allows {{'vertical', 'diagonal'}} concat strategy.",
-        ):
-            pl.concat([df1.lazy(), df2.lazy()], how=how).collect()
+    with pytest.raises(
+        ValueError,
+        match="'LazyFrame' only allows {'vertical','diagonal','align'} concat strategies.",
+    ):
+        pl.concat([df1.lazy(), df2.lazy()], how="horizontal").collect()
 
 
 @typing.no_type_check
 def test_series_concat_err() -> None:
     s = pl.Series([1, 2, 3])
-    for how in ["horizontal", "diagonal"]:
+    for how in ("horizontal", "diagonal"):
         with pytest.raises(
             ValueError,
-            match="'Series' only allows {{'vertical'}} concat strategy.",
+            match="'Series' only allows {'vertical'} concat strategy.",
         ):
             pl.concat([s, s], how=how)
 

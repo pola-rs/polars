@@ -14,6 +14,7 @@ import pytest
 
 import polars as pl
 from polars.dependencies import _ZONEINFO_AVAILABLE, dataclasses, pydantic
+from polars.exceptions import TimeZoneAwareConstructorWarning
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.utils._construction import type_hints
 
@@ -400,18 +401,14 @@ def test_dataclasses_initvar_typing() -> None:
     class ABC:
         x: date
         y: float
-        z: dataclasses.InitVar[str] = None
+        z: dataclasses.InitVar[list[str]] = None
 
+    # should be able to parse the initvar typing...
     abc = ABC(x=date(1999, 12, 31), y=100.0)
     df = pl.DataFrame([abc])
 
-    assert_frame_equal(
-        pl.DataFrame(
-            {"x": [date(1999, 12, 31)], "y": [100.0], "z": [None]},
-            schema_overrides={"z": pl.Utf8},
-        ),
-        df,
-    )
+    # ...but should not load the initvar field into the DataFrame
+    assert dataclasses.asdict(abc) == df.rows(named=True)[0]
 
 
 def test_init_ndarray(monkeypatch: Any) -> None:
@@ -678,15 +675,17 @@ def test_init_1d_sequence() -> None:
         [datetime(2020, 1, 1, tzinfo=timezone.utc)], schema={"ts": pl.Datetime("ms")}
     )
     assert df.schema == {"ts": pl.Datetime("ms", "UTC")}
-    df = pl.DataFrame(
-        [datetime(2020, 1, 1, tzinfo=timezone(timedelta(hours=1)))],
-        schema={"ts": pl.Datetime("ms")},
-    )
+    with pytest.warns(TimeZoneAwareConstructorWarning, match=r"UTC time zone"):
+        df = pl.DataFrame(
+            [datetime(2020, 1, 1, tzinfo=timezone(timedelta(hours=1)))],
+            schema={"ts": pl.Datetime("ms")},
+        )
     assert df.schema == {"ts": pl.Datetime("ms", "+01:00")}
-    df = pl.DataFrame(
-        [datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu"))],
-        schema={"ts": pl.Datetime("ms")},
-    )
+    with pytest.warns(TimeZoneAwareConstructorWarning, match=r"UTC time zone"):
+        df = pl.DataFrame(
+            [datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu"))],
+            schema={"ts": pl.Datetime("ms")},
+        )
     assert df.schema == {"ts": pl.Datetime("ms", "Asia/Kathmandu")}
 
 

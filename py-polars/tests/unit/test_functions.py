@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import typing
 from datetime import timedelta
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -51,7 +51,35 @@ def test_time() -> None:
     assert_series_equal(out["ms2"], df["micro"].rename("ms2"))
 
 
-def test_diag_concat() -> None:
+def test_concat_align() -> None:
+    a = pl.DataFrame({"a": ["a", "b", "d", "e", "e"], "b": [1, 2, 4, 5, 6]})
+    b = pl.DataFrame({"a": ["a", "b", "c"], "c": [5.5, 6.0, 7.5]})
+    c = pl.DataFrame({"a": ["a", "b", "c", "d", "e"], "d": ["w", "x", "y", "z", None]})
+
+    expected = cast(
+        pl.DataFrame,
+        pl.from_repr(
+            """
+            shape: (6, 4)
+            ┌─────┬──────┬──────┬──────┐
+            │ a   ┆ b    ┆ c    ┆ d    │
+            │ --- ┆ ---  ┆ ---  ┆ ---  │
+            │ str ┆ i64  ┆ f64  ┆ str  │
+            ╞═════╪══════╪══════╪══════╡
+            │ a   ┆ 1    ┆ 5.5  ┆ w    │
+            │ b   ┆ 2    ┆ 6.0  ┆ x    │
+            │ c   ┆ null ┆ 7.5  ┆ y    │
+            │ d   ┆ 4    ┆ null ┆ z    │
+            │ e   ┆ 5    ┆ null ┆ null │
+            │ e   ┆ 6    ┆ null ┆ null │
+            └─────┴──────┴──────┴──────┘
+            """
+        ),
+    )
+    assert_frame_equal(pl.concat([a, b, c], how="align"), expected)
+
+
+def test_concat_diagonal() -> None:
     a = pl.DataFrame({"a": [1, 2]})
     b = pl.DataFrame({"b": ["a", "b"], "c": [1, 2]})
     c = pl.DataFrame({"a": [5, 7], "c": [1, 2], "d": [1, 2]})
@@ -68,7 +96,6 @@ def test_diag_concat() -> None:
                 "d": [None, None, None, None, 1, 2],
             }
         )
-
         assert_frame_equal(out, expected)
 
 
@@ -87,6 +114,34 @@ def test_concat_horizontal() -> None:
         }
     )
     assert_frame_equal(out, expected)
+
+
+def test_concat_vertical() -> None:
+    a = pl.DataFrame({"a": ["a", "b"], "b": [1, 2]})
+    b = pl.DataFrame({"a": ["c", "d", "e"], "b": [3, 4, 5]})
+
+    out = pl.concat([a, b], how="vertical")
+    expected = cast(
+        pl.DataFrame,
+        pl.from_repr(
+            """
+            shape: (5, 2)
+            ┌─────┬─────┐
+            │ a   ┆ b   │
+            │ --- ┆ --- │
+            │ str ┆ i64 │
+            ╞═════╪═════╡
+            │ a   ┆ 1   │
+            │ b   ┆ 2   │
+            │ c   ┆ 3   │
+            │ d   ┆ 4   │
+            │ e   ┆ 5   │
+            └─────┴─────┘
+            """
+        ),
+    )
+    assert_frame_equal(out, expected)
+    assert out.rows() == [("a", 1), ("b", 2), ("c", 3), ("d", 4), ("e", 5)]
 
 
 def test_all_any_horizontally() -> None:
@@ -256,6 +311,36 @@ def test_align_frames_duplicate_key() -> None:
         (0, 6.0, "b"),
         (-1, 7.5, "b"),
         (None, None, "e"),
+    ]
+
+    # align frames the other way round, using "left" alignment strategy
+    af1, af2 = pl.align_frames(df2, df1, on="x", how="left")
+
+    # shape: (5, 3)        shape: (5, 2)
+    # ┌─────┬─────┬─────┐  ┌─────┬──────┐
+    # │ y   ┆ z   ┆ x   │  │ x   ┆ y    │
+    # │ --- ┆ --- ┆ --- │  │ --- ┆ ---  │
+    # │ i64 ┆ f64 ┆ str │  │ str ┆ i64  │
+    # ╞═════╪═════╪═════╡  ╞═════╪══════╡
+    # │ 0   ┆ 5.5 ┆ a   │  │ a   ┆ 1    │
+    # │ 0   ┆ 5.5 ┆ a   │  │ a   ┆ 2    │
+    # │ 0   ┆ 5.5 ┆ a   │  │ a   ┆ 4    │
+    # │ 0   ┆ 6.0 ┆ b   │  │ b   ┆ null │
+    # │ -1  ┆ 7.5 ┆ b   │  │ b   ┆ null │
+    # └─────┴─────┴─────┘  └─────┴──────┘
+    assert af1.rows() == [
+        (0, 5.5, "a"),
+        (0, 5.5, "a"),
+        (0, 5.5, "a"),
+        (0, 6.0, "b"),
+        (-1, 7.5, "b"),
+    ]
+    assert af2.rows() == [
+        ("a", 1),
+        ("a", 2),
+        ("a", 4),
+        ("b", None),
+        ("b", None),
     ]
 
 

@@ -214,7 +214,7 @@ pub struct DatetimeInfer<T> {
     transform_bytes: StrpTimeState,
     fmt_len: u16,
     pub logical_type: DataType,
-    utc: bool,
+    pub utc: bool,
 }
 
 #[cfg(feature = "dtype-datetime")]

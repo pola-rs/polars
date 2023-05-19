@@ -1024,6 +1024,22 @@ def test_column_names() -> None:
         assert df.columns == ["a", "b"]
 
 
+def test_init_series_edge_cases() -> None:
+    # confirm that we don't modify the name of the input series in-place
+    s = pl.Series("X", [1, 2, 3])
+    df1 = pl.DataFrame({"A": s}, schema_overrides={"A": pl.UInt8})
+    assert s.name == "X"
+    assert df1["A"].name == "A"
+
+    # init same series object under different names
+    df2 = pl.DataFrame({"A": s, "B": s})
+    assert df2.rows(named=True) == [
+        {"A": 1, "B": 1},
+        {"A": 2, "B": 2},
+        {"A": 3, "B": 3},
+    ]
+
+
 def test_head_groupby() -> None:
     commodity_prices = {
         "commodity": [
