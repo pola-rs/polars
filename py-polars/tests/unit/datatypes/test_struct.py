@@ -1024,7 +1024,6 @@ def test_struct_lit_cast() -> None:
 
 
 def test_struct_from_schema_only() -> None:
-    """Create struct supplying only schema."""
     # we create a dataframe with default types
     df = pl.DataFrame(
         {
@@ -1043,7 +1042,6 @@ def test_struct_from_schema_only() -> None:
                 ]
             ),
             "bool": [1, 0, 1, 1, 0],
-            # note: the following conversion of list[i64] -> list[u8] fails
             "list[u8]": [[1], [2], [3], [4], [5]],
         }
     )
