@@ -400,15 +400,38 @@ class SQLContext(Generic[FrameType]):
         names
             Names of the tables to unregister.
 
+        Notes
+        -----
+        You can also control table registration lifetime by using ``SQLContext`` as a
+        context manager; this can often be more useful when such control is wanted:
+
+        >>> df0 = pl.DataFrame({"colx": [0, 1, 2]})
+        >>> df1 = pl.DataFrame({"colx": [1, 2, 3]})
+        >>> df2 = pl.DataFrame({"colx": [2, 3, 4]})
+
+        Frames registered in-scope are automatically unregistered on scope-exit. Note
+        that frames registered on construction will persist through subsequent scopes.
+
+        >>> # register one frame at construction time, and the other two in-scope
+        >>> with pl.SQLContext(tbl0=df0) as ctx:
+        ...     ctx.register_many(tbl1=df1, tbl2=df2).tables()
+        ...
+        ['tbl0', 'tbl1', 'tbl2']
+
+        After scope exit, none of the tables registered in-scope remain:
+
+        >>> ctx.tables()
+        ['tbl0']
+
         Examples
         --------
-        >>> df = pl.DataFrame({"ints": [9, 8, 7, 6, 5]})
+        >>> df0 = pl.DataFrame({"ints": [9, 8, 7, 6, 5]})
         >>> lf1 = pl.LazyFrame({"text": ["a", "b", "c"]})
         >>> lf2 = pl.LazyFrame({"misc": ["testing1234"]})
 
         Register with a SQLContext object:
 
-        >>> ctx = pl.SQLContext(test1=df, test2=lf1, test3=lf2)
+        >>> ctx = pl.SQLContext(test1=df0, test2=lf1, test3=lf2)
         >>> ctx.tables()
         ['test1', 'test2', 'test3']
 
