@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import contextlib
+import itertools
 import os
 import random
 import typing
@@ -3850,63 +3851,59 @@ class DataFrame:
 
         # we treat different data types differently in terms of formatting
         num_or_bool = F.col(NUMERIC_DTYPES | {Boolean})
-        date = F.col({Date})
-        # all other datatypes
-        string = F.all().exclude(NUMERIC_DTYPES | {Boolean} | {Date})
+        string = F.all().exclude(NUMERIC_DTYPES | {Boolean})
+        # date = F.col({Date})
+        # # all other datatypes
+        # string = F.all().exclude(NUMERIC_DTYPES | {Boolean} | {Date})
 
         # determine metrics (optional/additional percentiles)
         metrics = {
-            "count": F.struct(
+            "count": (
                 num_or_bool.count().cast(float),
-                date.count().cast(str),
+                # date.count().cast(str),
                 string.count().cast(str),
             ),
-            "null_count": F.struct(
+            "null_count": (
                 num_or_bool.null_count().cast(float),
-                date.null_count().cast(str),
+                # date.null_count().cast(str),
                 string.null_count().cast(str),
             ),
-            "mean": F.struct(
+            "mean": (
                 num_or_bool.mean().cast(float),
-                date.mean().cast(str),
+                # date.mean().cast(str),
                 string.mean().cast(str),
             ),
-            "std": F.struct(
+            "std": (
                 num_or_bool.std().cast(float),
-                date.std().cast(str),
+                # date.std().cast(str),
                 string.std().cast(str),
             ),
-            "min": F.struct(
+            "min": (
                 num_or_bool.min().cast(float),
-                date.min().cast(str),
+                # date.min().cast(str),
                 string.min().cast(str),
             ),
-            "max": F.struct(
+            "max": (
                 num_or_bool.max().cast(float),
-                date.max().cast(str),
+                # date.max().cast(str),
                 string.max().cast(str),
             ),
-            "median": F.struct(
+            "median": (
                 num_or_bool.median().cast(float),
-                date.median().cast(str),
+                # date.median().cast(str),
                 string.median().cast(str),
             ),
         }
 
         for p in percentiles or ():
-            metrics[f"{p:.0%}"] = F.struct(
+            metrics[f"{p:.0%}"] = (
                 num_or_bool.quantile(p).cast(float),
-                date.quantile(p).cast(str),
+                # date.quantile(p).cast(str),
                 string.quantile(p).cast(str),
             )
 
-        # execute metrics in parallel
-        df_metrics = self.select(**metrics)  # 1 row dataframe with struct columns
-
-        # stack & unnest structs to columns
-        df_summary = df_metrics.transpose(
-            include_header=True, header_name="describe"
-        ).unnest("column_0")
+        df_summary = F.concat((self.lazy().select(*v) for v in metrics.values()), how="vertical").collect()
+        df_summary.insert_at_idx(0, pl.Series("describe", list(metrics.keys())))
 
         # put columns in original order
         df_summary = df_summary.select(["describe"] + self.columns)
@@ -7910,7 +7907,7 @@ class DataFrame:
             expr = expr_to_lit_or_expr(subset[0], str_to_lit=False)
         else:
             struct_fields = F.all() if (subset is None) else subset
-            expr = F.struct(struct_fields)  # type: ignore[call-overload]
+            expr = (struct_fields)  # type: ignore[call-overload]
 
         df = self.lazy().select(expr.n_unique()).collect()
         return 0 if df.is_empty() else df.row(0)[0]
