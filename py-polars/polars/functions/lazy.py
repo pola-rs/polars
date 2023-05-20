@@ -3168,7 +3168,7 @@ def repeat(
 
     Examples
     --------
-    >>> pl.repeat(1, n=3, eager=True, name='ones')
+    >>> pl.repeat(1, n=3, eager=True, name="ones")
     shape: (3,)
     Series: 'ones' [i32]
     [
@@ -3179,7 +3179,7 @@ def repeat(
 
     """
     if eager:
-        return pl.Series._repeat(value, n, name=name, dtype=dtype)
+        return pl.Series._repeat(value, n, name=name, dtype=dtype)  # type: ignore[arg-type]
     else:
         if isinstance(n, int):
             n = lit(n)
