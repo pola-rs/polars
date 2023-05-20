@@ -80,7 +80,11 @@ def test_sql_groupby(foods_ipc_path: Path) -> None:
             "att": ["x", "y", "x", "y", "y"],
         }
     )
+    assert c.tables() == ["foods"]
+
     c.register("test", lf)
+    assert c.tables() == ["foods", "test"]
+
     out = c.execute(
         """
         SELECT
@@ -160,6 +164,7 @@ def test_sql_join_left() -> None:
         (2, None, "y", -50.0),
         (3, 6, "x", None),
     ]
+    assert c.tables() == ["tbl_a", "tbl_b", "tbl_c"]
 
 
 def test_sql_is_between(foods_ipc_path: Path) -> None:
@@ -209,3 +214,23 @@ def test_sql_trim(foods_ipc_path: Path) -> None:
         assert out.to_dict(False) == {
             "category": ["seafood", "ruit", "egetables", "eat"]
         }
+
+
+def test_register_context() -> None:
+    # use as context manager unregisters tables created within each scope
+    # on exit from that scope; arbitrary levels of nesting are supported.
+    with pl.SQLContext() as ctx:
+        _lf1 = pl.LazyFrame({"a": [1, 2, 3], "b": ["m", "n", "o"]})
+        _lf2 = pl.LazyFrame({"a": [2, 3, 4], "c": ["p", "q", "r"]})
+        ctx.register_globals()
+        assert ctx.tables() == ["_lf1", "_lf2"]
+
+        with ctx:
+            _lf3 = pl.LazyFrame({"a": [3, 4, 5], "b": ["s", "t", "u"]})
+            _lf4 = pl.LazyFrame({"a": [4, 5, 6], "c": ["v", "w", "x"]})
+            ctx.register_globals(n=2)
+            assert ctx.tables() == ["_lf1", "_lf2", "_lf3", "_lf4"]
+
+        assert ctx.tables() == ["_lf1", "_lf2"]
+
+    assert ctx.tables() == []

@@ -134,8 +134,7 @@ impl From<&'_ mut SQLContext> for SerializableContext {
 
 impl From<SerializableContext> for SQLContext {
     fn from(ctx: SerializableContext) -> Self {
-        SQLContext::new_from_tables_and_map(
-            ctx.tables,
+        SQLContext::new_from_table_map(
             ctx.table_map
                 .into_iter()
                 .map(|(k, v)| (k, v.into()))
