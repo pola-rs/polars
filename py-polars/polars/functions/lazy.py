@@ -3155,7 +3155,7 @@ def repeat(
     value
         Value to repeat.
     n
-        repeat `n` times
+        Length of the resulting column.
     eager
         Evaluate immediately and return a ``Series``. If set to ``False`` (default),
         return an expression instead.
@@ -3163,7 +3163,19 @@ def repeat(
         Name of the resulting column.
     dtype
         Data type of the resulting column. If set to ``None`` (default), data type is
-        inferred from the given value.
+        inferred from the given value. Integer values default to Int32, unless Int64 is
+        required to fit the given value.
+
+    Examples
+    --------
+    >>> pl.repeat(1, n=3, eager=True, name='ones')
+    shape: (3,)
+    Series: 'ones' [i32]
+    [
+            1
+            1
+            1
+    ]
 
     """
     if eager:
@@ -3171,9 +3183,11 @@ def repeat(
     else:
         if isinstance(n, int):
             n = lit(n)
-        expr = wrap_expr(plr.repeat(value, n._pyexpr, dtype))
+        expr = wrap_expr(plr.repeat(value, n._pyexpr))
         if name is not None:
             expr = expr.alias(name)
+        if dtype is not None:
+            expr = expr.cast(dtype)
         return expr
 
 

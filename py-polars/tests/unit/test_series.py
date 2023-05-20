@@ -1140,6 +1140,12 @@ def test_repeat() -> None:
     ]
 
 
+def test_repeat_dtype() -> None:
+    s = pl.repeat(1, n=3, eager=True, dtype=pl.Int8)
+    assert s.dtype == pl.Int8
+    assert s.len() == 3
+
+
 def test_shape() -> None:
     s = pl.Series([1, 2, 3])
     assert s.shape == (3,)
