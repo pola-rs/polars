@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 @redirect({"query": ("execute", {"eager": True})})
 class SQLContext(Generic[FrameType]):
     """
-    Run a SQL query against a LazyFrame.
+    Run SQL queries against DataFrame/LazyFrame data.
 
     Warnings
     --------
@@ -211,6 +211,8 @@ class SQLContext(Generic[FrameType]):
 
         Examples
         --------
+        Declare frame data and register with a SQLContext:
+
         >>> df = pl.DataFrame(
         ...     data=[
         ...         ("The Godfather", 1972, 6_000_000, 134_821_952, 9.2),
@@ -222,6 +224,9 @@ class SQLContext(Generic[FrameType]):
         ...     schema=["title", "release_year", "budget", "gross", "imdb_score"],
         ... )
         >>> ctx = pl.SQLContext(films=df)
+
+        Execute a SQL query against the registered frame data:
+
         >>> ctx.execute(
         ...     '''
         ...     SELECT title, release_year, imdb_score
@@ -242,6 +247,9 @@ class SQLContext(Generic[FrameType]):
         │ Schindler's List         ┆ 1993         ┆ 8.9        │
         │ Pulp Fiction             ┆ 1994         ┆ 8.9        │
         └──────────────────────────┴──────────────┴────────────┘
+
+        Execute a GROUP BY query:
+
         >>> ctx.execute(
         ...     '''
         ...     SELECT
