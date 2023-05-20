@@ -20,6 +20,7 @@ serde = { version = "1", features = ["derive"], optional = true }
 thiserror.workspace = true
 
 [features]
+dtype-fixed_size_list = []
 nightly = ["hashbrown/nightly"]
 strings = []
 compute = ["arrow/compute_cast"]
