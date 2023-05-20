@@ -4,32 +4,13 @@ use crate::chunked_array::Settings;
 use crate::prelude::*;
 
 impl FixedSizeListChunked {
-    #[cfg(feature = "private")]
-    pub fn set_fast_explode(&mut self) {
-        self.bit_settings.insert(Settings::FAST_EXPLODE_LIST)
-    }
-    pub(crate) fn unset_fast_explode(&mut self) {
-        self.bit_settings.remove(Settings::FAST_EXPLODE_LIST)
-    }
-
-    pub fn _can_fast_explode(&self) -> bool {
-        self.bit_settings.contains(Settings::FAST_EXPLODE_LIST)
-    }
-
-    pub(crate) fn is_nested(&self) -> bool {
-        match self.dtype() {
-            DataType::List(inner) => matches!(&**inner, DataType::List(_)),
-            _ => unreachable!(),
-        }
-    }
-
-    pub fn to_logical(&mut self, inner_dtype: DataType) {
+    pub fn to_physical(&mut self, inner_dtype: DataType) {
         debug_assert_eq!(inner_dtype.to_physical(), self.inner_dtype());
         let fld = Arc::make_mut(&mut self.field);
         fld.coerce(DataType::List(Box::new(inner_dtype)))
     }
 
-    /// Get the inner values as `Series`, ignoring the list offsets.
+    /// Get the inner values as `Series`
     pub fn get_inner(&self) -> Series {
         let ca = self.rechunk();
         let inner_dtype = self.inner_dtype().to_arrow();
@@ -37,7 +18,7 @@ impl FixedSizeListChunked {
         unsafe {
             Series::try_from_arrow_unchecked(
                 self.name(),
-                vec![(*arr.values()).clone()],
+                vec![(arr.values()).clone()],
                 &inner_dtype,
             )
             .unwrap()
@@ -65,7 +46,7 @@ impl FixedSizeListChunked {
             let out = out.rechunk();
             let values = out.chunks()[0].clone();
 
-            let inner_dtype = FixedSizeListArray::default_datatype(out.dtype().to_arrow(), ca.inner_size());
+            let inner_dtype = FixedSizeListArray::default_datatype(out.dtype().to_arrow(), ca.width());
             let arr = FixedSizeListArray::new(
                 inner_dtype,
                 values,

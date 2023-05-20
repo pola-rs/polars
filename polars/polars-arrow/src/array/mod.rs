@@ -10,7 +10,6 @@ use crate::prelude::*;
 use crate::utils::CustomIterTools;
 
 pub mod default_arrays;
-pub mod fixed_size_list;
 mod get;
 pub mod list;
 pub mod null;

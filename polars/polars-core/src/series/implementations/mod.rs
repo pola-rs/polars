@@ -497,6 +497,10 @@ macro_rules! impl_dyn_series {
             fn str_concat(&self, delimiter: &str) -> Utf8Chunked {
                 self.0.str_concat(delimiter)
             }
+
+            fn tile(&self, n: usize) -> Series {
+                self.0.tile(n).into_series()
+            }
         }
     };
 }

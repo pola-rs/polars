@@ -82,9 +82,6 @@ impl FixedSizeListChunked {
         self.length += other.length;
         new_chunks(&mut self.chunks, &other.chunks, len);
         self.set_sorted_flag(IsSorted::Not);
-        if !other._can_fast_explode() {
-            self.unset_fast_explode()
-        }
         Ok(())
     }
 }

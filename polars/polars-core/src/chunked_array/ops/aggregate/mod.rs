@@ -520,7 +520,7 @@ impl ChunkAggSeries for FixedSizeListChunked {
             self.name(),
             1,
             &self.inner_dtype(),
-            self.inner_size(),
+            self.width(),
         )
         .into_series()
     }
@@ -529,7 +529,7 @@ impl ChunkAggSeries for FixedSizeListChunked {
             self.name(),
             1,
             &self.inner_dtype(),
-            self.inner_size(),
+            self.width(),
         )
         .into_series()
     }
@@ -538,7 +538,7 @@ impl ChunkAggSeries for FixedSizeListChunked {
             self.name(),
             1,
             &self.inner_dtype(),
-            self.inner_size(),
+            self.width(),
         )
         .into_series()
     }

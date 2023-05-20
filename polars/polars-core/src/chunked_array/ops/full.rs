@@ -2,8 +2,8 @@ use arrow::bitmap::MutableBitmap;
 use polars_arrow::array::default_arrays::FromData;
 
 #[cfg(feature = "dtype-fixed-size-list")]
-use crate::chunked_array::builder::get_fixed_size_list_builder;
 use crate::chunked_array::builder::get_list_builder;
+use crate::datatypes::AnyValue::FixedSizeList;
 use crate::prelude::*;
 use crate::series::IsSorted;
 
@@ -109,12 +109,12 @@ impl FixedSizeListChunked {
         name: &str,
         length: usize,
         inner_dtype: &DataType,
-        inner_size: usize,
+        width: usize,
     ) -> FixedSizeListChunked {
         let arr = new_null_array(
             ArrowDataType::FixedSizeList(
                 Box::new(ArrowField::new("item", inner_dtype.to_arrow(), true)),
-                inner_size,
+                width,
             ),
             length,
         );
@@ -125,12 +125,19 @@ impl FixedSizeListChunked {
 #[cfg(feature = "dtype-fixed-size-list")]
 impl ChunkFull<&Series> for FixedSizeListChunked {
     fn full(name: &str, value: &Series, length: usize) -> FixedSizeListChunked {
-        let mut builder =
-            get_fixed_size_list_builder(value.dtype(), value.len() * length, length, name).unwrap();
-        for _ in 0..length {
-            builder.append_series(value)
-        }
-        builder.finish()
+        if !value.dtype().is_numeric() {
+            todo!("FixedSizeList only supports numeric data types");
+        };
+        let width = value.len();
+        let values= value.tile(length);
+        let values = values.chunks()[0].clone();
+        let data_type = ArrowDataType::FixedSizeList(
+            Box::new(ArrowField::new("item", values.data_type().clone(), true)),
+            width
+        );
+
+        let arr= Box::new(FixedSizeListArray::new(data_type, values, None)) as ArrayRef;
+        unsafe { FixedSizeListChunked::from_chunks(name, vec![arr]) }
     }
 }
 

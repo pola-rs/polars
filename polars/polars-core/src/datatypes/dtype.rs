@@ -1,3 +1,5 @@
+use comfy_table::Width::Fixed;
+use crate::datatypes::AnyValue::FixedSizeList;
 use super::*;
 
 pub type TimeZone = String;
@@ -343,6 +345,12 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
         (List(inner_l), List(inner_r)) => {
             let merged = merge_dtypes(inner_l, inner_r)?;
             List(Box::new(merged))
+        }
+        #[cfg(feature = "dtype-fixed-size-list")]
+        (FixedSizeList(inner_l, width_l), FixedSizeList(inner_r, width_r)) => {
+            polars_ensure!(width_l == width_r, ComputeError: "widths of FixedSizeWidth Series are not equal");
+            let merged = merge_dtypes(inner_l, inner_r)?;
+            FixedSizeList(Box::new(merged), *width_l)
         }
         (left, right) if left == right => left.clone(),
         _ => polars_bail!(ComputeError: "unable to merge datatypes"),

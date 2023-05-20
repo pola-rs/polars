@@ -568,17 +568,11 @@ impl FixedSizeListChunked {
         }
     }
 
-    pub fn inner_size(&self) -> usize {
+    pub fn width(&self) -> usize {
         match self.dtype() {
             DataType::FixedSizeList(_dt, size) => *size,
             _ => unreachable!(),
         }
-    }
-
-    pub fn set_inner_dtype(&mut self, dtype: DataType) {
-        assert_eq!(dtype.to_physical(), self.inner_dtype().to_physical());
-        let field = Arc::make_mut(&mut self.field);
-        field.coerce(DataType::FixedSizeList(Box::new(dtype), self.inner_size()));
     }
 }
 

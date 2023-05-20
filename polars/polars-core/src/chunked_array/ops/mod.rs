@@ -46,6 +46,7 @@ pub(crate) mod take;
 pub(crate) mod unique;
 #[cfg(feature = "zip_with")]
 pub mod zip;
+mod tile;
 
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
@@ -640,7 +641,7 @@ impl ChunkExpandAtIndex<ListType> for ListChunked {
         match opt_val {
             Some(val) => {
                 let mut ca = ListChunked::full(self.name(), &val, length);
-                ca.to_logical(self.inner_dtype());
+                ca.to_physical(self.inner_dtype());
                 ca
             }
             None => ListChunked::full_null_with_dtype(self.name(), length, &self.inner_dtype()),
@@ -655,11 +656,11 @@ impl ChunkExpandAtIndex<FixedSizeListType> for FixedSizeListChunked {
         match opt_val {
             Some(val) => {
                 let mut ca = FixedSizeListChunked::full(self.name(), &val, length);
-                ca.to_logical(self.inner_dtype());
+                ca.to_physical(self.inner_dtype());
                 ca
             }
             None => {
-                FixedSizeListChunked::full_null_with_dtype(self.name(), length, &self.inner_dtype())
+                FixedSizeListChunked::full_null_with_dtype(self.name(), length, &self.inner_dtype(), 0)
             }
         }
     }
