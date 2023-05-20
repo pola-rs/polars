@@ -87,7 +87,9 @@ impl SqlExprVisitor<'_> {
             SqlExpr::UnaryOp { op, expr } => self.visit_unary_op(op, expr),
             SqlExpr::Value(value) => self.visit_literal(value),
             e @ SqlExpr::Case { .. } => self.visit_when_then(e),
-            other => polars_bail!(ComputeError: "SQL expression {:?} is not yet supported", other),
+            other => {
+                polars_bail!(InvalidOperation: "SQL expression {:?} is not yet supported", other)
+            }
         }
     }
 
@@ -95,19 +97,31 @@ impl SqlExprVisitor<'_> {
     ///
     /// e.g. df.column or "df"."column"
     fn visit_compound_identifier(&self, idents: &[sqlparser::ast::Ident]) -> PolarsResult<Expr> {
-        polars_ensure!(
-            idents.len() == 2,
-            ComputeError: "compound identifier {:?} is not yet supported", idents,
-        );
-        let tbl_name = &idents[0].value;
-        let refers_main_table =
-            { self.ctx.table_map.len() == 1 && self.ctx.table_map.contains_key(tbl_name) };
-        polars_ensure!(
-            refers_main_table, ComputeError:
-            "compound identifier {:?} is not yet supported if multiple tables are registered",
-            idents
-        );
-        Ok(col(&idents[1].value))
+        match idents {
+            [tbl_name, column_name] => {
+                let lf = self.ctx.table_map.get(&tbl_name.value).ok_or_else(|| {
+                    polars_err!(
+                        ComputeError: "no table named '{}' found",
+                        tbl_name
+                    )
+                })?;
+
+                let schema = lf.schema()?;
+                if let Some((_, name, _)) = schema.get_full(&column_name.value) {
+                    Ok(col(name))
+                } else {
+                    polars_bail!(
+                        ColumnNotFound: "no column named '{}' found in table '{}'",
+                        column_name,
+                        tbl_name
+                    )
+                }
+            }
+            _ => polars_bail!(
+                ComputeError: "Invalid identifier {:?}",
+                idents
+            ),
+        }
     }
 
     fn visit_unary_op(&self, op: &UnaryOperator, expr: &SqlExpr) -> PolarsResult<Expr> {
@@ -116,7 +130,7 @@ impl SqlExprVisitor<'_> {
             UnaryOperator::Plus => lit(0) + expr,
             UnaryOperator::Minus => lit(0) - expr,
             UnaryOperator::Not => expr.not(),
-            other => polars_bail!(ComputeError: "Unary operator {:?} is not supported", other),
+            other => polars_bail!(InvalidOperation: "Unary operator {:?} is not supported", other),
         })
     }
 

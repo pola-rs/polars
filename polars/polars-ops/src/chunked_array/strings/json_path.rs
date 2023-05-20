@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 
-use arrow::io::ndjson;
 use jsonpath_lib::PathCompiled;
 use serde_json::Value;
 
@@ -59,7 +58,7 @@ pub trait Utf8JsonPathImpl: AsUtf8 {
             .map(|x| x.unwrap_or("null"))
             .take(number_of_rows.unwrap_or(ca.len()));
 
-        ndjson::read::infer_iter(values_iter)
+        polars_json::ndjson::infer_iter(values_iter)
             .map(|d| DataType::from(&d))
             .map_err(|e| polars_err!(ComputeError: "error inferring JSON: {}", e))
     }

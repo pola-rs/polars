@@ -63,7 +63,7 @@ impl PyLazyGroupBy {
                 })?;
                 // unpack the wrapper in a PyDataFrame
                 let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
-                "Could net get DataFrame attribute '_df'. Make sure that you return a DataFrame object.",
+                "Could not get DataFrame attribute '_df'. Make sure that you return a DataFrame object.",
             );
                 // Downcast to Rust
                 let pydf = py_pydf.extract::<PyDataFrame>(py).unwrap();

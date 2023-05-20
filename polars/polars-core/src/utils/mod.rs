@@ -188,7 +188,7 @@ pub fn split_df(df: &mut DataFrame, n: usize) -> PolarsResult<Vec<DataFrame>> {
         return Ok(vec![df.clone()]);
     }
     // make sure that chunks are aligned.
-    df.rechunk();
+    df.align_chunks();
     split_df_as_ref(df, n)
 }
 
