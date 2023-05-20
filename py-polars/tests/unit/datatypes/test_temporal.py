@@ -2173,6 +2173,7 @@ def test_strptime_with_tz() -> None:
     [
         ("us", "Europe/London"),
         ("ms", None),
+        ("ns", "Africa/Lagos"),
     ],
 )
 def test_strptime_empty(time_unit: TimeUnit, time_zone: str | None) -> None:
