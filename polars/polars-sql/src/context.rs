@@ -21,7 +21,6 @@ use crate::table_functions::PolarsTableFunctions;
 #[derive(Default, Clone)]
 pub struct SQLContext {
     pub(crate) table_map: PlHashMap<String, LazyFrame>,
-    pub(crate) tables: Vec<String>,
     cte_map: RefCell<PlHashMap<String, LazyFrame>>,
 }
 
@@ -36,9 +35,15 @@ impl SQLContext {
     pub fn new() -> Self {
         Self {
             table_map: PlHashMap::new(),
-            tables: vec![],
             cte_map: RefCell::new(PlHashMap::new()),
         }
+    }
+
+    /// Get the names of all registered tables, in sorted order.
+    pub fn get_tables(&self) -> Vec<String> {
+        let mut tables = Vec::from_iter(self.table_map.keys().cloned());
+        tables.sort_unstable();
+        tables
     }
 
     /// Register a LazyFrame as a table in the SQLContext.
@@ -58,13 +63,11 @@ impl SQLContext {
     ///```
     pub fn register(&mut self, name: &str, lf: LazyFrame) {
         self.table_map.insert(name.to_owned(), lf);
-        self.tables.push(name.to_owned());
     }
 
     /// Unregister a LazyFrame table from the SQLContext.
     pub fn unregister(&mut self, name: &str) {
         self.table_map.remove(&name.to_owned());
-        self.tables.retain(|nm| nm != &name.to_owned());
     }
 
     /// Execute a SQL query, returning a LazyFrame.
@@ -196,7 +199,7 @@ impl SQLContext {
 
     /// SHOW TABLES
     fn execute_show_tables(&mut self, _: &Statement) -> PolarsResult<LazyFrame> {
-        let tables = Series::new("name", self.tables.clone());
+        let tables = Series::new("name", self.get_tables());
         let df = DataFrame::new(vec![tables])?;
         Ok(df.lazy())
     }
@@ -604,24 +607,17 @@ impl SQLContext {
 
 #[cfg(feature = "private")]
 impl SQLContext {
-    /// get all registered tables. For internal use only.
-    pub fn get_tables(&self) -> Vec<String> {
-        self.tables.clone()
-    }
-    /// get internal table map. For internal use only.
+    /// Get internal table map. For internal use only.
     #[cfg(feature = "private")]
     pub fn get_table_map(&self) -> PlHashMap<String, LazyFrame> {
         self.table_map.clone()
     }
-    /// Create a new SQLContext from a table map and a list of tables. For internal use only
+
+    /// Create a new SQLContext from a table map. For internal use only
     #[cfg(feature = "private")]
-    pub fn new_from_tables_and_map(
-        tables: Vec<String>,
-        table_map: PlHashMap<String, LazyFrame>,
-    ) -> Self {
+    pub fn new_from_table_map(table_map: PlHashMap<String, LazyFrame>) -> Self {
         Self {
             table_map,
-            tables,
             cte_map: RefCell::new(PlHashMap::new()),
         }
     }

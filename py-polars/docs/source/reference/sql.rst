@@ -4,14 +4,12 @@ SQL
 ===
 .. currentmodule:: polars
 
-.. autosummary::
-   :toctree: api/
-
-
 .. py:class:: SQLContext
     :canonical: polars.sql.SQLContext
 
-    Run SQL query against a LazyFrame.
+    Run SQL queries against DataFrame/LazyFrame data.
+
+    .. automethod:: __init__
 
 Methods
 -------
@@ -24,3 +22,4 @@ Methods
     SQLContext.register_globals
     SQLContext.register_many
     SQLContext.unregister
+    SQLContext.tables

@@ -33,6 +33,10 @@ impl PySQLContext {
             .into())
     }
 
+    pub fn get_tables(&self) -> PyResult<Vec<String>> {
+        Ok(self.context.get_tables())
+    }
+
     pub fn register(&mut self, name: &str, lf: PyLazyFrame) {
         self.context.register(name, lf.ldf)
     }
