@@ -909,32 +909,29 @@ def test_groupby_dynamic_when_conversion_crosses_dates_7274() -> None:
     df = (
         pl.DataFrame(
             data={
-                "timestamp_lagos": [
-                    "1970-01-01 00:00:00+01:00",
-                    "1970-01-01 01:00:00+01:00",
-                ],
+                "timestamp": ["1970-01-01 00:00:00+01:00", "1970-01-01 01:00:00+01:00"],
                 "value": [1, 1],
             }
         )
         .with_columns(
-            pl.col("timestamp_lagos")
+            pl.col("timestamp")
             .str.strptime(pl.Datetime, format="%Y-%m-%d %H:%M:%S%:z")
             .dt.convert_time_zone("Africa/Lagos")
             .set_sorted()
         )
         .with_columns(
-            pl.col("timestamp_lagos")
+            pl.col("timestamp")
             .dt.convert_time_zone("UTC")
             .alias("timestamp_utc")
             .set_sorted()
         )
     )
     result = df.groupby_dynamic(
-        index_column="timestamp_lagos", every="1d", closed="left"
+        index_column="timestamp", every="1d", closed="left"
     ).agg(pl.col("value").count())
-    expected = pl.DataFrame({"timestamp_lagos": [datetime(1970, 1, 1)], "value": [2]})
+    expected = pl.DataFrame({"timestamp": [datetime(1970, 1, 1)], "value": [2]})
     expected = expected.with_columns(
-        pl.col("timestamp_lagos").dt.replace_time_zone("Africa/Lagos"),
+        pl.col("timestamp").dt.replace_time_zone("Africa/Lagos"),
         pl.col("value").cast(pl.UInt32),
     )
     assert_frame_equal(result, expected)
