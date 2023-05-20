@@ -2684,7 +2684,7 @@ def time_(
     microsecond: Expr | str | int | None = None,
 ) -> Expr:
     """
-    Create a Polars literal expression of type Date.
+    Create a Polars literal expression of type Time.
 
     Parameters
     ----------
