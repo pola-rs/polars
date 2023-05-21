@@ -11,6 +11,11 @@ SQL
 
     .. automethod:: __init__
 
+    Note: can be used as a context manager.
+
+    .. automethod:: __enter__
+    .. automethod:: __exit__
+
 Methods
 -------
 
