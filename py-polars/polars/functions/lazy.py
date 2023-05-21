@@ -11,13 +11,11 @@ from polars.datatypes import (
     Date,
     Datetime,
     Duration,
-    Int32,
     Int64,
     Struct,
     Time,
     UInt32,
     is_polars_dtype,
-    py_type_to_dtype,
 )
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
@@ -3114,43 +3112,47 @@ def struct(
 
 @overload
 def repeat(
-    value: float | int | str | bool | date | datetime | time | timedelta | None,
+    value: PythonLiteral | None,
     n: Expr | int,
     *,
     eager: Literal[False] = ...,
     name: str | None = ...,
+    dtype: PolarsDataType | None = ...,
 ) -> Expr:
     ...
 
 
 @overload
 def repeat(
-    value: float | int | str | bool | date | datetime | time | timedelta | None,
+    value: PythonLiteral | None,
     n: Expr | int,
     *,
     eager: Literal[True],
     name: str | None = ...,
+    dtype: PolarsDataType | None = ...,
 ) -> Series:
     ...
 
 
 @overload
 def repeat(
-    value: float | int | str | bool | date | datetime | time | timedelta | None,
+    value: PythonLiteral | None,
     n: Expr | int,
     *,
     eager: bool,
     name: str | None,
+    dtype: PolarsDataType | None = ...,
 ) -> Expr | Series:
     ...
 
 
 def repeat(
-    value: float | int | str | bool | date | datetime | time | timedelta | None,
+    value: PythonLiteral | None,
     n: Expr | int,
     *,
     eager: bool = False,
     name: str | None = None,
+    dtype: PolarsDataType | None = None,
 ) -> Expr | Series:
     """
     Repeat a single value n times.
@@ -3160,30 +3162,40 @@ def repeat(
     value
         Value to repeat.
     n
-        repeat `n` times
+        Length of the resulting column.
     eager
         Evaluate immediately and return a ``Series``. If set to ``False`` (default),
         return an expression instead.
     name
-        Only used in `eager` mode. As expression, use `alias`
+        Name of the resulting column.
+    dtype
+        Data type of the resulting column. If set to ``None`` (default), data type is
+        inferred from the given value. Integer values default to Int32, unless Int64 is
+        required to fit the given value.
+
+    Examples
+    --------
+    >>> pl.repeat(1, n=3, eager=True, name="ones")
+    shape: (3,)
+    Series: 'ones' [i32]
+    [
+            1
+            1
+            1
+    ]
 
     """
     if eager:
-        if name is None:
-            name = ""
-        dtype = py_type_to_dtype(type(value))
-        if (
-            dtype == Int64
-            and isinstance(value, int)
-            and -(2**31) <= value <= 2**31 - 1
-        ):
-            dtype = Int32
-        s = pl.Series._repeat(name, value, n, dtype)  # type: ignore[arg-type]
-        return s
+        return pl.Series._repeat(value, n, name=name, dtype=dtype)  # type: ignore[arg-type]
     else:
         if isinstance(n, int):
             n = lit(n)
-        return wrap_expr(plr.repeat(value, n._pyexpr))
+        expr = wrap_expr(plr.repeat(value, n._pyexpr))
+        if name is not None:
+            expr = expr.alias(name)
+        if dtype is not None:
+            expr = expr.cast(dtype)
+        return expr
 
 
 @overload
