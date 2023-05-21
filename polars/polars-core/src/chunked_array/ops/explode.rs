@@ -679,4 +679,11 @@ mod test {
         let out = offsets_to_indexes(offsets, 2);
         assert_eq!(out, &[0, 1]);
     }
+
+    #[test]
+    fn test_row_offsets_nonzero_first_offset() {
+        let offsets = &[3, 6, 8];
+        let out = offsets_to_indexes(offsets, 10);
+        assert_eq!(out, &[0, 0, 0, 1, 1, 2, 2, 2, 2, 2]);
+    }
 }
