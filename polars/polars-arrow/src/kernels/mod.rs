@@ -4,6 +4,8 @@ use arrow::array::BooleanArray;
 use arrow::bitmap::utils::BitChunks;
 #[cfg(feature = "simd")]
 pub mod agg_mean;
+#[cfg(feature = "dtype-fixed_size_list")]
+pub mod comparison;
 pub mod concatenate;
 pub mod ewm;
 pub mod float;

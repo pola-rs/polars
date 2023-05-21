@@ -172,32 +172,37 @@ impl TakeChunked for ListChunked {
 impl TakeChunked for FixedSizeListChunked {
     unsafe fn take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Self {
         let arrs = self.downcast_iter().collect::<Vec<_>>();
-        let mut ca: Self = by
-            .iter()
-            .map(|[chunk_idx, array_idx]| {
-                let arr = arrs.get_unchecked(*chunk_idx as usize);
-                arr.get_unchecked(*array_idx as usize)
-            })
-            .collect();
-        ca.rename(self.name());
+        let iter = by.iter().map(|[chunk_idx, array_idx]| {
+            let arr = arrs.get_unchecked(*chunk_idx as usize);
+            arr.get_unchecked(*array_idx as usize)
+        });
+        let mut ca = Self::from_iter_and_args(
+            iter,
+            self.width(),
+            by.len(),
+            Some(self.inner_dtype()),
+            self.name(),
+        );
         ca.set_sorted_flag(sorted);
         ca
     }
 
     unsafe fn take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Self {
         let arrs = self.downcast_iter().collect::<Vec<_>>();
-        let mut ca: Self = by
-            .iter()
-            .map(|opt_idx| {
-                opt_idx.and_then(|[chunk_idx, array_idx]| {
-                    let arr = arrs.get_unchecked(chunk_idx as usize);
-                    arr.get_unchecked(array_idx as usize)
-                })
+        let iter = by.iter().map(|opt_idx| {
+            opt_idx.and_then(|[chunk_idx, array_idx]| {
+                let arr = arrs.get_unchecked(chunk_idx as usize);
+                arr.get_unchecked(array_idx as usize)
             })
-            .collect();
+        });
 
-        ca.rename(self.name());
-        ca
+        Self::from_iter_and_args(
+            iter,
+            self.width(),
+            by.len(),
+            Some(self.inner_dtype()),
+            self.name(),
+        )
     }
 }
 #[cfg(feature = "object")]

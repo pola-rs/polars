@@ -841,30 +841,27 @@ impl ChunkCompare<&ListChunked> for ListChunked {
 impl ChunkCompare<&FixedSizeListChunked> for FixedSizeListChunked {
     type Item = BooleanChunked;
     fn equal(&self, rhs: &FixedSizeListChunked) -> BooleanChunked {
-        todo!();
-        // self.amortized_iter()
-        //     .zip(rhs.amortized_iter())
-        //     .map(|(left, right)| match (left, right) {
-        //         (None, None) => true,
-        //         (Some(l), Some(r)) => l.as_ref().series_equal_missing(r.as_ref()),
-        //         _ => false,
-        //     })
-        //     .collect_trusted()
+        let (a, b) = align_chunks_binary(self, rhs);
+        let chunks = a
+            .downcast_iter()
+            .zip(b.downcast_iter())
+            .map(|(a, b)| {
+                Box::new(polars_arrow::kernels::comparison::fixed_size_list_eq(a, b)) as ArrayRef
+            })
+            .collect::<Vec<_>>();
+        unsafe { BooleanChunked::from_chunks(self.name(), chunks) }
     }
 
     fn not_equal(&self, rhs: &FixedSizeListChunked) -> BooleanChunked {
-        todo!();
-        // self.amortized_iter()
-        //     .zip(rhs.amortized_iter())
-        //     .map(|(left, right)| {
-        //         let out = match (left, right) {
-        //             (None, None) => true,
-        //             (Some(l), Some(r)) => l.as_ref().series_equal_missing(r.as_ref()),
-        //             _ => false,
-        //         };
-        //         !out
-        //     })
-        //     .collect_trusted()
+        let (a, b) = align_chunks_binary(self, rhs);
+        let chunks = a
+            .downcast_iter()
+            .zip(b.downcast_iter())
+            .map(|(a, b)| {
+                Box::new(polars_arrow::kernels::comparison::fixed_size_list_neq(a, b)) as ArrayRef
+            })
+            .collect::<Vec<_>>();
+        unsafe { BooleanChunked::from_chunks(self.name(), chunks) }
     }
 
     // following are not implemented because gt, lt comparison of series don't make sense

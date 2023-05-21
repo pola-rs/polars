@@ -62,13 +62,12 @@ impl ChunkTakeEvery<ListType> for ListChunked {
 #[cfg(feature = "dtype-fixed-size-list")]
 impl ChunkTakeEvery<FixedSizeListType> for FixedSizeListChunked {
     fn take_every(&self, n: usize) -> FixedSizeListChunked {
-        let mut ca: Self = if !self.has_validity() {
-            self.into_no_null_iter().step_by(n).collect()
-        } else {
-            self.into_iter().step_by(n).collect()
-        };
-        ca.rename(self.name());
-        ca
+        let idx = (0 as IdxSize..(self.len() as IdxSize))
+            .step_by(n)
+            .collect::<Vec<_>>();
+
+        // safety: we are in bounds
+        unsafe { self.take_unchecked((&idx).into()) }
     }
 }
 

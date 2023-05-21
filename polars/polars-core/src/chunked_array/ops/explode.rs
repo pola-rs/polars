@@ -5,10 +5,13 @@ use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::offset::OffsetsBuffer;
 use polars_arrow::array::PolarsArray;
 use polars_arrow::bit_util::unset_bit_raw;
+#[cfg(feature = "dtype-fixed-size-list")]
 use polars_arrow::is_valid::IsValid;
 use polars_arrow::prelude::*;
 
-use crate::chunked_array::builder::{AnonymousOwnedListBuilder, get_fixed_size_list_builder};
+#[cfg(feature = "dtype-fixed-size-list")]
+use crate::chunked_array::builder::get_fixed_size_list_builder;
+use crate::chunked_array::builder::AnonymousOwnedListBuilder;
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
 
@@ -261,7 +264,8 @@ impl ExplodeByOffsets for FixedSizeListChunked {
 
         let cap = get_capacity(offsets);
         let inner_type = self.inner_dtype();
-        let mut builder = get_fixed_size_list_builder(&inner_type, cap, self.width(), self.name()).unwrap();
+        let mut builder =
+            get_fixed_size_list_builder(&inner_type, cap, self.width(), self.name()).unwrap();
 
         let mut start = offsets[0] as usize;
         let mut last = start;

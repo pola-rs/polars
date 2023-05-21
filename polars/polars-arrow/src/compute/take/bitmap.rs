@@ -2,6 +2,8 @@ use arrow::bitmap::Bitmap;
 
 use crate::index::IdxSize;
 
+/// # Safety
+/// doesn't do any bound checks
 pub unsafe fn take_bitmap_unchecked(values: &Bitmap, indices: &[IdxSize]) -> Bitmap {
     let values = indices.iter().map(|&index| {
         debug_assert!((index as usize) < values.len());

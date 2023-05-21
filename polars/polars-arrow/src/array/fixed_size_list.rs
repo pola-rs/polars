@@ -1,23 +1,24 @@
-use arrow::array::{FixedSizeListArray};
+use arrow::array::FixedSizeListArray;
 use arrow::bitmap::MutableBitmap;
 use arrow::datatypes::DataType;
-use crate::prelude::ArrayRef;
 use polars_error::PolarsResult;
+
 use crate::kernels::concatenate::concatenate_owned_unchecked;
+use crate::prelude::ArrayRef;
 
 #[derive(Default)]
 pub struct AnonymousBuilder {
     arrays: Vec<ArrayRef>,
     validity: Option<MutableBitmap>,
-    pub width: usize
+    pub width: usize,
 }
 
-impl<'a> AnonymousBuilder {
+impl AnonymousBuilder {
     pub fn new(capacity: usize, width: usize) -> Self {
         Self {
             arrays: Vec::with_capacity(capacity),
             validity: None,
-            width
+            width,
         }
     }
     pub fn is_empty(&self) -> bool {
@@ -45,12 +46,6 @@ impl<'a> AnonymousBuilder {
         validity.extend_constant(self.arrays.len(), true);
         validity.set(self.arrays.len() - 1, false);
         self.validity = Some(validity)
-    }
-
-    fn update_validity(&mut self) {
-        if let Some(validity) = &mut self.validity {
-            validity.push(true)
-        }
     }
 
     pub fn finish(self, inner_dtype: Option<&DataType>) -> PolarsResult<FixedSizeListArray> {

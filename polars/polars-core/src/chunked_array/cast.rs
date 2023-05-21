@@ -368,7 +368,11 @@ fn cast_list(ca: &ListChunked, child_type: &DataType) -> PolarsResult<(ArrayRef,
 
 // Returns inner data type. This is needed because a cast can instantiate the dtype inner
 // values for instance with categoricals
-fn cast_fixed_size_list(ca: &FixedSizeListChunked, child_type: &DataType) -> PolarsResult<(ArrayRef, DataType)> {
+#[cfg(feature = "dtype-fixed-size-list")]
+fn cast_fixed_size_list(
+    ca: &FixedSizeListChunked,
+    child_type: &DataType,
+) -> PolarsResult<(ArrayRef, DataType)> {
     let ca = ca.rechunk();
     let arr = ca.downcast_iter().next().unwrap();
     // safety: inner dtype is passed correctly
@@ -382,12 +386,9 @@ fn cast_fixed_size_list(ca: &FixedSizeListChunked, child_type: &DataType) -> Pol
 
     let new_values = new_inner.array_ref(0).clone();
 
-    let data_type = FixedSizeListArray::default_datatype(new_values.data_type().clone(), ca.width());
-    let new_arr = FixedSizeListArray::new(
-        data_type,
-        new_values,
-        arr.validity().cloned(),
-    );
+    let data_type =
+        FixedSizeListArray::default_datatype(new_values.data_type().clone(), ca.width());
+    let new_arr = FixedSizeListArray::new(data_type, new_values, arr.validity().cloned());
     Ok((Box::new(new_arr), inner_dtype))
 }
 

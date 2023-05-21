@@ -1,7 +1,6 @@
 use arrow::bitmap::MutableBitmap;
 use polars_arrow::array::default_arrays::FromData;
 
-#[cfg(feature = "dtype-fixed-size-list")]
 use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
 use crate::series::IsSorted;

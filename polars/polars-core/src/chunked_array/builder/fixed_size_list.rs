@@ -75,16 +75,21 @@ impl<T: NativeType> FixedSizeListBuilder for FixedSizeListNumericBuilder<T> {
 pub(crate) struct AnonymousOwnedFixedSizeListBuilder {
     inner: fixed_size_list::AnonymousBuilder,
     name: SmartString,
-    inner_dtype: Option<DataType>
+    inner_dtype: Option<DataType>,
 }
 
 impl AnonymousOwnedFixedSizeListBuilder {
-    pub(crate) fn new(name: &str, width: usize, capacity: usize, inner_dtype: Option<DataType>) -> Self {
+    pub(crate) fn new(
+        name: &str,
+        width: usize,
+        capacity: usize,
+        inner_dtype: Option<DataType>,
+    ) -> Self {
         let inner = fixed_size_list::AnonymousBuilder::new(capacity, width);
         Self {
             inner,
             name: name.into(),
-            inner_dtype
+            inner_dtype,
         }
     }
 }
@@ -102,7 +107,9 @@ impl FixedSizeListBuilder for AnonymousOwnedFixedSizeListBuilder {
     }
 
     fn finish(&mut self) -> FixedSizeListChunked {
-        let arr = std::mem::take(&mut self.inner).finish(self.inner_dtype.as_ref().map(|dt| dt.to_arrow()).as_ref()).unwrap();
+        let arr = std::mem::take(&mut self.inner)
+            .finish(self.inner_dtype.as_ref().map(|dt| dt.to_arrow()).as_ref())
+            .unwrap();
         unsafe { ChunkedArray::from_chunks(self.name.as_str(), vec![Box::new(arr) as ArrayRef]) }
     }
 }
@@ -117,10 +124,15 @@ pub(crate) fn get_fixed_size_list_builder(
 
     let builder = if phys_dtype.is_numeric() {
         with_match_physical_numeric_type!(phys_dtype, |$T| {
-        Box::new(FixedSizeListNumericBuilder::<$T>::new(name, width, capacity)) as Box<dyn FixedSizeListBuilder>
-    })
+            Box::new(FixedSizeListNumericBuilder::<$T>::new(name, width, capacity)) as Box<dyn FixedSizeListBuilder>
+        })
     } else {
-        Box::new(AnonymousOwnedFixedSizeListBuilder::new(name, width, capacity, Some(inner_type_logical.clone())))
+        Box::new(AnonymousOwnedFixedSizeListBuilder::new(
+            name,
+            width,
+            capacity,
+            Some(inner_type_logical.clone()),
+        ))
     };
     Ok(builder)
 }

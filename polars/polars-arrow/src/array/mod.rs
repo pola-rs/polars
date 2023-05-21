@@ -10,13 +10,13 @@ use crate::prelude::*;
 use crate::utils::CustomIterTools;
 
 pub mod default_arrays;
+#[cfg(feature = "dtype-fixed_size_list")]
+pub mod fixed_size_list;
 mod get;
 pub mod list;
 pub mod null;
 pub mod slice;
 pub mod utf8;
-#[cfg(feature = "dtype-fixed_size_list")]
-pub mod fixed_size_list;
 
 pub use get::ArrowGetItem;
 pub use slice::*;
