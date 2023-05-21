@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import warnings
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, Callable, Iterable, NoReturn, Sequence, overload
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
 
 import polars._reexport as pl
 from polars.datatypes import (
@@ -3107,123 +3107,6 @@ def struct(
     if eager:
         return select(expr).to_series()
     else:
-        return expr
-
-
-@overload
-def repeat(
-    value: PythonLiteral | None,
-    n: Expr | int,
-    *,
-    eager: Literal[False] = ...,
-    name: str | None = ...,
-    dtype: PolarsDataType | None = ...,
-) -> Expr:
-    ...
-
-
-@overload
-def repeat(
-    value: PythonLiteral | None,
-    n: Expr,
-    *,
-    eager: Literal[True],
-    name: str | None = ...,
-    dtype: PolarsDataType | None = ...,
-) -> NoReturn:
-    ...
-
-
-@overload
-def repeat(
-    value: PythonLiteral | None,
-    n: int,
-    *,
-    eager: Literal[True],
-    name: str | None = ...,
-    dtype: PolarsDataType | None = ...,
-) -> Series:
-    ...
-
-
-@overload
-def repeat(
-    value: PythonLiteral | None,
-    n: Expr | int,
-    *,
-    eager: bool,
-    name: str | None,
-    dtype: PolarsDataType | None = ...,
-) -> Expr | Series:
-    ...
-
-
-def repeat(
-    value: PythonLiteral | None,
-    n: Expr | int,
-    *,
-    eager: bool = False,
-    name: str | None = None,
-    dtype: PolarsDataType | None = None,
-) -> Expr | Series:
-    """
-    Construct a column with the given value repeated `n` times.
-
-    Parameters
-    ----------
-    value
-        Value to repeat.
-    n
-        Length of the resulting column.
-    eager
-        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
-        return an expression instead.
-    name
-        Name of the resulting column.
-    dtype
-        Data type of the resulting column. If set to ``None`` (default), data type is
-        inferred from the given value. Defaults to Int32 for integer values, unless
-        Int64 is required to fit the given value. Defaults to Float64 for float values.
-
-    Examples
-    --------
-    Construct a column with a repeated value in a lazy context.
-
-    >>> pl.select(pl.repeat("z", n=3)).to_series()
-    shape: (3,)
-    Series: 'literal' [str]
-    [
-            "z"
-            "z"
-            "z"
-    ]
-
-    Generate a Series directly by setting ``eager=True``.
-
-    >>> pl.repeat(3, n=3, eager=True, name="three", dtype=pl.Int8)
-    shape: (3,)
-    Series: 'three' [i8]
-    [
-            3
-            3
-            3
-    ]
-
-    """
-    if eager:
-        if not isinstance(n, int):
-            raise ValueError(
-                "`n` must be an integer when using `repeat` in an eager context."
-            )
-        return pl.Series._repeat(value, n, name=name, dtype=dtype)
-    else:
-        if isinstance(n, int):
-            n = lit(n)
-        expr = wrap_expr(plr.repeat(value, n._pyexpr))
-        if name is not None:
-            expr = expr.alias(name)
-        if dtype is not None:
-            expr = expr.cast(dtype)
         return expr
 
 
