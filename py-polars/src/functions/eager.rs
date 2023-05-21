@@ -130,13 +130,14 @@ pub fn repeat_eager(
         None => match value.dtype() {
             // Integer inputs that fit in Int32 are parsed as such
             DataType::Int64 => {
-                let int_value: i64 = value.extract().unwrap();
+                let int_value: i64 = value.try_extract().unwrap();
                 if int_value >= i32::MIN as i64 && int_value <= i32::MAX as i64 {
                     DataType::Int32
                 } else {
                     DataType::Int64
                 }
             }
+            DataType::Unknown => DataType::Null,
             _ => value.dtype(),
         },
     };
