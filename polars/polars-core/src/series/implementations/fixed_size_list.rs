@@ -20,6 +20,9 @@ impl private::PrivateSeries for SeriesWrap<FixedSizeListChunked> {
     fn _dtype(&self) -> &DataType {
         self.0.ref_field().data_type()
     }
+    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
+        self.0.explode_by_offsets(offsets)
+    }
 
     fn _set_sorted_flag(&mut self, is_sorted: IsSorted) {
         self.0.set_sorted_flag(is_sorted)

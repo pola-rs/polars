@@ -60,6 +60,7 @@ impl<T: NativeType> FixedSizeListBuilder for FixedSizeListNumericBuilder<T> {
         }
     }
 
+    #[inline]
     unsafe fn push_null(&mut self) {
         let inner = self.inner.as_mut().unwrap_unchecked_release();
         inner.push_null()
@@ -89,11 +90,13 @@ impl AnonymousOwnedFixedSizeListBuilder {
 }
 
 impl FixedSizeListBuilder for AnonymousOwnedFixedSizeListBuilder {
+    #[inline]
     unsafe fn push_unchecked(&mut self, arr: &dyn Array, offset: usize) {
         let arr = arr.sliced_unchecked(offset * self.inner.width, self.inner.width);
         self.inner.push(arr)
     }
 
+    #[inline]
     unsafe fn push_null(&mut self) {
         self.inner.push_null()
     }

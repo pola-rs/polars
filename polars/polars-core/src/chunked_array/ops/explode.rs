@@ -5,9 +5,10 @@ use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::offset::OffsetsBuffer;
 use polars_arrow::array::PolarsArray;
 use polars_arrow::bit_util::unset_bit_raw;
+use polars_arrow::is_valid::IsValid;
 use polars_arrow::prelude::*;
 
-use crate::chunked_array::builder::AnonymousOwnedListBuilder;
+use crate::chunked_array::builder::{AnonymousOwnedListBuilder, get_fixed_size_list_builder};
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
 
@@ -255,38 +256,52 @@ impl ExplodeByOffsets for ListChunked {
 #[cfg(feature = "dtype-fixed-size-list")]
 impl ExplodeByOffsets for FixedSizeListChunked {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        todo!();
+        debug_assert_eq!(self.chunks.len(), 1);
+        let arr = self.downcast_iter().next().unwrap();
 
-        // debug_assert_eq!(self.chunks.len(), 1);
-        // let arr = self.downcast_iter().next().unwrap();
+        let cap = get_capacity(offsets);
+        let inner_type = self.inner_dtype();
+        let mut builder = get_fixed_size_list_builder(&inner_type, cap, self.width(), self.name()).unwrap();
 
-        // let cap = get_capacity(offsets);
-        // let inner_type = self.inner_dtype();
-        // let mut builder = AnonymousOwnedListBuilder::new(self.name(), cap, Some(inner_type));
+        let mut start = offsets[0] as usize;
+        let mut last = start;
+        for &o in &offsets[1..] {
+            let o = o as usize;
+            if o == last {
+                if start != last {
+                    let array = arr.slice_typed(start, last - start);
+                    let values = array.values().as_ref();
 
-        // let mut start = offsets[0] as usize;
-        // let mut last = start;
-        // for &o in &offsets[1..] {
-        //     let o = o as usize;
-        //     if o == last {
-        //         if start != last {
-        //             let vals = arr.slice_typed(start, last - start);
-        //             let ca = unsafe { ListChunked::from_chunks("", vec![Box::new(vals)]) };
-        //             for s in &ca {
-        //                 builder.append_opt_series(s.as_ref())
-        //             }
-        //         }
-        //         builder.append_null();
-        //         start = o;
-        //     }
-        //     last = o;
-        // }
-        // let vals = arr.slice_typed(start, last - start);
-        // let ca = unsafe { ListChunked::from_chunks("", vec![Box::new(vals)]) };
-        // for s in &ca {
-        //     builder.append_opt_series(s.as_ref())
-        // }
-        // builder.finish().into()
+                    for i in 0..array.len() {
+                        unsafe {
+                            if array.is_valid_unchecked(i) {
+                                builder.push_unchecked(values, i)
+                            } else {
+                                builder.push_null()
+                            }
+                        }
+                    }
+                }
+                unsafe {
+                    builder.push_null();
+                }
+                start = o;
+            }
+            last = o;
+        }
+        let array = arr.slice_typed(start, last - start);
+        let values = array.values().as_ref();
+        for i in 0..array.len() {
+            unsafe {
+                if array.is_valid_unchecked(i) {
+                    builder.push_unchecked(values, i)
+                } else {
+                    builder.push_null()
+                }
+            }
+        }
+
+        builder.finish().into()
     }
 }
 
