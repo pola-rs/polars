@@ -22,7 +22,6 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> AmortizedListIter<'a, I> {
         len: usize,
         series_container: Box<Series>,
         inner: NonNull<ArrayRef>,
-        lifetime: PhantomData<&'a ArrayRef>,
         iter: I,
         inner_dtype: DataType,
     ) -> Self {
@@ -30,7 +29,7 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> AmortizedListIter<'a, I> {
             len,
             series_container,
             inner,
-            lifetime,
+            lifetime: PhantomData,
             iter,
             inner_dtype,
         }
@@ -149,14 +148,13 @@ impl ListChunked {
 
         let ptr = series_container.array_ref(0) as *const ArrayRef as *mut ArrayRef;
 
-        AmortizedListIter {
-            len: self.len(),
+        AmortizedListIter::new(
+            self.len(),
             series_container,
-            inner: NonNull::new(ptr).unwrap(),
-            lifetime: PhantomData,
-            iter: self.downcast_iter().flat_map(|arr| arr.iter()),
+            NonNull::new(ptr).unwrap(),
+            self.downcast_iter().flat_map(|arr| arr.iter()),
             inner_dtype,
-        }
+        )
     }
 
     /// Apply a closure `F` elementwise.

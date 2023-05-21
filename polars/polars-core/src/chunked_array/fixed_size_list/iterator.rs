@@ -1,4 +1,3 @@
-use std::marker::PhantomData;
 use std::ptr::NonNull;
 
 use super::*;
@@ -63,7 +62,6 @@ impl FixedSizeListChunked {
             self.len(),
             series_container,
             NonNull::new(ptr).unwrap(),
-            PhantomData,
             self.downcast_iter().flat_map(|arr| arr.iter()),
             inner_dtype,
         )
