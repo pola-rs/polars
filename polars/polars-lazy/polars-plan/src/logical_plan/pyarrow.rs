@@ -16,16 +16,16 @@ pub(super) fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Opt
                 None
             }
         }
-        AExpr::Column(name) => Some(format!("pa.dataset.field('{}')", name.as_ref())),
+        AExpr::Column(name) => Some(format!("pa.compute.field('{}')", name.as_ref())),
         AExpr::Alias(input, _) => predicate_to_pa(*input, expr_arena),
         AExpr::Literal(LiteralValue::Series(s)) => {
-            if s.len() > 100 {
+            if s.is_empty() || s.len() > 100 {
                 None
             } else {
                 let mut list_repr = String::with_capacity(s.len() * 5);
                 list_repr.push('[');
                 for av in s.iter() {
-                    write!(list_repr, "{av}");
+                    write!(list_repr, "{av}").ok()?;
                     list_repr.push(',');
                 }
 
@@ -44,9 +44,9 @@ pub(super) fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Opt
                 AnyValue::Boolean(val) => {
                     // python bools are capitalized
                     if val {
-                        Some("True".to_string())
+                        Some("pa.compute.scalar(True)".to_string())
                     } else {
-                        Some("False".to_string())
+                        Some("pa.compute.scalar(False)".to_string())
                     }
                 }
                 #[cfg(feature = "dtype-date")]
