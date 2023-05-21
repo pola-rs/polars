@@ -8,8 +8,8 @@ use polars_plan::prelude::*;
 use polars_plan::utils::expressions_to_schema;
 use sqlparser::ast::{
     Distinct, ExcludeSelectItem, Expr as SqlExpr, FunctionArg, JoinOperator, ObjectName, Offset,
-    OrderByExpr, Query, Select, SelectItem, SetExpr, Statement, TableAlias, TableFactor,
-    TableWithJoins, Value as SQLValue, WildcardAdditionalOptions,
+    OrderByExpr, Query, Select, SelectItem, SetExpr, SetOperator, SetQuantifier, Statement,
+    TableAlias, TableFactor, TableWithJoins, Value as SQLValue, WildcardAdditionalOptions,
 };
 use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::{Parser, ParserOptions};
@@ -21,7 +21,6 @@ use crate::table_functions::PolarsTableFunctions;
 #[derive(Default, Clone)]
 pub struct SQLContext {
     pub(crate) table_map: PlHashMap<String, LazyFrame>,
-    pub(crate) tables: Vec<String>,
     cte_map: RefCell<PlHashMap<String, LazyFrame>>,
 }
 
@@ -36,9 +35,15 @@ impl SQLContext {
     pub fn new() -> Self {
         Self {
             table_map: PlHashMap::new(),
-            tables: vec![],
             cte_map: RefCell::new(PlHashMap::new()),
         }
+    }
+
+    /// Get the names of all registered tables, in sorted order.
+    pub fn get_tables(&self) -> Vec<String> {
+        let mut tables = Vec::from_iter(self.table_map.keys().cloned());
+        tables.sort_unstable();
+        tables
     }
 
     /// Register a LazyFrame as a table in the SQLContext.
@@ -58,13 +63,11 @@ impl SQLContext {
     ///```
     pub fn register(&mut self, name: &str, lf: LazyFrame) {
         self.table_map.insert(name.to_owned(), lf);
-        self.tables.push(name.to_owned());
     }
 
     /// Unregister a LazyFrame table from the SQLContext.
     pub fn unregister(&mut self, name: &str) {
         self.table_map.remove(&name.to_owned());
-        self.tables.retain(|nm| nm != &name.to_owned());
     }
 
     /// Execute a SQL query, returning a LazyFrame.
@@ -133,16 +136,50 @@ impl SQLContext {
     pub(crate) fn execute_query(&mut self, query: &Query) -> PolarsResult<LazyFrame> {
         self.register_ctes(query)?;
 
-        let lf = match &query.body.as_ref() {
-            SetExpr::Select(select_stmt) => self.execute_select(select_stmt, query)?,
-            SetExpr::Query(query) => self.execute_query(query)?,
-            SetExpr::SetOperation { op, .. } => {
-                polars_bail!(ComputeError: "{} operation not yet supported", op)
-            }
-            _ => polars_bail!(ComputeError: "INSERT, UPDATE, VALUES not yet supported"),
-        };
+        let lf = self.process_set_expr(&query.body, query)?;
 
         self.process_limit_offset(lf, &query.limit, &query.offset)
+    }
+
+    fn process_set_expr(&mut self, expr: &SetExpr, query: &Query) -> PolarsResult<LazyFrame> {
+        match expr {
+            SetExpr::Select(select_stmt) => self.execute_select(select_stmt, query),
+            SetExpr::Query(query) => self.execute_query(query),
+            SetExpr::SetOperation {
+                op: SetOperator::Union,
+                set_quantifier,
+                left,
+                right,
+            } => self.process_union(left, right, set_quantifier, query),
+            SetExpr::SetOperation { op, .. } => {
+                polars_bail!(InvalidOperation: "{} operation not yet supported", op)
+            }
+            op => polars_bail!(InvalidOperation: "{} operation not yet supported", op),
+        }
+    }
+
+    fn process_union(
+        &mut self,
+        left: &SetExpr,
+        right: &SetExpr,
+        quantifier: &SetQuantifier,
+        query: &Query,
+    ) -> PolarsResult<LazyFrame> {
+        match quantifier {
+            // UNION ALL
+            SetQuantifier::All => {
+                let left = self.process_set_expr(left, query)?;
+                let right = self.process_set_expr(right, query)?;
+                polars_lazy::dsl::concat(vec![left, right], false, true)
+            }
+            // UNION DISTINCT | UNION
+            _ => {
+                let left = self.process_set_expr(left, query)?;
+                let right = self.process_set_expr(right, query)?;
+                Ok(polars_lazy::dsl::concat(vec![left, right], true, true)?
+                    .unique(None, UniqueKeepStrategy::Any))
+            }
+        }
     }
     // EXPLAIN SELECT * FROM DF
     fn execute_explain(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
@@ -162,7 +199,7 @@ impl SQLContext {
 
     /// SHOW TABLES
     fn execute_show_tables(&mut self, _: &Statement) -> PolarsResult<LazyFrame> {
-        let tables = Series::new("name", self.tables.clone());
+        let tables = Series::new("name", self.get_tables());
         let df = DataFrame::new(vec![tables])?;
         Ok(df.lazy())
     }
@@ -570,24 +607,17 @@ impl SQLContext {
 
 #[cfg(feature = "private")]
 impl SQLContext {
-    /// get all registered tables. For internal use only.
-    pub fn get_tables(&self) -> Vec<String> {
-        self.tables.clone()
-    }
-    /// get internal table map. For internal use only.
+    /// Get internal table map. For internal use only.
     #[cfg(feature = "private")]
     pub fn get_table_map(&self) -> PlHashMap<String, LazyFrame> {
         self.table_map.clone()
     }
-    /// Create a new SQLContext from a table map and a list of tables. For internal use only
+
+    /// Create a new SQLContext from a table map. For internal use only
     #[cfg(feature = "private")]
-    pub fn new_from_tables_and_map(
-        tables: Vec<String>,
-        table_map: PlHashMap<String, LazyFrame>,
-    ) -> Self {
+    pub fn new_from_table_map(table_map: PlHashMap<String, LazyFrame>) -> Self {
         Self {
             table_map,
-            tables,
             cte_map: RefCell::new(PlHashMap::new()),
         }
     }

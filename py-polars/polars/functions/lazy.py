@@ -2684,7 +2684,7 @@ def time_(
     microsecond: Expr | str | int | None = None,
 ) -> Expr:
     """
-    Create a Polars literal expression of type Date.
+    Create a Polars literal expression of type Time.
 
     Parameters
     ----------
@@ -3038,7 +3038,8 @@ def struct(
         Evaluate immediately and return a ``Series``. If set to ``False`` (default),
         return an expression instead.
     schema
-        Optional schema that explicitly defines the struct field dtypes.
+        Optional schema that explicitly defines the struct field dtypes. If no columns
+        or expressions are provided, schema keys are used to define columns.
     **named_exprs
         Additional columns to collect into the struct column, specified as keyword
         arguments. The columns will be renamed to the keyword used.
@@ -3096,7 +3097,13 @@ def struct(
         )
 
     expr = wrap_expr(plr.as_struct(exprs))
+
     if schema:
+        if not exprs:
+            # no columns or expressions provided; create one from schema keys
+            expr = wrap_expr(
+                plr.as_struct(selection_to_pyexpr_list(list(schema.keys())))
+            )
         expr = expr.cast(Struct(schema), strict=False)
 
     if eager:

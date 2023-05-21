@@ -45,7 +45,7 @@ fn select_exclude_multi() {
 }
 
 #[test]
-fn select_from_join() {
+fn select_qualified_wildcard() {
     let df1 = df![
         "a" => [1,2,3],
         "b" => ["l", "m", "n"]
@@ -72,6 +72,71 @@ fn select_from_join() {
     INNER JOIN test2 
     USING(a)
     "#;
+    let actual = ctx.execute(sql).unwrap().collect().unwrap();
+    assert!(actual.frame_equal(&expected));
+}
+
+#[test]
+fn select_qualified_column() {
+    let df1 = df![
+        "a" => [1,2,3],
+        "b" => ["l", "m", "n"]
+    ]
+    .unwrap();
+    let df2 = df![
+        "a" => [4,2,3],
+        "c" => ["x", "y", "z"]
+    ]
+    .unwrap();
+
+    let expected = df![
+        "b" => ["m", "n"],
+        "a" => [2,3],
+        "c" => ["y", "z"]
+    ]
+    .unwrap();
+    let mut ctx = SQLContext::new();
+    ctx.register("test", df1.lazy());
+    ctx.register("test2", df2.lazy());
+
+    let sql = r#"
+    SELECT test.b, test2.*
+    FROM test 
+    INNER JOIN test2 
+    USING(a)
+    "#;
+    let actual = ctx.execute(sql).unwrap().collect().unwrap();
+    assert!(actual.frame_equal(&expected));
+}
+
+#[test]
+fn test_union_all() {
+    let df1 = df![
+        "a" => [1,2,3],
+        "b" => ["l", "m", "n"]
+    ]
+    .unwrap();
+    let df2 = df![
+        "a" => [4,2,3],
+        "b" => ["x", "y", "z"]
+    ]
+    .unwrap();
+
+    let mut ctx = SQLContext::new();
+    ctx.register("test", df1.clone().lazy());
+    ctx.register("test2", df2.clone().lazy());
+
+    let sql = r#"
+    SELECT * FROM test
+    UNION ALL (
+        SELECT * FROM test2
+    )
+    "#;
+    let expected = polars_lazy::dsl::concat(vec![df1.lazy(), df2.lazy()], false, true)
+        .unwrap()
+        .collect()
+        .unwrap();
+
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
     assert!(actual.frame_equal(&expected));
 }
