@@ -1,3 +1,5 @@
+use std::fmt::Write;
+
 use polars_core::datatypes::AnyValue;
 
 use crate::prelude::*;
@@ -16,11 +18,24 @@ pub(super) fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Opt
         }
         AExpr::Column(name) => Some(format!("pa.dataset.field('{}')", name.as_ref())),
         AExpr::Alias(input, _) => predicate_to_pa(*input, expr_arena),
-        AExpr::Literal(LiteralValue::Series(s)) => s
-            .iter()
-            .map(|av| av.to_string())
-            .reduce(|a, b| format!("{a}, {b}"))
-            .map(|s| format!("[{s}]")),
+        AExpr::Literal(LiteralValue::Series(s)) => {
+            if s.len() > 100 {
+                None
+            } else {
+                let mut list_repr = String::with_capacity(s.len() * 5);
+                list_repr.push('[');
+                for av in s.iter() {
+                    write!(list_repr, "{av}");
+                    list_repr.push(',');
+                }
+
+                // pop last comma
+                list_repr.pop();
+                list_repr.push(']');
+
+                Some(list_repr)
+            }
+        }
         AExpr::Literal(lv) => {
             let av = lv.to_anyvalue()?;
             let dtype = av.dtype();
