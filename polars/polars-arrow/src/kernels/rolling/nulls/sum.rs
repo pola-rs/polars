@@ -38,7 +38,7 @@ impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T>> SumWindow<
 impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T>> RollingAggWindowNulls<'a, T>
     for SumWindow<'a, T>
 {
-    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize, params: Option<RollingFnParams>) -> Self {
+    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize, _params: Option<RollingFnParams>) -> Self {
         let mut out = Self {
             slice,
             validity,
@@ -123,7 +123,7 @@ pub fn rolling_sum<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
-    params: Option<RollingFnParams>
+    _params: Option<RollingFnParams>
 ) -> ArrayRef
 where
     T: NativeType + IsFloat + PartialOrd + Add<Output = T> + Sub<Output = T>,

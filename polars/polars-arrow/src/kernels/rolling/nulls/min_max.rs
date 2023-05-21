@@ -48,7 +48,7 @@ impl<'a, T: NativeType> SortedMinMax<'a, T> {
 }
 
 impl<'a, T: NativeType> RollingAggWindowNulls<'a, T> for SortedMinMax<'a, T> {
-    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize, params: Option<RollingFnParams>) -> Self {
+    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize, _params: Option<RollingFnParams>) -> Self {
         let mut out = Self {
             slice,
             validity,
@@ -295,7 +295,7 @@ fn take_min<T: NativeType + IsFloat + PartialOrd>(a: T, b: T) -> T {
 }
 
 impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNulls<'a, T> for MinWindow<'a, T> {
-    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize, params: Option<RollingFnParams>) -> Self {
+    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize, _params: Option<RollingFnParams>) -> Self {
         Self {
             inner: MinMaxWindow::new(
                 slice,
@@ -324,7 +324,7 @@ pub fn rolling_min<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
-    params: Option<RollingFnParams>
+    _params: Option<RollingFnParams>
 ) -> ArrayRef
 where
     T: NativeType + std::iter::Sum + Zero + AddAssign + Copy + PartialOrd + Bounded + IsFloat,
@@ -362,7 +362,7 @@ fn take_max<T: NativeType + IsFloat + PartialOrd>(a: T, b: T) -> T {
 }
 
 impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNulls<'a, T> for MaxWindow<'a, T> {
-    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize, params: Option<RollingFnParams>) -> Self {
+    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize, _params: Option<RollingFnParams>) -> Self {
         Self {
             inner: MinMaxWindow::new(
                 slice,
@@ -391,7 +391,7 @@ pub fn rolling_max<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
-    params: Option<RollingFnParams>,
+    _params: Option<RollingFnParams>,
 ) -> ArrayRef
 where
     T: NativeType + std::iter::Sum + Zero + AddAssign + Copy + PartialOrd + Bounded + IsFloat,

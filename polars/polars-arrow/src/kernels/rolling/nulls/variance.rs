@@ -42,7 +42,7 @@ impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T> + Mul<Outpu
 impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T> + Mul<Output = T>>
     RollingAggWindowNulls<'a, T> for SumSquaredWindow<'a, T>
 {
-    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize, params: Option<RollingFnParams>) -> Self {
+    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize, _params: Option<RollingFnParams>) -> Self {
         let mut out = Self {
             slice,
             validity,
@@ -189,7 +189,7 @@ pub fn rolling_var<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
-    params: Option<RollingFnParams>
+    _params: Option<RollingFnParams>
 ) -> ArrayRef
 where
     T: NativeType + std::iter::Sum<T> + Zero + AddAssign + SubAssign + IsFloat + Float,

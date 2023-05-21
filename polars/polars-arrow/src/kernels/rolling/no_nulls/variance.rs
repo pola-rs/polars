@@ -17,7 +17,7 @@ pub(super) struct SumSquaredWindow<'a, T> {
 impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign + Mul<Output = T>>
     RollingAggWindowNoNulls<'a, T> for SumSquaredWindow<'a, T>
 {
-    fn new(slice: &'a [T], start: usize, end: usize, params: Option<RollingFnParams>) -> Self {
+    fn new(slice: &'a [T], start: usize, end: usize, _params: Option<RollingFnParams>) -> Self {
         let sum = slice[start..end].iter().map(|v| *v * *v).sum::<T>();
         Self {
             slice,
