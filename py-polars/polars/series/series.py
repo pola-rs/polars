@@ -4,6 +4,7 @@ import contextlib
 import math
 import os
 import typing
+import warnings
 from datetime import date, datetime, time, timedelta
 from typing import (
     TYPE_CHECKING,
@@ -91,6 +92,7 @@ from polars.utils.decorators import deprecated_alias
 from polars.utils.meta import get_index_type
 from polars.utils.various import (
     _is_generator,
+    find_stacklevel,
     is_int_sequence,
     parse_version,
     range_to_series,
@@ -1914,7 +1916,7 @@ class Series:
         s._s.rename(name)
         return s
 
-    def rename(self, name: str, *, in_place: bool = False) -> Series:
+    def rename(self, name: str, *, in_place: bool | None = None) -> Series:
         """
         Rename this Series.
 
@@ -1938,6 +1940,14 @@ class Series:
         ]
 
         """
+        if in_place is not None:
+            warnings.warn(
+                "the `in_place` parameter is deprecated and will be removed in a future"
+                " version; note that renaming is a shallow-copy operation with"
+                " essentially zero cost.",
+                category=DeprecationWarning,
+                stacklevel=find_stacklevel(),
+            )
         if in_place:
             self._s.rename(name)
             return self

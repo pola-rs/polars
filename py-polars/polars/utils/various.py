@@ -108,7 +108,7 @@ def range_to_series(
         step=rng.step,
         eager=True,
         dtype=dtype,
-    ).rename(name, in_place=True)
+    ).rename(name)
 
 
 def range_to_slice(rng: range) -> slice:
