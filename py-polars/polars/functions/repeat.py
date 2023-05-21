@@ -4,11 +4,10 @@ import contextlib
 import warnings
 from typing import TYPE_CHECKING, NoReturn, overload
 
-import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import Float64
 from polars.utils import no_default
-from polars.utils._wrap import wrap_expr
+from polars.utils._wrap import wrap_expr, wrap_s
 from polars.utils.various import find_stacklevel
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -142,26 +141,16 @@ def repeat(
             raise ValueError(
                 "`n` must be an integer when using `repeat` in an eager context."
             )
-        return pl.Series._repeat(value, n, name=name, dtype=dtype)
+        return wrap_s(plr.repeat_eager(value, n, dtype, name))
     else:
-        return _repeat_lazy(value, n, dtype=dtype, name=name)
-
-
-def _repeat_lazy(
-    value: PythonLiteral | None,
-    n: Expr | int,
-    *,
-    dtype: PolarsDataType | None = None,
-    name: str | None = None,
-) -> Expr:
-    if isinstance(n, int):
-        n = F.lit(n)
-    expr = wrap_expr(plr.repeat(value, n._pyexpr))
-    if name is not None:
-        expr = expr.alias(name)
-    if dtype is not None:
-        expr = expr.cast(dtype)
-    return expr
+        if isinstance(n, int):
+            n = F.lit(n)
+        expr = wrap_expr(plr.repeat_lazy(value, n._pyexpr))
+        if name is not None:
+            expr = expr.alias(name)
+        if dtype is not None:
+            expr = expr.cast(dtype)
+        return expr
 
 
 @overload
