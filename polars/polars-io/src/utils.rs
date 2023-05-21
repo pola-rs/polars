@@ -63,7 +63,7 @@ pub(crate) fn columns_to_projection(
                 let valid_columns: Vec<String> = schema.fields.iter().map(|f| f.name.clone()).collect();
                 polars_bail!(
                     ColumnNotFound:
-                    "unable to find {:?}; valid columns: {:?}", column, valid_columns,
+                    "unable to find column {:?}; valid columns: {:?}", column, valid_columns,
                 );
             };
             prj.push(i);
