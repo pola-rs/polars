@@ -449,7 +449,7 @@ impl ChunkTake for FixedSizeListChunked {
                         self.name(),
                         idx_array.len(),
                         &self.inner_dtype(),
-                        ca_self.width()
+                        ca_self.width(),
                     );
                 }
                 let arr = self.chunks[0].as_ref();

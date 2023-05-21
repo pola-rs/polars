@@ -1,7 +1,7 @@
 use arrow::array::{Array, BooleanArray, PrimitiveArray};
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use super::bitmap::take_bitmap_unchecked;
 
+use super::bitmap::take_bitmap_unchecked;
 use crate::index::IdxSize;
 
 // take implementation when neither values nor indices contain nulls

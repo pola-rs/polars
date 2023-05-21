@@ -1,13 +1,12 @@
-use arrow::array::{Array, PrimitiveArray};
-use arrow::compute::concatenate::concatenate;
 use arrow::array::growable::GrowableBoolean;
+use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::MutableBitmap;
+use arrow::compute::concatenate::concatenate;
 use arrow::types::NativeType;
 
 pub fn tile_primitive<T: NativeType>(arr: &PrimitiveArray<T>, n: usize) -> PrimitiveArray<T> {
     let slice = arr.values().as_slice();
     let mut out = Vec::with_capacity(slice.len() * n);
-
 
     for _ in 0..n {
         out.extend_from_slice(slice);

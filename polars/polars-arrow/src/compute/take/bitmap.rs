@@ -1,4 +1,5 @@
 use arrow::bitmap::Bitmap;
+
 use crate::index::IdxSize;
 
 pub unsafe fn take_bitmap_unchecked(values: &Bitmap, indices: &[IdxSize]) -> Bitmap {
@@ -8,4 +9,3 @@ pub unsafe fn take_bitmap_unchecked(values: &Bitmap, indices: &[IdxSize]) -> Bit
     });
     Bitmap::from_trusted_len_iter(values)
 }
-

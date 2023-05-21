@@ -1,6 +1,5 @@
 //! Special fixed-size-list utility methods
 
-use crate::chunked_array::Settings;
 use crate::prelude::*;
 
 impl FixedSizeListChunked {

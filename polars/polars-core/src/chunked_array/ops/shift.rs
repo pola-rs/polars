@@ -138,7 +138,7 @@ impl ChunkShiftFill<FixedSizeListType, Option<&Series>> for FixedSizeListChunked
                 self.name(),
                 fill_length,
                 &self.inner_dtype(),
-                0
+                0,
             ),
         };
 

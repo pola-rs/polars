@@ -335,7 +335,6 @@ impl AggList for ListChunked {
     }
 }
 
-
 #[cfg(feature = "dtype-fixed-size-list")]
 impl AggList for FixedSizeListChunked {
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {

@@ -152,25 +152,6 @@ impl FromTrustedLenIterator<Option<Series>> for ListChunked {
     }
 }
 
-#[cfg(feature = "dtype-fixed-size-list")]
-impl<Ptr> FromTrustedLenIterator<Ptr> for FixedSizeListChunked
-where
-    Ptr: Borrow<Series>,
-{
-    fn from_iter_trusted_length<I: IntoIterator<Item = Ptr>>(iter: I) -> Self {
-        let iter = iter.into_iter();
-        iter.collect()
-    }
-}
-
-#[cfg(feature = "dtype-fixed-size-list")]
-impl FromTrustedLenIterator<Option<Series>> for FixedSizeListChunked {
-    fn from_iter_trusted_length<I: IntoIterator<Item = Option<Series>>>(iter: I) -> Self {
-        let iter = iter.into_iter();
-        iter.collect()
-    }
-}
-
 impl FromTrustedLenIterator<Option<bool>> for ChunkedArray<BooleanType> {
     fn from_iter_trusted_length<I: IntoIterator<Item = Option<bool>>>(iter: I) -> Self
     where

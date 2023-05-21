@@ -3,7 +3,6 @@ use polars_arrow::array::default_arrays::FromData;
 
 #[cfg(feature = "dtype-fixed-size-list")]
 use crate::chunked_array::builder::get_list_builder;
-use crate::datatypes::AnyValue::FixedSizeList;
 use crate::prelude::*;
 use crate::series::IsSorted;
 
@@ -129,14 +128,14 @@ impl ChunkFull<&Series> for FixedSizeListChunked {
             todo!("FixedSizeList only supports numeric data types");
         };
         let width = value.len();
-        let values= value.tile(length);
+        let values = value.tile(length);
         let values = values.chunks()[0].clone();
         let data_type = ArrowDataType::FixedSizeList(
             Box::new(ArrowField::new("item", values.data_type().clone(), true)),
-            width
+            width,
         );
 
-        let arr= Box::new(FixedSizeListArray::new(data_type, values, None)) as ArrayRef;
+        let arr = Box::new(FixedSizeListArray::new(data_type, values, None)) as ArrayRef;
         unsafe { FixedSizeListChunked::from_chunks(name, vec![arr]) }
     }
 }

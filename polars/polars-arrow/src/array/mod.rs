@@ -15,6 +15,8 @@ pub mod list;
 pub mod null;
 pub mod slice;
 pub mod utf8;
+#[cfg(feature = "dtype-fixed_size_list")]
+pub mod fixed_size_list;
 
 pub use get::ArrowGetItem;
 pub use slice::*;

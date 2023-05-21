@@ -17,7 +17,7 @@ use arrow::bitmap::Bitmap;
 pub use binary::*;
 pub use boolean::*;
 #[cfg(feature = "dtype-fixed-size-list")]
-pub use fixed_size_list::*;
+pub(crate) use fixed_size_list::*;
 pub use list::*;
 pub use primitive::*;
 pub use utf8::*;

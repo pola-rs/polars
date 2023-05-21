@@ -43,10 +43,10 @@ mod set;
 mod shift;
 pub mod sort;
 pub(crate) mod take;
+mod tile;
 pub(crate) mod unique;
 #[cfg(feature = "zip_with")]
 pub mod zip;
-mod tile;
 
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
@@ -558,9 +558,9 @@ pub trait ChunkFullNull {
 }
 
 /// Reverse a ChunkedArray<T>
-pub trait ChunkReverse<T: PolarsDataType> {
+pub trait ChunkReverse {
     /// Return a reversed version of this array.
-    fn reverse(&self) -> ChunkedArray<T>;
+    fn reverse(&self) -> Self;
 }
 
 /// Filter values by a boolean mask.
@@ -659,9 +659,12 @@ impl ChunkExpandAtIndex<FixedSizeListType> for FixedSizeListChunked {
                 ca.to_physical(self.inner_dtype());
                 ca
             }
-            None => {
-                FixedSizeListChunked::full_null_with_dtype(self.name(), length, &self.inner_dtype(), 0)
-            }
+            None => FixedSizeListChunked::full_null_with_dtype(
+                self.name(),
+                length,
+                &self.inner_dtype(),
+                0,
+            ),
         }
     }
 }

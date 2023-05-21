@@ -252,7 +252,6 @@ impl ExplodeByOffsets for ListChunked {
     }
 }
 
-// TODO: should this be removed because a fixed size list doesn't have offsets?
 #[cfg(feature = "dtype-fixed-size-list")]
 impl ExplodeByOffsets for FixedSizeListChunked {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {

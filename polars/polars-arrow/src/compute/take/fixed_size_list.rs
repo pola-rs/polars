@@ -1,17 +1,18 @@
-use arrow::array::{Array, FixedSizeListArray, PrimitiveArray};
 use arrow::array::growable::{Growable, GrowableFixedSizeList};
+use arrow::array::{Array, FixedSizeListArray, PrimitiveArray};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::{DataType, PhysicalType};
 use arrow::types::NativeType;
+
 use crate::index::{IdxArr, IdxSize};
 use crate::prelude::ArrayRef;
 use crate::utils::with_match_primitive_type;
 
-pub unsafe fn take_unchecked(
-    values: &FixedSizeListArray,
-    indices: &IdxArr,
-) -> FixedSizeListArray {
-    if let (PhysicalType::Primitive(primitive), 0) = (values.values().data_type().to_physical_type(), indices.null_count()) {
+pub unsafe fn take_unchecked(values: &FixedSizeListArray, indices: &IdxArr) -> FixedSizeListArray {
+    if let (PhysicalType::Primitive(primitive), 0) = (
+        values.values().data_type().to_physical_type(),
+        indices.null_count(),
+    ) {
         let idx = indices.values().as_slice();
         let child_values = values.values();
         let DataType::FixedSizeList(_, width) = values.data_type() else {unreachable!()};
@@ -70,7 +71,12 @@ unsafe fn take_bitmap_unchecked(bitmap: &Bitmap, idx: &[IdxSize], width: usize) 
     out.into()
 }
 
-unsafe fn take_unchecked_primitive<T: NativeType>(parent: &FixedSizeListArray, list_values: &PrimitiveArray<T>, idx: &[IdxSize], width: usize) -> FixedSizeListArray {
+unsafe fn take_unchecked_primitive<T: NativeType>(
+    parent: &FixedSizeListArray,
+    list_values: &PrimitiveArray<T>,
+    idx: &[IdxSize],
+    width: usize,
+) -> FixedSizeListArray {
     let values = list_values.values().as_slice();
     let mut out = Vec::with_capacity(idx.len() * width);
 
@@ -86,9 +92,16 @@ unsafe fn take_unchecked_primitive<T: NativeType>(parent: &FixedSizeListArray, l
     } else {
         None
     };
-    let list_values = Box::new(PrimitiveArray::new(list_values.data_type().clone(), out.into(), validity)) as ArrayRef;
+    let list_values = Box::new(PrimitiveArray::new(
+        list_values.data_type().clone(),
+        out.into(),
+        validity,
+    )) as ArrayRef;
     let validity = if parent.null_count() > 0 {
-        Some(super::bitmap::take_bitmap_unchecked(parent.validity().unwrap(), idx))
+        Some(super::bitmap::take_bitmap_unchecked(
+            parent.validity().unwrap(),
+            idx,
+        ))
     } else {
         None
     };

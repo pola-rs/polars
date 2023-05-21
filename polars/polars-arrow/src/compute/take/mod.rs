@@ -1,7 +1,7 @@
+pub mod bitmap;
 mod boolean;
 #[cfg(feature = "dtype-fixed_size_list")]
 mod fixed_size_list;
-pub mod bitmap;
 
 use arrow::array::*;
 use arrow::bitmap::MutableBitmap;

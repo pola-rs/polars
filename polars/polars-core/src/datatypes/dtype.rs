@@ -1,5 +1,3 @@
-use comfy_table::Width::Fixed;
-use crate::datatypes::AnyValue::FixedSizeList;
 use super::*;
 
 pub type TimeZone = String;
