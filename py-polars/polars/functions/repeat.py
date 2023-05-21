@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import contextlib
+import warnings
 from typing import TYPE_CHECKING, NoReturn, overload
 
 import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import Float64
+from polars.utils import no_default
 from polars.utils._wrap import wrap_expr
+from polars.utils.various import find_stacklevel
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -17,6 +20,7 @@ if TYPE_CHECKING:
 
     from polars import Expr, Series
     from polars.type_aliases import PolarsDataType, PythonLiteral
+    from polars.utils import NoDefault
 
     if sys.version_info >= (3, 8):
         from typing import Literal
@@ -66,7 +70,7 @@ def repeat(
     n: Expr | int,
     *,
     dtype: PolarsDataType | None = ...,
-    name: str | None,
+    name: str | None = ...,
     eager: bool,
 ) -> Expr | Series:
     ...
@@ -160,13 +164,46 @@ def _repeat_lazy(
     return expr
 
 
+@overload
+def ones(
+    n: int,
+    dtype: PolarsDataType = ...,
+    *,
+    name: str | None = ...,
+    eager: Literal[False],
+) -> Expr:
+    ...
+
+
+@overload
+def ones(
+    n: int,
+    dtype: PolarsDataType = ...,
+    *,
+    name: str | None = ...,
+    eager: Literal[True] = ...,
+) -> Series:
+    ...
+
+
+@overload
+def ones(
+    n: int,
+    dtype: PolarsDataType = ...,
+    *,
+    name: str | None = ...,
+    eager: bool,
+) -> Expr | Series:
+    ...
+
+
 def ones(
     n: int,
     dtype: PolarsDataType = Float64,
     *,
     name: str | None = None,
-    eager: bool = True,
-) -> Series:
+    eager: bool | NoDefault = no_default,
+) -> Expr | Series:
     """
     Construct a column of length `n` filled with ones.
 
@@ -181,7 +218,7 @@ def ones(
     name
         Name of the resulting column.
     eager
-        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
+        Evaluate immediately and return a ``Series``. If set to ``False``,
         return an expression instead.
 
     Notes
@@ -206,7 +243,50 @@ def ones(
     ]
 
     """
+    if eager is no_default:
+        warnings.warn(
+            "In a future version, the default behaviour for `ones` will change from `eager=True` to `eager=False`. "
+            "To silence this warning, please:\n"
+            "- set `eager=False` to opt in to the new default behaviour, or\n"
+            "- set `eager=True` to retain the old one.",
+            FutureWarning,
+            stacklevel=find_stacklevel(),
+        )
+        eager = True
     return repeat(1.0, n=n, dtype=dtype, name=name, eager=eager)
+
+
+@overload
+def zeros(
+    n: int,
+    dtype: PolarsDataType = ...,
+    *,
+    name: str | None = ...,
+    eager: Literal[False],
+) -> Expr:
+    ...
+
+
+@overload
+def zeros(
+    n: int,
+    dtype: PolarsDataType = ...,
+    *,
+    name: str | None = ...,
+    eager: Literal[True] = ...,
+) -> Series:
+    ...
+
+
+@overload
+def zeros(
+    n: int,
+    dtype: PolarsDataType = ...,
+    *,
+    name: str | None = ...,
+    eager: bool,
+) -> Expr | Series:
+    ...
 
 
 def zeros(
@@ -214,8 +294,8 @@ def zeros(
     dtype: PolarsDataType = Float64,
     *,
     name: str | None = None,
-    eager: bool = True,
-) -> Series:
+    eager: bool | NoDefault = no_default,
+) -> Expr | Series:
     """
     Construct a column of length `n` filled with zeros.
 
@@ -230,7 +310,7 @@ def zeros(
     name
         Name of the resulting column.
     eager
-        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
+        Evaluate immediately and return a ``Series``. If set to ``False``,
         return an expression instead.
 
     Notes
@@ -255,4 +335,14 @@ def zeros(
     ]
 
     """
+    if eager is no_default:
+        warnings.warn(
+            "In a future version, the default behaviour for `ones` will change from `eager=True` to `eager=False`. "
+            "To silence this warning, please:\n"
+            "- set `eager=False` to opt in to the new default behaviour, or\n"
+            "- set `eager=True` to retain the old one.",
+            FutureWarning,
+            stacklevel=find_stacklevel(),
+        )
+        eager = True
     return repeat(0.0, n=n, dtype=dtype, name=name, eager=eager)

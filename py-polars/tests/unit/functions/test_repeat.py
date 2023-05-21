@@ -94,3 +94,21 @@ def test_repeat_eager_dtype() -> None:
     s = pl.repeat(1, n=3, eager=True, dtype=pl.Int8)
     assert s.dtype == pl.Int8
     assert s.len() == 3
+
+
+def test_ones_zeros_eager() -> None:
+    ones = pl.ones(5, eager=True)
+    assert ones.dtype == pl.Float64
+    assert ones.to_list() == [1.0, 1.0, 1.0, 1.0, 1.0]
+
+    ones = pl.ones(3, dtype=pl.UInt8, eager=True)
+    assert ones.dtype == pl.UInt8
+    assert ones.to_list() == [1, 1, 1]
+
+    zeros = pl.zeros(5, eager=True)
+    assert zeros.dtype == pl.Float64
+    assert zeros.to_list() == [0.0, 0.0, 0.0, 0.0, 0.0]
+
+    zeros = pl.zeros(3, dtype=pl.UInt8, eager=True)
+    assert zeros.dtype == pl.UInt8
+    assert zeros.to_list() == [0, 0, 0]

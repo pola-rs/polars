@@ -384,24 +384,6 @@ def test_coalesce() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_ones_zeros() -> None:
-    ones = pl.ones(5)
-    assert ones.dtype == pl.Float64
-    assert ones.to_list() == [1.0, 1.0, 1.0, 1.0, 1.0]
-
-    ones = pl.ones(3, dtype=pl.UInt8)
-    assert ones.dtype == pl.UInt8
-    assert ones.to_list() == [1, 1, 1]
-
-    zeros = pl.zeros(5)
-    assert zeros.dtype == pl.Float64
-    assert zeros.to_list() == [0.0, 0.0, 0.0, 0.0, 0.0]
-
-    zeros = pl.zeros(3, dtype=pl.UInt8)
-    assert zeros.dtype == pl.UInt8
-    assert zeros.to_list() == [0, 0, 0]
-
-
 def test_overflow_diff() -> None:
     df = pl.DataFrame(
         {
