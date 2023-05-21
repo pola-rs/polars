@@ -63,7 +63,7 @@ pub unsafe fn take_unchecked(values: &FixedSizeListArray, indices: &IdxArr) -> F
 
 unsafe fn take_bitmap_unchecked(bitmap: &Bitmap, idx: &[IdxSize], width: usize) -> Bitmap {
     let mut out = MutableBitmap::with_capacity(idx.len() * width);
-    let (slice, offset, len) = bitmap.as_slice();
+    let (slice, offset, _len) = bitmap.as_slice();
 
     for &idx in idx {
         out.extend_from_slice_unchecked(slice, offset + idx as usize * width, width)

@@ -1,6 +1,5 @@
-use arrow::array::{Array, FixedSizeListArray, new_null_array, NullArray};
+use arrow::array::{FixedSizeListArray};
 use arrow::bitmap::MutableBitmap;
-use arrow::compute::concatenate;
 use arrow::datatypes::DataType;
 use crate::prelude::ArrayRef;
 use polars_error::PolarsResult;
