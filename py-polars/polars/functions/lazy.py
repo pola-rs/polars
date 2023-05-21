@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import warnings
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
+from typing import TYPE_CHECKING, Any, Callable, Iterable, NoReturn, Sequence, overload
 
 import polars._reexport as pl
 from polars.datatypes import (
@@ -3125,7 +3125,19 @@ def repeat(
 @overload
 def repeat(
     value: PythonLiteral | None,
-    n: Expr | int,
+    n: Expr,
+    *,
+    eager: Literal[True],
+    name: str | None = ...,
+    dtype: PolarsDataType | None = ...,
+) -> NoReturn:
+    ...
+
+
+@overload
+def repeat(
+    value: PythonLiteral | None,
+    n: int,
     *,
     eager: Literal[True],
     name: str | None = ...,
@@ -3155,7 +3167,7 @@ def repeat(
     dtype: PolarsDataType | None = None,
 ) -> Expr | Series:
     """
-    Repeat a single value n times.
+    Construct a column with the given value repeated `n` times.
 
     Parameters
     ----------
@@ -3170,23 +3182,40 @@ def repeat(
         Name of the resulting column.
     dtype
         Data type of the resulting column. If set to ``None`` (default), data type is
-        inferred from the given value. Integer values default to Int32, unless Int64 is
-        required to fit the given value.
+        inferred from the given value. Defaults to Int32 for integer values, unless
+        Int64 is required to fit the given value. Defaults to Float64 for float values.
 
     Examples
     --------
-    >>> pl.repeat(1, n=3, eager=True, name="ones")
+    Construct a column with a repeated value in a lazy context.
+
+    >>> pl.select(pl.repeat("z", n=3)).to_series()
     shape: (3,)
-    Series: 'ones' [i32]
+    Series: 'literal' [str]
     [
-            1
-            1
-            1
+            "z"
+            "z"
+            "z"
+    ]
+
+    Generate a Series directly by setting ``eager=True``.
+
+    >>> pl.repeat(3, n=3, eager=True, name="three", dtype=pl.Int8)
+    shape: (3,)
+    Series: 'three' [i8]
+    [
+            3
+            3
+            3
     ]
 
     """
     if eager:
-        return pl.Series._repeat(value, n, name=name, dtype=dtype)  # type: ignore[arg-type]
+        if not isinstance(n, int):
+            raise ValueError(
+                "`n` must be an integer when using `repeat` in an eager context."
+            )
+        return pl.Series._repeat(value, n, name=name, dtype=dtype)
     else:
         if isinstance(n, int):
             n = lit(n)
