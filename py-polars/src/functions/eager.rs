@@ -140,10 +140,7 @@ pub fn repeat_eager(
             _ => value.dtype(),
         },
     };
-    let name = match name {
-        Some(name) => name,
-        None => "",
-    };
+    let name = name.unwrap_or("");
 
     Ok(Series::new(name, &[value])
         .cast(&dtype)
