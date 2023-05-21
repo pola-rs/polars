@@ -94,12 +94,14 @@ class SQLContext(Generic[FrameType]):
         frames
             A ``{name:lazyframe, ...}`` mapping.
         register_globals
-            Register all``LazyFrame`` objects found in the globals, automatically
+            Register all ``LazyFrame`` objects found in the globals, automatically
             mapping their variable name to a table name. If given an integer then
             only the most recent "n" frames found will be registered.
         eager_execution
-            Always execute queries in this context eagerly (returning a `` DataFrame``
-            instead of ``LazyFrame``).
+            Return query execution results as ``DataFrame`` instead of ``LazyFrame``.
+            (Note that the query itself is always executed in lazy-mode; this
+            parameter impacts whether :meth:`execute` returns an eager or lazy
+            result frame).
         **named_frames
             Named ``LazyFrame`` objects, provided as kwargs.
 
@@ -137,7 +139,7 @@ class SQLContext(Generic[FrameType]):
             self.register_many(frames, **named_frames)
 
     def __enter__(self) -> SQLContext[FrameType]:
-        """Note currently registered tables on scope entry; supports nested scopes."""
+        """Track currently registered tables on scope entry; supports nested scopes."""
         self._tables_scope_stack = getattr(self, "_tables_scope_stack", [])
         self._tables_scope_stack.append(set(self.tables()))
         return self
@@ -148,7 +150,14 @@ class SQLContext(Generic[FrameType]):
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        """Unregister any tables created within the given scope on exit."""
+        """
+        Unregister any tables created within the given scope on context exit.
+
+        See Also
+        --------
+        unregister
+
+        """
         self.unregister(
             names=(set(self.tables()) - self._tables_scope_stack.pop()),
         )
@@ -207,7 +216,8 @@ class SQLContext(Generic[FrameType]):
         eager
             Apply the query eagerly, returning ``DataFrame`` instead of ``LazyFrame``.
             If unset, the value of the init-time parameter "eager_execution" will be
-            used (default is False).
+            used. (Note that the query itself is always executed in lazy-mode; this
+            parameter only impacts the type of the returned frame).
 
         Examples
         --------
@@ -302,6 +312,11 @@ class SQLContext(Generic[FrameType]):
         │ world │
         └───────┘
 
+        See Also
+        --------
+        register_globals
+        register_many
+
         """
         if isinstance(frame, DataFrame):
             frame = frame.lazy()
@@ -346,6 +361,11 @@ class SQLContext(Generic[FrameType]):
         │ 1   ┆ x    ┆ null │
         └─────┴──────┴──────┘
 
+        See Also
+        --------
+        register
+        register_many
+
         """
         return self.register_many(
             frames=_get_stack_locals(of_type=(DataFrame, LazyFrame), n_objects=n)
@@ -383,6 +403,11 @@ class SQLContext(Generic[FrameType]):
 
         >>> ctx.register_many(tbl3=lf3, tbl4=lf4).tables()
         ['tbl1', 'tbl2', 'tbl3', 'tbl4']
+
+        See Also
+        --------
+        register
+        register_globals
 
         """
         frames = dict(frames or {})
@@ -453,11 +478,35 @@ class SQLContext(Generic[FrameType]):
         """
         Return a list of the registered table names.
 
+        Notes
+        -----
+        The :meth:`tables` method will return the same values as the
+        "SHOW TABLES" SQL statement, but as a list instead of a frame.
+
+        Executing as SQL:
+
+        >>> frame_data = pl.DataFrame({"hello": ["world"]})
+        >>> ctx = pl.SQLContext(hello_world=frame_data)
+        >>> ctx.execute("SHOW TABLES", eager=True)
+        shape: (1, 1)
+        ┌─────────────┐
+        │ name        │
+        │ ---         │
+        │ str         │
+        ╞═════════════╡
+        │ hello_world │
+        └─────────────┘
+
+        Calling the method:
+
+        >>> ctx.tables()
+        ['hello_world']
+
         Examples
         --------
-        >>> hello_data = pl.DataFrame({"hello": ["world"]})
-        >>> foo_bar = pl.DataFrame({"foo": ["bar", "baz"]})
-        >>> ctx = pl.SQLContext(register_globals=True)
+        >>> df1 = pl.DataFrame({"hello": ["world"]})
+        >>> df2 = pl.DataFrame({"foo": ["bar", "baz"]})
+        >>> ctx = pl.SQLContext(hello_data=df1, foo_bar=df2)
         >>> ctx.tables()
         ['foo_bar', 'hello_data']
 
