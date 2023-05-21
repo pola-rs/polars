@@ -1031,7 +1031,7 @@ def test_rolling() -> None:
     assert a.rolling_var(2).to_list()[1] == pytest.approx(0.5)
     assert a.rolling_std(2, ddof=0).to_list()[1] == pytest.approx(0.5)
     assert a.rolling_var(2, ddof=0).to_list()[1] == pytest.approx(0.25)
-    
+
     assert_series_equal(
         a.rolling_median(4), pl.Series("a", [None, None, None, 2, 2], dtype=Float64)
     )

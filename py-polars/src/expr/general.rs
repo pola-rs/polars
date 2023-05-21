@@ -752,7 +752,7 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
-            ..Default::default(),
+            ..Default::default()
         };
         self.inner.clone().rolling_sum(options).into()
     }
@@ -774,7 +774,7 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
-            ..Default::default(),
+            ..Default::default()
         };
         self.inner.clone().rolling_min(options).into()
     }
@@ -796,7 +796,7 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
-            ..Default::default(),
+            ..Default::default()
         };
         self.inner.clone().rolling_max(options).into()
     }
@@ -818,7 +818,7 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
-            ..Default::default(),
+            ..Default::default()
         };
 
         self.inner.clone().rolling_mean(options).into()
@@ -842,7 +842,7 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
-            fn_params: Some(rolling::RollingFnParams{RollingVarParams{ddof}}),
+            fn_params: Some(RollingFnParams::RollingVarParams{ddof}),
         };
 
         self.inner.clone().rolling_std(options).into()
@@ -866,7 +866,7 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
-            fn_params: Some(rolling::RollingFnParams{RollingVarParams{ddof}}),
+            fn_params: Some(RollingFnParams::RollingVarParams{ddof}),
         };
 
         self.inner.clone().rolling_var(options).into()
@@ -889,7 +889,7 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
-            ..Default::default(),
+            ..Default::default()
         };
         self.inner.clone().rolling_median(options).into()
     }
@@ -914,7 +914,7 @@ impl PyExpr {
             center,
             by,
             closed_window: closed.map(|c| c.0),
-            ..Default::default(),
+            ..Default::default()
         };
 
         self.inner
