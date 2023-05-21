@@ -477,6 +477,12 @@ def test_repeat() -> None:
     assert s.len() == 0
 
 
+def test_repeat_dtype() -> None:
+    s = pl.select(pl.repeat(1, n=3, dtype=pl.Int8)).to_series()
+    assert s.dtype == pl.Int8
+    assert s.len() == 3
+
+
 def test_min_alias_for_series_min() -> None:
     s = pl.Series([1, 2, 3])
     assert pl.min(s) == s.min()
