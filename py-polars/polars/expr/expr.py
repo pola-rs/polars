@@ -5093,6 +5093,7 @@ class Expr:
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
+        ddof: int = 1
     ) -> Self:
         """
         Compute a rolling standard deviation.
@@ -5191,7 +5192,7 @@ class Expr:
         )
         return self._from_pyexpr(
             self._pyexpr.rolling_std(
-                window_size, weights, min_periods, center, by, closed
+                window_size, weights, min_periods, center, by, closed, ddof
             )
         )
 
@@ -5204,6 +5205,7 @@ class Expr:
         center: bool = False,
         by: str | None = None,
         closed: ClosedInterval = "left",
+        ddof: int = 1
     ) -> Self:
         """
         Compute a rolling variance.
@@ -5302,7 +5304,7 @@ class Expr:
         )
         return self._from_pyexpr(
             self._pyexpr.rolling_var(
-                window_size, weights, min_periods, center, by, closed
+                window_size, weights, min_periods, center, by, closed, ddof,
             )
         )
 
