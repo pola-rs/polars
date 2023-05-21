@@ -42,7 +42,7 @@ impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T> + Mul<Outpu
 impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T> + Mul<Output = T>>
     RollingAggWindowNulls<'a, T> for SumSquaredWindow<'a, T>
 {
-    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize) -> Self {
+    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize, params: Option<RollingFnParams>) -> Self {
         let mut out = Self {
             slice,
             validity,
@@ -127,6 +127,7 @@ impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T> + Mul<Outpu
 pub struct VarWindow<'a, T> {
     mean: MeanWindow<'a, T>,
     sum_of_squares: SumSquaredWindow<'a, T>,
+    ddof: u8
 }
 
 impl<
@@ -139,32 +140,42 @@ impl<
             + Div<Output = T>
             + NumCast
             + One
+            + Zero
+            + PartialOrd
             + Add<Output = T>
             + Sub<Output = T>,
     > RollingAggWindowNulls<'a, T> for VarWindow<'a, T>
 {
-    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize) -> Self {
+    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize, params: Option<RollingFnParams>) -> Self {
         Self {
-            mean: MeanWindow::new(slice, validity, start, end),
-            sum_of_squares: SumSquaredWindow::new(slice, validity, start, end),
+            mean: MeanWindow::new(slice, validity, start, end, None),
+            sum_of_squares: SumSquaredWindow::new(slice, validity, start, end, None),
+            ddof: match params {
+                None => 1,
+                Some(RollingFnParams::RollingVarParams{ddof}) => ddof,
+                _ => panic!("Called RollingVarWindow with wrong parameters"),
+            },
         }
     }
 
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
         let sum_of_squares = self.sum_of_squares.update(start, end)?;
         let null_count = self.sum_of_squares.null_count;
-        let count = NumCast::from(end - start - null_count).unwrap();
+        let count: T = NumCast::from(end - start - null_count).unwrap();
 
-        let mean_of_squares = sum_of_squares / count;
         let mean = self.mean.update(start, end)?;
+        let ddof = NumCast::from(self.ddof).unwrap();
+        // If ddof == 1, Bessel's correction for an unbiased estimator
+        let denom = count - ddof;
 
-        if count == T::one() {
+        if count == T::zero() {
+            None
+        } else if count == T::one() || count <= ddof{
             NumCast::from(0)
         } else {
-            let var = mean_of_squares - mean * mean;
+            let var = (sum_of_squares - count * mean * mean) / denom;
 
-            // apply Bessel's correction
-            Some(var / (count - T::one()) * count)
+            Some(var)
         }
     }
     fn is_valid(&self, min_periods: usize) -> bool {
@@ -178,6 +189,7 @@ pub fn rolling_var<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
+    params: Option<RollingFnParams>
 ) -> ArrayRef
 where
     T: NativeType + std::iter::Sum<T> + Zero + AddAssign + SubAssign + IsFloat + Float,
@@ -185,23 +197,15 @@ where
     if weights.is_some() {
         panic!("weights not yet supported on array with null values")
     }
-    if center {
-        rolling_apply_agg_window::<VarWindow<_>, _, _>(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
-            window_size,
-            min_periods,
-            det_offsets_center,
-        )
-    } else {
-        rolling_apply_agg_window::<VarWindow<_>, _, _>(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
-            window_size,
-            min_periods,
-            det_offsets,
-        )
-    }
+    let offsets_fn = if center { det_offsets_center } else { det_offsets };
+    rolling_apply_agg_window::<VarWindow<_>, _, _>(
+        arr.values().as_slice(),
+        arr.validity().as_ref().unwrap(),
+        window_size,
+        min_periods,
+        offsets_fn,
+        None
+    )
 }
 
 pub struct StdWindow<'a, T> {
@@ -218,14 +222,16 @@ impl<
             + Div<Output = T>
             + NumCast
             + One
+            + Zero
+            + PartialOrd
             + Add<Output = T>
             + Sub<Output = T>
             + Pow<T, Output = T>,
     > RollingAggWindowNulls<'a, T> for StdWindow<'a, T>
 {
-    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize) -> Self {
+    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize, params: Option<RollingFnParams>) -> Self {
         Self {
-            var: VarWindow::new(slice, validity, start, end),
+            var: VarWindow::new(slice, validity, start, end, params),
         }
     }
 
@@ -245,6 +251,7 @@ pub fn rolling_std<T>(
     min_periods: usize,
     center: bool,
     weights: Option<&[f64]>,
+    params: Option<RollingFnParams>
 ) -> ArrayRef
 where
     T: NativeType
@@ -259,21 +266,13 @@ where
     if weights.is_some() {
         panic!("weights not yet supported on array with null values")
     }
-    if center {
-        rolling_apply_agg_window::<StdWindow<_>, _, _>(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
-            window_size,
-            min_periods,
-            det_offsets_center,
-        )
-    } else {
-        rolling_apply_agg_window::<StdWindow<_>, _, _>(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
-            window_size,
-            min_periods,
-            det_offsets,
-        )
-    }
+    let offsets_fn = if center { det_offsets_center } else { det_offsets };
+    rolling_apply_agg_window::<StdWindow<_>, _, _>(
+        arr.values().as_slice(),
+        arr.validity().as_ref().unwrap(),
+        window_size,
+        min_periods,
+        offsets_fn,
+        params
+    )
 }

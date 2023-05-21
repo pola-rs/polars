@@ -1242,6 +1242,7 @@ impl Expr {
                         tu: Some(tu),
                         tz: tz.as_ref(),
                         closed_window: options.closed_window,
+                        fn_params: options.fn_params,
                     };
 
                     rolling_fn(s, options).map(Some)

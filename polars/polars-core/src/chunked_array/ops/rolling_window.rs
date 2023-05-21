@@ -9,6 +9,7 @@ pub struct RollingOptionsFixedWindow {
     pub weights: Option<Vec<f64>>,
     /// Set the labels at the center of the window.
     pub center: bool,
+    pub fn_params: Option<polars_arrow::kernels::rolling::RollingFnParams>,
 }
 
 impl Default for RollingOptionsFixedWindow {
@@ -18,6 +19,7 @@ impl Default for RollingOptionsFixedWindow {
             min_periods: 1,
             weights: None,
             center: false,
+            fn_params: None
         }
     }
 }

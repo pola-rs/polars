@@ -1,6 +1,7 @@
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
 use polars_arrow::kernels::rolling::no_nulls::{self, RollingAggWindowNoNulls};
+use polars_arrow::kernels::rolling::{RollingFnParams};
 use polars_core::export::num;
 
 use super::*;
@@ -9,6 +10,7 @@ use super::*;
 pub(crate) fn rolling_apply_agg_window<'a, Agg, T, O>(
     values: &'a [T],
     offsets: O,
+    params: Option<RollingFnParams>,
 ) -> PolarsResult<ArrayRef>
 where
     // items (offset, len) -> so offsets are offset, offset + len
@@ -25,7 +27,7 @@ where
         )));
     }
     // start with a dummy index, will be overwritten on first iteration.
-    let mut agg_window = Agg::new(values, 0, 0);
+    let mut agg_window = Agg::new(values, 0, 0, params);
 
     let out = offsets
         .map(|result| {
@@ -54,6 +56,7 @@ pub(crate) fn rolling_min<T>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
+    params: Option<RollingFnParams>,
 ) -> PolarsResult<ArrayRef>
 where
     T: NativeType + PartialOrd + IsFloat + Bounded + NumCast + Mul<Output = T>,
@@ -70,7 +73,7 @@ where
         ),
         _ => groupby_values_iter(period, offset, time, closed_window, tu, None),
     };
-    rolling_apply_agg_window::<no_nulls::MinWindow<_>, _, _>(values, offset_iter)
+    rolling_apply_agg_window::<no_nulls::MinWindow<_>, _, _>(values, offset_iter, None)
 }
 
 pub(crate) fn rolling_max<T>(
@@ -81,6 +84,7 @@ pub(crate) fn rolling_max<T>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
+    params: Option<RollingFnParams>,
 ) -> PolarsResult<ArrayRef>
 where
     T: NativeType + PartialOrd + IsFloat + Bounded + NumCast + Mul<Output = T>,
@@ -97,7 +101,7 @@ where
         ),
         _ => groupby_values_iter(period, offset, time, closed_window, tu, None),
     };
-    rolling_apply_agg_window::<no_nulls::MaxWindow<_>, _, _>(values, offset_iter)
+    rolling_apply_agg_window::<no_nulls::MaxWindow<_>, _, _>(values, offset_iter, None)
 }
 
 pub(crate) fn rolling_sum<T>(
@@ -108,6 +112,7 @@ pub(crate) fn rolling_sum<T>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
+    params: Option<RollingFnParams>,
 ) -> PolarsResult<ArrayRef>
 where
     T: NativeType + std::iter::Sum + NumCast + Mul<Output = T> + AddAssign + SubAssign + IsFloat,
@@ -124,7 +129,7 @@ where
         ),
         _ => groupby_values_iter(period, offset, time, closed_window, tu, None),
     };
-    rolling_apply_agg_window::<no_nulls::SumWindow<_>, _, _>(values, offset_iter)
+    rolling_apply_agg_window::<no_nulls::SumWindow<_>, _, _>(values, offset_iter, None)
 }
 
 pub(crate) fn rolling_mean<T>(
@@ -135,6 +140,7 @@ pub(crate) fn rolling_mean<T>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
+    params: Option<RollingFnParams>,
 ) -> PolarsResult<ArrayRef>
 where
     T: NativeType + Float + std::iter::Sum<T> + SubAssign + AddAssign + IsFloat,
@@ -151,7 +157,7 @@ where
         ),
         _ => groupby_values_iter(period, offset, time, closed_window, tu, None),
     };
-    rolling_apply_agg_window::<no_nulls::MeanWindow<_>, _, _>(values, offset_iter)
+    rolling_apply_agg_window::<no_nulls::MeanWindow<_>, _, _>(values, offset_iter, None)
 }
 
 pub(crate) fn rolling_var<T>(
@@ -162,6 +168,7 @@ pub(crate) fn rolling_var<T>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
+    params: Option<RollingFnParams>,
 ) -> PolarsResult<ArrayRef>
 where
     T: NativeType + Float + std::iter::Sum<T> + SubAssign + AddAssign + IsFloat,
@@ -178,7 +185,7 @@ where
         ),
         _ => groupby_values_iter(period, offset, time, closed_window, tu, None),
     };
-    rolling_apply_agg_window::<no_nulls::VarWindow<_>, _, _>(values, offset_iter)
+    rolling_apply_agg_window::<no_nulls::VarWindow<_>, _, _>(values, offset_iter, params)
 }
 
 pub(crate) fn rolling_std<T>(
@@ -189,6 +196,7 @@ pub(crate) fn rolling_std<T>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
+    params: Option<RollingFnParams>,
 ) -> PolarsResult<ArrayRef>
 where
     T: NativeType
@@ -215,5 +223,5 @@ where
         ),
         _ => groupby_values_iter(period, offset, time, closed_window, tu, None),
     };
-    rolling_apply_agg_window::<no_nulls::StdWindow<_>, _, _>(values, offset_iter)
+    rolling_apply_agg_window::<no_nulls::StdWindow<_>, _, _>(values, offset_iter, params)
 }

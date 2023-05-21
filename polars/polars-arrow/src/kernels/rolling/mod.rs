@@ -133,3 +133,9 @@ where
         unsafe { buf.sort_by(|a, b| a.partial_cmp(b).unwrap_unchecked()) };
     }
 }
+
+//Parameters allowed for rolling operations.
+#[derive(Clone, Copy)]
+pub enum RollingFnParams {
+    RollingVarParams { ddof: u8 },
+}
