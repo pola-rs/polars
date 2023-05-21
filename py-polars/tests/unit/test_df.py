@@ -1026,18 +1026,25 @@ def test_column_names() -> None:
 
 def test_init_series_edge_cases() -> None:
     # confirm that we don't modify the name of the input series in-place
-    s = pl.Series("X", [1, 2, 3])
-    df1 = pl.DataFrame({"A": s}, schema_overrides={"A": pl.UInt8})
-    assert s.name == "X"
+    s1 = pl.Series("X", [1, 2, 3])
+    df1 = pl.DataFrame({"A": s1}, schema_overrides={"A": pl.UInt8})
+    assert s1.name == "X"
     assert df1["A"].name == "A"
 
     # init same series object under different names
-    df2 = pl.DataFrame({"A": s, "B": s})
+    df2 = pl.DataFrame({"A": s1, "B": s1})
     assert df2.rows(named=True) == [
         {"A": 1, "B": 1},
         {"A": 2, "B": 2},
         {"A": 3, "B": 3},
     ]
+
+    # empty series names should not be overwritten
+    s2 = pl.Series([1, 2, 3])
+    s3 = pl.Series([2, 3, 4])
+    df3 = pl.DataFrame([s2, s3])
+    assert s2.name == s3.name == ""
+    assert df3.columns == ["column_0", "column_1"]
 
 
 def test_head_groupby() -> None:
