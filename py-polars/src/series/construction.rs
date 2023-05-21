@@ -236,12 +236,32 @@ impl PySeries {
     fn repeat(
         value: Wrap<AnyValue>,
         n: usize,
-        name: &str,
-        dtype: Wrap<DataType>,
+        name: Option<&str>,
+        dtype: Option<Wrap<DataType>>,
     ) -> PyResult<Self> {
-        let av = value.0;
-        Ok(Series::new(name, &[av])
-            .cast(&dtype.0)
+        let value = value.0;
+        let name = match name {
+            Some(name) => name,
+            None => "",
+        };
+        let dtype = match dtype.map(|wrap| wrap.0) {
+            Some(dtype) => dtype,
+            None => match value.dtype() {
+                // Integer inputs that fit in Int32 are parsed as such
+                DataType::Int64 => {
+                    let int_value: i64 = value.extract().unwrap();
+                    if int_value >= i32::MIN as i64 && int_value <= i32::MAX as i64 {
+                        DataType::Int32
+                    } else {
+                        DataType::Int64
+                    }
+                }
+                _ => value.dtype(),
+            },
+        };
+
+        Ok(Series::new(name, &[value])
+            .cast(&dtype)
             .map_err(PyPolarsErr::from)?
             .new_from_index(0, n)
             .into())
