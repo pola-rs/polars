@@ -555,6 +555,7 @@ impl PyExpr {
             weights,
             min_periods,
             center,
+            ..Default::default()
         };
         // get the pypolars module
         // do the import outside of the function.
