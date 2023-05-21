@@ -243,7 +243,7 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                 let convert = utils.getattr("_to_python_time").unwrap();
                 convert.call1((v,)).unwrap().into_py(py)
             }
-            AnyValue::List(v) => PySeries::new(v).to_list(),
+            AnyValue::FixedSizeList(v, _) | AnyValue::List(v) => PySeries::new(v).to_list(),
             ref av @ AnyValue::Struct(_, _, flds) => struct_dict(py, av._iter_struct_av(), flds),
             AnyValue::StructOwned(payload) => struct_dict(py, payload.0.into_iter(), &payload.1),
             #[cfg(feature = "object")]
@@ -304,7 +304,6 @@ impl ToPyObject for Wrap<DataType> {
             DataType::Utf8 => pl.getattr("Utf8").unwrap().into(),
             DataType::Binary => pl.getattr("Binary").unwrap().into(),
             DataType::FixedSizeList(inner, _size) => {
-                // TODO: not sure this is correct; do we need a new FixedSizeList python class?
                 let inner = Wrap(*inner.clone()).to_object(py);
                 let list_class = pl.getattr("List").unwrap();
                 list_class.call1((inner,)).unwrap().into()

@@ -127,6 +127,11 @@ impl Series {
         unpack_chunked!(self, DataType::List(_) => ListChunked, "List")
     }
 
+    /// Unpack to ChunkedArray of dtype FixedSizeList
+    pub fn fixed_size_list(&self) -> PolarsResult<&FixedSizeListChunked> {
+        unpack_chunked!(self, DataType::FixedSizeList(_, _) => FixedSizeListChunked, "FixedSizeList")
+    }
+
     /// Unpack to ChunkedArray of dtype categorical
     #[cfg(feature = "dtype-categorical")]
     pub fn categorical(&self) -> PolarsResult<&CategoricalChunked> {

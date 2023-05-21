@@ -1,5 +1,5 @@
 //! Special list utility methods
-mod iterator;
+pub(super) mod iterator;
 
 use crate::chunked_array::Settings;
 use crate::prelude::*;

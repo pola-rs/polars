@@ -1,5 +1,7 @@
 //! Special fixed-size-list utility methods
 
+mod iterator;
+
 use crate::prelude::*;
 
 impl FixedSizeListChunked {

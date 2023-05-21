@@ -17,6 +17,26 @@ pub struct AmortizedListIter<'a, I: Iterator<Item = Option<ArrayBox>>> {
     inner_dtype: DataType,
 }
 
+impl<'a, I: Iterator<Item = Option<ArrayBox>>> AmortizedListIter<'a, I> {
+    pub(crate) fn new(
+        len: usize,
+        series_container: Box<Series>,
+        inner: NonNull<ArrayRef>,
+        lifetime: PhantomData<&'a ArrayRef>,
+        iter: I,
+        inner_dtype: DataType,
+    ) -> Self {
+        Self {
+            len,
+            series_container,
+            inner,
+            lifetime,
+            iter,
+            inner_dtype,
+        }
+    }
+}
+
 impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a, I> {
     type Item = Option<UnstableSeries<'a>>;
 

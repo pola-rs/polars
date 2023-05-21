@@ -31,6 +31,7 @@ pub(crate) enum PyDataType {
     Struct,
     Binary,
     Decimal(Option<usize>, usize),
+    FixedSizeList(usize),
 }
 
 impl From<&DataType> for PyDataType {
@@ -51,7 +52,7 @@ impl From<&DataType> for PyDataType {
             DataType::Boolean => Bool,
             DataType::Utf8 => Utf8,
             DataType::Binary => Binary,
-            DataType::FixedSizeList(_, _) => List,
+            DataType::FixedSizeList(_, width) => FixedSizeList(*width),
             DataType::List(_) => List,
             DataType::Date => Date,
             DataType::Datetime(tu, tz) => Datetime(*tu, tz.clone()),
@@ -101,6 +102,7 @@ impl From<PyDataType> for DataType {
             PyDataType::Categorical => Categorical(None),
             PyDataType::Struct => Struct(vec![]),
             PyDataType::Decimal(p, s) => Decimal(p, Some(s)),
+            PyDataType::FixedSizeList(width) => FixedSizeList(DataType::Null.into(), width),
         }
     }
 }
