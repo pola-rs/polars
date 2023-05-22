@@ -235,11 +235,6 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         Ok(self.finish_with_state(false, cats).into_series())
     }
 
-    fn take_every(&self, n: usize) -> Series {
-        self.with_state(true, |cats| cats.take_every(n))
-            .into_series()
-    }
-
     unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
         let cats = self.0.logical().take_unchecked(iter.into());
         self.finish_with_state(false, cats).into_series()
