@@ -442,17 +442,25 @@ def sequence_to_pyseries(
                         "Given time_zone is different from that of timezone aware datetimes."
                         f" Given: '{dtype_tz}', got: '{tz}'."
                     )
-                if tz != "UTC":
-                    warnings.warn(
-                        "In a future version of polars, constructing a Series with time-zone-aware "
-                        "datetimes will result in a Series with UTC time zone. "
-                        "To silence this warning and opt-in to the new behaviour, you can filter "
-                        "warnings of class TimeZoneAwareConstructorWarning and then use "
-                        "`.dt.convert_time_zone('UTC')`.",
-                        TimeZoneAwareConstructorWarning,
-                        stacklevel=find_stacklevel(),
+                with warnings.catch_warnings():
+                    # Silence the warning from convert_time_zone which users can't
+                    # take any action on anyway.
+                    warnings.filterwarnings(
+                        action="ignore",
+                        category=DeprecationWarning,
+                        message=r".*time zones other than those in `zoneinfo.available_timezones.*",
                     )
-                return s.dt.replace_time_zone("UTC").dt.convert_time_zone(tz)._s
+                    if tz != "UTC":
+                        warnings.warn(
+                            "In a future version of polars, constructing a Series with time-zone-aware "
+                            "datetimes will result in a Series with UTC time zone. "
+                            "To silence this warning and opt-in to the new behaviour, you can filter "
+                            "warnings of class TimeZoneAwareConstructorWarning and then use "
+                            "`.dt.convert_time_zone('UTC')`.",
+                            TimeZoneAwareConstructorWarning,
+                            stacklevel=find_stacklevel(),
+                        )
+                    return s.dt.replace_time_zone("UTC").dt.convert_time_zone(tz)._s
             return s._s
 
         elif (

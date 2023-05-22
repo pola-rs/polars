@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
@@ -83,7 +83,7 @@ def test_strptime_extract_times(
     assert_series_equal(getattr(s.dt, unit_attr)(), expected)
 
 
-@pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu", "+03:00"])
+@pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu"])
 @pytest.mark.parametrize(
     ("attribute", "expected"),
     [
@@ -99,7 +99,7 @@ def test_dt_date_and_time(
     assert result == expected
 
 
-@pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu", "+03:00"])
+@pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu"])
 @pytest.mark.parametrize("time_unit", ["us", "ns", "ms"])
 def test_dt_datetime(time_zone: str | None, time_unit: TimeUnit) -> None:
     ser = (
@@ -142,7 +142,6 @@ def test_dt_datetime_date_time_invalid() -> None:
     [
         (None, None),
         (ZoneInfo("Asia/Kathmandu"), "Asia/Kathmandu"),
-        (timezone(timedelta(hours=1)), "+01:00"),
     ],
 )
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
@@ -150,7 +149,7 @@ def test_month_start_datetime(
     dt: datetime,
     expected: datetime,
     time_unit: TimeUnit,
-    tzinfo: ZoneInfo | timezone | None,
+    tzinfo: ZoneInfo | None,
     time_zone: str | None,
 ) -> None:
     ser = pl.Series([dt]).dt.replace_time_zone(time_zone).dt.cast_time_unit(time_unit)
@@ -188,7 +187,6 @@ def test_month_start_date(dt: date, expected: date) -> None:
     [
         (None, None),
         (ZoneInfo("Asia/Kathmandu"), "Asia/Kathmandu"),
-        (timezone(timedelta(hours=1)), "+01:00"),
     ],
 )
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
@@ -196,7 +194,7 @@ def test_month_end_datetime(
     dt: datetime,
     expected: datetime,
     time_unit: TimeUnit,
-    tzinfo: ZoneInfo | timezone | None,
+    tzinfo: ZoneInfo | None,
     time_zone: str | None,
 ) -> None:
     ser = pl.Series([dt]).dt.replace_time_zone(time_zone).dt.cast_time_unit(time_unit)
