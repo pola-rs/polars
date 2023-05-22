@@ -70,6 +70,7 @@ pub fn hist(s: &Series, bins: Option<&Series>, bin_count: Option<usize>) -> Resu
             .alias(category_str),
         )
         .collect()?;
+
     let cuts = cuts_df
         .lazy()
         .with_columns([
