@@ -158,7 +158,6 @@ def ones(
     n: int,
     dtype: PolarsDataType = ...,
     *,
-    name: str | None = ...,
     eager: Literal[False],
 ) -> Expr:
     ...
@@ -169,7 +168,6 @@ def ones(
     n: int,
     dtype: PolarsDataType = ...,
     *,
-    name: str | None = ...,
     eager: Literal[True] = ...,
 ) -> Series:
     ...
@@ -180,7 +178,6 @@ def ones(
     n: int,
     dtype: PolarsDataType = ...,
     *,
-    name: str | None = ...,
     eager: bool,
 ) -> Expr | Series:
     ...
@@ -190,7 +187,6 @@ def ones(
     n: int,
     dtype: PolarsDataType = Float64,
     *,
-    name: str | None = None,
     eager: bool | NoDefault = no_default,
 ) -> Expr | Series:
     """
@@ -204,8 +200,6 @@ def ones(
         Length of the resulting column.
     dtype
         Data type of the resulting column. Defaults to Float64.
-    name
-        Name of the resulting column.
     eager
         Evaluate immediately and return a ``Series``. If set to ``False``,
         return an expression instead.
@@ -242,7 +236,7 @@ def ones(
             stacklevel=find_stacklevel(),
         )
         eager = True
-    return repeat(1.0, n=n, dtype=dtype, name=name, eager=eager)
+    return repeat(1.0, n=n, dtype=dtype, eager=eager).alias("ones")
 
 
 @overload
@@ -250,7 +244,6 @@ def zeros(
     n: int,
     dtype: PolarsDataType = ...,
     *,
-    name: str | None = ...,
     eager: Literal[False],
 ) -> Expr:
     ...
@@ -261,7 +254,6 @@ def zeros(
     n: int,
     dtype: PolarsDataType = ...,
     *,
-    name: str | None = ...,
     eager: Literal[True] = ...,
 ) -> Series:
     ...
@@ -272,7 +264,6 @@ def zeros(
     n: int,
     dtype: PolarsDataType = ...,
     *,
-    name: str | None = ...,
     eager: bool,
 ) -> Expr | Series:
     ...
@@ -282,7 +273,6 @@ def zeros(
     n: int,
     dtype: PolarsDataType = Float64,
     *,
-    name: str | None = None,
     eager: bool | NoDefault = no_default,
 ) -> Expr | Series:
     """
@@ -296,8 +286,6 @@ def zeros(
         Length of the resulting column.
     dtype
         Data type of the resulting column. Defaults to Float64.
-    name
-        Name of the resulting column.
     eager
         Evaluate immediately and return a ``Series``. If set to ``False``,
         return an expression instead.
@@ -334,4 +322,4 @@ def zeros(
             stacklevel=find_stacklevel(),
         )
         eager = True
-    return repeat(0.0, n=n, dtype=dtype, name=name, eager=eager)
+    return repeat(0.0, n=n, dtype=dtype, eager=eager).alias("zeros")
