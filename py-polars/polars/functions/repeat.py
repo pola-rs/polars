@@ -227,7 +227,7 @@ def ones(
     --------
     >>> pl.ones(3, pl.Int8, eager=True)
     shape: (3,)
-    Series: '' [i8]
+    Series: 'ones' [i8]
     [
         1
         1
@@ -313,7 +313,7 @@ def zeros(
     --------
     >>> pl.zeros(3, pl.Int8, eager=True)
     shape: (3,)
-    Series: '' [i8]
+    Series: 'zeros' [i8]
     [
         0
         0
