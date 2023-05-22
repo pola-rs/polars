@@ -384,24 +384,6 @@ def test_coalesce() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_ones_zeros() -> None:
-    ones = pl.ones(5)
-    assert ones.dtype == pl.Float64
-    assert ones.to_list() == [1.0, 1.0, 1.0, 1.0, 1.0]
-
-    ones = pl.ones(3, dtype=pl.UInt8)
-    assert ones.dtype == pl.UInt8
-    assert ones.to_list() == [1, 1, 1]
-
-    zeros = pl.zeros(5)
-    assert zeros.dtype == pl.Float64
-    assert zeros.to_list() == [0.0, 0.0, 0.0, 0.0, 0.0]
-
-    zeros = pl.zeros(3, dtype=pl.UInt8)
-    assert zeros.dtype == pl.UInt8
-    assert zeros.to_list() == [0, 0, 0]
-
-
 def test_overflow_diff() -> None:
     df = pl.DataFrame(
         {
@@ -437,50 +419,6 @@ def test_fill_null_unknown_output_type() -> None:
             148.4131591025766,
         ]
     }
-
-
-def test_repeat() -> None:
-    s = pl.select(pl.repeat(2**31 - 1, 3)).to_series()
-    assert s.dtype == pl.Int32
-    assert s.len() == 3
-    assert s.to_list() == [2**31 - 1] * 3
-    s = pl.select(pl.repeat(-(2**31), 4)).to_series()
-    assert s.dtype == pl.Int32
-    assert s.len() == 4
-    assert s.to_list() == [-(2**31)] * 4
-    s = pl.select(pl.repeat(2**31, 5)).to_series()
-    assert s.dtype == pl.Int64
-    assert s.len() == 5
-    assert s.to_list() == [2**31] * 5
-    s = pl.select(pl.repeat(-(2**31) - 1, 3)).to_series()
-    assert s.dtype == pl.Int64
-    assert s.len() == 3
-    assert s.to_list() == [-(2**31) - 1] * 3
-    s = pl.select(pl.repeat("foo", 2)).to_series()
-    assert s.dtype == pl.Utf8
-    assert s.len() == 2
-    assert s.to_list() == ["foo"] * 2
-    s = pl.select(pl.repeat(1.0, 5)).to_series()
-    assert s.dtype == pl.Float64
-    assert s.len() == 5
-    assert s.to_list() == [1.0] * 5
-    s = pl.select(pl.repeat(True, 4)).to_series()
-    assert s.dtype == pl.Boolean
-    assert s.len() == 4
-    assert s.to_list() == [True] * 4
-    s = pl.select(pl.repeat(None, 7)).to_series()
-    assert s.dtype == pl.Null
-    assert s.len() == 7
-    assert s.to_list() == [None] * 7
-    s = pl.select(pl.repeat(0, 0)).to_series()
-    assert s.dtype == pl.Int32
-    assert s.len() == 0
-
-
-def test_repeat_dtype() -> None:
-    s = pl.select(pl.repeat(1, n=3, dtype=pl.Int8)).to_series()
-    assert s.dtype == pl.Int8
-    assert s.len() == 3
 
 
 def test_min_alias_for_series_min() -> None:
