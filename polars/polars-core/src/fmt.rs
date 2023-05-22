@@ -294,13 +294,7 @@ impl Debug for Series {
             #[cfg(feature = "dtype-array")]
             DataType::Array(_, _) => {
                 let dt = format!("{}", self.dtype());
-                format_array!(
-                    f,
-                    self.fixed_size_list().unwrap(),
-                    &dt,
-                    self.name(),
-                    "Series"
-                )
+                format_array!(f, self.array().unwrap(), &dt, self.name(), "Series")
             }
             DataType::List(_) => {
                 let dt = format!("{}", self.dtype());

@@ -303,7 +303,7 @@ impl ToPyObject for Wrap<DataType> {
             DataType::Boolean => pl.getattr("Boolean").unwrap().into(),
             DataType::Utf8 => pl.getattr("Utf8").unwrap().into(),
             DataType::Binary => pl.getattr("Binary").unwrap().into(),
-            DataType::FixedSizeList(inner, size) => {
+            DataType::Array(inner, size) => {
                 let inner = Wrap(*inner.clone()).to_object(py);
                 let list_class = pl.getattr("Array").unwrap();
                 list_class.call1((*size, inner)).unwrap().into()
@@ -421,7 +421,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
                 let width = ob.getattr("width").unwrap();
                 let inner = inner.extract::<Wrap<DataType>>()?;
                 let width = width.extract::<usize>()?;
-                DataType::FixedSizeList(Box::new(inner.0), width)
+                DataType::Array(Box::new(inner.0), width)
             }
             "Struct" => {
                 let fields = ob.getattr("fields")?;
