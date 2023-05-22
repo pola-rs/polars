@@ -17,6 +17,25 @@ pub struct AmortizedListIter<'a, I: Iterator<Item = Option<ArrayBox>>> {
     inner_dtype: DataType,
 }
 
+impl<'a, I: Iterator<Item = Option<ArrayBox>>> AmortizedListIter<'a, I> {
+    pub(crate) fn new(
+        len: usize,
+        series_container: Box<Series>,
+        inner: NonNull<ArrayRef>,
+        iter: I,
+        inner_dtype: DataType,
+    ) -> Self {
+        Self {
+            len,
+            series_container,
+            inner,
+            lifetime: PhantomData,
+            iter,
+            inner_dtype,
+        }
+    }
+}
+
 impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a, I> {
     type Item = Option<UnstableSeries<'a>>;
 
@@ -129,14 +148,13 @@ impl ListChunked {
 
         let ptr = series_container.array_ref(0) as *const ArrayRef as *mut ArrayRef;
 
-        AmortizedListIter {
-            len: self.len(),
+        AmortizedListIter::new(
+            self.len(),
             series_container,
-            inner: NonNull::new(ptr).unwrap(),
-            lifetime: PhantomData,
-            iter: self.downcast_iter().flat_map(|arr| arr.iter()),
+            NonNull::new(ptr).unwrap(),
+            self.downcast_iter().flat_map(|arr| arr.iter()),
             inner_dtype,
-        }
+        )
     }
 
     /// Apply a closure `F` elementwise.

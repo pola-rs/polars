@@ -101,6 +101,51 @@ impl ChunkFullNull for ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-array")]
+impl ArrayChunked {
+    pub fn full_null_with_dtype(
+        name: &str,
+        length: usize,
+        inner_dtype: &DataType,
+        width: usize,
+    ) -> ArrayChunked {
+        let arr = new_null_array(
+            ArrowDataType::FixedSizeList(
+                Box::new(ArrowField::new("item", inner_dtype.to_arrow(), true)),
+                width,
+            ),
+            length,
+        );
+        unsafe { ArrayChunked::from_chunks(name, vec![arr]) }
+    }
+}
+
+#[cfg(feature = "dtype-array")]
+impl ChunkFull<&Series> for ArrayChunked {
+    fn full(name: &str, value: &Series, length: usize) -> ArrayChunked {
+        if !value.dtype().is_numeric() {
+            todo!("FixedSizeList only supports numeric data types");
+        };
+        let width = value.len();
+        let values = value.tile(length);
+        let values = values.chunks()[0].clone();
+        let data_type = ArrowDataType::FixedSizeList(
+            Box::new(ArrowField::new("item", values.data_type().clone(), true)),
+            width,
+        );
+
+        let arr = Box::new(FixedSizeListArray::new(data_type, values, None)) as ArrayRef;
+        unsafe { ArrayChunked::from_chunks(name, vec![arr]) }
+    }
+}
+
+#[cfg(feature = "dtype-array")]
+impl ChunkFullNull for ArrayChunked {
+    fn full_null(name: &str, length: usize) -> ArrayChunked {
+        ArrayChunked::full_null_with_dtype(name, length, &DataType::Null, 0)
+    }
+}
+
 impl ListChunked {
     pub fn full_null_with_dtype(name: &str, length: usize, inner_dtype: &DataType) -> ListChunked {
         let arr = new_null_array(

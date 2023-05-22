@@ -43,6 +43,7 @@ mod set;
 mod shift;
 pub mod sort;
 pub(crate) mod take;
+mod tile;
 pub(crate) mod unique;
 #[cfg(feature = "zip_with")]
 pub mod zip;
@@ -557,9 +558,9 @@ pub trait ChunkFullNull {
 }
 
 /// Reverse a ChunkedArray<T>
-pub trait ChunkReverse<T: PolarsDataType> {
+pub trait ChunkReverse {
     /// Return a reversed version of this array.
-    fn reverse(&self) -> ChunkedArray<T>;
+    fn reverse(&self) -> Self;
 }
 
 /// Filter values by a boolean mask.
@@ -640,10 +641,25 @@ impl ChunkExpandAtIndex<ListType> for ListChunked {
         match opt_val {
             Some(val) => {
                 let mut ca = ListChunked::full(self.name(), &val, length);
-                ca.to_logical(self.inner_dtype());
+                ca.to_physical(self.inner_dtype());
                 ca
             }
             None => ListChunked::full_null_with_dtype(self.name(), length, &self.inner_dtype()),
+        }
+    }
+}
+
+#[cfg(feature = "dtype-array")]
+impl ChunkExpandAtIndex<FixedSizeListType> for ArrayChunked {
+    fn new_from_index(&self, index: usize, length: usize) -> ArrayChunked {
+        let opt_val = self.get(index);
+        match opt_val {
+            Some(val) => {
+                let mut ca = ArrayChunked::full(self.name(), &val, length);
+                ca.to_physical(self.inner_dtype());
+                ca
+            }
+            None => ArrayChunked::full_null_with_dtype(self.name(), length, &self.inner_dtype(), 0),
         }
     }
 }

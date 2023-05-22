@@ -59,6 +59,18 @@ impl ChunkTakeEvery<ListType> for ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-array")]
+impl ChunkTakeEvery<FixedSizeListType> for ArrayChunked {
+    fn take_every(&self, n: usize) -> ArrayChunked {
+        let idx = (0 as IdxSize..(self.len() as IdxSize))
+            .step_by(n)
+            .collect::<Vec<_>>();
+
+        // safety: we are in bounds
+        unsafe { self.take_unchecked((&idx).into()) }
+    }
+}
+
 #[cfg(feature = "object")]
 impl<T: PolarsObject> ChunkTakeEvery<ObjectType<T>> for ObjectChunked<T> {
     fn take_every(&self, _n: usize) -> ObjectChunked<T> {

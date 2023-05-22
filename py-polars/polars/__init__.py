@@ -28,6 +28,7 @@ from polars.datatypes import (
     INTEGER_DTYPES,
     NUMERIC_DTYPES,
     TEMPORAL_DTYPES,
+    Array,
     Binary,
     Boolean,
     Categorical,
@@ -204,6 +205,7 @@ __all__ = [
     "LazyFrame",
     "Series",
     # polars.datatypes
+    "Array",
     "Binary",
     "Boolean",
     "Categorical",
