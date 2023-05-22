@@ -61,7 +61,7 @@ def test_repeat_expansion_in_groupby() -> None:
         .agg(pl.repeat(1, pl.count()).cumsum())
         .to_dict(False)
     )
-    assert out == {"g": [1, 2, 3], "literal": [[1], [1, 2], [1, 2, 3]]}
+    assert out == {"g": [1, 2, 3], "repeat": [[1], [1, 2], [1, 2, 3]]}
 
 
 def test_agg_after_head() -> None:

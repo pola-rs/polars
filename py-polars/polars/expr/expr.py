@@ -1256,18 +1256,18 @@ class Expr:
 
         >>> df.select(pl.repeat(None, 3).append(pl.col("a")).rechunk())
         shape: (6, 1)
-        ┌─────────┐
-        │ literal │
-        │ ---     │
-        │ i64     │
-        ╞═════════╡
-        │ null    │
-        │ null    │
-        │ null    │
-        │ 1       │
-        │ 1       │
-        │ 2       │
-        └─────────┘
+        ┌────────┐
+        │ repeat │
+        │ ---    │
+        │ i64    │
+        ╞════════╡
+        │ null   │
+        │ null   │
+        │ null   │
+        │ 1      │
+        │ 1      │
+        │ 2      │
+        └────────┘
 
         """
         return self._from_pyexpr(self._pyexpr.rechunk())

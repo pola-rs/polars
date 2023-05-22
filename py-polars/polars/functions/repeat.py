@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, NoReturn, overload
 
 from polars import functions as F
 from polars.datatypes import Float64
-from polars.utils import no_default
 from polars.utils._wrap import wrap_expr, wrap_s
 from polars.utils.various import find_stacklevel
 
@@ -19,7 +18,6 @@ if TYPE_CHECKING:
 
     from polars import Expr, Series
     from polars.type_aliases import PolarsDataType, PythonLiteral
-    from polars.utils import NoDefault
 
     if sys.version_info >= (3, 8):
         from typing import Literal
@@ -33,8 +31,8 @@ def repeat(
     n: Expr | int,
     *,
     dtype: PolarsDataType | None = ...,
-    name: str | None = ...,
     eager: Literal[False] = ...,
+    name: str | None = ...,
 ) -> Expr:
     ...
 
@@ -45,8 +43,8 @@ def repeat(
     n: int,
     *,
     dtype: PolarsDataType | None = ...,
-    name: str | None = ...,
     eager: Literal[True],
+    name: str | None = ...,
 ) -> Series:
     ...
 
@@ -57,8 +55,8 @@ def repeat(
     n: Expr,
     *,
     dtype: PolarsDataType | None = ...,
-    name: str | None = ...,
     eager: Literal[True],
+    name: str | None = ...,
 ) -> NoReturn:
     ...
 
@@ -69,8 +67,8 @@ def repeat(
     n: Expr | int,
     *,
     dtype: PolarsDataType | None = ...,
-    name: str | None = ...,
     eager: bool,
+    name: str | None = ...,
 ) -> Expr | Series:
     ...
 
@@ -80,8 +78,8 @@ def repeat(
     n: Expr | int,
     *,
     dtype: PolarsDataType | None = None,
-    name: str | None = None,
     eager: bool = False,
+    name: str | None = None,
 ) -> Expr | Series:
     """
     Construct a column of length `n` filled with the given value.
@@ -96,11 +94,14 @@ def repeat(
         Data type of the resulting column. If set to ``None`` (default), data type is
         inferred from the given value. Defaults to Int32 for integer values, unless
         Int64 is required to fit the given value. Defaults to Float64 for float values.
-    name
-        Name of the resulting column.
     eager
         Evaluate immediately and return a ``Series``. If set to ``False`` (default),
         return an expression instead.
+    name
+        Name of the resulting column.
+
+        .. deprecated:: 0.17.15
+            This argument is deprecated. Use the ``alias`` method instead.
 
     Notes
     -----
@@ -117,7 +118,7 @@ def repeat(
 
     >>> pl.select(pl.repeat("z", n=3)).to_series()
     shape: (3,)
-    Series: 'literal' [str]
+    Series: 'repeat' [str]
     [
             "z"
             "z"
@@ -126,9 +127,9 @@ def repeat(
 
     Generate a Series directly by setting ``eager=True``.
 
-    >>> pl.repeat(3, n=3, eager=True, name="three", dtype=pl.Int8)
+    >>> pl.repeat(3, n=3, dtype=pl.Int8, eager=True)
     shape: (3,)
-    Series: 'three' [i8]
+    Series: 'repeat' [i8]
     [
             3
             3
@@ -136,20 +137,28 @@ def repeat(
     ]
 
     """
+    if name is not None:
+        warnings.warn(
+            "the `name` argument is deprecated. Use the `alias` method instead.",
+            DeprecationWarning,
+            stacklevel=find_stacklevel(),
+        )
+
     if eager:
         if not isinstance(n, int):
             raise ValueError(
                 "`n` must be an integer when using `repeat` in an eager context."
             )
-        return wrap_s(plr.repeat_eager(value, n, dtype, name))
+        series = wrap_s(plr.repeat_eager(value, n, dtype))
+        if name is not None:
+            series = series.alias(name)
+        return series
     else:
         if isinstance(n, int):
             n = F.lit(n)
-        expr = wrap_expr(plr.repeat_lazy(value, n._pyexpr))
+        expr = wrap_expr(plr.repeat_lazy(value, n._pyexpr, dtype))
         if name is not None:
             expr = expr.alias(name)
-        if dtype is not None:
-            expr = expr.cast(dtype)
         return expr
 
 
@@ -158,7 +167,6 @@ def ones(
     n: int,
     dtype: PolarsDataType = ...,
     *,
-    name: str | None = ...,
     eager: Literal[False],
 ) -> Expr:
     ...
@@ -169,7 +177,6 @@ def ones(
     n: int,
     dtype: PolarsDataType = ...,
     *,
-    name: str | None = ...,
     eager: Literal[True] = ...,
 ) -> Series:
     ...
@@ -180,7 +187,6 @@ def ones(
     n: int,
     dtype: PolarsDataType = ...,
     *,
-    name: str | None = ...,
     eager: bool,
 ) -> Expr | Series:
     ...
@@ -190,8 +196,7 @@ def ones(
     n: int,
     dtype: PolarsDataType = Float64,
     *,
-    name: str | None = None,
-    eager: bool | NoDefault = no_default,
+    eager: bool | None = None,
 ) -> Expr | Series:
     """
     Construct a column of length `n` filled with ones.
@@ -204,8 +209,6 @@ def ones(
         Length of the resulting column.
     dtype
         Data type of the resulting column. Defaults to Float64.
-    name
-        Name of the resulting column.
     eager
         Evaluate immediately and return a ``Series``. If set to ``False``,
         return an expression instead.
@@ -224,7 +227,7 @@ def ones(
     --------
     >>> pl.ones(3, pl.Int8, eager=True)
     shape: (3,)
-    Series: '' [i8]
+    Series: 'ones' [i8]
     [
         1
         1
@@ -232,7 +235,7 @@ def ones(
     ]
 
     """
-    if eager is no_default:
+    if eager is None:
         warnings.warn(
             "In a future version, the default behaviour for `ones` will change from `eager=True` to `eager=False`. "
             "To silence this warning, please:\n"
@@ -242,7 +245,7 @@ def ones(
             stacklevel=find_stacklevel(),
         )
         eager = True
-    return repeat(1.0, n=n, dtype=dtype, name=name, eager=eager)
+    return repeat(1.0, n=n, dtype=dtype, eager=eager).alias("ones")
 
 
 @overload
@@ -250,7 +253,6 @@ def zeros(
     n: int,
     dtype: PolarsDataType = ...,
     *,
-    name: str | None = ...,
     eager: Literal[False],
 ) -> Expr:
     ...
@@ -261,7 +263,6 @@ def zeros(
     n: int,
     dtype: PolarsDataType = ...,
     *,
-    name: str | None = ...,
     eager: Literal[True] = ...,
 ) -> Series:
     ...
@@ -272,7 +273,6 @@ def zeros(
     n: int,
     dtype: PolarsDataType = ...,
     *,
-    name: str | None = ...,
     eager: bool,
 ) -> Expr | Series:
     ...
@@ -282,8 +282,7 @@ def zeros(
     n: int,
     dtype: PolarsDataType = Float64,
     *,
-    name: str | None = None,
-    eager: bool | NoDefault = no_default,
+    eager: bool | None = None,
 ) -> Expr | Series:
     """
     Construct a column of length `n` filled with zeros.
@@ -296,8 +295,6 @@ def zeros(
         Length of the resulting column.
     dtype
         Data type of the resulting column. Defaults to Float64.
-    name
-        Name of the resulting column.
     eager
         Evaluate immediately and return a ``Series``. If set to ``False``,
         return an expression instead.
@@ -316,7 +313,7 @@ def zeros(
     --------
     >>> pl.zeros(3, pl.Int8, eager=True)
     shape: (3,)
-    Series: '' [i8]
+    Series: 'zeros' [i8]
     [
         0
         0
@@ -324,7 +321,7 @@ def zeros(
     ]
 
     """
-    if eager is no_default:
+    if eager is None:
         warnings.warn(
             "In a future version, the default behaviour for `ones` will change from `eager=True` to `eager=False`. "
             "To silence this warning, please:\n"
@@ -334,4 +331,4 @@ def zeros(
             stacklevel=find_stacklevel(),
         )
         eager = True
-    return repeat(0.0, n=n, dtype=dtype, name=name, eager=eager)
+    return repeat(0.0, n=n, dtype=dtype, eager=eager).alias("zeros")

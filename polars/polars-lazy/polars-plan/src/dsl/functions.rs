@@ -1308,7 +1308,7 @@ pub fn repeat<L: Literal>(value: L, n: Expr) -> Expr {
             )?;
         Ok(Some(s.new_from_index(0, n)))
     };
-    apply_binary(lit(value), n, function, GetOutput::same_type())
+    apply_binary(lit(value), n, function, GetOutput::same_type()).alias("repeat")
 }
 
 #[cfg(feature = "arg_where")]
