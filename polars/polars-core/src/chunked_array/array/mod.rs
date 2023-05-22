@@ -5,6 +5,21 @@ mod iterator;
 use crate::prelude::*;
 
 impl ArrayChunked {
+    /// Get the inner data type of the fixed size list.
+    pub fn inner_dtype(&self) -> DataType {
+        match self.dtype() {
+            DataType::Array(dt, _size) => *dt.clone(),
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn width(&self) -> usize {
+        match self.dtype() {
+            DataType::Array(_dt, size) => *size,
+            _ => unreachable!(),
+        }
+    }
+
     pub fn to_physical(&mut self, inner_dtype: DataType) {
         debug_assert_eq!(inner_dtype.to_physical(), self.inner_dtype());
         let fld = Arc::make_mut(&mut self.field);

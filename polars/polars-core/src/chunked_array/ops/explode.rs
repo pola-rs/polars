@@ -3,15 +3,16 @@ use std::convert::TryFrom;
 use arrow::array::*;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::offset::OffsetsBuffer;
+use polars_arrow::array::list::AnonymousBuilder;
 use polars_arrow::array::PolarsArray;
 use polars_arrow::bit_util::unset_bit_raw;
 #[cfg(feature = "dtype-array")]
 use polars_arrow::is_valid::IsValid;
 use polars_arrow::prelude::*;
+use polars_arrow::trusted_len::PushUnchecked;
 
 #[cfg(feature = "dtype-array")]
 use crate::chunked_array::builder::get_fixed_size_list_builder;
-use crate::chunked_array::builder::AnonymousOwnedListBuilder;
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
 
@@ -228,31 +229,46 @@ impl ExplodeByOffsets for ListChunked {
 
         let cap = get_capacity(offsets);
         let inner_type = self.inner_dtype();
-        let mut builder = AnonymousOwnedListBuilder::new(self.name(), cap, Some(inner_type));
 
+        let mut builder = polars_arrow::array::list::AnonymousBuilder::new(cap);
+        let mut owned = Vec::with_capacity(cap);
         let mut start = offsets[0] as usize;
         let mut last = start;
+
+        let mut process_range = |start: usize, last: usize, builder: &mut AnonymousBuilder<'_>| {
+            let vals = arr.slice_typed(start, last - start);
+            for opt_arr in vals.into_iter() {
+                match opt_arr {
+                    None => builder.push_null(),
+                    Some(arr) => {
+                        unsafe {
+                            // we create a pointer to evade the bck
+                            let ptr = arr.as_ref() as *const dyn Array;
+                            // safety: we preallocated
+                            owned.push_unchecked(arr);
+                            // safety: the pointer is still valid as `owned` will not reallocate
+                            builder.push(&*ptr as &dyn Array);
+                        }
+                    }
+                }
+            }
+        };
+
         for &o in &offsets[1..] {
             let o = o as usize;
             if o == last {
                 if start != last {
-                    let vals = arr.slice_typed(start, last - start);
-                    let ca = unsafe { ListChunked::from_chunks("", vec![Box::new(vals)]) };
-                    for s in &ca {
-                        builder.append_opt_series(s.as_ref())
-                    }
+                    process_range(start, last, &mut builder);
                 }
-                builder.append_null();
+                builder.push_null();
                 start = o;
             }
             last = o;
         }
-        let vals = arr.slice_typed(start, last - start);
-        let ca = unsafe { ListChunked::from_chunks("", vec![Box::new(vals)]) };
-        for s in &ca {
-            builder.append_opt_series(s.as_ref())
-        }
-        builder.finish().into()
+        process_range(start, last, &mut builder);
+        let arr = builder.finish(Some(&inner_type.to_arrow())).unwrap();
+        self.copy_with_chunks(vec![Box::new(arr)], true, true)
+            .into_series()
     }
 }
 
@@ -469,106 +485,6 @@ impl ChunkExplode for ListChunked {
         }
 
         Ok((s, offsets_buf))
-    }
-}
-
-// TODO: for this should we implement the `fn explode(&self)` on the trait and ignore creating
-// offsets?
-#[cfg(feature = "dtype-array")]
-impl ChunkExplode for ArrayChunked {
-    fn explode_and_offsets(&self) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
-        todo!();
-
-        // // A list array's memory layout is actually already 'exploded', so we can just take the values array
-        // // of the list. And we also return a slice of the offsets. This slice can be used to find the old
-        // // list layout or indexes to expand the DataFrame in the same manner as the 'explode' operation
-        // let ca = self.rechunk();
-        // let listarr: &LargeListArray = ca
-        //     .downcast_iter()
-        //     .next()
-        //     .ok_or_else(|| polars_err!(NoData: "cannot explode empty list"))?;
-        // let offsets_buf = listarr.offsets().clone();
-        // let offsets = listarr.offsets().as_slice();
-        // let mut values = listarr.values().clone();
-
-        // let mut s = if ca._can_fast_explode() {
-        //     // ensure that the value array is sliced
-        //     // as a list only slices its offsets on a slice operation
-
-        //     // we only do this in fast-explode as for the other
-        //     // branch the offsets must coincide with the values.
-        //     if !offsets.is_empty() {
-        //         let start = offsets[0] as usize;
-        //         let len = offsets[offsets.len() - 1] as usize - start;
-        //         // safety:
-        //         // we are in bounds
-        //         values = unsafe { values.sliced_unchecked(start, len) };
-        //     }
-        //     // safety: inner_dtype should be correct
-        //     unsafe {
-        //         Series::from_chunks_and_dtype_unchecked(
-        //             self.name(),
-        //             vec![values],
-        //             &self.inner_dtype().to_physical(),
-        //         )
-        //     }
-        // } else {
-        //     // during tests
-        //     // test that this code branch is not hit with list arrays that could be fast exploded
-        //     #[cfg(test)]
-        //     {
-        //         let mut last = offsets[0];
-        //         let mut has_empty = false;
-        //         for &o in &offsets[1..] {
-        //             if o == last {
-        //                 has_empty = true;
-        //             }
-        //             last = o;
-        //         }
-        //         if !has_empty && offsets[0] == 0 {
-        //             panic!("could have fast exploded")
-        //         }
-        //     }
-
-        //     // safety: inner_dtype should be correct
-        //     let values = unsafe {
-        //         Series::from_chunks_and_dtype_unchecked(
-        //             self.name(),
-        //             vec![values],
-        //             &self.inner_dtype().to_physical(),
-        //         )
-        //     };
-        //     values.explode_by_offsets(offsets)
-        // };
-        // debug_assert_eq!(s.name(), self.name());
-        // // restore logical type
-        // unsafe {
-        //     s = s.cast_unchecked(&self.inner_dtype()).unwrap();
-        // }
-        // // // make sure we restore the logical type
-        // // match self.inner_dtype() {
-        // //     #[cfg(feature = "dtype-categorical")]
-        // //     DataType::Categorical(rev_map) => {
-        // //         let cats = s.u32().unwrap().clone();
-        // //         // safety:
-        // //         // rev_map is from same array, so we are still in bounds
-        // //         s = unsafe {
-        // //             CategoricalChunked::from_cats_and_rev_map_unchecked(cats, rev_map.unwrap())
-        // //                 .into_series()
-        // //         };
-        // //     }
-        // //     #[cfg(feature = "dtype-date")]
-        // //     DataType::Date => s = s.into_date(),
-        // //     #[cfg(feature = "dtype-datetime")]
-        // //     DataType::Datetime(tu, tz) => s = s.into_datetime(tu, tz),
-        // //     #[cfg(feature = "dtype-duration")]
-        // //     DataType::Duration(tu) => s = s.into_duration(tu),
-        // //     #[cfg(feature = "dtype-time")]
-        // //     DataType::Time => s = s.into_time(),
-        // //     _ => {}
-        // // }
-
-        // Ok((s, offsets_buf))
     }
 }
 

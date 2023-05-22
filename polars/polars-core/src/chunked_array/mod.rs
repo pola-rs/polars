@@ -542,40 +542,6 @@ impl ValueSize for BinaryChunked {
     }
 }
 
-impl ListChunked {
-    /// Get the inner data type of the list.
-    pub fn inner_dtype(&self) -> DataType {
-        match self.dtype() {
-            DataType::List(dt) => *dt.clone(),
-            _ => unreachable!(),
-        }
-    }
-
-    pub fn set_inner_dtype(&mut self, dtype: DataType) {
-        assert_eq!(dtype.to_physical(), self.inner_dtype().to_physical());
-        let field = Arc::make_mut(&mut self.field);
-        field.coerce(DataType::List(Box::new(dtype)));
-    }
-}
-
-#[cfg(feature = "dtype-array")]
-impl ArrayChunked {
-    /// Get the inner data type of the fixed size list.
-    pub fn inner_dtype(&self) -> DataType {
-        match self.dtype() {
-            DataType::Array(dt, _size) => *dt.clone(),
-            _ => unreachable!(),
-        }
-    }
-
-    pub fn width(&self) -> usize {
-        match self.dtype() {
-            DataType::Array(_dt, size) => *size,
-            _ => unreachable!(),
-        }
-    }
-}
-
 pub(crate) fn to_primitive<T: PolarsNumericType>(
     values: Vec<T::Native>,
     validity: Option<Bitmap>,
