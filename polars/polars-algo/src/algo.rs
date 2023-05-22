@@ -70,12 +70,11 @@ pub fn hist(s: &Series, bins: Option<&Series>, bin_count: Option<usize>) -> Resu
             .alias(category_str),
         )
         .collect()?;
-
     let cuts = cuts_df
         .lazy()
         .with_columns([
             col(category_str).cast(DataType::Categorical(None)),
-            col(breakpoint_str).cast(s.dtype().to_owned()),
+            col(breakpoint_str).cast(s.dtype().to_owned()).set_sorted_flag(IsSorted::Ascending),
         ])
         .collect()?;
 
