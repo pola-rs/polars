@@ -11,6 +11,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
+    Collection,
     Iterable,
     NoReturn,
     Sequence,
@@ -3249,7 +3250,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return self._from_pyldf(self._ldf.with_context([lf._ldf for lf in other]))
 
-    def drop(self, columns: str | Sequence[str], *more_columns: str) -> Self:
+    def drop(self, columns: str | Collection[str], *more_columns: str) -> Self:
         """
         Remove columns from the dataframe.
 
@@ -3314,10 +3315,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         if isinstance(columns, str):
             columns = [columns]
-        if more_columns:
-            columns = list(columns)
-            columns.extend(more_columns)
-        return self._from_pyldf(self._ldf.drop(columns))
+        return self._from_pyldf(self._ldf.drop([*columns, *more_columns]))
 
     def rename(self, mapping: dict[str, str]) -> Self:
         """
@@ -4378,7 +4376,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             subset = [subset]
         return self._from_pyldf(self._ldf.unique(maintain_order, subset, keep))
 
-    def drop_nulls(self, subset: str | Sequence[str] | None = None) -> Self:
+    def drop_nulls(self, subset: str | Collection[str] | None = None) -> Self:
         """
         Drop all rows that contain null values.
 
@@ -4450,8 +4448,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └──────┴─────┴──────┘
 
         """
-        if isinstance(subset, str):
-            subset = [subset]
+        if subset is not None:
+            if isinstance(subset, str):
+                subset = [subset]
+            subset = list(subset)
         return self._from_pyldf(self._ldf.drop_nulls(subset))
 
     def melt(

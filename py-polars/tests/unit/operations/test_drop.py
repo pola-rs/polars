@@ -1,3 +1,7 @@
+from typing import Any
+
+import pytest
+
 import polars as pl
 from polars.testing import assert_frame_equal
 
@@ -32,7 +36,15 @@ def test_drop_explode_6641() -> None:
     }
 
 
-def test_drop_nulls() -> None:
+@pytest.mark.parametrize(
+    "subset",
+    [
+        "foo",
+        ["foo"],
+        {"foo"},
+    ],
+)
+def test_drop_nulls(subset: Any) -> None:
     df = pl.DataFrame(
         {
             "foo": [1, 2, 3],
@@ -51,7 +63,7 @@ def test_drop_nulls() -> None:
     assert_frame_equal(result, expected)
 
     # below we only drop entries if they are null in the column 'foo'
-    result = df.drop_nulls("foo")
+    result = df.drop_nulls(subset)
     assert_frame_equal(result, df)
 
 
@@ -82,6 +94,12 @@ def test_drop_columns() -> None:
 
     out = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy().drop("a")
     assert out.columns == ["b", "c"]
+
+    out2 = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).drop("a", "b")
+    assert out2.columns == ["c"]
+
+    out2 = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).drop({"a"}, "b", "c")
+    assert out2.columns == []
 
 
 def test_drop_nan_ignore_null_3525() -> None:
