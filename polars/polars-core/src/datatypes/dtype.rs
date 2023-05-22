@@ -34,7 +34,7 @@ pub enum DataType {
     Time,
     /// A nested list with a fixed size in each row
     #[cfg(feature = "dtype-array")]
-    FixedSizeList(Box<DataType>, usize),
+    Array(Box<DataType>, usize),
     /// A nested list with a variable size in each row
     List(Box<DataType>),
     #[cfg(feature = "object")]
@@ -79,6 +79,10 @@ impl PartialEq for DataType {
                 (Object(lhs), Object(rhs)) => lhs == rhs,
                 #[cfg(feature = "dtype-struct")]
                 (Struct(lhs), Struct(rhs)) => lhs == rhs,
+                #[cfg(feature = "dtype-array")]
+                (Array(left_inner, left_width), Array(right_inner, right_width)) => {
+                    left_width == right_width && left_inner == right_inner
+                }
                 _ => std::mem::discriminant(self) == std::mem::discriminant(other),
             }
         }
@@ -233,7 +237,7 @@ impl DataType {
             Duration(unit) => ArrowDataType::Duration(unit.to_arrow()),
             Time => ArrowDataType::Time64(ArrowTimeUnit::Nanosecond),
             #[cfg(feature = "dtype-array")]
-            FixedSizeList(dt, size) => ArrowDataType::FixedSizeList(
+            Array(dt, size) => ArrowDataType::FixedSizeList(
                 Box::new(arrow::datatypes::Field::new("item", dt.to_arrow(), true)),
                 *size,
             ),
@@ -317,7 +321,7 @@ impl Display for DataType {
             DataType::Duration(tu) => return write!(f, "duration[{tu}]"),
             DataType::Time => "time",
             #[cfg(feature = "dtype-array")]
-            DataType::FixedSizeList(tp, size) => return write!(f, "array[{tp}, {size}]"),
+            DataType::Array(tp, size) => return write!(f, "array[{tp}, {size}]"),
             DataType::List(tp) => return write!(f, "list[{tp}]"),
             #[cfg(feature = "object")]
             DataType::Object(s) => s,
@@ -345,10 +349,10 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
             List(Box::new(merged))
         }
         #[cfg(feature = "dtype-array")]
-        (FixedSizeList(inner_l, width_l), FixedSizeList(inner_r, width_r)) => {
+        (Array(inner_l, width_l), Array(inner_r, width_r)) => {
             polars_ensure!(width_l == width_r, ComputeError: "widths of FixedSizeWidth Series are not equal");
             let merged = merge_dtypes(inner_l, inner_r)?;
-            FixedSizeList(Box::new(merged), *width_l)
+            Array(Box::new(merged), *width_l)
         }
         (left, right) if left == right => left.clone(),
         _ => polars_bail!(ComputeError: "unable to merge datatypes"),

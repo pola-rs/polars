@@ -4,7 +4,7 @@ use super::*;
 use crate::chunked_array::list::iterator::AmortizedListIter;
 use crate::series::unstable::ArrayBox;
 
-impl FixedSizeListChunked {
+impl ArrayChunked {
     /// This is an iterator over a ListChunked that save allocations.
     /// A Series is:
     ///     1. Arc<ChunkedArray>

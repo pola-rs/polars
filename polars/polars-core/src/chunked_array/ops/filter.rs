@@ -122,8 +122,8 @@ impl ChunkFilter<ListType> for ListChunked {
 }
 
 #[cfg(feature = "dtype-array")]
-impl ChunkFilter<FixedSizeListType> for FixedSizeListChunked {
-    fn filter(&self, filter: &BooleanChunked) -> PolarsResult<FixedSizeListChunked> {
+impl ChunkFilter<FixedSizeListType> for ArrayChunked {
+    fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ArrayChunked> {
         // broadcast
         if filter.len() == 1 {
             return match filter.get(0) {

@@ -1642,8 +1642,8 @@ impl<'a> ApplyLambda<'a> for ListChunked {
     }
 }
 
-#[cfg(feature = "dtype-fixed-size-list")]
-impl<'a> ApplyLambda<'a> for FixedSizeListChunked {
+#[cfg(feature = "dtype-array")]
+impl<'a> ApplyLambda<'a> for ArrayChunked {
     fn apply_lambda_unknown(&'a self, py: Python, lambda: &'a PyAny) -> PyResult<PySeries> {
         let pypolars = PyModule::import(py, "polars")?;
         let mut null_count = 0;

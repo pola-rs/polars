@@ -359,7 +359,7 @@ impl IntoGroupsProxy for ListChunked {
 }
 
 #[cfg(feature = "dtype-array")]
-impl IntoGroupsProxy for FixedSizeListChunked {
+impl IntoGroupsProxy for ArrayChunked {
     #[allow(clippy::needless_lifetimes)]
     #[allow(unused_variables)]
     fn group_tuples<'a>(

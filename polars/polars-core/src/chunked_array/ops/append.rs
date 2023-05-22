@@ -73,7 +73,7 @@ impl ListChunked {
 
 #[cfg(feature = "dtype-array")]
 #[doc(hidden)]
-impl FixedSizeListChunked {
+impl ArrayChunked {
     pub fn append(&mut self, other: &Self) -> PolarsResult<()> {
         let dtype = merge_dtypes(self.dtype(), other.dtype())?;
         self.field = Arc::new(Field::new(self.name(), dtype));

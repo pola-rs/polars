@@ -643,4 +643,4 @@ fn cast_index(idx: Series, len: usize, null_on_oob: bool) -> PolarsResult<Series
     Ok(out)
 }
 
-// TODO: implement the above for FixedSizeListChunked as well?
+// TODO: implement the above for ArrayChunked as well?

@@ -29,7 +29,7 @@ impl<T: NativeType> FixedSizeListNumericBuilder<T> {
 pub(crate) trait FixedSizeListBuilder {
     unsafe fn push_unchecked(&mut self, arr: &dyn Array, offset: usize);
     unsafe fn push_null(&mut self);
-    fn finish(&mut self) -> FixedSizeListChunked;
+    fn finish(&mut self) -> ArrayChunked;
 }
 
 impl<T: NativeType> FixedSizeListBuilder for FixedSizeListNumericBuilder<T> {
@@ -66,7 +66,7 @@ impl<T: NativeType> FixedSizeListBuilder for FixedSizeListNumericBuilder<T> {
         inner.push_null()
     }
 
-    fn finish(&mut self) -> FixedSizeListChunked {
+    fn finish(&mut self) -> ArrayChunked {
         let arr: FixedSizeListArray = self.inner.take().unwrap().into();
         unsafe { ChunkedArray::from_chunks(self.name.as_str(), vec![Box::new(arr) as ArrayRef]) }
     }
@@ -106,7 +106,7 @@ impl FixedSizeListBuilder for AnonymousOwnedFixedSizeListBuilder {
         self.inner.push_null()
     }
 
-    fn finish(&mut self) -> FixedSizeListChunked {
+    fn finish(&mut self) -> ArrayChunked {
         let arr = std::mem::take(&mut self.inner)
             .finish(self.inner_dtype.as_ref().map(|dt| dt.to_arrow()).as_ref())
             .unwrap();

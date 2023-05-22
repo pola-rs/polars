@@ -185,12 +185,8 @@ impl ChunkZip<ListType> for ListChunked {
 }
 
 #[cfg(feature = "dtype-array")]
-impl ChunkZip<FixedSizeListType> for FixedSizeListChunked {
-    fn zip_with(
-        &self,
-        mask: &BooleanChunked,
-        other: &FixedSizeListChunked,
-    ) -> PolarsResult<FixedSizeListChunked> {
+impl ChunkZip<FixedSizeListType> for ArrayChunked {
+    fn zip_with(&self, mask: &BooleanChunked, other: &ArrayChunked) -> PolarsResult<ArrayChunked> {
         let (left, right, mask) = align_chunks_ternary(self, other, mask);
         let chunks = left
             .downcast_iter()

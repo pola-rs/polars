@@ -257,7 +257,7 @@ impl ExplodeByOffsets for ListChunked {
 }
 
 #[cfg(feature = "dtype-array")]
-impl ExplodeByOffsets for FixedSizeListChunked {
+impl ExplodeByOffsets for ArrayChunked {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         debug_assert_eq!(self.chunks.len(), 1);
         let arr = self.downcast_iter().next().unwrap();
@@ -481,7 +481,7 @@ impl ChunkExplode for ListChunked {
 // TODO: for this should we implement the `fn explode(&self)` on the trait and ignore creating
 // offsets?
 #[cfg(feature = "dtype-array")]
-impl ChunkExplode for FixedSizeListChunked {
+impl ChunkExplode for ArrayChunked {
     fn explode_and_offsets(&self) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
         todo!();
 

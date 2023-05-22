@@ -10,7 +10,7 @@ use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::series::IsSorted;
 
-impl private::PrivateSeries for SeriesWrap<FixedSizeListChunked> {
+impl private::PrivateSeries for SeriesWrap<ArrayChunked> {
     fn compute_len(&mut self) {
         self.0.compute_len()
     }
@@ -46,7 +46,7 @@ impl private::PrivateSeries for SeriesWrap<FixedSizeListChunked> {
     }
 }
 
-impl SeriesTrait for SeriesWrap<FixedSizeListChunked> {
+impl SeriesTrait for SeriesWrap<ArrayChunked> {
     fn rename(&mut self, name: &str) {
         self.0.rename(name);
     }

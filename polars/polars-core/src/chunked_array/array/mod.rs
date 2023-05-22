@@ -4,7 +4,7 @@ mod iterator;
 
 use crate::prelude::*;
 
-impl FixedSizeListChunked {
+impl ArrayChunked {
     pub fn to_physical(&mut self, inner_dtype: DataType) {
         debug_assert_eq!(inner_dtype.to_physical(), self.inner_dtype());
         let fld = Arc::make_mut(&mut self.field);
@@ -30,7 +30,7 @@ impl FixedSizeListChunked {
     pub fn apply_to_inner(
         &self,
         func: &dyn Fn(Series) -> PolarsResult<Series>,
-    ) -> PolarsResult<FixedSizeListChunked> {
+    ) -> PolarsResult<ArrayChunked> {
         // generated Series will have wrong length otherwise.
         let ca = self.rechunk();
         let inner_dtype = self.inner_dtype().to_arrow();
@@ -56,6 +56,6 @@ impl FixedSizeListChunked {
             Ok(Box::new(arr) as ArrayRef)
         }).collect::<PolarsResult<Vec<_>>>()?;
 
-        unsafe { Ok(FixedSizeListChunked::from_chunks(self.name(), chunks)) }
+        unsafe { Ok(ArrayChunked::from_chunks(self.name(), chunks)) }
     }
 }

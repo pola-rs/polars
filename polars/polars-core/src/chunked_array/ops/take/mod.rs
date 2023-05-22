@@ -434,7 +434,7 @@ impl ChunkTake for ListChunked {
 }
 
 #[cfg(feature = "dtype-array")]
-impl ChunkTake for FixedSizeListChunked {
+impl ChunkTake for ArrayChunked {
     unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
     where
         Self: std::marker::Sized,

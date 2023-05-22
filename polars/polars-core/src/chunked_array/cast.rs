@@ -289,10 +289,10 @@ impl ChunkCast for ListChunked {
                 }
             }
             #[cfg(feature = "dtype-array")]
-            FixedSizeList(_, _) => {
+            Array(_, _) => {
                 // TODO! bubble up logical types
                 let chunks = cast_chunks(self.chunks(), data_type, true)?;
-                unsafe { Ok(FixedSizeListChunked::from_chunks(self.name(), chunks).into_series()) }
+                unsafe { Ok(ArrayChunked::from_chunks(self.name(), chunks).into_series()) }
             }
             _ => {
                 polars_bail!(
@@ -312,11 +312,11 @@ impl ChunkCast for ListChunked {
 /// We cannot cast anything to or from List/LargeList
 /// So this implementation casts the inner type
 #[cfg(feature = "dtype-array")]
-impl ChunkCast for FixedSizeListChunked {
+impl ChunkCast for ArrayChunked {
     fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
         use DataType::*;
         match data_type {
-            FixedSizeList(child_type, width) => {
+            Array(child_type, width) => {
                 match (self.inner_dtype(), &**child_type) {
                     #[cfg(feature = "dtype-categorical")]
                     (dt, Categorical(None)) if !matches!(dt, Utf8) => {
@@ -331,7 +331,7 @@ impl ChunkCast for FixedSizeListChunked {
                             Ok(Series::from_chunks_and_dtype_unchecked(
                                 self.name(),
                                 vec![arr],
-                                &FixedSizeList(Box::new(child_type), *width),
+                                &Array(Box::new(child_type), *width),
                             ))
                         }
                     }
@@ -381,7 +381,7 @@ fn cast_list(ca: &ListChunked, child_type: &DataType) -> PolarsResult<(ArrayRef,
 // values for instance with categoricals
 #[cfg(feature = "dtype-array")]
 fn cast_fixed_size_list(
-    ca: &FixedSizeListChunked,
+    ca: &ArrayChunked,
     child_type: &DataType,
 ) -> PolarsResult<(ArrayRef, DataType)> {
     let ca = ca.rechunk();

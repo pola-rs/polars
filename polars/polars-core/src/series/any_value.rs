@@ -411,7 +411,7 @@ impl<'a> From<&AnyValue<'a>> for DataType {
             #[cfg(feature = "dtype-time")]
             Time(_) => DataType::Time,
             #[cfg(feature = "dtype-array")]
-            FixedSizeList(s, size) => DataType::FixedSizeList(Box::new(s.dtype().clone()), *size),
+            Array(s, size) => DataType::Array(Box::new(s.dtype().clone()), *size),
             List(s) => DataType::List(Box::new(s.dtype().clone())),
             #[cfg(feature = "dtype-struct")]
             StructOwned(payload) => DataType::Struct(payload.1.to_vec()),

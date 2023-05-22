@@ -417,7 +417,7 @@ impl ListChunked {
 }
 
 #[cfg(feature = "dtype-array")]
-impl<'a> IntoIterator for &'a FixedSizeListChunked {
+impl<'a> IntoIterator for &'a ArrayChunked {
     type Item = Option<Series>;
     type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
     fn into_iter(self) -> Self::IntoIter {
@@ -525,7 +525,7 @@ impl<'a> DoubleEndedIterator for FixedSizeListIterNoNull<'a> {
 impl<'a> ExactSizeIterator for FixedSizeListIterNoNull<'a> {}
 
 #[cfg(feature = "dtype-array")]
-impl FixedSizeListChunked {
+impl ArrayChunked {
     #[allow(clippy::wrong_self_convention)]
     #[doc(hidden)]
     pub fn into_no_null_iter(

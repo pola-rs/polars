@@ -57,16 +57,16 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
             }
         }
         #[cfg(feature = "dtype-array")]
-        DataType::FixedSizeList(dt, width) => {
+        DataType::Array(dt, width) => {
             let v: ArrayRef = downcast!(FixedSizeListArray);
             if dt.is_primitive() {
                 let s = Series::from_chunks_and_dtype_unchecked("", vec![v], dt);
-                AnyValue::FixedSizeList(s, *width)
+                AnyValue::Array(s, *width)
             } else {
                 let s = Series::from_chunks_and_dtype_unchecked("", vec![v], &dt.to_physical())
                     .cast_unchecked(dt)
                     .unwrap();
-                AnyValue::FixedSizeList(s, *width)
+                AnyValue::Array(s, *width)
             }
         }
         #[cfg(feature = "dtype-categorical")]
@@ -254,7 +254,7 @@ impl ChunkAnyValue for ListChunked {
 }
 
 #[cfg(feature = "dtype-array")]
-impl ChunkAnyValue for FixedSizeListChunked {
+impl ChunkAnyValue for ArrayChunked {
     #[inline]
     unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
         get_any_value_unchecked!(self, index)

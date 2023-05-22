@@ -243,7 +243,7 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                 let convert = utils.getattr("_to_python_time").unwrap();
                 convert.call1((v,)).unwrap().into_py(py)
             }
-            AnyValue::FixedSizeList(v, _) | AnyValue::List(v) => PySeries::new(v).to_list(),
+            AnyValue::Array(v, _) | AnyValue::List(v) => PySeries::new(v).to_list(),
             ref av @ AnyValue::Struct(_, _, flds) => struct_dict(py, av._iter_struct_av(), flds),
             AnyValue::StructOwned(payload) => struct_dict(py, payload.0.into_iter(), &payload.1),
             #[cfg(feature = "object")]

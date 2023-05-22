@@ -650,21 +650,16 @@ impl ChunkExpandAtIndex<ListType> for ListChunked {
 }
 
 #[cfg(feature = "dtype-array")]
-impl ChunkExpandAtIndex<FixedSizeListType> for FixedSizeListChunked {
-    fn new_from_index(&self, index: usize, length: usize) -> FixedSizeListChunked {
+impl ChunkExpandAtIndex<FixedSizeListType> for ArrayChunked {
+    fn new_from_index(&self, index: usize, length: usize) -> ArrayChunked {
         let opt_val = self.get(index);
         match opt_val {
             Some(val) => {
-                let mut ca = FixedSizeListChunked::full(self.name(), &val, length);
+                let mut ca = ArrayChunked::full(self.name(), &val, length);
                 ca.to_physical(self.inner_dtype());
                 ca
             }
-            None => FixedSizeListChunked::full_null_with_dtype(
-                self.name(),
-                length,
-                &self.inner_dtype(),
-                0,
-            ),
+            None => ArrayChunked::full_null_with_dtype(self.name(), length, &self.inner_dtype(), 0),
         }
     }
 }

@@ -60,8 +60,8 @@ impl ChunkTakeEvery<ListType> for ListChunked {
 }
 
 #[cfg(feature = "dtype-array")]
-impl ChunkTakeEvery<FixedSizeListType> for FixedSizeListChunked {
-    fn take_every(&self, n: usize) -> FixedSizeListChunked {
+impl ChunkTakeEvery<FixedSizeListType> for ArrayChunked {
+    fn take_every(&self, n: usize) -> ArrayChunked {
         let idx = (0 as IdxSize..(self.len() as IdxSize))
             .step_by(n)
             .collect::<Vec<_>>();

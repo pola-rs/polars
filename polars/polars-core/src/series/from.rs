@@ -72,8 +72,8 @@ impl Series {
                 )
                 .into_series(),
             #[cfg(feature = "dtype-array")]
-            FixedSizeList(_, _) => {
-                FixedSizeListChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype.clone())
+            Array(_, _) => {
+                ArrayChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype.clone())
                     .into_series()
             }
             List(_) => ListChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype.clone())
@@ -148,7 +148,7 @@ impl Series {
             #[cfg(feature = "dtype-array")]
             ArrowDataType::FixedSizeList(_, _) => {
                 let chunks = chunks.iter().map(convert_inner_types).collect();
-                Ok(FixedSizeListChunked::from_chunks(name, chunks).into_series())
+                Ok(ArrayChunked::from_chunks(name, chunks).into_series())
             }
             ArrowDataType::Boolean => Ok(BooleanChunked::from_chunks(name, chunks).into_series()),
             #[cfg(feature = "dtype-u8")]

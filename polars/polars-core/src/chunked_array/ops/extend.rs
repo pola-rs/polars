@@ -212,7 +212,7 @@ impl ListChunked {
 
 #[cfg(feature = "dtype-array")]
 #[doc(hidden)]
-impl FixedSizeListChunked {
+impl ArrayChunked {
     pub fn extend(&mut self, other: &Self) -> PolarsResult<()> {
         // TODO! properly implement mutation
         // this is harder because we don't know the inner type of the list

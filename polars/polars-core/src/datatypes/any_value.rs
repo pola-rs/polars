@@ -74,7 +74,7 @@ pub enum AnyValue<'a> {
     /// Nested type, contains arrays that are filled with one of the datatypes.
     List(Series),
     #[cfg(feature = "dtype-array")]
-    FixedSizeList(Series, usize),
+    Array(Series, usize),
     #[cfg(feature = "object")]
     /// Can be used to fmt and implements Any, so can be downcasted to the proper value type.
     #[cfg(feature = "object")]

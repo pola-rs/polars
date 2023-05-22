@@ -41,7 +41,7 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
             DataType::List(Box::new(cat.dtype().clone()))
         }
         #[cfg(any(feature = "dtype-categorical", feature = "dtype-categorical"))]
-        DataType::FixedSizeList(inner, width) if *inner == DataType::Categorical(None) => {
+        DataType::Array(inner, width) if *inner == DataType::Categorical(None) => {
             let array = concatenate_owned_unchecked(chunks).unwrap();
             let list_arr = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
             let values_arr = list_arr.values();
@@ -64,7 +64,7 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
             );
             chunks.clear();
             chunks.push(Box::new(new_array));
-            DataType::FixedSizeList(Box::new(cat.dtype().clone()), width)
+            DataType::Array(Box::new(cat.dtype().clone()), width)
         }
         _ => dtype,
     }
@@ -82,7 +82,7 @@ where
         let dtype = match T::get_dtype() {
             dtype @ DataType::List(_) => from_chunks_list_dtype(&mut chunks, dtype),
             #[cfg(feature = "dtype-array")]
-            dtype @ DataType::FixedSizeList(_, _) => from_chunks_list_dtype(&mut chunks, dtype),
+            dtype @ DataType::Array(_, _) => from_chunks_list_dtype(&mut chunks, dtype),
             dt => dt,
         };
         let field = Arc::new(Field::new(name, dtype));
@@ -133,7 +133,7 @@ impl ListChunked {
 }
 
 #[cfg(feature = "dtype-array")]
-impl FixedSizeListChunked {
+impl ArrayChunked {
     pub(crate) unsafe fn from_chunks_and_dtype_unchecked(
         name: &str,
         chunks: Vec<ArrayRef>,

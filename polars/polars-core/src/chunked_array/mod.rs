@@ -21,11 +21,11 @@ pub mod kernels;
 #[cfg(feature = "ndarray")]
 mod ndarray;
 
+#[cfg(feature = "dtype-array")]
+pub(crate) mod array;
 mod bitwise;
 #[cfg(feature = "object")]
 mod drop;
-#[cfg(feature = "dtype-array")]
-pub(crate) mod array;
 mod from;
 pub(crate) mod list;
 pub(crate) mod logical;
@@ -433,7 +433,7 @@ where
 impl AsSinglePtr for BooleanChunked {}
 impl AsSinglePtr for ListChunked {}
 #[cfg(feature = "dtype-array")]
-impl AsSinglePtr for FixedSizeListChunked {}
+impl AsSinglePtr for ArrayChunked {}
 impl AsSinglePtr for Utf8Chunked {}
 impl AsSinglePtr for BinaryChunked {}
 #[cfg(feature = "object")]
@@ -519,7 +519,7 @@ impl ValueSize for ListChunked {
 }
 
 #[cfg(feature = "dtype-array")]
-impl ValueSize for FixedSizeListChunked {
+impl ValueSize for ArrayChunked {
     fn get_values_size(&self) -> usize {
         self.chunks
             .iter()
@@ -559,18 +559,18 @@ impl ListChunked {
 }
 
 #[cfg(feature = "dtype-array")]
-impl FixedSizeListChunked {
+impl ArrayChunked {
     /// Get the inner data type of the fixed size list.
     pub fn inner_dtype(&self) -> DataType {
         match self.dtype() {
-            DataType::FixedSizeList(dt, _size) => *dt.clone(),
+            DataType::Array(dt, _size) => *dt.clone(),
             _ => unreachable!(),
         }
     }
 
     pub fn width(&self) -> usize {
         match self.dtype() {
-            DataType::FixedSizeList(_dt, size) => *size,
+            DataType::Array(_dt, size) => *size,
             _ => unreachable!(),
         }
     }

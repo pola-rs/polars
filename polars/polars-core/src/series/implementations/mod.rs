@@ -534,7 +534,7 @@ impl private::PrivateSeriesNumeric for SeriesWrap<Utf8Chunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<BinaryChunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<ListChunked> {}
 #[cfg(feature = "dtype-array")]
-impl private::PrivateSeriesNumeric for SeriesWrap<FixedSizeListChunked> {}
+impl private::PrivateSeriesNumeric for SeriesWrap<ArrayChunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<BooleanChunked> {
     fn bit_repr_is_large(&self) -> bool {
         false

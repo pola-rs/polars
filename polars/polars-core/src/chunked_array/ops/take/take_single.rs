@@ -179,7 +179,7 @@ impl TakeRandom for ListChunked {
 }
 
 #[cfg(feature = "dtype-array")]
-impl TakeRandom for FixedSizeListChunked {
+impl TakeRandom for ArrayChunked {
     type Item = Series;
 
     #[inline]

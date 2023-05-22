@@ -339,8 +339,8 @@ impl AggList for ListChunked {
 }
 
 #[cfg(feature = "dtype-array")]
-fn agg_list_fixed_size_list<F: Fn(&FixedSizeListChunked, &mut Vec<ArrayRef>)>(
-    ca: &FixedSizeListChunked,
+fn agg_list_fixed_size_list<F: Fn(&ArrayChunked, &mut Vec<ArrayRef>)>(
+    ca: &ArrayChunked,
     groups_len: usize,
     func: F,
     width: usize,
@@ -364,11 +364,11 @@ fn agg_list_fixed_size_list<F: Fn(&FixedSizeListChunked, &mut Vec<ArrayRef>)>(
 }
 
 #[cfg(feature = "dtype-array")]
-impl AggList for FixedSizeListChunked {
+impl AggList for ArrayChunked {
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         match groups {
             GroupsProxy::Idx(groups) => {
-                let func = |ca: &FixedSizeListChunked, list_values: &mut Vec<ArrayRef>| {
+                let func = |ca: &ArrayChunked, list_values: &mut Vec<ArrayRef>| {
                     assert!(list_values.capacity() >= groups.len());
                     groups.iter().for_each(|(_, idx)| {
                         // Safety:
@@ -384,7 +384,7 @@ impl AggList for FixedSizeListChunked {
                 agg_list_fixed_size_list(self, groups.len(), func, self.width())
             }
             GroupsProxy::Slice { groups, .. } => {
-                let func = |ca: &FixedSizeListChunked, list_values: &mut Vec<ArrayRef>| {
+                let func = |ca: &ArrayChunked, list_values: &mut Vec<ArrayRef>| {
                     assert!(list_values.capacity() >= groups.len());
                     groups.iter().for_each(|&[first, len]| {
                         let mut s = ca.slice(first as i64, len as usize);

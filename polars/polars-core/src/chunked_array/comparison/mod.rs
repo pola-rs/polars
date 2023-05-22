@@ -838,9 +838,9 @@ impl ChunkCompare<&ListChunked> for ListChunked {
 }
 
 #[cfg(feature = "dtype-array")]
-impl ChunkCompare<&FixedSizeListChunked> for FixedSizeListChunked {
+impl ChunkCompare<&ArrayChunked> for ArrayChunked {
     type Item = BooleanChunked;
-    fn equal(&self, rhs: &FixedSizeListChunked) -> BooleanChunked {
+    fn equal(&self, rhs: &ArrayChunked) -> BooleanChunked {
         let (a, b) = align_chunks_binary(self, rhs);
         let chunks = a
             .downcast_iter()
@@ -852,7 +852,7 @@ impl ChunkCompare<&FixedSizeListChunked> for FixedSizeListChunked {
         unsafe { BooleanChunked::from_chunks(self.name(), chunks) }
     }
 
-    fn not_equal(&self, rhs: &FixedSizeListChunked) -> BooleanChunked {
+    fn not_equal(&self, rhs: &ArrayChunked) -> BooleanChunked {
         let (a, b) = align_chunks_binary(self, rhs);
         let chunks = a
             .downcast_iter()
@@ -865,19 +865,19 @@ impl ChunkCompare<&FixedSizeListChunked> for FixedSizeListChunked {
     }
 
     // following are not implemented because gt, lt comparison of series don't make sense
-    fn gt(&self, _rhs: &FixedSizeListChunked) -> BooleanChunked {
+    fn gt(&self, _rhs: &ArrayChunked) -> BooleanChunked {
         unimplemented!()
     }
 
-    fn gt_eq(&self, _rhs: &FixedSizeListChunked) -> BooleanChunked {
+    fn gt_eq(&self, _rhs: &ArrayChunked) -> BooleanChunked {
         unimplemented!()
     }
 
-    fn lt(&self, _rhs: &FixedSizeListChunked) -> BooleanChunked {
+    fn lt(&self, _rhs: &ArrayChunked) -> BooleanChunked {
         unimplemented!()
     }
 
-    fn lt_eq(&self, _rhs: &FixedSizeListChunked) -> BooleanChunked {
+    fn lt_eq(&self, _rhs: &ArrayChunked) -> BooleanChunked {
         unimplemented!()
     }
 }
@@ -972,7 +972,7 @@ impl ChunkEqualElement for BinaryChunked {
 
 impl ChunkEqualElement for ListChunked {}
 #[cfg(feature = "dtype-array")]
-impl ChunkEqualElement for FixedSizeListChunked {}
+impl ChunkEqualElement for ArrayChunked {}
 
 #[cfg(feature = "dtype-struct")]
 impl ChunkCompare<&StructChunked> for StructChunked {

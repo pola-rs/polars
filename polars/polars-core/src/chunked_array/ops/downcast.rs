@@ -181,10 +181,10 @@ impl ListChunked {
 
 #[cfg(feature = "dtype-array")]
 #[doc(hidden)]
-impl FixedSizeListChunked {
+impl ArrayChunked {
     pub fn downcast_iter(&self) -> impl Iterator<Item = &FixedSizeListArray> + DoubleEndedIterator {
         // Safety:
-        // This is the array type that must be in a FixedSizeListChunked
+        // This is the array type that must be in a ArrayChunked
         self.chunks.iter().map(|arr| {
             let arr = &**arr;
             unsafe { &*(arr as *const dyn Array as *const FixedSizeListArray) }

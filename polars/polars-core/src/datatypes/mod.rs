@@ -126,7 +126,7 @@ impl PolarsDataType for ListType {
 impl PolarsDataType for FixedSizeListType {
     fn get_dtype() -> DataType {
         // null as we cannot know anything without self.
-        DataType::FixedSizeList(Box::new(DataType::Null), 0)
+        DataType::Array(Box::new(DataType::Null), 0)
     }
 }
 
@@ -162,7 +162,7 @@ impl PolarsSingleType for Utf8Type {}
 impl PolarsSingleType for BinaryType {}
 
 #[cfg(feature = "dtype-array")]
-pub type FixedSizeListChunked = ChunkedArray<FixedSizeListType>;
+pub type ArrayChunked = ChunkedArray<FixedSizeListType>;
 pub type ListChunked = ChunkedArray<ListType>;
 pub type BooleanChunked = ChunkedArray<BooleanType>;
 pub type UInt8Chunked = ChunkedArray<UInt8Type>;

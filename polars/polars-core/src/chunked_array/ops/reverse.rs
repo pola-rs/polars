@@ -45,7 +45,7 @@ impl_reverse!(BinaryType, BinaryChunked);
 impl_reverse!(ListType, ListChunked);
 
 #[cfg(feature = "dtype-array")]
-impl ChunkReverse for FixedSizeListChunked {
+impl ChunkReverse for ArrayChunked {
     fn reverse(&self) -> Self {
         if !self.inner_dtype().is_numeric() {
             todo!("reverse for FixedSizeList with non-numeric dtypes not yet supported")

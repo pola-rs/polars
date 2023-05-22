@@ -122,9 +122,9 @@ impl ChunkShift<ListType> for ListChunked {
 }
 
 #[cfg(feature = "dtype-array")]
-impl ChunkShiftFill<FixedSizeListType, Option<&Series>> for FixedSizeListChunked {
-    fn shift_and_fill(&self, periods: i64, fill_value: Option<&Series>) -> FixedSizeListChunked {
-        // This has its own implementation because a FixedSizeListChunked cannot have a full-null without
+impl ChunkShiftFill<FixedSizeListType, Option<&Series>> for ArrayChunked {
+    fn shift_and_fill(&self, periods: i64, fill_value: Option<&Series>) -> ArrayChunked {
+        // This has its own implementation because a ArrayChunked cannot have a full-null without
         // knowing the inner type
         let periods = clamp(periods, -(self.len() as i64), self.len() as i64);
         let slice_offset = (-periods).max(0);
@@ -134,12 +134,9 @@ impl ChunkShiftFill<FixedSizeListType, Option<&Series>> for FixedSizeListChunked
         let fill_length = abs(periods) as usize;
         let mut fill = match fill_value {
             Some(val) => Self::full(self.name(), val, fill_length),
-            None => FixedSizeListChunked::full_null_with_dtype(
-                self.name(),
-                fill_length,
-                &self.inner_dtype(),
-                0,
-            ),
+            None => {
+                ArrayChunked::full_null_with_dtype(self.name(), fill_length, &self.inner_dtype(), 0)
+            }
         };
 
         if periods < 0 {
@@ -153,7 +150,7 @@ impl ChunkShiftFill<FixedSizeListType, Option<&Series>> for FixedSizeListChunked
 }
 
 #[cfg(feature = "dtype-array")]
-impl ChunkShift<FixedSizeListType> for FixedSizeListChunked {
+impl ChunkShift<FixedSizeListType> for ArrayChunked {
     fn shift(&self, periods: i64) -> Self {
         self.shift_and_fill(periods, None)
     }
