@@ -197,10 +197,6 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         Ok(ChunkTake::take(&self.0, iter.into())?.into_series())
     }
 
-    fn take_every(&self, n: usize) -> Series {
-        self.0.take_every(n).into_series()
-    }
-
     unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
         ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
     }

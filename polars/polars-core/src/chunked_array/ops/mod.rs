@@ -113,12 +113,6 @@ pub trait ChunkCumAgg<T: PolarsDataType> {
     }
 }
 
-/// Traverse and collect every nth element
-pub trait ChunkTakeEvery<T: PolarsDataType> {
-    /// Traverse and collect every nth element in a new array.
-    fn take_every(&self, n: usize) -> ChunkedArray<T>;
-}
-
 /// Explode/ flatten a List or Utf8 Series
 pub trait ChunkExplode {
     fn explode(&self) -> PolarsResult<Series> {
