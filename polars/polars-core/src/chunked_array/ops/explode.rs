@@ -307,32 +307,26 @@ pub(crate) fn offsets_to_indexes(offsets: &[i64], capacity: usize) -> Vec<IdxSiz
     if offsets.is_empty() {
         return vec![];
     }
+
     let mut idx = Vec::with_capacity(capacity);
 
-    // `value_count` counts the taken values from the list values
-    // and are the same unit as `offsets`
-    // we also add the start offset as a list can be sliced
-    let mut value_count = offsets[0];
     let mut last_idx = 0;
-
-    for offset in &offsets[1..] {
-        // this get all the elements up till offsets
-        while value_count < *offset {
-            value_count += 1;
-            idx.push(last_idx)
+    for (offset_start, offset_end) in offsets.iter().zip(offsets[1..].iter()) {
+        if idx.len() >= capacity {
+            // significant speed-up in edge cases with many offsets,
+            // no measurable overhead in typical case due to branch prediction
+            break;
         }
 
-        // then we compute the previous offsets
-        // Safety:
-        // we started iterating from 1, so there is always a previous offset
-        // we take the pointer to the previous element and deref that to get
-        // the previous offset
-        let previous_offset = unsafe { *(offset as *const i64).offset(-1) };
-
-        // if the previous offset is equal to the current offset we have an empty
-        // list and we duplicate previous index
-        if previous_offset == *offset {
+        if offset_start == offset_end {
+            // if the previous offset is equal to the current offset, we have an empty
+            // list and we duplicate the previous index
             idx.push(last_idx);
+        } else {
+            let width = (offset_end - offset_start) as usize;
+            for _ in 0..width {
+                idx.push(last_idx);
+            }
         }
 
         last_idx += 1;
@@ -678,5 +672,12 @@ mod test {
         let offsets = &[0, 1, 1, 2, 2];
         let out = offsets_to_indexes(offsets, 2);
         assert_eq!(out, &[0, 1]);
+    }
+
+    #[test]
+    fn test_row_offsets_nonzero_first_offset() {
+        let offsets = &[3, 6, 8];
+        let out = offsets_to_indexes(offsets, 10);
+        assert_eq!(out, &[0, 0, 0, 1, 1, 2, 2, 2, 2, 2]);
     }
 }
