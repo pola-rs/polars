@@ -288,6 +288,12 @@ impl ChunkCast for ListChunked {
                     }
                 }
             }
+            #[cfg(feature = "dtype-fixed-size-list")]
+            FixedSizeList(_, _) => {
+                // TODO! bubble up logical types
+                let chunks = cast_chunks(self.chunks(), data_type, true)?;
+                unsafe { Ok(FixedSizeListChunked::from_chunks(self.name(), chunks).into_series()) }
+            }
             _ => {
                 polars_bail!(
                     ComputeError: "cannot cast List type (inner: '{:?}', to: '{:?}')",
@@ -330,6 +336,11 @@ impl ChunkCast for FixedSizeListChunked {
                         }
                     }
                 }
+            }
+            List(_) => {
+                // TODO! bubble up logical types
+                let chunks = cast_chunks(self.chunks(), data_type, true)?;
+                unsafe { Ok(ListChunked::from_chunks(self.name(), chunks).into_series()) }
             }
             _ => polars_bail!(ComputeError: "cannot cast list type"),
         }

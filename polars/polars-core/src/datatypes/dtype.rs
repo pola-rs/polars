@@ -317,7 +317,7 @@ impl Display for DataType {
             DataType::Duration(tu) => return write!(f, "duration[{tu}]"),
             DataType::Time => "time",
             #[cfg(feature = "dtype-fixed-size-list")]
-            DataType::FixedSizeList(tp, size) => return write!(f, "list[{tp}, {size}]"),
+            DataType::FixedSizeList(tp, size) => return write!(f, "array[{tp}, {size}]"),
             DataType::List(tp) => return write!(f, "list[{tp}]"),
             #[cfg(feature = "object")]
             DataType::Object(s) => s,

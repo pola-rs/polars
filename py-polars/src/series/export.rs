@@ -128,7 +128,7 @@ impl PySeries {
                     }
                     DataType::FixedSizeList(_, _) => {
                         let v = PyList::empty(py);
-                        let ca = series.list().unwrap();
+                        let ca = series.fixed_size_list().unwrap();
                         for opt_s in ca.amortized_iter() {
                             match opt_s {
                                 None => {

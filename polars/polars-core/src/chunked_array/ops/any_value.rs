@@ -56,6 +56,19 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
                 AnyValue::List(s)
             }
         }
+        #[cfg(feature = "dtype-fixed-size-list")]
+        DataType::FixedSizeList(dt, width) => {
+            let v: ArrayRef = downcast!(FixedSizeListArray);
+            if dt.is_primitive() {
+                let s = Series::from_chunks_and_dtype_unchecked("", vec![v], dt);
+                AnyValue::FixedSizeList(s, *width)
+            } else {
+                let s = Series::from_chunks_and_dtype_unchecked("", vec![v], &dt.to_physical())
+                    .cast_unchecked(dt)
+                    .unwrap();
+                AnyValue::FixedSizeList(s, *width)
+            }
+        }
         #[cfg(feature = "dtype-categorical")]
         DataType::Categorical(rev_map) => {
             let arr = &*(arr as *const dyn Array as *const UInt32Array);
