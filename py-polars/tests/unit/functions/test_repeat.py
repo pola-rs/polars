@@ -44,6 +44,17 @@ def test_repeat(
     assert_series_equal(result_lazy, expected)
 
 
+def test_repeat_expr_input_eager() -> None:
+    with pytest.raises(ValueError):
+        pl.repeat(1, n=pl.lit(3), eager=True)
+
+
+def test_repeat_expr_input_lazy() -> None:
+    result = pl.select(pl.repeat(1, n=pl.lit(3))).to_series()
+    expected = pl.Series("repeat", [1, 1, 1], dtype=pl.Int32)
+    assert_series_equal(result, expected)
+
+
 @pytest.mark.parametrize(
     ("value", "n", "dtype", "expected_dtype"),
     [
