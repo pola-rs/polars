@@ -43,6 +43,7 @@ Nested
 .. autosummary::
     :toctree: api/
 
+    Array
     List
     Struct
 

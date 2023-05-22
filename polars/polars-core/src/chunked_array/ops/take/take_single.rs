@@ -177,3 +177,28 @@ impl TakeRandom for ListChunked {
         })
     }
 }
+
+#[cfg(feature = "dtype-array")]
+impl TakeRandom for ArrayChunked {
+    type Item = Series;
+
+    #[inline]
+    fn get(&self, index: usize) -> Option<Self::Item> {
+        // Safety:
+        // Out of bounds is checked and downcast is of correct type
+        let opt_arr = unsafe { impl_take_random_get!(self, index, FixedSizeListArray) };
+        opt_arr.map(|arr| {
+            let s = Series::try_from((self.name(), arr));
+            s.unwrap()
+        })
+    }
+
+    #[inline]
+    unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
+        let opt_arr = impl_take_random_get_unchecked!(self, index, FixedSizeListArray);
+        opt_arr.map(|arr| {
+            let s = Series::try_from((self.name(), arr));
+            s.unwrap()
+        })
+    }
+}

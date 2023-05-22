@@ -288,6 +288,12 @@ impl ChunkCast for ListChunked {
                     }
                 }
             }
+            #[cfg(feature = "dtype-array")]
+            Array(_, _) => {
+                // TODO! bubble up logical types
+                let chunks = cast_chunks(self.chunks(), data_type, true)?;
+                unsafe { Ok(ArrayChunked::from_chunks(self.name(), chunks).into_series()) }
+            }
             _ => {
                 polars_bail!(
                     ComputeError: "cannot cast List type (inner: '{:?}', to: '{:?}')",
@@ -295,6 +301,48 @@ impl ChunkCast for ListChunked {
                     data_type,
                 )
             }
+        }
+    }
+
+    unsafe fn cast_unchecked(&self, data_type: &DataType) -> PolarsResult<Series> {
+        self.cast(data_type)
+    }
+}
+
+/// We cannot cast anything to or from List/LargeList
+/// So this implementation casts the inner type
+#[cfg(feature = "dtype-array")]
+impl ChunkCast for ArrayChunked {
+    fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
+        use DataType::*;
+        match data_type {
+            Array(child_type, width) => {
+                match (self.inner_dtype(), &**child_type) {
+                    #[cfg(feature = "dtype-categorical")]
+                    (dt, Categorical(None)) if !matches!(dt, Utf8) => {
+                        polars_bail!(ComputeError: "cannot cast fixed-size-list inner type: '{:?}' to Categorical", dt)
+                    }
+                    _ => {
+                        // ensure the inner logical type bubbles up
+                        let (arr, child_type) = cast_fixed_size_list(self, child_type)?;
+                        // Safety: we just casted so the dtype matches.
+                        // we must take this path to correct for physical types.
+                        unsafe {
+                            Ok(Series::from_chunks_and_dtype_unchecked(
+                                self.name(),
+                                vec![arr],
+                                &Array(Box::new(child_type), *width),
+                            ))
+                        }
+                    }
+                }
+            }
+            List(_) => {
+                // TODO! bubble up logical types
+                let chunks = cast_chunks(self.chunks(), data_type, true)?;
+                unsafe { Ok(ListChunked::from_chunks(self.name(), chunks).into_series()) }
+            }
+            _ => polars_bail!(ComputeError: "cannot cast list type"),
         }
     }
 
@@ -326,6 +374,32 @@ fn cast_list(ca: &ListChunked, child_type: &DataType) -> PolarsResult<(ArrayRef,
         new_values,
         arr.validity().cloned(),
     );
+    Ok((Box::new(new_arr), inner_dtype))
+}
+
+// Returns inner data type. This is needed because a cast can instantiate the dtype inner
+// values for instance with categoricals
+#[cfg(feature = "dtype-array")]
+fn cast_fixed_size_list(
+    ca: &ArrayChunked,
+    child_type: &DataType,
+) -> PolarsResult<(ArrayRef, DataType)> {
+    let ca = ca.rechunk();
+    let arr = ca.downcast_iter().next().unwrap();
+    // safety: inner dtype is passed correctly
+    let s = unsafe {
+        Series::from_chunks_and_dtype_unchecked("", vec![arr.values().clone()], &ca.inner_dtype())
+    };
+    let new_inner = s.cast(child_type)?;
+
+    let inner_dtype = new_inner.dtype().clone();
+    debug_assert_eq!(&inner_dtype, child_type);
+
+    let new_values = new_inner.array_ref(0).clone();
+
+    let data_type =
+        FixedSizeListArray::default_datatype(new_values.data_type().clone(), ca.width());
+    let new_arr = FixedSizeListArray::new(data_type, new_values, arr.validity().cloned());
     Ok((Box::new(new_arr), inner_dtype))
 }
 

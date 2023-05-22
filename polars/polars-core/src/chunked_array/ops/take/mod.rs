@@ -433,6 +433,53 @@ impl ChunkTake for ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-array")]
+impl ChunkTake for ArrayChunked {
+    unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
+    where
+        Self: std::marker::Sized,
+        I: TakeIterator,
+        INulls: TakeIteratorNulls,
+    {
+        let ca_self = self.rechunk();
+        match indices {
+            TakeIdx::Array(idx_array) => {
+                if idx_array.null_count() == idx_array.len() {
+                    return Self::full_null_with_dtype(
+                        self.name(),
+                        idx_array.len(),
+                        &self.inner_dtype(),
+                        ca_self.width(),
+                    );
+                }
+                let arr = self.chunks[0].as_ref();
+                let arr = take_unchecked(arr, idx_array);
+                self.finish_from_array(arr)
+            }
+            TakeIdx::Iter(iter) => {
+                let idx: NoNull<IdxCa> = iter.map(|v| v as IdxSize).collect();
+                ca_self.take_unchecked((&idx.into_inner()).into())
+            }
+            TakeIdx::IterNulls(iter) => {
+                let idx: IdxCa = iter.map(|v| v.map(|v| v as IdxSize)).collect();
+                ca_self.take_unchecked((&idx).into())
+            }
+        }
+    }
+
+    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> PolarsResult<Self>
+    where
+        Self: std::marker::Sized,
+        I: TakeIterator,
+        INulls: TakeIteratorNulls,
+    {
+        indices.check_bounds(self.len())?;
+        // Safety:
+        // just checked bounds
+        Ok(unsafe { self.take_unchecked(indices) })
+    }
+}
+
 #[cfg(feature = "object")]
 impl<T: PolarsObject> ChunkTake for ObjectChunked<T> {
     unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self

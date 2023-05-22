@@ -14,6 +14,8 @@ mod datetime;
 mod decimal;
 #[cfg(feature = "dtype-duration")]
 mod duration;
+#[cfg(feature = "dtype-array")]
+mod fixed_size_list;
 mod floats;
 mod list;
 pub(crate) mod null;
@@ -495,6 +497,10 @@ macro_rules! impl_dyn_series {
             fn str_concat(&self, delimiter: &str) -> Utf8Chunked {
                 self.0.str_concat(delimiter)
             }
+
+            fn tile(&self, n: usize) -> Series {
+                self.0.tile(n).into_series()
+            }
         }
     };
 }
@@ -527,6 +533,8 @@ impl<T: PolarsNumericType> private::PrivateSeriesNumeric for SeriesWrap<ChunkedA
 impl private::PrivateSeriesNumeric for SeriesWrap<Utf8Chunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<BinaryChunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<ListChunked> {}
+#[cfg(feature = "dtype-array")]
+impl private::PrivateSeriesNumeric for SeriesWrap<ArrayChunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<BooleanChunked> {
     fn bit_repr_is_large(&self) -> bool {
         false

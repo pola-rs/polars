@@ -179,6 +179,30 @@ impl ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-array")]
+#[doc(hidden)]
+impl ArrayChunked {
+    pub fn downcast_iter(&self) -> impl Iterator<Item = &FixedSizeListArray> + DoubleEndedIterator {
+        // Safety:
+        // This is the array type that must be in a ArrayChunked
+        self.chunks.iter().map(|arr| {
+            let arr = &**arr;
+            unsafe { &*(arr as *const dyn Array as *const FixedSizeListArray) }
+        })
+    }
+    pub fn downcast_chunks(&self) -> Chunks<'_, FixedSizeListArray> {
+        Chunks::new(&self.chunks)
+    }
+
+    #[inline]
+    pub(crate) fn index_to_chunked_index(&self, index: usize) -> (usize, usize) {
+        if self.chunks.len() == 1 {
+            return (0, index);
+        }
+        index_to_chunked_index(self.downcast_iter().map(|arr| arr.len()), index)
+    }
+}
+
 #[cfg(feature = "object")]
 #[doc(hidden)]
 impl<T> ObjectChunked<T>

@@ -544,6 +544,10 @@ pub trait SeriesTrait:
     fn str_concat(&self, _delimiter: &str) -> Utf8Chunked {
         invalid_operation_panic!(str_concat, self);
     }
+
+    fn tile(&self, _n: usize) -> Series {
+        invalid_operation_panic!(tile, self);
+    }
 }
 
 impl<'a> (dyn SeriesTrait + 'a) {

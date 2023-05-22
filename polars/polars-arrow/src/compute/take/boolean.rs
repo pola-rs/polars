@@ -1,19 +1,12 @@
 use arrow::array::{Array, BooleanArray, PrimitiveArray};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 
+use super::bitmap::take_bitmap_unchecked;
 use crate::index::IdxSize;
-
-unsafe fn take_values(values: &Bitmap, indices: &[IdxSize]) -> Bitmap {
-    let values = indices.iter().map(|&index| {
-        debug_assert!((index as usize) < values.len());
-        values.get_bit_unchecked(index as usize)
-    });
-    Bitmap::from_trusted_len_iter(values)
-}
 
 // take implementation when neither values nor indices contain nulls
 unsafe fn take_no_validity(values: &Bitmap, indices: &[IdxSize]) -> (Bitmap, Option<Bitmap>) {
-    (take_values(values, indices), None)
+    (take_bitmap_unchecked(values, indices), None)
 }
 
 // take implementation when only values contain nulls
@@ -22,10 +15,10 @@ unsafe fn take_values_validity(
     indices: &[IdxSize],
 ) -> (Bitmap, Option<Bitmap>) {
     let validity_values = values.validity().unwrap();
-    let validity = take_values(validity_values, indices);
+    let validity = take_bitmap_unchecked(validity_values, indices);
 
     let values_values = values.values();
-    let buffer = take_values(values_values, indices);
+    let buffer = take_bitmap_unchecked(values_values, indices);
 
     (buffer, validity.into())
 }
@@ -36,7 +29,7 @@ unsafe fn take_indices_validity(
     indices: &PrimitiveArray<IdxSize>,
 ) -> (Bitmap, Option<Bitmap>) {
     // simply take all and copy the bitmap
-    let buffer = take_values(values, indices.values());
+    let buffer = take_bitmap_unchecked(values, indices.values());
 
     (buffer, indices.validity().cloned())
 }

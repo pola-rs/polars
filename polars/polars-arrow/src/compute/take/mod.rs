@@ -1,4 +1,7 @@
+pub mod bitmap;
 mod boolean;
+#[cfg(feature = "dtype-array")]
+mod fixed_size_list;
 
 use arrow::array::*;
 use arrow::bitmap::MutableBitmap;
@@ -35,6 +38,11 @@ pub unsafe fn take_unchecked(arr: &dyn Array, idx: &IdxArr) -> ArrayRef {
         Boolean => {
             let arr = arr.as_any().downcast_ref().unwrap();
             Box::new(boolean::take_unchecked(arr, idx))
+        }
+        #[cfg(feature = "dtype-array")]
+        FixedSizeList => {
+            let arr = arr.as_any().downcast_ref().unwrap();
+            Box::new(fixed_size_list::take_unchecked(arr, idx))
         }
         // TODO! implement proper unchecked version
         #[cfg(feature = "compute")]

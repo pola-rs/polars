@@ -52,7 +52,7 @@ impl Series {
         let name = self.name();
 
         let mut ca = unsafe { ListChunked::from_chunks(name, vec![Box::new(arr)]) };
-        ca.to_logical(inner_type.clone());
+        ca.to_physical(inner_type.clone());
         ca.set_fast_explode();
 
         Ok(ca)

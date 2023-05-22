@@ -127,6 +127,8 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::Boolean => DataType::Boolean,
             ArrowDataType::Float32 => DataType::Float32,
             ArrowDataType::Float64 => DataType::Float64,
+            #[cfg(feature = "dtype-array")]
+            ArrowDataType::FixedSizeList(f, size) => DataType::Array(Box::new(f.data_type().into()), *size),
             ArrowDataType::LargeList(f) | ArrowDataType::List(f) => DataType::List(Box::new(f.data_type().into())),
             ArrowDataType::Date32 => DataType::Date,
             ArrowDataType::Timestamp(tu, tz) => DataType::Datetime(tu.into(), tz.clone()),

@@ -56,6 +56,19 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
                 AnyValue::List(s)
             }
         }
+        #[cfg(feature = "dtype-array")]
+        DataType::Array(dt, width) => {
+            let v: ArrayRef = downcast!(FixedSizeListArray);
+            if dt.is_primitive() {
+                let s = Series::from_chunks_and_dtype_unchecked("", vec![v], dt);
+                AnyValue::Array(s, *width)
+            } else {
+                let s = Series::from_chunks_and_dtype_unchecked("", vec![v], &dt.to_physical())
+                    .cast_unchecked(dt)
+                    .unwrap();
+                AnyValue::Array(s, *width)
+            }
+        }
         #[cfg(feature = "dtype-categorical")]
         DataType::Categorical(rev_map) => {
             let arr = &*(arr as *const dyn Array as *const UInt32Array);
@@ -230,6 +243,18 @@ impl ChunkAnyValue for BinaryChunked {
 }
 
 impl ChunkAnyValue for ListChunked {
+    #[inline]
+    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
+        get_any_value_unchecked!(self, index)
+    }
+
+    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
+        get_any_value!(self, index)
+    }
+}
+
+#[cfg(feature = "dtype-array")]
+impl ChunkAnyValue for ArrayChunked {
     #[inline]
     unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
         get_any_value_unchecked!(self, index)

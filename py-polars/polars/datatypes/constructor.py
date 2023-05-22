@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 from decimal import Decimal as PyDecimal
 from typing import TYPE_CHECKING, Any, Callable, Sequence
 
@@ -50,8 +51,13 @@ def polars_type_to_constructor(
 ) -> Callable[[str, Sequence[Any], bool], PySeries]:
     """Get the right PySeries constructor for the given Polars dtype."""
     try:
-        dtype = dtype.base_type()
-        return _POLARS_TYPE_TO_CONSTRUCTOR[dtype]
+        base_type = dtype.base_type()
+        # special case for Array as it needs to pass the width argument
+        # upon construction
+        if base_type == dt.Array:
+            return functools.partial(PySeries.new_array, dtype.width)  # type: ignore[union-attr]
+
+        return _POLARS_TYPE_TO_CONSTRUCTOR[base_type]
     except KeyError:  # pragma: no cover
         raise ValueError(f"Cannot construct PySeries for type {dtype}.") from None
 
