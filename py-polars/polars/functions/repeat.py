@@ -156,9 +156,7 @@ def repeat(
     else:
         if isinstance(n, int):
             n = F.lit(n)
-        expr = wrap_expr(plr.repeat_lazy(value, n._pyexpr))
-        if dtype is not None:
-            expr = expr.cast(dtype)
+        expr = wrap_expr(plr.repeat_lazy(value, n._pyexpr, dtype))
         if name is not None:
             expr = expr.alias(name)
         return expr
