@@ -923,17 +923,13 @@ def test_groupby_dynamic_when_conversion_crosses_dates_7274() -> None:
             pl.col("timestamp")
             .dt.convert_time_zone("UTC")
             .alias("timestamp_utc")
+            .set_sorted()
         )
     )
     result = df.groupby_dynamic(
         index_column="timestamp", every="1d", closed="left"
     ).agg(pl.col("value").count())
-    expected = pl.DataFrame(
-        {
-            "timestamp": [datetime(1970, 1, 1)],
-            "value": [2],
-        }
-    )
+    expected = pl.DataFrame({"timestamp": [datetime(1970, 1, 1)], "value": [2]})
     expected = expected.with_columns(
         pl.col("timestamp").dt.replace_time_zone("Africa/Lagos"),
         pl.col("value").cast(pl.UInt32),
