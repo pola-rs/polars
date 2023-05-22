@@ -33,8 +33,8 @@ def repeat(
     n: Expr | int,
     *,
     dtype: PolarsDataType | None = ...,
-    name: str | None = ...,
     eager: Literal[False] = ...,
+    name: str | None = ...,
 ) -> Expr:
     ...
 
@@ -45,8 +45,8 @@ def repeat(
     n: int,
     *,
     dtype: PolarsDataType | None = ...,
-    name: str | None = ...,
     eager: Literal[True],
+    name: str | None = ...,
 ) -> Series:
     ...
 
@@ -57,8 +57,8 @@ def repeat(
     n: Expr,
     *,
     dtype: PolarsDataType | None = ...,
-    name: str | None = ...,
     eager: Literal[True],
+    name: str | None = ...,
 ) -> NoReturn:
     ...
 
@@ -69,8 +69,8 @@ def repeat(
     n: Expr | int,
     *,
     dtype: PolarsDataType | None = ...,
-    name: str | None = ...,
     eager: bool,
+    name: str | None = ...,
 ) -> Expr | Series:
     ...
 
@@ -80,8 +80,8 @@ def repeat(
     n: Expr | int,
     *,
     dtype: PolarsDataType | None = None,
-    name: str | None = None,
     eager: bool = False,
+    name: str | None = None,
 ) -> Expr | Series:
     """
     Construct a column of length `n` filled with the given value.
@@ -96,11 +96,14 @@ def repeat(
         Data type of the resulting column. If set to ``None`` (default), data type is
         inferred from the given value. Defaults to Int32 for integer values, unless
         Int64 is required to fit the given value. Defaults to Float64 for float values.
-    name
-        Name of the resulting column.
     eager
         Evaluate immediately and return a ``Series``. If set to ``False`` (default),
         return an expression instead.
+    name
+        Name of the resulting column.
+
+        .. deprecated:: 0.17.15
+            This argument is deprecated. Use the ``alias`` method instead.
 
     Notes
     -----
@@ -117,7 +120,7 @@ def repeat(
 
     >>> pl.select(pl.repeat("z", n=3)).to_series()
     shape: (3,)
-    Series: 'literal' [str]
+    Series: 'repeat' [str]
     [
             "z"
             "z"
@@ -126,9 +129,9 @@ def repeat(
 
     Generate a Series directly by setting ``eager=True``.
 
-    >>> pl.repeat(3, n=3, eager=True, name="three", dtype=pl.Int8)
+    >>> pl.repeat(3, n=3, dtype=pl.Int8, eager=True)
     shape: (3,)
-    Series: 'three' [i8]
+    Series: 'repeat' [i8]
     [
             3
             3
@@ -136,20 +139,30 @@ def repeat(
     ]
 
     """
+    if name is not None:
+        warnings.warn(
+            "the `name` argument is deprecated. Use the `alias` method instead.",
+            DeprecationWarning,
+            stacklevel=find_stacklevel(),
+        )
+
     if eager:
         if not isinstance(n, int):
             raise ValueError(
                 "`n` must be an integer when using `repeat` in an eager context."
             )
-        return wrap_s(plr.repeat_eager(value, n, dtype, name))
+        series = wrap_s(plr.repeat_eager(value, n, dtype))
+        if name is not None:
+            series = series.alias(name)
+        return series
     else:
         if isinstance(n, int):
             n = F.lit(n)
         expr = wrap_expr(plr.repeat_lazy(value, n._pyexpr))
-        if name is not None:
-            expr = expr.alias(name)
         if dtype is not None:
             expr = expr.cast(dtype)
+        if name is not None:
+            expr = expr.alias(name)
         return expr
 
 

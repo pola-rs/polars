@@ -122,7 +122,6 @@ pub fn repeat_eager(
     value: Wrap<AnyValue>,
     n: usize,
     dtype: Option<Wrap<DataType>>,
-    name: Option<&str>,
 ) -> PyResult<PySeries> {
     let value = value.0;
     let dtype = match dtype.map(|wrap| wrap.0) {
@@ -141,9 +140,8 @@ pub fn repeat_eager(
             _ => value.dtype(),
         },
     };
-    let name = name.unwrap_or("");
 
-    Ok(Series::new(name, &[value])
+    Ok(Series::new("repeat", &[value])
         .cast(&dtype)
         .map_err(PyPolarsErr::from)?
         .new_from_index(0, n)
