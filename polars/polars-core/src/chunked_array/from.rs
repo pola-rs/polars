@@ -40,7 +40,7 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
             chunks.push(Box::new(new_array));
             DataType::List(Box::new(cat.dtype().clone()))
         }
-        #[cfg(any(feature = "dtype-categorical", feature = "dtype-categorical"))]
+        #[cfg(all(feature = "dtype-array", feature = "dtype-categorical"))]
         DataType::Array(inner, width) if *inner == DataType::Categorical(None) => {
             let array = concatenate_owned_unchecked(chunks).unwrap();
             let list_arr = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();

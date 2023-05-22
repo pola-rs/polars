@@ -20,3 +20,12 @@ def test_cast_list_array() -> None:
         match=r"incompatible offsets in source list",
     ):
         s.cast(pl.Array(width=2, inner=pl.Int64))
+
+
+def test_array_construction() -> None:
+    payload = [[1, 2, 3], [4, 2, 3]]
+
+    dtype = pl.Array(width=3, inner=pl.Int64)
+    s = pl.Series(payload, dtype=dtype)
+    assert s.dtype == dtype
+    assert s.to_list() == payload

@@ -1,10 +1,11 @@
 use numpy::PyArray1;
 use polars_core::prelude::*;
 use polars_core::utils::CustomIterTools;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 use crate::arrow_interop::to_rust::array_to_rust;
-use crate::conversion::{slice_extract_wrapped, Wrap};
+use crate::conversion::{slice_extract_wrapped, vec_extract_wrapped, Wrap};
 use crate::error::PyPolarsErr;
 use crate::prelude::ObjectValue;
 use crate::series::ToSeries;
@@ -219,6 +220,26 @@ impl PySeries {
     fn new_series_list(name: &str, val: Vec<PySeries>, _strict: bool) -> Self {
         let series_vec = val.to_series();
         Series::new(name, &series_vec).into()
+    }
+
+    #[staticmethod]
+    fn new_array(
+        width: usize,
+        name: &str,
+        val: Vec<Wrap<AnyValue>>,
+        _strict: bool,
+    ) -> PyResult<Self> {
+        let val = vec_extract_wrapped(val);
+        let out = Series::new(name, &val);
+        match out.dtype() {
+            DataType::List(inner) => {
+                let out = out
+                    .cast(&DataType::Array(inner.clone(), width))
+                    .map_err(PyPolarsErr::from)?;
+                Ok(out.into())
+            }
+            _ => Err(PyValueError::new_err("could not create Array from input")),
+        }
     }
 
     #[staticmethod]
