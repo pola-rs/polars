@@ -1,3 +1,5 @@
+#[cfg(feature = "dtype-array")]
+mod array;
 mod binary;
 mod boolean;
 #[cfg(feature = "dtype-categorical")]
@@ -14,8 +16,6 @@ mod datetime;
 mod decimal;
 #[cfg(feature = "dtype-duration")]
 mod duration;
-#[cfg(feature = "dtype-array")]
-mod fixed_size_list;
 mod floats;
 mod list;
 pub(crate) mod null;
