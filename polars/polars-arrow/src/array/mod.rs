@@ -10,7 +10,7 @@ use crate::prelude::*;
 use crate::utils::CustomIterTools;
 
 pub mod default_arrays;
-#[cfg(feature = "dtype-fixed_size_list")]
+#[cfg(feature = "dtype-array")]
 pub mod fixed_size_list;
 mod get;
 pub mod list;

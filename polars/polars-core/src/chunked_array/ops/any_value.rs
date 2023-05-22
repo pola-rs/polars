@@ -56,7 +56,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
                 AnyValue::List(s)
             }
         }
-        #[cfg(feature = "dtype-fixed-size-list")]
+        #[cfg(feature = "dtype-array")]
         DataType::FixedSizeList(dt, width) => {
             let v: ArrayRef = downcast!(FixedSizeListArray);
             if dt.is_primitive() {
@@ -253,7 +253,7 @@ impl ChunkAnyValue for ListChunked {
     }
 }
 
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 impl ChunkAnyValue for FixedSizeListChunked {
     #[inline]
     unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {

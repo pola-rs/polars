@@ -837,7 +837,7 @@ impl ChunkCompare<&ListChunked> for ListChunked {
     }
 }
 
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 impl ChunkCompare<&FixedSizeListChunked> for FixedSizeListChunked {
     type Item = BooleanChunked;
     fn equal(&self, rhs: &FixedSizeListChunked) -> BooleanChunked {
@@ -971,7 +971,7 @@ impl ChunkEqualElement for BinaryChunked {
 }
 
 impl ChunkEqualElement for ListChunked {}
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 impl ChunkEqualElement for FixedSizeListChunked {}
 
 #[cfg(feature = "dtype-struct")]

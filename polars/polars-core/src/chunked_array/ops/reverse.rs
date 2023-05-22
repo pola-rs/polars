@@ -1,4 +1,4 @@
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 use crate::chunked_array::builder::get_fixed_size_list_builder;
 use crate::prelude::*;
 use crate::series::IsSorted;
@@ -44,7 +44,7 @@ impl_reverse!(Utf8Type, Utf8Chunked);
 impl_reverse!(BinaryType, BinaryChunked);
 impl_reverse!(ListType, ListChunked);
 
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 impl ChunkReverse for FixedSizeListChunked {
     fn reverse(&self) -> Self {
         if !self.inner_dtype().is_numeric() {

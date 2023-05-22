@@ -433,7 +433,7 @@ impl ChunkTake for ListChunked {
     }
 }
 
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 impl ChunkTake for FixedSizeListChunked {
     unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
     where

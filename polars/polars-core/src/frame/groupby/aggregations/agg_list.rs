@@ -338,7 +338,7 @@ impl AggList for ListChunked {
     }
 }
 
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 fn agg_list_fixed_size_list<F: Fn(&FixedSizeListChunked, &mut Vec<ArrayRef>)>(
     ca: &FixedSizeListChunked,
     groups_len: usize,
@@ -363,7 +363,7 @@ fn agg_list_fixed_size_list<F: Fn(&FixedSizeListChunked, &mut Vec<ArrayRef>)>(
     listarr.into_series()
 }
 
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 impl AggList for FixedSizeListChunked {
     unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         match groups {

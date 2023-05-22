@@ -168,7 +168,7 @@ impl TakeChunked for ListChunked {
     }
 }
 
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 impl TakeChunked for FixedSizeListChunked {
     unsafe fn take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Self {
         let arrs = self.downcast_iter().collect::<Vec<_>>();

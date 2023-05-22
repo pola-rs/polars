@@ -416,7 +416,7 @@ impl ListChunked {
     }
 }
 
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 impl<'a> IntoIterator for &'a FixedSizeListChunked {
     type Item = Option<Series>;
     type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
@@ -457,7 +457,7 @@ impl<'a> IntoIterator for &'a FixedSizeListChunked {
     }
 }
 
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 pub struct FixedSizeListIterNoNull<'a> {
     array: &'a FixedSizeListArray,
     inner_type: DataType,
@@ -465,7 +465,7 @@ pub struct FixedSizeListIterNoNull<'a> {
     current_end: usize,
 }
 
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 impl<'a> FixedSizeListIterNoNull<'a> {
     /// create a new iterator
     pub fn new(array: &'a FixedSizeListArray, inner_type: DataType) -> Self {
@@ -478,7 +478,7 @@ impl<'a> FixedSizeListIterNoNull<'a> {
     }
 }
 
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 impl<'a> Iterator for FixedSizeListIterNoNull<'a> {
     type Item = Series;
 
@@ -506,7 +506,7 @@ impl<'a> Iterator for FixedSizeListIterNoNull<'a> {
     }
 }
 
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 impl<'a> DoubleEndedIterator for FixedSizeListIterNoNull<'a> {
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.current_end == self.current {
@@ -521,10 +521,10 @@ impl<'a> DoubleEndedIterator for FixedSizeListIterNoNull<'a> {
 }
 
 /// all arrays have known size.
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 impl<'a> ExactSizeIterator for FixedSizeListIterNoNull<'a> {}
 
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 impl FixedSizeListChunked {
     #[allow(clippy::wrong_self_convention)]
     #[doc(hidden)]

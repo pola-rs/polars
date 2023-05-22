@@ -649,7 +649,7 @@ impl ChunkExpandAtIndex<ListType> for ListChunked {
     }
 }
 
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 impl ChunkExpandAtIndex<FixedSizeListType> for FixedSizeListChunked {
     fn new_from_index(&self, index: usize, length: usize) -> FixedSizeListChunked {
         let opt_val = self.get(index);

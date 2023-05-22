@@ -144,7 +144,7 @@ impl<T: AsRef<[Series]>> NamedFrom<T, ListType> for Series {
     }
 }
 
-// #[cfg(feature = "dtype-fixed-size-list")]
+// #[cfg(feature = "dtype-array")]
 // impl<T: AsRef<([Series], usize)>> NamedFrom<T, FixedSizeListType> for Series {
 //     fn new(name: &str, s: T) -> Self {
 //         use crate::chunked_array::builder::{get_fixed_size_list_builder, AnonymousFixedSizeListBuilder};

@@ -184,7 +184,7 @@ impl ChunkZip<ListType> for ListChunked {
     }
 }
 
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 impl ChunkZip<FixedSizeListType> for FixedSizeListChunked {
     fn zip_with(
         &self,

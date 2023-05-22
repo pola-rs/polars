@@ -1,6 +1,6 @@
 mod binary;
 mod boolean;
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 pub mod fixed_size_list;
 mod from;
 pub mod list;
@@ -16,7 +16,7 @@ use arrow::array::*;
 use arrow::bitmap::Bitmap;
 pub use binary::*;
 pub use boolean::*;
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 pub(crate) use fixed_size_list::*;
 pub use list::*;
 pub use primitive::*;

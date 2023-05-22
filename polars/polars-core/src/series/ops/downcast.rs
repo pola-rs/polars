@@ -128,7 +128,7 @@ impl Series {
     }
 
     /// Unpack to ChunkedArray of dtype FixedSizeList
-    #[cfg(feature = "dtype-fixed-size-list")]
+    #[cfg(feature = "dtype-array")]
     pub fn fixed_size_list(&self) -> PolarsResult<&FixedSizeListChunked> {
         unpack_chunked!(self, DataType::FixedSizeList(_, _) => FixedSizeListChunked, "FixedSizeList")
     }

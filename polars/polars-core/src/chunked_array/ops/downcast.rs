@@ -179,7 +179,7 @@ impl ListChunked {
     }
 }
 
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 #[doc(hidden)]
 impl FixedSizeListChunked {
     pub fn downcast_iter(&self) -> impl Iterator<Item = &FixedSizeListArray> + DoubleEndedIterator {

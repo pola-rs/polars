@@ -5,11 +5,11 @@ use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::offset::OffsetsBuffer;
 use polars_arrow::array::PolarsArray;
 use polars_arrow::bit_util::unset_bit_raw;
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 use polars_arrow::is_valid::IsValid;
 use polars_arrow::prelude::*;
 
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 use crate::chunked_array::builder::get_fixed_size_list_builder;
 use crate::chunked_array::builder::AnonymousOwnedListBuilder;
 use crate::prelude::*;
@@ -256,7 +256,7 @@ impl ExplodeByOffsets for ListChunked {
     }
 }
 
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 impl ExplodeByOffsets for FixedSizeListChunked {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         debug_assert_eq!(self.chunks.len(), 1);
@@ -480,7 +480,7 @@ impl ChunkExplode for ListChunked {
 
 // TODO: for this should we implement the `fn explode(&self)` on the trait and ignore creating
 // offsets?
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 impl ChunkExplode for FixedSizeListChunked {
     fn explode_and_offsets(&self) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
         todo!();

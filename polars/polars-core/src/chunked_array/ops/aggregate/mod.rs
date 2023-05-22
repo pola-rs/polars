@@ -513,7 +513,7 @@ impl ChunkAggSeries for ListChunked {
     }
 }
 
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 impl ChunkAggSeries for FixedSizeListChunked {
     fn sum_as_series(&self) -> Series {
         FixedSizeListChunked::full_null_with_dtype(

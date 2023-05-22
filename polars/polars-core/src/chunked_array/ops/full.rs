@@ -101,7 +101,7 @@ impl ChunkFullNull for ListChunked {
     }
 }
 
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 impl FixedSizeListChunked {
     pub fn full_null_with_dtype(
         name: &str,
@@ -120,7 +120,7 @@ impl FixedSizeListChunked {
     }
 }
 
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 impl ChunkFull<&Series> for FixedSizeListChunked {
     fn full(name: &str, value: &Series, length: usize) -> FixedSizeListChunked {
         if !value.dtype().is_numeric() {
@@ -139,7 +139,7 @@ impl ChunkFull<&Series> for FixedSizeListChunked {
     }
 }
 
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 impl ChunkFullNull for FixedSizeListChunked {
     fn full_null(name: &str, length: usize) -> FixedSizeListChunked {
         FixedSizeListChunked::full_null_with_dtype(name, length, &DataType::Null, 0)

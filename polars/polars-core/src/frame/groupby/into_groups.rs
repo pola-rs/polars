@@ -358,7 +358,7 @@ impl IntoGroupsProxy for ListChunked {
     }
 }
 
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 impl IntoGroupsProxy for FixedSizeListChunked {
     #[allow(clippy::needless_lifetimes)]
     #[allow(unused_variables)]

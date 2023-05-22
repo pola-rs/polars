@@ -288,7 +288,7 @@ impl ChunkCast for ListChunked {
                     }
                 }
             }
-            #[cfg(feature = "dtype-fixed-size-list")]
+            #[cfg(feature = "dtype-array")]
             FixedSizeList(_, _) => {
                 // TODO! bubble up logical types
                 let chunks = cast_chunks(self.chunks(), data_type, true)?;
@@ -311,7 +311,7 @@ impl ChunkCast for ListChunked {
 
 /// We cannot cast anything to or from List/LargeList
 /// So this implementation casts the inner type
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 impl ChunkCast for FixedSizeListChunked {
     fn cast(&self, data_type: &DataType) -> PolarsResult<Series> {
         use DataType::*;
@@ -379,7 +379,7 @@ fn cast_list(ca: &ListChunked, child_type: &DataType) -> PolarsResult<(ArrayRef,
 
 // Returns inner data type. This is needed because a cast can instantiate the dtype inner
 // values for instance with categoricals
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 fn cast_fixed_size_list(
     ca: &FixedSizeListChunked,
     child_type: &DataType,

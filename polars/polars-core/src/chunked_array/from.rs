@@ -81,7 +81,7 @@ where
     pub unsafe fn from_chunks(name: &str, mut chunks: Vec<ArrayRef>) -> Self {
         let dtype = match T::get_dtype() {
             dtype @ DataType::List(_) => from_chunks_list_dtype(&mut chunks, dtype),
-            #[cfg(feature = "dtype-fixed-size-list")]
+            #[cfg(feature = "dtype-array")]
             dtype @ DataType::FixedSizeList(_, _) => from_chunks_list_dtype(&mut chunks, dtype),
             dt => dt,
         };
@@ -132,7 +132,7 @@ impl ListChunked {
     }
 }
 
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 impl FixedSizeListChunked {
     pub(crate) unsafe fn from_chunks_and_dtype_unchecked(
         name: &str,

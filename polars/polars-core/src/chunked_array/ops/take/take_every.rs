@@ -59,7 +59,7 @@ impl ChunkTakeEvery<ListType> for ListChunked {
     }
 }
 
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 impl ChunkTakeEvery<FixedSizeListType> for FixedSizeListChunked {
     fn take_every(&self, n: usize) -> FixedSizeListChunked {
         let idx = (0 as IdxSize..(self.len() as IdxSize))

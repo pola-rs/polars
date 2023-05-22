@@ -14,7 +14,7 @@ use rayon::prelude::*;
 use crate::chunked_array::builder::{
     get_list_builder, AnonymousListBuilder, AnonymousOwnedListBuilder,
 };
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 use crate::chunked_array::builder::{AnonymousOwnedFixedSizeListBuilder, FixedSizeListBuilder};
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectArray;
@@ -302,7 +302,7 @@ impl FromIterator<Option<Box<dyn Array>>> for ListChunked {
     }
 }
 
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 impl FixedSizeListChunked {
     pub(crate) unsafe fn from_iter_and_args<I: IntoIterator<Item = Option<Box<dyn Array>>>>(
         iter: I,

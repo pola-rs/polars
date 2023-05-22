@@ -210,7 +210,7 @@ impl ListChunked {
     }
 }
 
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 #[doc(hidden)]
 impl FixedSizeListChunked {
     pub fn extend(&mut self, other: &Self) -> PolarsResult<()> {

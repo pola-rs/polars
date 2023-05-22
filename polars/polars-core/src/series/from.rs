@@ -71,7 +71,7 @@ impl Series {
                     scale.unwrap_or_else(|| unreachable!("scale should be set")),
                 )
                 .into_series(),
-            #[cfg(feature = "dtype-fixed-size-list")]
+            #[cfg(feature = "dtype-array")]
             FixedSizeList(_, _) => {
                 FixedSizeListChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype.clone())
                     .into_series()
@@ -145,7 +145,7 @@ impl Series {
                 let chunks = chunks.iter().map(convert_inner_types).collect();
                 Ok(ListChunked::from_chunks(name, chunks).into_series())
             }
-            #[cfg(feature = "dtype-fixed-size-list")]
+            #[cfg(feature = "dtype-array")]
             ArrowDataType::FixedSizeList(_, _) => {
                 let chunks = chunks.iter().map(convert_inner_types).collect();
                 Ok(FixedSizeListChunked::from_chunks(name, chunks).into_series())
@@ -472,7 +472,7 @@ fn convert_inner_types(arr: &ArrayRef) -> ArrayRef {
             let out = cast(&**arr, &ArrowDataType::LargeList(field.clone())).unwrap();
             convert_inner_types(&out)
         }
-        #[cfg(feature = "dtype-fixed-size-list")]
+        #[cfg(feature = "dtype-array")]
         ArrowDataType::FixedSizeList(_, size) => {
             let arr = arr.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
             let values = convert_inner_types(arr.values());

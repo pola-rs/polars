@@ -27,7 +27,7 @@ impl AsList for ListChunked {
     }
 }
 
-#[cfg(feature = "dtype-fixed-size-list")]
+#[cfg(feature = "dtype-array")]
 impl AsList for FixedSizeListChunked {
     fn as_list(&self) -> &ListChunked {
         // Need to create offsets to cast to ListChunked
