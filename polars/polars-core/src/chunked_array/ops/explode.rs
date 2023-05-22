@@ -311,7 +311,7 @@ pub(crate) fn offsets_to_indexes(offsets: &[i64], capacity: usize) -> Vec<IdxSiz
     let mut idx = Vec::with_capacity(capacity);
 
     let mut last_idx = 0;
-    for (offset_start, offset_end) in offsets.iter().zip(offsets.iter().skip(1)) {
+    for (offset_start, offset_end) in offsets.iter().zip(offsets[1..].iter()) {
         if idx.len() >= capacity {
             // significant speed-up in edge cases with many offsets,
             // no measurable overhead in typical case due to branch prediction
