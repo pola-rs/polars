@@ -310,9 +310,6 @@ pub trait SeriesTrait:
     /// Aggregate all chunks to a contiguous array of memory.
     fn rechunk(&self) -> Series;
 
-    /// Take every nth value as a new Series
-    fn take_every(&self, n: usize) -> Series;
-
     /// Drop all null values and return a new Series.
     fn drop_nulls(&self) -> Series {
         if self.null_count() == 0 {

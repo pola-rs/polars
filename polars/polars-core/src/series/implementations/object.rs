@@ -159,10 +159,6 @@ where
         self.rechunk_object().into_series()
     }
 
-    fn take_every(&self, n: usize) -> Series {
-        self.0.take_every(n).into_series()
-    }
-
     fn new_from_index(&self, index: usize, length: usize) -> Series {
         ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
     }

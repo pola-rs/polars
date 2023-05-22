@@ -244,10 +244,6 @@ macro_rules! impl_dyn_series {
                     .map(|ca| ca.$into_logical().into_series())
             }
 
-            fn take_every(&self, n: usize) -> Series {
-                self.0.take_every(n).$into_logical().into_series()
-            }
-
             unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
                 ChunkTake::take_unchecked(self.0.deref(), iter.into())
                     .$into_logical()

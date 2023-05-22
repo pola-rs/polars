@@ -83,10 +83,6 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         self.0.rename(name)
     }
 
-    fn take_every(&self, n: usize) -> Series {
-        self.0.apply_fields(|s| s.take_every(n)).into_series()
-    }
-
     fn has_validity(&self) -> bool {
         self.0.fields().iter().any(|s| s.has_validity())
     }

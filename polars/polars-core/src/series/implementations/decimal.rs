@@ -143,13 +143,6 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
             .into_series()
     }
 
-    fn take_every(&self, n: usize) -> Series {
-        self.0
-            .take_every(n)
-            .into_decimal_unchecked(self.0.precision(), self.0.scale())
-            .into_series()
-    }
-
     fn new_from_index(&self, index: usize, length: usize) -> Series {
         self.0
             .new_from_index(index, length)
