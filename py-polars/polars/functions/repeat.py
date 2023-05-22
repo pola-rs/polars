@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, NoReturn, overload
 
 from polars import functions as F
 from polars.datatypes import Float64
-from polars.utils import no_default
 from polars.utils._wrap import wrap_expr, wrap_s
 from polars.utils.various import find_stacklevel
 
@@ -19,7 +18,6 @@ if TYPE_CHECKING:
 
     from polars import Expr, Series
     from polars.type_aliases import PolarsDataType, PythonLiteral
-    from polars.utils import NoDefault
 
     if sys.version_info >= (3, 8):
         from typing import Literal
@@ -200,7 +198,7 @@ def ones(
     n: int,
     dtype: PolarsDataType = Float64,
     *,
-    eager: bool | NoDefault = no_default,
+    eager: bool | None = None,
 ) -> Expr | Series:
     """
     Construct a column of length `n` filled with ones.
@@ -239,7 +237,7 @@ def ones(
     ]
 
     """
-    if eager is no_default:
+    if eager is None:
         warnings.warn(
             "In a future version, the default behaviour for `ones` will change from `eager=True` to `eager=False`. "
             "To silence this warning, please:\n"
@@ -286,7 +284,7 @@ def zeros(
     n: int,
     dtype: PolarsDataType = Float64,
     *,
-    eager: bool | NoDefault = no_default,
+    eager: bool | None = None,
 ) -> Expr | Series:
     """
     Construct a column of length `n` filled with zeros.
@@ -325,7 +323,7 @@ def zeros(
     ]
 
     """
-    if eager is no_default:
+    if eager is None:
         warnings.warn(
             "In a future version, the default behaviour for `ones` will change from `eager=True` to `eager=False`. "
             "To silence this warning, please:\n"
