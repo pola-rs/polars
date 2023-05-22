@@ -75,7 +75,9 @@ pub fn hist(s: &Series, bins: Option<&Series>, bin_count: Option<usize>) -> Resu
         .lazy()
         .with_columns([
             col(category_str).cast(DataType::Categorical(None)),
-            col(breakpoint_str).cast(s.dtype().to_owned()).set_sorted_flag(IsSorted::Ascending),
+            col(breakpoint_str)
+                .cast(s.dtype().to_owned())
+                .set_sorted_flag(IsSorted::Ascending),
         ])
         .collect()?;
 
