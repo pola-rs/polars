@@ -390,10 +390,13 @@ def test_invalid_date_parsing_4898() -> None:
 
 
 def test_strptime_invalid_timezone() -> None:
-    ts = pl.Series(["2020-01-01 00:00:00+01:00"]).str.to_datetime(
-        "%Y-%m-%d %H:%M:%S%z", utc=True
-    )
-    with pytest.raises(ComputeError, match=r"unable to parse time zone: 'foo'"):
+    ts = pl.Series(["2020-01-01 00:00:00+01:00"]).str.to_datetime("%Y-%m-%d %H:%M:%S%z", utc=True)
+    with pytest.raises(
+        ComputeError, match=r"unable to parse time zone: 'foo'"
+    ), pytest.warns(
+        DeprecationWarning,
+        match="In a future version of polars, non-area/location time zones",
+    ):
         ts.dt.replace_time_zone("foo")
 
 

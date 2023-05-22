@@ -11,13 +11,11 @@ from polars.datatypes import (
     Date,
     Datetime,
     Duration,
-    Int32,
     Int64,
     Struct,
     Time,
     UInt32,
     is_polars_dtype,
-    py_type_to_dtype,
 )
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
@@ -2684,7 +2682,7 @@ def time_(
     microsecond: Expr | str | int | None = None,
 ) -> Expr:
     """
-    Create a Polars literal expression of type Date.
+    Create a Polars literal expression of type Time.
 
     Parameters
     ----------
@@ -3038,7 +3036,8 @@ def struct(
         Evaluate immediately and return a ``Series``. If set to ``False`` (default),
         return an expression instead.
     schema
-        Optional schema that explicitly defines the struct field dtypes.
+        Optional schema that explicitly defines the struct field dtypes. If no columns
+        or expressions are provided, schema keys are used to define columns.
     **named_exprs
         Additional columns to collect into the struct column, specified as keyword
         arguments. The columns will be renamed to the keyword used.
@@ -3096,87 +3095,19 @@ def struct(
         )
 
     expr = wrap_expr(plr.as_struct(exprs))
+
     if schema:
+        if not exprs:
+            # no columns or expressions provided; create one from schema keys
+            expr = wrap_expr(
+                plr.as_struct(selection_to_pyexpr_list(list(schema.keys())))
+            )
         expr = expr.cast(Struct(schema), strict=False)
 
     if eager:
         return select(expr).to_series()
     else:
         return expr
-
-
-@overload
-def repeat(
-    value: float | int | str | bool | date | datetime | time | timedelta | None,
-    n: Expr | int,
-    *,
-    eager: Literal[False] = ...,
-    name: str | None = ...,
-) -> Expr:
-    ...
-
-
-@overload
-def repeat(
-    value: float | int | str | bool | date | datetime | time | timedelta | None,
-    n: Expr | int,
-    *,
-    eager: Literal[True],
-    name: str | None = ...,
-) -> Series:
-    ...
-
-
-@overload
-def repeat(
-    value: float | int | str | bool | date | datetime | time | timedelta | None,
-    n: Expr | int,
-    *,
-    eager: bool,
-    name: str | None,
-) -> Expr | Series:
-    ...
-
-
-def repeat(
-    value: float | int | str | bool | date | datetime | time | timedelta | None,
-    n: Expr | int,
-    *,
-    eager: bool = False,
-    name: str | None = None,
-) -> Expr | Series:
-    """
-    Repeat a single value n times.
-
-    Parameters
-    ----------
-    value
-        Value to repeat.
-    n
-        repeat `n` times
-    eager
-        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
-        return an expression instead.
-    name
-        Only used in `eager` mode. As expression, use `alias`
-
-    """
-    if eager:
-        if name is None:
-            name = ""
-        dtype = py_type_to_dtype(type(value))
-        if (
-            dtype == Int64
-            and isinstance(value, int)
-            and -(2**31) <= value <= 2**31 - 1
-        ):
-            dtype = Int32
-        s = pl.Series._repeat(name, value, n, dtype)  # type: ignore[arg-type]
-        return s
-    else:
-        if isinstance(n, int):
-            n = lit(n)
-        return wrap_expr(plr.repeat(value, n._pyexpr))
 
 
 @overload

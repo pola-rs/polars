@@ -1,67 +1,11 @@
 use crate::prelude::*;
-use crate::utils::NoNull;
 
-impl<T> ChunkTakeEvery<T> for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-{
-    fn take_every(&self, n: usize) -> ChunkedArray<T> {
-        let mut ca = if !self.has_validity() {
-            let a: NoNull<_> = self.into_no_null_iter().step_by(n).collect();
-            a.into_inner()
-        } else {
-            self.into_iter().step_by(n).collect()
-        };
-        ca.rename(self.name());
-        ca
-    }
-}
+impl Series {
+    /// Traverse and collect every nth element in a new array.
+    pub fn take_every(&self, n: usize) -> Series {
+        let mut idx = (0..self.len()).step_by(n);
 
-impl ChunkTakeEvery<BooleanType> for BooleanChunked {
-    fn take_every(&self, n: usize) -> BooleanChunked {
-        let mut ca: Self = if !self.has_validity() {
-            self.into_no_null_iter().step_by(n).collect()
-        } else {
-            self.into_iter().step_by(n).collect()
-        };
-        ca.rename(self.name());
-        ca
-    }
-}
-
-impl ChunkTakeEvery<Utf8Type> for Utf8Chunked {
-    fn take_every(&self, n: usize) -> Utf8Chunked {
-        unsafe { self.as_binary().take_every(n).to_utf8() }
-    }
-}
-
-impl ChunkTakeEvery<BinaryType> for BinaryChunked {
-    fn take_every(&self, n: usize) -> BinaryChunked {
-        let mut ca: Self = if !self.has_validity() {
-            self.into_no_null_iter().step_by(n).collect()
-        } else {
-            self.into_iter().step_by(n).collect()
-        };
-        ca.rename(self.name());
-        ca
-    }
-}
-
-impl ChunkTakeEvery<ListType> for ListChunked {
-    fn take_every(&self, n: usize) -> ListChunked {
-        let mut ca: Self = if !self.has_validity() {
-            self.into_no_null_iter().step_by(n).collect()
-        } else {
-            self.into_iter().step_by(n).collect()
-        };
-        ca.rename(self.name());
-        ca
-    }
-}
-
-#[cfg(feature = "object")]
-impl<T: PolarsObject> ChunkTakeEvery<ObjectType<T>> for ObjectChunked<T> {
-    fn take_every(&self, _n: usize) -> ObjectChunked<T> {
-        todo!()
+        // safety: we are in bounds
+        unsafe { self.take_iter_unchecked(&mut idx) }
     }
 }

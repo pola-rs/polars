@@ -4,9 +4,7 @@ from polars.functions.eager import (
     cut,
     date_range,
     get_dummies,
-    ones,
     time_range,
-    zeros,
 )
 from polars.functions.lazy import (
     all,
@@ -49,7 +47,6 @@ from polars.functions.lazy import (
     pearson_corr,
     quantile,
     reduce,
-    repeat,
     rolling_corr,
     rolling_cov,
     select,
@@ -64,6 +61,7 @@ from polars.functions.lazy import date_ as date
 from polars.functions.lazy import datetime_ as datetime
 from polars.functions.lazy import list_ as list
 from polars.functions.lazy import time_ as time
+from polars.functions.repeat import ones, repeat, zeros
 from polars.functions.whenthen import when
 
 __all__ = [

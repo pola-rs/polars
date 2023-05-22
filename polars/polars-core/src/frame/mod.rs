@@ -478,7 +478,7 @@ impl DataFrame {
     }
 
     /// Ensure all the chunks in the DataFrame are aligned.
-    pub fn rechunk(&mut self) -> &mut Self {
+    pub fn align_chunks(&mut self) -> &mut Self {
         if self.should_rechunk() {
             self.as_single_chunk_par()
         } else {
@@ -819,7 +819,7 @@ impl DataFrame {
 
     /// Concatenate a `DataFrame` to this `DataFrame` and return as newly allocated `DataFrame`.
     ///
-    /// If many `vstack` operations are done, it is recommended to call [`DataFrame::rechunk`].
+    /// If many `vstack` operations are done, it is recommended to call [`DataFrame::align_chunks`].
     ///
     /// # Example
     ///
@@ -865,7 +865,7 @@ impl DataFrame {
 
     /// Concatenate a DataFrame to this DataFrame
     ///
-    /// If many `vstack` operations are done, it is recommended to call [`DataFrame::rechunk`].
+    /// If many `vstack` operations are done, it is recommended to call [`DataFrame::align_chunks`].
     ///
     /// # Example
     ///
@@ -949,7 +949,7 @@ impl DataFrame {
     ///
     /// Prefer `vstack` over `extend` when you want to append many times before doing a query. For instance
     /// when you read in multiple files and when to store them in a single `DataFrame`. In the latter case, finish the sequence
-    /// of `append` operations with a [`rechunk`](Self::rechunk).
+    /// of `append` operations with a [`rechunk`](Self::align_chunks).
     pub fn extend(&mut self, other: &DataFrame) -> PolarsResult<()> {
         polars_ensure!(
             self.width() == other.width(),

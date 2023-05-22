@@ -261,13 +261,6 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         })
     }
 
-    fn take_every(&self, n: usize) -> Series {
-        self.0
-            .take_every(n)
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
-            .into_series()
-    }
-
     unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
         ChunkTake::take_unchecked(self.0.deref(), iter.into())
             .into_datetime(self.0.time_unit(), self.0.time_zone().clone())

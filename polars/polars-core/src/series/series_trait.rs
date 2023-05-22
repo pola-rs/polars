@@ -310,9 +310,6 @@ pub trait SeriesTrait:
     /// Aggregate all chunks to a contiguous array of memory.
     fn rechunk(&self) -> Series;
 
-    /// Take every nth value as a new Series
-    fn take_every(&self, n: usize) -> Series;
-
     /// Drop all null values and return a new Series.
     fn drop_nulls(&self) -> Series {
         if self.null_count() == 0 {
@@ -543,6 +540,10 @@ pub trait SeriesTrait:
     /// * `delimiter` - A string that will act as delimiter between values.
     fn str_concat(&self, _delimiter: &str) -> Utf8Chunked {
         invalid_operation_panic!(str_concat, self);
+    }
+
+    fn tile(&self, _n: usize) -> Series {
+        invalid_operation_panic!(tile, self);
     }
 }
 
