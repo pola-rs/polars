@@ -3407,7 +3407,7 @@ class Expr:
 
             def wrap_f(x: Series) -> Series:  # pragma: no cover
                 def inner(s: Series) -> Series:  # pragma: no cover
-                    return function(s.rename(x.name))
+                    return function(s.alias(x.name))
 
                 return x.apply(inner, return_dtype=return_dtype, skip_nulls=skip_nulls)
 

@@ -820,7 +820,7 @@ def _sequence_of_series_to_pydf(
     data_series: list[PySeries] = []
     for i, s in enumerate(data):
         if not s.name:
-            s = s.rename(column_names[i])
+            s = s.alias(column_names[i])
         new_dtype = schema_overrides.get(column_names[i])
         if new_dtype and new_dtype != s.dtype:
             s = s.cast(new_dtype)

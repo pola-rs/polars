@@ -1290,7 +1290,7 @@ class DataFrame:
 
         elif not isinstance(other, DataFrame):
             s = _prepare_other_arg(other, length=len(self))
-            other = DataFrame([s.rename(f"n{i}") for i in range(len(self.columns))])
+            other = DataFrame([s.alias(f"n{i}") for i in range(len(self.columns))])
 
         orig_dtypes = other.dtypes
         other = self._cast_all_from_to(other, INTEGER_DTYPES, Float64)

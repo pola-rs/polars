@@ -1941,6 +1941,9 @@ class Series:
 
         """
         if in_place is not None:
+            # if 'in_place' is not None, this indicates that the parameter was
+            # explicitly set by the caller, and we should warn against it (use
+            # of NoDefault only applies when one of the valid values is None).
             warnings.warn(
                 "the `in_place` parameter is deprecated and will be removed in a future"
                 " version; note that renaming is a shallow-copy operation with"
@@ -5454,7 +5457,7 @@ class Series:
 
         Remap, setting a default for unrecognised values...
 
-        >>> s.map_dict(country_lookup, default="Unspecified").rename("country_name")
+        >>> s.map_dict(country_lookup, default="Unspecified").alias("country_name")
         shape: (4,)
         Series: 'country_name' [str]
         [
@@ -5466,7 +5469,7 @@ class Series:
 
         ...or keep the original value, by making use of ``pl.first()``:
 
-        >>> s.map_dict(country_lookup, default=pl.first()).rename("country_name")
+        >>> s.map_dict(country_lookup, default=pl.first()).alias("country_name")
         shape: (4,)
         Series: 'country_name' [str]
         [
@@ -5478,7 +5481,7 @@ class Series:
 
         ...or keep the original value, by assigning the input series:
 
-        >>> s.map_dict(country_lookup, default=s).rename("country_name")
+        >>> s.map_dict(country_lookup, default=s).alias("country_name")
         shape: (4,)
         Series: 'country_name' [str]
         [

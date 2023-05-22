@@ -606,7 +606,7 @@ def from_arrow(
             schema=schema,
             schema_overrides=schema_overrides,
         ).to_series()
-        return s if (name or schema or schema_overrides) else s.rename("")
+        return s if (name or schema or schema_overrides) else s.alias("")
 
     if isinstance(data, pa.RecordBatch):
         data = [data]
