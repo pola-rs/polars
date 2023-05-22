@@ -334,27 +334,6 @@ class Series:
             pandas_to_pyseries(name, values, nan_to_null=nan_to_null)
         )
 
-    @classmethod
-    def _repeat(
-        cls,
-        value: PythonLiteral | None,
-        n: int,
-        *,
-        name: str | None = None,
-        dtype: PolarsDataType | None = None,
-    ) -> Self:
-        if name is None:
-            name = ""
-        if dtype is None:
-            dtype = py_type_to_dtype(type(value))
-            if (
-                dtype == Int64
-                and isinstance(value, int)
-                and -(2**31) <= value <= 2**31 - 1
-            ):
-                dtype = Int32
-        return cls._from_pyseries(PySeries.repeat(value, n, name, dtype))
-
     def _get_ptr(self) -> int:
         """
         Get a pointer to the start of the values buffer of a numeric Series.

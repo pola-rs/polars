@@ -233,21 +233,6 @@ impl PySeries {
     }
 
     #[staticmethod]
-    fn repeat(
-        value: Wrap<AnyValue>,
-        n: usize,
-        name: &str,
-        dtype: Wrap<DataType>,
-    ) -> PyResult<Self> {
-        let av = value.0;
-        Ok(Series::new(name, &[av])
-            .cast(&dtype.0)
-            .map_err(PyPolarsErr::from)?
-            .new_from_index(0, n)
-            .into())
-    }
-
-    #[staticmethod]
     fn from_arrow(name: &str, array: &PyAny) -> PyResult<Self> {
         let arr = array_to_rust(array)?;
 

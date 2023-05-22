@@ -1300,7 +1300,7 @@ pub fn as_struct(exprs: &[Expr]) -> Expr {
 /// Create a column of length `n` containing `n` copies of the literal `value`. Generally you won't need this function,
 /// as `lit(value)` already represents a column containing only `value` whose length is automatically set to the correct
 /// number of rows.
-pub fn repeat<L: Literal>(value: L, n_times: Expr) -> Expr {
+pub fn repeat<L: Literal>(value: L, n: Expr) -> Expr {
     let function = |s: Series, n: Series| {
         let n =
             n.get(0).unwrap().extract::<usize>().ok_or_else(
@@ -1308,7 +1308,7 @@ pub fn repeat<L: Literal>(value: L, n_times: Expr) -> Expr {
             )?;
         Ok(Some(s.new_from_index(0, n)))
     };
-    apply_binary(lit(value), n_times, function, GetOutput::same_type())
+    apply_binary(lit(value), n, function, GetOutput::same_type())
 }
 
 #[cfg(feature = "arg_where")]

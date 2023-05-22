@@ -382,7 +382,7 @@ pub fn reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
 }
 
 #[pyfunction]
-pub fn repeat(value: &PyAny, n: PyExpr) -> PyResult<PyExpr> {
+pub fn repeat_lazy(value: &PyAny, n: PyExpr) -> PyResult<PyExpr> {
     if let Ok(true) = value.is_instance_of::<PyBool>() {
         let val = value.extract::<bool>().unwrap();
         Ok(dsl::repeat(val, n.inner).into())
