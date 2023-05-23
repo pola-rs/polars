@@ -3,7 +3,6 @@ from polars.functions.eager import (
     concat,
     cut,
     date_range,
-    get_dummies,
     time_range,
 )
 from polars.functions.lazy import (
@@ -71,7 +70,6 @@ __all__ = [
     "cut",
     "date_range",
     "element",
-    "get_dummies",
     "ones",
     "repeat",
     "time_range",

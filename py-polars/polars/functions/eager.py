@@ -46,57 +46,6 @@ if TYPE_CHECKING:
         from typing_extensions import Literal
 
 
-def get_dummies(
-    df: DataFrame,
-    *,
-    columns: str | Sequence[str] | None = None,
-    separator: str = "_",
-) -> DataFrame:
-    """
-    Convert categorical variables into dummy/indicator variables.
-
-    .. deprecated:: 0.16.8
-        `pl.get_dummies(df)` has been deprecated; use `df.to_dummies()`
-
-    Parameters
-    ----------
-    df
-        DataFrame to convert.
-    columns
-        Name of the column(s) that should be converted to dummy variables.
-        If set to ``None`` (default), convert all columns.
-    separator
-        Separator/delimiter used when generating column names.
-
-    Examples
-    --------
-    >>> df = pl.DataFrame(
-    ...     {
-    ...         "foo": [1, 2],
-    ...         "bar": [3, 4],
-    ...         "ham": ["a", "b"],
-    ...     }
-    ... )
-    >>> pl.get_dummies(df.to_dummies(), columns=["foo", "bar"])  # doctest: +SKIP
-    shape: (2, 6)
-    ┌───────┬───────┬───────┬───────┬───────┬───────┐
-    │ foo_1 ┆ foo_2 ┆ bar_3 ┆ bar_4 ┆ ham_a ┆ ham_b │
-    │ ---   ┆ ---   ┆ ---   ┆ ---   ┆ ---   ┆ ---   │
-    │ u8    ┆ u8    ┆ u8    ┆ u8    ┆ u8    ┆ u8    │
-    ╞═══════╪═══════╪═══════╪═══════╪═══════╪═══════╡
-    │ 1     ┆ 0     ┆ 1     ┆ 0     ┆ 1     ┆ 0     │
-    │ 0     ┆ 1     ┆ 0     ┆ 1     ┆ 0     ┆ 1     │
-    └───────┴───────┴───────┴───────┴───────┴───────┘
-
-    """
-    warnings.warn(
-        "`pl.get_dummies(df)` has been deprecated; use `df.to_dummies()`",
-        category=DeprecationWarning,
-        stacklevel=find_stacklevel(),
-    )
-    return df.to_dummies(columns=columns, separator=separator)
-
-
 def concat(
     items: Iterable[PolarsType],
     *,

@@ -26,7 +26,6 @@ Eager/Lazy functions
     concat
     cut
     date_range
-    get_dummies
     ones
     time_range
     zeros

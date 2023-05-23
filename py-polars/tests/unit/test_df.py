@@ -917,11 +917,6 @@ def test_to_dummies2() -> None:
     ) == {"x_0": [1, 0, 0], "x_1": [0, 1, 0], "x_2": [0, 0, 1]}
 
 
-def test_get_dummies_function_deprecated() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3]})
-    with pytest.deprecated_call():
-        pl.get_dummies(df)
-
 
 def test_to_pandas(df: pl.DataFrame) -> None:
     # pyarrow cannot deal with unsigned dictionary integer yet.
