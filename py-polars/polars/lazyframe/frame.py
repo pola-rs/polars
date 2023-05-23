@@ -652,13 +652,13 @@ class LazyFrame:
     def __deepcopy__(self, memo: None = None) -> Self:
         return self.clone()
 
-    def __getitem__(self, item: int | range | slice) -> Self:
+    def __getitem__(self, item: int | range | slice) -> LazyFrame:
         if not isinstance(item, slice):
             raise TypeError(
                 "'LazyFrame' object is not subscriptable (aside from slicing). Use"
                 " 'select()' or 'filter()' instead."
             )
-        return self._from_pyldf(LazyPolarsSlice(self).apply(item)._ldf)
+        return LazyPolarsSlice(self).apply(item)
 
     def __str__(self) -> str:
         return f"""\
@@ -1787,7 +1787,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """Cache the result once the execution of the physical plan hits this node."""
         return self._from_pyldf(self._ldf.cache())
 
-    def clear(self, n: int = 0) -> Self:
+    def clear(self, n: int = 0) -> LazyFrame:
         """
         Create an empty copy of the current LazyFrame, with zero to 'n' rows.
 
@@ -1832,7 +1832,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └──────┴──────┴──────┘
 
         """
-        return self._from_pyldf(pl.DataFrame(schema=self.schema).clear(n).lazy()._ldf)
+        return pl.DataFrame(schema=self.schema).clear(n).lazy()
 
     def clone(self) -> Self:
         """
