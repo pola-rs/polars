@@ -96,11 +96,11 @@ def test_window_function_cache() -> None:
             .over("groups", map_group_to_rows=False)
             .alias("values_list"),  # aggregation to list + join
             pl.col("values")
-            .over("groups", explode=True)
+            .over("groups", explode=True, map_group_to_rows=False)
             .alias("values_flat"),  # aggregation to list + explode and concat back
             pl.col("values")
             .reverse()
-            .over("groups", explode=True)
+            .over("groups", explode=True, map_group_to_rows=False)
             .alias("values_rev"),  # use flatten to reverse within a group
         ]
     )
