@@ -1,3 +1,5 @@
+use std::fmt::Write;
+
 use polars_core::datatypes::AnyValue;
 
 use crate::prelude::*;
@@ -14,8 +16,26 @@ pub(super) fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Opt
                 None
             }
         }
-        AExpr::Column(name) => Some(format!("pa.dataset.field('{}')", name.as_ref())),
+        AExpr::Column(name) => Some(format!("pa.compute.field('{}')", name.as_ref())),
         AExpr::Alias(input, _) => predicate_to_pa(*input, expr_arena),
+        AExpr::Literal(LiteralValue::Series(s)) => {
+            if s.is_empty() || s.len() > 100 {
+                None
+            } else {
+                let mut list_repr = String::with_capacity(s.len() * 5);
+                list_repr.push('[');
+                for av in s.iter() {
+                    write!(list_repr, "{av}").ok()?;
+                    list_repr.push(',');
+                }
+
+                // pop last comma
+                list_repr.pop();
+                list_repr.push(']');
+
+                Some(list_repr)
+            }
+        }
         AExpr::Literal(lv) => {
             let av = lv.to_anyvalue()?;
             let dtype = av.dtype();
@@ -24,9 +44,9 @@ pub(super) fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Opt
                 AnyValue::Boolean(val) => {
                     // python bools are capitalized
                     if val {
-                        Some("True".to_string())
+                        Some("pa.compute.scalar(True)".to_string())
                     } else {
-                        Some("False".to_string())
+                        Some("pa.compute.scalar(False)".to_string())
                     }
                 }
                 #[cfg(feature = "dtype-date")]
@@ -109,6 +129,16 @@ pub(super) fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Opt
             let input = input.first().unwrap();
             let input = predicate_to_pa(*input, expr_arena)?;
             Some(format!("~({input}).is_null()"))
+        }
+        AExpr::Function {
+            function: FunctionExpr::Boolean(BooleanFunction::IsIn),
+            input,
+            ..
+        } => {
+            let col = predicate_to_pa(*input.get(0)?, expr_arena)?;
+            let values = predicate_to_pa(*input.get(1)?, expr_arena)?;
+
+            Some(format!("({col}).isin({values})"))
         }
         _ => None,
     }

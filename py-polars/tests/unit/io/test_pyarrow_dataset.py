@@ -98,3 +98,23 @@ def test_dataset(df: pl.DataFrame) -> None:
             .select(["bools", "time", "date"])
             .collect(),
         )
+
+        # pushdown is_in
+        helper_dataset_test(
+            file_path,
+            lambda lf: lf.filter(pl.col("int").is_in([1, 3, 20]))
+            .select(["bools", "floats", "date"])
+            .collect(),
+        )
+        helper_dataset_test(
+            file_path,
+            lambda lf: lf.filter(pl.col("int").is_in(list(range(120))))
+            .select(["bools", "floats", "date"])
+            .collect(),
+        )
+        helper_dataset_test(
+            file_path,
+            lambda lf: lf.filter(pl.col("cat").is_in([]))
+            .select(["bools", "floats", "date"])
+            .collect(),
+        )
