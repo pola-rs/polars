@@ -403,6 +403,12 @@ class Series:
     @property
     def time_unit(self) -> TimeUnit | None:
         """Get the time unit of underlying Datetime Series as {"ns", "us", "ms"}."""
+        warnings.warn(
+            "`Series.time_unit` is deprecated and will be removed in a future version,"
+            " please use `Series.dtype.time_unit` instead",
+            category=DeprecationWarning,
+            stacklevel=2,
+        )
         return self._s.time_unit()
 
     def __bool__(self) -> NoReturn:
