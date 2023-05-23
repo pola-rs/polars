@@ -93,7 +93,6 @@ from polars.functions import (
     cumfold,
     cumreduce,
     cumsum,
-    cut,
     date_range,
     duration,
     element,
@@ -102,7 +101,6 @@ from polars.functions import (
     fold,
     format,
     from_epoch,
-    get_dummies,
     groups,
     head,
     implode,
@@ -115,14 +113,12 @@ from polars.functions import (
     min,
     n_unique,
     ones,
-    pearson_corr,
     quantile,
     reduce,
     repeat,
     rolling_corr,
     rolling_cov,
     select,
-    spearman_rank_corr,
     std,
     struct,
     sum,
@@ -133,7 +129,6 @@ from polars.functions import (
 )
 from polars.functions.lazy import date_ as date
 from polars.functions.lazy import datetime_ as datetime
-from polars.functions.lazy import list_ as list
 from polars.functions.lazy import time_ as time
 from polars.functions.whenthen import when
 from polars.io import (
@@ -149,7 +144,6 @@ from polars.io import (
     read_ndjson,
     read_parquet,
     read_parquet_schema,
-    read_sql,
     scan_csv,
     scan_delta,
     scan_ds,
@@ -254,7 +248,6 @@ __all__ = [
     "read_ndjson",
     "read_parquet",
     "read_parquet_schema",
-    "read_sql",
     "scan_csv",
     "scan_delta",
     "scan_ds",
@@ -275,10 +268,8 @@ __all__ = [
     "align_frames",
     "arg_where",
     "concat",
-    "cut",
     "date_range",
     "element",
-    "get_dummies",
     "ones",
     "repeat",
     "time_range",
@@ -313,7 +304,6 @@ __all__ = [
     "head",
     "implode",
     "last",
-    "list",  # named list_, see import above
     "lit",
     "map",
     "max",
@@ -322,13 +312,11 @@ __all__ = [
     "min",
     "n_unique",
     "approx_unique",
-    "pearson_corr",
     "quantile",
     "reduce",
     "rolling_corr",
     "rolling_cov",
     "select",
-    "spearman_rank_corr",
     "std",
     "struct",
     "sum",
