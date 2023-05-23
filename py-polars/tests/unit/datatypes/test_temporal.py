@@ -598,7 +598,9 @@ def test_date_range_lazy_with_expressions(
 ) -> None:
     ldf = (
         pl.DataFrame({"start": [date(2015, 6, 30)], "stop": [date(2022, 12, 31)]})
-        .with_columns(pl.date_range(low, high, interval="678d", eager=False).alias("dts"))
+        .with_columns(
+            pl.date_range(low, high, interval="678d", eager=False).alias("dts")
+        )
         .lazy()
     )
 
@@ -719,7 +721,7 @@ def test_time_range_lit() -> None:
             )
         )
         if not eager:
-            tm = tm.select(pl.col('tm').explode())
+            tm = tm.select(pl.col("tm").explode())
         assert tm["tm"].to_list() == [
             time(6, 47, 13, 333000),
             time(12, 32, 23, 666000),
@@ -735,7 +737,7 @@ def test_time_range_lit() -> None:
             )
         )
         if not eager:
-            tm = tm.select(pl.col('tm').explode())
+            tm = tm.select(pl.col("tm").explode())
         assert tm["tm"].to_list() == [
             time(0, 0),
             time(5, 45, 10, 333000),
@@ -752,7 +754,7 @@ def test_time_range_lit() -> None:
                 name="tm",
             )
         )
-        tm = tm.select(pl.col('tm').explode())
+        tm = tm.select(pl.col("tm").explode())
         assert tm["tm"].to_list() == [
             time(23, 59, 59, 999980),
             time(23, 59, 59, 999990),

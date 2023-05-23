@@ -93,7 +93,7 @@ pub(super) fn temporal_range_dispatch(
     name: &str,
     every: Duration,
     closed: ClosedWindow,
-    _tz: Option<TimeZone>,  // todo: respect _tz: https://github.com/pola-rs/polars/issues/8512
+    _tz: Option<TimeZone>, // todo: respect _tz: https://github.com/pola-rs/polars/issues/8512
 ) -> PolarsResult<Series> {
     let start = &s[0];
     let stop = &s[1];
