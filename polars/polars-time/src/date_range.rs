@@ -1,5 +1,3 @@
-#[cfg(feature = "timezones")]
-use arrow::temporal_conversions::parse_offset;
 use chrono::{Datelike, NaiveDateTime, NaiveTime};
 use polars_core::chunked_array::temporal::time_to_time64ns;
 use polars_core::prelude::*;

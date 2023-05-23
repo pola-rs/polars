@@ -1,6 +1,4 @@
 #[cfg(feature = "timezones")]
-use arrow::temporal_conversions::parse_offset;
-#[cfg(feature = "timezones")]
 use chrono_tz::Tz;
 use polars_arrow::kernels::rolling::no_nulls::{self, RollingAggWindowNoNulls};
 use polars_core::export::num;

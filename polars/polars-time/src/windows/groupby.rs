@@ -1,8 +1,6 @@
 use std::cmp::Ordering;
 
 #[cfg(feature = "timezones")]
-use arrow::temporal_conversions::parse_offset;
-#[cfg(feature = "timezones")]
 use chrono_tz::Tz;
 use polars_arrow::time_zone::PolarsTimeZone;
 use polars_arrow::trusted_len::TrustedLen;

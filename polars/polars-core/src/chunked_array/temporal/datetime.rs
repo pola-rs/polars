@@ -1,13 +1,9 @@
 use std::fmt::Write;
 
-#[cfg(feature = "timezones")]
-use arrow::temporal_conversions::parse_offset;
 use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
 use chrono::format::{DelayedFormat, StrftimeItems};
-#[cfg(feature = "timezones")]
-use chrono::FixedOffset;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone as TimeZoneTrait;
 #[cfg(feature = "timezones")]
@@ -52,17 +48,6 @@ fn apply_datefmt_f<'a>(
     Box::new(arr)
 }
 
-#[cfg(feature = "timezones")]
-fn format_fixed_offset(
-    tz: FixedOffset,
-    arr: &PrimitiveArray<i64>,
-    fmt: &str,
-    fmted: &str,
-    conversion_f: fn(i64) -> NaiveDateTime,
-) -> ArrayRef {
-    let datefmt_f = |ndt| tz.from_utc_datetime(&ndt).format(fmt);
-    apply_datefmt_f(arr, fmted, conversion_f, datefmt_f)
-}
 #[cfg(feature = "timezones")]
 fn format_tz(
     tz: Tz,

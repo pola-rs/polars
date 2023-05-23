@@ -1,7 +1,5 @@
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
-#[cfg(feature = "timezones")]
-use polars_core::utils::arrow::temporal_conversions::parse_offset;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 

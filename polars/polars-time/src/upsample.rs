@@ -1,5 +1,3 @@
-#[cfg(feature = "timezones")]
-use arrow::temporal_conversions::parse_offset;
 use polars_core::prelude::*;
 use polars_core::utils::ensure_sorted_arg;
 use polars_ops::prelude::*;

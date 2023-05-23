@@ -3,7 +3,7 @@ use arrow::compute::arity::try_unary;
 use arrow::datatypes::{DataType as ArrowDataType, TimeUnit};
 use arrow::error::{Error as ArrowError, Result};
 use arrow::temporal_conversions::{
-    parse_offset, timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
+    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
 #[cfg(feature = "timezones")]
 use chrono::{LocalResult, NaiveDateTime, TimeZone};
