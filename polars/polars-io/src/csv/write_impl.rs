@@ -106,10 +106,11 @@ fn write_anyvalue(
             };
             let formatted = match tz {
                 #[cfg(feature = "timezones")]
-                Some(tz) => match tz.parse::<Tz>() {
-                    Ok(parsed_tz) => parsed_tz.from_utc_datetime(&ndt).format(datetime_format),
-                    Err(_) => unreachable!(),
-                },
+                Some(tz) => tz
+                    .parse::<Tz>()
+                    .unwrap()
+                    .from_utc_datetime(&ndt)
+                    .format(datetime_format),
                 #[cfg(not(feature = "timezones"))]
                 Some(_) => {
                     panic!("activate 'timezones' feature");

@@ -157,12 +157,15 @@ impl DatetimeChunked {
 
         let mut ca: Utf8Chunked = match self.time_zone() {
             #[cfg(feature = "timezones")]
-            Some(time_zone) => match time_zone.parse::<Tz>() {
-                Ok(time_zone) => self.apply_kernel_cast(&|arr| {
-                    format_tz(time_zone, arr, format, &fmted, conversion_f)
-                }),
-                Err(_) => unreachable!(),
-            },
+            Some(time_zone) => self.apply_kernel_cast(&|arr| {
+                format_tz(
+                    time_zone.parse::<Tz>().unwrap(),
+                    arr,
+                    format,
+                    &fmted,
+                    conversion_f,
+                )
+            }),
             _ => self.apply_kernel_cast(&|arr| format_naive(arr, format, &fmted, conversion_f)),
         };
         ca.rename(self.name());

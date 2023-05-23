@@ -186,14 +186,11 @@ pub(super) fn truncate(s: &Series, every: &str, offset: &str) -> PolarsResult<Se
     Ok(match s.dtype() {
         DataType::Datetime(_, tz) => match tz {
             #[cfg(feature = "timezones")]
-            Some(tz) => match tz.parse::<Tz>() {
-                Ok(tz) => s
-                    .datetime()
-                    .unwrap()
-                    .truncate(every, offset, Some(&tz))?
-                    .into_series(),
-                Err(_) => unreachable!(),
-            },
+            Some(tz) => s
+                .datetime()
+                .unwrap()
+                .truncate(every, offset, tz.parse::<Tz>().ok().as_ref())?
+                .into_series(),
             _ => s
                 .datetime()
                 .unwrap()
@@ -214,10 +211,11 @@ pub(super) fn month_start(s: &Series) -> PolarsResult<Series> {
     Ok(match s.dtype() {
         DataType::Datetime(_, tz) => match tz {
             #[cfg(feature = "timezones")]
-            Some(tz) => match tz.parse::<Tz>() {
-                Ok(tz) => s.datetime().unwrap().month_start(Some(&tz))?.into_series(),
-                Err(_) => unreachable!(),
-            },
+            Some(tz) => s
+                .datetime()
+                .unwrap()
+                .month_start(tz.parse::<Tz>().ok().as_ref())?
+                .into_series(),
             _ => s
                 .datetime()
                 .unwrap()
@@ -234,10 +232,11 @@ pub(super) fn month_end(s: &Series) -> PolarsResult<Series> {
     Ok(match s.dtype() {
         DataType::Datetime(_, tz) => match tz {
             #[cfg(feature = "timezones")]
-            Some(tz) => match tz.parse::<Tz>() {
-                Ok(tz) => s.datetime().unwrap().month_end(Some(&tz))?.into_series(),
-                Err(_) => unreachable!(),
-            },
+            Some(tz) => s
+                .datetime()
+                .unwrap()
+                .month_end(tz.parse::<Tz>().ok().as_ref())?
+                .into_series(),
             _ => s.datetime().unwrap().month_end(NO_TIMEZONE)?.into_series(),
         },
         DataType::Date => s.date().unwrap().month_end(NO_TIMEZONE)?.into_series(),
@@ -251,14 +250,11 @@ pub(super) fn round(s: &Series, every: &str, offset: &str) -> PolarsResult<Serie
     Ok(match s.dtype() {
         DataType::Datetime(_, tz) => match tz {
             #[cfg(feature = "timezones")]
-            Some(tz) => match tz.parse::<Tz>() {
-                Ok(tz) => s
-                    .datetime()
-                    .unwrap()
-                    .round(every, offset, Some(&tz))?
-                    .into_series(),
-                Err(_) => unreachable!(),
-            },
+            Some(tz) => s
+                .datetime()
+                .unwrap()
+                .round(every, offset, tz.parse::<Tz>().ok().as_ref())?
+                .into_series(),
             _ => s
                 .datetime()
                 .unwrap()

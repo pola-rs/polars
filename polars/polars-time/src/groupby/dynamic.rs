@@ -168,10 +168,9 @@ impl Wrap<&DataFrame> {
         };
         match tz {
             #[cfg(feature = "timezones")]
-            Some(tz) => match tz.parse::<Tz>() {
-                Ok(tz) => self.impl_groupby_rolling(dt, by, options, tu, Some(tz), time_type),
-                Err(_) => unreachable!(),
-            },
+            Some(tz) => {
+                self.impl_groupby_rolling(dt, by, options, tu, tz.parse::<Tz>().ok(), time_type)
+            }
             _ => self.impl_groupby_rolling(dt, by, options, tu, NO_TIMEZONE.copied(), time_type),
         }
     }
