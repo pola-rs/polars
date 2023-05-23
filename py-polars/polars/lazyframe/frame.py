@@ -2054,7 +2054,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         by: IntoExpr | Iterable[IntoExpr],
         *more_by: IntoExpr,
         maintain_order: bool = False,
-    ) -> LazyGroupBy[Self]:
+    ) -> LazyGroupBy:
         """
         Start a groupby operation.
 
@@ -2147,7 +2147,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if more_by:
             exprs.extend(selection_to_pyexpr_list(more_by))
         lgb = self._ldf.groupby(exprs, maintain_order)
-        return LazyGroupBy(lgb, lazyframe_class=self.__class__)
+        return LazyGroupBy(lgb)
 
     def groupby_rolling(
         self,
@@ -2157,7 +2157,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         offset: str | timedelta | None = None,
         closed: ClosedInterval = "right",
         by: IntoExpr | Iterable[IntoExpr] | None = None,
-    ) -> LazyGroupBy[Self]:
+    ) -> LazyGroupBy:
         """
         Create rolling groups based on a time column.
 
@@ -2279,7 +2279,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         lgb = self._ldf.groupby_rolling(
             index_column._pyexpr, period, offset, closed, pyexprs_by
         )
-        return LazyGroupBy(lgb, lazyframe_class=self.__class__)
+        return LazyGroupBy(lgb)
 
     def groupby_dynamic(
         self,
@@ -2293,7 +2293,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         closed: ClosedInterval = "left",
         by: IntoExpr | Iterable[IntoExpr] | None = None,
         start_by: StartBy = "window",
-    ) -> LazyGroupBy[Self]:
+    ) -> LazyGroupBy:
         """
         Group based on a time value (or index value of type Int32, Int64).
 
@@ -2596,7 +2596,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             pyexprs_by,
             start_by,
         )
-        return LazyGroupBy(lgb, lazyframe_class=self.__class__)
+        return LazyGroupBy(lgb)
 
     def join_asof(
         self,
