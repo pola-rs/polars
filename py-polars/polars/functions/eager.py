@@ -21,7 +21,7 @@ from polars.utils.convert import (
     _tzinfo_to_str,
 )
 from polars.utils.decorators import deprecated_alias
-from polars.utils.various import find_stacklevel, no_default, ordered_unique
+from polars.utils.various import find_stacklevel, ordered_unique
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -38,7 +38,6 @@ if TYPE_CHECKING:
         PolarsType,
         TimeUnit,
     )
-    from polars.utils.various import NoDefault
 
     if sys.version_info >= (3, 8):
         from typing import Literal
@@ -292,8 +291,7 @@ def date_range(
     end: date | datetime | Expr | str,
     interval: str | timedelta = "1d",
     *,
-    lazy: bool | NoDefault = no_default,
-    eager: bool | NoDefault = no_default,
+    eager: bool = False,
     closed: ClosedInterval = "both",
     name: str | None = None,
     time_unit: TimeUnit | None = None,
@@ -312,12 +310,8 @@ def date_range(
         Interval of the range periods; can be a python timedelta object like
         ``timedelta(days=10)`` or a polars duration string, such as ``3d12h4m25s``
         (representing 3 days, 12 hours, 4 minutes, and 25 seconds).
-    lazy:
-        Return an expression.
-
-            .. deprecated:: 0.17.10
-    eager:
-        Evaluate immediately and return a ``Series``; if set to ``False`` (default),
+    eager
+        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
         return an expression instead.
     closed : {'both', 'left', 'right', 'none'}
         Define whether the temporal window interval is closed or not.
@@ -418,37 +412,6 @@ def date_range(
             DeprecationWarning,
             stacklevel=find_stacklevel(),
         )
-    if eager is no_default and lazy is no_default:
-        # user passed nothing
-        warnings.warn(
-            "In a future version of polars, the default will change from `lazy=False` to `eager=False`. "
-            "To silence this warning, please:\n"
-            "- set `eager=False` to opt in to the new default behaviour, or\n"
-            "- set `eager=True` to retain the old one.",
-            FutureWarning,
-            stacklevel=find_stacklevel(),
-        )
-        eager = True
-    elif eager is no_default and lazy is not no_default:
-        # user only passed lazy
-        warnings.warn(
-            "In a future version of polars, the default will change from `lazy=False` to `eager=False`. "
-            "To silence this warning, please remove `lazy` and then:\n"
-            "- set `eager=False` to opt in to the new default behaviour, or\n"
-            "- set `eager=True` to retain the old one.",
-            FutureWarning,
-            stacklevel=find_stacklevel(),
-        )
-        eager = not lazy
-    elif eager is not no_default and lazy is not no_default:
-        # user passed both
-        raise TypeError(
-            "cannot pass both `eager` and `lazy`. Please only pass `eager`, as `lazy` will be removed "
-            "in a future version."
-        )
-    else:
-        # user only passed eager. Nothing to warn about :)
-        pass
 
     if name is None:
         name = ""

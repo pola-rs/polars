@@ -196,7 +196,7 @@ def ones(
     n: int,
     dtype: PolarsDataType = Float64,
     *,
-    eager: bool | None = None,
+    eager: bool = False,
 ) -> Expr | Series:
     """
     Construct a column of length `n` filled with ones.
@@ -235,16 +235,6 @@ def ones(
     ]
 
     """
-    if eager is None:
-        warnings.warn(
-            "In a future version, the default behaviour for `ones` will change from `eager=True` to `eager=False`. "
-            "To silence this warning, please:\n"
-            "- set `eager=False` to opt in to the new default behaviour, or\n"
-            "- set `eager=True` to retain the old one.",
-            FutureWarning,
-            stacklevel=find_stacklevel(),
-        )
-        eager = True
     return repeat(1.0, n=n, dtype=dtype, eager=eager).alias("ones")
 
 
@@ -282,7 +272,7 @@ def zeros(
     n: int,
     dtype: PolarsDataType = Float64,
     *,
-    eager: bool | None = None,
+    eager: bool = False,
 ) -> Expr | Series:
     """
     Construct a column of length `n` filled with zeros.
@@ -321,14 +311,4 @@ def zeros(
     ]
 
     """
-    if eager is None:
-        warnings.warn(
-            "In a future version, the default behaviour for `ones` will change from `eager=True` to `eager=False`. "
-            "To silence this warning, please:\n"
-            "- set `eager=False` to opt in to the new default behaviour, or\n"
-            "- set `eager=True` to retain the old one.",
-            FutureWarning,
-            stacklevel=find_stacklevel(),
-        )
-        eager = True
     return repeat(0.0, n=n, dtype=dtype, eager=eager).alias("zeros")
