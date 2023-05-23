@@ -548,8 +548,7 @@ def test_take_misc(fruits_cars: pl.DataFrame) -> None:
                 pl.col("B")
                 .reverse()
                 .take(index)  # type: ignore[arg-type]
-                .implode()
-                .over("fruits"),
+                .over("fruits", map_group_to_rows=False),
                 "fruits",
             ]
         )
@@ -558,7 +557,7 @@ def test_take_misc(fruits_cars: pl.DataFrame) -> None:
         assert out[4, "B"].to_list() == [1, 4]
 
     out = df.sort("fruits").select(
-        [pl.col("B").reverse().take(pl.lit(1)).implode().over("fruits"), "fruits"]
+        [pl.col("B").reverse().take(pl.lit(1)).over("fruits"), "fruits"]
     )
     assert out[0, "B"] == 3
     assert out[4, "B"] == 4

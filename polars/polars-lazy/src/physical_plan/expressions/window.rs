@@ -40,8 +40,6 @@ enum MapStrategy {
     Join,
     // explode now
     Explode,
-    // will be exploded by subsequent `.flatten()` call
-    ExplodeLater,
     // Use an arg_sort to map the values back
     Map,
     Nothing,
@@ -321,13 +319,16 @@ impl WindowExpr {
         &self,
         agg_state: &AggState,
         sorted_keys: bool,
-        explicit_list: bool,
         gb: &GroupBy,
     ) -> PolarsResult<MapStrategy> {
-        match (self.options.explode, explicit_list, agg_state) {
+        match (
+            self.options.explode,
+            self.options.map_group_to_rows,
+            agg_state,
+        ) {
             // Explode
             // `(col("x").sum() * col("y")).list().over("groups").flatten()`
-            (true, true, _) => Ok(MapStrategy::ExplodeLater),
+            (true, true, _) => Ok(MapStrategy::Explode),
             // Explode all the aggregated lists. Maybe add later?
             (true, false, _) => {
                 polars_bail!(
@@ -335,15 +336,18 @@ impl WindowExpr {
                     "this operation is likely not what you want (you may need `.list()`)"
                 );
             }
-            // explicit list
-            // `(col("x").sum() * col("y")).list().over("groups")`
-            (false, true, _) => Ok(MapStrategy::Join),
+            // // explicit list
+            // // `(col("x").sum() * col("y")).list().over("groups")`
+            // (false, false, _) => Ok(MapStrategy::Join),
             // aggregations
             //`sum("foo").over("groups")`
-            (false, false, AggState::AggregatedFlat(_)) => Ok(MapStrategy::Join),
+            (_, _, AggState::AggregatedFlat(_)) => Ok(MapStrategy::Join),
             // no explicit aggregations, map over the groups
             //`(col("x").sum() * col("y")).over("groups")`
-            (false, false, AggState::AggregatedList(_)) => {
+            (_, false, AggState::AggregatedList(_)) => Ok(MapStrategy::Join),
+            // no explicit aggregations, map over the groups
+            //`(col("x").sum() * col("y")).over("groups")`
+            (_, true, AggState::AggregatedList(_)) => {
                 if sorted_keys {
                     if let GroupsProxy::Idx(g) = gb.get_groups() {
                         debug_assert!(g.is_sorted_flag())
@@ -360,7 +364,7 @@ impl WindowExpr {
             // or an aggregation that has been flattened
             // we have to check which one
             //`col("foo").over("groups")`
-            (false, false, AggState::NotAggregated(_)) => {
+            (_, true, AggState::NotAggregated(_)) => {
                 // col()
                 // or col().alias()
                 if self.is_simple_column_expr() {
@@ -369,8 +373,9 @@ impl WindowExpr {
                     Ok(MapStrategy::Map)
                 }
             }
+            (_, false, AggState::NotAggregated(_)) => Ok(MapStrategy::Join),
             // literals, do nothing and let broadcast
-            (false, false, AggState::Literal(_)) => Ok(MapStrategy::Nothing),
+            (_, _, AggState::Literal(_)) => Ok(MapStrategy::Nothing),
         }
     }
 }
@@ -427,16 +432,6 @@ impl PhysicalExpr for WindowExpr {
             )
         });
         let explicit_list_agg = self.is_explicit_list_agg();
-
-        // A `sort()` in a window function is one level flatter
-        // Assume we have column a : i32
-        // than a sort in a groupby. A groupby sorts the groups and returns array: list[i32]
-        // whereas a window function returns array: i32
-        // So a `sort().list()` in a groupby returns: list[list[i32]]
-        // whereas in a window function would return: list[i32]
-        if explicit_list_agg {
-            state.set_finalize_window_as_list();
-        }
 
         // if we flatten this column we need to make sure the groups are sorted.
         let mut sort_groups = self.options.explode ||
@@ -509,7 +504,7 @@ impl PhysicalExpr for WindowExpr {
         let mut ac = self.run_aggregation(df, state, &gb)?;
 
         use MapStrategy::*;
-        match self.determine_map_strategy(ac.agg_state(), sorted_keys, explicit_list_agg, &gb)? {
+        match self.determine_map_strategy(ac.agg_state(), sorted_keys, &gb)? {
             Nothing => {
                 let mut out = ac.flat_naive().into_owned();
                 cache_gb(gb, state, &cache_key);
@@ -520,14 +515,6 @@ impl PhysicalExpr for WindowExpr {
             }
             Explode => {
                 let mut out = ac.aggregated().explode()?;
-                cache_gb(gb, state, &cache_key);
-                if let Some(name) = &self.out_name {
-                    out.rename(name.as_ref());
-                }
-                Ok(out)
-            }
-            ExplodeLater => {
-                let mut out = ac.aggregated();
                 cache_gb(gb, state, &cache_key);
                 if let Some(name) = &self.out_name {
                     out.rename(name.as_ref());

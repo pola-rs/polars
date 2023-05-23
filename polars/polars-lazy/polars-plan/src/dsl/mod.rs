@@ -517,12 +517,8 @@ impl Expr {
             output_type,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
                 fmt_str: "map",
-                cast_to_supertypes: false,
-                allow_rename: false,
-                pass_name_to_apply: false,
+                ..Default::default()
             },
         }
     }
@@ -533,10 +529,6 @@ impl Expr {
             function: function_expr,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: false,
-                auto_explode: false,
-                cast_to_supertypes: false,
-                allow_rename: false,
                 ..Default::default()
             },
         }
@@ -921,6 +913,20 @@ impl Expr {
     /// ╰────────┴────────╯
     /// ```
     pub fn over<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, partition_by: E) -> Self {
+        self.over_with_options(
+            partition_by,
+            WindowOptions {
+                explode: false,
+                map_group_to_rows: true,
+            },
+        )
+    }
+
+    pub fn over_with_options<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
+        self,
+        partition_by: E,
+        options: WindowOptions,
+    ) -> Self {
         let partition_by = partition_by
             .as_ref()
             .iter()
@@ -930,7 +936,7 @@ impl Expr {
             function: Box::new(self),
             partition_by,
             order_by: None,
-            options: WindowOptions { explode: false },
+            options,
         }
     }
 

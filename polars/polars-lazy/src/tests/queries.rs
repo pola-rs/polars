@@ -1131,7 +1131,13 @@ fn test_fill_forward() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .select([col("b").forward_fill(None).implode().over([col("a")])])
+        .select([col("b").forward_fill(None).over_with_options(
+            [col("a")],
+            WindowOptions {
+                map_group_to_rows: false,
+                ..Default::default()
+            },
+        )])
         .collect()?;
     let agg = out.column("b")?.list()?;
 
@@ -1291,8 +1297,13 @@ fn test_filter_after_shift_in_groups() -> PolarsResult<()> {
             col("B")
                 .shift(1)
                 .filter(col("B").shift(1).gt(lit(4)))
-                .implode()
-                .over([col("fruits")])
+                .over_with_options(
+                    [col("fruits")],
+                    WindowOptions {
+                        map_group_to_rows: false,
+                        ..Default::default()
+                    },
+                )
                 .alias("filtered"),
         ])
         .collect()?;
@@ -1432,30 +1443,6 @@ fn test_singleton_broadcast() -> PolarsResult<()> {
         .collect()?;
 
     assert!(out.column("foo")?.len() > 1);
-    Ok(())
-}
-
-#[test]
-fn test_sort_by_suffix() -> PolarsResult<()> {
-    let df = fruits_cars();
-    let out = df
-        .lazy()
-        .select([col("*")
-            .sort_by([col("A")], [false])
-            .implode()
-            .over([col("fruits")])
-            .flatten()
-            .suffix("_sorted")])
-        .collect()?;
-
-    let expected = df!(
-            "A_sorted"=> [1, 2, 5, 3, 4],
-            "fruits_sorted"=> ["banana", "banana", "banana", "apple", "apple"],
-            "B_sorted"=> [5, 4, 1, 3, 2],
-            "cars_sorted"=> ["beetle", "audi", "beetle", "beetle", "beetle"]
-    )?;
-
-    assert!(expected.frame_equal(&out));
     Ok(())
 }
 
@@ -1643,9 +1630,7 @@ fn test_single_group_result() -> PolarsResult<()> {
                 nulls_last: false,
                 multithreaded: true,
             })
-            .implode()
-            .over([col("a")])
-            .flatten()])
+            .over([col("a")])])
         .collect()?;
 
     let a = out.column("a")?.idx()?;
@@ -1672,8 +1657,13 @@ fn test_single_ranked_group() -> PolarsResult<()> {
                 },
                 None,
             )
-            .implode()
-            .over([col("group")])])
+            .over_with_options(
+                [col("group")],
+                WindowOptions {
+                    map_group_to_rows: false,
+                    ..Default::default()
+                },
+            )])
         .collect()?;
 
     let out = out.column("value")?.explode()?;
