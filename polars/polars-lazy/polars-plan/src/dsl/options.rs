@@ -25,8 +25,6 @@ pub struct StrptimeOptions {
     pub exact: bool,
     /// use a cache of unique, converted dates to apply the datetime conversion.
     pub cache: bool,
-    /// Convert timezone aware to UTC
-    pub utc: bool,
 }
 
 impl Default for StrptimeOptions {
@@ -36,7 +34,6 @@ impl Default for StrptimeOptions {
             strict: true,
             exact: true,
             cache: true,
-            utc: false,
         }
     }
 }

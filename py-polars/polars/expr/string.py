@@ -79,7 +79,7 @@ class ExprStringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        utc: bool = False,
+        utc: bool | None = None,
     ) -> Expr:
         """
         Convert a Utf8 column into a Datetime column.
@@ -109,19 +109,34 @@ class ExprStringNameSpace:
             Parse time zone aware datetimes as UTC. This may be useful if you have data
             with mixed offsets.
 
+            .. deprecated:: 0.18.0
+                This is now a no-op, you can safely remove it.
+                Offset-naive strings are parsed as ``pl.Datetime(time_unit)``,
+                and offset-aware strings are converted to
+                ``pl.Datetime(time_unit, "UTC")``.
+
         Examples
         --------
         >>> s = pl.Series(["2020-01-01 01:00Z", "2020-01-01 02:00Z"])
         >>> s.str.to_datetime("%Y-%m-%d %H:%M%#z")
         shape: (2,)
-        Series: '' [datetime[μs, +00:00]]
+        Series: '' [datetime[μs, UTC]]
         [
-                2020-01-01 01:00:00 +00:00
-                2020-01-01 02:00:00 +00:00
+                2020-01-01 01:00:00 UTC
+                2020-01-01 02:00:00 UTC
         ]
-
         """
         _validate_format_argument(format)
+        if utc is not None:
+            warnings.warn(
+                "The `utc` argument is now a no-op and has no effect. "
+                "You can safely remove it. "
+                "Offset-naive strings are parsed as ``pl.Datetime(time_unit)``, "
+                "and offset-aware strings are converted to "
+                '``pl.Datetime(time_unit, "UTC")``.',
+                DeprecationWarning,
+                stacklevel=find_stacklevel(),
+            )
         return wrap_expr(
             self._pyexpr.str_to_datetime(
                 format,
@@ -130,7 +145,6 @@ class ExprStringNameSpace:
                 strict,
                 exact,
                 cache,
-                utc,
             )
         )
 
@@ -181,7 +195,7 @@ class ExprStringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        utc: bool = False,
+        utc: bool | None = None,
     ) -> Expr:
         """
         Convert a Utf8 column into a Date/Datetime/Time column.
@@ -206,6 +220,12 @@ class ExprStringNameSpace:
             Parse time zone aware datetimes as UTC. This may be useful if you have data
             with mixed offsets.
 
+            .. deprecated:: 0.18.0
+                This is now a no-op, you can safely remove it.
+                Offset-naive strings are parsed as ``pl.Datetime(time_unit)``,
+                and offset-aware strings are converted to
+                ``pl.Datetime(time_unit, "UTC")``.
+
         Notes
         -----
         When converting to a Datetime type, the time unit is inferred from the format
@@ -219,10 +239,10 @@ class ExprStringNameSpace:
         >>> s = pl.Series(["2020-01-01 01:00Z", "2020-01-01 02:00Z"])
         >>> s.str.strptime(pl.Datetime, "%Y-%m-%d %H:%M%#z")
         shape: (2,)
-        Series: '' [datetime[μs, +00:00]]
+        Series: '' [datetime[μs, UTC]]
         [
-                2020-01-01 01:00:00 +00:00
-                2020-01-01 02:00:00 +00:00
+                2020-01-01 01:00:00 UTC
+                2020-01-01 02:00:00 UTC
         ]
 
         Dealing with different formats.
@@ -252,7 +272,6 @@ class ExprStringNameSpace:
                 2022-01-31
                 2001-07-08
         ]
-
         """
         _validate_format_argument(format)
 
