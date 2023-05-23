@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 
 from polars.datatypes import Date, Datetime, Time, py_type_to_dtype
 from polars.exceptions import ChronoFormatWarning
-from polars.utils import no_default
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
 from polars.utils._wrap import wrap_expr
 from polars.utils.decorators import deprecated_alias
@@ -19,7 +18,6 @@ if TYPE_CHECKING:
         TimeUnit,
         TransferEncoding,
     )
-    from polars.utils import NoDefault
 
 
 class ExprStringNameSpace:
@@ -82,7 +80,6 @@ class ExprStringNameSpace:
         exact: bool = True,
         cache: bool = True,
         utc: bool = False,
-        _tz_aware: bool = False,
     ) -> Expr:
         """
         Convert a Utf8 column into a Datetime column.
@@ -134,7 +131,6 @@ class ExprStringNameSpace:
                 exact,
                 cache,
                 utc,
-                _tz_aware,
             )
         )
 
@@ -186,7 +182,6 @@ class ExprStringNameSpace:
         exact: bool = True,
         cache: bool = True,
         utc: bool = False,
-        tz_aware: bool | NoDefault = no_default,
     ) -> Expr:
         """
         Convert a Utf8 column into a Date/Datetime/Time column.
@@ -210,13 +205,6 @@ class ExprStringNameSpace:
         utc
             Parse time zone aware datetimes as UTC. This may be useful if you have data
             with mixed offsets.
-        tz_aware
-            Parse time zone aware datetimes. This may be automatically toggled by the
-            `format` given.
-
-            .. deprecated:: 0.16.17
-                This is now auto-inferred from the given `format`. You can safely drop
-                this argument, it will be removed in a future version.
 
         Notes
         -----
@@ -268,16 +256,6 @@ class ExprStringNameSpace:
         """
         _validate_format_argument(format)
 
-        if tz_aware is no_default:
-            tz_aware = False
-        else:
-            warnings.warn(
-                "`tz_aware` is now auto-inferred from `format` and will be removed "
-                "in a future version. You can safely drop this argument.",
-                category=DeprecationWarning,
-                stacklevel=find_stacklevel(),
-            )
-
         if dtype == Date:
             return self.to_date(format, strict=strict, exact=exact, cache=cache)
         elif dtype == Datetime:
@@ -291,7 +269,6 @@ class ExprStringNameSpace:
                 exact=exact,
                 cache=cache,
                 utc=utc,
-                _tz_aware=tz_aware,
             )
         elif dtype == Time:
             return self.to_time(format, strict=strict, cache=cache)
