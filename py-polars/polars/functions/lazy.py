@@ -1397,109 +1397,6 @@ def cumsum(
     )
 
 
-def spearman_rank_corr(
-    a: str | Expr, b: str | Expr, ddof: int = 1, *, propagate_nans: bool = False
-) -> Expr:
-    """
-    Compute the spearman rank correlation between two columns.
-
-    Missing data will be excluded from the computation.
-
-    .. deprecated:: 0.16.10
-        ``spearman_rank_corr`` will be removed in favor of
-        ``corr(..., method="spearman")``.
-
-    Parameters
-    ----------
-    a
-        Column name or Expression.
-    b
-        Column name or Expression.
-    ddof
-        “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
-        where N represents the number of elements.
-        By default ddof is 1.
-    propagate_nans
-        If `True` any `NaN` encountered will lead to `NaN` in the output.
-        Defaults to `False` where `NaN` are regarded as larger than any finite number
-        and thus lead to the highest rank.
-
-    See Also
-    --------
-    corr
-
-    Examples
-    --------
-    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
-    >>> df.select(pl.spearman_rank_corr("a", "b"))  # doctest: +SKIP
-    shape: (1, 1)
-    ┌─────┐
-    │ a   │
-    │ --- │
-    │ f64 │
-    ╞═════╡
-    │ 0.5 │
-    └─────┘
-    """
-    warnings.warn(
-        "`spearman_rank_corr()` is deprecated in favor of `corr()`",
-        DeprecationWarning,
-        stacklevel=find_stacklevel(),
-    )
-    if isinstance(a, str):
-        a = col(a)
-    if isinstance(b, str):
-        b = col(b)
-    return wrap_expr(plr.spearman_rank_corr(a._pyexpr, b._pyexpr, ddof, propagate_nans))
-
-
-def pearson_corr(a: str | Expr, b: str | Expr, ddof: int = 1) -> Expr:
-    """
-    Compute the pearson's correlation between two columns.
-
-    .. deprecated:: 0.16.10
-        ``pearson_corr`` will be removed in favor of ``corr(..., method="pearson")``.
-
-    Parameters
-    ----------
-    a
-        Column name or Expression.
-    b
-        Column name or Expression.
-    ddof
-        “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
-        where N represents the number of elements.
-        By default ddof is 1.
-
-    See Also
-    --------
-    corr
-
-    Examples
-    --------
-    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
-    >>> df.select(pl.pearson_corr("a", "b"))  # doctest: +SKIP
-    shape: (1, 1)
-    ┌──────────┐
-    │ a        │
-    │ ---      │
-    │ f64      │
-    ╞══════════╡
-    │ 0.544705 │
-    └──────────┘
-    """
-    warnings.warn(
-        "`pearson_corr()` is deprecated in favor of `corr()`",
-        DeprecationWarning,
-        stacklevel=find_stacklevel(),
-    )
-    if isinstance(a, str):
-        a = col(a)
-    if isinstance(b, str):
-        b = col(b)
-    return wrap_expr(plr.pearson_corr(a._pyexpr, b._pyexpr, ddof))
-
-
 def corr(
     a: str | Expr,
     b: str | Expr,
@@ -1509,7 +1406,7 @@ def corr(
     propagate_nans: bool = False,
 ) -> Expr:
     """
-    Compute the pearson's or spearman rank correlation correlation between two columns.
+    Compute the Pearson's or Spearman rank correlation correlation between two columns.
 
     Parameters
     ----------
@@ -1518,7 +1415,7 @@ def corr(
     b
         Column name or Expression.
     ddof
-        “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
+        "Delta Degrees of Freedom": the divisor used in the calculation is N - ddof,
         where N represents the number of elements.
         By default ddof is 1.
     method : {'pearson', 'spearman'}
