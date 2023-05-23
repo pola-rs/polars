@@ -1,3 +1,5 @@
+#[cfg(feature = "timezones")]
+use chrono_tz::Tz;
 use polars_core::prelude::*;
 use polars_core::utils::ensure_sorted_arg;
 use polars_ops::prelude::*;
@@ -155,13 +157,10 @@ fn upsample_single_impl(
                 (Some(first), Some(last)) => {
                     let (first, last) = match tz {
                         #[cfg(feature = "timezones")]
-                        Some(tz) => match tz.parse::<chrono_tz::Tz>() {
-                            Ok(tz) => (
-                                unlocalize_timestamp(first, *tu, tz),
-                                unlocalize_timestamp(last, *tu, tz),
-                            ),
-                            Err(_) => unreachable!(),
-                        },
+                        Some(tz) => (
+                            unlocalize_timestamp(first, *tu, tz.parse::<Tz>().unwrap()),
+                            unlocalize_timestamp(last, *tu, tz.parse::<Tz>().unwrap()),
+                        ),
                         _ => (first, last),
                     };
                     let first = match tu {
