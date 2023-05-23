@@ -2183,7 +2183,7 @@ def test_strptime_with_invalid_tz() -> None:
         ComputeError, match="unable to parse time zone: 'foo'"
     ), pytest.warns(
         FutureWarning,
-        match="In a future version of polars, non-area/location time zones",
+        match="time zones other than those in `zoneinfo.available_timezones",
     ):
         pl.Series(["2020-01-01 03:00:00"]).str.strptime(pl.Datetime("us", "foo"))
     with pytest.raises(
@@ -2226,7 +2226,7 @@ def test_convert_time_zone_invalid() -> None:
         ComputeError, match="unable to parse time zone: 'foo'"
     ), pytest.warns(
         FutureWarning,
-        match="In a future version of polars, non-area/location time zones",
+        match="time zones other than those in `zoneinfo.available_timezones",
     ):
         ts.dt.replace_time_zone("UTC").dt.convert_time_zone("foo")
 
