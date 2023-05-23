@@ -566,9 +566,7 @@ def test_date_range_lazy_with_literals() -> None:
             date(2023, 8, 31),
             interval="987d",
             eager=False,
-        )
-        .implode()
-        .alias("dts")
+        ).alias("dts")
     )
     assert df.rows() == [
         (
@@ -602,9 +600,7 @@ def test_date_range_lazy_with_expressions(
     ldf = (
         pl.DataFrame({"start": [date(2015, 6, 30)], "stop": [date(2022, 12, 31)]})
         .with_columns(
-            pl.date_range(low, high, interval="678d", eager=False)
-            .implode()
-            .alias("dts")
+            pl.date_range(low, high, interval="678d", eager=False).alias("dts")
         )
         .lazy()
     )
@@ -670,6 +666,33 @@ def test_date_range_lazy_with_expressions(
     }
 
 
+def test_date_range_single_row_lazy_7110() -> None:
+    df = pl.DataFrame(
+        {
+            "name": ["A"],
+            "from": [date(2020, 1, 1)],
+            "to": [date(2020, 1, 2)],
+        }
+    )
+    result = df.with_columns(
+        pl.date_range(
+            start=pl.col("from"),
+            end=pl.col("to"),
+            interval="1d",
+            eager=False,
+        ).alias("date_range")
+    )
+    expected = pl.DataFrame(
+        {
+            "name": ["A"],
+            "from": [date(2020, 1, 1)],
+            "to": [date(2020, 1, 2)],
+            "date_range": [[date(2020, 1, 1), date(2020, 1, 2)]],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
 def test_date_range_invalid_time_zone() -> None:
     with pytest.raises(
         ComputeError, match="unable to parse time zone: 'foo'"
@@ -698,6 +721,8 @@ def test_time_range_lit() -> None:
                 name="tm",
             )
         )
+        if not eager:
+            tm = tm.select(pl.col("tm").explode())
         assert tm["tm"].to_list() == [
             time(6, 47, 13, 333000),
             time(12, 32, 23, 666000),
@@ -712,6 +737,8 @@ def test_time_range_lit() -> None:
                 name="tm",
             )
         )
+        if not eager:
+            tm = tm.select(pl.col("tm").explode())
         assert tm["tm"].to_list() == [
             time(0, 0),
             time(5, 45, 10, 333000),
@@ -728,6 +755,7 @@ def test_time_range_lit() -> None:
                 name="tm",
             )
         )
+        tm = tm.select(pl.col("tm").explode())
         assert tm["tm"].to_list() == [
             time(23, 59, 59, 999980),
             time(23, 59, 59, 999990),
