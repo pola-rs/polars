@@ -146,7 +146,7 @@ def repeat(
 
     if eager:
         if not isinstance(n, int):
-            raise ValueError(
+            raise TypeError(
                 "`n` must be an integer when using `repeat` in an eager context."
             )
         series = wrap_s(plr.repeat_eager(value, n, dtype))
