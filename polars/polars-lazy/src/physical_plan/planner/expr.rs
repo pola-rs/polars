@@ -143,6 +143,7 @@ pub(crate) fn create_physical_expr(
             by,
             descending,
         } => {
+            polars_ensure!(!by.is_empty(), InvalidOperation: "'sort_by' got an empty set");
             let phys_expr = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
             let phys_by = create_physical_expressions(&by, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(SortByExpr::new(
