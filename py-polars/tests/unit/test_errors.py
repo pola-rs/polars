@@ -575,15 +575,17 @@ def test_invalid_groupby_arg() -> None:
         df.groupby(1).agg({"a": "sum"})
 
 
-def test_no_sorted_warning(capfd: typing.Any) -> None:
+def test_no_sorted_err() -> None:
     df = pl.DataFrame(
         {
             "dt": [datetime(2001, 1, 1), datetime(2001, 1, 2)],
         }
     )
-    df.groupby_dynamic("dt", every="1h").agg(pl.all().count().suffix("_foo"))
-    (_, err) = capfd.readouterr()
-    assert "argument in operation 'groupby_dynamic' is not explicitly sorted" in err
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match=r"argument in operation 'groupby_dynamic' is not explicitly sorted",
+    ):
+        df.groupby_dynamic("dt", every="1h").agg(pl.all().count().suffix("_foo"))
 
 
 def test_serde_validation() -> None:
