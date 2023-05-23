@@ -1,114 +1,99 @@
 from datetime import datetime
+from typing import Any
+
+import pytest
 
 import polars as pl
+from polars.testing import assert_series_equal
 
 
-def test_repeat_lazy() -> None:
-    s = pl.select(pl.repeat(2**31 - 1, 3)).to_series()
-    assert s.dtype == pl.Int32
-    assert s.len() == 3
-    assert s.to_list() == [2**31 - 1] * 3
-    s = pl.select(pl.repeat(-(2**31), 4)).to_series()
-    assert s.dtype == pl.Int32
-    assert s.len() == 4
-    assert s.to_list() == [-(2**31)] * 4
-    s = pl.select(pl.repeat(2**31, 5)).to_series()
-    assert s.dtype == pl.Int64
-    assert s.len() == 5
-    assert s.to_list() == [2**31] * 5
-    s = pl.select(pl.repeat(-(2**31) - 1, 3)).to_series()
-    assert s.dtype == pl.Int64
-    assert s.len() == 3
-    assert s.to_list() == [-(2**31) - 1] * 3
-    s = pl.select(pl.repeat("foo", 2)).to_series()
-    assert s.dtype == pl.Utf8
-    assert s.len() == 2
-    assert s.to_list() == ["foo"] * 2
-    s = pl.select(pl.repeat(1.0, 5)).to_series()
-    assert s.dtype == pl.Float64
-    assert s.len() == 5
-    assert s.to_list() == [1.0] * 5
-    s = pl.select(pl.repeat(True, 4)).to_series()
-    assert s.dtype == pl.Boolean
-    assert s.len() == 4
-    assert s.to_list() == [True] * 4
-    s = pl.select(pl.repeat(None, 7)).to_series()
-    assert s.dtype == pl.Null
-    assert s.len() == 7
-    assert s.to_list() == [None] * 7
-    s = pl.select(pl.repeat(0, 0)).to_series()
-    assert s.dtype == pl.Int32
-    assert s.len() == 0
+@pytest.mark.parametrize(
+    ("value", "n", "dtype", "expected_dtype"),
+    [
+        (2**31, 5, None, pl.Int64),
+        (2**31 - 1, 5, None, pl.Int32),
+        (-(2**31) - 1, 3, None, pl.Int64),
+        (-(2**31), 3, None, pl.Int32),
+        ("foo", 2, None, pl.Utf8),
+        (1.0, 5, None, pl.Float64),
+        (True, 4, None, pl.Boolean),
+        (None, 7, None, pl.Null),
+        (0, 0, None, pl.Int32),
+        (8, 2, pl.UInt8, pl.UInt8),
+        pytest.param(
+            datetime(2023, 2, 2),
+            3,
+            None,
+            pl.Datetime,
+            marks=pytest.mark.skip("Not implemented properly yet for lazy"),
+        ),
+    ],
+)
+def test_repeat(
+    value: Any,
+    n: int,
+    dtype: pl.PolarsDataType,
+    expected_dtype: pl.PolarsDataType,
+) -> None:
+    expected = pl.Series("repeat", [value] * n, dtype=expected_dtype)
+
+    result_eager = pl.repeat(value, n=n, dtype=dtype, eager=True)
+    assert_series_equal(result_eager, expected)
+
+    result_lazy = pl.select(pl.repeat(value, n=n, dtype=dtype, eager=False)).to_series()
+    assert_series_equal(result_lazy, expected)
 
 
-def test_repeat_lazy_dtype() -> None:
-    s = pl.select(pl.repeat(1, n=3, dtype=pl.Int8)).to_series()
-    assert s.dtype == pl.Int8
-    assert s.len() == 3
+def test_repeat_expr_input_eager() -> None:
+    with pytest.raises(TypeError):
+        pl.repeat(1, n=pl.lit(3), eager=True)
 
 
-def test_repeat_eager() -> None:
-    s = pl.repeat(2**31 - 1, 3, eager=True)
-    assert s.dtype == pl.Int32
-    assert s.len() == 3
-    assert s.to_list() == [2**31 - 1] * 3
-    s = pl.repeat(-(2**31), 4, eager=True)
-    assert s.dtype == pl.Int32
-    assert s.len() == 4
-    assert s.to_list() == [-(2**31)] * 4
-    s = pl.repeat(2**31, 5, eager=True)
-    assert s.dtype == pl.Int64
-    assert s.len() == 5
-    assert s.to_list() == [2**31] * 5
-    s = pl.repeat(-(2**31) - 1, 3, eager=True)
-    assert s.dtype == pl.Int64
-    assert s.len() == 3
-    assert s.to_list() == [-(2**31) - 1] * 3
-    s = pl.repeat("foo", 2, eager=True)
-    assert s.dtype == pl.Utf8
-    assert s.len() == 2
-    assert s.to_list() == ["foo"] * 2
-    s = pl.repeat(1.0, 5, eager=True)
-    assert s.dtype == pl.Float64
-    assert s.len() == 5
-    assert s.to_list() == [1.0] * 5
-    s = pl.repeat(True, 4, eager=True)
-    assert s.dtype == pl.Boolean
-    assert s.len() == 4
-    assert s.to_list() == [True] * 4
-    s = pl.repeat(None, 7, eager=True)
-    assert s.dtype == pl.Null
-    assert s.len() == 7
-    assert s.to_list() == [None] * 7
-    s = pl.repeat(0, 0, eager=True)
-    assert s.dtype == pl.Int32
-    assert s.len() == 0
-    assert pl.repeat(datetime(2023, 2, 2), 3, eager=True).to_list() == [
-        datetime(2023, 2, 2, 0, 0),
-        datetime(2023, 2, 2, 0, 0),
-        datetime(2023, 2, 2, 0, 0),
-    ]
+def test_repeat_expr_input_lazy() -> None:
+    result = pl.select(pl.repeat(1, n=pl.lit(3))).to_series()
+    expected = pl.Series("repeat", [1, 1, 1], dtype=pl.Int32)
+    assert_series_equal(result, expected)
 
 
-def test_repeat_eager_dtype() -> None:
-    s = pl.repeat(1, n=3, eager=True, dtype=pl.Int8)
-    assert s.dtype == pl.Int8
-    assert s.len() == 3
+@pytest.mark.parametrize(
+    ("n", "dtype", "expected_dtype"),
+    [
+        (3, None, pl.Float64),
+        (2, pl.UInt8, pl.UInt8),
+        (0, pl.Int32, pl.Int32),
+    ],
+)
+def test_ones(
+    n: int,
+    dtype: pl.PolarsDataType,
+    expected_dtype: pl.PolarsDataType,
+) -> None:
+    expected = pl.Series("ones", [1] * n, dtype=expected_dtype)
+
+    result_eager = pl.ones(n=n, dtype=dtype, eager=True)
+    assert_series_equal(result_eager, expected)
+
+    result_lazy = pl.select(pl.ones(n=n, dtype=dtype, eager=False)).to_series()
+    assert_series_equal(result_lazy, expected)
 
 
-def test_ones_zeros_eager() -> None:
-    ones = pl.ones(5, eager=True)
-    assert ones.dtype == pl.Float64
-    assert ones.to_list() == [1.0, 1.0, 1.0, 1.0, 1.0]
+@pytest.mark.parametrize(
+    ("n", "dtype", "expected_dtype"),
+    [
+        (3, None, pl.Float64),
+        (2, pl.UInt8, pl.UInt8),
+        (0, pl.Int32, pl.Int32),
+    ],
+)
+def test_zeros(
+    n: int,
+    dtype: pl.PolarsDataType,
+    expected_dtype: pl.PolarsDataType,
+) -> None:
+    expected = pl.Series("zeros", [0] * n, dtype=expected_dtype)
 
-    ones = pl.ones(3, dtype=pl.UInt8, eager=True)
-    assert ones.dtype == pl.UInt8
-    assert ones.to_list() == [1, 1, 1]
+    result_eager = pl.zeros(n=n, dtype=dtype, eager=True)
+    assert_series_equal(result_eager, expected)
 
-    zeros = pl.zeros(5, eager=True)
-    assert zeros.dtype == pl.Float64
-    assert zeros.to_list() == [0.0, 0.0, 0.0, 0.0, 0.0]
-
-    zeros = pl.zeros(3, dtype=pl.UInt8, eager=True)
-    assert zeros.dtype == pl.UInt8
-    assert zeros.to_list() == [0, 0, 0]
+    result_lazy = pl.select(pl.zeros(n=n, dtype=dtype, eager=False)).to_series()
+    assert_series_equal(result_lazy, expected)
