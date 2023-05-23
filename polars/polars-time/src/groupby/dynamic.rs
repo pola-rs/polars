@@ -120,7 +120,7 @@ impl Wrap<&DataFrame> {
         let time = self.0.column(&options.index_column)?.clone();
         if by.is_empty() && !options.period.parsed_int {
             // if by is given, the column must be sorted in the 'by' arg, which we can not check now
-            ensure_sorted_arg(&time, "groupby_rolling");
+            ensure_sorted_arg(&time, "groupby_rolling")?;
         }
         let time_type = time.dtype();
 
@@ -199,7 +199,7 @@ impl Wrap<&DataFrame> {
         let time = self.0.column(&options.index_column)?.rechunk();
         if by.is_empty() && !options.period.parsed_int {
             // if by is given, the column must be sorted in the 'by' arg, which we can not check now
-            ensure_sorted_arg(&time, "groupby_dynamic");
+            ensure_sorted_arg(&time, "groupby_dynamic")?;
         }
         let time_type = time.dtype();
 
@@ -625,7 +625,7 @@ mod test {
             TimeUnit::Microseconds,
             TimeUnit::Milliseconds,
         ] {
-            let date = Utf8Chunked::new(
+            let mut date = Utf8Chunked::new(
                 "dt",
                 [
                     "2020-01-01 13:45:48",
@@ -638,6 +638,7 @@ mod test {
             )
             .as_datetime(None, tu, false, false, None)?
             .into_series();
+            date.set_sorted_flag(IsSorted::Ascending);
             let a = Series::new("a", [3, 7, 5, 9, 2, 1]);
             let df = DataFrame::new(vec![date, a.clone()])?;
 
@@ -663,7 +664,7 @@ mod test {
 
     #[test]
     fn test_rolling_groupby_aggs() -> PolarsResult<()> {
-        let date = Utf8Chunked::new(
+        let mut date = Utf8Chunked::new(
             "dt",
             [
                 "2020-01-01 13:45:48",
@@ -676,6 +677,8 @@ mod test {
         )
         .as_datetime(None, TimeUnit::Milliseconds, false, false, None)?
         .into_series();
+        date.set_sorted_flag(IsSorted::Ascending);
+
         let a = Series::new("a", [3, 7, 5, 9, 2, 1]);
         let df = DataFrame::new(vec![date, a.clone()])?;
 

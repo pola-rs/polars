@@ -110,7 +110,7 @@ fn upsample_impl(
     stable: bool,
 ) -> PolarsResult<DataFrame> {
     let s = source.column(index_column)?;
-    ensure_sorted_arg(s, "upsample");
+    ensure_sorted_arg(s, "upsample")?;
     if matches!(s.dtype(), DataType::Date) {
         let mut df = source.clone();
         df.try_apply(index_column, |s| {
