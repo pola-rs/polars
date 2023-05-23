@@ -52,7 +52,7 @@ impl PyExpr {
     }
 
     fn list_mean(&self) -> Self {
-        self.inner.clone().arr().mean().with_fmt("arr.mean").into()
+        self.inner.clone().arr().mean().with_fmt("list.mean").into()
     }
 
     fn list_min(&self) -> Self {
@@ -83,12 +83,12 @@ impl PyExpr {
                 descending,
                 ..Default::default()
             })
-            .with_fmt("arr.sort")
+            .with_fmt("list.sort")
             .into()
     }
 
     fn list_sum(&self) -> Self {
-        self.inner.clone().arr().sum().with_fmt("arr.sum").into()
+        self.inner.clone().arr().sum().with_fmt("list.sum").into()
     }
 
     #[cfg(feature = "list_take")]

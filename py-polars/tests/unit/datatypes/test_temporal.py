@@ -2060,10 +2060,10 @@ def test_date_arr_concat() -> None:
 
     # type date
     df = pl.DataFrame({"d": [date(2000, 1, 1)]})
-    assert df.select(pl.col("d").arr.concat(pl.col("d"))).to_dict(False) == expected
+    assert df.select(pl.col("d").list.concat(pl.col("d"))).to_dict(False) == expected
     # type list[date]
     df = pl.DataFrame({"d": [[date(2000, 1, 1)]]})
-    assert df.select(pl.col("d").arr.concat(pl.col("d"))).to_dict(False) == expected
+    assert df.select(pl.col("d").list.concat(pl.col("d"))).to_dict(False) == expected
 
 
 def test_date_timedelta() -> None:

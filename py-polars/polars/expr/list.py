@@ -34,7 +34,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [1, 2], "bar": [["a", "b"], ["c"]]})
-        >>> df.select(pl.col("bar").arr.lengths())
+        >>> df.select(pl.col("bar").list.lengths())
         shape: (2, 1)
         ┌─────┐
         │ bar │
@@ -55,7 +55,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"values": [[1], [2, 3]]})
-        >>> df.select(pl.col("values").arr.sum())
+        >>> df.select(pl.col("values").list.sum())
         shape: (2, 1)
         ┌────────┐
         │ values │
@@ -76,7 +76,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"values": [[1], [2, 3]]})
-        >>> df.select(pl.col("values").arr.max())
+        >>> df.select(pl.col("values").list.max())
         shape: (2, 1)
         ┌────────┐
         │ values │
@@ -97,7 +97,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"values": [[1], [2, 3]]})
-        >>> df.select(pl.col("values").arr.min())
+        >>> df.select(pl.col("values").list.min())
         shape: (2, 1)
         ┌────────┐
         │ values │
@@ -118,7 +118,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"values": [[1], [2, 3]]})
-        >>> df.select(pl.col("values").arr.mean())
+        >>> df.select(pl.col("values").list.mean())
         shape: (2, 1)
         ┌────────┐
         │ values │
@@ -148,7 +148,7 @@ class ExprListNameSpace:
         ...         "a": [[3, 2, 1], [9, 1, 2]],
         ...     }
         ... )
-        >>> df.select(pl.col("a").arr.sort())
+        >>> df.select(pl.col("a").list.sort())
         shape: (2, 1)
         ┌───────────┐
         │ a         │
@@ -158,7 +158,7 @@ class ExprListNameSpace:
         │ [1, 2, 3] │
         │ [1, 2, 9] │
         └───────────┘
-        >>> df.select(pl.col("a").arr.sort(descending=True))
+        >>> df.select(pl.col("a").list.sort(descending=True))
         shape: (2, 1)
         ┌───────────┐
         │ a         │
@@ -183,7 +183,7 @@ class ExprListNameSpace:
         ...         "a": [[3, 2, 1], [9, 1, 2]],
         ...     }
         ... )
-        >>> df.select(pl.col("a").arr.reverse())
+        >>> df.select(pl.col("a").list.reverse())
         shape: (2, 1)
         ┌───────────┐
         │ a         │
@@ -213,7 +213,7 @@ class ExprListNameSpace:
         ...         "a": [[1, 1, 2]],
         ...     }
         ... )
-        >>> df.select(pl.col("a").arr.unique())
+        >>> df.select(pl.col("a").list.unique())
         shape: (1, 1)
         ┌───────────┐
         │ a         │
@@ -243,7 +243,7 @@ class ExprListNameSpace:
         ...         "b": [["b", "c"], ["y", "z"]],
         ...     }
         ... )
-        >>> df.select(pl.col("a").arr.concat("b"))
+        >>> df.select(pl.col("a").list.concat("b"))
         shape: (2, 1)
         ┌─────────────────┐
         │ a               │
@@ -282,7 +282,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [[3, 2, 1], [], [1, 2]]})
-        >>> df.select(pl.col("foo").arr.get(0))
+        >>> df.select(pl.col("foo").list.get(0))
         shape: (3, 1)
         ┌──────┐
         │ foo  │
@@ -333,7 +333,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [[3, 2, 1], [], [1, 2]]})
-        >>> df.select(pl.col("foo").arr.first())
+        >>> df.select(pl.col("foo").list.first())
         shape: (3, 1)
         ┌──────┐
         │ foo  │
@@ -355,7 +355,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [[3, 2, 1], [], [1, 2]]})
-        >>> df.select(pl.col("foo").arr.last())
+        >>> df.select(pl.col("foo").list.last())
         shape: (3, 1)
         ┌──────┐
         │ foo  │
@@ -388,7 +388,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"foo": [[3, 2, 1], [], [1, 2]]})
-        >>> df.select(pl.col("foo").arr.contains(1))
+        >>> df.select(pl.col("foo").list.contains(1))
         shape: (3, 1)
         ┌───────┐
         │ foo   │
@@ -421,7 +421,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"s": [["a", "b", "c"], ["x", "y"]]})
-        >>> df.select(pl.col("s").arr.join(" "))
+        >>> df.select(pl.col("s").list.join(" "))
         shape: (2, 1)
         ┌───────┐
         │ s     │
@@ -450,7 +450,7 @@ class ExprListNameSpace:
         ...         "a": [[1, 2], [2, 1]],
         ...     }
         ... )
-        >>> df.select(pl.col("a").arr.arg_min())
+        >>> df.select(pl.col("a").list.arg_min())
         shape: (2, 1)
         ┌─────┐
         │ a   │
@@ -479,7 +479,7 @@ class ExprListNameSpace:
         ...         "a": [[1, 2], [2, 1]],
         ...     }
         ... )
-        >>> df.select(pl.col("a").arr.arg_max())
+        >>> df.select(pl.col("a").list.arg_max())
         shape: (2, 1)
         ┌─────┐
         │ a   │
@@ -507,7 +507,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"n": [[1, 2, 3, 4], [10, 2, 1]]})
-        >>> df.select(pl.col("n").arr.diff())
+        >>> df.select(pl.col("n").list.diff())
         shape: (2, 1)
         ┌────────────────┐
         │ n              │
@@ -518,7 +518,7 @@ class ExprListNameSpace:
         │ [null, -8, -1] │
         └────────────────┘
 
-        >>> df.select(pl.col("n").arr.diff(n=2))
+        >>> df.select(pl.col("n").list.diff(n=2))
         shape: (2, 1)
         ┌───────────────────┐
         │ n                 │
@@ -529,7 +529,7 @@ class ExprListNameSpace:
         │ [null, null, -9]  │
         └───────────────────┘
 
-        >>> df.select(pl.col("n").arr.diff(n=2, null_behavior="drop"))
+        >>> df.select(pl.col("n").list.diff(n=2, null_behavior="drop"))
         shape: (2, 1)
         ┌───────────┐
         │ n         │
@@ -555,7 +555,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
-        >>> s.arr.shift()
+        >>> s.list.shift()
         shape: (2,)
         Series: 'a' [list[i64]]
         [
@@ -583,7 +583,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
-        >>> s.arr.slice(1, 2)
+        >>> s.list.slice(1, 2)
         shape: (2,)
         Series: 'a' [list[i64]]
         [
@@ -608,7 +608,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
-        >>> s.arr.head(2)
+        >>> s.list.head(2)
         shape: (2,)
         Series: 'a' [list[i64]]
         [
@@ -631,7 +631,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
-        >>> s.arr.tail(2)
+        >>> s.list.tail(2)
         shape: (2,)
         Series: 'a' [list[i64]]
         [
@@ -658,7 +658,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [[1, 2, 3], [4, 5, 6]]})
-        >>> df.select(pl.col("a").arr.explode())
+        >>> df.select(pl.col("a").list.explode())
         shape: (6, 1)
         ┌─────┐
         │ a   │
@@ -690,7 +690,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"listcol": [[0], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]})
-        >>> df.select(pl.col("listcol").arr.count_match(2).alias("number_of_twos"))
+        >>> df.select(pl.col("listcol").list.count_match(2).alias("number_of_twos"))
         shape: (5, 1)
         ┌────────────────┐
         │ number_of_twos │
@@ -749,7 +749,7 @@ class ExprListNameSpace:
         Convert list to struct with default field name assignment:
 
         >>> df = pl.DataFrame({"n": [[0, 1, 2], [0, 1]]})
-        >>> df.select(pl.col("n").arr.to_struct())
+        >>> df.select(pl.col("n").list.to_struct())
         shape: (2, 1)
         ┌────────────┐
         │ n          │
@@ -762,14 +762,14 @@ class ExprListNameSpace:
 
         Convert list to struct with field name assignment by function/index:
 
-        >>> df.select(pl.col("n").arr.to_struct(fields=lambda idx: f"n{idx}")).rows(
+        >>> df.select(pl.col("n").list.to_struct(fields=lambda idx: f"n{idx}")).rows(
         ...     named=True
         ... )
         [{'n': {'n0': 0, 'n1': 1, 'n2': 2}}, {'n': {'n0': 0, 'n1': 1, 'n2': None}}]
 
         Convert list to struct with field name assignment by index from a list of names:
 
-        >>> df.select(pl.col("n").arr.to_struct(fields=["one", "two", "three"])).rows(
+        >>> df.select(pl.col("n").list.to_struct(fields=["one", "two", "three"])).rows(
         ...     named=True
         ... )
         [{'n': {'one': 0, 'two': 1, 'three': 2}},
@@ -806,7 +806,7 @@ class ExprListNameSpace:
         --------
         >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
         >>> df.with_columns(
-        ...     pl.concat_list(["a", "b"]).arr.eval(pl.element().rank()).alias("rank")
+        ...     pl.concat_list(["a", "b"]).list.eval(pl.element().rank()).alias("rank")
         ... )
         shape: (3, 3)
         ┌─────┬─────┬────────────┐

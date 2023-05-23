@@ -31,7 +31,7 @@ class ListNameSpace:
         Examples
         --------
         >>> s = pl.Series([[1, 2, 3], [5]])
-        >>> s.arr.lengths()
+        >>> s.list.lengths()
         shape: (2,)
         Series: '' [u32]
         [
@@ -65,14 +65,14 @@ class ListNameSpace:
         Examples
         --------
         >>> s = pl.Series("a", [[3, 2, 1], [9, 1, 2]])
-        >>> s.arr.sort()
+        >>> s.list.sort()
         shape: (2,)
         Series: 'a' [list[i64]]
         [
                 [1, 2, 3]
                 [1, 2, 9]
         ]
-        >>> s.arr.sort(descending=True)
+        >>> s.list.sort(descending=True)
         shape: (2,)
         Series: 'a' [list[i64]]
         [
@@ -164,7 +164,7 @@ class ListNameSpace:
         Examples
         --------
         >>> s = pl.Series([["foo", "bar"], ["hello", "world"]])
-        >>> s.arr.join(separator="-")
+        >>> s.list.join(separator="-")
         shape: (2,)
         Series: '' [str]
         [
@@ -229,7 +229,7 @@ class ListNameSpace:
         Examples
         --------
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
-        >>> s.arr.diff()
+        >>> s.list.diff()
         shape: (2,)
         Series: 'a' [list[i64]]
         [
@@ -237,7 +237,7 @@ class ListNameSpace:
             [null, -8, -1]
         ]
 
-        >>> s.arr.diff(n=2)
+        >>> s.list.diff(n=2)
         shape: (2,)
         Series: 'a' [list[i64]]
         [
@@ -245,7 +245,7 @@ class ListNameSpace:
             [null, null, -9]
         ]
 
-        >>> s.arr.diff(n=2, null_behavior="drop")
+        >>> s.list.diff(n=2, null_behavior="drop")
         shape: (2,)
         Series: 'a' [list[i64]]
         [
@@ -267,7 +267,7 @@ class ListNameSpace:
         Examples
         --------
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
-        >>> s.arr.shift()
+        >>> s.list.shift()
         shape: (2,)
         Series: 'a' [list[i64]]
         [
@@ -292,7 +292,7 @@ class ListNameSpace:
         Examples
         --------
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
-        >>> s.arr.slice(1, 2)
+        >>> s.list.slice(1, 2)
         shape: (2,)
         Series: 'a' [list[i64]]
         [
@@ -314,7 +314,7 @@ class ListNameSpace:
         Examples
         --------
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
-        >>> s.arr.head(2)
+        >>> s.list.head(2)
         shape: (2,)
         Series: 'a' [list[i64]]
         [
@@ -336,7 +336,7 @@ class ListNameSpace:
         Examples
         --------
         >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
-        >>> s.arr.tail(2)
+        >>> s.list.tail(2)
         shape: (2,)
         Series: 'a' [list[i64]]
         [
@@ -361,7 +361,7 @@ class ListNameSpace:
         Examples
         --------
         >>> s = pl.Series("a", [[1, 2, 3], [4, 5, 6]])
-        >>> s.arr.explode()
+        >>> s.list.explode()
         shape: (6,)
         Series: 'a' [i64]
         [
@@ -417,7 +417,7 @@ class ListNameSpace:
         Convert list to struct with default field name assignment:
 
         >>> s1 = pl.Series("n", [[0, 1, 2], [0, 1]])
-        >>> s2 = s1.arr.to_struct()
+        >>> s2 = s1.list.to_struct()
         >>> s2
         shape: (2,)
         Series: 'n' [struct[3]]
@@ -430,13 +430,13 @@ class ListNameSpace:
 
         Convert list to struct with field name assignment by function/index:
 
-        >>> s3 = s1.arr.to_struct(fields=lambda idx: f"n{idx:02}")
+        >>> s3 = s1.list.to_struct(fields=lambda idx: f"n{idx:02}")
         >>> s3.struct.fields
         ['n00', 'n01', 'n02']
 
         Convert list to struct with field name assignment by index from a list of names:
 
-        >>> s1.arr.to_struct(fields=["one", "two", "three"]).struct.unnest()
+        >>> s1.list.to_struct(fields=["one", "two", "three"]).struct.unnest()
         shape: (2, 3)
         ┌─────┬─────┬───────┐
         │ one ┆ two ┆ three │
@@ -452,7 +452,7 @@ class ListNameSpace:
         return (
             s.to_frame()
             .select(
-                F.col(s.name).arr.to_struct(
+                F.col(s.name).list.to_struct(
                     # note: in eager mode, 'upper_bound' is always zero, as (unlike
                     # in lazy mode) there is no need to determine/track the schema.
                     n_field_strategy,
@@ -483,7 +483,7 @@ class ListNameSpace:
         --------
         >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
         >>> df.with_columns(
-        ...     pl.concat_list(["a", "b"]).arr.eval(pl.element().rank()).alias("rank")
+        ...     pl.concat_list(["a", "b"]).list.eval(pl.element().rank()).alias("rank")
         ... )
         shape: (3, 3)
         ┌─────┬─────┬────────────┐
