@@ -1,6 +1,4 @@
 #[cfg(feature = "timezones")]
-use arrow::temporal_conversions::parse_offset;
-#[cfg(feature = "timezones")]
 use chrono_tz::Tz;
 use polars_arrow::time_zone::PolarsTimeZone;
 use polars_arrow::utils::CustomIterTools;
@@ -170,13 +168,9 @@ impl Wrap<&DataFrame> {
         };
         match tz {
             #[cfg(feature = "timezones")]
-            Some(tz) => match tz.parse::<Tz>() {
-                Ok(tz) => self.impl_groupby_rolling(dt, by, options, tu, Some(tz), time_type),
-                Err(_) => match parse_offset(&tz) {
-                    Ok(tz) => self.impl_groupby_rolling(dt, by, options, tu, Some(tz), time_type),
-                    Err(_) => unreachable!(),
-                },
-            },
+            Some(tz) => {
+                self.impl_groupby_rolling(dt, by, options, tu, tz.parse::<Tz>().ok(), time_type)
+            }
             _ => self.impl_groupby_rolling(dt, by, options, tu, NO_TIMEZONE.copied(), time_type),
         }
     }
