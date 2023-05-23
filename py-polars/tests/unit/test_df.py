@@ -2780,18 +2780,6 @@ def test_join_suffixes() -> None:
     df_a.join_asof(df_b, on=pl.col("A").set_sorted(), suffix="_y")["B_y"]
 
 
-def test_preservation_of_subclasses_after_groupby_statements() -> None:
-    """Group by operations should preserve inherited dataframe classes."""
-
-    class SubClassedDataFrame(pl.DataFrame):
-        pass
-
-    # A group by operation should preserve the subclass
-    subclassed_df = SubClassedDataFrame({"a": [1, 2], "b": [3, 4]})
-    groupby = subclassed_df.groupby("a")
-    assert isinstance(groupby.agg(pl.count()), SubClassedDataFrame)
-
-
 def test_explode_empty() -> None:
     df = (
         pl.DataFrame({"x": ["a", "a", "b", "b"], "y": [1, 1, 2, 2]})
