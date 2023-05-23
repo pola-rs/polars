@@ -184,8 +184,6 @@ filterwarnings = [
   "error",
   # ...except where it prevents test debugging in an IPython console
   "ignore:.*unrecognized arguments.*PyDevIPCompleter:DeprecationWarning",
-  # or for this deprecation warning
-  "ignore:`Series.time_unit` is deprecated and will be removed in a future version, please use `Series.dtype.time_unit` instead:DeprecationWarning",
 ]
 xfail_strict = true
 
