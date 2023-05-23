@@ -1,5 +1,3 @@
-#[cfg(feature = "timezones")]
-use arrow::temporal_conversions::parse_offset;
 use polars_core::prelude::*;
 use polars_core::utils::ensure_sorted_arg;
 use polars_ops::prelude::*;
@@ -162,13 +160,7 @@ fn upsample_single_impl(
                                 unlocalize_timestamp(first, *tu, tz),
                                 unlocalize_timestamp(last, *tu, tz),
                             ),
-                            Err(_) => match parse_offset(tz) {
-                                Ok(tz) => (
-                                    unlocalize_timestamp(first, *tu, tz),
-                                    unlocalize_timestamp(last, *tu, tz),
-                                ),
-                                Err(_) => unreachable!(),
-                            },
+                            Err(_) => unreachable!(),
                         },
                         _ => (first, last),
                     };

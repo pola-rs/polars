@@ -1,5 +1,3 @@
-#[cfg(feature = "timezones")]
-use arrow::temporal_conversions::parse_offset;
 use chrono::{Datelike, NaiveDateTime, NaiveTime};
 use polars_core::chunked_array::temporal::time_to_time64ns;
 use polars_core::prelude::*;
@@ -43,18 +41,7 @@ pub fn date_range_impl(
                 )
                 .into_datetime(tu, _tz.cloned())
             }
-            Err(_) => match parse_offset(tz) {
-                Ok(tz) => {
-                    let start = localize_timestamp(start, tu, tz);
-                    let stop = localize_timestamp(stop, tu, tz);
-                    Int64Chunked::new_vec(
-                        name,
-                        temporal_range_vec(start?, stop?, every, closed, tu, Some(&tz))?,
-                    )
-                    .into_datetime(tu, _tz.cloned())
-                }
-                _ => polars_bail!(ComputeError: "unable to parse time zone: '{}'", tz),
-            },
+            Err(_) => polars_bail!(ComputeError: "unable to parse time zone: '{}'", tz),
         },
         _ => Int64Chunked::new_vec(
             name,

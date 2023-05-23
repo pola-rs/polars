@@ -1,6 +1,4 @@
 #[cfg(feature = "timezones")]
-use arrow::temporal_conversions::parse_offset;
-#[cfg(feature = "timezones")]
 use chrono_tz::Tz;
 #[cfg(feature = "date_offset")]
 use polars_arrow::time_zone::PolarsTimeZone;
@@ -34,19 +32,10 @@ pub(super) fn date_offset(s: Series, offset: Duration) -> PolarsResult<Series> {
 
             let out = match tz {
                 #[cfg(feature = "timezones")]
-                Some(ref tz) => match tz.parse::<Tz>() {
-                    Ok(tz) => {
-                        let offset_fn = offset_fn(tu);
-                        ca.0.try_apply(|v| offset_fn(&offset, v, Some(&tz)))
-                    }
-                    Err(_) => match parse_offset(tz) {
-                        Ok(tz) => {
-                            let offset_fn = offset_fn(tu);
-                            ca.0.try_apply(|v| offset_fn(&offset, v, Some(&tz)))
-                        }
-                        Err(_) => unreachable!(),
-                    },
-                },
+                Some(ref tz) => {
+                    let offset_fn = offset_fn(tu);
+                    ca.0.try_apply(|v| offset_fn(&offset, v, tz.parse::<Tz>().ok().as_ref()))
+                }
                 _ => {
                     let offset_fn = offset_fn(tu);
                     ca.0.try_apply(|v| offset_fn(&offset, v, NO_TIMEZONE))
