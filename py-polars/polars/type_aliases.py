@@ -145,6 +145,7 @@ CorrelationMethod: TypeAlias = Literal["pearson", "spearman"]
 DbReadEngine: TypeAlias = Literal["adbc", "connectorx"]
 DbWriteEngine: TypeAlias = Literal["sqlalchemy", "adbc"]
 DbWriteMode: TypeAlias = Literal["replace", "append", "fail"]
+WindowMappingStrategy: TypeAlias = Literal["group_to_rows", "join", "explode"]
 
 # type signature for allowed frame init
 FrameInitTypes: TypeAlias = Union[

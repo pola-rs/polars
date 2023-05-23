@@ -475,12 +475,15 @@ impl PyExpr {
         self.clone().inner.is_duplicated().into()
     }
 
-    fn over(&self, partition_by: Vec<Self>) -> Self {
+    fn over(&self, partition_by: Vec<Self>, mapping: Wrap<WindowMapping>) -> Self {
         let partition_by = partition_by
             .into_iter()
             .map(|e| e.inner)
             .collect::<Vec<Expr>>();
-        self.clone().inner.over(partition_by).into()
+        self.clone()
+            .inner
+            .over_with_options(partition_by, WindowOptions { mapping: mapping.0 })
+            .into()
     }
 
     fn _and(&self, expr: Self) -> Self {
