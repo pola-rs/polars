@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 class ExprListNameSpace:
     """Namespace for list related expressions."""
 
-    _accessor = "arr"
+    _accessor = "list"
 
     def __init__(self, expr: Expr):
         self._pyexpr = expr._pyexpr

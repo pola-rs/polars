@@ -17,9 +17,9 @@ if TYPE_CHECKING:
 
 @expr_dispatch
 class ListNameSpace:
-    """Series.arr namespace."""
+    """Namespace for list related methods."""
 
-    _accessor = "arr"
+    _accessor = "list"
 
     def __init__(self, series: Series):
         self._s: PySeries = series._s

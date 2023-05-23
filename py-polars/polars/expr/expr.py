@@ -7434,16 +7434,6 @@ class Expr:
         return self.map(func)
 
     @property
-    def arr(self) -> ExprListNameSpace:
-        """
-        Create an object namespace of all list related methods.
-
-        See the individual method pages for full details
-
-        """
-        return ExprListNameSpace(self)
-
-    @property
     def bin(self) -> ExprBinaryNameSpace:
         """
         Create an object namespace of all binary related methods.
@@ -7483,6 +7473,19 @@ class Expr:
         """Create an object namespace of all datetime related methods."""
         return ExprDateTimeNameSpace(self)
 
+    # Keep the `list` and `str` properties below at the end of the definition of Expr,
+    # as to not confuse mypy with the type annotation `str` and `list`
+
+    @property
+    def list(self) -> ExprListNameSpace:
+        """
+        Create an object namespace of all list related methods.
+
+        See the individual method pages for full details
+
+        """
+        return ExprListNameSpace(self)
+
     @property
     def meta(self) -> ExprMetaNameSpace:
         """
@@ -7492,9 +7495,6 @@ class Expr:
 
         """
         return ExprMetaNameSpace(self)
-
-    # Keep the `str` property below at the end of the definition of Expr,
-    # as to not confuse mypy with the type annotation `str`
 
     @property
     def str(self) -> ExprStringNameSpace:
