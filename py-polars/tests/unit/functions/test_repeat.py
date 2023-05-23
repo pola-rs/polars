@@ -56,20 +56,19 @@ def test_repeat_expr_input_lazy() -> None:
 
 
 @pytest.mark.parametrize(
-    ("value", "n", "dtype", "expected_dtype"),
+    ("n", "dtype", "expected_dtype"),
     [
-        (1.0, 3, None, pl.Float64),
-        (1, 2, pl.UInt8, pl.UInt8),
-        (1, 0, pl.Int32, pl.Int32),
+        (3, None, pl.Float64),
+        (2, pl.UInt8, pl.UInt8),
+        (0, pl.Int32, pl.Int32),
     ],
 )
 def test_ones(
-    value: Any,
     n: int,
     dtype: pl.PolarsDataType,
     expected_dtype: pl.PolarsDataType,
 ) -> None:
-    expected = pl.Series("ones", [value] * n, dtype=expected_dtype)
+    expected = pl.Series("ones", [1] * n, dtype=expected_dtype)
 
     result_eager = pl.ones(n=n, dtype=dtype, eager=True)
     assert_series_equal(result_eager, expected)
@@ -79,20 +78,19 @@ def test_ones(
 
 
 @pytest.mark.parametrize(
-    ("value", "n", "dtype", "expected_dtype"),
+    ("n", "dtype", "expected_dtype"),
     [
-        (0.0, 3, None, pl.Float64),
-        (0, 2, pl.UInt8, pl.UInt8),
-        (0, 0, pl.Int32, pl.Int32),
+        (3, None, pl.Float64),
+        (2, pl.UInt8, pl.UInt8),
+        (0, pl.Int32, pl.Int32),
     ],
 )
 def test_zeros(
-    value: Any,
     n: int,
     dtype: pl.PolarsDataType,
     expected_dtype: pl.PolarsDataType,
 ) -> None:
-    expected = pl.Series("zeros", [value] * n, dtype=expected_dtype)
+    expected = pl.Series("zeros", [0] * n, dtype=expected_dtype)
 
     result_eager = pl.zeros(n=n, dtype=dtype, eager=True)
     assert_series_equal(result_eager, expected)
