@@ -45,7 +45,7 @@ def test_repeat(
 
 
 def test_repeat_expr_input_eager() -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(TypeError):
         pl.repeat(1, n=pl.lit(3), eager=True)
 
 
