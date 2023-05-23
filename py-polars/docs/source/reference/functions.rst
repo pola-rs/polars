@@ -24,7 +24,6 @@ Eager/Lazy functions
 
     arg_where
     concat
-    cut
     date_range
     ones
     time_range

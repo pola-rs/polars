@@ -1,10 +1,4 @@
-from polars.functions.eager import (
-    align_frames,
-    concat,
-    cut,
-    date_range,
-    time_range,
-)
+from polars.functions.eager import align_frames, concat, date_range, time_range
 from polars.functions.lazy import (
     all,
     any,
@@ -67,7 +61,6 @@ __all__ = [
     "approx_unique",
     "arg_where",
     "concat",
-    "cut",
     "date_range",
     "element",
     "ones",
