@@ -46,57 +46,6 @@ if TYPE_CHECKING:
         from typing_extensions import Literal
 
 
-def get_dummies(
-    df: DataFrame,
-    *,
-    columns: str | Sequence[str] | None = None,
-    separator: str = "_",
-) -> DataFrame:
-    """
-    Convert categorical variables into dummy/indicator variables.
-
-    .. deprecated:: 0.16.8
-        `pl.get_dummies(df)` has been deprecated; use `df.to_dummies()`
-
-    Parameters
-    ----------
-    df
-        DataFrame to convert.
-    columns
-        Name of the column(s) that should be converted to dummy variables.
-        If set to ``None`` (default), convert all columns.
-    separator
-        Separator/delimiter used when generating column names.
-
-    Examples
-    --------
-    >>> df = pl.DataFrame(
-    ...     {
-    ...         "foo": [1, 2],
-    ...         "bar": [3, 4],
-    ...         "ham": ["a", "b"],
-    ...     }
-    ... )
-    >>> pl.get_dummies(df.to_dummies(), columns=["foo", "bar"])  # doctest: +SKIP
-    shape: (2, 6)
-    ┌───────┬───────┬───────┬───────┬───────┬───────┐
-    │ foo_1 ┆ foo_2 ┆ bar_3 ┆ bar_4 ┆ ham_a ┆ ham_b │
-    │ ---   ┆ ---   ┆ ---   ┆ ---   ┆ ---   ┆ ---   │
-    │ u8    ┆ u8    ┆ u8    ┆ u8    ┆ u8    ┆ u8    │
-    ╞═══════╪═══════╪═══════╪═══════╪═══════╪═══════╡
-    │ 1     ┆ 0     ┆ 1     ┆ 0     ┆ 1     ┆ 0     │
-    │ 0     ┆ 1     ┆ 0     ┆ 1     ┆ 0     ┆ 1     │
-    └───────┴───────┴───────┴───────┴───────┴───────┘
-
-    """
-    warnings.warn(
-        "`pl.get_dummies(df)` has been deprecated; use `df.to_dummies()`",
-        category=DeprecationWarning,
-        stacklevel=find_stacklevel(),
-    )
-    return df.to_dummies(columns=columns, separator=separator)
-
-
 def concat(
     items: Iterable[PolarsType],
     *,
@@ -686,72 +635,6 @@ def time_range(
             )
         )
         return tm_srs
-
-
-def cut(
-    s: Series,
-    bins: list[float],
-    labels: list[str] | None = None,
-    break_point_label: str = "break_point",
-    category_label: str = "category",
-) -> DataFrame:
-    """
-    Bin values into discrete values.
-
-    .. deprecated:: 0.16.8
-        `pl.cut(series, ...)` has been deprecated; use `series.cut(...)`
-
-    Parameters
-    ----------
-    s
-        Series to bin.
-    bins
-        Bins to create.
-    labels
-        Labels to assign to the bins. If given the length of labels must be
-        len(bins) + 1.
-    break_point_label
-        Name given to the breakpoint column.
-    category_label
-        Name given to the category column.
-
-    Returns
-    -------
-    DataFrame
-
-    Warnings
-    --------
-    This functionality is experimental and may change without it being considered a
-    breaking change.
-
-    Examples
-    --------
-    >>> a = pl.Series("a", [v / 10 for v in range(-30, 30, 5)])
-    >>> pl.cut(a, bins=[-1, 1])  # doctest: +SKIP
-    shape: (12, 3)
-    ┌──────┬─────────────┬──────────────┐
-    │ a    ┆ break_point ┆ category     │
-    │ ---  ┆ ---         ┆ ---          │
-    │ f64  ┆ f64         ┆ cat          │
-    ╞══════╪═════════════╪══════════════╡
-    │ -3.0 ┆ -1.0        ┆ (-inf, -1.0] │
-    │ -2.5 ┆ -1.0        ┆ (-inf, -1.0] │
-    │ -2.0 ┆ -1.0        ┆ (-inf, -1.0] │
-    │ -1.5 ┆ -1.0        ┆ (-inf, -1.0] │
-    │ …    ┆ …           ┆ …            │
-    │ 1.0  ┆ 1.0         ┆ (-1.0, 1.0]  │
-    │ 1.5  ┆ inf         ┆ (1.0, inf]   │
-    │ 2.0  ┆ inf         ┆ (1.0, inf]   │
-    │ 2.5  ┆ inf         ┆ (1.0, inf]   │
-    └──────┴─────────────┴──────────────┘
-
-    """
-    warnings.warn(
-        "`pl.cut(series)` has been deprecated; use `series.cut()`",
-        category=DeprecationWarning,
-        stacklevel=find_stacklevel(),
-    )
-    return s.cut(bins, labels, break_point_label, category_label)
 
 
 def align_frames(

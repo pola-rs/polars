@@ -44,7 +44,7 @@ from polars.expr.string import ExprStringNameSpace
 from polars.expr.struct import ExprStructNameSpace
 from polars.utils._parse_expr_input import expr_to_lit_or_expr, selection_to_pyexpr_list
 from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.decorators import deprecated_alias, redirect
+from polars.utils.decorators import deprecated_alias
 from polars.utils.meta import threadpool_size
 from polars.utils.various import sphinx_accessor
 
@@ -83,7 +83,6 @@ elif os.getenv("BUILDING_SPHINX_DOCS"):
     property = sphinx_accessor
 
 
-@redirect({"list": "implode"})
 class Expr:
     """Expressions that can be used in various contexts."""
 

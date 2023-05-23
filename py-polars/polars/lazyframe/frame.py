@@ -3,7 +3,6 @@ from __future__ import annotations
 import contextlib
 import os
 import typing
-import warnings
 from datetime import date, datetime, time, timedelta
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -56,7 +55,6 @@ from polars.utils.various import (
     _in_notebook,
     _prepare_row_count_args,
     _process_null_values,
-    find_stacklevel,
     normalise_filepath,
 )
 
@@ -880,107 +878,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
             return ldf.describe_optimized_plan()
         return self._ldf.describe_plan()
-
-    def describe_plan(
-        self,
-        *,
-        optimized: bool = False,
-        type_coercion: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        slice_pushdown: bool = True,
-        common_subplan_elimination: bool = True,
-        streaming: bool = False,
-    ) -> str:
-        """
-        Create a string representation of the unoptimized query plan.
-
-        Parameters
-        ----------
-        optimized
-            Return an optimized query plan. Defaults to ``False``.
-            If this is set to ``True`` the subsequent
-            optimization flags control which optimizations
-            run.
-        type_coercion
-            Do type coercion optimization.
-        predicate_pushdown
-            Do predicate pushdown optimization.
-        projection_pushdown
-            Do projection pushdown optimization.
-        simplify_expression
-            Run simplify expressions optimization.
-        slice_pushdown
-            Slice pushdown optimization.
-        common_subplan_elimination
-            Will try to cache branching subplans that occur on self-joins or unions.
-        streaming
-            Run parts of the query in a streaming fashion (this is in an alpha state)
-
-        .. deprecated:: 0.16.10
-            Use ``LazyFrame.explain``
-
-        Examples
-        --------
-        >>> lf = pl.LazyFrame(
-        ...     {
-        ...         "a": ["a", "b", "a", "b", "b", "c"],
-        ...         "b": [1, 2, 3, 4, 5, 6],
-        ...         "c": [6, 5, 4, 3, 2, 1],
-        ...     }
-        ... )
-        >>> lf.groupby("a", maintain_order=True).agg(pl.all().sum()).sort(
-        ...     "a"
-        ... ).describe_plan()  # doctest: +SKIP
-
-        """
-        warnings.warn(
-            "`LazyFrame.describe_plan` has been deprecated; Please use `LazyFrame.explain` instead",
-            category=DeprecationWarning,
-            stacklevel=find_stacklevel(),
-        )
-        if optimized:
-            ldf = self._ldf.optimization_toggle(
-                type_coercion,
-                predicate_pushdown,
-                projection_pushdown,
-                simplify_expression,
-                slice_pushdown,
-                common_subplan_elimination,
-                streaming,
-            )
-            return ldf.describe_optimized_plan()
-        return self._ldf.describe_plan()
-
-    def describe_optimized_plan(
-        self,
-        *,
-        type_coercion: bool = True,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        simplify_expression: bool = True,
-        slice_pushdown: bool = True,
-        common_subplan_elimination: bool = True,
-        streaming: bool = False,
-    ) -> str:
-        """Create a string representation of the optimized query plan."""
-        warnings.warn(
-            "`LazyFrame.describe_optimized_plan` has been deprecated; Please use `LazyFrame.explain` instead",
-            category=DeprecationWarning,
-            stacklevel=find_stacklevel(),
-        )
-        ldf = self._ldf.optimization_toggle(
-            type_coercion,
-            predicate_pushdown,
-            projection_pushdown,
-            simplify_expression,
-            slice_pushdown,
-            common_subplan_elimination,
-            streaming,
-        )
-
-        return ldf.describe_optimized_plan()
 
     def show_graph(
         self,

@@ -170,12 +170,6 @@ def test_all_any_horizontally() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_cut_deprecated() -> None:
-    with pytest.deprecated_call():
-        a = pl.Series("a", [v / 10 for v in range(-30, 30, 5)])
-        pl.cut(a, bins=[-1, 1])
-
-
 def test_null_handling_correlation() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, None, 4], "b": [1, 2, 3, 10, 4]})
 
