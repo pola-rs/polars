@@ -1,3 +1,5 @@
+import pytest
+
 import polars as pl
 from polars.testing import assert_frame_equal
 
@@ -58,3 +60,9 @@ def test_empty_count_window() -> None:
     out = df.select(pl.col("ID").count().over(["ID", "DESC"]))
     assert out.schema == {"ID": pl.UInt32}
     assert out.height == 0
+
+
+def test_empty_sort_by_args() -> None:
+    df = pl.DataFrame([1, 2, 3])
+    with pytest.raises(pl.InvalidOperationError):
+        df.select(pl.all().sort_by([]))
