@@ -167,7 +167,7 @@ def ones(
     n: int,
     dtype: PolarsDataType = ...,
     *,
-    eager: Literal[False],
+    eager: Literal[False] = ...,
 ) -> Expr:
     ...
 
@@ -177,7 +177,7 @@ def ones(
     n: int,
     dtype: PolarsDataType = ...,
     *,
-    eager: Literal[True] = ...,
+    eager: Literal[True],
 ) -> Series:
     ...
 
@@ -243,7 +243,7 @@ def zeros(
     n: int,
     dtype: PolarsDataType = ...,
     *,
-    eager: Literal[False],
+    eager: Literal[False] = ...,
 ) -> Expr:
     ...
 
@@ -253,7 +253,7 @@ def zeros(
     n: int,
     dtype: PolarsDataType = ...,
     *,
-    eager: Literal[True] = ...,
+    eager: Literal[True],
 ) -> Series:
     ...
 

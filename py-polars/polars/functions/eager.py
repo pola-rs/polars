@@ -227,13 +227,13 @@ def _interval_granularity(interval: str) -> str:
 
 @overload
 def date_range(
-    start: Expr,
+    start: date | datetime | Expr | str,
     end: date | datetime | Expr | str,
     interval: str | timedelta = ...,
     *,
-    eager: Literal[True] = ...,
+    eager: Literal[False] = ...,
     closed: ClosedInterval = ...,
-    name: str | None = ...,
+    name: str | None = None,
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
 ) -> Expr:
@@ -243,25 +243,10 @@ def date_range(
 @overload
 def date_range(
     start: date | datetime | Expr | str,
-    end: Expr,
+    end: date | datetime | Expr | str,
     interval: str | timedelta = ...,
     *,
-    eager: Literal[True] = ...,
-    closed: ClosedInterval = ...,
-    name: str | None = ...,
-    time_unit: TimeUnit | None = ...,
-    time_zone: str | None = ...,
-) -> Expr:
-    ...
-
-
-@overload
-def date_range(
-    start: date | datetime | str,
-    end: date | datetime | str,
-    interval: str | timedelta = ...,
-    *,
-    eager: Literal[True] = ...,
+    eager: Literal[True],
     closed: ClosedInterval = ...,
     name: str | None = ...,
     time_unit: TimeUnit | None = ...,
@@ -276,12 +261,12 @@ def date_range(
     end: date | datetime | Expr | str,
     interval: str | timedelta = ...,
     *,
-    eager: Literal[False],
+    eager: bool,
     closed: ClosedInterval = ...,
-    name: str | None = None,
+    name: str | None = ...,
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
-) -> Expr:
+) -> Series | Expr:
     ...
 
 
