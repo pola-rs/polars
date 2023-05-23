@@ -321,33 +321,22 @@ impl WindowExpr {
         sorted_keys: bool,
         gb: &GroupBy,
     ) -> PolarsResult<MapStrategy> {
-        match (
-            self.options.explode,
-            self.options.map_group_to_rows,
-            agg_state,
-        ) {
+        match (self.options.mapping, agg_state) {
             // Explode
             // `(col("x").sum() * col("y")).list().over("groups").flatten()`
-            (true, true, _) => Ok(MapStrategy::Explode),
-            // Explode all the aggregated lists. Maybe add later?
-            (true, false, _) => {
-                polars_bail!(
-                    expr = self.expr, ComputeError:
-                    "this operation is likely not what you want (you may need `.list()`)"
-                );
-            }
+            (WindowMapping::Explode, _) => Ok(MapStrategy::Explode),
             // // explicit list
             // // `(col("x").sum() * col("y")).list().over("groups")`
             // (false, false, _) => Ok(MapStrategy::Join),
             // aggregations
             //`sum("foo").over("groups")`
-            (_, _, AggState::AggregatedFlat(_)) => Ok(MapStrategy::Join),
+            (_, AggState::AggregatedFlat(_)) => Ok(MapStrategy::Join),
             // no explicit aggregations, map over the groups
             //`(col("x").sum() * col("y")).over("groups")`
-            (_, false, AggState::AggregatedList(_)) => Ok(MapStrategy::Join),
+            (WindowMapping::Join, AggState::AggregatedList(_)) => Ok(MapStrategy::Join),
             // no explicit aggregations, map over the groups
             //`(col("x").sum() * col("y")).over("groups")`
-            (_, true, AggState::AggregatedList(_)) => {
+            (WindowMapping::GroupsToRows, AggState::AggregatedList(_)) => {
                 if sorted_keys {
                     if let GroupsProxy::Idx(g) = gb.get_groups() {
                         debug_assert!(g.is_sorted_flag())
@@ -364,7 +353,7 @@ impl WindowExpr {
             // or an aggregation that has been flattened
             // we have to check which one
             //`col("foo").over("groups")`
-            (_, true, AggState::NotAggregated(_)) => {
+            (WindowMapping::GroupsToRows, AggState::NotAggregated(_)) => {
                 // col()
                 // or col().alias()
                 if self.is_simple_column_expr() {
@@ -373,9 +362,9 @@ impl WindowExpr {
                     Ok(MapStrategy::Map)
                 }
             }
-            (_, false, AggState::NotAggregated(_)) => Ok(MapStrategy::Join),
+            (WindowMapping::Join, AggState::NotAggregated(_)) => Ok(MapStrategy::Join),
             // literals, do nothing and let broadcast
-            (_, _, AggState::Literal(_)) => Ok(MapStrategy::Nothing),
+            (_, AggState::Literal(_)) => Ok(MapStrategy::Nothing),
         }
     }
 }
@@ -434,7 +423,7 @@ impl PhysicalExpr for WindowExpr {
         let explicit_list_agg = self.is_explicit_list_agg();
 
         // if we flatten this column we need to make sure the groups are sorted.
-        let mut sort_groups = self.options.explode ||
+        let mut sort_groups = matches!(self.options.mapping, WindowMapping::Explode) ||
             // if not
             //      `col().over()`
             // and not

@@ -548,7 +548,7 @@ def test_take_misc(fruits_cars: pl.DataFrame) -> None:
                 pl.col("B")
                 .reverse()
                 .take(index)  # type: ignore[arg-type]
-                .over("fruits", map_group_to_rows=False),
+                .over("fruits", mapping_strategy="join"),
                 "fruits",
             ]
         )

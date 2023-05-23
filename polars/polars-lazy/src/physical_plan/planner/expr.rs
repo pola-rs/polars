@@ -91,7 +91,6 @@ pub(crate) fn create_physical_expr(
                 out_name = Some(name.clone());
             };
             let function = node_to_expr(function, expr_arena);
-            polars_ensure!(!(options.explode && options.map_group_to_rows), InvalidOperation: "cannot both 'explode' AND 'map_group_to_rows'");
 
             Ok(Arc::new(WindowExpr {
                 group_by,

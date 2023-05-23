@@ -773,36 +773,36 @@ def test_arr_namespace(fruits_cars: pl.DataFrame) -> None:
         [
             "fruits",
             pl.col("B")
-            .over("fruits", map_group_to_rows=False)
+            .over("fruits", mapping_strategy="join")
             .arr.min()
             .alias("B_by_fruits_min1"),
             pl.col("B")
             .min()
-            .over("fruits", map_group_to_rows=False)
+            .over("fruits", mapping_strategy="join")
             .alias("B_by_fruits_min2"),
             pl.col("B")
-            .over("fruits", map_group_to_rows=False)
+            .over("fruits", mapping_strategy="join")
             .arr.max()
             .alias("B_by_fruits_max1"),
             pl.col("B")
             .max()
-            .over("fruits", map_group_to_rows=False)
+            .over("fruits", mapping_strategy="join")
             .alias("B_by_fruits_max2"),
             pl.col("B")
-            .over("fruits", map_group_to_rows=False)
+            .over("fruits", mapping_strategy="join")
             .arr.sum()
             .alias("B_by_fruits_sum1"),
             pl.col("B")
             .sum()
-            .over("fruits", map_group_to_rows=False)
+            .over("fruits", mapping_strategy="join")
             .alias("B_by_fruits_sum2"),
             pl.col("B")
-            .over("fruits", map_group_to_rows=False)
+            .over("fruits", mapping_strategy="join")
             .arr.mean()
             .alias("B_by_fruits_mean1"),
             pl.col("B")
             .mean()
-            .over("fruits", map_group_to_rows=False)
+            .over("fruits", mapping_strategy="join")
             .alias("B_by_fruits_mean2"),
         ]
     )

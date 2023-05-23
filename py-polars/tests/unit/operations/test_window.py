@@ -93,14 +93,14 @@ def test_window_function_cache() -> None:
     ).with_columns(
         [
             pl.col("values")
-            .over("groups", map_group_to_rows=False)
+            .over("groups", mapping_strategy="join")
             .alias("values_list"),  # aggregation to list + join
             pl.col("values")
-            .over("groups", explode=True, map_group_to_rows=False)
+            .over("groups", mapping_strategy="explode")
             .alias("values_flat"),  # aggregation to list + explode and concat back
             pl.col("values")
             .reverse()
-            .over("groups", explode=True, map_group_to_rows=False)
+            .over("groups", mapping_strategy="explode")
             .alias("values_rev"),  # use flatten to reverse within a group
         ]
     )
@@ -346,10 +346,10 @@ def test_window_function_implode_contention_8536() -> None:
 
     assert df.select(
         [
-            (pl.lit("LE").is_in(pl.col("memo").over("policy", map_group_to_rows=False)))
+            (pl.lit("LE").is_in(pl.col("memo").over("policy", mapping_strategy="join")))
             | (
                 pl.lit("RM").is_in(
-                    pl.col("memo").over("policy", map_group_to_rows=False)
+                    pl.col("memo").over("policy", mapping_strategy="join")
                 )
             )
         ]

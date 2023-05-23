@@ -50,8 +50,7 @@ fn test_shift_and_fill_window_function() -> PolarsResult<()> {
             col("B").shift_and_fill(-1, lit(-1)).over_with_options(
                 [col("fruits")],
                 WindowOptions {
-                    map_group_to_rows: false,
-                    ..Default::default()
+                    mapping: WindowMapping::Join,
                 },
             ),
         ])
@@ -65,8 +64,7 @@ fn test_shift_and_fill_window_function() -> PolarsResult<()> {
             col("B").shift_and_fill(-1, lit(-1)).over_with_options(
                 [col("fruits")],
                 WindowOptions {
-                    map_group_to_rows: false,
-                    ..Default::default()
+                    mapping: WindowMapping::Join,
                 },
             ),
         ])
@@ -92,8 +90,7 @@ fn test_exploded_window_function() -> PolarsResult<()> {
                 .over_with_options(
                     [col("fruits")],
                     WindowOptions {
-                        explode: true,
-                        ..Default::default()
+                        mapping: WindowMapping::Explode,
                     },
                 )
                 .alias("shifted"),
@@ -117,8 +114,7 @@ fn test_exploded_window_function() -> PolarsResult<()> {
                 .over_with_options(
                     [col("fruits")],
                     WindowOptions {
-                        explode: true,
-                        ..Default::default()
+                        mapping: WindowMapping::Explode,
                     },
                 )
                 .alias("shifted"),
@@ -192,8 +188,7 @@ fn test_literal_window_fn() -> PolarsResult<()> {
             .over_with_options(
                 [col("chars")],
                 WindowOptions {
-                    map_group_to_rows: false,
-                    ..Default::default()
+                    mapping: WindowMapping::Join,
                 },
             )
             .alias("foo")])

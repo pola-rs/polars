@@ -1134,8 +1134,7 @@ fn test_fill_forward() -> PolarsResult<()> {
         .select([col("b").forward_fill(None).over_with_options(
             [col("a")],
             WindowOptions {
-                map_group_to_rows: false,
-                ..Default::default()
+                mapping: WindowMapping::Join,
             },
         )])
         .collect()?;
@@ -1300,8 +1299,7 @@ fn test_filter_after_shift_in_groups() -> PolarsResult<()> {
                 .over_with_options(
                     [col("fruits")],
                     WindowOptions {
-                        map_group_to_rows: false,
-                        ..Default::default()
+                        mapping: WindowMapping::Join,
                     },
                 )
                 .alias("filtered"),
@@ -1660,8 +1658,7 @@ fn test_single_ranked_group() -> PolarsResult<()> {
             .over_with_options(
                 [col("group")],
                 WindowOptions {
-                    map_group_to_rows: false,
-                    ..Default::default()
+                    mapping: WindowMapping::Join,
                 },
             )])
         .collect()?;

@@ -69,6 +69,7 @@ if TYPE_CHECKING:
         RankMethod,
         RollingInterpolationMethod,
         SearchSortedSide,
+        WindowMappingStrategy,
     )
 
     if sys.version_info >= (3, 11):
@@ -2922,8 +2923,7 @@ class Expr:
         self,
         expr: IntoExpr | Iterable[IntoExpr],
         *more_exprs: IntoExpr,
-        map_group_to_rows: bool = True,
-        explode: bool = False,
+        mapping_strategy: WindowMappingStrategy = "group_to_rows",
     ) -> Self:
         """
         Compute expressions over the given groups.
@@ -2942,13 +2942,17 @@ class Expr:
             column names.
         *more_exprs
             Additional columns to group by, specified as positional arguments.
-        map_group_to_rows
-            If the aggregation results in multiple values, assign them back to there
-            position in the DataFrame. This can only be done if the group yields
-            the same elements before aggregation as after
-        explode
-            Don't do any mapping, but simply flatten the group. This only makes sense
-            if the input data is sorted.
+        mapping_strategy: {'group_to_rows', 'join', 'explode'}
+            - group_to_rows
+                If the aggregation results in multiple values, assign them back to there
+                position in the DataFrame. This can only be done if the group yields
+                the same elements before aggregation as after
+            - join
+                Join the groups as 'List<group_dtype>' to the row positions.
+                warning: this can be memory intensive
+            - explode
+                Don't do any mapping, but simply flatten the group.
+                This only makes sense if the input data is sorted.
 
         Examples
         --------
@@ -3027,7 +3031,7 @@ class Expr:
         exprs = selection_to_pyexpr_list(expr)
         if more_exprs:
             exprs.extend(selection_to_pyexpr_list(more_exprs))
-        return self._from_pyexpr(self._pyexpr.over(exprs, map_group_to_rows, explode))
+        return self._from_pyexpr(self._pyexpr.over(exprs, mapping_strategy))
 
     def is_unique(self) -> Self:
         """

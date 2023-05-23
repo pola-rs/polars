@@ -254,34 +254,7 @@ impl Expr {
 
     /// Explode the utf8/ list column
     pub fn explode(self) -> Self {
-        let has_filter = has_expr(&self, |e| matches!(e, Expr::Filter { .. }));
-
-        // if we explode right after a window function we don't self join, but just flatten
-        // the expression
-        if let Expr::Window {
-            function,
-            partition_by,
-            order_by,
-            mut options,
-        } = self
-        {
-            if has_filter {
-                panic!("A Filter of a window function is not allowed in combination with explode/flatten.\
-                The resulting column may not fit the DataFrame/ or the groups
-                ")
-            }
-
-            options.explode = true;
-
-            Expr::Explode(Box::new(Expr::Window {
-                function,
-                partition_by,
-                order_by,
-                options,
-            }))
-        } else {
-            Expr::Explode(Box::new(self))
-        }
+        Expr::Explode(Box::new(self))
     }
 
     /// Slice the Series.
@@ -913,13 +886,7 @@ impl Expr {
     /// ╰────────┴────────╯
     /// ```
     pub fn over<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, partition_by: E) -> Self {
-        self.over_with_options(
-            partition_by,
-            WindowOptions {
-                explode: false,
-                map_group_to_rows: true,
-            },
-        )
+        self.over_with_options(partition_by, Default::default())
     }
 
     pub fn over_with_options<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
