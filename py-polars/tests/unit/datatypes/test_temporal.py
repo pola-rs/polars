@@ -486,7 +486,7 @@ def test_date_range() -> None:
             time_unit=time_unit,
             eager=True,
         )
-        assert rng.time_unit == time_unit
+        assert rng.dtype.time_unit == time_unit
         assert rng.shape == (13,)
         assert rng.dt[0] == datetime(2020, 1, 1)
         assert rng.dt[-1] == datetime(2020, 1, 2)

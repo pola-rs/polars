@@ -407,7 +407,7 @@ class Series:
             "`Series.time_unit` is deprecated and will be removed in a future version,"
             " please use `Series.dtype.time_unit` instead",
             category=DeprecationWarning,
-            stacklevel=2,
+            stacklevel=find_stacklevel(),
         )
         return self._s.time_unit()
 
@@ -468,7 +468,7 @@ class Series:
                 return ~self
 
         if isinstance(other, datetime) and self.dtype == Datetime:
-            ts = _datetime_to_pl_timestamp(other, self.time_unit)
+            ts = _datetime_to_pl_timestamp(other, self._s.time_unit())
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
             return self._from_pyseries(f(ts))
@@ -491,7 +491,7 @@ class Series:
             return self._from_pyseries(getattr(self._s, op)(other._s))
 
         if other is not None:
-            other = maybe_cast(other, self.dtype, self.time_unit)
+            other = maybe_cast(other, self.dtype, self._s.time_unit())
         f = get_ffi_func(op + "_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -618,7 +618,7 @@ class Series:
             else:
                 return self._from_pyseries(getattr(self._s, op_s)(_s))
         else:
-            other = maybe_cast(other, self.dtype, self.time_unit)
+            other = maybe_cast(other, self.dtype, self._s.time_unit())
             f = get_ffi_func(op_ffi, self.dtype, self._s)
         if f is None:
             raise ValueError(
@@ -3342,9 +3342,9 @@ class Series:
             if self.dtype == Date:
                 tp = "datetime64[D]"
             elif self.dtype == Duration:
-                tp = f"timedelta64[{self.time_unit}]"
+                tp = f"timedelta64[{self._s.time_unit()}]"
             else:
-                tp = f"datetime64[{self.time_unit}]"
+                tp = f"datetime64[{self._s.time_unit()}]"
             return arr.astype(tp)
 
         def raise_no_zero_copy() -> None:
