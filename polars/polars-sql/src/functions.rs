@@ -403,15 +403,15 @@ impl SqlFunctionVisitor<'_> {
             // ----
             // Array functions
             // ----
-            ArrayContains => self.visit_binary::<Expr>(|e, s| e.arr().contains(s)),
-            ArrayGet => self.visit_binary(|e, i| e.arr().get(i)),
-            ArrayLength => self.visit_unary(|e| e.arr().lengths()),
-            ArrayMax => self.visit_unary(|e| e.arr().max()),
-            ArrayMean => self.visit_unary(|e| e.arr().mean()),
-            ArrayMin => self.visit_unary(|e| e.arr().min()),
-            ArrayReverse => self.visit_unary(|e| e.arr().reverse()),
-            ArraySum => self.visit_unary(|e| e.arr().sum()),
-            ArrayUnique => self.visit_unary(|e| e.arr().unique()),
+            ArrayContains => self.visit_binary::<Expr>(|e, s| e.list().contains(s)),
+            ArrayGet => self.visit_binary(|e, i| e.list().get(i)),
+            ArrayLength => self.visit_unary(|e| e.list().lengths()),
+            ArrayMax => self.visit_unary(|e| e.list().max()),
+            ArrayMean => self.visit_unary(|e| e.list().mean()),
+            ArrayMin => self.visit_unary(|e| e.list().min()),
+            ArrayReverse => self.visit_unary(|e| e.list().reverse()),
+            ArraySum => self.visit_unary(|e| e.list().sum()),
+            ArrayUnique => self.visit_unary(|e| e.list().unique()),
             Explode => self.visit_unary(|e| e.explode()),
         }
     }
