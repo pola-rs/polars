@@ -4,6 +4,7 @@ import contextlib
 import math
 import os
 import typing
+import warnings
 from datetime import date, datetime, time, timedelta
 from typing import (
     TYPE_CHECKING,
@@ -91,6 +92,7 @@ from polars.utils.decorators import deprecated_alias
 from polars.utils.meta import get_index_type
 from polars.utils.various import (
     _is_generator,
+    find_stacklevel,
     is_int_sequence,
     parse_version,
     range_to_series,
@@ -1893,7 +1895,7 @@ class Series:
         s._s.rename(name)
         return s
 
-    def rename(self, name: str, *, in_place: bool = False) -> Series:
+    def rename(self, name: str, *, in_place: bool | None = None) -> Series:
         """
         Rename this Series.
 
@@ -1917,6 +1919,17 @@ class Series:
         ]
 
         """
+        if in_place is not None:
+            # if 'in_place' is not None, this indicates that the parameter was
+            # explicitly set by the caller, and we should warn against it (use
+            # of NoDefault only applies when one of the valid values is None).
+            warnings.warn(
+                "the `in_place` parameter is deprecated and will be removed in a future"
+                " version; note that renaming is a shallow-copy operation with"
+                " essentially zero cost.",
+                category=DeprecationWarning,
+                stacklevel=find_stacklevel(),
+            )
         if in_place:
             self._s.rename(name)
             return self
@@ -5423,7 +5436,7 @@ class Series:
 
         Remap, setting a default for unrecognised values...
 
-        >>> s.map_dict(country_lookup, default="Unspecified").rename("country_name")
+        >>> s.map_dict(country_lookup, default="Unspecified").alias("country_name")
         shape: (4,)
         Series: 'country_name' [str]
         [
@@ -5435,7 +5448,7 @@ class Series:
 
         ...or keep the original value, by making use of ``pl.first()``:
 
-        >>> s.map_dict(country_lookup, default=pl.first()).rename("country_name")
+        >>> s.map_dict(country_lookup, default=pl.first()).alias("country_name")
         shape: (4,)
         Series: 'country_name' [str]
         [
@@ -5447,7 +5460,7 @@ class Series:
 
         ...or keep the original value, by assigning the input series:
 
-        >>> s.map_dict(country_lookup, default=s).rename("country_name")
+        >>> s.map_dict(country_lookup, default=s).alias("country_name")
         shape: (4,)
         Series: 'country_name' [str]
         [

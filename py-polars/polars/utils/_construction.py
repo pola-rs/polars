@@ -151,8 +151,9 @@ def nt_unpack(obj: Any) -> Any:
 
 def series_to_pyseries(name: str, values: Series) -> PySeries:
     """Construct a PySeries from a Polars Series."""
-    values.rename(name, in_place=True)
-    return values._s
+    py_s = values._s
+    py_s.rename(name)
+    return py_s
 
 
 def arrow_to_pyseries(name: str, values: pa.Array, rechunk: bool = True) -> PySeries:
@@ -684,7 +685,7 @@ def _expand_dict_scalars(
                     updated_data[name] = pl.DataFrame(val).to_struct(name)
 
                 elif isinstance(val, pl.Series):
-                    s = val.rename(name, in_place=False) if name != val.name else val
+                    s = val.rename(name) if name != val.name else val
                     if dtype and dtype != s.dtype:
                         s = s.cast(dtype)
                     updated_data[name] = s
@@ -827,7 +828,7 @@ def _sequence_of_series_to_pydf(
     data_series: list[PySeries] = []
     for i, s in enumerate(data):
         if not s.name:
-            s = s.rename(column_names[i], in_place=False)
+            s = s.alias(column_names[i])
         new_dtype = schema_overrides.get(column_names[i])
         if new_dtype and new_dtype != s.dtype:
             s = s.cast(new_dtype)

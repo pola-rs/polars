@@ -2422,12 +2422,7 @@ def arange(
     if not eager:
         return range_expr
     else:
-        return (
-            pl.DataFrame()
-            .select(range_expr)
-            .to_series()
-            .rename("arange", in_place=True)
-        )
+        return pl.DataFrame().select(range_expr.alias("arange")).to_series()
 
 
 def arg_sort_by(

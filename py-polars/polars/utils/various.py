@@ -108,7 +108,7 @@ def range_to_series(
         step=rng.step,
         eager=True,
         dtype=dtype,
-    ).rename(name, in_place=True)
+    ).rename(name)
 
 
 def range_to_slice(rng: range) -> slice:
@@ -339,7 +339,10 @@ class _NoDefault(Enum):
         return "<no_default>"
 
 
-no_default = _NoDefault.no_default  # Sentinel indicating the default value.
+# 'NoDefault' is a sentinel indicating that no default value has been set; note that
+# this should typically be used only when one of the valid parameter values is also
+# None, as otherwise we cannot determine if the caller has explicitly set that value.
+no_default = _NoDefault.no_default
 NoDefault = Literal[_NoDefault.no_default]
 
 
