@@ -121,6 +121,37 @@ impl ChunkFilter<ListType> for ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-array")]
+impl ChunkFilter<FixedSizeListType> for ArrayChunked {
+    fn filter(&self, filter: &BooleanChunked) -> PolarsResult<ArrayChunked> {
+        // broadcast
+        if filter.len() == 1 {
+            return match filter.get(0) {
+                Some(true) => Ok(self.clone()),
+                _ => unsafe {
+                    Ok(ChunkedArray::from_chunks(
+                        self.name(),
+                        vec![new_empty_array(self.dtype().to_arrow())],
+                    ))
+                },
+            };
+        }
+        let (left, filter) = align_chunks_binary(self, filter);
+
+        let chunks = left
+            .downcast_iter()
+            .zip(filter.downcast_iter())
+            .map(|(left, mask)| filter_fn(left, mask).unwrap())
+            .collect::<Vec<_>>();
+
+        // inner type may be categorical or logical type so we clone the state.
+        let mut ca = self.clone();
+        ca.chunks = chunks;
+        ca.compute_len();
+        Ok(ca)
+    }
+}
+
 #[cfg(feature = "object")]
 impl<T> ChunkFilter<ObjectType<T>> for ObjectChunked<T>
 where

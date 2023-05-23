@@ -382,34 +382,43 @@ pub fn reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
 }
 
 #[pyfunction]
-pub fn repeat(value: &PyAny, n_times: PyExpr) -> PyResult<PyExpr> {
-    if let Ok(true) = value.is_instance_of::<PyBool>() {
+pub fn repeat_lazy(value: &PyAny, n: PyExpr, dtype: Option<Wrap<DataType>>) -> PyResult<PyExpr> {
+    let dtype = dtype.map(|wrap| wrap.0);
+
+    let mut expr = if let Ok(true) = value.is_instance_of::<PyBool>() {
         let val = value.extract::<bool>().unwrap();
-        Ok(dsl::repeat(val, n_times.inner).into())
+        dsl::repeat(val, n.inner)
     } else if let Ok(int) = value.downcast::<PyInt>() {
         let val = int.extract::<i64>().unwrap();
 
         if val >= i32::MIN as i64 && val <= i32::MAX as i64 {
-            Ok(dsl::repeat(val as i32, n_times.inner).into())
+            dsl::repeat(val as i32, n.inner)
         } else {
-            Ok(dsl::repeat(val, n_times.inner).into())
+            dsl::repeat(val, n.inner)
         }
     } else if let Ok(float) = value.downcast::<PyFloat>() {
         let val = float.extract::<f64>().unwrap();
-        Ok(dsl::repeat(val, n_times.inner).into())
+        dsl::repeat(val, n.inner)
     } else if let Ok(pystr) = value.downcast::<PyString>() {
         let val = pystr
             .to_str()
             .expect("could not transform Python string to Rust Unicode");
-        Ok(dsl::repeat(val, n_times.inner).into())
+        dsl::repeat(val, n.inner)
     } else if value.is_none() {
-        Ok(dsl::repeat(Null {}, n_times.inner).into())
+        dsl::repeat(Null {}, n.inner)
     } else {
-        Err(PyValueError::new_err(format!(
+        return Err(PyValueError::new_err(format!(
             "could not convert value {:?} as a Literal",
             value.str()?
-        )))
-    }
+        )));
+    };
+
+    expr = match dtype {
+        Some(dtype) => expr.cast(dtype),
+        None => expr,
+    };
+
+    Ok(expr.into())
 }
 
 #[pyfunction]

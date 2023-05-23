@@ -21,6 +21,8 @@ pub mod kernels;
 #[cfg(feature = "ndarray")]
 mod ndarray;
 
+#[cfg(feature = "dtype-array")]
+pub(crate) mod array;
 mod bitwise;
 #[cfg(feature = "object")]
 mod drop;
@@ -430,6 +432,8 @@ where
 
 impl AsSinglePtr for BooleanChunked {}
 impl AsSinglePtr for ListChunked {}
+#[cfg(feature = "dtype-array")]
+impl AsSinglePtr for ArrayChunked {}
 impl AsSinglePtr for Utf8Chunked {}
 impl AsSinglePtr for BinaryChunked {}
 #[cfg(feature = "object")]
@@ -514,6 +518,14 @@ impl ValueSize for ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-array")]
+impl ValueSize for ArrayChunked {
+    fn get_values_size(&self) -> usize {
+        self.chunks
+            .iter()
+            .fold(0usize, |acc, arr| acc + arr.get_values_size())
+    }
+}
 impl ValueSize for Utf8Chunked {
     fn get_values_size(&self) -> usize {
         self.chunks
@@ -527,22 +539,6 @@ impl ValueSize for BinaryChunked {
         self.chunks
             .iter()
             .fold(0usize, |acc, arr| acc + arr.get_values_size())
-    }
-}
-
-impl ListChunked {
-    /// Get the inner data type of the list.
-    pub fn inner_dtype(&self) -> DataType {
-        match self.dtype() {
-            DataType::List(dt) => *dt.clone(),
-            _ => unreachable!(),
-        }
-    }
-
-    pub fn set_inner_dtype(&mut self, dtype: DataType) {
-        assert_eq!(dtype.to_physical(), self.inner_dtype().to_physical());
-        let field = Arc::make_mut(&mut self.field);
-        field.coerce(DataType::List(Box::new(dtype)));
     }
 }
 

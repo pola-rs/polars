@@ -1,4 +1,6 @@
-use arrow::array::{Array, BinaryArray, BooleanArray, ListArray, PrimitiveArray, Utf8Array};
+use arrow::array::{
+    Array, BinaryArray, BooleanArray, FixedSizeListArray, ListArray, PrimitiveArray, Utf8Array,
+};
 use arrow::types::NativeType;
 
 pub trait IsValid {
@@ -18,6 +20,7 @@ impl ArrowArray for Utf8Array<i64> {}
 impl<T: NativeType> ArrowArray for PrimitiveArray<T> {}
 impl ArrowArray for BooleanArray {}
 impl ArrowArray for ListArray<i64> {}
+impl ArrowArray for FixedSizeListArray {}
 
 impl<A: ArrowArray> IsValid for A {
     unsafe fn is_valid_unchecked(&self, i: usize) -> bool {

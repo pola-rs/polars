@@ -1256,18 +1256,18 @@ class Expr:
 
         >>> df.select(pl.repeat(None, 3).append(pl.col("a")).rechunk())
         shape: (6, 1)
-        ┌─────────┐
-        │ literal │
-        │ ---     │
-        │ i64     │
-        ╞═════════╡
-        │ null    │
-        │ null    │
-        │ null    │
-        │ 1       │
-        │ 1       │
-        │ 2       │
-        └─────────┘
+        ┌────────┐
+        │ repeat │
+        │ ---    │
+        │ i64    │
+        ╞════════╡
+        │ null   │
+        │ null   │
+        │ null   │
+        │ 1      │
+        │ 1      │
+        │ 2      │
+        └────────┘
 
         """
         return self._from_pyexpr(self._pyexpr.rechunk())
@@ -5580,6 +5580,23 @@ class Expr:
         │ 2   │
         │ 5   │
         └─────┘
+
+        Use 'rank' with 'over' to rank within groups:
+
+        >>> df = pl.DataFrame({"a": [1, 1, 2, 2, 2], "b": [6, 7, 5, 14, 11]})
+        >>> df.with_columns(pl.col("b").rank().over("a").alias("rank"))
+        shape: (5, 3)
+        ┌─────┬─────┬──────┐
+        │ a   ┆ b   ┆ rank │
+        │ --- ┆ --- ┆ ---  │
+        │ i64 ┆ i64 ┆ f32  │
+        ╞═════╪═════╪══════╡
+        │ 1   ┆ 6   ┆ 1.0  │
+        │ 1   ┆ 7   ┆ 2.0  │
+        │ 2   ┆ 5   ┆ 1.0  │
+        │ 2   ┆ 14  ┆ 3.0  │
+        │ 2   ┆ 11  ┆ 2.0  │
+        └─────┴─────┴──────┘
 
         """
         return self._from_pyexpr(self._pyexpr.rank(method, descending, seed))

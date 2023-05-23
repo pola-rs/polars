@@ -1,4 +1,6 @@
-use arrow::array::{Array, BinaryArray, BooleanArray, ListArray, PrimitiveArray, Utf8Array};
+use arrow::array::{
+    Array, BinaryArray, BooleanArray, FixedSizeListArray, ListArray, PrimitiveArray, Utf8Array,
+};
 use arrow::types::NativeType;
 
 use crate::is_valid::IsValid;
@@ -106,6 +108,30 @@ impl<'a> ArrowGetItem for &'a BinaryArray<i64> {
 }
 
 impl ArrowGetItem for ListArray<i64> {
+    type Item = Box<dyn Array>;
+
+    #[inline]
+    fn get(&self, item: usize) -> Option<Self::Item> {
+        debug_assert!(item < self.len());
+        if item >= self.len() {
+            None
+        } else {
+            unsafe { self.get_unchecked(item) }
+        }
+    }
+
+    #[inline]
+    unsafe fn get_unchecked(&self, item: usize) -> Option<Self::Item> {
+        debug_assert!(item < self.len());
+        if self.is_null_unchecked(item) {
+            None
+        } else {
+            Some(self.value_unchecked(item))
+        }
+    }
+}
+
+impl ArrowGetItem for FixedSizeListArray {
     type Item = Box<dyn Array>;
 
     #[inline]

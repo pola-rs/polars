@@ -14,6 +14,7 @@ from typing import (
     Any,
     BinaryIO,
     Callable,
+    Collection,
     Generator,
     Iterable,
     Iterator,
@@ -3411,7 +3412,7 @@ class DataFrame:
         *,
         include_header: bool = False,
         header_name: str = "column",
-        column_names: Iterator[str] | Sequence[str] | None = None,
+        column_names: Iterable[str] | None = None,
     ) -> Self:
         """
         Transpose a DataFrame over the diagonal.
@@ -3424,7 +3425,7 @@ class DataFrame:
             If `include_header` is set, this determines the name of the column that will
             be inserted.
         column_names
-            Optional generator/iterator that yields column names. Will be used to
+            Optional iterable that yields column names. Will be used to
             replace the columns in the DataFrame.
 
         Notes
@@ -4433,7 +4434,7 @@ class DataFrame:
         """
         return self.head(n)
 
-    def drop_nulls(self, subset: str | Sequence[str] | None = None) -> Self:
+    def drop_nulls(self, subset: str | Collection[str] | None = None) -> Self:
         """
         Drop all rows that contain null values.
 
@@ -5796,7 +5797,7 @@ class DataFrame:
         self._df.extend(other._df)
         return self
 
-    def drop(self, columns: str | Sequence[str], *more_columns: str) -> Self:
+    def drop(self, columns: str | Collection[str], *more_columns: str) -> Self:
         """
         Remove columns from the dataframe.
 

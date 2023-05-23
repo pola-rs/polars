@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Iterable, List, Sequence, cast, overload
 import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import Date
+from polars.expr.datetime import TIME_ZONE_DEPRECATION_MESSAGE
 from polars.type_aliases import FrameType
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
 from polars.utils._wrap import wrap_df, wrap_expr, wrap_ldf, wrap_s
@@ -34,7 +35,6 @@ if TYPE_CHECKING:
         ClosedInterval,
         ConcatMethod,
         JoinStrategy,
-        PolarsDataType,
         PolarsType,
         TimeUnit,
     )
@@ -461,6 +461,14 @@ def date_range(
     ]
 
     """
+    from polars.dependencies import zoneinfo
+
+    if time_zone is not None and time_zone not in zoneinfo.available_timezones():
+        warnings.warn(
+            TIME_ZONE_DEPRECATION_MESSAGE,
+            DeprecationWarning,
+            stacklevel=find_stacklevel(),
+        )
     if eager is no_default and lazy is no_default:
         # user passed nothing
         warnings.warn(
@@ -929,75 +937,3 @@ def align_frames(
     return cast(
         List[FrameType], F.collect_all(aligned_frames) if eager else aligned_frames
     )
-
-
-def ones(n: int, dtype: PolarsDataType | None = None) -> Series:
-    """
-    Return a new Series of given length and type, filled with ones.
-
-    Parameters
-    ----------
-    n
-        Number of elements in the ``Series``
-    dtype
-        DataType of the elements, defaults to ``polars.Float64``
-
-    Notes
-    -----
-    In the lazy API you should probably not use this, but use ``lit(1)``
-    instead.
-
-    Examples
-    --------
-    >>> pl.ones(5, pl.Int64)
-    shape: (5,)
-    Series: '' [i64]
-    [
-        1
-        1
-        1
-        1
-        1
-    ]
-
-    """
-    s = pl.Series([1.0])
-    if dtype:
-        s = s.cast(dtype)
-    return s.new_from_index(0, n)
-
-
-def zeros(n: int, dtype: PolarsDataType | None = None) -> Series:
-    """
-    Return a new Series of given length and type, filled with zeros.
-
-    Parameters
-    ----------
-    n
-        Number of elements in the ``Series``
-    dtype
-        DataType of the elements, defaults to ``polars.Float64``
-
-    Notes
-    -----
-    In the lazy API you should probably not use this, but use ``lit(0)``
-    instead.
-
-    Examples
-    --------
-    >>> pl.zeros(5, pl.Int64)
-    shape: (5,)
-    Series: '' [i64]
-    [
-        0
-        0
-        0
-        0
-        0
-    ]
-
-    """
-    s = pl.Series([0.0])
-    if dtype:
-        s = s.cast(dtype)
-    return s.new_from_index(0, n)

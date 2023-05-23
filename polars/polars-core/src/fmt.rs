@@ -184,6 +184,13 @@ impl Debug for ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-array")]
+impl Debug for ArrayChunked {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        format_array!(f, self, "fixed size list", self.name(), "ChunkedArray")
+    }
+}
+
 #[cfg(feature = "object")]
 impl<T> Debug for ObjectChunked<T>
 where
@@ -283,6 +290,11 @@ impl Debug for Series {
             DataType::Decimal(_, _) => {
                 let dt = format!("{}", self.dtype());
                 format_array!(f, self.decimal().unwrap(), &dt, self.name(), "Series")
+            }
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(_, _) => {
+                let dt = format!("{}", self.dtype());
+                format_array!(f, self.array().unwrap(), &dt, self.name(), "Series")
             }
             DataType::List(_) => {
                 let dt = format!("{}", self.dtype());
@@ -788,6 +800,8 @@ impl Display for AnyValue<'_> {
                 let s = self.get_str().unwrap();
                 write!(f, "\"{s}\"")
             }
+            #[cfg(feature = "dtype-array")]
+            AnyValue::Array(s, _size) => write!(f, "{}", s.fmt_list()),
             AnyValue::List(s) => write!(f, "{}", s.fmt_list()),
             #[cfg(feature = "object")]
             AnyValue::Object(v) => write!(f, "{v}"),

@@ -28,6 +28,7 @@ from polars.datatypes import (
     INTEGER_DTYPES,
     NUMERIC_DTYPES,
     TEMPORAL_DTYPES,
+    Array,
     Binary,
     Boolean,
     Categorical,
@@ -70,17 +71,8 @@ from polars.exceptions import (
     StructFieldNotFoundError,
 )
 from polars.expr import Expr
-from polars.functions.eager import (
+from polars.functions import (
     align_frames,
-    concat,
-    cut,
-    date_range,
-    get_dummies,
-    ones,
-    time_range,
-    zeros,
-)
-from polars.functions.lazy import (
     all,
     any,
     apply,
@@ -92,6 +84,7 @@ from polars.functions.lazy import (
     coalesce,
     col,
     collect_all,
+    concat,
     concat_list,
     concat_str,
     corr,
@@ -100,6 +93,8 @@ from polars.functions.lazy import (
     cumfold,
     cumreduce,
     cumsum,
+    cut,
+    date_range,
     duration,
     element,
     exclude,
@@ -107,6 +102,7 @@ from polars.functions.lazy import (
     fold,
     format,
     from_epoch,
+    get_dummies,
     groups,
     head,
     implode,
@@ -118,6 +114,7 @@ from polars.functions.lazy import (
     median,
     min,
     n_unique,
+    ones,
     pearson_corr,
     quantile,
     reduce,
@@ -130,7 +127,9 @@ from polars.functions.lazy import (
     struct,
     sum,
     tail,
+    time_range,
     var,
+    zeros,
 )
 from polars.functions.lazy import date_ as date
 from polars.functions.lazy import datetime_ as datetime
@@ -206,6 +205,7 @@ __all__ = [
     "LazyFrame",
     "Series",
     # polars.datatypes
+    "Array",
     "Binary",
     "Boolean",
     "Categorical",
