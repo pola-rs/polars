@@ -424,11 +424,26 @@ where
     };
 
     match &buf.compiled {
-        Some(compiled) => {
-            match DatetimeInfer::<T::Native>::try_from(compiled.pattern_with_offset.pattern) {
+        Some(compiled) => match DatetimeInfer::<T::Native>::try_from(compiled.pattern) {
+            Ok(mut infer) => {
+                let parsed = infer.parse(val);
+                buf.compiled = Some(infer);
+                buf.builder.append_option(parsed);
+                Ok(())
+            }
+            Err(_) => {
+                buf.builder.append_null();
+                Ok(())
+            }
+        },
+        None => match infer_pattern_single(val) {
+            None => {
+                buf.builder.append_null();
+                Ok(())
+            }
+            Some(pattern) => match DatetimeInfer::<T::Native>::try_from(pattern) {
                 Ok(mut infer) => {
-                    infer.utc = true;
-                    let parsed = infer.parse(val, None);
+                    let parsed = infer.parse(val);
                     buf.compiled = Some(infer);
                     buf.builder.append_option(parsed);
                     Ok(())
@@ -437,28 +452,7 @@ where
                     buf.builder.append_null();
                     Ok(())
                 }
-            }
-        }
-        None => match infer_pattern_single(val) {
-            None => {
-                buf.builder.append_null();
-                Ok(())
-            }
-            Some(pattern_with_offset) => {
-                match DatetimeInfer::<T::Native>::try_from(pattern_with_offset.pattern) {
-                    Ok(mut infer) => {
-                        infer.utc = true;
-                        let parsed = infer.parse(val, None);
-                        buf.compiled = Some(infer);
-                        buf.builder.append_option(parsed);
-                        Ok(())
-                    }
-                    Err(_) => {
-                        buf.builder.append_null();
-                        Ok(())
-                    }
-                }
-            }
+            },
         },
     }
 }

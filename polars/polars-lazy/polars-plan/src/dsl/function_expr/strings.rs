@@ -398,18 +398,12 @@ fn to_datetime(
         Some(format) => TZ_AWARE_RE.is_match(format),
         _ => false,
     };
-    match (time_zone, tz_aware, options.utc) {
-        (Some(_), true, _) => polars_bail!(
+    if let (Some(_), true) = (time_zone, tz_aware) {
+        polars_bail!(
             ComputeError:
             "cannot use strptime with both a tz-aware format and a tz-aware dtype, \
             please drop time zone from the dtype"
-        ),
-        (Some(_), _, true) => polars_bail!(
-            ComputeError:
-            "cannot use strptime with both 'utc=True' and tz-aware dtype, \
-            please drop time zone from the dtype"
-        ),
-        _ => (),
+        )
     };
 
     let ca = s.utf8()?;
@@ -419,7 +413,6 @@ fn to_datetime(
             *time_unit,
             options.cache,
             tz_aware,
-            options.utc,
             time_zone,
         )?
         .into_series()
@@ -436,8 +429,7 @@ fn to_datetime(
             \n\
             You might want to try:\n\
             - setting `strict=False`\n\
-            - explicitly specifying a `format`\n\
-            - setting `utc=True` (if you are parsing datetimes with multiple offsets)"
+            - explicitly specifying a `format`"
         );
     }
     Ok(out.into_series())

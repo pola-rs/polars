@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING
 
 from polars import functions as F
 from polars.series.utils import expr_dispatch
 from polars.utils._wrap import wrap_s
 from polars.utils.decorators import deprecated_alias
+from polars.utils.various import find_stacklevel
 
 if TYPE_CHECKING:
     from polars import Expr, Series
@@ -76,7 +78,7 @@ class StringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        utc: bool = False,
+        utc: bool | None = None,
     ) -> Series:
         """
         Convert a Utf8 column into a Datetime column.
@@ -106,17 +108,22 @@ class StringNameSpace:
             Parse time zone aware datetimes as UTC. This may be useful if you have data
             with mixed offsets.
 
+            .. deprecated:: 0.18.0
+                This is now a no-op, you can safely remove it.
+                Offset-naive strings are parsed as ``pl.Datetime(time_unit)``,
+                and offset-aware strings are converted to
+                ``pl.Datetime(time_unit, "UTC")``.
+
         Examples
         --------
         >>> s = pl.Series(["2020-01-01 01:00Z", "2020-01-01 02:00Z"])
         >>> s.str.to_datetime("%Y-%m-%d %H:%M%#z")
         shape: (2,)
-        Series: '' [datetime[μs, +00:00]]
+        Series: '' [datetime[μs, UTC]]
         [
-                2020-01-01 01:00:00 +00:00
-                2020-01-01 02:00:00 +00:00
+                2020-01-01 01:00:00 UTC
+                2020-01-01 02:00:00 UTC
         ]
-
         """
 
     def to_time(
@@ -164,7 +171,7 @@ class StringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        utc: bool = False,
+        utc: bool | None = None,
     ) -> Series:
         """
         Convert a Utf8 column into a Date/Datetime/Time column.
@@ -189,6 +196,12 @@ class StringNameSpace:
             Parse time zone aware datetimes as UTC. This may be useful if you have data
             with mixed offsets.
 
+            .. deprecated:: 0.18.0
+                This is now a no-op, you can safely remove it.
+                Offset-naive strings are parsed as ``pl.Datetime(time_unit)``,
+                and offset-aware strings are converted to
+                ``pl.Datetime(time_unit, "UTC")``.
+
         Notes
         -----
         When converting to a Datetime type, the time unit is inferred from the format
@@ -202,10 +215,10 @@ class StringNameSpace:
         >>> s = pl.Series(["2020-01-01 01:00Z", "2020-01-01 02:00Z"])
         >>> s.str.strptime(pl.Datetime, "%Y-%m-%d %H:%M%#z")
         shape: (2,)
-        Series: '' [datetime[μs, +00:00]]
+        Series: '' [datetime[μs, UTC]]
         [
-                2020-01-01 01:00:00 +00:00
-                2020-01-01 02:00:00 +00:00
+                2020-01-01 01:00:00 UTC
+                2020-01-01 02:00:00 UTC
         ]
 
         Dealing with different formats.
@@ -235,8 +248,17 @@ class StringNameSpace:
                 2022-01-31
                 2001-07-08
         ]
-
         """
+        if utc is not None:
+            warnings.warn(
+                "The `utc` argument is now a no-op and has no effect. "
+                "You can safely remove it. "
+                "Offset-naive strings are parsed as ``pl.Datetime(time_unit)``, "
+                "and offset-aware strings are converted to "
+                '``pl.Datetime(time_unit, "UTC")``.',
+                DeprecationWarning,
+                stacklevel=find_stacklevel(),
+            )
         s = wrap_s(self._s)
         return (
             s.to_frame()
@@ -247,7 +269,6 @@ class StringNameSpace:
                     strict=strict,
                     exact=exact,
                     cache=cache,
-                    utc=utc,
                 )
             )
             .to_series()

@@ -386,13 +386,12 @@ pub trait Utf8Methods: AsUtf8 {
         tu: TimeUnit,
         cache: bool,
         tz_aware: bool,
-        utc: bool,
         tz: Option<&TimeZone>,
     ) -> PolarsResult<DatetimeChunked> {
         let utf8_ca = self.as_utf8();
         let fmt = match fmt {
             Some(fmt) => fmt,
-            None => return infer::to_datetime(utf8_ca, tu, tz, utc),
+            None => return infer::to_datetime(utf8_ca, tu, tz),
         };
         let fmt = strptime::compile_fmt(fmt);
         let cache = cache && utf8_ca.len() > 50;
@@ -409,27 +408,11 @@ pub trait Utf8Methods: AsUtf8 {
                 use chrono::DateTime;
                 use polars_arrow::export::hashbrown::hash_map::Entry;
                 let mut cache_map = PlHashMap::new();
-                let mut tz = None;
 
-                let mut convert = |s: &str| {
+                let convert = |s: &str| {
                     DateTime::parse_from_str(s, &fmt)
                         .ok()
-                        .map(|dt| {
-                            if !utc {
-                                if let Some(tz_found) = tz {
-                                    polars_ensure!(
-                                        tz_found == dt.timezone(),
-                                        ComputeError: "different timezones found during 'strptime' \
-                                        operation (you might want to use `utc=True` and then set \
-                                        the time zone after parsing"
-                                );
-                                } else {
-                                    tz = Some(dt.timezone());
-                                }
-                            }
-                            Ok(func(dt.naive_utc()))
-                        })
-                        .transpose()
+                        .map(|dt| func(dt.naive_utc()))
                 };
 
                 let mut ca: Int64Chunked = utf8_ca
@@ -440,14 +423,14 @@ pub trait Utf8Methods: AsUtf8 {
                                 let out = if cache {
                                     match cache_map.entry(s) {
                                         Entry::Vacant(entry) => {
-                                            let value = convert(s)?;
+                                            let value = convert(s);
                                             entry.insert(value);
                                             value
                                         }
                                         Entry::Occupied(val) => *val.get(),
                                     }
                                 } else {
-                                    convert(s)?
+                                    convert(s)
                                 };
                                 Ok(out)
                             })
@@ -457,12 +440,7 @@ pub trait Utf8Methods: AsUtf8 {
                     .collect::<PolarsResult<_>>()?;
 
                 ca.rename(utf8_ca.name());
-                if !utc {
-                    let tz = tz.map(|of| format!("{of}"));
-                    Ok(ca.into_datetime(tu, tz))
-                } else {
-                    Ok(ca.into_datetime(tu, Some("UTC".to_string())))
-                }
+                Ok(ca.into_datetime(tu, Some("UTC".to_string())))
             }
             #[cfg(not(feature = "timezones"))]
             {
@@ -484,7 +462,7 @@ pub trait Utf8Methods: AsUtf8 {
                     // Safety:
                     // fmt_len is correct, it was computed with this `fmt` str.
                     match unsafe { strptime_cache.parse(s.as_bytes(), fmt.as_bytes(), fmt_len) } {
-                        None => transform(s, &fmt, None, utc),
+                        None => transform(s, &fmt),
                         Some(ndt) => Some(func(ndt)),
                     }
                 };
@@ -520,26 +498,18 @@ pub trait Utf8Methods: AsUtf8 {
                     .map(|opt_s| {
                         opt_s.and_then(|s| {
                             if cache {
-                                *cache_map
-                                    .entry(s)
-                                    .or_insert_with(|| transform(s, &fmt, None, false))
+                                *cache_map.entry(s).or_insert_with(|| transform(s, &fmt))
                             } else {
-                                transform(s, &fmt, None, false)
+                                transform(s, &fmt)
                             }
                         })
                     })
                     .collect_trusted()
             };
             ca.rename(utf8_ca.name());
-            match (tz, utc) {
+            match tz {
                 #[cfg(feature = "timezones")]
-                (Some(tz), false) => ca.into_datetime(tu, None).replace_time_zone(Some(tz), None),
-                #[cfg(feature = "timezones")]
-                (None, true) => ca
-                    .into_datetime(tu, None)
-                    .replace_time_zone(Some("UTC"), None),
-                #[cfg(feature = "timezones")]
-                (Some(_), true) => unreachable!(), // has already been validated in strptime
+                Some(tz) => ca.into_datetime(tu, None).replace_time_zone(Some(tz), None),
                 _ => Ok(ca.into_datetime(tu, None)),
             }
         }

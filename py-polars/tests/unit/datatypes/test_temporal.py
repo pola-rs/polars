@@ -2183,7 +2183,7 @@ def test_strptime_with_invalid_tz() -> None:
         ComputeError, match="unable to parse time zone: 'foo'"
     ), pytest.warns(
         FutureWarning,
-        match="In a future version of polars, non-area/location time zones",
+        match="time zones other than those in `zoneinfo.available_timezones",
     ):
         pl.Series(["2020-01-01 03:00:00"]).str.strptime(pl.Datetime("us", "foo"))
     with pytest.raises(
@@ -2193,12 +2193,22 @@ def test_strptime_with_invalid_tz() -> None:
         pl.Series(["2020-01-01 03:00:00+01:00"]).str.strptime(
             pl.Datetime("us", "foo"), "%Y-%m-%d %H:%M:%S%z"
         )
-    with pytest.raises(
-        ComputeError,
-        match="cannot use strptime with both 'utc=True' and tz-aware dtype",
+
+
+def test_utc_deprecation() -> None:
+    with pytest.warns(
+        DeprecationWarning,
+        match="The `utc` argument is now a no-op and has no effect. You can safely remove it",
     ):
         pl.Series(["2020-01-01 03:00:00"]).str.strptime(
-            pl.Datetime("us", "foo"), "%Y-%m-%d %H:%M:%S", utc=True
+            pl.Datetime("us"), "%Y-%m-%d %H:%M:%S", utc=True
+        )
+    with pytest.warns(
+        DeprecationWarning,
+        match="The `utc` argument is now a no-op and has no effect. You can safely remove it",
+    ):
+        pl.Series(["2020-01-01 03:00:00"]).str.to_datetime(
+            "%Y-%m-%d %H:%M:%S", utc=True
         )
 
 
@@ -2216,7 +2226,7 @@ def test_convert_time_zone_invalid() -> None:
         ComputeError, match="unable to parse time zone: 'foo'"
     ), pytest.warns(
         FutureWarning,
-        match="In a future version of polars, non-area/location time zones",
+        match="time zones other than those in `zoneinfo.available_timezones",
     ):
         ts.dt.replace_time_zone("UTC").dt.convert_time_zone("foo")
 
@@ -3039,7 +3049,7 @@ def test_infer_iso8601_tz_aware_datetime(iso8601_tz_aware_format_datetime: str) 
         iso8601_tz_aware_format_datetime.replace("%Y", "2134")
         .replace("%m", "12")
         .replace("%d", "13")
-        .replace("%H", "01")
+        .replace("%H", "02")
         .replace("%M", "12")
         .replace("%S", "34")
         .replace("%3f", "123")
@@ -3063,7 +3073,7 @@ def test_infer_iso8601_tz_aware_datetime(iso8601_tz_aware_format_datetime: str) 
         assert parsed.dt.nanosecond().item() == 123456000
     if "%3f" in iso8601_tz_aware_format_datetime:
         assert parsed.dt.nanosecond().item() == 123000000
-    assert parsed.dtype == pl.Datetime("ns", "+01:00")
+    assert parsed.dtype == pl.Datetime("ns", "UTC")
 
 
 def test_infer_iso8601_date(iso8601_format_date: str) -> None:
