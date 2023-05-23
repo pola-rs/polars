@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextlib
 import io
 from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING, Any, cast, no_type_check
@@ -16,7 +15,6 @@ from polars.exceptions import (
     ArrowError,
     ComputeError,
     PolarsPanicError,
-    TimeZoneAwareConstructorWarning,
 )
 from polars.testing import (
     assert_frame_equal,
