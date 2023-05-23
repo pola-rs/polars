@@ -179,7 +179,7 @@ def test_diff_datetime() -> None:
     out = (
         df.with_columns(
             pl.col("timestamp").str.strptime(pl.Date, format="%Y-%m-%d"),
-        ).with_columns(pl.col("timestamp").diff().implode().over("char"))
+        ).with_columns(pl.col("timestamp").diff().over("char", mapping_strategy="join"))
     )["timestamp"]
     assert (out[0] == out[1]).all()
 

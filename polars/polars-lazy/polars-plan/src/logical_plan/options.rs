@@ -171,14 +171,6 @@ pub enum ApplyOptions {
     ApplyFlat,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct WindowOptions {
-    /// Explode the aggregated list and just do a hstack instead of a join
-    /// this requires the groups to be sorted to make any sense
-    pub explode: bool,
-}
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FunctionOptions {
@@ -223,6 +215,8 @@ pub struct FunctionOptions {
     // if set, then the `Series` passed to the function in the groupby operation
     // will ensure the name is set. This is an extra heap allocation per group.
     pub pass_name_to_apply: bool,
+    // For example a `unique` or a `slice`
+    pub changes_length: bool,
 }
 
 impl FunctionOptions {
@@ -245,6 +239,7 @@ impl Default for FunctionOptions {
             cast_to_supertypes: false,
             allow_rename: false,
             pass_name_to_apply: false,
+            changes_length: false,
         }
     }
 }

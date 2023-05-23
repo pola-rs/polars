@@ -179,27 +179,22 @@ impl PhysicalExpr for AggregationExpr {
                     rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::Implode => {
-                    if state.unset_finalize_window_as_list() {
-                        let agg = ac.aggregated();
-                        rename_series(agg, &keep_name)
-                    } else {
-                        // if the aggregation is already
-                        // in an aggregate flat state for instance by
-                        // a mean aggregation, we simply convert to list
-                        //
-                        // if it is not, we traverse the groups and create
-                        // a list per group.
-                        let s = match ac.agg_state() {
-                            // mean agg:
-                            // -> f64 -> list<f64>
-                            AggState::AggregatedFlat(s) => s.reshape(&[-1, 1]).unwrap(),
-                            _ => {
-                                let agg = ac.aggregated();
-                                agg.as_list().into_series()
-                            }
-                        };
-                        rename_series(s, &keep_name)
-                    }
+                    // if the aggregation is already
+                    // in an aggregate flat state for instance by
+                    // a mean aggregation, we simply convert to list
+                    //
+                    // if it is not, we traverse the groups and create
+                    // a list per group.
+                    let s = match ac.agg_state() {
+                        // mean agg:
+                        // -> f64 -> list<f64>
+                        AggState::AggregatedFlat(s) => s.reshape(&[-1, 1]).unwrap(),
+                        _ => {
+                            let agg = ac.aggregated();
+                            agg.as_list().into_series()
+                        }
+                    };
+                    rename_series(s, &keep_name)
                 }
                 GroupByMethod::Groups => {
                     let mut column: ListChunked = ac.groups().as_list_chunked();

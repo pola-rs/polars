@@ -43,7 +43,7 @@ use polars_plan::logical_plan::{
     ArenaLpIter, OptimizationRule, SimplifyExprRule, StackOptimizer, TypeCoercionRule,
 };
 
-use crate::dsl::{arg_sort_by, pearson_corr};
+use crate::dsl::pearson_corr;
 use crate::prelude::*;
 
 static GLOB_PARQUET: &str = "../../examples/datasets/*.parquet";

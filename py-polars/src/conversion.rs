@@ -1248,6 +1248,22 @@ impl FromPyObject<'_> for Wrap<SearchSortedSide> {
     }
 }
 
+impl FromPyObject<'_> for Wrap<WindowMapping> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "group_to_rows" => WindowMapping::GroupsToRows,
+            "join" => WindowMapping::Join,
+            "explode" => WindowMapping::Explode,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "side must be one of {{'group_to_rows', 'join', 'explode'}}, got {v}",
+                )))
+            }
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
 pub(crate) fn parse_fill_null_strategy(
     strategy: &str,
     limit: FillNullLimit,
