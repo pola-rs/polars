@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING
 
 from polars import functions as F
 from polars.series.utils import expr_dispatch
-from polars.utils import no_default
 from polars.utils._wrap import wrap_s
 from polars.utils.decorators import deprecated_alias
 
@@ -17,7 +16,6 @@ if TYPE_CHECKING:
         TimeUnit,
         TransferEncoding,
     )
-    from polars.utils import NoDefault
 
 
 @expr_dispatch
@@ -167,7 +165,6 @@ class StringNameSpace:
         exact: bool = True,
         cache: bool = True,
         utc: bool = False,
-        tz_aware: bool | NoDefault = no_default,
     ) -> Series:
         """
         Convert a Utf8 column into a Date/Datetime/Time column.
@@ -191,13 +188,6 @@ class StringNameSpace:
         utc
             Parse time zone aware datetimes as UTC. This may be useful if you have data
             with mixed offsets.
-        tz_aware
-            Parse time zone aware datetimes. This may be automatically toggled by the
-            `format` given.
-
-            .. deprecated:: 0.16.17
-                This is now auto-inferred from the given `format`. You can safely drop
-                this argument, it will be removed in a future version.
 
         Notes
         -----
@@ -258,7 +248,6 @@ class StringNameSpace:
                     exact=exact,
                     cache=cache,
                     utc=utc,
-                    tz_aware=tz_aware,
                 )
             )
             .to_series()
