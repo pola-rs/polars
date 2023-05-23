@@ -50,7 +50,6 @@ from polars.functions.lazy import (
 )
 from polars.functions.lazy import date_ as date
 from polars.functions.lazy import datetime_ as datetime
-from polars.functions.lazy import list_ as list
 from polars.functions.lazy import time_ as time
 from polars.functions.repeat import ones, repeat, zeros
 from polars.functions.whenthen import when
@@ -97,7 +96,6 @@ __all__ = [
     "head",
     "implode",
     "last",
-    "list",  # named list_, see import above
     "lit",
     "map",
     "max",

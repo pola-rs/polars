@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-import warnings
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
 
@@ -27,7 +26,6 @@ from polars.utils.convert import (
     _timedelta_to_pl_timedelta,
 )
 from polars.utils.decorators import deprecated_alias
-from polars.utils.various import find_stacklevel
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -343,27 +341,6 @@ def implode(name: str) -> Expr:
         Name of the column that should be imploded.
 
     """
-    return col(name).implode()
-
-
-def list_(name: str) -> Expr:
-    """
-    Aggregate to list.
-
-    .. deprecated:: 0.17.3
-        ``list`` will be removed in favor of ``implode``.
-
-    Parameters
-    ----------
-    name
-        Name of the column that should be aggregated into a list.
-
-    """
-    warnings.warn(
-        "`pl.list` is deprecated, please use `pl.implode` instead.",
-        DeprecationWarning,
-        stacklevel=find_stacklevel(),
-    )
     return col(name).implode()
 
 

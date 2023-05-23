@@ -129,7 +129,6 @@ from polars.functions import (
 )
 from polars.functions.lazy import date_ as date
 from polars.functions.lazy import datetime_ as datetime
-from polars.functions.lazy import list_ as list
 from polars.functions.lazy import time_ as time
 from polars.functions.whenthen import when
 from polars.io import (
@@ -305,7 +304,6 @@ __all__ = [
     "head",
     "implode",
     "last",
-    "list",  # named list_, see import above
     "lit",
     "map",
     "max",
