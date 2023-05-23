@@ -36,8 +36,6 @@ pub fn ensure_sorted_arg(s: &Series, operation: &str) -> PolarsResult<()> {
 
 - If your data is ALREADY sorted, set the sorted flag with: '.set_sorted()'.
 - If your data is NOT sorted, sort the 'expr/series/column' first.
-
-This might become an error in a future version.
     ", operation);
     Ok(())
 }
