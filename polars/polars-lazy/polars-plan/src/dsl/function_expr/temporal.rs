@@ -39,13 +39,7 @@ pub(super) fn date_offset(s: Series, offset: Duration) -> PolarsResult<Series> {
                         let offset_fn = offset_fn(tu);
                         ca.0.try_apply(|v| offset_fn(&offset, v, Some(&tz)))
                     }
-                    Err(_) => match parse_offset(tz) {
-                        Ok(tz) => {
-                            let offset_fn = offset_fn(tu);
-                            ca.0.try_apply(|v| offset_fn(&offset, v, Some(&tz)))
-                        }
-                        Err(_) => unreachable!(),
-                    },
+                    Err(_) => unreachable!(),
                 },
                 _ => {
                     let offset_fn = offset_fn(tu);

@@ -162,13 +162,7 @@ fn upsample_single_impl(
                                 unlocalize_timestamp(first, *tu, tz),
                                 unlocalize_timestamp(last, *tu, tz),
                             ),
-                            Err(_) => match parse_offset(tz) {
-                                Ok(tz) => (
-                                    unlocalize_timestamp(first, *tu, tz),
-                                    unlocalize_timestamp(last, *tu, tz),
-                                ),
-                                Err(_) => unreachable!(),
-                            },
+                            Err(_) => unreachable!(),
                         },
                         _ => (first, last),
                     };

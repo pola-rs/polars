@@ -64,10 +64,7 @@ where
         #[cfg(feature = "timezones")]
         Some(tz) => match tz.parse::<Tz>() {
             Ok(tz) => groupby_values_iter(period, offset, time, closed_window, tu, Some(tz)),
-            Err(_) => match parse_offset(tz) {
-                Ok(tz) => groupby_values_iter(period, offset, time, closed_window, tu, Some(tz)),
-                Err(_) => unreachable!(),
-            },
+            Err(_) => unreachable!(),
         },
         _ => groupby_values_iter(
             period,
@@ -97,10 +94,7 @@ where
         #[cfg(feature = "timezones")]
         Some(tz) => match tz.parse::<Tz>() {
             Ok(tz) => groupby_values_iter(period, offset, time, closed_window, tu, Some(tz)),
-            Err(_) => match parse_offset(tz) {
-                Ok(tz) => groupby_values_iter(period, offset, time, closed_window, tu, Some(tz)),
-                Err(_) => unreachable!(),
-            },
+            Err(_) => unreachable!(),
         },
         _ => groupby_values_iter(
             period,
@@ -130,10 +124,7 @@ where
         #[cfg(feature = "timezones")]
         Some(tz) => match tz.parse::<Tz>() {
             Ok(tz) => groupby_values_iter(period, offset, time, closed_window, tu, Some(tz)),
-            Err(_) => match parse_offset(tz) {
-                Ok(tz) => groupby_values_iter(period, offset, time, closed_window, tu, Some(tz)),
-                Err(_) => unreachable!(),
-            },
+            Err(_) => unreachable!(),
         },
         _ => groupby_values_iter(
             period,
@@ -163,10 +154,7 @@ where
         #[cfg(feature = "timezones")]
         Some(tz) => match tz.parse::<Tz>() {
             Ok(tz) => groupby_values_iter(period, offset, time, closed_window, tu, Some(tz)),
-            Err(_) => match parse_offset(tz) {
-                Ok(tz) => groupby_values_iter(period, offset, time, closed_window, tu, Some(tz)),
-                Err(_) => unreachable!(),
-            },
+            Err(_) => unreachable!(),
         },
         _ => groupby_values_iter(
             period,
@@ -196,10 +184,7 @@ where
         #[cfg(feature = "timezones")]
         Some(tz) => match tz.parse::<Tz>() {
             Ok(tz) => groupby_values_iter(period, offset, time, closed_window, tu, Some(tz)),
-            Err(_) => match parse_offset(tz) {
-                Ok(tz) => groupby_values_iter(period, offset, time, closed_window, tu, Some(tz)),
-                Err(_) => unreachable!(),
-            },
+            Err(_) => unreachable!(),
         },
         _ => groupby_values_iter(
             period,
@@ -239,10 +224,7 @@ where
         #[cfg(feature = "timezones")]
         Some(tz) => match tz.parse::<Tz>() {
             Ok(tz) => groupby_values_iter(period, offset, time, closed_window, tu, Some(tz)),
-            Err(_) => match parse_offset(tz) {
-                Ok(tz) => groupby_values_iter(period, offset, time, closed_window, tu, Some(tz)),
-                Err(_) => unreachable!(),
-            },
+            Err(_) => unreachable!(),
         },
         _ => groupby_values_iter(
             period,

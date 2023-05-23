@@ -22,12 +22,9 @@ use crate::prelude::*;
 
 #[cfg(feature = "timezones")]
 fn validate_time_zone(tz: TimeZone) -> PolarsResult<()> {
-    match parse_offset(&tz) {
+    match tz.parse::<Tz>() {
         Ok(_) => Ok(()),
-        Err(_) => match tz.parse::<Tz>() {
-            Ok(_) => Ok(()),
-            Err(_) => polars_bail!(ComputeError: "unable to parse time zone: '{}'", tz),
-        },
+        Err(_) => polars_bail!(ComputeError: "unable to parse time zone: '{}'", tz),
     }
 }
 
@@ -175,16 +172,11 @@ impl DatetimeChunked {
 
         let mut ca: Utf8Chunked = match self.time_zone() {
             #[cfg(feature = "timezones")]
-            Some(time_zone) => match parse_offset(time_zone) {
+            Some(time_zone) => match time_zone.parse::<Tz>() {
                 Ok(time_zone) => self.apply_kernel_cast(&|arr| {
-                    format_fixed_offset(time_zone, arr, format, &fmted, conversion_f)
+                    format_tz(time_zone, arr, format, &fmted, conversion_f)
                 }),
-                Err(_) => match time_zone.parse::<Tz>() {
-                    Ok(time_zone) => self.apply_kernel_cast(&|arr| {
-                        format_tz(time_zone, arr, format, &fmted, conversion_f)
-                    }),
-                    Err(_) => unreachable!(),
-                },
+                Err(_) => unreachable!(),
             },
             _ => self.apply_kernel_cast(&|arr| format_naive(arr, format, &fmted, conversion_f)),
         };

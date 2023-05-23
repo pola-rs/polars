@@ -846,13 +846,7 @@ impl Display for PlTzAware<'_> {
                 let dt_tz_aware = dt_utc.with_timezone(&tz);
                 write!(f, "{dt_tz_aware}")
             }
-            Err(_) => match parse_offset(self.tz) {
-                Ok(offset) => {
-                    let dt_tz_aware = offset.from_utc_datetime(&self.ndt);
-                    write!(f, "{dt_tz_aware}")
-                }
-                Err(_) => write!(f, "invalid timezone"),
-            },
+            Err(_) => write!(f, "invalid timezone"),
         }
         #[cfg(not(feature = "timezones"))]
         {

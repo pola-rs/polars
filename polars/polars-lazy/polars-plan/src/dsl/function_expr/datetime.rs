@@ -194,14 +194,7 @@ pub(super) fn truncate(s: &Series, every: &str, offset: &str) -> PolarsResult<Se
                     .unwrap()
                     .truncate(every, offset, Some(&tz))?
                     .into_series(),
-                Err(_) => match parse_offset(tz) {
-                    Ok(tz) => s
-                        .datetime()
-                        .unwrap()
-                        .truncate(every, offset, Some(&tz))?
-                        .into_series(),
-                    Err(_) => unreachable!(),
-                },
+                Err(_) => unreachable!(),
             },
             _ => s
                 .datetime()
@@ -225,10 +218,7 @@ pub(super) fn month_start(s: &Series) -> PolarsResult<Series> {
             #[cfg(feature = "timezones")]
             Some(tz) => match tz.parse::<Tz>() {
                 Ok(tz) => s.datetime().unwrap().month_start(Some(&tz))?.into_series(),
-                Err(_) => match parse_offset(tz) {
-                    Ok(tz) => s.datetime().unwrap().month_start(Some(&tz))?.into_series(),
-                    Err(_) => unreachable!(),
-                },
+                Err(_) => unreachable!(),
             },
             _ => s
                 .datetime()
@@ -248,10 +238,7 @@ pub(super) fn month_end(s: &Series) -> PolarsResult<Series> {
             #[cfg(feature = "timezones")]
             Some(tz) => match tz.parse::<Tz>() {
                 Ok(tz) => s.datetime().unwrap().month_end(Some(&tz))?.into_series(),
-                Err(_) => match parse_offset(tz) {
-                    Ok(tz) => s.datetime().unwrap().month_end(Some(&tz))?.into_series(),
-                    Err(_) => unreachable!(),
-                },
+                Err(_) => unreachable!(),
             },
             _ => s.datetime().unwrap().month_end(NO_TIMEZONE)?.into_series(),
         },
@@ -272,14 +259,7 @@ pub(super) fn round(s: &Series, every: &str, offset: &str) -> PolarsResult<Serie
                     .unwrap()
                     .round(every, offset, Some(&tz))?
                     .into_series(),
-                Err(_) => match parse_offset(tz) {
-                    Ok(tz) => s
-                        .datetime()
-                        .unwrap()
-                        .round(every, offset, Some(&tz))?
-                        .into_series(),
-                    Err(_) => unreachable!(),
-                },
+                Err(_) => unreachable!(),
             },
             _ => s
                 .datetime()

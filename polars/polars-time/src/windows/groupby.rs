@@ -206,24 +206,7 @@ pub fn groupby_windows(
                     &mut groups,
                 );
             }
-            Err(_) => match parse_offset(tz) {
-                Ok(tz) => {
-                    update_groups_and_bounds(
-                        window
-                            .get_overlapping_bounds_iter(boundary, tu, Some(&tz), start_by)
-                            .unwrap(),
-                        start_offset,
-                        time,
-                        closed_window,
-                        include_lower_bound,
-                        include_upper_bound,
-                        &mut lower_bound,
-                        &mut upper_bound,
-                        &mut groups,
-                    );
-                }
-                _ => unreachable!(),
-            },
+            _ => unreachable!(),
         },
         _ => {
             update_groups_and_bounds(

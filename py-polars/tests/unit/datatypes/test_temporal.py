@@ -2255,17 +2255,6 @@ def test_convert_time_zone_on_tz_naive() -> None:
         ts.dt.convert_time_zone("Africa/Bamako")
 
 
-def test_replace_time_zone_fixed_offset() -> None:
-    ts = pl.Series(["2020-01-01"]).str.strptime(pl.Datetime)
-    with pytest.warns(
-        DeprecationWarning,
-        match="time zones other than those in `zoneinfo.available_timezones",
-    ):
-        result = ts.dt.replace_time_zone("+00:00")
-    assert result.dtype == pl.Datetime("us", "+00:00")
-    assert result.item() == datetime(2020, 1, 1, 0, 0, tzinfo=timezone.utc)
-
-
 def test_tz_aware_get_idx_5010() -> None:
     when = int(datetime(2022, 1, 1, 12, tzinfo=ZoneInfo("Asia/Shanghai")).timestamp())
     a = pa.array([when]).cast(pa.timestamp("s", tz="Asia/Shanghai"))
@@ -2393,25 +2382,6 @@ def test_tzaware_date_range_crossing_dst_monthly() -> None:
     assert result.to_list() == [
         datetime(2021, 11, 7, 0, 0, tzinfo=ZoneInfo("US/Central")),
         datetime(2021, 12, 7, 0, 0, tzinfo=ZoneInfo("US/Central")),
-    ]
-
-
-def test_tzaware_date_range_with_fixed_offset() -> None:
-    with pytest.warns(
-        DeprecationWarning,
-        match="time zones other than those in `zoneinfo.available_timezones",
-    ):
-        result = pl.date_range(
-            datetime(2021, 11, 7),
-            datetime(2021, 11, 7, 2),
-            "1h",
-            time_zone="+01:00",
-            eager=True,
-        )
-    assert result.to_list() == [
-        datetime(2021, 11, 7, 0, 0, tzinfo=timezone(timedelta(hours=1))),
-        datetime(2021, 11, 7, 1, 0, tzinfo=timezone(timedelta(hours=1))),
-        datetime(2021, 11, 7, 2, 0, tzinfo=timezone(timedelta(hours=1))),
     ]
 
 

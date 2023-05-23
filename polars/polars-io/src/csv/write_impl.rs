@@ -108,10 +108,7 @@ fn write_anyvalue(
                 #[cfg(feature = "timezones")]
                 Some(tz) => match tz.parse::<Tz>() {
                     Ok(parsed_tz) => parsed_tz.from_utc_datetime(&ndt).format(datetime_format),
-                    Err(_) => match temporal_conversions::parse_offset(tz) {
-                        Ok(parsed_tz) => parsed_tz.from_utc_datetime(&ndt).format(datetime_format),
-                        Err(_) => unreachable!(),
-                    },
+                    Err(_) => unreachable!(),
                 },
                 #[cfg(not(feature = "timezones"))]
                 Some(_) => {
