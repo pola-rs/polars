@@ -451,8 +451,7 @@ def test_time_range_lit() -> None:
                 interval="5h45m10s333ms",
                 closed="right",
                 eager=eager,
-                name="tm",
-            )
+            ).alias("tm")
         )
         if not eager:
             tm = tm.select(pl.col("tm").explode())
@@ -467,8 +466,7 @@ def test_time_range_lit() -> None:
             pl.time_range(
                 interval="5h45m10s333ms",
                 eager=eager,
-                name="tm",
-            )
+            ).alias("tm")
         )
         if not eager:
             tm = tm.select(pl.col("tm").explode())
@@ -485,8 +483,7 @@ def test_time_range_lit() -> None:
                 start=pl.lit(time(23, 59, 59, 999980)),
                 interval="10000ns",
                 eager=eager,
-                name="tm",
-            )
+            ).alias("tm")
         )
         tm = tm.select(pl.col("tm").explode())
         assert tm["tm"].to_list() == [
