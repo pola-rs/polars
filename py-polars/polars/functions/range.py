@@ -238,11 +238,9 @@ def date_range(
     Using polars duration string to specify the interval:
 
     >>> from datetime import date
-    >>> pl.date_range(
-    ...     date(2022, 1, 1), date(2022, 3, 1), "1mo", name="dtrange", eager=True
-    ... )
+    >>> pl.date_range(date(2022, 1, 1), date(2022, 3, 1), "1mo", eager=True)
     shape: (3,)
-    Series: 'dtrange' [date]
+    Series: 'date' [date]
     [
         2022-01-01
         2022-02-01
@@ -260,7 +258,7 @@ def date_range(
     ...     eager=True,
     ... )
     shape: (7,)
-    Series: '' [datetime[ms]]
+    Series: 'date' [datetime[ms]]
     [
         1985-01-01 00:00:00
         1985-01-02 12:00:00
@@ -281,7 +279,7 @@ def date_range(
     ...     eager=True,
     ... )
     shape: (3,)
-    Series: '' [datetime[μs, America/New_York]]
+    Series: 'date' [datetime[μs, America/New_York]]
     [
         2022-01-01 00:00:00 EST
         2022-02-01 00:00:00 EST
@@ -296,7 +294,7 @@ def date_range(
     ...     ).dt.month_end()
     ... )
     shape: (3,)
-    Series: '' [datetime[μs]]
+    Series: 'date' [datetime[μs]]
     [
         2022-01-31 00:00:00
         2022-02-28 00:00:00
