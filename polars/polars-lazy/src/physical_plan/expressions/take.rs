@@ -57,6 +57,7 @@ impl PhysicalExpr for TakeExpr {
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.phys_expr.evaluate_on_groups(df, groups, state)?;
         let mut idx = self.idx.evaluate_on_groups(df, groups, state)?;
+        eprintln!("idx: {:?}", idx);
 
         let idx =
             match idx.state {
@@ -125,7 +126,8 @@ impl PhysicalExpr for TakeExpr {
                     let idx = s.cast(&IDX_DTYPE)?;
                     let idx = idx.idx().unwrap();
 
-                    return if idx.len() == 1 {
+                    return if (idx.len() == 1) & (s.name() != "") {
+                        eprintln!("idx.len == 1, idx: {:?} and series {:?} and series.name {:?}", idx, s, s.name());
                         match idx.get(0) {
                             None => polars_bail!(ComputeError: "cannot take by a null"),
                             Some(idx) => {
@@ -161,6 +163,8 @@ impl PhysicalExpr for TakeExpr {
                             }
                         }
                     } else {
+                        eprintln!("idx.len != 1");
+                        //eprintln!("these are the idx: {:?}", idx);
                         let out = ac
                             .aggregated()
                             .list()
