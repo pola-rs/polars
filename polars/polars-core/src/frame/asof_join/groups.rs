@@ -1067,7 +1067,7 @@ mod test {
             "on_key",
             "on_key",
             ["group"],
-            [],
+            ["group"],
             AsofStrategy::Nearest,
             None,
         )?;
