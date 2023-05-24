@@ -66,8 +66,8 @@ impl RepeatBy for Utf8Chunked {
             ListChunked::from_chunks(
                 self.name(),
                 vec![Box::new(LargeListArray::from_iter_utf8_trusted_len(
-                        iter,
-                        self.len(),
+                    iter,
+                    self.len(),
                 ))],
             )
         }
