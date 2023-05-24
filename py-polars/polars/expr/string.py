@@ -1095,7 +1095,7 @@ class ExprStringNameSpace:
         ...         +           # 'one or more' quantifier
         ...         """
         ...     )
-        ...     .arr.to_struct(fields=["name", "domain"])
+        ...     .list.to_struct(fields=["name", "domain"])
         ...     .alias("email_parts")
         ... ).unnest("email_parts")
         shape: (3, 3)

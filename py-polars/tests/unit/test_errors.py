@@ -371,7 +371,7 @@ def test_arr_eval_named_cols() -> None:
     with pytest.raises(
         pl.ComputeError,
     ):
-        df.select(pl.col("B").arr.eval(pl.element().append(pl.col("A"))))
+        df.select(pl.col("B").list.eval(pl.element().append(pl.col("A"))))
 
 
 def test_alias_in_join_keys() -> None:

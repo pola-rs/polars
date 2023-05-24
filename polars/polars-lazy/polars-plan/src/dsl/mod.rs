@@ -1751,17 +1751,21 @@ impl Expr {
     pub fn dt(self) -> dt::DateLikeNameSpace {
         dt::DateLikeNameSpace(self)
     }
-    pub fn arr(self) -> list::ListNameSpace {
+
+    pub fn list(self) -> list::ListNameSpace {
         list::ListNameSpace(self)
     }
+
     #[cfg(feature = "dtype-categorical")]
     pub fn cat(self) -> cat::CategoricalNameSpace {
         cat::CategoricalNameSpace(self)
     }
+
     #[cfg(feature = "dtype-struct")]
     pub fn struct_(self) -> struct_::StructNameSpace {
         struct_::StructNameSpace(self)
     }
+
     #[cfg(feature = "meta")]
     pub fn meta(self) -> meta::MetaNameSpace {
         meta::MetaNameSpace(self)

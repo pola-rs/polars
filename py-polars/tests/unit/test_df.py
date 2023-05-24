@@ -2074,12 +2074,12 @@ def test_extension() -> None:
 
     out = df.groupby("groups", maintain_order=True).agg(pl.col("a").alias("a"))
     assert sys.getrefcount(foos[0]) == base_count + 2
-    s = out["a"].arr.explode()
+    s = out["a"].list.explode()
     assert sys.getrefcount(foos[0]) == base_count + 3
     del s
     assert sys.getrefcount(foos[0]) == base_count + 2
 
-    assert out["a"].arr.explode().to_list() == foos
+    assert out["a"].list.explode().to_list() == foos
     assert sys.getrefcount(foos[0]) == base_count + 2
     del out
     assert sys.getrefcount(foos[0]) == base_count + 1
@@ -3622,7 +3622,7 @@ def test_deadlocks_3409() -> None:
         pl.DataFrame({"col1": [[1, 2, 3]]})
         .with_columns(
             [
-                pl.col("col1").arr.eval(
+                pl.col("col1").list.eval(
                     pl.element().apply(lambda x: x, return_dtype=pl.Int64)
                 )
             ]

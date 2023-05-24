@@ -139,7 +139,7 @@ def test_min_nulls_consistency() -> None:
 def test_list_join_strings() -> None:
     s = pl.Series("a", [["ab", "c", "d"], ["e", "f"], ["g"], []])
     expected = pl.Series("a", ["ab-c-d", "e-f", "g", ""])
-    assert_series_equal(s.arr.join("-"), expected)
+    assert_series_equal(s.list.join("-"), expected)
 
 
 def test_count_expr() -> None:
@@ -334,7 +334,7 @@ def test_list_eval_expression() -> None:
     for parallel in [True, False]:
         assert df.with_columns(
             pl.concat_list(["a", "b"])
-            .arr.eval(pl.first().rank(), parallel=parallel)
+            .list.eval(pl.first().rank(), parallel=parallel)
             .alias("rank")
         ).to_dict(False) == {
             "a": [1, 8, 3],
@@ -342,7 +342,7 @@ def test_list_eval_expression() -> None:
             "rank": [[1.0, 2.0], [2.0, 1.0], [2.0, 1.0]],
         }
 
-        assert df["a"].reshape((1, -1)).arr.eval(
+        assert df["a"].reshape((1, -1)).list.eval(
             pl.first(), parallel=parallel
         ).to_list() == [[1, 8, 3]]
 
@@ -426,7 +426,7 @@ def test_arr_contains() -> None:
         }
     )
     assert df_groups.lazy().filter(
-        pl.col("str_list").arr.contains("cat")
+        pl.col("str_list").list.contains("cat")
     ).collect().to_dict(False) == {
         "str_list": [["cat", "mouse", "dog"], ["dog", "mouse", "cat"]]
     }
@@ -1118,4 +1118,4 @@ def test_extend_constant_arr(const: Any, dtype: pl.PolarsDataType) -> None:
 
     expected = pl.Series("s", [[const, const, const, const]], dtype=pl.List(dtype))
 
-    assert_series_equal(s.arr.eval(pl.element().extend_constant(const, 3)), expected)
+    assert_series_equal(s.list.eval(pl.element().extend_constant(const, 3)), expected)

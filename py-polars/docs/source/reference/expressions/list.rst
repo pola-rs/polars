@@ -2,36 +2,36 @@
 List
 ====
 
-The following methods are available under the `expr.arr` attribute.
+The following methods are available under the `expr.list` attribute.
 
 .. currentmodule:: polars
 .. autosummary::
    :toctree: api/
    :template: autosummary/accessor_method.rst
 
-    Expr.arr.arg_max
-    Expr.arr.arg_min
-    Expr.arr.concat
-    Expr.arr.contains
-    Expr.arr.count_match
-    Expr.arr.diff
-    Expr.arr.eval
-    Expr.arr.explode
-    Expr.arr.first
-    Expr.arr.get
-    Expr.arr.head
-    Expr.arr.join
-    Expr.arr.last
-    Expr.arr.lengths
-    Expr.arr.max
-    Expr.arr.mean
-    Expr.arr.min
-    Expr.arr.reverse
-    Expr.arr.shift
-    Expr.arr.slice
-    Expr.arr.sort
-    Expr.arr.sum
-    Expr.arr.tail
-    Expr.arr.take
-    Expr.arr.to_struct
-    Expr.arr.unique
+    Expr.list.arg_max
+    Expr.list.arg_min
+    Expr.list.concat
+    Expr.list.contains
+    Expr.list.count_match
+    Expr.list.diff
+    Expr.list.eval
+    Expr.list.explode
+    Expr.list.first
+    Expr.list.get
+    Expr.list.head
+    Expr.list.join
+    Expr.list.last
+    Expr.list.lengths
+    Expr.list.max
+    Expr.list.mean
+    Expr.list.min
+    Expr.list.reverse
+    Expr.list.shift
+    Expr.list.slice
+    Expr.list.sort
+    Expr.list.sum
+    Expr.list.tail
+    Expr.list.take
+    Expr.list.to_struct
+    Expr.list.unique

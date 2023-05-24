@@ -6,11 +6,11 @@ Attributes
 .. autosummary::
    :toctree: api/
 
-   Series.arr
    Series.cat
    Series.dt
    Series.dtype
    Series.inner_dtype
+   Series.list
    Series.name
    Series.shape
    Series.str

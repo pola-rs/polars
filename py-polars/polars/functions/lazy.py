@@ -234,7 +234,7 @@ def element() -> Expr:
 
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
     >>> df.with_columns(
-    ...     pl.concat_list(["a", "b"]).arr.eval(pl.element().rank()).alias("rank")
+    ...     pl.concat_list(["a", "b"]).list.eval(pl.element().rank()).alias("rank")
     ... )
     shape: (3, 3)
     ┌─────┬─────┬────────────┐
@@ -251,7 +251,7 @@ def element() -> Expr:
 
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
     >>> df.with_columns(
-    ...     pl.concat_list(["a", "b"]).arr.eval(pl.element() * 2).alias("a_b_doubled")
+    ...     pl.concat_list(["a", "b"]).list.eval(pl.element() * 2).alias("a_b_doubled")
     ... )
     shape: (3, 3)
     ┌─────┬─────┬─────────────┐
