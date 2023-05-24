@@ -445,10 +445,9 @@ pub fn time_range_lazy(
     end: PyExpr,
     every: &str,
     closed: Wrap<ClosedWindow>,
-    name: String,
 ) -> PyExpr {
     let start = start.inner;
     let end = end.inner;
     let every = Duration::parse(every);
-    dsl::functions::time_range(name, start, end, every, closed.0).into()
+    dsl::functions::time_range(start, end, every, closed.0).into()
 }

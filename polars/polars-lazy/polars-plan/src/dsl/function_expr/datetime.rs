@@ -44,7 +44,6 @@ pub enum TemporalFunction {
         tz: Option<TimeZone>,
     },
     TimeRange {
-        name: String,
         every: Duration,
         closed: ClosedWindow,
     },

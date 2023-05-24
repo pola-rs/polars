@@ -458,13 +458,52 @@ def date_range(
     return dt_range
 
 
+@overload
+def time_range(
+    start: time | Expr | str | None = ...,
+    end: time | Expr | str | None = ...,
+    interval: str | timedelta = ...,
+    *,
+    closed: ClosedInterval = ...,
+    eager: Literal[False] = ...,
+    name: str | None = ...,
+) -> Expr:
+    ...
+
+
+@overload
+def time_range(
+    start: time | Expr | str | None = ...,
+    end: time | Expr | str | None = ...,
+    interval: str | timedelta = ...,
+    *,
+    closed: ClosedInterval = ...,
+    eager: Literal[True],
+    name: str | None = ...,
+) -> Series:
+    ...
+
+
+@overload
+def time_range(
+    start: time | Expr | str | None = ...,
+    end: time | Expr | str | None = ...,
+    interval: str | timedelta = ...,
+    *,
+    closed: ClosedInterval = ...,
+    eager: bool,
+    name: str | None = ...,
+) -> Series | Expr:
+    ...
+
+
 def time_range(
     start: time | Expr | str | None = None,
     end: time | Expr | str | None = None,
     interval: str | timedelta = "1h",
     *,
-    eager: bool = False,
     closed: ClosedInterval = "both",
+    eager: bool = False,
     name: str | None = None,
 ) -> Series | Expr:
     """
@@ -482,13 +521,16 @@ def time_range(
         Interval of the range periods; can be a python timedelta object like
         ``timedelta(minutes=10)`` or a polars duration string, such as ``1h30m25s``
         (representing 1 hour, 30 minutes, and 25 seconds).
-    eager:
-        Evaluate immediately and return a ``Series``; if set to ``False`` (default),
-        return an expression instead.
     closed : {'both', 'left', 'right', 'none'}
         Define whether the temporal window interval is closed or not.
+    eager:
+        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
+        return an expression instead.
     name
         Name of the output Series.
+
+        .. deprecated:: 0.18.0
+            This argument is deprecated. Use the ``alias`` method instead.
 
     Returns
     -------
@@ -503,10 +545,9 @@ def time_range(
     ...     start=time(14, 0),
     ...     interval=timedelta(hours=3, minutes=15),
     ...     eager=True,
-    ...     name="tm",
     ... )
     shape: (4,)
-    Series: 'tm' [time]
+    Series: 'time' [time]
     [
         14:00:00
         17:15:00
@@ -539,6 +580,13 @@ def time_range(
     └──────────┴──────────┴────────────────────────────────┘
 
     """
+    if name is not None:
+        warnings.warn(
+            "the `name` argument is deprecated. Use the `alias` method instead.",
+            DeprecationWarning,
+            stacklevel=find_stacklevel(),
+        )
+
     if isinstance(interval, timedelta):
         interval = _timedelta_to_pl_duration(interval)
     elif " " in interval:
@@ -548,7 +596,6 @@ def time_range(
         if unit in interval:
             raise ValueError(f"invalid interval unit for time_range: found {unit!r}")
 
-    name = name or ""
     default_start = time(0, 0, 0)
     default_end = time(23, 59, 59, 999999)
     if (
@@ -568,10 +615,10 @@ def time_range(
             else expr_to_lit_or_expr(end, str_to_lit=False)
         )._pyexpr
 
-        tm_expr = wrap_expr(
-            plr.time_range_lazy(start_expr, end_expr, interval, closed, name)
-        )
-        return tm_expr.alias(name)
+        tm_expr = wrap_expr(plr.time_range_lazy(start_expr, end_expr, interval, closed))
+        if name is not None:
+            tm_expr = tm_expr.alias(name)
+        return tm_expr
     else:
         tm_srs = wrap_s(
             plr.time_range(
@@ -579,9 +626,10 @@ def time_range(
                 _time_to_pl_time(default_end if end is None else end),
                 interval,
                 closed,
-                name,
             )
         )
+        if name is not None:
+            tm_srs = tm_srs.alias(name)
         return tm_srs
 
 

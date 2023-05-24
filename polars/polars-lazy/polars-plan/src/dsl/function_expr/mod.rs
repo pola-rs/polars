@@ -591,14 +591,10 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
                     tz.clone()
                 )
             }
-            TimeRange {
-                name,
-                every,
-                closed,
-            } => {
+            TimeRange { every, closed } => {
                 map_as_slice!(
                     temporal::temporal_range_dispatch,
-                    name.as_ref(),
+                    "time",
                     every,
                     closed,
                     None

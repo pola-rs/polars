@@ -1372,25 +1372,16 @@ pub fn date_range(
 
 /// Create a time range, named `name`, from a `start` and `stop` expression.
 #[cfg(feature = "temporal")]
-pub fn time_range(
-    name: String,
-    start: Expr,
-    end: Expr,
-    every: Duration,
-    closed: ClosedWindow,
-) -> Expr {
+pub fn time_range(start: Expr, end: Expr, every: Duration, closed: ClosedWindow) -> Expr {
     let input = vec![start, end];
 
     Expr::Function {
         input,
-        function: FunctionExpr::TemporalExpr(TemporalFunction::TimeRange {
-            name,
-            every,
-            closed,
-        }),
+        function: FunctionExpr::TemporalExpr(TemporalFunction::TimeRange { every, closed }),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             cast_to_supertypes: false,
+            allow_rename: true,
             ..Default::default()
         },
     }
