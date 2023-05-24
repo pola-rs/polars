@@ -643,3 +643,11 @@ def test_transpose_categorical_cached() -> None:
         pl.DataFrame(
             {"b": pl.Series(["a", "b", "c"], dtype=pl.Categorical)}
         ).transpose()
+
+
+def test_overflow_msg() -> None:
+    with pytest.raises(
+        pl.ComputeError,
+        match=r"could not append value: 2147483648 of type: i64 to the builder",
+    ):
+        pl.DataFrame([[2**31]], [("a", pl.Int32)], orient="row")
