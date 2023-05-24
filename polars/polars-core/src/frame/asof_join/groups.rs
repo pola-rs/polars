@@ -534,7 +534,9 @@ where
         (None, AsofStrategy::Forward) => {
             (join_asof_forward_with_indirection, T::Native::zero(), true)
         }
-        (_, AsofStrategy::Nearest) => (join_asof_nearest_with_indirection, T::Native::zero(), false),
+        (_, AsofStrategy::Nearest) => {
+            (join_asof_nearest_with_indirection, T::Native::zero(), false)
+        }
     };
     let left_asof = left_asof.rechunk();
     let left_asof = left_asof.cont_slice().unwrap();
