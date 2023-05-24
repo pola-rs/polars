@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 use std::ops::Sub;
 
+use num_traits::Bounded;
 use polars_arrow::index::IdxSize;
 
 pub(super) fn join_asof_forward_with_tolerance<T: PartialOrd + Copy + Debug + Sub<Output = T>>(
@@ -181,6 +182,55 @@ pub(super) fn join_asof_backward<T: PartialOrd + Copy + Debug>(
     out
 }
 
+pub(super) fn join_asof_nearest<T: PartialOrd + Copy + Debug + Sub<Output = T> + Bounded>(
+    left: &[T],
+    right: &[T],
+) -> Vec<Option<IdxSize>> {
+    let mut out = Vec::with_capacity(left.len());
+    let mut offset = 0 as IdxSize;
+    let max_value = <T as num_traits::Bounded>::max_value();
+    let mut dist: T = max_value;
+
+    for &val_l in left {
+        loop {
+            match right.get(offset as usize) {
+                Some(&val_r) => {
+                    // This is (val_r - val_l).abs(), but works on strings/dates
+                    let dist_curr = if val_r > val_l {
+                        val_r - val_l
+                    } else {
+                        val_l - val_r
+                    };
+                    if dist_curr <= dist {
+                        // candidate for match
+                        dist = dist_curr;
+                        offset += 1;
+                    } else {
+                        // distance has increased, we're now farther away, so previous element was closest
+                        out.push(Some(offset - 1));
+                        //out.push(Some(max_value));
+
+                        // reset distance
+                        dist = max_value;
+
+                        // The next left-item may match on the same item, so we need to rewind the offset
+                        offset -= 1;
+                        break;
+                    }
+                }
+
+                None => {
+                    // We've reached the end with no matches, so grab the last item
+                    out.push(if offset > 1 { Some(offset - 1) } else { None });
+                    return out;
+                }
+            }
+        }
+    }
+
+    out
+}
+
 pub(super) fn join_asof_forward<T: PartialOrd + Copy + Debug>(
     left: &[T],
     right: &[T],
@@ -258,5 +308,15 @@ mod test {
         let tuples = join_asof_forward(&a, &b);
         assert_eq!(tuples.len(), a.len());
         assert_eq!(tuples, &[Some(0), Some(0), Some(1), Some(2), None]);
+    }
+
+    #[test]
+    fn test_asof_nearest() {
+        let a = [-1, 1, 2, 4, 6];
+        let b = [1, 2, 4, 5];
+
+        let tuples = join_asof_forward(&a, &b);
+        assert_eq!(tuples.len(), a.len());
+        assert_eq!(tuples, &[Some(1), Some(1), Some(2), Some(4), Some(5)]);
     }
 }
