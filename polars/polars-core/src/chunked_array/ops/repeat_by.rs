@@ -51,35 +51,16 @@ impl RepeatBy for BooleanChunked {
 impl RepeatBy for Utf8Chunked {
     fn repeat_by(&self, by: &IdxCa) -> ListChunked {
         // TODO! dispatch via binary.
-        if self.len() != by.len() {
+        if (self.len() != by.len()) & (by.len() >= 1) {
             return self.repeat_by(&IdxCa::new("", std::iter::repeat(by.get(0).unwrap()).take(self.len()).collect::<Vec<IdxSize>>()));
         }
 
         let iter = self
             .into_iter()
             .zip(by.into_iter())
-            .map(|(opt_v, opt_by)| {let k = opt_by.map(|by| std::iter::repeat(opt_v).take(by as usize));
-        eprintln!("this is k {:?}, opt_v {:?}, opt_by {:?}", k, opt_v, opt_by); k});
+            .map(|(opt_v, opt_by)| opt_by.map(|by| std::iter::repeat(opt_v).take(by as usize))
+        );
 
-        // eprintln!("This is the len of self {} and the len of by {}", self.len(), by.len());
-        // let it = match self.len() == by.len() {
-        //     true => by,
-        //     false => {
-        //         let t = by.get(0);
-        //         IdxCa::new("literal", std::iter::repeat(by.get(0) as IdxSize).take(self.len()).collect::<Vec<IdxCa>>()).as_ref(),
-        //     }
-        // };
-        // let t: IdxCa = by.into_iter().chain(repeat(by.get(by.len() - 1)).take(self.len().saturating_sub(by.len()))).collect();
-        // let iter = self
-        //     .into_iter()
-        //     .zip(it)
-        //     .map(|(opt_v, opt_by)| {let k = opt_by.map(|by| std::iter::repeat(opt_v).take(by as usize));
-        // eprintln!("this is k {:?}, opt_v {:?}, opt_by {:?}", k, opt_v, opt_by); k});
-       //  .iter()
-       //  .chain(repeat(&a[a.len() - 1]).take(b.len().saturating_sub(a.len())))
-       //  .zip(
-       //      b
-       //  )
         // Safety:
         // Length of iter is trusted
         unsafe {
