@@ -83,11 +83,8 @@ def test_date_range() -> None:
         assert rng.dt[-1] == datetime(2020, 1, 2)
 
     # if low/high are both date, range is also be date _iif_ the granularity is >= 1d
-    result = pl.date_range(
-        date(2022, 1, 1), date(2022, 3, 1), "1mo", name="drange", eager=True
-    )
+    result = pl.date_range(date(2022, 1, 1), date(2022, 3, 1), "1mo", eager=True)
     assert result.to_list() == [date(2022, 1, 1), date(2022, 2, 1), date(2022, 3, 1)]
-    assert result.name == "drange"
 
     result = pl.date_range(date(2022, 1, 1), date(2022, 1, 2), "1h30m", eager=True)
     assert list(result) == [

@@ -285,6 +285,13 @@ def date_range(
     ]
 
     """
+    if name is not None:
+        warnings.warn(
+            "the `name` argument is deprecated. Use the `alias` method instead.",
+            DeprecationWarning,
+            stacklevel=find_stacklevel(),
+        )
+
     from polars.dependencies import zoneinfo
 
     if time_zone is not None and time_zone not in zoneinfo.available_timezones():

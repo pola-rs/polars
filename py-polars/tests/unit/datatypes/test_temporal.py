@@ -2292,7 +2292,7 @@ def test_truncate_by_calendar_weeks() -> None:
     end = datetime(2022, 11, 20, 0, 0, 0)
 
     assert (
-        pl.date_range(start, end, timedelta(days=1), name="date", eager=True)
+        pl.date_range(start, end, timedelta(days=1), eager=True).alias("date")
         .to_frame()
         .select([pl.col("date").dt.truncate("1w")])
     ).to_dict(False) == {
