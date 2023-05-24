@@ -133,7 +133,7 @@ def test_predicate_arr_first_6573() -> None:
     assert (
         df.lazy()
         .with_columns(pl.col("a").implode())
-        .with_columns(pl.col("a").arr.first())
+        .with_columns(pl.col("a").list.first())
         .filter(pl.col("a") == pl.col("b"))
         .collect()
     ).to_dict(False) == {"a": [1], "b": [1]}

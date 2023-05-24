@@ -218,7 +218,7 @@ class Series:
     """
 
     _s: PySeries = None
-    _accessors: set[str] = {"arr", "cat", "dt", "str", "bin", "struct"}
+    _accessors: set[str] = {"cat", "dt", "list", "str", "bin", "struct"}
 
     def __init__(
         self,
@@ -5860,13 +5860,8 @@ class Series:
     def implode(self) -> Self:
         """Aggregate values into a list."""
 
-    # Below are the namespaces defined. Do not move these up in the definition of
-    # Series, as it confuses mypy between the type annotation `str` and the
-    # namespace `str`
-    @property
-    def arr(self) -> ListNameSpace:
-        """Create an object namespace of all list related methods."""
-        return ListNameSpace(self)
+    # Keep the `list` and `str` properties below at the end of the definition of Series,
+    # as to not confuse mypy with the type annotation `str` and `list`
 
     @property
     def bin(self) -> BinaryNameSpace:
@@ -5882,6 +5877,11 @@ class Series:
     def dt(self) -> DateTimeNameSpace:
         """Create an object namespace of all datetime related methods."""
         return DateTimeNameSpace(self)
+
+    @property
+    def list(self) -> ListNameSpace:
+        """Create an object namespace of all list related methods."""
+        return ListNameSpace(self)
 
     @property
     def str(self) -> StringNameSpace:

@@ -774,7 +774,7 @@ def test_arr_namespace(fruits_cars: pl.DataFrame) -> None:
             "fruits",
             pl.col("B")
             .over("fruits", mapping_strategy="join")
-            .arr.min()
+            .list.min()
             .alias("B_by_fruits_min1"),
             pl.col("B")
             .min()
@@ -782,7 +782,7 @@ def test_arr_namespace(fruits_cars: pl.DataFrame) -> None:
             .alias("B_by_fruits_min2"),
             pl.col("B")
             .over("fruits", mapping_strategy="join")
-            .arr.max()
+            .list.max()
             .alias("B_by_fruits_max1"),
             pl.col("B")
             .max()
@@ -790,7 +790,7 @@ def test_arr_namespace(fruits_cars: pl.DataFrame) -> None:
             .alias("B_by_fruits_max2"),
             pl.col("B")
             .over("fruits", mapping_strategy="join")
-            .arr.sum()
+            .list.sum()
             .alias("B_by_fruits_sum1"),
             pl.col("B")
             .sum()
@@ -798,7 +798,7 @@ def test_arr_namespace(fruits_cars: pl.DataFrame) -> None:
             .alias("B_by_fruits_sum2"),
             pl.col("B")
             .over("fruits", mapping_strategy="join")
-            .arr.mean()
+            .list.mean()
             .alias("B_by_fruits_mean1"),
             pl.col("B")
             .mean()

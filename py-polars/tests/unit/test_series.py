@@ -601,13 +601,13 @@ def test_to_python() -> None:
 def test_to_struct() -> None:
     s = pl.Series("nums", ["12 34", "56 78", "90 00"]).str.extract_all(r"\d+")
 
-    assert s.arr.to_struct().struct.fields == ["field_0", "field_1"]
-    assert s.arr.to_struct(fields=lambda idx: f"n{idx:02}").struct.fields == [
+    assert s.list.to_struct().struct.fields == ["field_0", "field_1"]
+    assert s.list.to_struct(fields=lambda idx: f"n{idx:02}").struct.fields == [
         "n00",
         "n01",
     ]
     assert_frame_equal(
-        s.arr.to_struct(fields=["one", "two"]).struct.unnest(),
+        s.list.to_struct(fields=["one", "two"]).struct.unnest(),
         pl.DataFrame({"one": ["12", "56", "90"], "two": ["34", "78", "00"]}),
     )
 
@@ -1373,30 +1373,30 @@ def test_kurtosis() -> None:
 
 def test_arr_lengths() -> None:
     s = pl.Series("a", [[1, 2], [1, 2, 3]])
-    assert_series_equal(s.arr.lengths(), pl.Series("a", [2, 3], dtype=UInt32))
+    assert_series_equal(s.list.lengths(), pl.Series("a", [2, 3], dtype=UInt32))
     df = pl.DataFrame([s])
     assert_series_equal(
-        df.select(pl.col("a").arr.lengths())["a"], pl.Series("a", [2, 3], dtype=UInt32)
+        df.select(pl.col("a").list.lengths())["a"], pl.Series("a", [2, 3], dtype=UInt32)
     )
 
 
 def test_arr_arithmetic() -> None:
     s = pl.Series("a", [[1, 2], [1, 2, 3]])
-    assert_series_equal(s.arr.sum(), pl.Series("a", [3, 6]))
-    assert_series_equal(s.arr.mean(), pl.Series("a", [1.5, 2.0]))
-    assert_series_equal(s.arr.max(), pl.Series("a", [2, 3]))
-    assert_series_equal(s.arr.min(), pl.Series("a", [1, 1]))
+    assert_series_equal(s.list.sum(), pl.Series("a", [3, 6]))
+    assert_series_equal(s.list.mean(), pl.Series("a", [1.5, 2.0]))
+    assert_series_equal(s.list.max(), pl.Series("a", [2, 3]))
+    assert_series_equal(s.list.min(), pl.Series("a", [1, 1]))
 
 
 def test_arr_ordering() -> None:
     s = pl.Series("a", [[2, 1], [1, 3, 2]])
-    assert_series_equal(s.arr.sort(), pl.Series("a", [[1, 2], [1, 2, 3]]))
-    assert_series_equal(s.arr.reverse(), pl.Series("a", [[1, 2], [2, 3, 1]]))
+    assert_series_equal(s.list.sort(), pl.Series("a", [[1, 2], [1, 2, 3]]))
+    assert_series_equal(s.list.reverse(), pl.Series("a", [[1, 2], [2, 3, 1]]))
 
 
 def test_arr_unique() -> None:
     s = pl.Series("a", [[2, 1], [1, 2, 2]])
-    result = s.arr.unique()
+    result = s.list.unique()
     assert len(result) == 2
     assert sorted(result[0]) == [1, 2]
     assert sorted(result[1]) == [1, 2]
@@ -1446,19 +1446,19 @@ def test_list_concat() -> None:
     s1 = pl.Series("b", [[3, 4, 5]])
     expected = pl.Series("a", [[1, 2, 3, 4, 5]])
 
-    out = s0.arr.concat([s1])
+    out = s0.list.concat([s1])
     assert_series_equal(out, expected)
 
-    out = s0.arr.concat(s1)
+    out = s0.list.concat(s1)
     assert_series_equal(out, expected)
 
     df = pl.DataFrame([s0, s1])
     assert_series_equal(df.select(pl.concat_list(["a", "b"]).alias("a"))["a"], expected)
     assert_series_equal(
-        df.select(pl.col("a").arr.concat("b").alias("a"))["a"], expected
+        df.select(pl.col("a").list.concat("b").alias("a"))["a"], expected
     )
     assert_series_equal(
-        df.select(pl.col("a").arr.concat(["b"]).alias("a"))["a"], expected
+        df.select(pl.col("a").list.concat(["b"]).alias("a"))["a"], expected
     )
 
 
