@@ -21,7 +21,10 @@ from typing import (
 import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import (
+    FLOAT_DTYPES,
+    INTEGER_DTYPES,
     N_INFER_DEFAULT,
+    TEMPORAL_DTYPES,
     Boolean,
     Categorical,
     Date,
@@ -298,6 +301,7 @@ def _construct_series_with_fallbacks(
     constructor: Callable[[str, Sequence[Any], bool], PySeries],
     name: str,
     values: Sequence[Any],
+    target_dtype: PolarsDataType | None,
     strict: bool,
 ) -> PySeries:
     """Construct Series, with fallbacks for basic type mismatch (eg: bool/int)."""
@@ -305,28 +309,33 @@ def _construct_series_with_fallbacks(
         try:
             return constructor(name, values, strict)
         except TypeError as exc:
-            str_val = str(exc)
+            str_exc = str(exc)
 
             # from x to float
             # error message can be:
             #   - integers: "'float' object cannot be interpreted as an integer"
-            if "'float'" in str_val:
+            if "'float'" in str_exc and (
+                # we do not accept float values as int/temporal, as it causes silent
+                # information loss; the caller should explicitly cast in this case.
+                target_dtype
+                not in (INTEGER_DTYPES | TEMPORAL_DTYPES)
+            ):
                 constructor = py_type_to_constructor(float)
 
             # from x to string
             # error message can be:
             #   - integers: "'str' object cannot be interpreted as an integer"
             #   - floats: "must be real number, not str"
-            elif "'str'" in str_val or str_val == "must be real number, not str":
+            elif "'str'" in str_exc or str_exc == "must be real number, not str":
                 constructor = py_type_to_constructor(str)
 
             # from x to int
             # error message can be:
             #   - bools: "'int' object cannot be converted to 'PyBool'"
-            elif str_val == "'int' object cannot be converted to 'PyBool'":
+            elif str_exc == "'int' object cannot be converted to 'PyBool'":
                 constructor = py_type_to_constructor(int)
 
-            elif "decimal.Decimal" in str_val:
+            elif "decimal.Decimal" in str_exc:
                 constructor = py_type_to_constructor(PyDecimal)
             else:
                 raise exc
@@ -373,6 +382,7 @@ def sequence_to_pyseries(
             # * if the values are integer, we take the physical branch.
             # * if the values are python types, take the temporal branch.
             # * if the values are ISO-8601 strings, init then convert via strptime.
+            # * if the values are floats/other dtypes, this is an error.
             if dtype in py_temporal_types and isinstance(value, int):
                 dtype = py_type_to_dtype(dtype)  # construct from integer
             elif (
@@ -389,8 +399,9 @@ def sequence_to_pyseries(
         and (python_dtype is None)
     ):
         constructor = polars_type_to_constructor(dtype)
-        pyseries = _construct_series_with_fallbacks(constructor, name, values, strict)
-
+        pyseries = _construct_series_with_fallbacks(
+            constructor, name, values, dtype, strict
+        )
         if dtype in (Date, Datetime, Duration, Time, Categorical, Boolean):
             if pyseries.dtype() != dtype:
                 pyseries = pyseries.cast(dtype, True)
@@ -413,7 +424,7 @@ def sequence_to_pyseries(
                     dtype_if_empty if dtype_if_empty else Float32
                 )
                 return _construct_series_with_fallbacks(
-                    constructor, name, values, strict
+                    constructor, name, values, dtype, strict
                 )
 
             # generic default dtype
@@ -425,11 +436,23 @@ def sequence_to_pyseries(
                 dtype = py_type_to_dtype(python_dtype)  # construct from integer
             elif dtype in py_temporal_types:
                 dtype = py_type_to_dtype(dtype)
-            time_unit = getattr(dtype, "time_unit", None)
+
+            values_dtype = (
+                None
+                if value is None
+                else py_type_to_dtype(type(value), raise_unmatched=False)
+            )
+            if values_dtype in FLOAT_DTYPES:
+                raise TypeError(
+                    # we do not accept float values as temporal; if this is
+                    # required, the caller should explicitly cast to int first.
+                    f"'float' object cannot be interpreted as a {python_dtype.__name__}"
+                )
 
             # we use anyvalue builder to create the datetime array
             # we store the values internally as UTC and set the timezone
             py_series = PySeries.new_from_anyvalues(name, values, strict)
+            time_unit = getattr(dtype, "time_unit", None)
             if time_unit is None:
                 s = wrap_s(py_series)
             else:
@@ -480,7 +503,9 @@ def sequence_to_pyseries(
                 except RuntimeError:
                     return sequence_from_anyvalue_or_object(name, values)
 
-            return _construct_series_with_fallbacks(constructor, name, values, strict)
+            return _construct_series_with_fallbacks(
+                constructor, name, values, dtype, strict
+            )
 
 
 def _pandas_series_to_arrow(
