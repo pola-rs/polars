@@ -315,7 +315,7 @@ mod test {
         let a = [-1, 1, 2, 4, 6];
         let b = [1, 2, 4, 5];
 
-        let tuples = join_asof_forward(&a, &b);
+        let tuples = join_asof_nearest(&a, &b);
         assert_eq!(tuples.len(), a.len());
         assert_eq!(tuples, &[Some(1), Some(1), Some(2), Some(4), Some(5)]);
     }
