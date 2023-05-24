@@ -1,7 +1,7 @@
 use std::iter::FromIterator;
 use std::ops::{Add, AddAssign, Mul};
 
-use num_traits::Bounded;
+use num_traits::{Bounded, Zero};
 
 use crate::prelude::*;
 use crate::utils::CustomIterTools;
@@ -36,37 +36,29 @@ where
     }
 }
 
-fn det_sum<T>(state: &mut Option<T>, v: Option<T>) -> Option<Option<T>>
+fn det_sum<T>(state: &mut T, v: Option<T>) -> Option<Option<T>>
 where
     T: Copy + PartialOrd + AddAssign + Add<Output = T>,
 {
-    match (*state, v) {
-        (Some(state_inner), Some(v)) => {
-            *state = Some(state_inner + v);
-            Some(*state)
+    match v {
+        Some(v) => {
+            *state = *state + v;
+            Some(Some(*state))
         }
-        (None, Some(v)) => {
-            *state = Some(v);
-            Some(*state)
-        }
-        (_, None) => Some(None),
+        None => Some(None),
     }
 }
 
-fn det_prod<T>(state: &mut Option<T>, v: Option<T>) -> Option<Option<T>>
+fn det_prod<T>(state: &mut T, v: Option<T>) -> Option<Option<T>>
 where
     T: Copy + PartialOrd + Mul<Output = T>,
 {
-    match (*state, v) {
-        (Some(state_inner), Some(v)) => {
-            *state = Some(state_inner * v);
-            Some(*state)
+    match v {
+        Some(v) => {
+            *state = *state * v;
+            Some(Some(*state))
         }
-        (None, Some(v)) => {
-            *state = Some(v);
-            Some(*state)
-        }
-        (_, None) => Some(None),
+        None => Some(None),
     }
 }
 
@@ -107,7 +99,7 @@ where
     }
 
     fn cumsum(&self, reverse: bool) -> ChunkedArray<T> {
-        let init = None;
+        let init = <<T as datatypes::PolarsNumericType>::Native as Zero>::zero();
         let mut ca: Self = match reverse {
             false => self.into_iter().scan(init, det_sum).collect_trusted(),
             true => self
@@ -122,7 +114,7 @@ where
     }
 
     fn cumprod(&self, reverse: bool) -> ChunkedArray<T> {
-        let init = None;
+        let init = <<T as datatypes::PolarsNumericType>::Native as Zero>::zero();
         let mut ca: Self = match reverse {
             false => self.into_iter().scan(init, det_prod).collect_trusted(),
             true => self
