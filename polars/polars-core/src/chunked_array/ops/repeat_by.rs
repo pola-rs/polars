@@ -50,15 +50,19 @@ impl RepeatBy for BooleanChunked {
 impl RepeatBy for Utf8Chunked {
     fn repeat_by(&self, by: &IdxCa) -> ListChunked {
         // TODO! dispatch via binary.
-        if (self.len() != by.len()) & (by.len() >= 1) {
-            return self.repeat_by(&IdxCa::new("", std::iter::repeat(by.get(0).unwrap()).take(self.len()).collect::<Vec<IdxSize>>()));
+        if (self.len() != by.len()) & (by.len() == 1) {
+            return self.repeat_by(&IdxCa::new(
+                "",
+                std::iter::repeat(by.get(0).unwrap())
+                    .take(self.len())
+                    .collect::<Vec<IdxSize>>(),
+            ));
         }
 
         let iter = self
             .into_iter()
             .zip(by.into_iter())
-            .map(|(opt_v, opt_by)| opt_by.map(|by| std::iter::repeat(opt_v).take(by as usize))
-        );
+            .map(|(opt_v, opt_by)| opt_by.map(|by| std::iter::repeat(opt_v).take(by as usize)));
 
         // Safety:
         // Length of iter is trusted
