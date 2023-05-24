@@ -15,11 +15,27 @@ pub(crate) fn create_physical_expressions(
     schema: Option<&SchemaRef>,
     state: &mut ExpressionConversionState,
 ) -> PolarsResult<Vec<Arc<dyn PhysicalExpr>>> {
+    create_physical_expressions_check_state(exprs, context, expr_arena, schema, state, |_| Ok(()))
+}
+
+pub(crate) fn create_physical_expressions_check_state<F>(
+    exprs: &[Node],
+    context: Context,
+    expr_arena: &Arena<AExpr>,
+    schema: Option<&SchemaRef>,
+    state: &mut ExpressionConversionState,
+    checker: F,
+) -> PolarsResult<Vec<Arc<dyn PhysicalExpr>>>
+where
+    F: Fn(&ExpressionConversionState) -> PolarsResult<()>,
+{
     exprs
         .iter()
         .map(|e| {
             state.reset();
-            create_physical_expr(*e, context, expr_arena, schema, state)
+            let out = create_physical_expr(*e, context, expr_arena, schema, state);
+            checker(state)?;
+            out
         })
         .collect()
 }
@@ -34,7 +50,13 @@ pub(crate) struct ExpressionConversionState {
     pub has_windows: bool,
     // settings per expression
     // those are reset every expression
-    pub has_implode: bool,
+    local: LocalConversionState,
+}
+
+#[derive(Copy, Clone, Default)]
+struct LocalConversionState {
+    has_implode: bool,
+    has_window: bool,
 }
 
 impl ExpressionConversionState {
@@ -45,7 +67,16 @@ impl ExpressionConversionState {
         }
     }
     fn reset(&mut self) {
-        self.has_implode = false;
+        self.local = Default::default()
+    }
+
+    fn has_implode(&self) -> bool {
+        self.local.has_implode
+    }
+
+    fn set_window(&mut self) {
+        self.has_windows = true;
+        self.local.has_window = true;
     }
 }
 
@@ -66,7 +97,7 @@ pub(crate) fn create_physical_expr(
             order_by: _,
             options,
         } => {
-            state.has_windows = true;
+            state.set_window();
             // TODO! Order by
             let group_by = create_physical_expressions(
                 &partition_by,
@@ -75,6 +106,9 @@ pub(crate) fn create_physical_expr(
                 schema,
                 state,
             )?;
+
+            // set again as the state can be reset
+            state.set_window();
             let phys_function =
                 create_physical_expr(function, Context::Aggregation, expr_arena, schema, state)?;
             let mut out_name = None;
@@ -185,8 +219,8 @@ pub(crate) fn create_physical_expr(
         Agg(agg) => {
             let expr = agg.get_input().first();
             let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
-            polars_ensure!(!(state.has_implode && matches!(ctxt, Context::Aggregation)), InvalidOperation: "'implode' followed by an aggregation is not allowed");
-            state.has_implode |= matches!(agg, AAggExpr::Implode(_));
+            polars_ensure!(!(state.has_implode() && matches!(ctxt, Context::Aggregation)), InvalidOperation: "'implode' followed by an aggregation is not allowed");
+            state.local.has_implode |= matches!(agg, AAggExpr::Implode(_));
 
             match ctxt {
                 // TODO!: implement these functions somewhere else
@@ -403,7 +437,21 @@ pub(crate) fn create_physical_expr(
             output_type: _,
             options,
         } => {
-            let input = create_physical_expressions(&input, ctxt, expr_arena, schema, state)?;
+            let is_reducing_aggregation =
+                options.auto_explode && matches!(options.collect_groups, ApplyOptions::ApplyGroups);
+            // will be reset in the function so get that here
+            let has_window = state.local.has_window;
+            let input = create_physical_expressions_check_state(
+                &input,
+                ctxt,
+                expr_arena,
+                schema,
+                state,
+                |state| {
+                    polars_ensure!(!((is_reducing_aggregation || has_window) && state.has_implode() && matches!(ctxt, Context::Aggregation)), InvalidOperation: "'implode' followed by an aggregation is not allowed");
+                    Ok(())
+                },
+            )?;
 
             Ok(Arc::new(ApplyExpr {
                 inputs: input,
@@ -423,7 +471,21 @@ pub(crate) fn create_physical_expr(
             options,
             ..
         } => {
-            let input = create_physical_expressions(&input, ctxt, expr_arena, schema, state)?;
+            let is_reducing_aggregation =
+                options.auto_explode && matches!(options.collect_groups, ApplyOptions::ApplyGroups);
+            // will be reset in the function so get that here
+            let has_window = state.local.has_window;
+            let input = create_physical_expressions_check_state(
+                &input,
+                ctxt,
+                expr_arena,
+                schema,
+                state,
+                |state| {
+                    polars_ensure!(!((is_reducing_aggregation || has_window) && state.has_implode() && matches!(ctxt, Context::Aggregation)), InvalidOperation: "'implode' followed by an aggregation is not allowed");
+                    Ok(())
+                },
+            )?;
 
             Ok(Arc::new(ApplyExpr {
                 inputs: input,
@@ -445,6 +507,7 @@ pub(crate) fn create_physical_expr(
             let input = create_physical_expr(input, ctxt, expr_arena, schema, state)?;
             let offset = create_physical_expr(offset, ctxt, expr_arena, schema, state)?;
             let length = create_physical_expr(length, ctxt, expr_arena, schema, state)?;
+            polars_ensure!(!(state.has_implode() && matches!(ctxt, Context::Aggregation)), InvalidOperation: "'implode' followed by a slice during aggregation is not allowed");
             Ok(Arc::new(SliceExpr {
                 input,
                 offset,
