@@ -804,7 +804,7 @@ def test_map_dict() -> None:
 
     with pytest.raises(
         pl.ComputeError,
-        match="Remapping keys for map_dict could not be converted to Int16: ",
+        match=".*'float' object cannot be interpreted as an integer",
     ):
         df.with_columns(pl.col("int").map_dict(float_dict))
 
