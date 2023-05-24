@@ -17,15 +17,24 @@ pub(crate) fn create_physical_expressions(
 ) -> PolarsResult<Vec<Arc<dyn PhysicalExpr>>> {
     exprs
         .iter()
-        .map(|e| create_physical_expr(*e, context, expr_arena, schema, state))
+        .map(|e| {
+            state.reset();
+            create_physical_expr(*e, context, expr_arena, schema, state)
+        })
         .collect()
 }
 
 #[derive(Copy, Clone, Default)]
 pub(crate) struct ExpressionConversionState {
+    // settings per context
+    // they remain activate between
+    // expressions
     has_cache: bool,
     pub allow_threading: bool,
     pub has_windows: bool,
+    // settings per expression
+    // those are reset every expression
+    pub has_implode: bool,
 }
 
 impl ExpressionConversionState {
@@ -34,6 +43,9 @@ impl ExpressionConversionState {
             allow_threading,
             ..Default::default()
         }
+    }
+    fn reset(&mut self) {
+        self.has_implode = false;
     }
 }
 
@@ -173,6 +185,8 @@ pub(crate) fn create_physical_expr(
         Agg(agg) => {
             let expr = agg.get_input().first();
             let input = create_physical_expr(expr, ctxt, expr_arena, schema, state)?;
+            polars_ensure!(!(state.has_implode && matches!(ctxt, Context::Aggregation)), InvalidOperation: "'implode' followed by an aggregation is not allowed");
+            state.has_implode |= matches!(agg, AAggExpr::Implode(_));
 
             match ctxt {
                 // TODO!: implement these functions somewhere else

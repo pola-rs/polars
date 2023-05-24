@@ -232,3 +232,14 @@ def test_online_variance() -> None:
         .select(["no_nulls", "nulls"]),
         df.select(pl.all().exclude("id").std()),
     )
+
+
+def test_err_on_implode_and_agg() -> None:
+    df = pl.DataFrame({"type": ["water", "fire", "water", "earth"]})
+
+    # this would OOB
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match=r"'implode' followed by an aggregation is not allowed",
+    ):
+        df.groupby("type").agg(pl.col("type").implode().first().alias("foo"))
