@@ -4665,7 +4665,7 @@ class Expr:
         center
             Set the labels at the center of the window
         by
-            If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
+            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
@@ -4764,7 +4764,7 @@ class Expr:
         center
             Set the labels at the center of the window
         by
-            If the `window_size` is temporal, for instance `"5h"` or `"3s`, you must
+            If the `window_size` is temporal, for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
@@ -4863,7 +4863,7 @@ class Expr:
         center
             Set the labels at the center of the window
         by
-            If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
+            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
@@ -4962,7 +4962,7 @@ class Expr:
         center
             Set the labels at the center of the window
         by
-            If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
+            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
@@ -5061,7 +5061,7 @@ class Expr:
         center
             Set the labels at the center of the window
         by
-            If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
+            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
@@ -5160,7 +5160,7 @@ class Expr:
         center
             Set the labels at the center of the window
         by
-            If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
+            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
@@ -5255,7 +5255,7 @@ class Expr:
         center
             Set the labels at the center of the window
         by
-            If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
+            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
@@ -5356,7 +5356,7 @@ class Expr:
         center
             Set the labels at the center of the window
         by
-            If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
+            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
