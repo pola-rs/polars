@@ -92,18 +92,18 @@ class SQLContext(Generic[FrameType]):
         Parameters
         ----------
         frames
-            A ``{name:lazyframe, ...}`` mapping.
+            A ``{name:frame, ...}`` mapping.
         register_globals
-            Register all ``LazyFrame`` objects found in the globals, automatically
-            mapping their variable name to a table name. If given an integer then
-            only the most recent "n" frames found will be registered.
+            Register all eager/lazy frames found in the globals, automatically
+            mapping their variable name to a table name. If given an integer
+            then only the most recent "n" frames found will be registered.
         eager_execution
             Return query execution results as ``DataFrame`` instead of ``LazyFrame``.
             (Note that the query itself is always executed in lazy-mode; this
             parameter impacts whether :meth:`execute` returns an eager or lazy
             result frame).
         **named_frames
-            Named ``LazyFrame`` objects, provided as kwargs.
+            Named eager/lazy frames, provided as kwargs.
 
         Examples
         --------
@@ -316,6 +316,7 @@ class SQLContext(Generic[FrameType]):
         --------
         register_globals
         register_many
+        unregister
 
         """
         if isinstance(frame, DataFrame):
@@ -365,6 +366,7 @@ class SQLContext(Generic[FrameType]):
         --------
         register
         register_many
+        unregister
 
         """
         return self.register_many(
@@ -408,6 +410,7 @@ class SQLContext(Generic[FrameType]):
         --------
         register
         register_globals
+        unregister
 
         """
         frames = dict(frames or {})
@@ -466,6 +469,12 @@ class SQLContext(Generic[FrameType]):
         ['test2']
         >>> ctx.unregister("test2").tables()
         []
+
+        See Also
+        --------
+        register
+        register_globals
+        register_many
 
         """
         if isinstance(names, str):
