@@ -388,7 +388,7 @@ fn apply_multiple_elementwise<'a>(
                 })
                 .collect::<Vec<_>>();
 
-            let input_len = s[0].len();
+            let input_len = s.iter().map(|s| s.len()).max().unwrap();
             let s = function.call_udf(&mut s)?.unwrap();
             check_map_output_len(input_len, s.len(), expr)?;
 
