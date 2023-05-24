@@ -380,7 +380,7 @@ def test_cached_windows_sync_8803() -> None:
             ]
         )
         .with_columns(
-            a=pl.col("is_valid").implode().list.contains(True).over("id"),
+            a=pl.lit(True).is_in(pl.col("is_valid")).over("id"),
             b=pl.col("is_valid").sum().gt(0).over("id"),
         )
         .sum()
