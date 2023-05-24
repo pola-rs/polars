@@ -124,11 +124,11 @@ def date_range(
     end: date | datetime | Expr | str,
     interval: str | timedelta = ...,
     *,
-    eager: Literal[False] = ...,
     closed: ClosedInterval = ...,
-    name: str | None = None,
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
+    eager: Literal[False] = ...,
+    name: str | None = ...,
 ) -> Expr:
     ...
 
@@ -139,11 +139,11 @@ def date_range(
     end: date | datetime | Expr | str,
     interval: str | timedelta = ...,
     *,
-    eager: Literal[True],
     closed: ClosedInterval = ...,
-    name: str | None = ...,
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
+    eager: Literal[True],
+    name: str | None = ...,
 ) -> Series:
     ...
 
@@ -154,11 +154,11 @@ def date_range(
     end: date | datetime | Expr | str,
     interval: str | timedelta = ...,
     *,
-    eager: bool,
     closed: ClosedInterval = ...,
-    name: str | None = ...,
     time_unit: TimeUnit | None = ...,
     time_zone: str | None = ...,
+    eager: bool,
+    name: str | None = ...,
 ) -> Series | Expr:
     ...
 
@@ -169,11 +169,11 @@ def date_range(
     end: date | datetime | Expr | str,
     interval: str | timedelta = "1d",
     *,
-    eager: bool = False,
     closed: ClosedInterval = "both",
-    name: str | None = None,
     time_unit: TimeUnit | None = None,
     time_zone: str | None = None,
+    eager: bool = False,
+    name: str | None = None,
 ) -> Series | Expr:
     """
     Create a range of type `Datetime` (or `Date`).
@@ -188,17 +188,20 @@ def date_range(
         Interval of the range periods; can be a python timedelta object like
         ``timedelta(days=10)`` or a polars duration string, such as ``3d12h4m25s``
         (representing 3 days, 12 hours, 4 minutes, and 25 seconds).
-    eager
-        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
-        return an expression instead.
     closed : {'both', 'left', 'right', 'none'}
         Define whether the temporal window interval is closed or not.
-    name
-        Name of the output Series.
     time_unit : {None, 'ns', 'us', 'ms'}
         Set the time unit.
     time_zone:
         Optional timezone
+    eager
+        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
+        return an expression instead.
+    name
+        Name of the output column.
+
+        .. deprecated:: 0.18.0
+            This argument is deprecated. Use the ``alias`` method instead.
 
 
     Notes
@@ -428,11 +431,11 @@ def time_range(
         (representing 1 hour, 30 minutes, and 25 seconds).
     closed : {'both', 'left', 'right', 'none'}
         Define whether the temporal window interval is closed or not.
-    eager:
+    eager
         Evaluate immediately and return a ``Series``. If set to ``False`` (default),
         return an expression instead.
     name
-        Name of the output Series.
+        Name of the output column.
 
         .. deprecated:: 0.18.0
             This argument is deprecated. Use the ``alias`` method instead.
