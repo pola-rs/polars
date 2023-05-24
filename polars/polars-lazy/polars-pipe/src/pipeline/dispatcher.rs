@@ -280,6 +280,13 @@ impl PipeLine {
         let mut out = None;
         let mut operator_start = 0;
         let last_i = self.sinks.len() - 1;
+
+        // for unions we typically first want to push all pipelines
+        // into the union sink before we call `finalize`
+        // however if the sink is finished early, (for instance a `head`)
+        // we don't want to run the rest of the pipelines and we finalize early
+        let mut sink_finished = false;
+
         for (i, (operator_end, shared_count, mut sink)) in
             std::mem::take(&mut self.sinks).into_iter().enumerate()
         {
@@ -297,6 +304,7 @@ impl PipeLine {
                         .iter()
                         .any(|sink_result| matches!(sink_result, SinkResult::Finished))
                     {
+                        sink_finished = true;
                         break;
                     }
                 }
@@ -320,7 +328,7 @@ impl PipeLine {
                 *shared_sink_count
             };
 
-            while shared_sink_count > 0 {
+            while shared_sink_count > 0 && !sink_finished {
                 let mut pipeline = pipeline_q.borrow_mut().pop_front().unwrap();
                 let (count, mut sink) =
                     pipeline.run_pipeline_no_finalize(ec, pipeline_q.clone())?;

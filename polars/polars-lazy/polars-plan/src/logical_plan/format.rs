@@ -1,10 +1,11 @@
 use std::borrow::Cow;
 use std::fmt;
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::{Debug, Display, Formatter, Write};
 use std::path::Path;
 
 use crate::prelude::*;
 
+#[allow(clippy::too_many_arguments)]
 fn write_scan<P: Display>(
     f: &mut Formatter,
     name: &str,
@@ -13,6 +14,7 @@ fn write_scan<P: Display>(
     n_columns: i64,
     total_columns: usize,
     predicate: &Option<P>,
+    n_rows: Option<usize>,
 ) -> fmt::Result {
     if indent != 0 {
         writeln!(f)?;
@@ -29,6 +31,9 @@ fn write_scan<P: Display>(
     }
     if let Some(predicate) = predicate {
         write!(f, "\n{:indent$}SELECTION: {predicate}", "")?;
+    }
+    if let Some(n_rows) = n_rows {
+        write!(f, "\n{:indent$}N_ROWS: {n_rows}", "")?;
     }
     Ok(())
 }
@@ -58,6 +63,7 @@ impl LogicalPlan {
                     n_columns,
                     total_columns,
                     &options.predicate,
+                    options.n_rows,
                 )
             }
             AnonymousScan {
@@ -79,15 +85,23 @@ impl LogicalPlan {
                     n_columns,
                     file_info.schema.len(),
                     predicate,
+                    options.n_rows,
                 )
             }
-            Union { inputs, .. } => {
-                write!(f, "{:indent$}UNION:", "")?;
+            Union { inputs, options } => {
+                let mut name = String::new();
+                let name = if let Some(slice) = options.slice {
+                    write!(name, "SLICED UNION: {:?}", slice)?;
+                    name.as_str()
+                } else {
+                    "UNION"
+                };
+                write!(f, "{:indent$}{}", "", name)?;
                 for (i, plan) in inputs.iter().enumerate() {
                     write!(f, "\n{:indent$}PLAN {i}:", "")?;
                     plan._format(f, sub_indent)?;
                 }
-                write!(f, "\n{:indent$}END UNION", "")
+                write!(f, "\n{:indent$}END {}", "", name)
             }
             Cache { input, id, count } => {
                 write!(f, "{:indent$}CACHE[id: {:x}, count: {}]", "", *id, *count)?;
@@ -114,6 +128,7 @@ impl LogicalPlan {
                     n_columns,
                     file_info.schema.len(),
                     predicate,
+                    options.n_rows,
                 )
             }
             #[cfg(feature = "ipc")]
@@ -137,6 +152,7 @@ impl LogicalPlan {
                     n_columns,
                     file_info.schema.len(),
                     predicate,
+                    options.n_rows,
                 )
             }
             Selection { predicate, input } => {
@@ -164,6 +180,7 @@ impl LogicalPlan {
                     n_columns,
                     file_info.schema.len(),
                     predicate,
+                    options.n_rows,
                 )
             }
             DataFrameScan {
