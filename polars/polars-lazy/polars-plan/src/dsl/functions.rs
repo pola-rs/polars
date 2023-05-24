@@ -1364,7 +1364,7 @@ pub fn date_range(
     }
 }
 
-/// Create a time range, named `name`, from a `start` and `stop` expression.
+/// Create a time range from a `start` and `stop` expression.
 #[cfg(feature = "temporal")]
 pub fn time_range(start: Expr, end: Expr, every: Duration, closed: ClosedWindow) -> Expr {
     let input = vec![start, end];
