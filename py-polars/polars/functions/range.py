@@ -42,8 +42,8 @@ def arange(
     end: int | Expr | Series,
     step: int = ...,
     *,
-    eager: Literal[False] = ...,
     dtype: PolarsDataType | None = ...,
+    eager: Literal[False] = ...,
 ) -> Expr:
     ...
 
@@ -54,8 +54,8 @@ def arange(
     end: int | Expr | Series,
     step: int = ...,
     *,
-    eager: Literal[True],
     dtype: PolarsDataType | None = ...,
+    eager: Literal[True],
 ) -> Series:
     ...
 
@@ -66,8 +66,8 @@ def arange(
     end: int | Expr | Series,
     step: int = ...,
     *,
-    eager: bool,
     dtype: PolarsDataType | None = ...,
+    eager: bool,
 ) -> Expr | Series:
     ...
 
@@ -78,18 +78,14 @@ def arange(
     end: int | Expr | Series,
     step: int = 1,
     *,
+    dtype: PolarsDataType = Int64,
     eager: bool = False,
-    dtype: PolarsDataType | None = None,
 ) -> Expr | Series:
     """
     Create a range expression (or Series).
 
     This can be used in a `select`, `with_column` etc. Be sure that the resulting
     range size is equal to the length of the DataFrame you are collecting.
-
-    Examples
-    --------
-    >>> df.lazy().filter(pl.col("foo") < pl.arange(0, 100)).collect()  # doctest: +SKIP
 
     Parameters
     ----------
@@ -105,12 +101,23 @@ def arange(
     dtype
         Apply an explicit integer dtype to the resulting expression (default is Int64).
 
+    Examples
+    --------
+    >>> pl.arange(0, 3, eager=True)
+    shape: (3,)
+    Series: 'arange' [i64]
+    [
+            0
+            1
+            2
+    ]
+
     """
     start = expr_to_lit_or_expr(start, str_to_lit=False)
     end = expr_to_lit_or_expr(end, str_to_lit=False)
     range_expr = wrap_expr(plr.arange(start._pyexpr, end._pyexpr, step))
 
-    if dtype is not None and dtype != Int64:
+    if dtype != Int64:
         range_expr = range_expr.cast(dtype)
     if not eager:
         return range_expr
