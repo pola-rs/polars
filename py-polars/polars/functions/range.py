@@ -78,7 +78,7 @@ def arange(
     end: int | Expr | Series,
     step: int = 1,
     *,
-    dtype: PolarsDataType = Int64,
+    dtype: PolarsDataType | None = None,
     eager: bool = False,
 ) -> Expr | Series:
     """
@@ -95,11 +95,11 @@ def arange(
         Upper bound of range.
     step
         Step size of the range.
+    dtype
+        Apply an explicit integer dtype to the resulting expression (default is Int64).
     eager
         Evaluate immediately and return a ``Series``. If set to ``False`` (default),
         return an expression instead.
-    dtype
-        Apply an explicit integer dtype to the resulting expression (default is Int64).
 
     Examples
     --------
@@ -112,12 +112,24 @@ def arange(
             2
     ]
 
+    >>> df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+    >>> df.select(pl.arange(pl.col("a"), pl.col("b")))
+    shape: (2, 1)
+    ┌───────────┐
+    │ a         │
+    │ ---       │
+    │ list[i64] │
+    ╞═══════════╡
+    │ [1, 2]    │
+    │ [2, 3]    │
+    └───────────┘
+
     """
     start = expr_to_lit_or_expr(start, str_to_lit=False)
     end = expr_to_lit_or_expr(end, str_to_lit=False)
     range_expr = wrap_expr(plr.arange(start._pyexpr, end._pyexpr, step))
 
-    if dtype != Int64:
+    if dtype is not None and dtype != Int64:
         range_expr = range_expr.cast(dtype)
     if not eager:
         return range_expr
@@ -539,7 +551,7 @@ def time_range(
         return tm_expr
     else:
         tm_srs = wrap_s(
-            plr.time_range(
+            plr.time_range_eager(
                 _time_to_pl_time(default_start if start is None else start),
                 _time_to_pl_time(default_end if end is None else end),
                 interval,

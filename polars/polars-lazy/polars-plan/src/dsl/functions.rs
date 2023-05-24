@@ -1359,7 +1359,6 @@ pub fn date_range(
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             cast_to_supertypes: true,
-            allow_rename: true,
             ..Default::default()
         },
     }
@@ -1376,7 +1375,6 @@ pub fn time_range(start: Expr, end: Expr, every: Duration, closed: ClosedWindow)
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             cast_to_supertypes: false,
-            allow_rename: true,
             ..Default::default()
         },
     }

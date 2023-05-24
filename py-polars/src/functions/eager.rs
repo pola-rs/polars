@@ -148,7 +148,7 @@ pub fn repeat_eager(
 }
 
 #[pyfunction]
-pub fn time_range(
+pub fn time_range_eager(
     start: i64,
     stop: i64,
     every: &str,

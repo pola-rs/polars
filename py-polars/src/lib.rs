@@ -89,7 +89,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::eager::repeat_eager))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::eager::time_range))
+    m.add_wrapped(wrap_pyfunction!(functions::eager::time_range_eager))
         .unwrap();
 
     // Functions - lazy
