@@ -153,11 +153,12 @@ def test_fused_arithm() -> None:
         pl.col("a") * pl.col("b") + pl.col("c"),
         (pl.col("a") + pl.col("b") * pl.col("c")).alias("2"),
     )
+    # the extra aliases are because the fma does operation reordering
     assert (
-        """col("c").fma([col("a"), col("b")]), col("a").fma([col("b"), col("c")]).alias("2")]"""
+        """col("c").fma([col("a"), col("b")]).alias("a"), col("a").fma([col("b"), col("c")]).alias("2")"""
         in q.explain()
     )
-    assert q.collect().to_dict(False) == {"c": [15, 45, 95], "2": [51, 102, 153]}
+    assert q.collect().to_dict(False) == {"a": [15, 45, 95], "2": [51, 102, 153]}
     # fsm
     q = df.lazy().select(pl.col("a") - pl.col("b") * pl.col("c"))
     assert """col("a").fsm([col("b"), col("c")])""" in q.explain()
@@ -176,6 +177,14 @@ def test_fused_arithm() -> None:
     q = df.lazy().with_columns((0 + 2.5 * (0.5 + pl.col("x"))).alias("compute"))
     assert q.collect()["compute"][0] == 1.25
     assert "0.0.fma" in q.explain()
+
+
+def test_fused_arithm_9009() -> None:
+    q = pl.LazyFrame({"a": [1, 2], "b": [3, 4]})
+    q = q.select((pl.col("b") * 2 + 3).over("a"))
+
+    assert """3.fma([col("b"), 2]).alias("b")""" in q.explain()
+    assert q.collect()["b"].to_list() == [9, 11]
 
 
 def test_boolean_addition() -> None:
