@@ -252,24 +252,25 @@ pub(crate) fn insert_streaming_nodes(
             }
             // add globbing patterns
             #[cfg(any(feature = "csv", feature = "parquet"))]
-            Union { inputs, .. }
-                if inputs.iter().all(|node| match lp_arena.get(*node) {
-                    #[cfg(feature = "parquet")]
-                    ParquetScan { .. } => true,
-                    #[cfg(feature = "csv")]
-                    CsvScan { .. } => true,
-                    MapFunction {
-                        input,
-                        function: FunctionNode::Rechunk,
-                    } => match lp_arena.get(*input) {
+            Union { inputs, options }
+                if options.slice.is_none()
+                    && inputs.iter().all(|node| match lp_arena.get(*node) {
                         #[cfg(feature = "parquet")]
                         ParquetScan { .. } => true,
                         #[cfg(feature = "csv")]
                         CsvScan { .. } => true,
+                        MapFunction {
+                            input,
+                            function: FunctionNode::Rechunk,
+                        } => match lp_arena.get(*input) {
+                            #[cfg(feature = "parquet")]
+                            ParquetScan { .. } => true,
+                            #[cfg(feature = "csv")]
+                            CsvScan { .. } => true,
+                            _ => false,
+                        },
                         _ => false,
-                    },
-                    _ => false,
-                }) =>
+                    }) =>
             {
                 state.sources.push(root);
                 pipeline_trees[current_idx].push(state);
