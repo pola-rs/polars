@@ -1756,6 +1756,16 @@ def test_from_rows_of_dicts() -> None:
         assert df3.rows() == [(1, 100), (2, 101)]
         assert df3.schema == {"id": pl.Int16, "value": pl.Int32}
 
+def test_repeat_by_literal() -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["x", "y", "z"],
+            "n": [3, 3, 3],
+        }
+    )
+    expected = pl.DataFrame({"a": [["x", "x", "x"], ["y", "y", "y"], ["z", "z", "z"]]})
+    result = df.select(pl.col("a").repeat_by("n"))
+    assert_frame_equal(result, expected)
 
 def test_repeat_by() -> None:
     df = pl.DataFrame({"name": ["foo", "bar"], "n": [2, 3]})
