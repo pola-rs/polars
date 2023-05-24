@@ -2461,30 +2461,6 @@ def test_date_range_end_of_month_5441() -> None:
         pl.date_range(start, stop, interval="1mo", eager=True)
 
 
-def test_date_range_lazy_to_eager_deprecation() -> None:
-    start, stop = date(2020, 1, 1), date(2020, 1, 2)
-    expected = pl.Series([start, stop])
-    # user passed nothing
-    with pytest.warns(
-        FutureWarning,
-        match="the default will change from `lazy=False` to `eager=False`",
-    ):
-        result = pl.date_range(start, stop)
-    assert_series_equal(result, expected)
-    # user passed lazy
-    with pytest.warns(
-        FutureWarning,
-        match="the default will change from `lazy=False` to `eager=False`",
-    ):
-        # `lazy` is deprecated anyway, so the date_range overloads are only written
-        # for `eager`
-        result = pl.date_range(start, stop, lazy=False)  # type: ignore[call-overload]
-    assert_series_equal(result, expected)
-    # user passed both lazy and eager
-    with pytest.raises(TypeError, match="cannot pass both `eager` and `lazy`"):
-        result = pl.date_range(start, stop, lazy=False, eager=True)  # type: ignore[call-overload]
-
-
 def test_logical_nested_take() -> None:
     frame = pl.DataFrame(
         {
