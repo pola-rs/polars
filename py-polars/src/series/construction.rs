@@ -223,8 +223,10 @@ impl PySeries {
     }
 
     #[staticmethod]
+    #[pyo3(signature = (width, inner, name, val, _strict))]
     fn new_array(
         width: usize,
+        inner: Option<Wrap<DataType>>,
         name: &str,
         val: Vec<Wrap<AnyValue>>,
         _strict: bool,
@@ -232,9 +234,12 @@ impl PySeries {
         let val = vec_extract_wrapped(val);
         let out = Series::new(name, &val);
         match out.dtype() {
-            DataType::List(inner) => {
+            DataType::List(list_inner) => {
                 let out = out
-                    .cast(&DataType::Array(inner.clone(), width))
+                    .cast(&DataType::Array(
+                        Box::new(inner.map(|dt| dt.0).unwrap_or(*list_inner.clone())),
+                        width,
+                    ))
                     .map_err(PyPolarsErr::from)?;
                 Ok(out.into())
             }
