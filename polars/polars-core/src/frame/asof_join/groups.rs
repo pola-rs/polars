@@ -1073,7 +1073,7 @@ mod test {
         )?;
         let a = out.column("b").unwrap();
         let a = a.f64().unwrap();
-        let expected = &[Some(1.), Some(1), Some(2), Some(4), Some(3)];
+        let expected = &[Some(1), Some(1), Some(2), Some(4), Some(3)];
 
         assert_eq!(Vec::from(a), expected);
 
