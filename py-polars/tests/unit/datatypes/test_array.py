@@ -29,3 +29,10 @@ def test_array_construction() -> None:
     s = pl.Series(payload, dtype=dtype)
     assert s.dtype == dtype
     assert s.to_list() == payload
+
+    # inner type
+    dtype = pl.Array(2, pl.UInt8)
+    payload = [[1, 2], [3, 4]]
+    s = pl.Series(payload, dtype=dtype)
+    assert s.dtype == dtype
+    assert s.to_list() == payload
