@@ -1342,10 +1342,9 @@ pub fn coalesce(exprs: &[Expr]) -> Expr {
     }
 }
 
-/// Create a date range, named `name`, from a `start` and `stop` expression.
+/// Create a date range from a `start` and `stop` expression.
 #[cfg(feature = "temporal")]
 pub fn date_range(
-    name: String,
     start: Expr,
     end: Expr,
     every: Duration,
@@ -1356,15 +1355,11 @@ pub fn date_range(
 
     Expr::Function {
         input,
-        function: FunctionExpr::TemporalExpr(TemporalFunction::DateRange {
-            name,
-            every,
-            closed,
-            tz,
-        }),
+        function: FunctionExpr::TemporalExpr(TemporalFunction::DateRange { every, closed, tz }),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             cast_to_supertypes: true,
+            allow_rename: true,
             ..Default::default()
         },
     }

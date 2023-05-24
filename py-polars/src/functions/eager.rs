@@ -65,17 +65,16 @@ pub fn concat_series(series: &PyAny) -> PyResult<PySeries> {
 }
 
 #[pyfunction]
-pub fn date_range(
+pub fn date_range_eager(
     start: i64,
     stop: i64,
     every: &str,
     closed: Wrap<ClosedWindow>,
-    name: &str,
     time_unit: Wrap<TimeUnit>,
     time_zone: Option<TimeZone>,
 ) -> PyResult<PySeries> {
     let date_range = time::date_range_impl(
-        name,
+        "date",
         start,
         stop,
         Duration::parse(every),

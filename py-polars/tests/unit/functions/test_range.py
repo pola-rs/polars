@@ -439,6 +439,17 @@ def test_date_range_end_of_month_5441() -> None:
         pl.date_range(start, stop, interval="1mo", eager=True)
 
 
+def test_date_range_name():
+    expected_name = "date"
+    result_eager = pl.date_range(date(2020, 1, 1), date(2020, 1, 3), eager=True)
+    assert result_eager.name == expected_name
+
+    result_lazy = pl.select(
+        pl.date_range(date(2020, 1, 1), date(2020, 1, 3), eager=False)
+    ).to_series()
+    assert result_lazy.name == expected_name
+
+
 def test_time_range_lit() -> None:
     for eager in (True, False):
         tm = pl.select(

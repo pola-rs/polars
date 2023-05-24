@@ -38,7 +38,6 @@ pub enum TemporalFunction {
     #[cfg(feature = "timezones")]
     TzLocalize(TimeZone),
     DateRange {
-        name: String,
         every: Duration,
         closed: ClosedWindow,
         tz: Option<TimeZone>,

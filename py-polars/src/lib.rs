@@ -81,7 +81,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::eager::concat_series))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::eager::date_range))
+    m.add_wrapped(wrap_pyfunction!(functions::eager::date_range_eager))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::eager::diag_concat_df))
         .unwrap();

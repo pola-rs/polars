@@ -301,8 +301,6 @@ def date_range(
             stacklevel=find_stacklevel(),
         )
 
-    if name is None:
-        name = ""
     if isinstance(interval, timedelta):
         interval = _timedelta_to_pl_duration(interval)
     elif " " in interval:
@@ -315,9 +313,7 @@ def date_range(
     ):
         start = expr_to_lit_or_expr(start, str_to_lit=False)._pyexpr
         end = expr_to_lit_or_expr(end, str_to_lit=False)._pyexpr
-        return wrap_expr(
-            plr.date_range_lazy(start, end, interval, closed, name, time_zone)
-        )
+        return wrap_expr(plr.date_range_lazy(start, end, interval, closed, time_zone))
 
     start, start_is_date = _ensure_datetime(start)
     end, end_is_date = _ensure_datetime(end)
@@ -349,7 +345,7 @@ def date_range(
     start_pl = _datetime_to_pl_timestamp(start, time_unit_)
     end_pl = _datetime_to_pl_timestamp(end, time_unit_)
     dt_range = wrap_s(
-        plr.date_range(start_pl, end_pl, interval, closed, name, time_unit_, time_zone)
+        plr.date_range_eager(start_pl, end_pl, interval, closed, time_unit_, time_zone)
     )
     if (
         start_is_date
