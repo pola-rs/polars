@@ -4,7 +4,6 @@ use polars_arrow::array::ListFromIter;
 use super::RepeatBy;
 use crate::prelude::*;
 
-use std::iter::repeat;
 type LargeListArray = ListArray<i64>;
 
 impl<T> RepeatBy for ChunkedArray<T>
@@ -64,13 +63,12 @@ impl RepeatBy for Utf8Chunked {
         // Safety:
         // Length of iter is trusted
         unsafe {
-            let d = Box::new(LargeListArray::from_iter_utf8_trusted_len(
-                        iter,
-                        self.len(),
-                    ));
             ListChunked::from_chunks(
                 self.name(),
-                vec![d],
+                vec![Box::new(LargeListArray::from_iter_utf8_trusted_len(
+                        iter,
+                        self.len(),
+                ))],
             )
         }
     }

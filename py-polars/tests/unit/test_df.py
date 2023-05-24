@@ -1761,14 +1761,10 @@ def test_repeat_by_literal() -> None:
     df = pl.DataFrame(
         {
             "a": ["x", "y", "z"],
-            "n": [3, 3, 3],
         }
     )
     expected = pl.DataFrame({"a": [["x", "x", "x"], ["y", "y", "y"], ["z", "z", "z"]]})
-    result = df.select(pl.col("a").repeat_by("n"))
-    import pdb
-
-    pdb.set_trace()
+    result = df.select(pl.col("a").repeat_by(3))
     assert_frame_equal(result, expected)
 
 
