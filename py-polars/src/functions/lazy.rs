@@ -381,41 +381,40 @@ pub fn reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
 }
 
 #[pyfunction]
-pub fn repeat_lazy(value: &PyAny, n: PyExpr, dtype: Option<Wrap<DataType>>) -> PyResult<PyExpr> {
+pub fn repeat_lazy(
+    value: Wrap<AnyValue>,
+    n: PyExpr,
+    dtype: Option<Wrap<DataType>>,
+) -> PyResult<PyExpr> {
+    let value = value.0;
+    let n = n.inner;
     let dtype = dtype.map(|wrap| wrap.0);
 
-    let mut expr = if let Ok(true) = value.is_instance_of::<PyBool>() {
-        let val = value.extract::<bool>().unwrap();
-        dsl::repeat(val, n.inner)
-    } else if let Ok(int) = value.downcast::<PyInt>() {
-        let val = int.extract::<i64>().unwrap();
-
-        if val >= i32::MIN as i64 && val <= i32::MAX as i64 {
-            dsl::repeat(val as i32, n.inner)
-        } else {
-            dsl::repeat(val, n.inner)
-        }
-    } else if let Ok(float) = value.downcast::<PyFloat>() {
-        let val = float.extract::<f64>().unwrap();
-        dsl::repeat(val, n.inner)
-    } else if let Ok(pystr) = value.downcast::<PyString>() {
-        let val = pystr
-            .to_str()
-            .expect("could not transform Python string to Rust Unicode");
-        dsl::repeat(val, n.inner)
-    } else if value.is_none() {
-        dsl::repeat(Null {}, n.inner)
-    } else {
-        return Err(PyValueError::new_err(format!(
-            "could not convert value {:?} as a Literal",
-            value.str()?
-        )));
+    let target_dtype = match dtype {
+        Some(dtype) => dtype,
+        None => match value.dtype() {
+            // Integer inputs that fit in Int32 are parsed as such
+            DataType::Int64 => {
+                let int_value: i64 = value.try_extract().unwrap();
+                if int_value >= i32::MIN as i64 && int_value <= i32::MAX as i64 {
+                    DataType::Int32
+                } else {
+                    DataType::Int64
+                }
+            }
+            DataType::Unknown => DataType::Null,
+            _ => value.dtype(),
+        },
     };
 
-    expr = match dtype {
-        Some(dtype) => expr.cast(dtype),
-        None => expr,
-    };
+    let lit_value = LiteralValue::try_from(value).map_err(PyPolarsErr::from)?;
+    let must_cast = lit_value.get_datatype() != target_dtype;
+
+    let mut expr = dsl::repeat(lit_value, n);
+
+    if must_cast {
+        expr = expr.cast(target_dtype);
+    }
 
     Ok(expr.into())
 }
