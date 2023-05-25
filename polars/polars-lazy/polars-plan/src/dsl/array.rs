@@ -16,4 +16,10 @@ impl ArrayNameSpace {
         self.0
             .map_private(FunctionExpr::ArrayExpr(ArrayFunction::Min))
     }
+
+    /// Compute the sum of the items in every subarray.
+    pub fn sum(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ArrayExpr(ArrayFunction::Sum))
+    }
 }

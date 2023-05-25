@@ -11,4 +11,8 @@ impl PyExpr {
     fn array_min(&self) -> Self {
         self.inner.clone().arr().min().into()
     }
+
+    fn array_sum(&self) -> Self {
+        self.inner.clone().arr().sum().into()
+    }
 }

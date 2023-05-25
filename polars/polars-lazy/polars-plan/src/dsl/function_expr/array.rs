@@ -7,6 +7,7 @@ use super::*;
 pub enum ArrayFunction {
     Min,
     Max,
+    Sum,
 }
 
 impl Display for ArrayFunction {
@@ -15,6 +16,7 @@ impl Display for ArrayFunction {
         let name = match self {
             Min => "min",
             Max => "max",
+            Sum => "sum",
         };
 
         write!(f, "arr.{name}")
@@ -27,4 +29,8 @@ pub(super) fn max(s: &Series) -> PolarsResult<Series> {
 
 pub(super) fn min(s: &Series) -> PolarsResult<Series> {
     Ok(s.array()?.array_min())
+}
+
+pub(super) fn sum(s: &Series) -> PolarsResult<Series> {
+    s.array()?.array_sum()
 }

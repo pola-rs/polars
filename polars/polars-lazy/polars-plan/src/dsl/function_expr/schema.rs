@@ -97,18 +97,7 @@ impl FunctionExpr {
                     Take(_) => mapper.with_same_dtype(),
                     #[cfg(feature = "list_count")]
                     CountMatch => mapper.with_dtype(IDX_DTYPE),
-                    Sum => {
-                        let mut first = fields[0].clone();
-                        use DataType::*;
-                        let dt = first.data_type().inner_dtype().cloned().unwrap_or(Unknown);
-
-                        if matches!(dt, UInt8 | Int8 | Int16 | UInt16) {
-                            first.coerce(Int64);
-                        } else {
-                            first.coerce(dt);
-                        }
-                        Ok(first)
-                    }
+                    Sum => mapper.nested_sum_type(),
                 }
             }
             #[cfg(feature = "dtype-array")]
@@ -116,6 +105,7 @@ impl FunctionExpr {
                 use ArrayFunction::*;
                 match af {
                     Min | Max => mapper.with_same_dtype(),
+                    Sum => mapper.nested_sum_type(),
                 }
             }
             #[cfg(feature = "dtype-struct")]
@@ -320,5 +310,18 @@ impl<'a> FieldsMapper<'a> {
                 polars_bail!(op = "cast-timezone", got = dt, expected = "Datetime");
             }
         })
+    }
+
+    fn nested_sum_type(&self) -> PolarsResult<Field> {
+        let mut first = self.fields[0].clone();
+        use DataType::*;
+        let dt = first.data_type().inner_dtype().cloned().unwrap_or(Unknown);
+
+        if matches!(dt, UInt8 | Int8 | Int16 | UInt16) {
+            first.coerce(Int64);
+        } else {
+            first.coerce(dt);
+        }
+        Ok(first)
     }
 }
