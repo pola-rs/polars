@@ -86,12 +86,12 @@ class ExprDateTimeNameSpace:
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
         >>> df = pl.date_range(
-        ...     start, stop, timedelta(minutes=225), name="dates", eager=True
+        ...     start, stop, timedelta(minutes=225), eager=True
         ... ).to_frame()
         >>> df
         shape: (7, 1)
         ┌─────────────────────┐
-        │ dates               │
+        │ date                │
         │ ---                 │
         │ datetime[μs]        │
         ╞═════════════════════╡
@@ -103,10 +103,10 @@ class ExprDateTimeNameSpace:
         │ 2001-01-01 18:45:00 │
         │ 2001-01-01 22:30:00 │
         └─────────────────────┘
-        >>> df.select(pl.col("dates").dt.truncate("1h"))
+        >>> df.select(pl.col("date").dt.truncate("1h"))
         shape: (7, 1)
         ┌─────────────────────┐
-        │ dates               │
+        │ date                │
         │ ---                 │
         │ datetime[μs]        │
         ╞═════════════════════╡
@@ -118,18 +118,18 @@ class ExprDateTimeNameSpace:
         │ 2001-01-01 18:00:00 │
         │ 2001-01-01 22:00:00 │
         └─────────────────────┘
-        >>> df.select(pl.col("dates").dt.truncate("1h")).frame_equal(
-        ...     df.select(pl.col("dates").dt.truncate(timedelta(hours=1)))
+        >>> df.select(pl.col("date").dt.truncate("1h")).frame_equal(
+        ...     df.select(pl.col("date").dt.truncate(timedelta(hours=1)))
         ... )
         True
 
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 1, 1)
-        >>> df = pl.date_range(start, stop, "10m", name="dates", eager=True).to_frame()
-        >>> df.select(["dates", pl.col("dates").dt.truncate("30m").alias("truncate")])
+        >>> df = pl.date_range(start, stop, "10m", eager=True).to_frame()
+        >>> df.select(["date", pl.col("date").dt.truncate("30m").alias("truncate")])
         shape: (7, 2)
         ┌─────────────────────┬─────────────────────┐
-        │ dates               ┆ truncate            │
+        │ date                ┆ truncate            │
         │ ---                 ┆ ---                 │
         │ datetime[μs]        ┆ datetime[μs]        │
         ╞═════════════════════╪═════════════════════╡
@@ -210,12 +210,12 @@ class ExprDateTimeNameSpace:
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 2)
         >>> df = pl.date_range(
-        ...     start, stop, timedelta(minutes=225), name="dates", eager=True
+        ...     start, stop, timedelta(minutes=225), eager=True
         ... ).to_frame()
         >>> df
         shape: (7, 1)
         ┌─────────────────────┐
-        │ dates               │
+        │ date                │
         │ ---                 │
         │ datetime[μs]        │
         ╞═════════════════════╡
@@ -227,10 +227,10 @@ class ExprDateTimeNameSpace:
         │ 2001-01-01 18:45:00 │
         │ 2001-01-01 22:30:00 │
         └─────────────────────┘
-        >>> df.select(pl.col("dates").dt.round("1h"))
+        >>> df.select(pl.col("date").dt.round("1h"))
         shape: (7, 1)
         ┌─────────────────────┐
-        │ dates               │
+        │ date                │
         │ ---                 │
         │ datetime[μs]        │
         ╞═════════════════════╡
@@ -242,18 +242,18 @@ class ExprDateTimeNameSpace:
         │ 2001-01-01 19:00:00 │
         │ 2001-01-01 23:00:00 │
         └─────────────────────┘
-        >>> df.select(pl.col("dates").dt.round("1h")).frame_equal(
-        ...     df.select(pl.col("dates").dt.round(timedelta(hours=1)))
+        >>> df.select(pl.col("date").dt.round("1h")).frame_equal(
+        ...     df.select(pl.col("date").dt.round(timedelta(hours=1)))
         ... )
         True
 
         >>> start = datetime(2001, 1, 1)
         >>> stop = datetime(2001, 1, 1, 1)
-        >>> df = pl.date_range(start, stop, "10m", name="dates", eager=True).to_frame()
-        >>> df.select(["dates", pl.col("dates").dt.round("30m").alias("round")])
+        >>> df = pl.date_range(start, stop, "10m", eager=True).to_frame()
+        >>> df.select(["date", pl.col("date").dt.round("30m").alias("round")])
         shape: (7, 2)
         ┌─────────────────────┬─────────────────────┐
-        │ dates               ┆ round               │
+        │ date                ┆ round               │
         │ ---                 ┆ ---                 │
         │ datetime[μs]        ┆ datetime[μs]        │
         ╞═════════════════════╪═════════════════════╡
