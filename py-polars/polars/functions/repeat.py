@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     import sys
 
     from polars import Expr, Series
-    from polars.type_aliases import PolarsDataType, PythonLiteral
+    from polars.type_aliases import PolarsDataType, PolarsExprType, PythonLiteral
 
     if sys.version_info >= (3, 8):
         from typing import Literal
@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 @overload
 def repeat(
     value: PythonLiteral | None,
-    n: Expr | int,
+    n: int | PolarsExprType,
     *,
     dtype: PolarsDataType | None = ...,
     eager: Literal[False] = ...,
@@ -52,7 +52,7 @@ def repeat(
 @overload
 def repeat(
     value: PythonLiteral | None,
-    n: Expr,
+    n: PolarsExprType,
     *,
     dtype: PolarsDataType | None = ...,
     eager: Literal[True],
@@ -64,7 +64,7 @@ def repeat(
 @overload
 def repeat(
     value: PythonLiteral | None,
-    n: Expr | int,
+    n: int | PolarsExprType,
     *,
     dtype: PolarsDataType | None = ...,
     eager: bool,
@@ -75,7 +75,7 @@ def repeat(
 
 def repeat(
     value: PythonLiteral | None,
-    n: Expr | int,
+    n: int | PolarsExprType,
     *,
     dtype: PolarsDataType | None = None,
     eager: bool = False,
@@ -164,7 +164,7 @@ def repeat(
 
 @overload
 def ones(
-    n: int,
+    n: int | PolarsExprType,
     dtype: PolarsDataType = ...,
     *,
     eager: Literal[False] = ...,
@@ -184,7 +184,17 @@ def ones(
 
 @overload
 def ones(
-    n: int,
+    n: PolarsExprType,
+    dtype: PolarsDataType = ...,
+    *,
+    eager: Literal[True],
+) -> NoReturn:
+    ...
+
+
+@overload
+def ones(
+    n: int | PolarsExprType,
     dtype: PolarsDataType = ...,
     *,
     eager: bool,
@@ -193,7 +203,7 @@ def ones(
 
 
 def ones(
-    n: int,
+    n: int | PolarsExprType,
     dtype: PolarsDataType = Float64,
     *,
     eager: bool = False,
@@ -240,7 +250,7 @@ def ones(
 
 @overload
 def zeros(
-    n: int,
+    n: int | PolarsExprType,
     dtype: PolarsDataType = ...,
     *,
     eager: Literal[False] = ...,
@@ -260,7 +270,17 @@ def zeros(
 
 @overload
 def zeros(
-    n: int,
+    n: PolarsExprType,
+    dtype: PolarsDataType = ...,
+    *,
+    eager: Literal[True],
+) -> NoReturn:
+    ...
+
+
+@overload
+def zeros(
+    n: int | PolarsExprType,
     dtype: PolarsDataType = ...,
     *,
     eager: bool,
@@ -269,7 +289,7 @@ def zeros(
 
 
 def zeros(
-    n: int,
+    n: int | PolarsExprType,
     dtype: PolarsDataType = Float64,
     *,
     eager: bool = False,
