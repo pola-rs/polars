@@ -625,6 +625,6 @@ def test_time_range_name() -> None:
 
 
 def test_time_range_lazy_schema() -> None:
-    ldf = pl.DataFrame({"start": [time(23, 10)], "stop": [time(23, 11)]})
+    ldf = pl.DataFrame({"start": [time(23, 10)], "stop": [time(23, 11)]}).lazy()
     ldf = ldf.with_columns(pl.time_range(pl.col("start"), pl.col("stop")))
     assert ldf.schema == {"start": pl.Time, "stop": pl.Time, "time": pl.List(pl.Time)}
