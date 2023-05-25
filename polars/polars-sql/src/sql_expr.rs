@@ -297,7 +297,7 @@ impl SqlExprVisitor<'_> {
 
         if let Some(order_by) = expr.order_by.as_ref() {
             let (order_by, descending) = self.visit_order_by(order_by)?;
-            base = base.sort_by(vec![order_by], vec![descending]);
+            base = base.sort_by(order_by, descending);
         }
 
         if let Some(limit) = &expr.limit {
@@ -345,9 +345,16 @@ impl SqlExprVisitor<'_> {
         }
     }
 
-    fn visit_order_by(&self, order_by: &OrderByExpr) -> PolarsResult<(Expr, bool)> {
-        let expr = self.visit_expr(&order_by.expr)?;
-        let descending = order_by.asc.unwrap_or(false);
+    fn visit_order_by(&self, order_by: &[OrderByExpr]) -> PolarsResult<(Vec<Expr>, Vec<bool>)> {
+        let mut expr = Vec::with_capacity(order_by.len());
+        let mut descending = Vec::with_capacity(order_by.len());
+        for order_by_expr in order_by {
+            let e = self.visit_expr(&order_by_expr.expr)?;
+            expr.push(e);
+            let desc = order_by_expr.asc.unwrap_or(false);
+            descending.push(desc);
+        }
+
         Ok((expr, descending))
     }
 
