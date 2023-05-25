@@ -1641,6 +1641,29 @@ def test_asof_join() -> None:
         "bid_right"
     ].to_list() == [51.95, 51.95, None, None, 720.77, None, None, None]
 
+    assert trades.join_asof(quotes, on="dates", strategy="nearest")[
+        "bid_right"
+    ].to_list() == [51.95, 51.99, 720.5, 720.5, 720.5]
+    assert quotes.join_asof(trades, on="dates", strategy="nearest")[
+        "bid_right"
+    ].to_list() == [51.95, 51.95, 51.95, 51.95, 98.0, 98.0, 98.0, 98.0]
+
+    assert trades.sort(by=["ticker", "dates"]).join_asof(
+        quotes.sort(by=["ticker", "dates"]), on="dates", by="ticker", strategy="nearest"
+    )["bid_right"].to_list() == [97.99, 720.5, 720.5, 51.95, 51.99]
+    assert quotes.sort(by=["ticker", "dates"]).join_asof(
+        trades.sort(by=["ticker", "dates"]), on="dates", by="ticker", strategy="nearest"
+    )["bid_right"].to_list() == [
+        98.0,
+        720.92,
+        720.92,
+        720.92,
+        51.95,
+        51.95,
+        51.95,
+        51.95,
+    ]
+
 
 @pytest.mark.parametrize(
     ("skip_nulls", "expected_value"),
