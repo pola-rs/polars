@@ -111,10 +111,11 @@ impl DataType {
     }
 
     pub fn inner_dtype(&self) -> Option<&DataType> {
-        if let DataType::List(inner) = self {
-            Some(inner)
-        } else {
-            None
+        match self {
+            DataType::List(inner) => Some(inner),
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(inner, _) => Some(inner),
+            _ => None,
         }
     }
 

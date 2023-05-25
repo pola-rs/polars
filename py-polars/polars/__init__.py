@@ -93,7 +93,9 @@ from polars.functions import (
     cumfold,
     cumreduce,
     cumsum,
+    date,
     date_range,
+    datetime,
     duration,
     element,
     exclude,
@@ -123,14 +125,12 @@ from polars.functions import (
     struct,
     sum,
     tail,
+    time,
     time_range,
     var,
+    when,
     zeros,
 )
-from polars.functions.lazy import date_ as date
-from polars.functions.lazy import datetime_ as datetime
-from polars.functions.lazy import time_ as time
-from polars.functions.whenthen import when
 from polars.io import (
     read_avro,
     read_csv,

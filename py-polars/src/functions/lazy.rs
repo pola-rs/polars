@@ -177,13 +177,12 @@ pub fn date_range_lazy(
     end: PyExpr,
     every: &str,
     closed: Wrap<ClosedWindow>,
-    name: String,
     time_zone: Option<TimeZone>,
 ) -> PyExpr {
     let start = start.inner;
     let end = end.inner;
     let every = Duration::parse(every);
-    dsl::functions::date_range(name, start, end, every, closed.0, time_zone).into()
+    dsl::functions::date_range(start, end, every, closed.0, time_zone).into()
 }
 
 #[pyfunction]
@@ -445,10 +444,9 @@ pub fn time_range_lazy(
     end: PyExpr,
     every: &str,
     closed: Wrap<ClosedWindow>,
-    name: String,
 ) -> PyExpr {
     let start = start.inner;
     let end = end.inner;
     let every = Duration::parse(every);
-    dsl::functions::time_range(name, start, end, every, closed.0).into()
+    dsl::functions::time_range(start, end, every, closed.0).into()
 }

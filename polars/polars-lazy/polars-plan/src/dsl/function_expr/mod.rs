@@ -2,6 +2,8 @@
 mod abs;
 #[cfg(feature = "arg_where")]
 mod arg_where;
+#[cfg(feature = "dtype-array")]
+mod array;
 mod binary;
 mod boolean;
 mod bounds;
@@ -46,6 +48,8 @@ mod unique;
 
 use std::fmt::{Display, Formatter};
 
+#[cfg(feature = "dtype-array")]
+pub(super) use array::ArrayFunction;
 #[cfg(feature = "fused")]
 pub(crate) use fused::FusedOperator;
 pub(super) use list::ListFunction;
@@ -111,6 +115,8 @@ pub enum FunctionExpr {
         max: Option<AnyValue<'static>>,
     },
     ListExpr(ListFunction),
+    #[cfg(feature = "dtype-array")]
+    ArrayExpr(ArrayFunction),
     #[cfg(feature = "dtype-struct")]
     StructExpr(StructFunction),
     #[cfg(feature = "top_k")]
@@ -260,6 +266,8 @@ impl Display for FunctionExpr {
             LowerBound => "lower_bound",
             #[cfg(feature = "fused")]
             Fused(fused) => return Display::fmt(fused, f),
+            #[cfg(feature = "dtype-array")]
+            ArrayExpr(af) => return Display::fmt(af, f),
         };
         write!(f, "{s}")
     }
@@ -415,6 +423,15 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                     Sum => map!(list::sum),
                 }
             }
+            #[cfg(feature = "dtype-array")]
+            ArrayExpr(lf) => {
+                use ArrayFunction::*;
+                match lf {
+                    Min => map!(array::min),
+                    Max => map!(array::max),
+                    Sum => map!(array::sum),
+                }
+            }
             #[cfg(feature = "dtype-struct")]
             StructExpr(sf) => {
                 use StructFunction::*;
@@ -518,6 +535,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "string_from_radix")]
             FromRadix(radix, strict) => map!(strings::from_radix, radix, strict),
             Slice(start, length) => map!(strings::str_slice, start, length),
+            Explode => map!(strings::explode),
         }
     }
 }
@@ -577,28 +595,19 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "timezones")]
             TzLocalize(tz) => map!(datetime::tz_localize, &tz),
             Combine(tu) => map_as_slice!(temporal::combine, tu),
-            DateRange {
-                name,
-                every,
-                closed,
-                tz,
-            } => {
+            DateRange { every, closed, tz } => {
                 map_as_slice!(
                     temporal::temporal_range_dispatch,
-                    name.as_ref(),
+                    "date",
                     every,
                     closed,
                     tz.clone()
                 )
             }
-            TimeRange {
-                name,
-                every,
-                closed,
-            } => {
+            TimeRange { every, closed } => {
                 map_as_slice!(
                     temporal::temporal_range_dispatch,
-                    name.as_ref(),
+                    "time",
                     every,
                     closed,
                     None

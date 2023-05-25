@@ -349,6 +349,8 @@ where
 /// - if `start` and `end` are literals the output will be of `Int64`.
 #[cfg(feature = "arange")]
 pub fn arange(start: Expr, end: Expr, step: i64) -> Expr {
+    let output_name = "arange";
+
     let has_col_without_agg = |e: &Expr| {
         has_expr(e, |ae| matches!(ae, Expr::Column(_)))
             &&
@@ -432,9 +434,10 @@ pub fn arange(start: Expr, end: Expr, step: i64) -> Expr {
                 } else {
                     DataType::Int64
                 };
-                Field::new("arange", dtype)
+                Field::new(output_name, dtype)
             }),
         )
+        .alias(output_name)
     } else {
         let f = move |sa: Series, sb: Series| {
             polars_ensure!(step != 0, InvalidOperation: "step must not be zero");
@@ -459,7 +462,7 @@ pub fn arange(start: Expr, end: Expr, step: i64) -> Expr {
             let start = sa.i64()?;
             let end = sb.i64()?;
             let mut builder = ListPrimitiveChunkedBuilder::<Int64Type>::new(
-                "arange",
+                output_name,
                 start.len(),
                 start.len() * 3,
                 DataType::Int64,
@@ -493,8 +496,11 @@ pub fn arange(start: Expr, end: Expr, step: i64) -> Expr {
             start,
             end,
             f,
-            GetOutput::map_field(|_| Field::new("arange", DataType::List(DataType::Int64.into()))),
+            GetOutput::map_field(|_| {
+                Field::new(output_name, DataType::List(DataType::Int64.into()))
+            }),
         )
+        .alias(output_name)
     }
 }
 
@@ -1342,10 +1348,9 @@ pub fn coalesce(exprs: &[Expr]) -> Expr {
     }
 }
 
-/// Create a date range, named `name`, from a `start` and `stop` expression.
+/// Create a date range from a `start` and `stop` expression.
 #[cfg(feature = "temporal")]
 pub fn date_range(
-    name: String,
     start: Expr,
     end: Expr,
     every: Duration,
@@ -1356,41 +1361,28 @@ pub fn date_range(
 
     Expr::Function {
         input,
-        function: FunctionExpr::TemporalExpr(TemporalFunction::DateRange {
-            name,
-            every,
-            closed,
-            tz,
-        }),
+        function: FunctionExpr::TemporalExpr(TemporalFunction::DateRange { every, closed, tz }),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             cast_to_supertypes: true,
+            allow_rename: true,
             ..Default::default()
         },
     }
 }
 
-/// Create a time range, named `name`, from a `start` and `stop` expression.
+/// Create a time range from a `start` and `stop` expression.
 #[cfg(feature = "temporal")]
-pub fn time_range(
-    name: String,
-    start: Expr,
-    end: Expr,
-    every: Duration,
-    closed: ClosedWindow,
-) -> Expr {
+pub fn time_range(start: Expr, end: Expr, every: Duration, closed: ClosedWindow) -> Expr {
     let input = vec![start, end];
 
     Expr::Function {
         input,
-        function: FunctionExpr::TemporalExpr(TemporalFunction::TimeRange {
-            name,
-            every,
-            closed,
-        }),
+        function: FunctionExpr::TemporalExpr(TemporalFunction::TimeRange { every, closed }),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             cast_to_supertypes: false,
+            allow_rename: true,
             ..Default::default()
         },
     }

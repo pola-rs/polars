@@ -1,10 +1,9 @@
-from polars.functions.eager import align_frames, concat, date_range, time_range
+from polars.functions.eager import align_frames, concat
 from polars.functions.lazy import (
     all,
     any,
     apply,
     approx_unique,
-    arange,
     arg_sort_by,
     arg_where,
     avg,
@@ -51,6 +50,7 @@ from polars.functions.lazy import (
 from polars.functions.lazy import date_ as date
 from polars.functions.lazy import datetime_ as datetime
 from polars.functions.lazy import time_ as time
+from polars.functions.range import arange, date_range, time_range
 from polars.functions.repeat import ones, repeat, zeros
 from polars.functions.whenthen import when
 
