@@ -57,7 +57,8 @@ pub(super) fn compile_fmt(fmt: &str) -> PolarsResult<String> {
         // if `fmt` is too long for NaiveDate. If that's implemented, then this check could
         // be removed, and that error could be matched against in `transform_datetime_*s`
         // See https://github.com/chronotope/chrono/issues/1075.
-        polars_bail!(ComputeError: "Invalid format string: found hour, but not minute directive");
+        polars_bail!(ComputeError: "Invalid format string: found hour, but no minute directive. \
+            Please either specify both or neither.");
     }
     Ok(fmt
         .replace("%D", "%m/%d/%y")

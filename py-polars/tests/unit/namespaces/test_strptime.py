@@ -450,7 +450,7 @@ def test_strptime_subseconds_datetime(data: str, format: str, expected: time) ->
 def test_strptime_hour_without_minute_8849() -> None:
     with pytest.raises(
         ComputeError,
-        match="Invalid format string: found hour, but not minute directive",
+        match="Invalid format string: found hour, but no minute directive",
     ):
         pl.Series(["2023-05-04|7", "2023-05-04|10"]).str.to_datetime("%Y-%m-%d|%H")
 
