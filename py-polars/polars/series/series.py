@@ -66,6 +66,7 @@ from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import ShapeError
+from polars.series.array import ArrayNameSpace
 from polars.series.binary import BinaryNameSpace
 from polars.series.categorical import CatNameSpace
 from polars.series.datetime import DateTimeNameSpace
@@ -5882,6 +5883,11 @@ class Series:
     def list(self) -> ListNameSpace:
         """Create an object namespace of all list related methods."""
         return ListNameSpace(self)
+
+    @property
+    def arr(self) -> ArrayNameSpace:
+        """Create an object namespace of all array related methods."""
+        return ArrayNameSpace(self)
 
     @property
     def str(self) -> StringNameSpace:
