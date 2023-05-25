@@ -379,7 +379,7 @@ macro_rules! impl_dyn_series {
                 IsIn::is_in(&self.0, other)
             }
             #[cfg(feature = "repeat_by")]
-            fn repeat_by(&self, by: &IdxCa) -> ListChunked {
+            fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {
                 RepeatBy::repeat_by(&self.0, by)
             }
 

@@ -509,7 +509,7 @@ pub trait SeriesTrait:
         polars_bail!(opq = is_in, self._dtype());
     }
     #[cfg(feature = "repeat_by")]
-    fn repeat_by(&self, _by: &IdxCa) -> ListChunked {
+    fn repeat_by(&self, _by: &IdxCa) -> PolarsResult<ListChunked> {
         invalid_operation_panic!(repeat_by, self)
     }
     #[cfg(feature = "checked_arithmetic")]
