@@ -10,6 +10,7 @@ import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.testing import assert_frame_equal
 from polars.utils.convert import get_zoneinfo as ZoneInfo
+from polars.exceptions import ComputeError
 
 if TYPE_CHECKING:
     from polars.type_aliases import TimeUnit
@@ -186,6 +187,80 @@ def test_date_range_lazy_with_literals() -> None:
             date(2000, 1, 1), date(2023, 12, 31), freq="987d"
         ).date.tolist()
     )
+
+@pytest.mark.parametrize(
+    ("tzinfo", "time_zone", "expected_tzinfo"),
+    [
+        (ZoneInfo("Asia/Kathmandu"), "Asia/Kathmandu", ZoneInfo("Asia/Kathmandu")),
+        (ZoneInfo("Asia/Kathmandu"), None, ZoneInfo("Asia/Kathmandu")),
+        (None, "Asia/Kathmandu", ZoneInfo("Asia/Kathmandu")),
+        (None, None, None),
+    ],
+)
+def test_date_range_lazy_time_zones(
+    tzinfo: ZoneInfo | None, time_zone: str | None, expected_tzinfo: ZoneInfo | None
+) -> None:
+    expected_boundaries_time_zone = tzinfo.key if tzinfo is not None else tzinfo
+    expected_output_time_zone = (
+        expected_tzinfo.key if expected_tzinfo is not None else expected_tzinfo
+    )
+    ldf = (
+        pl.DataFrame(
+            {
+                "start": [datetime(2015, 6, 30)],
+                "stop": [datetime(2022, 12, 31)],
+            }
+        )
+        .with_columns(
+            pl.col('start').dt.replace_time_zone(expected_boundaries_time_zone),
+            pl.col('stop').dt.replace_time_zone(expected_boundaries_time_zone),
+        )
+        .with_columns(
+            pl.date_range(
+                "start", "stop", interval="678d", eager=False, time_zone=time_zone
+            ).alias("dts")
+        )
+        .lazy()
+    )
+    assert ldf.schema == {
+        "start": pl.Datetime(time_unit="us", time_zone=expected_boundaries_time_zone),
+        "stop": pl.Datetime(time_unit="us", time_zone=expected_boundaries_time_zone),
+        "dts": pl.List(
+            pl.Datetime(time_unit="us", time_zone=expected_output_time_zone)
+        ),
+    }
+    assert ldf.collect().rows() == [
+        (
+            datetime(2015, 6, 30, tzinfo=tzinfo),
+            datetime(2022, 12, 31, tzinfo=tzinfo),
+            [
+                datetime(2015, 6, 30, tzinfo=expected_tzinfo),
+                datetime(2017, 5, 8, tzinfo=expected_tzinfo),
+                datetime(2019, 3, 17, tzinfo=expected_tzinfo),
+                datetime(2021, 1, 23, tzinfo=expected_tzinfo),
+                datetime(2022, 12, 2, tzinfo=expected_tzinfo),
+            ],
+        )
+    ]
+
+
+def test_date_range_lazy_time_zones_invalid() -> None:
+    start = datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu"))
+    stop = datetime(2020, 1, 2, tzinfo=ZoneInfo("Asia/Kathmandu"))
+    with pytest.raises(
+        ComputeError,
+        match="Given time_zone is different from that of timezone aware datetimes. Given: 'Pacific/Tarawa', got: 'Asia/Kathmandu",
+    ):
+        (
+            pl.DataFrame({"start": [start], "stop": [stop]})
+            .with_columns(
+                pl.date_range(
+                    start, stop, interval="678d", eager=False, time_zone="Pacific/Tarawa"
+                )
+            )
+            .lazy()
+        )
+
 
 
 @pytest.mark.parametrize("low", ["start", pl.col("start")])

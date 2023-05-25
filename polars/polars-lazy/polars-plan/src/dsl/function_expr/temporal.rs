@@ -95,6 +95,8 @@ pub(super) fn temporal_range_dispatch(
 
     let rng_start = start.to_physical_repr();
     let rng_stop = stop.to_physical_repr();
+    // Note: `start` and `stop` have already been cast to their supertype,
+    // so only `start`'s dtype needs to be checked.
     let start_dtype = start.dtype();
 
     let mut start = rng_start.cast(&DataType::Int64)?;
