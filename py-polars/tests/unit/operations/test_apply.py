@@ -328,3 +328,13 @@ def test_apply_no_dtype_set_8531() -> None:
         .item()
         == 2
     )
+
+
+def test_apply_set_datetime_output_8984() -> None:
+    df = pl.DataFrame({"a": [""]})
+    payload = datetime(2001, 1, 1)
+    assert df.select(
+        pl.col("a").apply(lambda _: payload, return_dtype=pl.Datetime),
+    )[
+        "a"
+    ].to_list() == [payload]

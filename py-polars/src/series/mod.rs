@@ -356,6 +356,7 @@ impl PySeries {
                     | DataType::Duration(_)
                     | DataType::Categorical(_)
                     | DataType::Binary
+                    | DataType::Array(_, _)
                     | DataType::Time
             ) || !skip_nulls
             {
@@ -494,28 +495,6 @@ impl PySeries {
                         None
                     )?;
                     ca.into_series()
-                }
-                Some(DataType::Date) => {
-                    let ca: Int32Chunked = dispatch_apply!(
-                        series,
-                        apply_lambda_with_primitive_out_type,
-                        py,
-                        lambda,
-                        0,
-                        None
-                    )?;
-                    ca.into_date().into_series()
-                }
-                Some(DataType::Datetime(tu, tz)) => {
-                    let ca: Int64Chunked = dispatch_apply!(
-                        series,
-                        apply_lambda_with_primitive_out_type,
-                        py,
-                        lambda,
-                        0,
-                        None
-                    )?;
-                    ca.into_datetime(tu, tz).into_series()
                 }
                 Some(DataType::Utf8) => {
                     let ca = dispatch_apply!(
