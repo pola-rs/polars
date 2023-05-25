@@ -111,6 +111,13 @@ impl FunctionExpr {
                     }
                 }
             }
+            #[cfg(feature = "dtype-array")]
+            ArrayExpr(af) => {
+                use ArrayFunction::*;
+                match af {
+                    Min | Max => mapper.with_same_dtype(),
+                }
+            }
             #[cfg(feature = "dtype-struct")]
             StructExpr(s) => {
                 use polars_core::utils::slice_offsets;
