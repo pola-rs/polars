@@ -219,11 +219,15 @@ pub(super) fn join_asof_nearest<T: PartialOrd + Copy + Debug + Sub<Output = T> +
                 }
 
                 None => {
-                    // We've reached the end with no matches, so the last item was the nearest for all remaining
-                    out.extend(
-                        std::iter::repeat(if offset > 1 { Some(offset - 1) } else { None })
-                            .take(left.len() - out.len()),
-                    );
+                    if offset > 1 {
+                        // we've reached the end with no matches, so the last item is the nearest for all remaining
+                        out.extend(
+                            std::iter::repeat(Some(offset - 1)).take(left.len() - out.len()),
+                        );
+                    } else {
+                        // this is only hit when the right frame is empty
+                        out.extend(std::iter::repeat(None).take(left.len() - out.len()));
+                    }
                     return out;
                 }
             }
