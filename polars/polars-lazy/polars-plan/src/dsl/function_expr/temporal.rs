@@ -93,14 +93,32 @@ pub(super) fn temporal_range_dispatch(
     );
     const TO_MS: i64 = SECONDS_IN_DAY * 1000;
 
-    let rng_start = start.to_physical_repr();
-    let rng_stop = stop.to_physical_repr();
     // Note: `start` and `stop` have already been cast to their supertype,
     // so only `start`'s dtype needs to be checked.
     let start_dtype = start.dtype();
 
-    let mut start = rng_start.cast(&DataType::Int64)?;
-    let mut stop = rng_stop.cast(&DataType::Int64)?;
+    let (mut start, mut stop) = match start_dtype {
+        #[cfg(feature = "timezones")]
+        DataType::Datetime(_, Some(_)) => (
+            start
+                .datetime()
+                .unwrap()
+                .replace_time_zone(None, None)?
+                .into_series()
+                .to_physical_repr()
+                .cast(&DataType::Int64)?,
+            stop.datetime()
+                .unwrap()
+                .replace_time_zone(None, None)?
+                .into_series()
+                .to_physical_repr()
+                .cast(&DataType::Int64)?,
+        ),
+        _ => (
+            start.to_physical_repr().cast(&DataType::Int64)?,
+            stop.to_physical_repr().cast(&DataType::Int64)?,
+        ),
+    };
 
     let dtype = match (start_dtype, tz) {
         (DataType::Date, _) => {
