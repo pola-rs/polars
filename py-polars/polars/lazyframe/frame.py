@@ -2630,8 +2630,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
           - A "forward" search selects the first row in the right DataFrame whose
             'on' key is greater than or equal to the left's key.
 
-        - A "nearest" search selects the row in the right DataFrame whose value is
-            nearest to the left's key.
+        - A "nearest" search selects the last row in the right DataFrame whose value
+          is nearest to the left's key.
 
         The default is "backward".
 
