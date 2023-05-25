@@ -1995,7 +1995,7 @@ def test_groupby_cat_list() -> None:
         .agg([pl.col("cat_column")])["cat_column"]
     )
 
-    out = grouped.str.explode()
+    out = grouped.explode()
     assert out.dtype == pl.Categorical
     assert out[0] == "a"
 

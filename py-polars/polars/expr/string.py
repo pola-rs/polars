@@ -1539,7 +1539,7 @@ class ExprStringNameSpace:
         └─────┘
 
         """
-        return wrap_expr(self._pyexpr.explode())
+        return wrap_expr(self._pyexpr.str_explode())
 
     def parse_int(self, radix: int = 2, *, strict: bool = True) -> Expr:
         """

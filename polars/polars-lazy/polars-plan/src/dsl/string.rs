@@ -457,4 +457,9 @@ impl StringNameSpace {
                 start, length,
             )))
     }
+
+    pub fn explode(self) -> Expr {
+        self.0
+            .apply_private(FunctionExpr::StringExpr(StringFunction::Explode))
+    }
 }
