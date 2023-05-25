@@ -35,6 +35,7 @@ from polars.datatypes import (
 )
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
+from polars.expr.array import ExprArrayNameSpace
 from polars.expr.binary import ExprBinaryNameSpace
 from polars.expr.categorical import ExprCatNameSpace
 from polars.expr.datetime import ExprDateTimeNameSpace
@@ -88,7 +89,7 @@ class Expr:
     """Expressions that can be used in various contexts."""
 
     _pyexpr: PyExpr = None
-    _accessors: set[str] = {"cat", "dt", "list", "meta", "str", "bin", "struct"}
+    _accessors: set[str] = {"arr", "cat", "dt", "list", "meta", "str", "bin", "struct"}
 
     @classmethod
     def _from_pyexpr(cls, pyexpr: PyExpr) -> Self:
@@ -7485,6 +7486,16 @@ class Expr:
 
         """
         return ExprListNameSpace(self)
+
+    @property
+    def arr(self) -> ExprArrayNameSpace:
+        """
+        Create an object namespace of all array related methods.
+
+        See the individual method pages for full details
+
+        """
+        return ExprArrayNameSpace(self)
 
     @property
     def meta(self) -> ExprMetaNameSpace:

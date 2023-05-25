@@ -9,6 +9,7 @@ This page gives an overview of all public Series methods.
    :hidden:
 
    aggregation
+   array
    attributes
    binary
    boolean

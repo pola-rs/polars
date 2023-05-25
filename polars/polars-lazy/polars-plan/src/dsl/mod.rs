@@ -6,6 +6,8 @@ pub mod cat;
 pub use cat::*;
 mod arithmetic;
 mod arity;
+#[cfg(feature = "dtype-array")]
+mod array;
 pub mod binary;
 #[cfg(feature = "temporal")]
 pub mod dt;
@@ -1756,16 +1758,25 @@ impl Expr {
         list::ListNameSpace(self)
     }
 
+    /// Get the [`ArrayNameSpace`]
+    #[cfg(feature = "dtype-array")]
+    pub fn arr(self) -> array::ArrayNameSpace {
+        array::ArrayNameSpace(self)
+    }
+
+    /// Get the [`CategoricalNameSpace`]
     #[cfg(feature = "dtype-categorical")]
     pub fn cat(self) -> cat::CategoricalNameSpace {
         cat::CategoricalNameSpace(self)
     }
 
+    /// Get the [`StructNameSpace`]
     #[cfg(feature = "dtype-struct")]
     pub fn struct_(self) -> struct_::StructNameSpace {
         struct_::StructNameSpace(self)
     }
 
+    /// Get the [`MetaNameSpace`]
     #[cfg(feature = "meta")]
     pub fn meta(self) -> meta::MetaNameSpace {
         meta::MetaNameSpace(self)

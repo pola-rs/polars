@@ -1,3 +1,5 @@
+#[cfg(feature = "dtype-array")]
+pub mod array;
 mod binary;
 #[cfg(feature = "interpolate")]
 mod interpolate;
