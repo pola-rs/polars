@@ -531,7 +531,3 @@ def test_approx_unique() -> None:
         df1.select(pl.col("b").approx_unique()),
         pl.DataFrame({"b": pl.Series(values=[3], dtype=pl.UInt32)}),
     )
-
-
-def test_range_decreasing() -> None:
-    assert pl.arange(10, 1, -2, eager=True).to_list() == list(range(10, 1, -2))

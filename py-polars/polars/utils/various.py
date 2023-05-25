@@ -99,16 +99,16 @@ def is_str_sequence(
 
 
 def range_to_series(
-    name: str, rng: range, dtype: PolarsDataType | None = Int64
+    name: str, rng: range, dtype: PolarsDataType | None = None
 ) -> Series:
     """Fast conversion of the given range to a Series."""
     return F.arange(
         start=rng.start,
         end=rng.stop,
         step=rng.step,
-        eager=True,
         dtype=dtype,
-    ).rename(name)
+        eager=True,
+    ).alias(name)
 
 
 def range_to_slice(rng: range) -> slice:

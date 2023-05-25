@@ -298,10 +298,9 @@ def test_truncate(
         start,
         stop,
         timedelta(minutes=30),
-        name=f"dates[{time_unit}]",
         time_unit=time_unit,
         eager=True,
-    )
+    ).alias(f"dates[{time_unit}]")
 
     # can pass strings and time-deltas
     out = s.dt.truncate(every)
@@ -333,10 +332,9 @@ def test_round(
         start,
         stop,
         timedelta(minutes=30),
-        name=f"dates[{time_unit}]",
         time_unit=time_unit,
         eager=True,
-    )
+    ).alias(f"dates[{time_unit}]")
 
     # can pass strings and time-deltas
     out = s.dt.round(every)

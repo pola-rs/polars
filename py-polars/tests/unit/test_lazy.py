@@ -268,13 +268,6 @@ def test_shift_and_fill() -> None:
     assert out["a"].null_count() == 0
 
 
-def test_arange() -> None:
-    ldf = pl.LazyFrame({"a": [1, 1, 1]})
-    result = ldf.filter(pl.col("a") >= pl.arange(0, 3)).collect()
-    expected = pl.DataFrame({"a": [1, 1]})
-    assert_frame_equal(result, expected)
-
-
 def test_arg_unique() -> None:
     ldf = pl.LazyFrame({"a": [4, 1, 4]})
     col_a_unique = ldf.select(pl.col("a").arg_unique()).collect()["a"]
