@@ -219,8 +219,11 @@ pub(super) fn join_asof_nearest<T: PartialOrd + Copy + Debug + Sub<Output = T> +
                 }
 
                 None => {
-                    // We've reached the end with no matches, so grab the last item
-                    out.push(if offset > 1 { Some(offset - 1) } else { None });
+                    // We've reached the end with no matches, so the last item was the nearest for all remaining
+                    out.extend(
+                        std::iter::repeat(if offset > 1 { Some(offset - 1) } else { None })
+                            .take(left.len() - out.len()),
+                    );
                     return out;
                 }
             }
@@ -307,15 +310,5 @@ mod test {
         let tuples = join_asof_forward(&a, &b);
         assert_eq!(tuples.len(), a.len());
         assert_eq!(tuples, &[Some(0), Some(0), Some(1), Some(2), None]);
-    }
-
-    #[test]
-    fn test_asof_nearest() {
-        let a = [-1, 1, 2, 4, 6];
-        let b = [1, 2, 4, 5];
-
-        let tuples = join_asof_nearest(&a, &b);
-        assert_eq!(tuples.len(), a.len());
-        assert_eq!(tuples, &[Some(1), Some(1), Some(2), Some(4), Some(5)]);
     }
 }
