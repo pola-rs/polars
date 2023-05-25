@@ -8,9 +8,9 @@ import pytest
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 from polars.utils.convert import get_zoneinfo as ZoneInfo
-from polars.exceptions import ComputeError
 
 if TYPE_CHECKING:
     from polars.type_aliases import TimeUnit
@@ -188,8 +188,9 @@ def test_date_range_lazy_with_literals() -> None:
         ).date.tolist()
     )
 
+
 @pytest.mark.parametrize(
-    ("tzinfo", "time_zone", "expected_tzinfo"),
+    ("start_tzinfo", "time_zone", "output_tzinfo"),
     [
         (ZoneInfo("Asia/Kathmandu"), "Asia/Kathmandu", ZoneInfo("Asia/Kathmandu")),
         (ZoneInfo("Asia/Kathmandu"), None, ZoneInfo("Asia/Kathmandu")),
@@ -198,12 +199,10 @@ def test_date_range_lazy_with_literals() -> None:
     ],
 )
 def test_date_range_lazy_time_zones(
-    tzinfo: ZoneInfo | None, time_zone: str | None, expected_tzinfo: ZoneInfo | None
+    start_tzinfo: ZoneInfo | None, time_zone: str | None, output_tzinfo: ZoneInfo | None
 ) -> None:
-    expected_boundaries_time_zone = tzinfo.key if tzinfo is not None else tzinfo
-    expected_output_time_zone = (
-        expected_tzinfo.key if expected_tzinfo is not None else expected_tzinfo
-    )
+    start_time_zone = start_tzinfo.key if start_tzinfo is not None else start_tzinfo
+    output_time_zone = output_tzinfo.key if output_tzinfo is not None else output_tzinfo
     ldf = (
         pl.DataFrame(
             {
@@ -212,8 +211,8 @@ def test_date_range_lazy_time_zones(
             }
         )
         .with_columns(
-            pl.col('start').dt.replace_time_zone(expected_boundaries_time_zone),
-            pl.col('stop').dt.replace_time_zone(expected_boundaries_time_zone),
+            pl.col("start").dt.replace_time_zone(start_time_zone),
+            pl.col("stop").dt.replace_time_zone(start_time_zone),
         )
         .with_columns(
             pl.date_range(
@@ -223,22 +222,20 @@ def test_date_range_lazy_time_zones(
         .lazy()
     )
     assert ldf.schema == {
-        "start": pl.Datetime(time_unit="us", time_zone=expected_boundaries_time_zone),
-        "stop": pl.Datetime(time_unit="us", time_zone=expected_boundaries_time_zone),
-        "dts": pl.List(
-            pl.Datetime(time_unit="us", time_zone=expected_output_time_zone)
-        ),
+        "start": pl.Datetime(time_unit="us", time_zone=start_time_zone),
+        "stop": pl.Datetime(time_unit="us", time_zone=start_time_zone),
+        "dts": pl.List(pl.Datetime(time_unit="us", time_zone=output_time_zone)),
     }
     assert ldf.collect().rows() == [
         (
-            datetime(2015, 6, 30, tzinfo=tzinfo),
-            datetime(2022, 12, 31, tzinfo=tzinfo),
+            datetime(2015, 6, 30, tzinfo=start_tzinfo),
+            datetime(2022, 12, 31, tzinfo=start_tzinfo),
             [
-                datetime(2015, 6, 30, tzinfo=expected_tzinfo),
-                datetime(2017, 5, 8, tzinfo=expected_tzinfo),
-                datetime(2019, 3, 17, tzinfo=expected_tzinfo),
-                datetime(2021, 1, 23, tzinfo=expected_tzinfo),
-                datetime(2022, 12, 2, tzinfo=expected_tzinfo),
+                datetime(2015, 6, 30, tzinfo=output_tzinfo),
+                datetime(2017, 5, 8, tzinfo=output_tzinfo),
+                datetime(2019, 3, 17, tzinfo=output_tzinfo),
+                datetime(2021, 1, 23, tzinfo=output_tzinfo),
+                datetime(2022, 12, 2, tzinfo=output_tzinfo),
             ],
         )
     ]
@@ -255,12 +252,15 @@ def test_date_range_lazy_time_zones_invalid() -> None:
             pl.DataFrame({"start": [start], "stop": [stop]})
             .with_columns(
                 pl.date_range(
-                    start, stop, interval="678d", eager=False, time_zone="Pacific/Tarawa"
+                    start,
+                    stop,
+                    interval="678d",
+                    eager=False,
+                    time_zone="Pacific/Tarawa",
                 )
             )
             .lazy()
         )
-
 
 
 @pytest.mark.parametrize("low", ["start", pl.col("start")])
