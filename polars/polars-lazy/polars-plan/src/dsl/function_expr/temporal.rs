@@ -93,10 +93,10 @@ pub(super) fn temporal_range_dispatch(
     );
     const TO_MS: i64 = SECONDS_IN_DAY * 1000;
 
-    // Note: `start` and `stop` have already been cast to their supertype,
-    // so only `start`'s dtype needs to be checked.
     let start_dtype = start.dtype();
 
+    // Note: `start` and `stop` have already been cast to their supertype,
+    // so only `start`'s dtype needs to be matched against.
     let (mut start, mut stop) = match start_dtype {
         #[cfg(feature = "timezones")]
         DataType::Datetime(_, Some(_)) => (
