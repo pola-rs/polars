@@ -57,11 +57,12 @@ def test_arange_expr() -> None:
 
 
 def test_arange_name() -> None:
+    expected_name = "arange"
     result_eager = pl.arange(0, 5, eager=True)
-    assert result_eager.name == "arange"
+    assert result_eager.name == expected_name
 
     result_lazy = pl.select(pl.arange(0, 5)).to_series()
-    assert result_lazy.name == "literal"
+    assert result_lazy.name == expected_name
 
 
 def test_date_range() -> None:
@@ -448,13 +449,14 @@ def test_date_range_end_of_month_5441() -> None:
 
 
 def test_date_range_name() -> None:
+    expected_name = "date"
     result_eager = pl.date_range(date(2020, 1, 1), date(2020, 1, 3), eager=True)
-    assert result_eager.name == "date"
+    assert result_eager.name == expected_name
 
     result_lazy = pl.select(
         pl.date_range(date(2020, 1, 1), date(2020, 1, 3), eager=False)
     ).to_series()
-    assert result_lazy.name == "literal"
+    assert result_lazy.name == expected_name
 
 
 def test_time_range_lit() -> None:
@@ -536,8 +538,9 @@ def test_time_range_expr() -> None:
 
 
 def test_time_range_name() -> None:
+    expected_name = "time"
     result_eager = pl.time_range(time(10), time(12), eager=True)
-    assert result_eager.name == "time"
+    assert result_eager.name == expected_name
 
     result_lazy = pl.select(pl.time_range(time(10), time(12), eager=False)).to_series()
-    assert result_lazy.name == "literal"
+    assert result_lazy.name == expected_name

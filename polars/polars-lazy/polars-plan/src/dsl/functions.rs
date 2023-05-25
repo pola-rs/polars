@@ -349,6 +349,8 @@ where
 /// - if `start` and `end` are literals the output will be of `Int64`.
 #[cfg(feature = "arange")]
 pub fn arange(start: Expr, end: Expr, step: i64) -> Expr {
+    let output_name = "arange";
+
     let has_col_without_agg = |e: &Expr| {
         has_expr(e, |ae| matches!(ae, Expr::Column(_)))
             &&
@@ -432,9 +434,10 @@ pub fn arange(start: Expr, end: Expr, step: i64) -> Expr {
                 } else {
                     DataType::Int64
                 };
-                Field::new("arange", dtype)
+                Field::new(output_name, dtype)
             }),
         )
+        .alias(output_name)
     } else {
         let f = move |sa: Series, sb: Series| {
             polars_ensure!(step != 0, InvalidOperation: "step must not be zero");
@@ -459,7 +462,7 @@ pub fn arange(start: Expr, end: Expr, step: i64) -> Expr {
             let start = sa.i64()?;
             let end = sb.i64()?;
             let mut builder = ListPrimitiveChunkedBuilder::<Int64Type>::new(
-                "arange",
+                output_name,
                 start.len(),
                 start.len() * 3,
                 DataType::Int64,
@@ -493,8 +496,11 @@ pub fn arange(start: Expr, end: Expr, step: i64) -> Expr {
             start,
             end,
             f,
-            GetOutput::map_field(|_| Field::new("arange", DataType::List(DataType::Int64.into()))),
+            GetOutput::map_field(|_| {
+                Field::new(output_name, DataType::List(DataType::Int64.into()))
+            }),
         )
+        .alias(output_name)
     }
 }
 
@@ -1359,6 +1365,7 @@ pub fn date_range(
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             cast_to_supertypes: true,
+            allow_rename: true,
             ..Default::default()
         },
     }
@@ -1375,6 +1382,7 @@ pub fn time_range(start: Expr, end: Expr, every: Duration, closed: ClosedWindow)
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             cast_to_supertypes: false,
+            allow_rename: true,
             ..Default::default()
         },
     }

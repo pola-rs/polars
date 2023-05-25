@@ -116,7 +116,7 @@ def arange(
     >>> df.select(pl.arange(pl.col("a"), pl.col("b")))
     shape: (2, 1)
     ┌───────────┐
-    │ a         │
+    │ arange    │
     │ ---       │
     │ list[i64] │
     ╞═══════════╡
