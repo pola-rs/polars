@@ -33,7 +33,9 @@ def test_groupby_flatten_list() -> None:
 
 def test_groupby_flatten_string() -> None:
     df = pl.DataFrame({"group": ["a", "b", "b"], "values": ["foo", "bar", "baz"]})
-    result = df.groupby("group", maintain_order=True).agg(pl.col("values").str.explode())
+    result = df.groupby("group", maintain_order=True).agg(
+        pl.col("values").str.explode()
+    )
 
     expected = pl.DataFrame(
         {
