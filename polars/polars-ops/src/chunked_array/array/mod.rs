@@ -1,5 +1,6 @@
 mod min_max;
 mod namespace;
+mod sum_mean;
 
 pub use namespace::ArrayNameSpace;
 use polars_core::prelude::*;

@@ -429,6 +429,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn SeriesUdf>> {
                 match lf {
                     Min => map!(array::min),
                     Max => map!(array::max),
+                    Sum => map!(array::sum),
                 }
             }
             #[cfg(feature = "dtype-struct")]
