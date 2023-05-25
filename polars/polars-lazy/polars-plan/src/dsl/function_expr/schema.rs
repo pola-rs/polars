@@ -64,34 +64,10 @@ impl FunctionExpr {
                         closed: _,
                         tz,
                     } => {
-                        let mut ret = mapper.map_to_supertype()?;
-                        let ret_dtype = match (&ret.dtype, tz) {
-                            #[cfg(feature = "timezones")]
-                            (DataType::Datetime(tu, Some(field_tz)), Some(tz)) => {
-                                if field_tz != tz {
-                                    polars_bail!(ComputeError: format!("Given time_zone is different from that of timezone aware datetimes. \
-                                    Given: '{}', got: '{}'.", tz, field_tz))
-                                }
-                                DataType::Datetime(*tu, Some(tz.to_string()))
-                            }
-                            #[cfg(feature = "timezones")]
-                            (DataType::Datetime(tu, Some(tz)), _) => {
-                                DataType::Datetime(*tu, Some(tz.to_string()))
-                            }
-                            #[cfg(feature = "timezones")]
-                            (DataType::Datetime(tu, _), Some(tz)) => {
-                                DataType::Datetime(*tu, Some(tz.to_string()))
-                            }
-                            (DataType::Datetime(tu, _), _) => DataType::Datetime(*tu, None),
-                            (DataType::Date, _) => DataType::Date,
-                            (dtype, _) => {
-                                polars_bail!(ComputeError: "expected Date or Datetime, got {}", dtype)
-                            }
-                        };
-                        ret.coerce(ret_dtype);
-                        return mapper.map_to_supertype();
+                        // output dtype may change based on `tz`
+                        return mapper.map_to_date_range_dtype(tz);
                     }
-                    TimeRange { .. } => DataType::Time,
+                    TimeRange { .. } => DataType::List(Box::new(DataType::Time)),
                     Combine(tu) => match mapper.with_same_dtype().unwrap().dtype {
                         DataType::Datetime(_, tz) => DataType::Datetime(*tu, tz),
                         DataType::Date => DataType::Datetime(*tu, None),
@@ -307,6 +283,31 @@ impl<'a> FieldsMapper<'a> {
             .unwrap_or(DataType::Unknown);
         first.coerce(dt);
         Ok(first)
+    }
+
+    pub(super) fn map_to_date_range_dtype(&self, tz: &Option<String>) -> PolarsResult<Field> {
+        let mut ret = self.map_to_supertype()?;
+        let ret_dtype = match (&ret.dtype, tz) {
+            #[cfg(feature = "timezones")]
+            (DataType::Datetime(tu, Some(field_tz)), Some(tz)) => {
+                if field_tz != tz {
+                    polars_bail!(ComputeError: format!("Given time_zone is different from that of timezone aware datetimes. \
+                    Given: '{}', got: '{}'.", tz, field_tz))
+                }
+                DataType::Datetime(*tu, Some(tz.to_string()))
+            }
+            #[cfg(feature = "timezones")]
+            (DataType::Datetime(tu, Some(tz)), _) => DataType::Datetime(*tu, Some(tz.to_string())),
+            #[cfg(feature = "timezones")]
+            (DataType::Datetime(tu, _), Some(tz)) => DataType::Datetime(*tu, Some(tz.to_string())),
+            (DataType::Datetime(tu, _), _) => DataType::Datetime(*tu, None),
+            (DataType::Date, _) => DataType::Date,
+            (dtype, _) => {
+                polars_bail!(ComputeError: "expected Date or Datetime, got {}", dtype)
+            }
+        };
+        ret.coerce(DataType::List(Box::new(ret_dtype)));
+        Ok(ret)
     }
 
     /// Map the dtypes to the "supertype" of a list of lists.

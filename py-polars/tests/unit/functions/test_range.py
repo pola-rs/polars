@@ -213,6 +213,7 @@ def test_date_range_lazy_time_zones(
                 "stop": [datetime(2022, 12, 31)],
             }
         )
+        .lazy()
         .with_columns(
             pl.col("start").dt.replace_time_zone(start_time_zone),
             pl.col("stop").dt.replace_time_zone(start_time_zone),
@@ -222,7 +223,6 @@ def test_date_range_lazy_time_zones(
                 "start", "stop", interval="678d", eager=False, time_zone=time_zone
             ).alias("dts")
         )
-        .lazy()
     )
     assert ldf.schema == {
         "start": pl.Datetime(time_unit="us", time_zone=start_time_zone),
@@ -622,3 +622,9 @@ def test_time_range_name() -> None:
 
     result_lazy = pl.select(pl.time_range(time(10), time(12), eager=False)).to_series()
     assert result_lazy.name == expected_name
+
+
+def test_time_range_lazy_schema() -> None:
+    ldf = pl.DataFrame({"start": [time(23, 10)], "stop": [time(23, 11)]})
+    ldf = ldf.with_columns(pl.time_range(pl.col("start"), pl.col("stop")))
+    assert ldf.schema == {"start": pl.Time, "stop": pl.Time, "time": pl.List(pl.Time)}
