@@ -7488,7 +7488,7 @@ class Expr:
         return ExprListNameSpace(self)
 
     @property
-    def arr(self) -> ExprListNameSpace:
+    def arr(self) -> ExprArrayNameSpace:
         """
         Create an object namespace of all array related methods.
 
