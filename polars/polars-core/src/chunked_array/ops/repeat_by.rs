@@ -11,6 +11,17 @@ where
     T: PolarsNumericType,
 {
     fn repeat_by(&self, by: &IdxCa) -> ListChunked {
+        if self.len() != by.len() {
+            if by.len() != 1 {
+                panic!("Length of repeat_by argument needs to be 1 or equal to the length of the Series. Found of series length: {}, length of by {}", self.len(), by.len());
+            }
+            return self.repeat_by(&IdxCa::new(
+                self.name(),
+                std::iter::repeat(by.get(0).unwrap())
+                    .take(self.len())
+                    .collect::<Vec<IdxSize>>(),
+            ));
+        }
         let iter = self
             .into_iter()
             .zip(by.into_iter())
@@ -32,6 +43,18 @@ where
 }
 impl RepeatBy for BooleanChunked {
     fn repeat_by(&self, by: &IdxCa) -> ListChunked {
+        if self.len() != by.len() {
+            if by.len() != 1 {
+                panic!("Length of repeat_by argument needs to be 1 or equal to the length of the Series. Found of series length: {}, length of by {}", self.len(), by.len());
+            }
+            return self.repeat_by(&IdxCa::new(
+                self.name(),
+                std::iter::repeat(by.get(0).unwrap())
+                    .take(self.len())
+                    .collect::<Vec<IdxSize>>(),
+            ));
+        }
+
         let iter = self
             .into_iter()
             .zip(by.into_iter())
@@ -50,7 +73,10 @@ impl RepeatBy for BooleanChunked {
 impl RepeatBy for Utf8Chunked {
     fn repeat_by(&self, by: &IdxCa) -> ListChunked {
         // TODO! dispatch via binary.
-        if (self.len() != by.len()) & (by.len() == 1) {
+        if self.len() != by.len() {
+            if by.len() != 1 {
+                panic!("Length of repeat_by argument needs to be 1 or equal to the length of the Series. Found of series length: {}, length of by {}", self.len(), by.len());
+            }
             return self.repeat_by(&IdxCa::new(
                 self.name(),
                 std::iter::repeat(by.get(0).unwrap())
@@ -79,6 +105,17 @@ impl RepeatBy for Utf8Chunked {
 }
 impl RepeatBy for BinaryChunked {
     fn repeat_by(&self, by: &IdxCa) -> ListChunked {
+        if self.len() != by.len() {
+            if by.len() != 1 {
+                panic!("Length of repeat_by argument needs to be 1 or equal to the length of the Series. Found of series length: {}, length of by {}", self.len(), by.len());
+            }
+            return self.repeat_by(&IdxCa::new(
+                self.name(),
+                std::iter::repeat(by.get(0).unwrap())
+                    .take(self.len())
+                    .collect::<Vec<IdxSize>>(),
+            ));
+        }
         let iter = self
             .into_iter()
             .zip(by.into_iter())

@@ -4293,7 +4293,7 @@ class Expr:
             other = expr_to_lit_or_expr(other, str_to_lit=False)
         return self._from_pyexpr(self._pyexpr.is_in(other._pyexpr))
 
-    def repeat_by(self, by: Expr | str | int) -> Self:
+    def repeat_by(self, by: pl.Series | Expr | str | int) -> Self:
         """
         Repeat the elements in this Series as specified in the given expression.
 
