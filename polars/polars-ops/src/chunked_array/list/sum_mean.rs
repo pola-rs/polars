@@ -9,21 +9,7 @@ use polars_core::export::num::{NumCast, ToPrimitive};
 use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use super::*;
-
-fn sum_slice<T, S>(values: &[T]) -> S
-where
-    T: NativeType + ToPrimitive,
-    S: NumCast + std::iter::Sum,
-{
-    values
-        .iter()
-        .copied()
-        .map(|t| unsafe {
-            let s: S = NumCast::from(t).unwrap_unchecked_release();
-            s
-        })
-        .sum()
-}
+use crate::chunked_array::sum::sum_slice;
 
 fn sum_between_offsets<T, S>(values: &[T], offset: &[i64]) -> Vec<S>
 where
