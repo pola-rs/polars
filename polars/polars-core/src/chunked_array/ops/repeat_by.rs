@@ -52,7 +52,7 @@ impl RepeatBy for Utf8Chunked {
         // TODO! dispatch via binary.
         if (self.len() != by.len()) & (by.len() == 1) {
             return self.repeat_by(&IdxCa::new(
-                "",
+                self.name(),
                 std::iter::repeat(by.get(0).unwrap())
                     .take(self.len())
                     .collect::<Vec<IdxSize>>(),

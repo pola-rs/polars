@@ -314,11 +314,13 @@ macro_rules! impl_dyn_series {
             }
 
             fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
+                // println!("take in series/implementations.rs mod: indices {:?}", indices);
                 let indices = if indices.chunks.len() > 1 {
                     Cow::Owned(indices.rechunk())
                 } else {
                     Cow::Borrowed(indices)
                 };
+                // println!("This is the resulting series {:?}", ChunkTake::take(&self.0, (&*indices).into())?.into_series());
                 Ok(ChunkTake::take(&self.0, (&*indices).into())?.into_series())
             }
 

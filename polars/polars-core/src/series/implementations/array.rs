@@ -94,6 +94,7 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
     }
 
     fn take(&self, indices: &IdxCa) -> PolarsResult<Series> {
+        // println!("take in series impl");
         let indices = if indices.chunks.len() > 1 {
             Cow::Owned(indices.rechunk())
         } else {
