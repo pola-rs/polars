@@ -10,10 +10,13 @@ import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
-from polars.utils.convert import get_zoneinfo as ZoneInfo
 
 if TYPE_CHECKING:
+    from zoneinfo import ZoneInfo
+
     from polars.type_aliases import TimeUnit
+else:
+    from polars.utils.convert import get_zoneinfo as ZoneInfo
 
 
 def test_arange() -> None:
