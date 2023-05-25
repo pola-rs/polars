@@ -208,7 +208,6 @@ pub(super) fn join_asof_nearest<T: PartialOrd + Copy + Debug + Sub<Output = T> +
                     } else {
                         // distance has increased, we're now farther away, so previous element was closest
                         out.push(Some(offset - 1));
-                        //out.push(Some(max_value));
 
                         // reset distance
                         dist = max_value;
