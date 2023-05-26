@@ -383,12 +383,18 @@ impl IntoIterator for Schema {
 /// This trait exists to be unify the API of polars Schema and arrows Schema
 #[cfg(feature = "private")]
 pub trait IndexOfSchema: Debug {
-    /// Get the index of column by name.
+    /// Get the index of a column by name.
     fn index_of(&self, name: &str) -> Option<usize>;
+
+    /// Get a vector of all column names.
+    fn get_names(&self) -> Vec<&str>;
 
     fn try_index_of(&self, name: &str) -> PolarsResult<usize> {
         self.index_of(name).ok_or_else(|| {
-            polars_err!(SchemaMismatch: "unable to get field '{}' from schema: {:?}", name, self)
+            polars_err!(
+                ColumnNotFound:
+                "unable to find column {:?}; valid columns: {:?}", name, self.get_names(),
+            )
         })
     }
 }
@@ -397,10 +403,18 @@ impl IndexOfSchema for Schema {
     fn index_of(&self, name: &str) -> Option<usize> {
         self.inner.get_index_of(name)
     }
+
+    fn get_names(&self) -> Vec<&str> {
+        self.iter_names().map(|name| name.as_str()).collect()
+    }
 }
 
 impl IndexOfSchema for ArrowSchema {
     fn index_of(&self, name: &str) -> Option<usize> {
         self.fields.iter().position(|f| f.name == name)
+    }
+
+    fn get_names(&self) -> Vec<&str> {
+        self.fields.iter().map(|f| f.name.as_str()).collect()
     }
 }

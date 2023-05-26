@@ -60,10 +60,9 @@ pub(crate) fn columns_to_projection(
 
         for column in columns.iter() {
             let Some(&i) = column_names.get(column.as_str()) else {
-                let valid_columns: Vec<String> = schema.fields.iter().map(|f| f.name.clone()).collect();
                 polars_bail!(
                     ColumnNotFound:
-                    "unable to find {:?}; valid columns: {:?}", column, valid_columns,
+                    "unable to find column {:?}; valid columns: {:?}", column, schema.get_names(),
                 );
             };
             prj.push(i);
