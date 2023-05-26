@@ -93,50 +93,6 @@ impl ArrayArithmetics for i128 {
     }
 }
 
-macro_rules! apply_operand_on_chunkedarray_by_iter {
-
-    ($self:ident, $rhs:ident, $operand:tt) => {
-            {
-                match ($self.has_validity(), $rhs.has_validity()) {
-                    (false, false) => {
-                        let a: NoNull<ChunkedArray<_>> = $self
-                        .into_no_null_iter()
-                        .zip($rhs.into_no_null_iter())
-                        .map(|(left, right)| left $operand right)
-                        .collect_trusted();
-                        a.into_inner()
-                    },
-                    (false, _) => {
-                        $self
-                        .into_no_null_iter()
-                        .zip($rhs.into_iter())
-                        .map(|(left, opt_right)| opt_right.map(|right| left $operand right))
-                        .collect_trusted()
-                    },
-                    (_, false) => {
-                        $self
-                        .into_iter()
-                        .zip($rhs.into_no_null_iter())
-                        .map(|(opt_left, right)| opt_left.map(|left| left $operand right))
-                        .collect_trusted()
-                    },
-                    (_, _) => {
-                    $self.into_iter()
-                        .zip($rhs.into_iter())
-                        .map(|(opt_left, opt_right)| match (opt_left, opt_right) {
-                            (None, None) => None,
-                            (None, Some(_)) => None,
-                            (Some(_), None) => None,
-                            (Some(left), Some(right)) => Some(left $operand right),
-                        })
-                        .collect_trusted()
-
-                    }
-                }
-            }
-    }
-}
-
 pub(super) fn arithmetic_helper<T, Kernel, F>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<T>,
