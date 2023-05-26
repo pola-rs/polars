@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 use std::ops::Sub;
 
+use num_traits::Bounded;
 use polars_arrow::index::IdxSize;
 
 pub(super) fn join_asof_forward_with_tolerance<T: PartialOrd + Copy + Debug + Sub<Output = T>>(
@@ -178,6 +179,61 @@ pub(super) fn join_asof_backward<T: PartialOrd + Copy + Debug>(
             }
         }
     }
+    out
+}
+
+pub(super) fn join_asof_nearest<T: PartialOrd + Copy + Debug + Sub<Output = T> + Bounded>(
+    left: &[T],
+    right: &[T],
+) -> Vec<Option<IdxSize>> {
+    let mut out = Vec::with_capacity(left.len());
+    let mut offset = 0 as IdxSize;
+    let max_value = <T as num_traits::Bounded>::max_value();
+    let mut dist: T = max_value;
+
+    for &val_l in left {
+        loop {
+            match right.get(offset as usize) {
+                Some(&val_r) => {
+                    // This is (val_r - val_l).abs(), but works on strings/dates
+                    let dist_curr = if val_r > val_l {
+                        val_r - val_l
+                    } else {
+                        val_l - val_r
+                    };
+                    if dist_curr <= dist {
+                        // candidate for match
+                        dist = dist_curr;
+                        offset += 1;
+                    } else {
+                        // distance has increased, we're now farther away, so previous element was closest
+                        out.push(Some(offset - 1));
+
+                        // reset distance
+                        dist = max_value;
+
+                        // The next left-item may match on the same item, so we need to rewind the offset
+                        offset -= 1;
+                        break;
+                    }
+                }
+
+                None => {
+                    if offset > 1 {
+                        // we've reached the end with no matches, so the last item is the nearest for all remaining
+                        out.extend(
+                            std::iter::repeat(Some(offset - 1)).take(left.len() - out.len()),
+                        );
+                    } else {
+                        // this is only hit when the right frame is empty
+                        out.extend(std::iter::repeat(None).take(left.len() - out.len()));
+                    }
+                    return out;
+                }
+            }
+        }
+    }
+
     out
 }
 

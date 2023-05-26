@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 import numpy as np
@@ -386,3 +386,103 @@ def test_asof_join_sorted_by_group(capsys: Any) -> None:
 
     _, err = capsys.readouterr()
     assert "is not explicitly sorted" not in err
+
+
+def test_asof_join_nearest() -> None:
+    df1 = pl.DataFrame(
+        {
+            "asof_key": [-1, 1, 2, 4, 6],
+            "a": [1, 2, 3, 4, 5],
+        }
+    ).sort(by="asof_key")
+
+    df2 = pl.DataFrame(
+        {
+            "asof_key": [1, 2, 4, 5],
+            "b": [1, 2, 3, 4],
+        }
+    ).sort(by="asof_key")
+
+    expected = pl.DataFrame(
+        {"asof_key": [-1, 1, 2, 4, 6], "a": [1, 2, 3, 4, 5], "b": [1, 1, 2, 3, 4]}
+    )
+
+    out = df1.join_asof(df2, on="asof_key", strategy="nearest")
+    assert_frame_equal(out, expected)
+
+
+def test_asof_join_nearest_by() -> None:
+    df1 = pl.DataFrame(
+        {
+            "asof_key": [-1, 1, 2, 6, 1],
+            "group": [1, 1, 1, 2, 2],
+            "a": [1, 2, 3, 2, 5],
+        }
+    ).sort(by=["group", "asof_key"])
+
+    df2 = pl.DataFrame(
+        {
+            "asof_key": [1, 2, 5, 1],
+            "group": [1, 1, 2, 2],
+            "b": [1, 2, 3, 4],
+        }
+    ).sort(by=["group", "asof_key"])
+
+    expected = pl.DataFrame(
+        {
+            "asof_key": [-1, 1, 2, 6, 1],
+            "group": [1, 1, 1, 2, 2],
+            "a": [1, 2, 3, 2, 5],
+            "b": [1, 1, 2, 3, 4],
+        }
+    ).sort(by=["group", "asof_key"])
+
+    out = df1.join_asof(df2, on="asof_key", by="group", strategy="nearest")
+    assert_frame_equal(out, expected)
+
+
+def test_asof_join_nearest_by_date() -> None:
+    df1 = pl.DataFrame(
+        {
+            "asof_key": [
+                date(2019, 12, 30),
+                date(2020, 1, 1),
+                date(2020, 1, 2),
+                date(2020, 1, 6),
+                date(2020, 1, 1),
+            ],
+            "group": [1, 1, 1, 2, 2],
+            "a": [1, 2, 3, 2, 5],
+        }
+    ).sort(by=["group", "asof_key"])
+
+    df2 = pl.DataFrame(
+        {
+            "asof_key": [
+                date(2020, 1, 1),
+                date(2020, 1, 2),
+                date(2020, 1, 5),
+                date(2020, 1, 1),
+            ],
+            "group": [1, 1, 2, 2],
+            "b": [1, 2, 3, 4],
+        }
+    ).sort(by=["group", "asof_key"])
+
+    expected = pl.DataFrame(
+        {
+            "asof_key": [
+                date(2019, 12, 30),
+                date(2020, 1, 1),
+                date(2020, 1, 2),
+                date(2020, 1, 6),
+                date(2020, 1, 1),
+            ],
+            "group": [1, 1, 1, 2, 2],
+            "a": [1, 2, 3, 2, 5],
+            "b": [1, 1, 2, 3, 4],
+        }
+    ).sort(by=["group", "asof_key"])
+
+    out = df1.join_asof(df2, on="asof_key", by="group", strategy="nearest")
+    assert_frame_equal(out, expected)

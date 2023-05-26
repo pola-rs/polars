@@ -936,9 +936,10 @@ impl FromPyObject<'_> for Wrap<AsofStrategy> {
         let parsed = match ob.extract::<&str>()? {
             "backward" => AsofStrategy::Backward,
             "forward" => AsofStrategy::Forward,
+            "nearest" => AsofStrategy::Nearest,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "strategy must be one of {{'backward', 'forward'}}, got {v}",
+                    "strategy must be one of {{'backward', 'forward', 'nearest'}}, got {v}",
                 )))
             }
         };

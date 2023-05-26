@@ -54,6 +54,8 @@ pub enum AsofStrategy {
     Backward,
     /// selects the first row in the right DataFrame whose ‘on’ key is greater than or equal to the left’s key.
     Forward,
+    /// selects the right in the right DataFrame whose 'on' key is nearest to the left's key.
+    Nearest,
 }
 
 impl<T> ChunkedArray<T>
@@ -96,6 +98,9 @@ where
                     )
                 }
             },
+            AsofStrategy::Nearest => {
+                join_asof_nearest(ca.cont_slice().unwrap(), other.cont_slice().unwrap())
+            }
         };
         Ok(out)
     }

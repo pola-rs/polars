@@ -2630,6 +2630,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
           - A "forward" search selects the first row in the right DataFrame whose
             'on' key is greater than or equal to the left's key.
 
+        - A "nearest" search selects the last row in the right DataFrame whose value
+          is nearest to the left's key.
+
         The default is "backward".
 
         Parameters
@@ -2649,7 +2652,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Join on these columns before doing asof join.
         by_right
             Join on these columns before doing asof join.
-        strategy : {'backward', 'forward'}
+        strategy : {'backward', 'forward', 'nearest'}
             Join strategy.
         suffix
             Suffix to append to columns with a duplicate name.

@@ -122,7 +122,7 @@ UnstackDirection: TypeAlias = Literal["vertical", "horizontal"]
 ApplyStrategy: TypeAlias = Literal["thread_local", "threading"]
 
 # The following have a Rust enum equivalent with a different name
-AsofJoinStrategy: TypeAlias = Literal["backward", "forward"]  # AsofStrategy
+AsofJoinStrategy: TypeAlias = Literal["backward", "forward", "nearest"]  # AsofStrategy
 ClosedInterval: TypeAlias = Literal["left", "right", "both", "none"]  # ClosedWindow
 InterpolationMethod: TypeAlias = Literal["linear", "nearest"]
 JoinStrategy: TypeAlias = Literal[

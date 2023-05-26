@@ -4,7 +4,7 @@ use std::ops::Sub;
 
 use ahash::RandomState;
 use arrow::types::NativeType;
-use num_traits::Zero;
+use num_traits::{Bounded, Zero};
 use rayon::prelude::*;
 use smartstring::alias::String as SmartString;
 
@@ -140,6 +140,46 @@ pub(super) unsafe fn join_asof_forward_with_indirection<T: PartialOrd + Copy + D
     (None, offsets.len())
 }
 
+pub(super) unsafe fn join_asof_nearest_with_indirection<
+    T: PartialOrd + Copy + Debug + Sub<Output = T> + Bounded,
+>(
+    val_l: T,
+    right: &[T],
+    offsets: &[IdxSize],
+    // only there to have the same function signature
+    _: T,
+) -> (Option<IdxSize>, usize) {
+    if offsets.is_empty() {
+        return (None, 0);
+    }
+    let max_value = <T as Bounded>::max_value();
+    let mut dist: T = max_value;
+    for (idx, &offset) in offsets.iter().enumerate() {
+        let val_r = *right.get_unchecked(offset as usize);
+        if val_r >= val_l {
+            // This is (val_r - val_l).abs(), but works on strings/dates
+            let dist_curr = if val_r > val_l {
+                val_r - val_l
+            } else {
+                val_l - val_r
+            };
+            if dist_curr <= dist {
+                // candidate for match
+                dist = dist_curr;
+            } else {
+                // note for a nearest-match, we can re-match on the same val_r next time,
+                // so we need to rewind the idx by 1
+                return (Some(offset - 1), idx - 1);
+            }
+        }
+    }
+
+    // if we've reached the end with nearest and haven't returned, it means that the last item was the closest
+    // note for a nearest-match, we can re-match on the same val_r next time,
+    // so we need to rewind the idx by 1
+    (Some(offsets[offsets.len() - 1]), offsets.len() - 1)
+}
+
 // process the group taken by the `by` operation and keep track of the offset.
 // we don't process a group at once but per `index_left` we find the `right_index` and keep track
 // of the offsets we have already processed in a separate hashmap. Then on a next iteration we can
@@ -233,6 +273,9 @@ where
         }
         (None, AsofStrategy::Forward) => {
             (join_asof_forward_with_indirection, T::Native::zero(), true)
+        }
+        (_, AsofStrategy::Nearest) => {
+            (join_asof_nearest_with_indirection, T::Native::zero(), false)
         }
     };
 
@@ -365,6 +408,9 @@ where
         (None, AsofStrategy::Forward) => {
             (join_asof_forward_with_indirection, T::Native::zero(), true)
         }
+        (_, AsofStrategy::Nearest) => {
+            (join_asof_nearest_with_indirection, T::Native::zero(), false)
+        }
     };
 
     let left_asof = left_asof.rechunk();
@@ -487,6 +533,9 @@ where
         }
         (None, AsofStrategy::Forward) => {
             (join_asof_forward_with_indirection, T::Native::zero(), true)
+        }
+        (_, AsofStrategy::Nearest) => {
+            (join_asof_nearest_with_indirection, T::Native::zero(), false)
         }
     };
     let left_asof = left_asof.rechunk();
