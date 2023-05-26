@@ -68,16 +68,7 @@ impl Series {
 
 impl PartialEq for Series {
     fn eq(&self, other: &Self) -> bool {
-        self.len() == other.len()
-            && self.field() == other.field()
-            && self.null_count() == other.null_count()
-            && self
-                .equal(other)
-                .unwrap()
-                .sum()
-                .map(|s| s as usize)
-                .unwrap_or(0)
-                == self.len()
+        self.series_equal_missing(other)
     }
 }
 
