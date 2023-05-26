@@ -374,7 +374,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
     #[cfg(feature = "repeat_by")]
     fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {
-        let out = self.0.logical().repeat_by(by).unwrap();
+        let out = self.0.logical().repeat_by(by)?;
         let casted = out
             .cast(&DataType::List(Box::new(self.dtype().clone())))
             .unwrap();

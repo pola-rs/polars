@@ -460,8 +460,7 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {
         Ok(self
             .0
-            .repeat_by(by)
-            .unwrap()
+            .repeat_by(by)?
             .cast(&DataType::List(Box::new(DataType::Duration(
                 self.0.time_unit(),
             ))))

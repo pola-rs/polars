@@ -443,8 +443,7 @@ macro_rules! impl_dyn_series {
                 match self.0.dtype() {
                     DataType::Date => Ok(self
                         .0
-                        .repeat_by(by)
-                        .unwrap()
+                        .repeat_by(by)?
                         .cast(&DataType::List(Box::new(DataType::Date)))
                         .unwrap()
                         .list()
@@ -452,8 +451,7 @@ macro_rules! impl_dyn_series {
                         .clone()),
                     DataType::Time => Ok(self
                         .0
-                        .repeat_by(by)
-                        .unwrap()
+                        .repeat_by(by)?
                         .cast(&DataType::List(Box::new(DataType::Time)))
                         .unwrap()
                         .list()
