@@ -1,4 +1,6 @@
 #[cfg(feature = "dynamic_groupby")]
+use polars_core::frame::groupby::GroupBy;
+#[cfg(feature = "dynamic_groupby")]
 use polars_time::DynamicGroupOptions;
 
 use super::*;
@@ -14,6 +16,7 @@ pub(crate) struct GroupByDynamicExec {
     pub(crate) options: DynamicGroupOptions,
     pub(crate) input_schema: SchemaRef,
     pub(crate) slice: Option<(i64, usize)>,
+    pub(crate) apply: Option<Arc<dyn DataFrameUdf>>,
 }
 
 impl GroupByDynamicExec {
@@ -32,6 +35,16 @@ impl GroupByDynamicExec {
             .collect::<PolarsResult<Vec<_>>>()?;
 
         let (mut time_key, mut keys, groups) = df.groupby_dynamic(keys, &self.options)?;
+
+        if let Some(f) = &self.apply {
+            let gb = GroupBy::new(&df, vec![], groups, None);
+            let out = gb.apply(move |df| f.call_udf(df))?;
+            return Ok(if let Some((offset, len)) = self.slice {
+                out.slice(offset, len)
+            } else {
+                out
+            });
+        }
 
         let mut groups = &groups;
         #[allow(unused_assignments)]

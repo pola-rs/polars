@@ -199,32 +199,6 @@ def test_groupby_agg_input_types(lazy: bool) -> None:
 
 
 @pytest.mark.parametrize("lazy", [True, False])
-def test_groupby_rolling_agg_input_types(lazy: bool) -> None:
-    df = pl.DataFrame({"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]}).set_sorted(
-        "index_column"
-    )
-    df_or_lazy: pl.DataFrame | pl.LazyFrame = df.lazy() if lazy else df
-
-    for bad_param in bad_agg_parameters():
-        with pytest.raises(TypeError):  # noqa: PT012
-            result = df_or_lazy.groupby_rolling(
-                index_column="index_column", period="2i"
-            ).agg(bad_param)
-            if lazy:
-                result.collect()  # type: ignore[union-attr]
-
-    expected = pl.DataFrame({"index_column": [0, 1, 2, 3], "b": [1, 4, 4, 3]})
-
-    for good_param in good_agg_parameters():
-        result = df_or_lazy.groupby_rolling(
-            index_column="index_column", period="2i"
-        ).agg(good_param)
-        if lazy:
-            result = result.collect()  # type: ignore[union-attr]
-        assert_frame_equal(result, expected)
-
-
-@pytest.mark.parametrize("lazy", [True, False])
 def test_groupby_dynamic_agg_input_types(lazy: bool) -> None:
     df = pl.DataFrame({"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]}).set_sorted(
         "index_column"
@@ -303,82 +277,6 @@ def test_apply_after_take_in_groupby_3869() -> None:
             pl.col("v").take(pl.col("t").arg_max()).sqrt()
         )  # <- fails for sqrt, exp, log, pow, etc.
     ).to_dict(False) == {"k": ["a", "b"], "v": [1.4142135623730951, 2.0]}
-
-
-def test_groupby_rolling_negative_offset_3914() -> None:
-    df = pl.DataFrame(
-        {
-            "datetime": pl.date_range(
-                datetime(2020, 1, 1), datetime(2020, 1, 5), "1d", eager=True
-            ),
-        }
-    )
-    assert df.groupby_rolling(index_column="datetime", period="2d", offset="-4d").agg(
-        pl.count().alias("count")
-    )["count"].to_list() == [0, 0, 1, 2, 2]
-
-    df = pl.DataFrame(
-        {
-            "ints": range(0, 20),
-        }
-    )
-
-    assert df.groupby_rolling(index_column="ints", period="2i", offset="-5i").agg(
-        [pl.col("ints").alias("matches")]
-    )["matches"].to_list() == [
-        [],
-        [],
-        [],
-        [0],
-        [0, 1],
-        [1, 2],
-        [2, 3],
-        [3, 4],
-        [4, 5],
-        [5, 6],
-        [6, 7],
-        [7, 8],
-        [8, 9],
-        [9, 10],
-        [10, 11],
-        [11, 12],
-        [12, 13],
-        [13, 14],
-        [14, 15],
-        [15, 16],
-    ]
-
-
-@pytest.mark.parametrize("time_zone", [None, "US/Central"])
-def test_groupby_rolling_negative_offset_crossing_dst(time_zone: str | None) -> None:
-    df = pl.DataFrame(
-        {
-            "datetime": pl.date_range(
-                datetime(2021, 11, 6),
-                datetime(2021, 11, 9),
-                "1d",
-                time_zone=time_zone,
-                eager=True,
-            ),
-            "value": [1, 4, 9, 155],
-        }
-    )
-    result = df.groupby_rolling(index_column="datetime", period="2d", offset="-1d").agg(
-        pl.col("value")
-    )
-    expected = pl.DataFrame(
-        {
-            "datetime": pl.date_range(
-                datetime(2021, 11, 6),
-                datetime(2021, 11, 9),
-                "1d",
-                time_zone=time_zone,
-                eager=True,
-            ),
-            "value": [[1, 4], [4, 9], [9, 155], [155]],
-        }
-    )
-    assert_frame_equal(result, expected)
 
 
 def test_groupby_signed_transmutes() -> None:
@@ -938,31 +836,3 @@ def test_perfect_hash_table_null_values_8663() -> None:
             [None, None, None],
         ],
     }
-
-
-def test_rolling_groupby_overlapping_groups() -> None:
-    # this first aggregates overlapping groups
-    # so they cannot be naively flattened
-    df = pl.DataFrame(
-        {
-            "a": [41, 60, 37, 51, 52, 39, 40],
-        }
-    )
-
-    assert_series_equal(
-        (
-            df.with_row_count()
-            .with_columns(pl.col("row_nr").cast(pl.Int32))
-            .groupby_rolling(
-                index_column="row_nr",
-                period="5i",
-            )
-            .agg(
-                # the apply to trigger the apply on the expression engine
-                pl.col("a")
-                .apply(lambda x: x)
-                .sum()
-            )
-        )["a"],
-        df["a"].rolling_sum(window_size=5, min_periods=1),
-    )

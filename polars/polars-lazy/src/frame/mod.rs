@@ -1345,8 +1345,8 @@ impl LazyGroupBy {
     {
         #[cfg(feature = "dynamic_groupby")]
         let options = GroupbyOptions {
-            dynamic: None,
-            rolling: None,
+            dynamic: self.dynamic_options,
+            rolling: self.rolling_options,
             slice: None,
         };
 
