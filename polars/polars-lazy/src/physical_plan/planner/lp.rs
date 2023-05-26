@@ -422,6 +422,7 @@ pub fn create_physical_plan(
                     options,
                     input_schema,
                     slice: _slice,
+                    apply,
                 }));
             }
 
@@ -435,6 +436,7 @@ pub fn create_physical_plan(
                     options,
                     input_schema,
                     slice: _slice,
+                    apply,
                 }));
             }
 
