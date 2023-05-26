@@ -1049,7 +1049,7 @@ impl PyExpr {
         let value = value.into_py(py);
         self.inner
             .clone()
-            .extend_constant(value, n)
+            .prepend_constant(value, n)
             //.map_private(dsl::function_expr::FunctionExpr::prepend_constant { value, usize })
             .with_fmt("prepend")
             .into()
