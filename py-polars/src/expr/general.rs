@@ -1040,15 +1040,8 @@ impl PyExpr {
         let value = value.into_py(py);
         self.inner
             .clone()
-            .apply_private(
-                move |s| {
-                    Python::with_gil(|py| {
-                        let value = value.extract::<Wrap<AnyValue>>(py).unwrap().0;
-                        s.extend_constant(value, n).map(Some)
-                    })
-                },
-                GetOutput::same_type(),
-            )
+            .extend_constant(value, n)
+            //.map_private(dsl::function_expr::FunctionExpr::extend_constant { value, usize })
             .with_fmt("extend")
             .into()
     }
@@ -1056,16 +1049,9 @@ impl PyExpr {
         let value = value.into_py(py);
         self.inner
             .clone()
-            .apply(
-                move |s| {
-                    Python::with_gil(|py| {
-                        let value = value.extract::<Wrap<AnyValue>>(py).unwrap().0;
-                        s.prepend_constant(value, n).map(Some)
-                    })
-                },
-                GetOutput::same_type(),
-            )
-            .with_fmt("extend")
+            .extend_constant(value, n)
+            //.map_private(dsl::function_expr::FunctionExpr::prepend_constant { value, usize })
+            .with_fmt("prepend")
             .into()
     }
     fn any(&self) -> Self {

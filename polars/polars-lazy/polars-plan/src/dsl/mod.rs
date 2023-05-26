@@ -941,6 +941,17 @@ impl Expr {
             .then(self)
             .otherwise(fill_value.into())
     }
+
+    /// Extend with a constant
+    pub fn extend_constant(self, value: AnyValue, n: usize) -> Expr {
+        self.map_private(FunctionExpr::ExtendConstant { value, n })
+    }
+    
+    /// Prepend with a constant
+    pub fn prepend_constant(self, value: AnyValue, n: usize) -> Expr {
+        self.map_private(FunctionExpr::PrependConstant { value, n })
+    }
+
     /// Count the values of the Series
     /// or
     /// Get counts of the group by operation.

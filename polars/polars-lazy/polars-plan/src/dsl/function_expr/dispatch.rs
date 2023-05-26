@@ -12,6 +12,10 @@ pub(super) fn extend_constant(s: &Series, value: AnyValue, n: usize) -> PolarsRe
     Ok(s.extend_constant(value, n))
 }
 
+pub(super) fn prepend_constant(s: &Series, value: AnyValue, n: usize) -> PolarsResult<Series> {
+    Ok(s.prepend_constant(value, n))
+}
+
 #[cfg(feature = "approx_unique")]
 pub(super) fn approx_unique(s: &Series) -> PolarsResult<Series> {
     polars_ops::prelude::approx_unique(s)
