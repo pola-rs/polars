@@ -13,7 +13,7 @@ use polars_arrow::prelude::FromData;
 
 use crate::prelude::*;
 use crate::series::IsSorted;
-use crate::utils::{align_chunks_binary, NoNull};
+use crate::utils::align_chunks_binary;
 
 impl<T> ChunkedArray<T>
 where
@@ -102,14 +102,14 @@ where
                 if let Some(value) = rhs.get(0) {
                     self.gt(value)
                 } else {
-                    BooleanChunked::full("", false, self.len())
+                    BooleanChunked::full_null("", self.len())
                 }
             }
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     rhs.lt(value)
                 } else {
-                    BooleanChunked::full("", false, rhs.len())
+                    BooleanChunked::full_null("", rhs.len())
                 }
             }
             _ => {
@@ -127,14 +127,14 @@ where
                 if let Some(value) = rhs.get(0) {
                     self.gt_eq(value)
                 } else {
-                    BooleanChunked::full("", false, self.len())
+                    BooleanChunked::full_null("", self.len())
                 }
             }
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     rhs.lt_eq(value)
                 } else {
-                    BooleanChunked::full("", false, rhs.len())
+                    BooleanChunked::full_null("", rhs.len())
                 }
             }
             _ => {
@@ -152,14 +152,14 @@ where
                 if let Some(value) = rhs.get(0) {
                     self.lt(value)
                 } else {
-                    BooleanChunked::full("", false, self.len())
+                    BooleanChunked::full_null("", self.len())
                 }
             }
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     rhs.gt(value)
                 } else {
-                    BooleanChunked::full("", false, rhs.len())
+                    BooleanChunked::full_null("", rhs.len())
                 }
             }
             _ => {
@@ -177,14 +177,14 @@ where
                 if let Some(value) = rhs.get(0) {
                     self.lt_eq(value)
                 } else {
-                    BooleanChunked::full("", false, self.len())
+                    BooleanChunked::full_null("", self.len())
                 }
             }
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     rhs.gt_eq(value)
                 } else {
-                    BooleanChunked::full("", false, rhs.len())
+                    BooleanChunked::full_null("", rhs.len())
                 }
             }
             _ => {
@@ -343,7 +343,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                         false => self.clone(),
                     }
                 } else {
-                    BooleanChunked::full("", false, self.len())
+                    BooleanChunked::full_null("", self.len())
                 }
             }
             (1, _) => {
@@ -353,7 +353,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                         false => BooleanChunked::full("", false, rhs.len()),
                     }
                 } else {
-                    BooleanChunked::full("", false, rhs.len())
+                    BooleanChunked::full_null("", rhs.len())
                 }
             }
             _ => {
@@ -374,7 +374,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                         false => BooleanChunked::full("", true, self.len()),
                     }
                 } else {
-                    BooleanChunked::full("", false, self.len())
+                    BooleanChunked::full_null("", self.len())
                 }
             }
             (1, _) => {
@@ -384,7 +384,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                         false => rhs.not(),
                     }
                 } else {
-                    BooleanChunked::full("", false, rhs.len())
+                    BooleanChunked::full_null("", rhs.len())
                 }
             }
             _ => {
@@ -405,7 +405,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                         false => BooleanChunked::full("", false, self.len()),
                     }
                 } else {
-                    BooleanChunked::full("", false, self.len())
+                    BooleanChunked::full_null("", self.len())
                 }
             }
             (1, _) => {
@@ -415,7 +415,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                         false => rhs.clone(),
                     }
                 } else {
-                    BooleanChunked::full("", false, rhs.len())
+                    BooleanChunked::full_null("", rhs.len())
                 }
             }
             _ => {
@@ -436,7 +436,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                         false => BooleanChunked::full("", false, self.len()),
                     }
                 } else {
-                    BooleanChunked::full("", false, self.len())
+                    BooleanChunked::full_null("", self.len())
                 }
             }
             (1, _) => {
@@ -446,7 +446,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
                         false => BooleanChunked::full("", true, rhs.len()),
                     }
                 } else {
-                    BooleanChunked::full("", false, rhs.len())
+                    BooleanChunked::full_null("", rhs.len())
                 }
             }
             _ => {
@@ -458,157 +458,31 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
     }
 }
 
-impl Utf8Chunked {
-    fn comparison(
-        &self,
-        rhs: &Utf8Chunked,
-        f: impl Fn(&Utf8Array<i64>, &Utf8Array<i64>) -> BooleanArray,
-    ) -> BooleanChunked {
-        let chunks = self
-            .downcast_iter()
-            .zip(rhs.downcast_iter())
-            .map(|(left, right)| {
-                let arr = f(left, right);
-                Box::new(arr) as ArrayRef
-            })
-            .collect();
-        unsafe { BooleanChunked::from_chunks("", chunks) }
-    }
-}
-
 impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
     type Item = BooleanChunked;
 
     fn equal(&self, rhs: &Utf8Chunked) -> BooleanChunked {
-        // broadcast
-        if rhs.len() == 1 {
-            if let Some(value) = rhs.get(0) {
-                self.equal(value)
-            } else {
-                self.is_null()
-            }
-        } else if self.len() == 1 {
-            if let Some(value) = self.get(0) {
-                rhs.equal(value)
-            } else {
-                rhs.is_null()
-            }
-        } else {
-            let (lhs, rhs) = align_chunks_binary(self, rhs);
-            lhs.comparison(&rhs, comparison::utf8::eq_and_validity)
-        }
+        self.as_binary().equal(&rhs.as_binary())
     }
 
     fn not_equal(&self, rhs: &Utf8Chunked) -> BooleanChunked {
-        // broadcast
-        if rhs.len() == 1 {
-            if let Some(value) = rhs.get(0) {
-                self.not_equal(value)
-            } else {
-                self.is_not_null()
-            }
-        } else if self.len() == 1 {
-            if let Some(value) = self.get(0) {
-                rhs.not_equal(value)
-            } else {
-                rhs.is_not_null()
-            }
-        } else {
-            let (lhs, rhs) = align_chunks_binary(self, rhs);
-            lhs.comparison(&rhs, comparison::utf8::neq_and_validity)
-        }
+        self.as_binary().not_equal(&rhs.as_binary())
     }
 
     fn gt(&self, rhs: &Utf8Chunked) -> BooleanChunked {
-        // broadcast
-        if rhs.len() == 1 {
-            if let Some(value) = rhs.get(0) {
-                self.gt(value)
-            } else {
-                BooleanChunked::full("", false, self.len())
-            }
-        } else if self.len() == 1 {
-            if let Some(value) = self.get(0) {
-                rhs.lt(value)
-            } else {
-                BooleanChunked::full("", false, self.len())
-            }
-        }
-        // same length
-        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
-            self.comparison(rhs, |l, r| comparison::gt(l, r))
-        } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, >)
-        }
+        self.as_binary().gt(&rhs.as_binary())
     }
 
     fn gt_eq(&self, rhs: &Utf8Chunked) -> BooleanChunked {
-        // broadcast
-        if rhs.len() == 1 {
-            if let Some(value) = rhs.get(0) {
-                self.gt_eq(value)
-            } else {
-                BooleanChunked::full("", false, self.len())
-            }
-        } else if self.len() == 1 {
-            if let Some(value) = self.get(0) {
-                rhs.lt_eq(value)
-            } else {
-                BooleanChunked::full("", false, self.len())
-            }
-        }
-        // same length
-        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
-            self.comparison(rhs, |l, r| comparison::gt_eq(l, r))
-        } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, >=)
-        }
+        self.as_binary().gt_eq(&rhs.as_binary())
     }
 
     fn lt(&self, rhs: &Utf8Chunked) -> BooleanChunked {
-        // broadcast
-        if rhs.len() == 1 {
-            if let Some(value) = rhs.get(0) {
-                self.lt(value)
-            } else {
-                BooleanChunked::full("", false, self.len())
-            }
-        } else if self.len() == 1 {
-            if let Some(value) = self.get(0) {
-                rhs.gt(value)
-            } else {
-                BooleanChunked::full("", false, self.len())
-            }
-        }
-        // same length
-        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
-            self.comparison(rhs, |l, r| comparison::lt(l, r))
-        } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, <)
-        }
+        self.as_binary().lt(&rhs.as_binary())
     }
 
     fn lt_eq(&self, rhs: &Utf8Chunked) -> BooleanChunked {
-        // broadcast
-        if rhs.len() == 1 {
-            if let Some(value) = rhs.get(0) {
-                self.lt_eq(value)
-            } else {
-                BooleanChunked::full("", false, self.len())
-            }
-        } else if self.len() == 1 {
-            if let Some(value) = self.get(0) {
-                rhs.gt_eq(value)
-            } else {
-                BooleanChunked::full("", false, self.len())
-            }
-        }
-        // same length
-        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
-            self.comparison(rhs, |l, r| comparison::lt_eq(l, r))
-        } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, <=)
-        }
+        self.as_binary().lt_eq(&rhs.as_binary())
     }
 }
 
@@ -639,13 +513,13 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
             if let Some(value) = rhs.get(0) {
                 self.equal(value)
             } else {
-                BooleanChunked::full("", false, self.len())
+                self.is_null()
             }
         } else if self.len() == 1 {
             if let Some(value) = self.get(0) {
                 rhs.equal(value)
             } else {
-                BooleanChunked::full("", false, self.len())
+                rhs.is_null()
             }
         } else {
             let (lhs, rhs) = align_chunks_binary(self, rhs);
@@ -659,13 +533,13 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
             if let Some(value) = rhs.get(0) {
                 self.not_equal(value)
             } else {
-                BooleanChunked::full("", false, self.len())
+                self.is_not_null()
             }
         } else if self.len() == 1 {
             if let Some(value) = self.get(0) {
                 rhs.not_equal(value)
             } else {
-                BooleanChunked::full("", false, self.len())
+                rhs.is_not_null()
             }
         } else {
             let (lhs, rhs) = align_chunks_binary(self, rhs);
@@ -679,20 +553,17 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
             if let Some(value) = rhs.get(0) {
                 self.gt(value)
             } else {
-                BooleanChunked::full("", false, self.len())
+                BooleanChunked::full_null("", self.len())
             }
         } else if self.len() == 1 {
             if let Some(value) = self.get(0) {
                 rhs.lt(value)
             } else {
-                BooleanChunked::full("", false, self.len())
+                BooleanChunked::full_null("", self.len())
             }
-        }
-        // same length
-        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
-            self.comparison(rhs, |l, r| comparison::gt(l, r))
         } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, >)
+            let (lhs, rhs) = align_chunks_binary(self, rhs);
+            lhs.comparison(&rhs, |l, r| comparison::gt(l, r))
         }
     }
 
@@ -702,20 +573,17 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
             if let Some(value) = rhs.get(0) {
                 self.gt_eq(value)
             } else {
-                BooleanChunked::full("", false, self.len())
+                BooleanChunked::full_null("", self.len())
             }
         } else if self.len() == 1 {
             if let Some(value) = self.get(0) {
                 rhs.lt_eq(value)
             } else {
-                BooleanChunked::full("", false, self.len())
+                BooleanChunked::full_null("", self.len())
             }
-        }
-        // same length
-        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
-            self.comparison(rhs, |l, r| comparison::gt_eq(l, r))
         } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, >=)
+            let (lhs, rhs) = align_chunks_binary(self, rhs);
+            lhs.comparison(&rhs, |l, r| comparison::gt_eq(l, r))
         }
     }
 
@@ -725,20 +593,17 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
             if let Some(value) = rhs.get(0) {
                 self.lt(value)
             } else {
-                BooleanChunked::full("", false, self.len())
+                BooleanChunked::full_null("", self.len())
             }
         } else if self.len() == 1 {
             if let Some(value) = self.get(0) {
                 rhs.gt(value)
             } else {
-                BooleanChunked::full("", false, self.len())
+                BooleanChunked::full_null("", self.len())
             }
-        }
-        // same length
-        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
-            self.comparison(rhs, |l, r| comparison::lt(l, r))
         } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, <)
+            let (lhs, rhs) = align_chunks_binary(self, rhs);
+            lhs.comparison(&rhs, |l, r| comparison::lt(l, r))
         }
     }
 
@@ -748,20 +613,17 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
             if let Some(value) = rhs.get(0) {
                 self.lt_eq(value)
             } else {
-                BooleanChunked::full("", false, self.len())
+                BooleanChunked::full_null("", self.len())
             }
         } else if self.len() == 1 {
             if let Some(value) = self.get(0) {
                 rhs.gt_eq(value)
             } else {
-                BooleanChunked::full("", false, self.len())
+                BooleanChunked::full_null("", self.len())
             }
-        }
-        // same length
-        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
-            self.comparison(rhs, |l, r| comparison::lt_eq(l, r))
         } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, <=)
+            let (lhs, rhs) = align_chunks_binary(self, rhs);
+            lhs.comparison(&rhs, |l, r| comparison::lt_eq(l, r))
         }
     }
 }
