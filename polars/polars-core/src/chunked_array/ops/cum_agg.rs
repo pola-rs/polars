@@ -1,7 +1,7 @@
 use std::iter::FromIterator;
 use std::ops::{Add, AddAssign, Mul};
 
-use num_traits::{Bounded, Zero};
+use num_traits::{Bounded, One, Zero};
 
 use crate::prelude::*;
 use crate::utils::CustomIterTools;
@@ -114,7 +114,7 @@ where
     }
 
     fn cumprod(&self, reverse: bool) -> ChunkedArray<T> {
-        let init = <<T as datatypes::PolarsNumericType>::Native as Zero>::zero();
+        let init = <<T as datatypes::PolarsNumericType>::Native as One>::one();
         let mut ca: Self = match reverse {
             false => self.into_iter().scan(init, det_prod).collect_trusted(),
             true => self
