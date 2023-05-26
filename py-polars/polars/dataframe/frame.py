@@ -5309,6 +5309,9 @@ class DataFrame:
           - A "forward" search selects the first row in the right DataFrame whose
             'on' key is greater than or equal to the left's key.
 
+          - A "nearest" search selects the last row in the right DataFrame whose value
+            is nearest to the left's key.
+
         The default is "backward".
 
         Parameters
@@ -5328,14 +5331,14 @@ class DataFrame:
             join on these columns before doing asof join
         by_right
             join on these columns before doing asof join
-        strategy : {'backward', 'forward'}
+        strategy : {'backward', 'forward', 'nearest'}
             Join strategy.
         suffix
             Suffix to append to columns with a duplicate name.
         tolerance
             Numeric tolerance. By setting this the join will only be done if the near
             keys are within this distance. If an asof join is done on columns of dtype
-            "Date", "Datetime", "Duration" or "Time" you use the following string
+            "Date", "Datetime", "Duration" or "Time", use the following string
             language:
 
                 - 1ns   (1 nanosecond)
