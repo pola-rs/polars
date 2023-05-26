@@ -1763,8 +1763,10 @@ def test_repeat_by_unequal_lengths_panic() -> None:
             "a": ["x", "y", "z"],
         }
     )
-    with pytest.raises(pl.ComputeError, 
-                       match="""Length of repeat_by argument needs to be 1 or equal to the length of the Series."""):
+    with pytest.raises(
+        pl.ComputeError,
+        match="""Length of repeat_by argument needs to be 1 or equal to the length of the Series.""",
+    ):
         df.select(pl.col("a").repeat_by(pl.Series([2, 2])))
 
 
