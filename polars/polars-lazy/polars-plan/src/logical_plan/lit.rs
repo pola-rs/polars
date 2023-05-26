@@ -291,6 +291,12 @@ impl Literal for Series {
     }
 }
 
+impl Literal for LiteralValue {
+    fn lit(self) -> Expr {
+        Expr::Literal(self)
+    }
+}
+
 /// Create a Literal Expression from `L`. A literal expression behaves like a column that contains a single distinct
 /// value.
 ///

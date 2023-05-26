@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime, time, timedelta
 from typing import Any
 
 import pytest
@@ -19,14 +19,13 @@ from polars.testing import assert_series_equal
         (True, 4, None, pl.Boolean),
         (None, 7, None, pl.Null),
         (0, 0, None, pl.Int32),
+        (datetime(2023, 2, 2), 3, None, pl.Datetime),
+        (date(2023, 2, 2), 3, None, pl.Date),
+        (time(10, 15), 1, None, pl.Time),
+        (timedelta(hours=3), 10, None, pl.Duration),
         (8, 2, pl.UInt8, pl.UInt8),
-        pytest.param(
-            datetime(2023, 2, 2),
-            3,
-            None,
-            pl.Datetime,
-            marks=pytest.mark.skip("Not implemented properly yet for lazy"),
-        ),
+        (date(2023, 2, 2), 3, pl.Datetime, pl.Datetime),
+        (7.5, 5, pl.UInt16, pl.UInt16),
     ],
 )
 def test_repeat(
@@ -35,7 +34,7 @@ def test_repeat(
     dtype: pl.PolarsDataType,
     expected_dtype: pl.PolarsDataType,
 ) -> None:
-    expected = pl.Series("repeat", [value] * n, dtype=expected_dtype)
+    expected = pl.Series("repeat", [value] * n).cast(expected_dtype)
 
     result_eager = pl.repeat(value, n=n, dtype=dtype, eager=True)
     assert_series_equal(result_eager, expected)
