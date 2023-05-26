@@ -326,6 +326,11 @@ def _assert_series_inner(
     if check_dtype and left.dtype != right.dtype:
         raise_assert_detail("Series", "Dtype mismatch", left.dtype, right.dtype)
 
+    if left.null_count() != right.null_count():
+        raise_assert_detail(
+            "Series", "null_count is not equal", left.null_count(), right.null_count()
+        )
+
     # create mask of which (if any) values are unequal
     unequal = left != right
 

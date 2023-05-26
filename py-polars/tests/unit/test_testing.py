@@ -98,35 +98,33 @@ def test_compare_series_nulls() -> None:
     srs2 = pl.Series([1, None, None])
     assert_series_not_equal(srs1, srs2)
 
-    with pytest.raises(AssertionError, match="Value mismatch"):
+    with pytest.raises(AssertionError, match="null_count is not equal"):
         assert_series_equal(srs1, srs2)
-    with pytest.raises(AssertionError, match="Exact value mismatch"):
-        assert_series_equal(srs1, srs2, check_exact=True)
 
 
 def test_series_cmp_fast_paths() -> None:
     assert (
         pl.Series([None], dtype=pl.Int32) != pl.Series([1, 2], dtype=pl.Int32)
-    ).to_list() == [True, True]
+    ).to_list() == [None, None]
     assert (
         pl.Series([None], dtype=pl.Int32) == pl.Series([1, 2], dtype=pl.Int32)
-    ).to_list() == [False, False]
+    ).to_list() == [None, None]
 
     assert (
         pl.Series([None], dtype=pl.Utf8) != pl.Series(["a", "b"], dtype=pl.Utf8)
-    ).to_list() == [True, True]
+    ).to_list() == [None, None]
     assert (
         pl.Series([None], dtype=pl.Utf8) == pl.Series(["a", "b"], dtype=pl.Utf8)
-    ).to_list() == [False, False]
+    ).to_list() == [None, None]
 
     assert (
         pl.Series([None], dtype=pl.Boolean)
         != pl.Series([True, False], dtype=pl.Boolean)
-    ).to_list() == [True, True]
+    ).to_list() == [None, None]
     assert (
         pl.Series([None], dtype=pl.Boolean)
         == pl.Series([False, False], dtype=pl.Boolean)
-    ).to_list() == [False, False]
+    ).to_list() == [None, None]
 
 
 def test_compare_series_value_mismatch_string() -> None:

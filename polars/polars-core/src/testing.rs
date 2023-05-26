@@ -17,30 +17,34 @@ impl Series {
     /// Two `Datetime` series are *not* equal if their timezones are different, regardless
     /// if they represent the same UTC time or not.
     pub fn series_equal_missing(&self, other: &Series) -> bool {
-        // TODO! remove this? Default behavior already includes equal missing
-        #[cfg(feature = "timezones")]
-        {
-            use crate::datatypes::DataType::Datetime;
+        let check_sum = |b: BooleanChunked, null_count: usize| {
+            b.sum().map(|s| s as usize).unwrap_or(0) == (self.len() - null_count)
+        };
 
-            if let Datetime(_, tz_lhs) = self.dtype() {
-                if let Datetime(_, tz_rhs) = other.dtype() {
-                    if tz_lhs != tz_rhs {
-                        return false;
-                    }
-                } else {
+        match (self.dtype(), other.dtype()) {
+            #[cfg(feature = "timezones")]
+            (DataType::Datetime(_, tz_lhs), DataType::Datetime(_, tz_rhs)) => {
+                if tz_lhs != tz_rhs {
                     return false;
                 }
             }
+            _ => {}
         }
 
         // differences from Partial::eq in that numerical dtype may be different
+        let null_count = self.null_count();
         self.len() == other.len()
             && self.name() == other.name()
-            && self.null_count() == other.null_count()
+            && null_count == other.null_count()
             && {
                 let eq = self.equal(other);
                 match eq {
-                    Ok(b) => b.sum().map(|s| s as usize).unwrap_or(0) == self.len(),
+                    Ok(b) => {
+                        // we first check the null count
+                        // as nulls propagate, if they were not on the same position
+                        // the null_count would have increased
+                        b.null_count() == null_count && check_sum(b, null_count)
+                    }
                     Err(_) => false,
                 }
             }
