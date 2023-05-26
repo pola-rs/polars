@@ -3,7 +3,7 @@ use polars_lazy::dsl::Expr;
 use polars_plan::dsl::count;
 use sqlparser::ast::{
     Expr as SqlExpr, Function as SQLFunction, FunctionArg, FunctionArgExpr, Value as SqlValue,
-    WindowSpec,
+    WindowSpec, WindowType,
 };
 
 use crate::sql_expr::parse_sql_expr;
@@ -432,7 +432,13 @@ impl SqlFunctionVisitor<'_> {
         cumulative_f: impl Fn(Expr, bool) -> Expr,
     ) -> PolarsResult<Expr> {
         match self.func.over.as_ref() {
-            Some(spec) => self.apply_cumulative_window(f, cumulative_f, spec),
+            Some(WindowType::WindowSpec(spec)) => {
+                self.apply_cumulative_window(f, cumulative_f, spec)
+            }
+            Some(WindowType::NamedWindow(named_window)) => polars_bail!(
+                InvalidOperation: "Named windows are not supported yet. Got {:?}",
+                named_window
+            ),
             _ => self.visit_unary(f),
         }
     }
@@ -534,10 +540,10 @@ impl SqlFunctionVisitor<'_> {
     fn apply_window_spec(
         &self,
         expr: Expr,
-        window_spec: &Option<WindowSpec>,
+        window_type: &Option<WindowType>,
     ) -> PolarsResult<Expr> {
-        Ok(match &window_spec {
-            Some(window_spec) => {
+        Ok(match &window_type {
+            Some(WindowType::WindowSpec(window_spec)) => {
                 if window_spec.partition_by.is_empty() {
                     let exprs = window_spec
                         .order_by
@@ -560,8 +566,11 @@ impl SqlFunctionVisitor<'_> {
                         .collect::<PolarsResult<Vec<_>>>()?;
                     expr.over(partition_by)
                 }
-                // Order by and Row range may not be supported at the moment
             }
+            Some(WindowType::NamedWindow(named_window)) => polars_bail!(
+                InvalidOperation: "Named windows are not supported yet. Got: {:?}",
+                named_window
+            ),
             None => expr,
         })
     }

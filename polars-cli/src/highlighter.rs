@@ -12,7 +12,7 @@ use crate::interactive::PolarsCommand;
 pub(crate) struct SQLHighlighter {}
 
 fn colorize_sql(query: &str, st: &mut StyledText) -> std::io::Result<()> {
-    let dialect = GenericDialect::default();
+    let dialect = GenericDialect;
 
     let mut tokenizer = Tokenizer::new(&dialect, query);
 
@@ -44,11 +44,11 @@ fn colorize_sql(query: &str, st: &mut StyledText) -> std::io::Result<()> {
 
     for token in tokens {
         match token {
-            Token::Mul => st.push((Style::new().fg(Color::Purple), format!("*"))),
-            Token::LParen => st.push((Style::new().fg(Color::Purple), format!("("))),
-            Token::RParen => st.push((Style::new().fg(Color::Purple), format!(")"))),
-            Token::Comma => st.push((Style::new().fg(Color::Purple), format!(","))),
-            Token::SemiColon => st.push((Style::new().fg(Color::White).bold(), format!(";"))),
+            Token::Mul => st.push((Style::new().fg(Color::Purple), "*".to_string())),
+            Token::LParen => st.push((Style::new().fg(Color::Purple), "(".to_string())),
+            Token::RParen => st.push((Style::new().fg(Color::Purple), ")".to_string())),
+            Token::Comma => st.push((Style::new().fg(Color::Purple), ",".to_string())),
+            Token::SemiColon => st.push((Style::new().fg(Color::White).bold(), ";".to_string())),
             Token::SingleQuotedString(s) => {
                 st.push((Style::new().fg(Color::Yellow).italic(), format!("'{}'", s)))
             }
