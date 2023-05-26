@@ -139,7 +139,7 @@ impl AExpr {
                     NUnique(expr) => {
                         let mut field =
                             arena.get(*expr).to_field(schema, Context::Default, arena)?;
-                        field.coerce(DataType::UInt32);
+                        field.coerce(IDX_DTYPE);
                         Ok(field)
                     }
                     Count(expr) => {
@@ -150,7 +150,7 @@ impl AExpr {
                     }
                     AggGroups(expr) => {
                         let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
-                        field.coerce(DataType::List(IDX_DTYPE.into()));
+                        field.coerce(List(IDX_DTYPE.into()));
                         Ok(field)
                     }
                     Quantile { expr, .. } => {
@@ -238,6 +238,12 @@ fn get_arithmetic_field(
                 (Date, Date) => Duration(TimeUnit::Milliseconds),
                 (left, right) => try_get_supertype(left, &right)?,
             }
+        }
+        Operator::Plus
+            if left_field.dtype == Boolean
+                && right_ae.get_type(schema, Context::Default, arena)? == Boolean =>
+        {
+            IDX_DTYPE
         }
         _ => {
             match (left_ae, right_ae) {

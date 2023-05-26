@@ -96,7 +96,7 @@ def test_rolling_skew() -> None:
     )
 
 
-@pytest.mark.parametrize("time_zone", [None, "US/Central", "+01:00"])
+@pytest.mark.parametrize("time_zone", [None, "US/Central"])
 @pytest.mark.parametrize(
     ("rolling_fn", "expected_values"),
     [
@@ -414,10 +414,11 @@ def test_dynamic_groupby_timezone_awareness() -> None:
                 datetime(2020, 1, 10),
                 timedelta(days=1),
                 time_unit="ns",
-                name="datetime",
                 eager=True,
-            ).dt.replace_time_zone("UTC"),
-            pl.Series("value", pl.arange(1, 11, eager=True)),
+            )
+            .alias("datetime")
+            .dt.replace_time_zone("UTC"),
+            pl.arange(1, 11, eager=True).alias("value"),
         )
     )
 

@@ -41,27 +41,28 @@ impl PySeries {
     }
 }
 
-pub(crate) fn to_series_collection(ps: Vec<PySeries>) -> Vec<Series> {
-    // prevent destruction of ps
-    let mut ps = std::mem::ManuallyDrop::new(ps);
-
-    // get mutable pointer and reinterpret as Series
-    let p = ps.as_mut_ptr() as *mut Series;
-    let len = ps.len();
-    let cap = ps.capacity();
-
-    // The pointer ownership will be transferred to Vec and this will be responsible for dealloc
-    unsafe { Vec::from_raw_parts(p, len, cap) }
+pub(crate) trait ToSeries {
+    fn to_series(self) -> Vec<Series>;
 }
 
-pub(crate) fn to_pyseries_collection(s: Vec<Series>) -> Vec<PySeries> {
-    let mut s = std::mem::ManuallyDrop::new(s);
+impl ToSeries for Vec<PySeries> {
+    fn to_series(self) -> Vec<Series> {
+        // Safety
+        // repr is transparent
+        unsafe { std::mem::transmute(self) }
+    }
+}
 
-    let p = s.as_mut_ptr() as *mut PySeries;
-    let len = s.len();
-    let cap = s.capacity();
+pub(crate) trait ToPySeries {
+    fn to_pyseries(self) -> Vec<PySeries>;
+}
 
-    unsafe { Vec::from_raw_parts(p, len, cap) }
+impl ToPySeries for Vec<Series> {
+    fn to_pyseries(self) -> Vec<PySeries> {
+        // Safety
+        // repr is transparent
+        unsafe { std::mem::transmute(self) }
+    }
 }
 
 #[pymethods]
@@ -355,6 +356,7 @@ impl PySeries {
                     | DataType::Duration(_)
                     | DataType::Categorical(_)
                     | DataType::Binary
+                    | DataType::Array(_, _)
                     | DataType::Time
             ) || !skip_nulls
             {
@@ -493,28 +495,6 @@ impl PySeries {
                         None
                     )?;
                     ca.into_series()
-                }
-                Some(DataType::Date) => {
-                    let ca: Int32Chunked = dispatch_apply!(
-                        series,
-                        apply_lambda_with_primitive_out_type,
-                        py,
-                        lambda,
-                        0,
-                        None
-                    )?;
-                    ca.into_date().into_series()
-                }
-                Some(DataType::Datetime(tu, tz)) => {
-                    let ca: Int64Chunked = dispatch_apply!(
-                        series,
-                        apply_lambda_with_primitive_out_type,
-                        py,
-                        lambda,
-                        0,
-                        None
-                    )?;
-                    ca.into_datetime(tu, tz).into_series()
                 }
                 Some(DataType::Utf8) => {
                     let ca = dispatch_apply!(
@@ -864,7 +844,7 @@ mod test {
 
         assert_eq!(s.sum::<i32>(), Some(6));
         let collection = vec![ps];
-        let s = to_series_collection(collection);
+        let s = collection.to_series();
         assert_eq!(
             s.iter().map(|s| s.sum::<i32>()).collect::<Vec<_>>(),
             vec![Some(6)]

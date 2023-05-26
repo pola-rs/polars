@@ -177,13 +177,12 @@ pub fn date_range_lazy(
     end: PyExpr,
     every: &str,
     closed: Wrap<ClosedWindow>,
-    name: String,
     time_zone: Option<TimeZone>,
 ) -> PyExpr {
     let start = start.inner;
     let end = end.inner;
     let every = Duration::parse(every);
-    dsl::functions::date_range(name, start, end, every, closed.0, time_zone).into()
+    dsl::functions::date_range(start, end, every, closed.0, time_zone).into()
 }
 
 #[pyfunction]
@@ -382,34 +381,38 @@ pub fn reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
 }
 
 #[pyfunction]
-pub fn repeat(value: &PyAny, n_times: PyExpr) -> PyResult<PyExpr> {
-    if let Ok(true) = value.is_instance_of::<PyBool>() {
-        let val = value.extract::<bool>().unwrap();
-        Ok(dsl::repeat(val, n_times.inner).into())
-    } else if let Ok(int) = value.downcast::<PyInt>() {
-        let val = int.extract::<i64>().unwrap();
+pub fn repeat(value: Wrap<AnyValue>, n: PyExpr, dtype: Option<Wrap<DataType>>) -> PyResult<PyExpr> {
+    let value = value.0;
+    let n = n.inner;
+    let dtype = dtype.map(|wrap| wrap.0);
 
-        if val >= i32::MIN as i64 && val <= i32::MAX as i64 {
-            Ok(dsl::repeat(val as i32, n_times.inner).into())
-        } else {
-            Ok(dsl::repeat(val, n_times.inner).into())
-        }
-    } else if let Ok(float) = value.downcast::<PyFloat>() {
-        let val = float.extract::<f64>().unwrap();
-        Ok(dsl::repeat(val, n_times.inner).into())
-    } else if let Ok(pystr) = value.downcast::<PyString>() {
-        let val = pystr
-            .to_str()
-            .expect("could not transform Python string to Rust Unicode");
-        Ok(dsl::repeat(val, n_times.inner).into())
-    } else if value.is_none() {
-        Ok(dsl::repeat(Null {}, n_times.inner).into())
-    } else {
-        Err(PyValueError::new_err(format!(
-            "could not convert value {:?} as a Literal",
-            value.str()?
-        )))
+    let target_dtype = match dtype {
+        Some(dtype) => dtype,
+        None => match value.dtype() {
+            // Integer inputs that fit in Int32 are parsed as such
+            DataType::Int64 => {
+                let int_value: i64 = value.try_extract().unwrap();
+                if int_value >= i32::MIN as i64 && int_value <= i32::MAX as i64 {
+                    DataType::Int32
+                } else {
+                    DataType::Int64
+                }
+            }
+            DataType::Unknown => DataType::Null,
+            _ => value.dtype(),
+        },
+    };
+
+    let lit_value = LiteralValue::try_from(value).map_err(PyPolarsErr::from)?;
+    let must_cast = lit_value.get_datatype() != target_dtype;
+
+    let mut expr = dsl::repeat(lit_value, n);
+
+    if must_cast {
+        expr = expr.cast(target_dtype);
     }
+
+    Ok(expr.into())
 }
 
 #[pyfunction]
@@ -428,4 +431,17 @@ pub fn spearman_rank_corr(a: PyExpr, b: PyExpr, ddof: u8, propagate_nans: bool) 
 pub fn sum_exprs(exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = exprs.to_exprs();
     dsl::sum_exprs(exprs).into()
+}
+
+#[pyfunction]
+pub fn time_range_lazy(
+    start: PyExpr,
+    end: PyExpr,
+    every: &str,
+    closed: Wrap<ClosedWindow>,
+) -> PyExpr {
+    let start = start.inner;
+    let end = end.inner;
+    let every = Duration::parse(every);
+    dsl::functions::time_range(start, end, every, closed.0).into()
 }

@@ -3,6 +3,8 @@ use std::sync::Arc;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
+use polars_core::POOL;
+use rayon::prelude::*;
 
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
@@ -74,33 +76,39 @@ impl PhysicalExpr for SortExpr {
             _ => {
                 let series = ac.flat_naive().into_owned();
 
-                let groups = match ac.groups().as_ref() {
-                    GroupsProxy::Idx(groups) => {
-                        groups
-                            .iter()
-                            .map(|(first, idx)| {
-                                // Safety:
-                                // Group tuples are always in bounds
-                                let group = unsafe {
-                                    series.take_iter_unchecked(&mut idx.iter().map(|i| *i as usize))
-                                };
+                let mut sort_options = self.options;
+                sort_options.multithreaded = false;
+                let groups = POOL.install(|| {
+                    match ac.groups().as_ref() {
+                        GroupsProxy::Idx(groups) => {
+                            groups
+                                .par_iter()
+                                .map(|(first, idx)| {
+                                    // Safety:
+                                    // Group tuples are always in bounds
+                                    let group = unsafe {
+                                        series.take_iter_unchecked(
+                                            &mut idx.iter().map(|i| *i as usize),
+                                        )
+                                    };
 
-                                let sorted_idx = group.arg_sort(self.options);
-                                let new_idx = map_sorted_indices_to_group_idx(&sorted_idx, idx);
+                                    let sorted_idx = group.arg_sort(sort_options);
+                                    let new_idx = map_sorted_indices_to_group_idx(&sorted_idx, idx);
+                                    (new_idx.first().copied().unwrap_or(first), new_idx)
+                                })
+                                .collect()
+                        }
+                        GroupsProxy::Slice { groups, .. } => groups
+                            .par_iter()
+                            .map(|&[first, len]| {
+                                let group = series.slice(first as i64, len as usize);
+                                let sorted_idx = group.arg_sort(sort_options);
+                                let new_idx = map_sorted_indices_to_group_slice(&sorted_idx, first);
                                 (new_idx.first().copied().unwrap_or(first), new_idx)
                             })
-                            .collect()
+                            .collect(),
                     }
-                    GroupsProxy::Slice { groups, .. } => groups
-                        .iter()
-                        .map(|&[first, len]| {
-                            let group = series.slice(first as i64, len as usize);
-                            let sorted_idx = group.arg_sort(self.options);
-                            let new_idx = map_sorted_indices_to_group_slice(&sorted_idx, first);
-                            (new_idx.first().copied().unwrap_or(first), new_idx)
-                        })
-                        .collect(),
-                };
+                });
                 let groups = GroupsProxy::Idx(groups);
                 ac.with_groups(groups);
             }

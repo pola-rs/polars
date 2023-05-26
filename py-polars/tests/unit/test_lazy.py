@@ -268,13 +268,6 @@ def test_shift_and_fill() -> None:
     assert out["a"].null_count() == 0
 
 
-def test_arange() -> None:
-    ldf = pl.LazyFrame({"a": [1, 1, 1]})
-    result = ldf.filter(pl.col("a") >= pl.arange(0, 3)).collect()
-    expected = pl.DataFrame({"a": [1, 1]})
-    assert_frame_equal(result, expected)
-
-
 def test_arg_unique() -> None:
     ldf = pl.LazyFrame({"a": [4, 1, 4]})
     col_a_unique = ldf.select(pl.col("a").arg_unique()).collect()["a"]
@@ -685,49 +678,6 @@ def test_backward_fill() -> None:
     assert_series_equal(col_a_backward_fill, pl.Series("a", [1, 3, 3]).cast(pl.Float64))
 
 
-def test_take(fruits_cars: pl.DataFrame) -> None:
-    ldf = fruits_cars.lazy()
-
-    # out of bounds error
-    with pytest.raises(pl.ComputeError):
-        (
-            ldf.sort("fruits")
-            .select(
-                [pl.col("B").reverse().take([1, 2]).implode().over("fruits"), "fruits"]
-            )
-            .collect()
-        )
-
-    for index in [[0, 1], pl.Series([0, 1]), np.array([0, 1])]:
-        out = (
-            ldf.sort("fruits")
-            .select(
-                [
-                    pl.col("B")
-                    .reverse()
-                    .take(index)  # type: ignore[arg-type]
-                    .implode()
-                    .over("fruits"),
-                    "fruits",
-                ]
-            )
-            .collect()
-        )
-
-        assert out[0, "B"].to_list() == [2, 3]
-        assert out[4, "B"].to_list() == [1, 4]
-
-    out = (
-        ldf.sort("fruits")
-        .select(
-            [pl.col("B").reverse().take(pl.lit(1)).implode().over("fruits"), "fruits"]
-        )
-        .collect()
-    )
-    assert out[0, "B"] == 3
-    assert out[4, "B"] == 4
-
-
 def test_select_by_col_list(fruits_cars: pl.DataFrame) -> None:
     ldf = fruits_cars.lazy()
     result = ldf.select(pl.col(["A", "B"]).sum())
@@ -815,14 +765,38 @@ def test_arr_namespace(fruits_cars: pl.DataFrame) -> None:
     out = ldf.select(
         [
             "fruits",
-            pl.col("B").implode().over("fruits").arr.min().alias("B_by_fruits_min1"),
-            pl.col("B").min().implode().over("fruits").alias("B_by_fruits_min2"),
-            pl.col("B").implode().over("fruits").arr.max().alias("B_by_fruits_max1"),
-            pl.col("B").max().implode().over("fruits").alias("B_by_fruits_max2"),
-            pl.col("B").implode().over("fruits").arr.sum().alias("B_by_fruits_sum1"),
-            pl.col("B").sum().implode().over("fruits").alias("B_by_fruits_sum2"),
-            pl.col("B").implode().over("fruits").arr.mean().alias("B_by_fruits_mean1"),
-            pl.col("B").mean().implode().over("fruits").alias("B_by_fruits_mean2"),
+            pl.col("B")
+            .over("fruits", mapping_strategy="join")
+            .list.min()
+            .alias("B_by_fruits_min1"),
+            pl.col("B")
+            .min()
+            .over("fruits", mapping_strategy="join")
+            .alias("B_by_fruits_min2"),
+            pl.col("B")
+            .over("fruits", mapping_strategy="join")
+            .list.max()
+            .alias("B_by_fruits_max1"),
+            pl.col("B")
+            .max()
+            .over("fruits", mapping_strategy="join")
+            .alias("B_by_fruits_max2"),
+            pl.col("B")
+            .over("fruits", mapping_strategy="join")
+            .list.sum()
+            .alias("B_by_fruits_sum1"),
+            pl.col("B")
+            .sum()
+            .over("fruits", mapping_strategy="join")
+            .alias("B_by_fruits_sum2"),
+            pl.col("B")
+            .over("fruits", mapping_strategy="join")
+            .list.mean()
+            .alias("B_by_fruits_mean1"),
+            pl.col("B")
+            .mean()
+            .over("fruits", mapping_strategy="join")
+            .alias("B_by_fruits_mean2"),
         ]
     )
     expected = pl.DataFrame(
@@ -1137,6 +1111,11 @@ def test_quantile(fruits_cars: pl.DataFrame) -> None:
 
     assert fruits_cars.lazy().quantile(0.24, "linear").collect()["A"][0] == 1.96
     assert fruits_cars.select(pl.col("A").quantile(0.24, "linear"))["A"][0] == 1.96
+
+
+def test_null_count() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, None, 2], "b": [None, 3, None, 3]})
+    assert lf.null_count().collect().rows() == [(1, 2)]
 
 
 def test_unique() -> None:

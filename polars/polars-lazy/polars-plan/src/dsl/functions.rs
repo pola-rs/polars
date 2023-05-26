@@ -240,23 +240,13 @@ pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8, propagate_nans: bool) -> E
 /// That means that the first `Series` will be used to determine the ordering
 /// until duplicates are found. Once duplicates are found, the next `Series` will
 /// be used and so on.
+#[cfg(feature = "arange")]
 pub fn arg_sort_by<E: AsRef<[Expr]>>(by: E, descending: &[bool]) -> Expr {
-    let descending = descending.to_vec();
-    let function = SpecialEq::new(Arc::new(move |by: &mut [Series]| {
-        polars_core::functions::arg_sort_by(by, &descending).map(|ca| Some(ca.into_series()))
-    }) as Arc<dyn SeriesUdf>);
-
-    Expr::AnonymousFunction {
-        input: by.as_ref().to_vec(),
-        function,
-        output_type: GetOutput::from_type(IDX_DTYPE),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyGroups,
-            input_wildcard_expansion: true,
-            fmt_str: "arg_sort_by",
-            ..Default::default()
-        },
-    }
+    let e = &by.as_ref()[0];
+    let name = expr_output_name(e).unwrap();
+    arange(lit(0 as IdxSize), count().cast(IDX_DTYPE), 1)
+        .sort_by(by, descending)
+        .alias(name.as_ref())
 }
 
 #[cfg(all(feature = "concat_str", feature = "strings"))]
@@ -325,11 +315,42 @@ pub fn concat_list<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> PolarsResult
     })
 }
 
+#[cfg(feature = "arange")]
+fn arange_impl<T>(start: T::Native, end: T::Native, step: i64) -> PolarsResult<Option<Series>>
+where
+    T: PolarsNumericType,
+    ChunkedArray<T>: IntoSeries,
+    std::ops::Range<T::Native>: Iterator<Item = T::Native>,
+    std::ops::RangeInclusive<T::Native>: DoubleEndedIterator<Item = T::Native>,
+{
+    let mut ca = match step {
+        1 => ChunkedArray::<T>::from_iter_values("arange", start..end),
+        2.. => ChunkedArray::<T>::from_iter_values("arange", (start..end).step_by(step as usize)),
+        _ => {
+            polars_ensure!(start > end, InvalidOperation: "range must be decreasing if 'step' is negative");
+            ChunkedArray::<T>::from_iter_values(
+                "arange",
+                (end..=start).rev().step_by(step.unsigned_abs() as usize),
+            )
+        }
+    };
+    let is_sorted = if end < start {
+        IsSorted::Descending
+    } else {
+        IsSorted::Ascending
+    };
+    ca.set_sorted_flag(is_sorted);
+    Ok(Some(ca.into_series()))
+}
+
+// TODO! rewrite this with the apply_private architecture
 /// Create list entries that are range arrays
 /// - if `start` and `end` are a column, every element will expand into an array in a list column.
 /// - if `start` and `end` are literals the output will be of `Int64`.
 #[cfg(feature = "arange")]
 pub fn arange(start: Expr, end: Expr, step: i64) -> Expr {
+    let output_name = "arange";
+
     let has_col_without_agg = |e: &Expr| {
         has_expr(e, |ae| matches!(ae, Expr::Column(_)))
             &&
@@ -367,44 +388,56 @@ pub fn arange(start: Expr, end: Expr, step: i64) -> Expr {
     if (literal_start || literal_end) && !any_column_no_agg {
         let f = move |sa: Series, sb: Series| {
             polars_ensure!(step != 0, InvalidOperation: "step must not be zero");
-            let sa = sa.cast(&DataType::Int64)?;
-            let sb = sb.cast(&DataType::Int64)?;
-            let start = sa
-                .i64()?
-                .get(0)
-                .ok_or_else(|| polars_err!(NoData: "no data in `start` evaluation"))?;
-            let end = sb
-                .i64()?
-                .get(0)
-                .ok_or_else(|| polars_err!(NoData: "no data in `end` evaluation"))?;
 
-            let mut ca = match step {
-                1 => Int64Chunked::from_iter_values("arange", start..end),
-                2.. => {
-                    Int64Chunked::from_iter_values("arange", (start..end).step_by(step as usize))
+            match sa.dtype() {
+                dt if dt == &IDX_DTYPE => {
+                    let start = sa
+                        .idx()?
+                        .get(0)
+                        .ok_or_else(|| polars_err!(NoData: "no data in `start` evaluation"))?;
+                    let sb = sb.cast(&IDX_DTYPE)?;
+                    let end = sb
+                        .idx()?
+                        .get(0)
+                        .ok_or_else(|| polars_err!(NoData: "no data in `end` evaluation"))?;
+                    #[cfg(feature = "bigidx")]
+                    {
+                        arange_impl::<UInt64Type>(start, end, step)
+                    }
+                    #[cfg(not(feature = "bigidx"))]
+                    {
+                        arange_impl::<UInt32Type>(start, end, step)
+                    }
                 }
                 _ => {
-                    polars_ensure!(start > end, InvalidOperation: "range must be decreasing if 'step' is negative");
-                    Int64Chunked::from_iter_values(
-                        "arange",
-                        (end..=start).rev().step_by(step.unsigned_abs() as usize),
-                    )
+                    let sa = sa.cast(&DataType::Int64)?;
+                    let sb = sb.cast(&DataType::Int64)?;
+                    let start = sa
+                        .i64()?
+                        .get(0)
+                        .ok_or_else(|| polars_err!(NoData: "no data in `start` evaluation"))?;
+                    let end = sb
+                        .i64()?
+                        .get(0)
+                        .ok_or_else(|| polars_err!(NoData: "no data in `end` evaluation"))?;
+                    arange_impl::<Int64Type>(start, end, step)
                 }
-            };
-            let is_sorted = if end < start {
-                IsSorted::Descending
-            } else {
-                IsSorted::Ascending
-            };
-            ca.set_sorted_flag(is_sorted);
-            Ok(Some(ca.into_series()))
+            }
         };
         apply_binary(
             start,
             end,
             f,
-            GetOutput::map_field(|_| Field::new("arange", DataType::Int64)),
+            GetOutput::map_field(|input| {
+                let dtype = if input.data_type() == &IDX_DTYPE {
+                    IDX_DTYPE
+                } else {
+                    DataType::Int64
+                };
+                Field::new(output_name, dtype)
+            }),
         )
+        .alias(output_name)
     } else {
         let f = move |sa: Series, sb: Series| {
             polars_ensure!(step != 0, InvalidOperation: "step must not be zero");
@@ -429,7 +462,7 @@ pub fn arange(start: Expr, end: Expr, step: i64) -> Expr {
             let start = sa.i64()?;
             let end = sb.i64()?;
             let mut builder = ListPrimitiveChunkedBuilder::<Int64Type>::new(
-                "arange",
+                output_name,
                 start.len(),
                 start.len() * 3,
                 DataType::Int64,
@@ -463,8 +496,11 @@ pub fn arange(start: Expr, end: Expr, step: i64) -> Expr {
             start,
             end,
             f,
-            GetOutput::map_field(|_| Field::new("arange", DataType::List(DataType::Int64.into()))),
+            GetOutput::map_field(|_| {
+                Field::new(output_name, DataType::List(DataType::Int64.into()))
+            }),
         )
+        .alias(output_name)
     }
 }
 
@@ -1270,7 +1306,7 @@ pub fn as_struct(exprs: &[Expr]) -> Expr {
 /// Create a column of length `n` containing `n` copies of the literal `value`. Generally you won't need this function,
 /// as `lit(value)` already represents a column containing only `value` whose length is automatically set to the correct
 /// number of rows.
-pub fn repeat<L: Literal>(value: L, n_times: Expr) -> Expr {
+pub fn repeat<L: Literal>(value: L, n: Expr) -> Expr {
     let function = |s: Series, n: Series| {
         let n =
             n.get(0).unwrap().extract::<usize>().ok_or_else(
@@ -1278,7 +1314,7 @@ pub fn repeat<L: Literal>(value: L, n_times: Expr) -> Expr {
             )?;
         Ok(Some(s.new_from_index(0, n)))
     };
-    apply_binary(lit(value), n_times, function, GetOutput::same_type())
+    apply_binary(lit(value), n, function, GetOutput::same_type()).alias("repeat")
 }
 
 #[cfg(feature = "arg_where")]
@@ -1312,10 +1348,9 @@ pub fn coalesce(exprs: &[Expr]) -> Expr {
     }
 }
 
-/// Create a date range, named `name`, from a `start` and `stop` expression.
+/// Create a date range from a `start` and `stop` expression.
 #[cfg(feature = "temporal")]
 pub fn date_range(
-    name: String,
     start: Expr,
     end: Expr,
     every: Duration,
@@ -1326,15 +1361,28 @@ pub fn date_range(
 
     Expr::Function {
         input,
-        function: FunctionExpr::TemporalExpr(TemporalFunction::DateRange {
-            name,
-            every,
-            closed,
-            tz,
-        }),
+        function: FunctionExpr::TemporalExpr(TemporalFunction::DateRange { every, closed, tz }),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             cast_to_supertypes: true,
+            allow_rename: true,
+            ..Default::default()
+        },
+    }
+}
+
+/// Create a time range from a `start` and `stop` expression.
+#[cfg(feature = "temporal")]
+pub fn time_range(start: Expr, end: Expr, every: Duration, closed: ClosedWindow) -> Expr {
+    let input = vec![start, end];
+
+    Expr::Function {
+        input,
+        function: FunctionExpr::TemporalExpr(TemporalFunction::TimeRange { every, closed }),
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyGroups,
+            cast_to_supertypes: false,
+            allow_rename: true,
             ..Default::default()
         },
     }

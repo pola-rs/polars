@@ -73,6 +73,8 @@ use polars_arrow::utils::CustomIterTools;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 use polars_core::utils::try_get_supertype;
+use polars_json::json::infer;
+use simd_json::BorrowedValue;
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::prelude::*;
@@ -131,7 +133,7 @@ where
     }
 
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
-        df.rechunk();
+        df.align_chunks();
         let fields = df.iter().map(|s| s.field().to_arrow()).collect::<Vec<_>>();
         let batches = df
             .iter_chunks()
@@ -199,18 +201,18 @@ where
 
         let out = match self.json_format {
             JsonFormat::Json => {
-                use arrow::io::json::read::json_deserializer::Value;
-                let bytes = rb.deref();
+                let mut bytes = rb.deref().to_vec();
                 let json_value =
-                    json::read::json_deserializer::parse(bytes).map_err(to_compute_err)?;
+                    simd_json::to_borrowed_value(&mut bytes).map_err(to_compute_err)?;
+
                 // likely struct type
-                let dtype = if let Value::Array(values) = &json_value {
+                let dtype = if let BorrowedValue::Array(values) = &json_value {
                     // struct types may have missing fields so find supertype
                     let dtype = values
                         .iter()
                         .take(self.infer_schema_len.unwrap_or(usize::MAX))
                         .map(|value| {
-                            json::read::infer(value)
+                            infer(value)
                                 .map_err(PolarsError::from)
                                 .map(|dt| DataType::from(&dt))
                         })
@@ -223,9 +225,9 @@ where
                     let dtype = DataType::List(Box::new(dtype));
                     dtype.to_arrow()
                 } else {
-                    json::read::infer(&json_value)?
+                    infer(&json_value)?
                 };
-                let arr = json::read::deserialize(&json_value, dtype)?;
+                let arr = polars_json::json::deserialize(&json_value, dtype)?;
                 let arr = arr.as_any().downcast_ref::<StructArray>().ok_or_else(
                     || polars_err!(ComputeError: "can only deserialize json objects"),
                 )?;

@@ -106,13 +106,11 @@ fn write_anyvalue(
             };
             let formatted = match tz {
                 #[cfg(feature = "timezones")]
-                Some(tz) => match tz.parse::<Tz>() {
-                    Ok(parsed_tz) => parsed_tz.from_utc_datetime(&ndt).format(datetime_format),
-                    Err(_) => match temporal_conversions::parse_offset(tz) {
-                        Ok(parsed_tz) => parsed_tz.from_utc_datetime(&ndt).format(datetime_format),
-                        Err(_) => unreachable!(),
-                    },
-                },
+                Some(tz) => tz
+                    .parse::<Tz>()
+                    .unwrap()
+                    .from_utc_datetime(&ndt)
+                    .format(datetime_format),
                 #[cfg(not(feature = "timezones"))]
                 Some(_) => {
                     panic!("activate 'timezones' feature");
@@ -204,6 +202,12 @@ pub(crate) fn write<W: Write>(
             DataType::List(_) => true,
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(_) => true,
+            #[cfg(feature = "object")]
+            DataType::Object(_) => {
+                return Err(PolarsError::ComputeError(
+                    "csv writer does not suppert object dtype".into(),
+                ))
+            }
             _ => false,
         };
         polars_ensure!(

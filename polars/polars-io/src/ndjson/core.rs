@@ -13,7 +13,7 @@ use rayon::prelude::*;
 
 use crate::csv::utils::*;
 use crate::mmap::{MmapBytesReader, ReaderBytes};
-use crate::ndjson_core::buffer::*;
+use crate::ndjson::buffer::*;
 use crate::prelude::*;
 const NEWLINE: u8 = b'\n';
 const RETURN: u8 = b'\r';
@@ -158,7 +158,8 @@ impl<'a> CoreJsonReader<'a> {
                 let bytes: &[u8] = &reader_bytes;
                 let mut cursor = Cursor::new(bytes);
 
-                let data_type = arrow_ndjson::read::infer(&mut cursor, infer_schema_len)?;
+                let data_type = polars_json::ndjson::infer(&mut cursor, infer_schema_len)?;
+                dbg!(&data_type);
                 let schema = StructArray::get_fields(&data_type).iter().collect();
 
                 Cow::Owned(schema)
@@ -213,7 +214,7 @@ impl<'a> CoreJsonReader<'a> {
                 .into_par_iter()
                 .map(|(start_pos, stop_at_nbytes)| {
                     let mut buffers = init_buffers(&self.schema, capacity)?;
-                    let _ = parse_lines(&bytes[start_pos..stop_at_nbytes], &mut buffers);
+                    parse_lines(&bytes[start_pos..stop_at_nbytes], &mut buffers)?;
                     DataFrame::new(
                         buffers
                             .into_values()
@@ -247,26 +248,27 @@ impl<'a> CoreJsonReader<'a> {
 fn parse_impl(
     bytes: &[u8],
     buffers: &mut PlIndexMap<BufferKey, Buffer>,
-    line: &mut Vec<u8>,
+    scratch: &mut Vec<u8>,
 ) -> PolarsResult<usize> {
-    line.clear();
-    line.extend_from_slice(bytes);
-    let n = line.len();
+    scratch.clear();
+    scratch.extend_from_slice(bytes);
+    let n = scratch.len();
     let all_good = match n {
         0 => true,
-        1 => line[0] == NEWLINE,
-        2 => line[0] == NEWLINE && line[1] == RETURN,
+        1 => scratch[0] == NEWLINE,
+        2 => scratch[0] == NEWLINE && scratch[1] == RETURN,
         _ => {
-            let value: simd_json::BorrowedValue = simd_json::to_borrowed_value(line)
+            let value: simd_json::BorrowedValue = simd_json::to_borrowed_value(scratch)
                 .map_err(|e| polars_err!(ComputeError: "error parsing line: {}", e))?;
             match value {
                 simd_json::BorrowedValue::Object(value) => {
-                    buffers
-                        .iter_mut()
-                        .for_each(|(s, inner)| match s.0.map_lookup(&value) {
-                            Some(v) => inner.add(v).expect("inner.add(v)"),
+                    buffers.iter_mut().try_for_each(|(s, inner)| {
+                        match s.0.map_lookup(&value) {
+                            Some(v) => inner.add(v)?,
                             None => inner.add_null(),
-                        });
+                        }
+                        PolarsResult::Ok(())
+                    })?;
                 }
                 _ => {
                     buffers.iter_mut().for_each(|(_, inner)| inner.add_null());
@@ -282,21 +284,14 @@ fn parse_impl(
 fn parse_lines(bytes: &[u8], buffers: &mut PlIndexMap<BufferKey, Buffer>) -> PolarsResult<()> {
     let mut buf = vec![];
 
-    let total_bytes = bytes.len();
-    let mut offset = 0;
     // The `RawValue` is a pointer to the original JSON string and does not perform any deserialization.
     // It is used to properly iterate over the lines without re-implementing the splitlines logic when this does the same thing.
     let mut iter =
         serde_json::Deserializer::from_slice(bytes).into_iter::<Box<serde_json::value::RawValue>>();
     while let Some(Ok(value)) = iter.next() {
         let bytes = value.get().as_bytes();
-        offset += bytes.len();
         parse_impl(bytes, buffers, &mut buf)?;
     }
-    polars_ensure!(
-        offset == total_bytes,
-        ComputeError: "expected {} bytes, but only parsed {}", total_bytes, offset,
-    );
     Ok(())
 }
 

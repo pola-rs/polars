@@ -126,6 +126,22 @@ impl PySeries {
                         }
                         v
                     }
+                    DataType::Array(_, _) => {
+                        let v = PyList::empty(py);
+                        let ca = series.array().unwrap();
+                        for opt_s in ca.amortized_iter() {
+                            match opt_s {
+                                None => {
+                                    v.append(py.None()).unwrap();
+                                }
+                                Some(s) => {
+                                    let pylst = to_list_recursive(py, s.as_ref());
+                                    v.append(pylst).unwrap();
+                                }
+                            }
+                        }
+                        v
+                    }
                     DataType::Date => {
                         let ca = series.date().unwrap();
                         return Wrap(ca).to_object(py);

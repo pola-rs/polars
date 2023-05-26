@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import typing
 from datetime import timedelta
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -21,17 +21,65 @@ def test_date_datetime() -> None:
         }
     )
     out = df.select(
-        [
-            pl.all(),
-            pl.datetime("year", "month", "day", "hour").dt.hour().cast(int).alias("h2"),
-            pl.date("year", "month", "day").dt.day().cast(int).alias("date"),
-        ]
+        pl.all(),
+        pl.datetime("year", "month", "day", "hour").dt.hour().cast(int).alias("h2"),
+        pl.date("year", "month", "day").dt.day().cast(int).alias("date"),
     )
     assert_series_equal(out["date"], df["day"].rename("date"))
     assert_series_equal(out["h2"], df["hour"].rename("h2"))
 
 
-def test_diag_concat() -> None:
+def test_time() -> None:
+    df = pl.DataFrame(
+        {
+            "hour": [7, 14, 21],
+            "min": [10, 20, 30],
+            "sec": [15, 30, 45],
+            "micro": [123456, 555555, 987654],
+        }
+    )
+    out = df.select(
+        pl.all(),
+        pl.time("hour", "min", "sec", "micro").dt.hour().cast(int).alias("h2"),
+        pl.time("hour", "min", "sec", "micro").dt.minute().cast(int).alias("m2"),
+        pl.time("hour", "min", "sec", "micro").dt.second().cast(int).alias("s2"),
+        pl.time("hour", "min", "sec", "micro").dt.microsecond().cast(int).alias("ms2"),
+    )
+    assert_series_equal(out["h2"], df["hour"].rename("h2"))
+    assert_series_equal(out["m2"], df["min"].rename("m2"))
+    assert_series_equal(out["s2"], df["sec"].rename("s2"))
+    assert_series_equal(out["ms2"], df["micro"].rename("ms2"))
+
+
+def test_concat_align() -> None:
+    a = pl.DataFrame({"a": ["a", "b", "d", "e", "e"], "b": [1, 2, 4, 5, 6]})
+    b = pl.DataFrame({"a": ["a", "b", "c"], "c": [5.5, 6.0, 7.5]})
+    c = pl.DataFrame({"a": ["a", "b", "c", "d", "e"], "d": ["w", "x", "y", "z", None]})
+
+    expected = cast(
+        pl.DataFrame,
+        pl.from_repr(
+            """
+            shape: (6, 4)
+            ┌─────┬──────┬──────┬──────┐
+            │ a   ┆ b    ┆ c    ┆ d    │
+            │ --- ┆ ---  ┆ ---  ┆ ---  │
+            │ str ┆ i64  ┆ f64  ┆ str  │
+            ╞═════╪══════╪══════╪══════╡
+            │ a   ┆ 1    ┆ 5.5  ┆ w    │
+            │ b   ┆ 2    ┆ 6.0  ┆ x    │
+            │ c   ┆ null ┆ 7.5  ┆ y    │
+            │ d   ┆ 4    ┆ null ┆ z    │
+            │ e   ┆ 5    ┆ null ┆ null │
+            │ e   ┆ 6    ┆ null ┆ null │
+            └─────┴──────┴──────┴──────┘
+            """
+        ),
+    )
+    assert_frame_equal(pl.concat([a, b, c], how="align"), expected)
+
+
+def test_concat_diagonal() -> None:
     a = pl.DataFrame({"a": [1, 2]})
     b = pl.DataFrame({"b": ["a", "b"], "c": [1, 2]})
     c = pl.DataFrame({"a": [5, 7], "c": [1, 2], "d": [1, 2]})
@@ -48,7 +96,6 @@ def test_diag_concat() -> None:
                 "d": [None, None, None, None, 1, 2],
             }
         )
-
         assert_frame_equal(out, expected)
 
 
@@ -67,6 +114,34 @@ def test_concat_horizontal() -> None:
         }
     )
     assert_frame_equal(out, expected)
+
+
+def test_concat_vertical() -> None:
+    a = pl.DataFrame({"a": ["a", "b"], "b": [1, 2]})
+    b = pl.DataFrame({"a": ["c", "d", "e"], "b": [3, 4, 5]})
+
+    out = pl.concat([a, b], how="vertical")
+    expected = cast(
+        pl.DataFrame,
+        pl.from_repr(
+            """
+            shape: (5, 2)
+            ┌─────┬─────┐
+            │ a   ┆ b   │
+            │ --- ┆ --- │
+            │ str ┆ i64 │
+            ╞═════╪═════╡
+            │ a   ┆ 1   │
+            │ b   ┆ 2   │
+            │ c   ┆ 3   │
+            │ d   ┆ 4   │
+            │ e   ┆ 5   │
+            └─────┴─────┘
+            """
+        ),
+    )
+    assert_frame_equal(out, expected)
+    assert out.rows() == [("a", 1), ("b", 2), ("c", 3), ("d", 4), ("e", 5)]
 
 
 def test_all_any_horizontally() -> None:
@@ -93,12 +168,6 @@ def test_all_any_horizontally() -> None:
         ]
     )
     assert_frame_equal(result, expected)
-
-
-def test_cut_deprecated() -> None:
-    with pytest.deprecated_call():
-        a = pl.Series("a", [v / 10 for v in range(-30, 30, 5)])
-        pl.cut(a, bins=[-1, 1])
 
 
 def test_null_handling_correlation() -> None:
@@ -183,7 +252,7 @@ def test_align_frames() -> None:
 
     # expected error condition
     with pytest.raises(TypeError):
-        pl.align_frames(  # type: ignore[call-overload]
+        pl.align_frames(  # type: ignore[type-var]
             pl.from_pandas(df1.reset_index()).lazy(),
             pl.from_pandas(df2.reset_index()),
             on="date",
@@ -198,6 +267,75 @@ def test_align_frames() -> None:
     )
     assert pf1.rows() == [(5, 8, 9), (4, None, None), (3, 5, 6), (2, None, None)]
     assert pf2.rows() == [(5, None, None), (4, 2, 0), (3, 8, 9), (2, 5, 6)]
+
+
+def test_align_frames_duplicate_key() -> None:
+    # setup some test frames with duplicate key/alignment values
+    df1 = pl.DataFrame({"x": ["a", "a", "a", "e"], "y": [1, 2, 4, 5]})
+    df2 = pl.DataFrame({"y": [0, 0, -1], "z": [5.5, 6.0, 7.5], "x": ["a", "b", "b"]})
+
+    # align rows, confirming correctness and original column order
+    af1, af2 = pl.align_frames(df1, df2, on="x")
+
+    # shape: (6, 2)   shape: (6, 3)
+    # ┌─────┬──────┐  ┌──────┬──────┬─────┐
+    # │ x   ┆ y    │  │ y    ┆ z    ┆ x   │
+    # │ --- ┆ ---  │  │ ---  ┆ ---  ┆ --- │
+    # │ str ┆ i64  │  │ i64  ┆ f64  ┆ str │
+    # ╞═════╪══════╡  ╞══════╪══════╪═════╡
+    # │ a   ┆ 1    │  │ 0    ┆ 5.5  ┆ a   │
+    # │ a   ┆ 2    │  │ 0    ┆ 5.5  ┆ a   │
+    # │ a   ┆ 4    │  │ 0    ┆ 5.5  ┆ a   │
+    # │ b   ┆ null │  │ 0    ┆ 6.0  ┆ b   │
+    # │ b   ┆ null │  │ -1   ┆ 7.5  ┆ b   │
+    # │ e   ┆ 5    │  │ null ┆ null ┆ e   │
+    # └─────┴──────┘  └──────┴──────┴─────┘
+    assert af1.rows() == [
+        ("a", 1),
+        ("a", 2),
+        ("a", 4),
+        ("b", None),
+        ("b", None),
+        ("e", 5),
+    ]
+    assert af2.rows() == [
+        (0, 5.5, "a"),
+        (0, 5.5, "a"),
+        (0, 5.5, "a"),
+        (0, 6.0, "b"),
+        (-1, 7.5, "b"),
+        (None, None, "e"),
+    ]
+
+    # align frames the other way round, using "left" alignment strategy
+    af1, af2 = pl.align_frames(df2, df1, on="x", how="left")
+
+    # shape: (5, 3)        shape: (5, 2)
+    # ┌─────┬─────┬─────┐  ┌─────┬──────┐
+    # │ y   ┆ z   ┆ x   │  │ x   ┆ y    │
+    # │ --- ┆ --- ┆ --- │  │ --- ┆ ---  │
+    # │ i64 ┆ f64 ┆ str │  │ str ┆ i64  │
+    # ╞═════╪═════╪═════╡  ╞═════╪══════╡
+    # │ 0   ┆ 5.5 ┆ a   │  │ a   ┆ 1    │
+    # │ 0   ┆ 5.5 ┆ a   │  │ a   ┆ 2    │
+    # │ 0   ┆ 5.5 ┆ a   │  │ a   ┆ 4    │
+    # │ 0   ┆ 6.0 ┆ b   │  │ b   ┆ null │
+    # │ -1  ┆ 7.5 ┆ b   │  │ b   ┆ null │
+    # └─────┴─────┴─────┘  └─────┴──────┘
+    assert af1.rows() == [
+        (0, 5.5, "a"),
+        (0, 5.5, "a"),
+        (0, 5.5, "a"),
+        (0, 6.0, "b"),
+        (-1, 7.5, "b"),
+    ]
+    assert af2.rows() == [
+        ("a", 1),
+        ("a", 2),
+        ("a", 4),
+        ("b", None),
+        ("b", None),
+    ]
 
 
 def test_nan_aggregations() -> None:
@@ -240,24 +378,6 @@ def test_coalesce() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_ones_zeros() -> None:
-    ones = pl.ones(5)
-    assert ones.dtype == pl.Float64
-    assert ones.to_list() == [1.0, 1.0, 1.0, 1.0, 1.0]
-
-    ones = pl.ones(3, dtype=pl.UInt8)
-    assert ones.dtype == pl.UInt8
-    assert ones.to_list() == [1, 1, 1]
-
-    zeros = pl.zeros(5)
-    assert zeros.dtype == pl.Float64
-    assert zeros.to_list() == [0.0, 0.0, 0.0, 0.0, 0.0]
-
-    zeros = pl.zeros(3, dtype=pl.UInt8)
-    assert zeros.dtype == pl.UInt8
-    assert zeros.to_list() == [0, 0, 0]
-
-
 def test_overflow_diff() -> None:
     df = pl.DataFrame(
         {
@@ -293,44 +413,6 @@ def test_fill_null_unknown_output_type() -> None:
             148.4131591025766,
         ]
     }
-
-
-def test_repeat() -> None:
-    s = pl.select(pl.repeat(2**31 - 1, 3)).to_series()
-    assert s.dtype == pl.Int32
-    assert s.len() == 3
-    assert s.to_list() == [2**31 - 1] * 3
-    s = pl.select(pl.repeat(-(2**31), 4)).to_series()
-    assert s.dtype == pl.Int32
-    assert s.len() == 4
-    assert s.to_list() == [-(2**31)] * 4
-    s = pl.select(pl.repeat(2**31, 5)).to_series()
-    assert s.dtype == pl.Int64
-    assert s.len() == 5
-    assert s.to_list() == [2**31] * 5
-    s = pl.select(pl.repeat(-(2**31) - 1, 3)).to_series()
-    assert s.dtype == pl.Int64
-    assert s.len() == 3
-    assert s.to_list() == [-(2**31) - 1] * 3
-    s = pl.select(pl.repeat("foo", 2)).to_series()
-    assert s.dtype == pl.Utf8
-    assert s.len() == 2
-    assert s.to_list() == ["foo"] * 2
-    s = pl.select(pl.repeat(1.0, 5)).to_series()
-    assert s.dtype == pl.Float64
-    assert s.len() == 5
-    assert s.to_list() == [1.0] * 5
-    s = pl.select(pl.repeat(True, 4)).to_series()
-    assert s.dtype == pl.Boolean
-    assert s.len() == 4
-    assert s.to_list() == [True] * 4
-    s = pl.select(pl.repeat(None, 7)).to_series()
-    assert s.dtype == pl.Null
-    assert s.len() == 7
-    assert s.to_list() == [None] * 7
-    s = pl.select(pl.repeat(0, 0)).to_series()
-    assert s.dtype == pl.Int32
-    assert s.len() == 0
 
 
 def test_min_alias_for_series_min() -> None:
@@ -449,7 +531,3 @@ def test_approx_unique() -> None:
         df1.select(pl.col("b").approx_unique()),
         pl.DataFrame({"b": pl.Series(values=[3], dtype=pl.UInt32)}),
     )
-
-
-def test_range_decreasing() -> None:
-    assert pl.arange(10, 1, -2, eager=True).to_list() == list(range(10, 1, -2))

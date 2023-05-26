@@ -19,13 +19,15 @@ use crate::prelude::*;
 pub(crate) struct AggregationExpr {
     pub(crate) input: Arc<dyn PhysicalExpr>,
     pub(crate) agg_type: GroupByMethod,
+    field: Option<Field>,
 }
 
 impl AggregationExpr {
-    pub fn new(expr: Arc<dyn PhysicalExpr>, agg_type: GroupByMethod) -> Self {
+    pub fn new(expr: Arc<dyn PhysicalExpr>, agg_type: GroupByMethod, field: Option<Field>) -> Self {
         Self {
             input: expr,
             agg_type,
+            field,
         }
     }
 }
@@ -66,34 +68,38 @@ impl PhysicalExpr for AggregationExpr {
                 }
             }
         }
-
         // Safety:
         // groups must always be in bounds.
         let out = unsafe {
             match self.agg_type {
                 GroupByMethod::Min => {
                     check_null_prop!();
-                    let agg_s = ac.flat_naive().into_owned().agg_min(ac.groups());
+                    let (s, groups) = ac.get_final_aggregation();
+                    let agg_s = s.agg_min(&groups);
                     rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::Max => {
                     check_null_prop!();
-                    let agg_s = ac.flat_naive().into_owned().agg_max(ac.groups());
+                    let (s, groups) = ac.get_final_aggregation();
+                    let agg_s = s.agg_max(&groups);
                     rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::Median => {
                     check_null_prop!();
-                    let agg_s = ac.flat_naive().into_owned().agg_median(ac.groups());
+                    let (s, groups) = ac.get_final_aggregation();
+                    let agg_s = s.agg_median(&groups);
                     rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::Mean => {
                     check_null_prop!();
-                    let agg_s = ac.flat_naive().into_owned().agg_mean(ac.groups());
+                    let (s, groups) = ac.get_final_aggregation();
+                    let agg_s = s.agg_mean(&groups);
                     rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::Sum => {
                     check_null_prop!();
-                    let agg_s = ac.flat_naive().into_owned().agg_sum(ac.groups());
+                    let (s, groups) = ac.get_final_aggregation();
+                    let agg_s = s.agg_sum(&groups);
                     rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::Count => {
@@ -156,43 +162,39 @@ impl PhysicalExpr for AggregationExpr {
                 }
                 GroupByMethod::First => {
                     check_null_prop!();
-                    let mut agg_s = ac.flat_naive().into_owned().agg_first(ac.groups());
-                    agg_s.rename(&keep_name);
-                    agg_s
+                    let (s, groups) = ac.get_final_aggregation();
+                    let agg_s = s.agg_first(&groups);
+                    rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::Last => {
                     check_null_prop!();
-                    let mut agg_s = ac.flat_naive().into_owned().agg_last(ac.groups());
-                    agg_s.rename(&keep_name);
-                    agg_s
+                    let (s, groups) = ac.get_final_aggregation();
+                    let agg_s = s.agg_last(&groups);
+                    rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::NUnique => {
                     check_null_prop!();
-                    let agg_s = ac.flat_naive().into_owned().agg_n_unique(ac.groups());
+                    let (s, groups) = ac.get_final_aggregation();
+                    let agg_s = s.agg_n_unique(&groups);
                     rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::Implode => {
-                    if state.unset_finalize_window_as_list() {
-                        let agg = ac.aggregated();
-                        rename_series(agg, &keep_name)
-                    } else {
-                        // if the aggregation is already
-                        // in an aggregate flat state for instance by
-                        // a mean aggregation, we simply convert to list
-                        //
-                        // if it is not, we traverse the groups and create
-                        // a list per group.
-                        let s = match ac.agg_state() {
-                            // mean agg:
-                            // -> f64 -> list<f64>
-                            AggState::AggregatedFlat(s) => s.reshape(&[-1, 1]).unwrap(),
-                            _ => {
-                                let agg = ac.aggregated();
-                                agg.as_list().into_series()
-                            }
-                        };
-                        rename_series(s, &keep_name)
-                    }
+                    // if the aggregation is already
+                    // in an aggregate flat state for instance by
+                    // a mean aggregation, we simply convert to list
+                    //
+                    // if it is not, we traverse the groups and create
+                    // a list per group.
+                    let s = match ac.agg_state() {
+                        // mean agg:
+                        // -> f64 -> list<f64>
+                        AggState::AggregatedFlat(s) => s.reshape(&[-1, 1]).unwrap(),
+                        _ => {
+                            let agg = ac.aggregated();
+                            agg.as_list().into_series()
+                        }
+                    };
+                    rename_series(s, &keep_name)
                 }
                 GroupByMethod::Groups => {
                     let mut column: ListChunked = ac.groups().as_list_chunked();
@@ -201,12 +203,14 @@ impl PhysicalExpr for AggregationExpr {
                 }
                 GroupByMethod::Std(ddof) => {
                     check_null_prop!();
-                    let agg_s = ac.flat_naive().into_owned().agg_std(ac.groups(), ddof);
+                    let (s, groups) = ac.get_final_aggregation();
+                    let agg_s = s.agg_std(&groups, ddof);
                     rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::Var(ddof) => {
                     check_null_prop!();
-                    let agg_s = ac.flat_naive().into_owned().agg_var(ac.groups(), ddof);
+                    let (s, groups) = ac.get_final_aggregation();
+                    let agg_s = s.agg_var(&groups, ddof);
                     rename_series(agg_s, &keep_name)
                 }
                 GroupByMethod::Quantile(_, _) => {
@@ -217,12 +221,11 @@ impl PhysicalExpr for AggregationExpr {
                     #[cfg(feature = "propagate_nans")]
                     {
                         check_null_prop!();
-                        let agg_s = ac.flat_naive().into_owned();
-                        let groups = ac.groups();
-                        let agg_s = if agg_s.dtype().is_float() {
-                            nan_propagating_aggregate::group_agg_nan_min_s(&agg_s, groups)
+                        let (s, groups) = ac.get_final_aggregation();
+                        let agg_s = if s.dtype().is_float() {
+                            nan_propagating_aggregate::group_agg_nan_min_s(&s, &groups)
                         } else {
-                            agg_s.agg_min(groups)
+                            s.agg_min(&groups)
                         };
                         rename_series(agg_s, &keep_name)
                     }
@@ -235,12 +238,11 @@ impl PhysicalExpr for AggregationExpr {
                     #[cfg(feature = "propagate_nans")]
                     {
                         check_null_prop!();
-                        let agg_s = ac.flat_naive().into_owned();
-                        let groups = ac.groups();
-                        let agg_s = if agg_s.dtype().is_float() {
-                            nan_propagating_aggregate::group_agg_nan_max_s(&agg_s, groups)
+                        let (s, groups) = ac.get_final_aggregation();
+                        let agg_s = if s.dtype().is_float() {
+                            nan_propagating_aggregate::group_agg_nan_max_s(&s, &groups)
                         } else {
-                            agg_s.agg_max(groups)
+                            s.agg_max(&groups)
                         };
                         rename_series(agg_s, &keep_name)
                     }
@@ -256,7 +258,11 @@ impl PhysicalExpr for AggregationExpr {
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
-        self.input.to_field(input_schema)
+        if let Some(field) = self.field.as_ref() {
+            Ok(field.clone())
+        } else {
+            self.input.to_field(input_schema)
+        }
     }
 
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {

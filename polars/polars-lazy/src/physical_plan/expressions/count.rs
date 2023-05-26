@@ -38,7 +38,7 @@ impl PhysicalExpr for CountExpr {
         Ok(AggregationContext::new(s, Cow::Borrowed(groups), true))
     }
     fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
-        Ok(Field::new("count", DataType::UInt32))
+        Ok(Field::new("count", IDX_DTYPE))
     }
 
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {

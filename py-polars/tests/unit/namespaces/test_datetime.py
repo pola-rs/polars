@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
@@ -83,7 +83,7 @@ def test_strptime_extract_times(
     assert_series_equal(getattr(s.dt, unit_attr)(), expected)
 
 
-@pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu", "+03:00"])
+@pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu"])
 @pytest.mark.parametrize(
     ("attribute", "expected"),
     [
@@ -99,7 +99,7 @@ def test_dt_date_and_time(
     assert result == expected
 
 
-@pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu", "+03:00"])
+@pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu"])
 @pytest.mark.parametrize("time_unit", ["us", "ns", "ms"])
 def test_dt_datetime(time_zone: str | None, time_unit: TimeUnit) -> None:
     ser = (
@@ -138,16 +138,21 @@ def test_dt_datetime_date_time_invalid() -> None:
     ],
 )
 @pytest.mark.parametrize(
-    "tzinfo", [None, ZoneInfo("Asia/Kathmandu"), timezone(timedelta(hours=1))]
+    ("tzinfo", "time_zone"),
+    [
+        (None, None),
+        (ZoneInfo("Asia/Kathmandu"), "Asia/Kathmandu"),
+    ],
 )
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_month_start_datetime(
     dt: datetime,
     expected: datetime,
     time_unit: TimeUnit,
-    tzinfo: ZoneInfo | timezone | None,
+    tzinfo: ZoneInfo | None,
+    time_zone: str | None,
 ) -> None:
-    ser = pl.Series([dt.replace(tzinfo=tzinfo)]).dt.cast_time_unit(time_unit)
+    ser = pl.Series([dt]).dt.replace_time_zone(time_zone).dt.cast_time_unit(time_unit)
     result = ser.dt.month_start().item()
     assert result == expected.replace(tzinfo=tzinfo)
 
@@ -178,16 +183,21 @@ def test_month_start_date(dt: date, expected: date) -> None:
     ],
 )
 @pytest.mark.parametrize(
-    "tzinfo", [None, ZoneInfo("Asia/Kathmandu"), timezone(timedelta(hours=1))]
+    ("tzinfo", "time_zone"),
+    [
+        (None, None),
+        (ZoneInfo("Asia/Kathmandu"), "Asia/Kathmandu"),
+    ],
 )
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
 def test_month_end_datetime(
     dt: datetime,
     expected: datetime,
     time_unit: TimeUnit,
-    tzinfo: ZoneInfo | timezone | None,
+    tzinfo: ZoneInfo | None,
+    time_zone: str | None,
 ) -> None:
-    ser = pl.Series([dt.replace(tzinfo=tzinfo)]).dt.cast_time_unit(time_unit)
+    ser = pl.Series([dt]).dt.replace_time_zone(time_zone).dt.cast_time_unit(time_unit)
     result = ser.dt.month_end().item()
     assert result == expected.replace(tzinfo=tzinfo)
 
@@ -288,10 +298,9 @@ def test_truncate(
         start,
         stop,
         timedelta(minutes=30),
-        name=f"dates[{time_unit}]",
         time_unit=time_unit,
         eager=True,
-    )
+    ).alias(f"dates[{time_unit}]")
 
     # can pass strings and time-deltas
     out = s.dt.truncate(every)
@@ -323,10 +332,9 @@ def test_round(
         start,
         stop,
         timedelta(minutes=30),
-        name=f"dates[{time_unit}]",
         time_unit=time_unit,
         eager=True,
-    )
+    ).alias(f"dates[{time_unit}]")
 
     # can pass strings and time-deltas
     out = s.dt.round(every)
@@ -372,18 +380,16 @@ def test_epoch_matches_timestamp() -> None:
 
 
 @pytest.mark.parametrize(
-    ("tzinfo", "expected_time_zone"),
+    ("tzinfo", "time_zone"),
     [(None, None), (ZoneInfo("Asia/Kathmandu"), "Asia/Kathmandu")],
 )
-def test_date_time_combine(
-    tzinfo: ZoneInfo | None, expected_time_zone: str | None
-) -> None:
+def test_date_time_combine(tzinfo: ZoneInfo | None, time_zone: str | None) -> None:
     # Define a DataFrame with columns for datetime, date, and time
     df = pl.DataFrame(
         {
             "dtm": [
-                datetime(2022, 12, 31, 10, 30, 45, tzinfo=tzinfo),
-                datetime(2023, 7, 5, 23, 59, 59, tzinfo=tzinfo),
+                datetime(2022, 12, 31, 10, 30, 45),
+                datetime(2023, 7, 5, 23, 59, 59),
             ],
             "dt": [
                 date(2022, 10, 10),
@@ -395,6 +401,7 @@ def test_date_time_combine(
             ],
         }
     )
+    df = df.with_columns(pl.col("dtm").dt.replace_time_zone(time_zone))
 
     # Combine datetime/date with time
     df = df.select(
@@ -423,7 +430,7 @@ def test_date_time_combine(
     assert df.to_dict(False) == expected_dict
 
     expected_schema = {
-        "d1": pl.Datetime("us", expected_time_zone),
+        "d1": pl.Datetime("us", time_zone),
         "d2": pl.Datetime("us"),
         "d3": pl.Datetime("us"),
     }
@@ -436,25 +443,19 @@ def test_combine_unsupported_types() -> None:
 
 
 @pytest.mark.parametrize("time_unit", ["ms", "us", "ns"])
-@pytest.mark.parametrize(
-    ("tzinfo", "expected_time_zone"),
-    [
-        (ZoneInfo("Asia/Kathmandu"), "Asia/Kathmandu"),
-        (None, None),
-    ],
-)
+@pytest.mark.parametrize("time_zone", ["Asia/Kathmandu", None])
 def test_combine_lazy_schema_datetime(
-    tzinfo: ZoneInfo | None,
-    expected_time_zone: str | None,
+    time_zone: str | None,
     time_unit: TimeUnit,
 ) -> None:
-    df = pl.DataFrame({"ts": pl.Series([datetime(2020, 1, 1, tzinfo=tzinfo)])})
+    df = pl.DataFrame({"ts": pl.Series([datetime(2020, 1, 1)])})
+    df = df.with_columns(pl.col("ts").dt.replace_time_zone(time_zone))
     result = (
         df.lazy()
         .select(pl.col("ts").dt.combine(time(1, 2, 3), time_unit=time_unit))
         .dtypes
     )
-    expected = [pl.Datetime(time_unit, expected_time_zone)]
+    expected = [pl.Datetime(time_unit, time_zone)]
     assert result == expected
 
 

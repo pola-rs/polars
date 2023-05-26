@@ -243,7 +243,7 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                 let convert = utils.getattr("_to_python_time").unwrap();
                 convert.call1((v,)).unwrap().into_py(py)
             }
-            AnyValue::List(v) => PySeries::new(v).to_list(),
+            AnyValue::Array(v, _) | AnyValue::List(v) => PySeries::new(v).to_list(),
             ref av @ AnyValue::Struct(_, _, flds) => struct_dict(py, av._iter_struct_av(), flds),
             AnyValue::StructOwned(payload) => struct_dict(py, payload.0.into_iter(), &payload.1),
             #[cfg(feature = "object")]
@@ -303,6 +303,11 @@ impl ToPyObject for Wrap<DataType> {
             DataType::Boolean => pl.getattr("Boolean").unwrap().into(),
             DataType::Utf8 => pl.getattr("Utf8").unwrap().into(),
             DataType::Binary => pl.getattr("Binary").unwrap().into(),
+            DataType::Array(inner, size) => {
+                let inner = Wrap(*inner.clone()).to_object(py);
+                let list_class = pl.getattr("Array").unwrap();
+                list_class.call1((*size, inner)).unwrap().into()
+            }
             DataType::List(inner) => {
                 let inner = Wrap(*inner.clone()).to_object(py);
                 let list_class = pl.getattr("List").unwrap();
@@ -410,6 +415,13 @@ impl FromPyObject<'_> for Wrap<DataType> {
                 let inner = ob.getattr("inner").unwrap();
                 let inner = inner.extract::<Wrap<DataType>>()?;
                 DataType::List(Box::new(inner.0))
+            }
+            "Array" => {
+                let inner = ob.getattr("inner").unwrap();
+                let width = ob.getattr("width").unwrap();
+                let inner = inner.extract::<Wrap<DataType>>()?;
+                let width = width.extract::<usize>()?;
+                DataType::Array(Box::new(inner.0), width)
             }
             "Struct" => {
                 let fields = ob.getattr("fields")?;
@@ -765,18 +777,6 @@ impl<'s> FromPyObject<'s> for Wrap<Row<'s>> {
     }
 }
 
-pub(crate) trait ToSeries {
-    fn to_series(self) -> Vec<Series>;
-}
-
-impl ToSeries for Vec<PySeries> {
-    fn to_series(self) -> Vec<Series> {
-        // Safety:
-        // transparent repr
-        unsafe { std::mem::transmute(self) }
-    }
-}
-
 impl FromPyObject<'_> for Wrap<Schema> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
         let dict = ob.extract::<&PyDict>()?;
@@ -936,9 +936,10 @@ impl FromPyObject<'_> for Wrap<AsofStrategy> {
         let parsed = match ob.extract::<&str>()? {
             "backward" => AsofStrategy::Backward,
             "forward" => AsofStrategy::Forward,
+            "nearest" => AsofStrategy::Nearest,
             v => {
                 return Err(PyValueError::new_err(format!(
-                    "strategy must be one of {{'backward', 'forward'}}, got {v}",
+                    "strategy must be one of {{'backward', 'forward', 'nearest'}}, got {v}",
                 )))
             }
         };
@@ -1241,6 +1242,22 @@ impl FromPyObject<'_> for Wrap<SearchSortedSide> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "side must be one of {{'any', 'left', 'right'}}, got {v}",
+                )))
+            }
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+impl FromPyObject<'_> for Wrap<WindowMapping> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let parsed = match ob.extract::<&str>()? {
+            "group_to_rows" => WindowMapping::GroupsToRows,
+            "join" => WindowMapping::Join,
+            "explode" => WindowMapping::Explode,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "side must be one of {{'group_to_rows', 'join', 'explode'}}, got {v}",
                 )))
             }
         };

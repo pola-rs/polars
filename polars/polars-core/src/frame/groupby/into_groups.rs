@@ -358,6 +358,19 @@ impl IntoGroupsProxy for ListChunked {
     }
 }
 
+#[cfg(feature = "dtype-array")]
+impl IntoGroupsProxy for ArrayChunked {
+    #[allow(clippy::needless_lifetimes)]
+    #[allow(unused_variables)]
+    fn group_tuples<'a>(
+        &'a self,
+        _multithreaded: bool,
+        _sorted: bool,
+    ) -> PolarsResult<GroupsProxy> {
+        todo!("grouping FixedSizeList not yet supported")
+    }
+}
+
 #[cfg(feature = "object")]
 impl<T> IntoGroupsProxy for ObjectChunked<T>
 where

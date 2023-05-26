@@ -63,6 +63,7 @@ pub enum StringFunction {
     #[cfg(feature = "string_from_radix")]
     FromRadix(u32, bool),
     Slice(i64, Option<u64>),
+    Explode,
 }
 
 impl StringFunction {
@@ -88,6 +89,7 @@ impl StringFunction {
             }
             #[cfg(feature = "string_from_radix")]
             FromRadix { .. } => mapper.with_dtype(DataType::Int32),
+            Explode => mapper.with_same_dtype(),
         }
     }
 }
@@ -125,6 +127,7 @@ impl Display for StringFunction {
             #[cfg(feature = "string_from_radix")]
             StringFunction::FromRadix { .. } => "from_radix",
             StringFunction::Slice(_, _) => "str_slice",
+            StringFunction::Explode => "explode",
         };
 
         write!(f, "str.{s}")
@@ -393,28 +396,17 @@ fn to_datetime(
     time_zone: Option<&TimeZone>,
     options: &StrptimeOptions,
 ) -> PolarsResult<Series> {
-    let tz_aware = match (options.tz_aware, &options.format) {
-        (true, Some(_)) => true,
-        (true, None) => polars_bail!(
-            ComputeError:
-            "passing 'tz_aware=True' without 'format' is not yet supported, please specify 'format'"
-        ),
+    let tz_aware = match &options.format {
         #[cfg(feature = "timezones")]
-        (false, Some(format)) => TZ_AWARE_RE.is_match(format),
-        (false, _) => false,
+        Some(format) => TZ_AWARE_RE.is_match(format),
+        _ => false,
     };
-    match (time_zone, tz_aware, options.utc) {
-        (Some(_), true, _) => polars_bail!(
+    if let (Some(_), true) = (time_zone, tz_aware) {
+        polars_bail!(
             ComputeError:
             "cannot use strptime with both a tz-aware format and a tz-aware dtype, \
             please drop time zone from the dtype"
-        ),
-        (Some(_), _, true) => polars_bail!(
-            ComputeError:
-            "cannot use strptime with both 'utc=True' and tz-aware dtype, \
-            please drop time zone from the dtype"
-        ),
-        _ => (),
+        )
     };
 
     let ca = s.utf8()?;
@@ -424,7 +416,6 @@ fn to_datetime(
             *time_unit,
             options.cache,
             tz_aware,
-            options.utc,
             time_zone,
         )?
         .into_series()
@@ -441,8 +432,7 @@ fn to_datetime(
             \n\
             You might want to try:\n\
             - setting `strict=False`\n\
-            - explicitly specifying a `format`\n\
-            - setting `utc=True` (if you are parsing datetimes with multiple offsets)"
+            - explicitly specifying a `format`"
         );
     }
     Ok(out.into_series())
@@ -654,4 +644,9 @@ pub(super) fn from_radix(s: &Series, radix: u32, strict: bool) -> PolarsResult<S
 pub(super) fn str_slice(s: &Series, start: i64, length: Option<u64>) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     ca.str_slice(start, length).map(|ca| ca.into_series())
+}
+
+pub(super) fn explode(s: &Series) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    ca.explode()
 }

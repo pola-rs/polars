@@ -25,10 +25,6 @@ pub struct StrptimeOptions {
     pub exact: bool,
     /// use a cache of unique, converted dates to apply the datetime conversion.
     pub cache: bool,
-    /// Parse a timezone aware timestamp
-    pub tz_aware: bool,
-    /// Convert timezone aware to UTC
-    pub utc: bool,
 }
 
 impl Default for StrptimeOptions {
@@ -38,8 +34,6 @@ impl Default for StrptimeOptions {
             strict: true,
             exact: true,
             cache: true,
-            tz_aware: false,
-            utc: false,
         }
     }
 }
@@ -70,4 +64,26 @@ impl Default for JoinOptions {
             rows_right: (None, usize::MAX),
         }
     }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct WindowOptions {
+    /// Explode the aggregated list and just do a hstack instead of a join
+    /// this requires the groups to be sorted to make any sense
+    pub mapping: WindowMapping,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum WindowMapping {
+    /// Map the group values to the position
+    #[default]
+    GroupsToRows,
+    /// Explode the aggregated list and just do a hstack instead of a join
+    /// this requires the groups to be sorted to make any sense
+    Explode,
+    /// Join the groups as 'List<group_dtype>' to the row positions.
+    /// warning: this can be memory intensive
+    Join,
 }

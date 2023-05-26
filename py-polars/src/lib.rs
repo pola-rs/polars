@@ -81,11 +81,13 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::eager::concat_series))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::eager::date_range))
+    m.add_wrapped(wrap_pyfunction!(functions::eager::date_range_eager))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::eager::diag_concat_df))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::eager::hor_concat_df))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::eager::time_range_eager))
         .unwrap();
 
     // Functions - lazy
@@ -156,6 +158,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::lazy::spearman_rank_corr))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::sum_exprs))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::lazy::time_range_lazy))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::whenthen::when))
         .unwrap();

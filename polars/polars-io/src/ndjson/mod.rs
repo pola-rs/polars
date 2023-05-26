@@ -1,2 +1,2 @@
 pub(crate) mod buffer;
-pub mod ndjson;
+pub mod core;

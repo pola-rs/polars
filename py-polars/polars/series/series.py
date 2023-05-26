@@ -4,6 +4,7 @@ import contextlib
 import math
 import os
 import typing
+import warnings
 from datetime import date, datetime, time, timedelta
 from typing import (
     TYPE_CHECKING,
@@ -65,6 +66,7 @@ from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import ShapeError
+from polars.series.array import ArrayNameSpace
 from polars.series.binary import BinaryNameSpace
 from polars.series.categorical import CatNameSpace
 from polars.series.datetime import DateTimeNameSpace
@@ -91,6 +93,7 @@ from polars.utils.decorators import deprecated_alias
 from polars.utils.meta import get_index_type
 from polars.utils.various import (
     _is_generator,
+    find_stacklevel,
     is_int_sequence,
     parse_version,
     range_to_series,
@@ -216,7 +219,7 @@ class Series:
     """
 
     _s: PySeries = None
-    _accessors: set[str] = {"arr", "cat", "dt", "str", "bin", "struct"}
+    _accessors: set[str] = {"arr", "cat", "dt", "list", "str", "bin", "struct"}
 
     def __init__(
         self,
@@ -334,12 +337,6 @@ class Series:
             pandas_to_pyseries(name, values, nan_to_null=nan_to_null)
         )
 
-    @classmethod
-    def _repeat(
-        cls, name: str, val: int | float | str | bool, n: int, dtype: PolarsDataType
-    ) -> Self:
-        return cls._from_pyseries(PySeries.repeat(name, val, n, dtype))
-
     def _get_ptr(self) -> int:
         """
         Get a pointer to the start of the values buffer of a numeric Series.
@@ -407,6 +404,12 @@ class Series:
     @property
     def time_unit(self) -> TimeUnit | None:
         """Get the time unit of underlying Datetime Series as {"ns", "us", "ms"}."""
+        warnings.warn(
+            "`Series.time_unit` is deprecated and will be removed in a future version,"
+            " please use `Series.dtype.time_unit` instead",
+            category=DeprecationWarning,
+            stacklevel=find_stacklevel(),
+        )
         return self._s.time_unit()
 
     def __bool__(self) -> NoReturn:
@@ -466,7 +469,7 @@ class Series:
                 return ~self
 
         if isinstance(other, datetime) and self.dtype == Datetime:
-            ts = _datetime_to_pl_timestamp(other, self.time_unit)
+            ts = _datetime_to_pl_timestamp(other, self._s.time_unit())
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
             return self._from_pyseries(f(ts))
@@ -489,7 +492,7 @@ class Series:
             return self._from_pyseries(getattr(self._s, op)(other._s))
 
         if other is not None:
-            other = maybe_cast(other, self.dtype, self.time_unit)
+            other = maybe_cast(other, self.dtype, self._s.time_unit())
         f = get_ffi_func(op + "_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -616,7 +619,7 @@ class Series:
             else:
                 return self._from_pyseries(getattr(self._s, op_s)(_s))
         else:
-            other = maybe_cast(other, self.dtype, self.time_unit)
+            other = maybe_cast(other, self.dtype, self._s.time_unit())
             f = get_ffi_func(op_ffi, self.dtype, self._s)
         if f is None:
             raise ValueError(
@@ -1899,7 +1902,7 @@ class Series:
         s._s.rename(name)
         return s
 
-    def rename(self, name: str, *, in_place: bool = False) -> Series:
+    def rename(self, name: str, *, in_place: bool | None = None) -> Series:
         """
         Rename this Series.
 
@@ -1923,6 +1926,17 @@ class Series:
         ]
 
         """
+        if in_place is not None:
+            # if 'in_place' is not None, this indicates that the parameter was
+            # explicitly set by the caller, and we should warn against it (use
+            # of NoDefault only applies when one of the valid values is None).
+            warnings.warn(
+                "the `in_place` parameter is deprecated and will be removed in a future"
+                " version; note that renaming is a shallow-copy operation with"
+                " essentially zero cost.",
+                category=DeprecationWarning,
+                stacklevel=find_stacklevel(),
+            )
         if in_place:
             self._s.rename(name)
             return self
@@ -3329,9 +3343,9 @@ class Series:
             if self.dtype == Date:
                 tp = "datetime64[D]"
             elif self.dtype == Duration:
-                tp = f"timedelta64[{self.time_unit}]"
+                tp = f"timedelta64[{self._s.time_unit()}]"
             else:
-                tp = f"datetime64[{self.time_unit}]"
+                tp = f"datetime64[{self._s.time_unit()}]"
             return arr.astype(tp)
 
         def raise_no_zero_copy() -> None:
@@ -5429,7 +5443,7 @@ class Series:
 
         Remap, setting a default for unrecognised values...
 
-        >>> s.map_dict(country_lookup, default="Unspecified").rename("country_name")
+        >>> s.map_dict(country_lookup, default="Unspecified").alias("country_name")
         shape: (4,)
         Series: 'country_name' [str]
         [
@@ -5441,7 +5455,7 @@ class Series:
 
         ...or keep the original value, by making use of ``pl.first()``:
 
-        >>> s.map_dict(country_lookup, default=pl.first()).rename("country_name")
+        >>> s.map_dict(country_lookup, default=pl.first()).alias("country_name")
         shape: (4,)
         Series: 'country_name' [str]
         [
@@ -5453,7 +5467,7 @@ class Series:
 
         ...or keep the original value, by assigning the input series:
 
-        >>> s.map_dict(country_lookup, default=s).rename("country_name")
+        >>> s.map_dict(country_lookup, default=s).alias("country_name")
         shape: (4,)
         Series: 'country_name' [str]
         [
@@ -5875,13 +5889,8 @@ class Series:
     def implode(self) -> Self:
         """Aggregate values into a list."""
 
-    # Below are the namespaces defined. Do not move these up in the definition of
-    # Series, as it confuses mypy between the type annotation `str` and the
-    # namespace `str`
-    @property
-    def arr(self) -> ListNameSpace:
-        """Create an object namespace of all list related methods."""
-        return ListNameSpace(self)
+    # Keep the `list` and `str` properties below at the end of the definition of Series,
+    # as to not confuse mypy with the type annotation `str` and `list`
 
     @property
     def bin(self) -> BinaryNameSpace:
@@ -5897,6 +5906,16 @@ class Series:
     def dt(self) -> DateTimeNameSpace:
         """Create an object namespace of all datetime related methods."""
         return DateTimeNameSpace(self)
+
+    @property
+    def list(self) -> ListNameSpace:
+        """Create an object namespace of all list related methods."""
+        return ListNameSpace(self)
+
+    @property
+    def arr(self) -> ArrayNameSpace:
+        """Create an object namespace of all array related methods."""
+        return ArrayNameSpace(self)
 
     @property
     def str(self) -> StringNameSpace:

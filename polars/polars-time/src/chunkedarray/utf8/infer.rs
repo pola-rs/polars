@@ -1,14 +1,13 @@
-use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime};
+use chrono::{DateTime, NaiveDate, NaiveDateTime};
 use once_cell::sync::Lazy;
 use polars_arrow::export::arrow::array::PrimitiveArray;
 use polars_core::prelude::*;
 use polars_core::utils::arrow::types::NativeType;
 use regex::Regex;
 
-use super::patterns::{self, PatternWithOffset};
+use super::patterns::{self, Pattern};
 #[cfg(feature = "dtype-date")]
 use crate::chunkedarray::date::naive_date_to_date;
-use crate::chunkedarray::utf8::patterns::Pattern;
 use crate::chunkedarray::utf8::strptime;
 use crate::prelude::utf8::strptime::StrpTimeState;
 
@@ -207,14 +206,13 @@ impl StrpTimeParser<i32> for DatetimeInfer<i32> {
 
 #[derive(Clone)]
 pub struct DatetimeInfer<T> {
-    pub pattern_with_offset: PatternWithOffset,
+    pub pattern: Pattern,
     patterns: &'static [&'static str],
     latest_fmt: &'static str,
-    transform: fn(&str, &str, Option<FixedOffset>, bool) -> Option<T>,
+    transform: fn(&str, &str) -> Option<T>,
     transform_bytes: StrpTimeState,
     fmt_len: u16,
     pub logical_type: DataType,
-    utc: bool,
 }
 
 #[cfg(feature = "dtype-datetime")]
@@ -224,43 +222,31 @@ impl TryFrom<Pattern> for DatetimeInfer<i64> {
     fn try_from(value: Pattern) -> PolarsResult<Self> {
         match value {
             Pattern::DatetimeDMY => Ok(DatetimeInfer {
-                pattern_with_offset: PatternWithOffset {
-                    pattern: Pattern::DatetimeDMY,
-                    offset: None,
-                },
+                pattern: Pattern::DatetimeDMY,
                 patterns: patterns::DATETIME_D_M_Y,
                 latest_fmt: patterns::DATETIME_D_M_Y[0],
                 transform: transform_datetime_us,
                 transform_bytes: StrpTimeState::default(),
                 fmt_len: 0,
                 logical_type: DataType::Datetime(TimeUnit::Microseconds, None),
-                utc: false,
             }),
             Pattern::DatetimeYMD => Ok(DatetimeInfer {
-                pattern_with_offset: PatternWithOffset {
-                    pattern: Pattern::DatetimeYMD,
-                    offset: None,
-                },
+                pattern: Pattern::DatetimeYMD,
                 patterns: patterns::DATETIME_Y_M_D,
                 latest_fmt: patterns::DATETIME_Y_M_D[0],
                 transform: transform_datetime_us,
                 transform_bytes: StrpTimeState::default(),
                 fmt_len: 0,
                 logical_type: DataType::Datetime(TimeUnit::Microseconds, None),
-                utc: false,
             }),
             Pattern::DatetimeYMDZ => Ok(DatetimeInfer {
-                pattern_with_offset: PatternWithOffset {
-                    pattern: Pattern::DatetimeYMDZ,
-                    offset: None,
-                },
+                pattern: Pattern::DatetimeYMDZ,
                 patterns: patterns::DATETIME_Y_M_D_Z,
                 latest_fmt: patterns::DATETIME_Y_M_D_Z[0],
                 transform: transform_tzaware_datetime_us,
                 transform_bytes: StrpTimeState::default(),
                 fmt_len: 0,
                 logical_type: DataType::Datetime(TimeUnit::Microseconds, None),
-                utc: false,
             }),
             _ => polars_bail!(ComputeError: "could not convert pattern"),
         }
@@ -274,30 +260,22 @@ impl TryFrom<Pattern> for DatetimeInfer<i32> {
     fn try_from(value: Pattern) -> PolarsResult<Self> {
         match value {
             Pattern::DateDMY => Ok(DatetimeInfer {
-                pattern_with_offset: PatternWithOffset {
-                    pattern: Pattern::DateDMY,
-                    offset: None,
-                },
+                pattern: Pattern::DateDMY,
                 patterns: patterns::DATE_D_M_Y,
                 latest_fmt: patterns::DATE_D_M_Y[0],
                 transform: transform_date,
                 transform_bytes: StrpTimeState::default(),
                 fmt_len: 0,
                 logical_type: DataType::Date,
-                utc: false,
             }),
             Pattern::DateYMD => Ok(DatetimeInfer {
-                pattern_with_offset: PatternWithOffset {
-                    pattern: Pattern::DateYMD,
-                    offset: None,
-                },
+                pattern: Pattern::DateYMD,
                 patterns: patterns::DATE_Y_M_D,
                 latest_fmt: patterns::DATE_Y_M_D[0],
                 transform: transform_date,
                 transform_bytes: StrpTimeState::default(),
                 fmt_len: 0,
                 logical_type: DataType::Date,
-                utc: false,
             }),
             _ => polars_bail!(ComputeError: "could not convert pattern"),
         }
@@ -305,17 +283,17 @@ impl TryFrom<Pattern> for DatetimeInfer<i32> {
 }
 
 impl<T: NativeType> DatetimeInfer<T> {
-    pub fn parse(&mut self, val: &str, offset: Option<FixedOffset>) -> Option<T> {
-        match (self.transform)(val, self.latest_fmt, offset, self.utc) {
+    pub fn parse(&mut self, val: &str) -> Option<T> {
+        match (self.transform)(val, self.latest_fmt) {
             Some(parsed) => Some(parsed),
             // try other patterns
             None => {
-                if !self.pattern_with_offset.pattern.is_inferable(val) {
+                if !self.pattern.is_inferable(val) {
                     return None;
                 }
                 for fmt in self.patterns {
                     self.fmt_len = 0;
-                    if let Some(parsed) = (self.transform)(val, fmt, offset, self.utc) {
+                    if let Some(parsed) = (self.transform)(val, fmt) {
                         self.latest_fmt = fmt;
                         return Some(parsed);
                     }
@@ -325,13 +303,13 @@ impl<T: NativeType> DatetimeInfer<T> {
         }
     }
 
-    fn coerce_utf8(&mut self, ca: &Utf8Chunked, offset: Option<FixedOffset>) -> Series {
+    fn coerce_utf8(&mut self, ca: &Utf8Chunked) -> Series {
         let chunks = ca
             .downcast_iter()
             .map(|array| {
                 let iter = array
                     .into_iter()
-                    .map(|opt_val| opt_val.and_then(|val| self.parse(val, offset)));
+                    .map(|opt_val| opt_val.and_then(|val| self.parse(val)));
                 Box::new(PrimitiveArray::from_trusted_len_iter(iter)) as ArrayRef
             })
             .collect();
@@ -352,19 +330,14 @@ impl<T: NativeType> DatetimeInfer<T> {
 }
 
 #[cfg(feature = "dtype-date")]
-fn transform_date(val: &str, fmt: &str, _offset: Option<FixedOffset>, _utc: bool) -> Option<i32> {
+fn transform_date(val: &str, fmt: &str) -> Option<i32> {
     NaiveDate::parse_from_str(val, fmt)
         .ok()
         .map(naive_date_to_date)
 }
 
 #[cfg(feature = "dtype-datetime")]
-pub(crate) fn transform_datetime_ns(
-    val: &str,
-    fmt: &str,
-    _offset: Option<FixedOffset>,
-    _utc: bool,
-) -> Option<i64> {
+pub(crate) fn transform_datetime_ns(val: &str, fmt: &str) -> Option<i64> {
     let out = NaiveDateTime::parse_from_str(val, fmt)
         .ok()
         .map(datetime_to_timestamp_ns);
@@ -375,29 +348,13 @@ pub(crate) fn transform_datetime_ns(
     })
 }
 
-fn transform_tzaware_datetime_ns(
-    val: &str,
-    fmt: &str,
-    offset: Option<FixedOffset>,
-    utc: bool,
-) -> Option<i64> {
+fn transform_tzaware_datetime_ns(val: &str, fmt: &str) -> Option<i64> {
     let dt = DateTime::parse_from_str(val, fmt);
-    match utc {
-        true => dt.ok().map(|dt| datetime_to_timestamp_ns(dt.naive_utc())),
-        false => match Some(dt.ok()?.timezone()) == offset {
-            true => dt.ok().map(|dt| datetime_to_timestamp_ns(dt.naive_utc())),
-            false => None,
-        },
-    }
+    dt.ok().map(|dt| datetime_to_timestamp_ns(dt.naive_utc()))
 }
 
 #[cfg(feature = "dtype-datetime")]
-pub(crate) fn transform_datetime_us(
-    val: &str,
-    fmt: &str,
-    _offset: Option<FixedOffset>,
-    _utc: bool,
-) -> Option<i64> {
+pub(crate) fn transform_datetime_us(val: &str, fmt: &str) -> Option<i64> {
     let out = NaiveDateTime::parse_from_str(val, fmt)
         .ok()
         .map(datetime_to_timestamp_us);
@@ -408,29 +365,13 @@ pub(crate) fn transform_datetime_us(
     })
 }
 
-fn transform_tzaware_datetime_us(
-    val: &str,
-    fmt: &str,
-    offset: Option<FixedOffset>,
-    utc: bool,
-) -> Option<i64> {
+fn transform_tzaware_datetime_us(val: &str, fmt: &str) -> Option<i64> {
     let dt = DateTime::parse_from_str(val, fmt);
-    match utc {
-        true => dt.ok().map(|dt| datetime_to_timestamp_us(dt.naive_utc())),
-        false => match Some(dt.ok()?.timezone()) == offset {
-            true => dt.ok().map(|dt| datetime_to_timestamp_us(dt.naive_utc())),
-            false => None,
-        },
-    }
+    dt.ok().map(|dt| datetime_to_timestamp_us(dt.naive_utc()))
 }
 
 #[cfg(feature = "dtype-datetime")]
-pub(crate) fn transform_datetime_ms(
-    val: &str,
-    fmt: &str,
-    _offset: Option<FixedOffset>,
-    _utc: bool,
-) -> Option<i64> {
+pub(crate) fn transform_datetime_ms(val: &str, fmt: &str) -> Option<i64> {
     let out = NaiveDateTime::parse_from_str(val, fmt)
         .ok()
         .map(datetime_to_timestamp_ms);
@@ -441,72 +382,48 @@ pub(crate) fn transform_datetime_ms(
     })
 }
 
-fn transform_tzaware_datetime_ms(
-    val: &str,
-    fmt: &str,
-    offset: Option<FixedOffset>,
-    utc: bool,
-) -> Option<i64> {
+fn transform_tzaware_datetime_ms(val: &str, fmt: &str) -> Option<i64> {
     let dt = DateTime::parse_from_str(val, fmt);
-    match utc {
-        true => dt.ok().map(|dt| datetime_to_timestamp_ms(dt.naive_utc())),
-        false => match Some(dt.ok()?.timezone()) == offset {
-            true => dt.ok().map(|dt| datetime_to_timestamp_ms(dt.naive_utc())),
-            false => None,
-        },
-    }
+    dt.ok().map(|dt| datetime_to_timestamp_ms(dt.naive_utc()))
 }
 
-pub fn infer_pattern_single(val: &str) -> Option<PatternWithOffset> {
+pub fn infer_pattern_single(val: &str) -> Option<Pattern> {
     // Dates come first, because we see datetimes as superset of dates
     infer_pattern_date_single(val).or_else(|| infer_pattern_datetime_single(val))
 }
 
-fn infer_pattern_datetime_single(val: &str) -> Option<PatternWithOffset> {
+fn infer_pattern_datetime_single(val: &str) -> Option<Pattern> {
     if patterns::DATETIME_D_M_Y.iter().any(|fmt| {
         NaiveDateTime::parse_from_str(val, fmt).is_ok()
             || NaiveDate::parse_from_str(val, fmt).is_ok()
     }) {
-        Some(PatternWithOffset {
-            pattern: Pattern::DatetimeDMY,
-            offset: None,
-        })
+        Some(Pattern::DatetimeDMY)
     } else if patterns::DATETIME_Y_M_D.iter().any(|fmt| {
         NaiveDateTime::parse_from_str(val, fmt).is_ok()
             || NaiveDate::parse_from_str(val, fmt).is_ok()
     }) {
-        Some(PatternWithOffset {
-            pattern: Pattern::DatetimeYMD,
-            offset: None,
-        })
+        Some(Pattern::DatetimeYMD)
+    } else if patterns::DATETIME_Y_M_D_Z
+        .iter()
+        .any(|fmt| NaiveDateTime::parse_from_str(val, fmt).is_ok())
+    {
+        Some(Pattern::DatetimeYMDZ)
     } else {
-        patterns::DATETIME_Y_M_D_Z
-            .iter()
-            .find_map(|fmt| DateTime::parse_from_str(val, fmt).ok())
-            .map(|dt| PatternWithOffset {
-                pattern: Pattern::DatetimeYMDZ,
-                offset: Some(dt.timezone()),
-            })
+        None
     }
 }
 
-fn infer_pattern_date_single(val: &str) -> Option<PatternWithOffset> {
+fn infer_pattern_date_single(val: &str) -> Option<Pattern> {
     if patterns::DATE_D_M_Y
         .iter()
         .any(|fmt| NaiveDate::parse_from_str(val, fmt).is_ok())
     {
-        Some(PatternWithOffset {
-            pattern: Pattern::DateDMY,
-            offset: None,
-        })
+        Some(Pattern::DateDMY)
     } else if patterns::DATE_Y_M_D
         .iter()
         .any(|fmt| NaiveDate::parse_from_str(val, fmt).is_ok())
     {
-        Some(PatternWithOffset {
-            pattern: Pattern::DateYMD,
-            offset: None,
-        })
+        Some(Pattern::DateYMD)
     } else {
         None
     }
@@ -517,51 +434,46 @@ pub(crate) fn to_datetime(
     ca: &Utf8Chunked,
     tu: TimeUnit,
     tz: Option<&TimeZone>,
-    utc: bool,
 ) -> PolarsResult<DatetimeChunked> {
     match ca.first_non_null() {
         None => Ok(Int64Chunked::full_null(ca.name(), ca.len()).into_datetime(tu, tz.cloned())),
         Some(idx) => {
             let subset = ca.slice(idx as i64, ca.len());
-            let pattern_with_offset = subset
+            let pattern = subset
                 .into_iter()
                 .find_map(|opt_val| opt_val.and_then(infer_pattern_datetime_single))
                 .ok_or_else(|| polars_err!(parse_fmt_idk = "date"))?;
-            let mut infer = DatetimeInfer::<i64>::try_from(pattern_with_offset.pattern)?;
-            match (tu, pattern_with_offset.offset) {
-                (TimeUnit::Nanoseconds, None) => infer.transform = transform_datetime_ns,
-                (TimeUnit::Microseconds, None) => infer.transform = transform_datetime_us,
-                (TimeUnit::Milliseconds, None) => infer.transform = transform_datetime_ms,
-                (TimeUnit::Nanoseconds, _) => infer.transform = transform_tzaware_datetime_ns,
-                (TimeUnit::Microseconds, _) => infer.transform = transform_tzaware_datetime_us,
-                (TimeUnit::Milliseconds, _) => infer.transform = transform_tzaware_datetime_ms,
+            let mut infer = DatetimeInfer::<i64>::try_from(pattern)?;
+            match (tu, pattern) {
+                (TimeUnit::Nanoseconds, Pattern::DatetimeYMDZ) => {
+                    infer.transform = transform_tzaware_datetime_ns
+                }
+                (TimeUnit::Microseconds, Pattern::DatetimeYMDZ) => {
+                    infer.transform = transform_tzaware_datetime_us
+                }
+                (TimeUnit::Milliseconds, Pattern::DatetimeYMDZ) => {
+                    infer.transform = transform_tzaware_datetime_ms
+                }
+                (TimeUnit::Nanoseconds, _) => infer.transform = transform_datetime_ns,
+                (TimeUnit::Microseconds, _) => infer.transform = transform_datetime_us,
+                (TimeUnit::Milliseconds, _) => infer.transform = transform_datetime_ms,
             }
-            infer.utc = utc;
-            if tz.is_some() && pattern_with_offset.offset.is_some() {
+            if tz.is_some() && pattern == Pattern::DatetimeYMDZ {
                 polars_bail!(ComputeError: "cannot parse tz-aware values with tz-aware dtype - please drop the time zone from the dtype.")
             }
-            match pattern_with_offset.offset {
+            match pattern {
                 #[cfg(feature = "timezones")]
-                Some(offset) => infer.coerce_utf8(ca, Some(offset)).datetime().map(|ca| {
+                Pattern::DatetimeYMDZ => infer.coerce_utf8(ca).datetime().map(|ca| {
                     let mut ca = ca.clone();
                     ca.set_time_unit(tu);
-                    match utc {
-                        true => Ok(ca.replace_time_zone(Some("UTC"), None)?),
-                        false => Ok(ca
-                            .replace_time_zone(Some("UTC"), None)?
-                            .convert_time_zone(offset.to_string())?),
-                    }
+                    ca.replace_time_zone(Some("UTC"), None)
                 })?,
-                _ => infer.coerce_utf8(ca, None).datetime().map(|ca| {
+                _ => infer.coerce_utf8(ca).datetime().map(|ca| {
                     let mut ca = ca.clone();
                     ca.set_time_unit(tu);
-                    match (tz, utc) {
+                    match tz {
                         #[cfg(feature = "timezones")]
-                        (Some(tz), false) => Ok(ca.replace_time_zone(Some(tz), None)?),
-                        #[cfg(feature = "timezones")]
-                        (None, true) => Ok(ca.replace_time_zone(Some("UTC"), None)?),
-                        #[cfg(feature = "timezones")]
-                        (Some(_), true) => unreachable!(), // has already been validated in strptime
+                        Some(tz) => ca.replace_time_zone(Some(tz), None),
                         _ => Ok(ca),
                     }
                 })?,
@@ -575,12 +487,12 @@ pub(crate) fn to_date(ca: &Utf8Chunked) -> PolarsResult<DateChunked> {
         None => Ok(Int32Chunked::full_null(ca.name(), ca.len()).into_date()),
         Some(idx) => {
             let subset = ca.slice(idx as i64, ca.len());
-            let pattern_with_offset = subset
+            let pattern = subset
                 .into_iter()
                 .find_map(|opt_val| opt_val.and_then(infer_pattern_date_single))
                 .ok_or_else(|| polars_err!(parse_fmt_idk = "date"))?;
-            let mut infer = DatetimeInfer::<i32>::try_from(pattern_with_offset.pattern).unwrap();
-            infer.coerce_utf8(ca, None).date().cloned()
+            let mut infer = DatetimeInfer::<i32>::try_from(pattern).unwrap();
+            infer.coerce_utf8(ca).date().cloned()
         }
     }
 }

@@ -43,7 +43,7 @@ lazy = ["polars-core/lazy", "polars-lazy", "polars-lazy/compile"]
 strings = ["polars-core/strings", "polars-lazy/strings", "polars-ops/strings"]
 
 # support for ObjectChunked<T> (downcastable Series of any type)
-object = ["polars-core/object", "polars-lazy/object"]
+object = ["polars-core/object", "polars-lazy/object", "polars-io/object"]
 
 # support for arrows json parsing
 json = ["polars-io", "polars-io/json", "polars-lazy/json", "polars-sql/json"]
@@ -181,6 +181,7 @@ dtype-full = [
   "dtype-datetime",
   "dtype-duration",
   "dtype-time",
+  "dtype-array",
   "dtype-i8",
   "dtype-i16",
   "dtype-decimal",
@@ -221,6 +222,11 @@ dtype-duration = [
   "polars-ops/dtype-duration",
 ]
 dtype-time = ["polars-core/dtype-time", "polars-io/dtype-time", "polars-time/dtype-time", "polars-ops/dtype-time"]
+dtype-array = [
+  "polars-core/dtype-array",
+  "polars-lazy/dtype-array",
+  "polars-ops/dtype-array",
+]
 dtype-i8 = ["polars-core/dtype-i8", "polars-lazy/dtype-i8", "polars-ops/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16", "polars-lazy/dtype-i16", "polars-ops/dtype-i16"]
 dtype-decimal = ["polars-core/dtype-decimal", "polars-lazy/dtype-decimal", "polars-ops/dtype-decimal"]

@@ -28,6 +28,7 @@ from polars.datatypes import (
     INTEGER_DTYPES,
     NUMERIC_DTYPES,
     TEMPORAL_DTYPES,
+    Array,
     Binary,
     Boolean,
     Categorical,
@@ -70,16 +71,8 @@ from polars.exceptions import (
     StructFieldNotFoundError,
 )
 from polars.expr import Expr
-from polars.functions.eager import (
+from polars.functions import (
     align_frames,
-    concat,
-    cut,
-    date_range,
-    get_dummies,
-    ones,
-    zeros,
-)
-from polars.functions.lazy import (
     all,
     any,
     apply,
@@ -91,6 +84,7 @@ from polars.functions.lazy import (
     coalesce,
     col,
     collect_all,
+    concat,
     concat_list,
     concat_str,
     corr,
@@ -99,6 +93,9 @@ from polars.functions.lazy import (
     cumfold,
     cumreduce,
     cumsum,
+    date,
+    date_range,
+    datetime,
     duration,
     element,
     exclude,
@@ -117,24 +114,23 @@ from polars.functions.lazy import (
     median,
     min,
     n_unique,
-    pearson_corr,
+    ones,
     quantile,
     reduce,
     repeat,
     rolling_corr,
     rolling_cov,
     select,
-    spearman_rank_corr,
     std,
     struct,
     sum,
     tail,
+    time,
+    time_range,
     var,
+    when,
+    zeros,
 )
-from polars.functions.lazy import date_ as date
-from polars.functions.lazy import datetime_ as datetime
-from polars.functions.lazy import list_ as list
-from polars.functions.whenthen import when
 from polars.io import (
     read_avro,
     read_csv,
@@ -148,7 +144,6 @@ from polars.io import (
     read_ndjson,
     read_parquet,
     read_parquet_schema,
-    read_sql,
     scan_csv,
     scan_delta,
     scan_ds,
@@ -204,6 +199,7 @@ __all__ = [
     "LazyFrame",
     "Series",
     # polars.datatypes
+    "Array",
     "Binary",
     "Boolean",
     "Categorical",
@@ -252,7 +248,6 @@ __all__ = [
     "read_ndjson",
     "read_parquet",
     "read_parquet_schema",
-    "read_sql",
     "scan_csv",
     "scan_delta",
     "scan_ds",
@@ -273,12 +268,11 @@ __all__ = [
     "align_frames",
     "arg_where",
     "concat",
-    "cut",
     "date_range",
     "element",
-    "get_dummies",
     "ones",
     "repeat",
+    "time_range",
     "zeros",
     # polars.functions.lazy
     "all",
@@ -310,7 +304,6 @@ __all__ = [
     "head",
     "implode",
     "last",
-    "list",  # named list_, see import above
     "lit",
     "map",
     "max",
@@ -319,17 +312,16 @@ __all__ = [
     "min",
     "n_unique",
     "approx_unique",
-    "pearson_corr",
     "quantile",
     "reduce",
     "rolling_corr",
     "rolling_cov",
     "select",
-    "spearman_rank_corr",
     "std",
     "struct",
     "sum",
     "tail",
+    "time",  # named time_, see import above
     "var",
     # polars.convert
     "from_arrow",

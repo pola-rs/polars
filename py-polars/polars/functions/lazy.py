@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import contextlib
-import warnings
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
 
@@ -11,13 +10,11 @@ from polars.datatypes import (
     Date,
     Datetime,
     Duration,
-    Int32,
     Int64,
     Struct,
     Time,
     UInt32,
     is_polars_dtype,
-    py_type_to_dtype,
 )
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
@@ -29,7 +26,6 @@ from polars.utils.convert import (
     _timedelta_to_pl_timedelta,
 )
 from polars.utils.decorators import deprecated_alias
-from polars.utils.various import find_stacklevel
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
@@ -238,7 +234,7 @@ def element() -> Expr:
 
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
     >>> df.with_columns(
-    ...     pl.concat_list(["a", "b"]).arr.eval(pl.element().rank()).alias("rank")
+    ...     pl.concat_list(["a", "b"]).list.eval(pl.element().rank()).alias("rank")
     ... )
     shape: (3, 3)
     ┌─────┬─────┬────────────┐
@@ -255,7 +251,7 @@ def element() -> Expr:
 
     >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
     >>> df.with_columns(
-    ...     pl.concat_list(["a", "b"]).arr.eval(pl.element() * 2).alias("a_b_doubled")
+    ...     pl.concat_list(["a", "b"]).list.eval(pl.element() * 2).alias("a_b_doubled")
     ... )
     shape: (3, 3)
     ┌─────┬─────┬─────────────┐
@@ -345,27 +341,6 @@ def implode(name: str) -> Expr:
         Name of the column that should be imploded.
 
     """
-    return col(name).implode()
-
-
-def list_(name: str) -> Expr:
-    """
-    Aggregate to list.
-
-    .. deprecated:: 0.17.3
-        ``list`` will be removed in favor of ``implode``.
-
-    Parameters
-    ----------
-    name
-        Name of the column that should be aggregated into a list.
-
-    """
-    warnings.warn(
-        "`pl.list` is deprecated, please use `pl.implode` instead.",
-        DeprecationWarning,
-        stacklevel=find_stacklevel(),
-    )
     return col(name).implode()
 
 
@@ -1399,109 +1374,6 @@ def cumsum(
     )
 
 
-def spearman_rank_corr(
-    a: str | Expr, b: str | Expr, ddof: int = 1, *, propagate_nans: bool = False
-) -> Expr:
-    """
-    Compute the spearman rank correlation between two columns.
-
-    Missing data will be excluded from the computation.
-
-    .. deprecated:: 0.16.10
-        ``spearman_rank_corr`` will be removed in favor of
-        ``corr(..., method="spearman")``.
-
-    Parameters
-    ----------
-    a
-        Column name or Expression.
-    b
-        Column name or Expression.
-    ddof
-        “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
-        where N represents the number of elements.
-        By default ddof is 1.
-    propagate_nans
-        If `True` any `NaN` encountered will lead to `NaN` in the output.
-        Defaults to `False` where `NaN` are regarded as larger than any finite number
-        and thus lead to the highest rank.
-
-    See Also
-    --------
-    corr
-
-    Examples
-    --------
-    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
-    >>> df.select(pl.spearman_rank_corr("a", "b"))  # doctest: +SKIP
-    shape: (1, 1)
-    ┌─────┐
-    │ a   │
-    │ --- │
-    │ f64 │
-    ╞═════╡
-    │ 0.5 │
-    └─────┘
-    """
-    warnings.warn(
-        "`spearman_rank_corr()` is deprecated in favor of `corr()`",
-        DeprecationWarning,
-        stacklevel=find_stacklevel(),
-    )
-    if isinstance(a, str):
-        a = col(a)
-    if isinstance(b, str):
-        b = col(b)
-    return wrap_expr(plr.spearman_rank_corr(a._pyexpr, b._pyexpr, ddof, propagate_nans))
-
-
-def pearson_corr(a: str | Expr, b: str | Expr, ddof: int = 1) -> Expr:
-    """
-    Compute the pearson's correlation between two columns.
-
-    .. deprecated:: 0.16.10
-        ``pearson_corr`` will be removed in favor of ``corr(..., method="pearson")``.
-
-    Parameters
-    ----------
-    a
-        Column name or Expression.
-    b
-        Column name or Expression.
-    ddof
-        “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
-        where N represents the number of elements.
-        By default ddof is 1.
-
-    See Also
-    --------
-    corr
-
-    Examples
-    --------
-    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2], "c": ["foo", "bar", "foo"]})
-    >>> df.select(pl.pearson_corr("a", "b"))  # doctest: +SKIP
-    shape: (1, 1)
-    ┌──────────┐
-    │ a        │
-    │ ---      │
-    │ f64      │
-    ╞══════════╡
-    │ 0.544705 │
-    └──────────┘
-    """
-    warnings.warn(
-        "`pearson_corr()` is deprecated in favor of `corr()`",
-        DeprecationWarning,
-        stacklevel=find_stacklevel(),
-    )
-    if isinstance(a, str):
-        a = col(a)
-    if isinstance(b, str):
-        b = col(b)
-    return wrap_expr(plr.pearson_corr(a._pyexpr, b._pyexpr, ddof))
-
-
 def corr(
     a: str | Expr,
     b: str | Expr,
@@ -1511,7 +1383,7 @@ def corr(
     propagate_nans: bool = False,
 ) -> Expr:
     """
-    Compute the pearson's or spearman rank correlation correlation between two columns.
+    Compute the Pearson's or Spearman rank correlation correlation between two columns.
 
     Parameters
     ----------
@@ -1520,7 +1392,7 @@ def corr(
     b
         Column name or Expression.
     ddof
-        “Delta Degrees of Freedom”: the divisor used in the calculation is N - ddof,
+        "Delta Degrees of Freedom": the divisor used in the calculation is N - ddof,
         where N represents the number of elements.
         By default ddof is 1.
     method : {'pearson', 'spearman'}
@@ -2345,92 +2217,6 @@ def quantile(
     return col(column).quantile(quantile, interpolation)
 
 
-@overload
-def arange(
-    start: int | Expr | Series,
-    end: int | Expr | Series,
-    step: int = ...,
-    *,
-    eager: Literal[False],
-) -> Expr:
-    ...
-
-
-@overload
-def arange(
-    start: int | Expr | Series,
-    end: int | Expr | Series,
-    step: int = ...,
-    *,
-    eager: Literal[True],
-    dtype: PolarsDataType | None = ...,
-) -> Series:
-    ...
-
-
-@overload
-def arange(
-    start: int | Expr | Series,
-    end: int | Expr | Series,
-    step: int = ...,
-    *,
-    eager: bool = ...,
-    dtype: PolarsDataType | None = ...,
-) -> Expr | Series:
-    ...
-
-
-@deprecated_alias(low="start", high="end")
-def arange(
-    start: int | Expr | Series,
-    end: int | Expr | Series,
-    step: int = 1,
-    *,
-    eager: bool = False,
-    dtype: PolarsDataType | None = None,
-) -> Expr | Series:
-    """
-    Create a range expression (or Series).
-
-    This can be used in a `select`, `with_column` etc. Be sure that the resulting
-    range size is equal to the length of the DataFrame you are collecting.
-
-    Examples
-    --------
-    >>> df.lazy().filter(pl.col("foo") < pl.arange(0, 100)).collect()  # doctest: +SKIP
-
-    Parameters
-    ----------
-    start
-        Lower bound of range.
-    end
-        Upper bound of range.
-    step
-        Step size of the range.
-    eager
-        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
-        return an expression instead.
-    dtype
-        Apply an explicit integer dtype to the resulting expression (default is Int64).
-
-    """
-    start = expr_to_lit_or_expr(start, str_to_lit=False)
-    end = expr_to_lit_or_expr(end, str_to_lit=False)
-    range_expr = wrap_expr(plr.arange(start._pyexpr, end._pyexpr, step))
-
-    if dtype is not None and dtype != Int64:
-        range_expr = range_expr.cast(dtype)
-    if not eager:
-        return range_expr
-    else:
-        return (
-            pl.DataFrame()
-            .select(range_expr)
-            .to_series()
-            .rename("arange", in_place=True)
-        )
-
-
 def arg_sort_by(
     exprs: IntoExpr | Iterable[IntoExpr],
     *more_exprs: IntoExpr,
@@ -2612,13 +2398,13 @@ def datetime_(
     day
         column or literal, ranging from 1-31.
     hour
-        column or literal, ranging from 1-23.
+        column or literal, ranging from 0-23.
     minute
-        column or literal, ranging from 1-59.
+        column or literal, ranging from 0-59.
     second
-        column or literal, ranging from 1-59.
+        column or literal, ranging from 0-59.
     microsecond
-        column or literal, ranging from 1-999999.
+        column or literal, ranging from 0-999999.
 
     Returns
     -------
@@ -2674,6 +2460,39 @@ def date_(
 
     """
     return datetime_(year, month, day).cast(Date).alias("date")
+
+
+def time_(
+    hour: Expr | str | int | None = None,
+    minute: Expr | str | int | None = None,
+    second: Expr | str | int | None = None,
+    microsecond: Expr | str | int | None = None,
+) -> Expr:
+    """
+    Create a Polars literal expression of type Time.
+
+    Parameters
+    ----------
+    hour
+        column or literal, ranging from 0-23.
+    minute
+        column or literal, ranging from 0-59.
+    second
+        column or literal, ranging from 0-59.
+    microsecond
+        column or literal, ranging from 0-999999.
+
+    Returns
+    -------
+    Expr of type pl.Date
+
+    """
+    epoch_start = (1970, 1, 1)
+    return (
+        datetime_(*epoch_start, hour, minute, second, microsecond)
+        .cast(Time)
+        .alias("time")
+    )
 
 
 def concat_str(
@@ -3004,7 +2823,8 @@ def struct(
         Evaluate immediately and return a ``Series``. If set to ``False`` (default),
         return an expression instead.
     schema
-        Optional schema that explicitly defines the struct field dtypes.
+        Optional schema that explicitly defines the struct field dtypes. If no columns
+        or expressions are provided, schema keys are used to define columns.
     **named_exprs
         Additional columns to collect into the struct column, specified as keyword
         arguments. The columns will be renamed to the keyword used.
@@ -3062,87 +2882,19 @@ def struct(
         )
 
     expr = wrap_expr(plr.as_struct(exprs))
+
     if schema:
+        if not exprs:
+            # no columns or expressions provided; create one from schema keys
+            expr = wrap_expr(
+                plr.as_struct(selection_to_pyexpr_list(list(schema.keys())))
+            )
         expr = expr.cast(Struct(schema), strict=False)
 
     if eager:
         return select(expr).to_series()
     else:
         return expr
-
-
-@overload
-def repeat(
-    value: float | int | str | bool | date | datetime | time | timedelta | None,
-    n: Expr | int,
-    *,
-    eager: Literal[False] = ...,
-    name: str | None = ...,
-) -> Expr:
-    ...
-
-
-@overload
-def repeat(
-    value: float | int | str | bool | date | datetime | time | timedelta | None,
-    n: Expr | int,
-    *,
-    eager: Literal[True],
-    name: str | None = ...,
-) -> Series:
-    ...
-
-
-@overload
-def repeat(
-    value: float | int | str | bool | date | datetime | time | timedelta | None,
-    n: Expr | int,
-    *,
-    eager: bool,
-    name: str | None,
-) -> Expr | Series:
-    ...
-
-
-def repeat(
-    value: float | int | str | bool | date | datetime | time | timedelta | None,
-    n: Expr | int,
-    *,
-    eager: bool = False,
-    name: str | None = None,
-) -> Expr | Series:
-    """
-    Repeat a single value n times.
-
-    Parameters
-    ----------
-    value
-        Value to repeat.
-    n
-        repeat `n` times
-    eager
-        Evaluate immediately and return a ``Series``. If set to ``False`` (default),
-        return an expression instead.
-    name
-        Only used in `eager` mode. As expression, use `alias`
-
-    """
-    if eager:
-        if name is None:
-            name = ""
-        dtype = py_type_to_dtype(type(value))
-        if (
-            dtype == Int64
-            and isinstance(value, int)
-            and -(2**31) <= value <= 2**31 - 1
-        ):
-            dtype = Int32
-        s = pl.Series._repeat(name, value, n, dtype)  # type: ignore[arg-type]
-        return s
-    else:
-        if isinstance(n, int):
-            n = lit(n)
-        return wrap_expr(plr.repeat(value, n._pyexpr))
 
 
 @overload

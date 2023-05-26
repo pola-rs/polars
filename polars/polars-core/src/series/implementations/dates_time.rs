@@ -154,8 +154,8 @@ macro_rules! impl_dyn_series {
                 self.0.group_tuples(multithreaded, sorted)
             }
 
-            fn arg_sort_multiple(&self, by: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {
-                self.0.deref().arg_sort_multiple(by, descending)
+            fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
+                self.0.deref().arg_sort_multiple(options)
             }
         }
 
@@ -242,10 +242,6 @@ macro_rules! impl_dyn_series {
             fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
                 ChunkTake::take(self.0.deref(), iter.into())
                     .map(|ca| ca.$into_logical().into_series())
-            }
-
-            fn take_every(&self, n: usize) -> Series {
-                self.0.take_every(n).$into_logical().into_series()
             }
 
             unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {

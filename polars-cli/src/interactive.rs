@@ -91,7 +91,7 @@ impl PolarsCommand {
             PolarsCommand::Save(buf) => {
                 let serializable_ctx: SerializableContext = ctx.into();
                 let mut w: Vec<u8> = vec![];
-                let _ = ciborium::ser::into_writer(&serializable_ctx, &mut w).map_err(|e| {
+                ciborium::ser::into_writer(&serializable_ctx, &mut w).map_err(|e| {
                     std::io::Error::new(
                         std::io::ErrorKind::Other,
                         format!("Serialization error: {}", e),

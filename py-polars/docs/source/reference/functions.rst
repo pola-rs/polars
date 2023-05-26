@@ -24,10 +24,9 @@ Eager/Lazy functions
 
     arg_where
     concat
-    cut
     date_range
-    get_dummies
     ones
+    time_range
     zeros
 
 Miscellaneous

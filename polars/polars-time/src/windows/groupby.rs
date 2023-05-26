@@ -1,8 +1,6 @@
 use std::cmp::Ordering;
 
 #[cfg(feature = "timezones")]
-use arrow::temporal_conversions::parse_offset;
-#[cfg(feature = "timezones")]
 use chrono_tz::Tz;
 use polars_arrow::time_zone::PolarsTimeZone;
 use polars_arrow::trusted_len::TrustedLen;
@@ -190,41 +188,26 @@ pub fn groupby_windows(
 
     match tz {
         #[cfg(feature = "timezones")]
-        Some(tz) => match tz.parse::<Tz>() {
-            Ok(tz) => {
-                update_groups_and_bounds(
-                    window
-                        .get_overlapping_bounds_iter(boundary, tu, Some(&tz), start_by)
-                        .unwrap(),
-                    start_offset,
-                    time,
-                    closed_window,
-                    include_lower_bound,
-                    include_upper_bound,
-                    &mut lower_bound,
-                    &mut upper_bound,
-                    &mut groups,
-                );
-            }
-            Err(_) => match parse_offset(tz) {
-                Ok(tz) => {
-                    update_groups_and_bounds(
-                        window
-                            .get_overlapping_bounds_iter(boundary, tu, Some(&tz), start_by)
-                            .unwrap(),
-                        start_offset,
-                        time,
-                        closed_window,
-                        include_lower_bound,
-                        include_upper_bound,
-                        &mut lower_bound,
-                        &mut upper_bound,
-                        &mut groups,
-                    );
-                }
-                _ => unreachable!(),
-            },
-        },
+        Some(tz) => {
+            update_groups_and_bounds(
+                window
+                    .get_overlapping_bounds_iter(
+                        boundary,
+                        tu,
+                        tz.parse::<Tz>().ok().as_ref(),
+                        start_by,
+                    )
+                    .unwrap(),
+                start_offset,
+                time,
+                closed_window,
+                include_lower_bound,
+                include_upper_bound,
+                &mut lower_bound,
+                &mut upper_bound,
+                &mut groups,
+            );
+        }
         _ => {
             update_groups_and_bounds(
                 window

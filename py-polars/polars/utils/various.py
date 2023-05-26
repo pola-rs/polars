@@ -99,16 +99,16 @@ def is_str_sequence(
 
 
 def range_to_series(
-    name: str, rng: range, dtype: PolarsDataType | None = Int64
+    name: str, rng: range, dtype: PolarsDataType | None = None
 ) -> Series:
     """Fast conversion of the given range to a Series."""
     return F.arange(
         start=rng.start,
         end=rng.stop,
         step=rng.step,
-        eager=True,
         dtype=dtype,
-    ).rename(name, in_place=True)
+        eager=True,
+    ).alias(name)
 
 
 def range_to_slice(rng: range) -> slice:
@@ -189,6 +189,13 @@ def parse_version(version: Sequence[str | int]) -> tuple[int, ...]:
     if isinstance(version, str):
         version = version.split(".")
     return tuple(int(re.sub(r"\D", "", str(v))) for v in version)
+
+
+def ordered_unique(values: Sequence[Any]) -> list[Any]:
+    """Return unique list of sequence values, maintaining their order of appearance."""
+    seen: set[Any] = set()
+    add_ = seen.add
+    return [v for v in values if not (v in seen or add_(v))]
 
 
 def scale_bytes(sz: int, unit: SizeUnit) -> int | float:
@@ -332,7 +339,10 @@ class _NoDefault(Enum):
         return "<no_default>"
 
 
-no_default = _NoDefault.no_default  # Sentinel indicating the default value.
+# 'NoDefault' is a sentinel indicating that no default value has been set; note that
+# this should typically be used only when one of the valid parameter values is also
+# None, as otherwise we cannot determine if the caller has explicitly set that value.
+no_default = _NoDefault.no_default
 NoDefault = Literal[_NoDefault.no_default]
 
 
@@ -357,3 +367,30 @@ def find_stacklevel() -> int:
         else:
             break
     return n
+
+
+def _get_stack_locals(
+    of_type: type | tuple[type, ...] | None = None, n_objects: int | None = None
+) -> dict[str, Any]:
+    """
+    Retrieve f_locals from all stack frames (starting from the current frame).
+
+    Parameters
+    ----------
+    of_type
+        Only return objects of this type.
+    n_objects
+        If specified, return only the most recent ``n`` matching objects.
+
+    """
+    objects = {}
+    stack_frame = getattr(inspect.currentframe(), "f_back", None)
+    while stack_frame:
+        local_items = list(stack_frame.f_locals.items())
+        for nm, obj in reversed(local_items):
+            if nm not in objects and (not of_type or isinstance(obj, of_type)):
+                objects[nm] = obj
+                if n_objects is not None and len(objects) >= n_objects:
+                    return objects
+        stack_frame = stack_frame.f_back
+    return objects

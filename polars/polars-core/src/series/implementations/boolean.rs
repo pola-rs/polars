@@ -98,8 +98,11 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
     }
 
-    fn arg_sort_multiple(&self, by: &[Series], descending: &[bool]) -> PolarsResult<IdxCa> {
-        self.0.arg_sort_multiple(by, descending)
+    fn arg_sort_multiple(&self, options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
+        self.0.arg_sort_multiple(options)
+    }
+    fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
+        NumOpsDispatch::add_to(&self.0, rhs)
     }
 }
 
@@ -192,10 +195,6 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
 
     fn take_iter(&self, iter: &mut dyn TakeIterator) -> PolarsResult<Series> {
         Ok(ChunkTake::take(&self.0, iter.into())?.into_series())
-    }
-
-    fn take_every(&self, n: usize) -> Series {
-        self.0.take_every(n).into_series()
     }
 
     unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {

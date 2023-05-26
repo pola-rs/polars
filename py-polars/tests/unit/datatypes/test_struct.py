@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import typing
 from dataclasses import dataclass
-from datetime import datetime, time
+from datetime import date, datetime, time
 
 import pandas as pd
 import pyarrow as pa
@@ -312,14 +312,14 @@ def test_from_dicts_struct() -> None:
 
 def test_list_to_struct() -> None:
     df = pl.DataFrame({"a": [[1, 2, 3], [1, 2]]})
-    assert df.select([pl.col("a").arr.to_struct()]).to_series().to_list() == [
+    assert df.select([pl.col("a").list.to_struct()]).to_series().to_list() == [
         {"field_0": 1, "field_1": 2, "field_2": 3},
         {"field_0": 1, "field_1": 2, "field_2": None},
     ]
 
     df = pl.DataFrame({"a": [[1, 2], [1, 2, 3]]})
     assert df.select(
-        [pl.col("a").arr.to_struct(fields=lambda idx: f"col_name_{idx}")]
+        [pl.col("a").list.to_struct(fields=lambda idx: f"col_name_{idx}")]
     ).to_series().to_list() == [
         {"col_name_0": 1, "col_name_1": 2},
         {"col_name_0": 1, "col_name_1": 2},
@@ -327,7 +327,7 @@ def test_list_to_struct() -> None:
 
     df = pl.DataFrame({"a": [[1, 2], [1, 2, 3]]})
     assert df.select(
-        [pl.col("a").arr.to_struct(n_field_strategy="max_width")]
+        [pl.col("a").list.to_struct(n_field_strategy="max_width")]
     ).to_series().to_list() == [
         {"field_0": 1, "field_1": 2, "field_2": None},
         {"field_0": 1, "field_1": 2, "field_2": 3},
@@ -335,7 +335,7 @@ def test_list_to_struct() -> None:
 
     # set upper bound
     df = pl.DataFrame({"lists": [[1, 1, 1], [0, 1, 0], [1, 0, 0]]})
-    assert df.lazy().select(pl.col("lists").arr.to_struct(upper_bound=3)).unnest(
+    assert df.lazy().select(pl.col("lists").list.to_struct(upper_bound=3)).unnest(
         "lists"
     ).sum().collect().columns == ["field_0", "field_1", "field_2"]
 
@@ -357,8 +357,8 @@ def test_struct_list_head_tail() -> None:
         }
     ).with_columns(
         [
-            pl.col("list_of_struct").arr.head(1).alias("head"),
-            pl.col("list_of_struct").arr.tail(1).alias("tail"),
+            pl.col("list_of_struct").list.head(1).alias("head"),
+            pl.col("list_of_struct").list.tail(1).alias("tail"),
         ]
     ).to_dict(
         False
@@ -419,13 +419,13 @@ def test_struct_arr_methods() -> None:
             ],
         }
     )
-    assert df.select([pl.col("list_struct").arr.first()]).to_dict(False) == {
+    assert df.select([pl.col("list_struct").list.first()]).to_dict(False) == {
         "list_struct": [{"a": 1, "b": 2}, {"a": 1, "b": 2}, {"a": 1, "b": 2}]
     }
-    assert df.select([pl.col("list_struct").arr.last()]).to_dict(False) == {
+    assert df.select([pl.col("list_struct").list.last()]).to_dict(False) == {
         "list_struct": [{"a": 5, "b": 6}, {"a": 3, "b": 4}, {"a": 1, "b": 2}]
     }
-    assert df.select([pl.col("list_struct").arr.get(0)]).to_dict(False) == {
+    assert df.select([pl.col("list_struct").list.get(0)]).to_dict(False) == {
         "list_struct": [{"a": 1, "b": 2}, {"a": 1, "b": 2}, {"a": 1, "b": 2}]
     }
 
@@ -442,7 +442,9 @@ def test_struct_concat_list() -> None:
                 [{"a": 6, "b": 7}],
             ],
         }
-    ).with_columns([pl.col("list_struct1").arr.concat("list_struct2").alias("result")])[
+    ).with_columns(
+        [pl.col("list_struct1").list.concat("list_struct2").alias("result")]
+    )[
         "result"
     ].to_list() == [
         [{"a": 1, "b": 2}, {"a": 3, "b": 4}, {"a": 6, "b": 7}, {"a": 8, "b": 9}],
@@ -458,7 +460,7 @@ def test_struct_arr_reverse() -> None:
                 [{"a": 30, "b": 40}, {"a": 10, "b": 20}, {"a": 50, "b": 60}],
             ],
         }
-    ).with_columns([pl.col("list_struct").arr.reverse()]).to_dict(False) == {
+    ).with_columns([pl.col("list_struct").list.reverse()]).to_dict(False) == {
         "list_struct": [
             [{"a": 5, "b": 6}, {"a": 3, "b": 4}, {"a": 1, "b": 2}],
             [{"a": 50, "b": 60}, {"a": 10, "b": 20}, {"a": 30, "b": 40}],
@@ -580,7 +582,7 @@ def test_struct_arr_eval() -> None:
         {"col_struct": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 1, "b": 11}]]}
     )
     assert df.with_columns(
-        pl.col("col_struct").arr.eval(pl.element().first()).alias("first")
+        pl.col("col_struct").list.eval(pl.element().first()).alias("first")
     ).to_dict(False) == {
         "col_struct": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 1, "b": 11}]],
         "first": [[{"a": 1, "b": 11}]],
@@ -593,7 +595,7 @@ def test_arr_unique() -> None:
         {"col_struct": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 1, "b": 11}]]}
     )
     # the order is unpredictable
-    unique = df.with_columns(pl.col("col_struct").arr.unique().alias("unique"))[
+    unique = df.with_columns(pl.col("col_struct").list.unique().alias("unique"))[
         "unique"
     ].to_list()
     assert len(unique) == 1
@@ -1021,3 +1023,111 @@ def test_struct_lit_cast() -> None:
             {"a": 2, "b": None},
             {"a": 3, "b": None},
         ]
+
+
+def test_struct_from_schema_only() -> None:
+    # we create a dataframe with default types
+    df = pl.DataFrame(
+        {
+            "str": ["a", "b", "c", "d", "e"],
+            "u8": [1, 2, 3, 4, 5],
+            "i32": [1, 2, 3, 4, 5],
+            "f64": [1, 2, 3, 4, 5],
+            "cat": ["a", "b", "c", "d", "e"],
+            "datetime": pl.Series(
+                [
+                    date(2023, 1, 1),
+                    date(2023, 1, 2),
+                    date(2023, 1, 3),
+                    date(2023, 1, 4),
+                    date(2023, 1, 5),
+                ]
+            ),
+            "bool": [1, 0, 1, 1, 0],
+            "list[u8]": [[1], [2], [3], [4], [5]],
+        }
+    )
+
+    # specify a schema with specific dtypes
+    s = df.select(
+        pl.struct(
+            schema={
+                "str": pl.Utf8,
+                "u8": pl.UInt8,
+                "i32": pl.Int32,
+                "f64": pl.Float64,
+                "cat": pl.Categorical,
+                "datetime": pl.Datetime("ms"),
+                "bool": pl.Boolean,
+                "list[u8]": pl.List(pl.UInt8),
+            }
+        ).alias("s")
+    )["s"]
+
+    # check dtypes
+    assert s.dtype == pl.Struct(
+        [
+            pl.Field("str", pl.Utf8),
+            pl.Field("u8", pl.UInt8),
+            pl.Field("i32", pl.Int32),
+            pl.Field("f64", pl.Float64),
+            pl.Field("cat", pl.Categorical),
+            pl.Field("datetime", pl.Datetime("ms")),
+            pl.Field("bool", pl.Boolean),
+            pl.Field("list[u8]", pl.List(pl.UInt8)),
+        ]
+    )
+
+    # check values
+    assert s.to_list() == [
+        {
+            "str": "a",
+            "u8": 1,
+            "i32": 1,
+            "f64": 1.0,
+            "cat": "a",
+            "datetime": datetime(2023, 1, 1, 0, 0),
+            "bool": True,
+            "list[u8]": [1],
+        },
+        {
+            "str": "b",
+            "u8": 2,
+            "i32": 2,
+            "f64": 2.0,
+            "cat": "b",
+            "datetime": datetime(2023, 1, 2, 0, 0),
+            "bool": False,
+            "list[u8]": [2],
+        },
+        {
+            "str": "c",
+            "u8": 3,
+            "i32": 3,
+            "f64": 3.0,
+            "cat": "c",
+            "datetime": datetime(2023, 1, 3, 0, 0),
+            "bool": True,
+            "list[u8]": [3],
+        },
+        {
+            "str": "d",
+            "u8": 4,
+            "i32": 4,
+            "f64": 4.0,
+            "cat": "d",
+            "datetime": datetime(2023, 1, 4, 0, 0),
+            "bool": True,
+            "list[u8]": [4],
+        },
+        {
+            "str": "e",
+            "u8": 5,
+            "i32": 5,
+            "f64": 5.0,
+            "cat": "e",
+            "datetime": datetime(2023, 1, 5, 0, 0),
+            "bool": False,
+            "list[u8]": [5],
+        },
+    ]

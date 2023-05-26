@@ -3,11 +3,16 @@ use std::convert::TryFrom;
 use arrow::array::*;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::offset::OffsetsBuffer;
+use polars_arrow::array::list::AnonymousBuilder;
 use polars_arrow::array::PolarsArray;
 use polars_arrow::bit_util::unset_bit_raw;
+#[cfg(feature = "dtype-array")]
+use polars_arrow::is_valid::IsValid;
 use polars_arrow::prelude::*;
+use polars_arrow::trusted_len::PushUnchecked;
 
-use crate::chunked_array::builder::AnonymousOwnedListBuilder;
+#[cfg(feature = "dtype-array")]
+use crate::chunked_array::builder::get_fixed_size_list_builder;
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
 
@@ -216,6 +221,7 @@ impl ExplodeByOffsets for BooleanChunked {
         builder.finish().into()
     }
 }
+
 impl ExplodeByOffsets for ListChunked {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         debug_assert_eq!(self.chunks.len(), 1);
@@ -223,7 +229,59 @@ impl ExplodeByOffsets for ListChunked {
 
         let cap = get_capacity(offsets);
         let inner_type = self.inner_dtype();
-        let mut builder = AnonymousOwnedListBuilder::new(self.name(), cap, Some(inner_type));
+
+        let mut builder = polars_arrow::array::list::AnonymousBuilder::new(cap);
+        let mut owned = Vec::with_capacity(cap);
+        let mut start = offsets[0] as usize;
+        let mut last = start;
+
+        let mut process_range = |start: usize, last: usize, builder: &mut AnonymousBuilder<'_>| {
+            let vals = arr.slice_typed(start, last - start);
+            for opt_arr in vals.into_iter() {
+                match opt_arr {
+                    None => builder.push_null(),
+                    Some(arr) => {
+                        unsafe {
+                            // we create a pointer to evade the bck
+                            let ptr = arr.as_ref() as *const dyn Array;
+                            // safety: we preallocated
+                            owned.push_unchecked(arr);
+                            // safety: the pointer is still valid as `owned` will not reallocate
+                            builder.push(&*ptr as &dyn Array);
+                        }
+                    }
+                }
+            }
+        };
+
+        for &o in &offsets[1..] {
+            let o = o as usize;
+            if o == last {
+                if start != last {
+                    process_range(start, last, &mut builder);
+                }
+                builder.push_null();
+                start = o;
+            }
+            last = o;
+        }
+        process_range(start, last, &mut builder);
+        let arr = builder.finish(Some(&inner_type.to_arrow())).unwrap();
+        self.copy_with_chunks(vec![Box::new(arr)], true, true)
+            .into_series()
+    }
+}
+
+#[cfg(feature = "dtype-array")]
+impl ExplodeByOffsets for ArrayChunked {
+    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
+        debug_assert_eq!(self.chunks.len(), 1);
+        let arr = self.downcast_iter().next().unwrap();
+
+        let cap = get_capacity(offsets);
+        let inner_type = self.inner_dtype();
+        let mut builder =
+            get_fixed_size_list_builder(&inner_type, cap, self.width(), self.name()).unwrap();
 
         let mut start = offsets[0] as usize;
         let mut last = start;
@@ -231,25 +289,42 @@ impl ExplodeByOffsets for ListChunked {
             let o = o as usize;
             if o == last {
                 if start != last {
-                    let vals = arr.slice_typed(start, last - start);
-                    let ca = unsafe { ListChunked::from_chunks("", vec![Box::new(vals)]) };
-                    for s in &ca {
-                        builder.append_opt_series(s.as_ref())
+                    let array = arr.slice_typed(start, last - start);
+                    let values = array.values().as_ref();
+
+                    for i in 0..array.len() {
+                        unsafe {
+                            if array.is_valid_unchecked(i) {
+                                builder.push_unchecked(values, i)
+                            } else {
+                                builder.push_null()
+                            }
+                        }
                     }
                 }
-                builder.append_null();
+                unsafe {
+                    builder.push_null();
+                }
                 start = o;
             }
             last = o;
         }
-        let vals = arr.slice_typed(start, last - start);
-        let ca = unsafe { ListChunked::from_chunks("", vec![Box::new(vals)]) };
-        for s in &ca {
-            builder.append_opt_series(s.as_ref())
+        let array = arr.slice_typed(start, last - start);
+        let values = array.values().as_ref();
+        for i in 0..array.len() {
+            unsafe {
+                if array.is_valid_unchecked(i) {
+                    builder.push_unchecked(values, i)
+                } else {
+                    builder.push_null()
+                }
+            }
         }
+
         builder.finish().into()
     }
 }
+
 impl ExplodeByOffsets for Utf8Chunked {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         unsafe {
@@ -307,44 +382,36 @@ pub(crate) fn offsets_to_indexes(offsets: &[i64], capacity: usize) -> Vec<IdxSiz
     if offsets.is_empty() {
         return vec![];
     }
+
     let mut idx = Vec::with_capacity(capacity);
 
-    // `value_count` counts the taken values from the list values
-    // and are the same unit as `offsets`
-    // we also add the start offset as a list can be sliced
-    let mut value_count = offsets[0];
-    // `empty_count` counts the duplicates taken because of empty list
-    let mut empty_count = 0usize;
     let mut last_idx = 0;
-
-    for offset in &offsets[1..] {
-        // this get all the elements up till offsets
-        while value_count < *offset {
-            value_count += 1;
-            idx.push(last_idx)
+    for (offset_start, offset_end) in offsets.iter().zip(offsets[1..].iter()) {
+        if idx.len() >= capacity {
+            // significant speed-up in edge cases with many offsets,
+            // no measurable overhead in typical case due to branch prediction
+            break;
         }
 
-        // then we compute the previous offsets
-        // Safety:
-        // we started iterating from 1, so there is always a previous offset
-        // we take the pointer to the previous element and deref that to get
-        // the previous offset
-        let previous_offset = unsafe { *(offset as *const i64).offset(-1) };
-
-        // if the previous offset is equal to the current offset we have an empty
-        // list and we duplicate previous index
-        if previous_offset == *offset {
-            empty_count += 1;
+        if offset_start == offset_end {
+            // if the previous offset is equal to the current offset, we have an empty
+            // list and we duplicate the previous index
             idx.push(last_idx);
+        } else {
+            let width = (offset_end - offset_start) as usize;
+            for _ in 0..width {
+                idx.push(last_idx);
+            }
         }
 
         last_idx += 1;
     }
 
     // take the remaining values
-    for _ in 0..(capacity - (value_count - offsets[0]) as usize - empty_count) {
+    for _ in 0..capacity.saturating_sub(idx.len()) {
         idx.push(last_idx);
     }
+    idx.truncate(capacity);
     idx
 }
 
@@ -665,5 +732,27 @@ mod test {
         let offsets = &[0, 1, 2, 2, 3, 4, 4];
         let out = offsets_to_indexes(offsets, 6);
         assert_eq!(out, &[0, 1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn test_empty_row_offsets() {
+        let offsets = &[0, 0];
+        let out = offsets_to_indexes(offsets, 0);
+        let expected: Vec<IdxSize> = Vec::new();
+        assert_eq!(out, expected);
+    }
+
+    #[test]
+    fn test_row_offsets_over_capacity() {
+        let offsets = &[0, 1, 1, 2, 2];
+        let out = offsets_to_indexes(offsets, 2);
+        assert_eq!(out, &[0, 1]);
+    }
+
+    #[test]
+    fn test_row_offsets_nonzero_first_offset() {
+        let offsets = &[3, 6, 8];
+        let out = offsets_to_indexes(offsets, 10);
+        assert_eq!(out, &[0, 0, 0, 1, 1, 2, 2, 2, 2, 2]);
     }
 }

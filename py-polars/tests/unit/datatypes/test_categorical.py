@@ -251,7 +251,7 @@ def test_cast_inner_categorical() -> None:
     with pytest.raises(
         pl.ComputeError, match=r"casting to categorical not allowed in `arr.eval`"
     ):
-        pl.Series("foo", [["a", "b"], ["a", "b"]]).arr.eval(
+        pl.Series("foo", [["a", "b"], ["a", "b"]]).list.eval(
             pl.element().cast(pl.Categorical)
         )
 
@@ -333,7 +333,7 @@ def test_nested_categorical_aggregation_7848() -> None:
     ).with_columns([pl.col("letter").cast(pl.Categorical)]).groupby(
         maintain_order=True, by=["group"]
     ).all().with_columns(
-        [pl.col("letter").arr.lengths().alias("c_group")]
+        [pl.col("letter").list.lengths().alias("c_group")]
     ).groupby(
         by=["c_group"], maintain_order=True
     ).agg(

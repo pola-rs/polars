@@ -62,19 +62,23 @@ where
 
         use Either::*;
 
-        match arr.into_mut() {
-            Left(immutable) => {
-                extend_immutable(&immutable, &mut self.chunks, &other.chunks);
-            }
-            Right(mut mutable) => {
-                for arr in other.downcast_iter() {
-                    match arr.null_count() {
-                        0 => mutable.extend_from_slice(arr.values()),
-                        _ => mutable.extend_trusted_len(arr.into_iter()),
-                    }
+        if arr.values().is_sliced() {
+            extend_immutable(&arr, &mut self.chunks, &other.chunks);
+        } else {
+            match arr.into_mut() {
+                Left(immutable) => {
+                    extend_immutable(&immutable, &mut self.chunks, &other.chunks);
                 }
-                let arr: PrimitiveArray<T::Native> = mutable.into();
-                self.chunks.push(Box::new(arr) as ArrayRef)
+                Right(mut mutable) => {
+                    for arr in other.downcast_iter() {
+                        match arr.null_count() {
+                            0 => mutable.extend_from_slice(arr.values()),
+                            _ => mutable.extend_trusted_len(arr.into_iter()),
+                        }
+                    }
+                    let arr: PrimitiveArray<T::Native> = mutable.into();
+                    self.chunks.push(Box::new(arr) as ArrayRef)
+                }
             }
         }
         self.compute_len();
@@ -198,6 +202,17 @@ impl BooleanChunked {
 
 #[doc(hidden)]
 impl ListChunked {
+    pub fn extend(&mut self, other: &Self) -> PolarsResult<()> {
+        // TODO! properly implement mutation
+        // this is harder because we don't know the inner type of the list
+        self.set_sorted_flag(IsSorted::Not);
+        self.append(other)
+    }
+}
+
+#[cfg(feature = "dtype-array")]
+#[doc(hidden)]
+impl ArrayChunked {
     pub fn extend(&mut self, other: &Self) -> PolarsResult<()> {
         // TODO! properly implement mutation
         // this is harder because we don't know the inner type of the list

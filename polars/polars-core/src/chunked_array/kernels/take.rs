@@ -32,7 +32,6 @@ pub(crate) fn take_primitive_opt_iter_n_chunks<
         .collect()
 }
 
-/// Forked and adapted from arrow-rs
 /// This is faster because it does no bounds checks and allocates directly into aligned memory
 ///
 /// # Safety

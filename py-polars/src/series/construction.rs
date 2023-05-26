@@ -1,13 +1,14 @@
 use numpy::PyArray1;
 use polars_core::prelude::*;
 use polars_core::utils::CustomIterTools;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 use crate::arrow_interop::to_rust::array_to_rust;
-use crate::conversion::{slice_extract_wrapped, Wrap};
+use crate::conversion::{slice_extract_wrapped, vec_extract_wrapped, Wrap};
 use crate::error::PyPolarsErr;
 use crate::prelude::ObjectValue;
-use crate::series::to_series_collection;
+use crate::series::ToSeries;
 use crate::PySeries;
 
 // Init with numpy arrays
@@ -216,9 +217,34 @@ impl PySeries {
     }
 
     #[staticmethod]
-    fn new_series_list(name: &str, val: Vec<Self>, _strict: bool) -> Self {
-        let series_vec = to_series_collection(val);
+    fn new_series_list(name: &str, val: Vec<PySeries>, _strict: bool) -> Self {
+        let series_vec = val.to_series();
         Series::new(name, &series_vec).into()
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (width, inner, name, val, _strict))]
+    fn new_array(
+        width: usize,
+        inner: Option<Wrap<DataType>>,
+        name: &str,
+        val: Vec<Wrap<AnyValue>>,
+        _strict: bool,
+    ) -> PyResult<Self> {
+        let val = vec_extract_wrapped(val);
+        let out = Series::new(name, &val);
+        match out.dtype() {
+            DataType::List(list_inner) => {
+                let out = out
+                    .cast(&DataType::Array(
+                        Box::new(inner.map(|dt| dt.0).unwrap_or(*list_inner.clone())),
+                        width,
+                    ))
+                    .map_err(PyPolarsErr::from)?;
+                Ok(out.into())
+            }
+            _ => Err(PyValueError::new_err("could not create Array from input")),
+        }
     }
 
     #[staticmethod]
@@ -230,16 +256,6 @@ impl PySeries {
         let s = Series::from_any_values_and_dtype(name, avs, &dtype, strict)
             .map_err(PyPolarsErr::from)?;
         Ok(s.into())
-    }
-
-    #[staticmethod]
-    fn repeat(name: &str, val: Wrap<AnyValue>, n: usize, dtype: Wrap<DataType>) -> PyResult<Self> {
-        let av = val.0;
-        Ok(Series::new(name, &[av])
-            .cast(&dtype.0)
-            .map_err(PyPolarsErr::from)?
-            .new_from_index(0, n)
-            .into())
     }
 
     #[staticmethod]

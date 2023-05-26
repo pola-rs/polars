@@ -178,7 +178,7 @@ def test_list_fill_null() -> None:
     df = pl.DataFrame({"C": [["a", "b", "c"], [], [], ["d", "e"]]})
     assert df.with_columns(
         [
-            pl.when(pl.col("C").arr.lengths() == 0)
+            pl.when(pl.col("C").list.lengths() == 0)
             .then(None)
             .otherwise(pl.col("C"))
             .alias("C")
@@ -189,7 +189,7 @@ def test_list_fill_null() -> None:
 def test_list_fill_list() -> None:
     assert pl.DataFrame({"a": [[1, 2, 3], []]}).select(
         [
-            pl.when(pl.col("a").arr.lengths() == 0)
+            pl.when(pl.col("a").list.lengths() == 0)
             .then([5])
             .otherwise(pl.col("a"))
             .alias("filled")
@@ -356,7 +356,7 @@ def test_flat_aggregation_to_list_conversion_6918() -> None:
     df = pl.DataFrame({"a": [1, 2, 2], "b": [[0, 1], [2, 3], [4, 5]]})
 
     assert df.groupby("a", maintain_order=True).agg(
-        pl.concat_list([pl.col("b").arr.get(i).mean().implode() for i in range(2)])
+        pl.concat_list([pl.col("b").list.get(i).mean().implode() for i in range(2)])
     ).to_dict(False) == {"a": [1, 2], "b": [[[0.0, 1.0]], [[3.0, 4.0]]]}
 
 
@@ -374,10 +374,10 @@ def test_concat_list_with_lit() -> None:
 
 def test_list_count_match() -> None:
     assert pl.DataFrame({"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]}).select(
-        pl.col("listcol").arr.count_match(2).alias("number_of_twos")
+        pl.col("listcol").list.count_match(2).alias("number_of_twos")
     ).to_dict(False) == {"number_of_twos": [0, 0, 2, 1, 0]}
     assert pl.DataFrame({"listcol": [[], [1], [1, 2, 3, 2], [1, 2, 1], [4, 4]]}).select(
-        pl.col("listcol").arr.count_match(2).alias("number_of_twos")
+        pl.col("listcol").list.count_match(2).alias("number_of_twos")
     ).to_dict(False) == {"number_of_twos": [0, 0, 2, 1, 0]}
 
 
@@ -401,23 +401,23 @@ def test_list_sum_and_dtypes() -> None:
         summed = df.explode("a").sum()
         assert summed.dtypes == [dt_out]
         assert summed.item() == 32
-        assert df.select(pl.col("a").arr.sum()).dtypes == [dt_out]
+        assert df.select(pl.col("a").list.sum()).dtypes == [dt_out]
 
-    assert df.select(pl.col("a").arr.sum()).to_dict(False) == {"a": [1, 6, 10, 15]}
+    assert df.select(pl.col("a").list.sum()).to_dict(False) == {"a": [1, 6, 10, 15]}
 
     # include nulls
     assert pl.DataFrame(
         {"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5], None]}
-    ).select(pl.col("a").arr.sum()).to_dict(False) == {"a": [1, 6, 10, 15, None]}
+    ).select(pl.col("a").list.sum()).to_dict(False) == {"a": [1, 6, 10, 15, None]}
 
 
 def test_list_mean() -> None:
     assert pl.DataFrame({"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]]}).select(
-        pl.col("a").arr.mean()
+        pl.col("a").list.mean()
     ).to_dict(False) == {"a": [1.0, 2.0, 2.5, 3.0]}
 
     assert pl.DataFrame({"a": [[1], [1, 2, 3], [1, 2, 3, 4], None]}).select(
-        pl.col("a").arr.mean()
+        pl.col("a").list.mean()
     ).to_dict(False) == {"a": [1.0, 2.0, 2.5, None]}
 
 
@@ -429,18 +429,20 @@ def test_list_min_max() -> None:
             {"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]]},
             schema={"a": pl.List(dt)},
         )
-        assert df.select(pl.col("a").arr.min())["a"].series_equal(
-            df.select(pl.col("a").arr.first())["a"]
+        assert df.select(pl.col("a").list.min())["a"].series_equal(
+            df.select(pl.col("a").list.first())["a"]
         )
-        assert df.select(pl.col("a").arr.max())["a"].series_equal(
-            df.select(pl.col("a").arr.last())["a"]
+        assert df.select(pl.col("a").list.max())["a"].series_equal(
+            df.select(pl.col("a").list.last())["a"]
         )
 
     df = pl.DataFrame(
         {"a": [[1], [1, 5, -1, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5], None]},
     )
-    assert df.select(pl.col("a").arr.min()).to_dict(False) == {"a": [1, -1, 1, 1, None]}
-    assert df.select(pl.col("a").arr.max()).to_dict(False) == {"a": [1, 5, 4, 5, None]}
+    assert df.select(pl.col("a").list.min()).to_dict(False) == {
+        "a": [1, -1, 1, 1, None]
+    }
+    assert df.select(pl.col("a").list.max()).to_dict(False) == {"a": [1, 5, 4, 5, None]}
 
 
 def test_fill_null_empty_list() -> None:

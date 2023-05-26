@@ -199,32 +199,6 @@ def test_groupby_agg_input_types(lazy: bool) -> None:
 
 
 @pytest.mark.parametrize("lazy", [True, False])
-def test_groupby_rolling_agg_input_types(lazy: bool) -> None:
-    df = pl.DataFrame({"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]}).set_sorted(
-        "index_column"
-    )
-    df_or_lazy: pl.DataFrame | pl.LazyFrame = df.lazy() if lazy else df
-
-    for bad_param in bad_agg_parameters():
-        with pytest.raises(TypeError):  # noqa: PT012
-            result = df_or_lazy.groupby_rolling(
-                index_column="index_column", period="2i"
-            ).agg(bad_param)
-            if lazy:
-                result.collect()  # type: ignore[union-attr]
-
-    expected = pl.DataFrame({"index_column": [0, 1, 2, 3], "b": [1, 4, 4, 3]})
-
-    for good_param in good_agg_parameters():
-        result = df_or_lazy.groupby_rolling(
-            index_column="index_column", period="2i"
-        ).agg(good_param)
-        if lazy:
-            result = result.collect()  # type: ignore[union-attr]
-        assert_frame_equal(result, expected)
-
-
-@pytest.mark.parametrize("lazy", [True, False])
 def test_groupby_dynamic_agg_input_types(lazy: bool) -> None:
     df = pl.DataFrame({"index_column": [0, 1, 2, 3], "b": [1, 3, 1, 2]}).set_sorted(
         "index_column"
@@ -303,82 +277,6 @@ def test_apply_after_take_in_groupby_3869() -> None:
             pl.col("v").take(pl.col("t").arg_max()).sqrt()
         )  # <- fails for sqrt, exp, log, pow, etc.
     ).to_dict(False) == {"k": ["a", "b"], "v": [1.4142135623730951, 2.0]}
-
-
-def test_groupby_rolling_negative_offset_3914() -> None:
-    df = pl.DataFrame(
-        {
-            "datetime": pl.date_range(
-                datetime(2020, 1, 1), datetime(2020, 1, 5), "1d", eager=True
-            ),
-        }
-    )
-    assert df.groupby_rolling(index_column="datetime", period="2d", offset="-4d").agg(
-        pl.count().alias("count")
-    )["count"].to_list() == [0, 0, 1, 2, 2]
-
-    df = pl.DataFrame(
-        {
-            "ints": range(0, 20),
-        }
-    )
-
-    assert df.groupby_rolling(index_column="ints", period="2i", offset="-5i").agg(
-        [pl.col("ints").alias("matches")]
-    )["matches"].to_list() == [
-        [],
-        [],
-        [],
-        [0],
-        [0, 1],
-        [1, 2],
-        [2, 3],
-        [3, 4],
-        [4, 5],
-        [5, 6],
-        [6, 7],
-        [7, 8],
-        [8, 9],
-        [9, 10],
-        [10, 11],
-        [11, 12],
-        [12, 13],
-        [13, 14],
-        [14, 15],
-        [15, 16],
-    ]
-
-
-@pytest.mark.parametrize("time_zone", [None, "US/Central", "+01:00"])
-def test_groupby_rolling_negative_offset_crossing_dst(time_zone: str | None) -> None:
-    df = pl.DataFrame(
-        {
-            "datetime": pl.date_range(
-                datetime(2021, 11, 6),
-                datetime(2021, 11, 9),
-                "1d",
-                time_zone=time_zone,
-                eager=True,
-            ),
-            "value": [1, 4, 9, 155],
-        }
-    )
-    result = df.groupby_rolling(index_column="datetime", period="2d", offset="-1d").agg(
-        pl.col("value")
-    )
-    expected = pl.DataFrame(
-        {
-            "datetime": pl.date_range(
-                datetime(2021, 11, 6),
-                datetime(2021, 11, 9),
-                "1d",
-                time_zone=time_zone,
-                eager=True,
-            ),
-            "value": [[1, 4], [4, 9], [9, 155], [155]],
-        }
-    )
-    assert_frame_equal(result, expected)
 
 
 def test_groupby_signed_transmutes() -> None:
@@ -461,20 +359,20 @@ def test_groupby_dynamic_flat_agg_4814() -> None:
         (timedelta(seconds=10), "100s"),
     ],
 )
-@pytest.mark.parametrize("tzinfo", [None, ZoneInfo("Asia/Kathmandu")])
+@pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu"])
 def test_groupby_dynamic_overlapping_groups_flat_apply_multiple_5038(
-    every: str | timedelta, period: str | timedelta, tzinfo: ZoneInfo | None
+    every: str | timedelta, period: str | timedelta, time_zone: str | None
 ) -> None:
     assert (
         pl.DataFrame(
             {
                 "a": [
-                    datetime(2021, 1, 1, tzinfo=tzinfo) + timedelta(seconds=2**i)
-                    for i in range(10)
+                    datetime(2021, 1, 1) + timedelta(seconds=2**i) for i in range(10)
                 ],
                 "b": [float(i) for i in range(10)],
             }
         )
+        .with_columns(pl.col("a").dt.replace_time_zone(time_zone))
         .lazy()
         .set_sorted("a")
         .groupby_dynamic("a", every=every, period=period)
@@ -563,17 +461,19 @@ def test_groupby_when_then_with_binary_and_agg_in_pred_6202() -> None:
 @pytest.mark.parametrize("every", ["1h", timedelta(hours=1)])
 @pytest.mark.parametrize("tzinfo", [None, ZoneInfo("Asia/Kathmandu")])
 def test_groupby_dynamic_iter(every: str | timedelta, tzinfo: ZoneInfo | None) -> None:
+    time_zone = tzinfo.key if tzinfo is not None else None
     df = pl.DataFrame(
         {
             "datetime": [
-                datetime(2020, 1, 1, 10, 0, tzinfo=tzinfo),
-                datetime(2020, 1, 1, 10, 50, tzinfo=tzinfo),
-                datetime(2020, 1, 1, 11, 10, tzinfo=tzinfo),
+                datetime(2020, 1, 1, 10, 0),
+                datetime(2020, 1, 1, 10, 50),
+                datetime(2020, 1, 1, 11, 10),
             ],
             "a": [1, 2, 2],
             "b": [4, 5, 6],
         }
     ).set_sorted("datetime")
+    df = df.with_columns(pl.col("datetime").dt.replace_time_zone(time_zone))
 
     # Without 'by' argument
     result1 = [
@@ -658,20 +558,20 @@ def test_overflow_mean_partitioned_groupby_5194(dtype: pl.PolarsDataType) -> Non
     ) == {"group": [1, 2], "data": [10000000.0, 10000000.0]}
 
 
-@pytest.mark.parametrize("tzinfo", [None, ZoneInfo("Asia/Kathmandu")])
+@pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu"])
 def test_groupby_dynamic_elementwise_following_mean_agg_6904(
-    tzinfo: ZoneInfo | None,
+    time_zone: str | None,
 ) -> None:
     df = (
         pl.DataFrame(
             {
                 "a": [
-                    datetime(2021, 1, 1, tzinfo=tzinfo) + timedelta(seconds=2**i)
-                    for i in range(5)
+                    datetime(2021, 1, 1) + timedelta(seconds=2**i) for i in range(5)
                 ],
                 "b": [float(i) for i in range(5)],
             }
         )
+        .with_columns(pl.col("a").dt.replace_time_zone(time_zone))
         .lazy()
         .set_sorted("a")
         .groupby_dynamic("a", every="10s", period="100s")
@@ -683,12 +583,12 @@ def test_groupby_dynamic_elementwise_following_mean_agg_6904(
         pl.DataFrame(
             {
                 "a": [
-                    datetime(2021, 1, 1, 0, 0, tzinfo=tzinfo),
-                    datetime(2021, 1, 1, 0, 0, 10, tzinfo=tzinfo),
+                    datetime(2021, 1, 1, 0, 0),
+                    datetime(2021, 1, 1, 0, 0, 10),
                 ],
                 "c": [0.9092974268256817, -0.7568024953079282],
             }
-        ),
+        ).with_columns(pl.col("a").dt.replace_time_zone(time_zone)),
     )
 
 

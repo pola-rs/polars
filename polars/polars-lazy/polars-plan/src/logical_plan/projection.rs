@@ -56,11 +56,11 @@ fn rewrite_special_aliases(expr: Expr) -> PolarsResult<Expr> {
 fn replace_wildcard(
     expr: &Expr,
     result: &mut Vec<Expr>,
-    exclude: &[Arc<str>],
+    exclude: &PlHashSet<Arc<str>>,
     schema: &Schema,
 ) -> PolarsResult<()> {
     for name in schema.iter_names() {
-        if !exclude.iter().any(|excluded| &**excluded == name) {
+        if !exclude.contains(name.as_str()) {
             let new_expr = replace_wildcard_with_column(expr.clone(), Arc::from(name.as_str()));
             let new_expr = rewrite_special_aliases(new_expr)?;
             result.push(new_expr)
@@ -201,15 +201,15 @@ fn expand_dtypes(
     result: &mut Vec<Expr>,
     schema: &Schema,
     dtypes: &[DataType],
-    exclude: &[Arc<str>],
+    exclude: &PlHashSet<Arc<str>>,
 ) -> PolarsResult<()> {
     // note: we loop over the schema to guarantee that we return a stable
     // field-order, irrespective of which dtypes are filtered against
-    for field in schema.iter_fields().filter(|f| dtypes.contains(&f.dtype)) {
+    for field in schema
+        .iter_fields()
+        .filter(|f| (dtypes.contains(&f.dtype) && !exclude.contains(f.name().as_str())))
+    {
         let name = field.name();
-        if exclude.iter().any(|excl| excl.as_ref() == name.as_str()) {
-            continue; // skip excluded names
-        }
         let new_expr = expr.clone();
         let new_expr = replace_dtype_with_column(new_expr, Arc::from(name.as_str()));
         let new_expr = rewrite_special_aliases(new_expr)?;
@@ -220,8 +220,12 @@ fn expand_dtypes(
 
 // schema is not used if regex not activated
 #[allow(unused_variables)]
-fn prepare_excluded(expr: &Expr, schema: &Schema, keys: &[Expr]) -> PolarsResult<Vec<Arc<str>>> {
-    let mut exclude = vec![];
+fn prepare_excluded(
+    expr: &Expr,
+    schema: &Schema,
+    keys: &[Expr],
+) -> PolarsResult<PlHashSet<Arc<str>>> {
+    let mut exclude = PlHashSet::new();
     for e in expr {
         if let Expr::Exclude(_, to_exclude) = e {
             #[cfg(feature = "regex")]
@@ -239,14 +243,14 @@ fn prepare_excluded(expr: &Expr, schema: &Schema, keys: &[Expr]) -> PolarsResult
                             // we cannot loop because of bchck
                             while let Some(col) = buf.pop() {
                                 if let Expr::Column(name) = col {
-                                    exclude.push(name)
+                                    exclude.insert(name);
                                 }
                             }
                         }
                         Excluded::Dtype(dt) => {
                             for fld in schema.iter_fields() {
                                 if fld.data_type() == dt {
-                                    exclude.push(Arc::from(fld.name().as_ref()))
+                                    exclude.insert(Arc::from(fld.name().as_ref()));
                                 }
                             }
                         }
@@ -258,11 +262,13 @@ fn prepare_excluded(expr: &Expr, schema: &Schema, keys: &[Expr]) -> PolarsResult
             {
                 for to_exclude_single in to_exclude {
                     match to_exclude_single {
-                        Excluded::Name(name) => exclude.push(name.clone()),
+                        Excluded::Name(name) => {
+                            exclude.insert(name.clone());
+                        }
                         Excluded::Dtype(dt) => {
                             for (name, dtype) in schema.iter() {
                                 if matches!(dtype, dt) {
-                                    exclude.push(Arc::from(name.as_str()))
+                                    exclude.insert(Arc::from(name.as_str()));
                                 }
                             }
                         }
@@ -276,7 +282,7 @@ fn prepare_excluded(expr: &Expr, schema: &Schema, keys: &[Expr]) -> PolarsResult
         loop {
             match expr {
                 Expr::Column(name) => {
-                    exclude.push(name.clone());
+                    exclude.insert(name.clone());
                     break;
                 }
                 Expr::Alias(e, _) => {

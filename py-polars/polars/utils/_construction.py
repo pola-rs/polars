@@ -21,7 +21,10 @@ from typing import (
 import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import (
+    FLOAT_DTYPES,
+    INTEGER_DTYPES,
     N_INFER_DEFAULT,
+    TEMPORAL_DTYPES,
     Boolean,
     Categorical,
     Date,
@@ -73,15 +76,25 @@ if TYPE_CHECKING:
         SchemaDict,
     )
 
+
+def _get_annotations(obj: type) -> dict[str, Any]:
+    return getattr(obj, "__annotations__", {})
+
+
 if version_info >= (3, 10):
 
     def type_hints(obj: type) -> dict[str, Any]:
-        return get_type_hints(obj)
+        try:
+            # often the same as obj.__annotations__, but handles forward references
+            # encoded as string literals, adds Optional[t] if a default value equal
+            # to None is set and recursively replaces 'Annotated[T, ...]' with 'T'.
+            return get_type_hints(obj)
+        except TypeError:
+            # fallback on edge-cases (eg: InitVar inference on python 3.10).
+            return _get_annotations(obj)
 
 else:
-
-    def type_hints(obj: type) -> dict[str, Any]:
-        return getattr(obj, "__annotations__", {})
+    type_hints = _get_annotations
 
 
 @lru_cache(64)
@@ -140,8 +153,9 @@ def nt_unpack(obj: Any) -> Any:
 
 def series_to_pyseries(name: str, values: Series) -> PySeries:
     """Construct a PySeries from a Polars Series."""
-    values.rename(name, in_place=True)
-    return values._s
+    py_s = values._s
+    py_s.rename(name)
+    return py_s
 
 
 def arrow_to_pyseries(name: str, values: pa.Array, rechunk: bool = True) -> PySeries:
@@ -287,6 +301,7 @@ def _construct_series_with_fallbacks(
     constructor: Callable[[str, Sequence[Any], bool], PySeries],
     name: str,
     values: Sequence[Any],
+    target_dtype: PolarsDataType | None,
     strict: bool,
 ) -> PySeries:
     """Construct Series, with fallbacks for basic type mismatch (eg: bool/int)."""
@@ -294,28 +309,33 @@ def _construct_series_with_fallbacks(
         try:
             return constructor(name, values, strict)
         except TypeError as exc:
-            str_val = str(exc)
+            str_exc = str(exc)
 
             # from x to float
             # error message can be:
             #   - integers: "'float' object cannot be interpreted as an integer"
-            if "'float'" in str_val:
+            if "'float'" in str_exc and (
+                # we do not accept float values as int/temporal, as it causes silent
+                # information loss; the caller should explicitly cast in this case.
+                target_dtype
+                not in (INTEGER_DTYPES | TEMPORAL_DTYPES)
+            ):
                 constructor = py_type_to_constructor(float)
 
             # from x to string
             # error message can be:
             #   - integers: "'str' object cannot be interpreted as an integer"
             #   - floats: "must be real number, not str"
-            elif "'str'" in str_val or str_val == "must be real number, not str":
+            elif "'str'" in str_exc or str_exc == "must be real number, not str":
                 constructor = py_type_to_constructor(str)
 
             # from x to int
             # error message can be:
             #   - bools: "'int' object cannot be converted to 'PyBool'"
-            elif str_val == "'int' object cannot be converted to 'PyBool'":
+            elif str_exc == "'int' object cannot be converted to 'PyBool'":
                 constructor = py_type_to_constructor(int)
 
-            elif "decimal.Decimal" in str_val:
+            elif "decimal.Decimal" in str_exc:
                 constructor = py_type_to_constructor(PyDecimal)
             else:
                 raise exc
@@ -362,6 +382,7 @@ def sequence_to_pyseries(
             # * if the values are integer, we take the physical branch.
             # * if the values are python types, take the temporal branch.
             # * if the values are ISO-8601 strings, init then convert via strptime.
+            # * if the values are floats/other dtypes, this is an error.
             if dtype in py_temporal_types and isinstance(value, int):
                 dtype = py_type_to_dtype(dtype)  # construct from integer
             elif (
@@ -378,8 +399,9 @@ def sequence_to_pyseries(
         and (python_dtype is None)
     ):
         constructor = polars_type_to_constructor(dtype)
-        pyseries = _construct_series_with_fallbacks(constructor, name, values, strict)
-
+        pyseries = _construct_series_with_fallbacks(
+            constructor, name, values, dtype, strict
+        )
         if dtype in (Date, Datetime, Duration, Time, Categorical, Boolean):
             if pyseries.dtype() != dtype:
                 pyseries = pyseries.cast(dtype, True)
@@ -402,7 +424,7 @@ def sequence_to_pyseries(
                     dtype_if_empty if dtype_if_empty else Float32
                 )
                 return _construct_series_with_fallbacks(
-                    constructor, name, values, strict
+                    constructor, name, values, dtype, strict
                 )
 
             # generic default dtype
@@ -414,11 +436,23 @@ def sequence_to_pyseries(
                 dtype = py_type_to_dtype(python_dtype)  # construct from integer
             elif dtype in py_temporal_types:
                 dtype = py_type_to_dtype(dtype)
-            time_unit = getattr(dtype, "time_unit", None)
+
+            values_dtype = (
+                None
+                if value is None
+                else py_type_to_dtype(type(value), raise_unmatched=False)
+            )
+            if values_dtype in FLOAT_DTYPES:
+                raise TypeError(
+                    # we do not accept float values as temporal; if this is
+                    # required, the caller should explicitly cast to int first.
+                    f"'float' object cannot be interpreted as a {python_dtype.__name__}"
+                )
 
             # we use anyvalue builder to create the datetime array
             # we store the values internally as UTC and set the timezone
             py_series = PySeries.new_from_anyvalues(name, values, strict)
+            time_unit = getattr(dtype, "time_unit", None)
             if time_unit is None:
                 s = wrap_s(py_series)
             else:
@@ -431,7 +465,7 @@ def sequence_to_pyseries(
                         "Given time_zone is different from that of timezone aware datetimes."
                         f" Given: '{dtype_tz}', got: '{tz}'."
                     )
-                return s.dt.replace_time_zone("UTC").dt.convert_time_zone(tz)._s
+                return s.dt.replace_time_zone("UTC")._s
             return s._s
 
         elif (
@@ -469,7 +503,9 @@ def sequence_to_pyseries(
                 except RuntimeError:
                     return sequence_from_anyvalue_or_object(name, values)
 
-            return _construct_series_with_fallbacks(constructor, name, values, strict)
+            return _construct_series_with_fallbacks(
+                constructor, name, values, dtype, strict
+            )
 
 
 def _pandas_series_to_arrow(
@@ -545,9 +581,10 @@ def _handle_columns_arg(
                 series_map = {s.name(): s for s in data}
                 if all((col in series_map) for col in columns):
                     return [series_map[col] for col in columns]
-
             for i, c in enumerate(columns):
-                data[i].rename(c)
+                if c != data[i].name():
+                    data[i] = data[i].clone()
+                    data[i].rename(c)
             return data
         else:
             raise ValueError("Dimensions of columns arg must match data dimensions.")
@@ -652,6 +689,12 @@ def _expand_dict_scalars(
                 dtype = dtypes.get(name)
                 if isinstance(val, dict) and dtype != Struct:
                     updated_data[name] = pl.DataFrame(val).to_struct(name)
+
+                elif isinstance(val, pl.Series):
+                    s = val.rename(name) if name != val.name else val
+                    if dtype and dtype != s.dtype:
+                        s = s.cast(dtype)
+                    updated_data[name] = s
 
                 elif arrlen(val) is not None or _is_generator(val):
                     updated_data[name] = pl.Series(
@@ -791,7 +834,7 @@ def _sequence_of_series_to_pydf(
     data_series: list[PySeries] = []
     for i, s in enumerate(data):
         if not s.name:
-            s.rename(column_names[i], in_place=True)
+            s = s.alias(column_names[i])
         new_dtype = schema_overrides.get(column_names[i])
         if new_dtype and new_dtype != s.dtype:
             s = s.cast(new_dtype)
@@ -1076,7 +1119,15 @@ def _dataclasses_or_models_to_pydf(
             for col, tp in type_hints(first_element.__class__).items()
             if col != "__slots__"
         }
-        schema_override.update(schema_overrides or {})
+        if schema_overrides:
+            schema_override.update(schema_overrides)
+        elif not from_model:
+            dc_fields = set(asdict(first_element))
+            schema_overrides = schema_override = {
+                nm: tp for nm, tp in schema_override.items() if nm in dc_fields
+            }
+        else:
+            schema_overrides = schema_override
 
     for col, tp in schema_override.items():
         if tp == Categorical:

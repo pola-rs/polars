@@ -113,10 +113,6 @@ impl SeriesTrait for NullChunked {
         self.length as usize
     }
 
-    fn take_every(&self, n: usize) -> Series {
-        NullChunked::new(self.name.clone(), self.len() / n).into_series()
-    }
-
     fn has_validity(&self) -> bool {
         true
     }

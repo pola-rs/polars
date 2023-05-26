@@ -25,15 +25,8 @@ bitflags! {
         const VERBOSE = 0x01;
         /// Indicates that window expression's [`GroupTuples`] may be cached.
         const CACHE_WINDOW_EXPR = 0x02;
-        /// A `sort()` in a window function is one level flatter
-        /// Assume we have column a : i32
-        /// than a sort in a groupby. A groupby sorts the groups and returns array: list[i32]
-        /// whereas a window function returns array: i32
-        /// So a `sort().list()` in a groupby returns: list[list[i32]]
-        /// whereas in a window function would return: list[i32]
-        const FINALIZE_WINDOW_AS_LIST = 0x04;
         /// Indicates the expression has a window function
-        const HAS_WINDOW = 0x08;
+        const HAS_WINDOW = 0x04;
     }
 }
 
@@ -252,21 +245,6 @@ impl ExecutionState {
     pub(super) fn verbose(&self) -> bool {
         let flags: StateFlags = self.flags.load(Ordering::Relaxed).into();
         flags.contains(StateFlags::VERBOSE)
-    }
-
-    pub(super) fn set_finalize_window_as_list(&self) {
-        self.set_flags(&|mut flags| {
-            flags |= StateFlags::FINALIZE_WINDOW_AS_LIST;
-            flags
-        })
-    }
-
-    pub(super) fn unset_finalize_window_as_list(&self) -> bool {
-        let mut flags: StateFlags = self.flags.load(Ordering::Relaxed).into();
-        let is_set = flags.contains(StateFlags::FINALIZE_WINDOW_AS_LIST);
-        flags.remove(StateFlags::FINALIZE_WINDOW_AS_LIST);
-        self.flags.store(flags.as_u8(), Ordering::Relaxed);
-        is_set
     }
 
     pub(super) fn remove_cache_window_flag(&mut self) {

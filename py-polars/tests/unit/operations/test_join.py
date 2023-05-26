@@ -505,6 +505,12 @@ def test_update() -> None:
 
     assert df1.update(df2, on="a").to_dict(False) == {"a": [1, 2, 3], "b": [4, 8, 9]}
 
+    a = pl.DataFrame({"a": [1, 2, 3]})
+    b = pl.DataFrame({"b": [4, 5]})
+    c = a.update(b)
+
+    assert c.rows() == a.rows()
+
 
 @typing.no_type_check
 def test_join_frame_consistency() -> None:

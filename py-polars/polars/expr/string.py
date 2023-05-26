@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 
 from polars.datatypes import Date, Datetime, Time, py_type_to_dtype
 from polars.exceptions import ChronoFormatWarning
-from polars.utils import no_default
 from polars.utils._parse_expr_input import expr_to_lit_or_expr
 from polars.utils._wrap import wrap_expr
 from polars.utils.decorators import deprecated_alias
@@ -19,7 +18,6 @@ if TYPE_CHECKING:
         TimeUnit,
         TransferEncoding,
     )
-    from polars.utils import NoDefault
 
 
 class ExprStringNameSpace:
@@ -81,8 +79,7 @@ class ExprStringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        utc: bool = False,
-        _tz_aware: bool = False,
+        utc: bool | None = None,
     ) -> Expr:
         """
         Convert a Utf8 column into a Datetime column.
@@ -112,19 +109,34 @@ class ExprStringNameSpace:
             Parse time zone aware datetimes as UTC. This may be useful if you have data
             with mixed offsets.
 
+            .. deprecated:: 0.18.0
+                This is now a no-op, you can safely remove it.
+                Offset-naive strings are parsed as ``pl.Datetime(time_unit)``,
+                and offset-aware strings are converted to
+                ``pl.Datetime(time_unit, "UTC")``.
+
         Examples
         --------
         >>> s = pl.Series(["2020-01-01 01:00Z", "2020-01-01 02:00Z"])
         >>> s.str.to_datetime("%Y-%m-%d %H:%M%#z")
         shape: (2,)
-        Series: '' [datetime[μs, +00:00]]
+        Series: '' [datetime[μs, UTC]]
         [
-                2020-01-01 01:00:00 +00:00
-                2020-01-01 02:00:00 +00:00
+                2020-01-01 01:00:00 UTC
+                2020-01-01 02:00:00 UTC
         ]
-
         """
         _validate_format_argument(format)
+        if utc is not None:
+            warnings.warn(
+                "The `utc` argument is now a no-op and has no effect. "
+                "You can safely remove it. "
+                "Offset-naive strings are parsed as ``pl.Datetime(time_unit)``, "
+                "and offset-aware strings are converted to "
+                '``pl.Datetime(time_unit, "UTC")``.',
+                DeprecationWarning,
+                stacklevel=find_stacklevel(),
+            )
         return wrap_expr(
             self._pyexpr.str_to_datetime(
                 format,
@@ -133,8 +145,6 @@ class ExprStringNameSpace:
                 strict,
                 exact,
                 cache,
-                utc,
-                _tz_aware,
             )
         )
 
@@ -185,8 +195,7 @@ class ExprStringNameSpace:
         strict: bool = True,
         exact: bool = True,
         cache: bool = True,
-        utc: bool = False,
-        tz_aware: bool | NoDefault = no_default,
+        utc: bool | None = None,
     ) -> Expr:
         """
         Convert a Utf8 column into a Date/Datetime/Time column.
@@ -210,13 +219,12 @@ class ExprStringNameSpace:
         utc
             Parse time zone aware datetimes as UTC. This may be useful if you have data
             with mixed offsets.
-        tz_aware
-            Parse time zone aware datetimes. This may be automatically toggled by the
-            `format` given.
 
-            .. deprecated:: 0.16.17
-                This is now auto-inferred from the given `format`. You can safely drop
-                this argument, it will be removed in a future version.
+            .. deprecated:: 0.18.0
+                This is now a no-op, you can safely remove it.
+                Offset-naive strings are parsed as ``pl.Datetime(time_unit)``,
+                and offset-aware strings are converted to
+                ``pl.Datetime(time_unit, "UTC")``.
 
         Notes
         -----
@@ -231,10 +239,10 @@ class ExprStringNameSpace:
         >>> s = pl.Series(["2020-01-01 01:00Z", "2020-01-01 02:00Z"])
         >>> s.str.strptime(pl.Datetime, "%Y-%m-%d %H:%M%#z")
         shape: (2,)
-        Series: '' [datetime[μs, +00:00]]
+        Series: '' [datetime[μs, UTC]]
         [
-                2020-01-01 01:00:00 +00:00
-                2020-01-01 02:00:00 +00:00
+                2020-01-01 01:00:00 UTC
+                2020-01-01 02:00:00 UTC
         ]
 
         Dealing with different formats.
@@ -264,19 +272,8 @@ class ExprStringNameSpace:
                 2022-01-31
                 2001-07-08
         ]
-
         """
         _validate_format_argument(format)
-
-        if tz_aware is no_default:
-            tz_aware = False
-        else:
-            warnings.warn(
-                "`tz_aware` is now auto-inferred from `format` and will be removed "
-                "in a future version. You can safely drop this argument.",
-                category=DeprecationWarning,
-                stacklevel=find_stacklevel(),
-            )
 
         if dtype == Date:
             return self.to_date(format, strict=strict, exact=exact, cache=cache)
@@ -291,7 +288,6 @@ class ExprStringNameSpace:
                 exact=exact,
                 cache=cache,
                 utc=utc,
-                _tz_aware=tz_aware,
             )
         elif dtype == Time:
             return self.to_time(format, strict=strict, cache=cache)
@@ -1099,7 +1095,7 @@ class ExprStringNameSpace:
         ...         +           # 'one or more' quantifier
         ...         """
         ...     )
-        ...     .arr.to_struct(fields=["name", "domain"])
+        ...     .list.to_struct(fields=["name", "domain"])
         ...     .alias("email_parts")
         ... ).unnest("email_parts")
         shape: (3, 3)
@@ -1543,7 +1539,7 @@ class ExprStringNameSpace:
         └─────┘
 
         """
-        return wrap_expr(self._pyexpr.explode())
+        return wrap_expr(self._pyexpr.str_explode())
 
     def parse_int(self, radix: int = 2, *, strict: bool = True) -> Expr:
         """

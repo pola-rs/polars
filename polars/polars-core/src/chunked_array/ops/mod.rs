@@ -43,6 +43,7 @@ mod set;
 mod shift;
 pub mod sort;
 pub(crate) mod take;
+mod tile;
 pub(crate) mod unique;
 #[cfg(feature = "zip_with")]
 pub mod zip;
@@ -110,12 +111,6 @@ pub trait ChunkCumAgg<T: PolarsDataType> {
     fn cumprod(&self, _reverse: bool) -> ChunkedArray<T> {
         panic!("operation cumprod not supported for this dtype")
     }
-}
-
-/// Traverse and collect every nth element
-pub trait ChunkTakeEvery<T: PolarsDataType> {
-    /// Traverse and collect every nth element in a new array.
-    fn take_every(&self, n: usize) -> ChunkedArray<T>;
 }
 
 /// Explode/ flatten a List or Utf8 Series
@@ -476,6 +471,14 @@ pub struct SortOptions {
     pub multithreaded: bool,
 }
 
+#[derive(Clone)]
+#[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
+pub struct SortMultipleOptions {
+    pub other: Vec<Series>,
+    pub descending: Vec<bool>,
+    pub multithreaded: bool,
+}
+
 impl Default for SortOptions {
     fn default() -> Self {
         Self {
@@ -498,7 +501,7 @@ pub trait ChunkSort<T: PolarsDataType> {
     fn arg_sort(&self, options: SortOptions) -> IdxCa;
 
     /// Retrieve the indexes need to sort this and the other arrays.
-    fn arg_sort_multiple(&self, _other: &[Series], _descending: &[bool]) -> PolarsResult<IdxCa> {
+    fn arg_sort_multiple(&self, _options: &SortMultipleOptions) -> PolarsResult<IdxCa> {
         polars_bail!(opq = arg_sort_multiple, T::get_dtype());
     }
 }
@@ -549,9 +552,9 @@ pub trait ChunkFullNull {
 }
 
 /// Reverse a ChunkedArray<T>
-pub trait ChunkReverse<T: PolarsDataType> {
+pub trait ChunkReverse {
     /// Return a reversed version of this array.
-    fn reverse(&self) -> ChunkedArray<T>;
+    fn reverse(&self) -> Self;
 }
 
 /// Filter values by a boolean mask.
@@ -632,10 +635,25 @@ impl ChunkExpandAtIndex<ListType> for ListChunked {
         match opt_val {
             Some(val) => {
                 let mut ca = ListChunked::full(self.name(), &val, length);
-                ca.to_logical(self.inner_dtype());
+                ca.to_physical(self.inner_dtype());
                 ca
             }
             None => ListChunked::full_null_with_dtype(self.name(), length, &self.inner_dtype()),
+        }
+    }
+}
+
+#[cfg(feature = "dtype-array")]
+impl ChunkExpandAtIndex<FixedSizeListType> for ArrayChunked {
+    fn new_from_index(&self, index: usize, length: usize) -> ArrayChunked {
+        let opt_val = self.get(index);
+        match opt_val {
+            Some(val) => {
+                let mut ca = ArrayChunked::full(self.name(), &val, length);
+                ca.to_physical(self.inner_dtype());
+                ca
+            }
+            None => ArrayChunked::full_null_with_dtype(self.name(), length, &self.inner_dtype(), 0),
         }
     }
 }
@@ -724,7 +742,7 @@ pub trait IsFirst<T: PolarsDataType> {
     }
 }
 
-#[cfg(feature = "is_first")]
+#[cfg(feature = "is_last")]
 /// Mask the last unique values as `true`
 pub trait IsLast<T: PolarsDataType> {
     fn is_last(&self) -> PolarsResult<BooleanChunked> {

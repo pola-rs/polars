@@ -13,6 +13,7 @@ from typing import (
     Sequence,
     Tuple,
     Type,
+    TypeVar,
     Union,
 )
 
@@ -22,7 +23,7 @@ else:
     from typing_extensions import Literal
 
 if TYPE_CHECKING:
-    from polars import Expr, Series
+    from polars import DataFrame, Expr, LazyFrame, Series
     from polars.datatypes import DataType, DataTypeClass, TemporalType
     from polars.dependencies import numpy as np
     from polars.dependencies import pandas as pd
@@ -121,7 +122,7 @@ UnstackDirection: TypeAlias = Literal["vertical", "horizontal"]
 ApplyStrategy: TypeAlias = Literal["thread_local", "threading"]
 
 # The following have a Rust enum equivalent with a different name
-AsofJoinStrategy: TypeAlias = Literal["backward", "forward"]  # AsofStrategy
+AsofJoinStrategy: TypeAlias = Literal["backward", "forward", "nearest"]  # AsofStrategy
 ClosedInterval: TypeAlias = Literal["left", "right", "both", "none"]  # ClosedWindow
 InterpolationMethod: TypeAlias = Literal["linear", "nearest"]
 JoinStrategy: TypeAlias = Literal[
@@ -135,7 +136,7 @@ ToStructStrategy: TypeAlias = Literal[
 ]  # ListToStructWidthStrategy
 
 # The following have no equivalent on the Rust side
-ConcatMethod = Literal["vertical", "diagonal", "horizontal"]
+ConcatMethod = Literal["vertical", "diagonal", "horizontal", "align"]
 EpochTimeUnit = Literal["ns", "us", "ms", "s", "d"]
 Orientation: TypeAlias = Literal["col", "row"]
 SearchSortedSide: TypeAlias = Literal["any", "left", "right"]
@@ -144,6 +145,7 @@ CorrelationMethod: TypeAlias = Literal["pearson", "spearman"]
 DbReadEngine: TypeAlias = Literal["adbc", "connectorx"]
 DbWriteEngine: TypeAlias = Literal["sqlalchemy", "adbc"]
 DbWriteMode: TypeAlias = Literal["replace", "append", "fail"]
+WindowMappingStrategy: TypeAlias = Literal["group_to_rows", "join", "explode"]
 
 # type signature for allowed frame init
 FrameInitTypes: TypeAlias = Union[
@@ -175,3 +177,7 @@ RowTotalsDefinition: TypeAlias = Union[
 
 # standard/named hypothesis profiles used for parametric testing
 ParametricProfileNames: TypeAlias = Literal["fast", "balanced", "expensive"]
+
+# typevars for core polars types
+PolarsType = TypeVar("PolarsType", "DataFrame", "LazyFrame", "Series", "Expr")
+FrameType = TypeVar("FrameType", "DataFrame", "LazyFrame")

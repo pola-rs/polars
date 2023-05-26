@@ -35,6 +35,7 @@ from polars.datatypes import (
 )
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
+from polars.expr.array import ExprArrayNameSpace
 from polars.expr.binary import ExprBinaryNameSpace
 from polars.expr.categorical import ExprCatNameSpace
 from polars.expr.datetime import ExprDateTimeNameSpace
@@ -44,7 +45,7 @@ from polars.expr.string import ExprStringNameSpace
 from polars.expr.struct import ExprStructNameSpace
 from polars.utils._parse_expr_input import expr_to_lit_or_expr, selection_to_pyexpr_list
 from polars.utils.convert import _timedelta_to_pl_duration
-from polars.utils.decorators import deprecated_alias, redirect
+from polars.utils.decorators import deprecated_alias
 from polars.utils.meta import threadpool_size
 from polars.utils.various import sphinx_accessor
 
@@ -69,6 +70,7 @@ if TYPE_CHECKING:
         RankMethod,
         RollingInterpolationMethod,
         SearchSortedSide,
+        WindowMappingStrategy,
     )
 
     if sys.version_info >= (3, 11):
@@ -83,12 +85,11 @@ elif os.getenv("BUILDING_SPHINX_DOCS"):
     property = sphinx_accessor
 
 
-@redirect({"list": "implode"})
 class Expr:
     """Expressions that can be used in various contexts."""
 
     _pyexpr: PyExpr = None
-    _accessors: set[str] = {"arr", "cat", "dt", "meta", "str", "bin", "struct"}
+    _accessors: set[str] = {"arr", "cat", "dt", "list", "meta", "str", "bin", "struct"}
 
     @classmethod
     def _from_pyexpr(cls, pyexpr: PyExpr) -> Self:
@@ -127,7 +128,7 @@ class Expr:
     def __radd__(self, other: Any) -> Self:
         return self._from_pyexpr(self._to_pyexpr(other) + self._pyexpr)
 
-    def __and__(self, other: Expr) -> Self:
+    def __and__(self, other: Expr | int) -> Self:
         return self._from_pyexpr(self._pyexpr._and(self._to_pyexpr(other)))
 
     def __rand__(self, other: Any) -> Self:
@@ -175,7 +176,7 @@ class Expr:
     def __neg__(self) -> Expr:
         return F.lit(0) - self
 
-    def __or__(self, other: Expr) -> Self:
+    def __or__(self, other: Expr | int) -> Self:
         return self._from_pyexpr(self._pyexpr._or(self._to_pyexpr(other)))
 
     def __ror__(self, other: Any) -> Self:
@@ -1256,18 +1257,18 @@ class Expr:
 
         >>> df.select(pl.repeat(None, 3).append(pl.col("a")).rechunk())
         shape: (6, 1)
-        ┌─────────┐
-        │ literal │
-        │ ---     │
-        │ i64     │
-        ╞═════════╡
-        │ null    │
-        │ null    │
-        │ null    │
-        │ 1       │
-        │ 1       │
-        │ 2       │
-        └─────────┘
+        ┌────────┐
+        │ repeat │
+        │ ---    │
+        │ i64    │
+        ╞════════╡
+        │ null   │
+        │ null   │
+        │ null   │
+        │ 1      │
+        │ 1      │
+        │ 2      │
+        └────────┘
 
         """
         return self._from_pyexpr(self._pyexpr.rechunk())
@@ -2918,7 +2919,12 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.last())
 
-    def over(self, expr: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Self:
+    def over(
+        self,
+        expr: IntoExpr | Iterable[IntoExpr],
+        *more_exprs: IntoExpr,
+        mapping_strategy: WindowMappingStrategy = "group_to_rows",
+    ) -> Self:
         """
         Compute expressions over the given groups.
 
@@ -2936,6 +2942,17 @@ class Expr:
             column names.
         *more_exprs
             Additional columns to group by, specified as positional arguments.
+        mapping_strategy: {'group_to_rows', 'join', 'explode'}
+            - group_to_rows
+                If the aggregation results in multiple values, assign them back to there
+                position in the DataFrame. This can only be done if the group yields
+                the same elements before aggregation as after
+            - join
+                Join the groups as 'List<group_dtype>' to the row positions.
+                warning: this can be memory intensive
+            - explode
+                Don't do any mapping, but simply flatten the group.
+                This only makes sense if the input data is sorted.
 
         Examples
         --------
@@ -3014,7 +3031,7 @@ class Expr:
         exprs = selection_to_pyexpr_list(expr)
         if more_exprs:
             exprs.extend(selection_to_pyexpr_list(more_exprs))
-        return self._from_pyexpr(self._pyexpr.over(exprs))
+        return self._from_pyexpr(self._pyexpr.over(exprs, mapping_strategy))
 
     def is_unique(self) -> Self:
         """
@@ -3407,8 +3424,7 @@ class Expr:
 
             def wrap_f(x: Series) -> Series:  # pragma: no cover
                 def inner(s: Series) -> Series:  # pragma: no cover
-                    s.rename(x.name, in_place=True)
-                    return function(s)
+                    return function(s.alias(x.name))
 
                 return x.apply(inner, return_dtype=return_dtype, skip_nulls=skip_nulls)
 
@@ -4650,7 +4666,7 @@ class Expr:
         center
             Set the labels at the center of the window
         by
-            If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
+            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
@@ -4749,7 +4765,7 @@ class Expr:
         center
             Set the labels at the center of the window
         by
-            If the `window_size` is temporal, for instance `"5h"` or `"3s`, you must
+            If the `window_size` is temporal, for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
@@ -4848,7 +4864,7 @@ class Expr:
         center
             Set the labels at the center of the window
         by
-            If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
+            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
@@ -4947,7 +4963,7 @@ class Expr:
         center
             Set the labels at the center of the window
         by
-            If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
+            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
@@ -5046,7 +5062,7 @@ class Expr:
         center
             Set the labels at the center of the window
         by
-            If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
+            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
@@ -5145,7 +5161,7 @@ class Expr:
         center
             Set the labels at the center of the window
         by
-            If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
+            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
@@ -5240,7 +5256,7 @@ class Expr:
         center
             Set the labels at the center of the window
         by
-            If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
+            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
@@ -5341,7 +5357,7 @@ class Expr:
         center
             Set the labels at the center of the window
         by
-            If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
+            If the `window_size` is temporal for instance `"5h"` or `"3s"`, you must
             set the column that will be used to determine the windows. This column must
             be of dtype `{Date, Datetime}`
         closed : {'left', 'right', 'both', 'none'}
@@ -5580,6 +5596,23 @@ class Expr:
         │ 2   │
         │ 5   │
         └─────┘
+
+        Use 'rank' with 'over' to rank within groups:
+
+        >>> df = pl.DataFrame({"a": [1, 1, 2, 2, 2], "b": [6, 7, 5, 14, 11]})
+        >>> df.with_columns(pl.col("b").rank().over("a").alias("rank"))
+        shape: (5, 3)
+        ┌─────┬─────┬──────┐
+        │ a   ┆ b   ┆ rank │
+        │ --- ┆ --- ┆ ---  │
+        │ i64 ┆ i64 ┆ f32  │
+        ╞═════╪═════╪══════╡
+        │ 1   ┆ 6   ┆ 1.0  │
+        │ 1   ┆ 7   ┆ 2.0  │
+        │ 2   ┆ 5   ┆ 1.0  │
+        │ 2   ┆ 14  ┆ 3.0  │
+        │ 2   ┆ 11  ┆ 2.0  │
+        └─────┴─────┴──────┘
 
         """
         return self._from_pyexpr(self._pyexpr.rank(method, descending, seed))
@@ -6995,7 +7028,13 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.shrink_dtype())
 
     def cache(self) -> Self:
-        """Cache this expression so that it only is executed once per context."""
+        """
+        Cache this expression so that it only is executed once per context.
+
+        This can actually hurt performance and can have a lot of contention.
+        It is advised not to use it until actually benchmarked on your problem.
+
+        """
         return self._from_pyexpr(self._pyexpr.cache())
 
     def map_dict(
@@ -7432,16 +7471,6 @@ class Expr:
         return self.map(func)
 
     @property
-    def arr(self) -> ExprListNameSpace:
-        """
-        Create an object namespace of all list related methods.
-
-        See the individual method pages for full details
-
-        """
-        return ExprListNameSpace(self)
-
-    @property
     def bin(self) -> ExprBinaryNameSpace:
         """
         Create an object namespace of all binary related methods.
@@ -7481,6 +7510,29 @@ class Expr:
         """Create an object namespace of all datetime related methods."""
         return ExprDateTimeNameSpace(self)
 
+    # Keep the `list` and `str` properties below at the end of the definition of Expr,
+    # as to not confuse mypy with the type annotation `str` and `list`
+
+    @property
+    def list(self) -> ExprListNameSpace:
+        """
+        Create an object namespace of all list related methods.
+
+        See the individual method pages for full details
+
+        """
+        return ExprListNameSpace(self)
+
+    @property
+    def arr(self) -> ExprArrayNameSpace:
+        """
+        Create an object namespace of all array related methods.
+
+        See the individual method pages for full details
+
+        """
+        return ExprArrayNameSpace(self)
+
     @property
     def meta(self) -> ExprMetaNameSpace:
         """
@@ -7490,9 +7542,6 @@ class Expr:
 
         """
         return ExprMetaNameSpace(self)
-
-    # Keep the `str` property below at the end of the definition of Expr,
-    # as to not confuse mypy with the type annotation `str`
 
     @property
     def str(self) -> ExprStringNameSpace:

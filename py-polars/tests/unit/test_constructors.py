@@ -395,6 +395,21 @@ def test_init_structured_objects_nested() -> None:
             )
 
 
+def test_dataclasses_initvar_typing() -> None:
+    @dataclasses.dataclass
+    class ABC:
+        x: date
+        y: float
+        z: dataclasses.InitVar[list[str]] = None
+
+    # should be able to parse the initvar typing...
+    abc = ABC(x=date(1999, 12, 31), y=100.0)
+    df = pl.DataFrame([abc])
+
+    # ...but should not load the initvar field into the DataFrame
+    assert dataclasses.asdict(abc) == df.rows(named=True)[0]
+
+
 def test_init_ndarray(monkeypatch: Any) -> None:
     # Empty array
     df = pl.DataFrame(np.array([]))
@@ -663,12 +678,12 @@ def test_init_1d_sequence() -> None:
         [datetime(2020, 1, 1, tzinfo=timezone(timedelta(hours=1)))],
         schema={"ts": pl.Datetime("ms")},
     )
-    assert df.schema == {"ts": pl.Datetime("ms", "+01:00")}
+    assert df.schema == {"ts": pl.Datetime("ms", "UTC")}
     df = pl.DataFrame(
         [datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu"))],
         schema={"ts": pl.Datetime("ms")},
     )
-    assert df.schema == {"ts": pl.Datetime("ms", "Asia/Kathmandu")}
+    assert df.schema == {"ts": pl.Datetime("ms", "UTC")}
 
 
 def test_init_pandas(monkeypatch: Any) -> None:

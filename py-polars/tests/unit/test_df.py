@@ -548,8 +548,7 @@ def test_take_misc(fruits_cars: pl.DataFrame) -> None:
                 pl.col("B")
                 .reverse()
                 .take(index)  # type: ignore[arg-type]
-                .implode()
-                .over("fruits"),
+                .over("fruits", mapping_strategy="join"),
                 "fruits",
             ]
         )
@@ -558,7 +557,7 @@ def test_take_misc(fruits_cars: pl.DataFrame) -> None:
         assert out[4, "B"].to_list() == [1, 4]
 
     out = df.sort("fruits").select(
-        [pl.col("B").reverse().take(pl.lit(1)).implode().over("fruits"), "fruits"]
+        [pl.col("B").reverse().take(pl.lit(1)).over("fruits"), "fruits"]
     )
     assert out[0, "B"] == 3
     assert out[4, "B"] == 4
@@ -740,6 +739,12 @@ def test_extend() -> None:
         )
         assert_frame_equal(df1, expected)
 
+        # 8745
+        df = pl.DataFrame([{"age": 1}, {"age": 2}, {"age": 3}])
+        df = df[:-1]
+        tail = pl.DataFrame([{"age": 8}])
+        assert df.extend(tail).to_dict(False) == {"age": [1, 2, 8]}
+
 
 def test_file_buffer() -> None:
     f = BytesIO()
@@ -864,7 +869,7 @@ def test_concat() -> None:
         _ = pl.concat([])
 
     with pytest.raises(ValueError):
-        pl.concat([df1, df1], how="rubbish")  # type: ignore[call-overload]
+        pl.concat([df1, df1], how="rubbish")  # type: ignore[arg-type]
 
 
 def test_concat_str() -> None:
@@ -909,12 +914,6 @@ def test_to_dummies2() -> None:
     assert pl.DataFrame({"x": pl.arange(0, 3, eager=True)}).to_dummies("x").to_dict(
         False
     ) == {"x_0": [1, 0, 0], "x_1": [0, 1, 0], "x_2": [0, 0, 1]}
-
-
-def test_get_dummies_function_deprecated() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3]})
-    with pytest.deprecated_call():
-        pl.get_dummies(df)
 
 
 def test_to_pandas(df: pl.DataFrame) -> None:
@@ -1016,6 +1015,29 @@ def test_column_names() -> None:
     for a in (tbl, tbl[:0]):
         df = cast(pl.DataFrame, pl.from_arrow(a))
         assert df.columns == ["a", "b"]
+
+
+def test_init_series_edge_cases() -> None:
+    # confirm that we don't modify the name of the input series in-place
+    s1 = pl.Series("X", [1, 2, 3])
+    df1 = pl.DataFrame({"A": s1}, schema_overrides={"A": pl.UInt8})
+    assert s1.name == "X"
+    assert df1["A"].name == "A"
+
+    # init same series object under different names
+    df2 = pl.DataFrame({"A": s1, "B": s1})
+    assert df2.rows(named=True) == [
+        {"A": 1, "B": 1},
+        {"A": 2, "B": 2},
+        {"A": 3, "B": 3},
+    ]
+
+    # empty series names should not be overwritten
+    s2 = pl.Series([1, 2, 3])
+    s3 = pl.Series([2, 3, 4])
+    df3 = pl.DataFrame([s2, s3])
+    assert s2.name == s3.name == ""
+    assert df3.columns == ["column_0", "column_1"]
 
 
 def test_head_groupby() -> None:
@@ -1973,7 +1995,7 @@ def test_groupby_cat_list() -> None:
         .agg([pl.col("cat_column")])["cat_column"]
     )
 
-    out = grouped.str.explode()
+    out = grouped.explode()
     assert out.dtype == pl.Categorical
     assert out[0] == "a"
 
@@ -2052,12 +2074,12 @@ def test_extension() -> None:
 
     out = df.groupby("groups", maintain_order=True).agg(pl.col("a").alias("a"))
     assert sys.getrefcount(foos[0]) == base_count + 2
-    s = out["a"].arr.explode()
+    s = out["a"].list.explode()
     assert sys.getrefcount(foos[0]) == base_count + 3
     del s
     assert sys.getrefcount(foos[0]) == base_count + 2
 
-    assert out["a"].arr.explode().to_list() == foos
+    assert out["a"].list.explode().to_list() == foos
     assert sys.getrefcount(foos[0]) == base_count + 2
     del out
     assert sys.getrefcount(foos[0]) == base_count + 1
@@ -2755,18 +2777,6 @@ def test_join_suffixes() -> None:
         df_a.join(df_b, on="A", suffix="_y", how=how)["B_y"]
 
     df_a.join_asof(df_b, on=pl.col("A").set_sorted(), suffix="_y")["B_y"]
-
-
-def test_preservation_of_subclasses_after_groupby_statements() -> None:
-    """Group by operations should preserve inherited dataframe classes."""
-
-    class SubClassedDataFrame(pl.DataFrame):
-        pass
-
-    # A group by operation should preserve the subclass
-    subclassed_df = SubClassedDataFrame({"a": [1, 2], "b": [3, 4]})
-    groupby = subclassed_df.groupby("a")
-    assert isinstance(groupby.agg(pl.count()), SubClassedDataFrame)
 
 
 def test_explode_empty() -> None:
@@ -3612,7 +3622,7 @@ def test_deadlocks_3409() -> None:
         pl.DataFrame({"col1": [[1, 2, 3]]})
         .with_columns(
             [
-                pl.col("col1").arr.eval(
+                pl.col("col1").list.eval(
                     pl.element().apply(lambda x: x, return_dtype=pl.Int64)
                 )
             ]
