@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import warnings
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
 from functools import lru_cache, partial, singledispatch
@@ -58,11 +59,10 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.exceptions import ComputeError, ShapeError
+from polars.exceptions import ComputeError, ShapeError, TimeZoneAwareConstructorWarning
 from polars.utils._wrap import wrap_df, wrap_s
-from polars.utils.convert import _tzinfo_to_str
 from polars.utils.meta import threadpool_size
-from polars.utils.various import _is_generator, arrlen, range_to_series
+from polars.utils.various import _is_generator, arrlen, find_stacklevel, range_to_series
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame, PySeries
@@ -458,12 +458,21 @@ def sequence_to_pyseries(
             else:
                 s = wrap_s(py_series).dt.cast_time_unit(time_unit)
             if dtype == Datetime and value.tzinfo is not None:
-                tz = _tzinfo_to_str(value.tzinfo)
+                tz = str(value.tzinfo)
                 dtype_tz = dtype.time_zone  # type: ignore[union-attr]
                 if dtype_tz is not None and tz != dtype_tz:
                     raise ValueError(
                         "Given time_zone is different from that of timezone aware datetimes."
                         f" Given: '{dtype_tz}', got: '{tz}'."
+                    )
+                if tz != "UTC":
+                    warnings.warn(
+                        "Constructing a Series with time-zone-aware "
+                        "datetimes results in a Series with UTC time zone. "
+                        "To silence this warning, you can filter "
+                        "warnings of class TimeZoneAwareConstructorWarning.",
+                        TimeZoneAwareConstructorWarning,
+                        stacklevel=find_stacklevel(),
                     )
                 return s.dt.replace_time_zone("UTC")._s
             return s._s
