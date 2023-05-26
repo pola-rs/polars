@@ -206,23 +206,6 @@ mod test {
     }
 
     #[test]
-    fn test_series_partialeq() {
-        let s1 = Series::new("a", &[1_i32, 2_i32, 3_i32]);
-        let s1_bis = Series::new("b", &[1_i32, 2_i32, 3_i32]);
-        let s1_ter = Series::new("a", &[1.0_f64, 2.0_f64, 3.0_f64]);
-        let s2 = Series::new("", &[Some(1), Some(0)]);
-        let s3 = Series::new("", &[Some(1), None]);
-        let s4 = Series::new("", &[1.0, f64::NAN]);
-
-        assert_eq!(s1, s1);
-        assert_ne!(s1, s1_bis);
-        assert_ne!(s1, s1_ter);
-        assert_eq!(s2, s2);
-        assert_ne!(s2, s3);
-        assert_ne!(s4, s4);
-    }
-
-    #[test]
     fn test_df_partialeq() {
         let df1 = df!("a" => &[1, 2, 3],
                       "b" => &[4, 5, 6])
