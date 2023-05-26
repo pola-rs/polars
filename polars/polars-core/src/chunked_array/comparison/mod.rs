@@ -579,7 +579,7 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
             if let Some(value) = self.get(0) {
                 rhs.lt_eq(value)
             } else {
-                BooleanChunked::full("", false, self.len())
+                BooleanChunked::full_null("", self.len())
             }
         } else {
             let (lhs, rhs) = align_chunks_binary(self, rhs);
@@ -593,13 +593,13 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
             if let Some(value) = rhs.get(0) {
                 self.lt(value)
             } else {
-                BooleanChunked::full("", false, self.len())
+                BooleanChunked::full_null("", self.len())
             }
         } else if self.len() == 1 {
             if let Some(value) = self.get(0) {
                 rhs.gt(value)
             } else {
-                BooleanChunked::full("", false, self.len())
+                BooleanChunked::full_null("", self.len())
             }
         } else {
             let (lhs, rhs) = align_chunks_binary(self, rhs);
@@ -613,13 +613,13 @@ impl ChunkCompare<&BinaryChunked> for BinaryChunked {
             if let Some(value) = rhs.get(0) {
                 self.lt_eq(value)
             } else {
-                BooleanChunked::full("", false, self.len())
+                BooleanChunked::full_null("", self.len())
             }
         } else if self.len() == 1 {
             if let Some(value) = self.get(0) {
                 rhs.gt_eq(value)
             } else {
-                BooleanChunked::full("", false, self.len())
+                BooleanChunked::full_null("", self.len())
             }
         } else {
             let (lhs, rhs) = align_chunks_binary(self, rhs);
