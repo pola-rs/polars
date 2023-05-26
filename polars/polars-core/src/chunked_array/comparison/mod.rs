@@ -224,47 +224,10 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
         match (self.len(), rhs.len()) {
             (_, 1) => {
                 if let Some(value) = rhs.get(0) {
-                    match value {
-                        true => {
-                            if self.null_count() == 0 {
-                                self.clone()
-                            } else {
-                                let chunks = self
-                                    .downcast_iter()
-                                    .map(|arr| {
-                                        if let Some(validity) = arr.validity() {
-                                            Box::new(BooleanArray::from_data_default(
-                                                arr.values() & validity,
-                                                None,
-                                            ))
-                                                as ArrayRef
-                                        } else {
-                                            Box::new(arr.clone())
-                                        }
-                                    })
-                                    .collect();
-                                unsafe { BooleanChunked::from_chunks("", chunks) }
-                            }
-                        }
-                        false => {
-                            if self.null_count() == 0 {
-                                self.not()
-                            } else {
-                                let chunks = self
-                                    .downcast_iter()
-                                    .map(|arr| {
-                                        let bitmap = if let Some(validity) = arr.validity() {
-                                            arr.values() ^ validity
-                                        } else {
-                                            arr.values().not()
-                                        };
-                                        Box::new(BooleanArray::from_data_default(bitmap, None))
-                                            as ArrayRef
-                                    })
-                                    .collect();
-                                unsafe { BooleanChunked::from_chunks("", chunks) }
-                            }
-                        }
+                    if value {
+                        self.clone()
+                    } else {
+                        self.not()
                     }
                 } else {
                     BooleanChunked::full_null("", self.len())
@@ -284,45 +247,10 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
         match (self.len(), rhs.len()) {
             (_, 1) => {
                 if let Some(value) = rhs.get(0) {
-                    match value {
-                        true => {
-                            if self.null_count() == 0 {
-                                self.not()
-                            } else {
-                                let chunks = self
-                                    .downcast_iter()
-                                    .map(|arr| {
-                                        let bitmap = if let Some(validity) = arr.validity() {
-                                            (arr.values() & validity).not()
-                                        } else {
-                                            arr.values().not()
-                                        };
-                                        Box::new(BooleanArray::from_data_default(bitmap, None))
-                                            as ArrayRef
-                                    })
-                                    .collect();
-                                unsafe { BooleanChunked::from_chunks("", chunks) }
-                            }
-                        }
-                        false => {
-                            if self.null_count() == 0 {
-                                self.clone()
-                            } else {
-                                let chunks = self
-                                    .downcast_iter()
-                                    .map(|arr| {
-                                        let bitmap = if let Some(validity) = arr.validity() {
-                                            (arr.values() ^ validity).not()
-                                        } else {
-                                            arr.values().clone()
-                                        };
-                                        Box::new(BooleanArray::from_data_default(bitmap, None))
-                                            as ArrayRef
-                                    })
-                                    .collect();
-                                unsafe { BooleanChunked::from_chunks("", chunks) }
-                            }
-                        }
+                    if value {
+                        self.not()
+                    } else {
+                        self.clone()
                     }
                 } else {
                     BooleanChunked::full_null("", self.len())
@@ -1176,22 +1104,22 @@ mod test {
         let all_true = BooleanChunked::from_slice("", &[true, true, true]);
         let all_false = BooleanChunked::from_slice("", &[false, false, false]);
         let out = a.equal(&true_);
-        assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(false)]);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(false), None]);
         let out = a.not_equal(&true_);
-        assert_eq!(Vec::from(&out), &[Some(false), Some(true), Some(true)]);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(true), None]);
 
         let out = a.equal(&all_true);
-        assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(false)]);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(false), None]);
         let out = a.not_equal(&all_true);
-        assert_eq!(Vec::from(&out), &[Some(false), Some(true), Some(true)]);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(true), None]);
         let out = a.equal(&false_);
-        assert_eq!(Vec::from(&out), &[Some(false), Some(true), Some(false)]);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(true), None]);
         let out = a.not_equal(&false_);
-        assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(true)]);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(false), None]);
         let out = a.equal(&all_false);
-        assert_eq!(Vec::from(&out), &[Some(false), Some(true), Some(false)]);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(true), None]);
         let out = a.not_equal(&all_false);
-        assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(true)]);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(false), None]);
     }
 
     #[test]

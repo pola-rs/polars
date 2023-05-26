@@ -179,7 +179,7 @@ impl PartialEq for DataFrame {
                 .columns
                 .iter()
                 .zip(other.columns.iter())
-                .all(|(s1, s2)| s1 == s2)
+                .all(|(s1, s2)| s1.series_equal_missing(s2))
     }
 }
 
