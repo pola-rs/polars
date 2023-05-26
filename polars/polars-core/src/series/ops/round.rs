@@ -21,11 +21,16 @@ impl Series {
             }
         }
         if let Ok(ca) = self.f64() {
-            let multiplier = 10.0.pow(decimals as f64);
-            let s = ca
-                .apply(|val| (val * multiplier).round() / multiplier)
-                .into_series();
-            return Ok(s);
+            if decimals == 0 {
+                let s = ca.apply(|val| val.round()).into_series();
+                return Ok(s);
+            } else {
+                let multiplier = 10.0.pow(decimals as f64);
+                let s = ca
+                    .apply(|val| (val * multiplier).round() / multiplier)
+                    .into_series();
+                return Ok(s);
+            }
         }
         polars_bail!(opq = round, self.dtype());
     }
