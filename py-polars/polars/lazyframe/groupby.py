@@ -142,17 +142,16 @@ class LazyGroupBy:
         """
         Apply a custom/user-defined function (UDF) over the groups as a new DataFrame.
 
-        Implementing logic using a Python function is almost always _significantly_
-        slower and more memory intensive than implementing the same logic using
-        the native expression API because:
+        Using this is considered an anti-pattern. This will be very slow because:
 
-        - The native expression engine runs in Rust; UDFs run in Python.
-        - Use of Python UDFs forces the DataFrame to be materialized in memory.
-        - Polars-native expressions can be parallelised (UDFs cannot).
-        - Polars-native expressions can be logically optimised (UDFs cannot).
+        - it forces the engine to materialize the whole `DataFrames` for the groups.
+        - it is not parallelized
+        - it blocks optimizations as the passed python function is opaque to the
+          optimizer
 
-        Wherever possible you should strongly prefer the native expression API
-        to achieve the best performance.
+        The idiomatic way to apply custom functions over multiple columns is using:
+
+        `pl.struct([my_columns]).apply(lambda struct_series: ..)`
 
         Parameters
         ----------
