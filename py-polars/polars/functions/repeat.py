@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import warnings
-from typing import TYPE_CHECKING, NoReturn, overload
+from typing import TYPE_CHECKING, overload
 
 from polars import functions as F
 from polars.datatypes import Float64
@@ -40,24 +40,12 @@ def repeat(
 @overload
 def repeat(
     value: PythonLiteral | None,
-    n: int,
+    n: int | PolarsExprType,
     *,
     dtype: PolarsDataType | None = ...,
     eager: Literal[True],
     name: str | None = ...,
 ) -> Series:
-    ...
-
-
-@overload
-def repeat(
-    value: PythonLiteral | None,
-    n: PolarsExprType,
-    *,
-    dtype: PolarsDataType | None = ...,
-    eager: Literal[True],
-    name: str | None = ...,
-) -> NoReturn:
     ...
 
 
@@ -144,19 +132,13 @@ def repeat(
             stacklevel=find_stacklevel(),
         )
 
-    n_pyexpr = F.lit(n)._pyexpr if isinstance(n, int) else n._pyexpr
-    expr = wrap_expr(plr.repeat(value, n_pyexpr, dtype))
-
+    if isinstance(n, int):
+        n = F.lit(n)
+    expr = wrap_expr(plr.repeat(value, n._pyexpr, dtype))
     if name is not None:
         expr = expr.alias(name)
-
     if eager:
-        if not isinstance(n, int):
-            raise TypeError(
-                "`n` must be an integer when using `repeat` in an eager context."
-            )
         return F.select(expr).to_series()
-
     return expr
 
 
@@ -172,21 +154,11 @@ def ones(
 
 @overload
 def ones(
-    n: int,
+    n: int | PolarsExprType,
     dtype: PolarsDataType = ...,
     *,
     eager: Literal[True],
 ) -> Series:
-    ...
-
-
-@overload
-def ones(
-    n: PolarsExprType,
-    dtype: PolarsDataType = ...,
-    *,
-    eager: Literal[True],
-) -> NoReturn:
     ...
 
 
@@ -258,21 +230,11 @@ def zeros(
 
 @overload
 def zeros(
-    n: int,
+    n: int | PolarsExprType,
     dtype: PolarsDataType = ...,
     *,
     eager: Literal[True],
 ) -> Series:
-    ...
-
-
-@overload
-def zeros(
-    n: PolarsExprType,
-    dtype: PolarsDataType = ...,
-    *,
-    eager: Literal[True],
-) -> NoReturn:
     ...
 
 
