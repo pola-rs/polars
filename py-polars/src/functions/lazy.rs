@@ -381,11 +381,7 @@ pub fn reduce(lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
 }
 
 #[pyfunction]
-pub fn repeat_lazy(
-    value: Wrap<AnyValue>,
-    n: PyExpr,
-    dtype: Option<Wrap<DataType>>,
-) -> PyResult<PyExpr> {
+pub fn repeat(value: Wrap<AnyValue>, n: PyExpr, dtype: Option<Wrap<DataType>>) -> PyResult<PyExpr> {
     let value = value.0;
     let n = n.inner;
     let dtype = dtype.map(|wrap| wrap.0);

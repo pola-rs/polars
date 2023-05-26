@@ -44,12 +44,14 @@ def test_repeat(
 
 
 def test_repeat_expr_input_eager() -> None:
-    with pytest.raises(TypeError):
-        pl.repeat(1, n=pl.lit(3), eager=True)
+    result = pl.select(pl.repeat(1, n=pl.lit(3), eager=True)).to_series()
+    expected = pl.Series("repeat", [1, 1, 1], dtype=pl.Int32)
+    assert_series_equal(result, expected)
 
 
 def test_repeat_expr_input_lazy() -> None:
-    result = pl.select(pl.repeat(1, n=pl.lit(3))).to_series()
+    df = pl.DataFrame({"a": [3, 2, 1]})
+    result = df.select(pl.repeat(1, n=pl.col("a"))).to_series()
     expected = pl.Series("repeat", [1, 1, 1], dtype=pl.Int32)
     assert_series_equal(result, expected)
 

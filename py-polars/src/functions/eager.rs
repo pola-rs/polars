@@ -117,37 +117,6 @@ pub fn hor_concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
 }
 
 #[pyfunction]
-pub fn repeat_eager(
-    value: Wrap<AnyValue>,
-    n: usize,
-    dtype: Option<Wrap<DataType>>,
-) -> PyResult<PySeries> {
-    let value = value.0;
-    let dtype = match dtype.map(|wrap| wrap.0) {
-        Some(dtype) => dtype,
-        None => match value.dtype() {
-            // Integer inputs that fit in Int32 are parsed as such
-            DataType::Int64 => {
-                let int_value: i64 = value.try_extract().unwrap();
-                if int_value >= i32::MIN as i64 && int_value <= i32::MAX as i64 {
-                    DataType::Int32
-                } else {
-                    DataType::Int64
-                }
-            }
-            DataType::Unknown => DataType::Null,
-            _ => value.dtype(),
-        },
-    };
-
-    Ok(Series::new("repeat", &[value])
-        .cast(&dtype)
-        .map_err(PyPolarsErr::from)?
-        .new_from_index(0, n)
-        .into())
-}
-
-#[pyfunction]
 pub fn time_range_eager(
     start: i64,
     stop: i64,
