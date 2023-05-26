@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, NoReturn, overload
 
 from polars import functions as F
 from polars.datatypes import Float64
-from polars.utils._wrap import wrap_expr, wrap_s
+from polars.utils._wrap import wrap_expr
 from polars.utils.various import find_stacklevel
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -144,22 +144,20 @@ def repeat(
             stacklevel=find_stacklevel(),
         )
 
+    n_pyexpr = F.lit(n)._pyexpr if isinstance(n, int) else n._pyexpr
+    expr = wrap_expr(plr.repeat(value, n_pyexpr, dtype))
+
+    if name is not None:
+        expr = expr.alias(name)
+
     if eager:
         if not isinstance(n, int):
             raise TypeError(
                 "`n` must be an integer when using `repeat` in an eager context."
             )
-        series = wrap_s(plr.repeat_eager(value, n, dtype))
-        if name is not None:
-            series = series.alias(name)
-        return series
-    else:
-        if isinstance(n, int):
-            n = F.lit(n)
-        expr = wrap_expr(plr.repeat_lazy(value, n._pyexpr, dtype))
-        if name is not None:
-            expr = expr.alias(name)
-        return expr
+        return F.select(expr).to_series()
+
+    return expr
 
 
 @overload
