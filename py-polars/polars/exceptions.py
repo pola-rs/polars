@@ -67,11 +67,7 @@ class TooManyRowsReturnedError(RowsError):
 
 
 class TimeZoneAwareConstructorWarning(Warning):
-    """
-    Warning raised when constructing a Series from time-zone-aware datetimes.
-
-    In a future version of polars, these will be converted to UTC.
-    """
+    """Warning raised when constructing Series from non-UTC time-zone-aware inputs."""
 
 
 class ChronoFormatWarning(Warning):
