@@ -94,7 +94,6 @@ from polars.utils.meta import get_index_type
 from polars.utils.various import (
     _is_generator,
     find_stacklevel,
-    is_int_sequence,
     parse_version,
     range_to_series,
     range_to_slice,
@@ -930,15 +929,13 @@ class Series:
     @overload
     def __getitem__(
         self,
-        item: Series | range | slice | np.ndarray[Any, Any] | list[int] | list[bool],
+        item: Series | range | slice | np.ndarray[Any, Any] | list[int],
     ) -> Series:
         ...
 
     def __getitem__(
         self,
-        item: (
-            int | Series | range | slice | np.ndarray[Any, Any] | list[int] | list[bool]
-        ),
+        item: (int | Series | range | slice | np.ndarray[Any, Any] | list[int]),
     ) -> Any:
         if isinstance(item, Series) and item.dtype in INTEGER_DTYPES:
             return self._take_with_series(item._pos_idxs(self.len()))
@@ -962,10 +959,13 @@ class Series:
 
         # Sequence of integers (slow to check if sequence contains all integers).
         # Also triggers on empty sequence
-        elif is_int_sequence(item):
-            return self._take_with_series(
-                Series("", item, dtype=Int64)._pos_idxs(self.len())
-            )
+        elif isinstance(item, Sequence) and (not item or isinstance(item[0], int)):
+            idx_series = Series("", item, dtype=Int64)._pos_idxs(self.len())
+            if idx_series.has_validity():
+                raise ValueError(
+                    "Cannot __getitem__ with index values containing nulls"
+                )
+            return self._take_with_series(idx_series)
 
         raise ValueError(
             f"Cannot __getitem__ on Series of dtype: '{self.dtype}' "
