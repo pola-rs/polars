@@ -1055,7 +1055,7 @@ impl Expr {
             let by = &s[1];
             let s = &s[0];
             let by = by.cast(&IDX_DTYPE)?;
-            Ok(Some(s.repeat_by(by.idx()?).unwrap().into_series()))
+            Ok(Some(s.repeat_by(by.idx()?)?.into_series()))
         };
 
         self.apply_many(

@@ -6,7 +6,7 @@ use crate::prelude::*;
 
 type LargeListArray = ListArray<i64>;
 
-fn assert_lengths(length_srs: usize, length_by: usize) -> PolarsResult<()> {
+fn check_lengths(length_srs: usize, length_by: usize) -> PolarsResult<()> {
     polars_ensure!(
        (length_srs == length_by) | (length_by == 1),
        ComputeError: "Length of repeat_by argument needs to be 1 or equal to the length of the Series. Series length {}, by length {}",
@@ -20,7 +20,7 @@ where
     T: PolarsNumericType,
 {
     fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {
-        assert_lengths(self.len(), by.len())?;
+        check_lengths(self.len(), by.len())?;
 
         if (self.len() != by.len()) & (by.len() == 1) {
             return self.repeat_by(&IdxCa::new(
@@ -51,7 +51,7 @@ where
 }
 impl RepeatBy for BooleanChunked {
     fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {
-        assert_lengths(self.len(), by.len())?;
+        check_lengths(self.len(), by.len())?;
 
         if (self.len() != by.len()) & (by.len() == 1) {
             return self.repeat_by(&IdxCa::new(
@@ -80,7 +80,7 @@ impl RepeatBy for BooleanChunked {
 impl RepeatBy for Utf8Chunked {
     fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {
         // TODO! dispatch via binary.
-        assert_lengths(self.len(), by.len())?;
+        check_lengths(self.len(), by.len())?;
 
         if (self.len() != by.len()) & (by.len() == 1) {
             return self.repeat_by(&IdxCa::new(
@@ -112,7 +112,7 @@ impl RepeatBy for Utf8Chunked {
 
 impl RepeatBy for BinaryChunked {
     fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {
-        assert_lengths(self.len(), by.len())?;
+        check_lengths(self.len(), by.len())?;
 
         if (self.len() != by.len()) & (by.len() == 1) {
             return self.repeat_by(&IdxCa::new(
