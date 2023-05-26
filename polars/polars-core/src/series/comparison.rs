@@ -156,7 +156,7 @@ impl ChunkCompare<&Series> for Series {
                     );
                 }
             }
-            (Null, Null, _, _) => BooleanChunked::full(self.name(), true, self.len()),
+            (Null, Null, _, _) => BooleanChunked::full_null(self.name(), self.len()),
             _ => {
                 impl_compare!(self, rhs, equal)
             }
