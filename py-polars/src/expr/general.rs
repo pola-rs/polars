@@ -51,8 +51,15 @@ impl PyExpr {
     fn eq(&self, other: Self) -> Self {
         self.clone().inner.eq(other.inner).into()
     }
+
+    fn eq_missing(&self, other: Self) -> Self {
+        self.clone().inner.eq_missing(other.inner).into()
+    }
     fn neq(&self, other: Self) -> Self {
         self.clone().inner.neq(other.inner).into()
+    }
+    fn neq_missing(&self, other: Self) -> Self {
+        self.clone().inner.neq_missing(other.inner).into()
     }
     fn gt(&self, other: Self) -> Self {
         self.clone().inner.gt(other.inner).into()

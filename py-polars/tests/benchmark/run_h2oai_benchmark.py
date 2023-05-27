@@ -293,7 +293,7 @@ assert out.shape == (9999995, 8)
 # but it triggers other code paths so the checksums assertion
 # are a sort of integration tests
 out = (
-    x.filter(pl.col("id1") == pl.lit("id046"))
+    x.filter(pl.col("id1").eq_missing(pl.lit("id046")))
     .select([pl.sum("id6"), pl.sum("v3")])
     .collect()
 )
@@ -302,7 +302,7 @@ assert np.isclose(out["v3"].to_list(), 4.724150165888001e6).all()
 print(out)
 
 out = (
-    x.filter(~(pl.col("id1") == pl.lit("id046")))
+    x.filter(~(pl.col("id1").eq_missing(pl.lit("id046"))))
     .select([pl.sum("id6"), pl.sum("v3")])
     .collect()
 )

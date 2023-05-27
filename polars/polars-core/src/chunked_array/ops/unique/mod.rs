@@ -170,7 +170,7 @@ where
                         ))
                     }
                 } else {
-                    let mask = self.not_equal(&self.shift(1));
+                    let mask = self.not_equal_and_validity(&self.shift(1));
                     self.filter(&mask)
                 }
             }

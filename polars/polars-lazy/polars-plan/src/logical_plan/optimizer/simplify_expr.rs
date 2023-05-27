@@ -530,17 +530,17 @@ impl OptimizationRule for SimplifyExprRule {
                             None
                         }
                     }
-                    FloorDivide => None,
                     Modulus => eval_binary_same_type!(left_aexpr, %, right_aexpr),
                     Lt => eval_binary_bool_type!(left_aexpr, <, right_aexpr),
                     Gt => eval_binary_bool_type!(left_aexpr, >, right_aexpr),
-                    Eq => eval_binary_bool_type!(left_aexpr, ==, right_aexpr),
-                    NotEq => eval_binary_bool_type!(left_aexpr, !=, right_aexpr),
+                    Eq | EqValidity => eval_binary_bool_type!(left_aexpr, ==, right_aexpr),
+                    NotEq | NotEqValidity => eval_binary_bool_type!(left_aexpr, !=, right_aexpr),
                     GtEq => eval_binary_bool_type!(left_aexpr, >=, right_aexpr),
                     LtEq => eval_binary_bool_type!(left_aexpr, <=, right_aexpr),
                     And => eval_bitwise(left_aexpr, right_aexpr, |l, r| l & r),
                     Or => eval_bitwise(left_aexpr, right_aexpr, |l, r| l | r),
                     Xor => eval_bitwise(left_aexpr, right_aexpr, |l, r| l ^ r),
+                    FloorDivide => None,
                 };
                 if out.is_some() {
                     return Ok(out);

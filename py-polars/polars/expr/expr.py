@@ -3772,6 +3772,20 @@ class Expr:
         """
         return self.__eq__(other)
 
+    def eq_missing(self, other: Any) -> Self:
+        """
+        Method equivalent of equality operator ``expr == other`` where `None` == None`.
+
+        This differs from default ``eq`` where null values are propagated.
+
+        Parameters
+        ----------
+        other
+            A literal or expression value to compare with.
+
+        """
+        return self._from_pyexpr(self._pyexpr.eq_missing(self._to_expr(other)._pyexpr))
+
     def ge(self, other: Any) -> Self:
         """
         Method equivalent of "greater than or equal" operator ``expr >= other``.
@@ -3946,6 +3960,20 @@ class Expr:
 
         """
         return self.__ne__(other)
+
+    def ne_missing(self, other: Any) -> Self:
+        """
+        Method equivalent of equality operator ``expr != other`` where `None` == None`.
+
+        This differs from default ``ne`` where null values are propagated.
+
+        Parameters
+        ----------
+        other
+            A literal or expression value to compare with.
+
+        """
+        return self._from_pyexpr(self._pyexpr.neq_missing(self._to_expr(other)._pyexpr))
 
     def add(self, other: Any) -> Self:
         """

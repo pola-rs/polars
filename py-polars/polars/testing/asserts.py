@@ -326,8 +326,13 @@ def _assert_series_inner(
     if check_dtype and left.dtype != right.dtype:
         raise_assert_detail("Series", "Dtype mismatch", left.dtype, right.dtype)
 
+    if left.null_count() != right.null_count():
+        raise_assert_detail(
+            "Series", "null_count is not equal", left.null_count(), right.null_count()
+        )
+
     # create mask of which (if any) values are unequal
-    unequal = left != right
+    unequal = left.ne_missing(right)
 
     # handle NaN values (which compare unequal to themselves)
     comparing_float_dtypes = left.dtype in FLOAT_DTYPES and right.dtype in FLOAT_DTYPES

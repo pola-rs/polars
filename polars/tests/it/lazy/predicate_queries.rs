@@ -39,7 +39,15 @@ fn filter_true_lit() -> PolarsResult<()> {
         .with_predicate_pushdown(false)
         .with_projection_pushdown(false)
         .collect()?;
+    let with_null = df
+        .clone()
+        .lazy()
+        .filter(col("a").is_null())
+        .with_predicate_pushdown(false)
+        .with_projection_pushdown(false)
+        .collect()?;
     let res = with_true.vstack(&with_not_true)?;
+    let res = res.vstack(&with_null)?;
     assert!(res.frame_equal_missing(&df));
     Ok(())
 }

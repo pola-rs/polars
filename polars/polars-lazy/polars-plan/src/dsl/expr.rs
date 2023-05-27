@@ -451,7 +451,9 @@ impl Expr {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Operator {
     Eq,
+    EqValidity,
     NotEq,
+    NotEqValidity,
     Lt,
     LtEq,
     Gt,
@@ -473,7 +475,9 @@ impl Display for Operator {
         use Operator::*;
         let tkn = match self {
             Eq => "==",
+            EqValidity => "==v",
             NotEq => "!=",
+            NotEqValidity => "!=v",
             Lt => "<",
             LtEq => "<=",
             Gt => ">",
@@ -506,6 +510,8 @@ impl Operator {
                 | Self::And
                 | Self::Or
                 | Self::Xor
+                | Self::EqValidity
+                | Self::NotEqValidity
         )
     }
 
