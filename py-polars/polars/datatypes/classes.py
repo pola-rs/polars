@@ -454,10 +454,10 @@ class Array(NestedType):
 
         Parameters
         ----------
-        inner
-            The `DataType` of values within the list
         width
             The fixed size length of the inner arrays.
+        inner
+            The `DataType` of values within the list
 
         """
         self.width = width
