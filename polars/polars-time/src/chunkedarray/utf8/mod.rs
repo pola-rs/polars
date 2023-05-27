@@ -311,7 +311,7 @@ pub trait Utf8Methods: AsUtf8 {
             None => return infer::to_date(utf8_ca),
         };
         let cache = cache && utf8_ca.len() > 50;
-        let fmt = strptime::compile_fmt(fmt);
+        let fmt = strptime::compile_fmt(fmt)?;
         let mut cache_map = PlHashMap::new();
 
         // we can use the fast parser
@@ -393,7 +393,7 @@ pub trait Utf8Methods: AsUtf8 {
             Some(fmt) => fmt,
             None => return infer::to_datetime(utf8_ca, tu, tz),
         };
-        let fmt = strptime::compile_fmt(fmt);
+        let fmt = strptime::compile_fmt(fmt)?;
         let cache = cache && utf8_ca.len() > 50;
 
         let func = match tu {
