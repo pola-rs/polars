@@ -1106,7 +1106,7 @@ def test_csv_categorical_lifetime() -> None:
         "b": ["b", "b", None],
     }
 
-    assert (df["a"] == df["b"]).to_list() == [False, False, False]
+    assert (df["a"] == df["b"]).to_list() == [False, False, None]
 
 
 def test_csv_categorical_categorical_merge() -> None:

@@ -105,9 +105,19 @@ impl Expr {
         binary_expr(self, Operator::Eq, other.into())
     }
 
+    /// Compare `Expr` with other `Expr` on equality where `None == None`
+    pub fn eq_missing<E: Into<Expr>>(self, other: E) -> Expr {
+        binary_expr(self, Operator::EqValidity, other.into())
+    }
+
     /// Compare `Expr` with other `Expr` on non-equality
     pub fn neq<E: Into<Expr>>(self, other: E) -> Expr {
         binary_expr(self, Operator::NotEq, other.into())
+    }
+
+    /// Compare `Expr` with other `Expr` on non-equality where `None == None`
+    pub fn neq_missing<E: Into<Expr>>(self, other: E) -> Expr {
+        binary_expr(self, Operator::NotEqValidity, other.into())
     }
 
     /// Check if `Expr` < `Expr`

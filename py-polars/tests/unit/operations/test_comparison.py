@@ -43,8 +43,8 @@ def test_comparison_nulls_single() -> None:
             "c": pl.Series([None], dtype=pl.Boolean),
         }
     )
-    assert (df1 == df2).row(0) == (True, True, True)
-    assert (df1 != df2).row(0) == (False, False, False)
+    assert (df1 == df2).row(0) == (None, None, None)
+    assert (df1 != df2).row(0) == (None, None, None)
 
 
 def test_comparison_series_expr() -> None:

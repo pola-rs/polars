@@ -589,9 +589,51 @@ class Series:
         """Method equivalent of operator expression ``series == other``."""
         return self.__eq__(other)
 
+    @overload
+    def eq_missing(self, other: Any) -> Self:
+        ...
+
+    @overload
+    def eq_missing(self, other: Expr) -> Expr:  # type: ignore[misc]
+        ...
+
+    def eq_missing(self, other: Any) -> Self | Expr:
+        """
+        Method equivalent of equality operator ``expr == other`` where `None` == None`.
+
+        This differs from default ``ne`` where null values are propagated.
+
+        Parameters
+        ----------
+        other
+            A literal or expression value to compare with.
+
+        """
+
     def ne(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression ``series != other``."""
         return self.__ne__(other)
+
+    @overload
+    def ne_missing(self, other: Expr) -> Expr:  # type: ignore[misc]
+        ...
+
+    @overload
+    def ne_missing(self, other: Any) -> Self:
+        ...
+
+    def ne_missing(self, other: Any) -> Self | Expr:
+        """
+        Method equivalent of equality operator ``expr != other`` where `None` == None`.
+
+        This differs from default ``ne`` where null values are propagated.
+
+        Parameters
+        ----------
+        other
+            A literal or expression value to compare with.
+
+        """
 
     def ge(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression ``series >= other``."""

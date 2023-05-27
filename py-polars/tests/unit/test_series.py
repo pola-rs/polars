@@ -2504,8 +2504,8 @@ def test_ptr() -> None:
 
 def test_null_comparisons() -> None:
     s = pl.Series("s", [None, "str", "a"])
-    assert (s.shift() == s).null_count() == 0
-    assert (s.shift() != s).null_count() == 0
+    assert (s.shift() == s).null_count() == 2
+    assert (s.shift() != s).null_count() == 2
 
 
 def test_min_max_agg_on_str() -> None:

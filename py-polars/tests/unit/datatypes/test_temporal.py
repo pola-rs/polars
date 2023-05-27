@@ -178,7 +178,7 @@ def test_diff_datetime() -> None:
             pl.col("timestamp").str.strptime(pl.Date, format="%Y-%m-%d"),
         ).with_columns(pl.col("timestamp").diff().over("char", mapping_strategy="join"))
     )["timestamp"]
-    assert (out[0] == out[1]).all()
+    assert_series_equal(out[0], out[1])
 
 
 def test_from_pydatetime() -> None:
