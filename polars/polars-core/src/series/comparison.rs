@@ -378,9 +378,10 @@ where
         Ok(apply_method_physical_numeric!(&s, equal, rhs))
     }
 
-    fn equal_missing(&self, _rhs: Rhs) -> Self::Item {
-        // we are not doing this
-        unimplemented!()
+    fn equal_missing(&self, rhs: Rhs) -> Self::Item {
+        validate_types(self.dtype(), &DataType::Int8)?;
+        let s = self.to_physical_repr();
+        Ok(apply_method_physical_numeric!(&s, equal_missing, rhs))
     }
 
     fn not_equal(&self, rhs: Rhs) -> PolarsResult<BooleanChunked> {
@@ -389,9 +390,10 @@ where
         Ok(apply_method_physical_numeric!(&s, not_equal, rhs))
     }
 
-    fn not_equal_missing(&self, _rhs: Rhs) -> Self::Item {
-        // we are not doing this
-        unimplemented!()
+    fn not_equal_missing(&self, rhs: Rhs) -> Self::Item {
+        validate_types(self.dtype(), &DataType::Int8)?;
+        let s = self.to_physical_repr();
+        Ok(apply_method_physical_numeric!(&s, not_equal_missing, rhs))
     }
 
     fn gt(&self, rhs: Rhs) -> PolarsResult<BooleanChunked> {
@@ -448,9 +450,21 @@ impl ChunkCompare<&str> for Series {
         }
     }
 
-    fn equal_missing(&self, _rhs: &str) -> Self::Item {
-        // we are not doing this
-        unimplemented!()
+    fn equal_missing(&self, rhs: &str) -> Self::Item {
+        validate_types(self.dtype(), &DataType::Utf8)?;
+        use DataType::*;
+        match self.dtype() {
+            Utf8 => Ok(self.utf8().unwrap().equal(rhs)),
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(_) => compare_cat_to_str_value(
+                self,
+                rhs,
+                self.name(),
+                |lhs, idx| lhs.equal_missing(idx),
+                false,
+            ),
+            _ => Ok(BooleanChunked::full(self.name(), false, self.len())),
+        }
     }
 
     fn not_equal(&self, rhs: &str) -> PolarsResult<BooleanChunked> {
@@ -470,9 +484,21 @@ impl ChunkCompare<&str> for Series {
         }
     }
 
-    fn not_equal_missing(&self, _rhs: &str) -> Self::Item {
-        // we are not doing this
-        unimplemented!()
+    fn not_equal_missing(&self, rhs: &str) -> Self::Item {
+        validate_types(self.dtype(), &DataType::Utf8)?;
+        use DataType::*;
+        match self.dtype() {
+            Utf8 => Ok(self.utf8().unwrap().not_equal(rhs)),
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(_) => compare_cat_to_str_value(
+                self,
+                rhs,
+                self.name(),
+                |lhs, idx| lhs.not_equal_missing(idx),
+                true,
+            ),
+            _ => Ok(BooleanChunked::full(self.name(), false, self.len())),
+        }
     }
 
     fn gt(&self, rhs: &str) -> PolarsResult<BooleanChunked> {
