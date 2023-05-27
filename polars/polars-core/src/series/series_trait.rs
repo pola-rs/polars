@@ -509,8 +509,8 @@ pub trait SeriesTrait:
         polars_bail!(opq = is_in, self._dtype());
     }
     #[cfg(feature = "repeat_by")]
-    fn repeat_by(&self, _by: &IdxCa) -> ListChunked {
-        invalid_operation_panic!(repeat_by, self)
+    fn repeat_by(&self, _by: &IdxCa) -> PolarsResult<ListChunked> {
+        polars_bail!(opq = repeat_by, self._dtype());
     }
     #[cfg(feature = "checked_arithmetic")]
     fn checked_div(&self, _rhs: &Series) -> PolarsResult<Series> {
