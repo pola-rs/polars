@@ -132,8 +132,9 @@ impl Wrap<&DataFrame> {
         options: &RollingGroupOptions,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
         let time = self.0.column(&options.index_column)?.clone();
-        if by.is_empty() && !options.period.parsed_int {
+        if by.is_empty() {
             // if by is given, the column must be sorted in the 'by' arg, which we can not check now
+            // this will be checked when the groups are materialized
             ensure_sorted_arg(&time, "groupby_rolling")?;
         }
         let time_type = time.dtype();
@@ -207,8 +208,9 @@ impl Wrap<&DataFrame> {
         }
 
         let time = self.0.column(&options.index_column)?.rechunk();
-        if by.is_empty() && !options.period.parsed_int {
+        if by.is_empty() {
             // if by is given, the column must be sorted in the 'by' arg, which we can not check now
+            // this will be checked when the groups are materialized
             ensure_sorted_arg(&time, "groupby_dynamic")?;
         }
         let time_type = time.dtype();

@@ -244,15 +244,10 @@ pub(crate) fn groupby_values_iter_full_lookbehind<'a>(
     };
 
     let mut last_lookbehind_i = 0;
-    let mut last = i64::MIN;
     time[start_offset..]
         .iter()
         .enumerate()
         .map(move |(mut i, lower)| {
-            if *lower < last {
-                panic!("index column of 'groupby_rolling' must be sorted in ascending order!")
-            }
-            last = *lower;
             i += start_offset;
             let lower = add(&offset, *lower, tz.as_ref())?;
             let upper = add(&period, lower, tz.as_ref())?;

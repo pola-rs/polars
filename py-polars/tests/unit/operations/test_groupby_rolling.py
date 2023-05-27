@@ -27,7 +27,7 @@ def test_groupby_rolling_apply() -> None:
             "a": [1, 2, 3, 4, 5],
             "b": [1, 2, 3, 4, 5],
         }
-    )
+    ).set_sorted("a")
 
     def apply(df: pl.DataFrame) -> pl.DataFrame:
         return df.select(
@@ -193,6 +193,20 @@ def test_groupby_rolling_dynamic_sortedness_check() -> None:
         )
 
     with pytest.raises(pl.ComputeError, match=r"input data is not sorted"):
-        df.groupby_rolling("idx", period="2i", by="group", check_sorted=False).agg(
+        df.groupby_rolling("idx", period="2i", by="group").agg(
             pl.col("idx").alias("idx1")
         )
+
+    # no `by` argument
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match=r"argument in operation 'groupby_dynamic' is not explicitly sorted",
+    ):
+        df.groupby_dynamic("idx", every="2i").agg(pl.col("idx").alias("idx1"))
+
+    # no `by` argument
+    with pytest.raises(
+        pl.InvalidOperationError,
+        match=r"argument in operation 'groupby_rolling' is not explicitly sorted",
+    ):
+        df.groupby_rolling("idx", period="2i").agg(pl.col("idx").alias("idx1"))
