@@ -29,6 +29,6 @@ impl DataFrame {
         impl_compare!(self, rhf, gt_eq)
     }
     pub fn lt_eq(&self, rhf: &DataFrame) -> PolarsResult<Self> {
-        impl_compare!(self, rhf, gt_eq)
+        impl_compare!(self, rhf, lt_eq)
     }
 }
