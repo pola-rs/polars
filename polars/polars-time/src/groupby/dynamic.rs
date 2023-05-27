@@ -9,6 +9,7 @@ use polars_core::series::IsSorted;
 use polars_core::utils::ensure_sorted_arg;
 use polars_core::utils::flatten::flatten_par;
 use polars_core::POOL;
+use polars_utils::slice::SortedSlice;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use smartstring::alias::String as SmartString;
@@ -31,10 +32,14 @@ pub struct DynamicGroupOptions {
     pub offset: Duration,
     /// truncate the time column values to the window
     pub truncate: bool,
-    // add the boundaries to the dataframe
+    /// add the boundaries to the dataframe
     pub include_boundaries: bool,
     pub closed_window: ClosedWindow,
     pub start_by: StartBy,
+    /// In cases sortedness cannot be checked by
+    /// the sorted flag, traverse the data to
+    /// check sortedness
+    pub check_sorted: bool,
 }
 
 impl Default for DynamicGroupOptions {
@@ -48,6 +53,7 @@ impl Default for DynamicGroupOptions {
             include_boundaries: false,
             closed_window: ClosedWindow::Left,
             start_by: Default::default(),
+            check_sorted: true,
         }
     }
 }
@@ -61,6 +67,10 @@ pub struct RollingGroupOptions {
     pub period: Duration,
     pub offset: Duration,
     pub closed_window: ClosedWindow,
+    /// In cases sortedness cannot be checked by
+    /// the sorted flag, traverse the data to
+    /// check sortedness
+    pub check_sorted: bool,
 }
 
 impl Default for RollingGroupOptions {
@@ -70,8 +80,14 @@ impl Default for RollingGroupOptions {
             period: Duration::new(1),
             offset: Duration::new(1),
             closed_window: ClosedWindow::Left,
+            check_sorted: true,
         }
     }
+}
+
+fn check_sortedness_slice(v: &[i64]) -> PolarsResult<()> {
+    polars_ensure!(v.is_sorted_ascending(), ComputeError: "input data is not sorted");
+    Ok(())
 }
 
 const LB_NAME: &str = "_lower_boundary";
@@ -303,10 +319,10 @@ impl Wrap<&DataFrame> {
                 options.start_by,
             );
             update_bounds(lower, upper);
-            GroupsProxy::Slice {
+            PolarsResult::Ok(GroupsProxy::Slice {
                 groups,
                 rolling: false,
-            }
+            })
         } else {
             let groups = self
                 .0
@@ -321,9 +337,13 @@ impl Wrap<&DataFrame> {
                             .par_iter()
                             .map(|base_g| {
                                 let dt = unsafe { dt.take_unchecked(base_g.1.into()) };
-
                                 let vals = dt.downcast_iter().next().unwrap();
                                 let ts = vals.values().as_slice();
+                                if options.check_sorted
+                                    && !matches!(dt.is_sorted_flag(), IsSorted::Ascending)
+                                {
+                                    check_sortedness_slice(ts)?
+                                }
                                 let (sub_groups, lower, upper) = groupby_windows(
                                     w,
                                     ts,
@@ -335,9 +355,9 @@ impl Wrap<&DataFrame> {
                                     options.start_by,
                                 );
 
-                                (lower, upper, update_subgroups_idx(&sub_groups, base_g))
+                                Ok((lower, upper, update_subgroups_idx(&sub_groups, base_g)))
                             })
-                            .collect::<Vec<_>>();
+                            .collect::<PolarsResult<Vec<_>>>()?;
 
                         ir.iter_mut().for_each(|(lower, upper, _)| {
                             let lower = std::mem::take(lower);
@@ -345,7 +365,9 @@ impl Wrap<&DataFrame> {
                             update_bounds(lower, upper)
                         });
 
-                        GroupsProxy::Idx(ir.into_iter().flat_map(|(_, _, groups)| groups).collect())
+                        Ok(GroupsProxy::Idx(
+                            ir.into_iter().flat_map(|(_, _, groups)| groups).collect(),
+                        ))
                     }
                     GroupsProxy::Slice { groups, .. } => {
                         let mut ir = groups
@@ -374,10 +396,10 @@ impl Wrap<&DataFrame> {
                             update_bounds(lower, upper)
                         });
 
-                        GroupsProxy::Slice {
+                        Ok(GroupsProxy::Slice {
                             groups: ir.into_iter().flat_map(|(_, _, groups)| groups).collect(),
                             rolling: false,
-                        }
+                        })
                     }
                 })
             } else {
@@ -385,10 +407,15 @@ impl Wrap<&DataFrame> {
                     GroupsProxy::Idx(groups) => {
                         let groupsidx = groups
                             .par_iter()
-                            .flat_map(|base_g| {
+                            .map(|base_g| {
                                 let dt = unsafe { dt.take_unchecked(base_g.1.into()) };
                                 let vals = dt.downcast_iter().next().unwrap();
                                 let ts = vals.values().as_slice();
+                                if options.check_sorted
+                                    && !matches!(dt.is_sorted_flag(), IsSorted::Ascending)
+                                {
+                                    check_sortedness_slice(ts)?
+                                }
                                 let (sub_groups, _, _) = groupby_windows(
                                     w,
                                     ts,
@@ -399,15 +426,15 @@ impl Wrap<&DataFrame> {
                                     include_upper_bound,
                                     options.start_by,
                                 );
-                                update_subgroups_idx(&sub_groups, base_g)
+                                Ok(update_subgroups_idx(&sub_groups, base_g))
                             })
-                            .collect();
-                        GroupsProxy::Idx(groupsidx)
+                            .collect::<PolarsResult<Vec<_>>>()?;
+                        Ok(GroupsProxy::Idx(GroupsIdx::from(groupsidx)))
                     }
                     GroupsProxy::Slice { groups, .. } => {
                         let groups = groups
                             .par_iter()
-                            .flat_map(|base_g| {
+                            .map(|base_g| {
                                 let dt = dt.slice(base_g[0] as i64, base_g[1] as usize);
                                 let vals = dt.downcast_iter().next().unwrap();
                                 let ts = vals.values().as_slice();
@@ -423,15 +450,18 @@ impl Wrap<&DataFrame> {
                                 );
                                 update_subgroups_slice(&sub_groups, *base_g)
                             })
-                            .collect();
-                        GroupsProxy::Slice {
+                            .collect::<Vec<_>>();
+
+                        let groups = flatten_par(&groups);
+
+                        Ok(GroupsProxy::Slice {
                             groups,
                             rolling: false,
-                        }
+                        })
                     }
                 })
             }
-        };
+        }?;
         // note that if 'by' is empty we can be sure that the index column, the lower column and the
         // upper column remain/are sorted
 
@@ -484,11 +514,11 @@ impl Wrap<&DataFrame> {
         time_type: &DataType,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
         let mut dt = dt.rechunk();
-        // a requirement for the index
-        // so we can set this such that downstream code has this info
-        dt.set_sorted_flag(IsSorted::Ascending);
 
         let groups = if by.is_empty() {
+            // a requirement for the index
+            // so we can set this such that downstream code has this info
+            dt.set_sorted_flag(IsSorted::Ascending);
             let dt = dt.datetime().unwrap();
             let vals = dt.downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
@@ -525,6 +555,12 @@ impl Wrap<&DataFrame> {
                             let dt = unsafe { dt_local.take_unchecked(base_g.1.into()) };
                             let vals = dt.downcast_iter().next().unwrap();
                             let ts = vals.values().as_slice();
+                            if options.check_sorted
+                                && !matches!(dt.is_sorted_flag(), IsSorted::Ascending)
+                            {
+                                check_sortedness_slice(ts)?
+                            }
+
                             let sub_groups = groupby_values(
                                 options.period,
                                 options.offset,

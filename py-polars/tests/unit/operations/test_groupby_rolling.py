@@ -174,3 +174,25 @@ def test_groupby_rolling_negative_offset_crossing_dst(time_zone: str | None) -> 
         }
     )
     assert_frame_equal(result, expected)
+
+
+def test_groupby_rolling_dynamic_sortedness_check() -> None:
+    # when the by argument is passed, the sortedness flag
+    # will be unset as the take shuffles data, so we must explicitly
+    # check the sortedness
+    df = pl.DataFrame(
+        {
+            "idx": [1, 2, -1, 2, 1, 1],
+            "group": [1, 1, 1, 2, 2, 1],
+        }
+    )
+
+    with pytest.raises(pl.ComputeError, match=r"input data is not sorted"):
+        df.groupby_dynamic("idx", every="2i", by="group").agg(
+            pl.col("idx").alias("idx1")
+        )
+
+    with pytest.raises(pl.ComputeError, match=r"input data is not sorted"):
+        df.groupby_rolling("idx", period="2i", by="group", check_sorted=False).agg(
+            pl.col("idx").alias("idx1")
+        )
