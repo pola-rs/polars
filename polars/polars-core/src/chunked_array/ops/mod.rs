@@ -425,8 +425,14 @@ pub trait ChunkCompare<Rhs> {
     /// Check for equality.
     fn equal(&self, rhs: Rhs) -> Self::Item;
 
+    /// Check for equality where `None == None`.
+    fn equal_missing(&self, rhs: Rhs) -> Self::Item;
+
     /// Check for inequality.
     fn not_equal(&self, rhs: Rhs) -> Self::Item;
+
+    /// Check for inequality where `None == None`.
+    fn not_equal_missing(&self, rhs: Rhs) -> Self::Item;
 
     /// Greater than comparison.
     fn gt(&self, rhs: Rhs) -> Self::Item;

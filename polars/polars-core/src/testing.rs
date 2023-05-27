@@ -17,10 +17,6 @@ impl Series {
     /// Two `Datetime` series are *not* equal if their timezones are different, regardless
     /// if they represent the same UTC time or not.
     pub fn series_equal_missing(&self, other: &Series) -> bool {
-        let check_sum = |b: BooleanChunked, null_count: usize| {
-            b.sum().map(|s| s as usize).unwrap_or(0) == (self.len() - null_count)
-        };
-
         match (self.dtype(), other.dtype()) {
             #[cfg(feature = "timezones")]
             (DataType::Datetime(_, tz_lhs), DataType::Datetime(_, tz_rhs)) => {
@@ -32,19 +28,13 @@ impl Series {
         }
 
         // differences from Partial::eq in that numerical dtype may be different
-        let null_count = self.null_count();
         self.len() == other.len()
             && self.name() == other.name()
-            && null_count == other.null_count()
+            && self.null_count() == other.null_count()
             && {
-                let eq = self.equal(other);
+                let eq = self.equal_missing(other);
                 match eq {
-                    Ok(b) => {
-                        // we first check the null count
-                        // as nulls propagate, if they were not on the same position
-                        // the null_count would have increased
-                        b.null_count() == null_count && check_sum(b, null_count)
-                    }
+                    Ok(b) => b.sum().map(|s| s as usize).unwrap_or(0) == self.len(),
                     Err(_) => false,
                 }
             }

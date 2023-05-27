@@ -76,10 +76,18 @@ where
 {
     type Item = BooleanChunked;
     fn equal(&self, rhs: Rhs) -> BooleanChunked {
+        self.primitive_compare_scalar(rhs, |l, rhs| comparison::eq_scalar(l, rhs))
+    }
+
+    fn equal_missing(&self, rhs: Rhs) -> BooleanChunked {
         self.primitive_compare_scalar(rhs, |l, rhs| comparison::eq_scalar_and_validity(l, rhs))
     }
 
     fn not_equal(&self, rhs: Rhs) -> BooleanChunked {
+        self.primitive_compare_scalar(rhs, |l, rhs| comparison::neq_scalar(l, rhs))
+    }
+
+    fn not_equal_missing(&self, rhs: Rhs) -> BooleanChunked {
         self.primitive_compare_scalar(rhs, |l, rhs| comparison::neq_scalar_and_validity(l, rhs))
     }
 
@@ -177,9 +185,18 @@ impl BinaryChunked {
 impl ChunkCompare<&[u8]> for BinaryChunked {
     type Item = BooleanChunked;
     fn equal(&self, rhs: &[u8]) -> BooleanChunked {
+        self.binary_compare_scalar(rhs, |l, rhs| comparison::eq_scalar(l, rhs))
+    }
+
+    fn equal_missing(&self, rhs: &[u8]) -> BooleanChunked {
         self.binary_compare_scalar(rhs, |l, rhs| comparison::eq_scalar_and_validity(l, rhs))
     }
+
     fn not_equal(&self, rhs: &[u8]) -> BooleanChunked {
+        self.binary_compare_scalar(rhs, |l, rhs| comparison::neq_scalar(l, rhs))
+    }
+
+    fn not_equal_missing(&self, rhs: &[u8]) -> BooleanChunked {
         self.binary_compare_scalar(rhs, |l, rhs| comparison::neq_scalar_and_validity(l, rhs))
     }
 

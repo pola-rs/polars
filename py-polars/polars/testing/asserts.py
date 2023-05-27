@@ -332,7 +332,7 @@ def _assert_series_inner(
         )
 
     # create mask of which (if any) values are unequal
-    unequal = left != right
+    unequal = left.ne_missing(right)
 
     # handle NaN values (which compare unequal to themselves)
     comparing_float_dtypes = left.dtype in FLOAT_DTYPES and right.dtype in FLOAT_DTYPES
