@@ -7909,7 +7909,7 @@ class DataFrame:
             expr = expr_to_lit_or_expr(subset[0], str_to_lit=False)
         else:
             struct_fields = F.all() if (subset is None) else subset
-            expr = (struct_fields)  # type: ignore[call-overload]
+            expr = F.struct(struct_fields)  # type: ignore[call-overload]
 
         df = self.lazy().select(expr.n_unique()).collect()
         return 0 if df.is_empty() else df.row(0)[0]
