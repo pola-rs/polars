@@ -18,6 +18,7 @@ mod arithmetic;
 #[cfg(feature = "asof_join")]
 pub(crate) mod asof_join;
 mod chunks;
+mod comparison;
 #[cfg(feature = "cross_join")]
 pub(crate) mod cross_join;
 pub mod explode;
