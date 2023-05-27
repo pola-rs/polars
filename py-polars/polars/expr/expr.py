@@ -3505,7 +3505,7 @@ class Expr:
 
     def explode(self) -> Self:
         """
-        Explode a list or utf8 Series.
+        Explode a list Series.
 
         This means that every item is expanded to a new row.
 

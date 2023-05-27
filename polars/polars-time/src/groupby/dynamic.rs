@@ -333,7 +333,7 @@ impl Wrap<&DataFrame> {
             if include_lower_bound {
                 POOL.install(|| match groups {
                     GroupsProxy::Idx(groups) => {
-                        let mut ir = groups
+                        let ir = groups
                             .par_iter()
                             .map(|base_g| {
                                 let dt = unsafe { dt.take_unchecked(base_g.1.into()) };
@@ -359,15 +359,17 @@ impl Wrap<&DataFrame> {
                             })
                             .collect::<PolarsResult<Vec<_>>>()?;
 
-                        ir.iter_mut().for_each(|(lower, upper, _)| {
-                            let lower = std::mem::take(lower);
-                            let upper = std::mem::take(upper);
-                            update_bounds(lower, upper)
+                        // flatten in 2 stages
+                        // first flatten the groups
+                        let mut groups = Vec::with_capacity(ir.len());
+
+                        ir.into_iter().for_each(|(lower, upper, g)| {
+                            update_bounds(lower, upper);
+                            groups.push(g);
                         });
 
-                        Ok(GroupsProxy::Idx(
-                            ir.into_iter().flat_map(|(_, _, groups)| groups).collect(),
-                        ))
+                        // then parallelize the flatten in the `from` impl
+                        Ok(GroupsProxy::Idx(GroupsIdx::from(groups)))
                     }
                     GroupsProxy::Slice { groups, .. } => {
                         let mut ir = groups
@@ -390,14 +392,19 @@ impl Wrap<&DataFrame> {
                             })
                             .collect::<Vec<_>>();
 
-                        ir.iter_mut().for_each(|(lower, upper, _)| {
+                        let mut capacity = 0;
+                        ir.iter_mut().for_each(|(lower, upper, g)| {
                             let lower = std::mem::take(lower);
                             let upper = std::mem::take(upper);
-                            update_bounds(lower, upper)
+                            update_bounds(lower, upper);
+                            capacity += g.len();
                         });
 
+                        let mut groups = Vec::with_capacity(capacity);
+                        ir.iter().for_each(|(_, _, g)| groups.extend_from_slice(g));
+
                         Ok(GroupsProxy::Slice {
-                            groups: ir.into_iter().flat_map(|(_, _, groups)| groups).collect(),
+                            groups,
                             rolling: false,
                         })
                     }
