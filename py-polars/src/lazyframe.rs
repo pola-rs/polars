@@ -510,6 +510,7 @@ impl PyLazyFrame {
         offset: &str,
         closed: Wrap<ClosedWindow>,
         by: Vec<PyExpr>,
+        check_sorted: bool,
     ) -> PyLazyGroupBy {
         let closed_window = closed.0;
         let ldf = self.ldf.clone();
@@ -525,6 +526,7 @@ impl PyLazyFrame {
                 period: Duration::parse(period),
                 offset: Duration::parse(offset),
                 closed_window,
+                check_sorted,
             },
         );
 
@@ -543,6 +545,7 @@ impl PyLazyFrame {
         closed: Wrap<ClosedWindow>,
         by: Vec<PyExpr>,
         start_by: Wrap<StartBy>,
+        check_sorted: bool,
     ) -> PyLazyGroupBy {
         let closed_window = closed.0;
         let by = by
@@ -561,6 +564,7 @@ impl PyLazyFrame {
                 include_boundaries,
                 closed_window,
                 start_by: start_by.0,
+                check_sorted,
                 ..Default::default()
             },
         );

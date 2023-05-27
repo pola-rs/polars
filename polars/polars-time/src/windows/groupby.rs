@@ -1,10 +1,7 @@
-use std::cmp::Ordering;
-
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
 use polars_arrow::time_zone::PolarsTimeZone;
 use polars_arrow::trusted_len::TrustedLen;
-use polars_arrow::utils::CustomIterTools;
 use polars_core::export::rayon::prelude::*;
 use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;
@@ -247,15 +244,10 @@ pub(crate) fn groupby_values_iter_full_lookbehind<'a>(
     };
 
     let mut last_lookbehind_i = 0;
-    let mut last = i64::MIN;
     time[start_offset..]
         .iter()
         .enumerate()
         .map(move |(mut i, lower)| {
-            if *lower < last {
-                panic!("index column of 'groupby_rolling' must be sorted in ascending order!")
-            }
-            last = *lower;
             i += start_offset;
             let lower = add(&offset, *lower, tz.as_ref())?;
             let upper = add(&period, lower, tz.as_ref())?;
@@ -416,16 +408,6 @@ pub(crate) fn groupby_values_iter_full_lookahead<'a>(
         })
 }
 
-pub(crate) fn partially_check_sorted(time: &[i64]) {
-    // check sortedness of a small subslice.
-    if time.len() > 1 {
-        assert!(time[..std::cmp::min(time.len(), 10)].windows(2).filter_map(|w| match w[0].cmp(&w[1]) {
-            Ordering::Equal => None,
-            t => Some(t)
-        }).all_equal(), "Subslice check showed that the values in `groupby_rolling/groupby_dynamic` were not sorted. Pleasure ensure the index column is sorted.");
-    }
-}
-
 #[cfg(feature = "rolling_window")]
 pub(crate) fn groupby_values_iter<'a>(
     period: Duration,
@@ -435,7 +417,6 @@ pub(crate) fn groupby_values_iter<'a>(
     tu: TimeUnit,
     tz: Option<impl PolarsTimeZone + 'a>,
 ) -> Box<dyn TrustedLen<Item = PolarsResult<(IdxSize, IdxSize)>> + 'a> {
-    partially_check_sorted(time);
     // we have a (partial) lookbehind window
     if offset.negative {
         // only lookbehind
@@ -478,7 +459,6 @@ pub fn groupby_values<'a>(
     tu: TimeUnit,
     tz: Option<impl PolarsTimeZone + 'a>,
 ) -> PolarsResult<GroupsSlice> {
-    partially_check_sorted(time);
     let thread_offsets = _split_offsets(time.len(), POOL.current_num_threads());
 
     // we have a (partial) lookbehind window

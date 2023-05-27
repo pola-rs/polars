@@ -4763,6 +4763,7 @@ class DataFrame:
         offset: str | timedelta | None = None,
         closed: ClosedInterval = "right",
         by: IntoExpr | Iterable[IntoExpr] | None = None,
+        check_sorted: bool = True,
     ) -> RollingGroupBy:
         """
         Create rolling groups based on a time column.
@@ -4819,6 +4820,12 @@ class DataFrame:
             Define which sides of the temporal interval are closed (inclusive).
         by
             Also group by this column/these columns
+        check_sorted
+            When the ``by`` argument is given, polars can not check sortedness
+            by the metadata and has to do a full scan on the index column to
+            verify data is sorted. This is expensive. If you are sure the
+            data within the by groups is sorted, you can set this to ``False``.
+            Doing so incorrectly will lead to incorrect output
 
         Returns
         -------
@@ -4870,7 +4877,9 @@ class DataFrame:
         └─────────────────────┴───────┴───────┴───────┘
 
         """
-        return RollingGroupBy(self, index_column, period, offset, closed, by)
+        return RollingGroupBy(
+            self, index_column, period, offset, closed, by, check_sorted
+        )
 
     def groupby_dynamic(
         self,
@@ -4884,6 +4893,7 @@ class DataFrame:
         closed: ClosedInterval = "left",
         by: IntoExpr | Iterable[IntoExpr] | None = None,
         start_by: StartBy = "window",
+        check_sorted: bool = True,
     ) -> DynamicGroupBy:
         """
         Group based on a time value (or index value of type Int32, Int64).
@@ -4966,6 +4976,12 @@ class DataFrame:
             - 'tuesday': Start the window on the tuesday before the first data point.
             - ...
             - 'sunday': Start the window on the sunday before the first data point.
+        check_sorted
+            When the ``by`` argument is given, polars can not check sortedness
+            by the metadata and has to do a full scan on the index column to
+            verify data is sorted. This is expensive. If you are sure the
+            data within the by groups is sorted, you can set this to ``False``.
+            Doing so incorrectly will lead to incorrect output
 
         Returns
         -------
@@ -5171,6 +5187,7 @@ class DataFrame:
             closed,
             by,
             start_by,
+            check_sorted,
         )
 
     def upsample(
