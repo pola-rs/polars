@@ -765,6 +765,7 @@ class RollingGroupBy:
         offset: str | timedelta | None,
         closed: ClosedInterval,
         by: IntoExpr | Iterable[IntoExpr] | None,
+        check_sorted: bool,
     ):
         period = _timedelta_to_pl_duration(period)
         offset = _timedelta_to_pl_duration(offset)
@@ -775,6 +776,7 @@ class RollingGroupBy:
         self.offset = offset
         self.closed = closed
         self.by = by
+        self.check_sorted = check_sorted
 
     def __iter__(self) -> Self:
         temp_col = "__POLARS_GB_GROUP_INDICES"
@@ -787,6 +789,7 @@ class RollingGroupBy:
                 offset=self.offset,
                 closed=self.closed,
                 by=self.by,
+                check_sorted=self.check_sorted,
             )
             .agg(F.col(temp_col))
             .collect(no_optimization=True)
@@ -833,6 +836,7 @@ class RollingGroupBy:
                 offset=self.offset,
                 closed=self.closed,
                 by=self.by,
+                check_sorted=self.check_sorted,
             )
             .agg(aggs, *more_aggs, **named_aggs)
             .collect(no_optimization=True)
@@ -927,6 +931,7 @@ class RollingGroupBy:
                 offset=self.offset,
                 closed=self.closed,
                 by=self.by,
+                check_sorted=self.check_sorted,
             )
             .apply(function, schema)
             .collect(no_optimization=True)
@@ -953,6 +958,7 @@ class DynamicGroupBy:
         closed: ClosedInterval,
         by: IntoExpr | Iterable[IntoExpr] | None,
         start_by: StartBy,
+        check_sorted: bool,
     ):
         period = _timedelta_to_pl_duration(period)
         offset = _timedelta_to_pl_duration(offset)
@@ -968,6 +974,7 @@ class DynamicGroupBy:
         self.closed = closed
         self.by = by
         self.start_by = start_by
+        self.check_sorted = check_sorted
 
     def __iter__(self) -> Self:
         temp_col = "__POLARS_GB_GROUP_INDICES"
@@ -984,6 +991,7 @@ class DynamicGroupBy:
                 closed=self.closed,
                 by=self.by,
                 start_by=self.start_by,
+                check_sorted=self.check_sorted,
             )
             .agg(F.col(temp_col))
             .collect(no_optimization=True)
@@ -1034,6 +1042,7 @@ class DynamicGroupBy:
                 closed=self.closed,
                 by=self.by,
                 start_by=self.start_by,
+                check_sorted=self.check_sorted,
             )
             .agg(aggs, *more_aggs, **named_aggs)
             .collect(no_optimization=True)
@@ -1132,6 +1141,7 @@ class DynamicGroupBy:
                 closed=self.closed,
                 by=self.by,
                 start_by=self.start_by,
+                check_sorted=self.check_sorted,
             )
             .apply(function, schema)
             .collect(no_optimization=True)

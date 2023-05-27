@@ -18,6 +18,29 @@ impl<T: PartialOrd> Extrema<T> for [T] {
     }
 }
 
+pub trait SortedSlice<T> {
+    fn is_sorted_ascending(&self) -> bool;
+}
+
+impl<T: PartialOrd + Copy> SortedSlice<T> for [T] {
+    fn is_sorted_ascending(&self) -> bool {
+        if self.is_empty() {
+            true
+        } else {
+            let mut previous = self[0];
+            let mut sorted = true;
+
+            // don't early stop or branch
+            // so it autovectorizes
+            for &v in &self[1..] {
+                sorted &= previous <= v;
+                previous = v;
+            }
+            sorted
+        }
+    }
+}
+
 pub trait GetSaferUnchecked<T> {
     /// # Safety
     ///

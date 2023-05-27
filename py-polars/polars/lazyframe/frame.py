@@ -2157,6 +2157,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         offset: str | timedelta | None = None,
         closed: ClosedInterval = "right",
         by: IntoExpr | Iterable[IntoExpr] | None = None,
+        check_sorted: bool = True,
     ) -> LazyGroupBy:
         """
         Create rolling groups based on a time column.
@@ -2213,6 +2214,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Define which sides of the temporal interval are closed (inclusive).
         by
             Also group by this column/these columns
+        check_sorted
+            When the ``by`` argument is given, polars can not check sortedness
+            by the metadata and has to do a full scan on the index column to
+            verify data is sorted. This is expensive. If you are sure the
+            data within the by groups is sorted, you can set this to ``False``.
+            Doing so incorrectly will lead to incorrect output
 
         Returns
         -------
@@ -2277,7 +2284,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         offset = _timedelta_to_pl_duration(offset)
 
         lgb = self._ldf.groupby_rolling(
-            index_column._pyexpr, period, offset, closed, pyexprs_by
+            index_column._pyexpr, period, offset, closed, pyexprs_by, check_sorted
         )
         return LazyGroupBy(lgb)
 
@@ -2293,6 +2300,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         closed: ClosedInterval = "left",
         by: IntoExpr | Iterable[IntoExpr] | None = None,
         start_by: StartBy = "window",
+        check_sorted: bool = True,
     ) -> LazyGroupBy:
         """
         Group based on a time value (or index value of type Int32, Int64).
@@ -2375,6 +2383,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * 'tuesday': Start the window on the tuesday before the first data point.
             * ...
             * 'sunday': Start the window on the sunday before the first data point.
+        check_sorted
+            When the ``by`` argument is given, polars can not check sortedness
+            by the metadata and has to do a full scan on the index column to
+            verify data is sorted. This is expensive. If you are sure the
+            data within the by groups is sorted, you can set this to ``False``.
+            Doing so incorrectly will lead to incorrect output
 
         Returns
         -------
@@ -2595,6 +2609,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             closed,
             pyexprs_by,
             start_by,
+            check_sorted,
         )
         return LazyGroupBy(lgb)
 

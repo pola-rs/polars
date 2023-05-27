@@ -82,13 +82,11 @@ where
     fn cast_impl(&self, data_type: &DataType, checked: bool) -> PolarsResult<Series> {
         if self.dtype() == data_type {
             // safety: chunks are correct dtype
-            return unsafe {
-                Ok(Series::from_chunks_and_dtype_unchecked(
-                    self.name(),
-                    self.chunks.clone(),
-                    data_type,
-                ))
+            let mut out = unsafe {
+                Series::from_chunks_and_dtype_unchecked(self.name(), self.chunks.clone(), data_type)
             };
+            out.set_sorted_flag(self.is_sorted_flag());
+            return Ok(out);
         }
         match data_type {
             #[cfg(feature = "dtype-categorical")]
@@ -105,10 +103,17 @@ where
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => cast_single_to_struct(self.name(), &self.chunks, fields),
             _ => cast_impl_inner(self.name(), &self.chunks, data_type, checked).map(|mut s| {
-                // maintain sorted if data types remain signed
+                // maintain sorted if data types
+                // - remain signed
+                // - unsigned -> signed
                 // this may still fail with overflow?
-                if ((self.dtype().is_signed() && data_type.is_signed())
-                    || (self.dtype().is_unsigned() && data_type.is_unsigned()))
+                let dtype = self.dtype();
+
+                let to_signed = data_type.is_signed();
+                let unsigned2unsigned = dtype.is_unsigned() && data_type.is_unsigned();
+                let allowed = to_signed || unsigned2unsigned;
+
+                if (allowed)
                     && (s.null_count() == self.null_count())
                     // physical to logicals
                     || (self.dtype().to_physical() == data_type.to_physical())

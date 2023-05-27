@@ -2942,7 +2942,7 @@ class Series:
 
     def explode(self) -> Series:
         """
-        Explode a list or utf8 Series.
+        Explode a list Series.
 
         This means that every item is expanded to a new row.
 
