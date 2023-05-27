@@ -680,6 +680,7 @@ mod test {
                         period: Duration::parse("2d"),
                         offset: Duration::parse("-2d"),
                         closed_window: ClosedWindow::Right,
+                        ..Default::default()
                     },
                 )
                 .unwrap();
@@ -720,6 +721,7 @@ mod test {
                     period: Duration::parse("2d"),
                     offset: Duration::parse("-2d"),
                     closed_window: ClosedWindow::Right,
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -801,6 +803,7 @@ mod test {
                     include_boundaries: true,
                     closed_window: ClosedWindow::Both,
                     start_by: Default::default(),
+                    ..Default::default()
                 },
             )
             .unwrap();
@@ -915,6 +918,7 @@ mod test {
                     include_boundaries: true,
                     closed_window: ClosedWindow::Both,
                     start_by: Default::default(),
+                    ..Default::default()
                 },
             )
             .unwrap();
