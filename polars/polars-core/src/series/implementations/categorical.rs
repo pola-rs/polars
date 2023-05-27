@@ -373,12 +373,12 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.0.logical().is_in(&other.to_physical_repr())
     }
     #[cfg(feature = "repeat_by")]
-    fn repeat_by(&self, by: &IdxCa) -> ListChunked {
-        let out = self.0.logical().repeat_by(by);
+    fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {
+        let out = self.0.logical().repeat_by(by)?;
         let casted = out
             .cast(&DataType::List(Box::new(self.dtype().clone())))
             .unwrap();
-        casted.list().unwrap().clone()
+        Ok(casted.list().unwrap().clone())
     }
 
     #[cfg(feature = "mode")]

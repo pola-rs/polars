@@ -1757,6 +1757,42 @@ def test_from_rows_of_dicts() -> None:
         assert df3.schema == {"id": pl.Int16, "value": pl.Int32}
 
 
+def test_repeat_by_unequal_lengths_panic() -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["x", "y", "z"],
+        }
+    )
+    with pytest.raises(
+        pl.ComputeError,
+        match="""Length of repeat_by argument needs to be 1 or equal to the length of the Series.""",
+    ):
+        df.select(pl.col("a").repeat_by(pl.Series([2, 2])))
+
+
+@pytest.mark.parametrize(
+    ("a", "a_expected"),
+    [
+        ([1.2, 2.2, 3.3], [[1.2, 1.2, 1.2], [2.2, 2.2, 2.2], [3.3, 3.3, 3.3]]),
+        ([True, False], [[True, True, True], [False, False, False]]),
+        (["x", "y", "z"], [["x", "x", "x"], ["y", "y", "y"], ["z", "z", "z"]]),
+    ],
+)
+def test_repeat_by_parameterized(
+    a: list[float | bool | str], a_expected: list[list[float | bool | str]]
+) -> None:
+    df = pl.DataFrame(
+        {
+            "a": a,
+        }
+    )
+    expected = pl.DataFrame({"a": a_expected})
+    result = df.select(pl.col("a").repeat_by(3))
+    assert_frame_equal(result, expected)
+    result = df.select(pl.col("a").repeat_by(pl.lit(3)))
+    assert_frame_equal(result, expected)
+
+
 def test_repeat_by() -> None:
     df = pl.DataFrame({"name": ["foo", "bar"], "n": [2, 3]})
     out = df.select(pl.col("n").repeat_by("n"))
