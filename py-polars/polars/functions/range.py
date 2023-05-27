@@ -15,7 +15,6 @@ from polars.utils.convert import (
     _datetime_to_pl_timestamp,
     _time_to_pl_time,
     _timedelta_to_pl_duration,
-    _tzinfo_to_str,
 )
 from polars.utils.decorators import deprecated_alias
 from polars.utils.various import find_stacklevel
@@ -343,13 +342,13 @@ def date_range(
             )
 
         if time_zone is not None and start.tzinfo is not None:
-            if _tzinfo_to_str(start.tzinfo) != time_zone:
+            if str(start.tzinfo) != time_zone:
                 raise ValueError(
                     "Given time_zone is different from that of timezone aware datetimes."
                     f" Given: '{time_zone}', got: '{start.tzinfo}'."
                 )
         if time_zone is None and start.tzinfo is not None:
-            time_zone = _tzinfo_to_str(start.tzinfo)
+            time_zone = str(start.tzinfo)
 
     time_unit_: TimeUnit
     if time_unit is not None:
