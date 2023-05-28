@@ -2041,9 +2041,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             exprs.extend(selection_to_pyexpr_list(more_exprs, structify=structify))
         if named_exprs:
             exprs.extend(
-                expr_to_lit_or_expr(
-                    expr, structify=structify, name=name, str_to_lit=False
-                )._pyexpr
+                expr_to_lit_or_expr(expr, structify=structify, str_to_lit=False)
+                .alias(name)
+                ._pyexpr
                 for name, expr in named_exprs.items()
             )
 
@@ -3098,9 +3098,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             exprs.extend(selection_to_pyexpr_list(more_exprs, structify=structify))
         if named_exprs:
             exprs.extend(
-                expr_to_lit_or_expr(
-                    expr, structify=structify, name=name, str_to_lit=False
-                )._pyexpr
+                expr_to_lit_or_expr(expr, structify=structify, str_to_lit=False)
+                .alias(name)
+                ._pyexpr
                 for name, expr in named_exprs.items()
             )
 

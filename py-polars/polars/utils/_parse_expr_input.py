@@ -5,11 +5,37 @@ from typing import TYPE_CHECKING, Iterable
 
 import polars._reexport as pl
 from polars import functions as F
+from polars.exceptions import ComputeError
 
 if TYPE_CHECKING:
     from polars import Expr
     from polars.polars import PyExpr
     from polars.type_aliases import IntoExpr
+
+
+def parse_multiple_expression_inputs(
+    exprs: IntoExpr | Iterable[IntoExpr],
+    *more_exprs: IntoExpr,
+    structify: bool = False,
+    **named_exprs: IntoExpr,
+) -> list[PyExpr]:
+    exprs = selection_to_pyexpr_list(exprs, structify=structify)
+    if more_exprs:
+        exprs.extend(selection_to_pyexpr_list(more_exprs, structify=structify))
+    if named_exprs:
+        exprs.extend(
+            expr_to_lit_or_expr(
+                expr, structify=structify, name=name, str_to_lit=False
+            )._pyexpr
+            for name, expr in named_exprs.items()
+        )
+    return exprs
+
+
+def parse_single_expression_input(
+    exprs: IntoExpr,
+) -> list[PyExpr]:
+    pass
 
 
 def selection_to_pyexpr_list(
@@ -36,7 +62,6 @@ def expr_to_lit_or_expr(
     expr: IntoExpr | Iterable[IntoExpr],
     str_to_lit: bool = True,
     structify: bool = False,
-    name: str | None = None,
 ) -> Expr:
     """
     Convert args to expressions.
@@ -51,8 +76,6 @@ def expr_to_lit_or_expr(
     structify
         If the final unaliased expression has multiple output names,
         automatically convert it to struct.
-    name
-        Apply the given name as an alias to the resulting expression.
 
     Returns
     -------
@@ -84,14 +107,16 @@ def expr_to_lit_or_expr(
         unaliased_expr = expr.meta.undo_aliases()
         if unaliased_expr.meta.has_multiple_outputs():
             expr_name = _expr_output_name(expr)
-            expr = F.struct(expr if expr_name is None else unaliased_expr)
-            name = name or expr_name
+            if expr_name is None:
+                expr = F.struct(expr)
+            else:
+                expr = F.struct(unaliased_expr).alias(expr_name)
 
-    return expr if name is None else expr.alias(name)
+    return expr
 
 
 def _expr_output_name(expr: Expr) -> str | None:
     try:
         return expr.meta.output_name()
-    except Exception:
+    except ComputeError:
         return None

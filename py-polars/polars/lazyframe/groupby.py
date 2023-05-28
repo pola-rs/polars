@@ -128,7 +128,7 @@ class LazyGroupBy:
             exprs.extend(selection_to_pyexpr_list(more_aggs))
         if named_aggs:
             exprs.extend(
-                expr_to_lit_or_expr(expr, name=name, str_to_lit=False)._pyexpr
+                expr_to_lit_or_expr(expr, str_to_lit=False).alias(name)._pyexpr
                 for name, expr in named_aggs.items()
             )
 
