@@ -73,7 +73,7 @@ def parse_single_expression_input(
         expr = input.otherwise(None)  # implicitly add the null branch.
     else:
         raise TypeError(
-            f"did not expect value {input} of type {type(input)}, maybe disambiguate with"
+            f"did not expect value {input!r} of type {type(input)}, maybe disambiguate with"
             " pl.lit or pl.col"
         )
 

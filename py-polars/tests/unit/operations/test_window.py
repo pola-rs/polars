@@ -246,9 +246,7 @@ def test_window_functions_list_types() -> None:
     # that's why we don't add it to the allowed types.
     assert (
         df.select(
-            pl.col("col_list")
-            .shift_and_fill(None, periods=1)  # type: ignore[arg-type]
-            .alias("list_shifted")
+            pl.col("col_list").shift_and_fill(None, periods=1).alias("list_shifted")
         )
     )["list_shifted"].to_list() == [None, [1], [1], [2]]
 

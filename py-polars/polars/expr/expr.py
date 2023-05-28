@@ -18,7 +18,6 @@ from typing import (
     Sequence,
     Set,
     TypeVar,
-    cast,
 )
 
 import polars._reexport as pl
@@ -2233,10 +2232,9 @@ class Expr:
         if isinstance(indices, list) or (
             _check_for_numpy(indices) and isinstance(indices, np.ndarray)
         ):
-            indices = cast("np.ndarray[Any, Any]", indices)
             indices_lit = F.lit(pl.Series("", indices, dtype=UInt32))
         else:
-            indices_lit = parse_single_expression_input(indices, str_to_lit=False)
+            indices_lit = parse_single_expression_input(indices, str_to_lit=False)  # type: ignore[arg-type]
         return self._from_pyexpr(self._pyexpr.take(indices_lit._pyexpr))
 
     def shift(self, periods: int = 1) -> Self:
@@ -2269,7 +2267,7 @@ class Expr:
 
     def shift_and_fill(
         self,
-        fill_value: int | float | bool | str | Expr | list[Any],
+        fill_value: IntoExpr,
         *,
         periods: int = 1,
     ) -> Self:

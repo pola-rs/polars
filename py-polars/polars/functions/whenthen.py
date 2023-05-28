@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import typing
-from typing import TYPE_CHECKING, Any, Iterable
+from typing import TYPE_CHECKING, Any
 
 from polars.utils._parse_expr_input import parse_single_expression_input
 from polars.utils._wrap import wrap_expr
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from polars.type_aliases import IntoExpr
 
 
-def when(expr: IntoExpr | Iterable[IntoExpr]) -> When:
+def when(expr: IntoExpr) -> When:
     """
     Start a "when, then, otherwise" expression.
 
@@ -104,7 +104,7 @@ class When:
     def __init__(self, pywhen: Any):
         self._pywhen = pywhen
 
-    def then(self, expr: IntoExpr | Iterable[IntoExpr]) -> WhenThen:
+    def then(self, expr: IntoExpr) -> WhenThen:
         """
         Values to return in case of the predicate being `True`.
 
@@ -124,12 +124,12 @@ class WhenThen:
     def __init__(self, pywhenthen: Any):
         self._pywhenthen = pywhenthen
 
-    def when(self, predicate: IntoExpr | Iterable[IntoExpr]) -> WhenThenThen:
+    def when(self, predicate: IntoExpr) -> WhenThenThen:
         """Start another "when, then, otherwise" layer."""
         predicate = parse_single_expression_input(predicate)
         return WhenThenThen(self._pywhenthen.when(predicate._pyexpr))
 
-    def otherwise(self, expr: IntoExpr | Iterable[IntoExpr]) -> Expr:
+    def otherwise(self, expr: IntoExpr) -> Expr:
         """
         Values to return in case of the predicate being `False`.
 
@@ -153,12 +153,12 @@ class WhenThenThen:
     def __init__(self, pywhenthenthen: Any):
         self.pywhenthenthen = pywhenthenthen
 
-    def when(self, predicate: IntoExpr | Iterable[IntoExpr]) -> WhenThenThen:
+    def when(self, predicate: IntoExpr) -> WhenThenThen:
         """Start another "when, then, otherwise" layer."""
         predicate = parse_single_expression_input(predicate)
         return WhenThenThen(self.pywhenthenthen.when(predicate._pyexpr))
 
-    def then(self, expr: IntoExpr | Iterable[IntoExpr]) -> WhenThenThen:
+    def then(self, expr: IntoExpr) -> WhenThenThen:
         """
         Values to return in case of the predicate being `True`.
 
@@ -170,7 +170,7 @@ class WhenThenThen:
         expr_ = parse_single_expression_input(expr)
         return WhenThenThen(self.pywhenthenthen.then(expr_._pyexpr))
 
-    def otherwise(self, expr: IntoExpr | Iterable[IntoExpr]) -> Expr:
+    def otherwise(self, expr: IntoExpr) -> Expr:
         """
         Values to return in case of the predicate being `False`.
 
