@@ -1,5 +1,4 @@
 pub use date_range::*;
-pub use polars_arrow::time_zone::NO_TIMEZONE;
 
 pub use crate::chunkedarray::*;
 pub use crate::series::{SeriesOpsTime, TemporalMethods};
