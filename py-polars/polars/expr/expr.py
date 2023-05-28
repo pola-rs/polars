@@ -3270,7 +3270,7 @@ class Expr:
         expression with a third-party library.
 
         Read more in `the book
-        <https://pola-rs.github.io/polars-book/user-guide/dsl/custom_functions.html>`_.
+        <https://pola-rs.github.io/polars-book/user-guide/expressions/user-defined-functions>`_.
 
         Parameters
         ----------
