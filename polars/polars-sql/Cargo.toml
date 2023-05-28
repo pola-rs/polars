@@ -1,6 +1,6 @@
 [package]
 name = "polars-sql"
-version = "0.29.0"
+version.workspace = true
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/pola-rs/polars"
@@ -16,10 +16,10 @@ parquet = ["polars-lazy/parquet"]
 private = []
 
 [dependencies]
-polars-arrow = { version = "0.29.0", path = "../polars-arrow", features = ["like"] }
-polars-core = { version = "0.29.0", path = "../polars-core", features = [] }
-polars-lazy = { version = "0.29.0", path = "../polars-lazy", features = ["compile", "strings", "cross_join", "trigonometry", "abs", "round_series", "log", "regex", "is_in", "meta", "cum_agg"] }
-polars-plan = { version = "0.29.0", path = "../polars-lazy/polars-plan", features = ["compile"] }
+polars-arrow = { version = "0.30.0", path = "../polars-arrow", features = ["like"] }
+polars-core = { version = "0.30.0", path = "../polars-core", features = [] }
+polars-lazy = { version = "0.30.0", path = "../polars-lazy", features = ["compile", "strings", "cross_join", "trigonometry", "abs", "round_series", "log", "regex", "is_in", "meta", "cum_agg"] }
+polars-plan = { version = "0.30.0", path = "../polars-lazy/polars-plan", features = ["compile"] }
 serde = "1"
 serde_json = { version = "1" }
 # sqlparser = { git = "https://github.com/sqlparser-rs/sqlparser-rs.git", rev = "ae3b5844c839072c235965fe0d1bddc473dced87" }
