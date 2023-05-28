@@ -7159,7 +7159,9 @@ class Expr:
         the rest of the fields are the other columns used in the default expression.
 
         >>> df.with_columns(
-        ...     pl.struct(pl.col(["country_code", "row_nr"])).map_dict(
+        ...     pl.struct("country_code", "row_nr")
+        ...     .alias("country_code")
+        ...     .map_dict(
         ...         remapping=country_code_dict,
         ...         default=pl.col("row_nr").cast(pl.Utf8),
         ...     )
