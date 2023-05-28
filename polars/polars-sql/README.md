@@ -8,7 +8,7 @@ To use `polars-sql`, add it as a dependency to your Rust project's `Cargo.toml` 
 
 ```toml
 [dependencies]
-polars-sql = "0.29.0"
+polars-sql = "0.30.0"
 ```
 
 You can then import the crate in your Rust code using:
