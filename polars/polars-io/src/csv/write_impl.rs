@@ -8,10 +8,9 @@ use std::io::Write;
 use arrow::temporal_conversions;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone;
-#[cfg(feature = "timezones")]
-use chrono_tz::Tz;
 use lexical_core::{FormattedSize, ToLexical};
 use memchr::{memchr, memchr2};
+use polars_arrow::time_zone::Tz;
 use polars_core::prelude::*;
 use polars_core::series::SeriesIter;
 use polars_core::POOL;
@@ -61,6 +60,7 @@ fn write_anyvalue(
     value: AnyValue,
     options: &SerializeOptions,
     #[allow(unused_variables)] datetime_format: Option<&str>,
+    tz: Option<Tz>,
 ) -> PolarsResult<()> {
     match value {
         AnyValue::Null => write!(f, "{}", &options.null),
@@ -96,7 +96,7 @@ fn write_anyvalue(
             }
         }
         #[cfg(feature = "dtype-datetime")]
-        AnyValue::Datetime(v, tu, tz) => {
+        AnyValue::Datetime(v, tu, _) => {
             // If this is a datetime, then datetime_format was either set or inferred.
             let datetime_format = datetime_format.unwrap();
             let ndt = match tu {
@@ -106,11 +106,7 @@ fn write_anyvalue(
             };
             let formatted = match tz {
                 #[cfg(feature = "timezones")]
-                Some(tz) => tz
-                    .parse::<Tz>()
-                    .unwrap()
-                    .from_utc_datetime(&ndt)
-                    .format(datetime_format),
+                Some(tz) => tz.from_utc_datetime(&ndt).format(datetime_format),
                 #[cfg(not(feature = "timezones"))]
                 Some(_) => {
                     panic!("activate 'timezones' feature");
@@ -223,29 +219,63 @@ pub(crate) fn write<W: Write>(
     );
     let delimiter = char::from(options.delimiter);
 
-    let formats: Option<Vec<Option<&str>>> = match &options.datetime_format {
-        None => Some(
-            df.get_columns()
-                .iter()
-                .map(|col| match col.dtype() {
-                    DataType::Datetime(TimeUnit::Milliseconds, tz) => match tz {
-                        Some(_) => Some("%FT%H:%M:%S.%3f%z"),
-                        None => Some("%FT%H:%M:%S.%3f"),
-                    },
-                    DataType::Datetime(TimeUnit::Microseconds, tz) => match tz {
-                        Some(_) => Some("%FT%H:%M:%S.%6f%z"),
-                        None => Some("%FT%H:%M:%S.%6f"),
-                    },
-                    DataType::Datetime(TimeUnit::Nanoseconds, tz) => match tz {
-                        Some(_) => Some("%FT%H:%M:%S.%9f%z"),
-                        None => Some("%FT%H:%M:%S.%9f"),
-                    },
-                    _ => None,
-                })
-                .collect::<Vec<_>>(),
-        ),
-        Some(_) => None,
-    };
+    let mut datetime_formats = vec![];
+    let mut time_zones = vec![];
+    for column in df.get_columns() {
+        match column.dtype() {
+            DataType::Datetime(TimeUnit::Milliseconds, tz) => match tz {
+                #[cfg(feature = "timezones")]
+                Some(tz) => {
+                    if options.datetime_format.is_none() {
+                        datetime_formats.push(Some("%FT%H:%M:%S.%3f%z"));
+                    }
+                    time_zones.push(tz.parse::<Tz>().ok());
+                }
+                _ => {
+                    if options.datetime_format.is_none() {
+                        datetime_formats.push(Some("%FT%H:%M:%S.%3f"));
+                    }
+                    time_zones.push(None);
+                }
+            },
+            DataType::Datetime(TimeUnit::Microseconds, tz) => match tz {
+                #[cfg(feature = "timezones")]
+                Some(tz) => {
+                    if options.datetime_format.is_none() {
+                        datetime_formats.push(Some("%FT%H:%M:%S.%6f%z"));
+                    }
+                    time_zones.push(tz.parse::<Tz>().ok());
+                }
+                _ => {
+                    if options.datetime_format.is_none() {
+                        datetime_formats.push(Some("%FT%H:%M:%S.%6f"));
+                    }
+                    time_zones.push(None);
+                }
+            },
+            DataType::Datetime(TimeUnit::Nanoseconds, tz) => match tz {
+                #[cfg(feature = "timezones")]
+                Some(tz) => {
+                    if options.datetime_format.is_none() {
+                        datetime_formats.push(Some("%FT%H:%M:%S.%9f%z"));
+                    }
+                    time_zones.push(tz.parse::<Tz>().ok());
+                }
+                _ => {
+                    if options.datetime_format.is_none() {
+                        datetime_formats.push(Some("%FT%H:%M:%S.%9f"));
+                    }
+                    time_zones.push(None);
+                }
+            },
+            _ => {
+                if options.datetime_format.is_none() {
+                    datetime_formats.push(None);
+                }
+                time_zones.push(None);
+            }
+        }
+    }
 
     let len = df.height();
     let n_threads = POOL.current_num_threads();
@@ -293,11 +323,18 @@ pub(crate) fn write<W: Write>(
                 for (i, col) in &mut col_iters.iter_mut().enumerate() {
                     let datetime_format = match &options.datetime_format {
                         Some(datetime_format) => Some(datetime_format.as_str()),
-                        None => unsafe { *formats.as_ref().unwrap().get_unchecked(i) },
+                        None => unsafe { *datetime_formats.get_unchecked(i) },
                     };
+                    let time_zone = unsafe { *time_zones.get_unchecked(i) };
                     match col.next() {
                         Some(value) => {
-                            write_anyvalue(&mut write_buffer, value, options, datetime_format)?;
+                            write_anyvalue(
+                                &mut write_buffer,
+                                value,
+                                options,
+                                datetime_format,
+                                time_zone,
+                            )?;
                         }
                         None => {
                             finished = true;
