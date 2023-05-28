@@ -872,16 +872,6 @@ def test_concat() -> None:
         pl.concat([df1, df1], how="rubbish")  # type: ignore[arg-type]
 
 
-def test_concat_str() -> None:
-    df = pl.DataFrame({"a": ["a", "b", "c"], "b": [1, 2, 3]})
-
-    out = df.select([pl.concat_str(["a", "b"], separator="-")])
-    assert out["a"].to_list() == ["a-1", "b-2", "c-3"]
-
-    out = df.select([pl.format("foo_{}_bar_{}", pl.col("a"), "b").alias("fmt")])
-    assert out["fmt"].to_list() == ["foo_a_bar_1", "foo_b_bar_2", "foo_c_bar_3"]
-
-
 def test_arg_where() -> None:
     s = pl.Series([True, False, True, False])
     assert_series_equal(pl.arg_where(s, eager=True).cast(int), pl.Series([0, 2]))
