@@ -1678,7 +1678,7 @@ class Expr:
         └─────┘
 
         """
-        other = parse_single_expression_input(other, str_to_lit=False)
+        other = parse_single_expression_input(other, str_as_lit=False)
         return self._from_pyexpr(self._pyexpr.dot(other._pyexpr))
 
     def mode(self) -> Self:
@@ -2049,7 +2049,7 @@ class Expr:
         └──────┴───────┴─────┘
 
         """
-        element = parse_single_expression_input(element, str_to_lit=False)
+        element = parse_single_expression_input(element, str_as_lit=False)
         return self._from_pyexpr(self._pyexpr.search_sorted(element._pyexpr, side))
 
     def sort_by(
@@ -2234,7 +2234,7 @@ class Expr:
         ):
             indices_lit = F.lit(pl.Series("", indices, dtype=UInt32))
         else:
-            indices_lit = parse_single_expression_input(indices, str_to_lit=False)  # type: ignore[arg-type]
+            indices_lit = parse_single_expression_input(indices, str_as_lit=False)  # type: ignore[arg-type]
         return self._from_pyexpr(self._pyexpr.take(indices_lit._pyexpr))
 
     def shift(self, periods: int = 1) -> Self:
@@ -2298,7 +2298,7 @@ class Expr:
         └─────┘
 
         """
-        fill_value = parse_single_expression_input(fill_value, str_to_lit=True)
+        fill_value = parse_single_expression_input(fill_value, str_as_lit=True)
         return self._from_pyexpr(
             self._pyexpr.shift_and_fill(periods, fill_value._pyexpr)
         )
@@ -2378,7 +2378,7 @@ class Expr:
             )
 
         if value is not None:
-            value = parse_single_expression_input(value, str_to_lit=True)
+            value = parse_single_expression_input(value, str_as_lit=True)
             return self._from_pyexpr(self._pyexpr.fill_null(value._pyexpr))
         else:
             return self._from_pyexpr(
@@ -2410,7 +2410,7 @@ class Expr:
         └──────┴──────┘
 
         """
-        fill_value = parse_single_expression_input(value, str_to_lit=True)
+        fill_value = parse_single_expression_input(value, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.fill_nan(fill_value._pyexpr))
 
     def forward_fill(self, limit: int | None = None) -> Self:
@@ -3175,7 +3175,7 @@ class Expr:
         └─────┘
 
         """
-        quantile = parse_single_expression_input(quantile, str_to_lit=False)
+        quantile = parse_single_expression_input(quantile, str_as_lit=False)
         return self._from_pyexpr(self._pyexpr.quantile(quantile._pyexpr, interpolation))
 
     def filter(self, predicate: Expr) -> Self:
@@ -3621,7 +3621,7 @@ class Expr:
         └─────┘
 
         """
-        offset = -parse_single_expression_input(n, str_to_lit=False)
+        offset = -parse_single_expression_input(n, str_as_lit=False)
         return self.slice(offset, n)
 
     def limit(self, n: int | Expr = 10) -> Self:
@@ -4320,7 +4320,7 @@ class Expr:
                 other = sorted(other)
             other = F.lit(None) if len(other) == 0 else F.lit(pl.Series(other))
         else:
-            other = parse_single_expression_input(other, str_to_lit=False)
+            other = parse_single_expression_input(other, str_as_lit=False)
         return self._from_pyexpr(self._pyexpr.is_in(other._pyexpr))
 
     def repeat_by(self, by: pl.Series | Expr | str | int) -> Self:
@@ -4361,7 +4361,7 @@ class Expr:
         └─────────────────┘
 
         """
-        by = parse_single_expression_input(by, str_to_lit=False)
+        by = parse_single_expression_input(by, str_as_lit=False)
         return self._from_pyexpr(self._pyexpr.repeat_by(by._pyexpr))
 
     def is_between(
@@ -4447,8 +4447,8 @@ class Expr:
         └─────┴────────────┘
 
         """
-        lower_bound = parse_single_expression_input(lower_bound, str_to_lit=False)
-        upper_bound = parse_single_expression_input(upper_bound, str_to_lit=False)
+        lower_bound = parse_single_expression_input(lower_bound, str_as_lit=False)
+        upper_bound = parse_single_expression_input(upper_bound, str_as_lit=False)
 
         if closed == "none":
             return (self > lower_bound) & (self < upper_bound)

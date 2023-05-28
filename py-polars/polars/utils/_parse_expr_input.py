@@ -25,12 +25,12 @@ def selection_to_pyexpr_list(
     ) or not isinstance(exprs, Iterable):
         return [
             parse_single_expression_input(
-                exprs, str_to_lit=False, structify=structify
+                exprs, str_as_lit=False, structify=structify
             )._pyexpr,
         ]
 
     return [
-        parse_single_expression_input(e, str_to_lit=False, structify=structify)._pyexpr
+        parse_single_expression_input(e, str_as_lit=False, structify=structify)._pyexpr
         for e in exprs  # type: ignore[union-attr]
     ]
 
@@ -38,7 +38,7 @@ def selection_to_pyexpr_list(
 def parse_single_expression_input(
     input: IntoExpr,
     *,
-    str_to_lit: bool = True,
+    str_as_lit: bool = True,
     structify: bool = False,
 ) -> Expr:
     """
@@ -48,7 +48,7 @@ def parse_single_expression_input(
     ----------
     input
         The input to be parsed as an expression.
-    str_to_lit
+    str_as_lit
         Interpret string input as a string literal. If set to ``False``, strings are
         parsed as column names.
     structify
@@ -57,7 +57,7 @@ def parse_single_expression_input(
     """
     if isinstance(input, pl.Expr):
         expr = input
-    elif isinstance(input, str) and not str_to_lit:
+    elif isinstance(input, str) and not str_as_lit:
         expr = F.col(input)
         structify = False
     elif (

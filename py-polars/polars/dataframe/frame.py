@@ -7902,7 +7902,7 @@ class DataFrame:
             subset = [subset]
 
         if isinstance(subset, Sequence) and len(subset) == 1:
-            expr = parse_single_expression_input(subset[0], str_to_lit=False)
+            expr = parse_single_expression_input(subset[0], str_as_lit=False)
         else:
             struct_fields = F.all() if (subset is None) else subset
             expr = F.struct(struct_fields)  # type: ignore[call-overload]

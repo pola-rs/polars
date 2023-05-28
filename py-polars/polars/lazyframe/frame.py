@@ -1924,7 +1924,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return self._from_pyldf(
             self._ldf.filter(
-                parse_single_expression_input(predicate, str_to_lit=False)._pyexpr
+                parse_single_expression_input(predicate, str_as_lit=False)._pyexpr
             )
         )
 
@@ -2047,7 +2047,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if named_exprs:
             exprs.extend(
                 parse_single_expression_input(
-                    expr, structify=structify, str_to_lit=False
+                    expr, structify=structify, str_as_lit=False
                 )
                 .alias(name)
                 ._pyexpr
@@ -2282,7 +2282,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────────────────────┴───────┴───────┴───────┘
 
         """
-        index_column = parse_single_expression_input(index_column, str_to_lit=False)
+        index_column = parse_single_expression_input(index_column, str_as_lit=False)
         if offset is None:
             offset = f"-{_timedelta_to_pl_duration(period)}"
 
@@ -2594,7 +2594,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────────────────┴─────────────────┴─────┴─────────────────┘
 
         """  # noqa: W505
-        index_column = parse_single_expression_input(index_column, str_to_lit=False)
+        index_column = parse_single_expression_input(index_column, str_as_lit=False)
         if offset is None:
             offset = f"-{_timedelta_to_pl_duration(every)}" if period is None else "0ns"
 
@@ -3106,7 +3106,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if named_exprs:
             exprs.extend(
                 parse_single_expression_input(
-                    expr, structify=structify, str_to_lit=False
+                    expr, structify=structify, str_as_lit=False
                 )
                 .alias(name)
                 ._pyexpr
@@ -4166,7 +4166,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┘
 
         """
-        quantile = parse_single_expression_input(quantile, str_to_lit=False)
+        quantile = parse_single_expression_input(quantile, str_as_lit=False)
         return self._from_pyldf(self._ldf.quantile(quantile._pyexpr, interpolation))
 
     def explode(

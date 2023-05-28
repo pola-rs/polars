@@ -295,7 +295,7 @@ class ExprListNameSpace:
         └──────┘
 
         """
-        index = parse_single_expression_input(index, str_to_lit=False)._pyexpr
+        index = parse_single_expression_input(index, str_as_lit=False)._pyexpr
         return wrap_expr(self._pyexpr.list_get(index))
 
     def take(
@@ -323,7 +323,7 @@ class ExprListNameSpace:
         """
         if isinstance(index, list):
             index = pl.Series(index)
-        index = parse_single_expression_input(index, str_to_lit=False)._pyexpr
+        index = parse_single_expression_input(index, str_as_lit=False)._pyexpr
         return wrap_expr(self._pyexpr.list_take(index, null_on_oob))
 
     def first(self) -> Expr:
@@ -594,8 +594,8 @@ class ExprListNameSpace:
         ]
 
         """
-        offset = parse_single_expression_input(offset, str_to_lit=False)._pyexpr
-        length = parse_single_expression_input(length, str_to_lit=False)._pyexpr
+        offset = parse_single_expression_input(offset, str_as_lit=False)._pyexpr
+        length = parse_single_expression_input(length, str_as_lit=False)._pyexpr
         return wrap_expr(self._pyexpr.list_slice(offset, length))
 
     def head(self, n: int | str | Expr = 5) -> Expr:
@@ -642,7 +642,7 @@ class ExprListNameSpace:
         ]
 
         """
-        offset = -parse_single_expression_input(n, str_to_lit=False)
+        offset = -parse_single_expression_input(n, str_as_lit=False)
         return self.slice(offset, n)
 
     def explode(self) -> Expr:
