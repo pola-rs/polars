@@ -556,3 +556,16 @@ def test_join_sorted_fast_paths_null() -> None:
         "x": [0, 0, 1, None],
         "y": [0, 0, None, 1],
     }
+
+
+@typing.no_type_check
+def test_outer_join_list_() -> None:
+    schema = {"id": pl.Int64, "vals": pl.List(pl.Float64)}
+
+    df1 = pl.DataFrame({"id": [1], "vals": [[]]}, schema=schema)
+    df2 = pl.DataFrame({"id": [2, 3], "vals": [[], [4]]}, schema=schema)
+    assert df1.join(df2, on="id", how="outer").to_dict(False) == {
+        "id": [2, 3, 1],
+        "vals": [None, None, []],
+        "vals_right": [[], [4.0], None],
+    }
