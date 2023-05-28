@@ -255,7 +255,7 @@ pub fn concat_str<E: AsRef<[Expr]>>(s: E, separator: &str) -> Expr {
     let input = s.as_ref().to_vec();
     let separator = separator.to_string();
 
-    Expr::Function {
+    let expr = Expr::Function {
         input,
         function: StringFunction::ConcatHorizontal(separator).into(),
         options: FunctionOptions {
@@ -264,7 +264,8 @@ pub fn concat_str<E: AsRef<[Expr]>>(s: E, separator: &str) -> Expr {
             auto_explode: true,
             ..Default::default()
         },
-    }
+    };
+    expr.alias("string")
 }
 
 #[cfg(all(feature = "concat_str", feature = "strings"))]
@@ -298,13 +299,13 @@ pub fn format_str<E: AsRef<[Expr]>>(format: &str, args: E) -> PolarsResult<Expr>
 }
 
 /// Concat lists entries.
-pub fn concat_list<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> PolarsResult<Expr> {
-    let s: Vec<_> = s.as_ref().iter().map(|e| e.clone().into()).collect();
+pub fn concat_list<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(exprs: E) -> PolarsResult<Expr> {
+    let exprs: Vec<_> = exprs.as_ref().iter().map(|e| e.clone().into()).collect();
 
-    polars_ensure!(!s.is_empty(), ComputeError: "`concat_list` needs one or more expressions");
+    polars_ensure!(!exprs.is_empty(), ComputeError: "`concat_list` needs one or more expressions");
 
-    Ok(Expr::Function {
-        input: s,
+    let expr = Expr::Function {
+        input: exprs,
         function: FunctionExpr::ListExpr(ListFunction::Concat),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
@@ -312,7 +313,8 @@ pub fn concat_list<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> PolarsResult
             fmt_str: "concat_list",
             ..Default::default()
         },
-    })
+    };
+    Ok(expr.alias("list"))
 }
 
 #[cfg(feature = "arange")]
@@ -1301,6 +1303,7 @@ pub fn as_struct(exprs: &[Expr]) -> Expr {
         options.pass_name_to_apply = true;
         options
     })
+    .alias("struct")
 }
 
 /// Create a column of length `n` containing `n` copies of the literal `value`. Generally you won't need this function,

@@ -228,8 +228,8 @@ def test_empty_list_in_apply() -> None:
     )
 
     assert df.select(
-        pl.struct(["a", "b"]).apply(lambda row: list(set(row["a"]) & set(row["b"])))
-    ).to_dict(False) == {"a": [[], [1, 2], [], [5]]}
+        pl.struct("a", "b").apply(lambda row: list(set(row["a"]) & set(row["b"])))
+    ).to_dict(False) == {"struct": [[], [1, 2], [], [5]]}
 
 
 def test_apply_skip_nulls() -> None:

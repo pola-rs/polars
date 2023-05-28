@@ -263,8 +263,9 @@ class ExprListNameSpace:
         other_list: list[Expr | str | Series]
         other_list = [other] if not isinstance(other, list) else copy.copy(other)  # type: ignore[arg-type]
 
-        other_list.insert(0, wrap_expr(self._pyexpr))
-        return F.concat_list(other_list)
+        original_expr = wrap_expr(self._pyexpr)
+        other_list.insert(0, original_expr)
+        return F.concat_list(other_list).alias(original_expr.meta.output_name())
 
     def get(self, index: int | Expr | str) -> Expr:
         """

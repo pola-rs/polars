@@ -351,7 +351,7 @@ def test_struct_categorical_nesting() -> None:
         {"cats": ["Value1", "Value2", "Value1"]},
         schema_overrides={"cats": pl.Categorical},
     )
-    s = df.select(pl.struct(pl.col("cats")))["cats"].implode()
+    s = df.select(pl.struct(pl.col("cats"))).to_series().implode()
     assert s.dtype == pl.List(pl.Struct([pl.Field("cats", pl.Categorical)]))
     # triggers recursive conversion
     assert s.to_list() == [[{"cats": "Value1"}, {"cats": "Value2"}, {"cats": "Value1"}]]

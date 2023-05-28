@@ -290,7 +290,7 @@ def test_logical_explode() -> None:
             schema_overrides={"cats": pl.Categorical},
         )
         .groupby(1)
-        .agg(pl.struct("cats"))
+        .agg(pl.struct("cats").alias("cats"))
         .explode("cats")
         .unnest("cats")
     )

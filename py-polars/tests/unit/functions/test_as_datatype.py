@@ -55,22 +55,10 @@ def test_empty_duration() -> None:
 def test_list_concat() -> None:
     s0 = pl.Series("a", [[1, 2]])
     s1 = pl.Series("b", [[3, 4, 5]])
-    expected = pl.Series("a", [[1, 2, 3, 4, 5]])
-
-    out = s0.list.concat([s1])
-    assert_series_equal(out, expected)
-
-    out = s0.list.concat(s1)
-    assert_series_equal(out, expected)
+    expected = pl.Series("list", [[1, 2, 3, 4, 5]])
 
     df = pl.DataFrame([s0, s1])
-    assert_series_equal(df.select(pl.concat_list(["a", "b"]).alias("a"))["a"], expected)
-    assert_series_equal(
-        df.select(pl.col("a").list.concat("b").alias("a"))["a"], expected
-    )
-    assert_series_equal(
-        df.select(pl.col("a").list.concat(["b"]).alias("a"))["a"], expected
-    )
+    assert_series_equal(df.select(pl.concat_list(["a", "b"])).to_series(), expected)
 
 
 def test_concat_list_with_lit() -> None:
@@ -115,7 +103,7 @@ def test_concat_list_in_agg_6397() -> None:
         ]
     ).sort("group").to_dict(False) == {
         "group": [1, 2, 3],
-        "value": [[["a"]], [["b"], ["c"]], [["d"]]],
+        "list": [[["a"]], [["b"], ["c"]], [["d"]]],
     }
 
     # nested list
@@ -140,7 +128,7 @@ def test_list_concat_supertype() -> None:
 
 def test_categorical_list_concat_4762() -> None:
     df = pl.DataFrame({"x": "a"})
-    expected = {"x": [["a", "a"]]}
+    expected = {"list": [["a", "a"]]}
 
     q = df.lazy().select([pl.concat_list([pl.col("x").cast(pl.Categorical)] * 2)])
     with pl.StringCache():
@@ -240,22 +228,28 @@ def test_struct_args_kwargs() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_struct_name() -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+    result = df.select(pl.struct("a", "b")).to_series()
+    assert result.name == "struct"
+
+
 def test_struct_with_lit() -> None:
     expr = pl.struct([pl.col("a"), pl.lit(1).alias("b")])
 
     assert (
         pl.DataFrame({"a": pl.Series([], dtype=pl.Int64)}).select(expr).to_dict(False)
-    ) == {"a": []}
+    ) == {"struct": []}
 
     assert (
         pl.DataFrame({"a": pl.Series([1], dtype=pl.Int64)}).select(expr).to_dict(False)
-    ) == {"a": [{"a": 1, "b": 1}]}
+    ) == {"struct": [{"a": 1, "b": 1}]}
 
     assert (
         pl.DataFrame({"a": pl.Series([1, 2], dtype=pl.Int64)})
         .select(expr)
         .to_dict(False)
-    ) == {"a": [{"a": 1, "b": 1}, {"a": 2, "b": 1}]}
+    ) == {"struct": [{"a": 1, "b": 1}, {"a": 2, "b": 1}]}
 
 
 def test_eager_struct() -> None:
@@ -401,7 +395,7 @@ def test_struct_list_cat_8235() -> None:
         {"values": [["a", "b", "c"]]}, schema={"values": pl.List(pl.Categorical)}
     )
     assert df.select(pl.struct("values")).to_dict(False) == {
-        "values": [{"values": ["a", "b", "c"]}]
+        "struct": [{"values": ["a", "b", "c"]}]
     }
 
 
@@ -410,7 +404,7 @@ def test_struct_lit_cast() -> None:
     schema = {"a": pl.Int64, "b": pl.List(pl.Int64)}
 
     for lit in [pl.lit(None), pl.lit([[]])]:
-        s = df.select(pl.struct([pl.col("a"), lit.alias("b")], schema=schema))["a"]  # type: ignore[arg-type]
+        s = df.select(pl.struct([pl.col("a"), lit.alias("b")], schema=schema)).to_series()  # type: ignore[arg-type]
         assert s.dtype == pl.Struct(
             [pl.Field("a", pl.Int64), pl.Field("b", pl.List(pl.Int64))]
         )
@@ -436,8 +430,9 @@ def test_suffix_in_struct_creation() -> None:
 def test_concat_str() -> None:
     df = pl.DataFrame({"a": ["a", "b", "c"], "b": [1, 2, 3]})
 
-    out = df.select([pl.concat_str(["a", "b"], separator="-")])
-    assert out["a"].to_list() == ["a-1", "b-2", "c-3"]
+    out = df.select([pl.concat_str(["a", "b"], separator="-")]).to_series()
+    assert out.to_list() == ["a-1", "b-2", "c-3"]
+    assert out.name == "string"
 
 
 def test_concat_str_wildcard_expansion() -> None:
@@ -454,5 +449,6 @@ def test_concat_str_wildcard_expansion() -> None:
 def test_format() -> None:
     df = pl.DataFrame({"a": ["a", "b", "c"], "b": [1, 2, 3]})
 
-    out = df.select([pl.format("foo_{}_bar_{}", pl.col("a"), "b").alias("fmt")])
-    assert out["fmt"].to_list() == ["foo_a_bar_1", "foo_b_bar_2", "foo_c_bar_3"]
+    out = df.select(pl.format("foo_{}_bar_{}", pl.col("a"), "b")).to_series()
+    assert out.to_list() == ["foo_a_bar_1", "foo_b_bar_2", "foo_c_bar_3"]
+    assert out.name == "string"

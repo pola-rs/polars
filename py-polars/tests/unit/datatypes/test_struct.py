@@ -155,11 +155,11 @@ def test_struct_function_expansion() -> None:
         {"a": [1, 2, 3, 4], "b": ["one", "two", "three", "four"], "c": [9, 8, 7, 6]}
     )
     struct_schema = {"a": pl.UInt32, "b": pl.Utf8}
-    s = df.with_columns(pl.struct(pl.col(["a", "b"]), schema=struct_schema))["a"]
+    s = df.with_columns(pl.struct(pl.col("a", "b"), schema=struct_schema))["struct"]
 
     assert isinstance(s, pl.Series)
     assert s.struct.fields == ["a", "b"]
-    assert pl.Struct(struct_schema) == s.to_frame().schema["a"]
+    assert pl.Struct(struct_schema) == s.to_frame().schema["struct"]
 
 
 def test_value_counts_expr() -> None:
@@ -806,7 +806,7 @@ def test_struct_concat_self_no_rechunk() -> None:
 def test_sort_structs() -> None:
     assert pl.DataFrame(
         {"sex": ["male", "female", "female"], "age": [22, 38, 26]}
-    ).select(pl.struct(["sex", "age"]).sort()).unnest("sex").to_dict(False) == {
+    ).select(pl.struct("sex", "age").sort()).unnest("struct").to_dict(False) == {
         "sex": ["female", "female", "male"],
         "age": [26, 38, 22],
     }
@@ -818,9 +818,9 @@ def test_struct_applies_as_map() -> None:
     # the window function doesn't really make sense
     # but it runs the test: #7286
     assert df.select(
-        pl.struct([pl.col("x"), pl.col("y") + pl.col("y")]).over("id")
+        pl.struct(pl.col("x"), pl.col("y") + pl.col("y")).over("id")
     ).to_dict(False) == {
-        "x": [{"x": "a", "y": "dd"}, {"x": "b", "y": "ee"}, {"x": "c", "y": "ff"}]
+        "struct": [{"x": "a", "y": "dd"}, {"x": "b", "y": "ee"}, {"x": "c", "y": "ff"}]
     }
 
 
@@ -881,17 +881,15 @@ def test_struct_name_passed_in_agg_apply() -> None:
 
     assert df.groupby("k").agg(
         pl.struct(
-            [
-                pl.col("val").value_counts(sort=True).struct.field("val").alias("val"),
-                pl.col("val")
-                .value_counts(sort=True)
-                .struct.field("counts")
-                .alias("counts"),
-            ]
+            pl.col("val").value_counts(sort=True).struct.field("val").alias("val"),
+            pl.col("val")
+            .value_counts(sort=True)
+            .struct.field("counts")
+            .alias("counts"),
         )
     ).to_dict(False) == {
         "k": [0],
-        "val": [
+        "struct": [
             [
                 {"val": -3, "counts": 1},
                 {"val": -2, "counts": 1},

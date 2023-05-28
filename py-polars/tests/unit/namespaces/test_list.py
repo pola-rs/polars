@@ -95,6 +95,22 @@ def test_list_concat() -> None:
     assert out_s[0].to_list() == [1, 2, 4, 1]
 
 
+def test_list_concat2() -> None:
+    s0 = pl.Series("a", [[1, 2]])
+    s1 = pl.Series("b", [[3, 4, 5]])
+    expected = pl.Series("a", [[1, 2, 3, 4, 5]])
+
+    out = s0.list.concat([s1])
+    assert_series_equal(out, expected)
+
+    out = s0.list.concat(s1)
+    assert_series_equal(out, expected)
+
+    df = pl.DataFrame([s0, s1])
+    assert_series_equal(df.select(pl.col("a").list.concat("b")).to_series(), expected)
+    assert_series_equal(df.select(pl.col("a").list.concat(["b"])).to_series(), expected)
+
+
 def test_list_arr_empty() -> None:
     df = pl.DataFrame({"cars": [[1, 2, 3], [2, 3], [4], []]})
 

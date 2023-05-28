@@ -243,9 +243,9 @@ def test_fast_explode_on_list_struct_6208() -> None:
 def test_flat_aggregation_to_list_conversion_6918() -> None:
     df = pl.DataFrame({"a": [1, 2, 2], "b": [[0, 1], [2, 3], [4, 5]]})
 
-    assert df.groupby("a", maintain_order=True).agg(
-        pl.concat_list([pl.col("b").list.get(i).mean().implode() for i in range(2)])
-    ).to_dict(False) == {"a": [1, 2], "b": [[[0.0, 1.0]], [[3.0, 4.0]]]}
+    exprs = [pl.col("b").list.get(i).mean().implode() for i in range(2)]
+    result = df.groupby("a", maintain_order=True).agg(pl.concat_list(exprs))
+    assert result.to_dict(False) == {"a": [1, 2], "list": [[[0.0, 1.0]], [[3.0, 4.0]]]}
 
 
 def test_list_count_match() -> None:
@@ -347,7 +347,7 @@ def test_logical_type_struct_agg_list() -> None:
         pl.Int32,
         pl.List(pl.Struct([pl.Field("cats", pl.Categorical)])),
     ]
-    assert out["cats"].to_list() == [
+    assert out["struct"].to_list() == [
         [{"cats": "Value1"}, {"cats": "Value2"}, {"cats": "Value1"}]
     ]
 

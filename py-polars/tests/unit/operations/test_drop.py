@@ -17,10 +17,10 @@ def test_drop_explode_6641() -> None:
     ).lazy()
 
     assert (
-        df.explode(["identifier", "alternate"])
-        .with_columns(pl.struct(["identifier", "alternate"]).alias("test"))
-        .drop(["identifier", "alternate"])
-        .select(pl.concat_list([pl.col("test"), pl.col("test")]))
+        df.explode("identifier", "alternate")
+        .with_columns(pl.struct("identifier", "alternate").alias("test"))
+        .drop("identifier", "alternate")
+        .select(pl.concat_list(pl.col("test"), pl.col("test")).alias("test"))
         .collect()
     ).to_dict(False) == {
         "test": [

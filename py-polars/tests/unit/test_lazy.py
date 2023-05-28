@@ -289,7 +289,7 @@ def test_is_first() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3, 2, None, 2, 1], "b": [0, 2, 3, 2, None, 2, 0]})
 
     assert ldf.select(pl.struct(["a", "b"]).is_first()).collect().to_dict(False) == {
-        "a": [True, True, True, False, True, False, False]
+        "struct": [True, True, True, False, True, False, False]
     }
 
 
