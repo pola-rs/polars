@@ -394,7 +394,7 @@ def test_power() -> None:
     assert_series_equal(a**b, pl.Series([None, 4.0], dtype=Float64))
     with pytest.raises(ValueError):
         c**2
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(pl.ColumnNotFoundError):
         a ** "hi"  # type: ignore[operator]
 
     # rpow
@@ -402,7 +402,7 @@ def test_power() -> None:
     assert_series_equal(2**b, pl.Series("literal", [None, 4.0], dtype=Float64))
     with pytest.raises(ValueError):
         2**c
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(pl.ColumnNotFoundError):
         "hi" ** a
 
     # Series.pow() method

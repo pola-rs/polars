@@ -2460,7 +2460,7 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
             )
         return condition.to_frame().select(arg_where(col(condition.name))).to_series()
     else:
-        condition = parse_single_expression_input(condition, str_as_lit=True)
+        condition = parse_single_expression_input(condition)
         return wrap_expr(plr.arg_where(condition._pyexpr))
 
 

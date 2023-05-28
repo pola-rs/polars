@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from datetime import date, datetime, time
 
     from polars import Expr, Series
-    from polars.type_aliases import NullBehavior, ToStructStrategy
+    from polars.type_aliases import IntoExpr, NullBehavior, ToStructStrategy
 
 
 class ExprListNameSpace:
@@ -295,7 +295,7 @@ class ExprListNameSpace:
         └──────┘
 
         """
-        index = parse_single_expression_input(index, str_as_lit=False)._pyexpr
+        index = parse_single_expression_input(index)._pyexpr
         return wrap_expr(self._pyexpr.list_get(index))
 
     def take(
@@ -323,7 +323,7 @@ class ExprListNameSpace:
         """
         if isinstance(index, list):
             index = pl.Series(index)
-        index = parse_single_expression_input(index, str_as_lit=False)._pyexpr
+        index = parse_single_expression_input(index)._pyexpr
         return wrap_expr(self._pyexpr.list_take(index, null_on_oob))
 
     def first(self) -> Expr:
@@ -402,7 +402,9 @@ class ExprListNameSpace:
 
         """
         return wrap_expr(
-            self._pyexpr.list_contains(parse_single_expression_input(item)._pyexpr)
+            self._pyexpr.list_contains(
+                parse_single_expression_input(item, str_as_lit=True)._pyexpr
+            )
         )
 
     def join(self, separator: str) -> Expr:
@@ -594,8 +596,8 @@ class ExprListNameSpace:
         ]
 
         """
-        offset = parse_single_expression_input(offset, str_as_lit=False)._pyexpr
-        length = parse_single_expression_input(length, str_as_lit=False)._pyexpr
+        offset = parse_single_expression_input(offset)._pyexpr
+        length = parse_single_expression_input(length)._pyexpr
         return wrap_expr(self._pyexpr.list_slice(offset, length))
 
     def head(self, n: int | str | Expr = 5) -> Expr:
@@ -642,7 +644,7 @@ class ExprListNameSpace:
         ]
 
         """
-        offset = -parse_single_expression_input(n, str_as_lit=False)
+        offset = -parse_single_expression_input(n)
         return self.slice(offset, n)
 
     def explode(self) -> Expr:
@@ -678,9 +680,7 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.explode())
 
-    def count_match(
-        self, element: float | str | bool | int | date | datetime | time | Expr
-    ) -> Expr:
+    def count_match(self, element: IntoExpr) -> Expr:
         """
         Count how often the value produced by ``element`` occurs.
 
@@ -709,7 +709,7 @@ class ExprListNameSpace:
         """
         return wrap_expr(
             self._pyexpr.list_count_match(
-                parse_single_expression_input(element)._pyexpr
+                parse_single_expression_input(element, str_as_lit=True)._pyexpr
             )
         )
 

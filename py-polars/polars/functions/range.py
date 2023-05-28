@@ -124,8 +124,8 @@ def arange(
     └───────────┘
 
     """
-    start = parse_single_expression_input(start, str_as_lit=False)
-    end = parse_single_expression_input(end, str_as_lit=False)
+    start = parse_single_expression_input(start)
+    end = parse_single_expression_input(end)
     range_expr = wrap_expr(plr.arange(start._pyexpr, end._pyexpr, step))
 
     if dtype is not None and dtype != Int64:
@@ -327,8 +327,8 @@ def date_range(
         or isinstance(start, (str, pl.Expr))
         or isinstance(end, (str, pl.Expr))
     ):
-        start = parse_single_expression_input(start, str_as_lit=False)._pyexpr
-        end = parse_single_expression_input(end, str_as_lit=False)._pyexpr
+        start = parse_single_expression_input(start)._pyexpr
+        end = parse_single_expression_input(end)._pyexpr
         return wrap_expr(plr.date_range_lazy(start, end, interval, closed, time_zone))
 
     start, start_is_date = _ensure_datetime(start)
@@ -533,13 +533,11 @@ def time_range(
         start_expr = (
             F.lit(default_start)
             if start is None
-            else parse_single_expression_input(start, str_as_lit=False)
+            else parse_single_expression_input(start)
         )._pyexpr
 
         end_expr = (
-            F.lit(default_end)
-            if end is None
-            else parse_single_expression_input(end, str_as_lit=False)
+            F.lit(default_end) if end is None else parse_single_expression_input(end)
         )._pyexpr
 
         tm_expr = wrap_expr(plr.time_range_lazy(start_expr, end_expr, interval, closed))

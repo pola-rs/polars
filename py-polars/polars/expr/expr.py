@@ -1678,7 +1678,7 @@ class Expr:
         └─────┘
 
         """
-        other = parse_single_expression_input(other, str_as_lit=False)
+        other = parse_single_expression_input(other)
         return self._from_pyexpr(self._pyexpr.dot(other._pyexpr))
 
     def mode(self) -> Self:
@@ -2049,7 +2049,7 @@ class Expr:
         └──────┴───────┴─────┘
 
         """
-        element = parse_single_expression_input(element, str_as_lit=False)
+        element = parse_single_expression_input(element)
         return self._from_pyexpr(self._pyexpr.search_sorted(element._pyexpr, side))
 
     def sort_by(
@@ -2234,7 +2234,7 @@ class Expr:
         ):
             indices_lit = F.lit(pl.Series("", indices, dtype=UInt32))
         else:
-            indices_lit = parse_single_expression_input(indices, str_as_lit=False)  # type: ignore[arg-type]
+            indices_lit = parse_single_expression_input(indices)  # type: ignore[arg-type]
         return self._from_pyexpr(self._pyexpr.take(indices_lit._pyexpr))
 
     def shift(self, periods: int = 1) -> Self:
@@ -3175,7 +3175,7 @@ class Expr:
         └─────┘
 
         """
-        quantile = parse_single_expression_input(quantile, str_as_lit=False)
+        quantile = parse_single_expression_input(quantile)
         return self._from_pyexpr(self._pyexpr.quantile(quantile._pyexpr, interpolation))
 
     def filter(self, predicate: Expr) -> Self:
@@ -3621,7 +3621,7 @@ class Expr:
         └─────┘
 
         """
-        offset = -parse_single_expression_input(n, str_as_lit=False)
+        offset = -parse_single_expression_input(n)
         return self.slice(offset, n)
 
     def limit(self, n: int | Expr = 10) -> Self:
@@ -4320,7 +4320,7 @@ class Expr:
                 other = sorted(other)
             other = F.lit(None) if len(other) == 0 else F.lit(pl.Series(other))
         else:
-            other = parse_single_expression_input(other, str_as_lit=False)
+            other = parse_single_expression_input(other)
         return self._from_pyexpr(self._pyexpr.is_in(other._pyexpr))
 
     def repeat_by(self, by: pl.Series | Expr | str | int) -> Self:
@@ -4361,7 +4361,7 @@ class Expr:
         └─────────────────┘
 
         """
-        by = parse_single_expression_input(by, str_as_lit=False)
+        by = parse_single_expression_input(by)
         return self._from_pyexpr(self._pyexpr.repeat_by(by._pyexpr))
 
     def is_between(
@@ -4447,8 +4447,8 @@ class Expr:
         └─────┴────────────┘
 
         """
-        lower_bound = parse_single_expression_input(lower_bound, str_as_lit=False)
-        upper_bound = parse_single_expression_input(upper_bound, str_as_lit=False)
+        lower_bound = parse_single_expression_input(lower_bound)
+        upper_bound = parse_single_expression_input(upper_bound)
 
         if closed == "none":
             return (self > lower_bound) & (self < upper_bound)
