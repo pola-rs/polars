@@ -282,6 +282,10 @@ impl Series {
                         ca.cast_unchecked(dtype)
                 })
             }
+            DataType::Binary => {
+                let ca = self.binary().unwrap();
+                ca.cast_unchecked(dtype)
+            }
             _ => self.cast(dtype),
         }
     }

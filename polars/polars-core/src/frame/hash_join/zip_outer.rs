@@ -74,8 +74,23 @@ macro_rules! impl_zip_outer_join {
     };
 }
 impl_zip_outer_join!(BooleanChunked);
-impl_zip_outer_join!(Utf8Chunked);
 impl_zip_outer_join!(BinaryChunked);
+
+impl ZipOuterJoinColumn for Utf8Chunked {
+    fn zip_outer_join_column(
+        &self,
+        right_column: &Series,
+        opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
+    ) -> Series {
+        unsafe {
+            let out = self.as_binary().zip_outer_join_column(
+                &right_column.cast_unchecked(&DataType::Binary).unwrap(),
+                opt_join_tuples,
+            );
+            out.cast_unchecked(&DataType::Utf8).unwrap_unchecked()
+        }
+    }
+}
 
 impl ZipOuterJoinColumn for Float32Chunked {
     fn zip_outer_join_column(

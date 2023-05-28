@@ -99,6 +99,7 @@ macro_rules! det_hash_prone_order {
 pub(super) use det_hash_prone_order;
 #[cfg(feature = "performant")]
 use polars_arrow::conversion::primitive_to_vec;
+use polars_utils::hash_to_partition;
 
 use crate::series::IsSorted;
 
@@ -161,12 +162,8 @@ pub(crate) unsafe fn get_hash_tbl_threaded_join_partitioned<Item>(
     hash_tables: &[Item],
     len: u64,
 ) -> &Item {
-    for i in 0..len {
-        if this_partition(h, i, len) {
-            return hash_tables.get_unchecked(i as usize);
-        }
-    }
-    unreachable!()
+    let i = hash_to_partition(h, len as usize);
+    hash_tables.get_unchecked(i)
 }
 
 #[allow(clippy::type_complexity)]
@@ -175,12 +172,8 @@ unsafe fn get_hash_tbl_threaded_join_mut_partitioned<T, H>(
     hash_tables: &mut [HashMap<T, (bool, Vec<IdxSize>), H>],
     len: u64,
 ) -> &mut HashMap<T, (bool, Vec<IdxSize>), H> {
-    for i in 0..len {
-        if this_partition(h, i, len) {
-            return hash_tables.get_unchecked_mut(i as usize);
-        }
-    }
-    unreachable!()
+    let i = hash_to_partition(h, len as usize);
+    hash_tables.get_unchecked_mut(i)
 }
 
 pub fn _join_suffix_name(name: &str, suffix: &str) -> String {
