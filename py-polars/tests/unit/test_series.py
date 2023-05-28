@@ -1411,27 +1411,6 @@ def test_strict_cast() -> None:
         pl.DataFrame({"a": [2**16]}).select([pl.col("a").cast(pl.Int16, strict=True)])
 
 
-def test_list_concat() -> None:
-    s0 = pl.Series("a", [[1, 2]])
-    s1 = pl.Series("b", [[3, 4, 5]])
-    expected = pl.Series("a", [[1, 2, 3, 4, 5]])
-
-    out = s0.list.concat([s1])
-    assert_series_equal(out, expected)
-
-    out = s0.list.concat(s1)
-    assert_series_equal(out, expected)
-
-    df = pl.DataFrame([s0, s1])
-    assert_series_equal(df.select(pl.concat_list(["a", "b"]).alias("a"))["a"], expected)
-    assert_series_equal(
-        df.select(pl.col("a").list.concat("b").alias("a"))["a"], expected
-    )
-    assert_series_equal(
-        df.select(pl.col("a").list.concat(["b"]).alias("a"))["a"], expected
-    )
-
-
 def test_floor_divide() -> None:
     s = pl.Series("a", [1, 2, 3])
     assert_series_equal(s // 2, pl.Series("a", [0, 1, 1]))

@@ -362,20 +362,6 @@ def test_fetch(fruits_cars: pl.DataFrame) -> None:
     assert_frame_equal(res, res[:2])
 
 
-def test_concat_str() -> None:
-    ldf = pl.LazyFrame({"a": ["a", "b", "c"], "b": [1, 2, 3]})
-
-    out = ldf.select([pl.concat_str(["a", "b"], separator="-")])
-    assert out.collect()["a"].to_list() == ["a-1", "b-2", "c-3"]
-
-    out = ldf.select([pl.format("foo_{}_bar_{}", pl.col("a"), "b").alias("fmt")])
-    assert out.collect()["fmt"].to_list() == [
-        "foo_a_bar_1",
-        "foo_b_bar_2",
-        "foo_c_bar_3",
-    ]
-
-
 def test_fold_filter() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3], "b": [0, 1, 2]})
 
