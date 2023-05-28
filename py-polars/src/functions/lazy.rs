@@ -9,16 +9,8 @@ use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
 use crate::apply::lazy::binary_lambda;
 use crate::conversion::{get_lf, Wrap};
 use crate::expr::ToExprs;
-use crate::prelude::{
-    vec_extract_wrapped, ClosedWindow, DataType, DatetimeArgs, Duration, DurationArgs, ObjectValue,
-};
+use crate::prelude::{vec_extract_wrapped, ClosedWindow, DataType, Duration, ObjectValue};
 use crate::{apply, PyDataFrame, PyExpr, PyLazyFrame, PyPolarsErr, PySeries};
-
-macro_rules! set_unwrapped_or_0 {
-    ($($var:ident),+ $(,)?) => {
-        $(let $var = $var.map(|e| e.inner).unwrap_or(dsl::lit(0));)+
-    };
-}
 
 #[pyfunction]
 pub fn arange(start: PyExpr, end: PyExpr, step: i64) -> PyExpr {
@@ -77,12 +69,6 @@ pub fn arg_where(condition: PyExpr) -> PyExpr {
 }
 
 #[pyfunction]
-pub fn as_struct(exprs: Vec<PyExpr>) -> PyExpr {
-    let exprs = exprs.to_exprs();
-    dsl::as_struct(&exprs).into()
-}
-
-#[pyfunction]
 pub fn coalesce(exprs: Vec<PyExpr>) -> PyExpr {
     let exprs = exprs.to_exprs();
     dsl::coalesce(&exprs).into()
@@ -133,19 +119,6 @@ pub fn concat_lf(seq: &PyAny, rechunk: bool, parallel: bool) -> PyResult<PyLazyF
 }
 
 #[pyfunction]
-pub fn concat_list(s: Vec<PyExpr>) -> PyResult<PyExpr> {
-    let s = s.into_iter().map(|e| e.inner).collect::<Vec<_>>();
-    let expr = dsl::concat_list(s).map_err(PyPolarsErr::from)?;
-    Ok(expr.into())
-}
-
-#[pyfunction]
-pub fn concat_str(s: Vec<PyExpr>, separator: &str) -> PyExpr {
-    let s = s.into_iter().map(|e| e.inner).collect::<Vec<_>>();
-    dsl::concat_str(s, separator).into()
-}
-
-#[pyfunction]
 pub fn count() -> PyExpr {
     dsl::count().into()
 }
@@ -186,34 +159,6 @@ pub fn date_range_lazy(
 }
 
 #[pyfunction]
-pub fn datetime(
-    year: PyExpr,
-    month: PyExpr,
-    day: PyExpr,
-    hour: Option<PyExpr>,
-    minute: Option<PyExpr>,
-    second: Option<PyExpr>,
-    microsecond: Option<PyExpr>,
-) -> PyExpr {
-    let year = year.inner;
-    let month = month.inner;
-    let day = day.inner;
-
-    set_unwrapped_or_0!(hour, minute, second, microsecond);
-
-    let args = DatetimeArgs {
-        year,
-        month,
-        day,
-        hour,
-        minute,
-        second,
-        microsecond,
-    };
-    dsl::datetime(args).into()
-}
-
-#[pyfunction]
 pub fn diag_concat_lf(lfs: &PyAny, rechunk: bool, parallel: bool) -> PyResult<PyLazyFrame> {
     let iter = lfs.iter()?;
 
@@ -232,41 +177,6 @@ pub fn diag_concat_lf(lfs: &PyAny, rechunk: bool, parallel: bool) -> PyResult<Py
 pub fn dtype_cols(dtypes: Vec<Wrap<DataType>>) -> PyResult<PyExpr> {
     let dtypes = vec_extract_wrapped(dtypes);
     Ok(dsl::dtype_cols(dtypes).into())
-}
-
-#[allow(clippy::too_many_arguments)]
-#[pyfunction]
-pub fn duration(
-    days: Option<PyExpr>,
-    seconds: Option<PyExpr>,
-    nanoseconds: Option<PyExpr>,
-    microseconds: Option<PyExpr>,
-    milliseconds: Option<PyExpr>,
-    minutes: Option<PyExpr>,
-    hours: Option<PyExpr>,
-    weeks: Option<PyExpr>,
-) -> PyExpr {
-    set_unwrapped_or_0!(
-        days,
-        seconds,
-        nanoseconds,
-        microseconds,
-        milliseconds,
-        minutes,
-        hours,
-        weeks,
-    );
-    let args = DurationArgs {
-        days,
-        seconds,
-        nanoseconds,
-        microseconds,
-        milliseconds,
-        minutes,
-        hours,
-        weeks,
-    };
-    dsl::duration(args).into()
 }
 
 #[pyfunction]

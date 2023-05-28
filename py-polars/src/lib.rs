@@ -97,8 +97,6 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::arg_where))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::as_struct))
-        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::coalesce))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::col))
@@ -108,10 +106,6 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::lazy::cols))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::concat_lf))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::concat_list))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::concat_str))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::count))
         .unwrap();
@@ -123,13 +117,9 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::date_range_lazy))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::datetime))
-        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::diag_concat_lf))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::dtype_cols))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::lazy::duration))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::lazy::first))
         .unwrap();
@@ -162,6 +152,18 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::lazy::time_range_lazy))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::whenthen::when))
+        .unwrap();
+
+    // Functions - As datatype
+    m.add_wrapped(wrap_pyfunction!(functions::as_datatype::datetime))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::as_datatype::duration))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::as_datatype::concat_str))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::as_datatype::concat_list))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::as_datatype::as_struct))
         .unwrap();
 
     // Functions - I/O
