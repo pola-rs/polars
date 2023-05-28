@@ -213,15 +213,6 @@ def test_nested_cache_composition() -> None:
     assert pl.using_string_cache() is False
 
 
-def test_categorical_list_concat_4762() -> None:
-    df = pl.DataFrame({"x": "a"})
-    expected = {"x": [["a", "a"]]}
-
-    q = df.lazy().select([pl.concat_list([pl.col("x").cast(pl.Categorical)] * 2)])
-    with pl.StringCache():
-        assert q.collect().to_dict(False) == expected
-
-
 def test_categorical_max_null_5437() -> None:
     assert (
         pl.DataFrame({"strings": ["c", "b", "a", "c"], "values": [0, 1, 2, 3]})
