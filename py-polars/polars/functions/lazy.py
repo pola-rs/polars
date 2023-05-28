@@ -17,7 +17,10 @@ from polars.datatypes import (
 )
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
-from polars.utils._parse_expr_input import expr_to_lit_or_expr, selection_to_pyexpr_list
+from polars.utils._parse_expr_input import (
+    parse_single_expression_input,
+    selection_to_pyexpr_list,
+)
 from polars.utils._wrap import wrap_df, wrap_expr
 from polars.utils.convert import (
     _datetime_to_pl_timestamp,
@@ -1720,7 +1723,7 @@ def fold(
     └─────┴─────┘
     """
     # in case of pl.col("*")
-    acc = expr_to_lit_or_expr(acc, str_to_lit=True)
+    acc = parse_single_expression_input(acc, str_to_lit=True)
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
@@ -1861,7 +1864,7 @@ def cumfold(
 
     """  # noqa: W505
     # in case of pl.col("*")
-    acc = expr_to_lit_or_expr(acc, str_to_lit=True)
+    acc = parse_single_expression_input(acc, str_to_lit=True)
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
@@ -2457,7 +2460,7 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
             )
         return condition.to_frame().select(arg_where(col(condition.name))).to_series()
     else:
-        condition = expr_to_lit_or_expr(condition, str_to_lit=True)
+        condition = parse_single_expression_input(condition, str_to_lit=True)
         return wrap_expr(plr.arg_where(condition._pyexpr))
 
 

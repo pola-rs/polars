@@ -4,7 +4,7 @@ import contextlib
 import typing
 from typing import TYPE_CHECKING, Any, Iterable
 
-from polars.utils._parse_expr_input import expr_to_lit_or_expr
+from polars.utils._parse_expr_input import parse_single_expression_input
 from polars.utils._wrap import wrap_expr
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -93,7 +93,7 @@ def when(expr: IntoExpr | Iterable[IntoExpr]) -> When:
 
 
     """
-    expr = expr_to_lit_or_expr(expr)
+    expr = parse_single_expression_input(expr)
     pywhen = _when(expr._pyexpr)
     return When(pywhen)
 
@@ -113,7 +113,7 @@ class When:
         pl.when : Documentation for `when, then, otherwise`
 
         """
-        expr = expr_to_lit_or_expr(expr)
+        expr = parse_single_expression_input(expr)
         pywhenthen = self._pywhen.then(expr._pyexpr)
         return WhenThen(pywhenthen)
 
@@ -126,7 +126,7 @@ class WhenThen:
 
     def when(self, predicate: IntoExpr | Iterable[IntoExpr]) -> WhenThenThen:
         """Start another "when, then, otherwise" layer."""
-        predicate = expr_to_lit_or_expr(predicate)
+        predicate = parse_single_expression_input(predicate)
         return WhenThenThen(self._pywhenthen.when(predicate._pyexpr))
 
     def otherwise(self, expr: IntoExpr | Iterable[IntoExpr]) -> Expr:
@@ -138,7 +138,7 @@ class WhenThen:
         pl.when : Documentation for `when, then, otherwise`
 
         """
-        expr = expr_to_lit_or_expr(expr)
+        expr = parse_single_expression_input(expr)
         return wrap_expr(self._pywhenthen.otherwise(expr._pyexpr))
 
     @typing.no_type_check
@@ -155,7 +155,7 @@ class WhenThenThen:
 
     def when(self, predicate: IntoExpr | Iterable[IntoExpr]) -> WhenThenThen:
         """Start another "when, then, otherwise" layer."""
-        predicate = expr_to_lit_or_expr(predicate)
+        predicate = parse_single_expression_input(predicate)
         return WhenThenThen(self.pywhenthenthen.when(predicate._pyexpr))
 
     def then(self, expr: IntoExpr | Iterable[IntoExpr]) -> WhenThenThen:
@@ -167,7 +167,7 @@ class WhenThenThen:
         pl.when : Documentation for `when, then, otherwise`
 
         """
-        expr_ = expr_to_lit_or_expr(expr)
+        expr_ = parse_single_expression_input(expr)
         return WhenThenThen(self.pywhenthenthen.then(expr_._pyexpr))
 
     def otherwise(self, expr: IntoExpr | Iterable[IntoExpr]) -> Expr:
@@ -179,7 +179,7 @@ class WhenThenThen:
         pl.when : Documentation for `when, then, otherwise`
 
         """
-        expr = expr_to_lit_or_expr(expr)
+        expr = parse_single_expression_input(expr)
         return wrap_expr(self.pywhenthenthen.otherwise(expr._pyexpr))
 
     @typing.no_type_check
