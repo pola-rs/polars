@@ -690,15 +690,15 @@ fn test_rolling_lookback() {
     )
     .unwrap();
     assert_eq!(dates.len(), groups.len());
-    assert_eq!(groups[0], [0, 5]);
-    assert_eq!(groups[1], [1, 5]);
-    assert_eq!(groups[2], [2, 5]);
-    assert_eq!(groups[3], [3, 5]);
-    assert_eq!(groups[4], [4, 5]);
-    assert_eq!(groups[5], [5, 4]);
-    assert_eq!(groups[6], [6, 3]);
-    assert_eq!(groups[7], [7, 2]);
-    assert_eq!(groups[8], [8, 0]);
+    assert_eq!(groups[0], [1, 4]); // (00:00, 02:00]
+    assert_eq!(groups[1], [2, 4]); // (00:30, 02:30]
+    assert_eq!(groups[2], [3, 4]); // (01:00, 03:00]
+    assert_eq!(groups[3], [4, 4]); // (01:30, 03:30]
+    assert_eq!(groups[4], [5, 4]); // (02:00, 04:00]
+    assert_eq!(groups[5], [6, 3]); // (02:30, 04:30]
+    assert_eq!(groups[6], [7, 2]); // (03:00, 05:00]
+    assert_eq!(groups[7], [8, 1]); // (03:30, 05:30]
+    assert_eq!(groups[8], [9, 0]); // (04:00, 06:00]
 
     let period = Duration::parse("2h");
     let tu = TimeUnit::Milliseconds;

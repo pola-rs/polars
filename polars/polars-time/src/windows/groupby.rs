@@ -355,7 +355,7 @@ pub(crate) fn groupby_values_iter_partial_lookbehind<'a>(
         let b = Bounds::new(lower, upper);
 
         for &t in &time[lagging_offset..] {
-            if b.is_member(t, closed_window) || lagging_offset == i {
+            if b.is_member(t, closed_window) || (offset.negative && lagging_offset == i) {
                 break;
             }
             lagging_offset += 1;
@@ -408,7 +408,7 @@ pub(crate) fn groupby_values_iter_full_lookahead<'a>(
                 i += 1;
             }
             if i >= time.len() {
-                return Ok((0, 0));
+                return Ok((i as IdxSize, 0));
             }
             let slice = unsafe { time.get_unchecked(i..) };
             let len = slice.partition_point(|v| b.is_member(*v, closed_window));
