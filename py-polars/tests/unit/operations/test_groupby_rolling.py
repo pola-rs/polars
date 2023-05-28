@@ -176,6 +176,40 @@ def test_groupby_rolling_negative_offset_crossing_dst(time_zone: str | None) -> 
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.parametrize("time_zone", [None, "US/Central"])
+def test_groupby_rolling_positive_offset_crossing_dst_9077(
+    time_zone: str | None,
+) -> None:
+    df = pl.DataFrame(
+        {
+            "datetime": pl.date_range(
+                datetime(2021, 11, 6),
+                datetime(2021, 11, 9),
+                "1d",
+                time_zone=time_zone,
+                eager=True,
+            ),
+            "value": [1, 4, 9, 155],
+        }
+    )
+    result = df.groupby_rolling(index_column="datetime", period="2d", offset="1d").agg(
+        pl.col("value")
+    )
+    expected = pl.DataFrame(
+        {
+            "datetime": pl.date_range(
+                datetime(2021, 11, 6),
+                datetime(2021, 11, 9),
+                "1d",
+                time_zone=time_zone,
+                eager=True,
+            ),
+            "value": [[9, 155], [155], [], []],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
 def test_groupby_rolling_dynamic_sortedness_check() -> None:
     # when the by argument is passed, the sortedness flag
     # will be unset as the take shuffles data, so we must explicitly

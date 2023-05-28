@@ -400,7 +400,16 @@ pub(crate) fn groupby_values_iter_full_lookahead<'a>(
 
             let b = Bounds::new(lower, upper);
 
-            debug_assert!(i < time.len());
+            // find starting point of window
+            for &t in &time[i..] {
+                if b.is_member(t, closed_window) {
+                    break;
+                }
+                i += 1;
+            }
+            if i >= time.len() {
+                return Ok((0, 0));
+            }
             let slice = unsafe { time.get_unchecked(i..) };
             let len = slice.partition_point(|v| b.is_member(*v, closed_window));
 
