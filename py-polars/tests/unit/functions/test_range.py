@@ -8,7 +8,7 @@ import pytest
 
 import polars as pl
 from polars.datatypes import DTYPE_TEMPORAL_UNITS
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, TimeZoneAwareConstructorWarning
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -250,7 +250,7 @@ def test_date_range_lazy_time_zones_invalid() -> None:
     with pytest.raises(
         ComputeError,
         match="Given time_zone is different from that of timezone aware datetimes. Given: 'Pacific/Tarawa', got: 'Asia/Kathmandu",
-    ):
+    ), pytest.warns(TimeZoneAwareConstructorWarning, match="Series with UTC"):
         (
             pl.DataFrame({"start": [start], "stop": [stop]})
             .with_columns(
