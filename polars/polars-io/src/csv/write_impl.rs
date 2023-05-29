@@ -8,10 +8,9 @@ use std::io::Write;
 use arrow::temporal_conversions;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone;
-#[cfg(feature = "timezones")]
-use chrono_tz::Tz;
 use lexical_core::{FormattedSize, ToLexical};
 use memchr::{memchr, memchr2};
+use polars_arrow::time_zone::Tz;
 use polars_core::prelude::*;
 use polars_core::series::SeriesIter;
 use polars_core::POOL;
@@ -56,11 +55,13 @@ fn fast_float_write<N: ToLexical>(f: &mut Vec<u8>, n: N, write_size: usize) -> s
     Ok(())
 }
 
-fn write_anyvalue(
+unsafe fn write_anyvalue(
     f: &mut Vec<u8>,
     value: AnyValue,
     options: &SerializeOptions,
-    #[allow(unused_variables)] datetime_format: Option<&str>,
+    datetime_formats: &[&str],
+    time_zones: &[Option<Tz>],
+    i: usize,
 ) -> PolarsResult<()> {
     match value {
         AnyValue::Null => write!(f, "{}", &options.null),
@@ -96,21 +97,17 @@ fn write_anyvalue(
             }
         }
         #[cfg(feature = "dtype-datetime")]
-        AnyValue::Datetime(v, tu, tz) => {
-            // If this is a datetime, then datetime_format was either set or inferred.
-            let datetime_format = datetime_format.unwrap();
+        AnyValue::Datetime(v, tu, _) => {
+            let datetime_format = { *datetime_formats.get_unchecked(i) };
+            let time_zone = { time_zones.get_unchecked(i) };
             let ndt = match tu {
                 TimeUnit::Nanoseconds => temporal_conversions::timestamp_ns_to_datetime(v),
                 TimeUnit::Microseconds => temporal_conversions::timestamp_us_to_datetime(v),
                 TimeUnit::Milliseconds => temporal_conversions::timestamp_ms_to_datetime(v),
             };
-            let formatted = match tz {
+            let formatted = match time_zone {
                 #[cfg(feature = "timezones")]
-                Some(tz) => tz
-                    .parse::<Tz>()
-                    .unwrap()
-                    .from_utc_datetime(&ndt)
-                    .format(datetime_format),
+                Some(time_zone) => time_zone.from_utc_datetime(&ndt).format(datetime_format),
                 #[cfg(not(feature = "timezones"))]
                 Some(_) => {
                     panic!("activate 'timezones' feature");
@@ -132,8 +129,7 @@ fn write_anyvalue(
     .map_err(|err| match value {
         #[cfg(feature = "dtype-datetime")]
         AnyValue::Datetime(_, _, tz) => {
-            // If this is a datetime, then datetime_format was either set or inferred.
-            let datetime_format = datetime_format.unwrap_or_default();
+            let datetime_format = unsafe { *datetime_formats.get_unchecked(i) };
             let type_name = if tz.is_some() {
                 "DateTime"
             } else {
@@ -223,29 +219,75 @@ pub(crate) fn write<W: Write>(
     );
     let delimiter = char::from(options.delimiter);
 
-    let formats: Option<Vec<Option<&str>>> = match &options.datetime_format {
-        None => Some(
-            df.get_columns()
-                .iter()
-                .map(|col| match col.dtype() {
-                    DataType::Datetime(TimeUnit::Milliseconds, tz) => match tz {
-                        Some(_) => Some("%FT%H:%M:%S.%3f%z"),
-                        None => Some("%FT%H:%M:%S.%3f"),
-                    },
-                    DataType::Datetime(TimeUnit::Microseconds, tz) => match tz {
-                        Some(_) => Some("%FT%H:%M:%S.%6f%z"),
-                        None => Some("%FT%H:%M:%S.%6f"),
-                    },
-                    DataType::Datetime(TimeUnit::Nanoseconds, tz) => match tz {
-                        Some(_) => Some("%FT%H:%M:%S.%9f%z"),
-                        None => Some("%FT%H:%M:%S.%9f"),
-                    },
-                    _ => None,
-                })
-                .collect::<Vec<_>>(),
-        ),
-        Some(_) => None,
-    };
+    let (datetime_formats, time_zones): (Vec<&str>, Vec<Option<Tz>>) = df
+        .get_columns()
+        .iter()
+        .map(|column| match column.dtype() {
+            DataType::Datetime(TimeUnit::Milliseconds, tz) => {
+                let (format, tz_parsed) = match tz {
+                    #[cfg(feature = "timezones")]
+                    Some(tz) => (
+                        options
+                            .datetime_format
+                            .as_deref()
+                            .unwrap_or("%FT%H:%M:%S.%3f%z"),
+                        tz.parse::<Tz>().ok(),
+                    ),
+                    _ => (
+                        options
+                            .datetime_format
+                            .as_deref()
+                            .unwrap_or("%FT%H:%M:%S.%3f"),
+                        None,
+                    ),
+                };
+                (format, tz_parsed)
+            }
+            DataType::Datetime(TimeUnit::Microseconds, tz) => {
+                let (format, tz_parsed) = match tz {
+                    #[cfg(feature = "timezones")]
+                    Some(tz) => (
+                        options
+                            .datetime_format
+                            .as_deref()
+                            .unwrap_or("%FT%H:%M:%S.%6f%z"),
+                        tz.parse::<Tz>().ok(),
+                    ),
+                    _ => (
+                        options
+                            .datetime_format
+                            .as_deref()
+                            .unwrap_or("%FT%H:%M:%S.%6f"),
+                        None,
+                    ),
+                };
+                (format, tz_parsed)
+            }
+            DataType::Datetime(TimeUnit::Nanoseconds, tz) => {
+                let (format, tz_parsed) = match tz {
+                    #[cfg(feature = "timezones")]
+                    Some(tz) => (
+                        options
+                            .datetime_format
+                            .as_deref()
+                            .unwrap_or("%FT%H:%M:%S.%9f%z"),
+                        tz.parse::<Tz>().ok(),
+                    ),
+                    _ => (
+                        options
+                            .datetime_format
+                            .as_deref()
+                            .unwrap_or("%FT%H:%M:%S.%9f"),
+                        None,
+                    ),
+                };
+                (format, tz_parsed)
+            }
+            _ => ("", None),
+        })
+        .unzip();
+    let datetime_formats = datetime_formats.into_iter().collect::<Vec<_>>();
+    let time_zones = time_zones.into_iter().collect::<Vec<_>>();
 
     let len = df.height();
     let n_threads = POOL.current_num_threads();
@@ -291,14 +333,17 @@ pub(crate) fn write<W: Write>(
             // loop rows
             while !finished {
                 for (i, col) in &mut col_iters.iter_mut().enumerate() {
-                    let datetime_format = match &options.datetime_format {
-                        Some(datetime_format) => Some(datetime_format.as_str()),
-                        None => unsafe { *formats.as_ref().unwrap().get_unchecked(i) },
-                    };
                     match col.next() {
-                        Some(value) => {
-                            write_anyvalue(&mut write_buffer, value, options, datetime_format)?;
-                        }
+                        Some(value) => unsafe {
+                            write_anyvalue(
+                                &mut write_buffer,
+                                value,
+                                options,
+                                &datetime_formats,
+                                &time_zones,
+                                i,
+                            )?;
+                        },
                         None => {
                             finished = true;
                             break;
