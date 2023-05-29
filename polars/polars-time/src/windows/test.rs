@@ -708,31 +708,6 @@ fn test_rolling_lookback() {
         ClosedWindow::Both,
         ClosedWindow::None,
     ] {
-        let offset = Duration::parse("0h");
-        let g0 = groupby_values_iter_full_lookahead(
-            period,
-            offset,
-            &dates,
-            closed_window,
-            tu,
-            NO_TIMEZONE.copied(),
-            0,
-            None,
-        )
-        .collect::<PolarsResult<Vec<_>>>()
-        .unwrap();
-        let g1 = groupby_values_iter_partial_lookbehind(
-            period,
-            offset,
-            &dates,
-            closed_window,
-            tu,
-            NO_TIMEZONE.copied(),
-        )
-        .collect::<PolarsResult<Vec<_>>>()
-        .unwrap();
-        assert_eq!(g0, g1);
-
         let offset = Duration::parse("-2h");
         let g0 = groupby_values_iter_full_lookbehind(
             period,

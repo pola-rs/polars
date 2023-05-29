@@ -355,7 +355,7 @@ pub(crate) fn groupby_values_iter_partial_lookbehind<'a>(
         let b = Bounds::new(lower, upper);
 
         for &t in &time[lagging_offset..] {
-            if b.is_member(t, closed_window) || (offset.negative && lagging_offset == i) {
+            if b.is_member(t, closed_window) || lagging_offset == i {
                 break;
             }
             lagging_offset += 1;
@@ -390,6 +390,12 @@ pub(crate) fn groupby_values_iter_full_lookahead<'a>(
         TimeUnit::Milliseconds => Duration::add_ms,
     };
 
+    // If the offset isn't 0, or if the window isn't closed on the left, then
+    // we need to advance within the loop to find the start of the window.
+    let inner_loop_needed = offset != Duration::parse("0ns")
+        || closed_window == ClosedWindow::Right
+        || closed_window == ClosedWindow::None;
+
     time[start_offset..upper_bound]
         .iter()
         .enumerate()
@@ -401,14 +407,19 @@ pub(crate) fn groupby_values_iter_full_lookahead<'a>(
             let b = Bounds::new(lower, upper);
 
             // find starting point of window
-            for &t in &time[i..] {
-                if b.is_member(t, closed_window) {
-                    break;
+            match inner_loop_needed {
+                true => {
+                    for &t in &time[i..] {
+                        if b.is_member(t, closed_window) {
+                            break;
+                        }
+                        i += 1;
+                    }
+                    if i >= time.len() {
+                        return Ok((i as IdxSize, 0));
+                    }
                 }
-                i += 1;
-            }
-            if i >= time.len() {
-                return Ok((i as IdxSize, 0));
+                false => debug_assert!(i < time.len()),
             }
             let slice = unsafe { time.get_unchecked(i..) };
             let len = slice.partition_point(|v| b.is_member(*v, closed_window));

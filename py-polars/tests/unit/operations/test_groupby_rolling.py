@@ -177,8 +177,24 @@ def test_groupby_rolling_negative_offset_crossing_dst(time_zone: str | None) -> 
 
 
 @pytest.mark.parametrize("time_zone", [None, "US/Central"])
-def test_groupby_rolling_positive_offset_crossing_dst_9077(
+@pytest.mark.parametrize(
+    ("offset", "closed", "expected_values"),
+    [
+        ("0d", "left", [[1, 4], [4, 9], [9, 155], [155]]),
+        ("0d", "right", [[4, 9], [9, 155], [155], []]),
+        ("0d", "both", [[1, 4, 9], [4, 9, 155], [9, 155], [155]]),
+        ("0d", "none", [[4], [9], [155], []]),
+        ("1d", "left", [[4, 9], [9, 155], [155], []]),
+        ("1d", "right", [[9, 155], [155], [], []]),
+        ("1d", "both", [[4, 9, 155], [9, 155], [155], []]),
+        ("1d", "none", [[9], [155], [], []]),
+    ],
+)
+def test_groupby_rolling_non_negative_offset_9077(
     time_zone: str | None,
+    offset: str,
+    closed: str,
+    expected_values: list[list[int]],
 ) -> None:
     df = pl.DataFrame(
         {
@@ -192,9 +208,9 @@ def test_groupby_rolling_positive_offset_crossing_dst_9077(
             "value": [1, 4, 9, 155],
         }
     )
-    result = df.groupby_rolling(index_column="datetime", period="2d", offset="1d").agg(
-        pl.col("value")
-    )
+    result = df.groupby_rolling(
+        index_column="datetime", period="2d", offset=offset, closed=closed
+    ).agg(pl.col("value"))
     expected = pl.DataFrame(
         {
             "datetime": pl.date_range(
@@ -204,7 +220,7 @@ def test_groupby_rolling_positive_offset_crossing_dst_9077(
                 time_zone=time_zone,
                 eager=True,
             ),
-            "value": [[9, 155], [155], [], []],
+            "value": expected_values,
         }
     )
     assert_frame_equal(result, expected)
