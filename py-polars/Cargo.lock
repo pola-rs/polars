@@ -1412,6 +1412,7 @@ name = "polars-arrow"
 version = "0.30.0"
 dependencies = [
  "arrow2",
+ "atoi",
  "chrono",
  "chrono-tz",
  "hashbrown 0.13.2",

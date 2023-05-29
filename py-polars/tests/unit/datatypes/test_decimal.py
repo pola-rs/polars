@@ -101,3 +101,20 @@ def test_decimal_cast() -> None:
 def test_decimal_scale_precision_roundtrip(monkeypatch: Any) -> None:
     monkeypatch.setenv("POLARS_ACTIVATE_DECIMAL", "1")
     assert pl.from_arrow(pl.Series("dec", [D("10.0")]).to_arrow()).item() == D("10.0")
+
+
+def test_utf8_to_decimal() -> None:
+    s = pl.Series(
+        ["40.12", "3420.13", "120134.19", "3212.98", "12.90", "143.09", "143.9"]
+    ).str.to_decimal()
+    assert s.dtype == pl.Decimal(8, 2)
+
+    assert s.to_list() == [
+        D("40.12"),
+        D("3420.13"),
+        D("120134.19"),
+        D("3212.98"),
+        D("12.90"),
+        D("143.09"),
+        D("143.90"),
+    ]

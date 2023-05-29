@@ -20,6 +20,8 @@ pub(crate) mod compare_inner;
 mod concat_str;
 #[cfg(feature = "cum_agg")]
 mod cum_agg;
+#[cfg(feature = "dtype-decimal")]
+mod decimal;
 pub(crate) mod downcast;
 pub(crate) mod explode;
 mod extend;

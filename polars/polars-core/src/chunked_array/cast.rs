@@ -172,6 +172,28 @@ impl ChunkCast for Utf8Chunked {
             }
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => cast_single_to_struct(self.name(), &self.chunks, fields),
+            #[cfg(feature = "dtype-decimal")]
+            DataType::Decimal(precision, scale) => match (precision, scale) {
+                (Some(precision), Some(scale)) => {
+                    let chunks = self
+                        .downcast_iter()
+                        .map(|arr| {
+                            polars_arrow::compute::cast::cast_utf8_to_decimal(
+                                arr, *precision, *scale,
+                            )
+                        })
+                        .collect();
+                    unsafe {
+                        Ok(Int128Chunked::from_chunks(self.name(), chunks)
+                            .into_decimal_unchecked(Some(*precision), *scale)
+                            .into_series())
+                    }
+                }
+                (None, None) => self.to_decimal(100),
+                _ => {
+                    polars_bail!(ComputeError: "expected 'precision' or 'scale' when casting to Decimal")
+                }
+            },
             _ => cast_impl(self.name(), &self.chunks, data_type),
         }
     }
