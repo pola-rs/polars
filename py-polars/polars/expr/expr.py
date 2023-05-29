@@ -43,8 +43,8 @@ from polars.expr.meta import ExprMetaNameSpace
 from polars.expr.string import ExprStringNameSpace
 from polars.expr.struct import ExprStructNameSpace
 from polars.utils._parse_expr_input import (
-    parse_single_expression_input,
-    selection_to_pyexpr_list,
+    parse_as_expression,
+    parse_as_list_of_expressions,
 )
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import deprecated_alias
@@ -191,7 +191,7 @@ class Expr:
         return self.pow(power)
 
     def __rpow__(self, base: int | float | Expr) -> Expr:
-        return parse_single_expression_input(base) ** self
+        return parse_as_expression(base) ** self
 
     def __sub__(self, other: Any) -> Self:
         return self._from_pyexpr(self._pyexpr - self._to_pyexpr(other))
@@ -231,7 +231,7 @@ class Expr:
                     "Numpy ufunc with more than one expression can only be used if all non-expression inputs are provided as keyword arguments only"
                 )
 
-            exprs = selection_to_pyexpr_list(inputs)
+            exprs = parse_as_list_of_expressions(inputs)
             return self._from_pyexpr(pyreduce(partial(ufunc, **kwargs), exprs))
 
         def function(s: Series) -> Series:  # pragma: no cover
@@ -1244,8 +1244,8 @@ class Expr:
         └─────┴──────┘
 
         """
-        other = parse_single_expression_input(other)
-        return self._from_pyexpr(self._pyexpr.append(other._pyexpr, upcast))
+        other = parse_as_expression(other)._pyexpr
+        return self._from_pyexpr(self._pyexpr.append(other, upcast))
 
     def rechunk(self) -> Self:
         """
@@ -1678,8 +1678,8 @@ class Expr:
         └─────┘
 
         """
-        other = parse_single_expression_input(other)
-        return self._from_pyexpr(self._pyexpr.dot(other._pyexpr))
+        other = parse_as_expression(other)._pyexpr
+        return self._from_pyexpr(self._pyexpr.dot(other))
 
     def mode(self) -> Self:
         """
@@ -2049,8 +2049,8 @@ class Expr:
         └──────┴───────┴─────┘
 
         """
-        element = parse_single_expression_input(element)
-        return self._from_pyexpr(self._pyexpr.search_sorted(element._pyexpr, side))
+        element = parse_as_expression(element)._pyexpr
+        return self._from_pyexpr(self._pyexpr.search_sorted(element, side))
 
     def sort_by(
         self,
@@ -2176,9 +2176,7 @@ class Expr:
         └───────┴────────┴────────┘
 
         """
-        by = selection_to_pyexpr_list(by)
-        if more_by:
-            by.extend(selection_to_pyexpr_list(more_by))
+        by = parse_as_list_of_expressions(by, *more_by)
         if isinstance(descending, bool):
             descending = [descending]
         elif len(by) != len(descending):
@@ -2234,7 +2232,7 @@ class Expr:
         ):
             indices_lit = F.lit(pl.Series("", indices, dtype=UInt32))
         else:
-            indices_lit = parse_single_expression_input(indices)  # type: ignore[arg-type]
+            indices_lit = parse_as_expression(indices)  # type: ignore[arg-type]
         return self._from_pyexpr(self._pyexpr.take(indices_lit._pyexpr))
 
     def shift(self, periods: int = 1) -> Self:
@@ -2298,10 +2296,8 @@ class Expr:
         └─────┘
 
         """
-        fill_value = parse_single_expression_input(fill_value, str_as_lit=True)
-        return self._from_pyexpr(
-            self._pyexpr.shift_and_fill(periods, fill_value._pyexpr)
-        )
+        fill_value = parse_as_expression(fill_value, str_as_lit=True)._pyexpr
+        return self._from_pyexpr(self._pyexpr.shift_and_fill(periods, fill_value))
 
     def fill_null(
         self,
@@ -2378,8 +2374,8 @@ class Expr:
             )
 
         if value is not None:
-            value = parse_single_expression_input(value, str_as_lit=True)
-            return self._from_pyexpr(self._pyexpr.fill_null(value._pyexpr))
+            value = parse_as_expression(value, str_as_lit=True)._pyexpr
+            return self._from_pyexpr(self._pyexpr.fill_null(value))
         else:
             return self._from_pyexpr(
                 self._pyexpr.fill_null_with_strategy(strategy, limit)
@@ -2410,8 +2406,8 @@ class Expr:
         └──────┴──────┘
 
         """
-        fill_value = parse_single_expression_input(value, str_as_lit=True)
-        return self._from_pyexpr(self._pyexpr.fill_nan(fill_value._pyexpr))
+        fill_value = parse_as_expression(value, str_as_lit=True)._pyexpr
+        return self._from_pyexpr(self._pyexpr.fill_nan(fill_value))
 
     def forward_fill(self, limit: int | None = None) -> Self:
         """
@@ -3029,9 +3025,7 @@ class Expr:
         └─────┴─────┴─────┴───────┘
 
         """
-        exprs = selection_to_pyexpr_list(expr)
-        if more_exprs:
-            exprs.extend(selection_to_pyexpr_list(more_exprs))
+        exprs = parse_as_list_of_expressions(expr, *more_exprs)
         return self._from_pyexpr(self._pyexpr.over(exprs, mapping_strategy))
 
     def is_unique(self) -> Self:
@@ -3175,8 +3169,8 @@ class Expr:
         └─────┘
 
         """
-        quantile = parse_single_expression_input(quantile)
-        return self._from_pyexpr(self._pyexpr.quantile(quantile._pyexpr, interpolation))
+        quantile = parse_as_expression(quantile)._pyexpr
+        return self._from_pyexpr(self._pyexpr.quantile(quantile, interpolation))
 
     def filter(self, predicate: Expr) -> Self:
         """
@@ -3621,7 +3615,7 @@ class Expr:
         └─────┘
 
         """
-        offset = -parse_single_expression_input(n)
+        offset = -parse_as_expression(n)
         return self.slice(offset, n)
 
     def limit(self, n: int | Expr = 10) -> Self:
@@ -4226,8 +4220,8 @@ class Expr:
         └─────┴───────┴────────────┘
 
         """
-        exponent = parse_single_expression_input(exponent)
-        return self._from_pyexpr(self._pyexpr.pow(exponent._pyexpr))
+        exponent = parse_as_expression(exponent)._pyexpr
+        return self._from_pyexpr(self._pyexpr.pow(exponent))
 
     def xor(self, other: Any) -> Self:
         """
@@ -4320,7 +4314,7 @@ class Expr:
                 other = sorted(other)
             other = F.lit(None) if len(other) == 0 else F.lit(pl.Series(other))
         else:
-            other = parse_single_expression_input(other)
+            other = parse_as_expression(other)
         return self._from_pyexpr(self._pyexpr.is_in(other._pyexpr))
 
     def repeat_by(self, by: pl.Series | Expr | str | int) -> Self:
@@ -4361,8 +4355,8 @@ class Expr:
         └─────────────────┘
 
         """
-        by = parse_single_expression_input(by)
-        return self._from_pyexpr(self._pyexpr.repeat_by(by._pyexpr))
+        by = parse_as_expression(by)._pyexpr
+        return self._from_pyexpr(self._pyexpr.repeat_by(by))
 
     def is_between(
         self,
@@ -4447,8 +4441,8 @@ class Expr:
         └─────┴────────────┘
 
         """
-        lower_bound = parse_single_expression_input(lower_bound)
-        upper_bound = parse_single_expression_input(upper_bound)
+        lower_bound = parse_as_expression(lower_bound)
+        upper_bound = parse_as_expression(upper_bound)
 
         if closed == "none":
             return (self > lower_bound) & (self < upper_bound)

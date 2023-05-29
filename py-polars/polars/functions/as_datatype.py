@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING, Iterable, overload
 from polars import functions as F
 from polars.datatypes import Date, Struct, Time
 from polars.utils._parse_expr_input import (
-    parse_single_expression_input,
-    selection_to_pyexpr_list,
+    parse_as_expression,
+    parse_as_list_of_expressions,
 )
 from polars.utils._wrap import wrap_expr
 
@@ -61,24 +61,24 @@ def datetime_(
     Expr of type `pl.Datetime`
 
     """
-    year_expr = parse_single_expression_input(year)
-    month_expr = parse_single_expression_input(month)
-    day_expr = parse_single_expression_input(day)
+    year_expr = parse_as_expression(year)._pyexpr
+    month_expr = parse_as_expression(month)._pyexpr
+    day_expr = parse_as_expression(day)._pyexpr
 
     if hour is not None:
-        hour = parse_single_expression_input(hour)._pyexpr
+        hour = parse_as_expression(hour)._pyexpr
     if minute is not None:
-        minute = parse_single_expression_input(minute)._pyexpr
+        minute = parse_as_expression(minute)._pyexpr
     if second is not None:
-        second = parse_single_expression_input(second)._pyexpr
+        second = parse_as_expression(second)._pyexpr
     if microsecond is not None:
-        microsecond = parse_single_expression_input(microsecond)._pyexpr
+        microsecond = parse_as_expression(microsecond)._pyexpr
 
     return wrap_expr(
         plr.datetime(
-            year_expr._pyexpr,
-            month_expr._pyexpr,
-            day_expr._pyexpr,
+            year_expr,
+            month_expr,
+            day_expr,
             hour,
             minute,
             second,
@@ -203,21 +203,21 @@ def duration(
 
     """  # noqa: W505
     if hours is not None:
-        hours = parse_single_expression_input(hours)._pyexpr
+        hours = parse_as_expression(hours)._pyexpr
     if minutes is not None:
-        minutes = parse_single_expression_input(minutes)._pyexpr
+        minutes = parse_as_expression(minutes)._pyexpr
     if seconds is not None:
-        seconds = parse_single_expression_input(seconds)._pyexpr
+        seconds = parse_as_expression(seconds)._pyexpr
     if milliseconds is not None:
-        milliseconds = parse_single_expression_input(milliseconds)._pyexpr
+        milliseconds = parse_as_expression(milliseconds)._pyexpr
     if microseconds is not None:
-        microseconds = parse_single_expression_input(microseconds)._pyexpr
+        microseconds = parse_as_expression(microseconds)._pyexpr
     if nanoseconds is not None:
-        nanoseconds = parse_single_expression_input(nanoseconds)._pyexpr
+        nanoseconds = parse_as_expression(nanoseconds)._pyexpr
     if days is not None:
-        days = parse_single_expression_input(days)._pyexpr
+        days = parse_as_expression(days)._pyexpr
     if weeks is not None:
-        weeks = parse_single_expression_input(weeks)._pyexpr
+        weeks = parse_as_expression(weeks)._pyexpr
 
     return wrap_expr(
         plr.duration(
@@ -272,9 +272,7 @@ def concat_list(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> 
     └───────────────────┘
 
     """
-    exprs = selection_to_pyexpr_list(exprs)
-    if more_exprs:
-        exprs.extend(selection_to_pyexpr_list(more_exprs))
+    exprs = parse_as_list_of_expressions(exprs, *more_exprs)
     return wrap_expr(plr.concat_list(exprs))
 
 
@@ -382,22 +380,14 @@ def struct(
     {'my_struct': Struct([Field('p', Int64), Field('q', Boolean)])}
 
     """
-    exprs = selection_to_pyexpr_list(exprs)
-    if more_exprs:
-        exprs.extend(selection_to_pyexpr_list(more_exprs))
-    if named_exprs:
-        exprs.extend(
-            parse_single_expression_input(expr).alias(name)._pyexpr
-            for name, expr in named_exprs.items()
-        )
-
+    exprs = parse_as_list_of_expressions(exprs, *more_exprs, **named_exprs)  # type: ignore[arg-type]
     expr = wrap_expr(plr.as_struct(exprs))
 
     if schema:
         if not exprs:
             # no columns or expressions provided; create one from schema keys
             expr = wrap_expr(
-                plr.as_struct(selection_to_pyexpr_list(list(schema.keys())))
+                plr.as_struct(parse_as_list_of_expressions(list(schema.keys())))
             )
         expr = expr.cast(Struct(schema), strict=False)
 
@@ -460,9 +450,7 @@ def concat_str(
     └─────┴──────┴──────┴───────────────┘
 
     """
-    exprs = selection_to_pyexpr_list(exprs)
-    if more_exprs:
-        exprs.extend(selection_to_pyexpr_list(more_exprs))
+    exprs = parse_as_list_of_expressions(exprs, *more_exprs)
     return wrap_expr(plr.concat_str(exprs, separator))
 
 
@@ -511,7 +499,7 @@ def format(f_string: str, *args: Expr | str) -> Expr:
     arguments = iter(args)
     for i, s in enumerate(f_string.split("{}")):
         if i > 0:
-            e = parse_single_expression_input(next(arguments))
+            e = parse_as_expression(next(arguments))
             exprs.append(e)
 
         if len(s) > 0:
