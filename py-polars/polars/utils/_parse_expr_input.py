@@ -14,47 +14,52 @@ if TYPE_CHECKING:
 
 
 def parse_as_list_of_expressions(
-    inputs: IntoExpr | Iterable[IntoExpr],
+    inputs: IntoExpr | Iterable[IntoExpr] | None = None,
     *more_inputs: IntoExpr,
     structify: bool = False,
     **named_inputs: IntoExpr,
 ) -> list[PyExpr]:
-    exprs = _selection_to_pyexpr_list(inputs, structify=structify)
-    if more_inputs:
-        exprs.extend(_selection_to_pyexpr_list(more_inputs, structify=structify))
+    """Parse multiple inputs into a list of expressions."""
+    exprs = _parse_regular_inputs(inputs, more_inputs, structify=structify)
+
     if named_inputs:
-        exprs.extend(
-            parse_as_expression(expr, structify=structify).alias(name)._pyexpr
-            for name, expr in named_inputs.items()
-        )
+        named_exprs = _parse_named_inputs(named_inputs, structify=structify)
+        exprs.extend(named_exprs)
+
     return exprs
 
 
-def _selection_to_pyexpr_list(
-    exprs: IntoExpr | Iterable[IntoExpr],
+def _parse_regular_inputs(
+    inputs: IntoExpr | Iterable[IntoExpr] | None,
+    more_inputs: tuple[IntoExpr, ...],
     structify: bool = False,
 ) -> list[PyExpr]:
-    if exprs is None:
+    inputs = _inputs_to_list(inputs)
+    if more_inputs:
+        inputs.extend(more_inputs)
+    return [parse_as_expression(e, structify=structify)._pyexpr for e in inputs]
+
+
+def _inputs_to_list(inputs: IntoExpr | Iterable[IntoExpr] | None) -> list[IntoExpr]:
+    if inputs is None:
         return []
+    elif not isinstance(inputs, Iterable) or isinstance(inputs, (str, pl.Series)):
+        return [inputs]
+    else:
+        return list(inputs)
 
-    if isinstance(
-        exprs, (str, pl.Expr, pl.Series, F.whenthen.WhenThen, F.whenthen.WhenThenThen)
-    ) or not isinstance(exprs, Iterable):
-        return [
-            parse_as_expression(exprs, structify=structify)._pyexpr,
-        ]
 
-    return [
-        parse_as_expression(e, structify=structify)._pyexpr
-        for e in exprs  # type: ignore[union-attr]
-    ]
+def _parse_named_inputs(
+    named_inputs: dict[str, IntoExpr], structify: bool = False
+) -> Iterable[PyExpr]:
+    return (
+        parse_as_expression(input, structify=structify).alias(name)._pyexpr
+        for name, input in named_inputs.items()
+    )
 
 
 def parse_as_expression(
-    input: IntoExpr,
-    *,
-    str_as_lit: bool = False,
-    structify: bool = False,
+    input: IntoExpr, *, str_as_lit: bool = False, structify: bool = False
 ) -> Expr:
     """
     Parse a single input into an expression.
