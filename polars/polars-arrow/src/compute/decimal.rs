@@ -1,8 +1,15 @@
 use atoi::atoi;
 
-#[inline]
-fn significant_bytes(bytes: &[u8]) -> u8 {
-    bytes.iter().map(|byte| (*byte != b'0') as u8).sum()
+// 90.xx has 2 sd
+// 00900.xx has 3 sd
+fn significant_digits_precision(bytes: &[u8]) -> u8 {
+    (bytes.len() - bytes.iter().take_while(|byte| **byte == b'0').count()) as u8
+}
+
+// 0.009 has 3 sd
+// 0.900 has 1 sd
+fn significant_digits_scale(bytes: &[u8]) -> u8 {
+    (bytes.len() - bytes.iter().rev().take_while(|byte| **byte == b'0').count()) as u8
 }
 
 fn split_decimal_bytes(bytes: &[u8]) -> (Option<&[u8]>, Option<&[u8]>) {
@@ -16,8 +23,8 @@ pub fn infer_params(bytes: &[u8]) -> Option<(u8, u8)> {
     let (lhs, rhs) = split_decimal_bytes(bytes);
     match (lhs, rhs) {
         (Some(lhs), Some(rhs)) => {
-            let lhs_s = significant_bytes(lhs);
-            let rhs_s = significant_bytes(rhs);
+            let lhs_s = significant_digits_precision(lhs);
+            let rhs_s = significant_digits_scale(rhs);
 
             let precision = lhs_s + rhs_s;
             let scale = rhs_s;
@@ -45,15 +52,20 @@ pub(super) fn deserialize_decimal(bytes: &[u8], precision: u8, scale: u8) -> Opt
             atoi::<i128>(rhs)
                 .map(|y| (x, lhs, y, rhs))
                 .and_then(|(lhs, lhs_b, rhs, rhs_b)| {
-                    let lhs_s = significant_bytes(lhs_b);
-                    let rhs_s = significant_bytes(rhs_b);
+                    let lhs_s = significant_digits_precision(lhs_b);
+                    let rhs_s = significant_digits_scale(rhs_b);
+
                     if lhs_s + rhs_s > precision || rhs_s > scale {
                         None
+                    } else if rhs_s < scale {
+                        let diff = scale - rhs_s;
+
+                        Some((lhs, rhs * 10i128.pow(diff as u32), rhs_s))
                     } else {
                         Some((lhs, rhs, rhs_s))
                     }
                 })
-                .map(|(lhs, rhs, rhs_s)| lhs * 10i128.pow(rhs_s as u32) + rhs)
+                .map(|(lhs, rhs, rhs_s)| lhs * 10i128.pow(scale as u32) + rhs)
         }),
         (None, Some(rhs)) => {
             if rhs.len() != precision as usize || rhs.len() != scale as usize {

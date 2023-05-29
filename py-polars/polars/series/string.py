@@ -274,6 +274,20 @@ class StringNameSpace:
             .to_series()
         )
 
+    def to_decimal(
+            self,
+            inference_length: int = 100,
+    ) -> Expr:
+        """
+        Convert a Utf8 column into a Date column.
+
+        Parameters
+        ----------
+        inference_length
+            Number of elements to parse to determine the `precision` and `scale`
+
+        """
+
     def lengths(self) -> Series:
         """
         Get length of the string values in the Series (as number of bytes).

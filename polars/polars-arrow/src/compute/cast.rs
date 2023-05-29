@@ -1,8 +1,6 @@
-use arrow::array::{Array, PrimitiveArray, Utf8Array};
+use arrow::array::Array;
 use arrow::datatypes::DataType;
 use arrow::error::Result;
-
-use crate::prelude::{ArrayRef, LargeStringArray};
 
 pub fn cast(array: &dyn Array, to_type: &DataType) -> Result<Box<dyn Array>> {
     match to_type {
@@ -16,14 +14,19 @@ pub fn cast(array: &dyn Array, to_type: &DataType) -> Result<Box<dyn Array>> {
 }
 
 #[cfg(feature = "dtype-decimal")]
+use arrow::array::{PrimitiveArray, Utf8Array};
+
+#[cfg(feature = "dtype-decimal")]
 use super::decimal::*;
 #[cfg(feature = "dtype-decimal")]
-fn cast_utf8_to_decimal(array: &Utf8Array<i64>, precision: usize, scale: usize) -> ArrayRef {
+use crate::prelude::{ArrayRef, LargeStringArray};
+#[cfg(feature = "dtype-decimal")]
+pub fn cast_utf8_to_decimal(array: &Utf8Array<i64>, precision: usize, scale: usize) -> ArrayRef {
     let values: PrimitiveArray<i128> = array
         .iter()
         .map(|val| {
             val.and_then(|val| deserialize_decimal(val.as_bytes(), precision as u8, scale as u8))
         })
         .collect();
-    Box::new(values.to(DataType::Decimal(precision, scale)))
+    Box::new(values)
 }

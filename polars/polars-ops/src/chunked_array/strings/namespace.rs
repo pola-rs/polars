@@ -21,11 +21,6 @@ fn f_regex_extract<'a>(reg: &Regex, input: &'a str, group_index: usize) -> Optio
 }
 
 pub trait Utf8NameSpaceImpl: AsUtf8 {
-    #[cfg(feature = "dtype-decimal")]
-    fn as_decimal(&self, infer_length: usize) -> PolarsResult<Series> {
-        decimal::utf8_to_decimal(self.as_utf8(), infer_length)
-    }
-
     #[cfg(not(feature = "binary_encoding"))]
     fn hex_decode(&self) -> PolarsResult<Utf8Chunked> {
         panic!("activate 'binary_encoding' feature")

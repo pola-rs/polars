@@ -86,8 +86,9 @@ dependencies = [
 
 [[package]]
 name = "arrow2"
-version = "0.17.1"
-source = "git+https://github.com/ritchie46/arrow2?branch=polars_2023-05-25#320a90bf300f388747dba97bf8ddd838af4a41ea"
+version = "0.17.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "15ae0428d69ab31d7b2adad22a752d6f11fef2e901d2262d0cad4f5cb08b7093"
 dependencies = [
  "ahash",
  "arrow-format",
@@ -1385,7 +1386,7 @@ dependencies = [
 
 [[package]]
 name = "polars"
-version = "0.29.0"
+version = "0.30.0"
 dependencies = [
  "getrandom",
  "polars-core",
@@ -1399,7 +1400,7 @@ dependencies = [
 
 [[package]]
 name = "polars-algo"
-version = "0.29.0"
+version = "0.30.0"
 dependencies = [
  "polars-core",
  "polars-lazy",
@@ -1408,9 +1409,10 @@ dependencies = [
 
 [[package]]
 name = "polars-arrow"
-version = "0.29.0"
+version = "0.30.0"
 dependencies = [
  "arrow2",
+ "atoi",
  "chrono",
  "chrono-tz",
  "hashbrown 0.13.2",
@@ -1423,7 +1425,7 @@ dependencies = [
 
 [[package]]
 name = "polars-core"
-version = "0.29.0"
+version = "0.30.0"
 dependencies = [
  "ahash",
  "arrow2",
@@ -1456,7 +1458,7 @@ dependencies = [
 
 [[package]]
 name = "polars-error"
-version = "0.29.0"
+version = "0.30.0"
 dependencies = [
  "arrow2",
  "regex",
@@ -1465,7 +1467,7 @@ dependencies = [
 
 [[package]]
 name = "polars-io"
-version = "0.29.0"
+version = "0.30.0"
 dependencies = [
  "ahash",
  "arrow2",
@@ -1500,7 +1502,7 @@ dependencies = [
 
 [[package]]
 name = "polars-json"
-version = "0.29.0"
+version = "0.30.0"
 dependencies = [
  "ahash",
  "arrow2",
@@ -1516,7 +1518,7 @@ dependencies = [
 
 [[package]]
 name = "polars-lazy"
-version = "0.29.0"
+version = "0.30.0"
 dependencies = [
  "ahash",
  "bitflags",
@@ -1538,7 +1540,7 @@ dependencies = [
 
 [[package]]
 name = "polars-ops"
-version = "0.29.0"
+version = "0.30.0"
 dependencies = [
  "argminmax",
  "arrow2",
@@ -1558,7 +1560,7 @@ dependencies = [
 
 [[package]]
 name = "polars-pipe"
-version = "0.29.0"
+version = "0.30.0"
 dependencies = [
  "crossbeam-channel",
  "crossbeam-queue",
@@ -1578,7 +1580,7 @@ dependencies = [
 
 [[package]]
 name = "polars-plan"
-version = "0.29.0"
+version = "0.30.0"
 dependencies = [
  "ahash",
  "arrow2",
@@ -1600,7 +1602,7 @@ dependencies = [
 
 [[package]]
 name = "polars-row"
-version = "0.29.0"
+version = "0.30.0"
 dependencies = [
  "arrow2",
  "polars-error",
@@ -1609,7 +1611,7 @@ dependencies = [
 
 [[package]]
 name = "polars-sql"
-version = "0.29.0"
+version = "0.30.0"
 dependencies = [
  "polars-arrow",
  "polars-core",
@@ -1622,7 +1624,7 @@ dependencies = [
 
 [[package]]
 name = "polars-time"
-version = "0.29.0"
+version = "0.30.0"
 dependencies = [
  "arrow2",
  "atoi",
@@ -1641,7 +1643,7 @@ dependencies = [
 
 [[package]]
 name = "polars-utils"
-version = "0.29.0"
+version = "0.30.0"
 dependencies = [
  "ahash",
  "hashbrown 0.13.2",
@@ -2133,9 +2135,9 @@ dependencies = [
 
 [[package]]
 name = "sysinfo"
-version = "0.28.4"
+version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4c2f3ca6693feb29a89724516f016488e9aafc7f37264f898593ee4b942f31b"
+checksum = "02f1dc6930a439cc5d154221b5387d153f8183529b07c19aca24ea31e0a167e1"
 dependencies = [
  "cfg-if",
  "core-foundation-sys",

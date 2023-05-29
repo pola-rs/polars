@@ -1,7 +1,5 @@
 #[cfg(feature = "strings")]
 mod case;
-#[cfg(feature = "dtype-decimal")]
-mod decimal;
 #[cfg(feature = "extract_jsonpath")]
 mod json_path;
 #[cfg(feature = "string_justify")]

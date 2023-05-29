@@ -285,4 +285,8 @@ impl PyExpr {
     fn str_splitn(&self, by: &str, n: usize) -> Self {
         self.inner.clone().str().splitn(by, n).into()
     }
+
+    fn str_to_decimal(&self, infer_len: usize) -> Self {
+        self.inner.clone().str().to_decimal(infer_len).into()
+    }
 }

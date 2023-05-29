@@ -294,6 +294,21 @@ class ExprStringNameSpace:
         else:
             raise ValueError("dtype should be of type {Date, Datetime, Time}")
 
+    def to_decimal(
+            self,
+            inference_length: int = 100,
+    ) -> Expr:
+        """
+        Convert a Utf8 column into a Date column.
+
+        Parameters
+        ----------
+        inference_length
+            Number of elements to parse to determine the `precision` and `scale`
+
+        """
+        return wrap_expr(self._pyexpr.str_to_decimal(inference_length))
+
     def lengths(self) -> Expr:
         """
         Get length of the strings as UInt32 (as number of bytes).
