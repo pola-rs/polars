@@ -670,7 +670,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 {self.explain(optimized=False)}\
 """
 
-    def __repr__(self) -> str:
+    def __repr__(self) -> Mapping[str, Union[DataTypeClass, DataType]]:
         # don't expose internal/private classpath
         return self.schema
 
