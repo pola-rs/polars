@@ -130,7 +130,7 @@ def test_to_date_non_exact_strptime() -> None:
     )
     assert_series_equal(result, expected)
 
-    with pytest.raises(Exception):
+    with pytest.raises(pl.ComputeError):
         s.str.to_date(format, strict=True, exact=True)
 
 
