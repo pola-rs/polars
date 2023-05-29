@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Iterable
 
@@ -59,6 +60,8 @@ def _parse_regular_inputs(
 def _inputs_to_list(inputs: IntoExpr | Iterable[IntoExpr] | None) -> list[IntoExpr]:
     if inputs is None:
         return []
+    elif isinstance(inputs, Mapping):
+        raise TypeError(f"cannot create expression from {type(inputs)}.")
     elif not isinstance(inputs, Iterable) or isinstance(inputs, (str, pl.Series)):
         return [inputs]
     else:
