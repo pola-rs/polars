@@ -13,7 +13,24 @@ if TYPE_CHECKING:
     from polars.type_aliases import IntoExpr
 
 
-def selection_to_pyexpr_list(
+def parse_as_list_of_expressions(
+    inputs: IntoExpr | Iterable[IntoExpr],
+    *more_inputs: IntoExpr,
+    structify: bool = False,
+    **named_inputs: IntoExpr,
+) -> list[PyExpr]:
+    exprs = _selection_to_pyexpr_list(inputs, structify=structify)
+    if more_inputs:
+        exprs.extend(_selection_to_pyexpr_list(more_inputs, structify=structify))
+    if named_inputs:
+        exprs.extend(
+            parse_single_expression_input(expr, structify=structify).alias(name)._pyexpr
+            for name, expr in named_inputs.items()
+        )
+    return exprs
+
+
+def _selection_to_pyexpr_list(
     exprs: IntoExpr | Iterable[IntoExpr],
     structify: bool = False,
 ) -> list[PyExpr]:

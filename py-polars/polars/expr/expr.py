@@ -43,8 +43,8 @@ from polars.expr.meta import ExprMetaNameSpace
 from polars.expr.string import ExprStringNameSpace
 from polars.expr.struct import ExprStructNameSpace
 from polars.utils._parse_expr_input import (
+    parse_as_list_of_expressions,
     parse_single_expression_input,
-    selection_to_pyexpr_list,
 )
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import deprecated_alias
@@ -231,7 +231,7 @@ class Expr:
                     "Numpy ufunc with more than one expression can only be used if all non-expression inputs are provided as keyword arguments only"
                 )
 
-            exprs = selection_to_pyexpr_list(inputs)
+            exprs = parse_as_list_of_expressions(inputs)
             return self._from_pyexpr(pyreduce(partial(ufunc, **kwargs), exprs))
 
         def function(s: Series) -> Series:  # pragma: no cover
@@ -2176,9 +2176,7 @@ class Expr:
         └───────┴────────┴────────┘
 
         """
-        by = selection_to_pyexpr_list(by)
-        if more_by:
-            by.extend(selection_to_pyexpr_list(more_by))
+        by = parse_as_list_of_expressions(by, *more_by)
         if isinstance(descending, bool):
             descending = [descending]
         elif len(by) != len(descending):
@@ -3029,9 +3027,7 @@ class Expr:
         └─────┴─────┴─────┴───────┘
 
         """
-        exprs = selection_to_pyexpr_list(expr)
-        if more_exprs:
-            exprs.extend(selection_to_pyexpr_list(more_exprs))
+        exprs = parse_as_list_of_expressions(expr, *more_exprs)
         return self._from_pyexpr(self._pyexpr.over(exprs, mapping_strategy))
 
     def is_unique(self) -> Self:

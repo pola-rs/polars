@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING, Iterable, overload
 from polars import functions as F
 from polars.datatypes import Date, Struct, Time
 from polars.utils._parse_expr_input import (
+    parse_as_list_of_expressions,
     parse_single_expression_input,
-    selection_to_pyexpr_list,
 )
 from polars.utils._wrap import wrap_expr
 
@@ -272,9 +272,7 @@ def concat_list(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> 
     └───────────────────┘
 
     """
-    exprs = selection_to_pyexpr_list(exprs)
-    if more_exprs:
-        exprs.extend(selection_to_pyexpr_list(more_exprs))
+    exprs = parse_as_list_of_expressions(exprs, *more_exprs)
     return wrap_expr(plr.concat_list(exprs))
 
 
@@ -382,22 +380,14 @@ def struct(
     {'my_struct': Struct([Field('p', Int64), Field('q', Boolean)])}
 
     """
-    exprs = selection_to_pyexpr_list(exprs)
-    if more_exprs:
-        exprs.extend(selection_to_pyexpr_list(more_exprs))
-    if named_exprs:
-        exprs.extend(
-            parse_single_expression_input(expr).alias(name)._pyexpr
-            for name, expr in named_exprs.items()
-        )
-
+    exprs = parse_as_list_of_expressions(exprs, *more_exprs, **named_exprs)  # type: ignore[arg-type]
     expr = wrap_expr(plr.as_struct(exprs))
 
     if schema:
         if not exprs:
             # no columns or expressions provided; create one from schema keys
             expr = wrap_expr(
-                plr.as_struct(selection_to_pyexpr_list(list(schema.keys())))
+                plr.as_struct(parse_as_list_of_expressions(list(schema.keys())))
             )
         expr = expr.cast(Struct(schema), strict=False)
 
@@ -460,9 +450,7 @@ def concat_str(
     └─────┴──────┴──────┴───────────────┘
 
     """
-    exprs = selection_to_pyexpr_list(exprs)
-    if more_exprs:
-        exprs.extend(selection_to_pyexpr_list(more_exprs))
+    exprs = parse_as_list_of_expressions(exprs, *more_exprs)
     return wrap_expr(plr.concat_str(exprs, separator))
 
 

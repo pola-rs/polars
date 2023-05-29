@@ -18,8 +18,8 @@ from polars.datatypes import (
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
 from polars.utils._parse_expr_input import (
+    parse_as_list_of_expressions,
     parse_single_expression_input,
-    selection_to_pyexpr_list,
 )
 from polars.utils._wrap import wrap_df, wrap_expr
 from polars.utils.convert import (
@@ -525,9 +525,7 @@ def max(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | A
         elif isinstance(exprs, str):
             return col(exprs).max()
 
-    exprs = selection_to_pyexpr_list(exprs)
-    if more_exprs:
-        exprs.extend(selection_to_pyexpr_list(more_exprs))
+    exprs = parse_as_list_of_expressions(exprs, *more_exprs)
     return wrap_expr(plr.max_exprs(exprs))
 
 
@@ -625,9 +623,7 @@ def min(
         elif isinstance(exprs, str):
             return col(exprs).min()
 
-    exprs = selection_to_pyexpr_list(exprs)
-    if more_exprs:
-        exprs.extend(selection_to_pyexpr_list(more_exprs))
+    exprs = parse_as_list_of_expressions(exprs, *more_exprs)
     return wrap_expr(plr.min_exprs(exprs))
 
 
@@ -741,9 +737,7 @@ def sum(
         elif isinstance(exprs, str):
             return col(exprs).sum()
 
-    exprs = selection_to_pyexpr_list(exprs)
-    if more_exprs:
-        exprs.extend(selection_to_pyexpr_list(more_exprs))
+    exprs = parse_as_list_of_expressions(exprs, *more_exprs)
     return wrap_expr(plr.sum_exprs(exprs))
 
 
@@ -1364,9 +1358,7 @@ def cumsum(
         elif isinstance(exprs, str):
             return col(exprs).cumsum()
 
-    exprs = selection_to_pyexpr_list(exprs)
-    if more_exprs:
-        exprs.extend(selection_to_pyexpr_list(more_exprs))
+    exprs = parse_as_list_of_expressions(exprs, *more_exprs)
 
     # (Expr): use u32 as that will not cast to float as eagerly
     exprs_wrapped = [wrap_expr(e) for e in exprs]
@@ -1534,7 +1526,7 @@ def map(
     │ 4   ┆ 7   ┆ 12    │
     └─────┴─────┴───────┘
     """
-    exprs = selection_to_pyexpr_list(exprs)
+    exprs = parse_as_list_of_expressions(exprs)
     return wrap_expr(
         plr.map_mul(
             exprs, function, return_dtype, apply_groups=False, returns_scalar=False
@@ -1611,7 +1603,7 @@ def apply(
     │ 4   ┆ 7   ┆ 16        │
     └─────┴─────┴───────────┘
     """
-    exprs = selection_to_pyexpr_list(exprs)
+    exprs = parse_as_list_of_expressions(exprs)
     return wrap_expr(
         plr.map_mul(
             exprs,
@@ -1727,7 +1719,7 @@ def fold(
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
-    exprs = selection_to_pyexpr_list(exprs)
+    exprs = parse_as_list_of_expressions(exprs)
     return wrap_expr(plr.fold(acc._pyexpr, function, exprs))
 
 
@@ -1791,7 +1783,7 @@ def reduce(
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
-    exprs = selection_to_pyexpr_list(exprs)
+    exprs = parse_as_list_of_expressions(exprs)
     return wrap_expr(plr.reduce(function, exprs))
 
 
@@ -1868,7 +1860,7 @@ def cumfold(
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
-    exprs = selection_to_pyexpr_list(exprs)
+    exprs = parse_as_list_of_expressions(exprs)
     return wrap_expr(plr.cumfold(acc._pyexpr, function, exprs, include_init))
 
 
@@ -1930,7 +1922,7 @@ def cumreduce(
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
-    exprs = selection_to_pyexpr_list(exprs)
+    exprs = parse_as_list_of_expressions(exprs)
     return wrap_expr(plr.cumreduce(function, exprs))
 
 
@@ -2018,9 +2010,7 @@ def any(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr | b
         elif isinstance(exprs, str):
             return col(exprs).any()
 
-    exprs = selection_to_pyexpr_list(exprs)
-    if more_exprs:
-        exprs.extend(selection_to_pyexpr_list(more_exprs))
+    exprs = parse_as_list_of_expressions(exprs, *more_exprs)
 
     exprs_wrapped = [wrap_expr(e) for e in exprs]
     return fold(
@@ -2109,9 +2099,7 @@ def all(
         elif isinstance(exprs, str):
             return col(exprs).all()
 
-    exprs = selection_to_pyexpr_list(exprs)
-    if more_exprs:
-        exprs.extend(selection_to_pyexpr_list(more_exprs))
+    exprs = parse_as_list_of_expressions(exprs, *more_exprs)
 
     exprs_wrapped = [wrap_expr(e) for e in exprs]
     return fold(
@@ -2277,9 +2265,7 @@ def arg_sort_by(
     └─────┘
 
     """
-    exprs = selection_to_pyexpr_list(exprs)
-    if more_exprs:
-        exprs.extend(selection_to_pyexpr_list(more_exprs))
+    exprs = parse_as_list_of_expressions(exprs, *more_exprs)
 
     if isinstance(descending, bool):
         descending = [descending] * len(exprs)
@@ -2511,9 +2497,7 @@ def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Exp
     └──────┴──────┴──────┴──────┘
 
     """
-    exprs = selection_to_pyexpr_list(exprs)
-    if more_exprs:
-        exprs.extend(selection_to_pyexpr_list(more_exprs))
+    exprs = parse_as_list_of_expressions(exprs, *more_exprs)
     return wrap_expr(plr.coalesce(exprs))
 
 
