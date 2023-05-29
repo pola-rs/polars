@@ -3,8 +3,8 @@ use polars_arrow::trusted_len::TrustedLen;
 use polars_core::export::rayon::prelude::*;
 use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;
+use polars_core::utils::flatten::flatten_par;
 use polars_core::POOL;
-use polars_utils::flatten;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -531,8 +531,8 @@ pub fn groupby_values(
             // ------t---
             // [------]
             if offset.duration_ns() < period.duration_ns() * 2 {
-                let vals = POOL.install(|| {
-                    thread_offsets
+                POOL.install(|| {
+                    let vals = thread_offsets
                         .par_iter()
                         .copied()
                         .map(|(base_offset, len)| {
@@ -549,9 +549,9 @@ pub fn groupby_values(
                             iter.map(|result| result.map(|(offset, len)| [offset, len]))
                                 .collect::<PolarsResult<Vec<_>>>()
                         })
-                        .collect::<PolarsResult<Vec<_>>>()
-                })?;
-                Ok(flatten(&vals, Some(time.len())))
+                        .collect::<PolarsResult<Vec<_>>>()?;
+                    Ok(flatten_par(&vals))
+                })
             }
             // window is completely behind t and t itself is not a member
             // ---------------t---
@@ -588,8 +588,8 @@ pub fn groupby_values(
         // window is completely ahead of t and t itself is not a member
         // --t-----------
         //        [---]
-        let vals = POOL.install(|| {
-            thread_offsets
+        POOL.install(|| {
+            let vals = thread_offsets
                 .par_iter()
                 .copied()
                 .map(|(base_offset, len)| {
@@ -608,16 +608,16 @@ pub fn groupby_values(
                     iter.map(|result| result.map(|(offset, len)| [offset as IdxSize, len]))
                         .collect::<PolarsResult<Vec<_>>>()
                 })
-                .collect::<PolarsResult<Vec<_>>>()
-        })?;
-        Ok(flatten(&vals, Some(time.len())))
+                .collect::<PolarsResult<Vec<_>>>()?;
+            Ok(flatten_par(&vals))
+        })
     } else {
         // Duration is 0 and window is closed on the left:
         // it must be that the window starts at t and t is a member
         // --t-----------
         //  [---]
-        let vals = POOL.install(|| {
-            thread_offsets
+        POOL.install(|| {
+            let vals = thread_offsets
                 .par_iter()
                 .copied()
                 .map(|(base_offset, len)| {
@@ -636,8 +636,8 @@ pub fn groupby_values(
                     iter.map(|result| result.map(|(offset, len)| [offset as IdxSize, len]))
                         .collect::<PolarsResult<Vec<_>>>()
                 })
-                .collect::<PolarsResult<Vec<_>>>()
-        })?;
-        Ok(flatten(&vals, Some(time.len())))
+                .collect::<PolarsResult<Vec<_>>>()?;
+            Ok(flatten_par(&vals))
+        })
     }
 }
