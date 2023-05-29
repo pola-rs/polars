@@ -9,7 +9,7 @@ import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import Date, Int64
 from polars.expr.datetime import TIME_ZONE_DEPRECATION_MESSAGE
-from polars.utils._parse_expr_input import parse_single_expression_input
+from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr, wrap_s
 from polars.utils.convert import (
     _datetime_to_pl_timestamp,
@@ -124,9 +124,9 @@ def arange(
     └───────────┘
 
     """
-    start = parse_single_expression_input(start)
-    end = parse_single_expression_input(end)
-    range_expr = wrap_expr(plr.arange(start._pyexpr, end._pyexpr, step))
+    start = parse_as_expression(start)._pyexpr
+    end = parse_as_expression(end)._pyexpr
+    range_expr = wrap_expr(plr.arange(start, end, step))
 
     if dtype is not None and dtype != Int64:
         range_expr = range_expr.cast(dtype)
@@ -327,8 +327,8 @@ def date_range(
         or isinstance(start, (str, pl.Expr))
         or isinstance(end, (str, pl.Expr))
     ):
-        start = parse_single_expression_input(start)._pyexpr
-        end = parse_single_expression_input(end)._pyexpr
+        start = parse_as_expression(start)._pyexpr
+        end = parse_as_expression(end)._pyexpr
         return wrap_expr(plr.date_range_lazy(start, end, interval, closed, time_zone))
 
     start, start_is_date = _ensure_datetime(start)
@@ -531,13 +531,11 @@ def time_range(
         or isinstance(end, (str, pl.Expr))
     ):
         start_expr = (
-            F.lit(default_start)
-            if start is None
-            else parse_single_expression_input(start)
+            F.lit(default_start) if start is None else parse_as_expression(start)
         )._pyexpr
 
         end_expr = (
-            F.lit(default_end) if end is None else parse_single_expression_input(end)
+            F.lit(default_end) if end is None else parse_as_expression(end)
         )._pyexpr
 
         tm_expr = wrap_expr(plr.time_range_lazy(start_expr, end_expr, interval, closed))
