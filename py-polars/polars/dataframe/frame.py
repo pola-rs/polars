@@ -90,7 +90,7 @@ from polars.utils._construction import (
     sequence_to_pydf,
     series_to_pydf,
 )
-from polars.utils._parse_expr_input import expr_to_lit_or_expr
+from polars.utils._parse_expr_input import parse_single_expression_input
 from polars.utils._wrap import wrap_ldf, wrap_s
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import deprecated_alias
@@ -4763,6 +4763,7 @@ class DataFrame:
         offset: str | timedelta | None = None,
         closed: ClosedInterval = "right",
         by: IntoExpr | Iterable[IntoExpr] | None = None,
+        check_sorted: bool = True,
     ) -> RollingGroupBy:
         """
         Create rolling groups based on a time column.
@@ -4819,6 +4820,12 @@ class DataFrame:
             Define which sides of the temporal interval are closed (inclusive).
         by
             Also group by this column/these columns
+        check_sorted
+            When the ``by`` argument is given, polars can not check sortedness
+            by the metadata and has to do a full scan on the index column to
+            verify data is sorted. This is expensive. If you are sure the
+            data within the by groups is sorted, you can set this to ``False``.
+            Doing so incorrectly will lead to incorrect output
 
         Returns
         -------
@@ -4870,7 +4877,9 @@ class DataFrame:
         └─────────────────────┴───────┴───────┴───────┘
 
         """
-        return RollingGroupBy(self, index_column, period, offset, closed, by)
+        return RollingGroupBy(
+            self, index_column, period, offset, closed, by, check_sorted
+        )
 
     def groupby_dynamic(
         self,
@@ -4884,6 +4893,7 @@ class DataFrame:
         closed: ClosedInterval = "left",
         by: IntoExpr | Iterable[IntoExpr] | None = None,
         start_by: StartBy = "window",
+        check_sorted: bool = True,
     ) -> DynamicGroupBy:
         """
         Group based on a time value (or index value of type Int32, Int64).
@@ -4966,6 +4976,12 @@ class DataFrame:
             - 'tuesday': Start the window on the tuesday before the first data point.
             - ...
             - 'sunday': Start the window on the sunday before the first data point.
+        check_sorted
+            When the ``by`` argument is given, polars can not check sortedness
+            by the metadata and has to do a full scan on the index column to
+            verify data is sorted. This is expensive. If you are sure the
+            data within the by groups is sorted, you can set this to ``False``.
+            Doing so incorrectly will lead to incorrect output
 
         Returns
         -------
@@ -5171,6 +5187,7 @@ class DataFrame:
             closed,
             by,
             start_by,
+            check_sorted,
         )
 
     def upsample(
@@ -5309,6 +5326,9 @@ class DataFrame:
           - A "forward" search selects the first row in the right DataFrame whose
             'on' key is greater than or equal to the left's key.
 
+          - A "nearest" search selects the last row in the right DataFrame whose value
+            is nearest to the left's key.
+
         The default is "backward".
 
         Parameters
@@ -5328,14 +5348,14 @@ class DataFrame:
             join on these columns before doing asof join
         by_right
             join on these columns before doing asof join
-        strategy : {'backward', 'forward'}
+        strategy : {'backward', 'forward', 'nearest'}
             Join strategy.
         suffix
             Suffix to append to columns with a duplicate name.
         tolerance
             Numeric tolerance. By setting this the join will only be done if the near
             keys are within this distance. If an asof join is done on columns of dtype
-            "Date", "Datetime", "Duration" or "Time" you use the following string
+            "Date", "Datetime", "Duration" or "Time", use the following string
             language:
 
                 - 1ns   (1 nanosecond)
@@ -7882,7 +7902,7 @@ class DataFrame:
             subset = [subset]
 
         if isinstance(subset, Sequence) and len(subset) == 1:
-            expr = expr_to_lit_or_expr(subset[0], str_to_lit=False)
+            expr = parse_single_expression_input(subset[0])
         else:
             struct_fields = F.all() if (subset is None) else subset
             expr = F.struct(struct_fields)  # type: ignore[call-overload]

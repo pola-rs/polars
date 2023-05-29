@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import io
 from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING, Any, cast, no_type_check
@@ -11,7 +12,7 @@ import pytest
 
 import polars as pl
 from polars.datatypes import DATETIME_DTYPES, DTYPE_TEMPORAL_UNITS, TEMPORAL_DTYPES
-from polars.exceptions import ArrowError, ComputeError
+from polars.exceptions import ArrowError, ComputeError, TimeZoneAwareConstructorWarning
 from polars.testing import (
     assert_frame_equal,
     assert_series_equal,
@@ -177,7 +178,7 @@ def test_diff_datetime() -> None:
             pl.col("timestamp").str.strptime(pl.Date, format="%Y-%m-%d"),
         ).with_columns(pl.col("timestamp").diff().over("char", mapping_strategy="join"))
     )["timestamp"]
-    assert (out[0] == out[1]).all()
+    assert_series_equal(out[0], out[1])
 
 
 def test_from_pydatetime() -> None:
@@ -341,9 +342,12 @@ def test_datetime_consistency() -> None:
         datetime(3099, 12, 31, 23, 59, 59, 123456, tzinfo=ZoneInfo("Asia/Kathmandu")),
         datetime(9999, 12, 31, 23, 59, 59, 999999, tzinfo=ZoneInfo("Asia/Kathmandu")),
     ]
-    ddf = pl.DataFrame({"dtm": test_data}).with_columns(
-        pl.col("dtm").dt.nanosecond().alias("ns")
-    )
+    with pytest.warns(
+        TimeZoneAwareConstructorWarning, match="Series with UTC time zone"
+    ):
+        ddf = pl.DataFrame({"dtm": test_data}).with_columns(
+            pl.col("dtm").dt.nanosecond().alias("ns")
+        )
     assert ddf.rows() == [
         (test_data[0], 555555000),
         (test_data[1], 986754000),
@@ -357,9 +361,12 @@ def test_datetime_consistency() -> None:
         datetime(2021, 11, 7, 1, 0, fold=1, tzinfo=ZoneInfo("US/Central")),
         datetime(2021, 11, 7, 2, 0, tzinfo=ZoneInfo("US/Central")),
     ]
-    ddf = pl.DataFrame({"dtm": test_data}).select(
-        pl.col("dtm").dt.convert_time_zone("US/Central")
-    )
+    with pytest.warns(
+        TimeZoneAwareConstructorWarning, match="Series with UTC time zone"
+    ):
+        ddf = pl.DataFrame({"dtm": test_data}).select(
+            pl.col("dtm").dt.convert_time_zone("US/Central")
+        )
     assert ddf.rows() == [
         (test_data[0],),
         (test_data[1],),
@@ -1313,6 +1320,29 @@ def test_asof_join() -> None:
         "bid_right"
     ].to_list() == [51.95, 51.95, None, None, 720.77, None, None, None]
 
+    assert trades.join_asof(quotes, on="dates", strategy="nearest")[
+        "bid_right"
+    ].to_list() == [51.95, 51.99, 720.5, 720.5, 720.5]
+    assert quotes.join_asof(trades, on="dates", strategy="nearest")[
+        "bid_right"
+    ].to_list() == [51.95, 51.95, 51.95, 51.95, 98.0, 98.0, 98.0, 98.0]
+
+    assert trades.sort(by=["ticker", "dates"]).join_asof(
+        quotes.sort(by=["ticker", "dates"]), on="dates", by="ticker", strategy="nearest"
+    )["bid_right"].to_list() == [97.99, 720.5, 720.5, 51.95, 51.99]
+    assert quotes.sort(by=["ticker", "dates"]).join_asof(
+        trades.sort(by=["ticker", "dates"]), on="dates", by="ticker", strategy="nearest"
+    )["bid_right"].to_list() == [
+        98.0,
+        720.92,
+        720.92,
+        720.92,
+        51.95,
+        51.95,
+        51.95,
+        51.95,
+    ]
+
 
 @pytest.mark.parametrize(
     ("skip_nulls", "expected_value"),
@@ -1985,7 +2015,10 @@ def test_tz_datetime_duration_arithm_5221() -> None:
 
 def test_auto_infer_time_zone() -> None:
     dt = datetime(2022, 10, 17, 10, tzinfo=ZoneInfo("Asia/Shanghai"))
-    s = pl.Series([dt])
+    with pytest.warns(
+        TimeZoneAwareConstructorWarning, match="Series with UTC time zone"
+    ):
+        s = pl.Series([dt])
     assert s.dtype == pl.Datetime("us", "UTC")
     assert s[0] == dt
 
@@ -2626,18 +2659,28 @@ def test_series_is_temporal() -> None:
     ],
 )
 def test_misc_precision_any_value_conversion(time_zone: Any, warn: bool) -> None:
+    context_manager: contextlib.AbstractContextManager[pytest.WarningsRecorder | None]
+    msg = r"UTC time zone"
+    if warn:
+        context_manager = pytest.warns(TimeZoneAwareConstructorWarning, match=msg)
+    else:
+        context_manager = contextlib.nullcontext()
+
     tz = ZoneInfo(time_zone) if isinstance(time_zone, str) else time_zone
     # default precision (μs)
     dt = datetime(2514, 5, 30, 1, 53, 4, 986754, tzinfo=tz)
-    assert pl.Series([dt]).to_list() == [dt]
+    with context_manager:
+        assert pl.Series([dt]).to_list() == [dt]
 
     # ms precision
     dt = datetime(2243, 1, 1, 0, 0, 0, 1000, tzinfo=tz)
-    assert pl.Series([dt]).cast(pl.Datetime("ms", time_zone)).to_list() == [dt]
+    with context_manager:
+        assert pl.Series([dt]).cast(pl.Datetime("ms", time_zone)).to_list() == [dt]
 
     # ns precision
     dt = datetime(2256, 1, 1, 0, 0, 0, 1, tzinfo=tz)
-    assert pl.Series([dt]).cast(pl.Datetime("ns", time_zone)).to_list() == [dt]
+    with context_manager:
+        assert pl.Series([dt]).cast(pl.Datetime("ns", time_zone)).to_list() == [dt]
 
 
 @pytest.mark.parametrize(

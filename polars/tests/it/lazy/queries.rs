@@ -43,6 +43,7 @@ fn test_special_groupby_schemas() -> PolarsResult<()> {
     let out = df
         .clone()
         .lazy()
+        .with_column(col("a").set_sorted_flag(IsSorted::Ascending))
         .groupby_rolling(
             col("a"),
             [],
@@ -67,6 +68,7 @@ fn test_special_groupby_schemas() -> PolarsResult<()> {
 
     let out = df
         .lazy()
+        .with_column(col("a").set_sorted_flag(IsSorted::Ascending))
         .groupby_dynamic(
             col("a"),
             [],

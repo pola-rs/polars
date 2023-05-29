@@ -16,6 +16,7 @@ if TYPE_CHECKING:
         ClosedInterval,
         IntoExpr,
         RollingInterpolationMethod,
+        SchemaDict,
         StartBy,
     )
 
@@ -764,6 +765,7 @@ class RollingGroupBy:
         offset: str | timedelta | None,
         closed: ClosedInterval,
         by: IntoExpr | Iterable[IntoExpr] | None,
+        check_sorted: bool,
     ):
         period = _timedelta_to_pl_duration(period)
         offset = _timedelta_to_pl_duration(offset)
@@ -774,6 +776,7 @@ class RollingGroupBy:
         self.offset = offset
         self.closed = closed
         self.by = by
+        self.check_sorted = check_sorted
 
     def __iter__(self) -> Self:
         temp_col = "__POLARS_GB_GROUP_INDICES"
@@ -786,6 +789,7 @@ class RollingGroupBy:
                 offset=self.offset,
                 closed=self.closed,
                 by=self.by,
+                check_sorted=self.check_sorted,
             )
             .agg(F.col(temp_col))
             .collect(no_optimization=True)
@@ -832,8 +836,104 @@ class RollingGroupBy:
                 offset=self.offset,
                 closed=self.closed,
                 by=self.by,
+                check_sorted=self.check_sorted,
             )
             .agg(aggs, *more_aggs, **named_aggs)
+            .collect(no_optimization=True)
+        )
+
+    def apply(
+        self,
+        function: Callable[[DataFrame], DataFrame],
+        schema: SchemaDict | None,
+    ) -> DataFrame:
+        """
+        Apply a custom/user-defined function (UDF) over the groups as a new DataFrame.
+
+        Using this is considered an anti-pattern. This will be very slow because:
+
+        - it forces the engine to materialize the whole `DataFrames` for the groups.
+        - it is not parallelized
+        - it blocks optimizations as the passed python function is opaque to the
+          optimizer
+
+        The idiomatic way to apply custom functions over multiple columns is using:
+
+        `pl.struct([my_columns]).apply(lambda struct_series: ..)`
+
+        Parameters
+        ----------
+        function
+            Function to apply over each group of the `LazyFrame`.
+        schema
+            Schema of the output function. This has to be known statically. If the
+            given schema is incorrect, this is a bug in the caller's query and may
+            lead to errors. If set to None, polars assumes the schema is unchanged.
+
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "id": [0, 1, 2, 3, 4],
+        ...         "color": ["red", "green", "green", "red", "red"],
+        ...         "shape": ["square", "triangle", "square", "triangle", "square"],
+        ...     }
+        ... )
+        >>> df
+        shape: (5, 3)
+        ┌─────┬───────┬──────────┐
+        │ id  ┆ color ┆ shape    │
+        │ --- ┆ ---   ┆ ---      │
+        │ i64 ┆ str   ┆ str      │
+        ╞═════╪═══════╪══════════╡
+        │ 0   ┆ red   ┆ square   │
+        │ 1   ┆ green ┆ triangle │
+        │ 2   ┆ green ┆ square   │
+        │ 3   ┆ red   ┆ triangle │
+        │ 4   ┆ red   ┆ square   │
+        └─────┴───────┴──────────┘
+
+        For each color group sample two rows:
+
+        >>> (
+        ...     df.lazy()
+        ...     .groupby("color")
+        ...     .apply(lambda group_df: group_df.sample(2), schema=None)
+        ...     .collect()
+        ... )  # doctest: +IGNORE_RESULT
+        shape: (4, 3)
+        ┌─────┬───────┬──────────┐
+        │ id  ┆ color ┆ shape    │
+        │ --- ┆ ---   ┆ ---      │
+        │ i64 ┆ str   ┆ str      │
+        ╞═════╪═══════╪══════════╡
+        │ 1   ┆ green ┆ triangle │
+        │ 2   ┆ green ┆ square   │
+        │ 4   ┆ red   ┆ square   │
+        │ 3   ┆ red   ┆ triangle │
+        └─────┴───────┴──────────┘
+
+        It is better to implement this with an expression:
+
+        >>> (
+        ...     df.lazy()
+        ...     .filter(pl.arange(0, pl.count()).shuffle().over("color") < 2)
+        ...     .collect()
+        ... )  # doctest: +IGNORE_RESULT
+
+        """
+        return (
+            self.df.lazy()
+            .groupby_rolling(
+                index_column=self.time_column,
+                period=self.period,
+                offset=self.offset,
+                closed=self.closed,
+                by=self.by,
+                check_sorted=self.check_sorted,
+            )
+            .apply(function, schema)
             .collect(no_optimization=True)
         )
 
@@ -858,6 +958,7 @@ class DynamicGroupBy:
         closed: ClosedInterval,
         by: IntoExpr | Iterable[IntoExpr] | None,
         start_by: StartBy,
+        check_sorted: bool,
     ):
         period = _timedelta_to_pl_duration(period)
         offset = _timedelta_to_pl_duration(offset)
@@ -873,6 +974,7 @@ class DynamicGroupBy:
         self.closed = closed
         self.by = by
         self.start_by = start_by
+        self.check_sorted = check_sorted
 
     def __iter__(self) -> Self:
         temp_col = "__POLARS_GB_GROUP_INDICES"
@@ -889,6 +991,7 @@ class DynamicGroupBy:
                 closed=self.closed,
                 by=self.by,
                 start_by=self.start_by,
+                check_sorted=self.check_sorted,
             )
             .agg(F.col(temp_col))
             .collect(no_optimization=True)
@@ -939,7 +1042,107 @@ class DynamicGroupBy:
                 closed=self.closed,
                 by=self.by,
                 start_by=self.start_by,
+                check_sorted=self.check_sorted,
             )
             .agg(aggs, *more_aggs, **named_aggs)
+            .collect(no_optimization=True)
+        )
+
+    def apply(
+        self,
+        function: Callable[[DataFrame], DataFrame],
+        schema: SchemaDict | None,
+    ) -> DataFrame:
+        """
+        Apply a custom/user-defined function (UDF) over the groups as a new DataFrame.
+
+        Using this is considered an anti-pattern. This will be very slow because:
+
+        - it forces the engine to materialize the whole `DataFrames` for the groups.
+        - it is not parallelized
+        - it blocks optimizations as the passed python function is opaque to the
+          optimizer
+
+        The idiomatic way to apply custom functions over multiple columns is using:
+
+        `pl.struct([my_columns]).apply(lambda struct_series: ..)`
+
+        Parameters
+        ----------
+        function
+            Function to apply over each group of the `LazyFrame`.
+        schema
+            Schema of the output function. This has to be known statically. If the
+            given schema is incorrect, this is a bug in the caller's query and may
+            lead to errors. If set to None, polars assumes the schema is unchanged.
+
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "id": [0, 1, 2, 3, 4],
+        ...         "color": ["red", "green", "green", "red", "red"],
+        ...         "shape": ["square", "triangle", "square", "triangle", "square"],
+        ...     }
+        ... )
+        >>> df
+        shape: (5, 3)
+        ┌─────┬───────┬──────────┐
+        │ id  ┆ color ┆ shape    │
+        │ --- ┆ ---   ┆ ---      │
+        │ i64 ┆ str   ┆ str      │
+        ╞═════╪═══════╪══════════╡
+        │ 0   ┆ red   ┆ square   │
+        │ 1   ┆ green ┆ triangle │
+        │ 2   ┆ green ┆ square   │
+        │ 3   ┆ red   ┆ triangle │
+        │ 4   ┆ red   ┆ square   │
+        └─────┴───────┴──────────┘
+
+        For each color group sample two rows:
+
+        >>> (
+        ...     df.lazy()
+        ...     .groupby("color")
+        ...     .apply(lambda group_df: group_df.sample(2), schema=None)
+        ...     .collect()
+        ... )  # doctest: +IGNORE_RESULT
+        shape: (4, 3)
+        ┌─────┬───────┬──────────┐
+        │ id  ┆ color ┆ shape    │
+        │ --- ┆ ---   ┆ ---      │
+        │ i64 ┆ str   ┆ str      │
+        ╞═════╪═══════╪══════════╡
+        │ 1   ┆ green ┆ triangle │
+        │ 2   ┆ green ┆ square   │
+        │ 4   ┆ red   ┆ square   │
+        │ 3   ┆ red   ┆ triangle │
+        └─────┴───────┴──────────┘
+
+        It is better to implement this with an expression:
+
+        >>> (
+        ...     df.lazy()
+        ...     .filter(pl.arange(0, pl.count()).shuffle().over("color") < 2)
+        ...     .collect()
+        ... )  # doctest: +IGNORE_RESULT
+
+        """
+        return (
+            self.df.lazy()
+            .groupby_dynamic(
+                index_column=self.time_column,
+                every=self.every,
+                period=self.period,
+                offset=self.offset,
+                truncate=self.truncate,
+                include_boundaries=self.include_boundaries,
+                closed=self.closed,
+                by=self.by,
+                start_by=self.start_by,
+                check_sorted=self.check_sorted,
+            )
+            .apply(function, schema)
             .collect(no_optimization=True)
         )

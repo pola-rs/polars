@@ -454,9 +454,10 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         self.0.is_in(other)
     }
     #[cfg(feature = "repeat_by")]
-    fn repeat_by(&self, by: &IdxCa) -> ListChunked {
-        self.0
-            .repeat_by(by)
+    fn repeat_by(&self, by: &IdxCa) -> PolarsResult<ListChunked> {
+        Ok(self
+            .0
+            .repeat_by(by)?
             .cast(&DataType::List(Box::new(DataType::Datetime(
                 self.0.time_unit(),
                 self.0.time_zone().clone(),
@@ -464,7 +465,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .unwrap()
             .list()
             .unwrap()
-            .clone()
+            .clone())
     }
     #[cfg(feature = "mode")]
     fn mode(&self) -> PolarsResult<Series> {

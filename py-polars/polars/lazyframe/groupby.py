@@ -3,7 +3,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Callable, Iterable
 
 from polars import functions as F
-from polars.utils._parse_expr_input import expr_to_lit_or_expr, selection_to_pyexpr_list
+from polars.utils._parse_expr_input import (
+    parse_single_expression_input,
+    selection_to_pyexpr_list,
+)
 from polars.utils._wrap import wrap_ldf
 
 if TYPE_CHECKING:
@@ -128,7 +131,7 @@ class LazyGroupBy:
             exprs.extend(selection_to_pyexpr_list(more_aggs))
         if named_aggs:
             exprs.extend(
-                expr_to_lit_or_expr(expr, name=name, str_to_lit=False)._pyexpr
+                parse_single_expression_input(expr).alias(name)._pyexpr
                 for name, expr in named_aggs.items()
             )
 
@@ -142,17 +145,16 @@ class LazyGroupBy:
         """
         Apply a custom/user-defined function (UDF) over the groups as a new DataFrame.
 
-        Implementing logic using a Python function is almost always _significantly_
-        slower and more memory intensive than implementing the same logic using
-        the native expression API because:
+        Using this is considered an anti-pattern. This will be very slow because:
 
-        - The native expression engine runs in Rust; UDFs run in Python.
-        - Use of Python UDFs forces the DataFrame to be materialized in memory.
-        - Polars-native expressions can be parallelised (UDFs cannot).
-        - Polars-native expressions can be logically optimised (UDFs cannot).
+        - it forces the engine to materialize the whole `DataFrames` for the groups.
+        - it is not parallelized
+        - it blocks optimizations as the passed python function is opaque to the
+          optimizer
 
-        Wherever possible you should strongly prefer the native expression API
-        to achieve the best performance.
+        The idiomatic way to apply custom functions over multiple columns is using:
+
+        `pl.struct([my_columns]).apply(lambda struct_series: ..)`
 
         Parameters
         ----------

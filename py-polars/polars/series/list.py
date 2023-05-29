@@ -277,7 +277,7 @@ class ListNameSpace:
 
         """
 
-    def slice(self, offset: int, length: int | None = None) -> Series:
+    def slice(self, offset: int | Expr, length: int | Expr | None = None) -> Series:
         """
         Slice every sublist.
 
@@ -302,7 +302,7 @@ class ListNameSpace:
 
         """
 
-    def head(self, n: int = 5) -> Series:
+    def head(self, n: int | Expr = 5) -> Series:
         """
         Slice the first `n` values of every sublist.
 
@@ -324,7 +324,7 @@ class ListNameSpace:
 
         """
 
-    def tail(self, n: int = 5) -> Series:
+    def tail(self, n: int | Expr = 5) -> Series:
         """
         Slice the last `n` values of every sublist.
 

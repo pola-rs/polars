@@ -66,6 +66,7 @@ from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import ShapeError
+from polars.series.array import ArrayNameSpace
 from polars.series.binary import BinaryNameSpace
 from polars.series.categorical import CatNameSpace
 from polars.series.datetime import DateTimeNameSpace
@@ -218,7 +219,7 @@ class Series:
     """
 
     _s: PySeries = None
-    _accessors: set[str] = {"cat", "dt", "list", "str", "bin", "struct"}
+    _accessors: set[str] = {"arr", "cat", "dt", "list", "str", "bin", "struct"}
 
     def __init__(
         self,
@@ -588,9 +589,51 @@ class Series:
         """Method equivalent of operator expression ``series == other``."""
         return self.__eq__(other)
 
+    @overload
+    def eq_missing(self, other: Any) -> Self:
+        ...
+
+    @overload
+    def eq_missing(self, other: Expr) -> Expr:  # type: ignore[misc]
+        ...
+
+    def eq_missing(self, other: Any) -> Self | Expr:
+        """
+        Method equivalent of equality operator ``expr == other`` where `None` == None`.
+
+        This differs from default ``ne`` where null values are propagated.
+
+        Parameters
+        ----------
+        other
+            A literal or expression value to compare with.
+
+        """
+
     def ne(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression ``series != other``."""
         return self.__ne__(other)
+
+    @overload
+    def ne_missing(self, other: Expr) -> Expr:  # type: ignore[misc]
+        ...
+
+    @overload
+    def ne_missing(self, other: Any) -> Self:
+        ...
+
+    def ne_missing(self, other: Any) -> Self | Expr:
+        """
+        Method equivalent of equality operator ``expr != other`` where `None` == None`.
+
+        This differs from default ``ne`` where null values are propagated.
+
+        Parameters
+        ----------
+        other
+            A literal or expression value to compare with.
+
+        """
 
     def ge(self, other: Any) -> Self | Expr:
         """Method equivalent of operator expression ``series >= other``."""
@@ -2899,7 +2942,7 @@ class Series:
 
     def explode(self) -> Series:
         """
-        Explode a list or utf8 Series.
+        Explode a list Series.
 
         This means that every item is expanded to a new row.
 
@@ -5882,6 +5925,11 @@ class Series:
     def list(self) -> ListNameSpace:
         """Create an object namespace of all list related methods."""
         return ListNameSpace(self)
+
+    @property
+    def arr(self) -> ArrayNameSpace:
+        """Create an object namespace of all array related methods."""
+        return ArrayNameSpace(self)
 
     @property
     def str(self) -> StringNameSpace:

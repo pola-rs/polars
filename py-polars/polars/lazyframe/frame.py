@@ -48,7 +48,10 @@ from polars.io.ipc.anonymous_scan import _scan_ipc_fsspec
 from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
 from polars.lazyframe.groupby import LazyGroupBy
 from polars.slice import LazyPolarsSlice
-from polars.utils._parse_expr_input import expr_to_lit_or_expr, selection_to_pyexpr_list
+from polars.utils._parse_expr_input import (
+    parse_single_expression_input,
+    selection_to_pyexpr_list,
+)
 from polars.utils._wrap import wrap_df, wrap_expr
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.various import (
@@ -1920,7 +1923,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             predicate = pl.Series(predicate)
 
         return self._from_pyldf(
-            self._ldf.filter(expr_to_lit_or_expr(predicate, str_to_lit=False)._pyexpr)
+            self._ldf.filter(parse_single_expression_input(predicate)._pyexpr)
         )
 
     def select(
@@ -2041,9 +2044,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             exprs.extend(selection_to_pyexpr_list(more_exprs, structify=structify))
         if named_exprs:
             exprs.extend(
-                expr_to_lit_or_expr(
-                    expr, structify=structify, name=name, str_to_lit=False
-                )._pyexpr
+                parse_single_expression_input(expr, structify=structify)
+                .alias(name)
+                ._pyexpr
                 for name, expr in named_exprs.items()
             )
 
@@ -2157,6 +2160,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         offset: str | timedelta | None = None,
         closed: ClosedInterval = "right",
         by: IntoExpr | Iterable[IntoExpr] | None = None,
+        check_sorted: bool = True,
     ) -> LazyGroupBy:
         """
         Create rolling groups based on a time column.
@@ -2213,6 +2217,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Define which sides of the temporal interval are closed (inclusive).
         by
             Also group by this column/these columns
+        check_sorted
+            When the ``by`` argument is given, polars can not check sortedness
+            by the metadata and has to do a full scan on the index column to
+            verify data is sorted. This is expensive. If you are sure the
+            data within the by groups is sorted, you can set this to ``False``.
+            Doing so incorrectly will lead to incorrect output
 
         Returns
         -------
@@ -2268,7 +2278,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────────────────────┴───────┴───────┴───────┘
 
         """
-        index_column = expr_to_lit_or_expr(index_column, str_to_lit=False)
+        index_column = parse_single_expression_input(index_column)
         if offset is None:
             offset = f"-{_timedelta_to_pl_duration(period)}"
 
@@ -2277,7 +2287,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         offset = _timedelta_to_pl_duration(offset)
 
         lgb = self._ldf.groupby_rolling(
-            index_column._pyexpr, period, offset, closed, pyexprs_by
+            index_column._pyexpr, period, offset, closed, pyexprs_by, check_sorted
         )
         return LazyGroupBy(lgb)
 
@@ -2293,6 +2303,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         closed: ClosedInterval = "left",
         by: IntoExpr | Iterable[IntoExpr] | None = None,
         start_by: StartBy = "window",
+        check_sorted: bool = True,
     ) -> LazyGroupBy:
         """
         Group based on a time value (or index value of type Int32, Int64).
@@ -2375,6 +2386,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * 'tuesday': Start the window on the tuesday before the first data point.
             * ...
             * 'sunday': Start the window on the sunday before the first data point.
+        check_sorted
+            When the ``by`` argument is given, polars can not check sortedness
+            by the metadata and has to do a full scan on the index column to
+            verify data is sorted. This is expensive. If you are sure the
+            data within the by groups is sorted, you can set this to ``False``.
+            Doing so incorrectly will lead to incorrect output
 
         Returns
         -------
@@ -2573,7 +2590,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────────────────┴─────────────────┴─────┴─────────────────┘
 
         """  # noqa: W505
-        index_column = expr_to_lit_or_expr(index_column, str_to_lit=False)
+        index_column = parse_single_expression_input(index_column)
         if offset is None:
             offset = f"-{_timedelta_to_pl_duration(every)}" if period is None else "0ns"
 
@@ -2595,6 +2612,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             closed,
             pyexprs_by,
             start_by,
+            check_sorted,
         )
         return LazyGroupBy(lgb)
 
@@ -2630,6 +2648,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
           - A "forward" search selects the first row in the right DataFrame whose
             'on' key is greater than or equal to the left's key.
 
+        - A "nearest" search selects the last row in the right DataFrame whose value
+          is nearest to the left's key.
+
         The default is "backward".
 
         Parameters
@@ -2649,7 +2670,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Join on these columns before doing asof join.
         by_right
             Join on these columns before doing asof join.
-        strategy : {'backward', 'forward'}
+        strategy : {'backward', 'forward', 'nearest'}
             Join strategy.
         suffix
             Suffix to append to columns with a duplicate name.
@@ -3080,9 +3101,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             exprs.extend(selection_to_pyexpr_list(more_exprs, structify=structify))
         if named_exprs:
             exprs.extend(
-                expr_to_lit_or_expr(
-                    expr, structify=structify, name=name, str_to_lit=False
-                )._pyexpr
+                parse_single_expression_input(expr, structify=structify)
+                .alias(name)
+                ._pyexpr
                 for name, expr in named_exprs.items()
             )
 
@@ -4139,7 +4160,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┘
 
         """
-        quantile = expr_to_lit_or_expr(quantile, str_to_lit=False)
+        quantile = parse_single_expression_input(quantile)
         return self._from_pyldf(self._ldf.quantile(quantile._pyexpr, interpolation))
 
     def explode(

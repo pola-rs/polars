@@ -7,15 +7,17 @@ use arrow::temporal_conversions::{
 };
 #[cfg(feature = "timezones")]
 use chrono::{LocalResult, NaiveDateTime, TimeZone};
+#[cfg(feature = "timezones")]
+use chrono_tz::Tz;
 use polars_error::polars_bail;
 
 use crate::error::PolarsResult;
 use crate::prelude::ArrayRef;
 
 #[cfg(feature = "timezones")]
-fn convert_to_naive_local<T1: TimeZone + std::fmt::Debug + std::fmt::Display, T2: TimeZone>(
-    from_tz: &T1,
-    to_tz: &T2,
+fn convert_to_naive_local(
+    from_tz: &Tz,
+    to_tz: &Tz,
     ndt: NaiveDateTime,
     use_earliest: Option<bool>,
 ) -> Result<NaiveDateTime> {
@@ -39,9 +41,9 @@ fn convert_to_naive_local<T1: TimeZone + std::fmt::Debug + std::fmt::Display, T2
 }
 
 #[cfg(feature = "timezones")]
-fn convert_to_timestamp<T1: TimeZone + std::fmt::Debug + std::fmt::Display, T2: TimeZone>(
-    from_tz: T1,
-    to_tz: T2,
+fn convert_to_timestamp(
+    from_tz: Tz,
+    to_tz: Tz,
     arr: &PrimitiveArray<i64>,
     tu: TimeUnit,
     use_earliest: Option<bool>,

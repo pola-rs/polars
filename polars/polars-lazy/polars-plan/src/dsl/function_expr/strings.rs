@@ -63,6 +63,7 @@ pub enum StringFunction {
     #[cfg(feature = "string_from_radix")]
     FromRadix(u32, bool),
     Slice(i64, Option<u64>),
+    Explode,
 }
 
 impl StringFunction {
@@ -88,6 +89,7 @@ impl StringFunction {
             }
             #[cfg(feature = "string_from_radix")]
             FromRadix { .. } => mapper.with_dtype(DataType::Int32),
+            Explode => mapper.with_same_dtype(),
         }
     }
 }
@@ -125,6 +127,7 @@ impl Display for StringFunction {
             #[cfg(feature = "string_from_radix")]
             StringFunction::FromRadix { .. } => "from_radix",
             StringFunction::Slice(_, _) => "str_slice",
+            StringFunction::Explode => "explode",
         };
 
         write!(f, "str.{s}")
@@ -641,4 +644,9 @@ pub(super) fn from_radix(s: &Series, radix: u32, strict: bool) -> PolarsResult<S
 pub(super) fn str_slice(s: &Series, start: i64, length: Option<u64>) -> PolarsResult<Series> {
     let ca = s.utf8()?;
     ca.str_slice(start, length).map(|ca| ca.into_series())
+}
+
+pub(super) fn explode(s: &Series) -> PolarsResult<Series> {
+    let ca = s.utf8()?;
+    ca.explode()
 }

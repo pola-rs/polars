@@ -425,8 +425,14 @@ pub trait ChunkCompare<Rhs> {
     /// Check for equality.
     fn equal(&self, rhs: Rhs) -> Self::Item;
 
+    /// Check for equality where `None == None`.
+    fn equal_missing(&self, rhs: Rhs) -> Self::Item;
+
     /// Check for inequality.
     fn not_equal(&self, rhs: Rhs) -> Self::Item;
+
+    /// Check for inequality where `None == None`.
+    fn not_equal_missing(&self, rhs: Rhs) -> Self::Item;
 
     /// Greater than comparison.
     fn gt(&self, rhs: Rhs) -> Self::Item;
@@ -729,7 +735,7 @@ pub trait IsIn {
 #[cfg(feature = "repeat_by")]
 pub trait RepeatBy {
     /// Repeat the values `n` times, where `n` is determined by the values in `by`.
-    fn repeat_by(&self, _by: &IdxCa) -> ListChunked {
+    fn repeat_by(&self, _by: &IdxCa) -> PolarsResult<ListChunked> {
         unimplemented!()
     }
 }

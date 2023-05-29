@@ -7,6 +7,7 @@ mod single_keys_outer;
 #[cfg(feature = "semi_anti_join")]
 mod single_keys_semi_anti;
 pub(super) mod sort_merge;
+mod zip_outer;
 
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::{BuildHasher, Hash, Hasher};
@@ -29,6 +30,7 @@ use single_keys_outer::*;
 #[cfg(feature = "semi_anti_join")]
 use single_keys_semi_anti::*;
 pub use sort_merge::*;
+pub(crate) use zip_outer::*;
 
 #[cfg(feature = "private")]
 pub use self::multiple_keys::private_left_join_multiple_keys;
@@ -97,6 +99,7 @@ macro_rules! det_hash_prone_order {
 pub(super) use det_hash_prone_order;
 #[cfg(feature = "performant")]
 use polars_arrow::conversion::primitive_to_vec;
+use polars_utils::hash_to_partition;
 
 use crate::series::IsSorted;
 
@@ -159,12 +162,8 @@ pub(crate) unsafe fn get_hash_tbl_threaded_join_partitioned<Item>(
     hash_tables: &[Item],
     len: u64,
 ) -> &Item {
-    for i in 0..len {
-        if this_partition(h, i, len) {
-            return hash_tables.get_unchecked(i as usize);
-        }
-    }
-    unreachable!()
+    let i = hash_to_partition(h, len as usize);
+    hash_tables.get_unchecked(i)
 }
 
 #[allow(clippy::type_complexity)]
@@ -173,119 +172,8 @@ unsafe fn get_hash_tbl_threaded_join_mut_partitioned<T, H>(
     hash_tables: &mut [HashMap<T, (bool, Vec<IdxSize>), H>],
     len: u64,
 ) -> &mut HashMap<T, (bool, Vec<IdxSize>), H> {
-    for i in 0..len {
-        if this_partition(h, i, len) {
-            return hash_tables.get_unchecked_mut(i as usize);
-        }
-    }
-    unreachable!()
-}
-
-pub trait ZipOuterJoinColumn {
-    fn zip_outer_join_column(
-        &self,
-        _right_column: &Series,
-        _opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
-    ) -> Series {
-        unimplemented!()
-    }
-}
-
-impl<T> ZipOuterJoinColumn for ChunkedArray<T>
-where
-    T: PolarsIntegerType,
-    ChunkedArray<T>: IntoSeries,
-{
-    fn zip_outer_join_column(
-        &self,
-        right_column: &Series,
-        opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
-    ) -> Series {
-        let right_ca = self.unpack_series_matching_type(right_column).unwrap();
-
-        let left_rand_access = self.take_rand();
-        let right_rand_access = right_ca.take_rand();
-
-        opt_join_tuples
-            .iter()
-            .map(|(opt_left_idx, opt_right_idx)| {
-                if let Some(left_idx) = opt_left_idx {
-                    unsafe { left_rand_access.get_unchecked(*left_idx as usize) }
-                } else {
-                    unsafe {
-                        let right_idx = opt_right_idx.unwrap_unchecked();
-                        right_rand_access.get_unchecked(right_idx as usize)
-                    }
-                }
-            })
-            .collect_trusted::<ChunkedArray<T>>()
-            .into_series()
-    }
-}
-
-macro_rules! impl_zip_outer_join {
-    ($chunkedtype:ident) => {
-        impl ZipOuterJoinColumn for $chunkedtype {
-            fn zip_outer_join_column(
-                &self,
-                right_column: &Series,
-                opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
-            ) -> Series {
-                let right_ca = self.unpack_series_matching_type(right_column).unwrap();
-
-                let left_rand_access = self.take_rand();
-                let right_rand_access = right_ca.take_rand();
-
-                opt_join_tuples
-                    .iter()
-                    .map(|(opt_left_idx, opt_right_idx)| {
-                        if let Some(left_idx) = opt_left_idx {
-                            unsafe { left_rand_access.get_unchecked(*left_idx as usize) }
-                        } else {
-                            unsafe {
-                                let right_idx = opt_right_idx.unwrap_unchecked();
-                                right_rand_access.get_unchecked(right_idx as usize)
-                            }
-                        }
-                    })
-                    .collect::<$chunkedtype>()
-                    .into_series()
-            }
-        }
-    };
-}
-impl_zip_outer_join!(BooleanChunked);
-impl_zip_outer_join!(Utf8Chunked);
-impl_zip_outer_join!(BinaryChunked);
-
-impl ZipOuterJoinColumn for Float32Chunked {
-    fn zip_outer_join_column(
-        &self,
-        right_column: &Series,
-        opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
-    ) -> Series {
-        self.apply_as_ints(|s| {
-            s.zip_outer_join_column(
-                &right_column.bit_repr_small().into_series(),
-                opt_join_tuples,
-            )
-        })
-    }
-}
-
-impl ZipOuterJoinColumn for Float64Chunked {
-    fn zip_outer_join_column(
-        &self,
-        right_column: &Series,
-        opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
-    ) -> Series {
-        self.apply_as_ints(|s| {
-            s.zip_outer_join_column(
-                &right_column.bit_repr_large().into_series(),
-                opt_join_tuples,
-            )
-        })
-    }
+    let i = hash_to_partition(h, len as usize);
+    hash_tables.get_unchecked_mut(i)
 }
 
 pub fn _join_suffix_name(name: &str, suffix: &str) -> String {

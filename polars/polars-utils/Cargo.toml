@@ -14,7 +14,7 @@ hashbrown.workspace = true
 once_cell.workspace = true
 rayon.workspace = true
 smartstring.workspace = true
-sysinfo = { version = "0.28", default-features = false, optional = true }
+sysinfo = { version = "0.29", default-features = false, optional = true }
 
 [features]
 bigidx = []

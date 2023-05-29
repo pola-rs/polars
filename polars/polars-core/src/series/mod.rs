@@ -282,6 +282,10 @@ impl Series {
                         ca.cast_unchecked(dtype)
                 })
             }
+            DataType::Binary => {
+                let ca = self.binary().unwrap();
+                ca.cast_unchecked(dtype)
+            }
             _ => self.cast(dtype),
         }
     }
@@ -342,12 +346,11 @@ impl Series {
             .and_then(|s| s.f64().unwrap().get(0).and_then(T::from))
     }
 
-    /// Explode a list or utf8 Series. This expands every item to a new row..
+    /// Explode a list Series. This expands every item to a new row..
     pub fn explode(&self) -> PolarsResult<Series> {
         match self.dtype() {
             DataType::List(_) => self.list().unwrap().explode(),
-            DataType::Utf8 => self.utf8().unwrap().explode(),
-            _ => polars_bail!(opq = explode, self.dtype()),
+            _ => Ok(self.clone()),
         }
     }
 

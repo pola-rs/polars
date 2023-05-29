@@ -872,16 +872,6 @@ def test_concat() -> None:
         pl.concat([df1, df1], how="rubbish")  # type: ignore[arg-type]
 
 
-def test_concat_str() -> None:
-    df = pl.DataFrame({"a": ["a", "b", "c"], "b": [1, 2, 3]})
-
-    out = df.select([pl.concat_str(["a", "b"], separator="-")])
-    assert out["a"].to_list() == ["a-1", "b-2", "c-3"]
-
-    out = df.select([pl.format("foo_{}_bar_{}", pl.col("a"), "b").alias("fmt")])
-    assert out["fmt"].to_list() == ["foo_a_bar_1", "foo_b_bar_2", "foo_c_bar_3"]
-
-
 def test_arg_where() -> None:
     s = pl.Series([True, False, True, False])
     assert_series_equal(pl.arg_where(s, eager=True).cast(int), pl.Series([0, 2]))
@@ -1757,6 +1747,42 @@ def test_from_rows_of_dicts() -> None:
         assert df3.schema == {"id": pl.Int16, "value": pl.Int32}
 
 
+def test_repeat_by_unequal_lengths_panic() -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["x", "y", "z"],
+        }
+    )
+    with pytest.raises(
+        pl.ComputeError,
+        match="""Length of repeat_by argument needs to be 1 or equal to the length of the Series.""",
+    ):
+        df.select(pl.col("a").repeat_by(pl.Series([2, 2])))
+
+
+@pytest.mark.parametrize(
+    ("a", "a_expected"),
+    [
+        ([1.2, 2.2, 3.3], [[1.2, 1.2, 1.2], [2.2, 2.2, 2.2], [3.3, 3.3, 3.3]]),
+        ([True, False], [[True, True, True], [False, False, False]]),
+        (["x", "y", "z"], [["x", "x", "x"], ["y", "y", "y"], ["z", "z", "z"]]),
+    ],
+)
+def test_repeat_by_parameterized(
+    a: list[float | bool | str], a_expected: list[list[float | bool | str]]
+) -> None:
+    df = pl.DataFrame(
+        {
+            "a": a,
+        }
+    )
+    expected = pl.DataFrame({"a": a_expected})
+    result = df.select(pl.col("a").repeat_by(3))
+    assert_frame_equal(result, expected)
+    result = df.select(pl.col("a").repeat_by(pl.lit(3)))
+    assert_frame_equal(result, expected)
+
+
 def test_repeat_by() -> None:
     df = pl.DataFrame({"name": ["foo", "bar"], "n": [2, 3]})
     out = df.select(pl.col("n").repeat_by("n"))
@@ -1995,7 +2021,7 @@ def test_groupby_cat_list() -> None:
         .agg([pl.col("cat_column")])["cat_column"]
     )
 
-    out = grouped.str.explode()
+    out = grouped.explode()
     assert out.dtype == pl.Categorical
     assert out[0] == "a"
 
