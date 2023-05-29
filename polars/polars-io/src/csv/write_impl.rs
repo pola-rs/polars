@@ -59,8 +59,9 @@ fn write_anyvalue(
     f: &mut Vec<u8>,
     value: AnyValue,
     options: &SerializeOptions,
-    #[allow(unused_variables)] datetime_format: Option<&str>,
-    tz: Option<Tz>,
+    datetime_formats: &[Option<&str>],
+    time_zones: &[Option<Tz>],
+    i: usize,
 ) -> PolarsResult<()> {
     match value {
         AnyValue::Null => write!(f, "{}", &options.null),
@@ -98,15 +99,16 @@ fn write_anyvalue(
         #[cfg(feature = "dtype-datetime")]
         AnyValue::Datetime(v, tu, _) => {
             // If this is a datetime, then datetime_format was either set or inferred.
-            let datetime_format = datetime_format.unwrap();
+            let datetime_format = unsafe { *datetime_formats.get_unchecked(i) }.unwrap();
+            let time_zone = unsafe { time_zones.get_unchecked(i) };
             let ndt = match tu {
                 TimeUnit::Nanoseconds => temporal_conversions::timestamp_ns_to_datetime(v),
                 TimeUnit::Microseconds => temporal_conversions::timestamp_us_to_datetime(v),
                 TimeUnit::Milliseconds => temporal_conversions::timestamp_ms_to_datetime(v),
             };
-            let formatted = match tz {
+            let formatted = match time_zone {
                 #[cfg(feature = "timezones")]
-                Some(tz) => tz.from_utc_datetime(&ndt).format(datetime_format),
+                Some(time_zone) => time_zone.from_utc_datetime(&ndt).format(datetime_format),
                 #[cfg(not(feature = "timezones"))]
                 Some(_) => {
                     panic!("activate 'timezones' feature");
@@ -129,7 +131,7 @@ fn write_anyvalue(
         #[cfg(feature = "dtype-datetime")]
         AnyValue::Datetime(_, _, tz) => {
             // If this is a datetime, then datetime_format was either set or inferred.
-            let datetime_format = datetime_format.unwrap_or_default();
+            let datetime_format = unsafe { *datetime_formats.get_unchecked(i) }.unwrap();
             let type_name = if tz.is_some() {
                 "DateTime"
             } else {
@@ -226,14 +228,20 @@ pub(crate) fn write<W: Write>(
             DataType::Datetime(TimeUnit::Milliseconds, tz) => match tz {
                 #[cfg(feature = "timezones")]
                 Some(tz) => {
-                    if options.datetime_format.is_none() {
-                        datetime_formats.push(Some("%FT%H:%M:%S.%3f%z"));
+                    match &options.datetime_format {
+                        Some(datetime_format) => {
+                            datetime_formats.push(Some(datetime_format.as_str()))
+                        }
+                        None => datetime_formats.push(Some("%FT%H:%M:%S.%3f%z")),
                     }
                     time_zones.push(tz.parse::<Tz>().ok());
                 }
                 _ => {
-                    if options.datetime_format.is_none() {
-                        datetime_formats.push(Some("%FT%H:%M:%S.%3f"));
+                    match &options.datetime_format {
+                        Some(datetime_format) => {
+                            datetime_formats.push(Some(datetime_format.as_str()))
+                        }
+                        None => datetime_formats.push(Some("%FT%H:%M:%S.%3f")),
                     }
                     time_zones.push(None);
                 }
@@ -241,14 +249,20 @@ pub(crate) fn write<W: Write>(
             DataType::Datetime(TimeUnit::Microseconds, tz) => match tz {
                 #[cfg(feature = "timezones")]
                 Some(tz) => {
-                    if options.datetime_format.is_none() {
-                        datetime_formats.push(Some("%FT%H:%M:%S.%6f%z"));
+                    match &options.datetime_format {
+                        Some(datetime_format) => {
+                            datetime_formats.push(Some(datetime_format.as_str()))
+                        }
+                        None => datetime_formats.push(Some("%FT%H:%M:%S.%6f%z")),
                     }
                     time_zones.push(tz.parse::<Tz>().ok());
                 }
                 _ => {
-                    if options.datetime_format.is_none() {
-                        datetime_formats.push(Some("%FT%H:%M:%S.%6f"));
+                    match &options.datetime_format {
+                        Some(datetime_format) => {
+                            datetime_formats.push(Some(datetime_format.as_str()))
+                        }
+                        None => datetime_formats.push(Some("%FT%H:%M:%S.%6f")),
                     }
                     time_zones.push(None);
                 }
@@ -256,22 +270,26 @@ pub(crate) fn write<W: Write>(
             DataType::Datetime(TimeUnit::Nanoseconds, tz) => match tz {
                 #[cfg(feature = "timezones")]
                 Some(tz) => {
-                    if options.datetime_format.is_none() {
-                        datetime_formats.push(Some("%FT%H:%M:%S.%9f%z"));
+                    match &options.datetime_format {
+                        Some(datetime_format) => {
+                            datetime_formats.push(Some(datetime_format.as_str()))
+                        }
+                        None => datetime_formats.push(Some("%FT%H:%M:%S.%9f%z")),
                     }
                     time_zones.push(tz.parse::<Tz>().ok());
                 }
                 _ => {
-                    if options.datetime_format.is_none() {
-                        datetime_formats.push(Some("%FT%H:%M:%S.%9f"));
+                    match &options.datetime_format {
+                        Some(datetime_format) => {
+                            datetime_formats.push(Some(datetime_format.as_str()))
+                        }
+                        None => datetime_formats.push(Some("%FT%H:%M:%S.%9f")),
                     }
                     time_zones.push(None);
                 }
             },
             _ => {
-                if options.datetime_format.is_none() {
-                    datetime_formats.push(None);
-                }
+                datetime_formats.push(None);
                 time_zones.push(None);
             }
         }
@@ -321,19 +339,15 @@ pub(crate) fn write<W: Write>(
             // loop rows
             while !finished {
                 for (i, col) in &mut col_iters.iter_mut().enumerate() {
-                    let datetime_format = match &options.datetime_format {
-                        Some(datetime_format) => Some(datetime_format.as_str()),
-                        None => unsafe { *datetime_formats.get_unchecked(i) },
-                    };
-                    let time_zone = unsafe { *time_zones.get_unchecked(i) };
                     match col.next() {
                         Some(value) => {
                             write_anyvalue(
                                 &mut write_buffer,
                                 value,
                                 options,
-                                datetime_format,
-                                time_zone,
+                                &datetime_formats,
+                                &time_zones,
+                                i,
                             )?;
                         }
                         None => {
