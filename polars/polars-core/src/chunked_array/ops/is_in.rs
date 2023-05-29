@@ -81,8 +81,8 @@ where
             }
             _ => {
                 // first make sure that the types are equal
-                let st = try_get_supertype(self.dtype(), other.dtype())?;
                 if self.dtype() != other.dtype() {
+                    let st = try_get_supertype(self.dtype(), other.dtype())?;
                     let left = self.cast(&st)?;
                     let right = other.cast(&st)?;
                     return left.is_in(&right);
@@ -327,6 +327,30 @@ impl IsIn for StructChunked {
                     ComputeError: "`is_in`: mismatch in the number of struct fields: {} and {}",
                     self.fields().len(), other.fields().len()
                 );
+
+                // first make sure that the types are equal
+                let self_dtypes: Vec<_> = self.fields().iter().map(|f| f.dtype()).collect();
+                let other_dtypes: Vec<_> = other.fields().iter().map(|f| f.dtype()).collect();
+                if self_dtypes != other_dtypes {
+                    let self_names = self.fields().iter().map(|f| f.name());
+                    let other_names = other.fields().iter().map(|f| f.name());
+                    let supertypes = self_dtypes
+                        .iter()
+                        .zip(other_dtypes.iter())
+                        .map(|(dt1, dt2)| try_get_supertype(dt1, dt2))
+                        .collect::<Result<Vec<_>, _>>()?;
+                    let self_supertype_fields = self_names
+                        .zip(supertypes.iter())
+                        .map(|(name, st)| Field::new(name, st.clone()))
+                        .collect();
+                    let self_super = self.cast(&DataType::Struct(self_supertype_fields))?;
+                    let other_supertype_fields = other_names
+                        .zip(supertypes.iter())
+                        .map(|(name, st)| Field::new(name, st.clone()))
+                        .collect();
+                    let other_super = other.cast(&DataType::Struct(other_supertype_fields))?;
+                    return self_super.is_in(&other_super);
+                }
 
                 let mut anyvalues = Vec::with_capacity(other.len() * other.fields().len());
                 // Safety:
