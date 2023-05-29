@@ -59,7 +59,7 @@ unsafe fn write_anyvalue(
     f: &mut Vec<u8>,
     value: AnyValue,
     options: &SerializeOptions,
-    datetime_formats: &[Option<&str>],
+    datetime_formats: &[&str],
     time_zones: &[Option<Tz>],
     i: usize,
 ) -> PolarsResult<()> {
@@ -98,8 +98,7 @@ unsafe fn write_anyvalue(
         }
         #[cfg(feature = "dtype-datetime")]
         AnyValue::Datetime(v, tu, _) => {
-            // If this is a datetime, then datetime_format was either set or inferred.
-            let datetime_format = { *datetime_formats.get_unchecked(i) }.unwrap();
+            let datetime_format = { *datetime_formats.get_unchecked(i) };
             let time_zone = { time_zones.get_unchecked(i) };
             let ndt = match tu {
                 TimeUnit::Nanoseconds => temporal_conversions::timestamp_ns_to_datetime(v),
@@ -130,8 +129,7 @@ unsafe fn write_anyvalue(
     .map_err(|err| match value {
         #[cfg(feature = "dtype-datetime")]
         AnyValue::Datetime(_, _, tz) => {
-            // If this is a datetime, then datetime_format was either set or inferred.
-            let datetime_format = unsafe { *datetime_formats.get_unchecked(i) }.unwrap();
+            let datetime_format = unsafe { *datetime_formats.get_unchecked(i) };
             let type_name = if tz.is_some() {
                 "DateTime"
             } else {
@@ -221,7 +219,7 @@ pub(crate) fn write<W: Write>(
     );
     let delimiter = char::from(options.delimiter);
 
-    let (datetime_formats, time_zones): (Vec<Option<&str>>, Vec<Option<Tz>>) = df
+    let (datetime_formats, time_zones): (Vec<&str>, Vec<Option<Tz>>) = df
         .get_columns()
         .iter()
         .map(|column| match column.dtype() {
@@ -243,7 +241,7 @@ pub(crate) fn write<W: Write>(
                         None,
                     ),
                 };
-                (Some(format), tz_parsed)
+                (format, tz_parsed)
             }
             DataType::Datetime(TimeUnit::Microseconds, tz) => {
                 let (format, tz_parsed) = match tz {
@@ -263,7 +261,7 @@ pub(crate) fn write<W: Write>(
                         None,
                     ),
                 };
-                (Some(format), tz_parsed)
+                (format, tz_parsed)
             }
             DataType::Datetime(TimeUnit::Nanoseconds, tz) => {
                 let (format, tz_parsed) = match tz {
@@ -283,9 +281,9 @@ pub(crate) fn write<W: Write>(
                         None,
                     ),
                 };
-                (Some(format), tz_parsed)
+                (format, tz_parsed)
             }
-            _ => (None, None),
+            _ => ("", None),
         })
         .unzip();
     let datetime_formats = datetime_formats.into_iter().collect::<Vec<_>>();
