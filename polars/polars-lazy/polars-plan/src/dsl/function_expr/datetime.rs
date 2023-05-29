@@ -192,13 +192,13 @@ pub(super) fn truncate(s: &Series, every: &str, offset: &str) -> PolarsResult<Se
             _ => s
                 .datetime()
                 .unwrap()
-                .truncate(every, offset, NO_TIMEZONE)?
+                .truncate(every, offset, None)?
                 .into_series(),
         },
         DataType::Date => s
             .date()
             .unwrap()
-            .truncate(every, offset, NO_TIMEZONE)?
+            .truncate(every, offset, None)?
             .into_series(),
         dt => polars_bail!(opq = round, got = dt, expected = "date/datetime"),
     })
@@ -214,13 +214,9 @@ pub(super) fn month_start(s: &Series) -> PolarsResult<Series> {
                 .unwrap()
                 .month_start(tz.parse::<Tz>().ok().as_ref())?
                 .into_series(),
-            _ => s
-                .datetime()
-                .unwrap()
-                .month_start(NO_TIMEZONE)?
-                .into_series(),
+            _ => s.datetime().unwrap().month_start(None)?.into_series(),
         },
-        DataType::Date => s.date().unwrap().month_start(NO_TIMEZONE)?.into_series(),
+        DataType::Date => s.date().unwrap().month_start(None)?.into_series(),
         dt => polars_bail!(opq = month_start, got = dt, expected = "date/datetime"),
     })
 }
@@ -235,9 +231,9 @@ pub(super) fn month_end(s: &Series) -> PolarsResult<Series> {
                 .unwrap()
                 .month_end(tz.parse::<Tz>().ok().as_ref())?
                 .into_series(),
-            _ => s.datetime().unwrap().month_end(NO_TIMEZONE)?.into_series(),
+            _ => s.datetime().unwrap().month_end(None)?.into_series(),
         },
-        DataType::Date => s.date().unwrap().month_end(NO_TIMEZONE)?.into_series(),
+        DataType::Date => s.date().unwrap().month_end(None)?.into_series(),
         dt => polars_bail!(opq = month_end, got = dt, expected = "date/datetime"),
     })
 }
@@ -256,14 +252,10 @@ pub(super) fn round(s: &Series, every: &str, offset: &str) -> PolarsResult<Serie
             _ => s
                 .datetime()
                 .unwrap()
-                .round(every, offset, NO_TIMEZONE)?
+                .round(every, offset, None)?
                 .into_series(),
         },
-        DataType::Date => s
-            .date()
-            .unwrap()
-            .round(every, offset, NO_TIMEZONE)?
-            .into_series(),
+        DataType::Date => s.date().unwrap().round(every, offset, None)?.into_series(),
         dt => polars_bail!(opq = round, got = dt, expected = "date/datetime"),
     })
 }

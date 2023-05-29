@@ -45,7 +45,7 @@ pub fn date_range_impl(
         },
         _ => Int64Chunked::new_vec(
             name,
-            temporal_range_vec(start, stop, every, closed, tu, NO_TIMEZONE)?,
+            temporal_range_vec(start, stop, every, closed, tu, None)?,
         )
         .into_datetime(tu, None),
     };
@@ -92,14 +92,7 @@ pub fn time_range_impl(
     }
     let mut out = Int64Chunked::new_vec(
         name,
-        temporal_range_vec(
-            start,
-            stop,
-            every,
-            closed,
-            TimeUnit::Nanoseconds,
-            NO_TIMEZONE,
-        )?,
+        temporal_range_vec(start, stop, every, closed, TimeUnit::Nanoseconds, None)?,
     )
     .into_time();
 

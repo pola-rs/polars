@@ -164,9 +164,9 @@ fn upsample_single_impl(
                         _ => (first, last),
                     };
                     let first = match tu {
-                        TimeUnit::Nanoseconds => offset.add_ns(first, NO_TIMEZONE)?,
-                        TimeUnit::Microseconds => offset.add_us(first, NO_TIMEZONE)?,
-                        TimeUnit::Milliseconds => offset.add_ms(first, NO_TIMEZONE)?,
+                        TimeUnit::Nanoseconds => offset.add_ns(first, None)?,
+                        TimeUnit::Microseconds => offset.add_us(first, None)?,
+                        TimeUnit::Milliseconds => offset.add_ms(first, None)?,
                     };
                     let range = date_range_impl(
                         index_col_name,

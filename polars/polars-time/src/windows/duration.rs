@@ -6,7 +6,7 @@ use polars_arrow::error::polars_err;
 use polars_arrow::export::arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
 };
-use polars_arrow::time_zone::PolarsTimeZone;
+use polars_arrow::time_zone::Tz;
 use polars_core::export::arrow::temporal_conversions::MICROSECONDS;
 use polars_core::prelude::{
     datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us, polars_bail,
@@ -427,7 +427,7 @@ impl Duration {
     pub fn truncate_impl<F, G, J>(
         &self,
         t: i64,
-        tz: Option<&impl PolarsTimeZone>,
+        tz: Option<&Tz>,
         nsecs_to_unit: F,
         timestamp_to_datetime: G,
         datetime_to_timestamp: J,
@@ -541,7 +541,7 @@ impl Duration {
 
     // Truncate the given ns timestamp by the window boundary.
     #[inline]
-    pub fn truncate_ns(&self, t: i64, tz: Option<&impl PolarsTimeZone>) -> PolarsResult<i64> {
+    pub fn truncate_ns(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         self.truncate_impl(
             t,
             tz,
@@ -553,7 +553,7 @@ impl Duration {
 
     // Truncate the given ns timestamp by the window boundary.
     #[inline]
-    pub fn truncate_us(&self, t: i64, tz: Option<&impl PolarsTimeZone>) -> PolarsResult<i64> {
+    pub fn truncate_us(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         self.truncate_impl(
             t,
             tz,
@@ -565,7 +565,7 @@ impl Duration {
 
     // Truncate the given ms timestamp by the window boundary.
     #[inline]
-    pub fn truncate_ms(&self, t: i64, tz: Option<&impl PolarsTimeZone>) -> PolarsResult<i64> {
+    pub fn truncate_ms(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         self.truncate_impl(
             t,
             tz,
@@ -578,7 +578,7 @@ impl Duration {
     fn add_impl_month_week_or_day<F, G, J>(
         &self,
         t: i64,
-        tz: Option<&impl PolarsTimeZone>,
+        tz: Option<&Tz>,
         nsecs_to_unit: F,
         timestamp_to_datetime: G,
         datetime_to_timestamp: J,
@@ -638,7 +638,7 @@ impl Duration {
         Ok(new_t)
     }
 
-    pub fn add_ns(&self, t: i64, tz: Option<&impl PolarsTimeZone>) -> PolarsResult<i64> {
+    pub fn add_ns(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         let d = self;
         let new_t = self.add_impl_month_week_or_day(
             t,
@@ -651,7 +651,7 @@ impl Duration {
         Ok(new_t? + nsecs)
     }
 
-    pub fn add_us(&self, t: i64, tz: Option<&impl PolarsTimeZone>) -> PolarsResult<i64> {
+    pub fn add_us(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         let d = self;
         let new_t = self.add_impl_month_week_or_day(
             t,
@@ -664,7 +664,7 @@ impl Duration {
         Ok(new_t? + nsecs / 1_000)
     }
 
-    pub fn add_ms(&self, t: i64, tz: Option<&impl PolarsTimeZone>) -> PolarsResult<i64> {
+    pub fn add_ms(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {
         let d = self;
         let new_t = self.add_impl_month_week_or_day(
             t,
@@ -731,7 +731,6 @@ mod test {
 
     #[test]
     fn test_add_ns() {
-        use polars_arrow::time_zone::NO_TIMEZONE;
         let t = 1;
         let seven_days = Duration::parse("7d");
         let one_week = Duration::parse("1w");
@@ -739,8 +738,8 @@ mod test {
         // add_ns can only error if a time zone is passed, so it's
         // safe to unwrap here
         assert_eq!(
-            seven_days.add_ns(t, NO_TIMEZONE).unwrap(),
-            one_week.add_ns(t, NO_TIMEZONE).unwrap()
+            seven_days.add_ns(t, None).unwrap(),
+            one_week.add_ns(t, None).unwrap()
         );
 
         let seven_days_negative = Duration::parse("-7d");
@@ -749,8 +748,8 @@ mod test {
         // add_ns can only error if a time zone is passed, so it's
         // safe to unwrap here
         assert_eq!(
-            seven_days_negative.add_ns(t, NO_TIMEZONE).unwrap(),
-            one_week_negative.add_ns(t, NO_TIMEZONE).unwrap()
+            seven_days_negative.add_ns(t, None).unwrap(),
+            one_week_negative.add_ns(t, None).unwrap()
         );
     }
 }

@@ -1,5 +1,5 @@
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
-use polars_arrow::time_zone::{PolarsTimeZone, NO_TIMEZONE};
+use polars_arrow::time_zone::Tz;
 use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
@@ -10,9 +10,9 @@ use polars_core::utils::arrow::temporal_conversions::{
 use crate::utils::{localize_datetime, unlocalize_datetime};
 
 // roll backward to the first day of the month
-pub(crate) fn roll_backward<T: PolarsTimeZone>(
+pub(crate) fn roll_backward(
     t: i64,
-    tz: Option<&T>,
+    tz: Option<&Tz>,
     timestamp_to_datetime: fn(i64) -> NaiveDateTime,
     datetime_to_timestamp: fn(NaiveDateTime) -> i64,
 ) -> PolarsResult<i64> {
@@ -50,13 +50,13 @@ pub(crate) fn roll_backward<T: PolarsTimeZone>(
 }
 
 pub trait PolarsMonthStart {
-    fn month_start(&self, time_zone: Option<&impl PolarsTimeZone>) -> PolarsResult<Self>
+    fn month_start(&self, time_zone: Option<&Tz>) -> PolarsResult<Self>
     where
         Self: Sized;
 }
 
 impl PolarsMonthStart for DatetimeChunked {
-    fn month_start(&self, tz: Option<&impl PolarsTimeZone>) -> PolarsResult<Self> {
+    fn month_start(&self, tz: Option<&Tz>) -> PolarsResult<Self> {
         let timestamp_to_datetime: fn(i64) -> NaiveDateTime;
         let datetime_to_timestamp: fn(NaiveDateTime) -> i64;
         match self.time_unit() {
@@ -81,14 +81,14 @@ impl PolarsMonthStart for DatetimeChunked {
 }
 
 impl PolarsMonthStart for DateChunked {
-    fn month_start(&self, _tz: Option<&impl PolarsTimeZone>) -> PolarsResult<Self> {
+    fn month_start(&self, _tz: Option<&Tz>) -> PolarsResult<Self> {
         const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
         Ok(self
             .0
             .try_apply(|t| {
                 Ok((roll_backward(
                     MSECS_IN_DAY * t as i64,
-                    NO_TIMEZONE,
+                    None,
                     timestamp_ms_to_datetime,
                     datetime_to_timestamp_ms,
                 )? / MSECS_IN_DAY) as i32)

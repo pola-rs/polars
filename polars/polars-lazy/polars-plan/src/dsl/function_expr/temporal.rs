@@ -1,7 +1,5 @@
-#[cfg(feature = "timezones")]
-use chrono_tz::Tz;
 #[cfg(feature = "date_offset")]
-use polars_arrow::time_zone::PolarsTimeZone;
+use polars_arrow::time_zone::Tz;
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
 #[cfg(feature = "date_offset")]
 use polars_time::prelude::*;
@@ -20,9 +18,7 @@ pub(super) fn date_offset(s: Series, offset: Duration) -> PolarsResult<Series> {
         DataType::Datetime(tu, tz) => {
             let ca = s.datetime().unwrap();
 
-            fn offset_fn<T: PolarsTimeZone>(
-                tu: TimeUnit,
-            ) -> fn(&Duration, i64, Option<&T>) -> PolarsResult<i64> {
+            fn offset_fn(tu: TimeUnit) -> fn(&Duration, i64, Option<&Tz>) -> PolarsResult<i64> {
                 match tu {
                     TimeUnit::Nanoseconds => Duration::add_ns,
                     TimeUnit::Microseconds => Duration::add_us,
@@ -38,7 +34,7 @@ pub(super) fn date_offset(s: Series, offset: Duration) -> PolarsResult<Series> {
                 }
                 _ => {
                     let offset_fn = offset_fn(tu);
-                    ca.0.try_apply(|v| offset_fn(&offset, v, NO_TIMEZONE))
+                    ca.0.try_apply(|v| offset_fn(&offset, v, None))
                 }
             }?;
             out.cast(&DataType::Datetime(tu, tz))

@@ -1,6 +1,4 @@
-#[cfg(feature = "timezones")]
-use chrono_tz::Tz;
-use polars_arrow::time_zone::PolarsTimeZone;
+use polars_arrow::time_zone::Tz;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::export::rayon::prelude::*;
 use polars_core::frame::groupby::GroupsProxy;
@@ -157,7 +155,7 @@ impl Wrap<&DataFrame> {
                     by,
                     options,
                     TimeUnit::Nanoseconds,
-                    NO_TIMEZONE.copied(),
+                    None,
                     &time_type,
                 )?;
                 let out = out.cast(&Int64).unwrap().cast(&Int32).unwrap();
@@ -171,7 +169,7 @@ impl Wrap<&DataFrame> {
                     by,
                     options,
                     TimeUnit::Nanoseconds,
-                    NO_TIMEZONE.copied(),
+                    None,
                     &time_type,
                 )?;
                 let out = out.cast(&Int64).unwrap();
@@ -188,7 +186,7 @@ impl Wrap<&DataFrame> {
             Some(tz) => {
                 self.impl_groupby_rolling(dt, by, options, tu, tz.parse::<Tz>().ok(), time_type)
             }
-            _ => self.impl_groupby_rolling(dt, by, options, tu, NO_TIMEZONE.copied(), time_type),
+            _ => self.impl_groupby_rolling(dt, by, options, tu, None, time_type),
         }
     }
 
@@ -519,7 +517,7 @@ impl Wrap<&DataFrame> {
         by: Vec<Series>,
         options: &RollingGroupOptions,
         tu: TimeUnit,
-        tz: Option<impl PolarsTimeZone>,
+        tz: Option<Tz>,
         time_type: &DataType,
     ) -> PolarsResult<(Series, Vec<Series>, GroupsProxy)> {
         let mut dt = dt.rechunk();
@@ -576,7 +574,7 @@ impl Wrap<&DataFrame> {
                                 ts,
                                 options.closed_window,
                                 tu,
-                                tz.clone(),
+                                tz,
                             )?;
                             Ok(update_subgroups_idx(&sub_groups, base_g))
                         })
@@ -597,7 +595,7 @@ impl Wrap<&DataFrame> {
                                 ts,
                                 options.closed_window,
                                 tu,
-                                tz.clone(),
+                                tz,
                             )?;
                             Ok(update_subgroups_slice(&sub_groups, *base_g))
                         })

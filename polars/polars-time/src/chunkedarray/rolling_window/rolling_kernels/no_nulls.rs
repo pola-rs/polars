@@ -68,14 +68,7 @@ where
             tu,
             tz.parse::<Tz>().ok(),
         ),
-        _ => groupby_values_iter(
-            period,
-            offset,
-            time,
-            closed_window,
-            tu,
-            NO_TIMEZONE.copied(),
-        ),
+        _ => groupby_values_iter(period, offset, time, closed_window, tu, None),
     };
     rolling_apply_agg_window::<no_nulls::MinWindow<_>, _, _>(values, offset_iter)
 }
@@ -102,14 +95,7 @@ where
             tu,
             tz.parse::<Tz>().ok(),
         ),
-        _ => groupby_values_iter(
-            period,
-            offset,
-            time,
-            closed_window,
-            tu,
-            NO_TIMEZONE.copied(),
-        ),
+        _ => groupby_values_iter(period, offset, time, closed_window, tu, None),
     };
     rolling_apply_agg_window::<no_nulls::MaxWindow<_>, _, _>(values, offset_iter)
 }
@@ -136,14 +122,7 @@ where
             tu,
             tz.parse::<Tz>().ok(),
         ),
-        _ => groupby_values_iter(
-            period,
-            offset,
-            time,
-            closed_window,
-            tu,
-            NO_TIMEZONE.copied(),
-        ),
+        _ => groupby_values_iter(period, offset, time, closed_window, tu, None),
     };
     rolling_apply_agg_window::<no_nulls::SumWindow<_>, _, _>(values, offset_iter)
 }
@@ -170,14 +149,7 @@ where
             tu,
             tz.parse::<Tz>().ok(),
         ),
-        _ => groupby_values_iter(
-            period,
-            offset,
-            time,
-            closed_window,
-            tu,
-            NO_TIMEZONE.copied(),
-        ),
+        _ => groupby_values_iter(period, offset, time, closed_window, tu, None),
     };
     rolling_apply_agg_window::<no_nulls::MeanWindow<_>, _, _>(values, offset_iter)
 }
@@ -204,14 +176,7 @@ where
             tu,
             tz.parse::<Tz>().ok(),
         ),
-        _ => groupby_values_iter(
-            period,
-            offset,
-            time,
-            closed_window,
-            tu,
-            NO_TIMEZONE.copied(),
-        ),
+        _ => groupby_values_iter(period, offset, time, closed_window, tu, None),
     };
     rolling_apply_agg_window::<no_nulls::VarWindow<_>, _, _>(values, offset_iter)
 }
@@ -248,14 +213,7 @@ where
             tu,
             tz.parse::<Tz>().ok(),
         ),
-        _ => groupby_values_iter(
-            period,
-            offset,
-            time,
-            closed_window,
-            tu,
-            NO_TIMEZONE.copied(),
-        ),
+        _ => groupby_values_iter(period, offset, time, closed_window, tu, None),
     };
     rolling_apply_agg_window::<no_nulls::StdWindow<_>, _, _>(values, offset_iter)
 }
