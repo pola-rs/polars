@@ -672,7 +672,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def __repr__(self) -> str:
         # don't expose internal/private classpath
-        return f"<polars.{self.__class__.__name__} object at 0x{id(self):X}>"
+        return self.schema
 
     def _repr_html_(self) -> str:
         try:
