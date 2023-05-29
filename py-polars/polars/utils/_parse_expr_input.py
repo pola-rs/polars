@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Iterable
 
 import polars._reexport as pl
 from polars import functions as F
+from polars.exceptions import ComputeError
 
 if TYPE_CHECKING:
     from polars import Expr
@@ -23,75 +24,70 @@ def selection_to_pyexpr_list(
         exprs, (str, pl.Expr, pl.Series, F.whenthen.WhenThen, F.whenthen.WhenThenThen)
     ) or not isinstance(exprs, Iterable):
         return [
-            expr_to_lit_or_expr(exprs, str_to_lit=False, structify=structify)._pyexpr,
+            parse_single_expression_input(exprs, structify=structify)._pyexpr,
         ]
 
     return [
-        expr_to_lit_or_expr(e, str_to_lit=False, structify=structify)._pyexpr
+        parse_single_expression_input(e, structify=structify)._pyexpr
         for e in exprs  # type: ignore[union-attr]
     ]
 
 
-def expr_to_lit_or_expr(
-    expr: IntoExpr | Iterable[IntoExpr],
-    str_to_lit: bool = True,
+def parse_single_expression_input(
+    input: IntoExpr,
+    *,
+    str_as_lit: bool = False,
     structify: bool = False,
-    name: str | None = None,
 ) -> Expr:
     """
-    Convert args to expressions.
+    Parse a single input into an expression.
 
     Parameters
     ----------
-    expr
-        Any argument.
-    str_to_lit
-        If True string argument `"foo"` will be converted to `lit("foo")`.
-        If False it will be converted to `col("foo")`.
+    input
+        The input to be parsed as an expression.
+    str_as_lit
+        Interpret string input as a string literal. If set to ``False`` (default),
+        strings are parsed as column names.
     structify
-        If the final unaliased expression has multiple output names,
-        automatically convert it to struct.
-    name
-        Apply the given name as an alias to the resulting expression.
-
-    Returns
-    -------
-    Expr
+        Convert multi-column expressions to a single struct expression.
 
     """
-    if isinstance(expr, pl.Expr):
-        pass
-    elif isinstance(expr, str) and not str_to_lit:
-        expr = F.col(expr)
+    if isinstance(input, pl.Expr):
+        expr = input
+    elif isinstance(input, str) and not str_as_lit:
+        expr = F.col(input)
+        structify = False
     elif (
-        isinstance(expr, (int, float, str, pl.Series, datetime, date, time, timedelta))
-        or expr is None
+        isinstance(input, (int, float, str, pl.Series, datetime, date, time, timedelta))
+        or input is None
     ):
-        expr = F.lit(expr)
+        expr = F.lit(input)
         structify = False
-    elif isinstance(expr, list):
-        expr = F.lit(pl.Series("", [expr]))
+    elif isinstance(input, list):
+        expr = F.lit(pl.Series("", [input]))
         structify = False
-    elif isinstance(expr, (F.whenthen.WhenThen, F.whenthen.WhenThenThen)):
-        expr = expr.otherwise(None)  # implicitly add the null branch.
+    elif isinstance(input, (F.whenthen.WhenThen, F.whenthen.WhenThenThen)):
+        expr = input.otherwise(None)  # implicitly add the null branch.
     else:
         raise TypeError(
-            f"did not expect value {expr} of type {type(expr)}, maybe disambiguate with"
+            f"did not expect value {input!r} of type {type(input)}, maybe disambiguate with"
             " pl.lit or pl.col"
         )
 
     if structify:
-        unaliased_expr = expr.meta.undo_aliases()
-        if unaliased_expr.meta.has_multiple_outputs():
-            expr_name = _expr_output_name(expr)
-            expr = F.struct(expr if expr_name is None else unaliased_expr)
-            name = name or expr_name
+        expr = _structify_expression(expr)
 
-    return expr if name is None else expr.alias(name)
+    return expr
 
 
-def _expr_output_name(expr: Expr) -> str | None:
-    try:
-        return expr.meta.output_name()
-    except Exception:
-        return None
+def _structify_expression(expr: Expr) -> Expr:
+    unaliased_expr = expr.meta.undo_aliases()
+    if unaliased_expr.meta.has_multiple_outputs():
+        try:
+            expr_name = expr.meta.output_name()
+        except ComputeError:
+            expr = F.struct(expr)
+        else:
+            expr = F.struct(unaliased_expr).alias(expr_name)
+    return expr

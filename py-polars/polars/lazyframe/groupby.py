@@ -3,7 +3,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Callable, Iterable
 
 from polars import functions as F
-from polars.utils._parse_expr_input import expr_to_lit_or_expr, selection_to_pyexpr_list
+from polars.utils._parse_expr_input import (
+    parse_single_expression_input,
+    selection_to_pyexpr_list,
+)
 from polars.utils._wrap import wrap_ldf
 
 if TYPE_CHECKING:
@@ -128,7 +131,7 @@ class LazyGroupBy:
             exprs.extend(selection_to_pyexpr_list(more_aggs))
         if named_aggs:
             exprs.extend(
-                expr_to_lit_or_expr(expr, name=name, str_to_lit=False)._pyexpr
+                parse_single_expression_input(expr).alias(name)._pyexpr
                 for name, expr in named_aggs.items()
             )
 

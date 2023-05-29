@@ -5,7 +5,10 @@ from typing import TYPE_CHECKING, Iterable, overload
 
 from polars import functions as F
 from polars.datatypes import Date, Struct, Time
-from polars.utils._parse_expr_input import expr_to_lit_or_expr, selection_to_pyexpr_list
+from polars.utils._parse_expr_input import (
+    parse_single_expression_input,
+    selection_to_pyexpr_list,
+)
 from polars.utils._wrap import wrap_expr
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -58,18 +61,18 @@ def datetime_(
     Expr of type `pl.Datetime`
 
     """
-    year_expr = expr_to_lit_or_expr(year, str_to_lit=False)
-    month_expr = expr_to_lit_or_expr(month, str_to_lit=False)
-    day_expr = expr_to_lit_or_expr(day, str_to_lit=False)
+    year_expr = parse_single_expression_input(year)
+    month_expr = parse_single_expression_input(month)
+    day_expr = parse_single_expression_input(day)
 
     if hour is not None:
-        hour = expr_to_lit_or_expr(hour, str_to_lit=False)._pyexpr
+        hour = parse_single_expression_input(hour)._pyexpr
     if minute is not None:
-        minute = expr_to_lit_or_expr(minute, str_to_lit=False)._pyexpr
+        minute = parse_single_expression_input(minute)._pyexpr
     if second is not None:
-        second = expr_to_lit_or_expr(second, str_to_lit=False)._pyexpr
+        second = parse_single_expression_input(second)._pyexpr
     if microsecond is not None:
-        microsecond = expr_to_lit_or_expr(microsecond, str_to_lit=False)._pyexpr
+        microsecond = parse_single_expression_input(microsecond)._pyexpr
 
     return wrap_expr(
         plr.datetime(
@@ -200,21 +203,21 @@ def duration(
 
     """  # noqa: W505
     if hours is not None:
-        hours = expr_to_lit_or_expr(hours, str_to_lit=False)._pyexpr
+        hours = parse_single_expression_input(hours)._pyexpr
     if minutes is not None:
-        minutes = expr_to_lit_or_expr(minutes, str_to_lit=False)._pyexpr
+        minutes = parse_single_expression_input(minutes)._pyexpr
     if seconds is not None:
-        seconds = expr_to_lit_or_expr(seconds, str_to_lit=False)._pyexpr
+        seconds = parse_single_expression_input(seconds)._pyexpr
     if milliseconds is not None:
-        milliseconds = expr_to_lit_or_expr(milliseconds, str_to_lit=False)._pyexpr
+        milliseconds = parse_single_expression_input(milliseconds)._pyexpr
     if microseconds is not None:
-        microseconds = expr_to_lit_or_expr(microseconds, str_to_lit=False)._pyexpr
+        microseconds = parse_single_expression_input(microseconds)._pyexpr
     if nanoseconds is not None:
-        nanoseconds = expr_to_lit_or_expr(nanoseconds, str_to_lit=False)._pyexpr
+        nanoseconds = parse_single_expression_input(nanoseconds)._pyexpr
     if days is not None:
-        days = expr_to_lit_or_expr(days, str_to_lit=False)._pyexpr
+        days = parse_single_expression_input(days)._pyexpr
     if weeks is not None:
-        weeks = expr_to_lit_or_expr(weeks, str_to_lit=False)._pyexpr
+        weeks = parse_single_expression_input(weeks)._pyexpr
 
     return wrap_expr(
         plr.duration(
@@ -384,7 +387,7 @@ def struct(
         exprs.extend(selection_to_pyexpr_list(more_exprs))
     if named_exprs:
         exprs.extend(
-            expr_to_lit_or_expr(expr, name=name, str_to_lit=False)._pyexpr
+            parse_single_expression_input(expr).alias(name)._pyexpr
             for name, expr in named_exprs.items()
         )
 
@@ -508,7 +511,7 @@ def format(f_string: str, *args: Expr | str) -> Expr:
     arguments = iter(args)
     for i, s in enumerate(f_string.split("{}")):
         if i > 0:
-            e = expr_to_lit_or_expr(next(arguments), str_to_lit=False)
+            e = parse_single_expression_input(next(arguments))
             exprs.append(e)
 
         if len(s) > 0:

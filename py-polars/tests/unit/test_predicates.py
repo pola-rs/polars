@@ -33,10 +33,8 @@ def test_when_then_implicit_none() -> None:
     )
 
     assert df.select(
-        [
-            pl.when(pl.col("points") > 7).then("Foo"),
-            pl.when(pl.col("points") > 7).then("Foo").alias("bar"),
-        ]
+        pl.when(pl.col("points") > 7).then("Foo"),
+        pl.when(pl.col("points") > 7).then("Foo").alias("bar"),
     ).to_dict(False) == {
         "literal": ["Foo", "Foo", "Foo", None, None, None],
         "bar": ["Foo", "Foo", "Foo", None, None, None],

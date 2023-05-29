@@ -67,7 +67,7 @@ PolarsExprType: TypeAlias = Union["Expr", "WhenThen", "WhenThenThen"]
 
 # literal types that are allowed in expressions (auto-converted to pl.lit)
 PythonLiteral: TypeAlias = Union[
-    str, int, float, bool, date, time, datetime, timedelta, bytes, Decimal
+    str, int, float, bool, date, time, datetime, timedelta, bytes, Decimal, List[Any]
 ]
 
 IntoExpr: TypeAlias = Union[PolarsExprType, PythonLiteral, "Series", None]
