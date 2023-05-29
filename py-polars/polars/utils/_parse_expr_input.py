@@ -19,7 +19,23 @@ def parse_as_list_of_expressions(
     structify: bool = False,
     **named_inputs: IntoExpr,
 ) -> list[PyExpr]:
-    """Parse multiple inputs into a list of expressions."""
+    """
+    Parse multiple inputs into a list of expressions.
+
+    Parameters
+    ----------
+    inputs
+        Inputs to be parsed as expressions.
+    *more_inputs
+        Additional inputs to be parsed as expressions, specified as positional
+        arguments.
+    **named_inputs
+        Additional inputs to be parsed as expressions, specified as keyword arguments.
+        The expressions will be renamed to the keyword used.
+    structify
+        Convert multi-column expressions to a single struct expression.
+
+    """
     exprs = _parse_regular_inputs(inputs, more_inputs, structify=structify)
 
     if named_inputs:

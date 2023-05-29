@@ -65,7 +65,7 @@ def test_parse_as_expression_expr(input: pl.Expr) -> None:
 @pytest.mark.parametrize(
     "input", [pl.when(True).then(1), pl.when(True).then(1).when(False).then(0)]
 )
-def test_parse_as_expression_whenthen(input: pl.WhenThen | pl.WhenThenThen) -> None:
+def test_parse_as_expression_whenthen(input: Any) -> None:
     result = parse_as_expression(input)
     expected = input.otherwise(None)
     assert_expr_equal(result, expected)
