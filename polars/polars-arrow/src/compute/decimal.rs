@@ -1,15 +1,11 @@
 use atoi::atoi;
 
-// 90.xx has 2 sd
-// 00900.xx has 3 sd
-fn significant_digits_precision(bytes: &[u8]) -> u8 {
-    (bytes.len() - bytes.iter().take_while(|byte| **byte == b'0').count()) as u8
+fn significant_digits(bytes: &[u8]) -> u8 {
+    (bytes.len() as u8) - leading_zeros(bytes)
 }
 
-// 0.009 has 3 sd
-// 0.900 has 1 sd
-fn significant_digits_scale(bytes: &[u8]) -> u8 {
-    (bytes.len() - bytes.iter().rev().take_while(|byte| **byte == b'0').count()) as u8
+fn leading_zeros(bytes: &[u8]) -> u8 {
+    bytes.iter().take_while(|byte| **byte == b'0').count() as u8
 }
 
 fn split_decimal_bytes(bytes: &[u8]) -> (Option<&[u8]>, Option<&[u8]>) {
@@ -23,8 +19,8 @@ pub fn infer_params(bytes: &[u8]) -> Option<(u8, u8)> {
     let (lhs, rhs) = split_decimal_bytes(bytes);
     match (lhs, rhs) {
         (Some(lhs), Some(rhs)) => {
-            let lhs_s = significant_digits_precision(lhs);
-            let rhs_s = significant_digits_scale(rhs);
+            let lhs_s = significant_digits(lhs);
+            let rhs_s = significant_digits(rhs);
 
             let precision = lhs_s + rhs_s;
             let scale = rhs_s;
@@ -52,20 +48,44 @@ pub(super) fn deserialize_decimal(bytes: &[u8], precision: u8, scale: u8) -> Opt
             atoi::<i128>(rhs)
                 .map(|y| (x, lhs, y, rhs))
                 .and_then(|(lhs, lhs_b, rhs, rhs_b)| {
-                    let lhs_s = significant_digits_precision(lhs_b);
-                    let rhs_s = significant_digits_scale(rhs_b);
+                    let lhs_s = significant_digits(lhs_b);
+                    let leading_zeros_rhs = leading_zeros(rhs_b);
+                    let rhs_s = rhs_b.len() as u8 - leading_zeros_rhs;
 
+                    // parameters don't match bytes
                     if lhs_s + rhs_s > precision || rhs_s > scale {
                         None
-                    } else if rhs_s < scale {
-                        let diff = scale - rhs_s;
-
-                        Some((lhs, rhs * 10i128.pow(diff as u32), rhs_s))
-                    } else {
-                        Some((lhs, rhs, rhs_s))
+                    }
+                    // significant digits don't fit scale
+                    else if rhs_s < scale {
+                        // scale: 2
+                        // number: x.09
+                        // sign digits: 1
+                        // parsed: 9
+                        // so this is correct
+                        if leading_zeros_rhs + rhs_s == scale {
+                            Some((lhs, rhs))
+                        }
+                        // scale: 2
+                        // number: x.9
+                        // sign digits: 1
+                        // parsed: 9
+                        // so we must multiply by 10 to get 90
+                        else {
+                            let diff = scale as u32 - rhs_s as u32;
+                            Some((lhs, rhs * 10i128.pow(diff)))
+                        }
+                    }
+                    // scale: 2
+                    // number: x.90
+                    // sign digits: 2
+                    // parsed: 90
+                    // so this is correct
+                    else {
+                        Some((lhs, rhs))
                     }
                 })
-                .map(|(lhs, rhs, rhs_s)| lhs * 10i128.pow(scale as u32) + rhs)
+                .map(|(lhs, rhs)| lhs * 10i128.pow(scale as u32) + rhs)
         }),
         (None, Some(rhs)) => {
             if rhs.len() != precision as usize || rhs.len() != scale as usize {
@@ -80,5 +100,33 @@ pub(super) fn deserialize_decimal(bytes: &[u8], precision: u8, scale: u8) -> Opt
             atoi::<i128>(lhs)
         }
         (None, None) => None,
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    #[test]
+    fn test_decimal() {
+        let precision = 8;
+        let scale = 2;
+
+        let val = "12.09";
+        assert_eq!(
+            deserialize_decimal(val.as_bytes(), precision, scale),
+            Some(1209)
+        );
+
+        let val = "1200.90";
+        assert_eq!(
+            deserialize_decimal(val.as_bytes(), precision, scale),
+            Some(120090)
+        );
+
+        let val = "143.9";
+        assert_eq!(
+            deserialize_decimal(val.as_bytes(), precision, scale),
+            Some(14390)
+        );
     }
 }

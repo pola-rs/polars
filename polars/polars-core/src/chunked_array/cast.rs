@@ -194,8 +194,6 @@ impl ChunkCast for Utf8Chunked {
                     polars_bail!(ComputeError: "expected 'precision' or 'scale' when casting to Decimal")
                 }
             },
-            #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(Some(precision), Some(scale)) => self.to_decimal(100),
             _ => cast_impl(self.name(), &self.chunks, data_type),
         }
     }
