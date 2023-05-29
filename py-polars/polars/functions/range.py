@@ -124,9 +124,9 @@ def arange(
     └───────────┘
 
     """
-    start = parse_as_expression(start)
-    end = parse_as_expression(end)
-    range_expr = wrap_expr(plr.arange(start._pyexpr, end._pyexpr, step))
+    start = parse_as_expression(start)._pyexpr
+    end = parse_as_expression(end)._pyexpr
+    range_expr = wrap_expr(plr.arange(start, end, step))
 
     if dtype is not None and dtype != Int64:
         range_expr = range_expr.cast(dtype)

@@ -401,11 +401,8 @@ class ExprListNameSpace:
         └───────┘
 
         """
-        return wrap_expr(
-            self._pyexpr.list_contains(
-                parse_as_expression(item, str_as_lit=True)._pyexpr
-            )
-        )
+        item = parse_as_expression(item, str_as_lit=True)._pyexpr
+        return wrap_expr(self._pyexpr.list_contains(item))
 
     def join(self, separator: str) -> Expr:
         """
@@ -644,8 +641,8 @@ class ExprListNameSpace:
         ]
 
         """
-        n = parse_as_expression(n)
-        return wrap_expr(self._pyexpr.list_tail(n._pyexpr))
+        n = parse_as_expression(n)._pyexpr
+        return wrap_expr(self._pyexpr.list_tail(n))
 
     def explode(self) -> Expr:
         """
@@ -707,11 +704,8 @@ class ExprListNameSpace:
         └────────────────┘
 
         """
-        return wrap_expr(
-            self._pyexpr.list_count_match(
-                parse_as_expression(element, str_as_lit=True)._pyexpr
-            )
-        )
+        element = parse_as_expression(element, str_as_lit=True)._pyexpr
+        return wrap_expr(self._pyexpr.list_count_match(element))
 
     @deprecated_alias(name_generator="fields")
     def to_struct(

@@ -1244,8 +1244,8 @@ class Expr:
         └─────┴──────┘
 
         """
-        other = parse_as_expression(other)
-        return self._from_pyexpr(self._pyexpr.append(other._pyexpr, upcast))
+        other = parse_as_expression(other)._pyexpr
+        return self._from_pyexpr(self._pyexpr.append(other, upcast))
 
     def rechunk(self) -> Self:
         """
@@ -1678,8 +1678,8 @@ class Expr:
         └─────┘
 
         """
-        other = parse_as_expression(other)
-        return self._from_pyexpr(self._pyexpr.dot(other._pyexpr))
+        other = parse_as_expression(other)._pyexpr
+        return self._from_pyexpr(self._pyexpr.dot(other))
 
     def mode(self) -> Self:
         """
@@ -2049,8 +2049,8 @@ class Expr:
         └──────┴───────┴─────┘
 
         """
-        element = parse_as_expression(element)
-        return self._from_pyexpr(self._pyexpr.search_sorted(element._pyexpr, side))
+        element = parse_as_expression(element)._pyexpr
+        return self._from_pyexpr(self._pyexpr.search_sorted(element, side))
 
     def sort_by(
         self,
@@ -2296,10 +2296,8 @@ class Expr:
         └─────┘
 
         """
-        fill_value = parse_as_expression(fill_value, str_as_lit=True)
-        return self._from_pyexpr(
-            self._pyexpr.shift_and_fill(periods, fill_value._pyexpr)
-        )
+        fill_value = parse_as_expression(fill_value, str_as_lit=True)._pyexpr
+        return self._from_pyexpr(self._pyexpr.shift_and_fill(periods, fill_value))
 
     def fill_null(
         self,
@@ -2376,8 +2374,8 @@ class Expr:
             )
 
         if value is not None:
-            value = parse_as_expression(value, str_as_lit=True)
-            return self._from_pyexpr(self._pyexpr.fill_null(value._pyexpr))
+            value = parse_as_expression(value, str_as_lit=True)._pyexpr
+            return self._from_pyexpr(self._pyexpr.fill_null(value))
         else:
             return self._from_pyexpr(
                 self._pyexpr.fill_null_with_strategy(strategy, limit)
@@ -2408,8 +2406,8 @@ class Expr:
         └──────┴──────┘
 
         """
-        fill_value = parse_as_expression(value, str_as_lit=True)
-        return self._from_pyexpr(self._pyexpr.fill_nan(fill_value._pyexpr))
+        fill_value = parse_as_expression(value, str_as_lit=True)._pyexpr
+        return self._from_pyexpr(self._pyexpr.fill_nan(fill_value))
 
     def forward_fill(self, limit: int | None = None) -> Self:
         """
@@ -3171,8 +3169,8 @@ class Expr:
         └─────┘
 
         """
-        quantile = parse_as_expression(quantile)
-        return self._from_pyexpr(self._pyexpr.quantile(quantile._pyexpr, interpolation))
+        quantile = parse_as_expression(quantile)._pyexpr
+        return self._from_pyexpr(self._pyexpr.quantile(quantile, interpolation))
 
     def filter(self, predicate: Expr) -> Self:
         """
@@ -4222,8 +4220,8 @@ class Expr:
         └─────┴───────┴────────────┘
 
         """
-        exponent = parse_as_expression(exponent)
-        return self._from_pyexpr(self._pyexpr.pow(exponent._pyexpr))
+        exponent = parse_as_expression(exponent)._pyexpr
+        return self._from_pyexpr(self._pyexpr.pow(exponent))
 
     def xor(self, other: Any) -> Self:
         """
@@ -4357,8 +4355,8 @@ class Expr:
         └─────────────────┘
 
         """
-        by = parse_as_expression(by)
-        return self._from_pyexpr(self._pyexpr.repeat_by(by._pyexpr))
+        by = parse_as_expression(by)._pyexpr
+        return self._from_pyexpr(self._pyexpr.repeat_by(by))
 
     def is_between(
         self,

@@ -335,8 +335,8 @@ class ExprDateTimeNameSpace:
             raise TypeError(
                 f"expected 'time' to be a python time or polars expression, found {time!r}"
             )
-        time = parse_as_expression(time)
-        return wrap_expr(self._pyexpr.dt_combine(time._pyexpr, time_unit))
+        time = parse_as_expression(time)._pyexpr
+        return wrap_expr(self._pyexpr.dt_combine(time, time_unit))
 
     def to_string(self, format: str) -> Expr:
         """

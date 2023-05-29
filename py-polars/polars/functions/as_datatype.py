@@ -61,9 +61,9 @@ def datetime_(
     Expr of type `pl.Datetime`
 
     """
-    year_expr = parse_as_expression(year)
-    month_expr = parse_as_expression(month)
-    day_expr = parse_as_expression(day)
+    year_expr = parse_as_expression(year)._pyexpr
+    month_expr = parse_as_expression(month)._pyexpr
+    day_expr = parse_as_expression(day)._pyexpr
 
     if hour is not None:
         hour = parse_as_expression(hour)._pyexpr
@@ -76,9 +76,9 @@ def datetime_(
 
     return wrap_expr(
         plr.datetime(
-            year_expr._pyexpr,
-            month_expr._pyexpr,
-            day_expr._pyexpr,
+            year_expr,
+            month_expr,
+            day_expr,
             hour,
             minute,
             second,

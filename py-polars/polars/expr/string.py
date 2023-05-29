@@ -1134,8 +1134,8 @@ class ExprStringNameSpace:
         └────────────────┘
 
         '''
-        pattern = parse_as_expression(pattern, str_as_lit=True)
-        return wrap_expr(self._pyexpr.str_extract_all(pattern._pyexpr))
+        pattern = parse_as_expression(pattern, str_as_lit=True)._pyexpr
+        return wrap_expr(self._pyexpr.str_extract_all(pattern))
 
     def count_match(self, pattern: str) -> Expr:
         r"""
@@ -1410,11 +1410,9 @@ class ExprStringNameSpace:
         └─────┴────────┘
 
         """
-        pattern = parse_as_expression(pattern, str_as_lit=True)
-        value = parse_as_expression(value, str_as_lit=True)
-        return wrap_expr(
-            self._pyexpr.str_replace_n(pattern._pyexpr, value._pyexpr, literal, n)
-        )
+        pattern = parse_as_expression(pattern, str_as_lit=True)._pyexpr
+        value = parse_as_expression(value, str_as_lit=True)._pyexpr
+        return wrap_expr(self._pyexpr.str_replace_n(pattern, value, literal, n))
 
     def replace_all(
         self, pattern: str | Expr, value: str | Expr, *, literal: bool = False
@@ -1451,11 +1449,9 @@ class ExprStringNameSpace:
         └─────┴─────────┘
 
         """
-        pattern = parse_as_expression(pattern, str_as_lit=True)
-        value = parse_as_expression(value, str_as_lit=True)
-        return wrap_expr(
-            self._pyexpr.str_replace_all(pattern._pyexpr, value._pyexpr, literal)
-        )
+        pattern = parse_as_expression(pattern, str_as_lit=True)._pyexpr
+        value = parse_as_expression(value, str_as_lit=True)._pyexpr
+        return wrap_expr(self._pyexpr.str_replace_all(pattern, value, literal))
 
     def slice(self, offset: int, length: int | None = None) -> Expr:
         """

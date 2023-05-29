@@ -2267,7 +2267,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────────────────────┴───────┴───────┴───────┘
 
         """
-        index_column = parse_as_expression(index_column)
+        index_column = parse_as_expression(index_column)._pyexpr
         if offset is None:
             offset = f"-{_timedelta_to_pl_duration(period)}"
 
@@ -2276,7 +2276,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         offset = _timedelta_to_pl_duration(offset)
 
         lgb = self._ldf.groupby_rolling(
-            index_column._pyexpr, period, offset, closed, pyexprs_by, check_sorted
+            index_column, period, offset, closed, pyexprs_by, check_sorted
         )
         return LazyGroupBy(lgb)
 
@@ -2579,7 +2579,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────────────────┴─────────────────┴─────┴─────────────────┘
 
         """  # noqa: W505
-        index_column = parse_as_expression(index_column)
+        index_column = parse_as_expression(index_column)._pyexpr
         if offset is None:
             offset = f"-{_timedelta_to_pl_duration(every)}" if period is None else "0ns"
 
@@ -2592,7 +2592,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         pyexprs_by = parse_as_list_of_expressions(by)
         lgb = self._ldf.groupby_dynamic(
-            index_column._pyexpr,
+            index_column,
             every,
             period,
             offset,
@@ -4142,8 +4142,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┘
 
         """
-        quantile = parse_as_expression(quantile)
-        return self._from_pyldf(self._ldf.quantile(quantile._pyexpr, interpolation))
+        quantile = parse_as_expression(quantile)._pyexpr
+        return self._from_pyldf(self._ldf.quantile(quantile, interpolation))
 
     def explode(
         self,

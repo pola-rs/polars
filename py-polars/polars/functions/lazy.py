@@ -1715,12 +1715,12 @@ def fold(
     └─────┴─────┘
     """
     # in case of pl.col("*")
-    acc = parse_as_expression(acc, str_as_lit=True)
+    acc = parse_as_expression(acc, str_as_lit=True)._pyexpr
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
     exprs = parse_as_list_of_expressions(exprs)
-    return wrap_expr(plr.fold(acc._pyexpr, function, exprs))
+    return wrap_expr(plr.fold(acc, function, exprs))
 
 
 def reduce(
@@ -1856,12 +1856,12 @@ def cumfold(
 
     """  # noqa: W505
     # in case of pl.col("*")
-    acc = parse_as_expression(acc, str_as_lit=True)
+    acc = parse_as_expression(acc, str_as_lit=True)._pyexpr
     if isinstance(exprs, pl.Expr):
         exprs = [exprs]
 
     exprs = parse_as_list_of_expressions(exprs)
-    return wrap_expr(plr.cumfold(acc._pyexpr, function, exprs, include_init))
+    return wrap_expr(plr.cumfold(acc, function, exprs, include_init))
 
 
 def cumreduce(
@@ -2446,8 +2446,8 @@ def arg_where(condition: Expr | Series, *, eager: bool = False) -> Expr | Series
             )
         return condition.to_frame().select(arg_where(col(condition.name))).to_series()
     else:
-        condition = parse_as_expression(condition)
-        return wrap_expr(plr.arg_where(condition._pyexpr))
+        condition = parse_as_expression(condition)._pyexpr
+        return wrap_expr(plr.arg_where(condition))
 
 
 def coalesce(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
