@@ -219,7 +219,7 @@ impl ListNameSpace {
 
     /// Get the tail of every sublist
     pub fn tail(self, n: Expr) -> Expr {
-        self.slice(lit(0) - n.clone().cast(DataType::Int64), n)
+        self.slice(lit(0i64) - n.clone().cast(DataType::Int64), n)
     }
 
     #[cfg(feature = "list_to_struct")]

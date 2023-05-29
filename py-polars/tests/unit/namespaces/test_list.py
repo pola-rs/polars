@@ -442,3 +442,9 @@ def test_list_arr_get_8810() -> None:
     assert pl.DataFrame(pl.Series("a", [None], pl.List(pl.Int64))).select(
         pl.col("a").list.get(0)
     ).to_dict(False) == {"a": [None]}
+
+
+def test_list_tail_underflow_9087() -> None:
+    assert pl.Series([["a", "b", "c"]]).list.tail(pl.lit(1, pl.UInt32)).to_list() == [
+        ["c"]
+    ]

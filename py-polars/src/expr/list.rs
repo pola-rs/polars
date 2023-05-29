@@ -80,6 +80,10 @@ impl PyExpr {
         self.inner.clone().list().slice(offset.inner, length).into()
     }
 
+    fn list_tail(&self, n: PyExpr) -> Self {
+        self.inner.clone().list().tail(n.inner).into()
+    }
+
     fn list_sort(&self, descending: bool) -> Self {
         self.inner
             .clone()

@@ -644,8 +644,8 @@ class ExprListNameSpace:
         ]
 
         """
-        offset = -parse_single_expression_input(n)
-        return self.slice(offset, n)
+        n = parse_single_expression_input(n)
+        return wrap_expr(self._pyexpr.list_tail(n._pyexpr))
 
     def explode(self) -> Expr:
         """
