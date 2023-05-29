@@ -369,6 +369,43 @@ pub(crate) fn groupby_values_iter_partial_lookbehind(
 }
 
 #[allow(clippy::too_many_arguments)]
+pub(crate) fn groupby_values_iter_partial_lookahead(
+    period: Duration,
+    offset: Duration,
+    time: &[i64],
+    closed_window: ClosedWindow,
+    tu: TimeUnit,
+    tz: Option<Tz>,
+    start_offset: usize,
+    upper_bound: Option<usize>,
+) -> impl Iterator<Item = PolarsResult<(IdxSize, IdxSize)>> + TrustedLen + '_ {
+    let upper_bound = upper_bound.unwrap_or(time.len());
+    debug_assert!(!offset.negative);
+
+    let add = match tu {
+        TimeUnit::Nanoseconds => Duration::add_ns,
+        TimeUnit::Microseconds => Duration::add_us,
+        TimeUnit::Milliseconds => Duration::add_ms,
+    };
+
+    time[start_offset..upper_bound]
+        .iter()
+        .enumerate()
+        .map(move |(mut i, lower)| {
+            i += start_offset;
+            let lower = add(&offset, *lower, tz.as_ref())?;
+            let upper = add(&period, lower, tz.as_ref())?;
+
+            let b = Bounds::new(lower, upper);
+
+            debug_assert!(i < time.len());
+            let slice = unsafe { time.get_unchecked(i..) };
+            let len = slice.partition_point(|v| b.is_member(*v, closed_window));
+
+            Ok((i as IdxSize, len as IdxSize))
+        })
+}
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn groupby_values_iter_full_lookahead(
     period: Duration,
     offset: Duration,
@@ -388,12 +425,6 @@ pub(crate) fn groupby_values_iter_full_lookahead(
         TimeUnit::Milliseconds => Duration::add_ms,
     };
 
-    // If the offset isn't 0, or if the window isn't closed on the left, then
-    // we need to advance within the loop to find the start of the window.
-    let inner_loop_needed = offset != Duration::parse("0ns")
-        || closed_window == ClosedWindow::Right
-        || closed_window == ClosedWindow::None;
-
     time[start_offset..upper_bound]
         .iter()
         .enumerate()
@@ -405,20 +436,16 @@ pub(crate) fn groupby_values_iter_full_lookahead(
             let b = Bounds::new(lower, upper);
 
             // find starting point of window
-            match inner_loop_needed {
-                true => {
-                    for &t in &time[i..] {
-                        if b.is_member(t, closed_window) {
-                            break;
-                        }
-                        i += 1;
-                    }
-                    if i >= time.len() {
-                        return Ok((i as IdxSize, 0));
-                    }
+            for &t in &time[i..] {
+                if b.is_member(t, closed_window) {
+                    break;
                 }
-                false => debug_assert!(i < time.len()),
+                i += 1;
             }
+            if i >= time.len() {
+                return Ok((i as IdxSize, 0));
+            }
+
             let slice = unsafe { time.get_unchecked(i..) };
             let len = slice.partition_point(|v| b.is_member(*v, closed_window));
 
@@ -449,8 +476,25 @@ pub(crate) fn groupby_values_iter<'a>(
                 groupby_values_iter_partial_lookbehind(period, offset, time, closed_window, tu, tz);
             Box::new(iter)
         }
-    } else {
+    } else if offset != Duration::parse("0ns")
+        || closed_window == ClosedWindow::Right
+        || closed_window == ClosedWindow::None
+    {
+        // only lookahead
         let iter = groupby_values_iter_full_lookahead(
+            period,
+            offset,
+            time,
+            closed_window,
+            tu,
+            tz,
+            0,
+            None,
+        );
+        Box::new(iter)
+    } else {
+        // partial lookahead
+        let iter = groupby_values_iter_partial_lookahead(
             period,
             offset,
             time,
@@ -537,7 +581,13 @@ pub fn groupby_values(
             iter.map(|result| result.map(|(offset, len)| [offset, len]))
                 .collect::<PolarsResult<_>>()
         }
-    } else {
+    } else if offset != Duration::parse("0ns")
+        || closed_window == ClosedWindow::Right
+        || closed_window == ClosedWindow::None
+    {
+        // window is completely ahead of t and t itself is not a member
+        // --t-----------
+        //        [---]
         let vals = POOL.install(|| {
             thread_offsets
                 .par_iter()
@@ -546,6 +596,34 @@ pub fn groupby_values(
                     let lower_bound = base_offset;
                     let upper_bound = base_offset + len;
                     let iter = groupby_values_iter_full_lookahead(
+                        period,
+                        offset,
+                        time,
+                        closed_window,
+                        tu,
+                        tz,
+                        lower_bound,
+                        Some(upper_bound),
+                    );
+                    iter.map(|result| result.map(|(offset, len)| [offset as IdxSize, len]))
+                        .collect::<PolarsResult<Vec<_>>>()
+                })
+                .collect::<PolarsResult<Vec<_>>>()
+        })?;
+        Ok(flatten(&vals, Some(time.len())))
+    } else {
+        // Duration is 0 and window is closed on the left:
+        // it must be that the window starts at t and t is a member
+        // --t-----------
+        //  [---]
+        let vals = POOL.install(|| {
+            thread_offsets
+                .par_iter()
+                .copied()
+                .map(|(base_offset, len)| {
+                    let lower_bound = base_offset;
+                    let upper_bound = base_offset + len;
+                    let iter = groupby_values_iter_partial_lookahead(
                         period,
                         offset,
                         time,
