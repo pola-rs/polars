@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from polars.datatypes import Date, Datetime, Time, py_type_to_dtype
 from polars.exceptions import ChronoFormatWarning
-from polars.utils._parse_expr_input import parse_single_expression_input
+from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
 from polars.utils.decorators import deprecated_alias
 from polars.utils.various import find_stacklevel
@@ -736,7 +736,7 @@ class ExprStringNameSpace:
         ends_with : Check if string values end with a substring.
 
         """
-        pattern = parse_single_expression_input(pattern, str_as_lit=True)._pyexpr
+        pattern = parse_as_expression(pattern, str_as_lit=True)._pyexpr
         return wrap_expr(self._pyexpr.str_contains(pattern, literal, strict))
 
     def ends_with(self, suffix: str | Expr) -> Expr:
@@ -783,7 +783,7 @@ class ExprStringNameSpace:
         starts_with : Check if string values start with a substring.
 
         """
-        suffix = parse_single_expression_input(suffix, str_as_lit=True)._pyexpr
+        suffix = parse_as_expression(suffix, str_as_lit=True)._pyexpr
         return wrap_expr(self._pyexpr.str_ends_with(suffix))
 
     def starts_with(self, prefix: str | Expr) -> Expr:
@@ -830,7 +830,7 @@ class ExprStringNameSpace:
         ends_with : Check if string values end with a substring.
 
         """
-        prefix = parse_single_expression_input(prefix, str_as_lit=True)._pyexpr
+        prefix = parse_as_expression(prefix, str_as_lit=True)._pyexpr
         return wrap_expr(self._pyexpr.str_starts_with(prefix))
 
     def json_extract(self, dtype: PolarsDataType | None = None) -> Expr:
@@ -1134,7 +1134,7 @@ class ExprStringNameSpace:
         └────────────────┘
 
         '''
-        pattern = parse_single_expression_input(pattern, str_as_lit=True)
+        pattern = parse_as_expression(pattern, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_extract_all(pattern._pyexpr))
 
     def count_match(self, pattern: str) -> Expr:
@@ -1410,8 +1410,8 @@ class ExprStringNameSpace:
         └─────┴────────┘
 
         """
-        pattern = parse_single_expression_input(pattern, str_as_lit=True)
-        value = parse_single_expression_input(value, str_as_lit=True)
+        pattern = parse_as_expression(pattern, str_as_lit=True)
+        value = parse_as_expression(value, str_as_lit=True)
         return wrap_expr(
             self._pyexpr.str_replace_n(pattern._pyexpr, value._pyexpr, literal, n)
         )
@@ -1451,8 +1451,8 @@ class ExprStringNameSpace:
         └─────┴─────────┘
 
         """
-        pattern = parse_single_expression_input(pattern, str_as_lit=True)
-        value = parse_single_expression_input(value, str_as_lit=True)
+        pattern = parse_as_expression(pattern, str_as_lit=True)
+        value = parse_as_expression(value, str_as_lit=True)
         return wrap_expr(
             self._pyexpr.str_replace_all(pattern._pyexpr, value._pyexpr, literal)
         )

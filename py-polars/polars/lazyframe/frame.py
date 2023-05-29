@@ -49,8 +49,8 @@ from polars.io.parquet.anonymous_scan import _scan_parquet_fsspec
 from polars.lazyframe.groupby import LazyGroupBy
 from polars.slice import LazyPolarsSlice
 from polars.utils._parse_expr_input import (
+    parse_as_expression,
     parse_as_list_of_expressions,
-    parse_single_expression_input,
 )
 from polars.utils._wrap import wrap_df, wrap_expr
 from polars.utils.convert import _timedelta_to_pl_duration
@@ -1921,7 +1921,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             predicate = pl.Series(predicate)
 
         return self._from_pyldf(
-            self._ldf.filter(parse_single_expression_input(predicate)._pyexpr)
+            self._ldf.filter(parse_as_expression(predicate)._pyexpr)
         )
 
     def select(
@@ -2267,7 +2267,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────────────────────┴───────┴───────┴───────┘
 
         """
-        index_column = parse_single_expression_input(index_column)
+        index_column = parse_as_expression(index_column)
         if offset is None:
             offset = f"-{_timedelta_to_pl_duration(period)}"
 
@@ -2579,7 +2579,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────────────────┴─────────────────┴─────┴─────────────────┘
 
         """  # noqa: W505
-        index_column = parse_single_expression_input(index_column)
+        index_column = parse_as_expression(index_column)
         if offset is None:
             offset = f"-{_timedelta_to_pl_duration(every)}" if period is None else "0ns"
 
@@ -4142,7 +4142,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         └─────┴─────┘
 
         """
-        quantile = parse_single_expression_input(quantile)
+        quantile = parse_as_expression(quantile)
         return self._from_pyldf(self._ldf.quantile(quantile._pyexpr, interpolation))
 
     def explode(

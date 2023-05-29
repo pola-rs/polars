@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import polars._reexport as pl
 from polars import functions as F
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
-from polars.utils._parse_expr_input import parse_single_expression_input
+from polars.utils._parse_expr_input import parse_as_expression
 from polars.utils._wrap import wrap_expr
 from polars.utils.convert import _timedelta_to_pl_duration
 from polars.utils.decorators import deprecated_alias
@@ -335,7 +335,7 @@ class ExprDateTimeNameSpace:
             raise TypeError(
                 f"expected 'time' to be a python time or polars expression, found {time!r}"
             )
-        time = parse_single_expression_input(time)
+        time = parse_as_expression(time)
         return wrap_expr(self._pyexpr.dt_combine(time._pyexpr, time_unit))
 
     def to_string(self, format: str) -> Expr:

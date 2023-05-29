@@ -24,7 +24,7 @@ def parse_as_list_of_expressions(
         exprs.extend(_selection_to_pyexpr_list(more_inputs, structify=structify))
     if named_inputs:
         exprs.extend(
-            parse_single_expression_input(expr, structify=structify).alias(name)._pyexpr
+            parse_as_expression(expr, structify=structify).alias(name)._pyexpr
             for name, expr in named_inputs.items()
         )
     return exprs
@@ -41,16 +41,16 @@ def _selection_to_pyexpr_list(
         exprs, (str, pl.Expr, pl.Series, F.whenthen.WhenThen, F.whenthen.WhenThenThen)
     ) or not isinstance(exprs, Iterable):
         return [
-            parse_single_expression_input(exprs, structify=structify)._pyexpr,
+            parse_as_expression(exprs, structify=structify)._pyexpr,
         ]
 
     return [
-        parse_single_expression_input(e, structify=structify)._pyexpr
+        parse_as_expression(e, structify=structify)._pyexpr
         for e in exprs  # type: ignore[union-attr]
     ]
 
 
-def parse_single_expression_input(
+def parse_as_expression(
     input: IntoExpr,
     *,
     str_as_lit: bool = False,
