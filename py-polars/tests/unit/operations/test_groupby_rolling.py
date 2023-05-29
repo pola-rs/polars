@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars.type_aliases import ClosedInterval
 
 
 def bad_agg_parameters() -> list[Any]:
@@ -193,7 +196,7 @@ def test_groupby_rolling_negative_offset_crossing_dst(time_zone: str | None) -> 
 def test_groupby_rolling_non_negative_offset_9077(
     time_zone: str | None,
     offset: str,
-    closed: str,
+    closed: ClosedInterval,
     expected_values: list[list[int]],
 ) -> None:
     df = pl.DataFrame(
