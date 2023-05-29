@@ -636,7 +636,6 @@ fn test_rolling_lookback() {
         None,
     )
     .unwrap(); // unwrapping as we pass None as the time zone
-    println!("dates: {:?}", dates);
 
     // full lookbehind
     let groups = groupby_values(
