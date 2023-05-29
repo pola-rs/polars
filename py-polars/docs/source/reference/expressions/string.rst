@@ -37,6 +37,7 @@ The following methods are available under the `expr.str` attribute.
     Expr.str.strptime
     Expr.str.to_date
     Expr.str.to_datetime
+    Expr.str.to_decimal
     Expr.str.to_lowercase
     Expr.str.to_time
     Expr.str.to_uppercase

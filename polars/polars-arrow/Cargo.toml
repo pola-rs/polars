@@ -10,6 +10,7 @@ description = "Arrow interfaces for Polars DataFrame library"
 
 [dependencies]
 arrow.workspace = true
+atoi = { version = "2.0.0", optional = true }
 chrono = { version = "0.4", default-features = false, features = ["std"], optional = true }
 chrono-tz = { version = "0.8", optional = true }
 hashbrown.workspace = true
@@ -20,6 +21,7 @@ serde = { version = "1", features = ["derive"], optional = true }
 thiserror.workspace = true
 
 [features]
+dtype-decimal = ["atoi"]
 dtype-array = []
 nightly = ["hashbrown/nightly"]
 strings = []
