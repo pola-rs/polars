@@ -107,6 +107,7 @@ publish:
 	cargo publish --allow-dirty -p polars-utils
 	cargo publish --allow-dirty -p polars-row
 	cargo publish --allow-dirty -p polars-arrow
+	cargo publish --allow-dirty -p polars-json
 	cargo publish --allow-dirty -p polars-core
 	cargo publish --allow-dirty -p polars-ops
 	cargo publish --allow-dirty -p polars-time

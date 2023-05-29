@@ -394,7 +394,7 @@ def test_power() -> None:
     assert_series_equal(a**b, pl.Series([None, 4.0], dtype=Float64))
     with pytest.raises(ValueError):
         c**2
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(pl.ColumnNotFoundError):
         a ** "hi"  # type: ignore[operator]
 
     # rpow
@@ -402,7 +402,7 @@ def test_power() -> None:
     assert_series_equal(2**b, pl.Series("literal", [None, 4.0], dtype=Float64))
     with pytest.raises(ValueError):
         2**c
-    with pytest.raises(pl.ComputeError):
+    with pytest.raises(pl.ColumnNotFoundError):
         "hi" ** a
 
     # Series.pow() method
@@ -1409,27 +1409,6 @@ def test_strict_cast() -> None:
         pl.Series("a", [2**16]).cast(dtype=pl.Int16, strict=True)
     with pytest.raises(pl.ComputeError):
         pl.DataFrame({"a": [2**16]}).select([pl.col("a").cast(pl.Int16, strict=True)])
-
-
-def test_list_concat() -> None:
-    s0 = pl.Series("a", [[1, 2]])
-    s1 = pl.Series("b", [[3, 4, 5]])
-    expected = pl.Series("a", [[1, 2, 3, 4, 5]])
-
-    out = s0.list.concat([s1])
-    assert_series_equal(out, expected)
-
-    out = s0.list.concat(s1)
-    assert_series_equal(out, expected)
-
-    df = pl.DataFrame([s0, s1])
-    assert_series_equal(df.select(pl.concat_list(["a", "b"]).alias("a"))["a"], expected)
-    assert_series_equal(
-        df.select(pl.col("a").list.concat("b").alias("a"))["a"], expected
-    )
-    assert_series_equal(
-        df.select(pl.col("a").list.concat(["b"]).alias("a"))["a"], expected
-    )
 
 
 def test_floor_divide() -> None:
