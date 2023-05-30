@@ -329,7 +329,10 @@ def date_range(
     ):
         start = parse_as_expression(start)._pyexpr
         end = parse_as_expression(end)._pyexpr
-        return wrap_expr(plr.date_range_lazy(start, end, interval, closed, time_zone))
+        expr = wrap_expr(plr.date_range_lazy(start, end, interval, closed, time_zone))
+        if name is not None:
+            expr = expr.alias(name)
+        return expr
 
     start, start_is_date = _ensure_datetime(start)
     end, end_is_date = _ensure_datetime(end)
@@ -370,6 +373,8 @@ def date_range(
     ):
         dt_range = dt_range.cast(Date)
 
+    if name is not None:
+        dt_range = dt_range.alias(name)
     return dt_range
 
 
